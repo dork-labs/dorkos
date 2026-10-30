@@ -555,9 +555,6 @@ export class AgentSendService {
         // The real port, so the launch's own room guard still fires for a chat
         // a room took over after the target was checked (ROOM_SESSION_MOVED).
         roomSessionPlace: this.deps.roomSessionPlace?.(),
-        // An extension's code is not the owner's words: its message carries the outsider mark
-        // and runs no looser than the agent's runtime default (DOR-3036, `specs/turn-marks`).
-        permissionCeiling: 'runtime-default',
         // A message into a busy chat adds no turn beside the running one.
         countsTowardLaunchCap: !busy,
         ...(reservation ? { onSettled: () => reservation.settle() } : {}),

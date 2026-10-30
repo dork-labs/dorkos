@@ -19,7 +19,6 @@ import { CARRIED_OUTSIDER_LEVEL } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { recordTurnLevels } from '../turn-levels.js';
 import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
-import { resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { boundTurnOpts } from '../agent-level-bound.js';
 import { chosenFullAutonomy } from '../../../runtimes/claude-code/turn-permission.js';
 import {
@@ -102,7 +101,6 @@ async function decide(id: string, sessionId: string) {
 
 beforeEach(() => {
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   resetChosenTurns();
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
   approvals = new ApprovalService(createTestDb());
@@ -117,7 +115,6 @@ afterEach(() => {
   resetCapabilityTierGate();
   resetPermissionGate();
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   resetChosenTurns();
   vi.restoreAllMocks();
 });

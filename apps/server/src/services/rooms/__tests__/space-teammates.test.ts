@@ -100,9 +100,7 @@ describe('a teammate’s ceiling', () => {
         { ...READ_ONLY_LEVEL, teammate: [{ roomId: 'r', authorId: member }] },
       ],
     });
-    // A stranger from a bridged chat keeps exactly what it had.
-    expect(ceilingForEntries(registry, [{ id: 'tg-2', authorId: telegram }])).toEqual({
-      permissionCeiling: 'runtime-default',
-    });
+    // A stranger from a bridged chat bounds nothing (DOR-3440).
+    expect(ceilingForEntries(registry, [{ id: 'tg-2', authorId: telegram }])).toEqual({});
   });
 });

@@ -43,7 +43,7 @@ import {
   registerTestHomes,
   clearTestHomes,
 } from '../../agent-identity/__tests__/agent-home-fixture.js';
-import { roomBridges, roomSessions, rooms, sessionMetadata } from '@dorkos/db';
+import { roomSessions, rooms, sessionMetadata } from '@dorkos/db';
 import { lastTurnLevelOf } from '../turn-levels.js';
 import { levelBinds } from '../agent-level-bound.js';
 import { createChatRiseFacts, setChatRiseFacts } from '../chat-rise-facts.js';
@@ -550,26 +550,7 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
       expect(launches.at(-1)!.mode).toBe('bypassPermissions');
     });
 
-    it('a marked seat stays capped after the uncap: a bridged room', async () => {
-      const runtime = boot();
-      seedSeat('seat-bridged', 'default', 'room-bridged');
-      db.insert(roomBridges)
-        .values({
-          roomId: 'room-bridged',
-          adapterId: 'telegram-1',
-          chatId: '42',
-          platformChatType: 'group',
-          bindingId: 'binding-1',
-          deliverNotices: false,
-          createdAt: new Date().toISOString(),
-        } as typeof roomBridges.$inferInsert)
-        .run();
-      agentStops.set(ANA, 'autonomy');
-      await run(runtime.sendMessage('seat-bridged', 'hi', seatOpts(ANA)));
-      expect(launches.at(-1)!.mode).toBe('default');
-    });
-
-    it('a marked turn stays capped after the uncap: a stranger’s words in view', async () => {
+    it('a turn a Wi-Fi hold bound stays capped after the uncap', async () => {
       const runtime = boot();
       seedSeat('seat-heard', 'default');
       agentStops.set(ANA, 'autonomy');
@@ -577,20 +558,9 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
         runtime.sendMessage(
           'seat-heard',
           'hi',
-          seatOpts(ANA, {
-            roomTurn: { roomId: ROOM, agentPath: ANA, outsiderInView: true },
-          } as never)
+          seatOpts(ANA, { permissionCeiling: 'runtime-default' })
         )
       );
-      expect(launches.at(-1)!.mode).toBe('default');
-    });
-
-    it('a held seat stays capped after the uncap', async () => {
-      const runtime = boot();
-      seedSeat('seat-held', 'default');
-      db.update(sessionMetadata).set({ lastTurnHeld: true }).run();
-      agentStops.set(ANA, 'autonomy');
-      await run(runtime.sendMessage('seat-held', 'hi', seatOpts(ANA)));
       expect(launches.at(-1)!.mode).toBe('default');
     });
 
@@ -602,12 +572,24 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
       expect(launches.at(-1)!.mode).toBe('default');
     });
 
-    it('a chat from outside (a relay origin) stays capped', async () => {
+    // Where a chat's messages came from says nothing about its level (DOR-3440).
+    it('a chat an extension’s message opened, held last turn, launches at its agent’s level', async () => {
       const runtime = boot();
-      seedChat('chat-relay', 'default', { launchOrigin: 'relay' });
+      seedChat('chat-ext', null, { launchOrigin: 'extension-message', lastTurnHeld: true });
       agentStops.set(ANA, 'autonomy');
-      await run(runtime.sendMessage('chat-relay', 'hi', { cwd: ANA }));
+      await run(runtime.sendMessage('chat-ext', 'hi', { cwd: ANA }));
+      expect(launches.at(-1)!.mode).toBe('bypassPermissions');
+      agentStops.set(ANA, 'ask');
+      await run(runtime.sendMessage('chat-ext', 'hi', { cwd: ANA }));
       expect(launches.at(-1)!.mode).toBe('default');
+    });
+
+    it('a chat a binding opened launches at its agent’s level', async () => {
+      const runtime = boot();
+      seedChat('chat-binding', null, { launchOrigin: 'relay-binding' });
+      agentStops.set(ANA, 'autonomy');
+      await run(runtime.sendMessage('chat-binding', 'hi', { cwd: ANA }));
+      expect(launches.at(-1)!.mode).toBe('bypassPermissions');
     });
 
     it('a chat in Plan keeps Plan', async () => {

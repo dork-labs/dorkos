@@ -37,7 +37,6 @@ import {
   settleBeatTurn,
 } from '../beat-turns.js';
 import { commitmentsDomain } from '../../commitments/commitment-capabilities.js';
-import { noteTurnOrigin, resetOutsiderTurns } from '../../session/origin/outsider-turns.js';
 
 const juno: AgentIdentity = {
   agentPath: '/agents/juno',
@@ -72,7 +71,6 @@ afterEach(() => {
   resetCapabilityTierGate();
   resetPermissionGate();
   resetBeatTurns();
-  resetOutsiderTurns();
   setRaiseRecipientCheck(undefined);
   vi.restoreAllMocks();
 });
@@ -184,36 +182,5 @@ describe('bypass counting', () => {
     // A note from another chat of the same agent is not the beat's.
     noteBeatBypass('agent-juno-other-chat');
     expect(liveBeatTurn('beat-chat')?.bypass).toBe(2);
-  });
-});
-
-describe("a stranger's turn", () => {
-  it('reads nobody’s promises on a turn an outsider started', async () => {
-    noteTurnOrigin('room-chat', { kind: 'room', externalAuthor: true });
-    const refused = await registry.invoke(
-      'commitments.list',
-      {},
-      { identity: juno, sessionId: 'room-chat', mcpServer: 'in-session' }
-    );
-    expect(refused).toMatchObject({ ok: false, code: 'OUTSIDER_TURN' });
-
-    // The next turn in the same chat is a local author's: the list is readable again.
-    noteTurnOrigin('room-chat', { kind: 'room', externalAuthor: false });
-    const listed = await registry.invoke(
-      'commitments.list',
-      {},
-      { identity: juno, sessionId: 'room-chat', mcpServer: 'in-session' }
-    );
-    expect(listed).toEqual({ commitments: [], truncated: false });
-  });
-
-  it('treats a bridged chat as a stranger’s on every turn', async () => {
-    noteTurnOrigin('telegram-chat', { kind: 'relay-binding' });
-    const refused = await registry.invoke(
-      'commitments.list',
-      {},
-      { identity: juno, sessionId: 'telegram-chat', mcpServer: 'in-session' }
-    );
-    expect(refused).toMatchObject({ ok: false, code: 'OUTSIDER_TURN' });
   });
 });

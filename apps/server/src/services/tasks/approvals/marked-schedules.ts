@@ -11,11 +11,16 @@
  *
  * @module services/tasks/approvals/marked-schedules
  */
-import { eq } from 'drizzle-orm';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { pulseSchedules, type Db } from '@dorkos/db';
+import { writeSkillFile } from '@dorkos/skills/writer';
 import type { TeammateOrigin } from '@dorkos/shared/agent-runtime';
 import { ScheduleOriginMarksSchema, type ScheduleOriginMarks } from '@dorkos/shared/schemas';
 import { hasMarks, type TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { logger } from '../../../lib/logger.js';
+import { planTaskFileUpdate } from '../task-file-update.js';
 
 /** The names DorkOS knows for a teammate origin, for the card. */
 export interface OriginLabel {
@@ -89,6 +94,67 @@ function mergeStored(
     ...(before?.outsider || added.outsider ? { outsider: true as const } : {}),
     ...(teammate.length > 0 ? { teammate } : {}),
   };
+}
+
+/**
+ * Clear the schedules parked only for an outsider's words (DOR-3440): a turn runs at its agent's
+ * set level now, so these wait on nobody. They come out switched OFF, as normal schedules a person
+ * can turn on, and nothing starts by itself. The file says so too, since the next sync copies a
+ * file's switch onto its row (a package's file excepted, whose switch lives on the row). A file that
+ * cannot be written leaves its row parked, to try again next boot. A teammate's mark stays parked.
+ * Run before any watcher or sync, and matches nothing once done.
+ *
+ * @param db - The database the store writes.
+ * @returns How many schedules were cleared.
+ */
+export async function clearOutsiderParks(db: Db): Promise<number> {
+  const parked = db
+    .select()
+    .from(pulseSchedules)
+    .where(and(eq(pulseSchedules.status, 'pending_approval'), isNotNull(pulseSchedules.originMarks)))
+    .all();
+  let cleared = 0;
+  for (const row of parked) {
+    const marks = parseOriginMarks(row.originMarks);
+    if (!marks?.outsider || marks.teammate !== undefined) continue;
+    try {
+      // A package's file and one project's copy of a shared file keep their switch on the row.
+      if (!row.packageOwned && !row.projectOnly) await switchFileOff(row.filePath);
+    } catch (err) {
+      logger.warn('[Tasks] could not switch off a schedule file; it stays parked', {
+        filePath: row.filePath,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
+    db.update(pulseSchedules)
+      .set({
+        enabled: false,
+        status: 'active',
+        originMarks: null,
+        previousApprovalKey: null,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(pulseSchedules.id, row.id))
+      .run();
+    cleared += 1;
+  }
+  return cleared;
+}
+
+/** Write `enabled: false` into a schedule's file; no file, nothing to do. */
+async function switchFileOff(filePath: string): Promise<void> {
+  let content: string;
+  try {
+    content = await fs.readFile(filePath, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+  const plan = planTaskFileUpdate(filePath, content, { enabled: false });
+  if (plan.kind === 'refuse') throw new Error(plan.message);
+  const dir = path.dirname(filePath);
+  await writeSkillFile(path.dirname(dir), path.basename(dir), plan.frontmatter, plan.body);
 }
 
 /**

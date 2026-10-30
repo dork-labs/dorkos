@@ -38,8 +38,6 @@
  *
  * @module services/session/origin/turn-origin
  */
-import { noteTurnOrigin } from './outsider-turns.js';
-
 /**
  * What is starting this session, as the thing that knows describes itself.
  *
@@ -261,10 +259,7 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // The owner on the web, with the chat's stream open through the relay. A
     // new chat is born at the operator's configured stop, as one started here
     // is, so the chat is the same chat when its owner comes back to this
-    // computer. What a relayed TURN may do is bounded separately: every one is
-    // held to the runtime's default by the relay (`RELAY_TURN_CEILING`), so it
-    // asks before anything that needs a person (spec `everything-is-a-space`
-    // B2, the operator's option 2).
+    // computer.
     case 'session-relay':
       return 'configured-stop';
     // Nobody is watching a room turn either, and that is the reason it follows
@@ -343,20 +338,6 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
       throw new Error(`unhandled turn origin: ${JSON.stringify(unhandled)}`);
     }
   }
-}
-
-/**
- * The power a new session row gets for this origin, and a note of who started
- * the turn about to run in it (`outsider-turns.ts`), in one call: every
- * turn-starting surface binds through `runtimeRegistry.persistSessionRuntime`,
- * which is the one place that knows both the chat and the origin.
- *
- * @param sessionId - The chat.
- * @param origin - What is starting the turn.
- */
-export function seedForTurn(sessionId: string, origin: TurnOrigin): OriginPermissionSeed {
-  noteTurnOrigin(sessionId, origin);
-  return permissionSeedForOrigin(origin);
 }
 
 /** The subject prefix the server stamps on a message one of our agents sends. */
@@ -451,17 +432,4 @@ export function relayTurnOrigin(from: string): TurnOrigin {
     return { kind: 'relay-binding' };
   }
   return { kind: 'outside-sender' };
-}
-
-/**
- * Note, before a relay turn runs, who started it: what the relay adapter's
- * `noteTurnStart` seam is given for every turn it runs (`adapter-factory.ts`),
- * so a capability that turn calls knows whether a stranger started it.
- *
- * @param turn - The session the turn runs in and the envelope's sender.
- * @param turn.sessionId - The session.
- * @param turn.from - The envelope's server-stamped sender.
- */
-export function noteRelayTurnStart(turn: { sessionId: string; from: string }): void {
-  noteTurnOrigin(turn.sessionId, relayTurnOrigin(turn.from));
 }

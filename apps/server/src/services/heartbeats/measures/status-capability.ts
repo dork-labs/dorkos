@@ -10,8 +10,6 @@
  * - **Summaries only.** It never returns the words of a held message or which
  *   chat a beat ran in: those are the owner's, in the app. Held messages are a
  *   count.
- * - **Strangers read nothing.** A turn somebody from off this machine started
- *   is refused (`OUTSIDER_TURN`): trust never extends to strangers.
  *
  * @module services/heartbeats/measures/status-capability
  */
@@ -147,13 +145,6 @@ export const heartbeatStatusCapability = defineCapability({
     },
   },
   invoke: async (_deps, input, context) => {
-    if (context.turnStartedByOutsider) {
-      return refuse(
-        'OUTSIDER_TURN',
-        'Heartbeats are read by the team, and this turn was started by someone outside it, ' +
-          'so nothing was read.'
-      );
-    }
     if (!reader) {
       return refuse('NOT_RUNNING', 'Heartbeats are not running on this server yet.');
     }

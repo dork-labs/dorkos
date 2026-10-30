@@ -1,10 +1,6 @@
 /**
  * Security's rows for re-seating (DOR-3143), one test each:
  *
- * - **Row 6 + hop**: a seat a stranger's words reached is moved; its next post
- *   still holds the Full autonomy agent it wakes to asking, so that agent's
- *   write raises a card. And again after a restart, when nothing is left in
- *   memory and only the stranger's message itself is known.
  * - **Power only down (Must 1)**: a seat set below Full stays there.
  * - **Accounts (Must 4)**: never DorkOS credits, never an account kept to other
  *   projects (how `claude-ab1` is kept out), never one that is out, and nothing
@@ -19,12 +15,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
-import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/schemas';
-import type { StreamEvent } from '@dorkos/shared/types';
-import { clampModeToCeiling } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import type { AuthorRegistry } from '../../author-registry.js';
 import type { RankedAccount } from '../../../core/usage/account-ranking.js';
 import type { AccountUsageStore } from '../../../core/usage/account-usage-store.js';
 import type { RuntimeAccount } from '../../../core/usage/runtime-accounts.js';
@@ -44,50 +36,6 @@ vi.mock('../../../core/config-manager.js', async (importOriginal) => ({
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes!;
 const SEAT = { roomId: 'room-1', authorId: 'ana', agentPath: '/agents/ana', sessionId: 'old-seat' };
-
-const AUTHORS = {
-  getMany: (ids: readonly string[]) =>
-    new Map(
-      ids
-        .map((id) => [id, RECORDS[id]] as const)
-        .filter((pair): pair is readonly [string, (typeof RECORDS)[string]] => !!pair[1])
-    ),
-} as unknown as AuthorRegistry;
-const RECORDS: Record<string, { kind: 'human' | 'agent'; naturalKey: string }> = {
-  ana: { kind: 'agent', naturalKey: '/agents/ana' },
-  stranger: { kind: 'human', naturalKey: 'platform:telegram:4242' },
-};
-
-/** A runtime that records each turn's options, wrapped the way the registry wraps it. */
-async function seam(stored: Record<string, string>) {
-  const { recordTurnLevels } = await import('../../../core/turn-power/turn-levels.js');
-  const sent = new Map<string, MessageOpts | undefined>();
-  const runtime = recordTurnLevels(
-    {
-      type: 'claude-code',
-      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
-      async *sendMessage(sessionId: string, _content: string, opts?: MessageOpts) {
-        sent.set(sessionId, opts);
-        yield { type: 'done', data: {} } as StreamEvent;
-      },
-    } as unknown as AgentRuntime,
-    (id) => stored[id] ?? null
-  );
-  return { runtime, sent };
-}
-
-async function run(runtime: AgentRuntime, sessionId: string, opts?: MessageOpts) {
-  for await (const _event of runtime.sendMessage(sessionId, 'hi', opts)) {
-    // drain
-  }
-}
-
-/** The mode a Full autonomy conversation runs a turn at under its ceiling: `default` asks, so a write cards. */
-function runsAt(opts: MessageOpts | undefined): string {
-  return opts?.permissionCeiling === undefined
-    ? 'bypassPermissions'
-    : clampModeToCeiling(MODES, 'bypassPermissions', opts.permissionCeiling);
-}
 
 function usage(id: string, limited = false): AccountUsage {
   return {
@@ -145,66 +93,6 @@ function mover(overrides: Partial<SeatMoverDeps> = {}) {
 }
 
 const OPTS = { alreadyPosted: false, hideAccounts: false };
-
-afterEach(async () => {
-  const { resetOutsiderTurns } = await import('../../../session/origin/outsider-turns.js');
-  resetOutsiderTurns();
-});
-
-// DOR-3390: the mark gates the woken agent's risky actions and shell; it no longer caps its level.
-describe('row 6 + hop: a moved marked seat still marks the agent it wakes', () => {
-  it('marks a Full autonomy agent, at its own level', async () => {
-    const { ceilingForEntry } = await import('../../limits/turn-ceiling.js');
-    const { noteEntryLevel, postLevelFor, lastTurnLevelOf } =
-      await import('../../../core/turn-power/turn-levels.js');
-    const { runtime, sent } = await seam({
-      'old-seat': 'bypassPermissions',
-      bo: 'bypassPermissions',
-    });
-    // A stranger's message wakes Ana's seat, then her account runs out and the seat moves.
-    await run(runtime, 'old-seat', ceilingForEntry(AUTHORS, { id: 'e-1', authorId: 'stranger' }));
-    const { m } = mover();
-    const moved = await m.afterLimit(SEAT, 'e-1', OPTS);
-    expect(moved.kind).toBe('moved');
-
-    // The new seat posts @bo before running anything of its own.
-    noteEntryLevel('post-1', postLevelFor(['new-seat-1']));
-    // In the owner's own circle; outside it Bo would be held (DOR-3390, Security's M-B).
-    await run(
-      runtime,
-      'bo',
-      ceilingForEntry(AUTHORS, { id: 'post-1', authorId: 'ana' }, false, '', { ownCircle: true })
-    );
-
-    expect(runsAt(sent.get('bo'))).toBe('bypassPermissions');
-    expect(lastTurnLevelOf('bo')?.outsider).toBe(true);
-  });
-
-  it('still does after a restart, when only the stranger’s message is known', async () => {
-    // Everything turn-levels kept in memory is gone, as after a restart.
-    vi.resetModules();
-    const { ceilingForEntry } = await import('../../limits/turn-ceiling.js');
-    const { noteEntryLevel, postLevelFor, lastTurnLevelOf, passedOnLevelOf } =
-      await import('../../../core/turn-power/turn-levels.js');
-    expect(passedOnLevelOf('new-seat-1')).toBeUndefined();
-    const { runtime, sent } = await seam({
-      'new-seat-1': 'bypassPermissions',
-      bo: 'bypassPermissions',
-    });
-
-    // The moved seat's next turn is the re-run of the stranger's message.
-    await run(runtime, 'new-seat-1', ceilingForEntry(AUTHORS, { id: 'e-1', authorId: 'stranger' }));
-    noteEntryLevel('post-2', postLevelFor(['new-seat-1']));
-    await run(
-      runtime,
-      'bo',
-      ceilingForEntry(AUTHORS, { id: 'post-2', authorId: 'ana' }, false, '', { ownCircle: true })
-    );
-
-    expect(runsAt(sent.get('bo'))).toBe('bypassPermissions');
-    expect(lastTurnLevelOf('bo')?.outsider).toBe(true);
-  });
-});
 
 describe('Must 1: power only goes down', () => {
   it('keeps a seat set below Full where it was', async () => {

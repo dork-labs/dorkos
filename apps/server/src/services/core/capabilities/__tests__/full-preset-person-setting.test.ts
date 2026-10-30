@@ -20,7 +20,6 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-
 import { recordTurnLevels } from '../../turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
 import { resetChosenTurns, setMarkedFullActivity } from '../../turn-power/full-autonomy.js';
-import { resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
@@ -127,7 +126,6 @@ const refusedLines = () =>
 
 beforeEach(() => {
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   emit.mockClear();
   setMarkedFullActivity({ emit } as never);
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
@@ -142,7 +140,6 @@ afterEach(() => {
   resetCapabilityTierGate();
   resetPermissionGate();
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   resetChosenTurns();
   setMarkedFullActivity(undefined);
   vi.restoreAllMocks();

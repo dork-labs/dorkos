@@ -14,8 +14,6 @@ import { shouldWakeForRefusal, wakeForRefusedRoomTurn } from '../room-wakes.js';
 import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
 import type { BeatWake } from '../beat-runner.js';
 import { ConnectorRegistry } from '../../connectors/registry.js';
-import { noteRelayTurnStart } from '../../session/origin/turn-origin.js';
-import { resetOutsiderTurns, turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 
 let beats: Array<{ agentId: string; wake: BeatWake }>;
 let hub: EventWakes;
@@ -55,7 +53,6 @@ beforeEach(() => {
 afterEach(() => {
   hub.uninstall();
   resetBeatTurns();
-  resetOutsiderTurns();
   vi.useRealTimers();
 });
 
@@ -173,16 +170,5 @@ describe('the connector registry', () => {
     registry.markSignInEnded('conn-1' as never, 'expired');
     vi.advanceTimersByTime(60_000);
     expect(beats).toEqual([{ agentId: 'agent-juno', wake: { wake: 'event:connection-lost' } }]);
-  });
-});
-
-describe('a relay turn', () => {
-  it('marks an A2A or bridged sender a stranger before the turn runs, and our agent not', () => {
-    noteRelayTurnStart({ sessionId: 's-a2a', from: 'a2a-gateway' });
-    noteRelayTurnStart({ sessionId: 's-telegram', from: 'relay.human.telegram.4242' });
-    noteRelayTurnStart({ sessionId: 's-agent', from: 'relay.agent.default.agent-02' });
-    expect(turnStartedByOutsider('s-a2a')).toBe(true);
-    expect(turnStartedByOutsider('s-telegram')).toBe(true);
-    expect(turnStartedByOutsider('s-agent')).toBe(false);
   });
 });

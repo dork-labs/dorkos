@@ -1,7 +1,7 @@
 /**
  * A chat set to Full autonomy asks nobody anything (DOR-3394, the product owner's rule). Its
- * level is read from what the chat is set to, so an outsider's mark, a carried ceiling or a
- * stranger's hold never puts one of its calls in front of a person: not the held-turn hook, not
+ * level is read from what the chat is set to, so a mark or a hold never puts one of its calls in
+ * front of a person: not the held-turn hook, not
  * `canUseTool`. Below Full the asks stay, and a turn nobody is watching is refused at once rather
  * than left waiting on a card.
  *
@@ -10,13 +10,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { CARRIED_OUTSIDER_LEVEL } from '@dorkos/shared/permission-semantics';
 import { NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
-  CARRIED_SHELL_ASK_REASON,
-  CARRIED_WRITE_ASK_REASON,
   createHeldTurnHook,
   HELD_TURN_ASK_REASON,
 } from '../held-turn-hook.js';
@@ -33,13 +30,11 @@ const DORKOS = { name: 'dorkos', source: 'sdk' };
 
 /** Every bound a mark or a hold can put on a turn. */
 const BOUNDS: [string, TurnPermissionCeiling][] = [
-  ['a carried mark', CARRIED_OUTSIDER_LEVEL as unknown as TurnPermissionCeiling],
   ['a stranger’s hold', 'runtime-default'],
   ['a marked lower level', { asks: 'always', reach: 'edit', outsider: true } as never],
-  ['both', ['runtime-default', CARRIED_OUTSIDER_LEVEL] as unknown as TurnPermissionCeiling],
 ];
 
-/** The calls a marked turn below Full is asked about. */
+/** Calls a held turn below Full is asked about. */
 const ASKED: [string, Record<string, unknown>][] = [
   ['Bash', { command: 'gh pr list' }],
   ['Bash', { command: 'git push' }],
@@ -158,25 +153,7 @@ describe('a chat set to Full autonomy never asks', () => {
 });
 
 describe('below Full the asks stay', () => {
-  it('a carried turn’s shell and git or .dork edits ask', async () => {
-    const session = {
-      permissionMode: 'acceptEdits' as const,
-      turnPermissionCeiling: CARRIED_OUTSIDER_LEVEL as unknown as TurnPermissionCeiling,
-    };
-    const reason = async (tool: string, input: Record<string, unknown>) =>
-      (
-        (await hookSays(session, call(tool, input))) as {
-          hookSpecificOutput?: { permissionDecisionReason?: string };
-        }
-      ).hookSpecificOutput?.permissionDecisionReason;
-    for (const [tool, input] of ASKED) {
-      expect(await reason(tool, input), `${tool} ${JSON.stringify(input)}`).toBe(
-        tool === 'Bash' ? CARRIED_SHELL_ASK_REASON : CARRIED_WRITE_ASK_REASON
-      );
-    }
-  });
-
-  it('a stranger’s held turn asks about the DOR-3394 tools', async () => {
+  it('a held turn asks about the DOR-3394 tools', async () => {
     const session = {
       permissionMode: 'default' as const,
       turnPermissionCeiling: 'runtime-default' as const,
@@ -192,19 +169,17 @@ describe('below Full the asks stay', () => {
   });
 
   it('an attended turn raises the card', async () => {
-    const session = gateSession('acceptEdits', {
-      turnPermissionCeiling: CARRIED_OUTSIDER_LEVEL as unknown as TurnPermissionCeiling,
-    });
+    const session = gateSession('acceptEdits', { turnPermissionCeiling: 'runtime-default' });
     void createCanUseTool(session, noopLog)('Bash', { command: 'git push' }, context('card'));
     await vi.waitFor(() => expect(session.pendingInteractions.has('card')).toBe(true));
     expect(session.eventQueue[0]?.type).toBe('approval_required');
   });
 
   it('a chat stored at Full whose agent is set to Ask is below Full: it asks, or fails fast (DOR-3175)', async () => {
-    // The agent's level rides in the turn's ceiling as a plain level, beside the mark.
+    // The agent's level rides in the turn's ceiling as a plain level, beside the hold.
     const AGENT_AT_ASK = { asks: 'always', reach: 'edit' } as const;
     const turnPermissionCeiling = [
-      CARRIED_OUTSIDER_LEVEL,
+      'runtime-default',
       AGENT_AT_ASK,
     ] as unknown as TurnPermissionCeiling;
     expect(chosenFullAutonomy({ permissionMode: 'bypassPermissions', turnPermissionCeiling })).toBe(
@@ -215,7 +190,7 @@ describe('below Full the asks stay', () => {
       call('Bash', { command: 'git push' })
     );
     expect(said).toMatchObject({
-      hookSpecificOutput: { permissionDecisionReason: CARRIED_SHELL_ASK_REASON },
+      hookSpecificOutput: { permissionDecisionReason: HELD_TURN_ASK_REASON },
     });
     const session = gateSession('bypassPermissions', { turnPermissionCeiling, unattended: true });
     expect(
@@ -227,7 +202,7 @@ describe('below Full the asks stay', () => {
 
   it('an unattended turn is refused at once with a reason, and no card is raised', async () => {
     const session = gateSession('acceptEdits', {
-      turnPermissionCeiling: CARRIED_OUTSIDER_LEVEL as unknown as TurnPermissionCeiling,
+      turnPermissionCeiling: 'runtime-default',
       unattended: true,
     });
     const result = await createCanUseTool(session, noopLog)(

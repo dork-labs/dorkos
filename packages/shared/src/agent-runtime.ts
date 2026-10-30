@@ -1092,15 +1092,6 @@ export interface MessageOpts extends SessionSettings {
      */
     aheadOfMain?: number | null;
     /**
-     * True when the room shows this turn a message from outside the owner's
-     * circle that it does not answer: a stranger's line in the recent window.
-     * It bounds no power (a stranger who spoke once in a shared room must not
-     * hold every later request there to asking), but the turn is recorded as
-     * one that read an outsider's words, so what it saves to memory or passes
-     * on says so (spec `trusted-by-default-flip` §4.7).
-     */
-    outsiderInView?: true;
-    /**
      * True when a space member who is not this install's owner started the
      * turn: a teammate (DOR-2955). A runtime that honours it lets the turn's
      * DorkOS tools reach only {@link roomId}, and refuses the rest; the same

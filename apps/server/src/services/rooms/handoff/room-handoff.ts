@@ -34,7 +34,6 @@ import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { markedBoundOf, marksOf } from '../../core/turn-power/turn-levels.js';
-import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import { getChatMessageService } from '../../session/chat-messages/chat-message-current.js';
 import { fenceUntrustedBlock } from '../../runtimes/shared/untrusted-fence.js';
 import { teammateOf } from '../limits/space-teammates.js';
@@ -457,7 +456,7 @@ function carryFrom(sessionId: string, agentPath: string): AsideCarry {
   const marks = marksOf(sessionId, agentPath);
   const ceiling = markedBoundOf(sessionId, agentPath);
   return {
-    externalAuthor: marks.outsider === true || chatHeardOutsider(sessionId),
+    externalAuthor: marks.outsider === true,
     ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
     ...(marks.teammate !== undefined && marks.teammate.length > 0 ? { teammate: true } : {}),
   };

@@ -20,8 +20,6 @@ import {
   createRoomHarness,
   type RoomHarness,
 } from '../../../rooms/__tests__/room-test-harness.js';
-import { launchCeiling } from '../../../session/message-dispatcher/state.js';
-import { extensionClientId } from '../../../extensions/agent-send/extension-client-id.js';
 import { registerTaskTools } from '../../external-mcp/task-tools.js';
 import { TaskStore } from '../../../tasks/task-store.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
@@ -86,26 +84,15 @@ describe('a room post’s marks, after a restart', () => {
         { ...READ_ONLY_LEVEL, teammate: [{ roomId: channel.id, authorId: bo }] },
       ],
     });
-    // Outside a space nothing changes: the runtime default, as for any unkept agent post.
+    // Outside a space nothing bounds it (DOR-3440).
     expect(teammateOf(harness.authors, [entry], false, channel.id)).toEqual({});
-    expect(ceilingForEntry(harness.authors, entry, false, channel.id)).toEqual({
-      permissionCeiling: 'runtime-default',
-    });
+    expect(ceilingForEntry(harness.authors, entry, false, channel.id)).toEqual({});
   });
 
   it('a known unmarked post stays unmarked', () => {
     const entry = postByBo();
     createEntryMarksStore(harness.db).write(channel.id, entry.id, {});
     expect(teammateOf(harness.authors, [entry], true, channel.id)).toEqual({});
-  });
-});
-
-describe('a queued extension message, launched after a restart', () => {
-  it('keeps the outsider mark: an app’s code is not the owner’s words', () => {
-    expect(launchCeiling(extensionClientId('social-manager'), 'msg-1', undefined)).toBe(
-      'runtime-default'
-    );
-    expect(launchCeiling('person-window-1', 'msg-2', undefined)).toBeUndefined();
   });
 });
 

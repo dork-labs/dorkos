@@ -27,7 +27,6 @@
  */
 import { eq, sessionMetadata, type Db } from '@dorkos/db';
 import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
-import { CARRIED_OUTSIDER_LEVEL } from '@dorkos/shared/permission-semantics';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -47,31 +46,17 @@ const WRITTEN_MAX = 10_000;
 export function setContinuationHoldDb(handle: Db | undefined): void {
   db = handle;
   written.clear();
-  carriedOnly.clear();
 }
 
 /**
- * Chats whose latest marked turn only CARRIED an outsider's words on (DOR-3390): our own agent's
- * post or message passed them, no stranger's turn held it. Kept in memory only, so after a
- * restart every held row reads as a stranger's again: the strict answer.
- */
-const carriedOnly = new Set<string>();
-
-/**
- * Record whether a chat's latest turn read outsider words. Never throws: a
- * failed write leaves the last answer.
+ * Record whether a chat's latest turn was held. Never throws: a failed write
+ * leaves the last answer.
  *
  * @param sessionId - The id the turn was sent under.
- * @param held - Whether the turn read words DorkOS cannot vouch for.
- * @param carried - Whether it only carried them on, held for no stranger (DOR-3390).
+ * @param held - Whether a hold bound the turn.
  */
-export function noteTurnHold(sessionId: string, held: boolean, carried = false): void {
+export function noteTurnHold(sessionId: string, held: boolean): void {
   const key = primaryOf(sessionId);
-  carriedOnly.delete(key);
-  if (held && carried) {
-    carriedOnly.add(key);
-    if (carriedOnly.size > WRITTEN_MAX) carriedOnly.delete(carriedOnly.values().next().value!);
-  }
   if (!db) return;
   if (written.get(key) === held) return;
   try {
@@ -138,20 +123,15 @@ export function ceilingForContinuation(sessionId: string): {
   continuationHold?: true;
 } {
   if (!lastTurnHeld(sessionId)) return {};
-  // A chat that only carried an outsider's words on stays marked and runs at its own level
-  // (DOR-3390): the words are still in it, and the mark gates the risky actions.
-  if (carriedOnly.has(primaryOf(sessionId))) return { permissionCeiling: CARRIED_OUTSIDER_LEVEL };
   return { permissionCeiling: 'runtime-default', continuationHold: true };
 }
 
 /**
  * The bound a turn that READS a held chat's words in its seed carries (an automatic carry-over):
- * the carried outsider mark when the chat only carried them on (DOR-3390), the runtime's default
- * otherwise, and nothing when its latest turn was not held.
+ * the runtime's default, and nothing when its latest turn was not held.
  *
  * @param sessionId - The chat whose words are carried over.
  */
 export function heldBoundFor(sessionId: string): TurnPermissionBound | undefined {
-  if (!lastTurnHeld(sessionId)) return undefined;
-  return carriedOnly.has(primaryOf(sessionId)) ? CARRIED_OUTSIDER_LEVEL : 'runtime-default';
+  return lastTurnHeld(sessionId) ? 'runtime-default' : undefined;
 }

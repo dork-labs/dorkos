@@ -21,9 +21,8 @@
  *    running turn already passed; otherwise it waits in the queue and the
  *    receipt says why. `interrupt` puts the message at the head of the queue
  *    and stops the running turn, so it runs next.
- * 4. **The power it carries.** The turn runs no looser than the sending
- *    chat's latest turn (`senderBound`), applied by the dispatcher when
- *    the queue row launches.
+ * 4. **The power it carries.** None: the turn runs at the receiving agent's own
+ *    level, except a teammate's chain, which rides on (`senderCeilingJson`).
  *
  * ## No loop guard
  *
@@ -38,7 +37,6 @@ import {
   chatMessageOrigin,
   parseCeiling,
   senderCeilingJson,
-  type OwnLevelReader,
 } from './chat-message-ceiling.js';
 import crypto from 'node:crypto';
 import type { MeshCore } from '@dorkos/mesh';
@@ -163,10 +161,8 @@ export interface ChatMessageServiceDeps {
   canonicalId: (sessionId: string) => Promise<string>;
   /** Stop a chat's running turn. True when one was running and was asked to stop. */
   interruptTurn: (sessionId: string) => Promise<boolean>;
-  /** The level a chat hands on (its latest turn's, marked if a stranger reached it), or undefined when not known. */
+  /** The level a chat hands on (its latest turn's), or undefined when not known. */
   turnLevelOf: (sessionId: string) => TurnPermissionLevel | undefined;
-  /** The level a person set an agent and its chat to (DOR-3107); absent, unmarked senders keep their level. */
-  ownLevelOf?: OwnLevelReader;
   /** Tell a chat's windows its messaging changed. */
   emitActivity: (sessionId: string) => void;
   /** Subscribe to the dispatcher's lifecycle. */
@@ -208,16 +204,17 @@ export class ChatMessageService {
   }
 
   /**
-   * The ceiling a queue row a chat sent launches under: every sender's bound
-   * when the row carries several, `runtime-default` for a row with no record.
+   * The ceiling a queue row a chat sent launches under: a teammate's chain any of its senders
+   * carried, or nothing.
    *
    * @param queueMessageId - The dispatcher's message id.
    */
-  ceilingForQueuedMessage(queueMessageId: string): TurnPermissionCeiling {
-    const rows = this.deps.store.listByQueueMessage(queueMessageId);
-    if (rows.length === 0) return 'runtime-default';
-    const bounds = rows.flatMap((row) => boundsOf(parseCeiling(row.ceilingJson)));
-    return bounds.length === 1 ? bounds[0]! : bounds;
+  ceilingForQueuedMessage(queueMessageId: string): TurnPermissionCeiling | undefined {
+    const bounds = this.deps.store.listByQueueMessage(queueMessageId).flatMap((row) => {
+      const ceiling = parseCeiling(row.ceilingJson);
+      return ceiling === undefined ? [] : boundsOf(ceiling);
+    });
+    return bounds.length === 0 ? undefined : bounds;
   }
 
   /**
@@ -271,7 +268,7 @@ export class ChatMessageService {
       text(input),
       this.deps.nonce?.()
     );
-    const ceilingJson = await senderCeilingJson(this.deps, caller);
+    const ceilingJson = senderCeilingJson(this.deps, caller);
     // A new DM chat's id is minted here, before the row, so a window already
     // watching it can match the message to its sender from the first event.
     if (target.sessionId === null) target.newSessionId = crypto.randomUUID();
@@ -617,7 +614,7 @@ export class ChatMessageService {
       delivery: 'queue',
       status: 'queued',
       queueMessageId,
-      ceilingJson: await senderCeilingJson(this.deps, caller),
+      ceilingJson: senderCeilingJson(this.deps, caller),
       replyToId: null,
     });
     return { id: row.id, content: rendered.text };

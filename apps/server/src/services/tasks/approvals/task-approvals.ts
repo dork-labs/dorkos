@@ -36,7 +36,7 @@ import {
   effectiveWork,
 } from '../timing/effective-timing.js';
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
-import { markScheduleOrigin } from './marked-schedules.js';
+import { clearOutsiderParks, markScheduleOrigin } from './marked-schedules.js';
 
 /**
  * What {@link TaskApprovals.rekeyMigratedFile} did with one migrated row.
@@ -552,5 +552,14 @@ export class TaskApprovals {
         .run();
     }
     return rows.length;
+  }
+
+  /**
+   * Clear the schedules parked only for an outsider's words: off, and a person can turn them on.
+   *
+   * @returns How many schedules were cleared.
+   */
+  clearOutsiderParks(): Promise<number> {
+    return clearOutsiderParks(this.db);
   }
 }

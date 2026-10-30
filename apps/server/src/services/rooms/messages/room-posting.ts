@@ -11,11 +11,6 @@
 import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { postLevelFor, unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
-import {
-  OUTSIDER_TURN_LIMIT,
-  releaseOutsiderOutput,
-  reserveOutsiderOutput,
-} from '../../core/turn-power/outsider-output.js';
 import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
 import type { ForwardVia } from '@dorkos/shared/chat-messages';
 import { logger } from '../../../lib/logger.js';
@@ -25,7 +20,6 @@ import type { AuthorRegistry } from '../author-registry.js';
 import type { PostAuthorBound, RoomEntryWriter } from './room-entry-writer.js';
 import { RoomError } from '../room-errors.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
-import { noteCallerSession } from '../limits/caller-sessions.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
@@ -274,44 +268,19 @@ export class RoomPosting {
         'This conversation was stopped, so nothing more from this turn is posted. Wait for the next message before answering here.'
       );
     }
-    // **A stranger's turn is still counted** (DOR-2739). Our own agents post as
-    // often as they need; a turn a stranger started may post a few messages and
-    // no more, so one message from outside the team cannot make it talk without
-    // end. Taken before the write and given back if the write refuses, so a
-    // post refused for any other reason spends nothing.
-    const countedSession = input.callerSessionId ?? turn?.sessionId;
-    if (!reserveOutsiderOutput('post', countedSession)) {
-      logger.info('[rooms] refused a stranger-started turn a further post', {
-        roomId,
-        authorId: input.authorId,
-      });
-      throw new RoomError(
-        'TOO_MANY_POSTS_THIS_TURN',
-        `A message from outside your team started this turn, so it can post ${OUTSIDER_TURN_LIMIT} messages at most. Put the rest in one message next turn.`
-      );
-    }
-    // The level the turns this post starts are held to. Both sessions vouch:
-    // the one that made the call, and the author's turn in this room, which
-    // differ when an agent posts from one room's turn into another. A caller
-    // nobody verified is kept as an outsider's (DOR-3107): an unknown post
-    // from the owner's own agent is trusted, an unverified one never is.
+    // The marks a post carries on. Both sessions vouch: the one that made the call, and the
+    // author's turn in this room, which differ when an agent posts from one room's turn into
+    // another. Only a teammate's chain still means anything to a turn it starts.
     const vouching = [input.callerSessionId, turn?.sessionId];
     const known = input.callerSessionId !== undefined ? postLevelFor(vouching) : undefined;
-    // Unknown is trusted only when nothing says a stranger reached these chats.
-    const authorLevel: TurnPermissionLevel | { marks: TurnMarks } =
-      known ??
-      (input.callerSessionId === undefined && !input.callerAgentVerified
-        ? { marks: { outsider: true } }
-        : {
-            marks: unknownLevelMarks(
-              vouching,
-              this.authors.getMany([input.authorId]).get(input.authorId)?.naturalKey
-            ),
-          });
+    const authorLevel: TurnPermissionLevel | { marks: TurnMarks } = known ?? {
+      marks: unknownLevelMarks(
+        vouching,
+        this.authors.getMany([input.authorId]).get(input.authorId)?.naturalKey
+      ),
+    };
     const { callerSessionId: _caller, callerAgentVerified: _verified, ...postInput } = input;
-    let entry: PostedEntry;
-    try {
-      entry = this.post(
+    const entry: PostedEntry = this.post(
         roomId,
         {
           ...postInput,
@@ -337,15 +306,6 @@ export class RoomPosting {
         },
         authorLevel
       );
-    } catch (err) {
-      releaseOutsiderOutput('post', countedSession);
-      throw err;
-    }
-    // The chat the post was written from, when it is not this room's turn: a
-    // person may have set that chat to ask first (DOR-3107, `posterCapsFor`).
-    if (input.callerSessionId !== undefined && input.callerSessionId !== turn?.sessionId) {
-      noteCallerSession(entry.id, input.callerSessionId);
-    }
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
   }

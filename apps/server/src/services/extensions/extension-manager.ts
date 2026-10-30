@@ -75,8 +75,7 @@ import {
 } from './agent-skills/running-skills-ledger.js';
 import { declaredSet, isSamePermissionSet } from './isolation/permission-coverage.js';
 import { isExpectedCopy, type ExpectedCopy } from './pin/extension-expected-copy.js';
-import { bundleDigestOf, isPathTrustApproval } from './pin/extension-path-trust.js';
-import { isolationKeyOf } from './isolation/isolation-view.js';
+import { bundleDigestOf, isPathTrustApproval } from './pin/extension-path-trust.js';import { isolationKeyOf } from './isolation/isolation-view.js';
 import { withoutExtension, withoutPersonChoices } from './rooms/extension-room-access.js';
 
 /**

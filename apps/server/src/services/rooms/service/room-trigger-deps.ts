@@ -4,7 +4,6 @@
  *
  * @module server/services/rooms/service/room-trigger-deps
  */
-import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import type {
   AuthorRef,
   RoomAttachment,
@@ -153,8 +152,6 @@ export interface RoomTriggerDeps {
    * a hand-built test dependency set still fits; absent answers no.
    */
   isSpaceRoom?(roomId: string): boolean;
-  /** The level a person set a poster agent to (DOR-3107); see `RoomServiceDeps.posterLevel`. */
-  posterLevel?(agentPath: string, sessionIds: readonly string[]): Promise<TurnPermissionBound>;
   /**
    * The stored forum-topic name for a batch of entries. Read only by
    * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.

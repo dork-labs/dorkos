@@ -18,7 +18,6 @@ import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
-import { RELAY_TURN_CEILING } from '../../../../core/session-relay/relay-send.js';
 import { configManager } from '../../../../core/config-manager.js';
 import { resolveDorkHome } from '../../../../../lib/dork-home.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
@@ -568,9 +567,7 @@ describe('a marked turn on an agent at Full autonomy', () => {
   }
 
   it.each([
-    ['a Telegram or Slack message (the relay adapter)', 'runtime-default' as const],
-    ['a turn relayed from the web', RELAY_TURN_CEILING],
-    ['a room post from an outsider', 'runtime-default' as const],
+    ['a Wi-Fi sign-in’s hold', 'runtime-default' as const],
     ['a space teammate’s post', ['runtime-default', READ_ONLY_LEVEL] as const],
   ])('launches at the runtime’s Default for %s', async (_name, ceiling) => {
     const options = await launchAs(

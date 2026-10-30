@@ -26,12 +26,6 @@
  *
  * ## Strangers
  *
- * `commitments_list` refuses on a turn somebody from off this machine started
- * (a bridged Telegram or Slack sender, an external room author, an outside
- * agent: `context.turnStartedByOutsider`). The promise texts are the agents'
- * own words, not secrets, but trust never extends to strangers (PRINCIPLES §1),
- * and a stranger's turn runs under the binding's grant, not the space's.
- *
  * `commitment_add` refuses on a turn that read such words, a Wi-Fi sign-in's
  * included (DOR-3037): the promise's due beat would run at the agent's own
  * level on words the turn was held back from acting on. Not in a chat set to
@@ -118,15 +112,6 @@ const NO_AGENT: Refusal = {
   error:
     'Only an agent can record its own promise. This chat is not running as one of your agents, ' +
     'so nothing was recorded.',
-};
-
-/** The refusal for a list asked for on a turn a stranger started. */
-const OUTSIDER_TURN: Refusal = {
-  ok: false,
-  code: 'OUTSIDER_TURN',
-  error:
-    'Promises are read by the team, and this turn was started by someone outside it, so ' +
-    'nothing was listed.',
 };
 
 /**
@@ -389,9 +374,7 @@ export const commitmentsDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
-      invoke: async (deps, input, context) => {
-        // A stranger's turn reads nobody's promises (module TSDoc, "Strangers").
-        if (context.turnStartedByOutsider) return OUTSIDER_TURN;
+      invoke: async (deps, input) => {
         const { state = 'open', limit = LIST_DEFAULT_LIMIT, ...filter } = input;
         const list = requireCommitmentDeps(deps).service.list(
           { ...filter, ...(state === 'all' ? {} : { state }) },

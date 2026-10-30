@@ -16,8 +16,7 @@ import { resolveScheduleParkPayload } from '../services/notifications/emitters/s
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { RELAY_NOT_BUILT } from '../services/relay/task-dispatch/readiness.js';
-import { startAgentExecutionWatch } from '../services/tasks/approvals/agent-execution-watch.js';
-import { attachAgentRoots, attachTaskRoot } from '../services/tasks/attach-task-roots.js';
+import { startAgentExecutionWatch } from '../services/tasks/approvals/agent-execution-watch.js';import { attachAgentRoots, attachTaskRoot } from '../services/tasks/attach-task-roots.js';
 import { migrateLegacySchedules } from '../services/tasks/legacy-migration.js';
 import type { resolveTasksFiring } from '../services/tasks/resolve-firing.js';
 import { ScheduleIdentityRegistry } from '../services/tasks/schedule-identity.js';
@@ -276,6 +275,10 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
         `[Tasks] Carried ${upgraded} approval(s) over to include each schedule's timezone and settings`
       );
     }
+
+    // Before the backfill, which then keeps what these rows already say, and before any sync reads
+    // their files (DOR-3440). They stay off: the backfill grants, it never switches on.
+    await taskStore.approvals.clearOutsiderParks();
 
     const backfilled = taskStore.approvals.backfillApprovalGrants();
     if (backfilled > 0) {

@@ -30,18 +30,13 @@
  * @module server/services/rooms/messages/room-freshness
  */
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import {
-  entryHeldToDefault,
-  entryMarksOf,
-  markRunningTurn,
-} from '../../core/turn-power/turn-levels.js';
+import { entryMarksOf, markRunningTurn } from '../../core/turn-power/turn-levels.js';
 import {
   hasMarks,
   mergeMarks,
   NO_MARKS,
   type TurnMarks,
 } from '../../core/turn-power/turn-marks.js';
-import { isEntryAuthorExternal } from '../limits/turn-ceiling.js';
 import { isTeammateEntry } from '../limits/space-teammates.js';
 import { agentKey } from '../room-claims.js';
 import type { RoomService } from '../room-service.js';
@@ -109,9 +104,7 @@ export function unseenPosts(rooms: RoomService, roomId: string, authorId: string
 }
 
 /**
- * The marks the handed-back posts carry, by the rules a turn start reads the lines it is shown
- * with (`outsiderInViewOf`, `teammateOf`): a stranger's post, one held to the runtime's default,
- * one kept with the outsider mark (a mini app's), and a teammate's or a post carrying one's mark.
+ * The marks the handed-back posts carry: a teammate's, or a post carrying one's mark.
  *
  * @param rooms - The rooms service.
  * @param roomId - The room the posts are in.
@@ -124,17 +117,13 @@ export function marksOfUnseen(
 ): TurnMarks {
   const inSpaceRoom = rooms.isMirroredRoom(roomId);
   return entries.reduce<TurnMarks>((marks, entry) => {
-    const kept = entryMarksOf(entry.id, roomId) ?? NO_MARKS;
-    const outsider =
-      isEntryAuthorExternal(rooms.authorRegistry, entry.authorId) ||
-      entryHeldToDefault(entry.id, roomId) ||
-      kept.outsider === true;
+    const kept = entryMarksOf(entry.id, roomId)?.teammate;
     const teammate = isTeammateEntry(rooms.authorRegistry, entry, inSpaceRoom)
       ? [{ roomId, authorId: entry.authorId }]
       : undefined;
     return mergeMarks(
-      mergeMarks(marks, kept),
-      mergeMarks(outsider ? { outsider: true } : NO_MARKS, teammate ? { teammate } : NO_MARKS)
+      mergeMarks(marks, kept ? { teammate: kept } : NO_MARKS),
+      teammate ? { teammate } : NO_MARKS
     );
   }, NO_MARKS);
 }
@@ -142,10 +131,9 @@ export function marksOfUnseen(
 /**
  * Hold an agent's post when the room moved on since it last read it.
  *
- * **The handed-back posts mark the turn that reads them** (Security, DOR-3398): they arrived
- * after the turn's marks were set, so a stranger's line from a bridged room would otherwise
- * reach the model unmarked. Every session this call speaks for is marked before returning, the
- * way the turn-start context would have marked it had the post been in view then.
+ * **A teammate's handed-back posts mark the turn that reads them** (Security, DOR-3398): they
+ * arrived after the turn's marks were set. Every session this call speaks for is marked before
+ * returning.
  *
  * @param rooms - The rooms service.
  * @param roomId - The room.

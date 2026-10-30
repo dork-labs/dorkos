@@ -63,8 +63,7 @@ import {
   writePlan,
 } from '../limit-plans.js';
 import { fireAutoHandoff } from '../auto-handoff.js';
-import { passedOnLevelOf, recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
-import { chatHeardOutsider } from '../../origin/outsider-turns.js';
+import { lastTurnLevelOf, recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
 import { setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
 import {
   ContinueError,
@@ -1254,8 +1253,7 @@ describe('core’s automatic handoff', () => {
     // Not a continuation's hold: the new chat reads the old one's words in its seed.
     expect(call).not.toHaveProperty('continuationHold');
     expect(call.permissionCeiling).toBe('runtime-default');
-    expect(chatHeardOutsider(call.sessionId!)).toBe(true);
-    expect(passedOnLevelOf(call.sessionId!)?.outsider).toBe(true);
+    expect(lastTurnLevelOf(call.sessionId!)?.outsider).toBe(true);
   });
 
   it('seeds an automatic move with the default summary when the advisor’s seed is too big', async () => {

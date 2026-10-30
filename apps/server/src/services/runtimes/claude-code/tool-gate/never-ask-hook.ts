@@ -103,9 +103,7 @@ export async function neverAskAllows(
   // Proven, not assumed: an absent source is NOT the host here.
   if (mcpServer?.source !== 'sdk') return false;
   if (toolName === CHAT_SEND_QUALIFIED) {
-    // A stranger's own turn passes nothing on. A turn that only carries an outsider's words on
-    // may (DOR-3390): the message carries the mark, so the chat it reaches is marked in turn and
-    // its raises, destructive calls and shell still ask.
+    // A held turn (a Wi-Fi sign-in's) passes nothing on.
     if (heldForOutsider(session)) return false;
   } else if (NEVER_IN_A_HELD_OR_MARKED_TURN.has(toolName)) {
     if (ceilingOn(session) !== 'none') return false;

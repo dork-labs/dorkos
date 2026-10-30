@@ -120,15 +120,14 @@ export function refuseOutsiderAgentFiles(
 ): undefined {
   const fields = namedInstructionFields(input);
   if (fields.length === 0) return undefined;
+  const personSet = fields.some((field) => PERSON_SET_INSTRUCTION_FIELDS.has(field));
+  // A person's limits: refused for every agent, marked or not (DOR-3440, Security's Must).
+  const fromAgent = context.sessionId !== undefined || context.identity !== undefined;
   const marks = marksOf(context.sessionId, context.identity?.agentPath);
-  if (!hasMarks(marks)) return undefined;
-  // A teammate's mark is the space owner's limit, refused at every level, and so is a person's own.
-  if (
-    marks.teammate === undefined &&
-    !fields.some((field) => PERSON_SET_INSTRUCTION_FIELDS.has(field)) &&
-    choseFullAutonomy(context.sessionId)
-  ) {
-    return undefined;
+  if (!(personSet && fromAgent)) {
+    if (!hasMarks(marks)) return undefined;
+    // A teammate's mark is the space owner's limit, refused at every level.
+    if (marks.teammate === undefined && choseFullAutonomy(context.sessionId)) return undefined;
   }
   throw new CapabilityToolError({
     error: AGENT_FILES_OUTSIDER_REFUSAL,

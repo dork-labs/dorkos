@@ -227,7 +227,7 @@ describe('one budget per person', () => {
 });
 
 describe('the owner’s own post in the space', () => {
-  it('keeps today’s power: a stranger’s ceiling, no fence, and nobody else’s budget', async () => {
+  it('runs at the agent’s level: no ceiling, no fence, and nobody else’s budget', async () => {
     const { harness, post } = space({ gate: members });
 
     for (let i = 0; i < 5; i += 1) await post(OWNER);
@@ -235,7 +235,7 @@ describe('the owner’s own post in the space', () => {
     expect(harness.runner.turns).toHaveLength(5);
     for (const turn of harness.runner.turns) {
       expect(turn.teammate).toBeUndefined();
-      expect(turn.permissionCeiling).toBe('runtime-default');
+      expect(turn.permissionCeiling).toBeUndefined();
     }
   });
 

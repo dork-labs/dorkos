@@ -28,7 +28,6 @@
  */
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { RoomTurnRequest } from '../room-turn-port.js';
-import { outsiderInViewOf } from './turn-ceiling.js';
 import { runsTeammateTurns, teammateRuntimeRefusal } from '../../core/turn-power/teammate-mark.js';
 
 /**
@@ -84,27 +83,19 @@ function turnDirectoriesOf(
 }
 
 /**
- * The marks a room turn's `roomTurn` carries about who it answers: whether it is shown an
- * outsider's words (`outsiderInViewOf`); whether a teammate started it, which fences its DorkOS
- * tools to `roomTurn.roomId`; and whether any message it answers was written by anyone but a
- * person on this machine, which keeps the runtime from running those words as a command or
- * expanding a file reference in them (`untrustedText`).
- *
- * `untrustedText` reads the ceiling the dispatcher already derived from who wrote the messages
- * (`turn-ceiling.ts`): it is set for every author except a person here, a stranger in a bridged
- * Telegram or Slack chat, a space member and another agent alike, and that is the same set.
+ * The marks a room turn's `roomTurn` carries about who it answers: whether a teammate started it,
+ * which fences its DorkOS tools to `roomTurn.roomId`; and whether any message it answers was written
+ * by anyone but a person on this machine (`answersUntrustedText`), which keeps the runtime from
+ * running those words as a command or expanding a file reference in them.
  *
  * @param request - The turn about to start.
  */
 export function roomTurnMarksOf(
-  request: Pick<RoomTurnRequest, 'roomContext' | 'teammate' | 'permissionCeiling'> & {
-    room?: { id: string };
-  }
-): Pick<NonNullable<MessageOpts['roomTurn']>, 'outsiderInView' | 'teammate' | 'untrustedText'> {
+  request: Pick<RoomTurnRequest, 'teammate' | 'permissionCeiling' | 'untrustedText'>
+): Pick<NonNullable<MessageOpts['roomTurn']>, 'teammate' | 'untrustedText'> {
   return {
-    ...outsiderInViewOf(request.roomContext, request.room?.id),
     ...(request.teammate ? { teammate: true as const } : {}),
-    ...(request.permissionCeiling !== undefined || request.teammate
+    ...(request.untrustedText || request.permissionCeiling !== undefined || request.teammate
       ? { untrustedText: true as const }
       : {}),
   };

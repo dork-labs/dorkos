@@ -18,12 +18,9 @@
  *    of the two when the chat is known by two ids. A chat this process never
  *    ran a turn on has no level and keeps the card, so a restart errs toward
  *    asking.
- * 5. No stranger started the turn, and no stranger's message reached it
- *    through a room or a ceiling (`startedByOutsider`, `marksOf`
- *    and the level's own `outsider` mark). This does NOT see outside content
- *    the turn read through a tool (an email, a web page); an injection-taint
- *    rule for that is a deferred follow-up (spec §8), and the 60-second
- *    window everyone is told about is the mitigation chosen meanwhile.
+ * 5. A Wi-Fi sign-in's hold did not bind the turn (`marksOf` and the level's own
+ *    `outsider` mark). The 60-second window everyone is told about is what stands
+ *    between any other turn and an irreversible action.
  * 6. DorkOS can say what the action is, in the app's own words. A hold
  *    everyone is told about must be describable.
  * 7. Wi-Fi access is closed (DOR-3242). The owner's own words from Wi-Fi run
@@ -72,7 +69,7 @@ import {
 } from '../../core/agent-identity/agent-identity-service.js';
 import { lastTurnLevelOf, marksOf } from '../../core/turn-power/turn-levels.js';
 import { choseFullAutonomy } from '../../core/turn-power/full-autonomy.js';
-import { marksOfLevel, startedByOutsider } from '../../core/turn-power/turn-marks.js';
+import { marksOfLevel } from '../../core/turn-power/turn-marks.js';
 import { isLanAccessOpen } from '../../core/lan-access/lan-trust.js';
 import { isServerPrincipal } from '../principal/server-principal.js';
 import type { DestructiveHoldService, HoldRequester } from './destructive-hold.js';
@@ -101,8 +98,7 @@ const LIVE_SOURCES: HoldEligibilitySources = {
   trusted: () => trustPosture(permissionGateSources().readConfig().preset) === 'trusted',
   describeAgent: async (agentPath) => getAgentIdentityService()?.describeAgent(agentPath),
   turnLevel: lastTurnLevelOf,
-  strangerTurn: (sessionId, agentPath) =>
-    startedByOutsider(sessionId) || marksOf(sessionId, agentPath).outsider === true,
+  strangerTurn: (sessionId, agentPath) => marksOf(sessionId, agentPath).outsider === true,
   plainWifiOpen: isLanAccessOpen,
 };
 

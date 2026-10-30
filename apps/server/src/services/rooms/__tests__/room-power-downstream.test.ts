@@ -1,13 +1,7 @@
 /**
- * Power flows downstream, never up (spec `trusted-by-default-flip` §4), through
- * the REAL room service, store, author registry and trigger dispatcher — only
- * the turn runner stands in.
- *
- * An agent's post is kept with the level its turn ran at, and the turn that
- * post starts on another agent is held to it. Without that, a conversation set
- * to Full autonomy answers any agent that writes into it at Full autonomy, and
- * an agent a stranger's message woke could hand its stranger to a shell one hop
- * later.
+ * A turn a room post starts runs at its own agent's level, whoever wrote the post (DOR-3440),
+ * through the REAL room service, store, author registry and trigger dispatcher. Only the turn
+ * runner stands in.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
@@ -52,9 +46,6 @@ async function ranAt(sessionId: string, mode: string, marked = false): Promise<v
   }
 }
 
-/** The level the person set Ana to, below Full autonomy. */
-const ANA_SET_TO = { asks: 'when-risky', reach: 'workspace' } as const;
-
 /** Ana's turn in ANOTHER room, which makes the call in the "from elsewhere" case. */
 const ELSEWHERE = 'ana-turn-in-another-room';
 
@@ -85,13 +76,7 @@ describe('a turn another agent’s post starts', () => {
       }
       return { text: null };
     });
-    ({ service, human, authors } = createRoomHarness({
-      agents,
-      runner,
-      // What the person set each agent to (DOR-3107): Ana below Full.
-      posterLevel: async (agentPath) =>
-        agentPath === '/agents/ana' ? ANA_SET_TO : { asks: 'never', reach: 'everything' },
-    }));
+    ({ service, human, authors } = createRoomHarness({ agents, runner }));
     channel = service.createRoom(
       { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
       human
@@ -104,55 +89,23 @@ describe('a turn another agent’s post starts', () => {
     expect(turnsOf('/agents/ana')[0]!.permissionCeiling).toBeUndefined();
   });
 
-  // DOR-3107: marks, not levels. Between the owner's own agents, an unmarked
-  // post hands on no level its turn ran at, only the cap a person set on the
-  // poster. Ana's turn ran at Accept edits; the person set her to ANA_SET_TO.
-  it('is held to the level a person set the poster to, not its turn’s', async () => {
-    service.post(channel.id, { authorId: human, text: '@ana hello' });
-    await settleUntil(() => turnsOf('/agents/ana').length === 1, 'Ana was asked');
-    const anaSession = turnsOf('/agents/ana')[0]!.sessionId!;
-    await ranAt(anaSession, 'acceptEdits');
+  // DOR-3440: the turn runs at its own agent's level, whatever the poster's turn ran at.
+  it.each(['about the build', 'unverified', 'from elsewhere'])(
+    'puts no bound on it, whichever turn wrote the post (%s)',
+    async (how) => {
+      service.post(channel.id, { authorId: human, text: '@ana hello' });
+      await settleUntil(() => turnsOf('/agents/ana').length === 1, 'Ana was asked');
+      await ranAt(turnsOf('/agents/ana')[0]!.sessionId!, 'acceptEdits');
+      await ranAt(ELSEWHERE, 'default', true);
 
-    service.post(channel.id, { authorId: human, text: '@ana ask bo about the build' });
-    await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
-
-    expect(turnsOf('/agents/ana')[1]!.sessionId).toBe(anaSession);
-    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toEqual(ANA_SET_TO);
-  });
-
-  // Security's test: LifeOS read an email (a marked turn) and posted. The agent
-  // its post wakes carries the mark on (DOR-3390: it gates the risky actions,
-  // and no longer caps the level).
-  it('still marks a turn when the post came from a marked turn', async () => {
-    service.post(channel.id, { authorId: human, text: '@ana hello' });
-    await settleUntil(() => turnsOf('/agents/ana').length === 1, 'Ana was asked');
-    await ranAt(turnsOf('/agents/ana')[0]!.sessionId!, 'bypassPermissions');
-    await ranAt(ELSEWHERE, 'default', true);
-
-    service.post(channel.id, { authorId: human, text: '@ana ask bo, from elsewhere' });
-    await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
-    // The level a person set Ana to comes first, never the level her held turn
-    // ran at, then the mark her post carries, as a bound that caps nothing
-    // (DOR-3390, Security's Must 1).
-    const ceiling = turnsOf('/agents/bo')[0]!.permissionCeiling as unknown[];
-    expect(ceiling[0]).toEqual(ANA_SET_TO);
-    expect(ceiling).toContainEqual({ asks: 'never', reach: 'everything', outsider: true });
-    expect(ceiling).not.toContain('runtime-default');
-  });
-
-  it('is held to the runtime default when nobody verified the calling session', async () => {
-    service.post(channel.id, { authorId: human, text: '@ana hello' });
-    await settleUntil(() => turnsOf('/agents/ana').length === 1, 'Ana was asked');
-    await ranAt(turnsOf('/agents/ana')[0]!.sessionId!, 'bypassPermissions');
-
-    service.post(channel.id, { authorId: human, text: '@ana ask bo, unverified' });
-    await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
-    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toBe('runtime-default');
-  });
+      service.post(channel.id, { authorId: human, text: `@ana ask bo, ${how}` });
+      await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
+      expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toBeUndefined();
+    }
+  );
 
   it('never takes a level from a session id a request body names', async () => {
-    // `POST /api/rooms/:id/entries` accepts a `sessionId`; naming a Full
-    // autonomy conversation there must not lift the turn the post starts.
+    // `POST /api/rooms/:id/entries` accepts a `sessionId`; it names no turn.
     const forged = 'a-full-autonomy-conversation';
     await ranAt(forged, 'bypassPermissions');
     const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
@@ -162,23 +115,14 @@ describe('a turn another agent’s post starts', () => {
       sessionId: forged,
     });
     expect(entryLevelOf(entry.id)).toBeUndefined();
-    expect(ceilingForEntry(authors, entry)).toEqual({ permissionCeiling: 'runtime-default' });
-  });
-
-  // Trust first (Dorian 2026-10-19): a verified own agent whose turn's level
-  // was not kept is trusted; only the cap the person set holds.
-  it('is held only to the poster’s set level when the posting turn’s level was not kept', async () => {
-    service.post(channel.id, { authorId: human, text: '@ana ask bo about the build' });
-    await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
-    expect(turnsOf('/agents/bo')[0]!.permissionCeiling).toEqual(ANA_SET_TO);
+    expect(ceilingForEntry(authors, entry)).toEqual({});
   });
 });
 
-// Review probe (DOR-2739): the collector gathers a burst and triggers on the
-// newest message. A stranger then a person inside one debounce window must not
-// leave the turn unbounded because the person wrote last.
+// The collector gathers a burst and triggers on the newest message: a stranger then a person
+// inside one debounce window is one turn, external because any author is.
 describe('a gathered burst mixing a stranger and a person', () => {
-  it('holds the one turn to the stranger’s bound', async () => {
+  it('runs one turn, at the agent’s level, and counts as external', async () => {
     const seen: RoomTurnRequest[] = [];
     const runner = outcomeRunner((request) => {
       seen.push(request);
@@ -208,7 +152,8 @@ describe('a gathered burst mixing a stranger and a person', () => {
 
     expect(seen).toHaveLength(1);
     expect(seen[0]!.entry.authorId).toBe(human);
-    expect(seen[0]!.permissionCeiling).toBe('runtime-default');
+    expect(seen[0]!.permissionCeiling).toBeUndefined();
+    expect(seen[0]!.untrustedText).toBe(true);
     expect(seen[0]!.externalAuthor).toBe(true);
   });
 });

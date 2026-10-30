@@ -48,7 +48,7 @@ import {
 import { logger, createTaggedLogger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { createLateTurnSource } from '../session/runtime-turns/late-turns.js';
-import { noteRelayTurnStart, relayTurnOrigin } from '../session/origin/turn-origin.js';
+import { relayTurnOrigin } from '../session/origin/turn-origin.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
 import { AdapterError } from './adapter-error.js';
 import { createTurnExecutionSettingsResolver } from './turn-execution-settings.js';
@@ -404,7 +404,6 @@ export async function createAdapter(
         // Every turn over the relay notes, before it runs, whether a stranger
         // started it (a bridged chat, an outside agent), so a capability the
         // turn calls knows (`session/origin/outsider-turns.ts`).
-        noteTurnStart: noteRelayTurnStart,
         // Every approval that arrives on the relay bus is checked here too,
         // before the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,
