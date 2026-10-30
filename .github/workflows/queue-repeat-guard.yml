@@ -45,27 +45,48 @@ jobs:
     runs-on: ubuntu-latest
     # Four GitHub reads and at most three writes; a minute is generous.
     timeout-minutes: 5
+    # Every step is `continue-on-error`: a failed step still shows as failed in
+    # the log, but the job, and so the check run on the merge-group commit,
+    # stays green (see the header for why it must).
     steps:
+      # The queue's base, not this entry's own tree: the scripts below run with
+      # a write token, so they must not be the ones the pull request being
+      # judged could have edited. Same reason as security-gate.yml.
       - uses: actions/checkout@v7
+        continue-on-error: true
+        with:
+          ref: ${{ github.event.merge_group.base_sha }}
+          persist-credentials: false
 
       - name: Mint the merge-tail app token
         id: app-token
-        # A missing key must not red the merge group (see the header).
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+          # Scoped down to what this job uses, all of them grants the app
+          # already holds (merge-tail.yml's token comment lists them): checks
+          # to read the failed runs, pull requests to comment and unlabel,
+          # contents for the dequeue. Not actions, which the app may lack:
+          # naming a permission it does not hold fails the mint.
+          permission-checks: read
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Take a repeat-failing head back out of the queue
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           HEAD_REF: ${{ github.event.merge_group.head_ref }}
         run: |
-          set -uo pipefail
+          # Not -e (GitHub's default shell sets it): every failure is handled.
+          set +e -uo pipefail
           warn() { echo "::warning::queue-repeat-guard: $*"; exit 0; }
           [[ -n "$GH_TOKEN" ]] || warn "no app token; the rule is not enforced on this entry"
+          [[ -f scripts/queue-repeat-guard.sh ]] \
+            || warn "the queue base has no scripts/queue-repeat-guard.sh; the rule is not enforced on this entry"
 
           pr=$(bash scripts/queue-repeat-guard.sh pr-from-ref "$HEAD_REF") \
             || warn "not a queue ref: $HEAD_REF"
@@ -76,7 +97,11 @@ jobs:
             > "$work/meta.json" 2>/dev/null || warn "PR #$pr: could not read the pull request"
           # The repeat rule reads no checks; the builder only needs a list.
           echo '[]' > "$work/checks.json"
-          # merge-tail's query (see read_graphql there), plus the node id to dequeue.
+          # merge-tail's query (see read_graphql there), plus the node id to
+          # dequeue and the label history. Wider windows than merge-tail's: each
+          # dequeue here is itself a removal, so an agent that keeps re-queueing
+          # would push the two failures out of a last-10 window and be let in;
+          # and a merge-group commit already carries ~17 check suites.
           gh api graphql -F number="$pr" -F owner="${REPO%/*}" -F name="${REPO#*/}" -f query='
             query($owner:String!,$name:String!,$number:Int!){
               repository(owner:$owner,name:$name){
@@ -88,9 +113,9 @@ jobs:
                   reviewThreads(last:100){ nodes{ isResolved } }
                   commits(last:1){ nodes{ commit{ oid
                     checkSuites(first:50){ nodes{ createdAt } } } } }
-                  timelineItems(last:10, itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){ nodes{
+                  timelineItems(last:50, itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){ nodes{
                     ... on RemovedFromMergeQueueEvent{ createdAt reason
-                      beforeCommit{ checkSuites(first:20){ nodes{
+                      beforeCommit{ checkSuites(first:50){ nodes{
                         checkRuns(first:50, filterBy:{conclusions:[FAILURE,TIMED_OUT,STARTUP_FAILURE]}){
                           nodes{ name } } } } } } } } } } }' \
             > "$work/gql.json" 2>/dev/null || :
@@ -101,7 +126,7 @@ jobs:
           # When `requeue-ok` was last put on; the guard honours it only if
           # that is later than the last failed try.
           jq -s '.[0] + {requeueOkAt: ([.[1].data.repository.pullRequest.labelEvents.nodes[]?
-                   | select(.label.name == "requeue-ok") | .createdAt] | max)}' \
+                   | select((.label.name // "" | ascii_downcase) == "requeue-ok") | .createdAt] | max)}' \
             "$work/payload.json" "$work/gql.json" > "$work/guard.json" \
             || warn "PR #$pr: could not read the label history"
 
@@ -123,8 +148,9 @@ jobs:
           fi
           # A label that is still on here was spent by an earlier failure; take
           # it off so the next one is a deliberate, fresh decision.
-          if jq -e '[.labels[]?.name] | index("requeue-ok") != null' "$work/meta.json" >/dev/null 2>&1; then
-            gh pr edit "$pr" --repo "$REPO" --remove-label requeue-ok >/dev/null 2>&1 \
+          spent=$(jq -r 'first(.labels[]?.name | select(ascii_downcase == "requeue-ok")) // ""' "$work/meta.json" 2>/dev/null) || spent=
+          if [[ -n "$spent" ]]; then
+            gh pr edit "$pr" --repo "$REPO" --remove-label "$spent" >/dev/null 2>&1 \
               || echo "::warning::queue-repeat-guard: PR #$pr: could not remove the spent requeue-ok label"
           fi
 

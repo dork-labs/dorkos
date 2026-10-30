@@ -30,8 +30,9 @@ one event every queue entry raises whoever queued it. `scripts/queue-repeat-guar
 jq rule as merge-tail's gate (`should-arm-automerge.sh --repeat-failure`), keeps only checks listed in
 `ci/required-checks.json` (`security-gate` fails in every merge group on a security path by design,
 so without the filter two different ejections would read as a repeat), and dequeues on proof only.
-The author is told once per head, under merge-tail's own comment marker. A `requeue-ok` label lets
-one more try through and is removed as it passes, for the case where the failures were `main`'s.
+The author is told once per head, under merge-tail's own comment marker. A `requeue-ok` label, for the case where the failures were `main`'s, counts when it was added after
+the last failed try: queue rebuilds of that try keep it, the next failure spends it, and the guard
+takes a spent label off when it dequeues.
 
 The target removes the third-and-later tries (7 in the baseline's 14 days, 3.5 per 7 days); the
 second ejection still happens, because it is the evidence. Report `queue-green` and
