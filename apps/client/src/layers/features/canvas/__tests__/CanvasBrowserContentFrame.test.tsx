@@ -168,7 +168,7 @@ it('a connected page that leaves its document is not challenged again; Reload br
   expect(started()).toHaveLength(1);
   // The strip carries its own Reload, the same text button the frame banners use.
   const strip = screen.getByText(OFFLINE).parentElement!;
-  fireEvent.click(within(strip).getByRole('button', { name: 'Reload' }));
+  fireEvent.click(within(strip).getByRole('button', { name: 'Reload to reconnect' }));
   await waitFor(() => expect(screen.getByTitle('Embedded browser')).not.toBe(frame));
   expect(screen.queryByText(OFFLINE)).toBeNull();
   // A new navigation carries a new nonce.

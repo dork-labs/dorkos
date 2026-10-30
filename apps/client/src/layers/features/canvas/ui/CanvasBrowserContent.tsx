@@ -280,9 +280,11 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
       {docFrame.requiresReload && (
         <div className="text-muted-foreground border-border/60 flex items-center justify-between gap-2 border-b px-2 py-1 text-xs">
           <p role="status">Page is offline. Reload to reconnect.</p>
-          {/* The same text button the frame's own banners use. */}
+          {/* The same text button the frame's own banners use. Named apart from
+              the toolbar's Reload, so a screen reader can tell the two apart. */}
           <button
             type="button"
+            aria-label="Reload to reconnect"
             onClick={() => {
               notePersonNavigated();
               setReloadNonce((n) => n + 1);
