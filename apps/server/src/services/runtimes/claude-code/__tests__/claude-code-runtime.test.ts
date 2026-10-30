@@ -2308,6 +2308,9 @@ describe('ClaudeCodeRuntime', () => {
         );
       });
       expect(probe.supportedCommands).toHaveBeenCalled();
+      // The probe never loads the repo's settings: nothing checked them (DOR-3298).
+      const options = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]?.options;
+      expect(options?.settingSources).toEqual(['user']);
     });
 
     it('does not probe when no plugin is installed (filesystem scan already covers it)', async () => {

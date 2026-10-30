@@ -196,6 +196,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.accounts[].noAutoMove',
       'runtimes.claudeCode.defaultAccountOnlyProjects',
       'runtimes.claudeCode.projectAccounts',
+      // Company certificates the desktop app trusts (DOR-3361): key material
+      // that decides which servers every connection believes, so a front-door
+      // setting changed only at this computer.
+      'network.extraCaCertsPath',
     ],
   },
   {
@@ -224,6 +228,10 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'harness.approvedFolderConfigParts',
       'harness.refusedFolderConfig',
       'harness.folderConfigPinned',
+      'harness.approvedRepoConfig',
+      'harness.refusedRepoConfig',
+      'harness.repoBaselines',
+      'harness.repoBaselinesPinned',
       'runtimes.opencode.binaryPath',
       'runtimes.codex.binaryPath',
       'runtimes.codex.transport',

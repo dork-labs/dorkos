@@ -20,11 +20,12 @@ export interface PausedConnectionListProps {
  * Needs you rows for connections paused after the DOR-3271 update (designer
  * spec `adapter-confirm`): one per connection, two lines under its title (what
  * Confirm does, led by what it dropped meanwhile; then what it sends and
- * where), and the same Confirm the connection's own panel has. The longer
- * hint sits behind ⓘ and stays the button's description. Only the owner can
- * answer it, so it counts toward the badge. A row leaves when the connection
- * is confirmed, removed, or edited to drop the setting, because the catalog
- * stops listing it.
+ * where), and the same Confirm the connection's own panel has. Confirm sits
+ * under the text, full width and 44px tall, so it is easy to hit on a phone
+ * (DOR-3288). The longer hint sits behind ⓘ and stays the button's
+ * description. Only the owner can answer it, so it counts toward the badge. A
+ * row leaves when the connection is confirmed, removed, or edited to drop the
+ * setting, because the catalog stops listing it.
  */
 export function PausedConnectionList({ items }: PausedConnectionListProps) {
   const confirm = useConfirmAdapterReferences();
@@ -44,6 +45,7 @@ export function PausedConnectionList({ items }: PausedConnectionListProps) {
             more={<p>{hint}</p>}
             actions={{
               kind: 'word',
+              block: true,
               label: pausedConfirmLabel(item.confirmation),
               description: hint,
               onClick: () =>

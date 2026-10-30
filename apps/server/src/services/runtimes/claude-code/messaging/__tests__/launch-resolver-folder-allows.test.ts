@@ -227,6 +227,9 @@ describe('an agent folder allow list at launch', () => {
     );
     const resolved = await launch(plain);
     expect(allowOf(resolved.sdkOptions.settings)).toBeUndefined();
-    expect(asked).toHaveLength(0);
+    // No folder-allow card: no agent lives here. The unreviewed allow rule is
+    // the repo settings check's to ask about (DOR-3298), and only that card shows.
+    const capabilities = asked.map((input) => (input as { capabilityId?: string }).capabilityId);
+    expect(capabilities.filter((id) => !id?.startsWith('runtime.apply_repo_'))).toHaveLength(0);
   });
 });

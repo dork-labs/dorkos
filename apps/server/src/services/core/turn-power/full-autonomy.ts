@@ -231,3 +231,50 @@ export function markedTurnRunsAtFull(
   recordMarkedFullAction(action);
   return true;
 }
+
+/** One thing a chat at Full autonomy did that a chat below Full is held or refused for. */
+export interface FullAction {
+  /** A short, stable id for what it was, such as `workspace.create`. */
+  actionId: string;
+  /** What it did, as a person reads it after the agent's name ("made the workspace p/w1"). */
+  did: string;
+  /** The limit a chat below Full meets there ("its repository's settings failed DorkOS's check"). */
+  limit: string;
+  /** The agent, by its home folder, when known. */
+  agentPath?: string;
+  /** What to call the agent. */
+  agentName?: string;
+  /** The chat it ran in, when known. */
+  sessionId?: string;
+}
+
+/**
+ * Write the one Activity line for something a chat at Full autonomy did that a chat below Full
+ * is held or refused for (the owner's rule: Full has no limits, and the record is how a person
+ * finds it afterwards). Never throws.
+ *
+ * @param action - What it did, the limit it went past, and who did it.
+ */
+export function recordFullAction(action: FullAction): void {
+  if (!activity) return;
+  const who = action.agentName ?? 'An agent';
+  void activity.emit({
+    actorType: 'agent',
+    ...(action.agentPath ? { actorId: action.agentPath } : {}),
+    actorLabel: who,
+    category: 'agent',
+    eventType: 'agent.full_action',
+    resourceType: 'action',
+    resourceId: action.actionId,
+    resourceLabel: action.did,
+    summary:
+      `${who} ${action.did} without being held: its chat is set to Full autonomy. Below Full, ` +
+      `${action.limit}.`,
+    ...(action.sessionId ? { linkPath: sessionPath({ session: action.sessionId }) } : {}),
+    metadata: {
+      actionId: action.actionId,
+      ...(action.agentPath ? { agentPath: action.agentPath } : {}),
+      ...(action.sessionId ? { sessionId: action.sessionId } : {}),
+    },
+  });
+}

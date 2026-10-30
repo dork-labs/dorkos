@@ -305,13 +305,19 @@ export interface CapabilityDefinition<
    * gate decides it exactly as before. A function means it is: the registry
    * runs it in place of the gate, and it resolves with the `hold` approval the
    * handler runs on once nobody cancelled, or throws when somebody did.
+   * `{ keptCardBecause }` means it would have been, but for that one reason,
+   * which the card then says (DOR-3242).
    */
   cancelWindow?: (
     deps: CapabilityDeps,
     input: z.infer<In>,
     context: CapabilityInvocationContext,
     preflight: CapabilityPreflightResult
-  ) => Promise<(() => Promise<Extract<GrantedApproval, { via: 'hold' }>>) | undefined>;
+  ) => Promise<
+    | (() => Promise<Extract<GrantedApproval, { via: 'hold' }>>)
+    | { readonly keptCardBecause: 'wifi-open' }
+    | undefined
+  >;
   /**
    * Where this capability came from, set only on a definition the host built
    * for a running extension (`buildExtensionDefinitions`, DOR-2685).

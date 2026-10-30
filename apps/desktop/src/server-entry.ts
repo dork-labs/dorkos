@@ -19,7 +19,13 @@
  */
 declare module '@dorkos/server';
 
-import { applyExtraCaCerts } from './extra-ca-certs';
+import path from 'node:path';
+import {
+  applyExtraCaCerts,
+  shareCompanyCertificatesWithAgents,
+  COMPANY_CERTIFICATES_STATUS,
+  readCompanyCertificatesPath,
+} from './extra-ca-certs';
 import { exitWhenOrphaned } from './orphan-watchdog';
 import { SERVER_READY_TIMEOUT_MS } from './shared/boot-timeouts';
 
@@ -27,6 +33,22 @@ import { SERVER_READY_TIMEOUT_MS } from './shared/boot-timeouts';
 // top-level helpers below stay file-scoped instead of leaking into the
 // global scope of the whole program.
 export {};
+
+/**
+ * The data directory whose `config.json` names the company certificates.
+ *
+ * The same answer as `main/dork-home.ts`'s `resolveDataDirectory`, reached from
+ * inside the child. In a packaged app `DORK_HOME` is always the one the main
+ * process set when it forked this process (`buildServerEnv` overwrites
+ * whatever the launching environment exported), so an exported variable can
+ * not move it. The certificate path itself is read from that file, never from
+ * the environment, which is what keeps `launchctl setenv` from choosing what
+ * this process trusts (DOR-3361). In dev, `DORK_HOME` passes through and the
+ * fallback is the project-local `<cwd>/.temp/.dork` the main process uses too.
+ */
+function serverDataDirectory(): string {
+  return process.env.DORK_HOME ?? path.join(process.cwd(), '.temp', '.dork');
+}
 
 /**
  * Poll the health endpoint until the server is responding.
@@ -83,8 +105,13 @@ function isMessage(msg: unknown, type: string): boolean {
 
 async function main() {
   // Before the server opens any connection: a company network's certificates,
-  // which the fused app binary no longer reads by itself (DOR-3361).
-  applyExtraCaCerts();
+  // which the fused app binary no longer reads by itself (DOR-3361), and only
+  // from the file a person set. The server reports the result in Settings.
+  const companyCertificates = applyExtraCaCerts({
+    file: readCompanyCertificatesPath(serverDataDirectory()),
+  });
+  (globalThis as Record<symbol, unknown>)[COMPANY_CERTIFICATES_STATUS] = companyCertificates;
+  shareCompanyCertificatesWithAgents(companyCertificates);
   exitWhenOrphaned();
   const port = Number(process.env.DORKOS_PORT);
 
