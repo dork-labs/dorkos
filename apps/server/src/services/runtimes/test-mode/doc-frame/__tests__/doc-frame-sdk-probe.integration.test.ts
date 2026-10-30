@@ -45,6 +45,8 @@ async function fixture() {
   let principal: ServerPrincipalProof | undefined;
   const listener = await startConnectorRuntimeMcpListener({
     principals: f.principals,
+    // The probe speaks as Claude Code, as it does under DORKOS_TEST_RUNTIME.
+    acceptInProcessRuntime: true,
     serverFactory: () => new McpServer({ name: 'unused-connectors', version: '1.0.0' }),
     agentServerFactory: (actual) => {
       principal = actual;

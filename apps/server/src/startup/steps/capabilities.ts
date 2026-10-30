@@ -331,6 +331,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     });
     refs.connectorRuntimeMcpListener = await startConnectorRuntimeMcpListener({
       principals: agentScopedRuntimePrincipals,
+      // Only the test runtime's server-run probes speak as Claude Code here.
+      acceptInProcessRuntime: Boolean(env.DORKOS_TEST_RUNTIME),
       serverFactory: (principal) =>
         createConnectorRuntimeMcpServer(refs.capabilityRegistry!, principal),
       agentServerFactory: async (principal) => {

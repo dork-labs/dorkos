@@ -39,13 +39,35 @@ export const CONNECTOR_RUNTIME_REFUSAL = {
 } as const;
 
 /**
+ * The runtime whose principal is minted and used inside this process only.
+ *
+ * Claude Code resolves its turn's principal in process and never hands the
+ * bearer to the CLI, so no agent can present one here. A claim of it on this
+ * listener is refused: `callerOf` in `session/browser-seat/ui-capabilities.ts`
+ * treats a Claude Code principal as the in-app surface that can ask a person,
+ * so a kind claimed where it is not minted would reach past that check.
+ */
+const IN_PROCESS_RUNTIME: ConnectorRuntime = 'claude-code';
+
+/** How the listener's authentication is configured. */
+export interface ConnectorRuntimeAuthOptions {
+  /**
+   * Accept a Claude Code claim. Only the test runtime sets it, for server-run
+   * probes that drive this listener as Claude Code (`DORKOS_TEST_RUNTIME`).
+   */
+  readonly acceptInProcessRuntime?: boolean;
+}
+
+/**
  * Authenticate a connector runtime bearer and attach its server proof.
  *
  * @param principals - Server-owned runtime principal resolver.
+ * @param options - Whether the in-process runtime may be claimed here.
  * @returns Hono middleware for the internal listener.
  */
 export function createConnectorRuntimeAuth(
-  principals: ConnectorRuntimePrincipalPort
+  principals: ConnectorRuntimePrincipalPort,
+  options: ConnectorRuntimeAuthOptions = {}
 ): MiddlewareHandler<ConnectorRuntimeEnv> {
   return async (c, next) => {
     const authorization = c.req.header('authorization');
@@ -54,7 +76,8 @@ export function createConnectorRuntimeAuth(
       !authorization?.startsWith('Bearer ') ||
       authorization.length === 'Bearer '.length ||
       !runtimeHeader ||
-      !RUNTIMES.has(runtimeHeader as ConnectorRuntime)
+      !RUNTIMES.has(runtimeHeader as ConnectorRuntime) ||
+      (runtimeHeader === IN_PROCESS_RUNTIME && options.acceptInProcessRuntime !== true)
     ) {
       return c.json(CONNECTOR_RUNTIME_REFUSAL, 401);
     }
