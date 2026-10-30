@@ -1,6 +1,7 @@
 import { BoundaryError } from '../lib/boundary.js';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../lib/logger.js';
+import { OriginRefusedError } from '../http/cors-policy.js';
 import {
   AmbiguousSessionError,
   SessionDiscoveryUnavailableError,
@@ -25,6 +26,11 @@ export interface ErrorReply {
  * @param path - The request path, without the query string.
  */
 export function logRequestError(err: Error, method: string, path: string): void {
+  // A refused browser origin is the caller's mistake, not a fault to page on.
+  if (err instanceof OriginRefusedError) {
+    logger.warn('[CORS] refused origin', { origin: err.origin, method, path });
+    return;
+  }
   const code = (err as { code?: unknown }).code;
   const status = (err as { status?: unknown }).status;
   logger.error('[DorkOS Error]', err.message, {
@@ -68,6 +74,10 @@ export function errorReply(err: Error): ErrorReply {
       status: 403,
       body: { error: 'This chat is outside the allowed directory.', code: err.code },
     };
+  }
+
+  if (err instanceof OriginRefusedError) {
+    return { status: err.status, body: { error: err.message, code: err.code } };
   }
 
   if (err instanceof SessionDiscoveryUnavailableError) {
