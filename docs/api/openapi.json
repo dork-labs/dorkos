@@ -16007,6 +16007,10 @@
             "type": "string",
             "minLength": 1,
             "description": "The live author this occurrence resolved to."
+          },
+          "cc": {
+            "type": "boolean",
+            "description": "True when this mention only copies its author in: it came after the leading run of @mentions in a channel message, so no agent takes a turn for it (DOR-3401). Absent means the author was asked, which is how every older entry reads."
           }
         },
         "required": [

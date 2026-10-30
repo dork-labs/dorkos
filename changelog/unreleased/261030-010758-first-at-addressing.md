@@ -2,6 +2,7 @@
 covers:
   - 'feat(rooms): only the leading @mentions wake an agent; later ones are cc (DOR-3401)'
   - 'test(rooms): pin the first @ mid-sentence and the run after it (DOR-3401)'
+  - 'docs(api): regenerate openapi.json for the mention cc field (DOR-3401)'
 ---
 
 ### Changed
