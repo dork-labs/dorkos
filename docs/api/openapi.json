@@ -4565,6 +4565,12 @@
           "everythingCut": {
             "type": "integer",
             "minimum": 1
+          },
+          "keptCardBecause": {
+            "type": "string",
+            "enum": [
+              "wifi-open"
+            ]
           }
         },
         "required": [
