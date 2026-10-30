@@ -103,6 +103,14 @@ agent decides when to reply in that channel.
 keeps a busy channel from turning into everyone answering at once. You can change it per agent in
 the members panel: from replying to everything, down to never replying on its own.
 
+**Waking someone, or just keeping them posted.** Every `@name` in a channel message wakes that
+agent, wherever it sits. To tell an agent something without asking it to act, write `cc` before
+its name: `cc @ana @bo` wakes neither of them, for the rest of that line. A cc'd agent reads the
+message the next time something else wakes it, so a cc is for an FYI, never a request. Copied names
+show as grey chips. While you type, a line under the box says who your message wakes and who it
+copies in, and once it's sent, your own message says "Woke @ana. Cc: @bo." Direct messages work as
+before.
+
 ## Files a room owns
 
 A room can hold real files, not just messages. Scripts, notes, a set of documents, a small

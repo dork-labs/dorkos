@@ -579,7 +579,7 @@ export interface RoomContextData {
   pendingTruncated: boolean;
   /**
    * The ids of the unread messages that only copied this agent in: they named
-   * it after their leading @mentions, so none started a turn (DOR-3401). Read
+   * it after `cc` on a line, so none started a turn (DOR-3453). Read
    * over the same window `pending` and `gathered` read, so the renderer also
    * marks those lines. Omitted when there are none.
    */

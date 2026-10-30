@@ -145,12 +145,12 @@ describe('mention spans survive the write and read back', () => {
     const ana = service.addMember(room.id, human, { agentPath: '/agents/ana' }).authorId;
     const bo = service.addMember(room.id, human, { agentPath: '/agents/bo' }).authorId;
 
-    const text = 'hey @ana and @ana again, over to @bo';
+    const text = 'hey @ana and @ana again, cc @bo';
     const expected = [
       { offset: text.indexOf('@ana'), length: 4, authorId: ana },
       { offset: text.indexOf('@ana', 5), length: 4, authorId: ana },
-      // Named after the leading run in a channel, so it is a cc (DOR-3401),
-      // and the mark is stored with the span.
+      // Named after `cc` in a channel, so it is a cc (DOR-3453), and the mark
+      // is stored with the span.
       { offset: text.indexOf('@bo'), length: 3, authorId: bo, cc: true },
     ];
 
