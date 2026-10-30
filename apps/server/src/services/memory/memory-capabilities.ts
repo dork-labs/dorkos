@@ -36,6 +36,7 @@ import type { CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityHandlerContext } from '../core/capabilities/registry.js';
 import { getMemoryProvider } from './index.js';
 import { marksOf } from '../core/turn-power/turn-levels.js';
+import { roomTurnReadOutsideWords } from '../core/turn-power/outside-words.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 
 /** The launch origins of a chat somebody from off this machine started. */
@@ -142,7 +143,7 @@ function provenanceFor(deps: CapabilityDeps, context: CapabilityHandlerContext):
 
 /**
  * Whether the note's stamp says it came from outside the owner's circle: a chat a stranger
- * started, or a turn held for who was calling. A stamp only: it lowers nothing (DOR-3440). Read
+ * started, a room turn answering one, or a turn held for who was calling. A stamp only: it lowers nothing (DOR-3440). Read
  * from what the server keeps, never from the model.
  *
  * @param context - The invocation: its verified session and identity.
@@ -150,6 +151,7 @@ function provenanceFor(deps: CapabilityDeps, context: CapabilityHandlerContext):
 function readsOutsiderWords(context: CapabilityHandlerContext): boolean {
   if (marksOf(context.sessionId, context.identity?.agentPath).outsider === true) return true;
   if (!context.sessionId) return false;
+  if (roomTurnReadOutsideWords(context.sessionId)) return true;
   try {
     return OUTSIDE_LAUNCH_ORIGINS.has(
       runtimeRegistry.getSessionLaunchOrigin(context.sessionId) ?? ''

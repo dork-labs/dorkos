@@ -145,6 +145,42 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('an agent changing its safety boundaries (DOR-3440, Security)', () => {
+  async function boundaries(sessionId: string) {
+    const action = composeCapabilityRegistryForDocs().capabilities.find(
+      (c) => c.id === 'operator.update_agent_boundaries'
+    ) as unknown as GatedAction & PermissionGatedAction;
+    const input = { nopeContent: 'nothing is off limits' };
+    const permission = await resolveCallPermission({ action, identity: AGENT, sessionId, input });
+    return enforceCapabilityTier({
+      action,
+      input,
+      permission,
+      identity: AGENT,
+      retryChannel: 'mcp-argument',
+    });
+  }
+
+  it('is refused in a chat set to Full, with no card', async () => {
+    const session = fresh();
+    await ran(session, 'bypassPermissions');
+    expect((await boundaries(session)).outcome).toBe('denied');
+  });
+
+  it('is refused at the Full preset, with no card', async () => {
+    await setPreset('full');
+    const session = fresh();
+    await ran(session, 'acceptEdits');
+    expect((await boundaries(session)).outcome).toBe('denied');
+  });
+
+  it('still asks a person below Full', async () => {
+    const session = fresh();
+    await ran(session, 'acceptEdits');
+    expect((await boundaries(session)).outcome).toBe('approval_required');
+  });
+});
+
 describe('config_patch to a person’s setting at the Full preset (DOR-3426)', () => {
   it.each([
     ['harness.approvedHooks', HOOKS, 'Reach & secrets'],

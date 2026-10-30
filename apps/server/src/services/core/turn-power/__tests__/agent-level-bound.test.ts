@@ -349,6 +349,19 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
       }
     });
 
+    it.each([
+      ['Claude Code', CLAUDE_CODE_CAPABILITIES],
+      ['Codex', CODEX_CAPABILITIES],
+      ['OpenCode', OPENCODE_CAPABILITIES],
+      ['Doe', DOE_CAPABILITIES],
+    ])('%s: an undeclared mode is not raised to the loosest', (_name, capabilities) => {
+      for (const ceiling of [record, newRow, olderRow]) {
+        expect(clampModeToCeiling(capabilities.permissionModes, 'not-a-mode', ceiling)).toBe(
+          'not-a-mode'
+        );
+      }
+    });
+
     it('Codex: a chat stored at its loosest mode, its agent capped, stays capped', async () => {
       const runtime = boot('codex', CODEX_CAPABILITIES);
       seedChat('codex-1', 'bypassPermissions', { runtime: 'codex' });

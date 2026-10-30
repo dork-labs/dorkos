@@ -108,6 +108,19 @@ describe('notePathTrustEdits', () => {
     expect(emit).toHaveBeenCalledTimes(1);
   });
 
+  it('lowered, then edited, then raised: the edit stays held, and the next edit runs', async () => {
+    await scan('sha256:1');
+    atFull = false;
+    await scan('sha256:1');
+    atFull = true;
+    await scan('sha256:2');
+    expect(runs('sha256:2')).toBe(false);
+    expect(emit).not.toHaveBeenCalled();
+    await scan('sha256:3');
+    expect(runs('sha256:3')).toBe(true);
+    expect(emit).toHaveBeenCalledTimes(1);
+  });
+
   it('a person’s yes on the held edit is not undone by the next scan', async () => {
     await scan('sha256:1');
     atFull = false;
@@ -164,7 +177,7 @@ describe('notePathTrustEdits', () => {
     const saved = JSON.parse(
       await fs.readFile(path.join(dorkHome, 'extension-data', 'path-trust-seen.json'), 'utf8')
     );
-    expect(saved).toEqual({ desk: 'sha256:2' });
+    expect(saved).toEqual({ digests: { desk: 'sha256:2' }, below: [] });
     expect(emit).toHaveBeenCalledTimes(1);
   });
 

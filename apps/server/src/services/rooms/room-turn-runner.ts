@@ -38,7 +38,7 @@ import { armLateReplyCeiling } from './turn-guards/late-reply-ceiling.js';
 import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
 import { roomTurnMarksOf, turnBoundsOf } from './limits/teammate-turn.js';
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
+import { noteRoomTurnWords } from '../core/turn-power/outside-words.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
@@ -69,7 +69,6 @@ import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // import there would load the dispatcher to raise a refusal it hands back to it.
 import { RoomTurnRuntimeGoneError, seatLaunchOf } from './room-turn-port.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
-import { configManager } from '../core/config-manager.js';
 import {
   dispatchMessage,
   getOrCreateProjector,
@@ -825,6 +824,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // thrown: a `SQLITE_BUSY` on this one bookkeeping row must never fail a
       // turn or escape `run` (see the late write below for why).
       let mintedRowAtLaunch = false;
+      // A stamp on what this turn saves, not a limit on what it does (`outside-words.ts`).
+      noteRoomTurnWords(sessionId, request.externalAuthor === true);
       const recordSessionOwner = async (ownedId: string): Promise<boolean> => {
         try {
           return await runtimeRegistry.persistSessionRuntime(

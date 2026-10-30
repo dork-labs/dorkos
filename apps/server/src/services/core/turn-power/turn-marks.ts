@@ -42,7 +42,11 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { isNoLooserThan, mergeTeammateOrigins } from '@dorkos/shared/permission-semantics';
+import {
+  ceilingOnlyRecords,
+  isNoLooserThan,
+  mergeTeammateOrigins,
+} from '@dorkos/shared/permission-semantics';
 import { turnAgentOf } from '../agent-identity/agent-home.js';
 import { countWhileRunning, runningMarksOf } from './live-outsider-turns.js';
 import { teammateTurnRefusal } from './teammate-mark.js';
@@ -273,27 +277,7 @@ export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undef
   return { asks: 'never', reach: 'everything', teammate: marks.teammate };
 }
 
-/**
- * Whether a ceiling only carries a record and bounds nothing ({@link ceilingCarrying}), so a runtime
- * treats its turn as one with no ceiling at all.
- *
- * @param ceiling - The ceiling a turn is sent with.
- */
-export function ceilingOnlyRecords(ceiling: TurnPermissionCeiling): boolean {
-  const bounds = Array.isArray(ceiling)
-    ? (ceiling as readonly (TurnPermissionLevel | 'runtime-default')[])
-    : [ceiling as TurnPermissionLevel | 'runtime-default'];
-  return (
-    bounds.length > 0 &&
-    bounds.every(
-      (bound) =>
-        bound !== 'runtime-default' &&
-        bound.asks === 'never' &&
-        bound.reach === 'everything' &&
-        bound.outsider !== true
-    )
-  );
-}
+export { ceilingOnlyRecords };
 
 /**
  * The marks stored as JSON on a row (a commitment, say), or none when absent or unreadable. Only

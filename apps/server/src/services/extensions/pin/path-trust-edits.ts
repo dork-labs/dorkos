@@ -86,13 +86,19 @@ const LIVE: PathTrustEditDeps = {
 const seenFile = (dorkHome: string) =>
   path.join(dorkHome, 'extension-data', 'path-trust-seen.json');
 
-/** The digests the last scan saw; unreadable reads as none. */
-async function readSeen(dorkHome: string): Promise<Record<string, string>> {
+/** What the last scan saw: each copy's digest, and the copies whose agent was below Full. */
+interface SeenState {
+  digests: Record<string, string>;
+  below: string[];
+}
+
+/** What the last scan saw; unreadable reads as nothing. */
+async function readSeen(dorkHome: string): Promise<SeenState> {
   try {
-    const parsed: unknown = JSON.parse(await fs.readFile(seenFile(dorkHome), 'utf8'));
-    return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, string>) : {};
+    const parsed = JSON.parse(await fs.readFile(seenFile(dorkHome), 'utf8')) as Partial<SeenState>;
+    return { digests: parsed.digests ?? {}, below: parsed.below ?? [] };
   } catch {
-    return {};
+    return { digests: {}, below: [] };
   }
 }
 
@@ -112,7 +118,9 @@ export async function notePathTrustEdits(
   deps: PathTrustEditDeps = LIVE
 ): Promise<void> {
   try {
-    const seen = await readSeen(dorkHome);
+    const state = await readSeen(dorkHome);
+    const seen = state.digests;
+    const below = new Set(state.below);
     let changed = false;
     for (const record of records) {
       const source = approvals?.approvedSources?.[record.id];
@@ -133,13 +141,20 @@ export async function notePathTrustEdits(
         changed = true;
       }
       if (!atFull) {
+        if (!below.has(record.id)) {
+          below.add(record.id);
+          changed = true;
+        }
         // The files last seen, so an edit made since this scan's lowering does not run.
         if (!source.digest) deps.pin(record.id, before ?? digest);
         continue;
       }
+      // The scan that finds the agent raised: whatever changed was made while it was below Full.
+      const raisedNow = below.delete(record.id);
+      if (raisedNow) changed = true;
       // Pinned and back at Full: a raise alone runs nothing. Only an edit made now does.
       if (source.digest) {
-        if (!edited || digest === source.digest) continue;
+        if (raisedNow || !edited || digest === source.digest) continue;
         deps.unpin(record.id);
       }
       if (edited) {
@@ -153,7 +168,7 @@ export async function notePathTrustEdits(
     }
     if (changed) {
       await fs.mkdir(path.dirname(seenFile(dorkHome)), { recursive: true });
-      await fs.writeFile(seenFile(dorkHome), JSON.stringify(seen));
+      await fs.writeFile(seenFile(dorkHome), JSON.stringify({ digests: seen, below: [...below] }));
     }
   } catch (err) {
     logger.warn('[Extensions] could not check path-trust copies', {

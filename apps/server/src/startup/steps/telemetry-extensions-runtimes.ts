@@ -35,6 +35,7 @@ import type { CoreExtensionInfo } from '../../services/extensions/extension-enab
 import { ensureCoreExtensions } from '../../services/core-extensions/ensure-core-extensions.js';
 import { warnRedundantEnabledEntries } from '../../services/core-extensions/warn-redundant-enabled.js';
 import { startExtensions } from '../extensions.js';
+import { onPermissionsChanged } from '../../services/core/permissions/permission-history.js';
 import { registerRuntimes } from '../runtimes.js';
 import { getAgentSendService } from '../../services/extensions/agent-send/agent-send.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
@@ -256,6 +257,8 @@ export async function startTelemetryExtensionsAndRuntimes(
   // The first scan ran before any runtime could say an agent's level, so it held every copy that
   // follows its agent (`path-trust-edits.ts`). Look again now.
   refs.extensionManager?.requestRefresh();
+  // And whenever a person changes a level, so a lowered agent's next edit finds its copy held.
+  onPermissionsChanged(() => refs.extensionManager?.requestRefresh());
 
   // Every runtime is registered, so the messages extensions sent before a
   // restart can be settled and re-armed, and held ones retried.

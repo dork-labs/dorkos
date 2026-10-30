@@ -7,11 +7,38 @@
  * @module services/core/operator/agent-file-inputs
  */
 import { z } from 'zod';
-import { HEARTBEAT_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
+import {
+  HEARTBEAT_MAX_CHARS,
+  NOPE_MAX_CHARS,
+  SOUL_MAX_CHARS,
+} from '@dorkos/shared/convention-files';
 import { CapabilityToolError } from '../capabilities/mcp-envelope.js';
 import { marksOf } from '../turn-power/turn-levels.js';
 import { marksHold } from '../turn-power/turn-marks.js';
 import { choseFullAutonomy } from '../turn-power/full-autonomy.js';
+
+/** `update_agent_boundaries`' fields, spread into its input schema. */
+export const AGENT_BOUNDARY_INPUTS = {
+  nopeContent: z
+    .string()
+    .max(NOPE_MAX_CHARS)
+    .optional()
+    .describe('Full NOPE.md content, replacing whatever is there now'),
+  // The mute, on the same gate as the rewrite because it is the STRONGER
+  // of the two: the file survives, and the agent is simply never given it
+  // (`runtimes/shared/agent-context.ts` skips the whole
+  // `<agent_safety_boundaries>` block on `conventions.nope !== true`).
+  // Leaving it on `update_agent` at tier `act` would have left a quieter
+  // door to the same outcome, which is the defect this split exists to
+  // close (DOR-1698).
+  enabled: z
+    .boolean()
+    .optional()
+    .describe(
+      'Whether the agent is given NOPE.md at all. false mutes the boundaries without ' +
+        'deleting them; true puts them back.'
+    ),
+};
 
 /** `update_agent`'s convention-file fields, spread into its input schema. */
 export const AGENT_FILE_INPUTS = {
