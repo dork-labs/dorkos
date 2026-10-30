@@ -39,63 +39,17 @@
  * So the answer is the smallest true one: adding or removing a source is the
  * person's, and an agent is told so plainly.
  *
- * ## One bar, not two — and why the `PATCH /api/config` cookie bar is NOT copied
+ * ## A key is a program (DOR-3330)
  *
- * `routes/config.ts` runs TWO bars on its operator-only paths: an agent bar
- * (`trustedCaller`) and, under login-on, a cookie bar
- * (`requireOperatorCookieUnderLogin`) that refuses a caller holding a per-user API
- * key. This route runs the agent bar only, and that difference is chosen rather
- * than overlooked.
+ * This route used to run the agent bar only, so `dorkos marketplace add`,
+ * which presents a personal API key, counted as the person. Since DOR-3330 a
+ * key is a program, never the person: once an owner exists, only their
+ * browser session changes a source, and a program, the CLI included, is told
+ * exactly where in the app to do it (`marketplaceSourceNeedsApp`). With no
+ * owner yet, the agent bar alone decides, as before. A CLI sign-in is DOR-3342.
  *
- * `dorkos marketplace add|remove` is a first-class OPERATOR verb, and the CLI has
- * no cookie — it authenticates with a personal API key by design
- * (`packages/cli/src/lib/api-client.ts`). A cookie bar here would refuse the person
- * at their own terminal on any login-on instance, which is not a hardening, it is a
- * lockout. `marketplace.test.ts` pins that posture, so a later "harden this like
- * `config.ts`" change turns red instead of silently locking the operator out.
- *
- * What separates this from the surface that DOES run the cookie bar is the
- * OPERATOR SURFACE, not the risk level — and the distinction is worth stating
- * plainly, because the tempting version of it is wrong. Standing permissions
- * (DOR-501 phase 2) have no CLI verb at all; they are a cockpit-only affordance, so
- * demanding a cookie there costs an operator nothing they can currently do. Adding
- * a package source has a documented terminal workflow that people actually run, and
- * the only credential that workflow can present is an API key. So the cookie bar is
- * free on one surface and a lockout on the other, and that — not "a source is less
- * dangerous than a standing grant" — is why they differ.
- *
- * ## An unresolved inversion, recorded rather than argued away (DOR-474)
- *
- * The paragraph below says adding a source is strictly MORE consequential than
- * uninstalling a package. After DOR-474 the postures do not line up with that:
- * uninstall carries the cookie bar under login-on (its caller gets an approval
- * card instead of a removal), and adding a source does not. Read as a pair, that
- * is incoherent.
- *
- * It is not a contradiction of the decision below, because that decision does not
- * rest on consequence — it rests on the ABSENCE of an approval path. A caller
- * refused here has nowhere to go; a caller refused at uninstall gets a card a
- * person answers, so nobody is locked out. But the doc and the posture now
- * disagree about which act is graver, and that is worth resolving on purpose
- * rather than leaving for someone to trip over. Filed separately.
- *
- * Do NOT reach for the argument that the neighbouring install and uninstall routes
- * settled this already. They did not settle the same question, and this module's
- * own opening argues the opposite of it: the install gate never asks WHERE a
- * package came from, so adding a source is the strictly MORE consequential act —
- * installing from an attacker's feed requires adding that feed first. "The route
- * next door asks for less" is how a bar erodes, and it is not why this one is set
- * where it is. The CLI lockout above is the argument that carries this decision,
- * and it should be the only one anyone cites from here.
- *
- * **The residual, stated plainly:** with `Require login` off — the default — a
- * program on this machine that omits its agent header is indistinguishable from the
- * person in the cockpit, so it can still add a source. That is the same residual
- * `routes/config.ts` documents for its agent bar and the same one
- * `docs/guides/action-approvals.mdx` describes for `dorkos uninstall`. What this
- * guard DOES close, in every posture, is the agent that follows its instructions
- * and carries `DORKOS_AGENT_TOKEN` — the prompt-injected agent this feature exists
- * to stop.
+ * The agent bar still answers anything that names itself an agent, in every
+ * posture, with the refusal written for a model below.
  *
  * @module services/marketplace/sources/source-write-policy
  */
@@ -127,15 +81,27 @@ export function marketplaceSourceRefusalError(action: MarketplaceSourceAction): 
  */
 export function describeMarketplaceSourceRefusal(action: MarketplaceSourceAction): string {
   const verb = action === 'add' ? 'added' : 'removed';
-  const command =
-    action === 'add'
-      ? 'dorkos marketplace add <url> --name <name>'
-      : 'dorkos marketplace remove <name>';
   return (
     `DorkOS ${verb} nothing. A package source is a feed this install will fetch and run code from, ` +
-    `so which feeds it reads is the person's to choose, not yours. Ask them to run \`${command}\` ` +
-    `themselves, or to change it on the Marketplace sources screen in DorkOS. Retrying will not ` +
+    `so which feeds it reads is the person's to choose, not yours. Ask them to change it on the ` +
+    `Marketplace sources page in the DorkOS app. Retrying will not ` +
     `help and there is no approval that unlocks this. You can still list, refresh, and validate ` +
     `sources, and install from the sources they already added.`
   );
+}
+
+/** The code a package-source write answers a program or a caller with no session (DOR-3330). */
+export const MARKETPLACE_SOURCE_NEEDS_APP_CODE = 'marketplace_source_needs_app';
+
+/**
+ * What a program, or the person with no session, reads when a package-source
+ * write needs them signed in (DOR-3330): what it needs and exactly where in
+ * the app to do it instead. The CLI prints it as it is.
+ *
+ * @param action - Which write was attempted.
+ */
+export function marketplaceSourceNeedsApp(action: MarketplaceSourceAction): string {
+  return action === 'add'
+    ? 'Adding a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and click Add marketplace source.'
+    : 'Removing a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and remove it there.';
 }

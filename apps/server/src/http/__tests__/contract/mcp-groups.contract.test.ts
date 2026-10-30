@@ -39,6 +39,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   type ContractCase,
+  stepUpAt,
 } from './harness.js';
 
 /** Stands for this server's local MCP token, which is only known once it boots. */
@@ -505,19 +506,9 @@ describe('contract: the /mcp endpoint with a person’s credentials, login off t
     server = await bootComposedServer();
     token = await revealLocalToken(server);
     const origin = { origin: server.baseUrl };
-    const signedUp = await setup(
-      server,
-      'POST',
-      '/api/auth/sign-up/email',
-      { ...OWNER, name: 'Owner' },
-      origin
-    );
-    cookie = {
-      cookie: signedUp.headers
-        .getSetCookie()
-        .map((value) => value.split(';')[0]!)
-        .join('; '),
-    };
+    await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
+    // The owner's step-up at this computer: its cookie and the app's proof (DOR-3330).
+    cookie = await stepUpAt(server.baseUrl, OWNER.password);
     const created = await setup(
       server,
       'POST',
@@ -551,7 +542,14 @@ describe('contract: the /mcp endpoint with a person’s credentials, login off t
   });
 
   it('answers at the session gate once login is on, where the local token no longer counts', async () => {
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, cookie);
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      await stepUpAt(server!.baseUrl, 'a-long-password-1')
+    );
     for (const [headers, body] of [
       [MCP_CLIENT, MUTATING_CALL],
       // The tokenless carve-out ends with login on.

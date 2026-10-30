@@ -41,6 +41,12 @@ type AddSourceResponseBody = Omit<AddedMarketplaceSource, 'listing'> &
 const USAGE_LINE = 'Usage: dorkos marketplace add <url> [--name <name>]';
 
 /**
+ * The code the server answers when adding a source needs the person signed in
+ * (`MARKETPLACE_SOURCE_NEEDS_APP_CODE` in the server's source-write policy).
+ */
+const SOURCE_NEEDS_APP = 'marketplace_source_needs_app';
+
+/**
  * Parse the raw argv slice that follows `dorkos marketplace add`.
  *
  * @param rawArgs - The argv slice after `marketplace add` (i.e.
@@ -160,7 +166,11 @@ export async function runMarketplaceAdd(args: MarketplaceAddArgs): Promise<numbe
   } catch (err) {
     if (err instanceof ApiError) {
       // 409 = duplicate name. Surface a clearer hint than the raw server message.
-      if (err.status === 409) {
+      if (err.body.code === SOURCE_NEEDS_APP) {
+        // Says what it needs and where in the app to do it instead (DOR-3330);
+        // one line, as written for a person.
+        console.error(String(err.body.error ?? err.message));
+      } else if (err.status === 409) {
         console.error(
           `Error: marketplace '${name}' already exists. Pass --name to choose another.`
         );

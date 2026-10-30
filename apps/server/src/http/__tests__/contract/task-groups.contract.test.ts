@@ -44,6 +44,7 @@ import {
   type ComposedServer,
   type ContractCase,
   signInAt,
+  stepUpAt,
 } from './harness.js';
 
 /** The repository root: the composed server's directory boundary. */
@@ -1100,9 +1101,6 @@ describe('contract: the same groups with login on', () => {
     server = await bootComposedServer(NO_OLLAMA);
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
-    // No stop of its own, for the test-mode reason the login-off block gives.
-    await setup(server, 'PATCH', '/api/config', { runtimes: { defaultTrustStop: null } });
-    await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } });
     const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', OWNER, origin);
     cookie = {
       cookie: signedIn.headers
@@ -1110,6 +1108,23 @@ describe('contract: the same groups with login on', () => {
         .map((value) => value.split(';')[0]!)
         .join('; '),
     };
+    const person = await stepUpAt(server.baseUrl, OWNER.password);
+    // No stop of its own, for the test-mode reason the login-off block gives.
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { runtimes: { defaultTrustStop: null } },
+      { ...person, ...origin }
+    );
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
+    await setup(
+      server,
+      'PATCH',
+      '/api/config',
+      { auth: { enabled: true } },
+      { ...person, ...origin }
+    );
     const created = await setup(
       server,
       'POST',

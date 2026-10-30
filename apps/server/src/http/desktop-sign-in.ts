@@ -16,6 +16,7 @@ import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import type { Auth } from '../services/core/auth/index.js';
 import { takeDesktopSignInCode } from '../services/core/auth/desktop-sign-in.js';
+import { personProofFor } from '../services/core/auth/person-proof.js';
 import { withRegistrationCaller } from '../services/core/auth/registration-policy.js';
 import type { ApiEnv } from './api-chain.js';
 import { honoRequestFacts } from './request-facts.js';
@@ -46,10 +47,14 @@ export function mountDesktopSignIn(app: Hono<ApiEnv>, auth: Auth): void {
     if (!userId) return c.json({ error: 'This sign-in has expired. Restart DorkOS.' }, 401);
     // Inside the request's class, so the session is stamped `local` like any
     // other sign-in made at this computer (`session-route.ts`, DOR-2969).
-    const { headers } = await withRegistrationCaller(requestClass, () =>
+    const { headers, response } = await withRegistrationCaller(requestClass, () =>
       auth.api.signInDesktopOwner({ body: { userId }, returnHeaders: true })
     );
     for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
-    return c.json({ ok: true });
+    // The window's person proof beside its cookie (DOR-3330), so the person at
+    // the desktop app is never asked for a password here.
+    const proof = await personProofFor(response.sessionId);
+    c.header('Cache-Control', 'no-store');
+    return c.json({ ok: true, ...(proof ? { proof } : {}) });
   });
 }

@@ -8,6 +8,9 @@
  * check, so the second warned on every unregister. Here git is a stand-in that
  * fails with each wording: the answer is the same, quiet `false`, and the
  * stand-in never even runs.
+ *
+ * When git does run, both wordings still read as "no repository", and the one
+ * for a broken `.git` link does not (DOR-1019, `saysNoRepository`).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'fs/promises';
@@ -27,7 +30,12 @@ vi.mock('child_process', async (importOriginal) => {
   };
 });
 
-const { isManifestGitTracked } = await import('../git-tracked.js');
+const { isManifestGitTracked, saysNoRepository } = await import('../git-tracked.js');
+
+const NO_REPOSITORY_WORDINGS = [
+  'fatal: not a git repository (or any of the parent directories): .git',
+  'fatal: not a git repository (or any parent up to mount point /tmp)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).',
+];
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -42,16 +50,16 @@ async function folderInNoRepository(): Promise<string> {
 }
 
 describe('isManifestGitTracked in a folder no repository holds', () => {
-  it.each([
-    'fatal: not a git repository (or any of the parent directories): .git',
-    'fatal: not a git repository (or any parent up to mount point /tmp)\nStopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).',
-  ])('answers untracked, quietly, whatever git would say: %s', async (wording) => {
-    git.stderr = wording;
-    const warn = vi.fn();
-    expect(await isManifestGitTracked(await folderInNoRepository(), { warn })).toBe(false);
-    expect(warn).not.toHaveBeenCalled();
-    expect(git.calls).toBe(0);
-  });
+  it.each(NO_REPOSITORY_WORDINGS)(
+    'answers untracked, quietly, whatever git would say: %s',
+    async (wording) => {
+      git.stderr = wording;
+      const warn = vi.fn();
+      expect(await isManifestGitTracked(await folderInNoRepository(), { warn })).toBe(false);
+      expect(warn).not.toHaveBeenCalled();
+      expect(git.calls).toBe(0);
+    }
+  );
 
   it('answers untracked, quietly, for a folder that is gone', async () => {
     const warn = vi.fn();
@@ -59,5 +67,15 @@ describe('isManifestGitTracked in a folder no repository holds', () => {
     expect(await isManifestGitTracked(gone, { warn })).toBe(false);
     expect(warn).not.toHaveBeenCalled();
     expect(git.calls).toBe(0);
+  });
+});
+
+describe('saysNoRepository', () => {
+  it.each(NO_REPOSITORY_WORDINGS)('reads %j as no repository', (stderr) => {
+    expect(saysNoRepository(stderr)).toBe(true);
+  });
+
+  it('never reads a linked worktree whose parent is gone as no repository', () => {
+    expect(saysNoRepository('fatal: not a git repository: /gone/.git/worktrees/x')).toBe(false);
   });
 });

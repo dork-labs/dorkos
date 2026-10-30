@@ -137,7 +137,7 @@ export async function mountLateRoutes(refs: ServerRefs, built: MountLateRoutesIn
   // from the Hono `/api` app (`http/hono-api.ts`), which reads this.
   deps.profile = {
     avatars: new LocalAvatarStore(dorkHome),
-    caller: (request) => resolveCaller(request),
+    caller: (request, access) => resolveCaller(request, access),
     authors: roomAuthors,
     ownerAccount: () => readOwnerAccount(),
     setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),

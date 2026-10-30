@@ -52,6 +52,10 @@ const server = fixture.server;
 let dir: string;
 let db: Db;
 let cookies: string[];
+/** The owner's session, sent for every request that names no caller. */
+let personCookie = '';
+/** The person proof the owner's app keeps beside it. */
+let personProof = '';
 let rooms: RoomSubsystem;
 let http: ReturnType<typeof createDocChannelHttpComposition>;
 let approvals: ApprovalService;
@@ -141,6 +145,17 @@ beforeAll(async () => {
   // A test-only header stands in for the Wi-Fi listener's own ingress mark.
   fixture.mount((req, res) => {
     if (req.headers['x-test-ingress'] === 'wifi') markIngress(req, 'wifi');
+    // With no password asked here, a request naming no caller is the owner in
+    // their own browser, which holds their session once an owner exists
+    // (DOR-3330). With the password on, it stays nobody.
+    const named = ['cookie', 'authorization', 'x-dorkos-agent', 'x-dorkos-approval'].some(
+      (name) => req.headers[name] !== undefined
+    );
+    const asks = configManager.get('auth')?.enabled === true;
+    if (!named && !asks && personCookie) {
+      req.headers.cookie = personCookie;
+      req.headers['x-dorkos-person'] = personProof;
+    }
     return listener(req, res);
   });
   const account = { email: 'owner@dork.test', password: 'correct-horse-battery-staple' };
@@ -158,6 +173,16 @@ beforeAll(async () => {
     .send(account);
   expect(login.status).toBe(200);
   cookies = login.headers['set-cookie'] as unknown as string[];
+  // The owner's one step-up at this computer: its cookie and the app's proof.
+  const stepUp = await request(server)
+    .post('/api/person-session')
+    .set('Origin', origin)
+    .send({ password: account.password });
+  expect(stepUp.status).toBe(200);
+  personCookie = (stepUp.headers['set-cookie'] as unknown as string[])
+    .map((value) => value.split(';')[0])
+    .join('; ');
+  personProof = stepUp.body.proof as string;
 });
 beforeEach(() => {
   configManager.set('auth', { enabled: false });
@@ -663,7 +688,7 @@ describe('document route controls over the mounted app', () => {
       eventType: 'permission.answered',
       category: 'permissions',
       resourceId: documentId,
-      metadata: { action: 'ui.approve_doc_route', answer: 'once', posture: 'local-trust' },
+      metadata: { action: 'ui.approve_doc_route', answer: 'once', posture: 'signed-in-operator' },
     });
     expect(lines[1]).toMatchObject({
       eventType: 'doc_route.turned_off',
@@ -674,7 +699,7 @@ describe('document route controls over the mounted app', () => {
         routeId: 'notes',
         revokedGrants: 1,
         cancelledApprovals: 0,
-        posture: 'local-trust',
+        posture: 'signed-in-operator',
       },
     });
     expect(lines[1]!.metadata).not.toHaveProperty('approvalId');

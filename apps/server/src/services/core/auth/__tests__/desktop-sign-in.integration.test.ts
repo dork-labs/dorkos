@@ -5,6 +5,7 @@
  *
  * @vitest-environment node
  */
+import { personProofFor } from '../person-proof.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -142,6 +143,9 @@ describe('redeeming', () => {
     // stays signed in.
     const twoDays = 2 * 24 * 60 * 60 * 1000;
     expect(who!.session.expiresAt.getTime() - Date.now()).toBeGreaterThan(twoDays);
+    // And the window's person proof for that session, so the person at the
+    // desktop app is never asked for a password (DOR-3330).
+    expect(res.body.proof).toBe(await personProofFor(who!.session.id));
   });
 
   it('stamps the session as made at this computer', async () => {

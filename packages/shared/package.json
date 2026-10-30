@@ -413,6 +413,10 @@
       "types": "./src/transport-doc-links.ts",
       "default": "./dist/transport-doc-links.js"
     },
+    "./person-session": {
+      "types": "./src/person-session.ts",
+      "default": "./dist/person-session.js"
+    },
     "./session-relay-link": {
       "types": "./src/session-relay-link.ts",
       "default": "./dist/session-relay-link.js"

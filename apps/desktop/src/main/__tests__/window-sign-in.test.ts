@@ -3,7 +3,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('electron', () => import('./electron-mock'));
 vi.mock('electron-log', () => import('./electron-log-mock'));
 
-import { signInWindow, SIGN_IN_CODE_TIMEOUT_MS } from '../sign-in/window-sign-in';
+import {
+  currentPersonProof,
+  signInWindow,
+  SIGN_IN_CODE_TIMEOUT_MS,
+} from '../sign-in/window-sign-in';
 
 /**
  * A server process that answers the mint message the way `server-entry.ts`
@@ -49,6 +53,12 @@ describe('the desktop window signing in by itself', () => {
       body: JSON.stringify({ code: 'the-code' }),
       credentials: 'include',
     });
+  });
+
+  it('keeps the person proof the sign-in answered with, for the app page (DOR-3330)', async () => {
+    const fetch = vi.fn(async () => new Response('{"ok":true,"proof":"p-1"}', { status: 200 }));
+    expect(await signInWindow({ ...fakeServer('the-code'), port: 51234, fetch })).toBe('signed-in');
+    expect(currentPersonProof()).toBe('p-1');
   });
 
   it('does nothing when the server mints no code', async () => {

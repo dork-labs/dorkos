@@ -133,6 +133,11 @@ declare global {
      */
     getServerPort(): number | null;
     /**
+     * The person proof the desktop window's own sign-in got (DOR-3330), or
+     * `null`. Absent on a shell older than this call.
+     */
+    getPersonProof?(): string | null;
+    /**
      * Restart the DorkOS server through the desktop shell's own supervisor
      * (DOR-542), instead of `POST /api/admin/restart` — which the server refuses
      * whenever a supervisor owns its lifecycle, because it restarts by

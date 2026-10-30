@@ -49,12 +49,25 @@ const target = swappableServer();
 let roomId: string;
 let rootEntryId: string;
 
+/**
+ * A person who is not the owner, signed in on their phone and a member here.
+ * A write needs a person's session once an owner exists (DOR-3330), and a
+ * Wi-Fi request only ever arrives with one, so the held case is theirs.
+ */
+const PHONE_PERSON = 'phone-person';
+
+/** Headers for a browser session the gate verified, as `PHONE_PERSON` or the owner. */
+function signedIn(userId: string): Record<string, string> {
+  return { 'x-test-signed-in': userId, 'sec-fetch-site': 'same-origin' };
+}
+
 beforeEach(() => {
   setRoomService(createRoomSubsystem({ db: createTestDb() }).service);
   const service = getRoomService();
   const human = service.authorRegistry.localHuman().id;
+  const phone = service.authorRegistry.human(PHONE_PERSON).id;
   roomId = service.createRoom(
-    { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+    { kind: 'channel', title: 'Backend', members: [phone], agentPaths: [] },
     human
   ).id;
   rootEntryId = service.post(roomId, { authorId: human, text: 'start of a thread' }).id;
@@ -91,10 +104,12 @@ describe('a person’s room post', () => {
     const wifi = await request(target.server)
       .post(`/api/rooms/${roomId}/entries`)
       .set('x-test-via', 'wifi')
+      .set(signedIn(PHONE_PERSON))
       .send({ text: 'from the phone' });
     expect(wifi.status).toBe(202);
     const here = await request(target.server)
       .post(`/api/rooms/${roomId}/entries`)
+      .set(signedIn('owner'))
       .send({ text: 'from this computer' });
     expect(here.status).toBe(202);
 
@@ -107,9 +122,22 @@ describe('a person’s room post', () => {
     const res = await request(target.server)
       .post(`/api/rooms/${roomId}/threads`)
       .set('x-test-via', 'wifi')
+      .set(signedIn(PHONE_PERSON))
       .send({ rootEntryId, text: 'replying from the phone' });
     expect(res.status).toBe(202);
     expect(vi.mocked(getRoomService().post).mock.calls[0]![3]).toBe('runtime-default');
+  });
+
+  // DOR-3330: with an owner, a write with no person's session is any program
+  // here, so it is refused rather than held.
+  it('is refused, not held, when nobody is signed in', async () => {
+    const res = await request(target.server)
+      .post(`/api/rooms/${roomId}/entries`)
+      .set('x-test-via', 'wifi')
+      .send({ text: 'from nobody' });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('PERSON_SESSION_REQUIRED');
+    expect(vi.mocked(getRoomService().post)).not.toHaveBeenCalled();
   });
 
   // DOR-3242: the owner's own words from Wi-Fi are theirs; a teammate's are not.
