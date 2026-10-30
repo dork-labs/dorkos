@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): one orange, calmer surfaces, and a colour system with one spelling'
+  - 'fix(client): a light ring that clears 3:1, and no light border on the context submenu'
 ---
 
 ### Changed
