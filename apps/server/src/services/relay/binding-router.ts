@@ -18,7 +18,6 @@
  */
 import { join as pathJoin } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { z } from 'zod';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
@@ -34,7 +33,7 @@ import type {
   SubscriberVerdict,
   Unsubscribe,
 } from '@dorkos/relay';
-import { mayApprove, runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
+import { runtimeSessionSubject, legacyAgentSubject } from '@dorkos/relay';
 import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { currentDispatchId, runInDispatch } from '../../lib/dispatch-context.js';
@@ -45,9 +44,10 @@ import type { BindingStore } from './binding-store.js';
 import type { AdapterMeshCoreLike } from './adapter-manager.js';
 import { parseHumanSubject } from './human-subject.js';
 import {
+  extractClaimFeedDisplayFields,
   extractPlatformChatType,
   extractPlatformUserId,
-  extractSenderName,
+  wordsAreUntrusted,
 } from './platform-identity.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
 import type { ChatBridgeIngest } from './chat-bridge/index.js';
@@ -68,44 +68,6 @@ import { assertOwnDesk, deskBindingFor, DeskNotOwnError } from '../core/agent-id
 function hasEmptyContent(payload: unknown): boolean {
   if (payload === null || typeof payload !== 'object') return false;
   return (payload as { content?: unknown }).content === '';
-}
-
-/**
- * The chat/channel's display title — the second of the two payload fields the
- * unclaimed-chat claim feed is allowed to read, beside the sender name
- * `extractSenderName` reads. Both are TOP-LEVEL `StandardPayload` fields every
- * adapter sets (`packages/relay/src/adapters/{telegram,slack}/inbound.ts` —
- * `senderName` always, `channelName` for a group/channel chat, sourced from
- * Telegram's `chat.title` / Slack's resolved channel name, already computed
- * for the message's own routing metadata, no extra platform lookup) — never
- * the message body/content field, and never read from anywhere else in the
- * payload (connection-scoping spec `specs/connection-scoping/` §Part 3 D6).
- */
-const ChatTitleSchema = z.object({ channelName: z.string().min(1).optional() }).partial();
-
-/** The claim-feed-safe display fields read off one inbound payload. */
-interface ClaimFeedDisplayFields {
-  senderName: string | undefined;
-  chatTitle: string | undefined;
-}
-
-/**
- * Read the sender's display name and the chat's display title off an
- * inbound payload, for the unclaimed-chat claim feed's cockpit card — never
- * the message text.
- *
- * The sender half goes through `platform-identity.ts` rather than a reader of
- * its own: that module owns every "who wrote this" question asked of a payload,
- * so the name a claim card shows and the name a bridged room mints an author
- * under cannot drift apart.
- *
- * @param payload - The relay envelope payload as it arrived.
- */
-function extractClaimFeedDisplayFields(payload: unknown): ClaimFeedDisplayFields {
-  const senderName = extractSenderName(payload);
-  if (payload === null || typeof payload !== 'object') return { senderName, chatTitle: undefined };
-  const parsed = ChatTitleSchema.safeParse(payload);
-  return { senderName, chatTitle: parsed.success ? parsed.data.channelName : undefined };
 }
 
 /** Minimal interface for AgentManager session creation. */
@@ -785,19 +747,12 @@ export class BindingRouter {
                   // configured `workspace.mode: 'none'` (spec `agent-home-desk`
                   // §3.2 row 12).
                   forAgent: projectPath,
-                  // Claude Code reads a file named with an `@` before any tool
-                  // gate sees it, at every level (DOR-2980), so the words go as
-                  // words unless they are the owner's. A person named as an
-                  // approver, in a direct message: a group's title and other
-                  // people's names ride in the same prompt, so a group is never
-                  // vouched for (as `ask-audience.ts`). Always written, so a
-                  // value a publisher put in the payload never survives here.
-                  __untrustedWords: !(
-                    channelType !== 'group' &&
-                    mayApprove(
-                      this.deps.approverAllowlistFor?.(binding.adapterId),
-                      extractPlatformUserId(envelope.payload)
-                    )
+                  // Always written, so a value a publisher put in the payload
+                  // never survives here (DOR-2980).
+                  __untrustedWords: wordsAreUntrusted(
+                    envelope.payload,
+                    channelType,
+                    this.deps.approverAllowlistFor?.(binding.adapterId)
                   ),
                   __bindingPermissions: {
                     canReply: binding.canReply,

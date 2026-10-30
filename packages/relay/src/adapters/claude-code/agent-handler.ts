@@ -27,6 +27,7 @@ import type {
 } from '../../types.js';
 import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-utils.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
+import { isTurnShapingSender } from './turn-shaping-sender.js';
 import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
@@ -323,28 +324,6 @@ function followLateResults(
   // A follow the host ended inside `follow` itself (work already reached the
   // session) is over; registering it would leave a dead entry behind.
   if (!ended) followers?.set(scope, stopFollowing);
-}
-
-/**
- * Senders whose payload may shape a turn — its folder, the agent it acts as and
- * its permission mode: a person reached through a binding (`relay.human.*`),
- * the server's own principals (`relay.system.*`) and chat bridges
- * (`relay.bridge.*`). Every other sender — an agent (`relay.agent.*`), a
- * session (`relay.session.*`), an external MCP caller — is read for its words
- * only. An agent's `from` is stamped by the server from its own identity, so
- * an agent cannot claim to be a person. A caller of the HTTP API
- * (`POST /api/relay/messages`) may name a `relay.human.*` sender and is then
- * trusted as the person, exactly as the rest of `/api` trusts its caller; only
- * the server's own principals are refused there.
- *
- * @param from - The envelope's sender address.
- */
-export function isTurnShapingSender(from: string): boolean {
-  return (
-    from.startsWith('relay.human.') ||
-    from.startsWith('relay.system.') ||
-    from.startsWith('relay.bridge.')
-  );
 }
 
 /** Why a turn was stopped before it started: its folder is not its agent's desk. */

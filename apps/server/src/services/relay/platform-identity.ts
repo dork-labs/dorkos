@@ -16,6 +16,7 @@
  * @module services/relay/platform-identity
  */
 import { z } from 'zod';
+import { mayApprove } from '@dorkos/relay/approver-allowlist';
 import { PlatformChatTypeSchema, type PlatformChatType } from '@dorkos/shared/relay-schemas';
 import type { ExternalAuthorIdentity } from '../rooms/author-registry.js';
 
@@ -114,6 +115,62 @@ export function extractSenderName(payload: unknown): string | undefined {
   if (payload === null || typeof payload !== 'object') return undefined;
   const parsed = SenderNameSchema.safeParse(payload);
   return parsed.success ? parsed.data.senderName : undefined;
+}
+
+/**
+ * The chat/channel's display title — the second of the two payload fields the
+ * unclaimed-chat claim feed is allowed to read, beside the sender name
+ * `extractSenderName` reads. Both are TOP-LEVEL `StandardPayload` fields every
+ * adapter sets (`packages/relay/src/adapters/{telegram,slack}/inbound.ts` —
+ * `senderName` always, `channelName` for a group/channel chat, sourced from
+ * Telegram's `chat.title` / Slack's resolved channel name, already computed
+ * for the message's own routing metadata, no extra platform lookup) — never
+ * the message body/content field, and never read from anywhere else in the
+ * payload (connection-scoping spec `specs/connection-scoping/` §Part 3 D6).
+ */
+const ChatTitleSchema = z.object({ channelName: z.string().min(1).optional() }).partial();
+
+/** The claim-feed-safe display fields read off one inbound payload. */
+interface ClaimFeedDisplayFields {
+  senderName: string | undefined;
+  chatTitle: string | undefined;
+}
+
+/**
+ * Read the sender's display name and the chat's display title off an
+ * inbound payload, for the unclaimed-chat claim feed's cockpit card — never
+ * the message text.
+ *
+ * The sender half reads through {@link extractSenderName}, so the name a claim
+ * card shows and the name a bridged room mints an author under cannot drift apart.
+ *
+ * @param payload - The relay envelope payload as it arrived.
+ */
+export function extractClaimFeedDisplayFields(payload: unknown): ClaimFeedDisplayFields {
+  const senderName = extractSenderName(payload);
+  if (payload === null || typeof payload !== 'object') return { senderName, chatTitle: undefined };
+  const parsed = ChatTitleSchema.safeParse(payload);
+  return { senderName, chatTitle: parsed.success ? parsed.data.channelName : undefined };
+}
+
+/**
+ * Whether a message on a directly bound chat is nobody's this computer can vouch for (DOR-2980).
+ * Claude Code reads a file named with an `@` before any tool gate sees it, at every level, so the
+ * words go as words unless they are the owner's: a person the connection names as an approver
+ * (`approver-allowlist.ts`), in a direct message. A group's title and other people's names ride in
+ * the same prompt, so a group is never vouched for (as `ask-audience.ts`). This reads no level and
+ * lowers none.
+ *
+ * @param payload - The relay envelope payload as it arrived.
+ * @param channelType - `'group'` or undefined (dm), from the subject.
+ * @param approvers - The connection's approver list, in whatever shape config held it.
+ */
+export function wordsAreUntrusted(
+  payload: unknown,
+  channelType: string | undefined,
+  approvers: unknown
+): boolean {
+  return channelType === 'group' || !mayApprove(approvers, extractPlatformUserId(payload));
 }
 
 /**
