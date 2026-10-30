@@ -1381,3 +1381,5 @@ All three components are exported from `@/layers/shared/ui`.
 | Filter engine            | `apps/client/src/layers/shared/lib/filter-engine.ts`             |
 | Filter state hook        | `apps/client/src/layers/shared/model/use-filter-state.ts`        |
 | FilterBar UI             | `apps/client/src/layers/shared/ui/filter-bar/`                   |
+
+<!-- QA throwaway (do not merge): a docs-only change to prove ui-smoke passes at once. -->
