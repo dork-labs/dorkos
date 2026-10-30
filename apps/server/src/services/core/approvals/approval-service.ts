@@ -87,6 +87,8 @@ import {
   resolveCapabilityApproval,
 } from '../../notifications/emitters/capability-approval.js';
 import { eventFanOut } from '../event-fan-out.js';
+import { approvalExpiresAt } from './passive-approval.js';
+import { retireSupersededApprovals, sweepExpiredApprovals } from './approval-retirement.js';
 import { toDecisionOutcome, type ApprovalDecisionOutcome } from './approval-decision-outcome.js';
 export type { ApprovalDecisionOutcome } from './approval-decision-outcome.js';
 import { logger } from '../../../lib/logger.js';
@@ -268,6 +270,12 @@ export interface ApprovalRequestInput {
    * not.
    */
   requestingSession?: ApprovalRequestingSession;
+  /**
+   * A row under Needs you that nothing waits on (DOR-3427, `passive-approval.ts`):
+   * it never expires and its notification never escalates. Only the harness
+   * raises one, for a package Full held back.
+   */
+  passive?: boolean;
 }
 
 /** Where a verdict for one approval would be delivered, when there is anywhere. */
@@ -648,7 +656,7 @@ export class ApprovalService {
       state: 'pending' as const,
       denyReason: null,
       createdAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + this.ttlMs).toISOString(),
+      expiresAt: approvalExpiresAt(input.passive === true, now + this.ttlMs),
       decidedAt: null,
       decidedByUserId: null,
       consumedAt: null,
@@ -1278,9 +1286,9 @@ export class ApprovalService {
    * {@link settle}: no `approval_resolved`, no escalation disarm, and no way for
    * the agent that asked to learn its request was dead.
    *
-   * **The write decides, not the read.** Each row goes through
-   * {@link markConsumed} — the same conditional update that makes a token
-   * single-use — so this sweep and a `consume` landing in the same millisecond
+   * **The write decides, not the read.** Each row is ended by the same
+   * conditional update {@link markConsumed} makes a token single-use with
+   * (`approval-retirement.ts`), so this sweep and a `consume` landing in the same millisecond
    * cannot both settle one approval. The loser simply skips it.
    *
    * A swept row keeps `state: 'pending'`: nobody decided it, and writing a
@@ -1291,27 +1299,20 @@ export class ApprovalService {
    * @returns How many approvals this call settled.
    */
   sweepExpired(): number {
-    const rows = this.db
-      .select()
-      .from(approvals)
-      .where(
-        and(
-          eq(approvals.state, 'pending'),
-          isNull(approvals.consumedAt),
-          // Strictly past the deadline, matching `isExpired` exactly so the sweep
-          // and every other expiry check agree about the boundary instant.
-          lt(approvals.expiresAt, new Date().toISOString())
-        )
-      )
-      .all();
+    return sweepExpiredApprovals(this.db, (id) => this.settle(id, 'expired'));
+  }
 
-    let settled = 0;
-    for (const row of rows) {
-      if (!this.markConsumed(row.id)) continue;
-      this.settle(row.id, 'expired');
-      settled += 1;
-    }
-    return settled;
+  /**
+   * Retire every other open approval of the family `binding` belongs to, so a
+   * requester that keeps one row per thing never stacks two (DOR-3433). Nobody
+   * decided them, so nothing is refused. See `approval-retirement.ts`.
+   *
+   * @param binding - The approval being raised; rows bound to exactly it stay.
+   * @param family - The key in front of its input hash (`familyInputHash`).
+   * @returns How many approvals this call retired.
+   */
+  retireSuperseded(binding: ApprovalBinding, family: string): number {
+    return retireSupersededApprovals(this.db, binding, family, (id) => this.settle(id, 'expired'));
   }
 
   /**

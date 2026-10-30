@@ -125,6 +125,21 @@ describe('ApprovalCard', () => {
     });
   });
 
+  describe('a row that never runs out (DOR-3427)', () => {
+    it('says it waits instead of counting down', () => {
+      // A package Full held back is a passive row: its expiry is the far
+      // future, and a countdown in millions of hours would be nonsense.
+      renderCard(buildApproval({ expiresAt: '9999-12-31T23:59:59.999Z' }));
+      expect(screen.getByText('waiting for you')).toBeInTheDocument();
+    });
+
+    it('still counts down an ordinary card', () => {
+      renderCard(buildApproval());
+      expect(screen.queryByText('waiting for you')).not.toBeInTheDocument();
+      expect(screen.getByText(/hr .*left|min left/)).toBeInTheDocument();
+    });
+  });
+
   describe('an extension tool (DOR-2685)', () => {
     it('titles the card with the tool and says which extension it is from', () => {
       // A destructive extension tool always asks, so this card is where a

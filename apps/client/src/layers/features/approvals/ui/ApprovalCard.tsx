@@ -25,6 +25,21 @@ import { ApprovalServiceAction } from './ApprovalServiceAction';
 import { ApprovalSubject } from './ApprovalSubject';
 import { RequestingAgent } from './RequestingAgent';
 
+/** Past this, a card has no deadline worth counting down: it waits for the person. */
+const NO_DEADLINE_AFTER_MS = 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * What a card says where its countdown goes. A row that never runs out (a
+ * package Full held back, DOR-3427) says it waits rather than counting years.
+ *
+ * @param expiresAt - The approval's expiry.
+ * @param now - The current time in epoch milliseconds.
+ */
+function approvalTimeLeft(expiresAt: string, now: number): string {
+  if (Date.parse(expiresAt) - now > NO_DEADLINE_AFTER_MS) return 'waiting for you';
+  return formatTimeLeft(expiresAt, now);
+}
+
 const staggerItem = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
@@ -363,7 +378,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               origin={approval.origin}
             />
             <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-              {formatTimeLeft(approval.expiresAt, now)}
+              {approvalTimeLeft(approval.expiresAt, now)}
             </span>
           </div>
         </div>
