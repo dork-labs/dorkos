@@ -92,9 +92,11 @@ beforeEach(() => {
   approvalInternal.sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 });
 
-afterEach(() => {
-  // End every wait: a no stops the poll.
+afterEach(async () => {
+  // End every wait: a no stops the poll. Let each poll hear it before the next
+  // test resets the config it would write that no into.
   for (const pending of approvals.listPending()) approvals.deny(pending.approvalId);
+  await settle();
   approvalInternal.forgetDecisions();
   approvalInternal.pollIntervalMs = SHIPPED_POLL_MS;
   approvalInternal.sleep = SHIPPED_SLEEP;
@@ -146,6 +148,54 @@ describe('on Full, a held-back package’s Needs-you row is quiet (DOR-3427)', (
     expect(body).not.toContain('cannot be undone');
     expect(body).toContain('Nothing waits on your answer');
     expect(entry.title(payload)).not.toContain('needs your approval');
+  });
+
+  it('a row for newer files closes the older one, across a restart, and refuses nothing (DOR-3433)', async () => {
+    const db = createTestDb();
+    const before = new ApprovalService(db, {
+      describeCapability: describeHookProjectionCapability,
+    });
+    const v1: WithheldHooks = {
+      ...HELD_BACK,
+      request: { ...HELD_BACK.request, scripts: [['hooks/run.sh', 'a'.repeat(64)]] },
+    };
+    const v2: WithheldHooks = {
+      ...HELD_BACK,
+      request: { ...HELD_BACK.request, scripts: [['hooks/run.sh', 'b'.repeat(64)]] },
+    };
+    raisePassiveHookRows([v1], {
+      projectPath: '/repo',
+      approvals: before,
+      reproject: () => undefined,
+    });
+    await settle();
+    const [old] = before.listPending();
+
+    // As after a restart: the open-card memory is gone, the rows are not.
+    approvalInternal.forgetDecisions();
+    const after = new ApprovalService(db, { describeCapability: describeHookProjectionCapability });
+    raisePassiveHookRows([v2], {
+      projectPath: '/repo',
+      approvals: after,
+      reproject: () => undefined,
+    });
+    await settle();
+
+    const pending = after.listPending();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.approvalId).not.toBe(old?.approvalId);
+    expect(pending[0]?.summary).toContain('b'.repeat(12));
+    // Another package in the same project keeps its own row.
+    raisePassiveHookRows(
+      [{ ...HELD_BACK, request: { ...HELD_BACK.request, packageName: 'other' } }],
+      { projectPath: '/repo', approvals: after, reproject: () => undefined }
+    );
+    await settle();
+    expect(after.listPending()).toHaveLength(2);
+    expect(config.harness.refusedHooks).toEqual([]);
+    expect(arm).not.toHaveBeenCalled();
+    for (const row of after.listPending()) after.deny(row.approvalId);
+    await settle();
   });
 
   it('a yes on the row records the approval and projects again', async () => {

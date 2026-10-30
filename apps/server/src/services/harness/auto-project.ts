@@ -377,10 +377,13 @@ export async function runAutoProjection(
       raisePassiveHookRows(withheld, {
         projectPath,
         approvals: opts.approvals,
+        // Answers what it still held back, so a stale yes leaves the row for
+        // today's files (DOR-3433).
         reproject: async () => {
-          await withProjectLock(projectPath, () =>
+          const again = await withProjectLock(projectPath, () =>
             projectAndLog({ ...ctx, projectPath }, opts.dorkHome)
           );
+          return again.withheld;
         },
       });
     }

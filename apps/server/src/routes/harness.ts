@@ -536,9 +536,11 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
         const askOpts = {
           projectPath: resolved,
           approvals: gateway,
-          reproject: () => {
-            // Proven again: pass two can come hours after pass one.
-            void proveInstalls(resolved)
+          // Proven again: pass two can come hours after pass one. It answers
+          // what it still held back, so a stale yes on a passive row leaves the
+          // row for today's files (DOR-3433).
+          reproject: () =>
+            proveInstalls(resolved)
               .then((again) =>
                 withProjectLock(resolved, () =>
                   projectWithConsent(resolved, {
@@ -551,13 +553,14 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
                   })
                 )
               )
+              .then(({ withheld }) => withheld)
               .catch((err: unknown) => {
                 logger.warn('[harness] POST /sync could not re-project after an approval', {
                   err,
                   projectPath: resolved,
                 });
-              });
-          },
+                return undefined;
+              }),
         };
         void askAboutWithheldHooks(result.withheld, askOpts).catch((err: unknown) => {
           logger.warn('[harness] POST /sync could not ask about a package’s hooks', {

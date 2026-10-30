@@ -59,6 +59,7 @@
  *
  * @module services/harness/hook-approval
  */
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { ProjectedHook } from '@dorkos/harness';
 import type {
@@ -73,6 +74,7 @@ import {
   redactSecretsInText,
 } from '../core/approvals/index.js';
 import { PASSIVE_APPROVAL_EXPIRES_AT } from '../core/approvals/passive-approval.js';
+import { familyInputHash } from '../core/approvals/approval-retirement.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import {
   hookApprovalEntry,
@@ -134,6 +136,23 @@ export interface HookApprovalGateway {
    * one, so a passive card left open across a restart is reused, not raised again.
    */
   reissue?(binding: ApprovalBinding): { approvalId: string; token: string } | undefined;
+  /**
+   * Retire every other open approval of the family `binding` belongs to, so a
+   * package edited twice leaves one passive row, not two (DOR-3433).
+   */
+  retireSuperseded?(binding: ApprovalBinding, family: string): number;
+}
+
+/**
+ * The family a passive row belongs to: one package in one project, whatever
+ * files it runs (DOR-3433). Short, because it only has to tell one project's
+ * packages apart, and stable, because a row raised before a restart must match.
+ */
+function passiveRowFamily(projectPath: string, packageName: string): string {
+  return createHash('sha256')
+    .update(`${projectPath}\0${packageName}`, 'utf8')
+    .digest('hex')
+    .slice(0, 16);
 }
 
 /**
@@ -349,24 +368,30 @@ export async function askForHookProjection(
   options: HookCardOptions = {}
 ): Promise<boolean> {
   const { projectPath, packageName, hooks } = canonical(request);
+  // A passive card (DOR-3427) is one ticket per package for good, so its binding
+  // carries the package's family in front of the exact action (DOR-3433).
+  const passive = options.notInstalledByDorkos === true;
+  const family = passive ? passiveRowFamily(projectPath, packageName) : undefined;
+  // Bound to the same facts the stored entry digests, so a token granted for one
+  // package's hooks can never be spent on another's — or on the same commands
+  // moved to a different event, or running other files.
+  const inputHash = hashApprovalInput({
+    projectPath,
+    packageName,
+    hooks: hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
+    scripts: request.scripts ?? [],
+  });
   const binding: ApprovalBinding = {
     capabilityId: HOOK_PROJECTION_CAPABILITY_ID,
-    // Bound to the same facts the stored entry digests, so a token granted for one
-    // package's hooks can never be spent on another's — or on the same commands
-    // moved to a different event.
-    inputHash: hashApprovalInput({
-      projectPath,
-      packageName,
-      hooks: hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
-      scripts: request.scripts ?? [],
-    }),
+    inputHash: family === undefined ? inputHash : familyInputHash(family, inputHash),
   };
 
   const entry = hookApprovalEntry(request);
   askingNow.add(entry);
-  // A passive card (DOR-3427) is one ticket per package for good: an open one,
-  // even from before a restart, is picked up again rather than raised twice.
-  const passive = options.notInstalledByDorkos === true;
+  // The row for files the package has since moved on from is closed, with no
+  // refusal recorded; an open one for these very files, even from before a
+  // restart, is picked up again rather than raised twice.
+  if (family !== undefined) gateway.retireSuperseded?.(binding, family);
   const reused = passive ? gateway.reissue?.(binding) : undefined;
   const ticket = reused
     ? { ...reused, expiresAt: PASSIVE_APPROVAL_EXPIRES_AT }

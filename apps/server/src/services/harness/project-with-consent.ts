@@ -108,7 +108,6 @@ import { join, resolve } from 'node:path';
 import {
   hookApprovalEntry,
   hookApprovalMatch,
-  isHookProjectionApproved,
   isHookProjectionRefused,
   pinLegacyHookApproval,
   storedHookDecisions,
@@ -168,8 +167,9 @@ export interface WithheldHooks {
   unreadable?: string;
   /**
    * On Full: the package is in the project but DorkOS did not install it (or
-   * its files changed since), so Full does not let its hooks run (DOR-3422).
-   * The card that asks is a passive row under Needs you; no turn waits on it.
+   * its files changed since), and no yes names the files it runs now, so Full
+   * does not let its hooks run (DOR-3422, DOR-3433). The card that asks is a
+   * passive row under Needs you; no turn waits on it.
    */
   notInstalledByDorkos?: true;
 }
@@ -360,9 +360,10 @@ export interface ProjectWithConsentOptions {
   /**
    * The packages DorkOS itself installed into this project, files unchanged
    * (`provenDorkosInstalls` in `dorkos-installed.ts`). On Full, only these run
-   * without a person; any other package found here is withheld and asked
-   * about. Async to prove, so a trigger proves first and passes it in; left
-   * out, nothing is proven.
+   * without a person; any other package found here runs only on a yes for
+   * exactly the files it runs, and is otherwise withheld and asked about.
+   * Async to prove, so a trigger proves first and passes it in; left out,
+   * nothing is proven.
    */
   dorkosInstalled?: ReadonlyMap<string, ProvenInstall>;
 }
@@ -374,8 +375,9 @@ export interface ConsentedPlan {
   /** Every hook-declaring package left out of it, with the reason. */
   withheld: WithheldHooks[];
   /**
-   * Packages nobody has decided about whose hooks are in the plan anyway,
-   * because DorkOS is set to Full (DOR-3422). Absent when there are none.
+   * Packages whose hooks are in the plan with no yes for the files they run,
+   * because DorkOS installed them, unchanged, and is set to Full (DOR-3422).
+   * Absent when there are none.
    */
   allowedAtFull?: HookProjectionRequest[];
 }
@@ -493,10 +495,16 @@ function scanHookRequestsWithRoots(
  * Build the projection plan for a project with every unapproved package's hooks
  * left out of it, and report what was left out.
  *
- * Read-only, with one exception: on the running server's own store (no
- * `opts.decisions`), a yes recorded before files were pinned gets today's files
- * pinned onto it, once (DOR-3403). A caller that passes its lists, like
- * `--check`, writes nothing.
+ * Read-only, with one exception: on the running server's own lists (no
+ * `opts.decisions`, or lists marked `live`), a yes recorded before files were
+ * pinned gets today's files pinned onto it, once (DOR-3403). A caller that
+ * passes a copy, like `--check`, writes nothing.
+ *
+ * For each hook-declaring package, in order: the settings file could not be
+ * read, or a no covers it → withheld. On Full, DorkOS installed it with its
+ * folder unchanged → it runs. A yes for exactly its files (or, before pins, for
+ * its commands) → it runs. Otherwise withheld: on Full in a passive row, below
+ * Full with a card.
  *
  * @param projectPath - The project root being projected into.
  * @param opts - Dork home, the decisions to obey, and an optional harness filter.
@@ -510,8 +518,7 @@ export function planWithConsent(
   const allowed = new Set<string>();
   const withheld: WithheldHooks[] = [];
   const allowedAtFull: HookProjectionRequest[] = [];
-  // Read once, and only when some package has no decision: that is the one
-  // answer the preset changes.
+  // Read once, and only when some package is not refused.
   let presetFull: boolean | undefined;
   for (const { request, installRoots } of scanHookRequestsWithRoots(projectPath, opts.dorkHome)) {
     // REFUSAL IS TESTED FIRST, and the order is the whole of it. Recording
@@ -529,35 +536,41 @@ export function planWithConsent(
       withheld.push({ reason: 'unreadable-config', request, unreadable: decisions.unreadable });
     } else if (isHookProjectionRefused(request, decisions)) {
       withheld.push({ reason: 'refused', request });
-    } else if (isHookProjectionApproved(request, decisions)) {
-      allowed.add(request.packageName);
-      // A yes from before files were pinned takes today's files once, on the
-      // running server's own store only (DOR-3403). `--check` passes its own
-      // copy of the lists and must write nothing, so it never reaches this.
-      if (opts.decisions === undefined && hookApprovalMatch(request, decisions) === 'unpinned') {
-        pinLegacyHookApproval(request);
-      }
-    } else if (
-      (presetFull ??= opts.decisions ? opts.decisions.full === true : storedPresetIsFull())
-    ) {
-      // On Full nothing new asks (DOR-3422), for packages DorkOS installed:
-      // their hooks run, and the trigger that applies them writes one Activity
-      // line. No yes is recorded, so moving below Full puts the card back. A
-      // folder somebody committed under `.dork/plugins/` is not one of those,
-      // so it stays withheld and is asked about in a passive row.
+    } else {
+      // On Full, proof is settled BEFORE the yes is looked at (DOR-3433): a
+      // package DorkOS installed, folder unchanged, runs whatever its yes says.
+      // Editing any file breaks that proof, so an edited package always falls
+      // through to its yes, which must name exactly the files it runs now.
+      const full = (presetFull ??= opts.decisions
+        ? opts.decisions.full === true
+        : storedPresetIsFull());
       const proven =
+        full &&
         installRoots.length > 0 &&
         installRoots.every((root) =>
           isProvenDorkosInstall(opts.dorkosInstalled, root, request.packageName)
         );
-      if (proven) {
+      // `exact` covers a dev link and hooks that name no file on any yes for
+      // the same commands; `changed` (a yes for other files) never applies.
+      const match = hookApprovalMatch(request, decisions);
+      const yes = match === 'exact' || match === 'unpinned';
+      if (proven || yes) {
         allowed.add(request.packageName);
-        allowedAtFull.push(request);
-      } else {
+        // Full, not a person, let these files run: the trigger writes one
+        // Activity line, and no yes is recorded, so below Full the card is back.
+        if (!yes) allowedAtFull.push(request);
+        // A yes from before files were pinned takes today's files once, on the
+        // running server's own lists only (DOR-3403); after that an edit is
+        // `changed`. `--check` passes a copy that is not live, and writes nothing.
+        if (match === 'unpinned' && decisions.live === true) pinLegacyHookApproval(request);
+      } else if (full) {
+        // A folder somebody committed under `.dork/plugins/`, an edited install,
+        // or a yes for files that have changed since: withheld, and asked about
+        // in one passive row under Needs you. No card, no push.
         withheld.push({ reason: 'unasked', request, notInstalledByDorkos: true });
+      } else {
+        withheld.push({ reason: 'unasked', request });
       }
-    } else {
-      withheld.push({ reason: 'unasked', request });
     }
   }
 

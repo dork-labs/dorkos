@@ -59,9 +59,17 @@ export interface AskAboutWithheldHooksOptions {
    * It runs only when something was allowed, because the first pass already
    * wrote everything else: with nothing granted, a second pass would write the
    * same bytes for nothing.
+   *
+   * It may answer what the second pass withheld. After a passive row's yes,
+   * {@link raisePassiveHookRows} raises the row for anything still held back:
+   * a yes given for files the package has since changed covers only those
+   * files, so the row for today's files is the one left (DOR-3433).
    */
-  reproject: () => void | Promise<void>;
+  reproject: () => void | Reprojected | Promise<void | Reprojected>;
 }
+
+/** What a re-projection may answer: the packages it still held back. */
+export type Reprojected = readonly WithheldHooks[];
 
 /** What {@link askAboutWithheldHooks} answers. */
 export interface AskAboutWithheldHooksResult {
@@ -162,8 +170,10 @@ function passiveRequests(withheld: readonly WithheldHooks[]): Set<HookProjection
  * `reproject` on its own. So a caller must call it OUTSIDE any project lock and
  * hand it a `reproject` that takes the lock itself: a wait that never ends must
  * not hold a repository. One row per package: a row already open in this process
- * is not raised again (`mayAskAboutHooks`), and one left open across a restart is
- * picked up again (`reissue`).
+ * is not raised again (`mayAskAboutHooks`), one left open across a restart is
+ * picked up again (`reissue`), and one for files the package has since changed
+ * is closed when the row for today's files goes up (DOR-3433). A yes that
+ * turns out stale leaves the package withheld and raises its row again, quietly.
  *
  * @param withheld - Every package the projection left hooks out for.
  * @param opts - The project, the approval primitive, and a lock-taking re-projection.
@@ -180,7 +190,8 @@ export function raisePassiveHookRows(
       .then(async (granted) => {
         if (!granted) return;
         recordHookApproval(request);
-        await opts.reproject();
+        const still = await opts.reproject();
+        if (still) raisePassiveHookRows(still, opts);
       })
       .catch((err: unknown) => {
         logger.warn('[HarnessSync] A held-back package’s row could not be followed up', {

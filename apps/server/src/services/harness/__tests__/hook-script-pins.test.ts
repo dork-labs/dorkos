@@ -1,7 +1,8 @@
 /**
  * DOR-3403: a yes to a package's hooks covers the exact script files they run.
- * Edit a script after the yes and, below Full, the yes no longer applies and the
- * person is asked again; on Full nothing new asks.
+ * Edit a script after the yes and the yes no longer applies: below Full the
+ * person is asked again with a card; on Full the package waits in one passive
+ * row under Needs you, unless DorkOS installed it unchanged (DOR-3433).
  *
  * Drives the real `@dorkos/harness` scan and plan over a real temporary project.
  *
@@ -35,10 +36,33 @@ vi.mock('../../core/config-manager.js', () => ({
   },
 }));
 
-import { _internal, planWithConsent, scanHookRequests } from '../project-with-consent.js';
-import { hookPackagesToAskAbout } from '../ask-withheld-hooks.js';
-import { summariseHookProjection } from '../hook-approval.js';
-import { hookApprovalEntry, recordHookApproval, recordHookRefusal } from '../hook-consent.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  _internal,
+  planWithConsent,
+  scanHookRequests,
+  withProvenInstalls,
+} from '../project-with-consent.js';
+import { hookPackagesToAskAbout, raisePassiveHookRows } from '../ask-withheld-hooks.js';
+import {
+  _internal as approvalInternal,
+  describeHookProjectionCapability,
+  summariseHookProjection,
+} from '../hook-approval.js';
+import {
+  hookApprovalEntry,
+  recordHookApproval,
+  recordHookRefusal,
+  storedHookDecisions,
+} from '../hook-consent.js';
+import { ApprovalService } from '../../core/approvals/index.js';
+import { PASSIVE_APPROVAL_EXPIRES_AT } from '../../core/approvals/passive-approval.js';
+import {
+  setEscalationService,
+  type EscalationService,
+} from '../../notifications/escalation-service.js';
+import { recordProjectInstall } from '../../marketplace/lib/project-install-index.js';
+import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
 
 const COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/hooks/loop.mjs"';
 
@@ -137,6 +161,8 @@ describe('a yes to package hooks is pinned to the files they run (DOR-3403)', ()
 
     const { withheld } = planWithConsent(repo, { dorkHome: home });
     expect(withheld.map((w) => w.reason)).toEqual(['unasked']);
+    // An ordinary card, not a passive row: below Full nothing changed.
+    expect(withheld[0]?.notInstalledByDorkos).toBeUndefined();
     expect(wouldAsk()).toBe(true);
   });
 
@@ -150,7 +176,9 @@ describe('a yes to package hooks is pinned to the files they run (DOR-3403)', ()
     expect(config.harness.approvedHooks).toEqual([hookApprovalEntry(request())]);
   });
 
-  it('on Full, no card at any point, even after the script changes', () => {
+  // Changed on purpose by DOR-3433: on Full a yes used to keep applying after
+  // the script changed, so new code ran on an old yes with nobody told.
+  it('on Full, an edit after the yes holds the package back in a passive row', () => {
     config.permissions = { preset: 'full' };
     writePackage(pluginDir());
     recordHookApproval(request());
@@ -158,8 +186,9 @@ describe('a yes to package hooks is pinned to the files they run (DOR-3403)', ()
 
     editScript('console.log("v2");\n');
 
-    expect(allowed()).toBe(true);
-    expect(wouldAsk()).toBe(false);
+    expect(allowed()).toBe(false);
+    const { withheld } = planWithConsent(repo, { dorkHome: home });
+    expect(withheld).toMatchObject([{ reason: 'unasked', notInstalledByDorkos: true }]);
   });
 
   it('a yes from before pins applies once and takes today’s files', () => {
@@ -228,5 +257,170 @@ describe('a yes to package hooks is pinned to the files they run (DOR-3403)', ()
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+/** Record the package as DorkOS's installer does, with the folder's digest. */
+async function recordInstall(): Promise<void> {
+  const folder = await installFolderDigest(pluginDir());
+  if (folder.kind !== 'digest') throw new Error('the staged package did not digest');
+  await recordProjectInstall(home, {
+    projectPath: repo,
+    installRoot: pluginDir(),
+    name: 'acme',
+    source: 'dork-labs/marketplace',
+    installDigest: folder.digest,
+  });
+}
+
+describe('on Full, a yes covers exactly the files it names (DOR-3433)', () => {
+  let approvals: ApprovalService;
+  const arm = vi.fn();
+  const SHIPPED_POLL_MS = approvalInternal.pollIntervalMs;
+  const SHIPPED_SLEEP = approvalInternal.sleep;
+
+  /** Plan the way Sync now does: prove installs, then read the server's own lists. */
+  async function plan() {
+    const opts = await withProvenInstalls(repo, {
+      dorkHome: home,
+      decisions: storedHookDecisions(),
+    });
+    return planWithConsent(repo, opts);
+  }
+
+  /** Sync now: plan, then raise the passive rows, and let them reach their first poll. */
+  async function sync() {
+    const { withheld } = await plan();
+    raisePassiveHookRows(withheld, {
+      projectPath: repo,
+      approvals,
+      reproject: async () => (await plan()).withheld,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    return withheld;
+  }
+
+  /** The short hash the row shows for the script as it is now. */
+  function currentHash(): string {
+    return (request().scripts?.[0]?.[1] ?? '').slice(0, 12);
+  }
+
+  beforeEach(() => {
+    config.permissions = { preset: 'full' };
+    approvals = new ApprovalService(createTestDb(), {
+      describeCapability: describeHookProjectionCapability,
+    });
+    arm.mockReset();
+    setEscalationService({ arm, stop: vi.fn() } as unknown as EscalationService);
+    approvalInternal.pollIntervalMs = 5;
+    approvalInternal.sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    writePackage(pluginDir());
+  });
+
+  afterEach(async () => {
+    // End every wait: a no stops the poll. Let each poll hear it before the next
+    // test resets the config it would write that no into.
+    for (const pending of approvals.listPending()) approvals.deny(pending.approvalId);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    approvalInternal.forgetDecisions();
+    approvalInternal.pollIntervalMs = SHIPPED_POLL_MS;
+    approvalInternal.sleep = SHIPPED_SLEEP;
+    setEscalationService(null);
+  });
+
+  it('two edits, each synced, leave one passive row, for the latest files', async () => {
+    await sync();
+    editScript('console.log("v2");\n');
+    await sync();
+    editScript('console.log("v3");\n');
+    await sync();
+
+    const pending = approvals.listPending();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.expiresAt).toBe(PASSIVE_APPROVAL_EXPIRES_AT);
+    expect(pending[0]?.summary).toContain(currentHash());
+    expect(arm).not.toHaveBeenCalled();
+    // Closing the older rows recorded no refusal.
+    expect(config.harness.refusedHooks).toEqual([]);
+  });
+
+  it('a yes on the row runs that version; a later edit withholds again with one row', async () => {
+    await sync();
+    approvals.grant(approvals.listPending()[0]!.approvalId);
+    await vi.waitFor(() =>
+      expect(config.harness.approvedHooks).toEqual([hookApprovalEntry(request())])
+    );
+    expect((await plan()).withheld).toEqual([]);
+
+    editScript('console.log("v2");\n');
+    const withheld = await sync();
+    expect(withheld).toMatchObject([{ reason: 'unasked', notInstalledByDorkos: true }]);
+    const pending = approvals.listPending();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.summary).toContain(currentHash());
+    expect(arm).not.toHaveBeenCalled();
+  });
+
+  it('a stale yes stays withheld, with no card or push, and leaves one row for today’s files', async () => {
+    await sync();
+    const [stale] = approvals.listPending();
+    // The package moves on while its row is open, then the row is allowed.
+    editScript('console.log("v2");\n');
+    approvals.grant(stale!.approvalId);
+
+    await vi.waitFor(() => {
+      const pending = approvals.listPending();
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.approvalId).not.toBe(stale!.approvalId);
+    });
+    const [row] = approvals.listPending();
+    expect(row?.expiresAt).toBe(PASSIVE_APPROVAL_EXPIRES_AT);
+    expect(row?.summary).toContain(currentHash());
+    expect((await plan()).withheld).toMatchObject([{ notInstalledByDorkos: true }]);
+    expect(arm).not.toHaveBeenCalled();
+  });
+
+  it('a yes from before pins is pinned once by the server’s own lists, then an edit withholds', async () => {
+    const { scripts: _scripts, ...unpinned } = request();
+    config.harness.approvedHooks = [hookApprovalEntry(unpinned)];
+
+    expect((await plan()).withheld).toEqual([]);
+    expect(config.harness.approvedHooks).toEqual([hookApprovalEntry(request())]);
+
+    editScript('console.log("v2");\n');
+    expect((await plan()).withheld).toMatchObject([{ notInstalledByDorkos: true }]);
+  });
+
+  it('a dev link stays exempt: any yes for its commands covers it', async () => {
+    const real = _internal.scanInstalledPlugins;
+    const spy = vi
+      .spyOn(_internal, 'scanInstalledPlugins')
+      .mockImplementation((opts) =>
+        real(opts).map((plugin) => ({ ...plugin, devLink: { path: outside } }))
+      );
+    try {
+      expect((await plan()).withheld).toMatchObject([{ notInstalledByDorkos: true }]);
+      recordHookApproval(request());
+      editScript('console.log("v2");\n');
+      expect((await plan()).withheld).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a DorkOS install runs while unchanged; edited, it needs a yes for exactly its files', async () => {
+    await recordInstall();
+    const clean = await plan();
+    expect(clean.withheld).toEqual([]);
+    expect(clean.allowedAtFull).toHaveLength(1);
+
+    // An edit breaks the install proof, so the yes has to name today's files.
+    editScript('console.log("v2");\n');
+    expect((await plan()).withheld).toMatchObject([{ notInstalledByDorkos: true }]);
+    recordHookApproval(request());
+    expect((await plan()).withheld).toEqual([]);
+
+    editScript('console.log("v3");\n');
+    expect((await plan()).withheld).toMatchObject([{ notInstalledByDorkos: true }]);
   });
 });

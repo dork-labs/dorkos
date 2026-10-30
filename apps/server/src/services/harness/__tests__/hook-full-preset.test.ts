@@ -59,6 +59,7 @@ import {
 } from '../hook-approval.js';
 import {
   readHookDecisionsFromDisk,
+  recordHookApproval,
   recordHookRefusal,
   storedHookDecisions,
 } from '../hook-consent.js';
@@ -318,6 +319,20 @@ describe('on Full, a package DorkOS did not install is held back (DOR-3422)', ()
 
     const { withheld } = await project();
     expect(withheld.some((w) => w.notInstalledByDorkos)).toBe(true);
+  });
+
+  it('a yes for hooks that name no file covers them on its commands alone (DOR-3433)', async () => {
+    const [request] = scanHookRequests(repo, home);
+    if (!request) throw new Error('the staged package declared no hooks');
+    expect(request.scripts).toBeUndefined();
+    recordHookApproval(request);
+
+    const { withheld, allowedAtFull } = await project();
+    expect(withheld).toEqual([]);
+    expect(hookInstalled()).toBe(true);
+    // A person's yes let it run, not Full: no Activity line says otherwise.
+    expect(allowedAtFull).toBeUndefined();
+    expect(fullActionRows()).toEqual([]);
   });
 
   it('allowing it is a person’s act: agents cannot write the yes list', () => {

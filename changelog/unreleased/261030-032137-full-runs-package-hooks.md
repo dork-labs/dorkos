@@ -5,6 +5,7 @@ covers:
   - 'test(server): Sync now on Full reads the preset through the shipped reader (DOR-3422)'
   - "fix(server): one recordFullAction, main's shape, for the Full hook rows (DOR-3422)"
   - 'fix(server): a package Full held back waits quietly under Needs you (DOR-3427)'
+  - 'fix(server): on Full, a yes covers only the files it named, one passive row per package (DOR-3422, DOR-3433)'
 ---
 
 ### Fixed
