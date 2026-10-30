@@ -84,7 +84,6 @@ import {
 } from './providers/check-dependencies.js';
 import {
   createOpenCodeEventContext,
-  mapOpenCodeTurn,
   matchesOpenCodeSession,
   matchesOpenCodeSubagentSession,
   type OpenCodeWireEvent,
@@ -120,6 +119,7 @@ import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { listOpenCodeSubagents } from './subagent-list.js';
 import { captureOpenCodeMedia } from './events/media-capture.js';
+import { mapLiveOpenCodeTurn } from './events/model-wait-liveness.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import {
   connectorRuntimeHeaders,
@@ -751,7 +751,8 @@ export class OpenCodeRuntime implements AgentRuntime {
           ? { permissionCeiling: opts.permissionCeiling }
           : {}),
       };
-      for await (const mapped of mapOpenCodeTurn(queue, ctx)) {
+      // Says the turn is alive while a slow model is still answering (FB-68).
+      for await (const mapped of mapLiveOpenCodeTurn(queue, ctx)) {
         // On credits, a refused token is the credits card, never an OpenCode
         // sign-in error: the person's own sign-in was not used.
         const event = await this.withContextWindow(
