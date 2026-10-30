@@ -328,6 +328,44 @@ describe('PATCH /api/config', () => {
     expect(configManager.getDot('server.boundary')).not.toBe('/');
   });
 
+  describe('company certificates (network.extraCaCertsPath, DOR-3361)', () => {
+    // The file the desktop app adds to what every connection trusts. It
+    // replaced NODE_EXTRA_CA_CERTS precisely because anything running as the
+    // user could set that, so an agent must not be able to set this either.
+    const bundle = '/Users/someone/company-ca.pem';
+
+    it('refuses an agent, and stores nothing', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ network: { extraCaCertsPath: '/tmp/attacker-ca.pem' } })
+        .expect(403);
+      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.paths).toEqual(['network.extraCaCertsPath']);
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('network.extraCaCertsPath')).toBeNull();
+    });
+
+    it('lets a person set it and clear it', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+
+      await request(server)
+        .patch('/api/config')
+        .send({ network: { extraCaCertsPath: bundle } })
+        .expect(200);
+      expect(configManager.getDot('network.extraCaCertsPath')).toBe(bundle);
+
+      await request(server)
+        .patch('/api/config')
+        .send({ network: { extraCaCertsPath: null } })
+        .expect(200);
+      expect(configManager.getDot('network.extraCaCertsPath')).toBeNull();
+    });
+  });
+
   describe('settings a config wipe refuses to reverse (DOR-1497)', () => {
     // The reproduction, kept as the test. Every leaf below is on
     // `PROTECTIVE_CARRYOVERS`: recovery from a corrupt config carries the
@@ -1353,6 +1391,19 @@ describe('GET /api/config', () => {
       owner.email = null;
     }
   });
+  it('reads company certificates back, with nothing loaded outside the desktop app (DOR-3361)', async () => {
+    const empty = await request(server).get('/api/config').expect(200);
+    expect(empty.body.network).toEqual({ extraCaCertsPath: null, companyCertificates: null });
+
+    const { configManager } = await import('../../services/core/config-manager.js');
+    configManager.setDot('network.extraCaCertsPath', '/Users/someone/company-ca.pem');
+    const set = await request(server).get('/api/config').expect(200);
+    expect(set.body.network).toEqual({
+      extraCaCertsPath: '/Users/someone/company-ca.pem',
+      companyCertificates: null,
+    });
+  });
+
   it('includes boundary field in response', async () => {
     const res = await request(server).get('/api/config');
 

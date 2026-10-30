@@ -27,6 +27,7 @@ import {
 } from '../model/settling-approvals';
 import { discardDismissedSuggestions } from '../model/use-dismiss-suggestion';
 import { ApprovalCard } from '../ui/ApprovalCard';
+import { WIFI_KEPT_CARD_LINE } from '../ui/ApprovalServiceAction';
 
 /** Build a pending approval, overriding only what a test cares about. */
 function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApproval {
@@ -521,6 +522,17 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
     ).toBeInTheDocument();
     // Never the old promise: "destructive" covers sending and sharing too.
     expect(screen.queryByText(/can't be undone/u)).not.toBeInTheDocument();
+  });
+
+  // DOR-3242: an extra card at the desk must not read as a bug.
+  it('says why it asks instead of waiting 60 seconds while Wi-Fi access is on', () => {
+    renderCard(connectorApproval({ ...GMAIL_DELETE, keptCardBecause: 'wifi-open' }));
+    expect(screen.getByText(WIFI_KEPT_CARD_LINE)).toBeInTheDocument();
+  });
+
+  it('says nothing about Wi-Fi on an ordinary card', () => {
+    renderCard(connectorApproval(GMAIL_DELETE));
+    expect(screen.queryByText(WIFI_KEPT_CARD_LINE)).not.toBeInTheDocument();
   });
 
   it('never shows the jargon title, the ids, or the summary sentence on top of it', () => {

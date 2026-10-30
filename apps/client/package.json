@@ -56,7 +56,7 @@
     "@zumer/snapdom": "2.24.18",
     "ansi-regex": "^6.3.0",
     "ansi-to-react": "^6.2.6",
-    "better-auth": "1.7.6",
+    "better-auth": "1.7.7",
     "blintz": "0.8.0",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",

@@ -549,6 +549,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Waking the computer for scheduled runs starts off: it powers the machine up
   // while nobody is there and needs a one-time admin grant (spec `keep-awake`).
   'keepAwake.wakeForScheduledTasks': false,
+  // No company certificates: the desktop app trusts only the system's own
+  // authorities until a person names a file (DOR-3361).
+  'network.extraCaCertsPath': null,
 };
 
 /**

@@ -410,6 +410,11 @@ export function spawnServer(port: number): ServerChild {
     // report a crash it caused itself. Production never wants that watchdog.
     delete env.DORKOS_PARENT_PID;
     delete env.DORKOS_PARENT_STARTED_AT;
+    // Company certificates come only from the path chosen in Settings
+    // (DOR-3361). An exported CA variable would otherwise ride from here into
+    // every agent process and its MCP servers, on calls that carry sign-in tokens.
+    delete env.NODE_EXTRA_CA_CERTS;
+    delete env.SSL_CERT_FILE;
   }
   const tail = createStderrTail();
 

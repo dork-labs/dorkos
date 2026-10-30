@@ -263,6 +263,11 @@ export const CONFIG_DISCLOSURE = {
   // How long the Activity feed keeps its rows (spec `audit-trail` §3.5).
   'activity.retentionDays': 'expose',
 
+  // Where the company certificates the desktop app trusts live (DOR-3361).
+  // Withheld: it names the one file whose contents decide whom every
+  // connection believes, and this read answers callers with no credential.
+  'network.extraCaCertsPath': 'withhold',
+
   'mesh.scanRoots': 'expose',
 
   // Which backend holds an agent's memory. A provider id, not a credential and

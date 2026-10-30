@@ -78,7 +78,7 @@
     "apps/server/src/services/rooms/room-capabilities.ts": 1176,
     "apps/server/src/services/rooms/room-store.ts": 945,
     "apps/server/src/services/rooms/room-turn-runner.ts": 527,
-    "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts": 1065,
+    "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts": 1055,
     "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts": 508,
     "apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts": 734,
     "apps/server/src/services/runtimes/claude-code/sessions/session-turn-windows.ts": 729,

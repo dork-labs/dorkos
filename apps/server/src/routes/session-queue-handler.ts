@@ -23,7 +23,7 @@ import { UpdateQueuedMessageRequestSchema } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
+import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import {
   cancelQueuedMessage,
   editQueuedMessage,
@@ -74,8 +74,9 @@ export function sessionQueueUpdateHandler(c: Context<ApiEnv>): Response {
   const message = editQueuedMessage(sessionId, messageId, {
     ...(content !== undefined ? { content } : {}),
     ...(move !== undefined ? { move } : {}),
-    // Words reworded from Wi-Fi run at the runtime's default at most (DOR-3037).
-    ...(content !== undefined && isFromWifi(honoRequestFacts(c)) ? { holdToDefault: true } : {}),
+    // Words reworded from Wi-Fi run at the runtime's default at most, unless they
+    // are the owner's own (DOR-3037, DOR-3242).
+    ...(content !== undefined && wifiTurnHeld(honoRequestFacts(c)) ? { holdToDefault: true } : {}),
   });
   if (message === 'not-yours') {
     return c.json(
