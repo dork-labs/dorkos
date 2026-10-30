@@ -346,6 +346,14 @@ export const RuntimesConfigSchema = z
      * `runtimes.<runtime>.defaultTrustStop` beats this one.
      */
     defaultTrustStop: RuntimeTrustStopSchema.unwrap().default('autonomy'),
+    /**
+     * How many chats nobody typed into (an agent's spin-off, an automatic
+     * carry-over) may have a turn running at once, on every runtime (DOR-3413).
+     * Ships at 8, the number that kept the 2026-09-25 drain from taking the
+     * machine down (spec `claude-account-fleet` D5). A launch past it is refused,
+     * not queued. Read at each launch, so a change applies to the next one.
+     */
+    maxAgentChats: z.number().int().min(1).max(64).default(8),
     // The rename heal runs BEFORE this object is parsed, so a config still
     // spelling the default `activeAccount` parses with the operator's choice
     // in the new key. What settles the FILE is a write that names `runtimes`,
@@ -454,6 +462,7 @@ export const RuntimesConfigSchema = z
     environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
     default: 'claude-code',
     defaultTrustStop: 'autonomy' as const,
+    maxAgentChats: 8,
     doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
     claudeCode: {
       defaultAccount: null,

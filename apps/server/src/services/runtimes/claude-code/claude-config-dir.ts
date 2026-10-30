@@ -68,6 +68,8 @@ import {
   refusalFor,
 } from '../../core/usage/account-eligibility.js';
 import { launchFallbackOrder } from '../../core/usage/account-ranking.js';
+import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
+import { mayAutoPickClaudeRoot } from './accounts/account-login-metadata.js';
 import {
   accountForPath,
   canonicalAccountPath,
@@ -272,6 +274,7 @@ function readClaudeCodeConfig(config: ConfigReader): {
  * @returns True when the folder holds a `projects/` directory.
  */
 export function isClaudeAccountRoot(dir: string): boolean {
+  if (!isCreditsClaudeRoot(dir) && isNeverUseClaudeFolder(dir)) return false;
   try {
     return fs.statSync(path.join(dir, 'projects')).isDirectory();
   } catch {
@@ -480,9 +483,10 @@ export function resolveLaunchAccountRoot(opts: {
   }
   const root = resolveActiveClaudeRoot(config);
   const accountId = accountIdForRoot(root, config);
-  if (accountEligibility(config, 'claude-code', accountId, project).eligible) {
-    return { ok: true, root, accountId };
-  }
+  const allowedHere = accountEligibility(config, 'claude-code', accountId, project).eligible;
+  // An automatic rung keeps to sign-ins DorkOS may pick on its own: confirmed,
+  // or known before the upgrade (DOR-3245). A new or changed one is skipped.
+  if (allowedHere && mayAutoPickClaudeRoot(root)) return { ok: true, root, accountId };
   // The automatic choice may not work here: the next eligible account runs it.
   // Never credits: an automatic step may not start spending (ADR 261001-000811).
   const candidates = [
@@ -492,17 +496,19 @@ export function resolveLaunchAccountRoot(opts: {
       .map((account) => account.id),
     IMPLICIT_ACCOUNT_ID,
   ].filter((id) => id !== CREDITS_ACCOUNT_ID);
-  const [next] = eligibleAccountIds(config, 'claude-code', [...new Set(candidates)], project);
-  if (next !== undefined) {
-    // `default` is always the machine root itself, as rungs 1-2 spell it, never
-    // a row the `'0.87.0'` rename left carrying the old name.
-    const row = next === IMPLICIT_ACCOUNT_ID ? undefined : findRegisteredAccount(accounts, next);
-    return {
-      ok: true,
-      root: row ? row.path : machineDefaultClaudeRoot(config),
-      accountId: next,
-    };
-  }
+  // `default` is always the machine root itself, as rungs 1-2 spell it, never
+  // a row the `'0.87.0'` rename left carrying the old name.
+  const rootOf = (id: string): string => {
+    const row = id === IMPLICIT_ACCOUNT_ID ? undefined : findRegisteredAccount(accounts, id);
+    return row ? row.path : machineDefaultClaudeRoot(config);
+  };
+  const next = eligibleAccountIds(config, 'claude-code', [...new Set(candidates)], project).find(
+    (id) => mayAutoPickClaudeRoot(rootOf(id))
+  );
+  if (next !== undefined) return { ok: true, root: rootOf(next), accountId: next };
+  // No sign-in DorkOS may pick on its own: the folder's own default still runs.
+  // A sign-in waiting for a look never stops a turn.
+  if (allowedHere) return { ok: true, root, accountId };
   return {
     ok: false,
     error: new AccountNotAllowedError(project, null, { reason: 'none-eligible' }),
@@ -667,6 +673,7 @@ export function resolveClaudeRootSet(config: ConfigReader = configManager): stri
   const seen = new Set<string>();
   const roots: string[] = [];
   for (const candidate of candidates) {
+    if (!isCreditsClaudeRoot(candidate) && isNeverUseClaudeFolder(candidate)) continue;
     // Dedupe on the resolved path so `~/.claude` and `~/.claude/` are one root,
     // but emit the candidate as written. The active root is first, so its
     // spelling is the one that survives.
@@ -722,6 +729,8 @@ export function resolveClaudeRootSet(config: ConfigReader = configManager): stri
  * @returns A one-entry env fragment to spread AFTER `...process.env`.
  */
 export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | undefined } {
+  if (!isCreditsClaudeRoot(root) && isNeverUseClaudeFolder(root))
+    throw new Error('This Claude folder is excluded in Runtimes.');
   const ambient = ambientClaudeConfigDir();
   // Compared by real path (`canonicalAccountPath`), so a symlink or another
   // spelling of `~/.claude` is still `~/.claude` and still reaches the child as
@@ -870,34 +879,36 @@ export function describeClaudeCodeAccounts(
     // account is not registered" and "nobody can say" — see
     // `readClaudeCodeConfig`.
     ...(unavailable ? { accountsUnavailable: true } : {}),
-    accounts: accounts.map((account) => ({
-      // The id agents and launch hints reference this account by. Never `null`
-      // for a REGISTERED account, including on a config the migration has not
-      // reached — `readClaudeCodeConfig` heals the id in. `null` on the wire is
-      // reserved for a row a caller synthesizes to describe an unregistered
-      // root, which nothing can point at (`ServerConfigSchema.claudeCode`).
-      id: account.id,
-      path: account.path,
-      label: account.label,
-      // Resolved by position when the operator stored none; `colorIsDefault`
-      // lets the settings screen write `null` back for such a row, so it keeps
-      // following the palette instead of freezing today's default into the file.
-      color: account.color,
-      colorIsDefault: account.colorIsDefault,
-      // NOT `exists`: this is D4's structural check, so a directory that is
-      // really there but holds no `projects/` reports false. Naming it `exists`
-      // would read as `fs.existsSync` to any UI and mislabel that case.
-      isAccountRoot: isClaudeAccountRoot(account.path),
-      // The projects the account is kept to, named, so Settings can say "Only
-      // for client-app" (spec `flow-multiproject` §8.5).
-      onlyProjects:
-        account.onlyProjects == null
-          ? null
-          : account.onlyProjects.map((root) => projectRefFor(canonicalDirectory(root))),
-      // Sent only when on, so Settings' "Move agents here automatically" switch
-      // reads it, and a row without it reads the same wire as before.
-      ...(account.noAutoMove === true ? { noAutoMove: true } : {}),
-    })),
+    accounts: accounts
+      .filter((account) => !isNeverUseClaudeFolder(expandClaudeAccountHome(account.path)))
+      .map((account) => ({
+        // The id agents and launch hints reference this account by. Never `null`
+        // for a REGISTERED account, including on a config the migration has not
+        // reached — `readClaudeCodeConfig` heals the id in. `null` on the wire is
+        // reserved for a row a caller synthesizes to describe an unregistered
+        // root, which nothing can point at (`ServerConfigSchema.claudeCode`).
+        id: account.id,
+        path: account.path,
+        label: account.label,
+        // Resolved by position when the operator stored none; `colorIsDefault`
+        // lets the settings screen write `null` back for such a row, so it keeps
+        // following the palette instead of freezing today's default into the file.
+        color: account.color,
+        colorIsDefault: account.colorIsDefault,
+        // NOT `exists`: this is D4's structural check, so a directory that is
+        // really there but holds no `projects/` reports false. Naming it `exists`
+        // would read as `fs.existsSync` to any UI and mislabel that case.
+        isAccountRoot: isClaudeAccountRoot(account.path),
+        // The projects the account is kept to, named, so Settings can say "Only
+        // for client-app" (spec `flow-multiproject` §8.5).
+        onlyProjects:
+          account.onlyProjects == null
+            ? null
+            : account.onlyProjects.map((root) => projectRefFor(canonicalDirectory(root))),
+        // Sent only when on, so Settings' "Move agents here automatically" switch
+        // reads it, and a row without it reads the same wire as before.
+        ...(account.noAutoMove === true ? { noAutoMove: true } : {}),
+      })),
     ...describeAccountRules(config, unavailable),
     credits,
   };

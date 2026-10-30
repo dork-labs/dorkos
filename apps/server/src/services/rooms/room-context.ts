@@ -47,6 +47,7 @@ import type { Room, RoomAttachment, RoomEntry } from '@dorkos/shared/room-schema
 import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
 import { addressableHandles, rosterMentionCandidates } from './handles/author-handles.js';
 import type { EngagementWindow } from './engagement.js';
+import { addresseesOf, ccOf } from './mentions.js';
 import {
   authorOrigin,
   isExternalNaturalKey,
@@ -531,6 +532,11 @@ export function buildRoomContext(
   // `slice(-0)` is `slice(0)` and returns the whole array. A room configured to
   // replay nothing would have replayed one entry and reported it as truncated.
   const missed = window.slice(Math.max(0, window.length - cap));
+  // Read over the whole page, not just what fits the cap, so a cc that fell
+  // off the front is still counted and named by id.
+  const ccdIn = [...window, ...gathered].filter((entry) =>
+    ccOf(entry).includes(input.agentAuthorId)
+  );
   // THE CHANNEL TAIL: the last few top-level messages of the room a thread turn
   // is happening in, and nothing for a top-level turn — where the channel IS the
   // scope and there is no "rest of the room" to name.
@@ -679,7 +685,7 @@ export function buildRoomContext(
       kind: entry.kind,
       at: entry.createdAt,
       text: entry.body.text,
-      mentionsMe: entry.mentions.includes(input.agentAuthorId),
+      mentionsMe: addresseesOf(entry).includes(input.agentAuthorId),
       // Omitted rather than `false` when it did not, so the rendered block only
       // ever says something happened — an entry carrying `arrivedDuringPrevTurn:
       // false` on every ordinary line is noise the model has to read past.
@@ -773,6 +779,9 @@ export function buildRoomContext(
       .map((claim) => ({ ...nameOf(claim.authorId), since: claim.since })),
     pending: missed.map(flatten),
     pendingTruncated,
+    // What copied this agent in since it last read the room: no turn was
+    // started for any of these, so this is where it learns of them (DOR-3401).
+    ...(ccdIn.length > 0 ? { ccdIn: ccdIn.map((entry) => entry.id) } : {}),
     // Omitted rather than sent empty, like `channelTail` below: the field means
     // "this turn is answering these too", and a turn that gathered nothing is
     // answering exactly one message.
@@ -814,7 +823,7 @@ export function buildRoomContext(
         self?.responseMode ?? fallbackResponseMode(deps, records.get(input.agentAuthorId)),
       engagedUntil: input.engaged?.until.toISOString() ?? null,
       engagedPostsLeft: input.engaged?.postsLeft ?? null,
-      addressedNow: input.entry.mentions.includes(input.agentAuthorId),
+      addressedNow: addresseesOf(input.entry).includes(input.agentAuthorId),
       ...(input.answerOwed ? { answerOwed: input.answerOwed } : {}),
     },
     budget: {

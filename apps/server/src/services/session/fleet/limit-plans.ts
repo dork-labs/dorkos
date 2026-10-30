@@ -39,7 +39,11 @@ import {
   onAccountAdvisorRegistered,
   validateLimitedPlan,
 } from '../../core/usage/account-advisor.js';
-import { rankAccounts, type AccountRanking } from '../../core/usage/account-ranking.js';
+import {
+  rankAccounts,
+  signinAllowsAutoPick,
+  type AccountRanking,
+} from '../../core/usage/account-ranking.js';
 import { configManager } from '../../core/config-manager.js';
 import { accountEligibility, projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
@@ -265,6 +269,18 @@ export function isRegisteredAccount(accountId: string): boolean {
   const store = getAccountUsageStore();
   if (!store) return false;
   return store.listAccounts(LIMIT_RUNTIME).some((a) => a.id === accountId && a.routable);
+}
+
+/**
+ * Whether a session may move to this account with nobody choosing it: a
+ * registered account whose sign-in DorkOS may pick on its own (DOR-3245).
+ */
+export function mayAutoMoveTo(accountId: string): boolean {
+  const store = getAccountUsageStore();
+  if (!store) return false;
+  return store
+    .listAccounts(LIMIT_RUNTIME)
+    .some((a) => a.id === accountId && a.routable && signinAllowsAutoPick(a));
 }
 
 /** Called with a session's stored limit after every plan write. */
@@ -580,8 +596,7 @@ async function planEpisode(stored: StoredSessionLimit): Promise<void> {
     const answer = validateLimitedPlan(await callAdvisor('onLimited', info), {
       limitedAccountId: stored.limit.accountId,
       isRegistered: (id) =>
-        isRegisteredAccount(id) &&
-        accountEligibility(configManager, LIMIT_RUNTIME, id, project).eligible,
+        mayAutoMoveTo(id) && accountEligibility(configManager, LIMIT_RUNTIME, id, project).eligible,
     });
     if (answer?.mode === 'wait') {
       plan = {

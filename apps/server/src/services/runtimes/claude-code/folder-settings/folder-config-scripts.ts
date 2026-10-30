@@ -64,8 +64,18 @@ function sha256(content: string | Buffer): string {
 /**
  * The absolute paths `commands` name that are worth hashing: inside the home
  * (relative, `$CLAUDE_PROJECT_DIR` or absolute), or inside a plugin folder.
+ * Also what the repo settings check (DOR-3298) reads, with a repo's working
+ * folder as the root.
+ *
+ * @param root - The folder commands run in (resolved).
+ * @param pluginsRoot - DorkOS's `plugins/` folder (resolved).
+ * @param commands - Hook, status line and helper commands.
  */
-function namedTargets(root: string, pluginsRoot: string, commands: readonly string[]): string[] {
+export function namedTargets(
+  root: string,
+  pluginsRoot: string,
+  commands: readonly string[]
+): string[] {
   const found = new Set<string>();
   const pluginSegment = `${path.sep}.dork${path.sep}plugins${path.sep}`;
   for (const command of commands) {
@@ -205,6 +215,28 @@ const AGENT_FILE_FIELDS = [
 ] as const;
 
 /**
+ * The power-widening frontmatter (`AGENT_FILE_FIELDS`) of one subagent, skill or command file, as
+ * an object holding only the fields it sets. Frontmatter that does not parse
+ * is a value of its own (its block's hash), so a broken one is a change, but
+ * the words below it never are.
+ *
+ * @param text - The file's text.
+ */
+export function pickAgentFileFields(text: string): Record<string, unknown> {
+  try {
+    const { data } = parseFrontmatter(text);
+    const picked: Record<string, unknown> = {};
+    for (const field of AGENT_FILE_FIELDS) {
+      if (Object.hasOwn(data, field)) picked[field] = data[field];
+    }
+    return picked;
+  } catch {
+    const block = /^---[^\n]*\n([\s\S]*?)\n---/.exec(text)?.[1] ?? text;
+    return { unparseable: sha256(block) };
+  }
+}
+
+/**
  * The power-widening frontmatter (`AGENT_FILE_FIELDS`) of the home's subagents, skills and commands,
  * by path, for files that set either; `undefined` when one can't be vouched
  * for (over 64 KB, unreadable, not a file, too deep, more than 200 files).
@@ -232,17 +264,7 @@ export function agentFileHooks(home: string): [string, unknown][] | undefined {
       return false;
     }
     files += 1;
-    let picked: Record<string, unknown>;
-    try {
-      const { data } = parseFrontmatter(text);
-      picked = {};
-      for (const field of AGENT_FILE_FIELDS) {
-        if (Object.hasOwn(data, field)) picked[field] = data[field];
-      }
-    } catch {
-      const block = /^---[^\n]*\n([\s\S]*?)\n---/.exec(text)?.[1] ?? text;
-      picked = { unparseable: sha256(block) };
-    }
+    const picked = pickAgentFileFields(text);
     if (Object.keys(picked).length > 0) entries.set(abs, picked);
     return true;
   };

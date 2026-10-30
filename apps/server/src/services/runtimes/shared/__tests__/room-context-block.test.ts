@@ -2364,3 +2364,22 @@ describe('a comment the person forwarded from a mini app (DOR-3325)', () => {
     expect(line).not.toContain('[via ');
   });
 });
+
+describe('a cc (DOR-3401)', () => {
+  it("says how many messages cc'd the agent, by id, outside the fence", () => {
+    const copied = said('@kai ship it, cc @ana');
+    const block = formatRoomContext(context({ pending: [copied], ccdIn: [copied.id] }), {
+      nonce: NONCE,
+    });
+    expect(block).toContain(
+      `You were cc'd in 1 message since you last read this room: ${idOf(copied.id)}.`
+    );
+    expect(block.split('\n').find((l) => l.includes('cc @ana'))).toContain('[cc: you]');
+  });
+
+  it('says nothing about a cc when there was none', () => {
+    const block = formatRoomContext(context(), { nonce: NONCE });
+    expect(block).not.toContain("cc'd");
+    expect(block).not.toContain('[cc: you]');
+  });
+});

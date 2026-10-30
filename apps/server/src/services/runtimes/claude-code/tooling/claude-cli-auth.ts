@@ -22,6 +22,7 @@
  *
  * @module services/runtimes/claude-code/tooling/claude-cli-auth
  */
+import { isNeverUseClaudeFolder } from '../../../health/account-signin-policy.js';
 import { resolveClaudeBinaryBeforePath } from '../sdk/sdk-utils.js';
 import {
   findBinaryOnPath,
@@ -143,7 +144,8 @@ export async function readClaudeAuthStatus(
   binary: string | null,
   env?: NodeJS.ProcessEnv
 ): Promise<ClaudeAuthStatus | null> {
-  if (!binary) return null;
+  if (!binary || (env?.CLAUDE_CONFIG_DIR && isNeverUseClaudeFolder(env.CLAUDE_CONFIG_DIR)))
+    return null;
   try {
     const out = await runBinaryProbe(
       binary,

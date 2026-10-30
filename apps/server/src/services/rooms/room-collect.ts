@@ -12,12 +12,14 @@
  *
  * Four things about this module are load-bearing:
  *
- * 1. **The window opens once and does not slide.** The first message for a
- *    `(room, agent)` pair sets a deadline `collectDebounceMs` out; later ones
- *    join the same collection without pushing it back. A resetting timer is the
- *    textbook debounce and it is the wrong shape here — a room where somebody
- *    types every 400 ms would starve the answer for as long as the chatter
- *    lasted, which is the opposite of "collect, do not drop".
+ * 1. **The window opens once, and slides only inside a hard cap.** The first
+ *    message for a `(room, agent)` pair sets a deadline `collectDebounceMs` out;
+ *    in a DM later ones join without pushing it back. A channel adds a quiet
+ *    window (DOR-3398, {@link ROOM_BURST_QUIET_MS}): its turn starts once the
+ *    burst has been quiet that long, so each agent answers a burst once rather
+ *    than its first line. A plain resetting timer would starve the answer for as
+ *    long as the chatter lasted, which is the opposite of "collect, do not drop",
+ *    so the slide stops at {@link ROOM_BURST_MAX_WAIT_MS} after the first message.
  *
  * 2. **A held collection is not a queue, and the difference is the claim.** An
  *    agent already mid-turn — in this room, or in another one that shares its
@@ -80,6 +82,19 @@ import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { TriggerReason } from './addressing.js';
 import type { EngagementWindow } from './engagement.js';
 import { agentKey } from './room-claims.js';
+
+/**
+ * How long a channel must be quiet before a gathered burst becomes a turn
+ * (DOR-3398). Each new message for the agent pushes its deadline to this long
+ * after that message, up to {@link ROOM_BURST_MAX_WAIT_MS}.
+ */
+export const ROOM_BURST_QUIET_MS = 20_000;
+
+/**
+ * The longest a channel burst can hold its turn back, counted from its first
+ * message, however long the chatter goes on.
+ */
+export const ROOM_BURST_MAX_WAIT_MS = 60_000;
 
 /** One message waiting for a turn, with what the guard already decided about it. */
 export interface CollectedTrigger {
@@ -146,12 +161,19 @@ export interface RoomCollection {
    * when the asking happened.
    */
   openedSeq: number;
+  /** When the first message arrived (`Date.now()` scale): where the quiet window's cap counts from. */
+  openedAt: number;
 }
 
 /** The live `rooms.collect*` ceilings, read per burst so a change takes effect. */
 export interface CollectWindow {
   /** How long a burst is gathered before it becomes a turn. */
   debounceMs: number;
+  /**
+   * The channel quiet window ({@link ROOM_BURST_QUIET_MS} in production).
+   * Absent or `0` keeps the fixed window alone.
+   */
+  quietMs?: number;
   /** The most messages one gathered turn covers; reaching it closes it at once. */
   maxEntries: number;
 }
@@ -289,6 +311,7 @@ export class RoomCollector {
       // should be framed by the room as it is when it runs.
       open.room = input.room;
       open.entries.push(trigger);
+      this.slide(open, input.arrivedAt);
       this.bound(key, open);
       return false;
     }
@@ -302,13 +325,16 @@ export class RoomCollector {
       parked: input.park,
       promoted: false,
       openedSeq: (this.opened += 1),
+      openedAt: input.arrivedAt,
     };
     this.collections.set(key, collection);
     // A collection opened behind a live claim gets no deadline at all: it is
     // released by {@link RoomCollector.resume} or {@link
     // RoomCollector.resumeAgent}, and a deadline would fire a turn into an agent
     // that is demonstrably busy.
-    if (!collection.parked) this.arm(collection, undefined, input.arrivedAt);
+    const quiet = this.quietFor(input.room);
+    const opening = quiet > 0 ? Math.max(quiet, this.window().debounceMs) : undefined;
+    if (!collection.parked) this.arm(collection, opening, input.arrivedAt);
     // The cap is checked on CREATION too, not only when a collection grows. At
     // `collectMaxEntries: 1` — the documented "answer every message on its own"
     // setting — the first message already fills the batch, and checking only on
@@ -548,6 +574,33 @@ export class RoomCollector {
     // — see the module docs for why a resetting timer starves the answer.
     if (collection.dueAt !== null) return;
     collection.dueAt = (from ?? Date.now()) + Math.max(0, delayMs ?? this.window().debounceMs);
+    this.schedule();
+  }
+
+  /**
+   * The quiet window that applies in this room: channels only. A DM is one
+   * person and one agent, where waiting out a burst buys nothing.
+   *
+   * @param room - The room the collection is in.
+   */
+  private quietFor(room: Room): number {
+    return room.kind === 'channel' ? Math.max(0, this.window().quietMs ?? 0) : 0;
+  }
+
+  /**
+   * Push a live channel collection's deadline to a quiet window after the
+   * message that just joined it, never past the cap and never earlier.
+   *
+   * @param collection - The collection that just grew.
+   * @param at - When the joining message arrived.
+   */
+  private slide(collection: RoomCollection, at: number): void {
+    const quiet = this.quietFor(collection.room);
+    if (quiet === 0 || collection.dueAt === null) return;
+    const due = Math.min(at + quiet, collection.openedAt + ROOM_BURST_MAX_WAIT_MS);
+    if (due <= collection.dueAt) return;
+    // A sweep armed for the old deadline skips this collection and re-arms.
+    collection.dueAt = due;
     this.schedule();
   }
 

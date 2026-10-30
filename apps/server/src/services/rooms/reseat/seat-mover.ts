@@ -131,6 +131,8 @@ export interface SeatAccount {
 
 /** Everything the mover reads from or writes to the app. Injected so a test supplies all of it. */
 export interface SeatMoverDeps {
+  /** Health read port: production identity policy, fake account world in tests. */
+  signinHealthy?: (root: string) => boolean;
   /** Move the seat's binding; `false` when the store refused or there was no seat. */
   rebind(roomId: string, authorId: string, sessionId: string): boolean;
   /** The runtime a session is bound to, or the agent's for an unbound seat. */
@@ -270,10 +272,14 @@ export class RoomSeatMover {
     if (transcript !== 'present') return null;
     const current = await this.deps.accountOf(runtime, seat.sessionId, seat.agentPath);
     if (current.id === null || current.usage === null || !nearlyOut(current.usage)) return null;
-    const pick = pickReseatAccount(await this.deps.ranking(runtime, seat.agentPath), {
-      runtime,
-      currentAccountId: current.id,
-    });
+    const pick = pickReseatAccount(
+      await this.deps.ranking(runtime, seat.agentPath),
+      {
+        runtime,
+        currentAccountId: current.id,
+      },
+      { signinHealthy: this.deps.signinHealthy }
+    );
     if (pick.kind === 'none') return null;
     // Counted against the message, so a limit later in the same turn does not
     // move the seat a second time.
@@ -315,10 +321,14 @@ export class RoomSeatMover {
     // seat back onto the account that just ran out helps nobody.
     if (current.id === null) return { kind: 'cannot-move' };
     this.noteMoved(seat, entryId);
-    const pick = pickReseatAccount(await this.deps.ranking(runtime, seat.agentPath), {
-      runtime,
-      currentAccountId: current.id,
-    });
+    const pick = pickReseatAccount(
+      await this.deps.ranking(runtime, seat.agentPath),
+      {
+        runtime,
+        currentAccountId: current.id,
+      },
+      { signinHealthy: this.deps.signinHealthy }
+    );
     if (pick.kind === 'none') return pick;
     const move = await this.reseat(seat, {
       trigger: 'limit',
@@ -356,7 +366,10 @@ export class RoomSeatMover {
     return {
       current,
       // A person may name an account kept out of automatic moves, so it is offered.
-      accounts: reseatCandidates(ranking, runtime, { keptOut: true })
+      accounts: reseatCandidates(ranking, runtime, {
+        keptOut: true,
+        signinHealthy: this.deps.signinHealthy,
+      })
         .filter((row) => row.id !== current.id)
         .map((row) => {
           const eligible = canTakeWork(row);
@@ -395,7 +408,7 @@ export class RoomSeatMover {
     const pick = pickReseatAccount(
       offered,
       { runtime, currentAccountId: current.id },
-      { keptOut: named }
+      { keptOut: named, signinHealthy: this.deps.signinHealthy }
     );
     if (pick.kind === 'none') return null;
     return this.reseat(seat, {

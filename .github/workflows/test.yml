@@ -792,11 +792,15 @@ jobs:
             exit 0
           fi
           verdict=true
-          if [ ! -f scripts/no-code-scope.sh ]; then
-            echo "scripts/no-code-scope.sh is not in this tree; running the shards"
-          elif git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
+          # The script comes from the BASE commit, never this checkout, so a
+          # pull request cannot edit the rule that grades it (Security, #3238).
+          if git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
             base=$(git rev-parse --verify --quiet 'HEAD^1'); then
-            verdict=$(bash scripts/no-code-scope.sh "$base" HEAD) || verdict=true
+            if git cat-file blob "$base:scripts/no-code-scope.sh" > "$RUNNER_TEMP/no-code-scope.sh" 2>/dev/null; then
+              verdict=$(bash "$RUNNER_TEMP/no-code-scope.sh" "$base" HEAD) || verdict=true
+            else
+              echo "the base commit has no scripts/no-code-scope.sh; running the shards"
+            fi
           else
             echo "cannot diff this pull request against its base (no test-merge commit); running the shards"
           fi

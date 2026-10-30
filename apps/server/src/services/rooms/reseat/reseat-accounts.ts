@@ -17,6 +17,7 @@
  */
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { RankedAccount } from '../../core/usage/account-ranking.js';
+import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 
 /** The share of the 5-hour or weekly window at which an account counts as nearly out. */
 export const NEARLY_OUT_PCT = 95;
@@ -60,12 +61,15 @@ export function nearlyOut(usage: AccountUsage): boolean {
 export function reseatCandidates(
   ranking: readonly RankedAccount[],
   runtime: string,
-  opts: { keptOut?: boolean } = {}
+  opts: { keptOut?: boolean; signinHealthy?: (root: string) => boolean } = {}
 ): RankedAccount[] {
   return ranking.filter(
     (row) =>
       row.runtime === runtime &&
       row.id !== CREDITS_ACCOUNT_ID &&
+      (runtime !== 'claude-code' ||
+        (row.usage.path !== null &&
+          (opts.signinHealthy?.(row.usage.path) ?? mayAutoPickClaudeRoot(row.usage.path)))) &&
       !row.notAllowed &&
       (opts.keptOut === true || !row.noAutoMove)
   );
@@ -112,7 +116,7 @@ function usableAgainAt(usage: AccountUsage): string | null {
 export function pickReseatAccount(
   ranking: readonly RankedAccount[],
   seat: { runtime: string; currentAccountId: string | null },
-  opts: { keptOut?: boolean } = {}
+  opts: { keptOut?: boolean; signinHealthy?: (root: string) => boolean } = {}
 ): ReseatPick {
   const candidates = reseatCandidates(ranking, seat.runtime, opts);
   const account = candidates.find((row) => row.id !== seat.currentAccountId && canTakeWork(row));

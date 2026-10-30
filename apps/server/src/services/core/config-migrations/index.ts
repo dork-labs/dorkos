@@ -102,6 +102,7 @@ import {
   keepAccountOutOfAutoMoves,
   seedUiDmViewLeaves,
   markLegacyPathOnlyApprovals,
+  seedMaxAgentChats,
 } from './v0-90-onward.js';
 
 /**
@@ -1347,4 +1348,10 @@ export const CONFIG_MIGRATIONS = {
   // approval is pinned to the files the next scan finds. See
   // `markLegacyPathOnlyApprovals`.
   '0.126.1': markLegacyPathOnlyApprovals,
+  // v0.126.4 is the newest tag, so this opens 0.126.5. Frozen from merge;
+  // anything further opens `'0.127.0'`.
+  //
+  // Writes `runtimes.maxAgentChats: 8` where the stored `runtimes` section
+  // lacks it, and touches nothing else (DOR-3413). See `seedMaxAgentChats`.
+  '0.126.5': seedMaxAgentChats,
 } as const;

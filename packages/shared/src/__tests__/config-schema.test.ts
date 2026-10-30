@@ -119,6 +119,7 @@ describe('UserConfigSchema', () => {
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
       heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
+      network: { extraCaCertsPath: null },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -220,6 +221,10 @@ describe('UserConfigSchema', () => {
         approvedFolderConfigParts: {},
         refusedFolderConfig: [],
         folderConfigPinned: false,
+        approvedRepoConfig: [],
+        refusedRepoConfig: [],
+        repoBaselines: {},
+        repoBaselinesPinned: false,
         // Nothing shared into a home directory, and the question never asked
         // (DOR-1924). Both are the closed state, and the factory has to list
         // them or a fresh install parses them as `undefined`.
@@ -229,6 +234,7 @@ describe('UserConfigSchema', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: 'autonomy',
+        maxAgentChats: 8,
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -549,6 +555,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
       heartbeats: { enabled: true, triageOnCredits: null },
       activity: { retentionDays: 365 },
+      network: { extraCaCertsPath: null },
       mesh: { scanRoots: [] },
       rooms: {
         turnLimitsEnabled: true,
@@ -650,6 +657,10 @@ describe('USER_CONFIG_DEFAULTS', () => {
         approvedFolderConfigParts: {},
         refusedFolderConfig: [],
         folderConfigPinned: false,
+        approvedRepoConfig: [],
+        refusedRepoConfig: [],
+        repoBaselines: {},
+        repoBaselinesPinned: false,
         // Nothing shared into a home directory, and the question never asked
         // (DOR-1924). Both are the closed state, and the factory has to list
         // them or a fresh install parses them as `undefined`.
@@ -659,6 +670,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       runtimes: {
         default: 'claude-code',
         defaultTrustStop: 'autonomy',
+        maxAgentChats: 8,
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -887,6 +899,7 @@ describe('per-field and section-literal defaults agree', () => {
     keepAwake: {},
     heartbeats: {},
     activity: {},
+    network: {},
     runtimes: { claudeCode: {} },
   });
 
@@ -926,6 +939,11 @@ describe('per-field and section-literal defaults agree', () => {
   it('activity keeps a year either way', () => {
     expect(fromFactory.activity).toEqual({ retentionDays: 365 });
     expect(fromFields.activity).toEqual({ retentionDays: 365 });
+  });
+
+  it('network trusts no company certificates either way (DOR-3361)', () => {
+    expect(fromFactory.network).toEqual({ extraCaCertsPath: null });
+    expect(fromFields.network).toEqual({ extraCaCertsPath: null });
   });
 
   it('runtimes.claudeCode.persistentSession is true either way', () => {
@@ -1132,6 +1150,7 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: 'autonomy',
+      maxAgentChats: 8,
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
@@ -1174,6 +1193,7 @@ describe('UserConfigSchema runtimes', () => {
     expect(result.runtimes).toEqual({
       default: 'claude-code',
       defaultTrustStop: 'autonomy',
+      maxAgentChats: 8,
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {

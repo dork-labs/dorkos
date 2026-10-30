@@ -1,10 +1,15 @@
 /**
  * From Wi-Fi, answering a turn that runs above Default may only pick what it
  * offered (DOR-3037): option labels, listed values, yes or no. Typed words, and
- * a Deny's reason, are refused there; a turn held to the default, or a request
- * at this computer, takes any answer.
+ * a Deny's reason, are refused there; a turn held to the default, a request
+ * at this computer, or the owner's own sign-in (DOR-3242) takes any answer.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../services/core/auth/index.js', () => ({
+  readOwnerAccount: () => ({ id: 'owner' }),
+}));
+
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RequestFacts } from '../../http/request-facts.js';
@@ -44,6 +49,16 @@ const HERE = {
   remoteAddress: '127.0.0.1',
   headers: {},
   ingress: 'direct',
+} as unknown as RequestFacts;
+/** The owner's own sign-in, verified on the Wi-Fi route (DOR-3242). */
+const OWNER_ON_WIFI = {
+  ...WIFI,
+  user: { userId: 'owner', credential: 'cookie', sessionId: 'phone', route: 'wifi' },
+} as unknown as RequestFacts;
+/** A teammate's, verified the same way. */
+const TEAMMATE_ON_WIFI = {
+  ...WIFI,
+  user: { userId: 'teammate', credential: 'cookie', sessionId: 'tm', route: 'wifi' },
 } as unknown as RequestFacts;
 const REFUSED = { error: WIFI_FREE_TEXT_REFUSAL, code: NOT_FROM_WIFI };
 
@@ -140,5 +155,26 @@ describe('a Deny from Wi-Fi into a turn above Default', () => {
     await session('full');
     expect(refuseDenyReason(WIFI, runtime, 'full', undefined)).toBeUndefined();
     expect(refuseDenyReason(WIFI, runtime, 'full', 'do this instead')).toEqual(REFUSED);
+  });
+});
+
+describe("the owner's own sign-in on Wi-Fi (DOR-3242)", () => {
+  it('types any answer, form value or Deny reason, as at this computer', async () => {
+    await session('full');
+    const owner = OWNER_ON_WIFI;
+    expect(refuseTypedAnswers(owner, runtime, 'full', 'q-1', { '0': 'anything' })).toBeUndefined();
+    expect(
+      refuseTypedElicitation(owner, runtime, 'full', 'e-1', 'accept', { note: 'typed' })
+    ).toBeUndefined();
+    expect(refuseDenyReason(owner, runtime, 'full', 'do this instead')).toBeUndefined();
+  });
+
+  it('still refuses a teammate’s typed words', async () => {
+    await session('full');
+    const teammate = TEAMMATE_ON_WIFI;
+    expect(refuseTypedAnswers(teammate, runtime, 'full', 'q-1', { '0': 'anything' })).toEqual(
+      REFUSED
+    );
+    expect(refuseDenyReason(teammate, runtime, 'full', 'do this instead')).toEqual(REFUSED);
   });
 });

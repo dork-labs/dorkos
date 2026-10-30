@@ -18,6 +18,7 @@
  *
  * @module features/settings/ui/runtimes/RuntimesTab
  */
+import { SigninPolicySection } from './SigninPolicySection';
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, RefreshCw } from 'lucide-react';
@@ -165,6 +166,7 @@ export function RuntimesTab() {
         onChangeRuntime={(runtime, stop) => trust.changeTrustStop(runtime, stop)}
       />
 
+      <SigninPolicySection />
       <ExecutionExceptionsStrip />
     </div>
   );

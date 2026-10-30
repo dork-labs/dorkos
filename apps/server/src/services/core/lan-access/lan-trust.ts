@@ -53,6 +53,14 @@ export function setLanTrust(next: LanTrust | null): void {
 }
 
 /**
+ * Whether Wi-Fi access is open right now. It is always plain `http` until the
+ * listener encrypts (DOR-3173), so anyone on the network can copy a sign-in.
+ */
+export function isLanAccessOpen(): boolean {
+  return trust !== null;
+}
+
+/**
  * Host names (no port) this server answers to on the network right now: its
  * Bonjour names and current IPv4 addresses. Empty while Wi-Fi access is closed.
  */

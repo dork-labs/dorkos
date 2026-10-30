@@ -9,6 +9,7 @@ const expected: Record<string, number> = {
   'claude-code/claude-code-runtime.ts': 1,
   'claude-code/messaging/message-sender.ts': 1,
   'claude-code/messaging/runtime-cache.ts': 1,
+  'claude-code/repo-settings/safe-git-interim.ts': 2,
   'claude-code/sessions/pump-launch.ts': 1,
   'claude-code/sessions/tracked-spawn.ts': 1,
   'claude-code/sessions/warm-process-ledger.ts': 1,
@@ -83,7 +84,13 @@ function census(text: string, name: string): { count: number; unprojected: strin
           /^\{[^}]*\benv,?\s*\}$/.test(call.replace(/\s+/g, ' '))) ||
         // The sidecar's env is built by `buildSidecarSpawnEnv`, which projects
         // through `runtimeEnvironment` on both sides (own sign-in and credits).
-        (name === 'opencode/server-manager.ts' && /env: buildSidecarSpawnEnv\(/.test(call));
+        (name === 'opencode/server-manager.ts' && /env: buildSidecarSpawnEnv\(/.test(call)) ||
+        // The repo-settings git reads (DOR-3298) run in a repo an agent controls,
+        // with a minimal environment that inherits only PATH and HOME: stricter
+        // than any projection, and never a turn's own process.
+        // Until DOR-3343's shared runner is on main (then this file goes).
+        (name === 'claude-code/repo-settings/safe-git-interim.ts' &&
+          /env: safeGitEnv\(/.test(call));
       if (!forwarded && !(/\benv:/.test(call) && /runtimeEnvironment\(/.test(call)))
         unprojected.push(kind);
     }

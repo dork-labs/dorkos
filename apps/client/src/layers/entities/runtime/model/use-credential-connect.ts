@@ -18,6 +18,7 @@
  *
  * @module entities/runtime/model/use-credential-connect
  */
+import { useClaudeAccounts } from '@/layers/shared/model';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   useMutation,
@@ -296,25 +297,41 @@ export function useDelegateRuntimeLogin(
 ): UseDelegateRuntimeLogin {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const { sessionId, accountRoot, onCompleted } = options ?? {};
+  const { sessionId, accountRoot, accountId, onCompleted } = options ?? {};
+  const roster = useClaudeAccounts();
+  const targetId =
+    accountId ??
+    (accountRoot
+      ? (roster.accounts.find((account) => account.path === accountRoot)?.id ??
+        (roster.ownResolvedAccount === accountRoot ? 'default' : undefined))
+      : sessionId
+        ? undefined
+        : 'default');
   // One key per sign-in TARGET: two cards for the same account share an
   // attempt, while a different account stays its own (the server refuses to run
   // those concurrently anyway, and its refusal must land on the card that asked).
   const mutationKey = useMemo(
-    () => ['runtime-login', type, sessionId ?? '', accountRoot ?? ''] as const,
-    [type, sessionId, accountRoot]
+    () => ['runtime-login', type, sessionId ?? '', targetId ?? accountRoot ?? ''] as const,
+    [type, sessionId, targetId, accountRoot]
   );
 
   const mutation = useMutation({
     mutationKey,
-    mutationFn: () =>
-      transport.delegateRuntimeLogin(
+    mutationFn: () => {
+      if (type === 'claude-code' && accountRoot && !targetId && !sessionId) {
+        throw new Error('Choose this account in Runtimes.');
+      }
+      return transport.delegateRuntimeLogin(
         type,
-        sessionId === undefined && accountRoot === undefined
-          ? undefined
-          : { sessionId, accountRoot }
-      ),
+        type === 'claude-code'
+          ? { sessionId, accountId: targetId }
+          : sessionId
+            ? { sessionId }
+            : undefined
+      );
+    },
     onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['claude-signin-policy'] });
       if (result.ok) {
         void queryClient.invalidateQueries({ queryKey: accountKeys.all });
         void queryClient.invalidateQueries({ queryKey: [...REQUIREMENTS_KEY] });

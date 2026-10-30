@@ -1,4 +1,3 @@
-import { appRoutes } from '@/layers/shared/lib';
 /**
  * How a notification draws, and where it goes when it is clicked.
  *
@@ -10,6 +9,7 @@ import { appRoutes } from '@/layers/shared/lib';
  *
  * @module entities/notifications/lib/notification-presentation
  */
+import { appRoutes } from '@/layers/shared/lib';
 import {
   Bell,
   CheckCircle2,
@@ -28,6 +28,7 @@ import {
   ShieldQuestion,
   Sparkles,
   TriangleAlert,
+  UserRoundCheck,
   WifiOff,
   type LucideIcon,
 } from 'lucide-react';
@@ -113,6 +114,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'web.new_device': MonitorSmartphone,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
   'agent.secret_files': ShieldAlert,
+  // A Claude folder's sign-in is new or changed (DOR-3245).
+  'account.signin_review': UserRoundCheck,
 };
 
 /** How loudly a notification draws. */
@@ -314,6 +317,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // the same place its phone-free arrival deep-links to
     // (`standingDeepLink` in the server's `escalation-service.ts`).
     return { ...appRoutes.home(), search: { settings: EXTENSIONS_SETTINGS_TAB } };
+  }
+  if (kind === 'account.signin_review') {
+    // Settings → Runtimes, where the person confirms or keeps the sign-in.
+    return { ...appRoutes.home(), search: { settings: RUNTIMES_SETTINGS_TAB } };
   }
   if (kind === 'web.new_device') {
     // Where the owner pauses chat from the web if it wasn't them.
