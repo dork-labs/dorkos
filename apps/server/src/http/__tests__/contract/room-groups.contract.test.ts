@@ -426,18 +426,51 @@ describe('contract: the room routes, driven by hand (login off)', () => {
 
   const rooms = (rest = ''): string => `/api/rooms/${roomId}${rest}`;
 
+  /** Switch room files on or off for the whole install, as Settings does. */
+  async function setRoomFiles(enabled: boolean): Promise<void> {
+    expectAnswer(await call(server, 'PATCH', '/api/config', { rooms: { repo: { enabled } } }), 200);
+  }
+
   it('POST /api/rooms opens a channel: 201 with its roster', async () => {
-    const created = await call(server, 'POST', '/api/rooms', {
-      kind: 'channel',
-      title: 'Contract room',
-      topic: 'Pinned by the contract',
-    });
+    // Opened with room files switched off, so this room starts with none: the
+    // canvas and repo routes below prove a room without files first, then give
+    // it some. A room opened with them on is the next test (DOR-2112).
+    await setRoomFiles(false);
+    let created: Answer;
+    try {
+      created = await call(server, 'POST', '/api/rooms', {
+        kind: 'channel',
+        title: 'Contract room',
+        topic: 'Pinned by the contract',
+      });
+    } finally {
+      await setRoomFiles(true);
+    }
     expectAnswer(created, 201, RoomWithRosterSchema);
     expect(created.headers['content-type']).toMatch(/^application\/json\b/);
     expect(created.json).not.toHaveProperty('created');
     expect(created.json.title).toBe('Contract room');
     expect(created.json.viewerIsOperator).toBe(true);
     roomId = created.json.id as string;
+    expectRefusal(await call(server, 'GET', rooms('/files')), 409, 'ROOM_HAS_NO_REPO');
+  });
+
+  it('POST /api/rooms starts a channel with its own files, ROOM.md pinned on its canvas (DOR-2112)', async () => {
+    const created = await call(server, 'POST', '/api/rooms', {
+      kind: 'channel',
+      title: 'Contract notes',
+    });
+    expectAnswer(created, 201, RoomWithRosterSchema);
+    const id = created.json.id as string;
+
+    const listed = await call(server, 'GET', `/api/rooms/${id}/files`);
+    expectAnswer(listed, 200, RoomFileListResponseSchema);
+    expect((listed.json.entries as { path: string }[]).map((e) => e.path)).toEqual(['ROOM.md']);
+    const canvas = await call(server, 'GET', `/api/rooms/${id}/canvas`);
+    expectAnswer(canvas, 200, CanvasDocumentListResponseSchema);
+    expect(JSON.stringify(canvas.json)).toContain('ROOM.md');
+    // Already set up, so the button has nothing left to do.
+    expectRefusal(await call(server, 'POST', `/api/rooms/${id}/repo`), 409, 'ROOM_REPO_EXISTS');
   });
 
   it('POST /api/rooms refuses a malformed slug 400', async () => {
