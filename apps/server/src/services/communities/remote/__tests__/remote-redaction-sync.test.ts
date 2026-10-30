@@ -1,3 +1,4 @@
+import { roomAudience } from '../../../rooms/service/room-audience.js';
 /**
  * The redaction sync's own decisions, against a real SQLite mirror and a scripted feed: where it
  * resumes, when it starts over, what it skips, and when it stops asking. The end-to-end proof
@@ -99,6 +100,7 @@ function setup(agents = agentLookupFor({})) {
     db: harness.db,
     mirrors,
     readers: () => ({ readRedactions }),
+    roomAudience: (id, removed) => roomAudience(id, harness.service, removed),
     // Wired as production wires it.
     publishRevisions: (localRoomId, seqs) =>
       harness.service.publishEntryRevisions(localRoomId, seqs),
@@ -183,6 +185,22 @@ describe('RemoteRedactionSync', () => {
   // Purpose: the stored cursor is where the next read starts, pages are followed while the server
   // says there are more, and only cached entries are rewritten. It fails if the cursor is not
   // stored, `hasMore` is ignored, or an uncached entry is invented.
+  it('addresses a purged mirror removal to its former member, not another account', () => {
+    const s = setup();
+    const publish = vi.spyOn(eventFanOut, 'broadcast');
+    try {
+      s.mirrors.revoke(REF, s.harness.human);
+      s.mirrors.purgeRevoked(REF, s.harness.human);
+      const notice = publish.mock.calls.find(([name]) => name === 'room_member_removed');
+      expect(notice?.[1]).toEqual({ roomId: s.room.id, authorId: s.harness.human });
+      expect(notice?.[2]?.({ kind: 'operator' })).toBe(true);
+      expect(notice?.[2]?.({ kind: 'program', userId: 'outsider' })).toBe(false);
+      expect(notice?.[2]?.({ kind: 'agent' })).toBe(false);
+    } finally {
+      publish.mockRestore();
+    }
+  });
+
   it('resumes from the stored cursor, follows hasMore, and rewrites only cached entries', async () => {
     const s = setup();
     s.mirrors.importEntries(REF, ROOM, [native(1, 'first words'), native(2, 'second words')]);
@@ -700,7 +718,11 @@ describe('RemoteRedactionSync', () => {
         },
       });
       expect(JSON.stringify(s.published)).not.toMatch(/zqxerasedcanary|Zephyrine/);
-      expect(fanOut).toHaveBeenCalledWith('room_updated', { roomId: s.room.id });
+      expect(fanOut).toHaveBeenCalledWith(
+        'room_updated',
+        { roomId: s.room.id },
+        expect.any(Function)
+      );
       fanOut.mockRestore();
     });
 

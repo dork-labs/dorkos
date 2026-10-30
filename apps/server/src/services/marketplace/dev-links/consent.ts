@@ -47,6 +47,7 @@ import {
   forgetApprovedEntries,
   hookApprovalEntry,
   recordApprovedEntry,
+  sameHookCommands,
   storedHookDecisions,
 } from '../../harness/hook-consent.js';
 import {
@@ -141,7 +142,11 @@ export function planLinkConsent(
     packageName: record.name,
     hooks,
   });
-  if (!store.approved().includes(entry)) plan.grantedHooks = [entry];
+  // Any yes for the same commands covers a dev link, whose files are never
+  // pinned (DOR-3403), so an installed copy's pinned yes is not a reason to add one.
+  if (!store.approved().some((stored) => sameHookCommands(stored, entry))) {
+    plan.grantedHooks = [entry];
+  }
   return plan;
 }
 

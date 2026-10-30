@@ -68,6 +68,7 @@ import {
   ActivityConfigSchema,
   HeartbeatsConfigSchema,
   KeepAwakeConfigSchema,
+  NetworkConfigSchema,
   ServerConfigSchema,
 } from './config-sections.js';
 import { CredentialReferenceSchema } from './credential-reference.js';
@@ -755,6 +756,8 @@ export const UserConfigSchema = z.object({
   heartbeats: HeartbeatsConfigSchema,
   /** The Activity feed (`config-sections.ts`). */
   activity: ActivityConfigSchema,
+  /** Company certificates the desktop app trusts (`config-sections.ts`). */
+  network: NetworkConfigSchema,
   mesh: z
     .object({
       scanRoots: z.array(z.string()).default(() => []),

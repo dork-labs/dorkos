@@ -907,16 +907,17 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
       expect(spacer.tagName).toBe('SPAN');
       expect(spacer).not.toHaveAttribute('tabindex');
       // The dot and "Limit to projects…" are the row's tab stops: no remove
-      // button, nothing extra (spec flow-multiproject §8.5 adds the second).
+      // button, and a healthy sign-in adds nothing (spec flow-multiproject
+      // §8.5 adds the second).
       expect(
         within(main)
           .getAllByRole('button')
           .map((b) => b.textContent)
-      ).toEqual(['', 'Sign in', 'Limit to projects…']);
+      ).toEqual(['', 'Limit to projects…']);
       const tabbable = main.querySelectorAll(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
       );
-      expect(tabbable).toHaveLength(3);
+      expect(tabbable).toHaveLength(2);
       // The registered rows keep their real button and have no spacer.
       const acme = screen.getAllByTestId('claude-account-row')[0]!;
       expect(within(acme).queryByTestId('claude-account-remove-spacer')).not.toBeInTheDocument();
@@ -1342,11 +1343,14 @@ describe('account sign-in state', () => {
     const login = vi.fn().mockResolvedValue({ ok: true });
     transport.delegateRuntimeLogin = login;
     const rows = await screen.findAllByTestId('claude-account-row');
-    expect(within(rows[0]).getByText('Signed in')).toBeInTheDocument();
+    // A healthy row stays quiet: one status line and one action, only when needed.
+    expect(within(rows[0]).queryByText('Signed in')).not.toBeInTheDocument();
+    expect(within(rows[0]).queryByRole('button', { name: /^Sign in/ })).not.toBeInTheDocument();
     expect(within(rows[1]).getByText('Signed out')).toBeInTheDocument();
     await userEvent.click(within(rows[1]).getByRole('button', { name: 'Sign in to Claude5' }));
     await waitFor(() =>
-      expect(login).toHaveBeenCalledWith('claude-code', { accountRoot: WORK, sessionId: undefined })
+      // The row's folder resolves to its registry id: the server signs in by id.
+      expect(login).toHaveBeenCalledWith('claude-code', { accountId: 'work', sessionId: undefined })
     );
   });
 });

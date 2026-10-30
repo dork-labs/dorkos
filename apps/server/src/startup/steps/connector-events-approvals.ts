@@ -23,6 +23,7 @@ import {
 } from '../../services/core/approvals/index.js';
 import { env } from '../../env.js';
 import { createAlwaysSuggestion } from '../../services/core/permissions/index.js';
+import { setMarkedFullActivity } from '../../services/core/turn-power/full-autonomy.js';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { describeHookProjectionCapability } from '../../services/harness/hook-approval.js';
 import {
@@ -30,6 +31,7 @@ import {
   setFolderAllowApprovalGateway,
 } from '../../services/runtimes/claude-code/folder-settings/folder-allow-approval.js';
 import { describeFolderConfigCapability } from '../../services/runtimes/claude-code/folder-settings/folder-config-approval.js';
+import { describeRepoConfigCapability } from '../../services/runtimes/claude-code/repo-settings/repo-config-approval.js';
 import { describeGlobalActivationCapability } from '../../services/marketplace/consent/ask-withheld-global-plugins.js';
 import {
   describeTemplateCreationCapability,
@@ -184,6 +186,7 @@ export async function wireConnectorEventsAndApprovals(
         describeHookProjectionCapability(capabilityId) ??
         describeFolderAllowCapability(capabilityId) ??
         describeFolderConfigCapability(capabilityId) ??
+        describeRepoConfigCapability(capabilityId) ??
         describeGlobalActivationCapability(capabilityId) ??
         describeTemplateCreationCapability(capabilityId) ??
         describeWorkspaceCreationCapability(capabilityId)
@@ -248,6 +251,9 @@ export async function wireConnectorEventsAndApprovals(
   // nothing but hand off, because `eventFanOut` runs listeners synchronously on
   // the broadcast write path (spec `approval-verdict-delivery`).
   startApprovalVerdictDelivery(approvalService);
+  // The one line a marked turn in a chat set to Full writes when it runs a send or a standing
+  // change with no card (DOR-3394).
+  setMarkedFullActivity(activityService);
   // The card that lets an agent's own folder allow list apply (DOR-3039). The
   // runtime starts before this step, so the launch is handed the service here.
   setFolderAllowApprovalGateway(approvalService);

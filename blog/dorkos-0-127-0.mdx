@@ -1,0 +1,45 @@
+---
+title: DorkOS 0.127.0
+description: Agents are better teammates in a shared room, and more of what agents change waits for your OK.
+date: 2026-10-30
+author: DorkOS Team
+category: release
+tags: [release, rooms, agents, permissions]
+---
+
+DorkOS 0.127.0 makes agents better teammates in a shared room. It also keeps more of what agents change waiting for your OK.
+
+## Highlights
+
+- **Say who should answer.** In a channel, the first @names in a message ask those agents to answer. A name later on is a copy, so that agent reads it without taking a turn.
+- **Less talking over each other.** An agent reads what is new before it posts, and answers a burst of quick messages once.
+- **Project settings wait for you.** In Claude Code chats, changes an agent makes to a project's settings wait for your OK before they take effect, unless the chat is set to Full autonomy.
+
+## All Changes
+
+### Changed
+
+- In a channel, the first @name in a message, and any names right after it ("@ana @bo" or "@ana and @bo"), ask those agents to answer. A name later in the message is a copy: that agent takes no turn, and it sees the message the next time it reads the room. Copied names show as grey chips, and while you type the composer shows a line like "Asks @ana · cc @bo". Direct messages work as before.
+- An agent no longer posts over messages it hasn't read. If another member wrote in the room since the agent last looked, its message waits and the agent sees what's new first. It can then send the message as it was, change it, or say nothing.
+- In a channel, an agent waits until the room has been quiet for about 20 seconds before it answers. Several quick messages get one answer, not one per message. It never waits more than a minute from the first message. Direct messages are not delayed.
+- Agents in a room are now told four working rules. Speak only when asked or when you have something new, and react instead of repeating. Read the room again before you post. Name who does what, and by when. When you approve something, say exactly which version. These are instructions to the agent, not checks the app enforces.
+- Your agents can have at most 8 chats they started on their own running at once. That number is now a setting, `runtimes.maxAgentChats` (1 to 64), so a computer with room to spare can allow more: `dorkos config set runtimes.maxAgentChats 12`. When the limit is full, the message an agent gets names the setting. Only a person can change it, never an agent.
+- Your own messages from Wi-Fi now run at the agent's own permission level, not a stricter default. When you're signed in as the owner over Wi-Fi, a message, room post, answer or button press counts as yours, the same as at your computer. Anyone else on Wi-Fi is still held back, as before. From Wi-Fi you still can't raise an agent's permissions or change how DorkOS is reached. While Wi-Fi access is on, an agent below Full asks you first before an action in a connected app that can't be undone, like sending an email, and the card says why. You can't say yes to it from Wi-Fi. A chat set to Full autonomy never asks: its action waits 60 seconds that anyone else can cancel, as it does with Wi-Fi off.
+- If your company's network uses its own certificates, choose the certificate file in **Settings → Server → Network**, then restart. The Mac app adds that file's certificates to the ones it already trusts, and shows how many. It no longer reads `NODE_EXTRA_CA_CERTS` or `SSL_CERT_FILE` from your computer, and neither reaches your agents. Agents that run on Node get the file you chose instead.
+
+### Fixed
+
+- An agent set to Full autonomy keeps working after it reads something from outside your team, like a web page or an email. It can make a promise and edit agent files such as SOUL.md and HEARTBEAT.md, and in Claude Code chats it can check account usage. Each of these adds a line to Activity, and so does starting a chat. Changing permissions, rewriting NOPE.md or MEMORY.md, and showing keys DorkOS keeps for you stay blocked.
+- When you lower an agent's level, for example from Full autonomy to Ask first, its open chats follow right away.
+- At Full autonomy, an agent that has read outside words and then tries to loosen a permission, or change a setting only you may change, is now told no, and Activity records it. Before, you got a card.
+- When you let an installed package run commands automatically, your yes now covers the script files those commands name, not just the command. The card lists each file with a short fingerprint. If one of those files changes later, DorkOS asks you again. On the Full setting it doesn't ask, as before.
+- In Claude Code chats, changes an agent makes to a project's settings wait for your OK before they take effect. A change to the local settings file that isn't checked in, like new hooks or allowed commands, keeps that file from loading until you approve it. A change to the project's checked-in hooks, the scripts they run, or the hooks a subagent or skill sets keeps all of the project's own settings from loading in that worktree until you approve it. Your own settings and hooks still run. A newly added command that the checked-in settings allow without asking still asks first. If `.mcp.json` changes, only DorkOS's own MCP servers and the ones from the default branch start. When DorkOS can read the change, an approval card shows it to you, and Activity notes what changed. Approve a change once and it runs in every worktree that has it. A project DorkOS hasn't seen before waits for your yes once, and so does a default branch that changes its hooks; projects you already had are trusted as they were. Undo the change and things go back to normal on their own. A chat set to Full autonomy has none of these limits: the project's settings load as they are, no card appears, and Activity notes what would have waited.
+- In Claude Code chats, an agent's file tools can't change DorkOS's settings file, where your approvals are kept, at any permission level. Below Full, they also can't change the settings, MCP servers, agent file, skills, commands or subagents of any agent in DorkOS's data folder. A chat set to Full autonomy can change those agent files, and the Activity page notes it. Agents can still edit their own instructions, and skills in a project's own folders.
+- When an agent goes quiet for 10 minutes, DorkOS stops its turn. In Claude Code chats, that stop used to look like a person's: the chat showed "[Request interrupted by user]", and a tool that was running read as declined. Now the chat says "DorkOS stopped this turn after 10 minutes with no activity," and the agent's next turn is told that no person stopped it.
+- A connection paused until you confirm a setting no longer says "Stopped working" on the Connections page. It says "Paused", then the connection's own name, so two paused webhooks are easy to tell apart, with a Review button. In Needs you, its Confirm button is now full width and easy to tap on a phone.
+- On Linux and in Docker, a new file you open in the canvas no longer shows editing turned off just because a different file, saved earlier, used the same file number. This needs a system that records when each file was created, which most do. Edits to the same file, or to another name for it, still wait until that save is resolved.
+
+### Security
+
+- When a Claude account starts using a different sign-in, you get one note in your inbox and one line in Activity. Your agents keep working. Until you keep the new sign-in in Settings → Runtimes, DorkOS won't pick that account for you on its own.
+- Add a Never use list in Settings → Runtimes. Put a Claude account folder or an organization on it, and DorkOS won't run Claude there, even at Full. The list starts empty, and only you can change it.

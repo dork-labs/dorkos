@@ -14,6 +14,14 @@ export interface ApprovalServiceActionProps {
 /** Indent per nesting level in the complete list, as a Tailwind padding class. */
 const DEPTH_INDENT = ['pl-0', 'pl-3', 'pl-6', 'pl-9', 'pl-12', 'pl-15', 'pl-18', 'pl-21', 'pl-24'];
 
+/**
+ * Why a card appears where the agent would otherwise have waited out the
+ * 60-second cancel window: Wi-Fi access is on (DOR-3242). Without it, the extra
+ * card at the desk reads as a bug.
+ */
+export const WIFI_KEPT_CARD_LINE =
+  'Asks instead of waiting 60 seconds, because Wi-Fi access is on.';
+
 /** "1 value is", "3 values are". */
 function cutLine(count: number): string {
   const values = count === 1 ? '1 value is' : `${count} values are`;
@@ -131,6 +139,11 @@ export function ApprovalServiceAction({
       {destructive && (
         <p data-slot="approval-irreversible" className="text-destructive mt-1.5 text-xs">
           {`High-risk action in ${action.serviceName}. Check it before you allow it.`}
+        </p>
+      )}
+      {action.keptCardBecause === 'wifi-open' && (
+        <p data-slot="approval-kept-card" className="text-muted-foreground mt-0.5 text-xs">
+          {WIFI_KEPT_CARD_LINE}
         </p>
       )}
     </div>

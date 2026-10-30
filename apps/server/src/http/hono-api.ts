@@ -105,6 +105,9 @@ import { setHandleRenameActivity } from '../services/rooms/handles/rename-author
 import { createDirectChatRoutes } from '../routes/direct-chats.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSessionRelayRoutes } from '../routes/session-relay.js';
+import { createPersonSessionRoutes } from '../routes/person-session.js';
+import { askForPersonBeforeTaskWrite } from './person-session-refusal.js';
+import { PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
 import { createRelayPasskeyPageRoutes } from '../routes/relay-passkey-page.js';
 import { createDevicesRoutes } from '../routes/devices.js';
 import { createDocLinkRoutes } from '../routes/docs-links.js';
@@ -129,6 +132,8 @@ import { createTestControlRoutes, type TestControlDeps } from '../routes/test-co
 import { createTestAccountWorldRoutes } from '../routes/test-account-world.js';
 import tunnelRoutes from '../routes/tunnel.js';
 import { createLanAccessRoutes } from '../routes/lan-access.js';
+import { createMcpServerRoutes } from '../routes/mcp-servers.js';
+import type { GlobalMcpStore } from '../services/mesh/global-mcp/global-mcp-store.js';
 import eventsRoutes from '../routes/events.js';
 import uploadRoutes from '../routes/uploads.js';
 import workbenchServeRoutes from '../routes/workbench-serve.js';
@@ -210,6 +215,8 @@ export interface ComposedGroupDeps {
   terminal?: TerminalManager;
   computers?: ComputerRoutesService;
   localBrowser?: LocalBrowserService;
+  /** The MCP servers a person added for every agent (`/api/mcp-servers`, DOR-3213). */
+  mcpServers?: GlobalMcpStore;
   /** Agent identity, by folder (`/api/agents`). */
   agents?: AgentsRouterDeps;
   /** The discovery scan stream (`/api/discovery`). Only handed over when the mesh started. */
@@ -435,7 +442,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
   if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
   if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));
-  if (deps.tasks) app.route('/api/tasks', createTasksRoutes(deps.tasks));
+  if (deps.tasks) {
+    // The person at this computer is asked to step up before a task change (DOR-3330).
+    app.use('/api/tasks', askForPersonBeforeTaskWrite());
+    app.use('/api/tasks/*', askForPersonBeforeTaskWrite());
+    app.route('/api/tasks', createTasksRoutes(deps.tasks));
+  }
   if (deps.connectors) app.route('/api/connectors', createConnectorRoutes(deps.connectors));
   if (deps.notifications) {
     app.route('/api/notifications', createNotificationsRoutes(deps.notifications));
@@ -504,6 +516,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/hub/link', createHubLinkRoutes());
   // This computer's own switch for chatting from the web; the `/api` 404 on a hub.
   app.route('/api/session-relay', createSessionRelayRoutes());
+  // The owner's one password step-up at this computer (DOR-3330).
+  app.route(PERSON_SESSION_PATH, createPersonSessionRoutes());
   // The loopback page an approvals passkey comes back to (B4c), at this computer only.
   app.route('/', createRelayPasskeyPageRoutes());
   // A person's own signed-in devices, and signing them out (DOR-2969).
@@ -516,6 +530,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
   if (deps.localBrowser)
     app.route('/api/local-browser', createLocalBrowserRoutes(deps.localBrowser));
+  if (deps.mcpServers) app.route('/api/mcp-servers', createMcpServerRoutes(deps.mcpServers));
   mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.

@@ -15,6 +15,7 @@ import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { coreRanking } from '../../core/usage/account-ranking.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
+import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 import { resolveTurnRuntimeType } from '../../runtimes/shared/resolve-agent-runtime-type.js';
 import { accountUsageForSession } from '../../session/fleet/session-account.js';
 import {
@@ -140,6 +141,12 @@ export function createRoomSeatMover(opts: {
   activity: () => ActivityService | undefined;
 }): RoomSeatMover {
   return new RoomSeatMover({
+    signinHealthy: (root) => {
+      const world = testWorldRanking();
+      return world && runtimeRegistry.has(TEST_RUNTIME)
+        ? world.some((row) => row.usage.path === root)
+        : mayAutoPickClaudeRoot(root);
+    },
     rebind: (roomId, authorId, sessionId) =>
       opts.store.rebindRoomSession(roomId, authorId, sessionId),
     runtimeOf: async (seat) =>

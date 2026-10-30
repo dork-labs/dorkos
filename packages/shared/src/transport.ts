@@ -65,6 +65,7 @@ import type {
   UnclaimedChatStatus,
   ClaimUnclaimedChatRequest,
   ClaimUnclaimedChatResponse,
+  AdapterEvent,
 } from './relay-schemas.js';
 import type {
   AgentManifest,
@@ -527,14 +528,7 @@ export interface McpSigninPollResult {
   toolCount?: number;
 }
 
-/** A lifecycle event recorded for an adapter instance. */
-export interface AdapterEvent {
-  id: string;
-  subject: string;
-  status: string;
-  sentAt: string;
-  metadata: string | null;
-}
+export type { AdapterEvent } from './relay-schemas.js';
 
 /**
  * Minimal file interface for upload — matches the browser File API.
@@ -1792,18 +1786,7 @@ export interface Transport extends TransportSlices {
    *   Claude Code holds — Codex's key lives in Codex's own login store).
    */
   checkRuntimeCredential(type: string, secret: string | null): Promise<CredentialCheckResult>;
-  /**
-   * Delegate a vendor CLI login (`claude auth login` / `codex login`), spawned
-   * terminal-free, resolving once the CLI reports a completed login. Bounded by a
-   * server-side timeout so a never-completed login resolves to `{ ok: false }`
-   * rather than blocking. Loopback-only server action.
-   *
-   * @param type - Runtime type (`'claude-code'` | `'codex'`).
-   * @param options - Optional `accountRoot` pinning the login to one account,
-   *   so re-authenticating from a session's own error card signs back into the
-   *   account THAT session is bound to (`claude-code` only; see
-   *   {@link DelegateLoginOptions}).
-   */
+  /** Delegate the selected account's vendor login. */
   delegateRuntimeLogin(type: string, options?: DelegateLoginOptions): Promise<DelegatedLoginResult>;
   /**
    * Validate and store an OpenRouter API key (Gateway paste-key path). The key is
@@ -1991,6 +1974,12 @@ export interface Transport extends TransportSlices {
   ): Promise<{ ok: boolean }>;
   /** Remove a relay adapter by ID. */
   removeRelayAdapter(id: string): Promise<{ ok: boolean }>;
+  /**
+   * Confirm a connection paused for `env:`/`keychain:` settings (DOR-3271):
+   * send back the `fingerprint` it was listed with, or `null` to undo a
+   * confirmation. Refused (403) for anything but a person; 409 when it changed.
+   */
+  confirmRelayAdapterReferences(id: string, fingerprint: string | null): Promise<{ ok: boolean }>;
   /** Update the config for an existing relay adapter. */
   updateRelayAdapterConfig(id: string, config: Record<string, unknown>): Promise<{ ok: boolean }>;
   /** Test connectivity for an adapter type and config without registering it. */

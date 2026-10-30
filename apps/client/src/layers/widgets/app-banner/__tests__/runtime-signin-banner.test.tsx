@@ -416,8 +416,9 @@ describe('account-targeted sign-in', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     fireEvent.click(button);
     await waitFor(() =>
+      // The folder resolves to its registry id: the server signs in by id.
       expect(login).toHaveBeenCalledWith('claude-code', {
-        accountRoot: '/accounts/five',
+        accountId: 'five',
         sessionId: undefined,
       })
     );

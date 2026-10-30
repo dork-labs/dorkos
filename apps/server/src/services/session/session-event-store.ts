@@ -139,6 +139,18 @@ export interface RecordedAgentCompaction {
   createdAt: string;
 }
 
+/**
+ * One recorded stall-guard cutoff (DOR-3307): the `turn_stalled` error that
+ * ended a turn the agent went quiet in, with the wall-clock it was written at,
+ * which is that turn's flush, a beat after the cutoff itself.
+ */
+export interface RecordedTurnCutoff {
+  /** The cutoff error as it was projected, `seq` included. */
+  event: Extract<SessionEvent, { type: 'error' }>;
+  /** ISO-8601 wall-clock the row was written at. */
+  createdAt: string;
+}
+
 /** The prompt event types, mapped to the interaction kind each one raises. */
 const ASK_KIND_BY_EVENT_TYPE: Readonly<
   Record<BlockingInteractionEventType, PendingInteractionDTO['type']>
@@ -383,6 +395,35 @@ export class SessionEventStore {
       }
     }
     return recorded;
+  }
+
+  /**
+   * A session's stall-guard cutoffs only (DOR-3307), filtered in SQLite like
+   * {@link SessionEventStore.readModelSubstitutions}, because it too runs on
+   * every history read.
+   *
+   * @param sessionId - DorkOS session identifier
+   */
+  readTurnCutoffs(sessionId: string): RecordedTurnCutoff[] {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(
+        and(
+          eq(sessionEvents.sessionId, sessionId),
+          sql`${sessionEvents.payload} LIKE '%"code":"turn_stalled"%'`
+        )
+      )
+      .orderBy(sessionEvents.seq)
+      .all();
+    const cutoffs: RecordedTurnCutoff[] = [];
+    for (const row of rows) {
+      const event = parsePayload(row);
+      if (event?.type === 'error' && event.code === 'turn_stalled') {
+        cutoffs.push({ event, createdAt: row.createdAt });
+      }
+    }
+    return cutoffs;
   }
 
   /**

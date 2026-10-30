@@ -153,6 +153,54 @@ sed -i.bak 's/"test": "vitest"/"test": "vitest run"/' "$r/package.json" && rm -f
 commit "$r"
 expect true 'a root package.json script change' "$r"
 
+# Security's #3238 review: only the TOP-LEVEL "version" key is version-only.
+# Each rewrites the root package.json whole, beside a real version bump.
+for field in \
+  '"packageManager": "pnpm@10.0.0"' \
+  '"engines": { "node": ">=24" }' \
+  '"overrides": { "zod": { "version": "3.1.0" } }' \
+  '"pnpm": { "overrides": { "zod": "3.1.0" } }' \
+  '"dependencies": { "version": "1.0.0" }'; do
+  r=$(fresh_repo)
+  printf '{\n  "name": "fixture",\n  "version": "0.2.0",\n  "private": true,\n  %s,\n  "scripts": {\n    "test": "vitest"\n  }\n}\n' "$field" >"$r/package.json"
+  commit "$r"
+  expect true "a version bump beside ${field%%:*}" "$r"
+done
+
+# A nested "version" alone, the line a line-matcher would wave through.
+r=$(fresh_repo)
+printf '{\n  "name": "fixture",\n  "version": "0.1.0",\n  "overrides": {\n    "zod": {\n      "version": "3.0.0"\n    }\n  }\n}\n' >"$r/package.json"
+commit "$r"
+sed -i.bak 's/"version": "3.0.0"/"version": "3.1.0"/' "$r/package.json" && rm -f "$r/package.json.bak"
+commit "$r"
+expect true 'only a nested "version" inside overrides' "$r"
+
+r=$(fresh_repo)
+printf '{\n  "name": "@fixture/shared",\n  "version": "0.1.0",\n  "dependencies": {\n    "zod": "^3.0.0",\n    "left-pad": "1.0.0"\n  }\n}\n' >"$r/packages/shared/package.json"
+commit "$r"
+expect true 'a new dependency line with no version change' "$r"
+
+r=$(fresh_repo)
+echo 'lockfileVersion: 9.0' >"$r/pnpm-lock.yaml"
+commit "$r"
+expect true 'a lockfile' "$r"
+
+r=$(fresh_repo)
+echo 'registry=https://example.test/' >"$r/.npmrc"
+commit "$r"
+expect true 'an .npmrc' "$r"
+
+r=$(fresh_repo)
+mkdir -p "$r/scripts"
+echo 'echo false' >"$r/scripts/no-code-scope.sh"
+commit "$r"
+expect true 'a change to the scope script itself' "$r"
+
+r=$(fresh_repo)
+printf '[1, 2]\n' >"$r/package.json"
+commit "$r"
+expect true 'a package.json that is not an object' "$r"
+
 r=$(fresh_repo)
 mkdir -p "$r/apps/new"
 printf '{\n  "version": "0.1.0"\n}\n' >"$r/apps/new/package.json"

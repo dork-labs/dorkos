@@ -36,6 +36,7 @@ import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { parseUploads, UploadLimitError, type UploadedFile } from '../http/uploads.js';
 import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
+import { callerAccessOf, type CallerAccess } from './caller-access.js';
 import { OPERATOR_SAVE_SOURCE } from '../services/identity/display-name-provenance.js';
 import {
   InvalidAvatarIdError,
@@ -59,7 +60,10 @@ export interface ProfileRouterDeps {
    * route. Still injected rather than imported, because what this router must
    * not reach for is the room SERVICE — resolving a caller mints author rows.
    */
-  caller: (request: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>) => AuthorRecord;
+  caller: (
+    request: Pick<RequestFacts, 'headers' | 'agentIdentity' | 'user'>,
+    access: CallerAccess
+  ) => AuthorRecord;
   /**
    * The rooms domain's author registry: the render cache every surface reads,
    * plus the one question that decides whether the account record is this
@@ -149,7 +153,7 @@ export function createProfileRouter(deps: ProfileRouterDeps): Hono<ApiEnv> {
   function operatorOrRefuse(c: Context<ApiEnv>, subject: string): CallerOrRefusal {
     let caller: AuthorRecord;
     try {
-      caller = deps.caller(honoRequestFacts(c));
+      caller = deps.caller(honoRequestFacts(c), callerAccessOf(c.req.method));
     } catch (err) {
       // The rooms domain's own mapping, shared rather than mirrored, exactly as
       // `read-cursors.ts` shares it: a refusal that reads one way on a room

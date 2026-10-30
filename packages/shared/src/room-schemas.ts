@@ -190,6 +190,9 @@ export const ROOM_RECEIPT_EMOJI = '👀';
  * - `handle_changed` — a person gave an agent here a new handle (DOR-3156).
  *   Quiet, with the agent as subject; it names the old handle and the new one,
  *   because the reader's next mention is what changes. A bridge never sends it.
+ * - `handoff_shared` / `handoff_declined` — an agent's chat here asked its seat in another room
+ *   to post something (DOR-3397), and the seat did, or did not and said why. Written in the
+ *   room the draft came from, with the agent as subject.
  *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
@@ -227,6 +230,8 @@ export const RoomNoticeCodeSchema = z
     'agent_reseated',
     'handle_changed',
     'files_set_up',
+    'handoff_shared',
+    'handoff_declined',
   ])
   .openapi('RoomNoticeCode');
 
@@ -1637,6 +1642,12 @@ export const MentionSpanSchema = z
       .min(1)
       .describe('Length in UTF-16 code units of the matched `@handle`, `@` included.'),
     authorId: z.string().min(1).describe('The live author this occurrence resolved to.'),
+    cc: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when this mention only copies its author in: it came after the leading run of @mentions in a channel message, so no agent takes a turn for it (DOR-3401). Absent means the author was asked, which is how every older entry reads.'
+      ),
   })
   .openapi('MentionSpan');
 

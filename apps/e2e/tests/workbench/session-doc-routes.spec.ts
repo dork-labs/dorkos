@@ -85,6 +85,13 @@ test('a person reviews, allows and turns off a document route from the canvas he
   page,
   request,
 }) => {
+  // The whole route lifecycle in one test: a real turn, a reload, three
+  // reviews and six screenshots in two themes. On a slow CI shard that runs past
+  // the default 30 s, and the timeout then reads as a broken panel: the
+  // `afterEach` navigates away and the next step finds nothing (both attempts
+  // that ejected #3255 from the merge queue). The panel itself settles in under
+  // a second.
+  test.slow();
   await page.setViewportSize({ width: 1280, height: 860 });
   const { documentId } = await openChecklist(page, request);
   const routes = async () =>

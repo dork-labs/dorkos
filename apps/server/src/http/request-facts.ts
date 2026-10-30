@@ -50,6 +50,12 @@ export interface RequestFacts {
   readonly user: RequestUser | undefined;
   /** The agent the `X-DorkOS-Agent` middleware resolved, when one did. */
   readonly agentIdentity: AgentIdentity | undefined;
+  /**
+   * The request method, when the surface knows it. A person-only bar at this
+   * computer asks for the person's session only on a change, never a read
+   * (`personSessionRequired`, DOR-3330); without one it assumes a change.
+   */
+  readonly method?: string;
 }
 
 /**
@@ -118,6 +124,7 @@ export function honoRequestFacts(c: Context<RequestFactsEnv>): RequestFacts {
     ingress: ingressOf(incoming),
     user: c.get('user'),
     agentIdentity: c.get('agentIdentity'),
+    method: c.req.method,
   };
 }
 

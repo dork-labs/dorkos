@@ -50,6 +50,18 @@ export interface WindowSignInDeps {
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
 }
 
+/**
+ * The person proof the window's last sign-in answered with (DOR-3330): what
+ * the app page sends beside its cookie so it counts as the person at this
+ * computer. Held in memory only; the window signs in again at launch.
+ */
+let personProof: string | null = null;
+
+/** The window's current person proof, or `null` before a sign-in gave one. */
+export function currentPersonProof(): string | null {
+  return personProof;
+}
+
 /** Ask the server for a code: the code, `null` when it mints none, `undefined` on no answer. */
 function askForCode(child: WindowSignInDeps['child']): Promise<string | null | undefined> {
   return new Promise((resolve) => {
@@ -98,7 +110,11 @@ export async function signInWindow(deps: WindowSignInDeps): Promise<WindowSignIn
       // never see the one this sets.
       credentials: 'include',
     });
-    if (res.ok) return 'signed-in';
+    if (res.ok) {
+      const body = (await res.json().catch(() => null)) as { proof?: unknown } | null;
+      personProof = typeof body?.proof === 'string' ? body.proof : null;
+      return 'signed-in';
+    }
     log.warn(`[sign-in] The server refused the window's sign-in (${res.status}).`);
     return 'failed';
   } catch (err) {

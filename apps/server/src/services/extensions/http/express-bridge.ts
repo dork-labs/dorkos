@@ -64,6 +64,7 @@ export function expressRequestFacts(req: Request, res: ExpressResponse): Request
     ingress: ingressOf(req),
     user: res.locals.user as RequestUser | undefined,
     agentIdentity: res.locals.agentIdentity as AgentIdentity | undefined,
+    method: req.method,
   };
 }
 

@@ -20,6 +20,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { validationFailureBody } from '../lib/route-utils.js';
 import type { AuthorRecord } from '../services/rooms/index.js';
+import { callerAccessOf } from './caller-access.js';
 import { resolveCaller } from './room-caller.js';
 import { isOwnerCaller, roomErrorReply } from './room-error-response.js';
 
@@ -54,7 +55,7 @@ export function roomErrorResponse(
  * @throws {RoomError} `AGENT_IDENTITY_UNVERIFIED`, as `resolveCaller` does.
  */
 export function resolveRoomCaller(c: Context<ApiEnv>): AuthorRecord {
-  return resolveCaller(honoRequestFacts(c));
+  return resolveCaller(honoRequestFacts(c), callerAccessOf(c.req.method));
 }
 
 /**

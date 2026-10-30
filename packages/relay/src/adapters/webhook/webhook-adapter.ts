@@ -361,6 +361,10 @@ export class WebhookAdapter extends BaseRelayAdapter {
     try {
       const response = await fetch(this.config.outbound.url, {
         method: 'POST',
+        // A redirect would carry the signed body and every custom header (an
+        // `Authorization` among them) to an address nobody approved (DOR-3271).
+        // A 3xx is answered as the failure it is, not followed.
+        redirect: 'manual',
         headers: {
           'Content-Type': 'application/json',
           'X-Signature': signature,

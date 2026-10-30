@@ -20,10 +20,17 @@
 #
 #   CHANGELOG.md, VERSION       the release's compiled notes and version file
 #   changelog/, docs/, blog/    fragments, user docs and posts (prose)
-#   any package.json            whose diff changes ONLY `"version": "…"` lines
+#   any package.json            whose ONLY change is its top-level "version" key
+#                               (compared as parsed JSON with jq)
 #
-# Anything else, including a package.json that changes a dependency, a script
-# or any other line beside its version, means run the shards.
+# Anything else, including a package.json that changes a dependency, a script,
+# `packageManager`, `engines`, `overrides`, `pnpm` or any other key beside its
+# version, a lockfile or an `.npmrc`, means run the shards.
+#
+# THE PR CANNOT GRADE ITSELF. test.yml runs this script as it stands on the
+# pull request's BASE commit, never the copy in the PR's checkout, so a PR that
+# edits this file is scored by the old rules (and, touching scripts/, runs the
+# shards anyway).
 #
 # A KNOWN GAP, NOT A NEW ONE. Some server tests read docs/ (for example
 # apps/server/src/services/core/__tests__/destructive-actions-prose.test.ts),
@@ -68,27 +75,23 @@ changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" "$he
   run_shards 'git diff failed'
 [ -n "$changed" ] || run_shards 'the diff is empty'
 
-# A `"version": "…"` line, with or without its trailing comma.
-version_line='^[-+][[:space:]]*"version":[[:space:]]*"[^"]*",?[[:space:]]*$'
-
-# True when <file>'s diff changes at least one line and every changed line is a
-# version line. The `---`/`+++` headers end at the first hunk, so a content
-# line that happens to start with `--` or `++` is still read as a change; a
-# diff with no hunk at all (a mode change) has no version line and is false.
+# True when <file> exists on both sides, both parse as JSON objects, only the
+# TOP-LEVEL "version" key differs, and it does differ (Security, #3238 review):
+# parsing rather than matching lines, so a `"version"` inside `overrides`,
+# `pnpm` or a dependency's own object, or a `packageManager`, `engines` or
+# dependency change beside a bump, is never read as version-only. Any read or
+# parse failure is false, so the caller runs the shards.
 version_only() {
-  local diff line in_hunk=0 changes=0
-  diff=$(git --literal-pathspecs diff -U0 --no-renames "$base" "$head" -- "$1") || return 1
-  while IFS= read -r line; do
-    case $line in
-      @@*) in_hunk=1 ;;
-      [-+]*)
-        [ "$in_hunk" -eq 1 ] || continue
-        [[ $line =~ $version_line ]] || return 1
-        changes=$((changes + 1))
-        ;;
-    esac
-  done <<<"$diff"
-  [ "$changes" -gt 0 ]
+  local before after
+  before=$(git cat-file blob "$base:$1" 2>/dev/null) || return 1
+  after=$(git cat-file blob "$head:$1" 2>/dev/null) || return 1
+  local rest_before rest_after v_before v_after
+  rest_before=$(jq -cS 'if type == "object" then del(.version) else error("not an object") end' <<<"$before" 2>/dev/null) || return 1
+  rest_after=$(jq -cS 'if type == "object" then del(.version) else error("not an object") end' <<<"$after" 2>/dev/null) || return 1
+  [ "$rest_before" = "$rest_after" ] || return 1
+  v_before=$(jq -c '.version' <<<"$before" 2>/dev/null) || return 1
+  v_after=$(jq -c '.version' <<<"$after" 2>/dev/null) || return 1
+  [ "$v_before" != "$v_after" ]
 }
 
 while IFS= read -r path; do

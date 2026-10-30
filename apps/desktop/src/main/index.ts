@@ -5,7 +5,7 @@ import { createWindow, isOwnOrigin, isWebLink, makeRendererUrlAccessor } from '.
 import { claimWindowsToRestore, setupTabSession } from './tab-session';
 import { watchDisplayChanges } from './window-state';
 import { startServer, stopServer, getServerPort, signInWindowSession } from './server-process';
-import { WINDOW_SIGN_IN_REFRESH_MS } from './sign-in/window-sign-in';
+import { currentPersonProof, WINDOW_SIGN_IN_REFRESH_MS } from './sign-in/window-sign-in';
 import { PortUnavailableError } from './server-port';
 import { setupMenu, setupDockMenu } from './menu';
 import { setupAboutPanel } from './about';
@@ -47,11 +47,16 @@ import {
 import { GET_FULLSCREEN_STATE_CHANNEL } from './fullscreen';
 import { GET_FOCUS_STATE_CHANNEL } from './window-focus';
 import { findRefusedLaunchSwitch, REFUSED_LAUNCH_SWITCHES } from './launch-switches';
-import { applyExtraCaCerts } from '../extra-ca-certs';
+import { applyExtraCaCerts, readCompanyCertificatesPath } from '../extra-ca-certs';
+import { resolveDataDirectory } from './dork-home';
 
-// A company network's certificates, which the fused app binary no longer reads
-// by itself (DOR-3361), before anything in the main process opens a connection.
-applyExtraCaCerts({ warn: (message) => log.warn(`[tls] ${message}`) });
+// A company network's certificates, from the file a person set in Settings and
+// never from the environment (DOR-3361), before anything in the main process
+// opens a connection.
+applyExtraCaCerts({
+  file: readCompanyCertificatesPath(resolveDataDirectory()),
+  warn: (message) => log.warn(`[tls] ${message}`),
+});
 
 /** The custom URL scheme `dorkos://` deep links arrive on. */
 const DEEP_LINK_PROTOCOL = 'dorkos';
@@ -66,6 +71,15 @@ let localBrowserBridge: Awaited<ReturnType<typeof startLocalBrowserBridge>> | un
  * pages as foreign links.
  */
 const getRendererUrl = makeRendererUrlAccessor(getServerPort);
+
+/** The origin of a frame's URL, or `null` when it has none. */
+function frameOrigin(url: string | undefined): string | null {
+  try {
+    return new URL(url ?? '').origin;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Create the main window and track its lifecycle. The app keeps running after
@@ -331,6 +345,16 @@ if (refusedSwitch !== null) {
 
   ipcMain.on('get-server-port', (event) => {
     event.returnValue = getServerPort();
+  });
+
+  // The window's person proof (DOR-3330), only to a page of the app itself:
+  // with the cookie, it is the person, so no other page may read it.
+  ipcMain.on('get-person-proof', (event) => {
+    const port = getServerPort();
+    event.returnValue =
+      port !== null && frameOrigin(event.senderFrame?.url) === `http://localhost:${port}`
+        ? currentPersonProof()
+        : null;
   });
 
   // Open a URL outside the app. The renderer needs this for one address in

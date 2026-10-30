@@ -244,6 +244,9 @@ export class RoomTriggerDispatcher {
    */
   readonly claimed = new Map<string, ActiveClaim>();
 
+  /** Who is waiting for the next claim to be released (room hand-offs, DOR-3397). */
+  readonly releaseWaiters = new Set<() => void>();
+
   /**
    * Rooms waiting on an agent that is mid-turn in a DIFFERENT room, keyed
    * `(room, agent)` — one apiece, which is the grain of the collection each one
@@ -913,26 +916,31 @@ export class RoomTriggerDispatcher {
    * @param input.authorId - The agent being asked.
    * @param input.prompt - The question, as the model will see it.
    */
-  askAside(input: {
-    room: Room;
-    entry: RoomEntry;
-    authorId: string;
-    prompt: string;
-  }): Promise<void> {
+  askAside(input: aside.AsideInput): Promise<aside.AsideResult> {
     return aside.askAside(this, input);
   }
 
-  runAsideInDispatch(input: {
-    room: Room;
-    entry: RoomEntry;
-    authorId: string;
-    agentPath: string;
-    sessionId: string;
-    key: string;
-    dispatchId: string;
-    prompt: string;
-  }): Promise<void> {
+  runAsideInDispatch(input: aside.AsideRun): Promise<aside.AsideResult> {
     return aside.runAsideInDispatch(this, input);
+  }
+
+  /**
+   * Resolve when the next claim is released, or after `timeoutMs`, whichever is first: how a
+   * room hand-off waits out a busy seat (DOR-3397) without polling the claim map.
+   *
+   * @param timeoutMs - The longest to wait.
+   */
+  nextRelease(timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      const wake = (): void => {
+        clearTimeout(timer);
+        this.releaseWaiters.delete(wake);
+        resolve();
+      };
+      const timer = setTimeout(wake, timeoutMs);
+      timer.unref?.();
+      this.releaseWaiters.add(wake);
+    });
   }
 
   awaitLate(late: Promise<LateRoomReply>, key: string): Promise<RoomTurnReply> {

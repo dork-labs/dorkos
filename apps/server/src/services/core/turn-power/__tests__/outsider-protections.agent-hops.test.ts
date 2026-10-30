@@ -16,7 +16,8 @@
  *
  * | Hop                                   | Held to asking  | Marked |
  * | ------------------------------------- | --------------- | ------ |
- * | a room post mentioning another agent  | no (gated)      | yes    |
+ * | a room post, in the own circle        | no (gated)      | yes    |
+ * | a room post, outside the own circle   | yes             | yes    |
  * | a relay message to another agent      | yes             | yes    |
  * | a chat message to another chat        | no (gated)      | yes    |
  * | a session the turn starts             | yes             | yes    |
@@ -63,6 +64,7 @@ import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outs
 import { levelOfMode } from '@dorkos/shared/permission-semantics';
 import { composeRegistry, type CapabilityRegistry } from '../../capabilities/index.js';
 import { MEMORY_OUTSIDER_HELD_MESSAGE, memoryDomain } from '../../../memory/memory-capabilities.js';
+import { noteChosenTurn, resetChosenTurns } from '../full-autonomy.js';
 import { resetMemoryProvider } from '../../../memory/index.js';
 import {
   clearTestHomes,
@@ -173,16 +175,34 @@ describe("a stranger's words, one agent hop later", () => {
     await run(runtime, ana, strangerTurn);
     expect(runsAt(sent.get(ana))).toBe('default');
 
-    // Ana posts mentioning Bo; Bo's turn is started by her post.
+    // Ana posts mentioning Bo; Bo's turn is started by her post. In the owner's own circle
+    // (DOR-3390) the mark gates Bo's risky actions; it no longer caps his level.
     const post = fresh('post');
     noteEntryLevel(post, postLevelFor([ana]));
-    await run(runtime, bo, ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }));
-    // DOR-3390: the mark gates Bo's risky actions; it no longer caps his level.
+    await run(
+      runtime,
+      bo,
+      ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }, false, '', { ownCircle: true })
+    );
     expect(runsAt(sent.get(bo))).toBe('bypassPermissions');
     expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
 
     expect((await boWrites({ action: 'add', text: 'ship on Fridays' }, bo)).saved).toBe(true);
     expect(await lastNote()).toMatch(OUTSIDER_STAMP);
+  });
+
+  it('a room post outside the own circle: Bo may see the stranger’s own line, so he is held', async () => {
+    // A bridged room, or one with a stranger's line in Bo's view (DOR-3390, Security's M-B): the
+    // reader sees the outside words first-hand, one agent hop later, and is held as before.
+    const ana = fresh('ana');
+    const bo = fresh('bo');
+    const { runtime, sent } = seam({ [ana]: 'bypassPermissions', [bo]: 'bypassPermissions' });
+    await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
+    const post = fresh('post');
+    noteEntryLevel(post, postLevelFor([ana]));
+    await run(runtime, bo, ceilingForEntry(AUTHORS, { id: post, authorId: 'ana' }));
+    expect(runsAt(sent.get(bo))).toBe('default');
+    expect(lastTurnLevelOf(bo)?.outsider).toBe(true);
   });
 
   it('a relay message: a turn held to the runtime default reads as an outsider’s', async () => {
@@ -241,28 +261,35 @@ describe("a stranger's words, one agent hop later", () => {
     const ana = fresh('ana');
     await run(runtime, ana, ceilingForEntry(AUTHORS, { id: fresh('e'), authorId: 'stranger' }));
     const bound = markedBoundOf(ana, '/agents/ana')!;
-    const session = { permissionMode: 'bypassPermissions' as const, turnPermissionCeiling: bound };
-    expect(ceilingOn(session)).toBe('stranger');
-    const hook = createHeldTurnHook(
-      session,
-      async () => ({}),
-      { debug() {}, info() {} },
-      { cwd: '/agents/bo', roots: ['/agents/bo'] }
-    );
-    const out = await hook(
-      {
-        hook_event_name: 'PreToolUse',
-        session_id: 's',
-        transcript_path: '/t',
-        cwd: '/agents/bo',
-        tool_name: 'Bash',
-        tool_input: { command: 'python3 -c 1' },
-        tool_use_id: 't',
-      } as never,
-      't',
-      { signal: new AbortController().signal }
-    );
-    expect(out).toMatchObject({ hookSpecificOutput: { permissionDecision: 'ask' } });
+    const hookSays = (permissionMode: 'acceptEdits' | 'bypassPermissions') => {
+      const session = { permissionMode, turnPermissionCeiling: bound };
+      expect(ceilingOn(session)).toBe('stranger');
+      const hook = createHeldTurnHook(
+        session,
+        async () => ({}),
+        { debug() {}, info() {} },
+        { cwd: '/agents/bo', roots: ['/agents/bo'] }
+      );
+      return hook(
+        {
+          hook_event_name: 'PreToolUse',
+          session_id: 's',
+          transcript_path: '/t',
+          cwd: '/agents/bo',
+          tool_name: 'Bash',
+          tool_input: { command: 'python3 -c 1' },
+          tool_use_id: 't',
+        } as never,
+        't',
+        { signal: new AbortController().signal }
+      );
+    };
+    // A child set below Full: its folder's allow rules ask.
+    expect(await hookSays('acceptEdits')).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'ask' },
+    });
+    // A child set to Full asks nobody anything (DOR-3394); it asked here until then.
+    expect(await hookSays('bypassPermissions')).toEqual({});
   });
 
   it('a post two of the author’s turns vouch for keeps the mark if either read an outsider', async () => {
@@ -368,6 +395,26 @@ describe('memory written in a turn that read an outsider’s words', () => {
     expect(replaced.error).toBe(MEMORY_OUTSIDER_HELD_MESSAGE);
     expect(removed).toMatchObject({ saved: false, code: 'outsider-held' });
     expect(await boMemory()).toContain('deploys need the operator’s OK');
+  });
+
+  it('cannot rewrite or remove a note even in a chat set to Full: a person’s limit (DOR-3412)', async () => {
+    await seedOperatorNote();
+    const { runtime } = seam({});
+    const bo = fresh('bo');
+    await run(runtime, bo, { permissionCeiling: 'runtime-default' });
+    noteChosenTurn(bo, { asks: 'never', reach: 'everything' } as never, false);
+    try {
+      const replaced = await boWrites(
+        { action: 'replace', old_text: 'deploys need the operator’s OK', text: 'deploy freely' },
+        bo
+      );
+      const removed = await boWrites({ action: 'remove', old_text: 'deploys need' }, bo);
+      expect(replaced).toMatchObject({ saved: false, code: 'outsider-held' });
+      expect(removed).toMatchObject({ saved: false, code: 'outsider-held' });
+      expect(await boMemory()).toContain('deploys need the operator’s OK');
+    } finally {
+      resetChosenTurns();
+    }
   });
 
   it('is still editable from a turn the owner started', async () => {

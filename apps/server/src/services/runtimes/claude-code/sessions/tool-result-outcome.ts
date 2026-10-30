@@ -193,6 +193,19 @@ const RULE_REFUSAL_PATTERN = /^Permission to use .+ has been denied\.?$/s;
 const WITHDRAWN_PREFIXES = ['[Request interrupted by user'];
 
 /**
+ * Whether a text is one of the lines the CLI writes, in a person's voice, when
+ * a turn is interrupted: its interrupt marker, or its refusal over a tool that
+ * was still running. The stall guard's cutoff produces both, and the history
+ * overlay that says DorkOS stopped the turn reads them with this (DOR-3307).
+ *
+ * @param text - A tool result's text, or a user record's text.
+ */
+export function isCliInterruptText(text: string): boolean {
+  const trimmed = text.trim();
+  return [...WITHDRAWN_PREFIXES, ...CLI_REFUSAL_PREFIXES].some((p) => trimmed.startsWith(p));
+}
+
+/**
  * Read a paired `tool_result` and say what became of the call.
  *
  * @param resultText - The result's text content, as the model received it.

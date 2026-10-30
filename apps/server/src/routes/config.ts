@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -36,6 +36,7 @@ import {
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
 import { describeExperiments } from '../services/core/config/describe-experiments.js';
+import { describeCompanyCertificates } from '../services/core/config/company-certificates.js';
 import { officialSpaceUrl } from '../services/communities/spaces-config.js';
 import { usableOfficialLink } from '../services/communities/official-space.js';
 import { deepMerge, sanitizedConfigSnapshot } from '../services/core/operator/config-patch.js';
@@ -53,8 +54,10 @@ import {
   frontDoorPathsOf,
   frontDoorSubjectOf,
 } from '../services/core/operator/front-door-settings.js';
-import { trustedCaller } from '../services/core/capabilities/index.js';
+import { APPROVAL_TOKEN_HEADER, trustedCaller } from '../services/core/capabilities/index.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import {
+  clearsTheAgentBar,
   readCallerAuthority,
   refuseFrontDoorChange,
   refuseUnlessAccountOwner,
@@ -414,6 +417,9 @@ router.get('/', async (c) => {
     // nothing above listed it. Anything registered as an experiment is listed
     // here automatically, so the next flag cannot go missing the same way.
     experiments: describeExperiments(),
+    // Company certificates (DOR-3361): the setting, and what the desktop app
+    // actually loaded at start-up, so Settings can say how many it trusts.
+    network: describeCompanyCertificates(),
     // The official space's link, already resolved against its env override and
     // checked, so the app offers it only when it can be joined (spec
     // `official-community-space` D4). `null` keeps every prompt hidden.
@@ -467,29 +473,20 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
       // server, not reasoned. A session cookie is the one signal a header-stripping
       // caller cannot fake, and under login-on a real operator has one.
       //
-      // The enable-login flow is unaffected, and that is load-bearing rather than
-      // lucky: `OwnerSetupHost.tsx` writes `auth.enabled: true` while login is
-      // still OFF, so this bar does not apply to it. A guard that read the
-      // POST-patch state instead of the current state would make login impossible
-      // to turn on.
+      // At this computer it asks too once an owner exists (DOR-3330): the
+      // person proves themselves once, with the password step-up, and the app
+      // carries that session after. The app's own enable-login flow signs in
+      // first for the same reason. With no owner yet, nobody can sign in, so
+      // this bar allows and the agent bar below is the one left.
       //
-      // ### What stays open, said plainly
-      //
-      // With login OFF there is no cookie for ANYONE, so THIS bar allows and the
-      // agent bar is the only one left. So the hole the agent bar leaves is
-      // NOT closed: a program on this machine that omits its agent header can
-      // still write every operator-only setting through here. That is the residual
-      // DOR-505 could not close, because the cockpit in the default posture
-      // presents nothing such a program cannot also present, and refusing it would
-      // lock a person out of their own settings. Pinned by a test that says so,
-      // and documented for users under "Settings your agents cannot change" in
-      // `docs/guides/action-approvals.mdx`. Turning on Require login closes it. Do
-      // not describe this route as "operator-only enforced" without that
-      // qualifier.
-      const cookieRefusal = requireOperatorCookieUnderLogin(
-        caller,
-        'the settings that protect this instance'
-      );
+      // A caller that names itself an agent, with nothing proved, hears the
+      // agent bar's answer instead: it is the truer one for it.
+      const namesAMachine =
+        presentsAgentIdentity(caller) || caller.headers[APPROVAL_TOKEN_HEADER] !== undefined;
+      const cookieRefusal =
+        namesAMachine && !caller.user
+          ? undefined
+          : requireOperatorCookieUnderLogin(caller, 'the settings that protect this instance');
       if (cookieRefusal) {
         return {
           status: cookieRefusal.status,
@@ -501,7 +498,7 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
       }
 
       // ## THE AGENT BAR — anything that names itself an agent is refused, in
-      // every posture, and in the login-off posture it is the ONLY bar left
+      // every posture, and with no owner yet it is the only bar left
       //
       // The cockpit must keep working: its own enable-login and disable-login
       // flows legitimately write `auth.enabled` through here, and under
@@ -740,6 +737,26 @@ router.put('/agents/defaultAgent', (c) => {
 });
 
 /**
+ * Only the person sees or replaces the local MCP token over HTTP (DOR-3330):
+ * it lets an outside tool act on this DorkOS. Once an owner exists that takes
+ * their session; the app asks for it. A program running as the same OS user
+ * can still read the token's file on disk, as it can the rest of the data folder.
+ *
+ * @param c - The request.
+ * @returns The refusal, or `undefined` for the person.
+ */
+function refuseLocalTokenToAProgram(c: Context<ApiEnv>): Response | undefined {
+  if (clearsTheAgentBar(honoRequestFacts(c))) return undefined;
+  return c.json(
+    {
+      error: 'Only you can see or change this token. Do it in the DorkOS app.',
+      code: 'person_required',
+    },
+    403
+  );
+}
+
+/**
  * POST /api/config/mcp/rotate-token — regenerate the per-instance local MCP
  * token (DOR-278).
  *
@@ -775,6 +792,8 @@ router.post('/mcp/rotate-token', (c) => {
         409
       );
     }
+    const notYou = refuseLocalTokenToAProgram(c);
+    if (notYou) return notYou;
 
     const dorkHome = resolveDorkHome();
     const localToken = rotateMcpLocalToken(dorkHome);
@@ -795,12 +814,8 @@ router.post('/mcp/rotate-token', (c) => {
  * rotate: 409 when an `MCP_API_KEY` override is set or the caller is not one the
  * gate leaves open (the local token does not apply there).
  *
- * Honest scope note: in login-off mode this endpoint sits behind the same
- * loopback trust boundary as the cockpit, so any local process with socket
- * reach can call it just as the settings tab does — the cockpit and a local
- * process are indistinguishable without login. The reveal endpoint therefore
- * does not (and cannot) make the token unreadable to local callers; turning on
- * login is the boundary that does.
+ * Only the person may call it (`refuseLocalTokenToAProgram`, DOR-3330); once
+ * an owner exists that takes their session at this computer.
  */
 router.post('/mcp/reveal-token', (c) => {
   try {
@@ -825,6 +840,8 @@ router.post('/mcp/reveal-token', (c) => {
         409
       );
     }
+    const notYou = refuseLocalTokenToAProgram(c);
+    if (notYou) return notYou;
 
     const localToken = getMcpLocalToken();
     if (!localToken) {

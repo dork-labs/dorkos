@@ -40,6 +40,8 @@ interface MentionPillRendererProps {
    * never be used to make a mention claim something the roster does not back.
    */
   children?: ReactNode;
+  /** True when the entry only copied this author in, after its leading @s. */
+  cc?: boolean;
 }
 
 /** The identity handed to the card hook when the mention names nobody. */
@@ -72,7 +74,7 @@ function handleLabel(children: ReactNode): string {
  * it was before this: hover-only, with the card's footer still reading
  * **soon** — an inert affordance is honest, a click that opens nothing is not.
  */
-export function MentionPillRenderer({ authorId, children }: MentionPillRendererProps) {
+export function MentionPillRenderer({ authorId, children, cc }: MentionPillRendererProps) {
   // Who this mention names, as of right now. Read from a context rather than
   // from the component map that decided to draw this pill at all, because that
   // map cannot deliver an update: Streamdown's top-level memo comparator
@@ -181,6 +183,7 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
       resolved
       interactive={viewProfile !== undefined}
       {...pillControl}
+      cc={cc}
     />
   );
   if (agentCard) return agentCard.wrap(pill, { openOnClick: true });
@@ -223,8 +226,13 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
  *
  * @param spannedIds - Author ids `entry.mentionSpans` actually names for this
  *   entry — the only ids a `<mention>` tag may resolve against.
+ * @param ccIds - Author ids this entry only copied in (DOR-3401). Their pills
+ *   draw as a grey cc chip. Read off the same spans, so it is frozen too.
  */
-export function buildMentionComponents(spannedIds: ReadonlySet<string>): Components {
+export function buildMentionComponents(
+  spannedIds: ReadonlySet<string>,
+  ccIds: ReadonlySet<string> = new Set()
+): Components {
   return {
     mention: (props: Record<string, unknown>) => {
       const authorIdValue = props[MENTION_AUTHOR_ATTR];
@@ -238,7 +246,9 @@ export function buildMentionComponents(spannedIds: ReadonlySet<string>): Compone
       }
 
       return (
-        <MentionPillRenderer authorId={authorId}>{props.children as ReactNode}</MentionPillRenderer>
+        <MentionPillRenderer authorId={authorId} cc={ccIds.has(authorId)}>
+          {props.children as ReactNode}
+        </MentionPillRenderer>
       );
     },
   };

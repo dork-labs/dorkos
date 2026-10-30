@@ -68,6 +68,7 @@ import { turnEnded } from '@dorkos/shared/schemas';
 import { SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
 import type { TurnWindowSignal } from './turn-window-signal.js';
+import { noteTurnCutoff, turnCutoffMessage } from './turn-cutoff/turn-cutoff.js';
 
 /** Race sentinel: the inactivity timer expired before the next source event. */
 const STALL_TIMEOUT = Symbol('stall-timeout');
@@ -101,8 +102,8 @@ export interface StallGuardOpts {
    * Omitting it leaves the TIMING exactly as this guard shipped it — one window,
    * one bound. It does not leave the COPY unchanged: the injected error names
    * which of the two faults happened, so a caller with no first-event window
-   * whose source never yielded now reads "the agent never started working after
-   * 10 minutes" where it used to read "no activity … for 10 minutes". That is a
+   * whose source never yielded now reads "the agent didn't start within 10
+   * minutes" where it used to read "no activity for 10 minutes". That is a
    * more accurate sentence for the same event, and the fixtures that pin it were
    * updated rather than the wording being made conditional on the option.
    *
@@ -473,12 +474,15 @@ export async function* withStallGuard(
         logger.warn('[stall-guard] stalled turn could not be interrupted', outcomeContext);
       }
 
+      // The runtime records this interrupt in a person's voice ("[Request
+      // interrupted by user]"), so DorkOS says who really stopped the turn:
+      // here, to the person, and on the next turn, to the agent (DOR-3307).
+      const cutoff = { windowMs, neverStarted };
+      noteTurnCutoff(opts.sessionId, cutoff);
       yield {
         type: 'error',
         data: {
-          message: neverStarted
-            ? `The agent never started working after ${formatWindow(windowMs)}, so the turn was ended.`
-            : `No activity from the agent for ${formatWindow(windowMs)}, so the turn was interrupted.`,
+          message: turnCutoffMessage(cutoff),
           code: 'turn_stalled',
           category: 'execution_error',
           details: outcome.details,
@@ -503,10 +507,4 @@ export async function* withStallGuard(
     // double return() after a stall.
     void Promise.resolve(iterator.return?.()).catch(() => {});
   }
-}
-
-/** Human form of the inactivity window: whole minutes, or seconds below one. */
-function formatWindow(timeoutMs: number): string {
-  if (timeoutMs >= 60_000) return `${Math.round(timeoutMs / 60_000)} minutes`;
-  return `${Math.round(timeoutMs / 1000)} seconds`;
 }

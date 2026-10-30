@@ -127,3 +127,22 @@ describe('MentionPill', () => {
     });
   });
 });
+
+describe('MentionPill as a cc (DOR-3401)', () => {
+  it('draws a grey chip that says cc in words, not just in colour', () => {
+    render(<MentionPill kind="agent" label="Bo" handle="bo" color="#6d5ae0" resolved cc />);
+    const pill = screen.getByLabelText('cc @bo');
+
+    expect(pill).toHaveAttribute('data-cc', 'true');
+    expect(pill).toHaveAttribute('title', "@bo gets a copy. They aren't asked to answer.");
+    expect(pill.className).toMatch(/bg-muted/);
+    expect(pill.className).toMatch(/text-muted-foreground/);
+    // No accent: the identity colour is not published on a cc.
+    expect(pill.style.getPropertyValue('--identity-color')).toBe('');
+  });
+
+  it('labels a person cc by handle too', () => {
+    render(<MentionPill kind="human" label="Kai" handle="kai" resolved cc />);
+    expect(screen.getByLabelText('cc @kai')).toHaveTextContent('@Kai');
+  });
+});

@@ -121,19 +121,22 @@ export async function sayInRoom(
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     roomDeps: { rooms },
   });
+  const context = {
+    identity: {
+      agentPath: author?.naturalKey ?? '',
+      displayName: author?.displayName ?? '',
+      createdAt: new Date().toISOString(),
+    },
+    ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+  };
+  const input = { roomId: roomTurn.roomId, text, ...(attachments ? { attachments } : {}) };
   try {
-    await registry.invoke(
-      'rooms.post',
-      { roomId: roomTurn.roomId, text, ...(attachments ? { attachments } : {}) },
-      {
-        identity: {
-          agentPath: author?.naturalKey ?? '',
-          displayName: author?.displayName ?? '',
-          createdAt: new Date().toISOString(),
-        },
-        ...(opts?.cwd ? { cwd: opts.cwd } : {}),
-      }
-    );
+    const result = await registry.invoke('rooms.post', input, context);
+    // A script's words never depend on what it was shown, so a post held for
+    // messages that arrived meanwhile (DOR-3398) is always still fit: confirm.
+    if ((result as { posted?: boolean } | undefined)?.posted === false) {
+      await registry.invoke('rooms.post', { ...input, confirm: true }, context);
+    }
     return true;
   } catch (err) {
     return err instanceof Error ? err.message : String(err);

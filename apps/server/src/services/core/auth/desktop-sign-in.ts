@@ -147,7 +147,7 @@ export function desktopSignInPlugin() {
           const previous = lastDesktopSession;
           lastDesktopSession = session.token;
           if (previous) await ctx.context.internalAdapter.deleteSession(previous);
-          return ctx.json({ ok: true });
+          return ctx.json({ sessionId: session.id });
         }
       ),
     },

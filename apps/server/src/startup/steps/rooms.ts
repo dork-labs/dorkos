@@ -1,3 +1,4 @@
+import { roomAudience } from '../../services/rooms/service/room-audience.js';
 /**
  * Rooms: read state, the rooms graph, remote community mirrors and
  * subscriptions, room files and worktrees, session binding repair, and the
@@ -48,6 +49,7 @@ import { RemoteRedactionSync } from '../../services/communities/remote/remote-re
 import { RemoteRoomSubscriptionRuntime } from '../../services/communities/remote/remote-room-subscription-runtime.js';
 import { AgentAvailabilityRuntime } from '../../services/communities/remote/availability/agent-availability-runtime.js';
 import { env } from '../../env.js';
+import { ROOM_BURST_QUIET_MS } from '../../services/rooms/room-collect.js';
 import { setRemoteCommunitySubscriptionProbe } from '../../routes/test-control.js';
 import { logger } from '../../lib/logger.js';
 import { readOperatorDisplayName } from '../../services/core/config/operator-display-name.js';
@@ -143,6 +145,9 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     canvasDocuments,
   } = createRoomSubsystem({
     db,
+    // A channel turn waits for its burst to go quiet (DOR-3398). Not under the
+    // scripted test runtime, whose browser specs would wait 20s per answer.
+    burstQuietMs: env.DORKOS_TEST_RUNTIME ? 0 : ROOM_BURST_QUIET_MS,
     runtimePrincipalCurrent: (proof) =>
       docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
     readCursors: readCursorService,
@@ -224,6 +229,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     mirrors: refs.remoteCommunityRuntime.mirrors,
     readers: getRemoteCommunityAdapter,
     attachmentBytes: roomAttachmentBytes,
+    roomAudience: (roomId, removedAuthorId) => roomAudience(roomId, roomService, removedAuthorId),
     publishRevisions: (localRoomId, seqs) => roomService.publishEntryRevisions(localRoomId, seqs),
   });
   refs.remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({

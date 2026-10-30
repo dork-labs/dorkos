@@ -334,7 +334,10 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   }
 
   function emit(event: string, data: unknown): void {
-    eventFanOut.broadcast(`ext:${extensionId}:${event}`, data);
+    // An extension's own event, never a room event (`ext:` prefix), so every
+    // stream gets it, as before; the audience is named only because the name
+    // is built at run time.
+    eventFanOut.broadcast(`ext:${extensionId}:${event}`, data, () => true);
   }
 
   const extensionName = deps.extensionName ?? extensionId;

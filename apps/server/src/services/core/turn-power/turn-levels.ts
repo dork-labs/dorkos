@@ -49,8 +49,9 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
-import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
+import { chatHeardOutsider, noteChatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import { noteTurnHold } from './continuation-hold.js';
+import { aliasChosenTurn, isFullLevel, noteChosenTurn, ownLevelBounds } from './full-autonomy.js';
 import {
   ceilingHoldsForOutsider,
   levelOfMode,
@@ -310,6 +311,27 @@ export function noteEntryLevel(
 }
 
 /**
+ * Mark a conversation's running turn with words it read mid-turn (DOR-3398): a held
+ * `post_to_room` hands the turn posts that arrived after it started, and a stranger's or a
+ * teammate's among them must mark it as the turn-start context would. Raises the recorded level
+ * (and its hand-off copy), which every enforcement point reads through {@link marksOf} on each
+ * call, and notes an outsider on the chat so what it hands on stays marked. Only ever adds.
+ *
+ * A gate fixed when the turn launched (Claude Code's carried-shell hook reads the launch ceiling)
+ * sees the mark from the chat's next turn, not this one.
+ *
+ * @param sessionId - The conversation the turn runs on.
+ * @param marks - The marks the words carry.
+ */
+export function markRunningTurn(sessionId: string, marks: TurnMarks): void {
+  if (marks.outsider === true) noteChatHeardOutsider(sessionId);
+  const level = turnLevels.get(sessionId);
+  if (level !== undefined) remember(turnLevels, sessionId, withMarks(level, marks));
+  const handOff = handOffLevels.get(sessionId);
+  if (handOff !== undefined) remember(handOffLevels, sessionId, withMarks(handOff, marks));
+}
+
+/**
  * Keep marks on a post whose author's level is not known but whose source is
  * (DOR-3107): a post from a caller DorkOS could not verify (an external `/mcp`
  * client naming no session) is kept as an outsider's, so it stays capped even
@@ -416,6 +438,7 @@ export function aliasTurnLevel(from: string, to: string): void {
   if (strangerHeld.has(from) && from !== to) strangerHeld.add(to);
   const serial = turnSerials.get(from);
   if (serial !== undefined && from !== to) turnSerials.set(to, serial);
+  aliasChosenTurn(from, to);
 }
 
 /**
@@ -478,6 +501,13 @@ function recordTurn(
 ): TurnPermissionLevel {
   const level = levelForTurn(runtime, stored, opts);
   remember(turnLevels, sessionId, level);
+  // What the chat is set to, with no ceiling, and whether anybody can be asked in it (DOR-3394):
+  // a chat set to Full asks nobody, whatever the ceiling holds the turn's power to.
+  noteChosenTurn(
+    sessionId,
+    chosenLevelOf(runtime, stored, opts),
+    opts?.unattended === true || opts?.unattendedApprovals === true
+  );
   const ceiling = opts?.continuationHold === true ? undefined : opts?.permissionCeiling;
   if (ceiling !== undefined && ceilingHoldsForOutsider(ceiling)) {
     strangerHeld.add(sessionId);
@@ -496,6 +526,23 @@ function recordTurn(
     strangerHeld.delete(strangerHeld.values().next().value!);
   }
   return level;
+}
+
+/**
+ * The level the chat a turn runs in is SET to (DOR-3394): its power under every bound that says
+ * what it may be (its agent's own level, DOR-3175, and another of the owner's agents' unmarked
+ * level), with the marks and a stranger's hold set aside (`ownLevelBounds`). So a schedule stored
+ * at Full on an agent a person set to Ask is not Full.
+ */
+function chosenLevelOf(
+  runtime: AgentRuntime,
+  stored: string | null | undefined,
+  opts: MessageOpts | undefined
+): TurnPermissionLevel {
+  const { permissionCeiling, ...unbounded } = opts ?? {};
+  const own = ownLevelBounds(permissionCeiling);
+  const kept = own === undefined ? unbounded : { ...unbounded, permissionCeiling: own };
+  return powerForTurn(runtime, stored, kept);
 }
 
 /** A ceiling with every stranger's hold (`'runtime-default'`, an empty list) taken out. */
@@ -565,18 +612,21 @@ export function recordTurnLevels(
   runtime: AgentRuntime,
   storedModeOf: (sessionId: string) => string | null | undefined
 ): AgentRuntime {
+  const storedOf = (sessionId: string): string | null | undefined => {
+    try {
+      return storedModeOf(sessionId);
+    } catch {
+      return undefined;
+    }
+  };
   return applyTurnMarks(
     recordLevels(runtime, storedModeOf),
     (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
     (sessionId, opts) => {
-      let stored: string | null | undefined;
-      try {
-        stored = storedModeOf(sessionId);
-      } catch {
-        stored = undefined;
-      }
-      recordTurn(runtime, sessionId, stored, opts);
-    }
+      recordTurn(runtime, sessionId, storedOf(sessionId), opts);
+    },
+    // A chat set to Full is never held for a mark it carries (DOR-3394).
+    (sessionId, opts) => isFullLevel(chosenLevelOf(runtime, storedOf(sessionId), opts))
   );
 }
 

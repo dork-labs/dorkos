@@ -2,6 +2,14 @@ import Database from 'better-sqlite3';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { interceptNext } from '@dorkos/test-utils/playwright-routes';
 import { describeViolation, runAxe } from '../../axe.js';
+import {
+  actAsPersonInPage,
+  ensureTestOwner,
+  personHeaders,
+  removeTestOwner,
+  stepUpAsPerson,
+  type TestOwner,
+} from '../../fixtures/person-step-up.js';
 import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
 
@@ -361,11 +369,11 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         },
       });
       expect(grant.ok()).toBe(true);
-      const key = await createProgramKey(request, harness.apiUrl);
+      let key: ProgramKey | undefined;
       const programRequest = await playwright.request.newContext();
       const execute = () =>
         programRequest.post(`${harness.apiUrl}/api/connectors/executions`, {
-          headers: { authorization: `Bearer ${key.key}` },
+          headers: { authorization: `Bearer ${key!.key}` },
           data: {
             agentId: seeded.agentId,
             connectionId,
@@ -374,6 +382,9 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
           },
         });
       try {
+        key = await createProgramKey(request, harness.apiUrl);
+        // An owner exists from here, so the page changes things as the person.
+        await actAsPersonInPage(page, harness.apiUrl, PROGRAM_KEY_OWNER.password);
         const first = await execute();
         expect(first.status(), await first.text()).toBe(200);
         expect(await first.json()).toMatchObject({
@@ -440,11 +451,18 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         expect((await execute()).status()).not.toBe(200);
       } finally {
         await programRequest.dispose();
-        const deleted = await request.post(`${harness.apiUrl}/api/auth/api-key/delete`, {
-          headers: { origin: harness.apiUrl },
-          data: { keyId: key.id },
-        });
-        expect(deleted.ok()).toBe(true);
+        try {
+          if (key) {
+            const deleted = await request.post(`${harness.apiUrl}/api/auth/api-key/delete`, {
+              headers: { origin: harness.apiUrl, ...personHeaders(key.proof) },
+              data: { keyId: key.id },
+            });
+            expect(deleted.ok(), await deleted.text()).toBe(true);
+          }
+        } finally {
+          // Every later test on this server starts owner-less again.
+          removeTestOwner(harness.apiUrl, PROGRAM_KEY_OWNER.email);
+        }
       }
     });
 
@@ -731,35 +749,33 @@ function expireReview(reviewRequestId: string): void {
   }
 }
 
-/** Issue an ephemeral program key through real local owner authentication. */
-async function createProgramKey(
-  request: APIRequestContext,
-  apiUrl: string
-): Promise<{ id: string; key: string }> {
-  const account = {
-    email: 'connections-owner@e2e.dorkos.local',
-    password: 'connections-owner-test-password',
-  };
-  let signedIn = await request.post(`${apiUrl}/api/auth/sign-in/email`, {
-    headers: { origin: apiUrl },
-    data: account,
-  });
-  if (!signedIn.ok()) {
-    const signup = await request.post(`${apiUrl}/api/auth/sign-up/email`, {
-      headers: { origin: apiUrl },
-      data: { ...account, name: 'Connections test owner' },
-    });
-    expect(signup.ok()).toBe(true);
-    signedIn = await request.post(`${apiUrl}/api/auth/sign-in/email`, {
-      headers: { origin: apiUrl },
-      data: account,
-    });
-  }
-  expect(signedIn.ok()).toBe(true);
+/** The owner the program-key test registers, and removes again before it ends. */
+const PROGRAM_KEY_OWNER: TestOwner = {
+  email: 'connections-owner@e2e.dorkos.local',
+  password: 'connections-owner-test-password',
+  name: 'Connections test owner',
+};
+
+/** A program key, with the person proof of the session that issued it. */
+interface ProgramKey {
+  id: string;
+  key: string;
+  proof: string;
+}
+
+/**
+ * Issue an ephemeral program key through real local owner authentication:
+ * register the owner, step up as the person the way the app does, and create
+ * the key with that session and its proof.
+ */
+async function createProgramKey(request: APIRequestContext, apiUrl: string): Promise<ProgramKey> {
+  await ensureTestOwner(request, apiUrl, PROGRAM_KEY_OWNER);
+  const proof = await stepUpAsPerson(request, apiUrl, PROGRAM_KEY_OWNER.password);
   const created = await request.post(`${apiUrl}/api/auth/api-key/create`, {
-    headers: { origin: apiUrl },
+    headers: { origin: apiUrl, ...personHeaders(proof) },
     data: { name: 'Connections browser protocol', expiresIn: 86400 },
   });
-  expect(created.ok()).toBe(true);
-  return (await created.json()) as { id: string; key: string };
+  expect(created.ok(), await created.text()).toBe(true);
+  const { id, key } = (await created.json()) as { id: string; key: string };
+  return { id, key, proof };
 }

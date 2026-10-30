@@ -1,5 +1,6 @@
 import { sameOriginalFileSaveSource } from './file-save-recovery/applied-source.js';
 /** Validated ordinary-save evidence and UUID/path fences; none of these reads grants authority. */
+import { statSync } from 'node:fs';
 import { z } from 'zod';
 import {
   and,
@@ -150,11 +151,50 @@ export function requireFileSaveUuidVacant(
     throw new Error('Document event UUID is permanently reserved.');
 }
 
+/**
+ * When the file at `identity` was born, in ms since the epoch, or `undefined` when that cannot be
+ * known: the path no longer names this device+inode, the stat fails, or the filesystem keeps no
+ * birth time (it reads as 0). Read only on an original-inode match, never inside a transaction.
+ */
+export function fileBirthMs(identity: CanonicalFileIdentity): number | undefined {
+  try {
+    const info = statSync(identity.canonicalPath, { bigint: true });
+    if (String(info.dev) !== identity.device || String(info.ino) !== identity.inode)
+      return undefined;
+    return info.birthtimeNs > 0n ? Number(info.birthtimeNs / 1_000_000n) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Filesystem and wall clocks may disagree slightly; inside this margin a file counts as old. */
+const RECYCLED_INODE_MARGIN_MS = 2_000;
+
+/**
+ * A row's ORIGINAL inode matches a different path only because the kernel recycled it (DOR-3409):
+ * the original existed before the row was written, so a file born clearly after `createdAt` is
+ * not it. A replaced original's surviving hard link was born before, and stays fenced. Unknown
+ * birth (no btime, moved, stat error) stays fenced too.
+ *
+ * Linux only. That is where freed inodes come back quickly; elsewhere (APFS) a file's owner can
+ * set its creation date (SetFile -d), which would let a hard link to the original pass as new.
+ */
+function recycledOriginalInode(
+  row: FileSaveIntentRow,
+  identity: CanonicalFileIdentity,
+  birthOf: (identity: CanonicalFileIdentity) => number | undefined
+): boolean {
+  if (process.platform !== 'linux') return false;
+  const born = birthOf(identity);
+  return born !== undefined && born >= Date.parse(row.createdAt) + RECYCLED_INODE_MARGIN_MS;
+}
+
 /** Scan unresolved and unknown statuses completely; terminal rows are validated on UUID reads. */
 export function assertFileSaveAdmission(
   db: Db,
   identity: CanonicalFileIdentity,
-  originalIntentId?: string
+  originalIntentId?: string,
+  birthOf: (identity: CanonicalFileIdentity) => number | undefined = fileBirthMs
 ): void {
   if (db.$client.inTransaction) throw new Error('Filesystem admission inside transaction');
   let cursor: string | undefined,
@@ -183,8 +223,10 @@ export function assertFileSaveAdmission(
       if (row.intentId === originalIntentId) continue;
       if (
         row.canonicalPath === identity.canonicalPath ||
-        (row.beforeDevice === identity.device && row.beforeInode === identity.inode) ||
-        (row.replacementDevice === identity.device && row.replacementInode === identity.inode)
+        (row.replacementDevice === identity.device && row.replacementInode === identity.inode) ||
+        (row.beforeDevice === identity.device &&
+          row.beforeInode === identity.inode &&
+          !recycledOriginalInode(row, identity, birthOf))
       )
         throw new FileSaveWriteFencedError();
     }

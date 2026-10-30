@@ -4,9 +4,11 @@
  * Three files used to derive a main checkout from `--git-common-dir` on their
  * own, and they disagreed (a bare repository, a relative common dir, a symlink
  * each read differently in one of them). Only `resolve-project-root.ts` may run
- * that git call now. The one carve-out is the rooms domain, which asks a
- * different question: a room's own private repository, with a ceiling so git
- * cannot climb out of it.
+ * that git call now. Two carve-outs ask a different question. The rooms
+ * domain reads a room's own private repository, with a ceiling so git cannot
+ * climb out of it. The repo settings check (DOR-3298) keys a security record
+ * by the shared git folder itself, read fresh on every launch, never a cached
+ * project root: an agent can re-point a worktree's `.git` between turns.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -18,6 +20,7 @@ const serverSrc = path.resolve(import.meta.dirname, '..', '..', '..');
 const ALLOWED = new Set([
   'services/projects/resolve-project-root.ts',
   'services/rooms/repo/room-repo-git.ts',
+  'services/runtimes/claude-code/repo-settings/repo-git.ts',
 ]);
 
 function sourceFiles(dir: string): string[] {

@@ -20,6 +20,7 @@ import {
 } from '@/layers/shared/lib';
 import { useAuthClient } from './auth-client-context';
 import type { AuthError, AuthSession, AuthUser } from './auth-client';
+import { confirmItsYou } from './confirm-its-you';
 
 /**
  * Everything a sign-in or sign-out may safely re-read.
@@ -86,11 +87,16 @@ export function useSignIn(): AuthActionState<[email: string, password: string]> 
       setError(null);
       invalidateProtectedCommunityState(queryClient);
       const { error: err } = await client.signIn.email({ email, password });
-      setIsPending(false);
       if (err) {
+        setIsPending(false);
         setError(err);
         return { ok: false, error: err };
       }
+      // The same password proves it is them at this computer, so nothing
+      // after a sign-in asks again (DOR-3330). Best effort: elsewhere it is
+      // refused and changes nothing.
+      await confirmItsYou(password);
+      setIsPending(false);
       setAuthRequired(false);
       await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
       return { ok: true };
@@ -186,11 +192,15 @@ export function useSignUp(): AuthActionState<
         { email, password, name },
         setupCode ? { setupCode } : undefined
       );
-      setIsPending(false);
       if (err) {
+        setIsPending(false);
         setError(err);
         return { ok: false, error: err };
       }
+      // The new owner's password proves it is them at this computer, so the
+      // first chat after setup asks nothing more (DOR-3330).
+      await confirmItsYou(password);
+      setIsPending(false);
       setAuthRequired(false);
       await queryClient.invalidateQueries({ queryKey: authSessionKey });
       return { ok: true };

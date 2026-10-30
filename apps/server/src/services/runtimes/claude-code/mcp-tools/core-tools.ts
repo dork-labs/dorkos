@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { homeOf, readHomeManifest, resolveAgentHome } from '../../../core/agent-identity/index.js';
 import { env } from '../../../../env.js';
 import { SERVER_VERSION } from '../../../../lib/version.js';
+import { currentDistribution } from '../../../../lib/distribution/index.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 
@@ -59,14 +60,15 @@ export async function handlePing() {
 }
 
 /**
- * Server info handler — returns DorkOS server metadata.
- * Validates Zod optional fields and env var access from tool handlers.
+ * Server info handler — returns DorkOS server metadata, including which kind of
+ * DorkOS this is (`distribution`, see `lib/distribution/`), read on each call.
  */
 export async function handleGetServerInfo(args: { include_uptime?: boolean }) {
   const info: Record<string, unknown> = {
     product: 'DorkOS',
     port: env.DORKOS_PORT,
     version: SERVER_VERSION,
+    distribution: currentDistribution(),
   };
   if (args.include_uptime) {
     info.uptime_seconds = Math.floor(process.uptime());
@@ -175,7 +177,7 @@ export function getCoreTools(deps: McpToolDeps) {
     ),
     tool(
       'get_server_info',
-      'Returns DorkOS server metadata including version, port, and optionally uptime.',
+      'Returns DorkOS server metadata: version, port, which kind of DorkOS this is (Mac app, Windows app, npm, Homebrew, Docker, dev checkout or unknown) with its architecture, and optionally uptime. Check the kind before giving update steps.',
       { include_uptime: z.boolean().optional().describe('Include server uptime in seconds') },
       handleGetServerInfo
     ),

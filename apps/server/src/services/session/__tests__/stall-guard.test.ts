@@ -70,8 +70,8 @@ function stallCloseEvents(
       type: 'error',
       data: {
         message: opts.started
-          ? 'No activity from the agent for 10 minutes, so the turn was interrupted.'
-          : 'The agent never started working after 10 minutes, so the turn was ended.',
+          ? 'DorkOS stopped this turn after 10 minutes with no activity.'
+          : "DorkOS ended this turn: the agent didn't start within 10 minutes.",
         code: 'turn_stalled',
         category: 'execution_error',
         details: STALL_DETAILS[outcome],
@@ -430,7 +430,7 @@ describe('withStallGuard', () => {
       expect(collector.events[0]).toEqual({
         type: 'error',
         data: {
-          message: 'The agent never started working after 2 minutes, so the turn was ended.',
+          message: "DorkOS ended this turn: the agent didn't start within 2 minutes.",
           code: 'turn_stalled',
           category: 'execution_error',
           details: STALL_DETAILS.aborted,

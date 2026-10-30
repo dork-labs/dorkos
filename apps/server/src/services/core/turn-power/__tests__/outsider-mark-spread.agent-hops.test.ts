@@ -106,10 +106,19 @@ function answering(entryId: string, authorId: string): MessageOpts {
   return ceilingForEntry(AUTHORS, { id: entryId, authorId }, false, ROOM, OWN_CIRCLE);
 }
 
-/** What the held-turn hook answers for one call in a turn sent with these options, at Full. */
-async function hookSays(opts: MessageOpts | undefined, toolName: string, input = {}) {
+/**
+ * What the held-turn hook answers for one call in a turn sent with these options, in a chat set to
+ * `permissionMode`. A chat set to Full asks nobody anything (DOR-3394), so the asks below are
+ * pinned at Accept edits; each was pinned at Full until then.
+ */
+async function hookSays(
+  opts: MessageOpts | undefined,
+  toolName: string,
+  input = {},
+  permissionMode: 'bypassPermissions' | 'acceptEdits' = 'bypassPermissions'
+) {
   const session = {
-    permissionMode: 'bypassPermissions' as const,
+    permissionMode,
     ...(opts?.permissionCeiling !== undefined
       ? { turnPermissionCeiling: opts.permissionCeiling }
       : {}),
@@ -176,18 +185,21 @@ describe('an outsider mark in a team room (DOR-3390)', () => {
     expect(await hookSays(opts, 'mcp__dorkos__post_to_room', { roomId: ROOM, text: 'x' })).toBe(
       'runs'
     );
-    expect(await hookSays(opts, 'Bash', { command: 'python3 -c 1' })).toBe(
+    expect(await hookSays(opts, 'Bash', { command: 'python3 -c 1' }, 'acceptEdits')).toBe(
       CARRIED_SHELL_ASK_REASON
     );
+    // In a chat set to Full its shell runs too (DOR-3394).
+    expect(await hookSays(opts, 'Bash', { command: 'python3 -c 1' })).toBe('runs');
   });
 
   it('still holds a stranger’s own turn entirely, and a spin-off it starts', async () => {
     const { runtime, sent } = seam();
     const pm = fresh('pm');
     await run(runtime, pm, { permissionCeiling: 'runtime-default' });
-    expect(await hookSays(sent.get(pm), 'Write', { file_path: '/agents/code/x.ts' })).toBe(
-      HELD_TURN_ASK_REASON
-    );
+    const write = { file_path: '/agents/code/x.ts' };
+    expect(await hookSays(sent.get(pm), 'Write', write, 'acceptEdits')).toBe(HELD_TURN_ASK_REASON);
+    // A chat set to Full is not asked even here (DOR-3394); its launch is still held below.
+    expect(await hookSays(sent.get(pm), 'Write', write)).toBe('runs');
     const bound = markedBoundOf(pm, '/agents/pm');
     expect(bound).toContain('runtime-default');
     const child = fresh('child');
@@ -209,9 +221,11 @@ describe('an outsider mark in a team room (DOR-3390)', () => {
     await run(runtime, cloud, { permissionCeiling: parseCeiling(stored) });
     expect(runsAt(sent.get(cloud))).toBe('bypassPermissions');
     expect(lastTurnLevelOf(cloud)?.outsider).toBe(true);
-    expect(await hookSays(sent.get(cloud), 'Bash', { command: 'gh pr list' })).toBe(
+    const gh = { command: 'gh pr list' };
+    expect(await hookSays(sent.get(cloud), 'Bash', gh, 'acceptEdits')).toBe(
       CARRIED_SHELL_ASK_REASON
     );
+    expect(await hookSays(sent.get(cloud), 'Bash', gh)).toBe('runs');
   });
 });
 

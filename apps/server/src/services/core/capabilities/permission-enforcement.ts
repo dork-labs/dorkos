@@ -81,6 +81,8 @@ import {
 } from '@dorkos/shared/permissions';
 
 import { marksOf } from '../turn-power/turn-levels.js';
+import { choseFullAutonomy, recordMarkedFullAction } from '../turn-power/full-autonomy.js';
+import { HELD_IN_A_MARKED_TURN, markedTurnCardArea } from './marked-turn-holds.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { GatedAction } from './tier-enforcement.js';
@@ -90,7 +92,38 @@ import { logger } from '../../../lib/logger.js';
 export interface CallPermission extends ResolvedPermission {
   /** Set when the agent's manifest could not be read: Blocked, and not approvable. */
   unreadable?: true;
+  /**
+   * Set when the call is one of the refusals every level keeps, and the chat is set to Full, so no
+   * card may be shown (DOR-3417): Blocked, not approvable, and refused with this plain reason.
+   */
+  keeperRefusal?: string;
 }
+
+/**
+ * Whether a person can be asked to approve past this Blocked permission: not when the manifest
+ * could not be read, the identity is switched off, or it is a refusal every level keeps in a chat
+ * set to Full (DOR-3417), which asks nobody.
+ *
+ * @param permission - The permission the call resolved to, or `null` for none.
+ */
+export function approvableBlock(permission: CallPermission | null): boolean {
+  return (
+    permission?.state === 'blocked' &&
+    !permission.unreadable &&
+    permission.source !== 'inactive' &&
+    permission.keeperRefusal === undefined
+  );
+}
+
+/**
+ * What a marked turn in a chat set to Full is told when it tries to loosen a permission, or to
+ * change a setting only a person may change (DOR-3417):
+ * an agent changing its own level or standing grants is refused at every level, and Full asks
+ * nobody, so it is refused without a card.
+ */
+export const MARKED_FULL_PERMISSION_REFUSAL =
+  "This turn read words from outside your team, so it can't loosen a permission or change a " +
+  'setting only a person may change. Nobody was asked. A person can change it in Settings.';
 
 /** Where the gate reads the two halves of a permission from. */
 export interface PermissionGateSources {
@@ -322,14 +355,6 @@ function stricter(a: ResolvedPermission, b: ResolvedPermission): ResolvedPermiss
 }
 
 /**
- * Edits every later turn of the agent reads (who it is in `SOUL.md`, what its beat does in
- * `HEARTBEAT.md`, its persona and settings), so in a marked turn they are held for a person
- * (DOR-3036): a stranger's or a teammate's words must not rewrite who the agent is for everyone
- * after. A card, every time, whatever the preset.
- */
-const HELD_IN_A_MARKED_TURN: ReadonlySet<string> = new Set(['operator.update_agent']);
-
-/**
  * Resolve the permission for one call, reading the config and the calling
  * agent's manifest fresh.
  *
@@ -355,16 +380,84 @@ export async function resolveCallPermission(request: {
   input?: unknown;
   /** The calling session, when the surface verified one. */
   sessionId?: string;
+  /**
+   * The chat and agent a turn-bound runtime principal names, for a surface that verified the
+   * principal but no session or identity (the connector loopback): its turn's marks count too.
+   */
+  principalTurn?: { sessionId: string; agentPath: string };
 }): Promise<CallPermission | null> {
-  const { action, identity } = request;
+  const { action, identity, principalTurn } = request;
   // Read from the turn's own record, never from the model: the session's
   // latest turn, or for a caller with no session, any running turn of its agent.
-  const strangerTurn = marksOf(request.sessionId, identity?.agentPath).outsider === true;
+  const marked =
+    marksOf(request.sessionId, identity?.agentPath).outsider === true ||
+    (principalTurn !== undefined &&
+      marksOf(principalTurn.sessionId, principalTurn.agentPath).outsider === true);
+  // A chat set to Full autonomy asks nobody anything (DOR-3394): its mark holds nothing here.
+  // Only a named chat can say it is set to Full; a caller with none keeps the mark's holds.
+  const full =
+    choseFullAutonomy(request.sessionId) ||
+    (principalTurn !== undefined && choseFullAutonomy(principalTurn.sessionId));
+  const strangerTurn = marked && !full;
+  /**
+   * One Activity line when a marked turn in a Full chat runs what a marked turn below Full is
+   * asked about (a send or a standing change): no card was shown, so the line is the record.
+   * Written as the gate lets the call through, since the gate cannot see its outcome; the
+   * call's own audit line follows. A destructive call allowed unasked already gets its line
+   * from the tier gate (`enforceCapabilityTier`).
+   */
+  const noteIfUnasked = (state: CallPermission['state'] | null): void => {
+    if (!marked || !full || !HELD_IN_A_MARKED_TURN.has(action.id)) return;
+    if (state !== null && state !== 'allowed') return;
+    const chat = request.sessionId ?? principalTurn?.sessionId;
+    const title = (action as { title?: unknown }).title;
+    recordMarkedFullAction({
+      actionId: action.id,
+      title: typeof title === 'string' ? title : action.id,
+      ...(identity ? { agentPath: identity.agentPath } : {}),
+      ...(identity?.displayName ? { agentName: identity.displayName } : {}),
+      ...(chat ? { sessionId: chat } : {}),
+    });
+  };
   // The emergency stop is decided by its tier alone, whatever it declares.
   if (NEVER_ASKS_ACTIONS.has(action.id)) return null;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
   const areas = areasForCall(action, request.input);
-  if (areas.length === 0) return null;
+  // Keeper 1 at Full (DOR-3417): an input that always asks a person is a change to a level or a
+  // standing grant: `change_permission` loosening any agent's settings, its own included, or a
+  // `config_patch` reaching a setting only a person may change (an area past the action's own).
+  // Below Full it raises its card as before; a marked turn in a Full chat asks nobody, so it is
+  // refused with a plain reason and one Activity line.
+  if (marked && full && (action.alwaysAsksForInput?.(request.input) === true || areas.length > 1)) {
+    const chat = request.sessionId ?? principalTurn?.sessionId;
+    const title = (action as { title?: unknown }).title;
+    recordMarkedFullAction({
+      actionId: action.id,
+      title: typeof title === 'string' ? title : action.id,
+      refused: true,
+      ...(identity ? { agentPath: identity.agentPath } : {}),
+      ...(identity?.displayName ? { agentName: identity.displayName } : {}),
+      ...(chat ? { sessionId: chat } : {}),
+    });
+    return {
+      area: action.area ?? 'permissions',
+      state: 'blocked',
+      source: 'always-asks',
+      layer: 'floor',
+      keeperRefusal: MARKED_FULL_PERMISSION_REFUSAL,
+    };
+  }
+  if (areas.length === 0) {
+    // An action with no area that a marked turn must still ask about (DOR-3390): a card, filed
+    // under the area it acts in, every time.
+    const cardArea = strangerTurn ? markedTurnCardArea(action.id) : undefined;
+    if (cardArea !== undefined) {
+      return { area: cardArea, state: 'ask', source: 'always-asks', layer: 'floor' };
+    }
+    // No area: the tier decides, and an `act` call runs unasked (`execute_write`).
+    if (action.tier === 'act') noteIfUnasked(null);
+    return null;
+  }
   // The strictest area DorkOS knows about, for the two refusals below.
   const refusalArea = areas.find(isFloorArea) ?? areas[0]!;
 
@@ -435,7 +528,9 @@ export async function resolveCallPermission(request: {
       ...(identity?.inactive ? { inactive: true } : {}),
     })
   );
-  return reached.reduce(stricter, own!);
+  const resolved = reached.reduce(stricter, own!);
+  noteIfUnasked(resolved.state);
+  return resolved;
 }
 
 /**
@@ -465,6 +560,7 @@ export function permissionAreaLabel(area: PermissionAreaId): string {
  * @param permission - The resolved Blocked permission.
  */
 export function blockedPermissionMessage(permission: CallPermission): string {
+  if (permission.keeperRefusal !== undefined) return permission.keeperRefusal;
   if (permission.unreadable) {
     return (
       "DorkOS could not read this agent's permissions, so it refused the call. " +
