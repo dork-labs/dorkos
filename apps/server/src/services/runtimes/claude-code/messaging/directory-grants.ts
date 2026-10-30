@@ -35,12 +35,11 @@
  *
  * @module services/runtimes/claude-code/messaging/directory-grants
  */
-import { realpathSync } from 'node:fs';
+import { readdirSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/directory-grants';
-import { recordFullAction } from '../../../core/turn-power/full-autonomy.js';
 
 /**
  * Makes `--add-dir` folders load their `CLAUDE.md`. Never passed to a turn: a
@@ -314,26 +313,29 @@ function namesOf(dorkHome: string, name: string): string[] {
  * the launch's settings beside any grant rules. Whatever the permission mode:
  * a deny rule holds under `bypassPermissions` too (see the module note).
  *
- * Every agent home's self-grant files ({@link agentHomesSelfGrantRules}) are
- * denied below Full only. A launch at Full autonomy (`bypassPermissions` on
- * `sdkOptions`, so set the mode first) has no limits (the owner's rule), so its
- * file tools may change them, and the chat gets one Activity line for it. The
- * rules are part of the launch fingerprint, so a chat that drops below Full
- * relaunches with them.
+ * Every agent home's self-grant files in the data folder
+ * ({@link agentHomesSelfGrantRules}) are denied at every level (DOR-3483,
+ * Security's first Must): at Full too, so one agent can't raise another's level,
+ * forge an approval or edit a Default agent's hooks. One home is left out: the
+ * turn's own, when a person set its agent to Full and the turn is unmarked
+ * (`chat.ownFolderOpen`, `own-folder-open.ts`). Then each OTHER home is named on
+ * its own ({@link otherAgentHomesSelfGrantRules}), since no allow rule can carve
+ * the own home out of one `agents/*` deny. An `agents/` entry whose path no rule
+ * can name keeps the one rule, and the own home with it: closed, never open.
+ * The rules are part of the launch fingerprint, so a chat whose answer changes
+ * relaunches with the new set.
  *
- * @param sdkOptions - The launch options, mutated in place; its mode is read.
+ * @param sdkOptions - The launch options, mutated in place.
  * @param dorkHome - The data directory.
- * @param chat - The chat being launched and its agent, for the Activity line at Full.
+ * @param chat - The chat being launched, its agent, and whether its own folder is open.
  * @throws DirectoryGrantError when the data directory's path can't be named
  *   exactly in a rule — failing closed, as a `read` grant does.
  */
 export function applyPersonOnlyDataDeny(
   sdkOptions: Options,
   dorkHome: string,
-  chat?: { sessionId: string; agentPath?: string | undefined }
+  chat?: { sessionId: string; agentPath?: string | undefined; ownFolderOpen?: boolean }
 ): void {
-  const full = sdkOptions.permissionMode === 'bypassPermissions';
-  if (full && chat) noteFullLaunch(chat);
   const folders = [...new Set(PERSON_ONLY_DATA_FOLDERS.flatMap((name) => namesOf(dorkHome, name)))];
   if (!folders.every(ruleCanName)) {
     throw new DirectoryGrantError(
@@ -357,38 +359,31 @@ export function applyPersonOnlyDataDeny(
         ...(permissions.deny ?? []),
         ...folders.flatMap(readOnlyRules),
         ...personOnlyFileRules(dorkHome),
-        ...(full ? [] : agentHomesSelfGrantRules(dorkHome, 'launch')),
+        ...agentHomesRulesFor(dorkHome, 'launch', chat?.ownFolderOpen ? chat.agentPath : undefined),
         ...PROJECT_PLUGIN_DENY_RULES,
       ],
     },
   } as Options['settings'];
 }
 
-/** Chats whose launch at Full already wrote its Activity line this server run, newest last. */
-const fullLaunchesNoted = new Set<string>();
-/** How many chats {@link fullLaunchesNoted} remembers, oldest dropped first. */
-const FULL_LAUNCH_MEMORY = 10_000;
-
 /**
- * Write the one Activity line a chat launched at Full autonomy gets for the agent-home files its
- * file tools may change: once per chat per server run, not per write, since no hook sees a write
- * the rules no longer refuse.
+ * The agent-home self-grant rules for one launch: every home, or every home but
+ * `openHome` when one is open and each other home can be named.
  *
- * @param chat - The chat being launched and its agent.
+ * @param dorkHome - The data directory.
+ * @param scope - Which files (see {@link agentHomesSelfGrantRules}).
+ * @param openHome - The turn's own home, when its folder is open.
  */
-function noteFullLaunch(chat: { sessionId: string; agentPath?: string | undefined }): void {
-  if (fullLaunchesNoted.has(chat.sessionId)) return;
-  fullLaunchesNoted.add(chat.sessionId);
-  if (fullLaunchesNoted.size > FULL_LAUNCH_MEMORY) {
-    fullLaunchesNoted.delete(fullLaunchesNoted.values().next().value!);
-  }
-  recordFullAction({
-    actionId: 'files.agent-homes',
-    did: "started a chat that may change other agents' settings, skills and agent files",
-    limit: "a chat's file tools can't change them",
-    ...(chat.agentPath ? { agentPath: chat.agentPath } : {}),
-    sessionId: chat.sessionId,
-  });
+export function agentHomesRulesFor(
+  dorkHome: string,
+  scope: 'launch' | 'all',
+  openHome: string | undefined
+): string[] {
+  if (openHome === undefined) return agentHomesSelfGrantRules(dorkHome, scope);
+  return (
+    otherAgentHomesSelfGrantRules(dorkHome, openHome, scope) ??
+    agentHomesSelfGrantRules(dorkHome, scope)
+  );
 }
 
 /**
@@ -441,17 +436,68 @@ export function agentHomesSelfGrantRules(dorkHome: string, scope: 'launch' | 'al
     const root = rulePath(spelling);
     if (root === undefined) continue;
     const agents = `${root}/agents`;
-    const files = [
-      ...(scope === 'all' ? ['.claude/**'] : LAUNCH_SELF_GRANT_CLAUDE_FILES),
-      '.agents/**',
-      '.mcp.json',
-      '.dork/agent.json',
-    ];
     for (const tool of ALL_WRITE_TOOLS) {
-      for (const file of files) rules.add(`${tool}(${agents}/*/${file})`);
+      for (const file of selfGrantFiles(scope)) rules.add(`${tool}(${agents}/*/${file})`);
     }
   }
   return [...rules];
+}
+
+/**
+ * {@link agentHomesSelfGrantRules} with one home left out (DOR-3483): each
+ * other folder in the data folder's `agents/` named on its own, through every
+ * spelling of the data directory. Read at launch, so a home made since is
+ * covered from the next launch on.
+ *
+ * `undefined` when an entry's path can't be named exactly in a rule: the caller
+ * then keeps the one `agents/*` rule, which closes the open home too.
+ *
+ * @param dorkHome - The data directory.
+ * @param openHome - The home to leave out: the turn's own.
+ * @param scope - Which files, as for {@link agentHomesSelfGrantRules}.
+ */
+export function otherAgentHomesSelfGrantRules(
+  dorkHome: string,
+  openHome: string,
+  scope: 'launch' | 'all'
+): string[] | undefined {
+  if (isForeignWindowsPath(dorkHome)) return undefined;
+  const home = path.resolve(dorkHome).replace(/[\\/]+$/, '');
+  const real = realpathOrUndefined(home);
+  const openReal = realpathOrUndefined(path.resolve(openHome));
+  const open = new Set([path.resolve(openHome), ...(openReal ? [openReal] : [])]);
+  const rules = new Set<string>();
+  for (const spelling of new Set([home, ...(real ? [real] : [])])) {
+    const agents = path.join(spelling, 'agents');
+    let entries: { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }[];
+    try {
+      entries = readdirSync(agents, { withFileTypes: true });
+    } catch {
+      continue; // No agents folder: nothing in it to name.
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      const folder = path.join(agents, entry.name);
+      const folderReal = realpathOrUndefined(folder);
+      if (open.has(folder) || (folderReal !== undefined && open.has(folderReal))) continue;
+      const root = rulePath(folder);
+      if (root === undefined) return undefined;
+      for (const tool of ALL_WRITE_TOOLS) {
+        for (const file of selfGrantFiles(scope)) rules.add(`${tool}(${root}/${file})`);
+      }
+    }
+  }
+  return [...rules];
+}
+
+/** The self-grant files of one home, relative to it, for a scope. */
+function selfGrantFiles(scope: 'launch' | 'all'): string[] {
+  return [
+    ...(scope === 'all' ? ['.claude/**'] : LAUNCH_SELF_GRANT_CLAUDE_FILES),
+    '.agents/**',
+    '.mcp.json',
+    '.dork/agent.json',
+  ];
 }
 
 /** The parts of a home's `.claude/` every launch denies to every agent's file tools. */
