@@ -224,6 +224,9 @@ describe('a room turn, standing at home', () => {
     toolLaunch: McpServerLaunch,
     text: string
   ): Promise<{ posted?: boolean; code?: string }> {
+    // The room keeps this session for Ana, so it is her seat here and posts (DOR-3397). The
+    // in-session server names the SDK's id for it.
+    harness.store.bindRoomSession(roomId, anaAuthor(), 'sdk-1', new Date().toISOString());
     const server = createDorkOsToolServer(
       toolDeps(),
       session,

@@ -22,6 +22,8 @@
  * @module server/services/rooms/room-service
  */
 import type { ReseatOptions } from '@dorkos/shared/room-schemas';
+import type { RoomHandoffs } from './handoff/room-handoff.js';
+import type { RoomTurnControl } from './manage/room-turn-control.js';
 import type { DbTransaction } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { SignalType } from '@dorkos/shared/relay-schemas';
@@ -185,6 +187,10 @@ export class RoomService {
   get follow(): RoomFollowService {
     return this.parts.follow;
   }
+  /** Each agent's seat per room, and the hand-off between them. See {@link RoomHandoffs}. */
+  get handoffs(): RoomHandoffs {
+    return this.parts.handoffs;
+  }
   /** Every room turn in flight right now. See {@link RoomTurnControl.listActiveClaims}. */
   listActiveClaims(): ActiveClaimView[] {
     return this.parts.turnControl.listActiveClaims();
@@ -263,12 +269,7 @@ export class RoomService {
     return this.parts.turnControl.promoteHold(roomId, authorId, viewerAuthorId);
   }
   /** Ask one agent something the room never posted. See {@link RoomTurnControl.askAside}. */
-  askAside(input: {
-    roomId: string;
-    authorId: string;
-    aboutEntryId: string;
-    prompt: string;
-  }): Promise<void> {
+  askAside(input: Parameters<RoomTurnControl['askAside']>[0]): Promise<void> {
     return this.parts.turnControl.askAside(input);
   }
   /** Open a channel or a DM. See {@link RoomLifecycle.createRoom}. */
