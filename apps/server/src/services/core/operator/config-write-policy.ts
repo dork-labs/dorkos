@@ -839,6 +839,10 @@ export const CONFIG_WRITE_POLICY = {
   // How many agents may run at once (DOR-3012): memory on this machine, so the
   // person sets it, like `scheduler.maxConcurrentRuns`.
   'runtimes.claudeCode.maxWarmProcesses': 'operator-only',
+  // How many spin-off chats may run at once (DOR-3413): the bound that keeps
+  // agents from launching agents until the machine falls over. An agent that
+  // could raise it would be raising its own limit, so only a person may.
+  'runtimes.maxAgentChats': 'operator-only',
   'runtimes.opencode.defaultModel': 'agent-writable',
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',
