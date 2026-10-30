@@ -229,6 +229,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         },
       },
       default: 'claude-code',
+      maxAgentChats: 12,
       // A global stop with one runtime overriding it, so the projection is
       // exercised on both halves of the override rather than on one.
       defaultTrustStop: 'act',

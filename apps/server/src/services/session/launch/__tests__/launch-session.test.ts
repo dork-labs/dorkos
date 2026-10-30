@@ -30,6 +30,9 @@ vi.mock('../../../core/runtime-registry.js', () => ({
     resolveForSessionWithOwnership: vi.fn(async () => ({ runtime: fakeRuntime, bound: false })),
   },
 }));
+vi.mock('../../../core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined) },
+}));
 vi.mock('../../../core/usage-reporter.js', () => ({ reportUsageEvent: vi.fn() }));
 vi.mock('../../../workspace/room-session-place.js', () => ({
   resolveSessionCwdWithRoom: vi.fn(async () => ({ rung: 'default', cwd: '/default' })),
@@ -54,6 +57,7 @@ vi.mock('../../message-dispatcher.js', () => ({
 }));
 
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { configManager } from '../../../core/config-manager.js';
 import { dispatchMessage } from '../../message-dispatcher.js';
 import {
   chatHeardOutsider,
@@ -63,8 +67,8 @@ import {
 import { recordDispatchEnd } from '../../../observability/dispatch-buffers.js';
 import { resolveSessionCwdWithRoom } from '../../../workspace/room-session-place.js';
 import {
-  AGENT_LAUNCH_CAP_MESSAGE,
   AGENT_LAUNCH_MAX_LIVE,
+  agentLaunchCapMessage,
   dispatchSessionMessage,
   isAgentLaunchCapFull,
   isSessionLaunchRefusal,
@@ -306,7 +310,18 @@ describe('dispatchSessionMessage', () => {
       for (const [opts] of vi.mocked(dispatchMessage).mock.calls) opts.onSettled?.('ok');
     }
 
-    afterEach(() => settleAll());
+    /** Answer `runtimes.maxAgentChats` as given, or leave it unset. */
+    function setMaxAgentChats(value: number | undefined): void {
+      vi.mocked(configManager.get).mockImplementation(((key: string) =>
+        key === 'runtimes' && value !== undefined
+          ? { maxAgentChats: value }
+          : undefined) as typeof configManager.get);
+    }
+
+    afterEach(() => {
+      settleAll();
+      setMaxAgentChats(undefined);
+    });
 
     it(`refuses the ${AGENT_LAUNCH_MAX_LIVE + 1}th live capped launch, and starts nothing for it`, async () => {
       for (let i = 0; i < AGENT_LAUNCH_MAX_LIVE; i++) {
@@ -317,9 +332,28 @@ describe('dispatchSessionMessage', () => {
 
       expect(await cappedLaunch()).toEqual({
         refused: 'LAUNCH_CAP_FULL',
-        message: AGENT_LAUNCH_CAP_MESSAGE,
+        message: agentLaunchCapMessage(),
       });
       expect(vi.mocked(dispatchMessage).mock.calls.length).toBe(calls);
+    });
+
+    it('still refuses the 9th at the shipped setting of 8', async () => {
+      setMaxAgentChats(8);
+      for (let i = 0; i < 8; i++) expect(isSessionLaunchRefusal(await cappedLaunch())).toBe(false);
+      expect(isSessionLaunchRefusal(await cappedLaunch())).toBe(true);
+    });
+
+    it('admits a 9th once a person raises the setting, and refuses past the new number', async () => {
+      setMaxAgentChats(12);
+      for (let i = 0; i < 12; i++) expect(isSessionLaunchRefusal(await cappedLaunch())).toBe(false);
+      const refused = await cappedLaunch();
+      expect(refused).toEqual({ refused: 'LAUNCH_CAP_FULL', message: agentLaunchCapMessage() });
+    });
+
+    it('names the number in force and the setting that raises it', () => {
+      setMaxAgentChats(12);
+      expect(agentLaunchCapMessage()).toContain('(12)');
+      expect(agentLaunchCapMessage()).toContain('runtimes.maxAgentChats');
     });
 
     it('frees a slot when a turn settles, and still tells the caller', async () => {

@@ -238,6 +238,12 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     reason: 'A tightened cap on how many files one upload may carry.',
   },
   {
+    path: 'runtimes.maxAgentChats',
+    direction: 'lower',
+    reason:
+      'A tightened cap on how many spin-off chats may run at once (DOR-3413). A person who lowered it to spare the machine must not get the default back from a wipe.',
+  },
+  {
     path: 'uploads.allowedTypes',
     direction: 'restricted',
     wildcard: '*/*',

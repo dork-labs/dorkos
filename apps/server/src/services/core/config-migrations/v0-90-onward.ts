@@ -813,3 +813,24 @@ export function markLegacyPathOnlyApprovals(store: {
     });
   }
 }
+
+/**
+ * Seed `runtimes.maxAgentChats` as `8` where the stored `runtimes` section
+ * lacks it (DOR-3413): the fixed cap it replaces, so nobody's limit moves.
+ *
+ * A nested leaf inside a section every config already carries, and conf's
+ * pre-migration merge is shallow, so this body is the only thing that writes it
+ * to disk. Absence is tested with `in`, so a number a person chose is never
+ * rewritten, and running it twice changes nothing.
+ *
+ * @param store - The conf store, narrowed to the two calls this needs.
+ */
+export function seedMaxAgentChats(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes === null || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  if ('maxAgentChats' in runtimes) return;
+  store.set('runtimes', { ...runtimes, maxAgentChats: 8 });
+}

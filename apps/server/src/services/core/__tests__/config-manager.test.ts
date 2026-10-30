@@ -109,6 +109,7 @@ const RUNTIMES_DEFAULTS = {
   // Trusted by default (ADR 261006-225605): the global stop ships at Full
   // autonomy, and each runtime's own stop ships `null` so it follows it.
   defaultTrustStop: 'autonomy',
+  maxAgentChats: 8,
   claudeCode: {
     defaultAccount: null,
     accounts: [],
@@ -4433,7 +4434,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(61);
+    expect(Object.keys(bodies)).toHaveLength(62);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

@@ -33,7 +33,7 @@
  *   checked by `checkAccountLaunch`: with no account advisor registered (the
  *   Flow extension), naming one is refused. Leaving it out walks the usual
  *   ladder, exactly as a person's launch does.
- * - **No pile-up.** Every launch counts against `AGENT_LAUNCH_MAX_LIVE` in the
+ * - **No pile-up.** Every launch counts against `runtimes.maxAgentChats` in the
  *   launch service, released when its turn settles.
  * - **No way around an extension's limits.** The new chat records who started
  *   it (`session_started_by`, spec `flow-multiproject` §7.7): the calling chat,
@@ -77,7 +77,7 @@ import {
   isAgentLaunchCapFull,
   isSessionLaunchRefusal,
   resolveRuntimeTypeForNewSession,
-  AGENT_LAUNCH_CAP_MESSAGE,
+  agentLaunchCapMessage,
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
 import { getChatMessageService } from '../../../session/chat-messages/chat-message-current.js';
@@ -446,7 +446,7 @@ export function createSessionStartHandler(
 
     // Asked here too, before the settings write below, so a full cap leaves no
     // row behind. The launch service's own check is the one that holds a slot.
-    if (isAgentLaunchCapFull()) return refuse(AGENT_LAUNCH_CAP_MESSAGE, 'LAUNCH_CAP_FULL');
+    if (isAgentLaunchCapFull()) return refuse(agentLaunchCapMessage(), 'LAUNCH_CAP_FULL');
 
     // The level it runs at: the calling chat's own or lower, never higher (spec
     // `inherited-start-permission`). The ceiling is read here, at the moment of
