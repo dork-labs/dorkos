@@ -455,7 +455,7 @@ export const roomsDomain: CapabilityDomain = {
         // that missed what was said since it last read gets it back instead.
         const held =
           author.kind === 'agent' && input.confirm !== true
-            ? answering(() => holdIfStale(rooms, input.roomId, authorId))
+            ? answering(() => holdIfStale(rooms, input.roomId, authorId, context.sessionId))
             : null;
         if (held) return held;
         // Staged BEFORE the entry, and bound inside its transaction below, so
@@ -1511,7 +1511,7 @@ async function readRoomCanvas(
   // claim, and it is taken off again when that turn ends. An agent reading the
   // canvas with no turn in hand (a person driving it from a shell, an external
   // MCP client) shows nothing, which is right: nobody is waiting on it.
-  if (rooms.isWorkingHere(input.roomId, callerAuthorId)) {
+  if (rooms.activeTurn(input.roomId, callerAuthorId)) {
     canvas.noteAgentRead(input.roomId, callerAuthorId, document.id);
   }
   const metadata = {

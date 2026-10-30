@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): agents re-read a room before they post, and answer a burst once (DOR-3398)'
+  - 'fix(server): a held post marks the turn for an outsider’s words it hands back (DOR-3398)'
 ---
 
 ### Changed
