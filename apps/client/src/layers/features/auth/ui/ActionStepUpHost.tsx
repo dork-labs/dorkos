@@ -1,5 +1,5 @@
-import { useEffect, useId, useState, useSyncExternalStore, type FormEvent } from 'react';
-import type { HeldStepUpView } from '@dorkos/shared/step-up';
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
+import type { HeldStepUpView, StepUpActionKind } from '@dorkos/shared/step-up';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -12,6 +12,7 @@ import {
 } from '@/layers/shared/ui';
 import {
   finishActionStepUp,
+  getActionStepUpAfterExpiry,
   getActionStepUpShowing,
   subscribeActionStepUp,
   type ActionStepUpOutcome,
@@ -92,7 +93,7 @@ type Stage =
   | { kind: 'loading' }
   | { kind: 'password'; view: HeldStepUpView }
   | { kind: 'change'; view: HeldStepUpView; minLength: number }
-  | { kind: 'ended'; message: string; askAgain: boolean };
+  | { kind: 'ended'; message: string };
 
 /** Seconds left until `until`, never below zero. */
 function secondsUntil(until: number): number {
@@ -110,13 +111,17 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
   const [failure, setFailure] = useState<ConfirmActionFailure | null>(null);
   const [waitUntil, setWaitUntil] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const afterExpiry = useSyncExternalStore(subscribeActionStepUp, getActionStepUpAfterExpiry);
 
   useEffect(() => {
     let live = true;
     void readHeldAction(heldActionId).then((read) => {
       if (!live) return;
       if (read.ok) setStage({ kind: 'password', view: read.view });
-      else setStage(endedBy(read) ?? { kind: 'ended', message: read.message, askAgain: false });
+      // Gone before it could be read: ask for the action again, on the same sheet.
+      else if (read.reason === 'expired') finishActionStepUp({ kind: 'ask-again' });
+      else setStage(endedBy(read) ?? { kind: 'ended', message: read.message });
     });
     return () => {
       live = false;
@@ -161,6 +166,12 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
       setStage({ kind: 'change', view: stage.view, minLength: result.minLength ?? 8 });
       return;
     }
+    // It expired while open: the action is asked for again, and the new sheet
+    // says why (designer, DOR-3467: an expired proof reopens on the same method).
+    if (result.reason === 'expired') {
+      finishActionStepUp({ kind: 'ask-again' });
+      return;
+    }
     if (result.reason === 'too-many-attempts') {
       setWaitUntil(Date.now() + (result.retryAfterSeconds ?? 60) * 1000);
     }
@@ -170,6 +181,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
       return;
     }
     setFailure(result);
+    if (result.reason === 'wrong-password') queueMicrotask(() => passwordRef.current?.select());
   }
 
   function handleSubmit(e: FormEvent) {
@@ -193,18 +205,17 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
               {note}
             </p>
           ))}
+          {afterExpiry && (
+            <p role="status" className="text-sm">
+              This took too long. Confirm it’s you again.
+            </p>
+          )}
         </AlertDialogHeader>
         {stage.kind === 'ended' ? (
-          <EndedBody
-            message={stage.message}
-            askAgain={stage.askAgain}
-            onClose={() => finish({ kind: 'not-confirmed' })}
-            onAskAgain={() => finishActionStepUp({ kind: 'ask-again' })}
-          />
+          <EndedBody message={stage.message} onClose={() => finish({ kind: 'not-confirmed' })} />
         ) : view?.passwordUnavailable === 'insecure-connection' ? (
           <EndedBody
             message="Confirm this on the computer running DorkOS."
-            askAgain={false}
             onClose={() => finish({ kind: 'not-confirmed' })}
           />
         ) : view?.passwordUnavailable === 'no-password' ? (
@@ -221,6 +232,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
                 {stage.kind === 'change' ? 'Current password' : 'DorkOS password'}
               </Label>
               <PasswordInput
+                ref={passwordRef}
                 id={passwordId}
                 autoComplete="current-password"
                 value={password}
@@ -246,20 +258,26 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
               </div>
             )}
             {failure && <FailureLine id={failureId} failure={failure} secondsLeft={secondsLeft} />}
-            <div className="flex gap-2">
+            {/* On a phone: stacked, full width, 44px tall (designer, DOR-3467). */}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
               <Button
                 type="button"
                 variant="ghost"
+                className="h-11 w-full sm:h-9 sm:w-auto"
                 onClick={() => finish({ kind: 'not-confirmed' })}
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
-                className="flex-1"
+                className="h-11 w-full sm:h-9 sm:flex-1"
                 disabled={pending || waiting || stage.kind === 'loading'}
               >
-                {pending ? 'Checking…' : stage.kind === 'change' ? 'Change and confirm' : 'Confirm'}
+                {pending
+                  ? 'Confirming…'
+                  : stage.kind === 'change'
+                    ? 'Change and confirm'
+                    : primaryLabel(view?.kind)}
               </Button>
             </div>
           </form>
@@ -275,63 +293,49 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
  */
 function endedBy(failure: ConfirmActionFailure): Extract<Stage, { kind: 'ended' }> | null {
   switch (failure.reason) {
-    case 'expired':
-      return { kind: 'ended', message: 'That took too long. Nothing changed.', askAgain: true };
     case 'too-many-tries':
       return {
         kind: 'ended',
         message: 'Too many wrong passwords. Nothing changed.',
-        askAgain: false,
       };
     case 'insecure-connection':
       return {
         kind: 'ended',
         message: 'Confirm this on the computer running DorkOS.',
-        askAgain: false,
       };
     case 'not-your-action':
     case 'not-a-person':
     case 'offline':
-      return { kind: 'ended', message: failure.message, askAgain: false };
+      return { kind: 'ended', message: failure.message };
     case 'no-password':
       return {
         kind: 'ended',
         message: `Set a DorkOS password first: run ${RESET_PASSWORD_COMMAND} on this computer.`,
-        askAgain: false,
       };
     default:
       return null;
   }
 }
 
-function EndedBody({
-  message,
-  askAgain,
-  onClose,
-  onAskAgain,
-}: {
-  message: string;
-  askAgain: boolean;
-  onClose: () => void;
-  onAskAgain?: () => void;
-}) {
+function EndedBody({ message, onClose }: { message: string; onClose: () => void }) {
   return (
     <div className="space-y-4">
       <p role="status" className="text-sm">
         {message}
       </p>
-      <div className="flex gap-2">
-        <Button type="button" variant="ghost" onClick={onClose} autoFocus={!askAgain}>
-          Close
-        </Button>
-        {askAgain && onAskAgain && (
-          <Button type="button" className="flex-1" onClick={onAskAgain} autoFocus>
-            Try again
-          </Button>
-        )}
-      </div>
+      <Button type="button" className="h-11 w-full sm:h-9" onClick={onClose} autoFocus>
+        Close
+      </Button>
     </div>
   );
+}
+
+/**
+ * The sheet's main button, named for the action where the designer named it
+ * (DOR-3467: "Confirm setting"); "Confirm" otherwise.
+ */
+function primaryLabel(kind: StepUpActionKind | undefined): string {
+  return kind === 'connection.confirm-setting' ? 'Confirm setting' : 'Confirm';
 }
 
 function NoPasswordBody({ onClose }: { onClose: () => void }) {
@@ -365,10 +369,8 @@ function FailureLine({
   const text =
     failure.reason === 'too-many-attempts'
       ? `Too many tries. Try again in ${Math.max(1, secondsLeft)} sec.`
-      : failure.reason === 'wrong-password' && failure.triesLeft !== undefined
-        ? `That’s not your DorkOS password. ${failure.triesLeft} ${
-            failure.triesLeft === 1 ? 'try' : 'tries'
-          } left.`
+      : failure.reason === 'wrong-password'
+        ? 'That password isn’t right.'
         : failure.message;
   return (
     <p id={id} role="alert" className="text-destructive text-sm">

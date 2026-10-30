@@ -76,7 +76,11 @@ const MAX_PASSWORD_LENGTH = 128;
  * The same list as `requirePersonAtThisComputer`'s (DOR-3213); whichever of
  * the two lands second makes them one export.
  */
-const PROGRAM_CREDENTIAL_HEADERS = ['authorization', 'x-api-key', 'proxy-authorization'] as const;
+export const PROGRAM_CREDENTIAL_HEADERS = [
+  'authorization',
+  'x-api-key',
+  'proxy-authorization',
+] as const;
 
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {

@@ -43,6 +43,7 @@ import {
   type QueryClientConfig,
 } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 
 import { QUERY_TIMING } from './constants';
 import { addBreadcrumb } from './breadcrumbs';
@@ -161,6 +162,9 @@ export function createQueryClientConfig(): QueryClientConfig {
           `${String(mutation.options?.mutationKey?.[0] ?? 'mutation')}: ${error.message}`
         );
         if (mutation.meta?.suppressErrorToast) return;
+        // "Confirm it's you" closed without confirming (DOR-3234): the person
+        // chose not to, and nothing changed, so it is not a failure to report.
+        if ((error as Error & { code?: unknown }).code === STEP_UP_REQUIRED_CODE) return;
         const isShownInline = mutation.meta?.isShownInline as
           ((error: Error) => boolean) | undefined;
         if (isShownInline?.(error)) return;
