@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- An approval card leaves with the turn that failed under it (DOR-3210)
+- When an agent's turn fails while it is waiting for your approval, the approval card now closes with it. Before, the card stayed open with a working Approve button that did nothing, and the room kept showing the agent as waiting on you.
