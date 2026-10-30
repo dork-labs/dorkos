@@ -36,7 +36,10 @@ import type { TaskRegistrar } from '../services/tasks/task-registrar.js';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
-import { removeScheduledTaskFile } from '../services/tasks/lifecycle/delete-task.js';
+import {
+  PROJECT_COPY_DELETE_REFUSAL,
+  removeScheduledTaskFile,
+} from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -818,6 +821,10 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const schedule = store.getTask(id);
     if (!schedule) {
       return c.json({ error: 'Scheduled task not found' }, 404);
+    }
+    // One project's copy shares its file with every other project's (DOR-3376).
+    if (schedule.projectOnly) {
+      return c.json({ error: PROJECT_COPY_DELETE_REFUSAL, code: 'schedule_project_copy' }, 409);
     }
 
     // The file goes first, through the seam `tasks_delete` shares: a row deleted

@@ -14,7 +14,7 @@
  *
  * @module services/tasks/sync/task-file-sync
  */
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import { ulid } from 'ulidx';
 import type { Task } from '@dorkos/shared/types';
@@ -108,10 +108,22 @@ export class TaskFileSync {
     const schedule = def.meta.schedule;
     const maxRuntimeMs = schedule['max-runtime'] ? parseDuration(schedule['max-runtime']) : null;
 
+    // One project's copy of a shared file is found by its file AND its agent;
+    // every other row by its file alone, never landing on a project's copy
+    // (DOR-3376).
+    const projectOnly = options?.projectOnly === true;
     const existing = this.db
       .select()
       .from(pulseSchedules)
-      .where(eq(pulseSchedules.filePath, def.filePath))
+      .where(
+        projectOnly
+          ? and(
+              eq(pulseSchedules.filePath, def.filePath),
+              eq(pulseSchedules.agentId, agentId ?? ''),
+              eq(pulseSchedules.projectOnly, true)
+            )
+          : and(eq(pulseSchedules.filePath, def.filePath), eq(pulseSchedules.projectOnly, false))
+      )
       .get();
 
     const incomingCron = schedule.cron ?? '';
@@ -255,7 +267,10 @@ export class TaskFileSync {
         cron: incomingCron,
         timezone: schedule.timezone,
         agentId: agentId ?? null,
-        enabled: schedule.enabled,
+        // A project's copy starts switched off whatever the file says: the
+        // project's own person turns it on (DOR-3376).
+        enabled: projectOnly ? false : schedule.enabled,
+        projectOnly,
         sticky: schedule.sticky,
         maxRuntime: maxRuntimeMs,
         permissionMode,
@@ -340,6 +355,10 @@ export class TaskFileSync {
    * registered agent's, so a slug lookup silently returns an arbitrary one of
    * several matches.
    *
+   * A project's copy of a global `scope: project` schedule shares its file with
+   * the other projects' copies, so it is never the answer here; see
+   * {@link TaskFileSync.projectCopiesOf} (DOR-3376).
+   *
    * @param filePath - Absolute path to the task's SKILL.md
    * @returns The matching Task or null
    */
@@ -347,9 +366,41 @@ export class TaskFileSync {
     const row = this.db
       .select()
       .from(pulseSchedules)
-      .where(eq(pulseSchedules.filePath, filePath))
+      .where(and(eq(pulseSchedules.filePath, filePath), eq(pulseSchedules.projectOnly, false)))
       .get();
     return row ? mapTaskRow(row) : null;
+  }
+
+  /**
+   * Every project's copy of a global `scope: project` schedule (DOR-3376).
+   *
+   * @param filePath - Absolute path to the shared SKILL.md.
+   * @returns One task per project that has a copy, in no particular order.
+   */
+  projectCopiesOf(filePath: string): Task[] {
+    return this.projectCopyRows(filePath).map(mapTaskRow);
+  }
+
+  /**
+   * Whether a person ever switched this project's copy on: it is on now, or a
+   * person approved it at some point, whatever has happened since (DOR-3376).
+   * Read from the row, because a switch turned back off keeps its approval.
+   *
+   * @param id - The copy's task id.
+   */
+  projectCopyWasEverOn(id: string): boolean {
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
+    if (!row) return false;
+    return row.enabled || row.approvedContentKey !== null || row.previousApprovalKey !== null;
+  }
+
+  /** The stored rows behind {@link TaskFileSync.projectCopiesOf}. */
+  private projectCopyRows(filePath: string) {
+    return this.db
+      .select()
+      .from(pulseSchedules)
+      .where(and(eq(pulseSchedules.filePath, filePath), eq(pulseSchedules.projectOnly, true)))
+      .all();
   }
 }
 
