@@ -3,9 +3,9 @@
  * to (room-participation spec §10.2 and §10.3, plus the E16b reversal in
  * ADR 260814-195522).
  *
- * Fifteen verbs, and between them they are everything an agent can do in a room
+ * Sixteen verbs, and between them they are everything an agent can do in a room
  * that is not simply answering the message it was handed. **Ten are open to
- * every agent; the five that arrange rooms are off until a person turns them
+ * every agent; the six that arrange rooms are off until a person turns them
  * on** (see "The one group with teeth" below):
  *
  * | Capability          | Tool                    | Tier      | What it is |
@@ -13,6 +13,7 @@
  * | `rooms.post`        | `post_to_room`          | `act`     | Say something into a channel, on purpose. |
  * | `rooms.react`       | `react_to_room_entry`   | `act`     | Put one emoji on one message. |
  * | `rooms.merge`       | `merge_to_room_main`    | `act`     | Bring the work in your own working copy into the room. |
+ * | `rooms.set_up_files`| `set_up_room_files`     | `act`     | Give a room you are in files of its own. |
  * | `rooms.read_history`| `read_room_history`     | `observe` | Read back what was said in ONE room. |
  * | `rooms.search_history`| `search_room_history` | `observe` | Find where something was said in ONE room. |
  * | `rooms.list_member_rooms`| `list_member_rooms` | `observe` | Which rooms this agent is in at all. |
@@ -40,10 +41,13 @@
  * They are also not a second write path. `merge_to_room_main` runs `git merge`
  * in the room's integration tree through `RoomMergeService`, and everything it
  * says about that afterwards goes into the room through `RoomService`, like
- * every other word an agent puts in a room. And **giving a room files is not
- * here**: enabling a repo is operator-only over HTTP (spec §3.2), because an
- * agent that could hand itself a writable working directory is the
- * confused-deputy shape the membership verbs already refuse.
+ * every other word an agent puts in a room.
+ *
+ * **`set_up_room_files` gives a member's room files of its own** (DOR-3468,
+ * Dorian's call: agents set this up without asking). It sits in the Rooms
+ * permission area like merging, and it opens only the setup: merging someone
+ * else's copy and repairing the shared copy stay owner-only, and the install's
+ * `rooms.repo.enabled` switch stays a person's.
  *
  * ## The lookup pair answers WHO and WHICH (DOR-1610)
  *
@@ -199,7 +203,6 @@ import { getAttachmentRowStore, getRoomAttachmentStore } from './attachments/att
 import {
   CapabilityToolError,
   defineCapability,
-  type CapabilityDeps,
   type CapabilityDomain,
   type CapabilityHandlerContext,
 } from '../core/capabilities/index.js';
@@ -219,6 +222,7 @@ import {
   applyPerMember,
   isOwnerCaller,
   reachOf,
+  requireMergeDeps,
   requireRoomDeps,
   resolveHandles,
 } from './service/room-capability-answers.js';
@@ -232,6 +236,8 @@ import {
   type RoomService,
 } from './room-service.js';
 import type { RoomMergeService } from './repo/room-merge-service.js';
+import type { RoomRepoService } from './repo/room-repo-service.js';
+import { setUpRoomFilesCapability } from './repo/room-setup-capability.js';
 
 /**
  * Extend the shared dependency bag with the rooms domain's one service handle.
@@ -257,28 +263,10 @@ declare module '../core/capabilities/capability-definition.js' {
        * refusal about the room.
        */
       merges?: RoomMergeService;
+      /** Giving a room files of its own, for the one verb that does. */
+      repos?: RoomRepoService;
     };
   }
-}
-
-/**
- * Narrow the bag to the merge service, throwing if the registry was composed
- * without it (a wiring bug, caught the first time a repo verb is called).
- *
- * A throw rather than a room-shaped refusal, deliberately: "this room has no
- * files" and "this server was wired without the thing that reads them" are
- * different facts, and answering the second with the first would send an agent
- * off to ask an operator to enable something that is already enabled.
- *
- * @param deps - The registry's shared dependency bag.
- * @returns The merge service.
- */
-function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
-  const merges = deps.roomDeps?.merges;
-  if (!merges) {
-    throw new Error('Rooms repo capability invoked without a merge service in the registry bag.');
-  }
-  return merges;
 }
 
 /**
@@ -636,6 +624,7 @@ export const roomsDomain: CapabilityDomain = {
         return { merged: true, ...result };
       },
     }),
+    setUpRoomFilesCapability,
     defineCapability({
       id: 'rooms.repo_status',
       title: 'Check the room’s files',

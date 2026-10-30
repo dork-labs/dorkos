@@ -514,7 +514,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 136 -> 137 for `running_chats` (DOR-3460): no prompt block names it, so it
     // stays deferred and unprefixed.
     // 137 -> 140 for the work queue's three tools (DOR-3462).
-    expect(advertised.size).toBe(140);
+    // 140 -> 141 for `set_up_room_files` (DOR-3468), deferred like its siblings.
+    expect(advertised.size).toBe(141);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

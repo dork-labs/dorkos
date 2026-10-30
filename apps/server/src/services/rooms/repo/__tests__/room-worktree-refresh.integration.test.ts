@@ -105,6 +105,7 @@ describe('an agent’s copy of the room’s files is brought up to date at turn 
       getRoom: (roomId) => harness.store.getRoom(roomId),
       isOwnerAuthor: (authorId) => authorId === harness.human,
       operatorGitName: () => 'Dorian',
+      getAuthor: () => null,
       pinRoomMd: () => {},
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,

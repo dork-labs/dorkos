@@ -179,6 +179,7 @@ describe('room files routes', () => {
       getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
       isOwnerAuthor: (authorId) => rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
       operatorGitName: () => 'Dorian',
+      getAuthor: () => null,
       pinRoomMd: () => {},
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,

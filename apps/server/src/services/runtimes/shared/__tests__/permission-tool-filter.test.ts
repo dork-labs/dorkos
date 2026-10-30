@@ -38,6 +38,7 @@ const ROOM_AREA_TOOLS = [
   'leave_room',
   'archive_room',
   'merge_to_room_main',
+  'set_up_room_files',
   'reseat_room_agent',
 ];
 

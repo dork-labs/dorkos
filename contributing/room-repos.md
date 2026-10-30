@@ -264,16 +264,19 @@ is called only by the reap, it passes no force flag, and git refuses it for a br
 unmerged commits — so it can retire a branch whose commits `main` already has and nothing else.
 Adding a rewriting verb to that module would make this paragraph false; do not.
 
-## The two agent verbs, and the one that is missing
+## The three agent verbs
 
-| Tool                 | Capability id       | Tier      | Gate       |
-| -------------------- | ------------------- | --------- | ---------- |
-| `merge_to_room_main` | `rooms.merge`       | `act`     | Membership |
-| `room_repo_status`   | `rooms.repo_status` | `observe` | Membership |
+| Tool                 | Capability id        | Tier      | Gate       |
+| -------------------- | -------------------- | --------- | ---------- |
+| `merge_to_room_main` | `rooms.merge`        | `act`     | Membership |
+| `set_up_room_files`  | `rooms.set_up_files` | `act`     | Membership |
+| `room_repo_status`   | `rooms.repo_status`  | `observe` | Membership |
 
-Enabling a repo is **not** an agent capability and must not become one. An agent that could give its
-own room a repo would hand itself a writable working directory nobody granted: the confused-deputy
-shape, same reasoning as `channel-workspace` §3.6's join rule.
+A member agent may give its room a repo (DOR-3468, reversing the old owner-only rule on Dorian's
+call). The setup commit, the room notice and Activity all carry the agent's name, never the
+operator's. It opens nothing else: merging someone else's copy (`room-merge-service.ts`) and repairing
+`repo/` (`repairMainCheckout`) stay owner-only, `rooms.repo.enabled` stays a person's switch, and a
+teammate's turn cannot reach the tool (`teammate-tier.ts` refuses what it doesn't list).
 
 **Name tools by their ending in any prompt copy.** Each runtime prefixes tool names differently, so
 `room-context-block.ts` says "the tool whose name ends in `merge_to_room_main`". Pinned by
