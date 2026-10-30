@@ -1,5 +1,6 @@
 import { startLocalBrowserBridge } from './local-browser';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
+import { registerStepUpWindow } from './step-up';
 import log from 'electron-log';
 import { createWindow, isOwnOrigin, isWebLink, makeRendererUrlAccessor } from './window-manager';
 import { claimWindowsToRestore, setupTabSession } from './tab-session';
@@ -345,6 +346,15 @@ if (refusedSwitch !== null) {
   // The server child cannot see `main.log`, so nothing but the shell can answer
   // this (see `shell-log-excerpt/`).
   registerShellLogExcerptHandler(getRendererUrl);
+
+  // "Confirm it's you" (DOR-3234): the password goes in the shell's own window,
+  // never the app's page, and the shell posts it through the window's session.
+  registerStepUpWindow({
+    isOwnSender: (event) => isOwnOrigin(event.sender.getURL(), getRendererUrl()),
+    port: getServerPort,
+    fetch: (url, init) => session.defaultSession.fetch(url, init),
+    personProof: currentPersonProof,
+  });
 
   ipcMain.on('get-server-port', (event) => {
     event.returnValue = getServerPort();

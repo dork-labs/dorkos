@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { HeldStepUpView } from '@dorkos/shared/step-up';
@@ -44,7 +44,7 @@ function ask(id = 'held-1'): Promise<ActionStepUpOutcome> {
 type Route = (method: string, url: string, body: unknown) => [number, unknown];
 
 /** The server, answering each step-up call by method and path. */
-function server(route: Route): ReturnType<typeof vi.spyOn> {
+function server(route: Route): MockInstance<typeof fetch> {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -163,6 +163,53 @@ describe('ActionStepUpHost', () => {
     void ask();
     expect(await screen.findByText('dorkos auth reset-password')).toBeTruthy();
     expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+  });
+
+  // Security's Must 3: in the Mac app the password is never typed into this page.
+  describe('in the Mac app', () => {
+    afterEach(() => {
+      delete (window as { electronAPI?: unknown }).electronAPI;
+    });
+
+    it('hands the confirm to the shell’s own window and shows no password field', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      const confirmStepUp = vi.fn(async () => ({
+        kind: 'confirmed' as const,
+        status: 201,
+        result: { added: 'github' },
+      }));
+      (window as { electronAPI?: unknown }).electronAPI = { confirmStepUp };
+      render(<ActionStepUpHost />);
+      const outcome = ask();
+      await expect(outcome).resolves.toEqual({
+        kind: 'confirmed',
+        status: 201,
+        result: { added: 'github' },
+      });
+      expect(confirmStepUp).toHaveBeenCalledExactlyOnceWith('held-1');
+      // The page itself never reads the held action or posts anything.
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('says where to confirm while the shell’s window is open', async () => {
+      (window as { electronAPI?: unknown }).electronAPI = {
+        confirmStepUp: () => new Promise(() => undefined),
+      };
+      render(<ActionStepUpHost />);
+      void ask();
+      expect(await screen.findByText('Confirm in the window that just opened.')).toBeTruthy();
+      expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+    });
+
+    it('never falls back to a password field on an older app', async () => {
+      (window as { electronAPI?: unknown }).electronAPI = {};
+      render(<ActionStepUpHost />);
+      const outcome = ask();
+      expect(await screen.findByText('Update the DorkOS app to confirm this.')).toBeTruthy();
+      expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+      await expect(outcome).resolves.toEqual({ kind: 'not-confirmed' });
+    });
   });
 
   it('turns a too-short password into change-and-confirm, in place', async () => {

@@ -9,6 +9,11 @@ import fs from 'node:fs';
 import { TRAY_IMAGE_FILES } from './src/shared/tray-images';
 import { FALLBACK_PAGE_FILE, FALLBACK_PAGE_SOURCE_DIR } from './src/shared/fallback-page';
 import { STOPPED_PAGE_FILE, STOPPED_PAGE_SOURCE_DIR } from './src/shared/stopped-page';
+import {
+  STEP_UP_PAGE_FILE,
+  STEP_UP_PAGE_SOURCE_DIR,
+  STEP_UP_PRELOAD_FILE,
+} from './src/shared/step-up-page';
 import { clientDefines } from '../client/vite-define';
 
 const clientRoot = path.resolve(__dirname, '../client');
@@ -72,6 +77,12 @@ function emitFallbackPage(): Plugin {
         fileName: STOPPED_PAGE_FILE,
         source: fs.readFileSync(path.join(__dirname, STOPPED_PAGE_SOURCE_DIR, STOPPED_PAGE_FILE)),
       });
+      // The "Confirm it's you" window's page (DOR-3234): the same arrangement.
+      this.emitFile({
+        type: 'asset',
+        fileName: STEP_UP_PAGE_FILE,
+        source: fs.readFileSync(path.join(__dirname, STEP_UP_PAGE_SOURCE_DIR, STEP_UP_PAGE_FILE)),
+      });
     },
   };
 }
@@ -107,6 +118,17 @@ export default defineConfig({
   preload: {
     build: {
       outDir: 'dist/preload',
+      // The app's own preload, and the "Confirm it's you" window's (DOR-3234),
+      // which `src/main/step-up/` loads as `STEP_UP_PRELOAD_FILE`.
+      rollupOptions: {
+        input: {
+          index: path.resolve(__dirname, 'src/preload/index.ts'),
+          [STEP_UP_PRELOAD_FILE.replace(/\.js$/, '')]: path.resolve(
+            __dirname,
+            'src/preload/step-up.ts'
+          ),
+        },
+      },
     },
   },
   renderer: {

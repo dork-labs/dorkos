@@ -39,8 +39,53 @@ const RESET_PASSWORD_COMMAND = 'dorkos auth reset-password';
 export function ActionStepUpHost() {
   const heldActionId = useSyncExternalStore(subscribeActionStepUp, getActionStepUpShowing);
   if (heldActionId === null) return null;
+  // In the Mac app the password is never typed into this page: the shell takes
+  // it in a window of its own (Security's Must 3).
+  if (typeof window !== 'undefined' && window.electronAPI) {
+    return <DesktopStepUpSheet key={heldActionId} heldActionId={heldActionId} />;
+  }
   // Keyed by the held action, so the next one starts with an empty field.
   return <ActionStepUpSheet key={heldActionId} heldActionId={heldActionId} />;
+}
+
+/** The held actions the shell's window is open for. */
+const askedTheShell = new Set<string>();
+
+/** The Mac app's sheet: it points at the shell's own window, and never asks itself. */
+function DesktopStepUpSheet({ heldActionId }: { heldActionId: string }) {
+  const confirm = window.electronAPI?.confirmStepUp;
+  useEffect(() => {
+    // Once per held action: React may run this twice, and two windows for one
+    // action would be one too many.
+    if (!confirm || askedTheShell.has(heldActionId)) return;
+    askedTheShell.add(heldActionId);
+    void confirm(heldActionId)
+      .catch((): ActionStepUpOutcome => ({ kind: 'not-confirmed' }))
+      .then((outcome) => {
+        askedTheShell.delete(heldActionId);
+        // Only if it is still the one showing; the request waiting on it hears either way.
+        if (getActionStepUpShowing() === heldActionId) finishActionStepUp(outcome);
+      });
+  }, [confirm, heldActionId]);
+  return (
+    <AlertDialog open>
+      <AlertDialogContent aria-modal="true">
+        <AlertDialogHeader className="text-left">
+          <AlertDialogTitle>Confirm it’s you</AlertDialogTitle>
+          <AlertDialogDescription>
+            {confirm
+              ? 'Confirm in the window that just opened.'
+              : 'Update the DorkOS app to confirm this.'}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {!confirm && (
+          <Button type="button" onClick={() => finishActionStepUp({ kind: 'not-confirmed' })}>
+            Close
+          </Button>
+        )}
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
 type Stage =

@@ -200,6 +200,20 @@ declare global {
      */
     openExternal(url: string): Promise<boolean>;
     /**
+     * "Confirm it's you" for one held action (DOR-3234): the shell takes the
+     * password in its own window and answers with how it ended. Absent on a
+     * host whose preload predates it.
+     *
+     * @param heldActionId - The id the guarded route answered with.
+     */
+    confirmStepUp?(
+      heldActionId: string
+    ): Promise<
+      | { kind: 'confirmed'; status: number; result: unknown }
+      | { kind: 'not-confirmed' }
+      | { kind: 'ask-again' }
+    >;
+    /**
      * Subscribe to main-process navigation requests (menu items, dock menu,
      * `dorkos://` deep links — ADR 260709-210223). `cb` receives the client
      * route path to navigate to.
