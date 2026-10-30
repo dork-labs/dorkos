@@ -74,10 +74,10 @@ name: site-build
 # by staying permanently non-required. Worse, a required check that never
 # reports ON THE PR keeps the PR out of the queue entirely (measured on PR
 # #1246, which sat armed and green and unqueueable for 15 hours). A skipped
-# STEP, by contrast, leaves the job green and the context reported. So this job
-# always runs, always reports `site-build`, and decides internally whether to
-# spend five minutes — which means promoting it to required is a
-# branch-protection change alone, with no edit to this file.
+# STEP, by contrast, leaves the job green and the context reported. So once it
+# starts, this job always reports `site-build` and decides internally whether to
+# spend five minutes. The `paths:` filter below is the exception, and it stays
+# only while this check is advisory.
 #
 # THIS IS NOT A REQUIRED CHECK YET. Branch protection is the operator's, not an
 # agent's (the DOR-1519 precedent). Until the ruleset lists `site-build`, a red
@@ -85,8 +85,41 @@ name: site-build
 # automerge.sh requires every check settled green — but it does not block the
 # queue, so a human can still merge past it. That is the same half-gate `lint`
 # lived in until 2026-09-02.
+#
+# A `paths:` FILTER ON `pull_request` ONLY, added on top of the scope step
+# (ledger 261030-193801), because this check is advisory and the runner pool is
+# the team's bottleneck. A pull request that can't reach the site no longer
+# holds a runner to install and then skip the build. The list matches what the
+# scope step answers: the site's dependency closure, the two content roots, and
+# the root files turbo treats as affecting everything. `merge_group` stays
+# unfiltered, so a package added to the closure and missed here costs an early
+# warning, never a gate. PROMOTING THIS CHECK NOW TAKES ONE EDIT: delete the
+# `paths:` below first, because a required check that never reports keeps a PR
+# out of the queue.
 on:
   pull_request:
+    paths:
+      - 'apps/site/**'
+      - 'docs/**'
+      - 'blog/**'
+      - 'packages/cloud-api/**'
+      - 'packages/connector-providers/**'
+      - 'packages/eslint-config/**'
+      - 'packages/extension-api/**'
+      - 'packages/icons/**'
+      - 'packages/marketplace/**'
+      - 'packages/shared/**'
+      - 'packages/skills/**'
+      - 'packages/typescript-config/**'
+      - 'packages/ui/**'
+      - 'patches/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - '.gitattributes'
+      - 'turbo.json'
+      - '.github/workflows/site-build.yml'
   merge_group:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
