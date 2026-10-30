@@ -2063,3 +2063,8 @@ body {
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }
+
+/* QA THROWAWAY (do not merge): a deliberate sideways overflow to prove ui-smoke goes red. */
+body {
+  min-width: 900px;
+}
