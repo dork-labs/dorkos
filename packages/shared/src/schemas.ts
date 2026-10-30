@@ -5791,6 +5791,16 @@ export const TaskSchema = z
         "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own).",
     }),
     /**
+     * Whether this is one project's copy of a global schedule marked
+     * `scope: project` (DOR-3376). Its switch and timing belong to this project
+     * alone; what it does is the shared file's, which DorkOS never rewrites for
+     * one project. Absent reads as false.
+     */
+    projectOnly: z.boolean().optional().openapi({
+      description:
+        "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false.",
+    }),
+    /**
      * What changed since this schedule was last approved, for a schedule
      * waiting again (DOR-2323): each part of the approved work that differs,
      * with its approved value and the one that would run now. Empty when the

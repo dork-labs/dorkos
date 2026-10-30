@@ -1,0 +1,222 @@
+/**
+ * Project-only schedules from a global package (DOR-3376).
+ *
+ * A skill in the global root (`<dorkHome>/skills`) whose `schedule:` block says
+ * `scope: project` never becomes a global schedule. Each registered project
+ * gets its own copy instead: switched off, parked without a card, running as
+ * that project's agent, with its own switch. From a project's own root the key
+ * changes nothing.
+ *
+ * Drives the real reconciler over real files; nothing fires.
+ */
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
+import type { Task, UpdateTaskRequest } from '@dorkos/shared/schemas';
+import { TaskStore } from '../task-store.js';
+import { TaskReconciler } from '../task-reconciler.js';
+import { ScheduleIdentityRegistry } from '../schedule-identity.js';
+import type { TaskRegistrar } from '../task-registrar.js';
+import { agentTaskRoots, globalSkillsRoot, globalTaskRoots } from '../skills-roots.js';
+import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
+import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
+
+/** A scheduled skill, optionally marked project-only. */
+function skill(name: string, scope?: string): string {
+  return [
+    '---',
+    `name: ${name}`,
+    `description: A skill named ${name}`,
+    'schedule:',
+    "  cron: '0 * * * *'",
+    ...(scope ? [`  scope: ${scope}`] : []),
+    '---',
+    'Drain the queue.',
+  ].join('\n');
+}
+
+let store: TaskStore;
+let reconciler: TaskReconciler;
+let root: string;
+let dorkHome: string;
+/** Two registered projects, each with its agent. */
+let projects: { agentId: string; path: string }[];
+
+const registrar = {
+  syncTask: vi.fn(),
+  syncTaskByFilePath: vi.fn(),
+  repairTask: vi.fn(),
+} as unknown as TaskRegistrar;
+
+beforeEach(async () => {
+  store = new TaskStore(createTestDb());
+  // Resolved: a schedule's identity is its file's REAL path, and on macOS every
+  // temp directory is a symlink.
+  root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-project-only-')));
+  dorkHome = path.join(root, 'dork');
+  projects = [
+    { agentId: 'agent-alpha', path: path.join(root, 'alpha') },
+    { agentId: 'agent-beta', path: path.join(root, 'beta') },
+  ];
+  reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
+  await fs.mkdir(globalSkillsRoot(dorkHome), { recursive: true });
+  for (const r of globalTaskRoots(dorkHome)) reconciler.addRoot(r);
+  for (const project of projects) {
+    for (const r of agentTaskRoots(project.path, project.agentId)) {
+      await fs.mkdir(r.dir, { recursive: true });
+      reconciler.addRoot(r);
+    }
+  }
+});
+
+afterEach(async () => {
+  store.close();
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+/** Write a skill into a skills root, and return its file. */
+async function put(dir: string, name: string, content: string): Promise<string> {
+  await fs.mkdir(path.join(dir, name), { recursive: true });
+  const file = path.join(dir, name, 'SKILL.md');
+  await fs.writeFile(file, content, 'utf-8');
+  return file;
+}
+
+/** PATCH a task the way `PATCH /api/tasks/:id` does: the file half, then the row. */
+async function patch(existing: Task, data: UpdateTaskRequest) {
+  const outcome = await applyTaskFileUpdate({ dorkHome } as never, { existing, data });
+  if (!outcome.ok) return { ok: false as const, code: outcome.code, error: outcome.error };
+  return {
+    ok: true as const,
+    task: store.updateTask(existing.id, data, { timingLandsOn: outcome.timingLandsOn }),
+  };
+}
+
+describe('a project-only schedule in a global package', () => {
+  it('makes no global schedule, and one switched-off copy per project with no card', async () => {
+    const file = await put(
+      globalSkillsRoot(dorkHome),
+      'flow-drain',
+      skill('flow-drain', 'project')
+    );
+    await reconciler.reconcile();
+
+    const rows = store.getTasks();
+    expect(rows.filter((row) => row.agentId === null)).toEqual([]);
+    expect(rows.map((row) => row.agentId).sort()).toEqual(['agent-alpha', 'agent-beta']);
+    for (const row of rows) {
+      expect(row.filePath).toBe(file);
+      expect(row.projectOnly).toBe(true);
+      expect(row.enabled).toBe(false);
+      // Parked like every discovered schedule, but off, so nobody is asked.
+      expect(row.status).toBe('pending_approval');
+      expect(needsScheduleApprovalAttention(row)).toBe(false);
+    }
+  });
+
+  it('takes away the global schedule it used to make', async () => {
+    const file = await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain'));
+    await reconciler.reconcile();
+    expect(store.fileSync.getByFilePath(file)?.agentId).toBeNull();
+
+    await fs.writeFile(file, skill('flow-drain', 'project'), 'utf-8');
+    await reconciler.reconcile();
+
+    expect(store.fileSync.getByFilePath(file)).toBeNull();
+    expect(store.getTasks().every((row) => row.projectOnly)).toBe(true);
+  });
+
+  it('turns on for one project only, and stays on across the next sweep', async () => {
+    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'project'));
+    await reconciler.reconcile();
+    const alpha = store.getTasks().find((row) => row.agentId === 'agent-alpha')!;
+
+    // The same approval a package's opt-in schedule takes: no new path.
+    const approved = await patch(alpha, { status: 'active', enabled: true });
+    expect(approved.ok).toBe(true);
+    await reconciler.reconcile();
+
+    const after = store.getTasks();
+    const alphaAfter = after.find((row) => row.agentId === 'agent-alpha')!;
+    const betaAfter = after.find((row) => row.agentId === 'agent-beta')!;
+    expect(alphaAfter.enabled).toBe(true);
+    expect(alphaAfter.status).toBe('active');
+    // It runs as that project's agent, which is what puts the run in that
+    // project's folder (`resolveRunPlacement`).
+    expect(alphaAfter.agentId).toBe('agent-alpha');
+    expect(betaAfter.enabled).toBe(false);
+    expect(betaAfter.status).toBe('pending_approval');
+  });
+
+  it("never writes the shared file for one project's edit", async () => {
+    const file = await put(
+      globalSkillsRoot(dorkHome),
+      'flow-drain',
+      skill('flow-drain', 'project')
+    );
+    await reconciler.reconcile();
+    const alpha = store.getTasks().find((row) => row.agentId === 'agent-alpha')!;
+    const before = await fs.readFile(file, 'utf-8');
+
+    const timing = await patch(alpha, { cron: '30 6 * * *' });
+    expect(timing.ok).toBe(true);
+    expect(timing.ok && timing.task?.cron).toBe('30 6 * * *');
+
+    const prompt = await patch(alpha, { prompt: 'Something else.' });
+    expect(prompt).toMatchObject({ ok: false, code: 'schedule_project_copy' });
+    expect(await fs.readFile(file, 'utf-8')).toBe(before);
+
+    await reconciler.reconcile();
+    // The project's own timing survives the sweep; the other project's does not move.
+    expect(store.getTask(alpha.id)?.cron).toBe('30 6 * * *');
+    const beta = store.getTasks().find((row) => row.agentId === 'agent-beta')!;
+    expect(beta.cron).toBe('0 * * * *');
+  });
+
+  it('goes back to one schedule when the key is taken out', async () => {
+    const file = await put(
+      globalSkillsRoot(dorkHome),
+      'flow-drain',
+      skill('flow-drain', 'project')
+    );
+    await reconciler.reconcile();
+    await fs.writeFile(file, skill('flow-drain'), 'utf-8');
+    await reconciler.reconcile();
+
+    const rows = store.getTasks();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.agentId).toBeNull();
+    expect(rows[0]?.projectOnly).toBe(false);
+  });
+
+  it('parks a value it does not know as a global complaint, never a running schedule', async () => {
+    await put(globalSkillsRoot(dorkHome), 'flow-drain', skill('flow-drain', 'everywhere'));
+    await reconciler.reconcile();
+
+    const rows = store.getTasks();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe('pending_approval');
+    expect(rows[0]?.enabled).toBe(false);
+    expect(rows[0]?.reason).toContain('scope');
+  });
+});
+
+describe('a project-only schedule in a project', () => {
+  it('behaves exactly as if the key were absent', async () => {
+    const project = projects[0]!;
+    const dir = agentTaskRoots(project.path, project.agentId)[0]!.dir;
+    const file = await put(dir, 'local-sweep', skill('local-sweep', 'project'));
+    await reconciler.reconcile();
+
+    const rows = store.getTasks();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      filePath: file,
+      agentId: project.agentId,
+      projectOnly: false,
+      enabled: true,
+    });
+  });
+});

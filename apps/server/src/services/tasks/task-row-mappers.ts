@@ -114,6 +114,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     // `unknown` is the sync's own bookkeeping for a row older than the column,
     // not something to show anyone.
     packageOwned: row.packageOwned === 'unknown' ? null : (row.packageOwned ?? null),
+    projectOnly: row.projectOnly,
     approvalChanges: approvalChangesOf(row),
     agentId: row.agentId ?? null,
     enabled: row.enabled,

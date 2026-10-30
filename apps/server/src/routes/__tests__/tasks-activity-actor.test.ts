@@ -54,6 +54,7 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 vi.mock('../../services/tasks/lifecycle/delete-task.js', () => ({
+  PROJECT_COPY_DELETE_REFUSAL: 'shared by every project',
   removeScheduledTaskFile: vi.fn(async () => undefined),
 }));
 

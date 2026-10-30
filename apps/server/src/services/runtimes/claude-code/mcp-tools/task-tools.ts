@@ -56,7 +56,10 @@ import {
 } from '../../../tasks/task-write-policy.js';
 import { createScheduledTask } from '../../../tasks/lifecycle/create-task.js';
 import { agentSchedulesArmWithoutAsking } from '../../../tasks/approvals/agent-trust.js';
-import { removeScheduledTaskFile } from '../../../tasks/lifecycle/delete-task.js';
+import {
+  PROJECT_COPY_DELETE_REFUSAL,
+  removeScheduledTaskFile,
+} from '../../../tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../../../tasks/lifecycle/update-task-file.js';
 import { changesApprovedWork } from '../../../tasks/task-file-update.js';
 import { refuseStickyAccountChange } from '../../../tasks/session/sticky-session.js';
@@ -699,6 +702,8 @@ export function createDeleteScheduleHandler(deps: McpToolDeps) {
     // row is gone there is nothing left to tell that from an ordinary task — and
     // the row is also the only place the file's path is recorded.
     const existing = deps.taskStore!.getTask(args.id);
+    // One project's copy shares its file with every other project's (DOR-3376).
+    if (existing?.projectOnly) return jsonContent({ error: PROJECT_COPY_DELETE_REFUSAL }, true);
     await removeScheduledTaskFile(existing?.filePath ?? null);
     const deleted = deps.taskStore!.deleteTask(args.id);
     if (!deleted) return jsonContent({ error: `Schedule ${args.id} not found` }, true);

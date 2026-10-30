@@ -46,6 +46,13 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * app, which shows ownership before a person tries an edit.
    */
   packageOwned: text('package_owned', { enum: ['record', 'legacy', 'unknown'] }),
+  /**
+   * Whether this row is one project's copy of a global schedule marked
+   * `scope: project` (DOR-3376). One file then backs one row per project, so
+   * a row is found by its file AND its agent, its switch lives on the row
+   * alone, and DorkOS never writes the shared file for it.
+   */
+  projectOnly: integer('project_only', { mode: 'boolean' }).notNull().default(false),
   prompt: text('prompt').notNull(),
   agentId: text('agent_id'),
   /**

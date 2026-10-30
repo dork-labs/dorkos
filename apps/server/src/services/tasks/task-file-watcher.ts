@@ -85,6 +85,11 @@ import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { readTaskRootFile, scanTaskRoot, type ReadOutcome } from './skills-root-discovery.js';
 import { carrySwitchIntoReleasedFile, packageOwnershipInRoot } from './task-file-update.js';
 import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
+import {
+  dropProjectCopies,
+  projectOnlyTargets,
+  syncProjectCopies,
+} from './sync/project-only-schedules.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -590,14 +595,31 @@ export class TaskFileWatcher implements TaskWatchHealth {
     const { discovered } = outcome;
     if (!this.identities.claim(discovered.def.filePath, root.dir, outcome.filePath)) return;
     const packageOwned = await packageOwnershipInRoot(discovered.def.filePath, root);
-    const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, {
-      source: 'discovery',
+    const options = {
+      source: 'discovery' as const,
       problem: discovered.problem,
       // A schedule an installed package owns keeps the switch a person set on
       // the row, because its file is one DorkOS never writes (FB-26). The row
       // keeps the answer, so the sync sees ownership lapse (DOR-2272).
       packageOwned,
-    });
+    };
+    // A global `scope: project` file is one copy per project, never a global
+    // row, and its shared file is never written for any one of them (DOR-3376).
+    const projects = projectOnlyTargets(
+      discovered.def,
+      root,
+      [...this.watched.values()].map((watched) => watched.root)
+    );
+    if (projects) {
+      const synced = syncProjectCopies(this.store, discovered.def, projects, options);
+      for (const id of synced.removedIds) this.registrar.syncTask(id);
+      for (const copy of synced.copies) this.registrar.syncTask(copy.id);
+      return;
+    }
+    for (const id of dropProjectCopies(this.store, discovered.def.filePath)) {
+      this.registrar.syncTask(id);
+    }
+    const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, options);
     this.registrar.syncTask(task.id);
     // A file that just stopped being a package's gets the switch the row kept
     // for it. That write comes back through here, finds the file agreeing, and
@@ -622,7 +644,12 @@ export class TaskFileWatcher implements TaskWatchHealth {
     // one of them on every arm rather than only for a file an event named. The
     // read is indexed and the write is not free — the same trade the
     // reconciler's own `retireIfPresent` makes, for the same reason.
-    if (this.store.fileSync.getByFilePath(filePath) === null) return;
+    if (
+      this.store.fileSync.getByFilePath(filePath) === null &&
+      this.store.fileSync.projectCopiesOf(filePath).length === 0
+    ) {
+      return;
+    }
     if (this.store.fileSync.markRemovedByFilePath(filePath) === 0) return;
     this.registrar.syncTaskByFilePath(filePath);
     logger.info(`[TaskFileWatcher] Schedule block removed from ${filePath} — paused`);

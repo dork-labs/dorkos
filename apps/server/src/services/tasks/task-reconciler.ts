@@ -40,6 +40,11 @@ import {
   taskRootShape,
 } from './skills-root-discovery.js';
 import { pluginsRootFor, type TaskRoot } from './skills-roots.js';
+import {
+  dropProjectCopies,
+  projectOnlyTargets,
+  syncProjectCopies,
+} from './sync/project-only-schedules.js';
 import { carrySwitchIntoReleasedFile, packageOwnershipInRoot } from './task-file-update.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { UNWATCHED_ROOT_SWEEP_SECONDS, type TaskWatchHealth } from './task-file-watcher.js';
@@ -399,7 +404,12 @@ export class TaskReconciler {
     // Most files in a skills root are plain skills that never had a row, and
     // this runs for every one of them on every pass. The read is indexed and the
     // write is not free, so ask before writing.
-    if (this.store.fileSync.getByFilePath(filePath) === null) return false;
+    if (
+      this.store.fileSync.getByFilePath(filePath) === null &&
+      this.store.fileSync.projectCopiesOf(filePath).length === 0
+    ) {
+      return false;
+    }
     if (this.store.fileSync.markRemovedByFilePath(filePath) === 0) return false;
     this.registrar.syncTaskByFilePath(filePath);
     logger.info(`[TaskReconciler] Schedule block removed from ${filePath} — paused`);
@@ -596,14 +606,33 @@ export class TaskReconciler {
         if (!this.identities.claim(discovered.def.filePath, root.dir, result.filePath)) continue;
         try {
           const packageOwned = await packageOwnershipInRoot(discovered.def.filePath, root);
-          const before = this.store.fileSync.getByFilePath(discovered.def.filePath);
-          const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, {
-            source: 'discovery',
+          const options = {
+            source: 'discovery' as const,
             problem: discovered.problem,
             // See the watcher's call: the same rule, on the pass that catches
             // what the watcher missed (FB-26, DOR-2272).
             packageOwned,
-          });
+          };
+          // The watcher's rule for a global `scope: project` file, over every
+          // root this reconciler knows (DOR-3376): one copy per project.
+          const projects = projectOnlyTargets(discovered.def, root, this.roots);
+          if (projects) {
+            const seen = new Map(
+              this.store.fileSync
+                .projectCopiesOf(discovered.def.filePath)
+                .map((copy) => [copy.id, copy.updatedAt])
+            );
+            const synced = syncProjectCopies(this.store, discovered.def, projects, options);
+            for (const id of synced.removedIds) this.registrar.syncTask(id);
+            for (const copy of synced.copies) this.registrar.syncTask(copy.id);
+            upserted += synced.copies.filter((copy) => seen.get(copy.id) !== copy.updatedAt).length;
+            continue;
+          }
+          for (const id of dropProjectCopies(this.store, discovered.def.filePath)) {
+            this.registrar.syncTask(id);
+          }
+          const before = this.store.fileSync.getByFilePath(discovered.def.filePath);
+          const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, options);
           // Carry the repair through to the clock. This pass exists to catch
           // what the watcher missed, and what the watcher missed was never only
           // the row. A row the file left exactly as it was keeps its job unless
