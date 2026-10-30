@@ -198,9 +198,9 @@ export function marksOf(
 }
 
 /**
- * The bound work a caller starts must carry because a teammate's chain started the caller's turn,
+ * The record work a caller starts must carry because a teammate's chain started the caller's turn,
  * or `undefined` when none did. Read by `session_start`, which sends it as the new session's
- * ceiling: `ceilingCarrying`, beside the caller's own level when this process recorded its turn.
+ * ceiling. It lowers nothing (`ceilingCarrying`).
  *
  * @param sessionId - The calling session, when the surface verified one.
  * @param agentPath - The calling agent's home, from its verified identity.
@@ -209,12 +209,7 @@ export function markedBoundOf(
   sessionId: string | null | undefined,
   agentPath: string | undefined
 ): TurnPermissionCeiling | undefined {
-  const carried = ceilingCarrying(marksOf(sessionId, agentPath));
-  if (carried === undefined) return undefined;
-  type BoundList = Extract<TurnPermissionCeiling, readonly unknown[]>;
-  const bounds = carried as BoundList;
-  const level = sessionId ? turnLevels.get(sessionId) : undefined;
-  return level === undefined ? bounds : ([level, ...bounds] as BoundList);
+  return ceilingCarrying(marksOf(sessionId, agentPath));
 }
 
 /**

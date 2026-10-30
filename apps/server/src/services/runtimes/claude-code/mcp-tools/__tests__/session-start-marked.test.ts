@@ -5,12 +5,13 @@
  * level and the runtime default, never looser than the caller.
  */
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { CARRIED_OUTSIDER_LEVEL, ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
+import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
-import { marksOnlyBound, outsiderStartCeiling } from '../session-start-facts.js';
+import { marksOfCeiling } from '../../../../core/turn-power/turn-marks.js';
+import { outsiderStartCeiling } from '../session-start-facts.js';
 
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
@@ -66,9 +67,9 @@ describe('a chat session_start opens', () => {
     expect(result).toMatchObject({ ok: false, code: 'ABOVE_YOUR_LEVEL' });
   });
 
-  it('a marked chat set to Full, read at Full and passed the marks alone, starts at Full (DOR-3394)', async () => {
-    // What the handler hands on for a chat set to Full: its own mode, and `marked` false,
-    // because the bound it carries is the marks alone (below). Named or not.
+  it('a chat a teammate’s mark reached, read at Full and passed its record, starts at Full (DOR-3440)', async () => {
+    // What the handler hands on: its own mode, and `marked` false, because the bound it carries
+    // is the record alone (below). Named or not.
     const facts = { personSetStop: 'autonomy' as const, fullUnnamedAllowed: true };
     const fromFull = (requested?: string) =>
       resolveStartPermission(
@@ -76,7 +77,11 @@ describe('a chat session_start opens', () => {
         { sessionId: 'caller', permissionMode: FULL, runtime: 'claude-code', chosenFull: true },
         'claude-code',
         null,
-        ceilingHoldsForOutsider(marksOnlyBound(['runtime-default', CARRIED_OUTSIDER_LEVEL])),
+        ceilingHoldsForOutsider({
+          asks: 'never',
+          reach: 'everything',
+          teammate: [{ roomId: 'r', authorId: 'pat' }],
+        }),
         facts
       );
     expect(await fromFull(FULL)).toMatchObject({ ok: true, permission: { mode: FULL } });
@@ -96,8 +101,8 @@ describe('a chat session_start opens', () => {
 });
 
 describe('the bound a marked start carries (DOR-3394)', () => {
-  /** A Full chat whose last turn a hold bound, through the real level seam. */
-  async function heldChat(sessionId: string) {
+  /** A Full chat whose last turn ran under this ceiling, through the real level seam. */
+  async function chatAt(sessionId: string, permissionCeiling: TurnPermissionCeiling) {
     const runtime = recordTurnLevels(
       {
         type: 'claude-code',
@@ -108,16 +113,14 @@ describe('the bound a marked start carries (DOR-3394)', () => {
       } as unknown as AgentRuntime,
       () => FULL
     );
-    for await (const _event of runtime.sendMessage(sessionId, 'hi', {
-      permissionCeiling: 'runtime-default',
-    })) {
+    for await (const _event of runtime.sendMessage(sessionId, 'hi', { permissionCeiling })) {
       // drain
     }
   }
 
   it('is nothing from a chat a hold bound, at any level: the hold stays on that turn', async () => {
-    await heldChat('full-caller');
-    await heldChat('held-caller');
+    await chatAt('full-caller', 'runtime-default');
+    await chatAt('held-caller', 'runtime-default');
     expect(
       outsiderStartCeiling({
         agentPath: '/agents/ana',
@@ -129,10 +132,15 @@ describe('the bound a marked start carries (DOR-3394)', () => {
     ).toEqual({});
   });
 
-  it('keeps every teammate origin, with no read-only cap', () => {
+  it('keeps every teammate origin for the space’s limit, and holds nothing', async () => {
     const teammate = [{ roomId: 'r', authorId: 'pat' }];
-    expect(
-      marksOnlyBound(['runtime-default', { asks: 'always', reach: 'read', teammate }] as never)
-    ).toEqual({ ...CARRIED_OUTSIDER_LEVEL, teammate });
+    await chatAt('teammate-caller', { asks: 'never', reach: 'everything', teammate });
+    const { permissionCeiling } = outsiderStartCeiling({
+      agentPath: '/agents/ana',
+      chat: { sessionId: 'teammate-caller' },
+    });
+    expect(permissionCeiling).toBeDefined();
+    expect(marksOfCeiling(permissionCeiling!)).toEqual({ teammate });
+    expect(ceilingHoldsForOutsider(permissionCeiling!)).toBe(false);
   });
 });

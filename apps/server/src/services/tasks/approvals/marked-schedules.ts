@@ -18,7 +18,7 @@ import { pulseSchedules, type Db } from '@dorkos/db';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import type { TeammateOrigin } from '@dorkos/shared/agent-runtime';
 import { ScheduleOriginMarksSchema, type ScheduleOriginMarks } from '@dorkos/shared/schemas';
-import { hasMarks, type TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { marksHold, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { logger } from '../../../lib/logger.js';
 import { planTaskFileUpdate } from '../task-file-update.js';
 
@@ -101,8 +101,8 @@ function mergeStored(
  * set level now, so these wait on nobody. They come out switched OFF, as normal schedules a person
  * can turn on, and nothing starts by itself. The file says so too, since the next sync copies a
  * file's switch onto its row (a package's file excepted, whose switch lives on the row). A file that
- * cannot be written leaves its row parked, to try again next boot. A teammate's mark stays parked.
- * Run before any watcher or sync, and matches nothing once done.
+ * cannot be written leaves its row parked, to try again next boot. A teammate's mark clears the same
+ * way. Run before any watcher or sync, and matches nothing once done.
  *
  * @param db - The database the store writes.
  * @returns How many schedules were cleared.
@@ -111,12 +111,14 @@ export async function clearOutsiderParks(db: Db): Promise<number> {
   const parked = db
     .select()
     .from(pulseSchedules)
-    .where(and(eq(pulseSchedules.status, 'pending_approval'), isNotNull(pulseSchedules.originMarks)))
+    .where(
+      and(eq(pulseSchedules.status, 'pending_approval'), isNotNull(pulseSchedules.originMarks))
+    )
     .all();
   let cleared = 0;
   for (const row of parked) {
     const marks = parseOriginMarks(row.originMarks);
-    if (!marks?.outsider || marks.teammate !== undefined) continue;
+    if (!marks?.outsider && marks?.teammate === undefined) continue;
     try {
       // A package's file and one project's copy of a shared file keep their switch on the row.
       if (!row.packageOwned && !row.projectOnly) await switchFileOff(row.filePath);
@@ -167,7 +169,7 @@ async function switchFileOff(filePath: string): Promise<void> {
  * @returns Whether the schedule was marked (and so now waits for a person).
  */
 export function markScheduleOrigin(db: Db, id: string, marks: TurnMarks): boolean {
-  if (!hasMarks(marks)) return false;
+  if (!marksHold(marks)) return false;
   const row = db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
   if (!row) return false;
   const added: ScheduleOriginMarks = {

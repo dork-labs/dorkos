@@ -78,7 +78,7 @@ import {
 } from '../../../tasks/lifecycle/schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from '../../../tasks/lifecycle/schedule-credits-model.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
-import { hasMarks, type TurnMarks } from '../../../core/turn-power/turn-marks.js';
+import { marksHold, type TurnMarks } from '../../../core/turn-power/turn-marks.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -196,7 +196,7 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
  * @param provenance - The calling session and agent, as the server resolved them.
  */
 function readOutsiderWords(provenance: { sessionId?: string; agentPath?: string }): boolean {
-  return hasMarks(marksOf(provenance.sessionId, provenance.agentPath));
+  return marksHold(marksOf(provenance.sessionId, provenance.agentPath));
 }
 
 /**
@@ -629,7 +629,7 @@ export function createUpdateScheduleHandler(
     // for its card (DOR-3036).
     const caller = resolveProvenance?.() ?? {};
     const marks = callerMarks?.() ?? marksOf(caller.sessionId, caller.agentPath);
-    if (hasMarks(marks) && deps.taskStore!.approvals.markOrigin(updated.id, marks)) {
+    if (marksHold(marks) && deps.taskStore!.approvals.markOrigin(updated.id, marks)) {
       if (existing.status !== 'pending_approval') settled = 'parked';
     }
     if (settled === 'parked') {

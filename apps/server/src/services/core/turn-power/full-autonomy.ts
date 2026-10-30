@@ -232,18 +232,12 @@ export function recordMarkedFullAction(action: MarkedFullAction): void {
 /**
  * Whether a marked turn may do what a marked turn below Full is refused: only in a chat set to Full
  * (DOR-3412), and then the Activity line is written here. Call it only once the turn is known to be
- * marked, and never for one of the three refusals every level keeps. A teammate's mark is one of
- * them (the limits the space's owner set), so it is refused at every level.
+ * marked, and never for one of the three refusals every level keeps.
  *
  * @param action - What the turn is about to run, and who runs it; `sessionId` names the chat.
- * @param marks - The turn's marks, read from its own record.
  * @returns `true` when the call goes on (Full, line written), `false` when it is refused.
  */
-export function markedTurnRunsAtFull(
-  action: MarkedFullAction,
-  marks: { teammate?: unknown }
-): boolean {
-  if (marks.teammate !== undefined) return false;
+export function markedTurnRunsAtFull(action: MarkedFullAction): boolean {
   if (!choseFullAutonomy(action.sessionId)) return false;
   recordMarkedFullAction(action);
   return true;

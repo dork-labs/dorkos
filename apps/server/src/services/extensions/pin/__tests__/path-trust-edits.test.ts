@@ -33,7 +33,10 @@ describe('notePathTrustEdits', () => {
   let atFull: boolean;
   let approvals: {
     approvedToRun: string[];
-    approvedSources: Record<string, { path: string; authorHome: string; grants: string; digest?: string }>;
+    approvedSources: Record<
+      string,
+      { path: string; authorHome: string; grants: string; digest?: string }
+    >;
   };
   const deps = {
     agentAtFull: async () => atFull,
@@ -44,8 +47,7 @@ describe('notePathTrustEdits', () => {
       delete approvals.approvedSources[id]!.digest;
     },
   };
-  const scan = (digest: string) =>
-    notePathTrustEdits([copyAt(digest)], approvals, dorkHome, deps);
+  const scan = (digest: string) => notePathTrustEdits([copyAt(digest)], approvals, dorkHome, deps);
   /** Whether this copy's files may run under the approval as it stands. */
   const runs = (digest: string) => isApprovedByPath(copyAt(digest), approvals);
 
@@ -125,6 +127,34 @@ describe('notePathTrustEdits', () => {
     await scan('sha256:1');
     expect(approvals.approvedSources.desk!.digest).toBe('sha256:1');
     deps.agentAtFull = async () => atFull;
+  });
+
+  it('boot: an edit made while down, at Full, runs once the level can be read', async () => {
+    await scan('sha256:1');
+    const agentAtFull = deps.agentAtFull;
+    deps.agentAtFull = async () => {
+      throw new Error('no runtime is registered yet');
+    };
+    await scan('sha256:2');
+    expect(runs('sha256:2')).toBe(false);
+    deps.agentAtFull = agentAtFull;
+    await scan('sha256:2');
+    expect(runs('sha256:2')).toBe(true);
+    expect(emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('boot: an edit made while down, below Full, stays held once the level can be read', async () => {
+    await scan('sha256:1');
+    const agentAtFull = deps.agentAtFull;
+    deps.agentAtFull = async () => {
+      throw new Error('no runtime is registered yet');
+    };
+    await scan('sha256:2');
+    deps.agentAtFull = agentAtFull;
+    atFull = false;
+    await scan('sha256:2');
+    expect(runs('sha256:2')).toBe(false);
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('sees an edit made while the server was down', async () => {

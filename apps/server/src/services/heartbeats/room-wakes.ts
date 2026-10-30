@@ -32,8 +32,7 @@ import type { AuthorRegistry } from '../rooms/author-registry.js';
 import type { TriggerReason } from '../rooms/addressing.js';
 import { isEntryAuthorExternal } from '../rooms/limits/turn-ceiling.js';
 import { isBeatRoomPost, wakeAgentAt } from './event-wakes.js';
-import { entryHeldToDefault, entryMarksOf } from '../core/turn-power/turn-levels.js';
-import { hasMarks } from '../core/turn-power/turn-marks.js';
+import { entryHeldToDefault } from '../core/turn-power/turn-levels.js';
 
 /** Room trigger reasons a refused turn wakes a beat for: somebody is waiting. */
 const WAKING_REASONS: ReadonlySet<TriggerReason> = new Set<TriggerReason>([
@@ -83,11 +82,6 @@ export function shouldWakeForRefusal(
   const author = authors.getMany([entry.authorId]).get(entry.authorId);
   // An agent's post with no chat behind it is nobody's turn to answer for.
   if (author?.kind === 'agent' && !entry.sessionId) return false;
-  // A post a teammate's chain wrote never wakes a beat (DOR-3036). One that carried an outsider's
-  // words on does (DOR-3390, Security): the beat gathers the post with its marks, so it runs as
-  // a marked turn whose risky actions still ask.
-  const marks = entryMarksOf(entry.id, entry.roomId);
-  if (marks && hasMarks(marks) && marks.teammate !== undefined) return false;
   return !isEntryAuthorExternal(authors, entry.authorId);
 }
 

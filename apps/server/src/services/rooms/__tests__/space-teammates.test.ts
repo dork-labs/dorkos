@@ -3,7 +3,6 @@
  * for it as the owner's own. Nobody else is a teammate, and the turn a teammate's message starts
  * is held to a stranger's ceiling and read access together.
  */
-import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { describe, expect, it } from 'vitest';
 import { isTeammateEntry, teammateOf, vouchOwnerSpaceEntry } from '../limits/space-teammates.js';
 import { ceilingForEntries } from '../limits/turn-ceiling.js';
@@ -75,10 +74,11 @@ describe('in a space’s local copy', () => {
     expect(
       ceilingForEntries(registry, [{ id: 'gone-3', authorId: 'no-such-author' }], true, 'space-r')
     ).toEqual({
-      permissionCeiling: [
-        'runtime-default',
-        { ...READ_ONLY_LEVEL, teammate: [{ roomId: 'space-r', authorId: 'no-such-author' }] },
-      ],
+      permissionCeiling: {
+        asks: 'never',
+        reach: 'everything',
+        teammate: [{ roomId: 'space-r', authorId: 'no-such-author' }],
+      },
     });
   });
 
@@ -91,14 +91,15 @@ describe('in a space’s local copy', () => {
 });
 
 describe('a teammate’s ceiling', () => {
-  it('is a stranger’s and read access, both at once', () => {
+  it('only records who wrote where, and lowers nothing (DOR-3440)', () => {
     const { registry, member, telegram } = authors();
-    // The read-access bound carries the teammate's mark: the room they wrote in and who they are.
+    // The mark says the room they wrote in and who they are, for the space's monthly limit.
     expect(ceilingForEntries(registry, [{ id: 'space-3', authorId: member }], false, 'r')).toEqual({
-      permissionCeiling: [
-        'runtime-default',
-        { ...READ_ONLY_LEVEL, teammate: [{ roomId: 'r', authorId: member }] },
-      ],
+      permissionCeiling: {
+        asks: 'never',
+        reach: 'everything',
+        teammate: [{ roomId: 'r', authorId: member }],
+      },
     });
     // A stranger from a bridged chat bounds nothing (DOR-3440).
     expect(ceilingForEntries(registry, [{ id: 'tg-2', authorId: telegram }])).toEqual({});

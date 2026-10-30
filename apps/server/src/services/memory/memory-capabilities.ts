@@ -151,7 +151,9 @@ function readsOutsiderWords(context: CapabilityHandlerContext): boolean {
   if (marksOf(context.sessionId, context.identity?.agentPath).outsider === true) return true;
   if (!context.sessionId) return false;
   try {
-    return OUTSIDE_LAUNCH_ORIGINS.has(runtimeRegistry.getSessionLaunchOrigin(context.sessionId) ?? '');
+    return OUTSIDE_LAUNCH_ORIGINS.has(
+      runtimeRegistry.getSessionLaunchOrigin(context.sessionId) ?? ''
+    );
   } catch {
     return false;
   }

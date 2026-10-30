@@ -29,6 +29,7 @@ import {
   personOnlyFileRules,
 } from '../directory-grants.js';
 import { assignTurnBounds } from '../../turn-bounds.js';
+import { roomTurnMarksOf } from '../../../../rooms/limits/teammate-turn.js';
 import {
   captureLaunchFingerprint,
   compareLaunchFingerprints,
@@ -147,39 +148,14 @@ describe('the launch options every Claude Code turn is given', () => {
     expect(options.hooks?.PostToolUseFailure).toEqual([{ hooks: [unmatched[0]!.hooks[0]] }]);
   });
 
-  it('registers the teammate fence on every tool, read from the session as each call is made', async () => {
-    // DOR-2955. A fence that is never registered fails nothing anywhere: a
-    // teammate's turn would simply reach every room the agent is in again.
-    const session = makeSession();
-    const options = await captureSdkOptions(undefined, session);
-    const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
-    // The teammate fence, then the held turn's ask (DOR-3204).
-    expect(unmatched).toHaveLength(2);
-    const hook = unmatched[0]!.hooks[0]!;
-    const call = {
-      hook_event_name: 'PreToolUse' as const,
-      session_id: 'sdk-1',
-      transcript_path: '/tmp/t.jsonl',
-      cwd: '/mock/project',
-      tool_name: 'mcp__dorkos__read_room_history',
-      tool_input: { roomId: 'room-of-the-owner' },
-      tool_use_id: 'tool-1',
-    };
-    const signal = { signal: new AbortController().signal };
-
-    expect(await hook(call, 'tool-1', signal)).toEqual({});
-    session.teammateTier = { roomId: 'room-answered' };
-    expect(await hook(call, 'tool-1', signal)).toMatchObject({
-      hookSpecificOutput: { permissionDecision: 'deny' },
-    });
-  });
-
   it('registers the held turn’s ask on every tool, read from the session as each call is made', async () => {
     // DOR-3204. Unregistered, a held turn runs whatever the folder's allow rules allow, unasked.
     const session = makeSession();
     const options = await captureSdkOptions(undefined, session);
     const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
-    const hook = unmatched[1]!.hooks[0]!;
+    // The only hook on every tool: there is no teammate fence (DOR-3440).
+    expect(unmatched).toHaveLength(1);
+    const hook = unmatched[0]!.hooks[0]!;
     const call = {
       hook_event_name: 'PreToolUse' as const,
       session_id: 'sdk-1',
@@ -198,127 +174,55 @@ describe('the launch options every Claude Code turn is given', () => {
     });
   });
 
-  it('shows a teammate’s turn no notes, says what it may do, and never shares its process with the owner’s', async () => {
-    // DOR-2955. The notes are left out of the prompt, which the digest does not
-    // see, so the teammate block must be IN the digest: without it a warm
-    // process launched with the owner's notes would serve the teammate's turn.
-    vi.mocked(buildSystemPromptAppend).mockImplementation(async (_home, _cwd, _gates, options) => ({
-      text:
-        options?.memory === false
-          ? '<env>mock</env>'
-          : '<env>mock</env>\n\n<agent_memory>x</agent_memory>',
-      stable: '<env>mock</env>',
-    }));
-    const session = makeSession();
-    const resolve = (messageOpts?: MessageOpts) =>
-      resolveLaunch({
-        sessionId: 's1',
-        content: 'hello',
-        session,
-        opts: makeOpts(),
-        ...(messageOpts ? { messageOpts } : {}),
-        effectiveCwd: '/mock/project',
-      });
-    const append = (launch: Awaited<ReturnType<typeof resolve>>) =>
-      (launch.sdkOptions.systemPrompt as { append: string }).append;
-    const pin = (launch: Awaited<ReturnType<typeof resolve>>) =>
-      captureLaunchFingerprint(launch.launch);
-
-    const owner = await resolve();
-    const teammate = await resolve({
-      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
-    });
-    const ownerAgain = await resolve({
-      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't2' },
-    });
-
-    expect(append(teammate)).not.toContain('<agent_memory>');
-    expect(append(teammate)).not.toContain('<relay_connections>');
-    expect(append(teammate)).toContain('<teammate_turn>');
-    expect(append(ownerAgain)).toContain('<agent_memory>');
-    expect(append(ownerAgain)).not.toContain('<teammate_turn>');
-    expect(compareLaunchFingerprints(pin(owner), pin(teammate)).action).toBe('relaunch');
-    expect(compareLaunchFingerprints(pin(teammate), pin(ownerAgain)).action).toBe('relaunch');
-    // And an ordinary turn after an ordinary turn relaunches for none of this.
-    expect(compareLaunchFingerprints(pin(owner), pin(ownerAgain)).action).not.toBe('relaunch');
-    // Back to the file's own stub, which `clearAllMocks` would not restore.
-    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
-      text: '<env>mock</env>',
-      stable: '<env>mock</env>',
-    });
-  });
-
-  it('launches a teammate’s turn without the owner’s profile, folder or grants (DOR-2956)', async () => {
-    // Red when: the launcher stops asking the append for the teammate form, or applies a
-    // caller's folder grants to a teammate's turn. Owner turns are unchanged.
+  it('launches a teammate’s turn as any other: notes, profile, grants and process (DOR-3440)', async () => {
+    // Red when: a teammate's turn is launched apart again, which is the lowering Dorian removed.
     const asked: Array<Record<string, unknown> | undefined> = [];
     vi.mocked(buildSystemPromptAppend).mockImplementation(async (_home, _cwd, _gates, options) => {
       asked.push(options as Record<string, unknown> | undefined);
-      return { text: '<env>mock</env>', stable: '<env>mock</env>' };
+      return {
+        text: '<env>mock</env>\n\n<agent_memory>x</agent_memory>',
+        stable: '<env>mock</env>',
+      };
     });
     const grants = [{ path: '/elsewhere/private-repo', access: 'read' as const }];
-    const resolve = (messageOpts: MessageOpts) =>
+    const resolve = (turnId: string, teammate: boolean) =>
       resolveLaunch({
         sessionId: 's1',
         content: 'hello',
         session: makeSession(),
         opts: makeOpts(),
-        messageOpts,
+        messageOpts: {
+          additionalDirectories: grants,
+          roomTurn: {
+            roomId: 'room-a',
+            authorId: 'ana',
+            turnId,
+            ...(teammate ? { teammate } : {}),
+          },
+        },
         effectiveCwd: '/mock/project',
       });
-    const reach = (launch: Awaited<ReturnType<typeof resolve>>) =>
-      (launch.sdkOptions.settings as { permissions?: { additionalDirectories?: string[] } })
-        ?.permissions?.additionalDirectories ?? [];
+    const owner = await resolve('t1', false);
+    const teammate = await resolve('t2', true);
+    const append = (launch: typeof owner) =>
+      (launch.sdkOptions.systemPrompt as { append: string }).append;
 
-    const teammate = await resolve({
-      additionalDirectories: grants,
-      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
-    });
-    const owner = await resolve({
-      additionalDirectories: grants,
-      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't2' },
-    });
-
-    expect(asked[0]).toMatchObject({ memory: false, teammate: true });
-    expect(asked[1]?.teammate).toBeUndefined();
-    expect(reach(teammate)).toEqual([]);
-    expect(reach(owner)).toContain('/elsewhere/private-repo');
-    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
-      text: '<env>mock</env>',
-      stable: '<env>mock</env>',
-    });
-  });
-
-  it('holds a chat a teammate’s mark reached to the same tier, fenced to no room (DOR-3036)', async () => {
-    // Red when: the launcher reads only `roomTurn.teammate`, so a chat one hop on from a
-    // teammate's turn gets the owner's notes, profile and grants back.
-    const asked: Array<Record<string, unknown> | undefined> = [];
-    vi.mocked(buildSystemPromptAppend).mockImplementation(async (_home, _cwd, _gates, options) => {
-      asked.push(options as Record<string, unknown> | undefined);
-      return { text: '<env>mock</env>', stable: '<env>mock</env>' };
-    });
-    const session = makeSession();
-    const launch = await resolveLaunch({
-      sessionId: 's1',
-      content: 'hello',
-      session,
-      opts: makeOpts(),
-      messageOpts: {
-        teammate: true,
-        additionalDirectories: [{ path: '/elsewhere/private-repo', access: 'read' }],
-      },
-      effectiveCwd: '/mock/project',
-    });
-    assignTurnBounds(session, { teammate: true });
-
-    expect(asked[0]).toMatchObject({ memory: false, teammate: true });
+    expect(append(teammate)).toContain('<agent_memory>');
+    expect(append(teammate)).not.toContain('<teammate_turn>');
+    expect(asked[0]).not.toHaveProperty('memory');
+    expect(asked[0]).not.toHaveProperty('teammate');
     expect(
-      (launch.sdkOptions.settings as { permissions?: { additionalDirectories?: string[] } })
-        ?.permissions?.additionalDirectories ?? []
-    ).toEqual([]);
-    expect(session.teammateTier).toEqual({ roomId: null });
-    assignTurnBounds(session, undefined);
-    expect(session.teammateTier).toBeUndefined();
+      (teammate.sdkOptions.settings as { permissions?: { additionalDirectories?: string[] } })
+        ?.permissions?.additionalDirectories
+    ).toContain('/elsewhere/private-repo');
+    expect(teammate.sdkOptions.settingSources).toEqual(['local', 'project', 'user']);
+    expect(teammate.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
+    expect(
+      compareLaunchFingerprints(
+        captureLaunchFingerprint(owner.launch),
+        captureLaunchFingerprint(teammate.launch)
+      ).action
+    ).not.toBe('relaunch');
     vi.mocked(buildSystemPromptAppend).mockResolvedValue({
       text: '<env>mock</env>',
       stable: '<env>mock</env>',
@@ -350,9 +254,14 @@ describe('the launch options every Claude Code turn is given', () => {
       expect(at.enrichedContent).toBe(`see ${ZW}@/etc/hosts`);
     });
 
-    it('is the same for a teammate’s turn', async () => {
+    it('is the same for a teammate’s turn, as the room runner sends it', async () => {
       const launched = await resolveWith('/compact', {
-        roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
+        roomTurn: {
+          roomId: 'room-a',
+          authorId: 'ana',
+          turnId: 't1',
+          ...roomTurnMarksOf({ teammate: true }),
+        },
       });
       expect(launched.enrichedContent).toBe(`${ZW}/compact`);
     });
@@ -433,41 +342,6 @@ describe('the launch options every Claude Code turn is given', () => {
       const resolved = await launch(path.join(root, 'plain'));
       expect(resolved.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
     });
-  });
-
-  it('launches a teammate’s turn with no setting layers and no auto-memory, in its own process', async () => {
-    // DOR-2955, review B3: every setting layer adds the owner's CLAUDE.md files, and
-    // Claude Code adds its own auto-memory for the folder whatever the layers say.
-    const session = makeSession();
-    const resolve = (messageOpts?: MessageOpts) =>
-      resolveLaunch({
-        sessionId: 's1',
-        content: 'hello',
-        session,
-        opts: makeOpts(),
-        ...(messageOpts ? { messageOpts } : {}),
-        effectiveCwd: '/mock/project',
-      });
-    const owner = await resolve();
-    const teammate = await resolve({
-      roomTurn: { roomId: 'room-a', authorId: 'ana', turnId: 't1', teammate: true },
-    });
-
-    expect(teammate.sdkOptions.settingSources).toEqual([]);
-    expect(teammate.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
-    expect(owner.sdkOptions.settingSources).toEqual(['local', 'project', 'user']);
-    expect(owner.sdkOptions.env?.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
-    // What bounds the turn is an option of the launch, never a setting layer.
-    expect(teammate.sdkOptions.hooks?.PreToolUse?.length).toBeGreaterThan(0);
-    expect(teammate.sdkOptions.canUseTool).toBeTypeOf('function');
-    const moved = compareLaunchFingerprints(
-      captureLaunchFingerprint(owner.launch),
-      captureLaunchFingerprint(teammate.launch)
-    );
-    expect(moved.action).toBe('relaunch');
-    if (moved.action === 'relaunch') {
-      expect(moved.changed).toEqual(expect.arrayContaining(['settingSources', 'env']));
-    }
   });
 
   it('registers the PostToolUse hook that tells auto mode about DorkOS tools', async () => {
@@ -568,7 +442,7 @@ describe('a marked turn on an agent at Full autonomy', () => {
 
   it.each([
     ['a Wi-Fi sign-in’s hold', 'runtime-default' as const],
-    ['a space teammate’s post', ['runtime-default', READ_ONLY_LEVEL] as const],
+    ['a read-only cap', ['runtime-default', READ_ONLY_LEVEL] as const],
   ])('launches at the runtime’s Default for %s', async (_name, ceiling) => {
     const options = await launchAs(
       { permissionCeiling: ceiling as TurnPermissionCeiling },
@@ -576,6 +450,20 @@ describe('a marked turn on an agent at Full autonomy', () => {
     );
     expect(options.permissionMode).not.toBe('bypassPermissions');
     expect(['default', 'plan']).toContain(options.permissionMode);
+  });
+
+  it('launches at Full autonomy for a teammate’s turn, whose mark only records (DOR-3440)', async () => {
+    const options = await launchAs(
+      {
+        permissionCeiling: {
+          asks: 'never',
+          reach: 'everything',
+          teammate: [{ roomId: 'r', authorId: 'a' }],
+        },
+      },
+      bypassSession()
+    );
+    expect(options.permissionMode).toBe('bypassPermissions');
   });
 
   it('launches at Full autonomy for the owner’s own turn', async () => {

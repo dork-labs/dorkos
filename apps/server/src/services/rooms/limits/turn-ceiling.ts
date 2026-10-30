@@ -1,14 +1,13 @@
 /**
  * What a room turn's triggering messages mean for it. A turn runs at its agent's set level, whoever
- * wrote what it answers (Dorian 2026-10-30, DOR-3440). Two things still bound one: a post held to
- * the runtime's default because of who was calling (a Wi-Fi sign-in, DOR-3037), and a teammate in a
- * shared space (DOR-2955).
+ * wrote what it answers (Dorian 2026-10-30, DOR-3440). One thing still bounds one: a post held to
+ * the runtime's default because of who was calling (a Wi-Fi sign-in, DOR-3037). A teammate in a
+ * shared space (DOR-2955) adds a record for the space's monthly limit, which lowers nothing.
  *
  * @module server/services/rooms/limits/turn-ceiling
  */
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { entryHeldToDefault, entryMarksOf } from '../../core/turn-power/turn-levels.js';
 import { ceilingCarrying } from '../../core/turn-power/turn-marks.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
@@ -33,9 +32,8 @@ export function isEntryAuthorExternal(authors: AuthorRegistry, authorId: string)
 
 /**
  * The ceiling a turn this entry starts runs under, as the spread a `RoomTurnRequest` takes. A
- * teammate's is held to the runtime's default and to read access, the bound carrying the teammate's
- * mark (DOR-3036). A post held to the default (a person's from Wi-Fi, DOR-3037) is held to the
- * runtime's default. Every other post bounds nothing.
+ * teammate's only carries their mark (DOR-3036, `ceilingCarrying`). A post held to the default (a
+ * person's from Wi-Fi, DOR-3037) is held to the runtime's default. Every other post has none.
  *
  * @param authors - The registry holding the stored author records.
  * @param entry - The entry that triggered the turn.
@@ -48,16 +46,14 @@ export function ceilingForEntry(
   inSpaceRoom = false,
   roomId = ''
 ): { permissionCeiling?: TurnPermissionCeiling } {
-  const teammateHold = (): TurnPermissionCeiling => [
-    'runtime-default',
-    { ...READ_ONLY_LEVEL, teammate: [{ roomId, authorId: entry.authorId }] },
-  ];
-  if (isTeammateEntry(authors, entry, inSpaceRoom)) return { permissionCeiling: teammateHold() };
+  const teammateRecord = (): TurnPermissionCeiling =>
+    ceilingCarrying({ teammate: [{ roomId, authorId: entry.authorId }] })!;
+  if (isTeammateEntry(authors, entry, inSpaceRoom)) return { permissionCeiling: teammateRecord() };
   if (entryHeldToDefault(entry.id, entry.roomId ?? (roomId || undefined))) {
     return { permissionCeiling: 'runtime-default' };
   }
   if (isUnknownSpaceAgentPost(authors, entry, inSpaceRoom, roomId || undefined)) {
-    return { permissionCeiling: teammateHold() };
+    return { permissionCeiling: teammateRecord() };
   }
   const marks = entryMarksOf(entry.id, roomId || undefined);
   if (marks?.teammate !== undefined) return { permissionCeiling: ceilingCarrying(marks)! };

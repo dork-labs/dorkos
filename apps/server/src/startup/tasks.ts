@@ -16,7 +16,8 @@ import { resolveScheduleParkPayload } from '../services/notifications/emitters/s
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import { RELAY_NOT_BUILT } from '../services/relay/task-dispatch/readiness.js';
-import { startAgentExecutionWatch } from '../services/tasks/approvals/agent-execution-watch.js';import { attachAgentRoots, attachTaskRoot } from '../services/tasks/attach-task-roots.js';
+import { startAgentExecutionWatch } from '../services/tasks/approvals/agent-execution-watch.js';
+import { attachAgentRoots, attachTaskRoot } from '../services/tasks/attach-task-roots.js';
 import { migrateLegacySchedules } from '../services/tasks/legacy-migration.js';
 import type { resolveTasksFiring } from '../services/tasks/resolve-firing.js';
 import { ScheduleIdentityRegistry } from '../services/tasks/schedule-identity.js';

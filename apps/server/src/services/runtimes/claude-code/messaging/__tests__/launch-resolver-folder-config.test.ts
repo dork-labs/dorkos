@@ -291,11 +291,12 @@ describe('a new agent whose home already has settings (DOR-3432)', () => {
     expect(deny).toContain(`Write(/${home}/.claude/**)`);
   });
 
-  it('never treats a teammate’s turn as Full', async () => {
+  it('treats a teammate’s turn at Full as Full, like any other (DOR-3440)', async () => {
     mode = 'bypassPermissions';
     const resolved = await launch({ teammate: true });
-    expect(settingsOf(resolved)?.disableAllHooks).toBe(true);
-    expect(fullLines()).toEqual([]);
+    expect(settingsOf(resolved)?.disableAllHooks).toBeUndefined();
+    expect(tickets()).toEqual([]);
+    expect(fullLines()).toHaveLength(1);
   });
 });
 

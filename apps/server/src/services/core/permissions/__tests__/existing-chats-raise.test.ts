@@ -525,12 +525,12 @@ describe('Undo of the raise', () => {
 });
 
 describe('openingMessageMarked', () => {
-  it('reads an outsider or teammate mark on the opening message as marked', () => {
+  it('reads an outsider mark on the opening message as marked, and a teammate record as not', () => {
     const level = { asks: 'never', reach: 'full' };
     expect(openingMessageMarked(JSON.stringify({ ...level, outsider: true }))).toBe(true);
     expect(
       openingMessageMarked(JSON.stringify({ ...level, teammate: [{ roomId: 'r', authorId: 'a' }] }))
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('reads what a sender held to the runtime default (a Wi-Fi turn) stores as marked', () => {
@@ -557,7 +557,7 @@ describe('openingMessageMarked', () => {
     ).toBe(true);
   });
 
-  it('reads an unknown sender stored with a teammate mark as marked', () => {
+  it('reads an unknown sender stored with only a teammate mark as not marked', () => {
     expect(
       openingMessageMarked(
         JSON.stringify({
@@ -565,7 +565,7 @@ describe('openingMessageMarked', () => {
           marks: { teammate: [{ roomId: 'r', authorId: 'a' }] },
         })
       )
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('reads an unknown sender stored with empty or junk marks as not marked', () => {

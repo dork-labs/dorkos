@@ -37,7 +37,7 @@
  */
 import { z } from 'zod';
 import { marksOf } from '../core/turn-power/turn-levels.js';
-import { hasMarks } from '../core/turn-power/turn-marks.js';
+import { marksHold } from '../core/turn-power/turn-marks.js';
 import { markedTurnRunsAtFull } from '../core/turn-power/full-autonomy.js';
 import {
   COMMITMENT_LIST_MAX,
@@ -245,17 +245,14 @@ export const commitmentsDomain: CapabilityDomain = {
       invoke: async (deps, input, context) => {
         const marks = marksOf(context.sessionId, context.identity?.agentPath);
         if (
-          hasMarks(marks) &&
-          !markedTurnRunsAtFull(
-            {
-              actionId: 'commitments.add',
-              title: 'Make a promise',
-              ...(context.identity ? { agentPath: context.identity.agentPath } : {}),
-              ...(context.identity?.displayName ? { agentName: context.identity.displayName } : {}),
-              ...(context.sessionId ? { sessionId: context.sessionId } : {}),
-            },
-            marks
-          )
+          marksHold(marks) &&
+          !markedTurnRunsAtFull({
+            actionId: 'commitments.add',
+            title: 'Make a promise',
+            ...(context.identity ? { agentPath: context.identity.agentPath } : {}),
+            ...(context.identity?.displayName ? { agentName: context.identity.displayName } : {}),
+            ...(context.sessionId ? { sessionId: context.sessionId } : {}),
+          })
         ) {
           return OUTSIDER_PROMISE;
         }

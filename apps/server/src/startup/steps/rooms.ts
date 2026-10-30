@@ -78,9 +78,7 @@ import {
 } from '../../services/session/index.js';
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
-import { runsTeammateTurns } from '../../services/core/turn-power/teammate-mark.js';
 import { wireTeammateSpend } from '../../services/communities/remote/wake/teammate-spend-wiring.js';
-import { agentRuntimeTypeFrom } from '../../services/runtimes/shared/resolve-agent-runtime-type.js';
 import {
   followSessionRekeys,
   repairRoomSessionBindings,
@@ -214,14 +212,6 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
   // Who in each space may wake an agent here (spec `official-community-space` D9). It starts
   // loading now, long before the streams start below, and wakes nobody until it has.
   remoteCommunityBridge.current.useWakeGate(getRemoteWakePolicy());
-  // Which enrolled agents may take a teammate's turn (DOR-2955): those whose next turn starts on a
-  // runtime that holds it to every limit. An agent Mesh cannot name takes none.
-  remoteCommunityBridge.current.useTeammateRuntimes((localAgentId) => {
-    const agent = refs.meshCore?.get(localAgentId);
-    const projectPath = refs.meshCore?.getProjectPath(localAgentId);
-    if (!agent || !projectPath) return false;
-    return runsTeammateTurns(agentRuntimeTypeFrom(projectPath, agent.runtime));
-  });
   // What each teammate turn cost, counted against its space's monthly limit (DOR-2956).
   wireTeammateSpend(refs.remoteCommunityRuntime.mirrors);
   refs.remoteRedactionSync = new RemoteRedactionSync({

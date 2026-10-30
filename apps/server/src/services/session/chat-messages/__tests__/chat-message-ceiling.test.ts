@@ -1,34 +1,19 @@
 /**
  * A chat message runs at its receiving agent's own level (DOR-3440). Only a teammate's chain in a
- * shared space rides on it, and a chat such a message opens inherits nothing (DOR-3107).
+ * shared space rides on it, as a record for the space's limit that lowers nothing.
  */
 import { describe, expect, it } from 'vitest';
-import { chatMessageOrigin, parseCeiling, senderCeilingJson } from '../chat-message-ceiling.js';
+import { CHAT_MESSAGE_ORIGIN, parseCeiling, senderCeilingJson } from '../chat-message-ceiling.js';
 import { permissionSeedForOrigin } from '../../origin/turn-origin.js';
+import { ceilingOnlyRecords, marksOfCeiling } from '../../../core/turn-power/turn-marks.js';
 
 const LEVEL = { asks: 'never', reach: 'everything' } as const;
 const CHAIN = { ...LEVEL, teammate: [{ roomId: 'r', authorId: 'a' }] };
 const CALLER = { sessionId: 'sender', agentPath: '/agents/ana' };
 
 describe('a chat a message opens', () => {
-  it('follows the agent’s own level, whatever older row it reads', () => {
-    for (const stored of [
-      JSON.stringify(LEVEL),
-      JSON.stringify({ ...LEVEL, outsider: true }),
-      JSON.stringify('runtime-default'),
-      JSON.stringify('none'),
-      'not json',
-    ]) {
-      const origin = chatMessageOrigin(stored);
-      expect(origin, stored).toEqual({ kind: 'chat-message' });
-      expect(permissionSeedForOrigin(origin), stored).toBe('configured-stop-on-insert');
-    }
-  });
-
-  it('inherits nothing when a teammate’s chain reached the sending turn', () => {
-    const origin = chatMessageOrigin(JSON.stringify(['runtime-default', CHAIN]));
-    expect(origin).toEqual({ kind: 'chat-message', marked: true });
-    expect(permissionSeedForOrigin(origin)).toBe('none');
+  it('seeds the same stop, whoever the sending turn answered', () => {
+    expect(permissionSeedForOrigin(CHAT_MESSAGE_ORIGIN)).toBe('configured-stop-on-insert');
   });
 });
 
@@ -40,12 +25,18 @@ describe('the bound a message row stores', () => {
     }
   });
 
-  it('carries a teammate’s chain, read back as the runtime default and the chain', () => {
+  it('carries a teammate’s chain for the space’s limit, and reads back lowering nothing', () => {
     const json = senderCeilingJson({ turnLevelOf: () => CHAIN }, CALLER);
-    expect(parseCeiling(json)).toEqual([
-      'runtime-default',
-      expect.objectContaining({ teammate: CHAIN.teammate }),
-    ]);
+    const ceiling = parseCeiling(json);
+    expect(ceiling).toBeDefined();
+    expect(marksOfCeiling(ceiling!)).toEqual({ teammate: CHAIN.teammate });
+    expect(ceilingOnlyRecords(ceiling!)).toBe(true);
+  });
+
+  it('reads a chain an earlier build stored under the runtime default as lowering nothing', () => {
+    const ceiling = parseCeiling(JSON.stringify(['runtime-default', CHAIN]));
+    expect(ceiling).toBeDefined();
+    expect(ceilingOnlyRecords(ceiling!)).toBe(true);
   });
 
   it('reads a bound from an older build as nothing', () => {

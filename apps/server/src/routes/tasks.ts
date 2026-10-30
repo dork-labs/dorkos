@@ -87,7 +87,7 @@ import {
   refuseUnknownTaskUpdateFields,
 } from '../services/tasks/task-write-policy.js';
 import { marksOf } from '../services/core/turn-power/turn-levels.js';
-import { hasMarks } from '../services/core/turn-power/turn-marks.js';
+import { marksHold } from '../services/core/turn-power/turn-marks.js';
 
 /**
  * Refuse a task write that reaches for a field only a person may set (DOR-504):
@@ -668,7 +668,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // An agent's edit from a marked turn parks the schedule for a person and keeps the marks for
     // its card, whatever it changed (DOR-3036). Picked up by the park edge below like any other.
     const marks = caller.agentIdentity ? marksOf(undefined, caller.agentIdentity.agentPath) : {};
-    if (!trusted && hasMarks(marks) && store.approvals.markOrigin(updated.id, marks)) {
+    if (!trusted && marksHold(marks) && store.approvals.markOrigin(updated.id, marks)) {
       updated = store.getTask(updated.id) ?? updated;
     }
 

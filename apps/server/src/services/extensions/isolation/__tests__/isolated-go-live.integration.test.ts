@@ -38,6 +38,23 @@ vi.mock('../../../core/config-manager.js', () => ({
   },
 }));
 
+// The agent that made it is at Full, so its edits run (`path-trust-edits.ts`).
+vi.mock('../../../session/resolution/agent-launch-level.js', () => ({
+  resolveAgentLaunchLevel: async () => ({ mode: 'bypassPermissions' }),
+}));
+vi.mock('../../../core/runtime-registry.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../core/runtime-registry.js')>();
+  const { CLAUDE_CODE_CAPABILITIES } =
+    await import('../../../runtimes/claude-code/runtime-constants.js');
+  return {
+    ...original,
+    runtimeRegistry: {
+      getDefaultType: () => 'claude-code',
+      getAllCapabilities: () => ({ 'claude-code': CLAUDE_CODE_CAPABILITIES }),
+    },
+  };
+});
+
 // Login off: the chain's session gate lets every request through.
 vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../core/auth/session-gate.js')>()),

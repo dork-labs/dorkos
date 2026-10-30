@@ -88,7 +88,6 @@ import {
 } from '../../session/resolution/agent-launch-level.js';
 import { isChosenMode, isKept } from '../permissions/existing-chats-raise.js';
 import { chatRiseFacts } from './chat-rise-facts.js';
-import { marksForTurn } from './turn-marks.js';
 import { logger } from '../../../lib/logger.js';
 
 /** Chats on another computer, which this one cannot vouch for. */
@@ -237,12 +236,10 @@ async function agentOfTurn(
   return resolveLevelAgent(cwd, opts, recorded);
 }
 
-/** Whether the turn is held: a Wi-Fi sign-in's (the runtime's default), or a teammate's chain. */
+/** Whether the turn is held: only a Wi-Fi sign-in's (the runtime's default) holds one. */
 function turnIsMarked(opts: MessageOpts | undefined): boolean {
   const ceiling = opts?.permissionCeiling;
-  if (ceiling !== undefined && ceilingHoldsForOutsider(ceiling)) return true;
-  if (opts?.teammate === true || opts?.roomTurn?.teammate === true) return true;
-  return marksForTurn(opts).teammate !== undefined;
+  return ceiling !== undefined && ceilingHoldsForOutsider(ceiling);
 }
 
 /**

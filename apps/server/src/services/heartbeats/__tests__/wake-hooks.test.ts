@@ -94,10 +94,10 @@ describe('a refused room turn', () => {
     ).toBe(true);
   });
 
-  // DOR-3036: a beat would read a teammate's chain as the agent's own. A post that carried a
-  // stranger's words on wakes it (DOR-3390, Security): the beat gathers it with its marks, so it
-  // runs as a marked turn whose risky actions ask.
-  it('never wakes for a teammate’s chain, and wakes for a post that carried outside words', () => {
+  // A teammate's chain is a record for the space's limit, and blocks no wake (DOR-3440). A post that
+  // carried a stranger's words on wakes it too (DOR-3390, Security): the beat gathers it with its
+  // marks, so it runs as a marked turn whose risky actions ask.
+  it('wakes for a teammate’s chain, and for a post that carried outside words', () => {
     const level = { asks: 'always', reach: 'read' } as const;
     noteEntryLevel('marked-teammate', {
       ...level,
@@ -109,7 +109,7 @@ describe('a refused room turn', () => {
     const fromOtto = (id: string) => entry({ id, authorId: 'a-otto', sessionId: 'otto-chat' });
     expect(
       shouldWakeForRefusal(JUNO, 'mention', fromOtto('marked-teammate'), 'repeat', AUTHORS)
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldWakeForRefusal(JUNO, 'mention', fromOtto('marked-outsider'), 'repeat', AUTHORS)
     ).toBe(true);

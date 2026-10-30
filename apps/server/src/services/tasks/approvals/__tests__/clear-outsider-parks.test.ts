@@ -22,7 +22,12 @@ let store: TaskStore;
 
 /** A schedule on disk, switched on, and its row parked with these marks. */
 async function parked(name: string, marks: unknown): Promise<string> {
-  const schedule = { cron: '0 7 * * *', timezone: 'UTC', enabled: true, permissions: 'acceptEdits' };
+  const schedule = {
+    cron: '0 7 * * *',
+    timezone: 'UTC',
+    enabled: true,
+    permissions: 'acceptEdits',
+  };
   const filePath = await writeSkillFile(root, name, { name, description: 'd', schedule }, 'Go.');
   const task = store.fileSync.upsertFromFile({
     name,
@@ -113,7 +118,12 @@ describe('a real sync after the clear', () => {
   });
 
   it('a project’s copy stays off through a sync, and its neighbours do not change', async () => {
-    const schedule = { cron: '0 7 * * *', timezone: 'UTC', enabled: true, permissions: 'acceptEdits' };
+    const schedule = {
+      cron: '0 7 * * *',
+      timezone: 'UTC',
+      enabled: true,
+      permissions: 'acceptEdits',
+    };
     const filePath = await writeSkillFile(
       root,
       'digest',
@@ -196,7 +206,12 @@ describe('a person turns a cleared schedule back on', () => {
       enabled: true,
     });
     if (plan.kind === 'refuse') throw new Error(plan.message);
-    await writeSkillFile(path.dirname(path.dirname(filePath)), 'digest', plan.frontmatter, plan.body);
+    await writeSkillFile(
+      path.dirname(path.dirname(filePath)),
+      'digest',
+      plan.frontmatter,
+      plan.body
+    );
     const task = await sync(filePath);
 
     expect(task).toMatchObject({ enabled: true, status: 'active' });
@@ -232,14 +247,11 @@ describe('clearOutsiderParks', () => {
     expect((raw?.data.schedule as { enabled: unknown }).enabled).toBe(false);
   });
 
-  it('keeps a teammate’s mark parked', async () => {
-    const id = await parked('digest', {
-      outsider: true,
-      teammate: [{ roomId: 'r', authorId: 'a' }],
-    });
+  it('clears a teammate’s mark the same way', async () => {
+    const id = await parked('digest', { teammate: [{ roomId: 'r', authorId: 'a' }] });
 
-    expect(await store.approvals.clearOutsiderParks()).toBe(0);
-    expect(rowOf(id)).toMatchObject({ status: 'pending_approval', enabled: true });
+    expect(await store.approvals.clearOutsiderParks()).toBe(1);
+    expect(rowOf(id)).toMatchObject({ status: 'active', enabled: false, originMarks: null });
   });
 
   it('matches nothing the second time', async () => {

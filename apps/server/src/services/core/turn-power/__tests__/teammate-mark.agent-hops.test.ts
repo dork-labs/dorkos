@@ -2,16 +2,14 @@
  * The teammate's mark follows every path a turn passes work on by (DOR-3036), past the room
  * mention (that one, through the real room service, is `rooms/__tests__/room-teammate-hop.test.ts`).
  *
- * A teammate's turn itself cannot reach these paths: the teammate tier refuses `chat_send`,
- * `session_start`, `tasks_create` and `memory_write` (`teammate-tier.ts`). Before the mark, one
- * mention later the teammate was gone: Ana's teammate turn posted `@bo`, Bo's turn answered Ana,
- * and every path was open to him. Now Bo's level carries the teammate's mark, so:
+ * The mark is a record for the space's monthly limit and lowers nothing (DOR-3440). So one mention
+ * later, and past it, each next turn stays counted, at its agent's own level:
  *
- * | Path from Bo's turn            | What the next turn gets                               |
- * | ------------------------------ | ----------------------------------------------------- |
- * | `chat_send` to another chat    | the mark, the tier, and the space's monthly limit     |
- * | `session_start` spin-off       | the mark, the tier, and the space's monthly limit     |
- * | a schedule he creates or edits | parks for a person, the mark shown, approval clears it |
+ * | Path from Bo's turn            | What the next turn gets                       |
+ * | ------------------------------ | --------------------------------------------- |
+ * | `chat_send` to another chat    | the mark and the space's monthly limit        |
+ * | `session_start` spin-off       | the mark and the space's monthly limit        |
+ * | a schedule he creates or edits | no park: it settles as any other schedule does |
  *
  * Read through the real level-recording seam and the real teammate meter, wrapped the way the
  * runtime registry wraps every runtime, and the real in-session task tools over a real store.
@@ -25,7 +23,6 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import {
   lastTurnLevelOf,
@@ -40,7 +37,6 @@ import {
   setTeammateTurnCostSink,
   type TeammateTurnCost,
 } from '../teammate-turn-cost.js';
-import { TEAMMATE_TIER_DENIAL, teammateTierRefusal } from '../teammate-tier.js';
 import { ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
 import { teammateOf } from '../../../rooms/limits/space-teammates.js';
 import type { AuthorRegistry } from '../../../rooms/author-registry.js';
@@ -49,7 +45,6 @@ import {
   senderCeilingJson,
 } from '../../../session/chat-messages/chat-message-ceiling.js';
 import { TaskStore } from '../../../tasks/task-store.js';
-import { originLabelerFrom, setOriginLabeler } from '../../../tasks/approvals/marked-schedules.js';
 import {
   createCreateScheduleHandler,
   createUpdateScheduleHandler,
@@ -162,27 +157,15 @@ beforeEach(() => {
 
 afterEach(() => {
   setTeammateTurnCostSink(null);
-  setOriginLabeler(() => ({ name: null, room: null }));
   resetLiveOutsiderTurns();
 });
 
-describe('a teammate’s own turn cannot pass work on, and one mention later', () => {
-  it.each(['chat_send', 'session_start', 'tasks_create', 'memory_write'])(
-    'the teammate tier refuses %s',
-    (name) => {
-      expect(
-        teammateTierRefusal(
-          { roomId: SPACE_ROOM },
-          { source: 'dorkos', name, input: { roomId: SPACE_ROOM } }
-        )
-      ).toBe(TEAMMATE_TIER_DENIAL);
-    }
-  );
-
-  it('Bo, one mention later, is held to read access and carries both marks', async () => {
+describe('one mention later, nothing is lowered', () => {
+  it('Bo runs at full reach and still carries the teammate’s mark', async () => {
     const { runtime } = decorated();
     const bo = await teammateThenMention(runtime);
-    expect(lastTurnLevelOf(bo)).toMatchObject({ reach: READ_ONLY_LEVEL.reach, outsider: true });
+    expect(lastTurnLevelOf(bo)).toMatchObject({ asks: 'never', reach: 'everything' });
+    expect(lastTurnLevelOf(bo)?.outsider).toBeUndefined();
     expect(teammateMarkOf(lastTurnLevelOf(bo))).toEqual([
       { roomId: SPACE_ROOM, authorId: 'priya' },
     ]);
@@ -224,17 +207,10 @@ describe('one mention later, the teammate mark still carries (DOR-3036)', () => 
     expect(sink).toHaveBeenCalledWith(expect.objectContaining({ costUsd: TURN_COST }));
   });
 
-  it('a schedule Bo creates parks with the teammate’s mark, and only a person’s approval clears it', async () => {
+  it('a schedule Bo creates does not park for the mark, and keeps none', async () => {
     const { runtime } = decorated();
     const bo = await teammateThenMention(runtime);
     const store = new TaskStore(createTestDb());
-    // The labeler the server runs, over this test's one teammate and room.
-    setOriginLabeler(
-      originLabelerFrom({
-        authorName: (id) => (id === 'priya' ? 'Priya' : null),
-        roomTitle: (id) => (id === SPACE_ROOM ? 'launch' : null),
-      })
-    );
     const create = createCreateScheduleHandler(scheduleDeps(store), () => ({
       sessionId: bo,
       agentPath: '/agents/bo',
@@ -251,19 +227,13 @@ describe('one mention later, the teammate mark still carries (DOR-3036)', () => 
         })
       ).content[0]!.text
     ) as { schedule: { id: string } };
-    const parked = store.getTask(reply.schedule.id)!;
-    // Parked whatever the preset (an unread preset is Trusted, which would arm it otherwise).
-    expect(parked.status).toBe('pending_approval');
-    expect(parked.originMarks).toEqual({
-      outsider: true,
-      teammate: [{ roomId: SPACE_ROOM, authorId: 'priya', name: 'Priya', room: '#launch' }],
-    });
-
-    store.approvals.recordApproval(parked.id);
-    expect(store.getTask(parked.id)!.originMarks).toBeNull();
+    const made = store.getTask(reply.schedule.id)!;
+    // An unread preset is Trusted, which arms it: only a mark that holds could park it here.
+    expect(made.status).toBe('active');
+    expect(made.originMarks).toBeNull();
   });
 
-  it('an edit from a marked turn parks an armed schedule, whatever it changed', async () => {
+  it('an edit from a marked turn leaves an armed schedule armed', async () => {
     const { runtime } = decorated();
     const bo = await teammateThenMention(runtime);
     const store = new TaskStore(createTestDb());
@@ -282,10 +252,7 @@ describe('one mention later, the teammate mark still carries (DOR-3036)', () => 
     const reply = JSON.parse((await update({ id: armed.id, enabled: true })).content[0]!.text) as {
       needsReapproval?: boolean;
     };
-    expect(reply.needsReapproval).toBe(true);
-    expect(store.getTask(armed.id)).toMatchObject({
-      status: 'pending_approval',
-      originMarks: { outsider: true },
-    });
+    expect(reply.needsReapproval).toBeUndefined();
+    expect(store.getTask(armed.id)).toMatchObject({ status: 'active', originMarks: null });
   });
 });

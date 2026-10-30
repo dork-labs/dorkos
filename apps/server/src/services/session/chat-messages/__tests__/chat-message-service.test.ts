@@ -22,6 +22,7 @@ vi.mock('../../message-dispatcher.js', async (importOriginal) => {
 });
 
 import { recordAudit } from '../../../audit/audit-trail.js';
+import { ceilingOnlyRecords, marksOfCeiling } from '../../../core/turn-power/turn-marks.js';
 import { isQueuedMessageLaunching, type DispatchLifecycleEvent } from '../../message-dispatcher.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../message-queue-store.js';
 import type {
@@ -253,16 +254,16 @@ describe('send — to an idle chat', () => {
     expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toBeUndefined();
   });
 
-  it('records a teammate’s chain the sender carries, and the chat it opens inherits nothing', async () => {
+  it('records a teammate’s chain the sender carries, lowering nothing', async () => {
     chat('chat-b');
     const teammate = [{ roomId: 'r', authorId: 'a' }];
     levels.set(ANA.sessionId, { ...MIDDLE, teammate });
     await service.send(ANA, { to: 'chat-b', message: 'hi' });
-    expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual([
-      'runtime-default',
-      expect.objectContaining({ teammate }),
-    ]);
-    expect(dispatched[0]!.origin).toEqual({ kind: 'chat-message', marked: true });
+    const ceiling = service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!);
+    expect(ceiling).toBeDefined();
+    expect(marksOfCeiling(ceiling!)).toEqual({ teammate });
+    expect(ceilingOnlyRecords(ceiling!)).toBe(true);
+    expect(dispatched[0]!.origin).toEqual({ kind: 'chat-message' });
   });
 
   it('keeps the trimmed summary', async () => {
@@ -1062,11 +1063,14 @@ describe('ceilingForQueuedMessage', () => {
     });
   }
 
-  it('holds a teammate’s chain any sender carried', () => {
+  it('keeps a teammate’s chain any sender carried, lowering nothing, in an earlier build’s row too', () => {
     const chain = { ...TIGHT, teammate: [{ roomId: 'r', authorId: 'a' }] };
     row('r1', 'q1', JSON.stringify(['runtime-default', chain]));
     row('r2', 'q1', JSON.stringify('none'));
-    expect(service.ceilingForQueuedMessage('q1')).toEqual(['runtime-default', chain]);
+    const ceiling = service.ceilingForQueuedMessage('q1');
+    expect(ceiling).toBeDefined();
+    expect(marksOfCeiling(ceiling!).teammate).toEqual(chain.teammate);
+    expect(ceilingOnlyRecords(ceiling!)).toBe(true);
   });
 
   it('is nothing for no rows, a plain or older bound, or a ceiling it cannot read', () => {

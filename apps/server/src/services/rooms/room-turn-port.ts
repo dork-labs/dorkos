@@ -183,10 +183,8 @@ export interface RoomTurnRequest {
   untrustedText?: true;
   /**
    * Set when a message this turn answers is a TEAMMATE's: a space member who is
-   * not this install's owner (DOR-2955, `limits/space-teammates.ts`). The runner
-   * then sends the turn with nobody to ask, fences its DorkOS tools to this room,
-   * and refuses it on a runtime that cannot hold it to both
-   * (`limits/teammate-turn.ts`). The read-only half rides `permissionCeiling`.
+   * not this install's owner (DOR-2955, `limits/space-teammates.ts`). A record for
+   * the space's monthly limit; it lowers nothing (`limits/teammate-turn.ts`).
    */
   teammate?: true;
   /**

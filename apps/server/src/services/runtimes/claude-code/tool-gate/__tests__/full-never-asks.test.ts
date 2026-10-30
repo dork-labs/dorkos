@@ -13,10 +13,7 @@ import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import {
-  createHeldTurnHook,
-  HELD_TURN_ASK_REASON,
-} from '../held-turn-hook.js';
+import { createHeldTurnHook, HELD_TURN_ASK_REASON } from '../held-turn-hook.js';
 import {
   createCanUseTool,
   type ToolApprovalContext,

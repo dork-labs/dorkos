@@ -281,31 +281,31 @@ export class RoomPosting {
     };
     const { callerSessionId: _caller, callerAgentVerified: _verified, ...postInput } = input;
     const entry: PostedEntry = this.post(
-        roomId,
-        {
-          ...postInput,
-          // **What a tool post has never carried, and now must** (spec
-          // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
-          // post passed neither, so `sessionId` fell to `null` and the "answers
-          // this" pointer was simply absent. That was survivable while a deliberate
-          // post was rare. Under the flip it is EVERY agent reply in the product:
-          // the room would stop drawing the pointer, and no entry could be traced
-          // back to the session that wrote it.
-          //
-          // Both facts are in hand at write time — the live claim knows the entry it
-          // is answering, and the `(room, agent)` binding is the session that turn
-          // runs on — so they are filled from there rather than trusted from the
-          // caller. Only for a post made INSIDE a turn: a post with no claim behind
-          // it is answering nothing and belongs to no session here.
-          ...(turn !== undefined
-            ? {
-                answersEntryId: turn.entryId,
-                ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
-              }
-            : {}),
-        },
-        authorLevel
-      );
+      roomId,
+      {
+        ...postInput,
+        // **What a tool post has never carried, and now must** (spec
+        // `tool-only-room-replies` §D8). The turn-text path passes both; a tool
+        // post passed neither, so `sessionId` fell to `null` and the "answers
+        // this" pointer was simply absent. That was survivable while a deliberate
+        // post was rare. Under the flip it is EVERY agent reply in the product:
+        // the room would stop drawing the pointer, and no entry could be traced
+        // back to the session that wrote it.
+        //
+        // Both facts are in hand at write time — the live claim knows the entry it
+        // is answering, and the `(room, agent)` binding is the session that turn
+        // runs on — so they are filled from there rather than trusted from the
+        // caller. Only for a post made INSIDE a turn: a post with no claim behind
+        // it is answering nothing and belongs to no session here.
+        ...(turn !== undefined
+          ? {
+              answersEntryId: turn.entryId,
+              ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
+            }
+          : {}),
+      },
+      authorLevel
+    );
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;
   }

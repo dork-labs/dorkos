@@ -152,14 +152,7 @@ export type TurnOrigin =
    * autonomy agents talking held each other to asking, and every reply after
    * the first kept it that way.
    */
-  | {
-      readonly kind: 'chat-message';
-      /**
-       * The sending turn was marked (it read words DorkOS cannot vouch for),
-       * so the chat it opens inherits nothing (DOR-3107).
-       */
-      readonly marked?: true;
-    }
+  | { readonly kind: 'chat-message' }
   /**
    * A limited session's work carried over to a new session on another account
    * (spec `claude-account-fleet` D9), by a person or by the account advisor.
@@ -289,12 +282,8 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // own: the turn runs at the stricter of the two. On insert only, so an
     // existing chat a person set keeps what they chose. A person who later
     // types into it gets the same stop a chat of their own starts at.
-    //
-    // A message from a MARKED turn seeds nothing (DOR-3107, Security): the
-    // chat it opens never inherits the agent's own level from a turn a
-    // stranger's words reached.
     case 'chat-message':
-      return origin.marked ? 'none' : 'configured-stop-on-insert';
+      return 'configured-stop-on-insert';
     // Everything below seeds nothing, for two different reasons.
     //
     // A schedule's power is already decided and already stored, on the schedule

@@ -60,7 +60,7 @@ describe('a room post’s marks, after a restart', () => {
     expect(store.read(channel.id, entry.id)).toEqual({ outsider: true, teammate: [PRIYA] });
   });
 
-  it('reads a teammate-marked post as marked once its level is gone, so the answering turn is fenced', () => {
+  it('reads a teammate-marked post as marked once its level is gone, so the answering turn is counted', () => {
     const entry = postByBo();
     createEntryMarksStore(harness.db).write(channel.id, entry.id, {
       outsider: true,
@@ -70,7 +70,7 @@ describe('a room post’s marks, after a restart', () => {
     expect(entryMarksOf(entry.id, channel.id)).toEqual({ outsider: true, teammate: [PRIYA] });
     expect(teammateOf(harness.authors, [entry], false, channel.id)).toEqual({ teammate: true });
     expect(ceilingForEntry(harness.authors, entry, false, channel.id)).toEqual({
-      permissionCeiling: ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [PRIYA] }],
+      permissionCeiling: { asks: 'never', reach: 'everything', teammate: [PRIYA] },
     });
   });
 
@@ -79,10 +79,11 @@ describe('a room post’s marks, after a restart', () => {
     expect(entryMarksOf(entry.id, channel.id)).toBeNull();
     expect(teammateOf(harness.authors, [entry], true, channel.id)).toEqual({ teammate: true });
     expect(ceilingForEntry(harness.authors, entry, true, channel.id)).toEqual({
-      permissionCeiling: [
-        'runtime-default',
-        { ...READ_ONLY_LEVEL, teammate: [{ roomId: channel.id, authorId: bo }] },
-      ],
+      permissionCeiling: {
+        asks: 'never',
+        reach: 'everything',
+        teammate: [{ roomId: channel.id, authorId: bo }],
+      },
     });
     // Outside a space nothing bounds it (DOR-3440).
     expect(teammateOf(harness.authors, [entry], false, channel.id)).toEqual({});

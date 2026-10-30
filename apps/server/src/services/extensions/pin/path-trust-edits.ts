@@ -44,11 +44,13 @@ export interface PathTrustEditDeps {
  * runtime runs on the server's default; a runtime that is not here, or a level it cannot say, is no.
  *
  * @param agentPath - The agent's folder.
+ * @throws {Error} When no runtime is registered yet, so nothing can say the level.
  */
 export async function agentAtFullNow(agentPath: string): Promise<boolean> {
   const { runtime } = await readAgentExecutionDefaults(agentPath);
-  const capabilities =
-    runtimeRegistry.getAllCapabilities()[runtime ?? runtimeRegistry.getDefaultType()];
+  const all = runtimeRegistry.getAllCapabilities();
+  if (Object.keys(all).length === 0) throw new Error('no runtime is registered yet');
+  const capabilities = all[runtime ?? runtimeRegistry.getDefaultType()];
   if (!capabilities) return false;
   const { mode } = await resolveAgentLaunchLevel({ agentPath, capabilities });
   return isFullLevel(levelOfMode(capabilities.permissionModes, mode));
@@ -66,18 +68,23 @@ function writeSource(
     ...before,
     approvedSources: { ...before.approvedSources, [id]: edit(source) },
   });
-  logConfigWrite('an extension following its agent', 'extensions', before, configManager.get('extensions'));
+  logConfigWrite(
+    'an extension following its agent',
+    'extensions',
+    before,
+    configManager.get('extensions')
+  );
 }
 
 const LIVE: PathTrustEditDeps = {
   agentAtFull: agentAtFullNow,
   pin: (id, digest) => writeSource(id, (source) => ({ ...source, digest })),
-  unpin: (id) =>
-    writeSource(id, ({ digest: _pinned, ...source }) => source),
+  unpin: (id) => writeSource(id, ({ digest: _pinned, ...source }) => source),
 };
 
 /** The file the last-seen digests are kept in. */
-const seenFile = (dorkHome: string) => path.join(dorkHome, 'extension-data', 'path-trust-seen.json');
+const seenFile = (dorkHome: string) =>
+  path.join(dorkHome, 'extension-data', 'path-trust-seen.json');
 
 /** The digests the last scan saw; unreadable reads as none. */
 async function readSeen(dorkHome: string): Promise<Record<string, string>> {
@@ -114,7 +121,13 @@ export async function notePathTrustEdits(
       if (!keepsPathTrust(record, source)) continue;
       const before = seen[record.id];
       const edited = before !== undefined && before !== digest;
-      const atFull = await deps.agentAtFull(source.authorHome).catch(() => false);
+      const atFull = await deps.agentAtFull(source.authorHome).catch(() => undefined);
+      if (atFull === undefined) {
+        // Hold it, and keep the last-seen files, so the next scan that can read the level still
+        // sees an edit made since: the first scan at boot runs before the runtimes are registered.
+        if (!source.digest) deps.pin(record.id, before ?? digest);
+        continue;
+      }
       if (before !== digest) {
         seen[record.id] = digest;
         changed = true;

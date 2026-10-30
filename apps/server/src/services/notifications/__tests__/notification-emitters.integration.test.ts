@@ -583,8 +583,8 @@ describe('a turn of its own that fails outside a beat', () => {
         projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
         vi.advanceTimersByTime(60_000);
       };
-      // DOR-3036: a teammate-marked hop refused before it ran (a Codex chat, say) is a marked
-      // turn's failure, never the agent's own to chase.
+      // DOR-3036: a teammate-marked hop's failure is a marked turn's, never the agent's own to
+      // chase.
       const codex = recordTurnLevels(
         {
           type: 'codex',
@@ -603,7 +603,7 @@ describe('a turn of its own that fails outside a beat', () => {
           teammate: [{ roomId: 'space', authorId: 'priya' }],
         },
       });
-      await expect(marked.next()).rejects.toThrow();
+      await marked.next();
       fail('sess-teammate-hop');
       expect(woken).toEqual([]);
       fail('sess-own');

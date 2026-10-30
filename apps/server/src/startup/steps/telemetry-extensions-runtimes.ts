@@ -253,6 +253,10 @@ export async function startTelemetryExtensionsAndRuntimes(
     currentCreditsRelay: () => refs.creditsRelay,
   }));
 
+  // The first scan ran before any runtime could say an agent's level, so it held every copy that
+  // follows its agent (`path-trust-edits.ts`). Look again now.
+  refs.extensionManager?.requestRefresh();
+
   // Every runtime is registered, so the messages extensions sent before a
   // restart can be settled and re-armed, and held ones retried.
   await getAgentSendService()

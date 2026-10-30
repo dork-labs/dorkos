@@ -34,7 +34,7 @@
  */
 import {
   boundsOf,
-  chatMessageOrigin,
+  CHAT_MESSAGE_ORIGIN,
   parseCeiling,
   senderCeilingJson,
 } from './chat-message-ceiling.js';
@@ -370,7 +370,7 @@ export class ChatMessageService {
     const sessionId = target.sessionId ?? target.newSessionId ?? crypto.randomUUID();
     const cwd = target.sessionId ? await this.deps.sessionCwd(target.sessionId) : undefined;
     const result = await this.dispatch({
-      origin: chatMessageOrigin(row.ceilingJson),
+      origin: CHAT_MESSAGE_ORIGIN,
       sessionId,
       messageId: row.queueMessageId ?? undefined,
       request: {

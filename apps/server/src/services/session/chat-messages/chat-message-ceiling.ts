@@ -42,33 +42,27 @@ export function boundsOf(ceiling: TurnPermissionCeiling): readonly TurnPermissio
 }
 
 /**
- * The teammate's chain a stored bound holds, or `undefined` for any other row: every older row's
- * level, cap or hold included, so what an earlier build stored lowers nothing.
+ * The teammate's chain a stored bound holds, as a record that lowers nothing, or `undefined` for any
+ * other row. An earlier build stored the chain in a list beside its cap, so what it stored lowers
+ * nothing either.
  *
  * @param json - The row's `ceilingJson`.
  */
 export function parseCeiling(json: string): TurnPermissionCeiling | undefined {
   try {
     const value = JSON.parse(json) as unknown;
-    if (!Array.isArray(value)) return undefined;
-    const teammate = (value as { teammate?: unknown }[]).find(
+    const bounds = (Array.isArray(value) ? value : [value]) as { teammate?: unknown }[];
+    const carrier = bounds.find(
       (bound) => typeof bound === 'object' && bound !== null && Array.isArray(bound.teammate)
     );
-    if (teammate === undefined) return undefined;
-    return ['runtime-default', teammate as TurnPermissionLevel];
+    if (carrier === undefined) return undefined;
+    return ceilingCarrying({ teammate: carrier.teammate as TurnPermissionLevel['teammate'] });
   } catch {
     return undefined;
   }
 }
 
 /**
- * The origin of the turn a chat message starts. A message from a teammate's chain opens a chat that
- * does not inherit its agent's own level.
- *
- * @param ceilingJson - The message row's stored sender bound.
+ * The origin of the turn a chat message starts.
  */
-export function chatMessageOrigin(ceilingJson: string): TurnOrigin {
-  return parseCeiling(ceilingJson) !== undefined
-    ? { kind: 'chat-message', marked: true }
-    : { kind: 'chat-message' };
-}
+export const CHAT_MESSAGE_ORIGIN: TurnOrigin = { kind: 'chat-message' };

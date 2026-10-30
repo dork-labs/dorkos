@@ -63,7 +63,7 @@ async function writeSettings(body: unknown): Promise<void> {
 
 /** The agent's own turn, in its own home. */
 function ownTurn(overrides: Partial<Parameters<typeof resolveFolderAllows>[0]> = {}) {
-  return resolveFolderAllows({ teammate: false, agent: AGENT, home, cwd: home, ...overrides });
+  return resolveFolderAllows({ agent: AGENT, home, cwd: home, ...overrides });
 }
 
 beforeEach(async () => {
@@ -162,15 +162,6 @@ describe('resolveFolderAllows', () => {
       permissions: { allow: ['Bash(scripts/claim-check:*)', 'Read(docs/**)'] },
     });
     expect((await ownTurn()).kind).toBe('waiting');
-  });
-
-  it('passes nothing on a teammate turn, even for an approved list', async () => {
-    await writeSettings({ permissions: { allow: ['Bash(scripts/claim-check:*)'] } });
-    const waiting = await ownTurn();
-    if (waiting.kind !== 'waiting') throw new Error('expected waiting');
-    recordFolderAllowApproval(waiting.request);
-
-    expect(await ownTurn({ teammate: true })).toEqual({ kind: 'none' });
   });
 
   it('passes nothing for a folder no registered agent owns', async () => {

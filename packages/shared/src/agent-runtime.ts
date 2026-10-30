@@ -137,9 +137,9 @@ export interface TurnPermissionLevel {
    * The teammates whose words started the chain this turn is part of, one per
    * space room and member (DOR-3036, `specs/turn-marks`): a space member who
    * is not the owner wrote a message a turn answered, and everything that
-   * turn caused carries it on. Not a power axis of its own: a turn carrying it
-   * is held to the teammate tier and counted against each space's monthly
-   * limit. Present (even empty) means marked.
+   * turn caused carries it on. A record, not a power axis: a turn carrying it
+   * runs at its agent's level and counts against each space's monthly limit.
+   * Present (even empty) means marked.
    */
   readonly teammate?: readonly TeammateOrigin[];
 }
@@ -1093,10 +1093,9 @@ export interface MessageOpts extends SessionSettings {
     aheadOfMain?: number | null;
     /**
      * True when a space member who is not this install's owner started the
-     * turn: a teammate (DOR-2955). A runtime that honours it lets the turn's
-     * DorkOS tools reach only {@link roomId}, and refuses the rest; the same
-     * turn is also sent `unattended` and a read-only `permissionCeiling`.
-     * Assigned with the rest of this marker, on every send.
+     * turn: a teammate (DOR-2955). Counts the turn against the space's monthly
+     * limit, and lowers nothing. Assigned with the rest of this marker, on every
+     * send.
      */
     teammate?: true;
     /**
@@ -1179,15 +1178,6 @@ export interface MessageOpts extends SessionSettings {
    * its own ignores it.
    */
   unattended?: boolean;
-  /**
-   * True when THIS turn carries a teammate's mark (DOR-3036): a teammate in a
-   * shared space started the chain it is part of, however many agents it came
-   * through. Set by the registry's turn-mark seam, never by a caller. A runtime
-   * that honours it holds the turn to the teammate tier: its DorkOS tools reach
-   * only `roomTurn.roomId` when it answers a room and no room otherwise, and it
-   * reads no files, notes or the owner's profile. Assigned on every send.
-   */
-  teammate?: true;
   /**
    * The loosest level THIS turn may run at, whatever the session is set to
    * (spec `trusted-by-default-flip` §4, "power flows downstream, never up").

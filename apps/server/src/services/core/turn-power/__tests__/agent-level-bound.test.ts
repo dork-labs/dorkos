@@ -44,6 +44,13 @@ import {
   clearTestHomes,
 } from '../../agent-identity/__tests__/agent-home-fixture.js';
 import { roomSessions, rooms, sessionMetadata } from '@dorkos/db';
+import { OPENCODE_CAPABILITIES } from '../../../runtimes/opencode/runtime-constants.js';
+import { DOE_CAPABILITIES } from '../../../runtimes/doe/runtime-constants.js';
+import {
+  parseCeiling,
+  senderCeilingJson,
+} from '../../../session/chat-messages/chat-message-ceiling.js';
+import { ceilingCarrying } from '../turn-marks.js';
 import { lastTurnLevelOf } from '../turn-levels.js';
 import { levelBinds } from '../agent-level-bound.js';
 import { createChatRiseFacts, setChatRiseFacts } from '../chat-rise-facts.js';
@@ -224,6 +231,132 @@ describe('an agent’s level bounds every turn it starts (DOR-3175)', () => {
     clearTestHomes();
     setContinuationHoldDb(undefined);
     setChatRiseFacts(null);
+  });
+
+  describe('a sender below Full messages an agent at Full (DOR-3440, the live case)', () => {
+    const BELOW_FULL = { asks: 'always', reach: 'edit' } as const;
+
+    it.each([
+      [
+        'a row this build stores',
+        senderCeilingJson(
+          { turnLevelOf: () => BELOW_FULL },
+          { sessionId: 'sender', agentPath: BOB }
+        ),
+      ],
+      ['a plain level an older build stored', JSON.stringify(BELOW_FULL)],
+      ['an older row with a plain level in a list', JSON.stringify([BELOW_FULL])],
+    ])('0 cards: %s', async (_name, stored) => {
+      const permissionCeiling = parseCeiling(stored);
+      expect(permissionCeiling).toBeUndefined();
+
+      const runtime = boot();
+      agentStops.set(ANA, 'autonomy');
+      seedChat('dm-1', 'bypassPermissions', { launchOrigin: 'chat-message' });
+      await run(runtime.sendMessage('dm-1', 'do it', { cwd: ANA }));
+
+      const { mode, ceiling } = launches.at(-1)!;
+      expect(mode).toBe('bypassPermissions');
+      expect(ceiling).toBeUndefined();
+      expect(
+        chosenFullAutonomy({
+          permissionMode: mode,
+          ...(ceiling !== undefined ? { turnPermissionCeiling: ceiling } : {}),
+        })
+      ).toBe(true);
+      expect(writeCards(mode)).toBe(false);
+    });
+  });
+
+  describe('a teammate’s record never raises a turn (DOR-3440, Security)', () => {
+    const TEAMMATE = [{ roomId: ROOM, authorId: 'member' }];
+    const record = ceilingCarrying({ teammate: TEAMMATE })!;
+    /** A chain as an older build stored it on a chat message row, read back. */
+    const olderRow = parseCeiling(
+      JSON.stringify(['runtime-default', { asks: 'always', reach: 'read', teammate: TEAMMATE }])
+    )!;
+    /** The same chain as this build stores it, read back. */
+    const newRow = parseCeiling(JSON.stringify(record))!;
+
+    it.each([
+      ['a room turn', record],
+      ['a chat hop', newRow],
+      ['a chat hop from an older build’s row', olderRow],
+    ])('an agent at Ask still asks: %s', async (_name, ceiling) => {
+      const runtime = boot();
+      agentStops.set(ANA, 'ask');
+      seedChat('chat-1', null);
+      await run(
+        runtime.sendMessage('chat-1', 'write it', { cwd: ANA, permissionCeiling: ceiling })
+      );
+      expect(launches.at(-1)!.mode).toBe('default');
+      expect(writeCards(launches.at(-1)!.mode)).toBe(true);
+      expect(lastTurnLevelOf('chat-1')?.teammate).toEqual(TEAMMATE);
+    });
+
+    it('a chat stored at Full whose agent is at Ask still asks, and after a restart', async () => {
+      seedChat('chat-2', 'bypassPermissions');
+      agentStops.set(ANA, 'ask');
+      for (const _boot of [1, 2]) {
+        const runtime = boot();
+        await run(runtime.sendMessage('chat-2', 'go', { cwd: ANA, permissionCeiling: record }));
+        expect(launches.at(-1)!.mode).toBe('default');
+      }
+      expect(registry.storedPermissionModeOf('chat-2')).toBe('bypassPermissions');
+    });
+
+    it('a chat the chain opened runs at its agent’s level, not the record’s', async () => {
+      const runtime = boot();
+      seedChat('opened-ask', null, { launchOrigin: 'chat-message' });
+      seedChat('opened-act', null, { launchOrigin: 'chat-message' });
+      seedChat('opened-full', null, { launchOrigin: 'chat-message' });
+      for (const [id, stop, mode] of [
+        ['opened-ask', 'ask', 'default'],
+        ['opened-act', 'act', 'acceptEdits'],
+        ['opened-full', 'autonomy', 'bypassPermissions'],
+      ] as const) {
+        agentStops.set(ANA, stop);
+        await run(runtime.sendMessage(id, 'go', { cwd: ANA, permissionCeiling: newRow }));
+        expect(launches.at(-1)!.mode, id).toBe(mode);
+      }
+    });
+
+    it('a schedule’s named mode stays below a Full agent: the record does not raise it', async () => {
+      const runtime = boot();
+      agentStops.set(ANA, 'autonomy');
+      seedChat('run-1', null, { launchOrigin: 'schedule' });
+      await run(
+        runtime.sendMessage('run-1', 'go', {
+          cwd: ANA,
+          permissionMode: 'acceptEdits',
+          permissionCeiling: record,
+        })
+      );
+      expect(launches.at(-1)!.mode).toBe('acceptEdits');
+    });
+
+    it.each([
+      ['Claude Code', CLAUDE_CODE_CAPABILITIES],
+      ['Codex', CODEX_CAPABILITIES],
+      ['OpenCode', OPENCODE_CAPABILITIES],
+      ['Doe', DOE_CAPABILITIES],
+    ])('%s: the clamp leaves every declared mode as it is', (_name, capabilities) => {
+      const declared = capabilities.permissionModes;
+      for (const { id } of declared.values) {
+        for (const ceiling of [record, newRow, olderRow]) {
+          expect(clampModeToCeiling(declared, id, ceiling), id).toBe(id);
+        }
+      }
+    });
+
+    it('Codex: a chat stored at its loosest mode, its agent capped, stays capped', async () => {
+      const runtime = boot('codex', CODEX_CAPABILITIES);
+      seedChat('codex-1', 'bypassPermissions', { runtime: 'codex' });
+      agentStops.set(ANA, 'ask');
+      await run(runtime.sendMessage('codex-1', 'go', { cwd: ANA, permissionCeiling: record }));
+      // Codex's own Ask: a read-only sandbox.
+      expect(launches.at(-1)!.mode).toBe('default');
+    });
   });
 
   describe('the lower (QA rows)', () => {

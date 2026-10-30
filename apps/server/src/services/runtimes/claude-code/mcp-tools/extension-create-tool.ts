@@ -9,7 +9,6 @@
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { resolveProposerName } from '../../../tasks/task-provenance.js';
-import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 
 /**
  * Which session is creating an extension, read at CALL time (the SDK rekeys a
@@ -74,12 +73,9 @@ export function createCreateExtensionHandler(
       const creator = resolveCreator?.();
       const agentPath = creator?.agentPath;
       // New code follows the agent's level (DOR-3440): at Full it approves itself with one
-      // Activity line. Below Full, under a ceiling or in a teammate's chain, it waits for a person
-      // and is pinned to its files, so an edit waits again.
-      const approves =
-        creator?.chosenFull === true &&
-        creator.ceilinged !== true &&
-        markedBoundOf(creator.sessionId, agentPath) === undefined;
+      // Activity line. Below Full or under a ceiling, it waits for a person and is pinned to its
+      // files, so an edit waits again.
+      const approves = creator?.chosenFull === true && creator.ceilinged !== true;
       const result = await manager.createExtension({
         name: args.name,
         description: args.description,

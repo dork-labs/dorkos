@@ -18,8 +18,9 @@
  * ## What sets a mark
  *
  * A turn runs at its agent's set level, wherever its message came from (Dorian 2026-10-30,
- * DOR-3440). Only two things bound one: a Wi-Fi sign-in's hold (who is calling, DOR-3037), which
- * sets `outsider` on that turn and goes no further; and a teammate's chain in a shared space.
+ * DOR-3440). Only a Wi-Fi sign-in's hold bounds one (who is calling, DOR-3037), which sets `outsider`
+ * on that turn and goes no further. A teammate's chain in a shared space is a record for the space's
+ * monthly limit, and lowers nothing.
  *
  * ## The seam
  *
@@ -27,8 +28,8 @@
  * every runtime the registry wraps applies marks after the level is recorded, to a turn and to a
  * command intent alike. A turn carrying a mark is counted against its agent while it runs, so a
  * caller that cannot name its session (Codex and OpenCode over the external `/mcp` server) is
- * still read as marked (`live-outsider-turns.ts`), and a teammate-marked turn is refused or held
- * to the teammate tier before the runtime sees it (`teammate-mark.ts`). A runtime that reaches a
+ * still read as marked (`live-outsider-turns.ts`), and a teammate-marked turn past its space's
+ * monthly limit is refused before the runtime sees it (`teammate-mark.ts`). A runtime that reaches a
  * turn without the seam is a gap the census refuses (`turn-marks-seam.census.test.ts`).
  *
  * @module services/core/turn-power/turn-marks
@@ -41,14 +42,10 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import {
-  isNoLooserThan,
-  mergeTeammateOrigins,
-  READ_ONLY_LEVEL,
-} from '@dorkos/shared/permission-semantics';
+import { isNoLooserThan, mergeTeammateOrigins } from '@dorkos/shared/permission-semantics';
 import { turnAgentOf } from '../agent-identity/agent-home.js';
 import { countWhileRunning, runningMarksOf } from './live-outsider-turns.js';
-import { teammateTurnOpts, teammateTurnRefusal } from './teammate-mark.js';
+import { teammateTurnRefusal } from './teammate-mark.js';
 
 /** Every kind of mark, each a field of `TurnPermissionLevel`. */
 export const TURN_MARK_KINDS = [
@@ -192,12 +189,22 @@ export function mergeMarks(a: TurnMarks, b: TurnMarks): TurnMarks {
 }
 
 /**
- * Whether a set carries any mark.
+ * Whether a set carries any mark, a record included.
  *
  * @param marks - The set.
  */
 export function hasMarks(marks: TurnMarks): boolean {
   return presentKinds(marks).length > 0;
+}
+
+/**
+ * Whether a set's marks hold anything back: only a Wi-Fi sign-in's hold does. A teammate's mark is
+ * a record for the space's monthly limit (DOR-3440).
+ *
+ * @param marks - The set.
+ */
+export function marksHold(marks: TurnMarks): boolean {
+  return marks.outsider === true;
 }
 
 /**
@@ -255,15 +262,37 @@ export function agentMarksRunning(agentPath: string): TurnMarks {
 }
 
 /**
- * A ceiling that carries a teammate's chain to a turn that reads words written under it: the
- * runtime default and a read-only level holding every teammate origin. `undefined` otherwise: no
- * other mark follows words anywhere (Dorian 2026-10-30, DOR-3440).
+ * A ceiling that carries a teammate's chain to a turn that reads words written under it, for the
+ * space's monthly limit: the loosest level, so it lowers nothing (Dorian 2026-10-30, DOR-3440).
+ * `undefined` otherwise: no other mark follows words anywhere.
  *
  * @param marks - The marks the words were written under.
  */
 export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undefined {
   if (marks.teammate === undefined) return undefined;
-  return ['runtime-default', { ...READ_ONLY_LEVEL, teammate: marks.teammate }];
+  return { asks: 'never', reach: 'everything', teammate: marks.teammate };
+}
+
+/**
+ * Whether a ceiling only carries a record and bounds nothing ({@link ceilingCarrying}), so a runtime
+ * treats its turn as one with no ceiling at all.
+ *
+ * @param ceiling - The ceiling a turn is sent with.
+ */
+export function ceilingOnlyRecords(ceiling: TurnPermissionCeiling): boolean {
+  const bounds = Array.isArray(ceiling)
+    ? (ceiling as readonly (TurnPermissionLevel | 'runtime-default')[])
+    : [ceiling as TurnPermissionLevel | 'runtime-default'];
+  return (
+    bounds.length > 0 &&
+    bounds.every(
+      (bound) =>
+        bound !== 'runtime-default' &&
+        bound.asks === 'never' &&
+        bound.reach === 'everything' &&
+        bound.outsider !== true
+    )
+  );
 }
 
 /**
@@ -349,23 +378,21 @@ export function applyTurnMarks(
   ): AsyncGenerator<StreamEvent> {
     const marks = marksForTurn(opts);
     if (!hasMarks(marks)) return start(opts);
-    let sent = opts;
     if (marks.teammate !== undefined) {
-      sent = teammateTurnOpts(opts);
-      const refusal = teammateTurnRefusal(target.type, marks.teammate);
+      const refusal = teammateTurnRefusal(marks.teammate);
       if (refusal !== null) {
         // Recorded all the same, so what reads the chat afterwards (a failure wake, say) knows it
         // was a marked turn and does not treat its failure as the agent's own.
-        recordRefused?.(sessionId, sent);
+        if (opts) recordRefused?.(sessionId, opts);
         return refused(refusal);
       }
     }
     // A caller that cannot name this session can still name its agent.
-    const place = placeOf(target, sessionId, sent);
+    const place = placeOf(target, sessionId, opts);
     places.delete(sessionId);
     places.set(sessionId, place);
     if (places.size > PLACE_MEMORY) places.delete(places.keys().next().value!);
-    return countWhileRunning(place, marks, start(sent));
+    return countWhileRunning(place, marks, start(opts));
   }
 
   return new Proxy(runtime, {

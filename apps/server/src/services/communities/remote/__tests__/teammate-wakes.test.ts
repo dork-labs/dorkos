@@ -1,15 +1,13 @@
 /**
  * A teammate in a space (a member who is not this install's owner) wakes an agent here only as a
- * teammate (DOR-2955): within a budget, on a runtime that can hold the turn, and with a turn the
- * runner sends read-only, with nobody to ask and fenced to its room. The owner's own posts keep
- * today's power. Walked from the live stream bridge through the real RoomService and trigger
- * dispatcher to the turn request the runner receives; the runner's and runtime's halves are pinned
- * in `room-turn-runner.test.ts` and `teammate-tier-hook.test.ts`.
+ * teammate (DOR-2955): within a budget and the space's monthly limit, with a turn at the agent's own
+ * level whose mark only records (DOR-3440). The owner's own posts keep today's power, and spend
+ * neither. Walked from the live stream bridge through the real RoomService and trigger dispatcher to
+ * the turn request the runner receives; the runner's half is pinned in `room-turn-runner.test.ts`.
  *
  * @module services/communities/remote/__tests__/teammate-wakes
  */
 import type { CommunityEntry, CommunityRef } from '@dorkos/shared/community-adapter';
-import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { describe, expect, it } from 'vitest';
 import {
   agentLookupFor,
@@ -29,16 +27,12 @@ const REF = 'remote_team_space' as CommunityRef;
 const OWNER_MEMBER = 'remote-owner-member';
 const START = Date.parse('2026-10-16T09:00:00.000Z');
 const LIVE = { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false } as const;
-/** A teammate's ceiling: the runtime default and read access, which carries their mark (DOR-3036). */
-const TEAMMATE_CEILING = [
-  'runtime-default',
-  {
-    ...READ_ONLY_LEVEL,
-    teammate: [
-      expect.objectContaining({ roomId: expect.any(String), authorId: expect.any(String) }),
-    ],
-  },
-];
+/** A teammate's ceiling: their mark, for the space's monthly limit, which lowers nothing (DOR-3440). */
+const TEAMMATE_CEILING = {
+  asks: 'never',
+  reach: 'everything',
+  teammate: [expect.objectContaining({ roomId: expect.any(String), authorId: expect.any(String) })],
+};
 
 const TEAMMATE = { memberId: 'remote-bo', displayName: 'Bo', kind: 'human' } as const;
 const OTHER_TEAMMATE = { memberId: 'remote-cy', displayName: 'Cy', kind: 'human' } as const;
@@ -53,7 +47,7 @@ const members: RemoteWakeGate = {
 let seq = 0;
 
 /** A space mirror with Ana enrolled, a clock the test moves, and the gate production wires. */
-function space(opts: { gate?: RemoteWakeGate; runsTeammateTurns?: boolean; kind?: 'dm' } = {}) {
+function space(opts: { gate?: RemoteWakeGate; kind?: 'dm' } = {}) {
   const clock = { now: START };
   const state: { mirrors?: RemoteMirrorStore } = {};
   const harness: RoomHarness = createRoomHarness({
@@ -83,7 +77,6 @@ function space(opts: { gate?: RemoteWakeGate; runsTeammateTurns?: boolean; kind?
     () => clock.now
   );
   if (opts.gate !== undefined) bridge.useWakeGate(opts.gate);
-  if (opts.runsTeammateTurns !== false) bridge.useTeammateRuntimes(() => true);
   const room = {
     communityRef: REF,
     remoteRoomId: 'general',
@@ -120,7 +113,7 @@ function space(opts: { gate?: RemoteWakeGate; runsTeammateTurns?: boolean; kind?
 }
 
 describe('a teammate’s mention', () => {
-  it('starts a teammate’s turn: read-only, with nobody to ask, fenced to the room', async () => {
+  it('starts a teammate’s turn that carries their mark and lowers nothing', async () => {
     const { harness, localRoom, post } = space({ gate: members });
 
     await post(TEAMMATE);
@@ -133,21 +126,12 @@ describe('a teammate’s mention', () => {
     expect(turn.roomContext.room.id).toBe(localRoom.id);
   });
 
-  it('is held to the teammate rules when no gate can say who the owner is', async () => {
+  it('counts as a teammate’s when no gate can say who the owner is', async () => {
     const { harness, post } = space();
 
     await post(OWNER);
 
     expect(harness.runner.turns[0]!.teammate).toBe(true);
-  });
-
-  it('wakes nobody on an agent whose runtime cannot hold the turn, and stays history', async () => {
-    const { harness, localRoom, post } = space({ gate: members, runsTeammateTurns: false });
-
-    await post(TEAMMATE);
-
-    expect(harness.runner.turns).toHaveLength(0);
-    expect(harness.store.listEntriesAfter(localRoom.id, 0)).toHaveLength(1);
   });
 
   it('wakes an agent three times per person every ten minutes, then keeps posts as history', async () => {
@@ -168,10 +152,10 @@ describe('a teammate’s mention', () => {
 });
 
 describe('in the space’s local copy', () => {
-  it('holds a message whose author resolves to nobody to the teammate rules', async () => {
+  it('counts a message whose author resolves to nobody as a teammate’s', async () => {
     // Review should-fix 3: in a space's copy, only a vouch or this machine keeps the owner's power.
-    const { harness, localRoom, agent, post } = space({ gate: members, runsTeammateTurns: false });
-    await post(TEAMMATE); // kept as history: no agent here may take a teammate's turn
+    const { harness, localRoom, agent, post } = space({ gate: { ...members, wakes: () => false } });
+    await post(TEAMMATE); // kept as history: the gate lets nobody wake an agent
     const kept = harness.store.listEntriesAfter(localRoom.id, 0)[0]!;
 
     harness.service.dispatchImportedRemoteEntry(localRoom.id, {
@@ -238,14 +222,6 @@ describe('the owner’s own post in the space', () => {
       expect(turn.permissionCeiling).toBeUndefined();
     }
   });
-
-  it('still wakes an agent whose runtime cannot take a teammate’s turn', async () => {
-    const { harness, post } = space({ gate: members, runsTeammateTurns: false });
-
-    await post(OWNER);
-
-    expect(harness.runner.turns).toHaveLength(1);
-  });
 });
 
 describe('a direct message with the agent', () => {
@@ -284,14 +260,6 @@ describe('a direct message with the agent', () => {
 
   it('stays history when the owner lets only themselves wake agents', async () => {
     const { harness, post } = space({ gate: ownerOnly, kind: 'dm' });
-
-    await post(TEAMMATE, []);
-
-    expect(harness.runner.turns).toHaveLength(0);
-  });
-
-  it('stays history on an agent whose runtime cannot hold a teammate’s turn', async () => {
-    const { harness, post } = space({ gate: members, kind: 'dm', runsTeammateTurns: false });
 
     await post(TEAMMATE, []);
 

@@ -1218,9 +1218,8 @@ describe('createSessionRoomTurnRunner', () => {
     }
   });
 
-  it('grants a teammate’s turn no folder, whatever placement granted (DOR-2956)', async () => {
-    // Red when: the runner forwards placement's grants on a teammate's turn. Claude Code reads
-    // without asking inside every granted folder, so a grant is a read the tier never decided.
+  it('grants a teammate’s turn the folders placement granted, as any other (DOR-3440)', async () => {
+    // Red when: the runner treats a teammate's turn apart. The mark only records.
     turnBehaviour = (opts) => {
       openTurn(opts);
       opts.projector.ingest({ type: 'turn_end' });
@@ -1233,7 +1232,7 @@ describe('createSessionRoomTurnRunner', () => {
     );
 
     const call = triggered[triggered.length - 1]!;
-    expect(call).not.toHaveProperty('additionalDirectories');
+    expect(call.additionalDirectories).toEqual(grants);
     expect(call.roomTurn).toMatchObject({ teammate: true });
   });
 
@@ -2812,13 +2811,16 @@ describe('what power a room turn runs at (DOR-1917)', () => {
     expect(triggered[0].permissionCeiling).toBeUndefined();
   });
 
-  // A space member who is not the owner (DOR-2955): nobody is asked, the
-  // DorkOS tools reach only this room, and only a runtime that honours both
-  // may run it at all.
+  // A space member who is not the owner (DOR-2955): the turn runs like any other
+  // and its mark is a record for the space's monthly limit (DOR-3440).
   describe('a teammate’s turn', () => {
-    const teammateCeiling = ['runtime-default', { asks: 'always', reach: 'read' }] as const;
+    const teammateCeiling = {
+      asks: 'never',
+      reach: 'everything',
+      teammate: [{ roomId: 'room-1', authorId: 'priya' }],
+    } as const;
 
-    it('is sent with nobody to ask and fenced to the room it answers', async () => {
+    it('is sent with the person still there to ask, carrying its record', async () => {
       const turn = request({
         sessionId: 'room-session-with-a-row',
         externalAuthor: true,
@@ -2828,9 +2830,13 @@ describe('what power a room turn runs at (DOR-1917)', () => {
 
       await createSessionRoomTurnRunner().run(turn);
 
-      expect(triggered[0].unattended).toBe(true);
+      expect(triggered[0].unattended).toBeUndefined();
       expect(triggered[0].permissionCeiling).toEqual(teammateCeiling);
-      expect(triggered[0].roomTurn).toMatchObject({ roomId: turn.room.id, teammate: true });
+      expect(triggered[0].roomTurn).toMatchObject({
+        roomId: turn.room.id,
+        teammate: true,
+        untrustedText: true,
+      });
     });
 
     it('marks nothing on a stranger’s or a person’s turn', async () => {
@@ -2863,16 +2869,13 @@ describe('what power a room turn runs at (DOR-1917)', () => {
       ]);
     });
 
-    it.each(['codex', 'opencode'])('is refused on %s before anything starts', async (runtime) => {
+    it.each(['codex', 'opencode'])('starts on %s, as any turn does', async (runtime) => {
       agentManifest = { runtime };
 
-      await expect(
-        createSessionRoomTurnRunner().run(
-          request({ sessionId: null, externalAuthor: true, teammate: true })
-        )
-      ).rejects.toThrow(`cannot start a turn on ${runtime}`);
-      expect(triggered).toHaveLength(0);
-      expect(persistSessionRuntime).not.toHaveBeenCalled();
+      await createSessionRoomTurnRunner().run(
+        request({ sessionId: null, externalAuthor: true, teammate: true })
+      );
+      expect(triggered).toHaveLength(1);
     });
   });
 

@@ -3,8 +3,6 @@
  * launch's flag-layer `settings` (DOR-3039), and merge it in when it does.
  *
  * It applies only when every condition holds:
- * - the turn is not a teammate's (DOR-2955: a teammate's turn loads no
- *   settings layer, so it gets none of these either);
  * - the turn's folder is a registered agent home, by real path, exactly
  *   (`isExactlyAgentHome`);
  * - a person approved exactly this list for this agent
@@ -37,7 +35,7 @@ import { cardShowsWholeList } from './folder-allow-approval.js';
 
 /** What a launch does with an agent's folder allow list. */
 export type FolderAllowsDecision =
-  /** Nothing to apply or ask about: a teammate's turn, no registered agent, not the home, or an empty list. */
+  /** Nothing to apply or ask about: no registered agent, not the home, or an empty list. */
   | { kind: 'none' }
   /** Approved: these rules ride the launch. */
   | { kind: 'applied'; rules: string[]; hash: string; dropped: number }
@@ -50,8 +48,6 @@ export type FolderAllowsDecision =
 
 /** What {@link resolveFolderAllows} needs to know about the turn. */
 export interface FolderAllowsTurn {
-  /** Whether this is a teammate's turn. */
-  teammate: boolean;
   /** The registered agent the turn runs as, if any. */
   agent: { id: string; name: string } | undefined;
   /** The registered agent home the turn resolved to, if any. */
@@ -66,7 +62,7 @@ export interface FolderAllowsTurn {
  * @param turn - Who the turn is for and where it stands.
  */
 export async function resolveFolderAllows(turn: FolderAllowsTurn): Promise<FolderAllowsDecision> {
-  if (turn.teammate || !turn.agent || !turn.home) return { kind: 'none' };
+  if (!turn.agent || !turn.home) return { kind: 'none' };
   if (!(await isExactlyAgentHome(turn.cwd, turn.home))) return { kind: 'none' };
   const list = await readFolderAllowList(turn.home);
   if (list.rules.length === 0) return { kind: 'none' };

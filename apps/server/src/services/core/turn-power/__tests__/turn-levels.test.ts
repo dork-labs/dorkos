@@ -163,7 +163,6 @@ describe('the level a post is kept with', () => {
   });
 });
 
-
 describe('the ceiling a room entry puts on the turn it starts (DOR-3440)', () => {
   it('bounds nothing, whoever wrote it', async () => {
     const session = fresh('ana');
@@ -239,5 +238,3 @@ describe('a turn a continuation’s hold clamped (DOR-3203)', () => {
     expect(lastTurnHeld(chat)).toBe(true);
   });
 });
-
-
