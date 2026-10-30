@@ -19,7 +19,8 @@
   --dui-destructive-foreground: 0 0% 98%;
   --dui-border: 0 0% 83%;
   --dui-input: 0 0% 83%;
-  --dui-ring: 23 97% 46%;
+  /* Darker than the fill: at 46% a ring misses 3:1 on the sidebar and a selected row. */
+  --dui-ring: 23 97% 40%;
   --dui-brand: 23 97% 46%;
   /* Near-black: white on this orange reads 3.50:1, this reads 5.12:1. */
   --dui-brand-foreground: 0 0% 9%;
