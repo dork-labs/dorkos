@@ -182,6 +182,8 @@ export const marketplaceDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
+      // Package names and descriptions are their authors' words, strangers' included (DOR-3291).
+      readsOutside: true,
       invoke: async (deps, input) =>
         unwrapMcpEnvelope(await createSearchHandler(requireMarketplaceDeps(deps))(input)),
     }),
@@ -203,6 +205,8 @@ export const marketplaceDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
+      // A package's manifest and README are its author's words (DOR-3291).
+      readsOutside: true,
       invoke: async (deps, input) =>
         unwrapMcpEnvelope(await createGetHandler(requireMarketplaceDeps(deps))(input)),
     }),
@@ -256,6 +260,8 @@ export const marketplaceDomain: CapabilityDomain = {
           annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
+      // Installed packages still describe themselves in their authors' words (DOR-3291).
+      readsOutside: true,
       invoke: async (deps, input) =>
         unwrapMcpEnvelope(await createListInstalledHandler(requireMarketplaceDeps(deps))(input)),
     }),
@@ -281,6 +287,8 @@ export const marketplaceDomain: CapabilityDomain = {
       },
       // The session's own project, so `installed` covers it beside the global
       // scope and never another agent's project.
+      // Suggestions carry each package's own description (DOR-3291).
+      readsOutside: true,
       invoke: async (deps, input, context) =>
         unwrapMcpEnvelope(
           await createRecommendHandler(requireMarketplaceDeps(deps))(input, {

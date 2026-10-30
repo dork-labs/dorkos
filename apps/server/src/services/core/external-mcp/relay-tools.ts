@@ -23,6 +23,7 @@ import { adapterToolDefinitions } from '../../runtimes/claude-code/mcp-tools/ada
 import { traceToolDefinitions } from '../../runtimes/claude-code/mcp-tools/trace-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
 import { registerFromDefinitions, type ExternalToolConfigs } from './register-from-definitions.js';
+import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 
 const A = ToolAnnotationPresets;
 
@@ -48,16 +49,19 @@ const RELAY_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  * @param deps - Shared MCP tool dependencies.
  * @param identity - Server-resolved sender identity. `getRelayTools` takes it for
  *   `relay_notify_user`, which this server skips.
+ * @param caller - The calling agent, when the request carried a resolved identity token: a
+ *   trace read marks it (DOR-3291).
  */
 export function registerRelayTools(
   registrar: ToolRegistrar,
   deps: McpToolDeps,
-  identity: SenderIdentity
+  identity: SenderIdentity,
+  caller?: AgentIdentity
 ): void {
   const definitions = [
     ...getRelayTools(deps, identity),
     ...adapterToolDefinitions(deps),
-    ...traceToolDefinitions(deps),
+    ...traceToolDefinitions(deps, () => (caller ? { agentPath: caller.agentPath } : {})),
   ];
   registerFromDefinitions(registrar, definitions, RELAY_EXTERNAL_CONFIGS);
 }

@@ -358,3 +358,27 @@ export async function stageAgentAttachments(request: AgentAttachmentRequest): Pr
     throw err;
   }
 }
+
+/**
+ * The agent's own working directory, or a refusal it can act on.
+ *
+ * The one place a `post_to_room` attachment may point, and it is read off the
+ * VERIFIED in-session surface rather than off the arguments — a cwd a caller
+ * could name would be the confused-deputy shape this whole path exists to
+ * avoid. A surface with no working directory (external `/mcp`) can attach
+ * nothing, and says so instead of silently attaching from somewhere else.
+ *
+ * @param context - The capability invocation context.
+ * @returns The session's working directory.
+ * @throws {RoomError} `ATTACHMENT_PATH_REFUSED` when the surface carries none.
+ */
+export function requireAgentCwd(context: { cwd?: string }): string {
+  if (!context.cwd) {
+    throw new RoomError(
+      'ATTACHMENT_PATH_REFUSED',
+      'Attaching a file needs a working directory to read it from, and this surface has none. ' +
+        'Post the message without attachments.'
+    );
+  }
+  return context.cwd;
+}

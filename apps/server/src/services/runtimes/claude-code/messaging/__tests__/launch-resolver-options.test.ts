@@ -144,8 +144,13 @@ describe('the launch options every Claude Code turn is given', () => {
   it("registers the hooks that record a helper agent's tool calls, on every tool", async () => {
     const options = await captureSdkOptions();
     const unmatched = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher === undefined);
-    expect(unmatched).toHaveLength(1);
-    expect(options.hooks?.PostToolUseFailure).toEqual([{ hooks: [unmatched[0]!.hooks[0]] }]);
+    // Two run on every tool: the audit record, and the tool-read mark (DOR-3291), which the CLI
+    // awaits before the model sees a result. Only the audit one also runs when a tool fails.
+    expect(unmatched).toHaveLength(2);
+    const failure = options.hooks?.PostToolUseFailure ?? [];
+    expect(failure).toHaveLength(1);
+    expect(failure[0]!.hooks).toHaveLength(1);
+    expect(unmatched.map((m) => m.hooks[0])).toContain(failure[0]!.hooks[0]);
   });
 
   it('registers the teammate fence on every tool, read from the session as each call is made', async () => {

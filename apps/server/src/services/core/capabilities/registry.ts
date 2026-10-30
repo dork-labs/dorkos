@@ -46,7 +46,8 @@ import {
 } from './tier-enforcement.js';
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
 import { resolveCallPermission } from './permission-enforcement.js';
-import { principalTurnOf } from './marked-turn-holds.js';
+import { principalTurnOf, toolReadCallerOf } from './marked-turn-holds.js';
+import { markToolRead, resultReadsOutside } from '../turn-power/tool-read-marks.js';
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
@@ -934,13 +935,21 @@ export function composeRegistry(
       // Run as the caller (spec `audit-trail` PR2): an identified agent's call
       // runs inside its own audit scope, so a write the capability makes further
       // down names the agent, never the person whose message started the turn.
-      const run = () =>
-        runAsAgent(
+      // A result carrying a third party's text marks the calling turn before the turn reads it
+      // (DOR-3291): from the action's declaration, never from the model. An extension's always.
+      const run = async () => {
+        const result = await runAsAgent(
           invocationContext.identity,
           supplied.sessionId,
           () => capability.invoke(deps, parsed, invocationContext),
           { inSession: supplied.mcpServer === 'in-session' }
         );
+        const declared = capability.source !== undefined ? true : capability.readsOutside;
+        if (resultReadsOutside(declared, parsed, result, deps)) {
+          markToolRead(toolReadCallerOf(supplied));
+        }
+        return result;
+      };
 
       // Reads with nobody named stay silent: there is nothing to attribute and a
       // read changes nothing. Every other call reaches the observer, identified

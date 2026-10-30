@@ -303,6 +303,20 @@ export class CommitmentService {
   }
 
   /**
+   * Every mark these promises were made under (DOR-3291): what a turn that reads them is handed.
+   * A promise no longer stored marks nothing.
+   *
+   * @param ids - The promises read.
+   */
+  marksOfMany(ids: readonly string[]): TurnMarks {
+    return ids
+      .map((id) => this.store.get(id))
+      .filter((row) => row !== undefined)
+      .map((row) => parseStoredMarks(row.originMarks))
+      .reduce(mergeMarks, NO_MARKS);
+  }
+
+  /**
    * Record a promise for an agent.
    *
    * The caller decides whose it is: the capability passes the calling agent's

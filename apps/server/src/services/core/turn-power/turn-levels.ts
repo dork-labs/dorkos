@@ -217,6 +217,58 @@ export function marksOf(
 }
 
 /**
+ * Mark the turn running on this conversation as one that got a third party's
+ * text through a tool's result (DOR-3291, `tool-read-marks.ts`), from now to
+ * its end. The mark lands on the turn's recorded level and on the level its
+ * hand-offs carry, so every reader above sees it on its next read: the
+ * permission gate, the destructive hold, memory stamps, `session_start`'s
+ * bound, room posts and `chat_send`. Marks only add.
+ *
+ * Sticky, like a stranger's first-hand words (Security, 2026-10-29): the text
+ * stays in the chat's context, so every later turn on the chat is sent
+ * carrying the mark too ({@link recordTurnLevels}), a person's own included,
+ * and the chat's hand-offs carry it (`noteChatHeardOutsider`). Kept in memory,
+ * as that is.
+ *
+ * Written under every id this process recorded the conversation by (a
+ * runtime may have renamed it mid-turn). A conversation with no recorded turn
+ * is still remembered for its next turns, and its readers fall back to its
+ * agent's running turns, which `noteAgentReadOutside` marks.
+ *
+ * @param sessionId - The calling session, as the surface verified it.
+ * @returns Whether a recorded turn was marked.
+ */
+export function noteTurnReadOutside(sessionId: string): boolean {
+  const primary = primaryOf(sessionId);
+  toolReadChats.delete(primary);
+  toolReadChats.add(primary);
+  if (toolReadChats.size > TURN_LEVEL_MEMORY) {
+    toolReadChats.delete(toolReadChats.values().next().value!);
+  }
+  noteChatHeardOutsider(sessionId);
+  const ids = [...turnLevels.keys()].filter(
+    (id) => id === sessionId || id === primary || primaryOf(id) === primary
+  );
+  for (const id of ids) {
+    const level = turnLevels.get(id)!;
+    if (level.toolRead === true) continue;
+    // Set in place of the oldest-first order: marking a turn is not a newer turn.
+    turnLevels.set(id, withMarks(level, TOOL_READ_MARKS));
+    const handOff = handOffLevels.get(id);
+    if (handOff !== undefined) handOffLevels.set(id, withMarks(handOff, TOOL_READ_MARKS));
+    // A later pick-up of this chat stays marked; a stranger's hold already recorded stays a hold.
+    if (level.outsider !== true) noteTurnHold(id, true, true);
+  }
+  return ids.length > 0;
+}
+
+/** The marks a tool read adds: the source, and the outsider mark that carries every effect. */
+const TOOL_READ_MARKS: TurnMarks = Object.freeze({ outsider: true, toolRead: true });
+
+/** Chats a tool read reached, by first id: every later turn on them is marked; insertion-ordered. */
+const toolReadChats = new Set<string>();
+
+/**
  * The bound work a caller starts must carry because the caller's turn is
  * marked, or `undefined` when it is not. Read by `session_start`, which sends
  * it as the new session's ceiling, so the new chat carries the marks on.
@@ -619,15 +671,63 @@ export function recordTurnLevels(
       return undefined;
     }
   };
-  return applyTurnMarks(
-    recordLevels(runtime, storedModeOf),
-    (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
-    (sessionId, opts) => {
-      recordTurn(runtime, sessionId, storedOf(sessionId), opts);
-    },
-    // A chat set to Full is never held for a mark it carries (DOR-3394).
-    (sessionId, opts) => isFullLevel(chosenLevelOf(runtime, storedOf(sessionId), opts))
+  return sendStickyReads(
+    applyTurnMarks(
+      recordLevels(runtime, storedModeOf),
+      (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
+      (sessionId, opts) => {
+        recordTurn(runtime, sessionId, storedOf(sessionId), opts);
+      },
+      // A chat set to Full is never held for a mark it carries (DOR-3394).
+      (sessionId, opts) => isFullLevel(chosenLevelOf(runtime, storedOf(sessionId), opts))
+    )
   );
+}
+
+/**
+ * The send's options carrying a chat's earlier tool read on (DOR-3291): the bound that names the
+ * mark without capping power, beside whatever ceiling the send had. Untouched for a chat no tool
+ * read reached.
+ */
+function withStickyRead(sessionId: string, opts: MessageOpts | undefined): MessageOpts | undefined {
+  if (!toolReadChats.has(primaryOf(sessionId))) return opts;
+  const read = ceilingCarrying(TOOL_READ_MARKS)! as TurnPermissionBound;
+  const ceiling = opts?.permissionCeiling;
+  const bounds: TurnPermissionBound[] =
+    ceiling === undefined
+      ? [read]
+      : Array.isArray(ceiling)
+        ? [...(ceiling as readonly TurnPermissionBound[]), read]
+        : [ceiling as TurnPermissionBound, read];
+  return { ...opts, permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
+}
+
+/**
+ * Send every turn on a chat a tool read reached with the mark on, outermost of the record and the
+ * marks, so both see it: the level records it, and the marks apply it on every runtime (Claude
+ * Code's shell asks; another runtime's turn is held to its default).
+ */
+function sendStickyReads(runtime: AgentRuntime): AgentRuntime {
+  return new Proxy(runtime, {
+    get(target, prop) {
+      if (
+        (prop === 'sendMessage' || prop === 'executeCommandIntent') &&
+        typeof target[prop] === 'function'
+      ) {
+        const start = (
+          target[prop] as (
+            id: string,
+            input: unknown,
+            opts?: MessageOpts
+          ) => AsyncGenerator<StreamEvent>
+        ).bind(target);
+        return (sessionId: string, input: unknown, opts?: MessageOpts) =>
+          start(sessionId, input, withStickyRead(sessionId, opts));
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
 }
 
 /** The level record alone, which {@link recordTurnLevels} wraps in the marks. */

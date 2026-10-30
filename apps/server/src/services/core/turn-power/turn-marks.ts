@@ -9,8 +9,9 @@
  * spin-off starts under its starter's bound, and `stricterLevel` keeps every mark of the two
  * levels it merges. {@link TurnMarks} is exactly those fields: `outsider`, the turn read words from
  * outside the owner's circle (spec `trusted-by-default-flip` §4.7), and `teammate`, the teammates
- * in shared spaces whose words started the chain (`teammate-mark.ts`). Tool-read joins them later,
- * as one more field of the same set with its own entry in the rules below.
+ * in shared spaces whose words started the chain (`teammate-mark.ts`), and `toolRead`, the turn got
+ * a third party's text through a tool's result (`tool-read-marks.ts`, DOR-3291). A tool-read mark
+ * always rides with the outsider mark, which carries every effect; it only names the source.
  *
  * Marks only add up: no reader here ever takes one away, and only a person clears the durable
  * copies (a parked schedule, a held edit).
@@ -63,6 +64,7 @@ import { teammateTurnOpts, teammateTurnRefusal } from './teammate-mark.js';
 /** Every kind of mark, each a field of `TurnPermissionLevel`. */
 export const TURN_MARK_KINDS = [
   'outsider',
+  'toolRead',
   'teammate',
 ] as const satisfies readonly (keyof TurnPermissionLevel)[];
 
@@ -98,6 +100,10 @@ const sameOrigin = (a: TeammateOrigin, b: TeammateOrigin) =>
 /** One entry per kind, so a kind added to {@link TURN_MARK_KINDS} cannot go without rules. */
 const RULES: { [K in TurnMarkKind]: KindRules<K> } = {
   outsider: {
+    merge: (a, b) => (a === true || b === true ? true : undefined),
+    covers: (outer, inner) => inner !== true || outer === true,
+  },
+  toolRead: {
     merge: (a, b) => (a === true || b === true ? true : undefined),
     covers: (outer, inner) => inner !== true || outer === true,
   },
@@ -285,9 +291,19 @@ export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undef
   if (!hasMarks(marks)) return undefined;
   // A teammate's hold is the runtime default, which carries the outsider mark already.
   if (marks.teammate !== undefined) {
-    return ['runtime-default', { ...READ_ONLY_LEVEL, teammate: marks.teammate }];
+    return [
+      'runtime-default',
+      {
+        ...READ_ONLY_LEVEL,
+        teammate: marks.teammate,
+        ...(marks.toolRead === true ? { toolRead: true, outsider: true } : {}),
+      },
+    ];
   }
-  return CARRIED_OUTSIDER_LEVEL;
+  // A tool read's mark rides on the same uncapping bound, so the card downstream can name it.
+  return marks.toolRead === true
+    ? { ...CARRIED_OUTSIDER_LEVEL, toolRead: true }
+    : CARRIED_OUTSIDER_LEVEL;
 }
 
 /**
@@ -299,7 +315,11 @@ export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undef
 export function parseStoredMarks(stored: string | null | undefined): TurnMarks {
   if (!stored) return NO_MARKS;
   try {
-    const value = JSON.parse(stored) as { outsider?: unknown; teammate?: unknown };
+    const value = JSON.parse(stored) as {
+      outsider?: unknown;
+      toolRead?: unknown;
+      teammate?: unknown;
+    };
     const teammate = Array.isArray(value.teammate)
       ? value.teammate
           .filter(
@@ -309,7 +329,9 @@ export function parseStoredMarks(stored: string | null | undefined): TurnMarks {
           .map((o) => ({ roomId: o.roomId, authorId: o.authorId }))
       : undefined;
     return marksFrom({
-      ...(value.outsider === true ? { outsider: true } : {}),
+      // A tool-read mark never rides without the outsider mark that carries its effects.
+      ...(value.outsider === true || value.toolRead === true ? { outsider: true } : {}),
+      ...(value.toolRead === true ? { toolRead: true } : {}),
       ...(teammate !== undefined ? { teammate } : {}),
     });
   } catch {

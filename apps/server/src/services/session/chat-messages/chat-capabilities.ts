@@ -32,6 +32,7 @@ import {
   ChatMessageStatusSchema,
 } from '@dorkos/shared/chat-messages';
 import { chatMarkdownLink } from '@dorkos/shared/session-link';
+import { chatReadsOutside } from '../../core/turn-power/tool-read-marks.js';
 import {
   defineCapability,
   type CapabilityDeps,
@@ -324,6 +325,12 @@ export const chatDomain: CapabilityDomain = {
           annotations: { idempotentHint: false },
         },
       },
+      // Our own agents' chats are team members' words; one a stranger or an outside read reached
+      // hands those words on (DOR-3291). A status check returns no messages.
+      readsOutside: (input, output) =>
+        output.ok === true &&
+        input.include !== 'status' &&
+        chatReadsOutside((output as { chat: { id: string } }).chat.id),
       invoke: async (deps, input, context) => {
         const caller = chatCallerOf(context);
         if (!caller) return NO_CHAT;

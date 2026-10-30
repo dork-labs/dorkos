@@ -190,6 +190,7 @@ import {
 import {
   discardStagedAttachments,
   ownRoomCopy,
+  requireAgentCwd,
   stageAgentAttachments,
 } from './attachments/agent-attachments.js';
 import { resolveDorkHome } from '../../lib/dork-home.js';
@@ -208,7 +209,7 @@ import type { AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
 import { projectEntry, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
-import { projectDetail } from './service/room-detail-projection.js';
+import { authorLabel, projectDetail } from './service/room-detail-projection.js';
 import { holdIfStale, noteHistoryRead, noteSeen } from './messages/room-freshness.js';
 
 export { callerAuthor };
@@ -230,6 +231,7 @@ import {
   type RoomService,
 } from './room-service.js';
 import type { RoomMergeService } from './repo/room-merge-service.js';
+import { roomReadShowsOutsider } from './room-read-outsider.js';
 
 /**
  * Extend the shared dependency bag with the rooms domain's one service handle.
@@ -277,30 +279,6 @@ function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
     throw new Error('Rooms repo capability invoked without a merge service in the registry bag.');
   }
   return merges;
-}
-
-/**
- * The agent's own working directory, or a refusal it can act on.
- *
- * The one place a `post_to_room` attachment may point, and it is read off the
- * VERIFIED in-session surface rather than off the arguments — a cwd a caller
- * could name would be the confused-deputy shape this whole path exists to
- * avoid. A surface with no working directory (external `/mcp`) can attach
- * nothing, and says so instead of silently attaching from somewhere else.
- *
- * @param context - The capability invocation context.
- * @returns The session's working directory.
- * @throws {RoomError} `ATTACHMENT_PATH_REFUSED` when the surface carries none.
- */
-function requireAgentCwd(context: CapabilityHandlerContext): string {
-  if (!context.cwd) {
-    throw new RoomError(
-      'ATTACHMENT_PATH_REFUSED',
-      'Attaching a file needs a working directory to read it from, and this surface has none. ' +
-        'Post the message without attachments.'
-    );
-  }
-  return context.cwd;
 }
 
 /** Shared by both reads: which room, and optionally which thread inside it. */
@@ -399,6 +377,8 @@ export const roomsDomain: CapabilityDomain = {
           annotations: { idempotentHint: false },
         },
       },
+      // A post held over unread messages hands them back (`newMessages`), a stranger's included.
+      readsOutside: roomReadShowsOutsider,
       invoke: async (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         // Inside `answering`, because resolving WHO is calling can itself refuse
@@ -711,6 +691,7 @@ export const roomsDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
+      readsOutside: roomReadShowsOutsider,
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         const readerId = answering(() => callerAuthor(rooms, context).id);
@@ -761,6 +742,7 @@ export const roomsDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
+      readsOutside: roomReadShowsOutsider,
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         const entries = answering(() =>
@@ -857,6 +839,7 @@ export const roomsDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
+      readsOutside: roomReadShowsOutsider,
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         const matches = answering(() =>
@@ -1406,6 +1389,8 @@ export const roomsDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
+      // A document can be a web page, a file or a stranger's text (DOR-3291); the list is labels.
+      readsOutside: (input) => input.documentId !== undefined,
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         const caller = callerAuthor(rooms, context);
@@ -1564,20 +1549,4 @@ async function readFileBacked(
     });
     return { content: null, reason: 'That file could not be read just now.' };
   }
-}
-
-/**
- * How a member is named in a canvas answer — their handle when they have one.
- *
- * Sanitized like every other label this seam hands back: it lands in text
- * another model reads.
- *
- * @param rooms - The rooms service, for its author registry.
- * @param authorId - The member to name.
- * @returns A short label.
- */
-function authorLabel(rooms: RoomService, authorId: string): string {
-  const author = rooms.authorRegistry.getById(authorId);
-  const name = author?.handle ?? rooms.nameForAgents(authorId);
-  return (name ? sanitizeIdentity(name) : undefined) ?? 'Somebody';
 }

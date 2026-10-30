@@ -17,6 +17,7 @@ import {
   MEMORY_NOTE_MAX_CHARS,
   MEMORY_NOTES_FENCE_LABEL,
   MEMORY_NOTES_FENCE_PREAMBLE,
+  OUTSIDER_PROVENANCE_PHRASE,
 } from '@dorkos/shared/convention-files';
 import {
   MemoryCapExceededError,
@@ -447,6 +448,13 @@ export const memoryDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
+      // A note saved in a turn that read outside words is stamped so (DOR-3291): reading it back
+      // hands those words on. The agent's own notes otherwise mark nothing. A forged stamp in a
+      // note's text only marks more.
+      readsOutside: (_input, output) =>
+        output.ok === true &&
+        typeof output.text === 'string' &&
+        output.text.includes(OUTSIDER_PROVENANCE_PHRASE),
       invoke: async (_deps, input, context) => {
         // Jailed exactly like `memory_write`: whose notes is the identity this
         // session presented, never an argument.

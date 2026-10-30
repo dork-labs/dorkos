@@ -3,9 +3,9 @@
  * review, S2). The broker derives them from the calling turn, never from
  * anything the agent sends, so an injected turn cannot ask for a clean card:
  * `outsider` when the turn read words from outside the owner's circle or a
- * stranger started it, and `teammate` when a teammate in a shared space
- * started the chain. `tool_read` is reserved in the contract for the tool-read
- * mark, which DorkOS does not record yet.
+ * stranger started it, `tool_read` when it got a third party's text through a
+ * tool's result (an email, a web page; DOR-3291), and `teammate` when a
+ * teammate in a shared space started the chain.
  *
  * @module services/connectors/execution/managed-turn-marks
  */
@@ -25,6 +25,7 @@ export function managedTurnMarks(
 ): ManagedConnectorTurnMark[] {
   const found: ManagedConnectorTurnMark[] = [];
   if (marks.outsider === true || startedByStranger) found.push('outsider');
+  if (marks.toolRead === true) found.push('tool_read');
   // Present, even empty, means marked (`TurnPermissionLevel.teammate`).
   if (marks.teammate !== undefined) found.push('teammate');
   return found;

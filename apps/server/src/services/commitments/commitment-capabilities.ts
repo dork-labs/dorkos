@@ -77,7 +77,7 @@ declare module '../core/capabilities/capability-definition.js' {
     /** Present when the commitments service is running; gates the `commitments` domain. */
     commitmentDeps?: {
       /** Records, reads and changes commitments. */
-      service: Pick<CommitmentService, 'create' | 'update' | 'list'>;
+      service: Pick<CommitmentService, 'create' | 'update' | 'list' | 'marksOfMany'>;
       /**
        * The Mesh id of the agent living at a home folder, or undefined when Mesh
        * does not know it.
@@ -389,6 +389,13 @@ export const commitmentsDomain: CapabilityDomain = {
           annotations: { idempotentHint: true },
         },
       },
+      // A promise made in a turn that read outside words keeps them (DOR-3291, Security): reading
+      // it hands them on, as a stamped memory note does. Promises made in clean turns mark nothing.
+      readsOutside: (_input, output, deps) =>
+        'commitments' in output &&
+        output.commitments.length > 0 &&
+        requireCommitmentDeps(deps).service.marksOfMany(output.commitments.map((c) => c.id))
+          .outsider === true,
       invoke: async (deps, input, context) => {
         // A stranger's turn reads nobody's promises (module TSDoc, "Strangers").
         if (context.turnStartedByOutsider) return OUTSIDER_TURN;

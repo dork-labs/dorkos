@@ -263,6 +263,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.read_canvas_document',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: 'Read a document on your canvas',
       description:
         'Read one document off the canvas of the window you are talking through — the chart you ' +
@@ -301,6 +303,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.read_console',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: "Read the preview's console log",
       description: READ_CONSOLE_DESCRIPTION,
       tier: 'observe',
@@ -320,6 +324,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.read_network',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: "Read the preview's network log",
       description: READ_NETWORK_DESCRIPTION,
       tier: 'observe',
@@ -339,6 +345,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.screenshot',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: 'Take a screenshot of the preview',
       description: SCREENSHOT_DESCRIPTION,
       tier: 'act',
@@ -351,6 +359,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.click',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: 'Click something in the preview',
       description: CLICK_DESCRIPTION,
       tier: 'act',
@@ -364,6 +374,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.type',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: 'Type into the preview',
       description: TYPE_DESCRIPTION,
       tier: 'act',
@@ -377,6 +389,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.press',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: 'Press a key in the preview',
       description: PRESS_DESCRIPTION,
       tier: 'act',
@@ -390,6 +404,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.scroll',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: 'Scroll the preview',
       description: SCROLL_DESCRIPTION,
       tier: 'act',
@@ -403,6 +419,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.wait_for',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: 'Wait for the preview to catch up',
       description: WAIT_FOR_DESCRIPTION,
       tier: 'observe',
@@ -416,6 +434,8 @@ export const uiDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'ui.read_page',
+      // The page is a third party's words, and every one of these hands some back (DOR-3291).
+      readsOutside: true,
       title: "Read the preview's page outline",
       description: READ_PAGE_DESCRIPTION,
       tier: 'observe',

@@ -267,7 +267,7 @@ export function handRegisteredInSessionToolSet(
     }),
     ...getAdapterTools(deps),
     ...getBindingTools(deps),
-    ...getTraceTools(deps),
+    ...getTraceTools(deps, resolveTaskProvenance),
     ...getMeshTools(deps),
     ...getAgentTools(deps),
     // The same provenance the task tools read: present in a session, so a

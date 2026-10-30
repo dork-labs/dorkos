@@ -10,6 +10,7 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { traceRuntime, watchRuntimeSignin } from '../../observability/index.js';
 import { holdAwakeDuringTurns } from '../keep-awake/hold-during-turn.js';
 import { recordTurnLevels } from '../turn-power/turn-levels.js';
+import { markNativeReads } from '../turn-power/native-tool-reads.js';
 import { boundToAgentLevel } from '../turn-power/agent-level-bound.js';
 import { meterTeammateTurns } from '../turn-power/teammate-turn-cost.js';
 import { recordToolUse } from '../../audit/record-tool-use.js';
@@ -37,6 +38,8 @@ export interface SessionReads {
  *    §4), and the marks a turn carries take effect after its level is recorded
  *    (`recordTurnLevels` returns the record wrapped in `applyTurnMarks`,
  *    DOR-3036; `turn-marks-seam.census.test.ts` proves every runtime has it).
+ *    Just outside it, a runtime's own web and outside-MCP tools mark the turn
+ *    running them as they start (`markNativeReads`, DOR-3291).
  * 2. **The teammate meter** reads what each turn a teammate started cost, for
  *    that space's monthly limit (DOR-2956). It passes every other turn through
  *    untouched, and sees a teammate's turn whether or not tracing is on.
@@ -75,7 +78,7 @@ export function decorateRuntime(runtime: AgentRuntime, sessions: SessionReads): 
         watchRuntimeSignin(
           traceRuntime(
             meterTeammateTurns(
-              boundToAgentLevel(recordTurnLevels(runtime, storedModeOf), {
+              boundToAgentLevel(markNativeReads(recordTurnLevels(runtime, storedModeOf)), {
                 storedModeOf,
                 ...(recordedAgentOf ? { recordedAgentOf } : {}),
               })

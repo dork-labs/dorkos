@@ -105,6 +105,7 @@ import type { MessageSenderOpts, ResolvedLaunch } from './message-sender-shared.
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
+import { createToolReadHook } from '../tool-gate/tool-read-hook.js';
 import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
 import { hasMarks } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
@@ -822,6 +823,14 @@ export async function resolveLaunch(args: {
   // backstop holds: `interactive-handlers.ts` auto-denies on abort and on
   // timeout, so a prompt that arrives outside a foreground turn degrades
   // gracefully rather than hanging one.
+  // The agent's folders as this launch granted them: what a read may stay inside.
+  const turnFolders = {
+    cwd: effectiveCwd,
+    roots: [
+      effectiveCwd,
+      ...(teammate ? [] : (messageOpts?.additionalDirectories ?? [])).map((g) => g.path),
+    ],
+  };
   const auditHooks = auditToolHookMatchers({
     sessionId,
     turn: { cwd: effectiveCwd, forAgent, roomTurn: messageOpts?.roomTurn },
@@ -834,15 +843,7 @@ export async function resolveLaunch(args: {
       // A held turn (DOR-3204): the folder's allow rules become cards, its deny
       // rules still refuse. Answers nothing on any other turn.
       {
-        hooks: [
-          createHeldTurnHook(session, resolveIdentity, logger, {
-            cwd: effectiveCwd,
-            roots: [
-              effectiveCwd,
-              ...(teammate ? [] : (messageOpts?.additionalDirectories ?? [])).map((g) => g.path),
-            ],
-          }),
-        ],
+        hooks: [createHeldTurnHook(session, resolveIdentity, logger, turnFolders)],
       },
       // Never ask (DOR-3042): the CLI calls no `canUseTool` under `dontAsk`, so
       // DorkOS's own safe tools are let through here, with the gate's own
@@ -886,6 +887,10 @@ export async function resolveLaunch(args: {
     // at all. `CLASSIFIER_CONTEXT_MATCHER` carries the anchor that buys the
     // regex reading, and its TSDoc has the whole rule.
     PostToolUse: [
+      // The tool-read mark (DOR-3291): a web tool, another MCP server's tool or a read outside
+      // the folders marks the turn, and a mark the turn carries reaches its ceiling, before the
+      // model sees the result. Every tool, main thread and helpers.
+      { hooks: [createToolReadHook(session, sessionId, turnAgentPath ?? undefined, turnFolders)] },
       {
         matcher: CLASSIFIER_CONTEXT_MATCHER,
         hooks: [createClassifierContextHook({ sessionId, enabled: CLASSIFIER_CONTEXT_ON })],

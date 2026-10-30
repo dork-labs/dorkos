@@ -60,3 +60,19 @@ export function projectDetail(rooms: RoomService, detail: RoomDetail): Record<st
     })),
   };
 }
+
+/**
+ * How a member is named in a canvas answer — their handle when they have one.
+ *
+ * Sanitized like every other label this seam hands back: it lands in text
+ * another model reads.
+ *
+ * @param rooms - The rooms service, for its author registry.
+ * @param authorId - The member to name.
+ * @returns A short label.
+ */
+export function authorLabel(rooms: RoomService, authorId: string): string {
+  const author = rooms.authorRegistry.getById(authorId);
+  const name = author?.handle ?? rooms.nameForAgents(authorId);
+  return (name ? sanitizeIdentity(name) : undefined) ?? 'Somebody';
+}

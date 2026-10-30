@@ -185,6 +185,10 @@ function executionCapability(
     // id beside its principal-bound discovery tools from
     // CONNECTOR_RUNTIME_CAPABILITY_IDS instead.
     surfaces: {},
+    // A read hands the turn whatever a third party wrote there: an email body, an invite from
+    // someone else (DOR-3291). The result names no sender or organizer the owner's own data could
+    // be told apart by, so every read marks. A write's or a removal's result is the app's receipt.
+    ...(classification === 'read' ? { readsOutside: true as const } : {}),
     preflight: async (deps, input, context) =>
       requireExecutionDeps(deps).authorization.preflight({
         capabilityId: id,

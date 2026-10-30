@@ -134,6 +134,14 @@ export interface TurnPermissionLevel {
    */
   readonly outsider?: true;
   /**
+   * True when the turn this level was recorded from got text a third party
+   * wrote through a tool's result (DOR-3291, `specs/turn-marks`): an email body
+   * from a connected app, a web page, a stranger's line in a room's history.
+   * Always set beside {@link outsider}, which carries every effect; this one
+   * says where the words came from, so an approval card can name it.
+   */
+  readonly toolRead?: true;
+  /**
    * The teammates whose words started the chain this turn is part of, one per
    * space room and member (DOR-3036, `specs/turn-marks`): a space member who
    * is not the owner wrote a message a turn answered, and everything that

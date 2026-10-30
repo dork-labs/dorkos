@@ -20,6 +20,7 @@ import {
   resetCapabilityTierGate,
 } from '../tier-enforcement.js';
 import { initPermissionGate, resetPermissionGate } from '../permission-enforcement.js';
+import { resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
 import type { ExtensionToolSpec } from '../extension-contribution.js';
 import { ApprovalService, isAlwaysOffered } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
@@ -112,6 +113,9 @@ describe('extension tools at the gate (DOR-2685)', () => {
   afterEach(() => {
     resetCapabilityTierGate();
     resetPermissionGate();
+    // An extension tool's result marks its caller as having read outside words (DOR-3291), and
+    // a caller with no chat is marked by agent for a while: start every case unmarked.
+    resetLiveOutsiderTurns();
     vi.restoreAllMocks();
   });
 

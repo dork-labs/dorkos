@@ -106,9 +106,10 @@ const CARRIED_BOUND = 'carried';
  * rollback) reads an object with no `asks` as the runtime's default, so it fails closed.
  */
 function storedForm(bound: TurnPermissionBound): unknown {
-  return isCarriedOutsiderBound(bound)
-    ? { bound: CARRIED_BOUND, marks: { outsider: true } }
-    : bound;
+  if (!isCarriedOutsiderBound(bound)) return bound;
+  // A tool read's source rides along (DOR-3291), so the receiving turn's card can name it.
+  const toolRead = bound !== 'runtime-default' && bound.toolRead === true;
+  return { bound: CARRIED_BOUND, marks: { outsider: true, ...(toolRead ? { toolRead } : {}) } };
 }
 
 /**
@@ -160,7 +161,9 @@ export function parseCeiling(json: string): TurnPermissionCeiling {
       (value as { bound?: unknown }).bound === CARRIED_BOUND &&
       (value as { marks?: { outsider?: unknown } }).marks?.outsider === true
     ) {
-      return CARRIED_OUTSIDER_LEVEL;
+      return (value as { marks: { toolRead?: unknown } }).marks.toolRead === true
+        ? { ...CARRIED_OUTSIDER_LEVEL, toolRead: true }
+        : CARRIED_OUTSIDER_LEVEL;
     }
     // A carried mark is never stored as a bare level: one that looks like it is unknown.
     if (

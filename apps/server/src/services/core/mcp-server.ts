@@ -114,7 +114,7 @@ export function createExternalMcpServer(
   registerAccountTools(registrar, deps);
   registerSessionTools(registrar, deps, identity);
   registerTaskTools(registrar, deps, identity);
-  registerRelayTools(registrar, deps, relayIdentity);
+  registerRelayTools(registrar, deps, relayIdentity, identity);
   registerBindingTools(registrar, deps);
   registerMeshTools(registrar, deps);
   registerAgentAndExtensionTools(registrar, deps);

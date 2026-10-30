@@ -2,6 +2,8 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
+import type { TaskProvenanceResolver } from './task-tools.js';
+import { markToolRead } from '../../../core/turn-power/tool-read-marks.js';
 
 /** Guard that returns an error response when TraceStore is not available. */
 function requireTraceStore(deps: McpToolDeps) {
@@ -11,8 +13,19 @@ function requireTraceStore(deps: McpToolDeps) {
   return null;
 }
 
-/** Get the full trace for a message by its ID. */
-export function createRelayGetTraceHandler(deps: McpToolDeps) {
+/**
+ * Get the full trace for a message by its ID.
+ *
+ * A span's error and metadata are free text an adapter wrote, which can echo what an outside chat
+ * sent, so the calling turn is marked before they reach it (DOR-3291).
+ *
+ * @param deps - Shared MCP tool dependencies.
+ * @param resolveCaller - The calling session and agent, on the in-session server.
+ */
+export function createRelayGetTraceHandler(
+  deps: McpToolDeps,
+  resolveCaller?: TaskProvenanceResolver
+) {
   return async (args: { messageId: string }) => {
     const err = requireTraceStore(deps);
     if (err) return err;
@@ -21,6 +34,11 @@ export function createRelayGetTraceHandler(deps: McpToolDeps) {
       return jsonContent({ error: 'Trace not found', messageId: args.messageId }, true);
     }
     const spans = deps.traceStore!.getTrace(span.traceId);
+    const caller = resolveCaller?.() ?? {};
+    markToolRead({
+      ...(caller.sessionId ? { sessionId: caller.sessionId } : {}),
+      ...(caller.agentPath ? { agentPath: caller.agentPath } : {}),
+    });
     return jsonContent({ traceId: span.traceId, spans });
   };
 }
@@ -46,14 +64,15 @@ export function createRelayGetMetricsHandler(deps: McpToolDeps) {
  * `mcp-server.ts`).
  *
  * @param deps - Shared MCP tool dependencies.
+ * @param resolveCaller - The calling session and agent, so a trace read marks its turn.
  */
-export function traceToolDefinitions(deps: McpToolDeps) {
+export function traceToolDefinitions(deps: McpToolDeps, resolveCaller?: TaskProvenanceResolver) {
   return [
     tool(
       'relay_get_trace',
       'Get the full delivery trace for a Relay message. Returns all spans in the trace chain.',
       { messageId: z.string().describe('Message ID to look up the trace for') },
-      createRelayGetTraceHandler(deps)
+      createRelayGetTraceHandler(deps, resolveCaller)
     ),
     tool(
       'relay_get_metrics',
@@ -69,8 +88,9 @@ export function traceToolDefinitions(deps: McpToolDeps) {
  * The trace tools for the in-session server — only when traceStore is provided.
  *
  * @param deps - Shared MCP tool dependencies.
+ * @param resolveCaller - The calling session and agent, so a trace read marks its turn.
  */
-export function getTraceTools(deps: McpToolDeps) {
+export function getTraceTools(deps: McpToolDeps, resolveCaller?: TaskProvenanceResolver) {
   if (!deps.traceStore) return [];
-  return traceToolDefinitions(deps);
+  return traceToolDefinitions(deps, resolveCaller);
 }

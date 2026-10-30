@@ -20,6 +20,7 @@ import {
   isServerPrincipal,
   type ServerPrincipalProof,
 } from '../../connectors/principal/server-principal.js';
+import type { ToolReadCaller } from '../turn-power/tool-read-marks.js';
 
 /** Actions that ask in a marked turn, by capability id or hand-registered tool name. */
 export const HELD_IN_A_MARKED_TURN: ReadonlySet<string> = new Set([
@@ -75,4 +76,24 @@ export function principalTurnOf(principal: ServerPrincipalProof | undefined): {
   }
   const { canonicalSessionId, agentPath } = principal.claims;
   return { principalTurn: { sessionId: canonicalSessionId, agentPath } };
+}
+
+/**
+ * The turn a tool read is marked on (DOR-3291): the session and agent the surface verified, or the
+ * turn a runtime principal names. Never anything from the call's input.
+ *
+ * @param supplied - The invocation context the surface built.
+ */
+export function toolReadCallerOf(supplied: {
+  sessionId?: string;
+  identity?: { agentPath: string };
+  serverPrincipal?: ServerPrincipalProof;
+}): ToolReadCaller {
+  const turn = principalTurnOf(supplied.serverPrincipal).principalTurn;
+  const sessionId = supplied.sessionId ?? turn?.sessionId;
+  const agentPath = supplied.identity?.agentPath ?? turn?.agentPath;
+  return {
+    ...(sessionId ? { sessionId } : {}),
+    ...(agentPath ? { agentPath } : {}),
+  };
 }

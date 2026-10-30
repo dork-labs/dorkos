@@ -80,14 +80,46 @@ export function countWhileRunning(
 }
 
 /**
+ * How long a tool read by a caller that named no session marks its agent (DOR-3291). Such a
+ * caller cannot say which turn read, and an unmarked turn is not counted here, so the read marks
+ * the agent for longer than a turn usually runs: more calls marked, never fewer.
+ */
+export const AGENT_READ_WINDOW_MS = 30 * 60_000;
+
+/** Agent home → when the tool-read mark a session-less read left on it runs out. */
+const agentReads = new Map<string, number>();
+
+/** The marks a session-less read leaves: the source, and the outsider mark that carries it. */
+const READ_MARKS: TurnMarks = Object.freeze({ outsider: true, toolRead: true });
+
+/**
+ * Mark an agent as having read a third party's text in a turn it cannot name (Codex or OpenCode
+ * over the external `/mcp` server): its session-less callers carry the tool-read mark for
+ * {@link AGENT_READ_WINDOW_MS}.
+ *
+ * @param agentPath - The calling agent's home, from its verified identity.
+ */
+export function noteAgentReadOutside(agentPath: string): void {
+  const key = homeKey(agentPath) ?? path.resolve(agentPath);
+  agentReads.delete(key);
+  agentReads.set(key, Date.now() + AGENT_READ_WINDOW_MS);
+  for (const [home, until] of agentReads) {
+    if (until > Date.now()) break;
+    agentReads.delete(home);
+  }
+}
+
+/**
  * The marks of every marked turn the agent at this home has running, and of
- * every one no agent could be found for. `turn-marks.ts` merges them.
+ * every one no agent could be found for, and a session-less read it made
+ * lately (`noteAgentReadOutside`). `turn-marks.ts` merges them.
  *
  * @param agentPath - The calling agent's home, from its verified identity.
  */
 export function runningMarksOf(agentPath: string): readonly TurnMarks[] {
   const key = homeKey(agentPath) ?? path.resolve(agentPath);
-  return [...(running.get(UNPLACED) ?? []), ...(running.get(key) ?? [])].map((t) => t.marks);
+  const marks = [...(running.get(UNPLACED) ?? []), ...(running.get(key) ?? [])].map((t) => t.marks);
+  return (agentReads.get(key) ?? 0) > Date.now() ? [...marks, READ_MARKS] : marks;
 }
 
 /**
@@ -97,4 +129,5 @@ export function runningMarksOf(agentPath: string): readonly TurnMarks[] {
  */
 export function resetLiveOutsiderTurns(): void {
   running.clear();
+  agentReads.clear();
 }

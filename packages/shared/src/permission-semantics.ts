@@ -538,7 +538,7 @@ function admits(level: TurnPermissionLevel, mode: PermissionModeDescriptor): boo
  * other reaches further — Codex's read-only default against Claude's Default),
  * the two are combined: the more frequent asking and the shorter reach, and
  * Auto only when both are Auto. Either level's marks are kept (the outsider
- * mark, and every teammate origin): the stricter of two turns' levels is one
+ * mark, the tool-read mark, and every teammate origin): the stricter of two turns' levels is one
  * that read whatever either read.
  *
  * @param a - One level.
@@ -546,8 +546,12 @@ function admits(level: TurnPermissionLevel, mode: PermissionModeDescriptor): boo
  */
 export function stricterLevel(a: TurnPermissionLevel, b: TurnPermissionLevel): TurnPermissionLevel {
   const level = stricterPower(a, b);
+  const outsider =
+    (a.outsider || b.outsider) && !level.outsider ? { ...level, outsider: true as const } : level;
   const marked: TurnPermissionLevel =
-    (a.outsider || b.outsider) && !level.outsider ? { ...level, outsider: true } : level;
+    (a.toolRead || b.toolRead) && !outsider.toolRead
+      ? { ...outsider, toolRead: true, outsider: true }
+      : outsider;
   const teammate = mergeTeammateOrigins(a.teammate, b.teammate);
   return teammate === undefined || teammate === marked.teammate ? marked : { ...marked, teammate };
 }

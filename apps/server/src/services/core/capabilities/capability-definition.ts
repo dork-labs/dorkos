@@ -335,6 +335,24 @@ export interface CapabilityDefinition<
    */
   source?: CapabilitySource;
   /**
+   * Whether this action's result can hand the calling turn text a third party
+   * wrote (DOR-3291, `turn-power/tool-read-marks.ts`): an email body, a web
+   * page, a stranger's line in a room. `true` marks every call that returns; a
+   * function decides on the parsed input and the result, for an action whose
+   * result is sometimes only the owner's own (a room history with no stranger
+   * in it). Absent means the result is this computer's own state and its own
+   * people's words; the census (`tool-read-provenance.census.test.ts`) refuses
+   * a capability that is absent without a reason on file. An extension's
+   * actions always mark, whatever they declare: code from strangers is never
+   * vouched for.
+   *
+   * Declared, never read from the model: nothing an agent sends sets or clears
+   * the mark, and the registry marks after the handler returns, before the
+   * result reaches the turn.
+   */
+  readsOutside?:
+    true | ((input: z.infer<In>, output: z.infer<Out>, deps: CapabilityDeps) => boolean);
+  /**
    * Execute the capability against the injected dependencies, returning PLAIN
    * typed output (see the module-level "result-wrapping seam" note — transport
    * adapters own envelope shaping; redaction stays here).

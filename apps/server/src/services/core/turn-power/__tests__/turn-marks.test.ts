@@ -115,6 +115,7 @@ describe('reading marks', () => {
 /** One value of each kind; a kind added to TURN_MARK_KINDS without one is a type error here. */
 const SAMPLE: { [K in TurnMarkKind]-?: NonNullable<TurnMarks[K]> } = {
   outsider: true,
+  toolRead: true,
   teammate: [{ roomId: 'space-room', authorId: 'priya' }],
 };
 

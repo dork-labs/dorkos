@@ -50,6 +50,24 @@ import {
   type ReadableSessions,
 } from './audit-session-scrub.js';
 
+/**
+ * Whether an audit read hands the turn text DorkOS did not write (DOR-3291, Security's rule for
+ * traces: if any payload text can appear, it marks). A summary is DorkOS's own sentence; an
+ * event's `error` can quote an outside app's reply, and its `change` carries the values written,
+ * which can be anybody's words.
+ *
+ * @param _input - The read's input (unused).
+ * @param output - `events` (a page) or `event` (one).
+ */
+function auditShowsOutsideText(_input: unknown, output: unknown): boolean {
+  const result = (output ?? {}) as { events?: unknown; event?: unknown };
+  const events = Array.isArray(result.events) ? result.events : [result.event];
+  return events.some((event) => {
+    const e = (event ?? {}) as { error?: unknown; change?: unknown };
+    return typeof e.error === 'string' || (Array.isArray(e.change) && e.change.length > 0);
+  });
+}
+
 declare module '../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
     /** Present when the server keeps an audit log; gates the `audit` domain. */
@@ -188,6 +206,7 @@ export const auditDomain: CapabilityDomain = {
         mcp: { toolName: 'audit_query', ...READ_TOOL, servers: [...READ_TOOL.servers] },
         http: { method: 'get', path: '/api/audit' },
       },
+      readsOutside: auditShowsOutsideText,
       invoke: async (deps, input, context) => {
         const audit = requireAuditDeps(deps);
         const reader = readerFor(audit, context);
@@ -209,6 +228,7 @@ export const auditDomain: CapabilityDomain = {
         mcp: { toolName: 'audit_get', ...READ_TOOL, servers: [...READ_TOOL.servers] },
         http: { method: 'get', path: '/api/audit/{id}' },
       },
+      readsOutside: auditShowsOutsideText,
       invoke: async (deps, input, context) => {
         const audit = requireAuditDeps(deps);
         const reader = readerFor(audit, context);
@@ -239,6 +259,7 @@ export const auditDomain: CapabilityDomain = {
         mcp: { toolName: 'account_timeline', ...READ_TOOL, servers: [...READ_TOOL.servers] },
         http: { method: 'get', path: '/api/audit/accounts/{accountId}/timeline' },
       },
+      readsOutside: auditShowsOutsideText,
       invoke: async (deps, input, context) => {
         const audit = requireAuditDeps(deps);
         const reader = readerFor(audit, context);
@@ -263,6 +284,9 @@ export const auditDomain: CapabilityDomain = {
       surfaces: {
         mcp: { toolName: 'transcript_read', ...READ_TOOL, servers: [...READ_TOOL.servers] },
       },
+      // A transcript holds every tool result the chat got, web pages and emails included, from
+      // turns long before this process started, so nothing can vouch for it (DOR-3291).
+      readsOutside: true,
       invoke: async (deps, input, context) => {
         const audit = requireAuditDeps(deps);
         if (!mayReadSession(audit, readerFor(audit, context), input.sessionId)) {

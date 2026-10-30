@@ -19,11 +19,9 @@
  *    ran a turn on has no level and keeps the card, so a restart errs toward
  *    asking.
  * 5. No stranger started the turn, and no stranger's message reached it
- *    through a room or a ceiling (`startedByOutsider`, `marksOf`
- *    and the level's own `outsider` mark). This does NOT see outside content
- *    the turn read through a tool (an email, a web page); an injection-taint
- *    rule for that is a deferred follow-up (spec §8), and the 60-second
- *    window everyone is told about is the mitigation chosen meanwhile.
+ *    through a room, a ceiling or a tool's result (`startedByOutsider`,
+ *    `marksOf` and the level's own `outsider` mark). A tool read (an email,
+ *    a web page) sets that mark too, since DOR-3291 (`tool-read-marks.ts`).
  * 6. DorkOS can say what the action is, in the app's own words. A hold
  *    everyone is told about must be describable.
  * 7. Wi-Fi access is closed (DOR-3242). The owner's own words from Wi-Fi run
@@ -96,13 +94,23 @@ export interface HoldEligibilitySources {
   chosenFull?: (sessionId: string) => boolean;
 }
 
+/**
+ * Whether a stranger started the turn or their words reached it: through a room, a ceiling, or a
+ * tool's result (DOR-3291). The live answer to condition 5.
+ *
+ * @param sessionId - One id the chat goes by.
+ * @param agentPath - The calling agent's home.
+ */
+export function strangerReachedTurn(sessionId: string, agentPath: string): boolean {
+  return startedByOutsider(sessionId) || marksOf(sessionId, agentPath).outsider === true;
+}
+
 /** The live server's answers. */
 const LIVE_SOURCES: HoldEligibilitySources = {
   trusted: () => trustPosture(permissionGateSources().readConfig().preset) === 'trusted',
   describeAgent: async (agentPath) => getAgentIdentityService()?.describeAgent(agentPath),
   turnLevel: lastTurnLevelOf,
-  strangerTurn: (sessionId, agentPath) =>
-    startedByOutsider(sessionId) || marksOf(sessionId, agentPath).outsider === true,
+  strangerTurn: strangerReachedTurn,
   plainWifiOpen: isLanAccessOpen,
 };
 

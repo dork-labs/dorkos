@@ -52,7 +52,13 @@ export function registerTaskTools(
 ): void {
   registerFromDefinitions(
     registrar,
-    getTasksTools(deps, undefined, () => externalCallerMarks(identity)),
+    getTasksTools(
+      deps,
+      undefined,
+      () => externalCallerMarks(identity),
+      // A run-history read marks the calling agent (DOR-3291); no session to name here.
+      () => (identity ? { agentPath: identity.agentPath } : {})
+    ),
     TASKS_EXTERNAL_CONFIGS
   );
 }

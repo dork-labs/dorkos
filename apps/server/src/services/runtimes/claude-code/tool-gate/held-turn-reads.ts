@@ -110,6 +110,15 @@ function inside(target: string, roots: readonly string[]): boolean {
 }
 
 /**
+ * Whether a tool is one of the CLI's file reads (`Read`, `Grep`, `Glob` and the rest).
+ *
+ * @param toolName - The tool.
+ */
+export function isFileReadTool(toolName: string): boolean {
+  return Object.prototype.hasOwnProperty.call(FILE_READ_PATHS, toolName);
+}
+
+/**
  * Whether a file tool's call reads only inside the folders. A tool this does not know, or a path it
  * cannot read, is not.
  *

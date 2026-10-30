@@ -378,6 +378,8 @@ export const mcpDomain: CapabilityDomain = {
         },
         http: { method: 'post', path: '/api/agents/{agentId}/mcp-servers/{name}/test' },
       },
+      // A failed probe reports the server's own error text, which that server wrote (DOR-3291).
+      readsOutside: (_input, output) => typeof output.error === 'string',
       invoke: async (deps, input) => {
         const { service } = requireMcpDeps(deps);
         try {

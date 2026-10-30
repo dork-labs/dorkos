@@ -78,6 +78,7 @@ import {
 } from '../../../tasks/lifecycle/schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from '../../../tasks/lifecycle/schedule-credits-model.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import { createGetRunHistoryHandler, requireTasks } from './run-history-tool.js';
 import { hasMarks, type TurnMarks } from '../../../core/turn-power/turn-marks.js';
 
 /**
@@ -134,14 +135,6 @@ const DURATION_ARG = z
   .max(TASK_DURATION_MAX)
   .regex(TASK_DURATION_PATTERN)
   .optional();
-
-/** Guard that returns an error response when Tasks is disabled. */
-function requireTasks(deps: McpToolDeps) {
-  if (!deps.taskStore) {
-    return jsonContent({ error: 'Scheduled tasks are turned off on this DorkOS' }, true);
-  }
-  return null;
-}
 
 /**
  * Refuse a task write that reaches for a field only a person may set, or return
@@ -718,19 +711,6 @@ export function createDeleteScheduleHandler(deps: McpToolDeps) {
   };
 }
 
-/** Get recent runs for a schedule. */
-export function createGetRunHistoryHandler(deps: McpToolDeps) {
-  return async (args: { schedule_id: string; limit?: number }) => {
-    const err = requireTasks(deps);
-    if (err) return err;
-    const runs = deps.taskStore!.listRuns({
-      taskId: args.schedule_id,
-      limit: args.limit ?? 20,
-    });
-    return jsonContent({ runs, count: runs.length });
-  };
-}
-
 /**
  * The Tasks tool definitions: name, description, input schema, and handler.
  *
@@ -742,11 +722,15 @@ export function createGetRunHistoryHandler(deps: McpToolDeps) {
  * @param resolveProvenance - How `tasks_create` learns which session is
  *   proposing. Omitted by the sessionless external `/mcp` registration, where a
  *   proposal genuinely has no session behind it and provenance stays null.
+ * @param callerMarks - The calling turn's marks, for the writes a marked turn holds.
+ * @param readCaller - Who a run-history read marks, when it differs from
+ *   `resolveProvenance`: the external server's verified agent (DOR-3291).
  */
 export function getTasksTools(
   deps: McpToolDeps,
   resolveProvenance?: TaskProvenanceResolver,
-  callerMarks?: CallerMarksResolver
+  callerMarks?: CallerMarksResolver,
+  readCaller: TaskProvenanceResolver | undefined = resolveProvenance
 ) {
   return [
     tool(
@@ -833,7 +817,10 @@ export function getTasksTools(
         schedule_id: z.string().describe('Schedule ID to get runs for'),
         limit: z.number().optional().describe('Max runs to return (default 20)'),
       },
-      createGetRunHistoryHandler(deps)
+      createGetRunHistoryHandler(deps, readCaller)
     ),
   ];
 }
+
+/** Re-exported where the other Tasks handlers are, for the barrel and the tests. */
+export { createGetRunHistoryHandler };

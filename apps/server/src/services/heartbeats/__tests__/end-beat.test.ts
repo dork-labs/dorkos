@@ -62,7 +62,12 @@ beforeEach(() => {
   registry = composeRegistry([heartbeatDomain, commitmentsDomain], {
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     commitmentDeps: {
-      service: { create: vi.fn(), update: vi.fn(), list: vi.fn(() => []) },
+      service: {
+        create: vi.fn(),
+        update: vi.fn(),
+        list: vi.fn(() => []),
+        marksOfMany: vi.fn(() => ({})),
+      },
       agentIdForPath: () => 'agent-juno',
     },
   });
