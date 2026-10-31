@@ -323,6 +323,7 @@
     "GET /api/sessions/daily-counts",
     "GET /api/sessions/pending-interactions",
     "GET /api/sessions/recent",
+    "GET /api/sessions/running",
     "GET /api/shapes",
     "GET /api/sign-in-landings/:id",
     "GET /api/step-up/:heldActionId",

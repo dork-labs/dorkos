@@ -137,6 +137,10 @@
       "types": "./src/session-link.ts",
       "default": "./dist/session-link.js"
     },
+    "./running-chats": {
+      "types": "./src/running-chats.ts",
+      "default": "./dist/running-chats.js"
+    },
     "./telemetry-consent": {
       "types": "./src/telemetry-consent.ts",
       "default": "./dist/telemetry-consent.js"
