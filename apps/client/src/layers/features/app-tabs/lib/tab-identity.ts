@@ -553,12 +553,19 @@ export function homeTabIdentity(needsYouCount: number): TabIdentity {
 export interface TeamTabInput {
   /** Agents with a turn streaming right now. */
   workingCount: number;
+  /** Agents with a chat blocked on you: a pending approval or question. */
+  needsYouCount: number;
   /** The fleet's live facts, folded across every agent. */
   signals: TabStatusSignals;
 }
 
 /**
  * Team · N working, wearing the hottest status across the fleet.
+ *
+ * **The label says what the dot says** (DOR-3533). A tab has room for one
+ * status, so when anyone is waiting on you the label switches to that
+ * ("Team · 1 needs you") and the working count moves to the hover sentence.
+ * "Team · 3 working" beside an amber dot read as "amber means working".
  *
  * @param pathname - `/team`, or its `/agents` alias.
  * @param input - What the fleet is doing.
@@ -567,19 +574,31 @@ export function teamTabIdentity(pathname: string, input: TeamTabInput): TabIdent
   const route = ROUTE_IDENTITY[pathname] ?? ROUTE_IDENTITY['/team']!;
   const status = pickTabStatus(input.signals);
   const working = positive(input.workingCount);
+  // A needs-you signal always names at least one agent, even before the count lands.
+  const waiting = status === 'needs-you' ? Math.max(input.needsYouCount, 1) : undefined;
   return identity({
     icon: { kind: 'route', Icon: route.Icon },
     primary: route.primary,
-    secondary: working ? `${working} working` : undefined,
+    secondary: waiting
+      ? plural(waiting, 'needs you', 'need you')
+      : working
+        ? `${working} working`
+        : undefined,
     status,
-    statusSentence:
-      status === 'needs-you'
-        ? 'An agent is waiting on you'
-        : status === 'failed'
-          ? 'An agent’s last reply failed'
-          : status === 'working'
-            ? plural(input.workingCount, 'agent working', 'agents working')
-            : undefined,
+    // Non-breaking spaces keep "3 working" whole: a narrow hover card breaks
+    // after the separator, never between a number and its word.
+    statusSentence: waiting
+      ? [
+          plural(waiting, 'agent is waiting on you', 'agents are waiting on you'),
+          working ? `${working}\u00a0working` : undefined,
+        ]
+          .filter(Boolean)
+          .join('\u00a0· ')
+      : status === 'failed'
+        ? 'An agent’s last reply failed'
+        : status === 'working'
+          ? plural(input.workingCount, 'agent working', 'agents working')
+          : undefined,
   });
 }
 
