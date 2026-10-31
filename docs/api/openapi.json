@@ -4454,6 +4454,9 @@
             "type": "string",
             "maxLength": 4000
           },
+          "marketplaceSummary": {
+            "$ref": "#/components/schemas/MarketplaceApprovalSummary"
+          },
           "subject": {
             "$ref": "#/components/schemas/ApprovalSubject"
           },
@@ -4496,6 +4499,135 @@
           "alwaysOffered",
           "requestedAt",
           "expiresAt"
+        ]
+      },
+      "MarketplaceApprovalSummary": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "install",
+              "update"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketplacePackageSummary"
+            },
+            "minItems": 1
+          },
+          "fullDetailLength": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "operation",
+          "packages",
+          "fullDetailLength"
+        ]
+      },
+      "MarketplacePackageSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "where": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "fromVersion": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "toVersion": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "power": {
+            "type": "string",
+            "enum": [
+              "adds",
+              "none"
+            ]
+          },
+          "risks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketplaceRisk"
+            }
+          },
+          "unchangedCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "name",
+          "where",
+          "toVersion",
+          "power",
+          "risks",
+          "unchangedCount"
+        ]
+      },
+      "MarketplaceRisk": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "extension",
+              "hook",
+              "skillCommand",
+              "mcp",
+              "lsp",
+              "monitor",
+              "executable",
+              "schedule",
+              "host",
+              "secret",
+              "skillTools",
+              "dependency",
+              "unreadable"
+            ]
+          },
+          "change": {
+            "type": "string",
+            "enum": [
+              "new",
+              "broader",
+              "removed"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "command": {
+            "type": "string",
+            "maxLength": 200000
+          },
+          "was": {
+            "type": "string",
+            "maxLength": 200000
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "change",
+          "text"
         ]
       },
       "ApprovalSubject": {
@@ -12914,6 +13046,18 @@
         },
         "required": [
           "approvals"
+        ]
+      },
+      "ApprovalFullDetailResponse": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 200000
+          }
+        },
+        "required": [
+          "text"
         ]
       },
       "PendingExtensionApprovalsResponse": {
@@ -82718,6 +82862,40 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/approvals/{id}/full-detail": {
+      "get": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Read everything a pending Marketplace card is about",
+        "description": "The full list behind a Marketplace summary card (DOR-3070): every reinstall or install and everything it would run, written out whole and swept for secrets, as the approval is bound to it. Only while the card is pending; 404 for any other approval.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The full list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalFullDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No pending card with a full list"
           }
         }
       }

@@ -48,7 +48,7 @@
  * @module services/marketplace/flows/update
  */
 import { isRealCommitSha } from '@dorkos/marketplace';
-import type { InstallRequest, InstallResult } from '../types.js';
+import type { InstallRequest, InstallResult, PreviewExtension } from '../types.js';
 import { disclosedEffectsOf, type DisclosedEffects } from '../preview/disclosed-effects.js';
 import { packageContentHash } from '../lib/content-hash.js';
 import { readRunnableDeclarations } from '../preview/permission-preview.js';
@@ -120,6 +120,8 @@ interface PlannedCheck {
   contentHash?: string;
   /** What the installed version runs now, when planned with `disclose`. */
   installedDisclosed?: DisclosedEffects | null;
+  /** The new version's extensions, when planned with `disclose`. */
+  extensions?: PreviewExtension[];
 }
 
 /**
@@ -189,12 +191,15 @@ export class UpdateFlow {
       req.installations.map((record) => this.checkSafely(record, req.disclose ?? false))
     );
     return {
-      checks: planned.map(({ check, disclosed, contentHash, installedDisclosed }, i) => ({
-        ...withIdentity(check, req.installations[i]!.package),
-        ...(disclosed !== undefined && { disclosed }),
-        ...(contentHash !== undefined && { contentHash }),
-        ...(installedDisclosed !== undefined && { installedDisclosed }),
-      })),
+      checks: planned.map(
+        ({ check, disclosed, contentHash, installedDisclosed, extensions }, i) => ({
+          ...withIdentity(check, req.installations[i]!.package),
+          ...(disclosed !== undefined && { disclosed }),
+          ...(contentHash !== undefined && { contentHash }),
+          ...(installedDisclosed !== undefined && { installedDisclosed }),
+          ...(extensions !== undefined && { extensions }),
+        })
+      ),
       steps: planned.map(({ request }, i) => ({
         record: req.installations[i]!,
         ...(request && { request }),
@@ -360,6 +365,7 @@ export class UpdateFlow {
         disclosed: disclosedEffectsOf(preview),
         contentHash,
         installedDisclosed,
+        extensions: preview.extensions,
       };
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
