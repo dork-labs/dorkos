@@ -141,6 +141,7 @@ describe('POST /api/rooms/:id/repo', () => {
         isOwnerAuthor: (authorId) =>
           rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
         operatorGitName: () => 'Dorian',
+        getAuthor: (authorId) => rooms.authors.getById(authorId),
         pinRoomMd: () => {},
         caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
         maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
@@ -215,25 +216,70 @@ describe('POST /api/rooms/:id/repo', () => {
     expect(await gitInRepo(['rev-parse', 'HEAD'], store, roomId)).toBe(head);
   });
 
-  it('refuses a member agent — enabling is never an agent capability', async () => {
+  it('lets a member agent set up files, under its own name and nobody else’s', async () => {
     const roomId = await channel();
     const identity = initAgentIdentityService(db);
     const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
-
-    // Ana really is in this room: the same token reads it.
-    const reads = await request(testServer)
-      .get(`/api/rooms/${roomId}`)
-      .set('X-DorkOS-Agent', token);
-    expect(reads.status).toBe(200);
 
     const res = await request(testServer)
       .post(`/api/rooms/${roomId}/repo`)
       .set('X-DorkOS-Agent', token);
 
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('OPERATOR_ONLY');
+    expect(res.status).toBe(201);
+    // The commit is Ana's: `log` would say the operator's name if the setup borrowed it.
+    expect(await gitInRepo(['log', '--format=%an'], store, roomId)).toBe('Ana');
+    expect(await gitInRepo(['log', '--format=%ae'], store, roomId)).not.toBe(
+      'operator@dorkos.local'
+    );
+    const history = await request(testServer).get(`/api/rooms/${roomId}/entries`);
+    expect(history.body.entries).toEqual([
+      expect.objectContaining({
+        kind: 'notice',
+        body: expect.objectContaining({
+          text: 'Ana set up files for this room.',
+          notice: 'files_set_up',
+        }),
+      }),
+    ]);
+
+    // Asking again changes nothing and says nothing new.
+    const again = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('X-DorkOS-Agent', token);
+    expect(again.status).toBe(409);
+    expect(again.body.code).toBe('ROOM_REPO_EXISTS');
+    const after = await request(testServer).get(`/api/rooms/${roomId}/entries`);
+    expect(after.body.entries).toHaveLength(1);
+  });
+
+  it('refuses a member agent while room files are switched off', async () => {
+    const roomId = await channel();
+    enabled = false;
+    const identity = initAgentIdentityService(db);
+    const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+
+    const res = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('X-DorkOS-Agent', token);
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ROOM_REPOS_DISABLED');
     expect(existsSync(store.homeDir(roomId))).toBe(false);
-    expect(store.getRow(roomId)).toBeNull();
+  });
+
+  it('refuses a member agent in an archived room', async () => {
+    const roomId = await channel();
+    const identity = initAgentIdentityService(db);
+    const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
+    await request(testServer).patch(`/api/rooms/${roomId}`).send({ archived: true });
+
+    const res = await request(testServer)
+      .post(`/api/rooms/${roomId}/repo`)
+      .set('X-DorkOS-Agent', token);
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ROOM_ARCHIVED');
+    expect(existsSync(store.homeDir(roomId))).toBe(false);
   });
 
   it('answers an outsider agent the same 404 an unknown room gets', async () => {
@@ -366,6 +412,7 @@ describe('the room repo routes', () => {
       getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
       isOwnerAuthor: (authorId) => rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
       operatorGitName: () => 'Dorian',
+      getAuthor: () => null,
       pinRoomMd: () => {},
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,

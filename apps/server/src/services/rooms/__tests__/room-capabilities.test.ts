@@ -31,6 +31,7 @@ import {
   RoomRepoConfigUnsafeError,
 } from '../room-errors.js';
 import type { RoomMergeService } from '../repo/room-merge-service.js';
+import type { RoomRepoService } from '../repo/room-repo-service.js';
 import { FIND_ROOMS_MAX, type RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
 import type { RoomTurnRequest } from '../room-trigger.js';
@@ -198,6 +199,16 @@ describe('the rooms capability domain', () => {
           // `act`, like the other two writes. Not `destructive`: the room's repo
           // is append-only — nothing on this surface, or under it, can force,
           // reset or push — so a merge adds a commit and takes none away.
+          tier: 'act',
+          area: 'rooms',
+          servers: ['in-session', 'external'],
+          readOnly: false,
+        },
+        {
+          id: 'rooms.set_up_files',
+          tool: 'set_up_room_files',
+          // `act`: it adds a first commit to a room that has none, and a repeat
+          // changes nothing. In the Rooms area, so the agent's set level decides.
           tier: 'act',
           area: 'rooms',
           servers: ['in-session', 'external'],
@@ -391,6 +402,7 @@ describe('the rooms capability domain', () => {
 
       const granted = projectCatalog(catalog, {
         area: 'rooms',
+        detail: 'full',
         limit: MAX_CAPABILITY_LIMIT,
       });
       expect(granted.detail).toBe('full');
@@ -406,6 +418,7 @@ describe('the rooms capability domain', () => {
         'merge_to_room_main',
         'remove_room_members',
         'reseat_room_agent',
+        'set_up_room_files',
         'update_room',
       ]);
 
@@ -513,6 +526,67 @@ describe('the rooms capability domain', () => {
       )) as { entryId: string };
 
       expect(harness.store.getEntryById(channel.id, result.entryId)?.authorId).toBe(ana);
+    });
+  });
+
+  describe('set_up_room_files (DOR-3468)', () => {
+    /** A registry over a repo service that asks the real room who may see it. */
+    function withRepos(enable: RoomRepoService['enable']): CapabilityRegistry {
+      return composeRegistry([roomsDomain], {
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+        roomDeps: { rooms: service, repos: { enable } as unknown as RoomRepoService },
+      });
+    }
+
+    const CREATED = { created: true, repo: { defaultBranch: 'main' } } as Awaited<
+      ReturnType<RoomRepoService['enable']>
+    >;
+
+    it('sets up files for a member agent, as that agent, and tells the room once', async () => {
+      const enable = vi.fn(async () => CREATED);
+
+      const result = await withRepos(enable).invoke(
+        'rooms.set_up_files',
+        { roomId: channel.id },
+        { identity: ANA_IDENTITY, retryChannel: 'mcp-argument' }
+      );
+
+      expect(result).toEqual({ created: true, defaultBranch: 'main' });
+      // Who is asking comes from the verified identity: the tool takes no author.
+      expect(enable).toHaveBeenCalledWith(channel.id, ana);
+      const notices = service
+        .readHistory(channel.id, human, { limit: 50 })
+        .filter((entry) => entry.kind === 'notice');
+      expect(notices).toEqual([
+        expect.objectContaining({
+          body: expect.objectContaining({
+            text: 'Ana set up files for this room.',
+            notice: 'files_set_up',
+          }),
+        }),
+      ]);
+    });
+
+    it('stays quiet when the room already had files', async () => {
+      const enable = vi.fn(async () => ({ ...CREATED, created: false }));
+
+      const result = await withRepos(enable).invoke(
+        'rooms.set_up_files',
+        { roomId: channel.id },
+        { identity: ANA_IDENTITY, retryChannel: 'mcp-argument' }
+      );
+
+      expect(result).toEqual({ created: false, defaultBranch: 'main' });
+      const notices = service
+        .readHistory(channel.id, human, { limit: 50 })
+        .filter((entry) => entry.kind === 'notice');
+      expect(notices).toEqual([]);
+    });
+
+    it('takes no author in its input', () => {
+      const capability = roomsDomain.capabilities.find((c) => c.id === 'rooms.set_up_files');
+      const input = capability?.input as unknown as { shape: object };
+      expect(Object.keys(input.shape)).toEqual(['roomId']);
     });
   });
 
