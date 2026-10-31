@@ -440,6 +440,31 @@ describe('getting back out of a list no reader will honour', () => {
     expect(r.out).toContain('"entries": []');
   });
 
+  it('takes an expired entry out of a list the readers do honour', () => {
+    // Readers drop an expired entry before anyone sees it, so a remove that
+    // read the honoured entries called it "not in the lane" and left it on the
+    // data branch for good.
+    const base = JSON.parse(overCapList()).entries[0];
+    const list = JSON.stringify({
+      schema: 1,
+      updated_at: NOW,
+      entries: [
+        {
+          ...base,
+          title: 'one',
+          added_at: '2026-09-06T12:00:00Z',
+          expires_at: '2026-09-19T12:00:00Z',
+        },
+        { ...base, title: 'two', expires_at: '2026-09-27T12:00:00Z' },
+      ],
+    });
+    const r = runWithList(remove('one'), list);
+    expect(r.code).toBe(0);
+    expect(r.out).not.toContain('removing from it is a repair');
+    expect(r.out).toContain('"title": "two"');
+    expect(r.out).not.toContain('"title": "one"');
+  });
+
   it('says so plainly when there is nothing to remove from', () => {
     const r = runWithList(remove('one'), '{ not json at all');
     expect(r.code).toBe(1);
