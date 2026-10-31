@@ -168,12 +168,12 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 
 **Split by what each is good at.** GitHub Actions splits by cost (2026-08-23/24, the CI-saturation fix):
 
-- On PRs, `test` runs **affected-only** and `browser-test` reports an instant pass-through.
+- On PRs, `test` runs **affected-only** on two shards, `community-pg` does not run (the `test` fan-in accepts its skip on `pull_request` only), and `browser-test` reports an instant pass-through. PR pushes were starving queue builds of runners (ledger `261030-233825`).
 - The **full monorepo `test` sweep and the Playwright shards run only on `merge_group`**, as required merge-queue checks. The queue's combined-tree build decides every merge. So does the one-minute first run (`browser-test.yml`'s `first-run` job, `pnpm --filter @dorkos/e2e e2e:first-run`): it boots two never-onboarded servers and the `browser-test` fan-in fails unless it passed.
 - The PR legs exist because GitHub requires a required check to succeed **on the PR** before the PR may enter the queue at all. A `merge_group`-only required check deadlocks every PR out of the queue (measured on PR #1246).
 - Push-to-main no longer re-runs the suites: the queue already tested the exact tree content (squash rewrites the SHA, not the content).
 
-**Sharding.** Both `test` legs are **split four ways** (`test-shard (N/4)`, DOR-1731 for the PR leg). The four shard jobs are where the suites run; `test` itself is only their fan-in, so read a red on a PR off the shard, not off `test`. Only `test` is a required context. Never make a shard one.
+**Sharding.** The queue and canary `test` leg is **split six ways** (`test-shard (N/6)`) and the PR leg **two ways** (`test-shard (N/2)`, DOR-1731 for why the PR leg is split at all). The shard jobs are where the suites run; `test` itself is only their fan-in, so read a red on a PR off the shard, not off `test`. Only `test` is a required context. Never make a shard one.
 
 **`assert-tests-executed.sh`.** Turbo caches `test` and replays a full cache hit in about 280 ms while printing "29 successful". So the merge-group `test` run asserts the suites actually executed (`scripts/assert-tests-executed.sh`, pinned by `scripts/test-assert-tests-executed.sh`). Never weaken that step without reading its header. `scripts/assert-shard-union.sh` is the other half: it restores the zero-collected-files net that `--passWithNoTests` removes from the sharded sweep.
 
@@ -187,7 +187,7 @@ Nothing that reaches `main` reaches it with less checking. The queue runs the fu
 
 **Other Actions checks.** `fragment-present` and `no-fragment-under-skip-label` (changelog), `scripts-test` (its `fixtures` job is required and runs on every PR and merge group; its `harness` job is advisory, PR and push only, and scoped by `scripts/scripts-test-scope.sh`), and CLI smoke tests (Node 22/24) plus integration tests, which run on push to `main` and on PRs that touch what they package. Locally: `pnpm smoke:docker` and `pnpm smoke:integration`. Advisory checks such as `site-build`, `harness-windows` and the Claude `review` do not block the queue, but any red check stops merge-tail arming a PR.
 
-**Capacity.** The org is on the GitHub **Team** plan: 60 concurrent jobs, not the Free plan's 20. One push to a PR starts 19 jobs (docs-only) to 25 (code); a queue entry costs about 19 to 20, plus three browser shards more since that suite went to six (a queue build's full check-run count, the number the CI Steward ledger uses, went from about 31 to 34). Twenty agents each pushing once is 400 to 500 jobs, 7 to 8 full refills of the pool, and the queue's own builds wait behind them. That arithmetic is why no remedy anywhere here is "push an empty commit".
+**Capacity.** The org is on the GitHub **Team** plan: 60 concurrent jobs, not the Free plan's 20. One push to a PR starts about 14 jobs (docs-only) to 20 (code), down from 19 to 25 before the PR leg went to two shards and dropped `community-pg`; a queue entry costs about 19 to 20, plus three browser shards more since that suite went to six (a queue build's full check-run count, the number the CI Steward ledger uses, went from about 31 to 34). Twenty agents each pushing once is 400 to 500 jobs, 7 to 8 full refills of the pool, and the queue's own builds wait behind them. That arithmetic is why no remedy anywhere here is "push an empty commit".
 
 ## The merge queue
 
