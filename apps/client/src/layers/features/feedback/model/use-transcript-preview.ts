@@ -101,3 +101,46 @@ export function useTranscriptPreview(
 
   return { text: data ?? '', isLoading, isError };
 }
+
+/** What {@link useRoomTranscriptPreview} returns. */
+export interface RoomTranscriptPreviewState extends TranscriptPreview {
+  /**
+   * The `seq` of the newest message shown, once the preview has loaded. A send
+   * hands it back so nothing that landed after the preview goes unseen.
+   */
+  throughSeq: number | undefined;
+}
+
+/**
+ * Load the room excerpt a report written in `roomId` would attach (DOR-2108).
+ *
+ * Unlike the chat preview above, this is not a client-side approximation: the
+ * server builds it with the very function a send runs, read as the reporter,
+ * so what the person sees here is what leaves their machine.
+ *
+ * @param roomId - The room the report is being written in, or `undefined`.
+ * @param enabled - Only reads while the preview is open.
+ * @returns The preview text plus loading/error flags.
+ */
+export function useRoomTranscriptPreview(
+  roomId: string | undefined,
+  enabled: boolean
+): RoomTranscriptPreviewState {
+  const transport = useTransport();
+
+  // `enabled: false` still reads the cache, which is how the dialog learns the
+  // `throughSeq` of the preview the person last saw without fetching itself.
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['feedback-room-transcript-preview', roomId],
+    queryFn: () => transport.previewRoomTranscript(roomId as string),
+    enabled: enabled && Boolean(roomId),
+    staleTime: 30 * 1000,
+  });
+
+  return {
+    text: data?.text ?? '',
+    throughSeq: data?.throughSeq ?? undefined,
+    isLoading,
+    isError,
+  };
+}

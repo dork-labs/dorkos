@@ -1,4 +1,4 @@
-import { Eye } from 'lucide-react';
+import { Check, Eye } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
@@ -20,6 +20,10 @@ interface AlsoSendChipProps {
  * toggle (`aria-pressed`), with an eye button beside it that opens the preview of
  * exactly what it would send. Small on purpose; the message is the form, and
  * these are the extras a person can check and switch off.
+ *
+ * On shows a check and off shows nothing, so the state reads without colour.
+ * On a phone the eye grows to a 44px target, and both focus rings sit inside
+ * the pill rather than spilling over its border.
  */
 export function AlsoSendChip({
   label,
@@ -41,15 +45,9 @@ export function AlsoSendChip({
             type="button"
             aria-pressed={pressed}
             onClick={() => onPressedChange(!pressed)}
-            className="hover:text-foreground focus-visible:ring-ring flex items-center gap-1.5 rounded-full py-1 pr-1.5 pl-2.5 focus-visible:ring-2 focus-visible:outline-none"
+            className="hover:text-foreground focus-visible:ring-ring flex items-center gap-1 rounded-full py-1 pr-1.5 pl-2.5 focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
           >
-            <span
-              aria-hidden
-              className={cn(
-                'size-1.5 rounded-full transition-colors duration-150',
-                pressed ? 'bg-primary' : 'bg-muted-foreground/40'
-              )}
-            />
+            {pressed && <Check className="size-3" aria-hidden />}
             {label}
           </button>
         </TooltipTrigger>
@@ -59,7 +57,7 @@ export function AlsoSendChip({
         type="button"
         onClick={onPreview}
         aria-label={`Preview ${label.toLowerCase()}`}
-        className="text-muted-foreground hover:text-foreground focus-visible:ring-ring flex items-center rounded-full py-1 pr-2.5 pl-1 focus-visible:ring-2 focus-visible:outline-none"
+        className="text-muted-foreground hover:text-foreground focus-visible:ring-ring flex items-center justify-center rounded-full py-1 pr-2.5 pl-1 focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset max-sm:min-h-11 max-sm:min-w-11 max-sm:px-0"
       >
         <Eye className="size-3.5" aria-hidden />
       </button>

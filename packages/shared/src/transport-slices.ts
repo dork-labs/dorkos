@@ -18,6 +18,7 @@ import type { CommitmentTransport } from './transport-commitments.js';
 import type { ActivityTransport } from './transport-activity.js';
 import type { AgentPauseTransport } from './transport-agent-pause.js';
 import type { HeartbeatTransport } from './transport-heartbeats.js';
+import type { FeedbackTransport } from './transport-feedback.js';
 import type { RemoteAccessTransport } from './transport-remote-access.js';
 import type { ComputerTransport } from './transport-computers.js';
 import type { LocalBrowserTransport } from './transport-local-browser.js';
@@ -45,6 +46,7 @@ export interface TransportSlices
     ActivityTransport,
     AgentPauseTransport,
     HeartbeatTransport,
+    FeedbackTransport,
     RemoteAccessTransport,
     OnboardingTransport,
     ComputerTransport,

@@ -21,9 +21,10 @@ import { appRoutes } from '@/layers/shared/lib';
  *     app the same reports also carry `diagnostics.shellLogExcerpt`, the SHELL's
  *     own log — the one thing the server cannot gather, because it lives in the
  *     Electron main process (DOR-2045).
- *   - `includeConversation` (only when a `sessionId` is resolvable from the
- *     route) → sets `sessionId` + `includeTranscript` so the server gathers and
- *     attaches a bounded, scrubbed transcript excerpt.
+ *   - `includeConversation` (only when a `sessionId` or a `roomId` is
+ *     resolvable from the route) → sets that id + `includeTranscript` so the
+ *     server gathers and attaches a bounded, scrubbed transcript excerpt: the
+ *     chat's, or that one room's latest messages (DOR-2108).
  *   - `screenshotDataUrl` → becomes the `screenshot` attachment, already
  *     downscaled and bounded by `compressImage` before it reaches this hook.
  *   - `anonymous` → tells the server to skip its identity lookup.
@@ -52,6 +53,7 @@ import {
 } from '@dorkos/shared/telemetry-events';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { useTransport, useResolvedTheme, type ResolvedTheme } from '@/layers/shared/model';
+import { useTeamRoom } from '@/layers/entities/room';
 import {
   buildClientReport,
   captureClientEnvironment,
@@ -102,8 +104,13 @@ export interface FeedbackDraft {
   contact?: string;
   /** Attach the client diagnostics bundle (clientReport + breadcrumbs). */
   includeDiagnostics?: boolean;
-  /** Attach the current session's transcript excerpt (server-gathered). */
+  /** Attach the current chat's or room's transcript excerpt (server-gathered). */
   includeConversation?: boolean;
+  /**
+   * The newest room message the preview showed, when the person opened it. The
+   * server leaves out anything after it, so nothing is sent unseen (DOR-2108).
+   */
+  roomThroughSeq?: number;
   /**
    * The compressed `data:` URL of the one screenshot the user attached, already
    * bounded by `compressImage`. Becomes the submission's `screenshot` field; the
@@ -135,6 +142,12 @@ export interface UseSendFeedback {
    * only when this is set (there is nothing to attach otherwise).
    */
   sessionId: string | undefined;
+  /**
+   * The room the report is being written in (DOR-2108): `/channels?id=…`, or
+   * #team on Home. `undefined` anywhere else. Never set together with
+   * `sessionId`, since no page is both.
+   */
+  roomId: string | undefined;
   /**
    * The page address this submission will record: the pathname plus the
    * allowlisted query params {@link buildFeedbackRoute} keeps. Exposed so the
@@ -239,6 +252,17 @@ export function useSendFeedback(): UseSendFeedback {
       return typeof search?.session === 'string' ? search.session : undefined;
     },
   });
+  const channelRoomId = useRouterState({
+    select: (s) => {
+      if (s.location.pathname !== '/channels') return undefined;
+      const search = s.location.search as { id?: string } | undefined;
+      return typeof search?.id === 'string' ? search.id : undefined;
+    },
+  });
+  // Home is #team, and has no room id in its address.
+  const team = useTeamRoom();
+  const homeRoomId = pathname === '/' && team.status === 'ready' ? team.room.id : undefined;
+  const roomId = sessionId ? undefined : (channelRoomId ?? homeRoomId);
   const { data: config } = useQuery<ServerConfig>({
     queryKey: configKeys.current(),
     queryFn: () => transport.getConfig(),
@@ -283,6 +307,7 @@ export function useSendFeedback(): UseSendFeedback {
         : undefined;
       const includeServerLogs = draft.includeDiagnostics && draft.kind === 'bug';
       const attachConversation = Boolean(draft.includeConversation && sessionId);
+      const attachRoom = Boolean(draft.includeConversation && roomId);
 
       setIsSubmitting(true);
       try {
@@ -305,6 +330,13 @@ export function useSendFeedback(): UseSendFeedback {
             : {}),
           ...(includeServerLogs ? { includeServerLogs: true } : {}),
           ...(attachConversation ? { sessionId, includeTranscript: true } : {}),
+          ...(attachRoom
+            ? {
+                roomId,
+                includeTranscript: true,
+                ...(draft.roomThroughSeq ? { roomThroughSeq: draft.roomThroughSeq } : {}),
+              }
+            : {}),
           ...(draft.screenshotDataUrl ? { screenshot: { dataUrl: draft.screenshotDataUrl } } : {}),
           ...(draft.anonymous ? { anonymous: true } : {}),
           ...(draft.element ? { element: draft.element } : {}),
@@ -330,8 +362,8 @@ export function useSendFeedback(): UseSendFeedback {
         setIsSubmitting(false);
       }
     },
-    [transport, pathname, route, sessionId, config, resolvedTheme, navigate]
+    [transport, pathname, route, sessionId, roomId, config, resolvedTheme, navigate]
   );
 
-  return { isSubmitting, sessionId, route, buildDiagnostics, send };
+  return { isSubmitting, sessionId, roomId, route, buildDiagnostics, send };
 }

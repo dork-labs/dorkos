@@ -131,12 +131,12 @@
     "packages/shared/src/account-usage.ts": 574,
     "packages/shared/src/community-admin-wire.ts": 618,
     "packages/shared/src/community-wire.ts": 1018,
-    "packages/shared/src/transport.ts": 1104,
+    "packages/shared/src/transport.ts": 1101,
     "packages/shared/src/ui-widget.ts": 694,
     "packages/test-utils/src/community-conformance-branched.ts": 603,
     "packages/test-utils/src/community-conformance-universal.ts": 672,
     "packages/test-utils/src/fake-community-adapter.ts": 789,
-    "packages/test-utils/src/mock-factories.ts": 1244,
+    "packages/test-utils/src/mock-factories.ts": 1242,
     "packages/test-utils/src/runtime-capability-matrix.ts": 776,
     "packages/test-utils/src/runtime-conformance.ts": 2432
   }

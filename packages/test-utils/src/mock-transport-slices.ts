@@ -48,7 +48,10 @@ type SliceMethods =
   | 'signOutEverywhereElse'
   | 'setAccountNoAutoMove'
   | 'getFrameBridgeStatus'
-  | 'getAgentLevel';
+  | 'getAgentLevel'
+  | 'sendFeedback'
+  | 'listMyFeedback'
+  | 'previewRoomTranscript';
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -64,6 +67,10 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     ...createMockHubTransport(),
     ...createMockSessionRelayTransport(),
     listActivityEvents: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    // Feedback goes through; nothing sent before; an empty room to preview.
+    sendFeedback: vi.fn().mockResolvedValue({ ok: true }),
+    listMyFeedback: vi.fn().mockResolvedValue([]),
+    previewRoomTranscript: vi.fn().mockResolvedValue({ text: '', throughSeq: null }),
     // Nobody is signed in anywhere, and every sign-out succeeds.
     listSignedInDevices: vi.fn().mockResolvedValue({ sessions: [], canSignOutOthers: false }),
     signOutDevice: vi.fn().mockResolvedValue(undefined),
