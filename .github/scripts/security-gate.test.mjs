@@ -149,6 +149,30 @@ test('merge_group with all exact heads approved passes', async () => {
   assert.deepEqual(f.writes, []);
 });
 
+// Under a HEADGREEN merge queue an earlier entry merges on the LAST entry's
+// build, so its own security-gate run may never be awaited. The last entry's
+// run has to catch it: groupMembers walks from that head back to the base.
+test('merge_group judged on its last entry still fails closed on an earlier unapproved entry', async () => {
+  const f = fixture({ statuses: { head2: [approved], head3: [approved] } });
+  f.heads[3] = 'head3';
+  const three = [
+    ...entries,
+    {
+      baseCommit: { oid: 'group2' },
+      headCommit: { oid: 'group3' },
+      pullRequest: { number: 3, headRefOid: 'head3' },
+    },
+  ];
+  f.api.queue = async () => structuredClone(three);
+  const lastEntry = { merge_group: { ...groupEvent.merge_group, head_sha: 'group3' } };
+  await assert.rejects(
+    checkMergeGroup(f.api, lastEntry, pattern),
+    /PR #1: no security-review success on head1/
+  );
+  f.statuses.head1 = [approved];
+  await checkMergeGroup(f.api, lastEntry, pattern);
+});
+
 test('a push while reading a status fails', async () => {
   const f = fixture({ statuses: { head1: [approved], head2: [approved] } });
   f.api.statuses = async () => {
