@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(server): declining a package's schedule keeps the package's files (DOR-2097)"
+  - 'refactor(server): the tasks_* MCP tools move to mcp-tools/tasks/, and tasks_delete gets its own file (DOR-2097)'
 ---
 
 ### Fixed
