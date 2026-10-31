@@ -582,6 +582,94 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
+  # HOW MANY SHARDS THE TEST JOB GETS (ledger 261031-150702). Six in the queue
+  # and on the canary, always. On a pull request, two, unless the change
+  # touches apps/server/** or packages/shared/**: those make the affected sweep
+  # nearly the whole monorepo, which on two shards ran into the 30-minute
+  # ceiling (release PR #3357, #3221), so they get six. This job runs before
+  # test-shard and hands it the list. Not a required context itself; it has no
+  # job-level `if:`, and if it fails, test-shard is skipped and the `test`
+  # fan-in fails, so a broken picker can never turn into a green.
+  #
+  # Every failure on the PR path FAILS OPEN to six, never to two: a HEAD that
+  # is not a test-merge commit, a base git cannot resolve, or a diff that
+  # errors all get six. The diff is the test-merge commit against its first
+  # parent, for the reason community-packaged's scope step gives, with
+  # `--no-renames` so a file moved out of apps/server still counts.
+  test-shard-count:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.count.outputs.matrix }}
+    steps:
+      # A canary run is against `main` or it is nothing.
+      #
+      # `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would run
+      # this workflow against that branch and post the check run — under the
+      # name of a REQUIRED context — on that pull request's head. This refuses
+      # that, and refuses it by FAILING: a skipped job posts a skipped check
+      # run and GitHub counts skipped as passing, so a skip is how you hand a
+      # pull request a green required check that tested a different tree.
+      #
+      # INLINE, AND FIRST. Inline because this runs BEFORE `actions/checkout`,
+      # where the workspace is still empty: a `bash scripts/…` here would exit
+      # 127 on every event, reddening this required check on every PR and every
+      # queue build (the same 127 that killed a required check on 2026-07-29,
+      # which is why "Prove the browser suite actually executed" carries a
+      # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
+      # than 150 job minutes. Byte-identical in every canary job and
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
+      # extracts this very block and runs it.
+      #
+      # No `if:`: the body is a no-op on the gating events, which keeps it out
+      # of the census allowlist while gating exactly the same thing.
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
+      # Depth 2 so the test-merge commit's first parent is here to diff against.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Pick the shard count
+        id: count
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          six='[1, 2, 3, 4, 5, 6]'
+          matrix=$six
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run: six shards, always"
+          elif git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
+            base=$(git rev-parse --verify --quiet 'HEAD^1') &&
+            changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" HEAD); then
+            if printf '%s\n' "$changed" | grep -qE '^(apps/server|packages/shared)/'; then
+              echo "this change touches apps/server or packages/shared: six shards"
+            else
+              matrix='[1, 2]'
+              echo "this change touches neither apps/server nor packages/shared: two shards"
+            fi
+          else
+            echo "cannot diff this pull request against its base (no test-merge commit, or git failed): six shards"
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   # The suite, split six ways at the vitest file level (see the header), on
   # BOTH events: the full monorepo sweep on `merge_group`, the affected-only
   # sweep on `pull_request`. What differs between the two is one `run:` step
@@ -589,24 +677,28 @@ jobs:
   # them — checkout, toolchain, install, heap, ceiling — is shared, because
   # nothing about it depends on which sweep runs.
   test-shard:
+    needs: [test-shard-count]
     strategy:
       # All six shards report even when one is red — the matrix equivalent of
       # `--continue`, and the same reason: one red package must not hide the
       # other seventeen packages' results.
       fail-fast: false
-      # SIX IN THE QUEUE, TWO ON A PULL REQUEST (ledger 261030-233825). A PR
+      # SIX IN THE QUEUE, TWO ON MOST PULL REQUESTS (ledger 261030-233825). A PR
       # push started six shards for an affected-only sweep, and PR pushes were
       # starving the queue of runners: 46 PR runs were active at 23:30 on
       # 2026-10-30 while a queue build that started at 22:45 still had none, and
       # each queue build needs about 30 of the plan's 60 jobs. Two, not one: the
       # unsharded PR leg ran 37 minutes on a PR touching @dorkos/shared and was
       # killed at its ceiling (see the fan-in's timeout note), so one runner
-      # would bring that back; two keep the widest PR sweep near 20 minutes. The
-      # queue's six are untouched, and the queue leg's own lines below still name
-      # their total as a literal 6, which scripts/__tests__/unit-shard-workdivision.test.ts
-      # holds equal to this list.
+      # would bring that back. Two did not keep the widest PR sweep near 20
+      # minutes after all: a change to apps/server or packages/shared still hit
+      # the 30-minute ceiling on two (ledger 261031-150702), so those PRs get six
+      # again. test-shard-count above picks the list; the queue and the canary
+      # always get six. The queue leg's own lines below still name their total as
+      # a literal 6, which scripts/__tests__/unit-shard-workdivision.test.ts holds
+      # equal to the queue's list.
       matrix:
-        shard: ${{ fromJSON(github.event_name == 'pull_request' && '[1, 2]' || '[1, 2, 3, 4, 5, 6]') }}
+        shard: ${{ fromJSON(needs.test-shard-count.outputs.matrix) }}
     name: test-shard (${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
     # Six file partitions reduce suite work; fixed checkout/install/build
