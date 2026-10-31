@@ -23,3 +23,7 @@ Why: setup-node keys the pnpm store on OS + arch + lockfile hash only, so every 
 Evidence: every green run up to 23:35Z (41136786605, 41145136246, 41145353740) logged `Image: ubuntu-26.04`; every red one from 23:39Z (41145731794, 41145829415, 41145987309) logged `Image: ubuntu-24.04`. The red ones include a PR branch with none of that evening's merges. Lockfile, node-pty 1.1.0 and Node 24.22.1 were the same in both.
 
 Revert, back to `cache: pnpm`, once every Linux job runs on one image.
+
+## Correction 2026-10-31
+
+The key this entry added, `${{ env.ImageOS }}`, was always empty: the `env` context never sees the runner's own variables, so the key read `pnpm-store-Linux--X64-…` on every image (run 41158979135) and the store was still shared. #3341 went green because the one shared store happened to be built on 24.04. Ledger 261031-071000 reads `ImageOS` in a step instead.
