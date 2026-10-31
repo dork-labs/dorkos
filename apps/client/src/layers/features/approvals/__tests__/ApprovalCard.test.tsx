@@ -667,7 +667,7 @@ describe('on Wi-Fi (DOR-2969)', () => {
     await screen.findByText('Always allow is only available at this computer.');
     expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
     const once = screen.getByRole('button', { name: 'Allow once' });
-    expect(once).toHaveAttribute('data-variant', 'outline');
+    expect(once).toHaveAttribute('data-variant', 'secondary');
     expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
     await userEvent.click(once);
     await waitFor(() => expect(transport.grantApproval).toHaveBeenCalled());

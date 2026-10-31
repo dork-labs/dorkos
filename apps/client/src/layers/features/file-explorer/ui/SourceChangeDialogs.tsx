@@ -138,10 +138,7 @@ export function SourceChangeDialogs({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={changes.cancelDelete}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => void changes.confirmDelete()}
-              className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
-            >
+            <AlertDialogAction onClick={() => void changes.confirmDelete()} variant="destructive">
               {shownDelete?.entry.type === 'dir' ? 'Delete folder' : 'Delete file'}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -215,7 +212,7 @@ export function SourceChangeDialogs({
                 changes.dismissConflict();
                 void conflict.retry();
               }}
-              className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
+              variant="destructive"
             >
               {conflict === null ? '' : ANYWAY_LABEL[conflict.kind]}
             </AlertDialogAction>

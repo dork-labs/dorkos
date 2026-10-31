@@ -585,12 +585,9 @@ export function TaskRow({
               >
                 Cancel
               </button>
-              <button
-                onClick={confirmDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60 inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
-              >
+              <Button variant="destructive" size="sm" onClick={confirmDelete}>
                 Delete task
-              </button>
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

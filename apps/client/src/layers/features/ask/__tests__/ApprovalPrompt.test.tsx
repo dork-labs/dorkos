@@ -704,7 +704,7 @@ describe('ApprovalPrompt on Wi-Fi (DOR-2969)', () => {
     render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
     expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
     const once = screen.getByRole('button', { name: /^Allow once/ });
-    expect(once.getAttribute('data-variant')).toBe('outline');
+    expect(once.getAttribute('data-variant')).toBe('secondary');
     expect(screen.getByRole('button', { name: /^Deny/ })).toBeDefined();
     expect(screen.getByText('Always allow is only available at this computer.')).toBeDefined();
   });

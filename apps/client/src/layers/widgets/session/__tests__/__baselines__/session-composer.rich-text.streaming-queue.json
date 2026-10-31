@@ -814,10 +814,9 @@
                           "kind": "element",
                           "tag": "button",
                           "classes": [
-                            "bg-destructive",
-                            "dark:bg-destructive/60",
+                            "bg-dui-destructive-fill",
                             "focus-ring",
-                            "hover:bg-destructive/90",
+                            "hover:bg-dui-destructive-fill-hover",
                             "max-md:p-2",
                             "p-1.5",
                             "rounded-lg",
