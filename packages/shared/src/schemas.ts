@@ -44,6 +44,7 @@ import { ProjectRefSchema } from './project-schemas.js';
 import {
   ChatMessageStampSchema,
   QueuedChatEntrySchema,
+  PromptSourceSchema,
   RoomMessageStampSchema,
 } from './chat-messages.js';
 
@@ -3781,6 +3782,11 @@ export const HistoryMessageSchema = z
      * unless the room says the person wrote it.
      */
     roomMessage: RoomMessageStampSchema.optional(),
+    /**
+     * Where this user message came from, when no person in this chat typed it
+     * (DOR-3019). The app draws the source from here, never "You".
+     */
+    promptSource: PromptSourceSchema.optional(),
   })
   .openapi('HistoryMessage');
 
@@ -5789,6 +5795,16 @@ export const TaskSchema = z
     packageOwned: z.enum(['record', 'legacy']).nullable().default(null).openapi({
       description:
         "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own).",
+    }),
+    /**
+     * Whether this is one project's copy of a global schedule marked
+     * `scope: project` (DOR-3376). Its switch and timing belong to this project
+     * alone; what it does is the shared file's, which DorkOS never rewrites for
+     * one project. Absent reads as false.
+     */
+    projectOnly: z.boolean().optional().openapi({
+      description:
+        "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false.",
     }),
     /**
      * What changed since this schedule was last approved, for a schedule

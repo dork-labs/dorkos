@@ -17,12 +17,10 @@
  *
  * @module services/session/fleet/carry-over-summary
  */
-import { execFile } from 'node:child_process';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
-import { internalGitArgs } from '../../../lib/git-safety.js';
+import { runSafeGit } from '@dorkos/shared/safe-git';
 import { mayRunGitHere } from '../../core/agent-identity/index.js';
 import { projectSlug } from '../../runtimes/claude-code/sessions/project-slug.js';
 
@@ -235,10 +233,8 @@ export interface SummaryDeps {
   readHistory: () => Promise<HistoryMessage[]>;
 }
 
-const execFileAsync = promisify(execFile);
-
 /**
- * Run git through the repo's hardened arguments, bounded in time, never in an
+ * Run git through the audited runner (`@dorkos/shared/safe-git`), bounded in time, never in an
  * agent folder (DOR-3343), and answer `undefined` on any failure.
  *
  * @param cwd - The folder.
@@ -247,12 +243,7 @@ const execFileAsync = promisify(execFile);
 export async function runGitForSummary(cwd: string, args: string[]): Promise<string | undefined> {
   if (!mayRunGitHere(cwd)) return undefined;
   try {
-    const { stdout } = await execFileAsync('git', [...internalGitArgs(), ...args], {
-      cwd,
-      timeout: 5_000,
-      maxBuffer: 1024 * 1024,
-    });
-    return stdout;
+    return await runSafeGit(args, cwd, { timeoutMs: 5_000, maxBuffer: 1024 * 1024 });
   } catch {
     return undefined;
   }

@@ -43,6 +43,7 @@
  */
 import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
+import { isPassiveApproval } from '../../core/approvals/passive-approval.js';
 import { cancelEscalationByKey } from '../escalation-service.js';
 import { notificationEntry, type NotificationPayload } from '../notification-registry.js';
 import { broadcastStandingResolved, raiseStanding } from '../standing-events.js';
@@ -84,6 +85,9 @@ export function capabilityApprovalPayload(
     capabilityTitle: approvalHeading(approval),
     ...(agentId ? { agentId } : {}),
     requestedBy: approval.requestedBy ?? UNNAMED_REQUESTER,
+    // Read off the card's own expiry, so the boot pass that rebuilds every
+    // pending approval's payload finds it too (DOR-3427).
+    ...(isPassiveApproval(approval) ? { passive: true } : {}),
   };
 }
 
@@ -124,9 +128,14 @@ export function raiseCapabilityApproval(approval: PendingApproval, requestedByPa
   // `standing_resolved` at all (DOR-1570 review). Without this, a desktop banner
   // for such an approval would linger forever, deep-linking to a bell with
   // nothing behind it.
-  raiseStanding('approval.pending', capabilityApprovalPayload(approval, requestedByPath), {
-    expiresAt: approval.expiresAt,
-  });
+  //
+  // A passive approval never runs out, so it carries no deadline at all: a
+  // banner timer aimed at year 9999 is one a platform clamps to "now".
+  raiseStanding(
+    'approval.pending',
+    capabilityApprovalPayload(approval, requestedByPath),
+    isPassiveApproval(approval) ? {} : { expiresAt: approval.expiresAt }
+  );
 }
 
 /**

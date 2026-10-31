@@ -73,6 +73,18 @@ export const GlobalMcpServerFieldSchema = z.object({
 
 export type GlobalMcpServerField = z.infer<typeof GlobalMcpServerFieldSchema>;
 
+/**
+ * Something on a server a person should look at: an env name that changes
+ * what the program loads, or why a saved server is not started.
+ */
+export const GlobalMcpServerWarningSchema = z.object({
+  /** The env name, or the server's name when the whole server is stopped. */
+  name: z.string(),
+  note: z.string(),
+});
+
+export type GlobalMcpServerWarning = z.infer<typeof GlobalMcpServerWarningSchema>;
+
 /** One global server as Connections → MCP servers lists it. */
 export const GlobalMcpServerViewSchema = z.object({
   name: z.string(),
@@ -90,6 +102,8 @@ export const GlobalMcpServerViewSchema = z.object({
    * SSE-only server, so their agents go without it.
    */
   skippedOn: z.array(z.enum(['codex', 'opencode'])),
+  /** What to look at twice, and why a saved server is not started. */
+  warnings: z.array(GlobalMcpServerWarningSchema),
 });
 
 export type GlobalMcpServerView = z.infer<typeof GlobalMcpServerViewSchema>;

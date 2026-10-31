@@ -160,11 +160,20 @@ export function checkLiveWorkflows(gh: Gh, files: HandFiles): Finding[] {
     }
   } catch (e) {
     if (e instanceof BudgetExhausted) throw e;
-    out.push(
-      finding(
-        `Required workflow live comparison failed: ${e instanceof Error ? e.message : String(e)}. Org rule and bypass-list read access is required; no extra credential is requested or installed by CI.`
-      )
-    );
+    const why = e instanceof Error ? e.message : String(e);
+    const detail = `${why} ${String((e as { stderr?: unknown }).stderr ?? '')}`;
+    out.push({
+      ...finding(
+        `Required workflow live comparison failed: ${why}. Org rule and bypass-list read access is required; no extra credential is requested or installed by CI.`
+      ),
+      // A token that may not read org rules is told apart from a read that went wrong, so the
+      // daily collector can report it without calling itself unhealthy (CI's own token never can).
+      ...(UNREADABLE.test(detail) ? { code: UNREADABLE_CODE } : {}),
+    });
   }
   return out;
 }
+
+/** The code of the finding for a token that is not allowed to read organization rules. */
+export const UNREADABLE_CODE = 'required-workflow/unreadable';
+const UNREADABLE = /HTTP 403|Resource not accessible by integration/i;

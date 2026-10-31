@@ -21,7 +21,16 @@ export interface DocHandshakePorts {
   channel(): { port1: MessagePort; port2: MessagePort };
   scheduler: DocQueueScheduler;
   offline(): void;
+  /**
+   * The boot nonce the host put on this served document's frame `src`, or `null`
+   * for a preview. Every served document shares the opaque origin `null` and the
+   * frame's one window, so the nonce is the only thing that tells the document
+   * DorkOS navigated to from one the frame reached by a link or redirect.
+   */
+  boot: string | null;
 }
+/** What the host tells a page whose port it closes. */
+export type DocHostClosure = 'offline' | 'revoked';
 /** Host handshake with one dedicated transfer and idempotent valid acknowledgements. */
 export class DocFrameHandshake {
   private readonly challenge: CanvasDocHandshake;
@@ -44,6 +53,14 @@ export class DocFrameHandshake {
       typeof ports.offline !== 'function'
     )
       throw new Error('Current loaded Doc binding and explicit handshake ports required.');
+    // Fail closed: a served document without a boot nonce could never be told
+    // apart from an outside page in the same frame.
+    if (
+      bound.binding.observation.eligibility === 'served-document'
+        ? typeof ports.boot !== 'string' || ports.boot.length === 0
+        : ports.boot !== null
+    )
+      throw new Error('A served document needs its boot nonce; a preview has none.');
     this.challenge = CanvasDocHandshakeSchema.parse({
       protocol: 'dorkos-doc',
       v: 1,
@@ -95,7 +112,7 @@ export class DocFrameHandshake {
     )
       return false;
     const ack = parseCanvasDocWire(CanvasDocHandshakeSchema, event.data);
-    if (!ack || ack.kind !== 'ack' || !this.matches(ack)) return false;
+    if (!ack || ack.kind !== 'ack' || !this.matches(ack) || !this.booted(ack)) return false;
     if (this.connected) return true;
     this.connected = true;
     let channel: { port1: MessagePort; port2: MessagePort } | undefined;
@@ -127,6 +144,16 @@ export class DocFrameHandshake {
       if (!current()) return refuse();
       this.port.start();
       if (!current()) return refuse();
+      // A served document's origin is opaque (`null`), and `postMessage` has
+      // no way to name an opaque origin: `'*'` is the only target that reaches
+      // it, and nothing can pin delivery to "the document that acked". So if
+      // the frame navigates between the ack and this post, the port (and the
+      // correlation it rides with) lands in whatever document is there now,
+      // which could use it until that document's own load event retires this
+      // binding and closes the port. The window is the one message hop between
+      // the booted page's ack and this synchronous reply, and only a page that
+      // navigates itself at that instant opens it. A preview names its exact
+      // minted origin instead, so its port can only ever reach that origin.
       this.bound.binding.observation.frame!.postMessage(
         { ...this.challenge, kind: 'connect' },
         this.bound.binding.observation.exactOrigin === 'null'
@@ -144,15 +171,20 @@ export class DocFrameHandshake {
   publish(result: DocHostPayload): void {
     this.send({ ...result, ...this.challenge, kind: result.kind } as CanvasDocResult);
   }
-  /** Retire queue/ports/timers independently; sent requests remain explicitly unconfirmed. */
-  close(): void {
+  /**
+   * Retire queue/ports/timers independently; sent requests remain explicitly unconfirmed.
+   *
+   * @param status - What the page is told: `offline` (it may reconnect) or
+   *   `revoked` (its document no longer accepts events from it).
+   */
+  close(status: DocHostClosure = 'offline'): void {
     if (this.closed) return;
     this.closed = true;
     try {
       this.port?.postMessage({
         ...this.challenge,
         kind: 'status',
-        status: 'offline',
+        status,
         unconfirmed: true,
       });
     } catch {
@@ -194,6 +226,10 @@ export class DocFrameHandshake {
       value.loadToken === this.challenge.loadToken &&
       value.generation === this.challenge.generation
     );
+  }
+  /** A served document must present the nonce its frame was navigated with. */
+  private booted(ack: CanvasDocHandshake & { kind: 'ack' }): boolean {
+    return this.ports.boot === null || ack.boot === this.ports.boot;
   }
   private send(value: unknown): void {
     if (!this.closed && this.connected && this.bound.current()) {

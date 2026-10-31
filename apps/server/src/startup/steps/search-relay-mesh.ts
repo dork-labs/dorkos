@@ -12,6 +12,8 @@ import { logger, logError } from '../../lib/logger.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { resolveTasksFiring } from '../../services/tasks/resolve-firing.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
+import { scheduledPromptsFor } from '../../services/tasks/history/scheduled-prompts.js';
+import { setScheduledPromptLookup } from '../../services/session/chat-messages/prompt-source.js';
 import { setTasksInitError } from '../../services/tasks/task-state.js';
 import { relayStartsEnabled, setRelayInitError } from '../../services/relay/relay-state.js';
 import path from 'path';
@@ -152,6 +154,7 @@ export async function startSearchRelayAndMesh(
   if (tasksEnabled) {
     try {
       refs.taskStore = new TaskStore(db);
+      setScheduledPromptLookup((sessionIds) => scheduledPromptsFor(db, sessionIds));
       logger.info('[Tasks] TaskStore initialized');
     } catch (err) {
       const errInfo = logError(err);

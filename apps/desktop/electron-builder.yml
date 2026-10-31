@@ -65,12 +65,27 @@ mac:
   # value is then deleted (app-builder-lib's macPackager.applyCommonInfo) —
   # so setting these to `null` cleanly strips them rather than shipping
   # unused privacy strings.
+  #
+  # The five file-location strings below are the opposite case: agents do
+  # read and write files there, through the bundled server. Without a purpose
+  # string, macOS never shows a prompt and refuses the read with EPERM — an
+  # agent asked to sort a USB drive simply fails. macOS shows each string in
+  # the access prompt, so they are user-facing copy (writing-app-copy). macOS
+  # grants access to the whole app, so each string says the answer covers
+  # every agent. These five are the only usage strings the app ships; adding
+  # another is a Security review. src/main/permissions/__tests__/
+  # info-plist-usage-strings.test.ts pins both halves.
   extendInfo:
     NSCameraUsageDescription: null
     NSMicrophoneUsageDescription: null
     NSBluetoothAlwaysUsageDescription: null
     NSBluetoothPeripheralUsageDescription: null
     NSAudioCaptureUsageDescription: null
+    NSRemovableVolumesUsageDescription: Lets the agents you run in DorkOS read and change files on external drives. This applies to every agent.
+    NSNetworkVolumesUsageDescription: Lets the agents you run in DorkOS read and change files on network drives. This applies to every agent.
+    NSDesktopFolderUsageDescription: Lets the agents you run in DorkOS read and change files in your Desktop folder. This applies to every agent.
+    NSDocumentsFolderUsageDescription: Lets the agents you run in DorkOS read and change files in your Documents folder. This applies to every agent.
+    NSDownloadsFolderUsageDescription: Lets the agents you run in DorkOS read and change files in your Downloads folder. This applies to every agent.
 
 dmg:
   sign: true
@@ -159,6 +174,29 @@ files:
   - 'package.json'
   - 'dist/**'
   - 'core-extensions/**'
+
+# Electron fuses (DOR-3053 PR 1): switches baked into the Electron Framework
+# binary, which the app and every Helper share, flipped right before signing.
+# Each one shuts a way for another process on this Mac to run its own code
+# under DorkOS's signature. scripts/smoke-fuses.ts reads them back from the
+# packaged app, and its unit test holds this block and PACKAGED_FUSES together.
+#
+# runAsNode stays ON, as a named residual: isolated extensions run on this
+# binary with ELECTRON_RUN_AS_NODE=1 under Node's permission model, and
+# Electron's utilityProcess ignores `--permission` (measured on 42.11.16), so
+# moving them would drop their sandbox. Playwright's browser download forks a
+# run-as-node child too. Turning it off is DOR-3358, before the Keychain lands.
+#
+# resetAdHocDarwinSignature: flipping a fuse breaks the ad-hoc signature an
+# unsigned arm64 build carries, and an arm64 Mac refuses to run that. A signed
+# build is re-signed with the real identity afterwards either way.
+electronFuses:
+  runAsNode: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  resetAdHocDarwinSignature: true
 
 asar: true
 asarUnpack:

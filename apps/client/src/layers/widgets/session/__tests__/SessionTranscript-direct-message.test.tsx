@@ -120,6 +120,30 @@ describe('SessionTranscript as a direct message', () => {
     expect(authorNames()).toEqual(['You', 'Claude Code']);
   });
 
+  it('names the person in an ordinary chat too, with "(you)" after it (FB-38/55)', () => {
+    renderWithTransport(
+      <SessionTranscript sessionId="scout-direct" messages={MESSAGES} humanName="Dorian" />,
+      readState.transport
+    );
+
+    expect(authorNames()).toEqual(['Dorian', 'Claude Code']);
+    expect(screen.getAllByText('(you)')).toHaveLength(1);
+  });
+
+  it('keeps the person’s name while it asks whether the chat is a DM', () => {
+    renderWithTransport(
+      <SessionTranscript
+        sessionId="scout-direct"
+        messages={MESSAGES}
+        directMessage={{ agent: null, humanName: null, settled: false }}
+        humanName="Dorian"
+      />,
+      readState.transport
+    );
+
+    expect(authorNames()[0]).toBe('Dorian');
+  });
+
   it('never invents a time for history: a row without one shows none', () => {
     const untimed = MESSAGES.map((message) => ({ ...message, timestamp: '' }));
     renderWithTransport(

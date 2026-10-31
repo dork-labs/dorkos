@@ -1,13 +1,14 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
 import type { Dirent } from 'fs';
 import type { FileEntry } from '@dorkos/shared/schemas';
 import { FILE_LIMITS, FILE_LISTING } from '../../config/constants.js';
 import { validateBoundary } from '../../lib/boundary.js';
-import { internalGitArgs } from '../../lib/git-safety.js';
+import { runSafeGit } from '@dorkos/shared/safe-git';
 import { mayRunGitHere } from './agent-identity/index.js';
+
+/** How long one git listing may take; a huge repository falls back to a plain listing. */
+const GIT_LIST_TIMEOUT_MS = 30_000;
 
 /** Convert an OS-separated relative path to a POSIX (`/`) path for the wire. */
 function toPosix(rel: string): string {
@@ -22,7 +23,6 @@ function toPosix(rel: string): string {
  *
  * @module services/file-lister
  */
-const execFileAsync = promisify(execFile);
 
 class FileListService {
   private cache = new Map<string, { files: string[]; timestamp: number }>();
@@ -56,13 +56,10 @@ class FileListService {
   private async listViaGit(cwd: string): Promise<string[]> {
     // Never git in an agent folder (DOR-3343): the caller lists by hand instead.
     if (!mayRunGitHere(cwd)) throw new Error('git is not run in an agent folder');
-    const { stdout } = await execFileAsync(
-      'git',
-      [...internalGitArgs(), 'ls-files', '--cached', '--others', '--exclude-standard'],
-      {
-        cwd,
-        maxBuffer: FILE_LIMITS.GIT_MAX_BUFFER,
-      }
+    const stdout = await runSafeGit(
+      ['ls-files', '--cached', '--others', '--exclude-standard'],
+      cwd,
+      { timeoutMs: GIT_LIST_TIMEOUT_MS, maxBuffer: FILE_LIMITS.GIT_MAX_BUFFER }
     );
     return stdout.split('\n').filter(Boolean);
   }
@@ -196,14 +193,10 @@ class FileListService {
       // `check-ignore` echoes the ignored inputs (one per line). `-z` is not used
       // because it requires `--stdin`; directory-entry names never contain
       // newlines in practice, so line-splitting is safe here.
-      const { stdout } = await execFileAsync(
-        'git',
-        [...internalGitArgs(), 'check-ignore', '--', ...relPaths],
-        {
-          cwd,
-          maxBuffer: FILE_LIMITS.GIT_MAX_BUFFER,
-        }
-      );
+      const stdout = await runSafeGit(['check-ignore', '--', ...relPaths], cwd, {
+        timeoutMs: GIT_LIST_TIMEOUT_MS,
+        maxBuffer: FILE_LIMITS.GIT_MAX_BUFFER,
+      });
       return new Set(stdout.split('\n').filter(Boolean));
     } catch (err) {
       const e = err as { code?: number; stdout?: string };

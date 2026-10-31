@@ -66,6 +66,8 @@ import type { WireCoreStoresResult } from './core-stores.js';
 import type { WireRoomsResult } from './rooms.js';
 import type { ServerRefs } from '../server-refs.js';
 import { isAgentComputer } from '../../services/core/server-role/role-checks.js';
+import { resolveDorkHome } from '../../lib/dork-home.js';
+import { resumeQuietRowsAtStartup } from '../../services/harness/auto-project.js';
 
 /** What {@link wireConnectorEventsAndApprovals} reads from the startup steps before it. */
 export interface WireConnectorEventsAndApprovalsInput {
@@ -257,6 +259,10 @@ export async function wireConnectorEventsAndApprovals(
   // The card that lets an agent's own folder allow list apply (DOR-3039). The
   // runtime starts before this step, so the launch is handed the service here.
   setFolderAllowApprovalGateway(approvalService);
+  // A quiet Needs-you row a restart left open is waited on again, so a yes given
+  // after it records and projects (DOR-3427). Here, not with the marketplace,
+  // because this step runs on every server, relay on or off.
+  resumeQuietRowsAtStartup(approvalService, resolveDorkHome());
   // Hand back the delivery claims that only a hold in a DEAD process could still
   // hold. A hold lives in process memory and holds a turn open, so none survives
   // a restart — and without this sweep, a restart while somebody was deciding

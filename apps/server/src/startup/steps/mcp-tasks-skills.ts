@@ -50,6 +50,7 @@ import type { WireTeamRoomAndRelayAdaptersResult } from './team-room-relay-adapt
 import type { StartSearchRelayAndMeshResult } from './search-relay-mesh.js';
 import type { ServerRefs } from '../server-refs.js';
 import { GlobalMcpStore } from '../../services/mesh/global-mcp/global-mcp-store.js';
+import { setGlobalMcpServerLookup } from '../../services/runtimes/claude-code/tool-gate/global-server-always-allow.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
 
 /** What {@link wireMcpTasksAndSkills} reads from the startup steps before it. */
@@ -100,12 +101,20 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   // The MCP servers a person added for every agent (DOR-3213). Loaded before
   // any runtime asks for its servers; an unreadable file leaves the list empty
   // and says so, rather than keeping the server from starting.
-  const globalMcpServers = new GlobalMcpStore(dorkHome, credentialStore);
+  // Nothing they run may live where agents write: the data directory or any
+  // agent's folder, read fresh at each check (Security's T7).
+  const globalMcpServers = new GlobalMcpStore(dorkHome, credentialStore, {
+    agentRoots: () => refs.meshCore?.agentRegistry.list().map((agent) => agent.projectPath) ?? [],
+    logger,
+  });
   await globalMcpServers.load().catch((err: unknown) => {
     logger.warn('[mcp-servers] could not read the MCP servers for every agent', {
       error: err instanceof Error ? err.message : String(err),
     });
   });
+  // An "Always allow" on one of their tools stays with the agent that was
+  // asked, never every agent (Security's T9).
+  setGlobalMcpServerLookup((name) => globalMcpServers.has(name));
   // A plugin reload that threw a conversation's prompt cache away leaves a line
   // in the feed — with what it cost and whether it waited first. Free reloads
   // stay silent (spec `plugin-reload-cache-cost`). Outside the mesh block below
@@ -245,6 +254,8 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       // MCP tools used to write rows the scheduler never heard about
       // (DOR-1493). Read at call time, by which point it exists.
       resolveTaskRegistrar: () => refs.taskRegistrar ?? null,
+      // Read at call time for the same reason: the scheduler is built later.
+      nextRunOf: (taskId) => refs.schedulerService?.getNextRun(taskId) ?? null,
       ...(refs.relayCore && { relayCore: refs.relayCore }),
       ...(refs.adapterManager && { adapterManager: refs.adapterManager }),
       ...(refs.adapterManager && { bindingStore: refs.adapterManager.getBindingStore() }),

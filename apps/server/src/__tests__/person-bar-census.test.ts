@@ -71,6 +71,8 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   'http/hono-api.ts': ['askForPersonBeforeTaskWrite'],
   'routes/marketplace/context.ts': ['trustedCaller', 'personSessionRequired'],
   'routes/mesh.ts': ['clearsTheAgentBar'],
+  // A server for every agent runs in every session (DOR-3213, Security's M1).
+  'routes/mcp-servers.ts': ['refuseFrontDoorChange', 'clearsTheAgentBar'],
   'startup/steps/core-routes.ts': ['loginEnabled: personSessionRequired'],
 };
 

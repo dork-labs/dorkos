@@ -131,6 +131,7 @@ export class WorkspaceService implements WorkspaceManager {
             source: req.source,
             branch,
             personGit: gate.person === true,
+            ...(gate.fullChat && { fullChat: gate.fullChat }),
           })
         : undefined;
     let approvedHooks: WorkspaceInspection['hooks'];
@@ -189,6 +190,7 @@ export class WorkspaceService implements WorkspaceManager {
           source: req.source,
           branch,
           personGit: gate.person === true,
+          ...(gate.fullChat && { fullChat: gate.fullChat }),
         });
       }
       const ports = derivePorts(portBase);
@@ -370,6 +372,7 @@ export class WorkspaceService implements WorkspaceManager {
     source: string;
     branch: string;
     personGit: boolean;
+    fullChat?: WorkspaceGate['fullChat'];
   }): Promise<string> {
     const staging = nodePath.join(this.deps.store.root, '.staging', ulid());
     await fs.mkdir(nodePath.dirname(staging), { recursive: true });

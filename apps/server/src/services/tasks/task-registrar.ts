@@ -131,12 +131,14 @@ export class TaskRegistrar {
    *
    * The file layer knows paths, not ids — a removed file is reported to the
    * watcher as a path, and the row behind it is whichever one claims that exact
-   * path. A path with no row is nothing to do.
+   * path, plus every project's copy of it when the file is a global
+   * `scope: project` schedule (DOR-3376). A path with no row is nothing to do.
    *
    * @param filePath - Absolute path to the task's SKILL.md.
    */
   syncTaskByFilePath(filePath: string): void {
     const task = this.deps.store.fileSync.getByFilePath(filePath);
     if (task) this.syncTask(task.id);
+    for (const copy of this.deps.store.fileSync.projectCopiesOf(filePath)) this.syncTask(copy.id);
   }
 }

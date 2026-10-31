@@ -149,6 +149,8 @@ vi.mock('../../services/workspace/index.js', () => ({
   // The gate is the workspace gate's own concern (workspace-gate.test.ts); this
   // suite is about where a turn runs once a workspace exists.
   workspaceGateFor: vi.fn(() => async () => {}),
+  // Full autonomy's pass past the git audit is the provider's concern (provider-git-settings.test.ts).
+  fullChatOf: vi.fn(() => undefined),
 }));
 
 import { createServer } from 'node:http';

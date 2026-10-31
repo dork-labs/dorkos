@@ -62,12 +62,19 @@ import { join } from 'node:path';
 import { configManager } from '../core/config-manager.js';
 import { dorkosHarness } from './dorkos-harness.js';
 import { logger } from '../../lib/logger.js';
-import { askAboutWithheldHooks } from './ask-withheld-hooks.js';
+import {
+  askAboutWithheldHooks,
+  raisePassiveHookRows,
+  resumePassiveHookRows,
+} from './ask-withheld-hooks.js';
 import { type HookApprovalGateway } from './hook-approval.js';
+import { storedPresetIsFull } from './hook-consent.js';
+import { provenDorkosInstallsIfFull } from './dorkos-installed.js';
 import {
   projectWithConsent as defaultProjectWithConsent,
   withProjectLock,
   type ProjectWithConsentResult,
+  type WithheldHooks,
 } from './project-with-consent.js';
 
 /** The install action that triggered auto-projection. */
@@ -128,11 +135,18 @@ export const _internal = {
  * @param dorkHome - Resolved DorkOS data directory.
  * @returns Everything the seam reported, for the caller's ask/record loop.
  */
-function projectAndLog(
+async function projectAndLog(
   ctx: PluginChangeContext & { projectPath: string },
   dorkHome: string
-): ProjectWithConsentResult {
+): Promise<ProjectWithConsentResult> {
   const { projectPath, packageName, action } = ctx;
+  // On Full, only packages DorkOS installed run without a person (DOR-3422).
+  // Proven fresh on every pass: the second one can come hours after the first.
+  const dorkosInstalled = await provenDorkosInstallsIfFull(
+    projectPath,
+    dorkHome,
+    storedPresetIsFull()
+  );
   // `sweepOrphans` prunes projections for plugins no longer in the plan — the
   // uninstall path. Install adds; uninstall prunes. Why it is safe beside the
   // consent filter is stated in `project-with-consent.ts`.
@@ -141,6 +155,7 @@ function projectAndLog(
     dorkHome,
     sweepOrphans: true,
     ...(ours === undefined ? {} : { dorkosHarness: ours }),
+    ...(dorkosInstalled === undefined ? {} : { dorkosInstalled }),
   });
   const { plan, applied, conflicts, swept, removals, leftAlone, withheld } = result;
 
@@ -223,11 +238,13 @@ function projectAndLog(
  *
  * @param ctx - the plugin change that occurred, with a project root.
  * @param opts - resolved dork home and the approval service.
+ * @returns What the first pass withheld, for the passive rows the caller raises
+ *   once the lock is released (DOR-3427).
  */
 async function projectAndAsk(
   ctx: PluginChangeContext & { projectPath: string },
   opts: RunAutoProjectionOptions
-): Promise<void> {
+): Promise<readonly WithheldHooks[]> {
   const { projectPath, packageName, action } = ctx;
   // GAP-5: a project with no harness manifest gets a scaffolded default so the
   // engine has something to project instead of no-opping. Write-if-absent, so
@@ -263,23 +280,23 @@ async function projectAndAsk(
         packageName,
         action,
       });
-      return;
+      return [];
     }
   }
 
   // Hooks are the one part of a package that runs code, so they project only
   // for packages a person has allowed (DOR-522). Everything else projects
   // whatever the answer is.
-  const { withheld } = projectAndLog(ctx, opts.dorkHome);
+  const { withheld } = await projectAndLog(ctx, opts.dorkHome);
 
-  if (withheld.length === 0) return;
+  if (withheld.length === 0) return [];
   if (!opts.approvals) {
     logger.warn('[HarnessSync] No approval service; package hooks were not projected', {
       packageName,
       projectPath,
       packages: withheld.map(({ request }) => request.packageName),
     });
-    return;
+    return [];
   }
 
   // The asking itself is `ask-withheld-hooks.ts`, shared with the sync route.
@@ -289,8 +306,11 @@ async function projectAndAsk(
   await askAboutWithheldHooks(withheld, {
     projectPath,
     approvals: opts.approvals,
-    reproject: () => projectAndLog(ctx, opts.dorkHome),
+    reproject: async () => {
+      await projectAndLog(ctx, opts.dorkHome);
+    },
   });
+  return withheld;
 }
 
 /**
@@ -352,7 +372,19 @@ export async function runAutoProjection(
     // nobody answers cannot hold a repository for ever. Different repositories
     // never wait on each other, and what happens between PROCESSES is stated in
     // `project-with-consent.ts`.
-    await withProjectLock(projectPath, () => projectAndAsk({ ...ctx, projectPath }, opts));
+    const withheld = await withProjectLock(projectPath, () =>
+      projectAndAsk({ ...ctx, projectPath }, opts)
+    );
+    // After the lock, never inside it: a passive row's wait has no end, and its
+    // yes takes the lock itself to project again (DOR-3427).
+    if (opts.approvals) {
+      raisePassiveHookRows(withheld, {
+        projectPath,
+        approvals: opts.approvals,
+        dorkHome: opts.dorkHome,
+        reproject: () => projectAgainAfterYes({ ...ctx, projectPath }, opts.dorkHome),
+      });
+    }
   } catch (err) {
     logger.warn('[HarnessSync] Auto-projection failed (non-fatal)', {
       packageName,
@@ -360,5 +392,57 @@ export async function runAutoProjection(
       projectPath,
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+}
+
+/**
+ * Project a repository again after a person's yes on a passive row, taking the
+ * project lock for that pass alone (DOR-3427).
+ *
+ * Answers what it still held back, so a stale yes leaves the row for today's
+ * files (DOR-3433). Exported for the startup resume (`resumePassiveHookRows`),
+ * which has no install to hang the pass on.
+ *
+ * @param ctx - The package whose row was answered, and its project.
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @returns The packages this pass still held back.
+ */
+export async function projectAgainAfterYes(
+  ctx: PluginChangeContext & { projectPath: string },
+  dorkHome: string
+): Promise<readonly WithheldHooks[]> {
+  const again = await withProjectLock(ctx.projectPath, () => projectAndLog(ctx, dorkHome));
+  return again.withheld;
+}
+
+/**
+ * Pick up, at startup, the quiet rows a restart left open (DOR-3427), so a yes
+ * given after it records and projects. Called from the approvals startup step,
+ * which runs on every server whatever else is switched on. Never throws: a
+ * start that cannot pick the rows up still starts.
+ *
+ * @param approvals - The approval primitive the rows were raised through.
+ * @param dorkHome - Resolved DorkOS data directory.
+ * @returns The package names picked up.
+ */
+export function resumeQuietRowsAtStartup(
+  approvals: HookApprovalGateway,
+  dorkHome: string
+): string[] {
+  try {
+    return resumePassiveHookRows({
+      dorkHome,
+      approvals,
+      reproject: (request) =>
+        projectAgainAfterYes(
+          { projectPath: request.projectPath, packageName: request.packageName, action: 'install' },
+          dorkHome
+        ),
+    });
+  } catch (err) {
+    logger.warn('[HarnessSync] Could not pick up the saved quiet rows', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
   }
 }
