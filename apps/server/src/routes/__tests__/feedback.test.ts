@@ -376,7 +376,7 @@ describe('feedback route', () => {
   describe('room transcript excerpt (DOR-2108)', () => {
     it('gathers the room’s excerpt as the reporter when the room chip asked for one', async () => {
       mockSend.mockResolvedValue({ ok: true });
-      mockGetRoomTranscript.mockResolvedValue('Sam: the board is empty');
+      mockGetRoomTranscript.mockResolvedValue({ text: 'Sam: the board is empty', throughSeq: 3 });
 
       const res = await request(fixtureTarget.mount(buildApp())).post('/api/feedback').send({
         kind: 'bug',
@@ -386,11 +386,23 @@ describe('feedback route', () => {
       });
 
       expect(res.status).toBe(200);
-      expect(mockGetRoomTranscript).toHaveBeenCalledWith('room-1', 'author-me');
+      expect(mockGetRoomTranscript).toHaveBeenCalledWith('room-1', 'author-me', undefined);
       expect(mockGetTranscript).not.toHaveBeenCalled();
       expect(mockSend.mock.calls[0][0]).toMatchObject({
         submission: { roomId: 'room-1', transcriptExcerpt: 'Sam: the board is empty' },
       });
+    });
+
+    it('holds the room to the newest message the preview showed', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      await request(fixtureTarget.mount(buildApp())).post('/api/feedback').send({
+        kind: 'bug',
+        message: 'x',
+        roomId: 'room-1',
+        roomThroughSeq: 41,
+        includeTranscript: true,
+      });
+      expect(mockGetRoomTranscript).toHaveBeenCalledWith('room-1', 'author-me', 41);
     });
 
     it('reads the reporter as a reader, so a report needs no write session', async () => {
@@ -422,20 +434,20 @@ describe('feedback route', () => {
     });
 
     it('previews exactly the excerpt a send would attach', async () => {
-      mockGetRoomTranscript.mockResolvedValue('Sam: hi');
+      mockGetRoomTranscript.mockResolvedValue({ text: 'Sam: hi', throughSeq: 7 });
       const res = await request(fixtureTarget.mount(buildApp())).get(
         '/api/feedback/room-transcript?roomId=room-1'
       );
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ text: 'Sam: hi' });
-      expect(mockGetRoomTranscript).toHaveBeenCalledWith('room-1', 'author-me');
+      expect(res.body).toEqual({ text: 'Sam: hi', throughSeq: 7 });
+      expect(mockGetRoomTranscript).toHaveBeenCalledWith('room-1', 'author-me', undefined);
     });
 
     it('previews nothing for a room the reporter cannot see', async () => {
       const res = await request(fixtureTarget.mount(buildApp())).get(
         '/api/feedback/room-transcript?roomId=room-2'
       );
-      expect(res.body).toEqual({ text: '' });
+      expect(res.body).toEqual({ text: '', throughSeq: null });
     });
 
     it('refuses a preview with no room id', async () => {

@@ -102,6 +102,15 @@ export function useTranscriptPreview(
   return { text: data ?? '', isLoading, isError };
 }
 
+/** What {@link useRoomTranscriptPreview} returns. */
+export interface RoomTranscriptPreviewState extends TranscriptPreview {
+  /**
+   * The `seq` of the newest message shown, once the preview has loaded. A send
+   * hands it back so nothing that landed after the preview goes unseen.
+   */
+  throughSeq: number | undefined;
+}
+
 /**
  * Load the room excerpt a report written in `roomId` would attach (DOR-2108).
  *
@@ -116,9 +125,11 @@ export function useTranscriptPreview(
 export function useRoomTranscriptPreview(
   roomId: string | undefined,
   enabled: boolean
-): TranscriptPreview {
+): RoomTranscriptPreviewState {
   const transport = useTransport();
 
+  // `enabled: false` still reads the cache, which is how the dialog learns the
+  // `throughSeq` of the preview the person last saw without fetching itself.
   const { data, isLoading, isError } = useQuery({
     queryKey: ['feedback-room-transcript-preview', roomId],
     queryFn: () => transport.previewRoomTranscript(roomId as string),
@@ -126,5 +137,10 @@ export function useRoomTranscriptPreview(
     staleTime: 30 * 1000,
   });
 
-  return { text: data ?? '', isLoading, isError };
+  return {
+    text: data?.text ?? '',
+    throughSeq: data?.throughSeq ?? undefined,
+    isLoading,
+    isError,
+  };
 }

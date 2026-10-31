@@ -78,13 +78,13 @@ describe('createFeedbackMethods().previewRoomTranscript (DOR-2108)', () => {
   it('GETs the room preview for that room and returns its text', async () => {
     const fetchMock = vi.fn(
       async (_url: unknown, _init?: RequestInit) =>
-        new Response(JSON.stringify({ text: 'Sam: hi' }), { status: 200 })
+        new Response(JSON.stringify({ text: 'Sam: hi', throughSeq: 4 }), { status: 200 })
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    const text = await createFeedbackMethods('/api').previewRoomTranscript('room 1');
+    const preview = await createFeedbackMethods('/api').previewRoomTranscript('room 1');
 
-    expect(text).toBe('Sam: hi');
+    expect(preview).toEqual({ text: 'Sam: hi', throughSeq: 4 });
     expect(fetchMock.mock.calls[0][0]).toBe('/api/feedback/room-transcript?roomId=room+1');
   });
 });

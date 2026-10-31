@@ -70,7 +70,30 @@ export function buildRoomTranscriptExcerpt(
 }
 
 /**
+ * How many messages past the cap a read takes when it is held to a preview's
+ * `throughSeq`, so that messages arriving after the preview do not crowd out
+ * the ones the person saw. More than this many arriving in between leaves a
+ * shorter excerpt. That is still only messages they saw.
+ */
+const THROUGH_SEQ_SLACK = 20;
+
+/** A gathered room excerpt, and the last message it holds. */
+export interface RoomTranscriptExcerpt {
+  /** The scrubbed, bounded excerpt. */
+  text: string;
+  /** The `seq` of the newest message in it, which a send hands back. */
+  throughSeq: number;
+}
+
+/**
  * Gather the excerpt for one room, as the reporter sees it.
+ *
+ * **Held to what the person saw.** The preview answers with the `seq` of the
+ * newest message it showed, and a send hands it back as `throughSeq`. Anything
+ * after that is left out, so a message that lands between preview and Send is
+ * never sent unseen. Without one (the person never opened the preview), the
+ * excerpt is the room as it stands at send time, as the chip's own summary
+ * says.
  *
  * Never throws: a room the reporter cannot see, a room that is gone, or a
  * service that is not up all resolve to `undefined`, so a report still sends
@@ -78,21 +101,27 @@ export function buildRoomTranscriptExcerpt(
  *
  * @param roomId - The room the report was written in.
  * @param viewerAuthorId - The reporter's own room author id.
- * @returns The scrubbed, bounded excerpt, or `undefined`.
+ * @param throughSeq - The newest message the preview showed, when there was one.
+ * @returns The excerpt and its newest `seq`, or `undefined`.
  */
 export async function getRoomTranscriptExcerpt(
   roomId: string,
-  viewerAuthorId: string
-): Promise<string | undefined> {
+  viewerAuthorId: string,
+  throughSeq?: number
+): Promise<RoomTranscriptExcerpt | undefined> {
   try {
     const rooms = getRoomService();
-    const entries = rooms.listEntries(roomId, viewerAuthorId, {
-      limit: ROOM_TRANSCRIPT_MAX_MESSAGES,
+    const page = rooms.listEntries(roomId, viewerAuthorId, {
+      limit: ROOM_TRANSCRIPT_MAX_MESSAGES + (throughSeq === undefined ? 0 : THROUGH_SEQ_SLACK),
     });
-    return buildRoomTranscriptExcerpt(
+    const seen = throughSeq === undefined ? page : page.filter((entry) => entry.seq <= throughSeq);
+    const entries = seen.slice(-ROOM_TRANSCRIPT_MAX_MESSAGES);
+    const text = buildRoomTranscriptExcerpt(
       entries,
       (authorId) => rooms.authorRegistry.getById(authorId)?.displayName
     );
+    const newest = entries.at(-1);
+    return text && newest ? { text, throughSeq: newest.seq } : undefined;
   } catch {
     return undefined;
   }

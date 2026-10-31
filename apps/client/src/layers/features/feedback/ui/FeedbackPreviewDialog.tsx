@@ -78,7 +78,7 @@ function PrivacyNote() {
     >
       <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
         <Lock className="size-3 shrink-0" aria-hidden />
-        Private. Only the DorkOS core team sees these. Never public.
+        Private. Only the DorkOS team sees these. Never public.
       </p>
     </div>
   );

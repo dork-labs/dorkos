@@ -5,7 +5,7 @@ import type { FeedbackDiagnostics } from '@dorkos/shared/telemetry-events';
 import { FeedbackPreviewDialog } from '../ui/FeedbackPreviewDialog';
 
 /**
- * DOR-1962: the "Private. Only the DorkOS core team sees these." footer must
+ * DOR-1962: the "Private. Only the DorkOS team sees these." footer must
  * stay a fully opaque, non-shrinking bar below the scroll area — never a
  * transparent line the scrolled content can show through.
  */
@@ -37,7 +37,7 @@ describe('FeedbackPreviewDialog', () => {
   it('renders the privacy footer outside the scrollable diagnostics region', () => {
     renderDialog();
 
-    const footerText = screen.getByText(/Only the DorkOS core team sees these/);
+    const footerText = screen.getByText(/Only the DorkOS team sees these/);
     const footerBar = footerText.closest('[data-slot="feedback-preview-footer"]');
     expect(footerBar).not.toBeNull();
 
@@ -53,7 +53,7 @@ describe('FeedbackPreviewDialog', () => {
     renderDialog();
 
     const footerBar = screen
-      .getByText(/Only the DorkOS core team sees these/)
+      .getByText(/Only the DorkOS team sees these/)
       .closest('[data-slot="feedback-preview-footer"]');
     const scrollArea = document.querySelector('[data-slot="scroll-area"]');
     // The panel `<TabsContent>` wraps the scroll area — its parent is the same

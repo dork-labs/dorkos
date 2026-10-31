@@ -136,10 +136,45 @@ describe('getRoomTranscriptExcerpt', () => {
   it('reads that one room as the reporter, and names authors from the registry', async () => {
     listEntries.mockReturnValue([entry(1, 'a', 'hi')]);
     getById.mockImplementation((id: string) => (id === 'a' ? { displayName: 'Sam' } : null));
-    await expect(getRoomTranscriptExcerpt('room-1', 'viewer-1')).resolves.toBe('Sam: hi');
+    await expect(getRoomTranscriptExcerpt('room-1', 'viewer-1')).resolves.toEqual({
+      text: 'Sam: hi',
+      throughSeq: 1,
+    });
     expect(listEntries).toHaveBeenCalledWith('room-1', 'viewer-1', {
       limit: ROOM_TRANSCRIPT_MAX_MESSAGES,
     });
+  });
+
+  it('leaves out a message that landed after the preview the person saw', async () => {
+    listEntries.mockReturnValue([
+      entry(4, 'a', 'seen one'),
+      entry(5, 'a', 'seen two'),
+      entry(6, 'a', 'arrived after the preview'),
+    ]);
+    getById.mockReturnValue({ displayName: 'Sam' });
+
+    const out = await getRoomTranscriptExcerpt('room-1', 'viewer-1', 5);
+
+    expect(out).toEqual({ text: 'Sam: seen one\n\nSam: seen two', throughSeq: 5 });
+    // Read past the cap, so late arrivals do not push seen messages out.
+    expect(listEntries.mock.calls[0][2].limit).toBeGreaterThan(ROOM_TRANSCRIPT_MAX_MESSAGES);
+  });
+
+  it('keeps at most the cap of seen messages when held to a preview', async () => {
+    const page = Array.from({ length: ROOM_TRANSCRIPT_MAX_MESSAGES + 10 }, (_, i) =>
+      entry(i + 1, 'a', `m${i + 1}`)
+    );
+    listEntries.mockReturnValue(page);
+    getById.mockReturnValue({ displayName: 'Sam' });
+
+    const out = await getRoomTranscriptExcerpt(
+      'room-1',
+      'viewer-1',
+      ROOM_TRANSCRIPT_MAX_MESSAGES + 5
+    );
+
+    expect(out?.throughSeq).toBe(ROOM_TRANSCRIPT_MAX_MESSAGES + 5);
+    expect(out?.text.split('\n\n')).toHaveLength(ROOM_TRANSCRIPT_MAX_MESSAGES);
   });
 
   it('attaches nothing when the reporter cannot see the room', async () => {

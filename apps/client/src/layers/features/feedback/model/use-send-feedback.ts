@@ -107,6 +107,11 @@ export interface FeedbackDraft {
   /** Attach the current chat's or room's transcript excerpt (server-gathered). */
   includeConversation?: boolean;
   /**
+   * The newest room message the preview showed, when the person opened it. The
+   * server leaves out anything after it, so nothing is sent unseen (DOR-2108).
+   */
+  roomThroughSeq?: number;
+  /**
    * The compressed `data:` URL of the one screenshot the user attached, already
    * bounded by `compressImage`. Becomes the submission's `screenshot` field; the
    * server derives the `hasScreenshot` hint from its presence, so nothing here
@@ -325,7 +330,13 @@ export function useSendFeedback(): UseSendFeedback {
             : {}),
           ...(includeServerLogs ? { includeServerLogs: true } : {}),
           ...(attachConversation ? { sessionId, includeTranscript: true } : {}),
-          ...(attachRoom ? { roomId, includeTranscript: true } : {}),
+          ...(attachRoom
+            ? {
+                roomId,
+                includeTranscript: true,
+                ...(draft.roomThroughSeq ? { roomThroughSeq: draft.roomThroughSeq } : {}),
+              }
+            : {}),
           ...(draft.screenshotDataUrl ? { screenshot: { dataUrl: draft.screenshotDataUrl } } : {}),
           ...(draft.anonymous ? { anonymous: true } : {}),
           ...(draft.element ? { element: draft.element } : {}),

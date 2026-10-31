@@ -17,6 +17,7 @@ import {
 import { useIsMobile, useReportIssue } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { useSendFeedback } from '../model/use-send-feedback';
+import { useRoomTranscriptPreview } from '../model/use-transcript-preview';
 import { useScreenshotAttachment } from '../model/use-screenshot-attachment';
 import {
   describeElement,
@@ -126,6 +127,9 @@ export function FeedbackDialog({
   // even for a bug, unlike a chat: it carries other people's words, so it goes
   // only when the person turns it on (DOR-2108).
   const transcriptKey = sessionId ? `session:${sessionId}` : roomId ? `room:${roomId}` : undefined;
+  // The newest message the room preview showed, read from its cache without
+  // fetching: a send goes no further than what the person saw.
+  const { throughSeq: roomThroughSeq } = useRoomTranscriptPreview(roomId, false);
   const signedIn = Boolean(currentUser);
 
   const messageId = useId();
@@ -329,6 +333,7 @@ export function FeedbackDialog({
       ...(signedIn ? {} : { contact }),
       includeDiagnostics,
       includeConversation,
+      ...(roomId && roomThroughSeq ? { roomThroughSeq } : {}),
       anonymous,
       ...(draftCrashStack ? { crashStack: draftCrashStack } : {}),
       ...(screenshot.dataUrl ? { screenshotDataUrl: screenshot.dataUrl } : {}),

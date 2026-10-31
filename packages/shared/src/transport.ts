@@ -244,7 +244,11 @@ import type {
   CloudUsageResponse,
   StartLinkResult,
 } from './cloud-schemas.js';
-import type { FeedbackListItem, FeedbackSubmission } from './telemetry-events.js';
+import type {
+  FeedbackListItem,
+  FeedbackSubmission,
+  RoomTranscriptPreview,
+} from './telemetry-events.js';
 import type { ConnectorProviderStatus } from '@dork-labs/connector-providers/connector-provider';
 import type {
   ConnectorAgentRequestAuthenticationInput,
@@ -3248,11 +3252,12 @@ export interface Transport extends TransportSlices {
 
   /**
    * The room excerpt a feedback report written in `roomId` would attach
-   * (DOR-2108), for the dialog's preview. Built by the same server function a
-   * send runs, so it is exactly what would leave the machine. Resolves `''` for
-   * an empty room or one the reporter cannot see; rejects on a network failure.
+   * (DOR-2108), for the dialog's preview, with the `seq` of its newest message.
+   * Built by the same server function a send runs, so it is exactly what would
+   * leave the machine. Resolves `{ text: '', throughSeq: null }` for an empty
+   * room or one the reporter cannot see; rejects on a network failure.
    */
-  previewRoomTranscript(roomId: string): Promise<string>;
+  previewRoomTranscript(roomId: string): Promise<RoomTranscriptPreview>;
 
   // --- Connectors (connector-completion spec §Detailed Design 5) ---
 

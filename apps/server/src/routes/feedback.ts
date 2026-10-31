@@ -39,7 +39,10 @@ import {
 } from '../services/core/feedback-reporter.js';
 import { getRecentLogExcerpt } from '../lib/log-excerpt.js';
 import { getSessionTranscriptExcerpt } from '../lib/transcript-excerpt.js';
-import { getRoomTranscriptExcerpt } from '../services/rooms/messages/room-transcript-excerpt.js';
+import {
+  getRoomTranscriptExcerpt,
+  type RoomTranscriptExcerpt,
+} from '../services/rooms/messages/room-transcript-excerpt.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { logger, logError } from '../lib/logger.js';
 import { SERVER_VERSION } from '../lib/version.js';
@@ -120,9 +123,13 @@ function reporterAuthorId(c: Context<ApiEnv>): string | undefined {
  * @param c - The request context.
  * @param roomId - The room the report was written in.
  */
-async function roomExcerptFor(c: Context<ApiEnv>, roomId: string): Promise<string | undefined> {
+async function roomExcerptFor(
+  c: Context<ApiEnv>,
+  roomId: string,
+  throughSeq?: number
+): Promise<RoomTranscriptExcerpt | undefined> {
   const viewer = reporterAuthorId(c);
-  return viewer ? getRoomTranscriptExcerpt(roomId, viewer) : undefined;
+  return viewer ? getRoomTranscriptExcerpt(roomId, viewer, throughSeq) : undefined;
 }
 
 /**
@@ -147,7 +154,9 @@ async function withTranscriptExcerpt(
 
   let transcriptExcerpt: string | undefined;
   if (submission.roomId) {
-    transcriptExcerpt = await roomExcerptFor(c, submission.roomId);
+    // Held to the newest message the preview showed, when it was opened.
+    transcriptExcerpt = (await roomExcerptFor(c, submission.roomId, submission.roomThroughSeq))
+      ?.text;
   } else if (submission.sessionId) {
     transcriptExcerpt = await getSessionTranscriptExcerpt(submission.sessionId);
   }
@@ -251,6 +260,8 @@ router.get('/mine', async (c) => {
  * GET /api/feedback/room-transcript?roomId= — the room excerpt a report would
  * attach, for the dialog's preview (DOR-2108). It runs the very function a send
  * runs, so the preview IS what leaves the machine, not an approximation of it.
+ * `throughSeq` is the newest message shown, which a send hands back so nothing
+ * that lands after the preview is sent unseen (`null` with nothing to show).
  * A room the reporter cannot see answers an empty `text`, the same as a room
  * with nothing in it: the preview has nothing to show either way, and this
  * route says nothing about which rooms exist.
@@ -260,7 +271,8 @@ router.get('/room-transcript', async (c) => {
   if (!roomId || roomId.length > MAX_FEEDBACK_ROOM_ID_LEN) {
     return c.json({ error: 'roomId is required', code: 'INVALID_ROOM_ID' }, 400);
   }
-  return c.json({ text: (await roomExcerptFor(c, roomId)) ?? '' });
+  const excerpt = await roomExcerptFor(c, roomId);
+  return c.json({ text: excerpt?.text ?? '', throughSeq: excerpt?.throughSeq ?? null });
 });
 
 /**

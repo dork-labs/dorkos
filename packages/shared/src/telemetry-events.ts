@@ -659,7 +659,9 @@ export type FeedbackElement = z.infer<typeof FeedbackElementSchema>;
  * `sessionId` (gathered server-side, mirroring `serverLogExcerpt` — the client
  * never truncates or scrubs the transcript itself), or from `roomId` when the
  * report was written in a room (DOR-2108: that room's latest messages, read as
- * the reporter, so a room they are not in yields nothing); `anonymous` is the dialog's
+ * the reporter, so a room they are not in yields nothing; `roomThroughSeq` is the
+ * last message the preview showed, so a message that lands after it is never
+ * sent unseen); `anonymous` is the dialog's
  * "Send anonymously" flag — when `true`, the route skips the server-side
  * identity lookup even for a verified session, so no `reporterEmail`/
  * `reporterName` is attached (the pseudonymous `instanceId` still rides along).
@@ -672,6 +674,7 @@ export const FeedbackSubmissionSchema = z
     route: z.string().min(1).max(MAX_FEEDBACK_ROUTE_LEN).optional(),
     sessionId: z.string().min(1).max(MAX_FEEDBACK_SESSION_ID_LEN).optional(),
     roomId: z.string().min(1).max(MAX_FEEDBACK_ROOM_ID_LEN).optional(),
+    roomThroughSeq: z.number().int().min(1).optional(),
     diagnostics: FeedbackDiagnosticsSchema.optional(),
     transcriptExcerpt: z.string().max(MAX_TRANSCRIPT_LEN).optional(),
     screenshot: FeedbackScreenshotSchema.optional(),
@@ -681,6 +684,17 @@ export const FeedbackSubmissionSchema = z
     anonymous: z.boolean().optional(),
   })
   .strict();
+
+/**
+ * What the feedback dialog's room preview shows (DOR-2108): the exact excerpt a
+ * send would attach, and the `seq` of its newest message. A send hands that
+ * `seq` back as `roomThroughSeq`, so nothing that lands after the preview is
+ * sent unseen. `throughSeq` is `null` when there is nothing to show.
+ */
+export interface RoomTranscriptPreview {
+  text: string;
+  throughSeq: number | null;
+}
 
 /** The submission payload a client sends to `POST /api/feedback`. */
 export type FeedbackSubmission = z.infer<typeof FeedbackSubmissionSchema>;
