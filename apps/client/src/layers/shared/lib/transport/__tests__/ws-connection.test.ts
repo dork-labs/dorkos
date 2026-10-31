@@ -246,7 +246,7 @@ describe('WSConnection', () => {
     conn.destroy();
   });
 
-  it('gives up after the failure threshold and reports disconnected', () => {
+  it('reports disconnected after the failure threshold', () => {
     const onStateChange = vi.fn();
     const conn = new WSConnection(TEST_URL, {
       eventHandlers: {},
@@ -260,6 +260,217 @@ describe('WSConnection', () => {
     }
 
     expect(onStateChange).toHaveBeenCalledWith('disconnected', expect.any(Number));
+    conn.destroy();
+  });
+
+  // DOR-3482: a chat whose server restarted said "Live updates lost" until
+  // somebody sent a message, because the socket stopped trying for good here.
+  it('keeps retrying underneath disconnected, and recovers when the server is back', () => {
+    const onStateChange = vi.fn();
+    const conn = new WSConnection(TEST_URL, {
+      eventHandlers: {},
+      onStateChange,
+      disconnectedThreshold: 3,
+    });
+    conn.connect();
+    for (let i = 0; i < 3; i++) {
+      latest().drop();
+      vi.advanceTimersByTime(60_000);
+    }
+    expect(conn.getState()).toBe('disconnected');
+    onStateChange.mockClear();
+
+    // Still trying: a new socket opens at the backoff cap, without the label
+    // flickering through `connecting` on each attempt.
+    const before = FakeSocket.instances.length;
+    latest().drop();
+    vi.advanceTimersByTime(60_000);
+    expect(FakeSocket.instances.length).toBeGreaterThan(before);
+    expect(onStateChange).not.toHaveBeenCalledWith('connecting', expect.any(Number));
+    expect(conn.getState()).toBe('disconnected');
+
+    latest().open();
+    expect(conn.getState()).toBe('connected');
+    conn.destroy();
+  });
+
+  it('tries at once when retryNow is called, rather than waiting out the backoff', () => {
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {}, backoffBaseMs: 60_000 });
+    conn.connect();
+    latest().drop();
+    const before = FakeSocket.instances.length;
+
+    conn.retryNow();
+
+    expect(FakeSocket.instances.length).toBe(before + 1);
+    // The cancelled backoff does not open a second socket later.
+    vi.advanceTimersByTime(120_000);
+    expect(FakeSocket.instances.length).toBe(before + 1);
+    conn.destroy();
+  });
+
+  it('ignores retryNow on an open socket', () => {
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {} });
+    conn.connect();
+    latest().open();
+    const before = FakeSocket.instances.length;
+
+    conn.retryNow();
+
+    expect(FakeSocket.instances.length).toBe(before);
+    conn.destroy();
+  });
+
+  it('tries at once when the browser comes back online', () => {
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {}, backoffBaseMs: 60_000 });
+    conn.connect();
+    latest().drop();
+    const before = FakeSocket.instances.length;
+
+    window.dispatchEvent(new Event('online'));
+
+    expect(FakeSocket.instances.length).toBe(before + 1);
+    conn.destroy();
+    // Destroyed streams stop listening.
+    window.dispatchEvent(new Event('online'));
+    expect(FakeSocket.instances.length).toBe(before + 1);
+  });
+
+  it('wakes the other streams to the same server when one gets back through', () => {
+    // The list stream and the chat stream reach one server: one reconnecting
+    // means it is back, so the chat stops waiting out a 30s backoff.
+    const list = new WSConnection('/api/events', { eventHandlers: {}, backoffBaseMs: 60_000 });
+    const chat = new WSConnection(TEST_URL, { eventHandlers: {}, backoffBaseMs: 60_000 });
+    const elsewhere = new WSConnection('https://other.test/api/events', {
+      eventHandlers: {},
+      backoffBaseMs: 60_000,
+    });
+    list.connect();
+    const listSocket = latest();
+    chat.connect();
+    const chatSocket = latest();
+    elsewhere.connect();
+    const elsewhereSocket = latest();
+    listSocket.drop();
+    chatSocket.drop();
+    elsewhereSocket.drop();
+
+    // The list stream's backoff fires first and gets through. Opening is not
+    // enough; the first frame is what proves the server is really back.
+    list.retryNow();
+    const before = FakeSocket.instances.length;
+    latest().open();
+    expect(FakeSocket.instances.length).toBe(before);
+    latest().deliver({ event: STREAM_HEARTBEAT_EVENT });
+
+    const opened = FakeSocket.instances.slice(before).map((socket) => new URL(socket.url).host);
+    expect(opened).toEqual(['localhost:3000']);
+    expect(chat.getState()).not.toBe('connected');
+    latest().open();
+    expect(chat.getState()).toBe('connected');
+
+    list.destroy();
+    chat.destroy();
+    elsewhere.destroy();
+  });
+
+  it('does not wake siblings for a socket the server opens and closes again', () => {
+    // Two streams the server accepts and then closes must not wake each other
+    // in a tight loop.
+    const a = new WSConnection('/api/events', { eventHandlers: {}, backoffBaseMs: 60_000 });
+    const b = new WSConnection(TEST_URL, { eventHandlers: {}, backoffBaseMs: 60_000 });
+    a.connect();
+    const aSocket = latest();
+    b.connect();
+    latest().drop();
+    aSocket.drop();
+    a.retryNow();
+    const before = FakeSocket.instances.length;
+
+    latest().open();
+    latest().drop();
+
+    expect(FakeSocket.instances.length).toBe(before);
+    a.destroy();
+    b.destroy();
+  });
+
+  it('keeps a socket parked by a hidden tab shut, even when the browser comes online', () => {
+    const list = new WSConnection('/api/events', { eventHandlers: {} });
+    list.connect();
+    latest().open();
+    list.enableVisibilityOptimization(1_000);
+    try {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(1_000);
+      const parked = FakeSocket.instances.length;
+
+      window.dispatchEvent(new Event('online'));
+      list.retryNow();
+
+      expect(FakeSocket.instances.length).toBe(parked);
+    } finally {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      list.destroy();
+    }
+  });
+
+  it('wakes the waiting chat when a socket parked by a hidden tab comes back', () => {
+    const list = new WSConnection('/api/events', { eventHandlers: {} });
+    list.connect();
+    latest().open();
+    list.enableVisibilityOptimization(1_000);
+    const chat = new WSConnection(TEST_URL, { eventHandlers: {}, backoffBaseMs: 60_000 });
+    try {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(1_000);
+      chat.connect();
+      latest().drop();
+
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      document.dispatchEvent(new Event('visibilitychange'));
+      latest().open();
+      const before = FakeSocket.instances.length;
+      latest().deliver({ event: STREAM_HEARTBEAT_EVENT });
+
+      expect(FakeSocket.instances.length).toBe(before + 1);
+      expect(latest().url).toContain('/api/sessions/abc/events');
+    } finally {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+      list.destroy();
+      chat.destroy();
+    }
+  });
+
+  it('does not wake anything on a first connect that never failed', () => {
+    const other = new WSConnection(TEST_URL, { eventHandlers: {}, backoffBaseMs: 60_000 });
+    other.connect();
+    latest().drop();
+    const before = FakeSocket.instances.length;
+
+    const fresh = new WSConnection('/api/events', { eventHandlers: {} });
+    fresh.connect();
+    latest().open();
+
+    expect(FakeSocket.instances.length).toBe(before + 1);
+    other.destroy();
+    fresh.destroy();
+  });
+
+  it('stays down after a deliberate disconnect, whatever wakes it', () => {
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {} });
+    conn.connect();
+    latest().open();
+    conn.disconnect();
+    const before = FakeSocket.instances.length;
+
+    conn.retryNow();
+    window.dispatchEvent(new Event('online'));
+    vi.advanceTimersByTime(120_000);
+
+    expect(FakeSocket.instances.length).toBe(before);
     conn.destroy();
   });
 
@@ -332,6 +543,20 @@ describe('WSConnection', () => {
     );
     expect(errors, 'and it is visible in the console').toHaveBeenCalled();
     errors.mockRestore();
+    conn.destroy();
+  });
+
+  it('stays down after a refusal, even when the browser comes back online', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const conn = new WSConnection(TEST_URL, { eventHandlers: {} });
+    conn.connect();
+    latest().refuse(403);
+    const before = FakeSocket.instances.length;
+
+    conn.retryNow();
+    window.dispatchEvent(new Event('online'));
+
+    expect(FakeSocket.instances.length).toBe(before);
     conn.destroy();
   });
 

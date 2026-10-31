@@ -23,6 +23,7 @@ import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
 import { nameForAgents } from './room-context.js';
 import { configManager } from '../core/config-manager.js';
 import { readOperatorDisplayName } from '../core/config/operator-display-name.js';
+import { readOperatorTimeZone } from '../core/config/operator-time-zone.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { onProjectorTurnBoundary } from '../session/session-state-projector.js';
 import { watchRoomAwaiting } from './awaiting/room-awaiting.js';
@@ -662,6 +663,10 @@ export function createRoomSubsystem(opts: {
     // Read per turn: the person can rename themselves at any time, and the
     // next turn's context has to call them by the new name (DOR-2458).
     operatorName: readOperatorDisplayName,
+    // Read per turn for the same reason: the app seeds the zone from the
+    // browser, and a person who moves has their next turn read in the new one
+    // (FB-66). Unset or unreadable falls back to this server's own zone.
+    operatorTimeZone: readOperatorTimeZone,
     // The record-based twin, for a caller that already fetched a batch of
     // rows and would otherwise pay `isOwnerAuthor`'s re-query per member.
     isOwnerRecord: (record) => isOwnerRecord(record, readOwnerAccount()?.id ?? null),

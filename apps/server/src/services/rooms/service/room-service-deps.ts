@@ -272,6 +272,8 @@ export interface RoomServiceDeps {
    * owner is "the operator" (DOR-2458).
    */
   operatorName?(): string | null;
+  /** The owner's IANA zone, read per call — see `RoomContextDeps.operatorTimeZone`. */
+  operatorTimeZone?(): string;
   /**
    * The record-based twin of {@link RoomServiceDeps.isOwnerAuthor}, for a
    * caller that already holds the row — resolving an id `isOwnerAuthor`

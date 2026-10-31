@@ -79,6 +79,7 @@ import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
+import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
 import { applyLaunchExtensionsDeny } from '../folder-settings/agent-extensions-deny.js';
 import { IN_SESSION_TOOL_PREFIX, loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
@@ -204,6 +205,9 @@ export async function resolveLaunch(args: {
     full: !teammate && turnPermissionMode(session) === 'bypassPermissions',
   });
   const agentFileHeld = folderConfig.held.includes('manifest');
+  // Never a silent switch off the runtime the agent is set to (DOR-3459).
+  const runtimeNotice = heldRuntimeNotice(manifest, turnAgentPath);
+  if (runtimeNotice) statusEvents.push(runtimeNotice);
 
   // Slash commands must reach the CLI as the bare prompt — it only parses a
   // command when `/` starts the message (DOR-107). Verify the name against the
