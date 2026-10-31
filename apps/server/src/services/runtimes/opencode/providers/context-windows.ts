@@ -26,6 +26,7 @@
  * @module services/runtimes/opencode/providers/context-windows
  */
 import type { OpencodeClient, ProviderListResponse } from '@opencode-ai/sdk';
+import type { StreamEvent } from '@dorkos/shared/types';
 import { logger, logError } from '../../../../lib/logger.js';
 
 /** How long one read of the catalog is trusted. */
@@ -127,6 +128,40 @@ export class OpenCodeContextWindows {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Add the model's context window to a reply's context reading, so the
+   * reading says how full the conversation is (DOR-2732). OpenCode's own
+   * usage event names the model but not its window; the sidecar's catalog
+   * does (cached per directory, waited on for at most
+   * {@link CONTEXT_WINDOW_READ_TIMEOUT_MS}). A model the catalog gives no
+   * window for, or a catalog that does not answer in time, leaves the reading
+   * without one.
+   *
+   * @param client - The sidecar client the turn runs on.
+   * @param directory - The session's directory, for the catalog read.
+   * @param providerId - The reply's provider, as the mapper recorded it.
+   * @param event - One mapped event; only a context reading is touched.
+   */
+  async withWindow(
+    client: OpencodeClient,
+    directory: string,
+    providerId: string | undefined,
+    event: StreamEvent
+  ): Promise<StreamEvent> {
+    if (event.type !== 'session_status') return event;
+    const data = event.data as Record<string, unknown>;
+    if (data.contextTokens === undefined || data.contextMaxTokens !== undefined) return event;
+    const window = await this.lookup(
+      client,
+      directory,
+      providerId,
+      typeof data.model === 'string' ? data.model : undefined
+    );
+    return window === undefined
+      ? event
+      : ({ ...event, data: { ...data, contextMaxTokens: window } } as StreamEvent);
   }
 
   private tableFor(client: OpencodeClient, directory: string): Promise<WindowTable> {

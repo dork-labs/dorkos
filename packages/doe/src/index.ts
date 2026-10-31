@@ -30,3 +30,4 @@ export { createBuilderTool, createBuilderShell, builderPrompt } from './builder.
 export type { BuilderToolOptions } from './builder.js';
 export { createBeatExtension, validateBeatOutcome } from './beat/beat.js';
 export type { BeatOptions } from './beat/beat.js';
+export { estimateInput } from './context-estimation.js';
