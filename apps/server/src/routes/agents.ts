@@ -61,7 +61,8 @@ import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 import { trustedCaller } from '../services/core/capabilities/index.js';
-import { readCallerAuthority } from '../lib/caller-authority.js';
+import { clearsTheAgentBar, readCallerAuthority } from '../lib/caller-authority.js';
+import { pinPersonCreatedAgent } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
@@ -349,6 +350,8 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
       // HEARTBEAT.md by runtime (spec `heartbeats` §2), write-if-absent for the
       // reason MEMORY.md is: a re-registered agent's own file is its own.
       await seedHeartbeatFile(agentPath, { runtime: manifest.runtime });
+      // A person's new agent runs on the runtime they picked (DOR-3459).
+      if (clearsTheAgentBar(honoRequestFacts(c))) pinPersonCreatedAgent(manifest.id, agentPath);
 
       // ADR-0043: sync to Mesh DB cache (best-effort)
       try {
@@ -529,6 +532,11 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
         meshCore,
         templateGate ? { templateGate } : {}
       );
+      // A person's new agent runs on the runtime they picked; an agent's new
+      // agent waits for a person's card (DOR-3459).
+      if (clearsTheAgentBar(honoRequestFacts(c))) {
+        pinPersonCreatedAgent(result.manifest.id, result.path);
+      }
 
       // Fire-and-forget activity event for agent registration
       if (activityService) {

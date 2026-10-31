@@ -459,22 +459,20 @@ jobs:
       - name: npm-availability wait fixtures
         run: bash scripts/test-wait-for-npm.sh
 
-      # heavy-run-lock.sh (DOR-2160) is the machine-wide cap on how many heavy
-      # local gates run at once — the answer to several agents each starting a
-      # full affected sweep on one 14-core box, which measured a load average
-      # around 500 with the kernel killing processes for memory. It wraps the
-      # pre-commit lint and typecheck commands, so its dangerous failures are
-      # not "the cap is a bit loose": they are "no commit on this machine ever
-      # returns" (a holder SIGKILLed for memory runs no release trap and leaves
-      # its slot behind) and "the cap silently stops existing" (a reclaim or a
-      # release that deletes a LIVE holder's slot, which the suite reproduces
-      # and pins). Its centrepiece SIGKILLs a holder and asserts the next run
-      # gets through in seconds; the rest pin that it caps at all, that waiting
-      # is bounded, that giving up runs the command rather than hanging or
-      # silently skipping it, and that a slot that changed hands is never
-      # deleted by its previous owner. Hermetic: throwaway git repos and
-      # `sleep`, no `pnpm install`, about fifteen seconds, almost all of it
-      # deliberate waiting on bounds.
+      # heavy-run-lock.sh (DOR-2160, host-wide since DOR-3274) is the cap on how
+      # many heavy local runs go at once on one host: the commit lint and the
+      # root build, typecheck, test and verify scripts. Several agents each
+      # starting a full sweep measured a load around 500, and on 2026-10-24
+      # panicked the host. A slot is a flock held by a sidecar for the run's
+      # life, so its dangerous failures are "no build on this machine ever
+      # returns" (a nested call waiting on its own parent, a dead holder never
+      # released) and "the cap silently stops existing" (slots per clone, so
+      # two checkouts overlap). The suite SIGKILLs a holder and a bare wrapper
+      # and asserts the slot frees at once, runs two unrelated checkouts on one
+      # slot and asserts they serialise, and pins bounded waits, nested calls,
+      # the CI bypass and the no-perl fallback. Hermetic: a throwaway lock
+      # directory per case and `sleep`, no `pnpm install`, about twenty seconds,
+      # almost all of it deliberate waiting on bounds.
       - name: Heavy-run lock fixtures
         run: bash scripts/test-heavy-run-lock.sh
 

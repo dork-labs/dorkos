@@ -10,17 +10,29 @@
  */
 
 /**
+ * The two formatters, built once (DOR-3312).
+ *
+ * `toLocaleTimeString(locales, options)` builds a fresh `Intl.DateTimeFormat`
+ * on every call, and every drawn message calls these on every render — it was
+ * the hottest JavaScript in a profile of a busy room. Same locale, same
+ * options, same output; built lazily so a module import does no Intl work.
+ */
+let shortFormat: Intl.DateTimeFormat | undefined;
+let fullFormat: Intl.DateTimeFormat | undefined;
+
+/**
  * Short time display (HH:MM), or `''` when the string is not a time at all.
  *
- * `toLocaleTimeString` does not throw on an unparseable date — it renders
- * "Invalid Date" — so the guard has to be the parse, not a `try`.
+ * An unparseable date throws a RangeError from `format`, so the guard is the
+ * parse: a row with a bad timestamp draws no time rather than no row.
  *
  * @param timestamp - The row's ISO 8601 timestamp.
  */
 export function formatTime(timestamp: string): string {
   const ms = Date.parse(timestamp);
   if (Number.isNaN(ms)) return '';
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  shortFormat ??= new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
+  return shortFormat.format(ms);
 }
 
 /**
@@ -39,5 +51,6 @@ export function formatTime(timestamp: string): string {
 export function formatAbsoluteTime(timestamp: string): string {
   const ms = Date.parse(timestamp);
   if (Number.isNaN(ms)) return '';
-  return new Date(ms).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
+  fullFormat ??= new Intl.DateTimeFormat([], { dateStyle: 'full', timeStyle: 'short' });
+  return fullFormat.format(ms);
 }
