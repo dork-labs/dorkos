@@ -245,10 +245,7 @@ function RoomPreview({ roomId, active }: { roomId: string; active: boolean }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="text-muted-foreground space-y-1 text-xs">
-        <p>
-          The last {ROOM_TRANSCRIPT_MAX_MESSAGES} messages in this room, not its threads. A long
-          room keeps the newest part.
-        </p>
+        <p>The last {ROOM_TRANSCRIPT_MAX_MESSAGES} messages in this room, without threads.</p>
         <p>Home paths shown as ~, tokens removed, file names left out.</p>
       </div>
       <pre className="text-foreground bg-muted/40 rounded-md p-3 font-mono text-xs break-words whitespace-pre-wrap">

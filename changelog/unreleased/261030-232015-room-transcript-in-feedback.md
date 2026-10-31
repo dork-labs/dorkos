@@ -3,6 +3,7 @@ covers:
   - "feat(feedback): attach a room's recent messages to a feedback report (DOR-2108)"
   - 'fix(feedback): room reports send only what the preview showed, and chips show a check (DOR-2108)'
   - 'chore(feedback): census the room preview route and give feedback its own transport slice (DOR-2108)'
+  - "fix(feedback): shorten the room preview's scope line under the 16-word copy limit (DOR-2108)"
 ---
 
 ### Added
