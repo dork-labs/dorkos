@@ -9938,6 +9938,10 @@
             "type": "boolean",
             "description": "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false."
           },
+          "offersTurnOn": {
+            "type": "boolean",
+            "description": "True when the schedule stayed off although its file now says on. A file can switch a schedule off but never on, so a person is offered Turn on. Absent means false."
+          },
           "approvalChanges": {
             "type": "array",
             "items": {

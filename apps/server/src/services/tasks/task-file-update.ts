@@ -114,11 +114,11 @@ export interface FileBackedRow {
  * Whether this request CHANGES anything that lives in the SKILL.md.
  *
  * Not "mentions" — changes. That distinction is the whole fix for B1: the
- * cockpit's Approve button sends `{status, enabled: true}` together, always,
- * because a schedule approved but left switched off would never run. `enabled`
- * does live in the file, so a request that merely mentions it looks
- * file-worthy — and every Approve would then drag the person's own SKILL.md
- * through a read-merge-write that had nothing to write.
+ * cockpit's "Approve and turn on" sends `{status, enabled: true}` together
+ * (a plain Approve sends `status` alone and keeps the switch, DOR-3309).
+ * `enabled` does live in the file, so a request that merely mentions it looks
+ * file-worthy — and every such Approve would then drag the person's own
+ * SKILL.md through a read-merge-write that had nothing to write.
  *
  * Comparing against the row is what makes Approve free of the file entirely:
  * `enabled: true` on a row that is already enabled is not a change, so nothing

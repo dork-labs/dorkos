@@ -116,6 +116,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     // not something to show anyone.
     packageOwned: row.packageOwned === 'unknown' ? null : (row.packageOwned ?? null),
     projectOnly: row.projectOnly,
+    offersTurnOn: row.offersTurnOn,
     approvalChanges: approvalChangesOf(row),
     agentId: row.agentId ?? null,
     enabled: row.enabled,
