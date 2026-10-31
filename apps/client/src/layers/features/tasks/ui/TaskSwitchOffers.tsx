@@ -1,21 +1,20 @@
 /**
- * The Schedules row's answers that touch a task's switch (DOR-3309).
+ * The Schedules row's parts that touch a task's switch (DOR-3309).
  *
  * Only a person turns a task on. Approving a parked task keeps its switch as
- * it is, so an off task offers "Approve (stays off)" first and "Approve and
- * turn on" beside it. A task whose file now says on, while the task stayed
- * off, offers Turn on.
+ * it is, so an off task offers "Approve" and, beside it, "Approve and turn on".
+ * A task whose file now says on, while the task stayed off, says so; the row's
+ * own switch is how a person turns it on.
  *
  * @module features/tasks/ui/TaskSwitchOffers
  */
 import { toast } from 'sonner';
 import type { Task } from '@dorkos/shared/types';
 import { useDeleteTask, useUpdateTask } from '@/layers/entities/tasks';
+import { Button } from '@/layers/shared/ui';
 
-const OUTLINE_BUTTON =
-  'border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium shadow-xs transition-colors';
-const GHOST_BUTTON =
-  'hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium transition-colors';
+/** The card's button size (`ScheduleApprovalCard`), so the two read alike. */
+const BUTTON_CLASS = 'h-7 px-2.5 text-xs';
 
 /**
  * Approve or reject a parked task from its row.
@@ -34,61 +33,57 @@ export function TaskApproveButtons({ task }: { task: Task }) {
       { id: task.id, status: 'active', ...(turnOn && { enabled: true }) },
       {
         onSuccess: () =>
-          toast(task.enabled || turnOn ? 'Schedule approved' : 'Schedule approved, still off'),
+          toast(
+            task.enabled || turnOn
+              ? 'Schedule approved'
+              : 'Schedule approved. Off until you turn it on.'
+          ),
       }
     );
   };
   return (
-    <div className="flex gap-1">
-      <button className={OUTLINE_BUTTON} onClick={(e) => approve(e, false)}>
-        {task.enabled ? 'Approve' : 'Approve (stays off)'}
-      </button>
+    <div className="flex flex-wrap gap-1">
+      <Button size="sm" className={BUTTON_CLASS} onClick={(e) => approve(e, false)}>
+        Approve
+      </Button>
       {!task.enabled && (
-        <button className={OUTLINE_BUTTON} onClick={(e) => approve(e, true)}>
+        <Button
+          variant="outline"
+          size="sm"
+          className={BUTTON_CLASS}
+          onClick={(e) => approve(e, true)}
+        >
           Approve and turn on
-        </button>
+        </Button>
       )}
-      <button
-        className={GHOST_BUTTON}
+      <Button
+        variant="ghost"
+        size="sm"
+        className={BUTTON_CLASS}
         onClick={(e) => {
           e.stopPropagation();
           deleteTask.mutate(task.id);
         }}
       >
         Reject
-      </button>
+      </Button>
     </div>
   );
 }
 
 /**
- * "The file turns this task on", with Turn on, for a task that stayed off when
- * its file started saying on. A parked task is approved in the same act, as
- * the row's switch does: `status` is operator-only, so a person's Turn on is
- * the approval.
+ * The note on a task that stayed off when its file started saying on. No
+ * button of its own: the row's switch turns it on, and switching it either
+ * way clears the note on the server.
  */
-export function TaskTurnOnOffer({ task }: { task: Task }) {
-  const updateTask = useUpdateTask();
+export function TaskFileSaysOnNote({ task }: { task: Task }) {
   if (!task.offersTurnOn || task.enabled) return null;
   return (
     <div
-      data-slot="task-turn-on-offer"
-      className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-x-2 text-xs"
+      data-slot="task-file-says-on"
+      className="text-muted-foreground min-w-0 text-xs break-words"
     >
-      <span className="break-words">The file turns this task on. It stays off until you do.</span>
-      <button
-        className={OUTLINE_BUTTON}
-        onClick={(e) => {
-          e.stopPropagation();
-          updateTask.mutate({
-            id: task.id,
-            enabled: true,
-            ...(task.status === 'pending_approval' && { status: 'active' as const }),
-          });
-        }}
-      >
-        Turn on
-      </button>
+      Its file says on. It stays off until you switch it on.
     </div>
   );
 }

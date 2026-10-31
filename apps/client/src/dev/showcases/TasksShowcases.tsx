@@ -80,8 +80,7 @@ const RETIMED_PACKAGE_SCHEDULE: Task = {
 
 /**
  * An agent's proposal parked while switched off: approving keeps it off, so the
- * row offers "Approve (stays off)" first and "Approve and turn on" beside it
- * (DOR-3309).
+ * row offers "Approve" first and "Approve and turn on" beside it (DOR-3309).
  */
 const OFF_PROPOSAL_SCHEDULE: Task = {
   ...RUNNING_SCHEDULE,
@@ -95,8 +94,8 @@ const OFF_PROPOSAL_SCHEDULE: Task = {
 };
 
 /**
- * A task that stayed off when its file started saying on: the row names that
- * and offers Turn on, because only a person turns a task on (DOR-3309).
+ * A task that stayed off when its file started saying on: the row says so, and
+ * its own switch is how a person turns it on (DOR-3309).
  */
 const FILE_SAYS_ON_SCHEDULE: Task = {
   ...RUNNING_SCHEDULE,

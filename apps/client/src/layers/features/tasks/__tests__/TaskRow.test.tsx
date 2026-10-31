@@ -230,23 +230,27 @@ describe('ScheduleRow', () => {
   });
 
   describe('a schedule whose file now says on while it stayed off (DOR-3309)', () => {
-    it('offers Turn on, which sends enabled: true', async () => {
+    it('says so, and its own switch turns it on', async () => {
       const offered: Task = { ...disabledSchedule, offersTurnOn: true };
       const updateTask = vi.fn().mockResolvedValue({ ...offered, enabled: true });
       const transport = createMockTransport({ updateTask });
       renderScheduleRow(offered, {}, transport);
 
-      expect(screen.getByText(/The file turns this task on/)).toBeTruthy();
+      expect(
+        screen.getByText('Its file says on. It stays off until you switch it on.')
+      ).toBeTruthy();
+      // No button of its own: the switch is the control.
+      expect(screen.queryByRole('button', { name: 'Turn on' })).toBeNull();
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: 'Turn on' }));
+        fireEvent.click(screen.getByRole('switch'));
       });
       expect(updateTask).toHaveBeenCalledWith(offered.id, { enabled: true });
     });
 
-    it('offers nothing on an ordinary switched-off schedule', () => {
+    it('says nothing on an ordinary switched-off schedule', () => {
       renderScheduleRow(disabledSchedule);
 
-      expect(screen.queryByText(/The file turns this task on/)).toBeNull();
+      expect(screen.queryByText(/Its file says on/)).toBeNull();
     });
   });
 
@@ -378,7 +382,7 @@ describe('ScheduleRow', () => {
       renderScheduleRow(agentHidOwnProposal);
 
       // Off, so approving keeps it off unless the person asks (DOR-3309).
-      expect(screen.getByText('Approve (stays off)')).toBeTruthy();
+      expect(screen.getByText('Approve')).toBeTruthy();
       expect(screen.getByText('Approve and turn on')).toBeTruthy();
       expect(screen.getByText('Reject')).toBeTruthy();
       expect(screen.queryByRole('switch')).toBeNull();
@@ -390,7 +394,7 @@ describe('ScheduleRow', () => {
       renderScheduleRow(agentHidOwnProposal, {}, transport);
 
       await act(async () => {
-        fireEvent.click(screen.getByText('Approve (stays off)'));
+        fireEvent.click(screen.getByText('Approve'));
       });
       expect(updateTask).toHaveBeenLastCalledWith(agentHidOwnProposal.id, { status: 'active' });
 

@@ -563,7 +563,7 @@ export function ScheduleApprovalCard({
             className="h-7 px-2.5 text-xs"
             onClick={approveAtProposedLevel}
           >
-            {task.enabled ? 'Approve' : 'Approve (stays off)'}
+            Approve
           </Button>
           {/* An off schedule stays off when approved (DOR-3309); turning it on
               is the second, deliberate choice. */}
@@ -594,19 +594,10 @@ export function ScheduleApprovalCard({
               Approve at {stopLabel(raise.stop)}
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            data-slot="schedule-reject"
-            aria-label={`Reject ${name}`}
-            className="h-7 px-2.5 text-xs"
-            onClick={reject}
-          >
-            Reject
-          </Button>
-          {/* Third, and quieter than Approve: it is the evidence-gathering move,
-              not the decision. Disabled only while a run of its own is in
-              flight — two supervised runs from one card is two things to read. */}
+          {/* After the approvals and quieter than Approve: it is the
+              evidence-gathering move, not the decision. Disabled only while a
+              run of its own is in flight — two supervised runs from one card is
+              two things to read. */}
           <Button
             variant="outline"
             size="sm"
@@ -617,6 +608,17 @@ export function ScheduleApprovalCard({
             onClick={testRun.start}
           >
             Run it once
+          </Button>
+          {/* Last, so the answers that keep the schedule read first. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            data-slot="schedule-reject"
+            aria-label={`Reject ${name}`}
+            className="h-7 px-2.5 text-xs"
+            onClick={reject}
+          >
+            Reject
           </Button>
         </AskCard.Actions>
       ) : (
@@ -632,7 +634,7 @@ export function ScheduleApprovalCard({
                 `Approved${granted ? ` at ${stopLabel(granted.stop)}` : ''}` +
                 (task.enabled || turnedOn
                   ? `${firstRuns ? `. First run ${firstRuns.first}` : ''}`
-                  : ', still off')
+                  : '. Off until you turn it on.')
               : 'Rejected'}
           </AskCard.Receipt>
           {/* Live for as long as the DELETE has not been sent. Once the window

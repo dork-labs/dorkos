@@ -6,7 +6,8 @@
  * `enabled: true`, or a file with no `enabled` line at all (which reads as
  * on), would otherwise switch a task a person turned off back on at the next
  * sweep, with nothing anywhere saying why. So when the file says on and the
- * task is off, the task stays off and the person is offered "Turn on" instead.
+ * task is off, the task stays off and its row says so; the person turns it on
+ * with the row's own switch.
  *
  * The offer is made once, when the file STARTS saying on, which is why the row
  * keeps the file's own switch as it was last read (`file_enabled`). Without it a
