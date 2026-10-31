@@ -19,7 +19,8 @@
  * while charging the budget to every one of them. So the gate left the push
  * path, and what a push now guarantees is one formatting check — which is
  * cheap, deterministic, and preempts a REQUIRED CI gate that seven PRs in one
- * week went red on. The merge queue is the test gate.
+ * week went red on — plus, since 2026-10-30, a changelog-fragment validity
+ * check of the same shape. The merge queue is the test gate.
  *
  * THREE REGRESSIONS, all silent:
  *
@@ -97,13 +98,21 @@ const codeOf = (block: string) =>
 const prePush = codeOf(hookBlock(lefthookText, 'pre-push'));
 const preCommit = codeOf(hookBlock(lefthookText, 'pre-commit'));
 
-describe('a push runs a formatting check and nothing else', () => {
+describe('a push runs two fast checks and nothing else', () => {
   it('finds both hooks at all', () => {
     // Without this, every assertion below passes vacuously the day a hook is
     // renamed or the scanner stops matching.
     expect(prePush).not.toBe('');
     expect(preCommit).not.toBe('');
     expect(prePush).toContain('scripts/pre-push-format-check.sh');
+  });
+
+  it('runs the changelog fragment check, from a script that is there', () => {
+    // It front-runs the required `fragment-present` check. A path typo would
+    // fail every push with a message about fragments it never checked.
+    const rel = 'scripts/pre-push-fragment-check.sh';
+    expect(prePush).toContain(rel);
+    expect(existsSync(path.join(repoRoot, rel))).toBe(true);
   });
 
   it('runs no test suite at push time', () => {

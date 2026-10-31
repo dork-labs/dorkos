@@ -49,6 +49,12 @@ rejects until that comment is gone. Rewrite the bullet for a human (or delete
 the fragment if the change needs no entry at all) and delete the marker with
 it; the `covers:` declaration is unaffected and needs no changes.
 
+A branch that already carries a hand-written fragment (one added or edited
+since it forked from origin/main, with no seed marker) gets no seed at all:
+the commit's subject is appended to that fragment's `covers:` list instead.
+The pre-push hook (`scripts/pre-push-fragment-check.sh`) refuses any seed
+still unedited, so the remaining case is caught before CI sees it.
+
 Installation:
     ln -sf ../../.claude/git-hooks/changelog-populator.py .git/hooks/post-commit
 
@@ -418,6 +424,97 @@ def already_recorded(unreleased_dir: Path, entry: str, subject: str) -> bool:
     return False
 
 
+def get_branch_base() -> Optional[str]:
+    """The commit this branch forked from, or None when there is no branch.
+
+    Same base the pre-push gates use: `origin/main`, else the local `main` for a
+    clone with no remote. None when HEAD is the base itself (a commit straight
+    onto main), since then there is no branch to own a fragment.
+    """
+    for ref in ("origin/main", "main"):
+        result = subprocess.run(
+            ["git", "merge-base", ref, "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+        base = result.stdout.strip()
+        if result.returncode == 0 and base:
+            head = subprocess.run(
+                ["git", "rev-parse", "HEAD"], capture_output=True, text=True
+            ).stdout.strip()
+            return None if base == head else base
+    return None
+
+
+def find_branch_fragment(unreleased_dir: Path, base: str) -> Optional[Path]:
+    """The newest hand-written fragment this branch already carries, if any.
+
+    "Hand-written" means no `SEED_MARKER_TOKEN`: a seed is not a fragment
+    anyone wrote, so extending it would only grow the thing CI refuses. Only
+    fragments with a block-form `covers:` list qualify, because that is the
+    shape `add_claim` knows how to extend; anything else falls back to seeding.
+    """
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=AM", f"{base}..HEAD",
+         "--", ":/changelog/unreleased/"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    names = sorted(
+        Path(line).name for line in result.stdout.split("\n") if line.endswith(".md")
+    )
+    for name in reversed(names):
+        path = unreleased_dir / name
+        # `is_file()` follows a link, so refuse links first: the hook writes
+        # into this file, and must never write through one.
+        if path.is_symlink() or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        if SEED_MARKER_TOKEN not in text and covers_insert_index(text.split("\n")) is not None:
+            return path
+    return None
+
+
+def covers_insert_index(lines: list[str]) -> Optional[int]:
+    """Where a new `covers:` item goes: after the last item of a block list.
+
+    Returns None unless the file opens with a frontmatter block holding a
+    block-form `covers:` key (`covers:` alone on its line, items below it).
+    An inline `covers: [...]` or a missing key is left to a human.
+    """
+    if not lines or lines[0].strip() != "---":
+        return None
+    try:
+        end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    except StopIteration:
+        return None
+    key = next(
+        (i for i in range(1, end) if lines[i].strip() == f"{COVERS_FIELD}:"), None
+    )
+    if key is None:
+        return None
+    insert = key + 1
+    for i in range(key + 1, end):
+        stripped = lines[i].strip()
+        if stripped.startswith("- "):
+            insert = i + 1
+        elif stripped and not stripped.startswith("#"):
+            break
+    return insert
+
+
+def add_claim(path: Path, subject: str) -> None:
+    """Append `subject` to the `covers:` list of an existing fragment."""
+    lines = path.read_text(encoding="utf-8").split("\n")
+    index = covers_insert_index(lines)
+    if index is None:
+        raise ValueError(f"{path.name} has no block-form covers: list")
+    lines.insert(index, f"  - {quote_yaml_scalar(subject)}")
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def resolve_fragment_path(unreleased_dir: Path, stamp: str, slug: str) -> Path:
     """Pick a free fragment path, disambiguating a same-second same-slug collision."""
     base = unreleased_dir / f"{stamp}-{slug}.md"
@@ -473,18 +570,32 @@ def main() -> int:
     if already_recorded(unreleased_dir, entry, subject):
         return 0
 
-    stamp = get_last_commit_timestamp().strftime("%y%m%d-%H%M%S")
-    slug = slugify(description)
-    fragment_path = resolve_fragment_path(unreleased_dir, stamp, slug)
-    content = render_fragment(section, entry, subject)
+    # A branch that already has a hand-written fragment gets this commit added
+    # to that fragment's `covers:` list instead of a new seed. A seed is a file
+    # the required `fragment-present` check refuses until someone edits it, and
+    # on a branch whose author already wrote the entry, nobody does: it rode
+    # into CI unedited on five PRs in one week (#3290, #3294, #3295, #3297,
+    # #3205). The claim keeps coverage exact; the prose stays the author's.
+    base = get_branch_base()
+    existing = find_branch_fragment(unreleased_dir, base) if base else None
+
+    if existing is None:
+        stamp = get_last_commit_timestamp().strftime("%y%m%d-%H%M%S")
+        slug = slugify(description)
+        fragment_path = resolve_fragment_path(unreleased_dir, stamp, slug)
+    else:
+        fragment_path = existing
 
     try:
         # Create lock file to prevent re-entry during amend
         lock_file.parent.mkdir(parents=True, exist_ok=True)
         lock_file.touch()
 
-        unreleased_dir.mkdir(parents=True, exist_ok=True)
-        fragment_path.write_text(content, encoding="utf-8")
+        if existing is None:
+            unreleased_dir.mkdir(parents=True, exist_ok=True)
+            fragment_path.write_text(render_fragment(section, entry, subject), encoding="utf-8")
+        else:
+            add_claim(fragment_path, subject)
         format_with_prettier(fragment_path)
 
         # Stage the fragment
@@ -497,7 +608,17 @@ def main() -> int:
             capture_output=True,
         )
 
-        print(f"Changelog fragment created: {fragment_path.name}")
+        if existing is None:
+            print(
+                f"Changelog fragment seeded: {fragment_path.name}. Rewrite its bullet "
+                "for a human and delete the seed comment, or delete the file if the "
+                "change needs no entry. A push refuses it as it is."
+            )
+        else:
+            print(
+                f"Changelog: added this commit to covers: in {fragment_path.name}. "
+                "If it needs its own bullet, add one there."
+            )
     finally:
         # Always remove lock file
         if lock_file.exists():

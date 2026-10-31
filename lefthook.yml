@@ -25,7 +25,8 @@
 #
 #   at commit  prettier on staged files, Drizzle migrations, a directory-size
 #              check, and lint of the affected packages
-#   at push    a formatting check on the changed files
+#   at push    a formatting check on the changed files, and a validity check
+#              on the changelog fragments the push carries
 #
 # Nothing at push claims to have tested anything. That is not an omission; it is
 # the decision, and the `pre-push:` block below carries the measurement behind
@@ -161,7 +162,9 @@ pre-commit:
       fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
-  # WHAT HAPPENS AT PUSH NOW: one formatting check, and nothing else (DOR-2160).
+  # WHAT HAPPENS AT PUSH NOW: a formatting check and a changelog-fragment
+  # validity check, and nothing else (DOR-2160; the fragment check joined on
+  # 2026-10-30, ci/ledger/261030-*-pre-push-fragment-check).
   #
   # THE TEST GATE IS GONE. It ran `turbo test --affected` here for months, and
   # the measurement that ended it is a cliff, not a slope. 49 pre-push runs on
@@ -194,7 +197,9 @@ pre-push:
   # `prettier --check .` inside the `lint` job. Seven PRs across five sessions
   # went red on exactly that in one week, every one a single `prettier --write`
   # from green. It is the one local check whose verdict is both certain and
-  # cheaper than finding out from CI.
+  # cheaper than finding out from CI. The fragment check is the second such
+  # check, with the same argument: ~0.1 s, and it front-runs the REQUIRED
+  # `fragment-present` check with that check's own validity command.
   #
   # Nothing at push claims to have tested anything. `contributing/ci.md` says so
   # in the same words, and scripts/__tests__/local-gate-shape.test.ts fails if a
@@ -202,9 +207,8 @@ pre-push:
   #
   # `follow: true` stays: lefthook otherwise buffers a command's output until it
   # exits, and the one thing this hook prints is a failure a person has to read.
-  # `piped` and the `priority` keys are GONE with the second command — they
-  # ordered two commands against each other and there is now one, so they would
-  # assert a fact about a file that no longer holds.
+  # No `piped` or `priority` keys: the two commands are independent, and each
+  # should report its own failure on the same push.
   follow: true
   commands:
     formatting:
@@ -223,3 +227,13 @@ pre-push:
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push formatting
         bash scripts/pre-push-format-check.sh
       fail_text: 'Formatting check failed — run the `prettier --write` command printed above, commit, and push again.'
+    fragments:
+      # The second check with the same shape as `formatting`: fast (~0.1 s,
+      # pure-stdlib Python), deterministic, and it front-runs a REQUIRED check,
+      # `fragment-present`, with the exact command that check's validity step
+      # runs. Seeded changelog fragments nobody rewrote reached CI on five PRs
+      # in the week to 2026-10-30. The script's header carries the argument.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push fragments
+        bash scripts/pre-push-fragment-check.sh
+      fail_text: 'Changelog fragment check failed — rewrite or delete the fragment named above, commit, and push again.'

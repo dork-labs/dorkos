@@ -177,8 +177,9 @@
 # THE FRESH-WORKTREE CASE — the one place this DELIBERATELY fails
 #
 # A worktree created but never `pnpm install`ed has no prettier, so this check
-# cannot run at all. Since DOR-2160 it is the ONLY command in the pre-push hook,
-# which makes the choice here the whole behaviour of the hook in that state: it
+# cannot run at all. It is the pre-push hook's only node-based command (the
+# fragment check beside it needs only python3), so the choice here decides the
+# hook's behaviour in that state: it
 # exits 1, because "we could not check" is not "there is nothing to check", and
 # because a fresh worktree that cannot run prettier cannot run the commit gates
 # either — you want to hear it now, with the fix named, rather than at the first
