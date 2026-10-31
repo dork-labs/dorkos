@@ -374,21 +374,34 @@ describe('work that outlives the turn', () => {
   it('holds for a working helper past twenty minutes, and for only a shell or timer up to twenty', async () => {
     // Purpose: a server left in a background shell, or a timer, cannot keep
     // the computer up for hours; a working helper can (the runtime caps it).
-    const service = new KeepAwakeService();
-    const { runtime, state } = backgroundRuntime();
-    state.background = true;
-    state.helper = true;
-    const ended = Date.now();
-    await drain(holdAwakeDuringTurns(runtime, service).sendMessage('s1', 'hello'));
+    // The clock is ours: the service stamps the turn's end itself, so a real
+    // clock that ticks mid-turn would move the boundary under the assertions.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const service = new KeepAwakeService();
+      const { runtime, state } = backgroundRuntime();
+      state.background = true;
+      state.helper = true;
+      const started = 1_000_000;
+      vi.setSystemTime(started);
+      const stream = holdAwakeDuringTurns(runtime, service).sendMessage('s1', 'hello');
+      await stream.next();
+      // The turn runs for a while, so the ceiling must count from its end.
+      const ended = started + 5 * 60 * 1000;
+      vi.setSystemTime(ended);
+      expect((await stream.next()).done).toBe(true);
 
-    service.sweepIdleTurns(ended + TURN_IDLE_CEILING_MS * 2);
-    expect(working(service).chats).toBe(1);
+      service.sweepIdleTurns(ended + TURN_IDLE_CEILING_MS * 2);
+      expect(working(service).chats).toBe(1);
 
-    state.helper = false;
-    service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS - 1);
-    expect(working(service).chats).toBe(1);
-    service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS);
-    expect(working(service).chats).toBe(0);
+      state.helper = false;
+      service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS - 1);
+      expect(working(service).chats).toBe(1);
+      service.sweepIdleTurns(ended + BACKGROUND_ONLY_CEILING_MS);
+      expect(working(service).chats).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps one background hold per session: a newer one replaces the older', async () => {
