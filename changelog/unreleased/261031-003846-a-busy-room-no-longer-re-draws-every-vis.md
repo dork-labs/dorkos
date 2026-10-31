@@ -5,6 +5,4 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- A busy room no longer re-draws every visible message on each scroll frame (DOR-3312)
+- A busy room or chat uses less CPU. Each new message used to redraw every message on screen many times while the view scrolled down to it. Now only the messages that changed are redrawn.
