@@ -44,7 +44,7 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-dui-primary text-dui-primary-foreground hover:bg-dui-primary/90',
         destructive:
-          'bg-dui-destructive text-dui-destructive-foreground hover:bg-dui-destructive/90 focus-visible:ring-dui-destructive has-[:focus-visible]:ring-dui-destructive dui-dark:bg-dui-destructive/60 focus-visible:ring-offset-2 focus-visible:ring-offset-dui-background has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-dui-background',
+          'bg-dui-destructive-fill text-dui-destructive-foreground hover:bg-dui-destructive-fill/90 focus-visible:ring-dui-destructive has-[:focus-visible]:ring-dui-destructive focus-visible:ring-offset-2 focus-visible:ring-offset-dui-background has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-dui-background',
         outline:
           'border border-dui-border bg-dui-background text-dui-foreground shadow-xs hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:bg-dui-input/30 dui-dark:border-dui-input dui-dark:hover:bg-dui-input/50',
         secondary: 'bg-dui-secondary text-dui-secondary-foreground hover:bg-dui-secondary/80',

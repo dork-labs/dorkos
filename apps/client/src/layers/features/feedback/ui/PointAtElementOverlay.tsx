@@ -29,10 +29,10 @@ interface PointAtElementOverlayProps {
  * Painted as an enormous spread on the highlight box's own shadow rather than as
  * a full-screen layer with a hole in it — one element, no stacking to reason
  * about, and the hole can never drift out of register with the outline because it
- * IS the outline. `bg-black/50` is the scrim every other overlay in the design
+ * IS the outline. `--scrim` is the scrim every other overlay in the design
  * system uses; this is that value, in the one place Tailwind cannot spell it.
  */
-const SCRIM = '0 0 0 9999px rgb(0 0 0 / 0.5)';
+const SCRIM = '0 0 0 9999px var(--scrim)';
 
 /** What the pill above the highlight says. */
 function labelFor(element: Element): string {
@@ -333,7 +333,7 @@ export function PointAtElementOverlay({ phase, onSelect, onCancel }: PointAtElem
         ) : (
           // Nothing under the pointer yet, so the app dims whole — the picker is
           // visibly in charge before the first move.
-          <div className="absolute inset-0 bg-black/50" />
+          <div className="bg-scrim absolute inset-0" />
         ))}
 
       {picking && (

@@ -21,10 +21,10 @@ describe('CountPill', () => {
     expect(screen.getByLabelText('12 mentions')).toHaveTextContent('9+');
   });
 
-  it('wears neutral ink on a neutral tint', () => {
+  it('wears the orange ink on its own orange wash', () => {
     render(<CountPill count={2} label="2 mentions" />);
     const pill = screen.getByLabelText('2 mentions');
-    expect(pill).toHaveClass('bg-foreground/10', 'text-foreground');
-    expect(pill.className).not.toMatch(/brand|warning|primary/);
+    expect(pill).toHaveClass('bg-brand/15', 'text-brand-text');
+    expect(pill.className).not.toMatch(/warning|primary/);
   });
 });

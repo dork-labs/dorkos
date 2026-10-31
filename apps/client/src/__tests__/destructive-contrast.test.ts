@@ -309,10 +309,14 @@ describe('bare red status text (DOR-2493)', () => {
     );
   }
 
-  it('discriminates: the tint-tuned `-fg` red fails the selected row in dark mode', () => {
+  it('discriminates: the 60% red `-fg` used to hold fails the selected row in dark mode', () => {
+    expect(contrast(hslToRgb(0, 72, 60), hsl(themes.dark, '--secondary'))).toBeLessThan(AA);
+  });
+
+  it('dark: the `-fg` red clears AA on the selected row', () => {
     expect(
       ratios(themes.dark, 'text-status-error-fg')['selected session row (bg-secondary)']
-    ).toBeLessThan(AA);
+    ).toBeGreaterThanOrEqual(AA);
   });
 
   it('light: clears AA on every ground', () => {
@@ -578,9 +582,28 @@ describe('solid destructive fills dim themselves in dark mode', () => {
     expect(
       undimmedFills(src.replace("foreground'", "foreground dark:bg-dui-destructive/60'")).offenders
     ).toHaveLength(1);
-    const button = undimmedFills(readFileSync(join(UI_SRC, 'button.tsx'), 'utf8'));
-    expect(button.inspected).toBe(1);
-    expect(button.offenders).toEqual([]);
+  });
+
+  it('the package button paints the fill token, whose dark value is dimmed and clears AA', () => {
+    const button = readFileSync(join(UI_SRC, 'button.tsx'), 'utf8');
+    expect(button).toContain('bg-dui-destructive-fill');
+    expect(undimmedFills(button).offenders).toEqual([]);
+
+    const tokens = readFileSync(join(UI_ROOT, 'tokens.css'), 'utf8');
+    const dark = section(tokens, '\n.dark {', '\n}');
+    const mix = dark.match(
+      /--dui-destructive-fill: color-mix\(in srgb, hsl\(([\d.]+) (\d+)% (\d+)%\) (\d+)%, hsl\(0 0% (\d+)%\)\)/
+    );
+    expect(mix, 'dark fill token is not the expected mix').not.toBeNull();
+    const [h, s, l, pct, ground] = mix!.slice(1).map(Number) as [
+      number,
+      number,
+      number,
+      number,
+      number,
+    ];
+    const fill = over(hslToRgb(h, s, l), pct / 100, hslToRgb(0, 0, ground));
+    expect(contrast(hslToRgb(0, 0, 98), fill)).toBeGreaterThanOrEqual(AA);
   });
 
   it('every labelled solid fill in the app and package carries the dark dimming', () => {

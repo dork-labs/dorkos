@@ -132,6 +132,8 @@
   --color-brand: hsl(var(--brand));
   --color-brand-foreground: hsl(var(--brand-foreground));
   --color-brand-text: hsl(var(--brand-text));
+  --color-faint: hsl(var(--faint));
+  --color-scrim: var(--scrim);
   --color-chart-1: hsl(var(--chart-1));
   --color-chart-2: hsl(var(--chart-2));
   --color-chart-3: hsl(var(--chart-3));
@@ -249,6 +251,10 @@
   --brand: var(--dui-brand);
   --brand-foreground: var(--dui-brand-foreground);
   --brand-text: var(--dui-brand-text);
+  /* The quietest text that still clears 4.5:1 on a selected row. Use it in place
+     of opacity on text. */
+  --faint: 0 0% 37%;
+  --scrim: var(--dui-scrim);
 
   /* === Status tokens === */
   /* Green is text (dial caption, status word, "unattended" notes, session marks)
@@ -285,8 +291,8 @@
      — the darkest common ground this token is painted on, so the closest to
      this token's own luminance and the tightest ratio): 30% clears it at
      4.51:1, `--accent` at 4.73:1, `--muted` at 4.95:1, the `-bg` wash at
-     5.08:1, and plain white at 5.40:1. Dark mode's `-fg` (50%) already
-     clears every ground by a wide margin and is unchanged.
+     5.08:1, and plain white at 5.40:1. Dark mode's `-fg` clears every ground
+     by a wide margin.
      claude-account-ui 04 §13: 28%, not 30%. The session row's context gauge
      paints this bare on the sidebar (91%), where 30% read 4.41:1, and on the
      sidebar's accent tint, 4.21:1. At 28% the binding ground is that tint at
@@ -350,7 +356,7 @@
   --msg-user-line-height: 1.6;
   --msg-prose-font-weight: 300;
   --msg-prose-line-height: 1.75;
-  --msg-timestamp-color: hsl(var(--muted-foreground) / 0.6);
+  --msg-timestamp-color: hsl(var(--faint));
 
   /* === Spacing tokens (density-aware) === */
   --msg-padding-x: 1.5rem;
@@ -460,14 +466,14 @@
 
   /* Elevation scale, consumed by the shadow-* and card-interactive utilities.
      Ported from apps/site (DOR-191). Named --elevation-* (not --shadow-*) to
-     avoid colliding with Tailwind's default shadow tokens. Light mode is
-     exactly Tailwind's own sm/md/lg/xl (same offsets, 0.1 alpha): Tailwind's
-     shadow-sm/md/lg/xl are routed through this scale in @theme, so matching
-     its values is what keeps light mode unchanged for every one of them. */
-  --elevation-soft: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  --elevation-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --elevation-floating: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --elevation-modal: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+     avoid colliding with Tailwind's default shadow tokens. Tailwind's
+     shadow-sm/md/lg/xl are routed through this scale in @theme. Light mode keeps
+     Tailwind's offsets at a far lower alpha, climbing with height, so a surface
+     lifts without a dark halo. */
+  --elevation-soft: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  --elevation-elevated: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --elevation-floating: 0 10px 15px -3px rgb(0 0 0 / 0.06), 0 4px 6px -4px rgb(0 0 0 / 0.06);
+  --elevation-modal: 0 20px 25px -5px rgb(0 0 0 / 0.07), 0 8px 10px -6px rgb(0 0 0 / 0.07);
 
   /* Nebula radar: gradient edge fades to the panel background */
   --nebula-edge: #e8e8e8;
@@ -483,12 +489,13 @@
   --sidebar-accent: 0 0% 86%;
   --sidebar-accent-foreground: 0 0% 9%;
   --sidebar-border: 0 0% 83%;
-  --sidebar-ring: 24 90% 44%;
-  /* The scroll-edge shadow under the sidebar's header and footer. Theme-split
-     for the same reason --elevation-* is: a shadow is light falling on a
-     surface, and the same black that reads as a soft edge on a light panel
-     disappears entirely on a dark one. */
-  --sidebar-scroll-edge: 0 0% 0% / 0.16;
+  --sidebar-ring: var(--dui-ring);
+  /* The scroll-edge shadow under a header and footer. Theme-split for the same
+     reason --elevation-* is: a shadow is light falling on a surface, and the same
+     black that reads as a soft edge on a light panel disappears entirely on a
+     dark one. */
+  --scroll-edge: 0 0% 0% / 0.1;
+  --sidebar-scroll-edge: var(--scroll-edge);
 
   /* Categorical chart palette (gen-ui widgets) — brand orange + calm hues */
   --chart-1: 24 90% 44%;
@@ -521,6 +528,8 @@
   --brand: var(--dui-brand);
   --brand-foreground: var(--dui-brand-foreground);
   --brand-text: var(--dui-brand-text);
+  --faint: 0 0% 58%;
+  --scrim: var(--dui-scrim);
 
   --status-success: 152 69% 55%;
   --status-success-bg: 152 69% 12%;
@@ -530,7 +539,7 @@
   --status-error: 0 72% 60%;
   --status-error-bg: 0 72% 12%;
   --status-error-border: 0 72% 25%;
-  --status-error-fg: 0 72% 60%;
+  --status-error-fg: 0 72% 68%;
 
   --status-warning: 38 92% 60%;
   /* Unchanged from `--status-warning` here, and that is the answer rather than
@@ -539,7 +548,7 @@
   --status-warning-dot: 38 92% 60%;
   --status-warning-bg: 38 92% 12%;
   --status-warning-border: 38 92% 25%;
-  --status-warning-fg: 38 92% 50%;
+  --status-warning-fg: 38 92% 56%;
 
   --status-info: 213 94% 68%;
   --status-info-bg: 213 94% 12%;
@@ -642,8 +651,9 @@
   --sidebar-accent: 0 0% 16%;
   --sidebar-accent-foreground: 0 0% 93%;
   --sidebar-border: 0 0% 25%;
-  --sidebar-ring: 24 88% 55%;
-  --sidebar-scroll-edge: 0 0% 0% / 0.45;
+  --sidebar-ring: var(--dui-ring);
+  --scroll-edge: 0 0% 0% / 0.45;
+  --sidebar-scroll-edge: var(--scroll-edge);
 
   /* Categorical chart palette (gen-ui widgets) — brighter for dark surfaces */
   --chart-1: 24 88% 55%;
