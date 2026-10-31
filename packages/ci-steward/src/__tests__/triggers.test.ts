@@ -432,11 +432,34 @@ describe('trigger rules', () => {
     // A deadline inside the job at 5.5 minutes is the one that ends it: 90.9%.
     const r = repo();
     r.files.config.deadlines = [
-      { gate: 'wf.test.test-shard', minutes: 5.5, source: 'a runner-level deadline' },
+      {
+        gate: 'wf.test.test-shard',
+        minutes: 5.5,
+        lead_minutes: 0,
+        source: 'a runner-level deadline',
+      },
     ];
     const t = triage(input({ ...r, snapshots: days }));
     expect(ids(t)).toEqual(['headroom:wf.test.test-shard']);
     expect(t.open[0]!.what).toContain('90.9%');
+  });
+
+  it("8c. counts the setup ahead of an inner deadline's clock as job time it does not bound", () => {
+    // The same 5.5-minute deadline, but its clock starts after a minute of
+    // setup, so the job ends at 6.5 minutes: 76.9%, nothing to say.
+    const r = repo();
+    r.files.config.deadlines = [
+      {
+        gate: 'wf.test.test-shard',
+        minutes: 5.5,
+        lead_minutes: 1,
+        source: 'a step-level deadline',
+      },
+    ];
+    const days = Array.from({ length: 2 }, (_, i) =>
+      gateDay(addDays(TODAY, -1 - i), 'wf.test.test-shard', { runs: 10, seconds: 300, timeout: 10 })
+    );
+    expect(ids(triage(input({ ...r, snapshots: days })))).toEqual([]);
   });
 
   it('7c. keeps a spell open past a commit that did not run the workflow that failed', () => {
