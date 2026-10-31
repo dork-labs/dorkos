@@ -420,11 +420,30 @@ describe('ScheduleApprovalCard — answering it', () => {
     renderCard(proposal({ enabled: false }), { updateTask });
 
     const stayOff = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
-    expect(stayOff).toHaveTextContent('Approve (stays off)');
+    expect(stayOff).toHaveTextContent(/^Approve$/);
     await userEvent.click(stayOff);
 
     expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
-    expect(await findSlot('schedule-receipt')).toHaveTextContent('Approved, still off');
+    expect(await findSlot('schedule-receipt')).toHaveTextContent(
+      'Approved. Off until you turn it on.'
+    );
+  });
+
+  it('orders the answers Approve, Approve and turn on, Run it once, Reject', async () => {
+    renderCard(proposal({ enabled: false }));
+
+    await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    const order = [
+      'schedule-approve',
+      'schedule-approve-turn-on',
+      'schedule-test-run-start',
+      'schedule-reject',
+    ].map((name) => slot(name));
+    for (let i = 1; i < order.length; i++) {
+      expect(
+        order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    }
   });
 
   it('sends enabled: true with "Approve and turn on" (DOR-3309)', async () => {

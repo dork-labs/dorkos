@@ -47,7 +47,7 @@ import {
   TaskOpenScheduleButton,
 } from './TaskHealthParts';
 import { isFailing } from '../lib/schedule-health';
-import { TaskApproveButtons, TaskTurnOnOffer } from './TaskSwitchOffers';
+import { TaskApproveButtons, TaskFileSaysOnNote } from './TaskSwitchOffers';
 
 /**
  * Density steps controlling how much detail a TaskRow displays.
@@ -383,7 +383,7 @@ export function TaskRow({
                 panel — otherwise a package-shipped schedule found switched off
                 is indistinguishable from one the person switched off
                 themselves (DOR-2059 review). */}
-            {!isMinimal && <TaskTurnOnOffer task={task} />}
+            {!isMinimal && <TaskFileSaysOnNote task={task} />}
             {!isMinimal && isQuietlyParkedFromFile && task.filePath && (
               <div
                 data-slot="task-quiet-source"
