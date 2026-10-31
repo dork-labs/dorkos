@@ -33,9 +33,15 @@ web server under `turbo e2e`) would wait the whole job bound on its own parent.
 **The lock directory must be ours (DOR-3509).** `/tmp/dorkos-heavy-locks-<uid>`
 can be created first by another user. A symlink or a foreign directory there is
 now refused, with one line, and the command runs uncapped, as for an unwritable
-directory. Every slot and queue open uses `O_NOFOLLOW`; before this, a planted
-symlink slot file made the holder truncate the file it pointed at. A directory of
-ours left open to others is closed to `go-rwx`.
+directory. The path checks only give a clear message, since the path can be
+swapped after them. The sidecar `chdir`s into the directory and requires the
+path to be a non-link directory we own with the same dev/ino as `.`. It closes
+it to `go-rwx` there and uses relative names from then on. Every slot and queue
+open uses `O_NOFOLLOW` and keeps the fd only for a regular file we own with
+`nlink == 1`. Before this, a planted symlink or hard-linked slot file made the
+holder truncate the file it named. The writability check is `-w "."`, so no
+probe file is left behind. Not changed here, and kept as tickets: the
+`DORKOS_HEAVY_*` pass-through wildcard and pid reuse under `--hold`.
 
 `scripts-test-scope.sh` gains `^turbo\.json$`, because the new
 `scripts/__tests__/heavy-turbo-slot.test.ts` pins turbo.json and a turbo.json-only

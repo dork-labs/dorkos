@@ -202,8 +202,12 @@ mkdir -p -m 700 -- "$lock_dir" 2>/dev/null
 # files or read every holder's command line. Either is refused, the same way an
 # unwritable directory is: one line, and the command runs uncapped, because a
 # squatter must not be able to stop every build and commit on the host.
-# /tmp's sticky bit stops anyone else renaming a directory we own, so checking
-# it once here holds for the run.
+#
+# These two checks are by PATH, so they only give the common case a clear
+# message: a squatter can swap the path after them. The checks that hold are in
+# the sidecar, which enters the directory, confirms it is the one it checked,
+# closes it to others and uses relative names from there (see "PIN THE
+# DIRECTORY" below).
 refuse_lock_dir() {
   echo "[heavy-run-lock] refusing lock directory ${lock_dir}: $1 — running without the host-wide cap." >&2
   echo "                 Remove it, or point DORKOS_HEAVY_LOCK_DIR at a directory you own." >&2
@@ -218,20 +222,6 @@ if [ -e "$lock_dir" ] && [ ! -O "$lock_dir" ]; then
   refuse_lock_dir "it is owned by uid $(ls -ldn -- "$lock_dir" 2>/dev/null | awk '{print $3}'), not by you (uid $(id -u))"
   run_uncapped "$@"
 fi
-# Ours but left open to others (made by an older version, or by hand): close it
-# before anything is created in it. Only group and other bits, so an owner's
-# own read-only directory still reaches the writability probe below.
-chmod go-rwx -- "$lock_dir" 2>/dev/null
-
-# WRITABILITY IS A SEPARATE QUESTION FROM EXISTENCE. `mkdir -p` returns 0 for a
-# directory that is there but unwritable, and every slot open would then fail,
-# so every waiter would sit out its whole bound and blame busy slots. One probe
-# answers it. mktemp creates exclusively, so a planted name is never followed.
-if ! probe=$(mktemp "$lock_dir/.probe.XXXXXX" 2>/dev/null); then
-  echo "[heavy-run-lock] cannot write ${lock_dir} — running without the host-wide cap." >&2
-  run_uncapped "$@"
-fi
-rm -f -- "$probe"
 
 # Every ancestor of this wrapper, nearest first. A nested call whose parent
 # holds a slot normally says so through DORKOS_HEAVY_SLOT_HELD, but turbo runs
@@ -250,8 +240,8 @@ done
 # hold the slot for, a one-line description of the holder for waiters, the
 # ancestor pids, and 1 to detach once the slot is taken (--hold).
 # It prints exactly one line on stdout — `acquired <waited>`, `timeout
-# <waited>` or `nested 0` — and, once acquired, holds the slot until that pid
-# is gone.
+# <waited>`, `nested 0` or `refused 0` (the directory failed a check; it says
+# why on stderr) — and, once acquired, holds the slot until that pid is gone.
 # shellcheck disable=SC2016
 holder_src='
 use strict;
@@ -269,13 +259,51 @@ STDOUT->autoflush(1);
 sub left { my $l = $deadline - time; return $l > 0 ? $l : 0 }
 sub done { print STDOUT "$_[0] ", int(time - $start), "\n"; close STDOUT }
 
-sub slot_path { "$dir/slot-$_[0]" }
+sub refuse {
+  print STDERR "[heavy-run-lock] $_[0] — running without the host-wide cap.\n";
+  print STDERR "                 Remove it, or point DORKOS_HEAVY_LOCK_DIR at a directory you own.\n" if $_[1];
+  done("refused");
+  exit 0;
+}
 
-# O_NOFOLLOW on every open (DOR-3509): a slot file that is a symlink is never
-# followed, so neither our write nor our truncate can reach another file.
+# PIN THE DIRECTORY (DOR-3509). A check by path and a use by path can see two
+# different directories: a squatter swaps the path in between. So enter it
+# first, then require that the PATH is a real directory (not a link) with the
+# same device and inode as where we are, and that it is ours. From here on
+# every name is relative, so it resolves in that directory whatever the path
+# later points at.
+chdir($dir) or refuse("cannot enter $dir");
+my @at = lstat($dir) or refuse("cannot read $dir");
+refuse("refusing lock directory $dir: it is a symlink, not a directory", 1) if -l _;
+refuse("refusing lock directory $dir: it is not a directory", 1) unless -d _;
+my @here = stat(".") or refuse("cannot read $dir");
+refuse("refusing lock directory $dir: it changed while it was being checked", 1)
+  unless $at[0] == $here[0] && $at[1] == $here[1];
+refuse("refusing lock directory $dir: it is owned by uid $here[4], not by you (uid $<)", 1)
+  unless $here[4] == $<;
+# Ours but left open to others (an older version, or made by hand): close it
+# before anything is opened in it. Only group and other bits, so an owner who
+# made it read-only still reaches the writability check.
+chmod($here[2] & 0700, ".");
+# WRITABILITY IS A SEPARATE QUESTION FROM EXISTENCE. Every slot open would fail
+# in a directory we cannot write, and every waiter would sit out its whole
+# bound blaming busy slots. Asked of the kernel, so nothing is created to ask.
+refuse("cannot write $dir") unless -w ".";
+
+sub slot_path { "slot-$_[0]" }
+
+# Every opened file must be a plain file of ours with no other name. O_NOFOLLOW
+# stops a symlink; nlink == 1 stops a HARD link to one of our files, which
+# O_NOFOLLOW cannot see, and which our truncate would otherwise empty.
+sub ours {
+  my @s = stat($_[0]);
+  return @s && -f _ && $s[4] == $< && $s[3] == 1;
+}
+
 sub try_slot {
   my ($k) = @_;
   sysopen(my $fh, slot_path($k), O_RDWR | O_CREAT | O_NOFOLLOW, 0600) or return;
+  unless (ours($fh)) { close $fh; return }
   return $fh if flock($fh, LOCK_EX | LOCK_NB);
   close $fh;
   return;
@@ -293,6 +321,7 @@ sub holders {
   my @out;
   for my $k (1 .. $slots) {
     sysopen(my $fh, slot_path($k), O_RDONLY | O_NOFOLLOW) or next;
+    unless (ours($fh)) { close $fh; next }
     if (flock($fh, LOCK_SH | LOCK_NB)) { close $fh; next }
     my $line = <$fh>;
     close $fh;
@@ -325,7 +354,8 @@ unless ($fh) {
   # Line up behind the other waiters. The queue lock is held only while waiting,
   # so the head of the queue is the only one polling slots.
   my $queue;
-  sysopen($queue, "$dir/queue", O_RDWR | O_CREAT | O_NOFOLLOW, 0600) or undef $queue;
+  sysopen($queue, "queue", O_RDWR | O_CREAT | O_NOFOLLOW, 0600) or undef $queue;
+  if ($queue && !ours($queue)) { close $queue; undef $queue }
   if ($queue) {
     my $ok = eval {
       local $SIG{ALRM} = sub { die "timeout\n" };
@@ -402,7 +432,7 @@ case $verdict in
   timeout)
     ci_steward_note lock_timeout "$waited"
     ;;
-  nested) ;;
+  nested | refused) ;;
   *)
     echo "[heavy-run-lock] the lock helper exited without an answer — running without the host-wide cap." >&2
     ;;

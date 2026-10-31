@@ -390,6 +390,29 @@ out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=2 bash "$CHECK" bash -c 
 check_eq 'a planted symlink slot does not stop the run' 'ran-past-planted-slot' "$out"
 check_eq 'a planted symlink slot is never written through' 'keep me' "$(cat "$work/victim")"
 
+# A HARD link is a second name for the same file, so O_NOFOLLOW cannot see it,
+# and it can sit in a directory that is ours. Security's probe on #3368 emptied a
+# 35-byte canary this way. A slot file with another name is refused; the queue
+# file too, when every slot is busy and the run has to line up.
+locks=$(new_locks)
+printf 'canary: never empty this\n' >"$work/canary"
+ln "$work/canary" "$locks/slot-1"
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=2 bash "$CHECK" bash -c 'echo ran-past-hard-link' 2>&1)
+check_eq 'a hard-linked slot does not stop the run' 'ran-past-hard-link' "$out"
+check_eq 'a hard-linked slot is never truncated or written' 'canary: never empty this' "$(cat "$work/canary")"
+locks=$(new_locks)
+printf 'canary: never empty this\n' >"$work/canary2"
+ln "$work/canary2" "$locks/slot-1"
+ln "$work/canary2" "$locks/queue"
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=1 \
+  bash "$CHECK" bash -c 'echo ran-past-hard-linked-queue' 2>&1)
+check_contains 'with every slot hard-linked the run still goes ahead' 'ran-past-hard-linked-queue' "$out"
+check_eq 'a hard-linked queue is never written' 'canary: never empty this' "$(cat "$work/canary2")"
+
+# The write check no longer leaves a probe file behind.
+probes=$(cd "$locks" && for f in .probe*; do [ -e "$f" ] && printf '%s ' "$f"; done)
+check_eq 'no probe file is left in the lock directory' '' "$probes"
+
 echo ""
 echo "== --hold takes a slot for another process, for a bare turbo run (DOR-3274 Phase 2) =="
 
