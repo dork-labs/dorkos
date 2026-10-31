@@ -159,6 +159,7 @@ describe('secret files in the agent’s own folder (DOR-3292)', () => {
     '.git-credentials',
     'gcp/my-service-account-prod.json',
     'credentials.json',
+    'home/.aws/credentials',
     'home/.docker/config.json',
     '.kube/config',
   ])('denies %s, which the scan also names', (rel) => {
@@ -166,13 +167,20 @@ describe('secret files in the agent’s own folder (DOR-3292)', () => {
     expect(covered(rel)).toBe(true);
   });
 
-  it.each(['.env.example', '.env.sample', 'id_ed25519.pub', 'notes.md', 'env.ts'])(
-    'leaves %s readable, which the scan does not name',
-    (rel) => {
-      expect(secretNameRule(path.basename(rel), rel)).toBeUndefined();
-      expect(covered(rel)).toBe(false);
-    }
-  );
+  it.each([
+    '.env.example',
+    '.env.sample',
+    'id_ed25519.pub',
+    'notes.md',
+    'env.ts',
+    // Beside or under a bare secret name (DOR-3510).
+    'docs/credentials/setup.md',
+    'src/credentials.ts',
+    'src/i18n/keys.ts',
+  ])('leaves %s readable, which the scan does not name', (rel) => {
+    expect(secretNameRule(path.basename(rel), rel)).toBeUndefined();
+    expect(covered(rel)).toBe(false);
+  });
 
   it('names nothing for a turn with no agent folder', () => {
     expect(secretReadDenyRules(FOLDERS).some((rule) => rule.includes('/agents/scout/'))).toBe(

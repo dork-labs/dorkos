@@ -85,6 +85,10 @@ export const HOME_SECRETS = globs(HOME_SECRET_PATHS);
  *   (`python3 -c "open('.env')"`). Below Full it is a card or a refusal.
  * Only moving the file out of the folder stops those, or Claude Code's Bash
  * sandbox, which isn't on.
+ *
+ * Bare names (`credentials`, `*.key`) can catch an ordinary file, so every
+ * refusal under one of these names logs a `[SecretReadDeny]` line
+ * (`secret-deny-refusal.ts`, DOR-3510). Narrow a name that bites.
  */
 export const AGENT_FOLDER_SECRETS = globs(AGENT_FOLDER_SECRET_PATHS).map((glob) => `**/${glob}`);
 
