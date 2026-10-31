@@ -399,6 +399,48 @@ describe('RoomRepoService', () => {
     });
   });
 
+  describe('setUpForNewRoom (DOR-2112)', () => {
+    it('gives a channel the person opened its files and ROOM.md, committed as them', async () => {
+      expect(await service.setUpForNewRoom(ROOM_ID, OPERATOR)).toBe(true);
+
+      const repoDir = store.repoPath(ROOM_ID);
+      expect(await git(['ls-files'], repoDir)).toBe(ROOM_MD_FILENAME);
+      expect(await git(['log', '--format=%an <%ae>'], repoDir)).toBe(
+        'Dorian <operator@dorkos.local>'
+      );
+      expect(store.getRow(ROOM_ID)).toMatchObject({ roomId: ROOM_ID, mode: 'owned' });
+      expect(pinned).toEqual([{ roomId: ROOM_ID, authorId: OPERATOR }]);
+    });
+
+    it('writes nothing for a room an agent opened, and never asks enable to refuse', async () => {
+      const enable = vi.spyOn(service, 'enable');
+      expect(await service.setUpForNewRoom(ROOM_ID, AGENT)).toBe(false);
+      expect(enable).not.toHaveBeenCalled();
+      expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
+    });
+
+    it('writes nothing while room files are switched off', async () => {
+      enabled = false;
+      expect(await service.setUpForNewRoom(ROOM_ID, OPERATOR)).toBe(false);
+      expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
+      expect(store.getRow(ROOM_ID)).toBeNull();
+    });
+
+    it('leaves a direct message without files', async () => {
+      room = { ...ROOM, kind: 'dm', slug: null };
+      expect(await service.setUpForNewRoom(ROOM_ID, OPERATOR)).toBe(false);
+      expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
+    });
+
+    it('never throws: a machine without git leaves a room without files', async () => {
+      vi.stubEnv('PATH', '');
+      await expect(service.setUpForNewRoom(ROOM_ID, OPERATOR)).resolves.toBe(false);
+      vi.unstubAllEnvs();
+      expect(store.getRow(ROOM_ID)).toBeNull();
+      expect(existsSync(store.sidecarPath(ROOM_ID))).toBe(false);
+    });
+  });
+
   describe('hasRepo', () => {
     it('is false for a room with no repo, true once it has one', async () => {
       expect(service.hasRepo(ROOM_ID)).toBe(false);

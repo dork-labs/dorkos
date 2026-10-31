@@ -150,6 +150,8 @@ describe('room files routes', () => {
   let attachmentRows: AttachmentRowStore;
   let roomSubsystem: ReturnType<typeof createRoomSubsystem>;
   let attachmentStore: LocalRoomAttachmentStore;
+  /** Whether rooms may have files; only ever switched off to make a plain room. */
+  let filesOn: boolean;
 
   beforeEach(async () => {
     fakeRuntime = new FakeAgentRuntime();
@@ -158,6 +160,7 @@ describe('room files routes', () => {
     db = createTestDb();
     dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-room-files-route-'));
     maxFileBytes = ROOM_REPO_CAP_DEFAULTS.maxFileBytes;
+    filesOn = true;
     registerAgent(db, 'ana', ANA_PATH);
     const rooms = createRoomSubsystem({ db });
     roomSubsystem = rooms;
@@ -172,7 +175,7 @@ describe('room files routes', () => {
       store,
       mutex,
       queueWaitMs: () => 5000,
-      enabled: () => true,
+      enabled: () => filesOn,
       getRoom: (roomId, viewerAuthorId) => rooms.service.getRoom(roomId, viewerAuthorId),
       isOwnerAuthor: (authorId) => rooms.authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
       operatorGitName: () => 'Dorian',
@@ -212,11 +215,16 @@ describe('room files routes', () => {
     await rm(dorkHome, { recursive: true, force: true });
   });
 
-  /** A channel with Ana on the roster. */
+  /**
+   * A channel with Ana on the roster and no files: made while room files are
+   * off, since a room the person opens otherwise starts with them (DOR-2112).
+   */
   async function channel(title = 'Release train'): Promise<string> {
+    filesOn = false;
     const created = await request(testServer)
       .post('/api/rooms')
       .send({ kind: 'channel', title, agentPaths: [ANA_PATH] });
+    filesOn = true;
     expect(created.status).toBe(201);
     return created.body.id as string;
   }

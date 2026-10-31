@@ -46,6 +46,7 @@ import {
   getRoomService,
   RoomError,
   toAuthorRef,
+  tryGetRoomRepoService,
   type PostedEntry,
 } from '../services/rooms/index.js';
 import { listRoomsAcrossCommunities } from '../services/communities/index.js';
@@ -101,12 +102,20 @@ router.get('/', (c) => {
  * stripped here rather than serialized, so the response stays exactly
  * `RoomWithRosterSchema` and the distinction rides the status line, where an
  * upsert's does.
+ *
+ * **A channel the person opens starts with its own files and `ROOM.md`**
+ * (DOR-2112), set up before this answers so the room's panel shows them on
+ * first look. Only for a room this call created: an existing room is never
+ * given files by being opened again. `setUpForNewRoom` says no to a DM, to an
+ * agent, and to an install with room files switched off, and never fails the
+ * create.
  */
 router.post('/', (c) => {
   const body = parseOrRefuse(c, CreateRoomRequestSchema, readJsonBody(c));
   if (body instanceof Response) return body;
-  return roomRoute(c, 'POST /', (caller) => {
+  return roomRoute(c, 'POST /', async (caller) => {
     const { created, ...room } = getRoomService().createRoom(body, caller().id);
+    if (created) await tryGetRoomRepoService()?.setUpForNewRoom(room.id, caller().id);
     return c.json(room, created ? 201 : 200);
   });
 });
