@@ -12,6 +12,9 @@ import {
   ConfigBootError,
   configManager,
 } from '../../services/core/config-manager.js';
+import { accountSigninPolicy } from '../../services/health/account-signin-policy.js';
+import { readAccountLoginMetadata } from '../../services/runtimes/claude-code/accounts/account-login-metadata.js';
+import { signinAccounts } from '../../services/runtimes/connect/signin-accounts.js';
 import { logger, initLogger } from '../../lib/logger.js';
 import { warnMalformedAccountRules } from '../../services/core/usage/account-eligibility.js';
 import { initCredentialProvider } from '../../services/core/credential-provider.js';
@@ -62,6 +65,13 @@ export async function openConfigAndDatabase(
     console.error(`\n${error.message}\n`);
     process.exit(1);
   }
+  // Before usage polling or any launch, preserve the identities an existing
+  // install already used. Metadata is non-secret; excluded folders never enter it.
+  accountSigninPolicy()?.initializeInstall(
+    !configManager.isFirstRun,
+    signinAccounts().map((account) => account.path),
+    readAccountLoginMetadata
+  );
   // A hand-edited account rule of the wrong shape reads as "no rule" rather than
   // refusing the file (spec `flow-multiproject` §8.1); say so once.
   warnMalformedAccountRules(configManager, (message, meta) => logger.warn(message, meta));

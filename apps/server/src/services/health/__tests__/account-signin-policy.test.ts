@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,15 +19,35 @@ beforeEach(() => {
 });
 afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
 describe('account identity policy', () => {
-  it('fails closed with missing, empty, unreadable policy or metadata', () => {
+  it('fails closed with missing, unreadable policy or metadata', () => {
     expect(policy.assess('/fake/claude5', identity).state).toBe('unreadable');
     policy.addOrganization(forbidden, 'Excluded company');
     policy.removeOrganization(forbidden);
-    expect(policy.accept('/fake/claude5', identity)).toBe(false);
+    expect(policy.assess('/fake/claude5', identity).state).toBe('unconfirmed');
     policy.addOrganization(forbidden, 'Excluded company');
     expect(policy.assess('/fake/claude5', null).state).toBe('unreadable');
     fs.writeFileSync(path.join(home, 'account-signin-policy.json'), '{');
     expect(new AccountSigninPolicy(home).accept('/fake/claude5', identity)).toBe(false);
+  });
+  it('initializes an explicit empty list and never rebinds after restart or policy deletion', () => {
+    const read = vi.fn(() => identity);
+    policy.initializeInstall(true, ['/fake/existing'], read);
+    expect(policy.assess('/fake/existing', identity).state).toBe('confirmed');
+    const changed = { ...identity, accountUuid: forbidden };
+    policy.initializeInstall(true, ['/fake/existing'], () => changed);
+    expect(policy.assess('/fake/existing', changed).state).toBe('changed');
+    fs.unlinkSync(path.join(home, 'account-signin-policy.json'));
+    const missing = new AccountSigninPolicy(home);
+    missing.initializeInstall(true, ['/fake/existing'], read);
+    expect(missing.assess('/fake/existing', identity).state).toBe('unreadable');
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+  it('does not read any excluded folder during an upgrade', () => {
+    policy.addFolder({ accountId: 'excluded', path: '/fake/excluded', label: 'Excluded' });
+    const read = vi.fn(() => identity);
+    policy.initializeInstall(true, ['/fake/excluded'], read);
+    expect(read).not.toHaveBeenCalled();
+    expect(policy.assess('/fake/excluded', null).state).toBe('never-use');
   });
   it('requires first confirmation and pauses a UUID mismatch even with the same email', () => {
     policy.addOrganization(forbidden, 'Excluded company');

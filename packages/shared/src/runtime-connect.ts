@@ -468,6 +468,7 @@ export interface AccountSigninIdentityView {
   previousEmail?: string;
 }
 export interface ClaudeSigninPolicyView {
+  stepUp?: 'password' | 'this-computer' | 'other-computer';
   deniedOrganizations: Array<{ id: string; label: string }>;
   folders: Array<{ accountId: string; path: string; label: string }>;
   accounts: Array<{
@@ -480,6 +481,7 @@ export interface ClaudeSigninPolicyView {
 /** Every mutation requires an owner session and a fresh password step-up. */
 export type ClaudeSigninPolicyChange = {
   password: string;
+  confirmOnThisComputer?: true;
 } & (
   | { action: 'add-org'; orgId: string; label: string }
   | { action: 'remove-org'; orgId: string }

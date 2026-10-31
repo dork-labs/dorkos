@@ -44,6 +44,7 @@ import {
   type EligibilityConfigReader,
   type Ineligible,
 } from './account-eligibility.js';
+import { accountLoginIdentity } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 import { getAccountUsageStore } from './current-usage-store.js';
 import type { RuntimeAccount } from './runtime-accounts.js';
 
@@ -304,6 +305,27 @@ async function advisedRanking(
   };
 }
 
+/** Health is a server constraint: an advisor cannot make an unbound folder eligible. */
+function confirmedRanking(ranking: AccountRanking): AccountRanking {
+  const store = getAccountUsageStore();
+  const accounts = ranking.accounts.map((row) => {
+    if (row.runtime !== 'claude-code' || row.id === 'dorkos-credits') return row;
+    const account = store?.listAccounts('claude-code').find((item) => item.id === row.id);
+    const root = account?.canonicalPath;
+    if (root && accountLoginIdentity(root).state === 'confirmed') return row;
+    return { ...row, eligible: false, reason: 'Choose an account' };
+  });
+  accounts.sort((a, b) => Number(b.eligible) - Number(a.eligible));
+  return {
+    ...ranking,
+    accounts,
+    recommendedId:
+      accounts.find((row) => row.eligible && row.id === ranking.recommendedId)?.id ??
+      accounts.find((row) => row.eligible)?.id ??
+      null,
+  };
+}
+
 /**
  * Rank the accounts a session may launch or continue on: the registered
  * advisor's ranking (validated: unknown ids dropped, hidden ids absent), else
@@ -314,8 +336,9 @@ async function advisedRanking(
 export async function rankAccounts(ctx: AdvisorContext): Promise<AccountRanking> {
   const project = await projectOfFolder(ctx.cwd);
   const advised = await advisedRanking(ctx, project);
-  if (advised === null || advised === 'failed') return defaultRanking(ctx, project);
-  return advised;
+  return confirmedRanking(
+    advised === null || advised === 'failed' ? defaultRanking(ctx, project) : advised
+  );
 }
 
 /**
@@ -334,7 +357,9 @@ export function launchFallbackOrder(
   project: ProjectRef | null,
   config: EligibilityConfigReader = configManager
 ): string[] {
-  return coreRanking(runtime, project, config).map((row) => row.id);
+  return coreRanking(runtime, project, config)
+    .filter((row) => row.eligible)
+    .map((row) => row.id);
 }
 
 /**
@@ -352,10 +377,8 @@ export function coreRanking(
   project: ProjectRef | null,
   config: EligibilityConfigReader = configManager
 ): RankedAccount[] {
-  return defaultRanking(
-    { purpose: 'launch', caller: 'person', cwd: '', runtime },
-    project,
-    config
+  return confirmedRanking(
+    defaultRanking({ purpose: 'launch', caller: 'person', cwd: '', runtime }, project, config)
   ).accounts.filter((row) => row.runtime === runtime);
 }
 

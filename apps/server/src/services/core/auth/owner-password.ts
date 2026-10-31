@@ -91,6 +91,16 @@ const liveDeps: OwnerPasswordDeps = {
   now: () => Date.now(),
 };
 
+/** Whether a password step-up exists; never returns the hash or any credential. */
+export async function ownerPasswordAvailable(): Promise<boolean> {
+  const owner = readOwnerAccount();
+  if (!owner) return false;
+  const verifier = await liveVerifier();
+  // Auth being unavailable is not permission to use the local fallback.
+  if (!verifier) return true;
+  return (await verifier.storedHash(owner.id)) !== null;
+}
+
 /** When each recent wrong password arrived, oldest first. */
 let failures: number[] = [];
 

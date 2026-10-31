@@ -11,7 +11,7 @@ import {
   Input,
   Label,
 } from '@/layers/shared/ui';
-import { SIGNIN_POLICY_KEY } from '../model/use-signin-policy';
+import { SIGNIN_POLICY_KEY, useSigninPolicy } from '../model/use-signin-policy';
 
 type Change = ClaudeSigninPolicyChange extends infer T
   ? T extends { password: string }
@@ -37,6 +37,9 @@ export function OwnerSigninAction({
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const policy = useSigninPolicy();
+  const localConfirm = policy.data?.stepUp === 'this-computer';
+  const onOtherComputer = policy.data?.stepUp === 'other-computer';
   const transport = useTransport();
   const client = useQueryClient();
   async function apply() {
@@ -45,7 +48,11 @@ export function OwnerSigninAction({
     const stepUp = password;
     setPassword('');
     try {
-      await transport.changeClaudeSigninPolicy({ ...change, password: stepUp });
+      await transport.changeClaudeSigninPolicy({
+        ...change,
+        password: stepUp,
+        ...(localConfirm ? { confirmOnThisComputer: true as const } : {}),
+      });
       await Promise.all([
         client.invalidateQueries({ queryKey: SIGNIN_POLICY_KEY }),
         client.invalidateQueries({ queryKey: configKeys.current() }),
@@ -81,7 +88,11 @@ export function OwnerSigninAction({
         <DialogContent>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Confirm it’s you with this computer’s owner password.
+            {localConfirm
+              ? 'Confirm it’s you on this computer.'
+              : onOtherComputer
+                ? 'Confirm this on the Mac running DorkOS.'
+                : 'Confirm it’s you with this computer’s owner password.'}
           </DialogDescription>
           {children}
           <form
@@ -91,22 +102,29 @@ export function OwnerSigninAction({
             }}
             className="space-y-3"
           >
-            <Label htmlFor="signin-step-up">Owner password</Label>
-            <Input
-              id="signin-step-up"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              disabled={pending}
-            />
+            {!localConfirm && !onOtherComputer && (
+              <>
+                <Label htmlFor="signin-step-up">Owner password</Label>
+                <Input
+                  id="signin-step-up"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={pending}
+                />
+              </>
+            )}
             {error && (
               <p role="alert" className="text-destructive text-sm">
                 {error}
               </p>
             )}
-            <Button type="submit" disabled={pending || !password}>
-              {pending ? 'Checking…' : label}
+            <Button
+              type="submit"
+              disabled={pending || onOtherComputer || (!localConfirm && !password)}
+            >
+              {pending ? 'Checking…' : localConfirm ? 'Confirm on the Mac' : label}
             </Button>
           </form>
         </DialogContent>

@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(runtimes): preserve existing logins and require confirmed handoff targets'
   - 'fix(runtimes): refresh confirmed sign-ins through the shared config query'
   - 'fix(runtimes): keep excluded account aliases out of probes'
   - 'fix(runtimes): pause Claude accounts until their login is confirmed'
@@ -11,4 +12,4 @@ covers:
 
 ### Note for people upgrading
 
-- Review Claude sign-ins in Settings → Runtimes before running agents. An empty exclusion list keeps accounts paused.
+- Existing Claude sign-ins stay confirmed after upgrading. Changed logins wait for confirmation in Settings → Runtimes. Without an owner password, confirm on the Mac running DorkOS.

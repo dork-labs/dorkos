@@ -16,6 +16,15 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
+import fs from 'node:fs';
+import {
+  accountSigninPolicy,
+  initAccountSigninPolicy,
+} from '../../../../health/account-signin-policy.js';
+import {
+  requireConfirmedAccountLogin,
+  readAccountLoginMetadata,
+} from '../../accounts/account-login-metadata.js';
 import os from 'os';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
@@ -101,17 +110,68 @@ async function runTurn(session: AgentSession): Promise<Options> {
 
 describe('executeSdkQuery — Claude account pin', () => {
   const ORIGINAL_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
+  let policyHome: string;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    policyHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-pin-policy-'));
+    initAccountSigninPolicy(policyHome);
+    accountSigninPolicy()!.initializeInstall(false, [], () => null);
     // A launching terminal that exported an account. Every assertion below is
     // about DorkOS deciding the account rather than inheriting this one.
     process.env.CLAUDE_CONFIG_DIR = ACTIVE;
   });
 
   afterEach(() => {
+    fs.rmSync(policyHome, { recursive: true, force: true });
     if (ORIGINAL_CONFIG_DIR === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = ORIGINAL_CONFIG_DIR;
+  });
+
+  it('upgrades a 0.125.4 login-off install and runs a turn without pausing it', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-upgrade-identity-'));
+    const root = path.join(home, 'claude-fixture');
+    fs.mkdirSync(root);
+    fs.writeFileSync(
+      path.join(home, 'config.json'),
+      JSON.stringify({
+        auth: { enabled: false },
+        __version: '0.125.4',
+        runtimes: { claudeCode: { accounts: [{ id: 'work', path: root }] } },
+      })
+    );
+    fs.writeFileSync(
+      path.join(root, '.claude.json'),
+      JSON.stringify({
+        oauthAccount: {
+          accountUuid: '11111111-1111-4111-8111-111111111111',
+          organizationUuid: '22222222-2222-4222-8222-222222222222',
+          emailAddress: 'fixture@example.test',
+        },
+      })
+    );
+    const real = await vi.importActual<typeof import('../../accounts/account-login-metadata.js')>(
+      '../../accounts/account-login-metadata.js'
+    );
+    try {
+      initAccountSigninPolicy(home);
+      const config = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
+      expect(config.auth.enabled).toBe(false);
+      accountSigninPolicy()!.initializeInstall(
+        true,
+        config.runtimes.claudeCode.accounts.map((row: { path: string }) => row.path),
+        readAccountLoginMetadata
+      );
+      vi.mocked(requireConfirmedAccountLogin).mockImplementation(real.requireConfirmedAccountLogin);
+      expect(real.accountLoginIdentity(root).state).toBe('confirmed');
+      const options = await runTurn(makeSession({ accountRoot: root }));
+      expect(options.env?.CLAUDE_CONFIG_DIR).toBe(root);
+      expect(query).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.mocked(requireConfirmedAccountLogin).mockImplementation(() => {});
+      fs.rmSync(home, { recursive: true, force: true });
+      initAccountSigninPolicy(policyHome);
+    }
   });
 
   it("pins the session's OWN account, not the active one, when disk resolved it", async () => {

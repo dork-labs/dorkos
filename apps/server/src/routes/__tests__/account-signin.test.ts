@@ -21,6 +21,7 @@ const identity = { accountUuid: org, organizationUuid: org, maskedEmail: 'd…@e
 let home: string;
 let policy: AccountSigninPolicy;
 const metadata = vi.fn(() => identity);
+const passwordAvailable = vi.fn(async () => true);
 const checkPassword = vi.fn(async (password: string | undefined) =>
   password === 'fresh' ? ('ok' as const) : ('wrong' as const)
 );
@@ -30,20 +31,22 @@ beforeEach(() => {
   policy.addOrganization(blocked, 'Art Blocks fixture');
   vi.clearAllMocks();
   metadata.mockReturnValue(identity);
+  passwordAvailable.mockResolvedValue(true);
 });
 afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
 async function call(
-  actor: 'owner' | 'teammate' | 'agent' | 'key',
+  actor: 'owner' | 'teammate' | 'agent' | 'key' | 'local' | 'remote',
   endpoint: string,
   body: object = {},
   method = 'POST'
 ) {
   const app = new Hono<ApiEnv>();
   app.use('*', async (c, next) => {
-    c.set('user', {
-      userId: actor === 'teammate' ? 'other' : 'owner',
-      credential: actor === 'key' ? 'api-key' : 'cookie',
-    });
+    if (actor !== 'local' && actor !== 'remote')
+      c.set('user', {
+        userId: actor === 'teammate' ? 'other' : 'owner',
+        credential: actor === 'key' ? 'api-key' : 'cookie',
+      });
     c.set('body', body);
     await next();
   });
@@ -54,16 +57,20 @@ async function call(
       accounts: () => [{ accountId: 'five', path: '/fake/five', name: 'Claude5' }],
       metadata,
       checkPassword,
+      passwordAvailable,
     })
   );
-  const headers = actor === 'agent' ? { 'x-dorkos-agent': 'agent' } : {};
+  const headers = {
+    host: 'localhost:4242',
+    ...(actor === 'agent' ? { 'x-dorkos-agent': 'agent' } : {}),
+  };
   return app.request(
     '/signins' + endpoint,
     { method },
     {
       incoming: {
         headers,
-        socket: { remoteAddress: '192.0.2.1', encrypted: true },
+        socket: { remoteAddress: actor === 'local' ? '127.0.0.1' : '192.0.2.1', encrypted: true },
       } as unknown as IncomingMessage,
       outgoing: {} as ServerResponse,
     }
@@ -95,6 +102,22 @@ describe('owner sign-in policy routes', () => {
     expect(policy.assess('/fake/five', identity).state).toBe('unconfirmed');
     expect((await call('owner', '/five/accept', { password: 'fresh' })).status).toBe(200);
     expect(policy.assess('/fake/five', identity).state).toBe('confirmed');
+  });
+  it('confirms explicitly on this computer with login off and no owner password', async () => {
+    passwordAvailable.mockResolvedValue(false);
+    expect((await call('local', '/five/accept', {})).status).toBe(403);
+    expect((await call('local', '/five/accept', { confirmOnThisComputer: true })).status).toBe(200);
+    expect(policy.assess('/fake/five', identity).state).toBe('confirmed');
+    expect(checkPassword).toHaveBeenCalledTimes(1);
+    expect((await call('remote', '/five/accept', { confirmOnThisComputer: true })).status).toBe(
+      403
+    );
+    expect((await call('agent', '/five/accept', { confirmOnThisComputer: true })).status).toBe(403);
+    expect((await call('key', '/five/accept', { confirmOnThisComputer: true })).status).toBe(403);
+  });
+  it('does not let a local-confirm flag bypass an existing password', async () => {
+    expect((await call('local', '/five/accept', { confirmOnThisComputer: true })).status).toBe(403);
+    expect(policy.assess('/fake/five', identity).state).toBe('unconfirmed');
   });
   it('refuses a denied org even for the owner and exposes no identity', async () => {
     metadata.mockReturnValue({ ...identity, organizationUuid: blocked });

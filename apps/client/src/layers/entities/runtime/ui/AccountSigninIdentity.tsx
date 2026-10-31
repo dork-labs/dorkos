@@ -12,9 +12,20 @@ export function AccountSigninIdentity({ accountId, name }: { accountId: string; 
   if (!identity || identity.state === 'never-use') return null;
   if (identity.state === 'confirmed')
     return (
-      <p className="text-muted-foreground text-xs">
-        {name} is signed in as {identity.email}.
-      </p>
+      <div className="space-y-2">
+        <p className="text-muted-foreground text-xs">
+          {name} is signed in as {identity.email}.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={`Sign in to ${name}`}
+          disabled={login.isPending}
+          onClick={login.login}
+        >
+          Sign in
+        </Button>
+      </div>
     );
   const blocked = identity.state === 'blocked';
   return (

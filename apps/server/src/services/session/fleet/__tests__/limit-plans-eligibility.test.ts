@@ -43,6 +43,7 @@ vi.mock('../../../core/usage/account-eligibility.js', async (importOriginal) => 
   projectOfFolder: vi.fn(async (cwd: string | null | undefined) => (cwd === CWD ? PROJECT : null)),
 }));
 
+import { accountLoginIdentity } from '../../../runtimes/claude-code/accounts/account-login-metadata.js';
 import { dispatchSessionMessage } from '../../launch/launch-session.js';
 import { notifyAutoMoveFailed } from '../../../notifications/emitters/session-lifecycle.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
@@ -200,6 +201,7 @@ beforeEach(() => {
   runtimeRegistry.setDb(db);
   runtimeRegistry.register(new FakeAgentRuntime('claude-code') as never);
   __resetAccountAdvisorForTests();
+  vi.mocked(accountLoginIdentity).mockReturnValue({ state: 'confirmed' });
   keepSpareTo(null);
   installUsageStore();
   vi.mocked(dispatchSessionMessage).mockReset();
@@ -228,6 +230,16 @@ afterEach(() => {
 });
 
 describe("the advisor's auto plan (planEpisode)", () => {
+  it('degrades an advisor target to ask when its login is unconfirmed', async () => {
+    vi.mocked(accountLoginIdentity).mockImplementation((root) =>
+      root.endsWith('/spare') ? { state: 'unconfirmed' } : { state: 'confirmed' }
+    );
+    adviseAutoToSpare();
+    await limitedSession('src-1');
+    expect(plan('src-1')).toEqual({ mode: 'ask' });
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
   it("degrades to ask when the target may not work in the session's project", async () => {
     // Purpose: an unattended move must never land on an account kept to another project.
     keepSpareTo(['/elsewhere']);
@@ -271,6 +283,18 @@ describe("core's automatic handoff (fireAutoHandoff)", () => {
     expect(candidates.map((c) => c.id)).not.toContain('spare');
   });
 
+  it('starts nothing if the target login changes during the countdown', async () => {
+    adviseAutoToSpare();
+    await limitedSession('src-1');
+    expect(plan('src-1')).toMatchObject({ mode: 'auto', target: 'spare' });
+    vi.mocked(accountLoginIdentity).mockImplementation((root) =>
+      root.endsWith('/spare') ? { state: 'changed' } : { state: 'confirmed' }
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
   it('moves the work when the target is still allowed', async () => {
     // Purpose: control — the same countdown with unchanged rules carries the work over.
     adviseAutoToSpare();
@@ -283,3 +307,11 @@ describe("core's automatic handoff (fireAutoHandoff)", () => {
     });
   });
 });
+
+// These usage/advisor fixtures already have confirmed logins. Mixed real identity
+// states are exercised in health/__tests__/confirmed-ranking.test.ts.
+vi.mock('../../../runtimes/claude-code/accounts/account-login-metadata.js', () => ({
+  accountLoginIdentity: vi.fn(() => ({ state: 'confirmed' as const })),
+  requireConfirmedAccountLogin: vi.fn(),
+  readAccountLoginMetadata: vi.fn(),
+}));

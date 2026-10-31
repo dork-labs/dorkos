@@ -244,3 +244,12 @@ describe('notAllowedAccounts', () => {
     expect(await notAllowedAccounts(ctx(CLIENT_APP.root))).toEqual([]);
   });
 });
+
+// These usage/advisor fixtures already have confirmed logins. Mixed real identity
+// states are exercised in health/__tests__/confirmed-ranking.test.ts.
+vi.mock('../../../runtimes/claude-code/accounts/account-login-metadata.js', async (original) => ({
+  ...(await original<
+    typeof import('../../../runtimes/claude-code/accounts/account-login-metadata.js')
+  >()),
+  accountLoginIdentity: () => ({ state: 'confirmed' as const }),
+}));

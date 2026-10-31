@@ -39,6 +39,32 @@ export class AccountSigninPolicy {
       this.value = null;
     }
   }
+  /** One-time upgrade: trust existing non-secret metadata, never future logins.
+   * The separate receipt prevents deletion or an interrupted migration from
+   * silently binding a different identity on the next start.
+   */
+  initializeInstall(
+    existingInstall: boolean,
+    roots: readonly string[],
+    readMetadata: (root: string) => LoginIdentity | null
+  ): void {
+    const receipt = path.join(path.dirname(this.file), 'account-signin-policy.initialized');
+    if (fs.existsSync(receipt)) return;
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    fs.writeFileSync(receipt, '1', { flag: 'wx', mode: 0o600 });
+    if (fs.existsSync(this.file)) return; // Preserve existing policy, including malformed policy.
+    this.value = empty();
+    if (existingInstall) {
+      for (const root of roots) {
+        if (this.neverUses(root)) continue;
+        const identity = readMetadata(root);
+        if (identity && this.assess(root, identity).state === 'unconfirmed') {
+          this.value.bindings[path.resolve(root)] = identity;
+        }
+      }
+    }
+    this.save(this.value);
+  }
   isReadable(): boolean {
     return this.value !== null;
   }
@@ -66,7 +92,7 @@ export class AccountSigninPolicy {
   assess(root: string, identity: LoginIdentity | null): LoginIdentityView {
     if (!this.value) return { state: 'unreadable' };
     if (this.neverUses(root)) return { state: 'never-use' };
-    if (!this.value?.deniedOrganizations.length || !identity) return { state: 'unreadable' };
+    if (!identity) return { state: 'unreadable' };
     if (this.value.deniedOrganizations.some((entry) => entry.id === identity.organizationUuid)) {
       return { state: 'blocked' }; // Deliberately discloses no identity or owner.
     }

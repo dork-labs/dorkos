@@ -4,12 +4,16 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import type { AccountSigninIdentityView } from '@dorkos/shared/runtime-connect';
+import type {
+  AccountSigninIdentityView,
+  ClaudeSigninPolicyView,
+} from '@dorkos/shared/runtime-connect';
 import { AccountSigninIdentity } from '../ui/AccountSigninIdentity';
 afterEach(cleanup);
-function mount(identity: AccountSigninIdentityView) {
+function mount(identity: AccountSigninIdentityView, stepUp?: ClaudeSigninPolicyView['stepUp']) {
   const transport = createMockTransport({
     getClaudeSigninPolicy: vi.fn().mockResolvedValue({
+      stepUp,
       deniedOrganizations: [],
       folders: [],
       accounts: [{ accountId: 'five', name: 'Claude5', path: '/fake/five', identity }],
@@ -50,6 +54,30 @@ describe('account identity review', () => {
         action: 'accept',
         accountId: 'five',
         password: 'fake-owner-step-up',
+      })
+    );
+  });
+  it('offers explicit local confirmation without asking for a password when login is off', async () => {
+    const transport = mount({ state: 'unconfirmed', email: 'f…@example.test' }, 'this-computer');
+    fireEvent.click(await screen.findByRole('button', { name: 'Use this account' }));
+    expect(screen.queryByLabelText('Owner password')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm on the Mac' }));
+    await waitFor(() =>
+      expect(transport.changeClaudeSigninPolicy).toHaveBeenCalledWith({
+        action: 'accept',
+        accountId: 'five',
+        password: '',
+        confirmOnThisComputer: true,
+      })
+    );
+  });
+  it('keeps a sign-in action on the confirmed account row', async () => {
+    const transport = mount({ state: 'confirmed', email: 'f…@example.test' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in to Claude5' }));
+    await waitFor(() =>
+      expect(transport.delegateRuntimeLogin).toHaveBeenCalledWith('claude-code', {
+        accountId: 'five',
+        sessionId: undefined,
       })
     );
   });

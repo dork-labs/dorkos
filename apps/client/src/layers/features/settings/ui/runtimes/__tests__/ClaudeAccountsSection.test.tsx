@@ -912,11 +912,11 @@ describe('ClaudeAccountsSection: usage, colors and the Flow note', () => {
         within(main)
           .getAllByRole('button')
           .map((b) => b.textContent)
-      ).toEqual(['', 'Limit to projects…']);
+      ).toEqual(['', 'Sign in', 'Limit to projects…']);
       const tabbable = main.querySelectorAll(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
       );
-      expect(tabbable).toHaveLength(2);
+      expect(tabbable).toHaveLength(3);
       // The registered rows keep their real button and have no spacer.
       const acme = screen.getAllByTestId('claude-account-row')[0]!;
       expect(within(acme).queryByTestId('claude-account-remove-spacer')).not.toBeInTheDocument();
@@ -1302,6 +1302,51 @@ describe('ClaudeAccountsSection — DorkOS credits in Runs on (ADR 261001-000811
     });
     expect(await screen.findByTestId('claude-credits-unavailable')).toHaveTextContent(
       'new chats here won’t start'
+    );
+  });
+});
+
+describe('account sign-in state', () => {
+  afterEach(cleanup);
+  it('shows each account state and pins each row’s sign-in', async () => {
+    const transport = renderSection(
+      {
+        resolvedAccount: HOME,
+        inherited: true,
+        accounts: [
+          {
+            id: 'main',
+            path: HOME,
+            label: 'Main',
+            color: '#aabbcc',
+            colorIsDefault: true,
+            isAccountRoot: true,
+          },
+          {
+            id: 'work',
+            path: WORK,
+            label: 'Claude5',
+            color: '#aabbcc',
+            colorIsDefault: true,
+            isAccountRoot: true,
+          },
+        ],
+      },
+      {
+        usage: [
+          createMockAccountUsage({ accountId: 'main', path: HOME, signInState: 'signed-in' }),
+          createMockAccountUsage({ accountId: 'work', path: WORK, signInState: 'signed-out' }),
+        ],
+      }
+    );
+    const login = vi.fn().mockResolvedValue({ ok: true });
+    transport.delegateRuntimeLogin = login;
+    const rows = await screen.findAllByTestId('claude-account-row');
+    expect(within(rows[0]).getByText('Signed in')).toBeInTheDocument();
+    expect(within(rows[1]).getByText('Signed out')).toBeInTheDocument();
+    await userEvent.click(within(rows[1]).getByRole('button', { name: 'Sign in to Claude5' }));
+    await waitFor(() =>
+      expect(login).toHaveBeenCalledWith('claude-code', { accountId: 'work', sessionId: undefined })
     );
   });
 });

@@ -569,7 +569,10 @@ describe('signed admission over real HTTP and Postgres', () => {
       'ownerMemberId',
       'role',
     ]);
-    expect((await call('/api/v1/members', 'GET', undefined, admittedCookie)).status).toBe(403);
+    // Every member sees who is in the space, but never when anyone joined (DOR-3005).
+    const plain = await call('/api/v1/members', 'GET', undefined, admittedCookie);
+    expect(plain.status).toBe(200);
+    for (const row of (await plain.json()).members) expect(row).not.toHaveProperty('joinedAt');
     const first = await call('/api/v1/members?limit=1', 'GET', undefined, ownerCookie);
     expect(first.status).toBe(200);
     const page = await first.json();
@@ -1045,7 +1048,7 @@ describe('signed admission over real HTTP and Postgres', () => {
     agentToken = newToken;
   });
 
-  it('names an agent owner in a joined roster without exposing a global member directory', async () => {
+  it('names an agent owner in a joined roster', async () => {
     const created = await call('/api/v1/channels', 'POST', { name: 'Owner away' }, ownerCookie);
     expect(created.status).toBe(201);
     const channel = (await created.json()).channel.id as string;
@@ -1071,7 +1074,6 @@ describe('signed admission over real HTTP and Postgres', () => {
     expect((await call(`/api/v1/channels/${channel}/leave`, 'POST', {}, ownerCookie)).status).toBe(
       200
     );
-    expect((await call('/api/v1/members', 'GET', undefined, admittedCookie)).status).toBe(403);
     const roster = await call(
       `/api/v1/channels/${channel}/members`,
       'GET',

@@ -24,32 +24,37 @@ export function createAccountSigninMethods(baseUrl: string) {
     },
     getClaudeSigninPolicy: () => fetchJSON<ClaudeSigninPolicyView>(baseUrl, base),
     changeClaudeSigninPolicy(input: ClaudeSigninPolicyChange): Promise<{ ok: boolean }> {
-      const { password } = input;
+      const { password, confirmOnThisComputer } = input;
       switch (input.action) {
         case 'add-org':
           return fetchJSON(baseUrl, `${base}/organizations`, {
             method: 'POST',
-            body: JSON.stringify({ password, orgId: input.orgId, label: input.label }),
+            body: JSON.stringify({
+              password,
+              confirmOnThisComputer,
+              orgId: input.orgId,
+              label: input.label,
+            }),
           });
         case 'remove-org':
           return fetchJSON(baseUrl, `${base}/organizations/${encodeURIComponent(input.orgId)}`, {
             method: 'DELETE',
-            body: JSON.stringify({ password }),
+            body: JSON.stringify({ password, confirmOnThisComputer }),
           });
         case 'exclude-folder':
           return fetchJSON(baseUrl, `${base}/folders`, {
             method: 'POST',
-            body: JSON.stringify({ password, accountId: input.accountId }),
+            body: JSON.stringify({ password, confirmOnThisComputer, accountId: input.accountId }),
           });
         case 'allow-folder':
           return fetchJSON(baseUrl, `${base}/folders/${encodeURIComponent(input.accountId)}`, {
             method: 'DELETE',
-            body: JSON.stringify({ password }),
+            body: JSON.stringify({ password, confirmOnThisComputer }),
           });
         case 'accept':
           return fetchJSON(baseUrl, `${base}/${encodeURIComponent(input.accountId)}/accept`, {
             method: 'POST',
-            body: JSON.stringify({ password }),
+            body: JSON.stringify({ password, confirmOnThisComputer }),
           });
       }
     },

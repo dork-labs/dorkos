@@ -40,8 +40,6 @@ import {
   validateLimitedPlan,
 } from '../../core/usage/account-advisor.js';
 import { rankAccounts, type AccountRanking } from '../../core/usage/account-ranking.js';
-import { configManager } from '../../core/config-manager.js';
-import { accountEligibility, projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { onProjectorLimitSet, peekProjector } from '../session-state-projector.js';
 import { flowRunsFor } from './flow-run-link.js';
@@ -576,12 +574,18 @@ async function planEpisode(stored: StoredSessionLimit): Promise<void> {
     // An `auto` target must be an account that may work in this folder's
     // project; one that may not degrades the plan to `ask` (spec
     // `flow-multiproject` §8.4), exactly as an unregistered one does.
-    const project = await projectOfFolder(info.cwd);
+    const ranking = await rankAccounts({
+      purpose: 'continue',
+      caller: 'advisor',
+      cwd: info.cwd,
+      runtime: LIMIT_RUNTIME,
+      excludeAccountId: stored.limit.accountId,
+    });
     const answer = validateLimitedPlan(await callAdvisor('onLimited', info), {
       limitedAccountId: stored.limit.accountId,
       isRegistered: (id) =>
         isRegisteredAccount(id) &&
-        accountEligibility(configManager, LIMIT_RUNTIME, id, project).eligible,
+        ranking.accounts.some((row) => row.id === id && row.eligible && !row.noAutoMove),
     });
     if (answer?.mode === 'wait') {
       plan = {

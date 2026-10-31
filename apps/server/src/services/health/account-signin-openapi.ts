@@ -1,7 +1,12 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
-const password = z.object({ password: z.string().max(128).optional() }).strict();
+const password = z
+  .object({
+    password: z.string().max(128).optional(),
+    confirmOnThisComputer: z.literal(true).optional(),
+  })
+  .strict();
 const identity = z.object({
   state: z.enum(['unreadable', 'unconfirmed', 'changed', 'blocked', 'confirmed', 'never-use']),
   email: z.string().optional(),
@@ -12,7 +17,7 @@ const organization = z.object({ id: z.uuid(), label: z.string() });
 const account = z.object({ accountId: z.string(), path: z.string(), name: z.string(), identity });
 const error = { description: 'The request is refused' };
 const owner =
-  'Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Every mutation requires a fresh owner password check. No secret or unmasked email is returned.';
+  'Requires the owner’s signed-in cookie on any device. Agents, API keys and teammates are refused. Mutations require a fresh owner password check, or explicit confirmation at this computer when no owner password exists. No secret or unmasked email is returned.';
 
 /** The owner-only account identity and exclusion policy, separate from agent tools. */
 export function registerAccountSigninOpenApi(registry: OpenAPIRegistry): void {
@@ -28,6 +33,7 @@ export function registerAccountSigninOpenApi(registry: OpenAPIRegistry): void {
         content: {
           'application/json': {
             schema: z.object({
+              stepUp: z.enum(['password', 'this-computer', 'other-computer']),
               deniedOrganizations: z.array(organization),
               folders: z.array(folder),
               accounts: z.array(account),
