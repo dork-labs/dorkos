@@ -9,6 +9,11 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 
 > DorkOS 0.128.0 lets pages in the canvas send events to their agent, lets agents see every running chat, and stores your password more safely.
 
+### Security
+
+- Your DorkOS password is now stored with a much stronger hash, so it's far harder to guess from a copy of the file. An older password switches over the next time you set a new one, or enter it when DorkOS asks you to confirm it's you on this computer (DOR-3234)
+- This version stores your DorkOS password in a new way that DorkOS 0.127.1 can't read. If you go back to 0.127.1 after the switch, you can't sign in with your password. To fix it, run `dorkos auth reset-password` in a terminal and choose a new password. This signs everyone out, and you sign in again with the new one.
+
 ### Added
 
 - Local pages and dev-server previews in the canvas browser can now send events to your agent. When your agent sets this up for a page, a click in that page can start its next turn. A preview reconnects by itself after it reloads. A local page that reloads, or follows a link to another site, stays offline until you press Reload, so another site can't send events in its place. The offline notice has its own Reload button. (DOR-2665)
@@ -35,11 +40,6 @@ All notable changes to DorkOS are documented here. This project follows [Semanti
 - A message started by a schedule or a heartbeat now says where it came from, instead of looking like you sent it. It shows once the turn has finished. (DOR-3019)
 - The first time an agent opens Documents, Desktop or Downloads, macOS asks; your answer applies to all agents.
 - When DorkOS stops and starts again, an open chat now gets its live updates back on its own, like a room does. Before, it kept saying "Live updates lost" until you sent a message or reloaded the page.
-
-### Security
-
-- Your DorkOS password is now stored with a much stronger hash, so it's far harder to guess from a copy of the file. An older password switches over the next time you set a new one, or enter it when DorkOS asks you to confirm it's you on this computer (DOR-3234)
-- This version stores your DorkOS password in a new way that DorkOS 0.127.1 can't read. If you go back to 0.127.1 after the switch, you can't sign in with your password. To fix it, run `dorkos auth reset-password` in a terminal and choose a new password. This signs everyone out, and you sign in again with the new one.
 
 ### Known issues
 
