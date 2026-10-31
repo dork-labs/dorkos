@@ -831,8 +831,8 @@ export function AppShell() {
                       </AnimatePresence>
                       {/* Phone actions share the identity's row while they fit,
                             each a 44px target, and wrap to their own row only when
-                            a beacon needs the room. At `md`, `contents` restores
-                            the desktop's one row. */}
+                            a beacon needs the room. From `md` the header no longer
+                            wraps, so they close the desktop's one row. */}
                       <GlobalHeaderActions />
                     </header>
                     {/* ── Global banner slot — one standing banner at a time, ranked
