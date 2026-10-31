@@ -2,6 +2,7 @@
 covers:
   - 'feat(server): agents introduce themselves when they join a channel (DOR-2106)'
   - 'fix(server): introductions run at the runtime default level, five an hour per agent (DOR-2106)'
+  - "fix(server): the browser suite's real-runtime legs turn agent introductions off (DOR-2106)"
 ---
 
 ### Added

@@ -324,6 +324,11 @@ export const serverEnvSchema = z.object({
   // `apps/e2e/playwright.config.ts` sets this on both Express legs; nothing
   // else in the repo does. See services/search/registry.ts `selectSearchSources`.
   DORKOS_SEARCH_NO_EXTERNAL_HISTORY: boolFlag,
+  // Turn off agent introductions in rooms (DOR-2106). An introduction starts a
+  // real agent turn, so a harness that must start none sets this:
+  // `apps/e2e/playwright.config.ts` does on its real-runtime Express legs, whose
+  // fixtures guarantee that no spec reaches a real runtime. Off by default.
+  DORKOS_NO_ROOM_INTRODUCTIONS: boolFlag,
   // Activity feed retention in days. Overrides `activity.retentionDays` (default 365) when set.
   DORKOS_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(1).optional(),
   // Test mode — TestModeRuntime is registered instead of ClaudeCodeRuntime

@@ -120,6 +120,25 @@ export const MAX_INTRODUCTIONS_PER_AGENT_PER_HOUR = 5;
 
 const HOUR_MS = 60 * 60_000;
 
+/**
+ * Whether the server turns introductions on at startup.
+ *
+ * Off under the scripted test runtime, whose browser specs count what a room
+ * says, and off where the operator of a harness says so
+ * (`DORKOS_NO_ROOM_INTRODUCTIONS`): an introduction is a real agent turn, and
+ * the browser suite's real-runtime legs guarantee their specs start none. Their
+ * fixtures silence an agent after the create that seats it, and an introduction
+ * claims its turn inside that create, so silencing cannot stop it (#3317).
+ *
+ * @param env - The two server flags this reads.
+ */
+export function introductionsOnAtStartup(env: {
+  DORKOS_TEST_RUNTIME: boolean;
+  DORKOS_NO_ROOM_INTRODUCTIONS: boolean;
+}): boolean {
+  return !env.DORKOS_TEST_RUNTIME && !env.DORKOS_NO_ROOM_INTRODUCTIONS;
+}
+
 /** Introduces agents to channels they join. See the module docs. */
 export class RoomIntroductions {
   /**

@@ -18,7 +18,10 @@ import {
   type RoomHarness,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
-import { MAX_INTRODUCTIONS_PER_AGENT_PER_HOUR } from '../introductions/introducer.js';
+import {
+  introductionsOnAtStartup,
+  MAX_INTRODUCTIONS_PER_AGENT_PER_HOUR,
+} from '../introductions/introducer.js';
 
 const ANA = '/agents/ana';
 const BO = '/agents/bo';
@@ -258,5 +261,21 @@ describe('agent introductions', () => {
 
     expect(harness.runner.turns).toEqual([]);
     expect(log(harness, room.id)).toEqual([]);
+  });
+});
+
+describe('whether the server turns introductions on', () => {
+  it('is on for a real install, and off under the scripted runtime or the harness flag', () => {
+    // The browser suite's real-runtime legs set DORKOS_NO_ROOM_INTRODUCTIONS: an
+    // introduction is a real turn claimed inside the create, which the fixtures'
+    // silencing comes too late to stop (#3317's peek and lane-no-shift specs).
+    const on = (testRuntime: boolean, optOut: boolean): boolean =>
+      introductionsOnAtStartup({
+        DORKOS_TEST_RUNTIME: testRuntime,
+        DORKOS_NO_ROOM_INTRODUCTIONS: optOut,
+      });
+    expect(on(false, false)).toBe(true);
+    expect(on(true, false)).toBe(false);
+    expect(on(false, true)).toBe(false);
   });
 });
