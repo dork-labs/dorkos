@@ -3,6 +3,7 @@ import {
   CONTEXT_TRIM_ORDER,
   chooseTrims,
   dorkosContextBudget,
+  fitItemOf,
   joinFitted,
   type ContextPart,
 } from '../context-fit.js';
@@ -52,6 +53,30 @@ describe('chooseTrims', () => {
     expect(CONTEXT_TRIM_ORDER.at(-1)).toBe('agent_memory');
     expect(CONTEXT_TRIM_ORDER).not.toContain('agent_safety_boundaries');
     expect(CONTEXT_TRIM_ORDER).not.toContain('working_rules');
+  });
+});
+
+// DOR-3515: a block's guard lines stay in its place when the block is left out.
+describe('a part with kept lines', () => {
+  const parts: ContextPart[] = [
+    {
+      block: 'dorkos_context',
+      text: `<dorkos_context>\n${'o'.repeat(4000)}\nNever run a bare dorkos.\n</dorkos_context>`,
+      kept: '<dorkos_context>\nNever run a bare dorkos.\n</dorkos_context>',
+    },
+  ];
+
+  it('renders the whole block when it fits, and only the kept lines when it does not', () => {
+    expect(joinFitted(parts, [])).toContain('oooo');
+    const left = joinFitted(parts, ['dorkos_context']);
+    expect(left).toContain('Never run a bare dorkos.');
+    expect(left).not.toContain('oooo');
+  });
+
+  it('counts only what leaving it out actually frees', () => {
+    const fit = chooseTrims(parts.map(fitItemOf), 1);
+    expect(fit.dropped).toEqual(['dorkos_context']);
+    expect(fit.tokens).toBe(Math.ceil(parts[0]!.kept!.length / 4));
   });
 });
 

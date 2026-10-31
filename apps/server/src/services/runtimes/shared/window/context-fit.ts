@@ -49,7 +49,9 @@
  * 4. `dorkos_tool_schemas`: the full descriptions of DorkOS's always-loaded
  *    tools. They load on demand through tool search instead. Only a runtime that
  *    controls its own tool list can do this (Doe).
- * 5. `dorkos_context`: what DorkOS is and how to point a person at a chat.
+ * 5. `dorkos_context`: what DorkOS is and how to point a person at a chat. Its
+ *    guard lines (how to name DorkOS's tools, never a bare `dorkos` command
+ *    through PATH) are kept in its place: see {@link ContextPart.kept} (DOR-3515).
  * 6. `session_model`: that the agent is one session of several.
  * 7. `agent_persona`: the agent's personality (SOUL.md).
  * 8. `agent_memory`: the agent's saved notes. Last, because forgetting is the
@@ -112,6 +114,8 @@ export interface FitItem {
   readonly block: TrimmableBlock | null;
   /** Its size in characters (text, or serialized tool schemas). */
   readonly chars: number;
+  /** Characters that stay when the block is left out ({@link ContextPart.kept}). */
+  readonly keptChars?: number;
 }
 
 /** What {@link chooseTrims} decided. */
@@ -146,7 +150,7 @@ export function chooseTrims(
     if (estimateTokens(chars) <= budgetTokens) break;
     const size = items
       .filter((item) => item.block === block)
-      .reduce((sum, item) => sum + item.chars, 0);
+      .reduce((sum, item) => sum + item.chars - (item.keptChars ?? 0), 0);
     if (size === 0) continue;
     dropped.push(block);
     chars -= size;
@@ -177,6 +181,21 @@ export interface ContextPart {
   readonly block: TrimmableBlock | null;
   /** The rendered text. */
   readonly text: string;
+  /**
+   * What stays in this part's place when its block is left out: lines that
+   * guard against a harmful mistake and must reach even the smallest model
+   * (DOR-3515). Absent when nothing needs to stay.
+   */
+  readonly kept?: string;
+}
+
+/**
+ * The size of one part, as {@link chooseTrims} counts it.
+ *
+ * @param part - One rendered part.
+ */
+export function fitItemOf(part: ContextPart): FitItem {
+  return { block: part.block, chars: part.text.length, keptChars: part.kept?.length ?? 0 };
 }
 
 /**
@@ -194,7 +213,9 @@ export function joinFitted(
   const left = new Set<TrimmableBlock>(dropped);
   return [
     smallWindowNote(dropped),
-    ...parts.filter((part) => part.block === null || !left.has(part.block)).map((p) => p.text),
+    ...parts.map((part) =>
+      part.block === null || !left.has(part.block) ? part.text : (part.kept ?? '')
+    ),
   ]
     .filter(Boolean)
     .join('\n\n');

@@ -19,7 +19,12 @@ import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { assembleDoeMcp } from './mcp.js';
 import { assembleDoeResources } from './resources.js';
 import { buildDoeContextParts } from './context.js';
-import { chooseTrims, dorkosContextBudget, joinFitted } from '../shared/window/context-fit.js';
+import {
+  chooseTrims,
+  dorkosContextBudget,
+  fitItemOf,
+  joinFitted,
+} from '../shared/window/context-fit.js';
 import { fitHostTools, hostToolChars, type DoeWindow } from './window-fit.js';
 import { loadsAgentToAgentTools } from '../shared/tools/tool-exposure-policy.js';
 import { doeBuilderTool, type DoeBuilderLifecycle } from './builder.js';
@@ -68,7 +73,7 @@ export async function assembleDoeHost(options: DoeHostOptions) {
     // small window both are trimmed in one order (DOR-2839).
     const fit = chooseTrims(
       [
-        ...parts.map((part) => ({ block: part.block, chars: part.text.length })),
+        ...parts.map(fitItemOf),
         {
           block: 'dorkos_tool_schemas' as const,
           chars: hostToolChars(mcp.tools, mcp.trustedHostToolNames),

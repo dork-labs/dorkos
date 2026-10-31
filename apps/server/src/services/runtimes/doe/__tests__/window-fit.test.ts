@@ -89,6 +89,15 @@ describe('Doe on a small context window', () => {
     expect(context).not.toContain('<agent_memory>');
     expect(context).not.toContain('<agent_persona>');
   });
+
+  // DOR-3515: the orientation block may go, but its guard lines never do.
+  it('keeps the DorkOS tool-naming and PATH guard lines at the tightest fit', async () => {
+    const context = await contextFor({ contextWindow: 2_048, maxOutputTokens: 1_024 });
+    expect(context).toContain('the DorkOS orientation');
+    expect(context).not.toContain('DorkOS is a workspace for people and agents');
+    expect(context).toContain('Never run a bare `dorkos` command or resolve it through PATH');
+    expect(context).toContain('The capability catalog tool name ENDS in');
+  });
 });
 
 describe('fitHostTools', () => {

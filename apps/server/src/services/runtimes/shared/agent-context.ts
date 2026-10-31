@@ -99,10 +99,6 @@ import type { ContextPart } from './window/context-fit.js';
  * window.
  */
 function buildDorkosContextBlock(): string {
-  const cli = currentCliInvocation();
-  const fallback = cli
-    ? `If MCP tools are unavailable, use this exact current-server command: \`${cli} capabilities\`, then \`${cli} call <capability-id> [--input '<json>']\`. Use the same absolute prefix for other documented CLI commands.`
-    : 'No verified CLI fallback is available in this session. Ask the operator to restore the DorkOS tools if they are missing.';
   return `<dorkos_context>
 DorkOS is a workspace for people and agents. You are a co-worker on this team, not an assistant.
 Your job is your description and persona; the tool whose name ends in \`mesh_list\` shows who else does what.
@@ -112,16 +108,39 @@ Never show a raw id. A chat link is [Chat title](/session?session=<full id>). Th
 ready to use: the one whose name ends in \`session_start\`, the one that ends in \`chat_send\` and the
 one that ends in \`chat_read\`. Outside DorkOS (Telegram, Slack), give the title alone.
 What you can do here is listed area by area in the next block.
-Prefer your injected DorkOS MCP tools. The capability catalog tool name ENDS in
-\`list_capabilities\`, behind the prefix assigned by your harness; search for that ending.
-${fallback}
-Never run a bare \`dorkos\` command or resolve it through PATH: a login shell may
-select an older installation that cannot safely read this server's settings.
+${dorkosToolGuardLines()}
 Tasks, Relay, and Mesh are NOT in the capability catalog: use their injected tools
 whose names end in \`tasks_*\`, \`relay_*\` and \`mesh_*\`. Relay and Mesh have no CLI path.
 Documentation: ${env.DORKOS_DOCS_BASE_URL}/llms.txt
 Full docs: ${env.DORKOS_DOCS_BASE_URL}/docs
 </dorkos_context>`;
+}
+
+/**
+ * The guard lines of `<dorkos_context>`: how to reach DorkOS's tools and the CLI
+ * fallback, and never a bare `dorkos` through PATH. Rendered here once, for the
+ * block and for {@link buildDorkosContextGuard}, so the two cannot drift.
+ */
+function dorkosToolGuardLines(): string {
+  const cli = currentCliInvocation();
+  const fallback = cli
+    ? `If MCP tools are unavailable, use this exact current-server command: \`${cli} capabilities\`, then \`${cli} call <capability-id> [--input '<json>']\`. Use the same absolute prefix for other documented CLI commands.`
+    : 'No verified CLI fallback is available in this session. Ask the operator to restore the DorkOS tools if they are missing.';
+  return `Prefer your injected DorkOS MCP tools. The capability catalog tool name ENDS in
+\`list_capabilities\`, behind the prefix assigned by your harness; search for that ending.
+${fallback}
+Never run a bare \`dorkos\` command or resolve it through PATH: a login shell may
+select an older installation that cannot safely read this server's settings.`;
+}
+
+/**
+ * What stays of `<dorkos_context>` when a small window leaves the block out
+ * (DOR-3515): its guard lines, word for word, so even the smallest model still
+ * names DorkOS's tools by their ending and never reaches a bare `dorkos` through
+ * PATH. Security asked for this when the block became trimmable (DOR-2839).
+ */
+function buildDorkosContextGuard(): string {
+  return `<dorkos_context>\n${dorkosToolGuardLines()}\n</dorkos_context>`;
 }
 
 /**
@@ -624,7 +643,11 @@ async function buildAgentBlock(
   if (conventions?.dorkosKnowledge !== false) {
     // The areas ride with it: the same switch, because both say what DorkOS is (DOR-3219).
     tail.push(
-      { block: 'dorkos_context', text: buildDorkosContextBlock() },
+      {
+        block: 'dorkos_context',
+        text: buildDorkosContextBlock(),
+        kept: buildDorkosContextGuard(),
+      },
       { block: 'dorkos_areas', text: buildDorkosAreasBlock() }
     );
   }

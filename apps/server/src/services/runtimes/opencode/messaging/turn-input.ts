@@ -36,6 +36,7 @@ import { formatStagedContext } from '../../shared/staged-context-block.js';
 import {
   chooseTrims,
   dorkosContextBudget,
+  fitItemOf,
   joinFitted,
   type ContextPart,
 } from '../../shared/window/context-fit.js';
@@ -185,7 +186,7 @@ export function buildOpenCodeSystem(
     { block: null, text: opts?.systemPromptAppend ?? '' },
   ].filter((part) => part.text !== '');
   const fit = chooseTrims(
-    parts.map((part) => ({ block: part.block, chars: part.text.length })),
+    parts.map(fitItemOf),
     contextWindow === undefined ? undefined : dorkosContextBudget(contextWindow)
   );
   const system = joinFitted(parts, fit.dropped);
