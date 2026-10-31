@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): borderless cards, settings groups without rules, and one list row'
   - 'fix(client): on a phone a list row gives its title the width, and state copy wraps'
+  - 'fix(client): a list row's ghost button under the copy starts where the text does'
 ---
 
 ### Changed
