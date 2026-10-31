@@ -124,9 +124,9 @@ describe('credential-free-build workflow', () => {
     // green. Change it deliberately when you add or remove a step.
     expect(
       commands.length,
-      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 5. If you added or ` +
+      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 6. If you added or ` +
         `removed one on purpose, update this number; if you did not, a step went missing.`
-    ).toBe(5);
+    ).toBe(6);
     const unscrubbed = commands.filter((c) => !c.startsWith(`bash ${SCRUB_REL}`));
     expect(
       unscrubbed,
@@ -270,7 +270,9 @@ describe('credential-free-build workflow', () => {
           `whole affected set on every run — the reason it had never once finished.`
       ).toBe(true);
     }
-    const keys = [...workflow.matchAll(/^\s+key:\s*(.+)$/gm)].map((m) => (m[1] as string).trim());
+    const keys = [...workflow.matchAll(/^\s+key:\s*(.+)$/gm)]
+      .map((m) => (m[1] as string).trim())
+      .filter((k) => k.startsWith('turbo-'));
     expect(
       keys,
       `the cache keys in ${WORKFLOW_REL} are ${JSON.stringify(keys)}. Restore and save must use ` +
@@ -322,5 +324,23 @@ describe('credential-free-build workflow', () => {
         `save writes into a scope the queue deletes on merge, so it is unreadable waste against ` +
         `the repo's 10GB cache budget).`
     ).toBe("always() && github.event_name == 'pull_request'");
+  });
+
+  // setup-node's `cache: pnpm` shares one store per lockfile across every Linux
+  // job, whatever image built it. node-pty compiles at install on linux-x64, so
+  // a store saved on ubuntu-26.04 kills the boot probe on a 24.04 runner
+  // (2026-10-30, ledger 261031-012000).
+  it('keys the pnpm store on the runner image', () => {
+    expect(
+      /^\s+cache:\s*pnpm\s*$/m.test(workflow),
+      `${WORKFLOW_REL} uses setup-node's \`cache: pnpm\` again. That store is shared across ` +
+        `runner images, and node-pty's compiled pty.node does not load across them.`
+    ).toBe(false);
+    expect(
+      workflow.includes(
+        "key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}"
+      ),
+      `${WORKFLOW_REL} no longer keys its pnpm store on \`env.ImageOS\`.`
+    ).toBe(true);
   });
 });
