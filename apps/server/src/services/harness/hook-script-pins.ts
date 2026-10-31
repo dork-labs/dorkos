@@ -27,9 +27,12 @@ import path from 'node:path';
 import { namedTargets } from '../runtimes/claude-code/folder-settings/folder-config-scripts.js';
 
 /**
- * The largest file whose bytes are hashed. A bigger one is pinned by its size
- * and change time instead: still a change when it is rewritten, without
- * reading megabytes on every projection.
+ * The largest file whose bytes are hashed. A bigger one is pinned by its size,
+ * modification time, inode change time and inode instead: still a change when
+ * it is rewritten, without reading megabytes on every projection. `ctime` and
+ * the inode are what a writer cannot put back: `touch -m` restores a
+ * modification time, but only the kernel sets `ctime`, and a file swapped in
+ * by rename gets a new inode.
  */
 const MAX_HASHED_BYTES = 8 * 1024 * 1024;
 
@@ -61,7 +64,9 @@ function fileFingerprint(abs: string): string {
   }
   if (stat.isDirectory()) return 'dir';
   if (!stat.isFile()) return 'unreadable';
-  if (stat.size > MAX_HASHED_BYTES) return `large:${stat.size}:${stat.mtimeMs}`;
+  if (stat.size > MAX_HASHED_BYTES) {
+    return `large:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
+  }
   try {
     return createHash('sha256').update(readFileSync(abs)).digest('hex');
   } catch {
@@ -95,17 +100,21 @@ export function hookScriptPins(
 }
 
 /**
- * Say which files a card's yes covers, with a short hash a reviewer can match
- * against the file they read.
+ * Say which files a card's yes covers, with a short fingerprint a reviewer can
+ * match against the file they read, and the other states in words.
  *
  * @param scripts - The pins on the request.
- * @returns A clause like `hooks/loop.mjs (sha256 1a2b3c4d5e6f)`, or `''` when none.
+ * @returns A clause like `hooks/loop.mjs (fingerprint 1a2b3c4d5e6f)`, or `''` when none.
  */
 export function describeHookScriptPins(scripts: readonly HookScriptPin[]): string {
-  return scripts
-    .map(
-      ([file, hash]) =>
-        `${file} (${/^[0-9a-f]{64}$/.test(hash) ? `sha256 ${hash.slice(0, 12)}` : hash})`
-    )
-    .join(', ');
+  return scripts.map(([file, hash]) => `${file} (${describePin(hash)})`).join(', ');
+}
+
+/** One pin's state as a person reads it (DOR-3340): never a raw marker. */
+function describePin(hash: string): string {
+  if (/^[0-9a-f]{64}$/.test(hash)) return `fingerprint ${hash.slice(0, 12)}`;
+  if (hash === 'absent') return 'not there yet';
+  if (hash === 'dir') return 'a folder';
+  if (hash.startsWith('large:')) return 'large file';
+  return "can't be read";
 }
