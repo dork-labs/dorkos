@@ -126,15 +126,15 @@ Users can override font family via Settings → Appearance. The app store (`setF
 
 Base values at desktop (no mobile scaling applied). Actual rendered sizes multiply by `--_st` on mobile (default 1.25x). Users can apply a further `--user-font-scale` via Settings → Appearance.
 
-| Token          | Base size | Usage                                       |
-| -------------- | --------- | ------------------------------------------- |
-| `text-3xs`     | 10px      | Count badges, avatar initials               |
-| `text-2xs`     | 11px      | Section labels, secondary metadata          |
-| `text-xs`      | 12px      | Timestamps, tool status                     |
-| `text-control` | 13px      | Control-surface labels: sidebar rows, menus |
-| `text-sm`      | 14px      | Message body text, code, metadata, labels   |
-| `text-base`    | 16px      | (unused in chat UI)                         |
-| `text-lg`      | 18px      | In-message headings (h3+)                   |
+| Token          | Base size | Usage                                         |
+| -------------- | --------- | --------------------------------------------- |
+| `text-3xs`     | 10px      | Corner counts, avatar initials only           |
+| `text-2xs`     | 11px      | Section labels, metadata, `xs` badges, counts |
+| `text-xs`      | 12px      | Timestamps, tool status                       |
+| `text-control` | 13px      | Control-surface labels: sidebar rows, menus   |
+| `text-sm`      | 14px      | Message body text, code, metadata, labels     |
+| `text-base`    | 16px      | (unused in chat UI)                           |
+| `text-lg`      | 18px      | In-message headings (h3+)                     |
 
 Literal sizes (`text-[13px]`) ignore the user's font size; use tokens. `text-control` sets no line height, so it keeps the one its surroundings give it.
 
@@ -387,7 +387,7 @@ Every level of separation comes off **one ramp**, `--sidebar-accent`, and no new
 
 **Never use `--muted` inside the sidebar.** It inverts direction between themes. `--sidebar` is 91% light and 10% dark, while `--muted` is 96% light and 9% dark — so a surface tinted with `--muted` is _lighter_ than its panel in light mode and _darker_ in dark mode. `--sidebar-accent` is 86% light (−5%) and 16% dark (+6%): it moves away from the panel in the same perceptual direction in both themes, at the 5–10% delta this system asks for.
 
-Status colour stays on the semantic tokens, which are already calibrated per theme and are already what `status-dot.ts` uses: `bg-status-success` (working), `bg-status-warning` (needs you, directed badges), `bg-status-error` (error or wedged), `bg-status-info` (unseen). No raw hex, and no new `--sidebar-*` tint variable — one ramp is the point.
+Status colour stays on the semantic tokens, which are already calibrated per theme and are already what `status-dot.ts` uses: `bg-status-success` (working), `bg-status-warning` (needs you), `bg-status-error` (error or wedged), `bg-status-info` (unseen). No raw hex, and no new `--sidebar-*` tint variable — one ramp is the point.
 
 Label-on-tint must still meet 4.5:1 in both themes. Check it with an axe-core run over the playground showcase rather than by eye.
 
@@ -761,7 +761,7 @@ The filter engine provides five filter factories:
 ### Styling
 
 - Root container: `flex flex-wrap items-center gap-2 px-4 py-3`
-- Active filter chips: removable badges with `X` icon
+- Active filter chips: `RemovableChip`, in a `data-chip-group` so removing one moves focus to its neighbour
 - Primary filters: enum pills inline in the bar
 - Search input: standard input with `text-sm` and debounced URL sync
 - Enum filter colors: defined per-option via `colors` record in filter schema (Tailwind classes like `text-emerald-400`)
@@ -797,7 +797,7 @@ For compound controls (e.g., Badge + Switch), wrap them in a flex container:
 ```tsx
 <SettingRow label="Feature" description="Toggle feature access">
   <div className="flex items-center gap-2">
-    <Badge variant="secondary">Disabled</Badge>
+    <Badge>Disabled</Badge>
     <Switch checked={enabled} onCheckedChange={setEnabled} />
   </div>
 </SettingRow>
@@ -850,7 +850,7 @@ import { FieldCard, FieldCardContent, CollapsibleFieldCard } from '@/layers/shar
   open={open}
   onOpenChange={setOpen}
   trigger="Advanced"
-  badge={<Badge variant="secondary">3 overrides</Badge>}
+  badge={<Badge>3 overrides</Badge>}
 >
   <div className="px-4 py-3">Content here</div>
 </CollapsibleFieldCard>
@@ -953,10 +953,43 @@ Rules that come with it:
 
 - **Numbers are for you, not for volume.** A busy channel nobody addressed you in stays at a bold label however many messages it holds.
 - **Activity draws no mark of its own** (decided 2026-08-09, `specs/sidebar-now-today-library/design-decisions.md` §18). It used to add a dot. A dot is a third weight in a system that deliberately has two, and the avatar corner already owns dots for agent lifecycle — two dot vocabularies on one row is the confusion this removes.
-- **The count pill is orange.** `CountPill` (`shared/ui/count-pill.tsx`) is the orange ink on its own wash (`bg-brand/15 text-brand-text`), because orange means you, and caps at `9+` while its label reads the real number. In the sidebar it counts @mentions of you in a channel, and every new message in a direct message, both counted by the server from the room log above your read cursor.
+- **A directed count is orange.** `CountPill` (`shared/ui/count-pill.tsx`) defaults to `tone="you"`, the orange ink on its own wash (`bg-brand/15 text-brand-text`), because orange means you. Its label reads the real figure where one exists. In the sidebar it counts @mentions of you in a channel, and every new message in a direct message, both counted by the server from the room log above your read cursor.
+- **Caps are honest.** Mentions cap at `9+` (`MENTION_COUNT_CAP`): the server stops counting at `ROOM_MENTION_COUNT_CAP` (10), so its `10` means "10 or more" and anything higher would be a claim nobody measured. A DM's messages are counted in full and cap at `99+`. `directedCountCap(kind)` and `directedCountLabel(count, kind)` pick the cap and the words together. A corner count caps at `9+`.
 - **Mute keeps a mention's count, and only that.** A muted row loses its bold, but an @mention of you still shows its number. This holds for a muted direct message too: it counts real @mentions only, never every message. Mute means "stop pulling at me", so a DM that kept counting every message through mute would make mute a lie. Do not "fix" it.
 - **A collapsed container keeps its signal, as rows.** A folded section keeps its unread rows on screen under the header, drawn as they are when open. A section header never carries a count; its one mark is a working dot.
-- **Only "happening right now" pulses.** An agent mid-turn pulses (see [Identity](#identity)); an unread count does not.
+- **Only "happening right now" pulses.** An agent mid-turn pulses (see [Identity](#identity)); an unread count does not. A count also never flips or crossfades when its number changes: tabular figures keep the width, and the number is the news. `animate-count-flip` belongs to `ThreadReplyRow` alone, and the design-token check refuses it anywhere else.
+
+### Badge, count and chip
+
+Three primitives, one shape (full radius) and one tint (7% of the foreground). The playground shows every state: `/dev` Components → Badge, Count pill, Chip, Mention pill.
+
+| Primitive       | Is                                                           | Element                   | File                           |
+| --------------- | ------------------------------------------------------------ | ------------------------- | ------------------------------ |
+| `Badge`         | An inert label: a state, a category, a fact                  | `<span>`                  | `shared/ui/badge.tsx`          |
+| `CountPill`     | A number, and who it is for                                  | `<span>`                  | `shared/ui/count-pill.tsx`     |
+| `Chip`          | A pill you can press: a toggle, an action, a popover trigger | `<button>`, ref forwarded | `shared/ui/chip.tsx`           |
+| `RemovableChip` | A pill you dismiss: an active filter, a tag                  | `<span>` + × `<button>`   | `shared/ui/removable-chip.tsx` |
+
+**Badge.** `tone` is `neutral | warning | error | success | info` (`info` draws neutral: blue is not a resting state). `size` is `sm` (12px, 20px high) or `xs` (11px, 18px). No border, no shadow, `font-medium tabular-nums`. **Colour goes on the glyph, never the word:** `warning` brings `TriangleAlert` in `text-status-warning-fg`, `error` brings `CircleX`, `success` a `Check`, and the word stays on the neutral tint at full strength. A coloured word fails AA on the tint (amber 4.28:1 on the sidebar, red 4.13:1 on a dark selected row); the glyphs clear 3:1 everywhere. `icon` overrides the glyph and `icon={null}` removes it. `live` draws the pulsing working dot. A badge is never a target: one that links or toggles is a `Chip`. `variant` and `shape` are deprecated aliases (`destructive` resolves to `error`) until the codemod removes them.
+
+**CountPill.** `tone` says who the count is for:
+
+| Tone            | Means                                   | Inline wash                                   | Solid                                  |
+| --------------- | --------------------------------------- | --------------------------------------------- | -------------------------------------- |
+| `you` (default) | Somebody wrote to you: a mention, a DM  | `bg-brand/15 text-brand-text`                 | `bg-brand-text text-background`        |
+| `warning`       | Something stopped and waits on a person | `bg-status-warning-bg text-status-warning-fg` | `bg-status-warning-fg text-background` |
+| `error`         | Something failed                        | `bg-status-error-bg text-status-error-fg`     | `bg-status-error-fg text-background`   |
+| `neutral`       | Activity you asked to see               | `bg-foreground/10 text-foreground`            | `bg-foreground text-background`        |
+
+`placement="inline"` is 18px (22 on a phone) in `text-2xs` semibold and caps at `99+`; `placement="corner"` is 16px (20) in `text-3xs`, always solid, absolutely placed on a `relative` parent, and caps at `9+`. Use `solid` inline where the wash cannot clear the ground: the `you` wash is 4.04:1 on a dark modal hover row, solid is 7.90:1, so the command palette counts solid. `count <= 0` draws nothing. Omit `label` when the parent's own accessible name already says the number, and the pill hides itself from assistive tech, so the count is read once. A count is a glyph, so it may have a coloured ground; a badge may not.
+
+**Chip.** Rests on `bg-foreground/7 text-muted-foreground`, hovers to `/11` and full-strength text in 150ms, presses at `0.98` (80ms in, 120ms out, `motion-safe` only), focuses with `focus-ring`. `pressed` sets `aria-pressed` and **inverts** to `bg-foreground text-background`: 7% against 11% is about 1.1:1, so a tinted selection would be colour-only. `sm` is 24px on a desktop and 40 on a phone with a 44px hit area; `md` is 32 and 44. Long text truncates at `max-w-56`; put the full text in `title`. Neighbours sit `gap-1 max-md:gap-2`.
+
+**RemovableChip.** The body is inert; only the × is a button, 24×24 on a desktop and 44×40 (44 hit) on a phone, and `removeLabel` names the thing removed. Wrap a row of them in `data-chip-group`: removing one moves focus to the next chip, else the previous, else the nearest `data-chip-group-add` control. Never to `<body>`. Nothing animates out.
+
+**Mention pill.** Stays `inline` so it wraps with `box-decoration-break`, and is exempt from target sizes. A person is `bg-foreground/7 text-foreground` (the old `bg-secondary` vanished on the sidebar); an agent keeps its identity tint; a **cc** is the same tint in the muted grey at regular weight, with the visible word `cc` before the name, so it is never told apart by shade alone.
+
+**Guards** (`pnpm check:design-tokens`): `local-count-cap` (no `DISPLAY_CAP` or `MAX_COUNT`; caps live in `count-pill.tsx`), `hand-rolled-count` (`tabular-nums` and `rounded-full` on one line outside `count-pill.tsx`, `badge.tsx` and `TouchChip`'s string), and `count-flip`. All three are hard fails.
 
 ### 3-State Status Pattern
 

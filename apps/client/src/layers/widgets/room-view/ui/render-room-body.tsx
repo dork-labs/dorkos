@@ -28,6 +28,7 @@ import {
   withMentionTags,
 } from '../lib/mention-markup';
 import { ccAuthors } from '@dorkos/shared/mention-addressing';
+import { typedCcAuthors } from '../lib/typed-cc';
 import type { RosterAuthor } from '../lib/room-timeline';
 import { MentionRosterProvider } from '../model/mention-roster-context';
 import { buildMentionComponents } from './MentionPillRenderer';
@@ -80,9 +81,15 @@ function RoomBody({ entry, authors }: RoomBodyProps) {
   // Who this entry only copied in, as the server marked it (DOR-3401): their
   // pills draw grey. Frozen with the spans, so it is safe in the map too.
   const ccIds = useMemo(() => new Set(ccAuthors(entry.mentionSpans ?? [])), [entry.mentionSpans]);
+  // cc'd mentions the writer already introduced with a typed "cc", whose pills
+  // leave out their own word. Derived from the text and spans, so frozen too.
+  const typedCcIds = useMemo(
+    () => typedCcAuthors(entry.body.text, entry.mentionSpans ?? []),
+    [entry.body.text, entry.mentionSpans]
+  );
   const mentionComponents = useMemo(
-    () => buildMentionComponents(spannedIds, ccIds),
-    [spannedIds, ccIds]
+    () => buildMentionComponents(spannedIds, ccIds, typedCcIds),
+    [spannedIds, ccIds, typedCcIds]
   );
 
   return (

@@ -41,7 +41,7 @@ import {
 } from '@/layers/entities/room';
 import { deriveUnreadSignal } from '../../model/rules/derive-unread-signal';
 import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-item';
-import { directedCountLabel } from './directed-count-label';
+import { directedCountCap, directedCountLabel } from './directed-count-label';
 import { DISABLED_SORTABLE_BINDINGS, type SortableBindings } from '../dnd/SidebarDndPrimitives';
 import { buildRoomRowMenuNodes } from './RoomRowMenuItems';
 import { useRoomRowMenu, type RoomRowActs } from './use-room-row-menu';
@@ -488,7 +488,11 @@ export const RoomRow = memo(function RoomRow({
                 />
               ))}
             {signal.tier === 'directed' && signal.count !== undefined && (
-              <CountPill count={signal.count} label={directedCountLabel(signal.count, countKind)} />
+              <CountPill
+                count={signal.count}
+                cap={directedCountCap(countKind)}
+                label={directedCountLabel(signal.count, countKind)}
+              />
             )}
           </>
         }

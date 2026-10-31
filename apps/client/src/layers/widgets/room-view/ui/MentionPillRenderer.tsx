@@ -42,6 +42,8 @@ interface MentionPillRendererProps {
   children?: ReactNode;
   /** True when the entry only copied this author in, after its leading @s. */
   cc?: boolean;
+  /** False when the writer already typed "cc" right before this mention. */
+  ccWord?: boolean;
 }
 
 /** The identity handed to the card hook when the mention names nobody. */
@@ -74,7 +76,7 @@ function handleLabel(children: ReactNode): string {
  * it was before this: hover-only, with the card's footer still reading
  * **soon** — an inert affordance is honest, a click that opens nothing is not.
  */
-export function MentionPillRenderer({ authorId, children, cc }: MentionPillRendererProps) {
+export function MentionPillRenderer({ authorId, children, cc, ccWord }: MentionPillRendererProps) {
   // Who this mention names, as of right now. Read from a context rather than
   // from the component map that decided to draw this pill at all, because that
   // map cannot deliver an update: Streamdown's top-level memo comparator
@@ -184,6 +186,7 @@ export function MentionPillRenderer({ authorId, children, cc }: MentionPillRende
       interactive={viewProfile !== undefined}
       {...pillControl}
       cc={cc}
+      ccWord={ccWord}
     />
   );
   if (agentCard) return agentCard.wrap(pill, { openOnClick: true });
@@ -228,10 +231,13 @@ export function MentionPillRenderer({ authorId, children, cc }: MentionPillRende
  *   entry — the only ids a `<mention>` tag may resolve against.
  * @param ccIds - Author ids this entry only copied in (DOR-3401). Their pills
  *   draw as a grey cc chip. Read off the same spans, so it is frozen too.
+ * @param typedCcIds - cc'd author ids the writer already introduced with the
+ *   word "cc"; their pills leave out their own `cc`. Frozen with the text.
  */
 export function buildMentionComponents(
   spannedIds: ReadonlySet<string>,
-  ccIds: ReadonlySet<string> = new Set()
+  ccIds: ReadonlySet<string> = new Set(),
+  typedCcIds: ReadonlySet<string> = new Set()
 ): Components {
   return {
     mention: (props: Record<string, unknown>) => {
@@ -246,7 +252,11 @@ export function buildMentionComponents(
       }
 
       return (
-        <MentionPillRenderer authorId={authorId} cc={ccIds.has(authorId)}>
+        <MentionPillRenderer
+          authorId={authorId}
+          cc={ccIds.has(authorId)}
+          ccWord={!typedCcIds.has(authorId)}
+        >
           {props.children as ReactNode}
         </MentionPillRenderer>
       );

@@ -3,6 +3,7 @@ import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { COMPONENTS_SECTIONS } from '../playground-registry';
 import { LayoutShowcases } from '../showcases/LayoutShowcases';
 import { ControlShowcases } from '../showcases/ControlShowcases';
+import { BadgeChipShowcases } from '../showcases/BadgeChipShowcases';
 import { AccountSigninShowcases } from '../showcases/AccountSigninShowcases';
 import { BannerShowcases } from '../showcases/BannerShowcases';
 import { FeedbackShowcases } from '../showcases/FeedbackShowcases';
@@ -30,6 +31,7 @@ export function ComponentsPage() {
     >
       <LayoutShowcases />
       <ControlShowcases />
+      <BadgeChipShowcases />
       <SigninIdentityShowcases />
       <AccountSigninShowcases />
       <BannerShowcases />

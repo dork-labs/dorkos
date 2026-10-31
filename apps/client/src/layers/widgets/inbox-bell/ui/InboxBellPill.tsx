@@ -11,12 +11,7 @@ import type { ComponentProps } from 'react';
 import { motion } from 'motion/react';
 import { Bell, TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-
-/**
- * Above this the pill shows a capped "N+" rather than a growing number — the
- * exact size of a long queue is on the cards, not on a header chip.
- */
-export const DISPLAY_CAP = 9;
+import { CORNER_COUNT_CAP, CountPill, formatPillCount } from '@/layers/shared/ui';
 
 /**
  * Which silhouette the pill wears.
@@ -113,22 +108,23 @@ export function InboxBellPill({
     >
       <Glyph aria-hidden className="size-3.5 shrink-0" />
       {count !== undefined && (
-        <span
-          data-slot="inbox-bell-count"
-          className={cn(
-            'tabular-nums',
-            // The corner badge, below `lg`: out of flow, so the number never
-            // widens the control. Solid in the pill's own ink, so it reads as
-            // the same signal at a glance.
-            'text-3xs absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 leading-none',
-            tone === 'waiting'
-              ? 'bg-status-warning-fg text-background'
-              : 'bg-foreground text-background',
-            'lg:static lg:h-auto lg:min-w-0 lg:rounded-none lg:bg-transparent lg:px-0 lg:text-xs lg:leading-normal lg:text-inherit'
-          )}
-        >
-          {count > DISPLAY_CAP ? `${DISPLAY_CAP}+` : count}
-        </span>
+        <>
+          {/* Below `lg`, the corner count: out of flow, so the number never
+            widens the control, and solid in the pill's own ink. Capped at 9+:
+            the size of a long queue is on the cards, not on a header chip. */}
+          <CountPill
+            data-slot="inbox-bell-count"
+            count={count}
+            placement="corner"
+            tone={tone === 'waiting' ? 'warning' : 'neutral'}
+            className="lg:hidden"
+          />
+          {/* From `lg`, the number sits inline beside its word, where the row
+            has room for it. */}
+          <span aria-hidden className="hidden tabular-nums lg:inline">
+            {formatPillCount(count, CORNER_COUNT_CAP)}
+          </span>
+        </>
       )}
       <span className="hidden lg:inline">{text}</span>
     </motion.button>
