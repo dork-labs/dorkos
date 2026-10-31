@@ -532,6 +532,10 @@ export const dialog = {
    */
   showMessageBoxSync: vi.fn<(options: MessageBoxOptions) => number>(() => 0),
   showErrorBox: vi.fn<(title: string, content: string) => void>(),
+  /** The open-file dialog, cancelled by default: no file picked. */
+  showOpenDialog: vi.fn<
+    (...args: unknown[]) => Promise<{ canceled: boolean; filePaths: string[] }>
+  >(() => Promise.resolve({ canceled: true, filePaths: [] })),
 };
 
 /**
@@ -688,6 +692,7 @@ export function resetElectronMock(): void {
   );
   dialog.showMessageBoxSync = vi.fn(() => 0);
   dialog.showErrorBox = vi.fn();
+  dialog.showOpenDialog = vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] }));
 
   Menu.buildFromTemplate = vi.fn(makeMockMenu);
   Menu.setApplicationMenu = vi.fn();
