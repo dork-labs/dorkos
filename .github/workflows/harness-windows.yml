@@ -53,15 +53,39 @@ name: harness-windows
 # and the context reported. So this job always runs, always reports
 # `harness-windows`, and decides internally whether to spend the minutes.
 #
-# NOT REQUIRED YET, AND NEVER FOLDED INTO `test`. Promoting it is a
-# branch-protection change and nothing else: no edit to this file, because
-# `merge_group:` is in the `on:` list from day one. What it must NEVER become is
-# a Windows leg of the required `test` check — `test` is four-way sharded and
-# gates every merge, and hanging a second operating system off it makes every
-# merge in the repo wait on the platform this job exists to explore. Two
-# contexts, two failure domains, one promotion decision each.
+# A `paths:` FILTER ON `pull_request` ONLY, added on top of that (ledger
+# 261030-193801), because this check is advisory and the runner pool is the
+# team's bottleneck. A pull request that can't reach these suites no longer
+# holds a Windows runner to install and then skip them. `merge_group` stays
+# unfiltered, so the queue still runs every suite on every merge.
+#
+# apps/client/ is left out on purpose, though the scope step below counts it:
+# `dorkos` depends on the client, but no suite here imports it (it only appears
+# as text in test fixtures). The list is deliberately `packages/**`, not the
+# CLI's closure, so a new workspace dependency can't fall off it.
+#
+# NOT REQUIRED YET, AND NEVER FOLDED INTO `test`. Promoting it takes one edit
+# here, delete the `paths:` below, and then the branch-protection change: a
+# required check that never reports keeps a PR out of the queue. `merge_group:`
+# is in the `on:` list from day one. What it must NEVER become is a Windows leg
+# of the required `test` check — `test` is sharded and gates every merge, and
+# hanging a second operating system off it makes every merge in the repo wait
+# on the platform this job exists to explore. Two contexts, two failure domains,
+# one promotion decision each.
 on:
   pull_request:
+    paths:
+      - 'apps/server/**'
+      - 'packages/**'
+      - 'patches/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - '.gitattributes'
+      - 'turbo.json'
+      - 'vitest.config.ts'
+      - '.github/workflows/harness-windows.yml'
   merge_group:
   workflow_dispatch:
 

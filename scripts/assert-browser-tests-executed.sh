@@ -220,6 +220,11 @@ FILTERED_SPECS=(
 #     session to outlive that file's `POST /api/test/reset`. Its neighbours in
 #     tests/dashboard-sidebar/ are ordinary cockpit specs, which is exactly why
 #     the extension matters here.
+#   workbench/doc-frame-sdk-browser.ts, doc-frame-companion-browser.ts and
+#     doc-frame-outside-browser.ts — a page in the canvas browser talking to its
+#     agent (DOR-2665): the installed SDK's receipts, the visual companion flow,
+#     and a served frame that leaves DorkOS. Registered into
+#     browser-driving.spec.ts, whose served pages and preview proxy they drive.
 #   chat/interactive-prompts.ts — the prompts a turn STOPS on: tool approvals,
 #     the batch bar, AskUserQuestion, MCP elicitation (capability rows
 #     I-01…I-04, DOR-1214). Registered into chat-mock.spec.ts because every one
@@ -260,6 +265,9 @@ REGISTERED_MODULES=(
   'conversation/ask-anywhere.ts'
   'conversation/ask-parks.ts'
   'dashboard-sidebar/dorkbot-seed-survives-reload.ts'
+  'workbench/doc-frame-companion-browser.ts'
+  'workbench/doc-frame-outside-browser.ts'
+  'workbench/doc-frame-sdk-browser.ts'
 )
 
 fail() {

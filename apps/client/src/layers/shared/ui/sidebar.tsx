@@ -538,7 +538,10 @@ function SidebarMenuButton({
   tooltip?: string | React.ComponentProps<typeof TooltipContent>;
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
   const Comp = asChild ? Slot.Root : 'button';
-  const { isMobile, state } = useSidebar();
+  // Read directly rather than through useSidebar: the agent profile's Schedules
+  // page renders these rows outside the app shell's provider (DOR-3124). The
+  // context only decides the collapsed-rail tooltip, and no rail means no tooltip.
+  const sidebar = React.useContext(SidebarContext);
 
   const button = (
     <Comp
@@ -551,7 +554,7 @@ function SidebarMenuButton({
     />
   );
 
-  if (!tooltip) {
+  if (!tooltip || !sidebar) {
     return button;
   }
 
@@ -567,7 +570,7 @@ function SidebarMenuButton({
       <TooltipContent
         side="right"
         align="center"
-        hidden={state !== 'collapsed' || isMobile}
+        hidden={sidebar.state !== 'collapsed' || sidebar.isMobile}
         {...tooltip}
       />
     </Tooltip>

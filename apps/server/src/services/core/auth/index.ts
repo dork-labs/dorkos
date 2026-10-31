@@ -50,6 +50,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { hubSignInPlugin } from '../hub/hub-sign-in.js';
 import { desktopSignInPlugin } from './desktop-sign-in.js';
 import { personStepUpPlugin } from './person-step-up.js';
+import { hashOwnerPassword, verifyOwnerPassword } from './passwords/password-hash.js';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
 import { apiKey } from '@better-auth/api-key';
@@ -192,13 +193,15 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       schema: { user, session, account, verification, apikey },
     }),
     // Local accounts: email is an identifier only. No verification, no SMTP.
-    // Password hashing stays the Better Auth default (scrypt).
+    // Passwords are hashed with scrypt at OWASP's cost (`./passwords/password-hash.ts`,
+    // DOR-3234); a hash Better Auth's lighter default wrote still verifies.
     // A hub has no passwords: its owner signs in with their DorkOS account,
     // so sign-in, sign-up and resets by password are off there (A4). An agent
     // computer has no person to sign in at all (DOR-2940).
     emailAndPassword: {
       enabled: isPersonalComputer(),
       requireEmailVerification: false,
+      password: { hash: hashOwnerPassword, verify: verifyOwnerPassword },
     },
     user: {
       additionalFields: {

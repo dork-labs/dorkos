@@ -26,7 +26,6 @@ import {
   CANARY_EVENTS,
   gateKey,
   latestDay,
-  localExportDays,
   readData,
   snapshotDays,
   snapshotPath,
@@ -40,6 +39,7 @@ import { gateMapper, gateTimeouts, requiredWorkflowPaths, type GateMapper } from
 import { sampleFlaky } from './artifacts.ts';
 import { BudgetExhausted, type Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
+import { localExportHealth } from './local-health.ts';
 import type { Config } from './schemas.ts';
 import { fetchMergedPrs, type PrFacts } from './prs.ts';
 import { failingGatesFor, priorQueueBuilds, repeatEjections } from './ejection-facts.ts';
@@ -368,11 +368,14 @@ function collectDay(
   // Problems with this day's own data: any one keeps the day incomplete, so
   // the next run fetches it again instead of trusting it forever.
   const dayFailures: string[] = [];
-  const warnings: string[] = [];
+  const warnings: string[] = [...global.warnings];
+  // What `main` really requires: a workflow whose organization rule is not live
+  // yet (`enforced: false`) is still collected and named in `failed_gates`, but
+  // cannot turn a queue build red.
   const required = requiredWorkflowPaths(
     workflows,
     files.requiredChecks?.contexts ?? [],
-    files.requiredChecks?.workflows ?? []
+    (files.requiredChecks?.workflows ?? []).filter((s) => s.enforced)
   );
   const mapGate = gateMapper(workflows);
   const fetched = fetchRuns(gh, repo, day, partial ? now : undefined);
@@ -550,36 +553,6 @@ export function planDays(dataDir: string, files: HandFiles, now: Date): string[]
 }
 
 /**
- * Local-export ages for the health block.
- *
- * @param dataDir - The data branch working tree.
- * @param files - The hand files.
- * @param today - The current UTC day.
- */
-function localExportHealth(
-  dataDir: string,
-  files: HandFiles,
-  today: string
-): { exports: Health['local_exports']; failures: string[] } {
-  const { stale_after_days: stale, retired_after_days: retired } = files.config.local;
-  const exports: Health['local_exports'] = {};
-  const failures: string[] = [];
-  for (const [clone, last] of Object.entries(localExportDays(dataDir))) {
-    const age = Math.round(
-      (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${last}T00:00:00Z`)) / 86_400_000
-    );
-    const state = age > retired ? 'retired' : age > stale ? 'stale' : 'fresh';
-    exports[clone] = { last, age_days: age, state };
-    if (state === 'stale') {
-      failures.push(
-        `The local export from clone ${clone} is ${age} days old (last ${last}); local-commit and local-push are going stale. Approve or re-run the ci-local-export scheduled skill on that machine (Schedules page, Full autonomy).`
-      );
-    }
-  }
-  return { exports, failures };
-}
-
-/**
  * Run the collector: plan the days, collect each one while the budget lasts,
  * write their snapshots, then spend what is left refreshing older days.
  *
@@ -608,6 +581,7 @@ export function collect(opts: CollectOptions): CollectResult {
   }
   const local = localExportHealth(dataDir, files, today);
   global.failures.push(...local.failures);
+  global.warnings.push(...local.warnings);
   const written: string[] = [];
   const failures = new Set<string>();
   for (const day of days) {

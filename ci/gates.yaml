@@ -198,6 +198,9 @@ gates:
   - id: wf.test.community-packaged
     source: .github/workflows/test.yml
     purpose: Proves the packaged local-agent community journey with no public network, on every queue build and canary run, and on pull requests whose diff touches the community slice (scripts/community-packaged-scope.sh).
+  - id: wf.test.test-shard-count
+    source: .github/workflows/test.yml
+    purpose: Picks how many test shards a run gets; six in the queue, on the canary and on a pull request that changes apps/server or packages/shared, two on other pull requests, and six whenever the diff cannot be read.
   - id: wf.test.test-shard
     source: .github/workflows/test.yml
     purpose: Runs one sixth of the unit suites (affected-only on PRs, skipped on PRs that change only changelog, docs or version lines per scripts/no-code-scope.sh; the full sweep in the merge queue).

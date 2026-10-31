@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import { UserMessageContent } from '../UserMessageContent';
@@ -29,6 +29,35 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
 describe('UserMessageContent', () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it('folds a prompt nobody here typed, and opens it on request (DOR-3019)', () => {
+    render(
+      <UserMessageContent
+        message={makeMessage({ content: 'Check the queue', promptSource: { kind: 'heartbeat' } })}
+      />
+    );
+    // Hidden from the eye, still there for a screen reader.
+    expect(screen.getByText('Check the queue')).toHaveClass('sr-only');
+    fireEvent.click(screen.getByRole('button', { name: 'Show message' }));
+    expect(screen.getByText('Check the queue')).not.toHaveClass('sr-only');
+    expect(screen.getByRole('button', { name: 'Hide message' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+  });
+
+  it("shows a person's words from a connection as a plain message (DOR-3019)", () => {
+    render(
+      <UserMessageContent
+        message={makeMessage({
+          content: 'Hi from my phone',
+          promptSource: { kind: 'channel', label: 'Telegram' },
+        })}
+      />
+    );
+    expect(screen.getByText('Hi from my phone')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show message' })).not.toBeInTheDocument();
   });
 
   it('renders local-command output via OutputRenderer (DOR-126)', () => {

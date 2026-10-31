@@ -14,7 +14,7 @@ import { emitQueueUpdate } from '../queue-stream-events.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { AGENT_LAUNCH_CAP_SETTING, agentLaunchMaxLive } from '../launch/launch-session.js';
 import type { ChatMessageStore } from './chat-message-store.js';
-import type { TurnRefusal } from '../launch/turn-not-started.js';
+import { TURN_NO_ANSWER, type TurnRefusal } from '../launch/turn-not-started.js';
 
 /**
  * What a send refused by the machine-load launch cap answers. Not the
@@ -111,7 +111,10 @@ export function waitingPlace(
  * speaks to that chat's person ("answer the open request"), which the sender
  * cannot do and must not try to.
  */
-const NOT_DELIVERED: Record<TurnRefusal, string> = {
+const NOT_DELIVERED: Record<TurnRefusal | typeof TURN_NO_ANSWER, string> = {
+  [TURN_NO_ANSWER]:
+    'Not answered: that chat’s agent stopped on an error first, often a usage limit. ' +
+    'It reads this on its next turn.',
   'warm-ceiling': 'Not delivered: that computer has too many chats open. Send it again later.',
   'pending-interaction': 'Not delivered: that chat is waiting on its person. Send it again later.',
   'crash-loop': 'Not delivered: that chat’s agent keeps stopping. Its person needs to look.',
@@ -120,10 +123,23 @@ const NOT_DELIVERED: Record<TurnRefusal, string> = {
 };
 
 /**
+ * Where a message stands once its turn has settled: `delivered` only when the
+ * agent got to it, so a usage limit is not reported as an arrival (DOR-3287).
+ *
+ * @param outcome - How the turn settled.
+ * @param reason - What the settled event says about it.
+ */
+export function settledStatus(
+  outcome: 'ok' | 'failed',
+  reason: string | undefined
+): Extract<ChatMessageStatus, 'delivered' | 'failed'> {
+  return outcome === 'ok' && reason !== TURN_NO_ANSWER ? 'delivered' : 'failed';
+}
+
+/**
  * Why a message's turn failed, for its sender.
  *
- * @param refusal - Why the chat refused the turn before its agent saw the
- *   message, when it did.
+ * @param refusal - Why the agent never got to the message, when known.
  */
 export function settledFailureReason(refusal: string | undefined): string {
   if (refusal === undefined) return 'The chat’s turn ended with an error.';

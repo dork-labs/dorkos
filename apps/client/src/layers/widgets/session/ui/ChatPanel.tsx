@@ -746,7 +746,7 @@ export function ChatPanel({
           {...(landOnRow === undefined ? {} : { landOnRow })}
           foldFirstPrompt={startedBy !== null}
           directLog={directLog}
-          directMessage={surface.directMessage}
+          {...surface.transcriptNames}
         />
 
         <TerminalReasonChip terminalReason={sessionStatus?.terminalReason} />

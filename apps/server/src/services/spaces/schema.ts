@@ -690,9 +690,7 @@ export const pendingAdmissions = pgTable(
 export const admissionReceipts = pgTable(
   'admission_receipts',
   {
-    admissionId: uuid('admission_id')
-      .primaryKey()
-      .references(() => pendingAdmissions.id, { onDelete: 'cascade' }),
+    admissionId: uuid('admission_id').primaryKey(),
     communityId: uuid('community_id')
       .notNull()
       .references(() => communities.id),
@@ -708,7 +706,7 @@ export const admissionReceipts = pgTable(
       name: 'admission_receipts_admission_tenant_fk',
       columns: [table.communityId, table.admissionId],
       foreignColumns: [pendingAdmissions.communityId, pendingAdmissions.id],
-    }),
+    }).onDelete('cascade'),
     foreignKey({
       name: 'admission_receipts_admission_account_fk',
       columns: [table.communityId, table.admissionId, table.accountId],
@@ -717,7 +715,7 @@ export const admissionReceipts = pgTable(
         pendingAdmissions.id,
         pendingAdmissions.accountId,
       ],
-    }),
+    }).onDelete('cascade'),
     foreignKey({
       name: 'admission_receipts_invite_tenant_fk',
       columns: [table.communityId, table.inviteId],

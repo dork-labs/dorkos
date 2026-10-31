@@ -822,8 +822,8 @@ export class ChatMessageService {
       let failureReason: string | undefined;
       if (event.phase === 'started' && row.status === 'queued') status = 'working';
       else if (event.phase === 'settled' && (row.status === 'working' || row.status === 'queued')) {
-        status = event.outcome === 'ok' ? 'delivered' : 'failed';
-        if (event.outcome !== 'ok') failureReason = standing.settledFailureReason(event.reason);
+        status = standing.settledStatus(event.outcome, event.reason);
+        if (status === 'failed') failureReason = standing.settledFailureReason(event.reason);
       } else if (event.phase === 'dropped' && row.status === 'queued') {
         status = 'failed';
         failureReason =

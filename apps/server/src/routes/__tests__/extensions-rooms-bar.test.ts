@@ -99,4 +99,11 @@ describe('refuseRoomWrite', () => {
   it('refuses a bearer even where the gate was open', () => {
     expect(refuseRoomWrite(facts({}, { authorization: 'Bearer k' }))).toBe('not-a-browser-session');
   });
+
+  it.each([['x-api-key'], ['proxy-authorization']])(
+    'refuses %s even where the gate was open, valid or not',
+    (header) => {
+      expect(refuseRoomWrite(facts({}, { [header]: 'garbage' }))).toBe('not-a-browser-session');
+    }
+  );
 });

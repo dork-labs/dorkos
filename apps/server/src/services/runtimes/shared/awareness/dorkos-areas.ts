@@ -72,7 +72,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Canvas',
-    can: "open documents, files, diffs, widgets and pages beside the chat or on a room's canvas.",
+    can: "open documents, files, diffs, widgets and pages beside the chat or on a room's canvas; a page can send you events.",
     covers: [
       'ui.control',
       'ui.state',
@@ -182,7 +182,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Activity',
-    can: "read what agents did, the audit log and agents' chat transcripts.",
+    can: "read what agents did, every chat running now, the audit log and agents' transcripts.",
     covers: ['audit.', 'operator.activity_list', 'operator.agents_recent_activity'],
     areas: [],
     gate: 'read only',

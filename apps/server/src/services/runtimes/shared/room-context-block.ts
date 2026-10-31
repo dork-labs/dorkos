@@ -90,6 +90,7 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { defuseUntrustedText, fenceUntrustedBlock, mintFenceNonce } from './untrusted-fence.js';
 import { movedQuoted, refreshLines } from './room-files-refresh-lines.js';
+import { clockFace, clockSentence } from './room/room-context-clock.js';
 
 /** What the fence markers are called, on both the opening and closing line. */
 const FENCE_LABEL = 'UNTRUSTED ROOM MESSAGES';
@@ -619,9 +620,10 @@ function filesLines(files: RoomContextFiles): string[] {
  *
  * @param canvas - What is on the table, as the server assembled it.
  * @param nonce - This turn's fence nonce, for the id labels.
+ * @param zone - The person's IANA zone, or absent for UTC.
  * @returns The lines, or an empty list when the table is empty.
  */
-function canvasLines(canvas: RoomContextCanvas, nonce: string): string[] {
+function canvasLines(canvas: RoomContextCanvas, nonce: string, zone?: string): string[] {
   if (canvas.documents.length === 0) return [];
   const count = canvas.documents.length;
   const watching =
@@ -636,7 +638,7 @@ function canvasLines(canvas: RoomContextCanvas, nonce: string): string[] {
         `${idLabel(document.id, nonce)} ${label(document.type, 40)} from ${named({
           handle: document.author,
           displayName: document.author,
-        })}${document.pinned ? ', pinned' : ''}, last changed ${clock(document.lastChangedAt)}`
+        })}${document.pinned ? ', pinned' : ''}, last changed ${clock(document.lastChangedAt, zone)}`
     ),
   ];
 }
@@ -707,17 +709,16 @@ function idLabel(entryId: string, nonce: string): string {
 }
 
 /**
- * The clock face of an ISO timestamp, `HH:MM` in UTC.
- *
- * A model needs the ordering and the gaps, not the date, and every room
- * timestamp is written by `toISOString()`. Anything that is not that shape is
- * sanitized as a label rather than passed through: these render in the preamble,
- * where nothing unsanitized may appear.
+ * The clock face of an ISO timestamp, in the person's zone (FB-66) or in UTC
+ * when the turn carries none. Anything that is not an ISO timestamp is
+ * sanitized as a label rather than passed through: these render in the
+ * preamble, where nothing unsanitized may appear.
  *
  * @param iso - The stored timestamp.
+ * @param zone - The person's IANA zone, or absent for UTC.
  */
-function clock(iso: string): string {
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso) ? iso.slice(11, 16) : label(iso, 40);
+function clock(iso: string, zone?: string): string {
+  return clockFace(iso, zone) ?? label(iso, 40);
 }
 
 /**
@@ -873,7 +874,7 @@ function memberLine(member: RoomContextMember): string {
 function entryLine(
   entry: RoomContextEntry,
   nonce: string,
-  opts: { actionable?: boolean; ccdIn?: readonly string[] } = {}
+  opts: { actionable?: boolean; ccdIn?: readonly string[]; zone?: string } = {}
 ): string {
   const author = { handle: entry.authorHandle, displayName: entry.authorDisplayName };
   const who = entry.kind === 'notice' ? 'the room' : named(author);
@@ -949,7 +950,7 @@ function entryLine(
     entry.attachments.length > 0
       ? ` [attached: ${entry.attachments.map(attachmentPath).join(', ')}]`
       : '';
-  return `[${clock(entry.at)}] ${who}${what}${id}${topic}${mention}${steered}${via}${attached}: ${body(entry.text)}`;
+  return `[${clock(entry.at, opts.zone)}] ${who}${what}${id}${topic}${mention}${steered}${via}${attached}: ${body(entry.text)}`;
 }
 
 /**
@@ -980,11 +981,12 @@ const ACKNOWLEDGMENT_NOTE =
  * and from the next turn it renders here.
  *
  * @param ack - The acknowledgment to render.
+ * @param zone - The person's IANA zone, or absent for UTC.
  */
-function acknowledgmentLine(ack: RoomContextAcknowledgment): string {
+function acknowledgmentLine(ack: RoomContextAcknowledgment, zone?: string): string {
   const who = named(ack);
   const what = ack.isPerson ? 'person' : 'agent';
-  return `[${clock(ack.entryAt)}] ${who} (${what}${addressNote(ack)}) reacted ${label(ack.emoji)} to: ${body(ack.entryExcerpt)}`;
+  return `[${clock(ack.entryAt, zone)}] ${who} (${what}${addressNote(ack)}) reacted ${label(ack.emoji)} to: ${body(ack.entryExcerpt)}`;
 }
 
 /**
@@ -1102,6 +1104,11 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
   // will confidently describe a group it cannot read.
   if (data.room.visibility === 'partial') lines.push(VISIBILITY_PARTIAL_NOTE);
 
+  // FB-66: every time below is on the person's clock, and this is the one place
+  // the block says whose clock that is.
+  // The zone goes through `label`, as everything in the preamble does.
+  if (data.clock) lines.push(clockSentence(data.clock, label(data.clock.timeZone, 64)));
+
   // §15: guidance only, never enforcement — the outbound adapter remains the
   // backstop that actually splits and escapes. This is a fixed, server-authored
   // constant (never user input), so unlike everything else in this function it
@@ -1159,7 +1166,7 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
     // cannot follow, which is the same failure `.claude/rules/room-conduct.md`
     // records about telling a model not to loop.
     lines.push(
-      `You are engaged in this conversation until ${clock(data.addressing.engagedUntil)}, ` +
+      `You are engaged in this conversation until ${clock(data.addressing.engagedUntil, data.clock?.timeZone)}, ` +
         `${postsLeftClause(data.addressing.engagedPostsLeft)} — whichever comes first.`
     );
   }
@@ -1258,7 +1265,7 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
     // its addressability is already stated. Saying it twice would buy nothing
     // and cost a line on every turn.
     const working = data.working
-      .map((agent) => `${named(agent)}, since ${clock(agent.since)}`)
+      .map((agent) => `${named(agent)}, since ${clock(agent.since, data.clock?.timeZone)}`)
       .join('; ');
     lines.push(`Working right now: ${working}.`);
   }
@@ -1277,7 +1284,7 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
   // title cannot forge one.
   //
   // A room with nothing on its canvas renders nothing at all.
-  if (data.canvas) lines.push(...canvasLines(data.canvas, nonce));
+  if (data.canvas) lines.push(...canvasLines(data.canvas, nonce, data.clock?.timeZone));
 
   // **A number here is a claim, so "no limit" is said as itself.** A headroom
   // field is `null` when nothing is counting that particular ceiling, and
@@ -1328,6 +1335,7 @@ function preamble(data: RoomContextData, where: string, nonce: string): string[]
  * @returns The fenced block, or `null` when there is no member text to render.
  */
 function fenced(data: RoomContextData, nonce: string): string | null {
+  const zone = data.clock?.timeZone;
   const quoted: string[] = [];
   if (data.thread) {
     // Its id too, because this is the one entry a thread turn is most likely to
@@ -1338,7 +1346,8 @@ function fenced(data: RoomContextData, nonce: string): string | null {
         `${body(data.thread.rootExcerpt)}`
     );
   }
-  for (const entry of data.pending) quoted.push(entryLine(entry, nonce, { ccdIn: data.ccdIn }));
+  for (const entry of data.pending)
+    quoted.push(entryLine(entry, nonce, { ccdIn: data.ccdIn, zone }));
   // The rest of what this turn is ANSWERING, under its own nonced heading and
   // after the background it must not be confused with (RP8, DOR-1231).
   //
@@ -1359,7 +1368,7 @@ function fenced(data: RoomContextData, nonce: string): string | null {
       GATHERED_NOTE,
       ...gathered.map(
         (entry, index) =>
-          `(${index + 1} of ${gathered.length} · ${nonce}) ${entryLine(entry, nonce, { ccdIn: data.ccdIn })}`
+          `(${index + 1} of ${gathered.length} · ${nonce}) ${entryLine(entry, nonce, { ccdIn: data.ccdIn, zone })}`
       )
     );
   }
@@ -1388,7 +1397,7 @@ function fenced(data: RoomContextData, nonce: string): string | null {
       // No ids: the heading above these calls them background and says the
       // answer goes to the thread, so an id here would only make the aside
       // easier to take (DOR-1263).
-      ...data.channelTail.map((entry) => entryLine(entry, nonce, { actionable: false }))
+      ...data.channelTail.map((entry) => entryLine(entry, nonce, { actionable: false, zone }))
     );
   }
   if (quoted.length === 0) return null;
@@ -1456,9 +1465,10 @@ export function formatRoomContext(
     // These keep their ids: an agent editing course often needs to point at
     // what it said last — a reply in the thread it opened, or a correction.
     blocks.push(
-      ['You said here recently:', ...data.ownRecent.map((entry) => entryLine(entry, nonce))].join(
-        '\n'
-      )
+      [
+        'You said here recently:',
+        ...data.ownRecent.map((entry) => entryLine(entry, nonce, { zone: data.clock?.timeZone })),
+      ].join('\n')
     );
   }
 
@@ -1469,7 +1479,7 @@ export function formatRoomContext(
     blocks.push(
       [
         'Reactions to what you said here:',
-        ...data.acknowledgments.map(acknowledgmentLine),
+        ...data.acknowledgments.map((ack) => acknowledgmentLine(ack, data.clock?.timeZone)),
         ACKNOWLEDGMENT_NOTE,
       ].join('\n')
     );

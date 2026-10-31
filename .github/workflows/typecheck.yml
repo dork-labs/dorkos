@@ -328,14 +328,24 @@ jobs:
       # a shrink must lower its entry. Rides THIS job for the reason every gate
       # above does: `typecheck` is required, unfiltered and reports on
       # `merge_group`, so no new required check. `--base` refuses a baseline
-      # raised by hand; the base is the merge commit's first parent, fetched one
-      # level deep exactly as the ledger-coverage step below does, which works
-      # on `pull_request`, `merge_group` and the canary alike.
+      # raised by hand. On `pull_request` and the canary the base is the merge
+      # commit's first parent, fetched one level deep. On `merge_group` it is
+      # `merge_group.base_sha` (main), NOT `HEAD^1`: there `HEAD^1` is the
+      # previous queue entry, so a raise in an earlier entry would be judged
+      # only in that entry's own build, which a HEADGREEN queue does not await
+      # (ci/proposals/2026-10-31-queue-batching.md, ledger 261031-091600).
       - name: File-size ratchet (DOR-2822)
         if: ${{ !cancelled() }}
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
           git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          base="$(git rev-parse HEAD^1)"
+          if [ -n "$QUEUE_BASE" ]; then
+            git fetch --no-tags --depth=1 origin "$QUEUE_BASE"
+            base="$QUEUE_BASE"
+          else
+            base="$(git rev-parse HEAD^1)"
+          fi
           pnpm run check:max-lines -- --base "$base"
 
       # Raw NUL bytes pasted into text files (DOR-1561). Rides THIS job for
