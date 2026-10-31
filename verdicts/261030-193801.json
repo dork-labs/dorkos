@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "id": "261030-193801",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-11-07T08:22:09Z; the verdict is computed on 2026-11-08.",
+ "computed_at": "2026-10-31T10:50:05.113Z",
+ "hypothesis_hash": "890f1e51f3bc252e",
+ "metric": "tracked.job-minutes-per-merged-pr",
+ "anchor": "2026-10-31T08:22:09Z",
+ "prs": [
+  3310
+ ],
+ "baseline": {
+  "value": 1163.2,
+  "source": "ledger"
+ },
+ "target": 1140,
+ "min_n": 10,
+ "before": {
+  "from": "2026-10-24T08:22:09Z",
+  "to": "2026-10-31T08:22:09Z",
+  "n": 95,
+  "value": 1458
+ },
+ "after": {
+  "from": "2026-10-31T08:22:09Z",
+  "to": "2026-11-07T08:22:09Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [],
+ "slo": {
+  "id": "pr-feedback",
+  "stat": "p50",
+  "before": 25.9,
+  "after": null,
+  "movement": "unknown"
+ }
+}
