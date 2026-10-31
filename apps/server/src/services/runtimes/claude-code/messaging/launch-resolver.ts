@@ -116,6 +116,8 @@ import {
   resolveFolderConfigForLaunch,
 } from '../folder-settings/launch-folder-config.js';
 import { applyRepoConfigStep, applyRepoMcpServers } from '../repo-settings/launch-repo-config.js';
+import { prepareOwnFolder } from '../folder-settings/own-folder-open.js';
+import { createStopHook } from '../tool-gate/stop-hook.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
@@ -736,11 +738,22 @@ export async function resolveLaunch(args: {
     teammate ? undefined : messageOpts?.additionalDirectories,
     effectiveCwd
   );
+  // An agent a person set to Full writes its own folder setup on an unmarked
+  // turn (DOR-3483); every change is logged from file hashes, here and at turn end.
+  const ownFolder = await prepareOwnFolder(sdkOptions, {
+    home: turnAgentPath ?? undefined,
+    teammate,
+    turnMode: effectivePermissionMode,
+    session,
+    sessionId,
+    accountRoot,
+    agentName: agentDisplayName,
+  });
   // Every turn, a teammate's too: the permission floor and the relay pins are a person's.
-  // Every agent home's self-grant files too, below Full only (read off the mode set above).
-  applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome(), { sessionId, agentPath: turnAgentPath });
+  // Every agent home's self-grant files too, but an open own home's.
+  applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome(), ownFolder.chat);
   // And the agent home's self-grant files, plus the switches for held-back parts.
-  applyFolderConfigToLaunch(sdkOptions, turnAgentPath ?? undefined, folderConfig);
+  applyFolderConfigToLaunch(sdkOptions, turnAgentPath ?? undefined, folderConfig, ownFolder.open);
   // Every turn, at every level: Read, Grep and Glob never open a secret (DOR-3299, DOR-3292).
   applySecretReadDeny(sdkOptions, {
     dorkHome: resolveDorkHome(),
@@ -783,6 +796,7 @@ export async function resolveLaunch(args: {
     accountRoot,
     neverAsk: effectivePermissionMode === NEVER_ASK_MODE_ID,
     chat: session,
+    ownFolderOpen: ownFolder.open,
   });
   if (folderAllowsNotice) statusEvents.push(folderAllowsNotice);
 
@@ -899,28 +913,8 @@ export async function resolveLaunch(args: {
     // A helper agent's tool calls never reach the stream the audit record
     // reads, so these record them (spec `audit-trail` PR3). Observe-only.
     PostToolUseFailure: auditHooks.PostToolUseFailure,
-    // Which session timers are still pending (DOR-2717). CronCreate,
-    // ScheduleWakeup and /loop live inside the CLI and are no background task,
-    // so the stream never names them; the Stop hook's input does, at every turn
-    // end. The warm process is held while any is pending (`ProcessQuiet`), so
-    // the idle reaper cannot take the timer with it. Observe-only: the empty
-    // answer lets the turn end exactly as it would have.
-    Stop: [
-      {
-        hooks: [
-          async (hookInput) => {
-            if (hookInput.hook_event_name === 'Stop') {
-              // A Stop hook does not run after an interrupt, so a fired timer
-              // can stay counted until the next turn ends; the four-hour
-              // ceiling bounds that, as it bounds every hold.
-              const crons = hookInput.session_crons;
-              session.pendingTimers = Array.isArray(crons) ? crons.length : 0;
-            }
-            return {};
-          },
-        ],
-      },
-    ],
+    // Pending session timers, and the agent's own folder at turn end (`stop-hook.ts`).
+    Stop: [{ hooks: [createStopHook(session, ownFolder.atTurnEnd)] }],
   };
   sdkOptions.onElicitation = (request, { signal }) => {
     logger.debug('[sendMessage] elicitation request', {
