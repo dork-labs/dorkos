@@ -31,6 +31,14 @@
  * the spin-off's level as the ceiling), so a parent busy with its person hears
  * the report when that turn ends, and an idle parent wakes.
  *
+ * ## Into a room's seat
+ *
+ * A parent that is an agent's seat in a room (the session the room keeps for
+ * it) takes no chat messages, so a report there goes through the room instead
+ * (`toRoomSeat`, `rooms/handoff/seat-report.ts`, DOR-3488): it wakes the seat
+ * with a private turn that carries the report, once the seat is free. Nothing
+ * is posted into the room unless the seat's turn decides the room needs it.
+ *
  * @module services/session/chat-messages/chat-report-back
  */
 import type { HistoryMessage } from '@dorkos/shared/types';
@@ -75,6 +83,16 @@ export interface ReportTarget {
   parentSessionId: string;
 }
 
+/** A report on its way to a room seat. */
+export interface RoomSeatReport {
+  /** The spin-off. */
+  fromSessionId: string;
+  /** Its agent home. */
+  fromAgentPath: string;
+  /** The report. */
+  text: string;
+}
+
 /** What report-back needs. */
 export interface ChatReportBackDeps {
   /** The sender. */
@@ -91,6 +109,11 @@ export interface ChatReportBackDeps {
   statusOf: (sessionId: string) => SessionStatus | null;
   /** The chat's history. */
   history: (sessionId: string) => Promise<HistoryMessage[]>;
+  /**
+   * Deliver a report to a parent that is a room's seat, as a turn there (DOR-3488). False when
+   * the parent is no room's seat, and the report goes as a chat message instead.
+   */
+  toRoomSeat?: (parentSessionId: string, report: RoomSeatReport) => Promise<boolean>;
   /** Wait (tests make it immediate). */
   delay?: (ms: number) => Promise<void>;
   /** The clock (tests pin it). */
@@ -170,12 +193,13 @@ export function composeReport(reason: ReportReason, text: string, detail?: strin
  * started it, and how it reports. Every word is DorkOS's own except the
  * parent's title and agent name, which DorkOS also holds.
  *
- * A parent that cannot take chat messages (a room's chat, a bridged chat, a
+ * A parent that cannot take chat messages (a room's seat, a bridged chat, a
  * scheduled run) is never named as a `chat_send` target: every such send is
- * refused, and the spin-off would conclude the parent is unreachable.
+ * refused, and the spin-off would conclude the parent is unreachable. A room's
+ * seat still takes reports, as turns of its own (DOR-3488).
  *
- * @param opts - The parent, whether reports go back on their own, and whether
- *   the parent takes chat messages at all.
+ * @param opts - The parent, whether reports go back on their own, whether the
+ *   parent takes chat messages at all, and whether it is a room's seat.
  */
 export function spinOffBriefing(opts: {
   parentChatId: string;
@@ -183,6 +207,7 @@ export function spinOffBriefing(opts: {
   parentAgentName: string;
   reportBack: boolean;
   parentTakesMessages: boolean;
+  parentIsRoomSeat?: boolean;
 }): string {
   const parent = `${opts.parentTitle ? `"${opts.parentTitle}" ` : ''}(chat ${opts.parentChatId}, ${opts.parentAgentName})`;
   const lines = [`This is a spin-off chat. The chat ${parent} started it.`];
@@ -191,8 +216,12 @@ export function spinOffBriefing(opts: {
       'When you end a turn finished, failed, waiting on the person, or paused at a usage ' +
         'limit, your last message goes back to that chat on its own. So end each turn with a ' +
         'short report: what you did and what is left.',
-      `Send milestones before then with chat_send to ${opts.parentChatId}; nobody has to ask. ` +
-        'Do not send your final result that way too: it already goes back on its own.',
+      opts.parentIsRoomSeat
+        ? 'That chat is its agent’s seat in a room, so it takes no chat_send: your report wakes ' +
+            'it with a turn of its own, and nobody else in the room sees it. Put milestones in ' +
+            'your turn-end reports.'
+        : `Send milestones before then with chat_send to ${opts.parentChatId}; nobody has to ` +
+            'ask. Do not send your final result that way too: it already goes back on its own.',
       'If you are waiting on CI, a timer or a helper, keep your turn alive (for example ' +
         '`gh pr checks --watch` or a short sleep loop). A turn that ends only to wait sends nothing.'
     );
@@ -313,11 +342,24 @@ export class ChatReportBack {
     if (!agentPath) return;
     const caller: ChatCaller = { sessionId, agentPath };
     try {
+      // A room's seat takes no chat messages: the report wakes the seat with a turn of its own.
+      const message = composeReport(reason, text, detail);
+      const toSeat = this.deps.toRoomSeat;
+      if (
+        toSeat &&
+        (await toSeat(target.parentSessionId, {
+          fromSessionId: sessionId,
+          fromAgentPath: agentPath,
+          text: message,
+        }))
+      ) {
+        return;
+      }
       await this.deps.service.send(
         caller,
         {
           to: target.parentSessionId,
-          message: composeReport(reason, text, detail),
+          message,
           summary: SUMMARY[reason],
         },
         'report'

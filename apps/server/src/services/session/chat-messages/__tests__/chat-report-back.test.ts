@@ -278,3 +278,61 @@ describe('the words', () => {
     expect(roomChild).toContain('post_to_room');
   });
 });
+
+describe('a parent that is a room’s seat (DOR-3488)', () => {
+  it('sends the report into the seat, not as a chat message the seat would refuse', async () => {
+    const toRoomSeat = vi.fn().mockResolvedValue(true);
+    const { send, end } = harness({ toRoomSeat });
+    await expect(end()).resolves.toBe('finished');
+    expect(send).not.toHaveBeenCalled();
+    expect(toRoomSeat).toHaveBeenCalledTimes(1);
+    const [parent, report] = toRoomSeat.mock.calls[0]!;
+    expect(parent).toBe(PARENT);
+    expect(report).toMatchObject({ fromSessionId: CHILD, fromAgentPath: '/agents/builder' });
+    expect(report.text).toContain('Finished this turn.');
+    expect(report.text).toContain('Done: merged #1.');
+  });
+
+  it('sends a chat message as before when the parent is no room’s seat', async () => {
+    const toRoomSeat = vi.fn().mockResolvedValue(false);
+    const { send, end } = harness({ toRoomSeat });
+    await end();
+    expect(toRoomSeat).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![1].to).toBe(PARENT);
+  });
+
+  it('sends a "needs the person" wait into the seat too', async () => {
+    const toRoomSeat = vi.fn().mockResolvedValue(true);
+    const { reportBack, send } = harness({
+      toRoomSeat,
+      statusOf: () => status({ lifecycle: 'blocked' }),
+    });
+    await expect(reportBack.onWaiting(CHILD, { key: 'w1', what: 'It asks: ship?' })).resolves.toBe(
+      true
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(toRoomSeat.mock.calls[0]![1].text).toContain('It asks: ship?');
+  });
+
+  it('a seat delivery that throws is logged, never thrown at the projector', async () => {
+    const { send, end } = harness({ toRoomSeat: vi.fn().mockRejectedValue(new Error('boom')) });
+    await expect(end()).resolves.toBe('finished');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('the briefing promises reports to a seat, and never tells the spin-off to chat_send it', () => {
+    const seatChild = spinOffBriefing({
+      parentChatId: PARENT,
+      parentTitle: 'Other agents in #dorkos',
+      parentAgentName: 'Coordinator',
+      reportBack: true,
+      parentTakesMessages: false,
+      parentIsRoomSeat: true,
+    });
+    expect(seatChild).toContain('goes back to that chat on its own');
+    expect(seatChild).toContain('takes no chat_send');
+    expect(seatChild).not.toContain(`chat_send to ${PARENT}`);
+    expect(seatChild).toContain('keep your turn alive');
+  });
+});
