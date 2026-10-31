@@ -142,14 +142,4 @@ describe('heartbeat_status', () => {
       code: 'AGENT_NOT_FOUND',
     });
   });
-
-  it("reads nothing on a turn a stranger started, before it reads anyone's record", async () => {
-    install();
-    const result = await call(
-      { agentId: 'agent-otto' },
-      { identity: juno, turnStartedByOutsider: true }
-    );
-    expect(result).toMatchObject({ ok: false, code: 'OUTSIDER_TURN' });
-    expect(status).not.toHaveBeenCalled();
-  });
 });

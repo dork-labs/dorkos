@@ -1,13 +1,7 @@
 /**
- * Power flows downstream, never up (spec `trusted-by-default-flip` §4): the
- * level a turn runs at is recorded as it is sent, kept with each room post its
- * author writes, and read back as the ceiling of the turn that post starts.
- *
- * The chain case is the reason this exists. A conversation set to Full
- * autonomy that a stranger's message woke runs that turn at the runtime's
- * default. If it posts into a room, the turn its post starts on another agent
- * must be held to that default too — not to the poster's Full autonomy row,
- * which would launder the stranger's message into a shell one hop later.
+ * The level a turn runs at is recorded as it is sent and kept with each room post its author
+ * writes. A turn answering a post runs at its own agent's level, whoever wrote it (DOR-3440): only
+ * a Wi-Fi sign-in's hold on the post itself, or a teammate's chain, bounds it.
  */
 import { afterEach, describe, it, expect } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -18,13 +12,13 @@ import {
   entryLevelOf,
   lastTurnLevelOf,
   aliasTurnLevel,
+  noteEntryHeldToDefault,
   noteEntryLevel,
   postLevelFor,
   recordTurnLevels,
   TURN_LEVEL_MEMORY,
 } from '../turn-levels.js';
 import { ceilingForEntries, ceilingForEntry } from '../../../rooms/limits/turn-ceiling.js';
-import { noteTurnOrigin } from '../../../session/origin/outsider-turns.js';
 import {
   ceilingForContinuation,
   lastTurnHeld,
@@ -36,10 +30,8 @@ import type { AuthorRegistry } from '../../../rooms/author-registry.js';
 const DEFAULT = { asks: 'always', reach: 'edit' };
 const ACCEPT_EDITS = { asks: 'when-risky', reach: 'edit' };
 const FULL = { asks: 'never', reach: 'everything' };
-/** Default, recorded from a turn that read an outsider's words (§4.7). */
+/** Default, recorded from a turn a hold bound. */
 const DEFAULT_OUTSIDER = { ...DEFAULT, outsider: true };
-/** Full, carrying an outsider's words on (DOR-3390): also the bound the mark rides as. */
-const FULL_OUTSIDER = { ...FULL, outsider: true };
 
 /** A runtime that answers every send with one `done`, wrapped the way the registry wraps it. */
 function wrapped(stored: Record<string, string | null>): AgentRuntime {
@@ -144,29 +136,19 @@ describe('the level a post is kept with', () => {
     noteEntryLevel(entry, postLevelFor([ana]));
     // A person then talks to the same conversation at its own level.
     await send(runtime, ana);
-    // Ana's own level without the stranger's hold, marked (DOR-3390).
-    expect(entryLevelOf(entry)).toEqual(FULL_OUTSIDER);
+    // Ana's own level: a hold and its mark stay on the turn they bound (DOR-3440).
+    expect(entryLevelOf(entry)).toEqual(FULL);
   });
 
   it('is the stricter of the calling session and the author’s turn in the room', async () => {
-    // Ana has an Accept edits turn in R2 and a stranger-held Full turn in R1;
-    // posting from R1's turn into R2 keeps R2's lower level and R1's mark.
+    // Ana has an Accept edits turn in R2 and a held Full turn in R1; posting from R1's turn into
+    // R2 keeps R2's lower level, and R1's hold goes no further.
     const inR1 = fresh('ana-r1');
     const inR2 = fresh('ana-r2');
     const runtime = wrapped({ [inR1]: 'bypassPermissions', [inR2]: 'acceptEdits' });
     await send(runtime, inR1, { permissionCeiling: 'runtime-default' });
     await send(runtime, inR2);
-    expect(postLevelFor([inR1, inR2])).toEqual({ ...ACCEPT_EDITS, outsider: true });
-  });
-
-  // DOR-3107 review: a turn a connector event started (an email arriving) has
-  // no ceiling, so its level alone would read as unmarked. Its post carries the
-  // outsider mark, so the turn it wakes is capped.
-  it('marks a post from a turn an outsider started, even with no ceiling', async () => {
-    const started = fresh('connector-turn');
-    noteTurnOrigin(started, { kind: 'connector-event' });
-    await send(wrapped({ [started]: 'bypassPermissions' }), started);
-    expect(postLevelFor([started])).toMatchObject({ outsider: true });
+    expect(postLevelFor([inR1, inR2])).toEqual(ACCEPT_EDITS);
   });
 
   it('vouches for nothing when a session is unknown or none is named', async () => {
@@ -181,81 +163,36 @@ describe('the level a post is kept with', () => {
   });
 });
 
-describe('the ceiling a room entry puts on the turn it starts', () => {
-  it('holds a stranger’s message to the runtime default', () => {
-    expect(ceilingForEntry(REGISTRY, { id: 'e', authorId: 'stranger' })).toEqual({
-      permissionCeiling: 'runtime-default',
-    });
-  });
-
-  it('holds an author nobody can resolve to the runtime default', () => {
-    expect(ceilingForEntry(REGISTRY, { id: 'e', authorId: 'nobody' })).toEqual({
-      permissionCeiling: 'runtime-default',
-    });
-  });
-
-  it('puts no bound on a person on this machine', () => {
-    expect(ceilingForEntry(REGISTRY, { id: 'e', authorId: 'dorian' })).toEqual({});
-  });
-
-  it('holds an agent’s post to the level its turn ran at', async () => {
+describe('the ceiling a room entry puts on the turn it starts (DOR-3440)', () => {
+  it('bounds nothing, whoever wrote it', async () => {
     const session = fresh('ana');
     const entry = fresh('e-ana');
     await send(wrapped({ [session]: 'acceptEdits' }), session);
     noteEntryLevel(entry, postLevelFor([session]));
-    expect(ceilingForEntry(REGISTRY, { id: entry, authorId: 'ana' })).toEqual({
-      permissionCeiling: ACCEPT_EDITS,
-    });
+    for (const posted of [
+      { id: fresh('e'), authorId: 'stranger' },
+      { id: fresh('e'), authorId: 'nobody' },
+      { id: fresh('e'), authorId: 'dorian' },
+      { id: fresh('e'), authorId: 'ana' },
+      { id: entry, authorId: 'ana' },
+    ]) {
+      expect(ceilingForEntry(REGISTRY, posted), posted.authorId).toEqual({});
+    }
+    expect(ceilingForEntries(REGISTRY, [{ id: fresh('e'), authorId: 'stranger' }])).toEqual({});
   });
 
-  it('holds an agent’s post whose level was not kept to the runtime default', () => {
-    expect(ceilingForEntry(REGISTRY, { id: 'unkept', authorId: 'ana' })).toEqual({
+  it('holds a post a Wi-Fi sign-in wrote, and a burst holding one, to the runtime default', () => {
+    const held = fresh('e-wifi');
+    noteEntryHeldToDefault(held);
+    expect(ceilingForEntry(REGISTRY, { id: held, authorId: 'dorian' })).toEqual({
       permissionCeiling: 'runtime-default',
     });
-  });
-
-  it('carries a stranger’s mark through an agent at Full autonomy, held outside the own circle', async () => {
-    // Ana's conversation is at Full autonomy. A stranger's message wakes it:
-    // that turn runs at the default. Ana posts; outside the owner's own circle
-    // Ben may see the stranger's line himself, so he carries the mark at Ana's
-    // own level AND the hold (DOR-3390, Security's M-B). The own circle drops
-    // the hold: `outsider-protections.agent-hops.test.ts`.
-    const session = fresh('ana');
-    const entry = fresh('e-ana');
-    const runtime = wrapped({ [session]: 'bypassPermissions' });
-    await send(runtime, session, ceilingForEntry(REGISTRY, { id: 'e0', authorId: 'stranger' }));
-    noteEntryLevel(entry, postLevelFor([session]));
-    expect(ceilingForEntry(REGISTRY, { id: entry, authorId: 'ana' })).toEqual({
-      permissionCeiling: [FULL_OUTSIDER, FULL_OUTSIDER, 'runtime-default'],
-    });
-  });
-});
-
-describe('the ceiling of a turn answering several messages', () => {
-  it('holds every author’s bound at once, so a person writing last does not lift a stranger’s', () => {
     expect(
       ceilingForEntries(REGISTRY, [
-        { id: 'e1', authorId: 'stranger' },
-        { id: 'e2', authorId: 'dorian' },
+        { id: held, authorId: 'dorian' },
+        { id: fresh('e'), authorId: 'dorian' },
       ])
     ).toEqual({ permissionCeiling: 'runtime-default' });
-  });
-
-  it('lists several bounds when more than one author is bounded', async () => {
-    const session = fresh('ana');
-    const entry = fresh('e-ana');
-    await send(wrapped({ [session]: 'acceptEdits' }), session);
-    noteEntryLevel(entry, postLevelFor([session]));
-    expect(
-      ceilingForEntries(REGISTRY, [
-        { id: entry, authorId: 'ana' },
-        { id: 'e2', authorId: 'stranger' },
-      ])
-    ).toEqual({ permissionCeiling: [ACCEPT_EDITS, 'runtime-default'] });
-  });
-
-  it('puts no bound on a burst only people on this machine wrote', () => {
-    expect(ceilingForEntries(REGISTRY, [{ id: 'e1', authorId: 'dorian' }])).toEqual({});
   });
 });
 
@@ -286,26 +223,18 @@ describe('a turn a continuation’s hold clamped (DOR-3203)', () => {
     expect(lastTurnHeld(chat)).toBe(true);
   });
 
-  it('is unlike a stranger’s hold, which marks the turn and records it as held', async () => {
-    const chat = fresh('stranger-held');
+  it('is unlike a Wi-Fi hold, which marks the turn and records it as held', async () => {
+    const chat = fresh('wifi-held');
     const db = createTestDb();
     setContinuationHoldDb(db);
     noteTurnHold(chat, false);
     await send(wrapped({ [chat]: 'bypassPermissions' }), chat, {
       permissionCeiling: 'runtime-default',
     });
-    // What it hands on is marked, at its own level without the hold (DOR-3390).
-    expect(postLevelFor([chat])).toEqual(FULL_OUTSIDER);
+    // What it hands on is its own level, with neither the hold nor the mark (DOR-3440).
+    expect(postLevelFor([chat])).toEqual(FULL);
     expect(lastTurnLevelOf(chat)).toEqual(DEFAULT_OUTSIDER);
     setContinuationHoldDb(db);
     expect(lastTurnHeld(chat)).toBe(true);
-  });
-
-  it('still marks what a chat a stranger reached posts', async () => {
-    const chat = fresh('connector-chat');
-    heldAcrossRestart(chat);
-    noteTurnOrigin(chat, { kind: 'connector-event' });
-    await send(wrapped({ [chat]: 'bypassPermissions' }), chat, ceilingForContinuation(chat));
-    expect(postLevelFor([chat])).toMatchObject({ outsider: true });
   });
 });

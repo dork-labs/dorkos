@@ -271,14 +271,15 @@ export function handRegisteredInSessionToolSet(
     ...getMeshTools(deps),
     ...getAgentTools(deps),
     // The same provenance the task tools read: present in a session, so a
-    // Trusted install approves an extension our agent creates (ADR 261006-225605).
-    // A turn under a ceiling records no author for it (DOR-3068).
+    // Trusted install approves an extension an agent at Full creates (ADR 261006-225605,
+    // DOR-3440). A turn below Full, or under a ceiling, records no author (DOR-3068).
     ...getExtensionTools(
       deps,
       resolveTaskProvenance &&
         (() => ({
           ...resolveTaskProvenance(),
           ...(session && heldToACeiling(session) ? { ceilinged: true } : {}),
+          ...(session && chosenFullAutonomy(session) ? { chosenFull: true } : {}),
         }))
     ),
   ];

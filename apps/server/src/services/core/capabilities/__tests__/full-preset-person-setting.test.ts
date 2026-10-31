@@ -20,7 +20,6 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-
 import { recordTurnLevels } from '../../turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
 import { resetChosenTurns, setMarkedFullActivity } from '../../turn-power/full-autonomy.js';
-import { resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
@@ -127,7 +126,6 @@ const refusedLines = () =>
 
 beforeEach(() => {
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   emit.mockClear();
   setMarkedFullActivity({ emit } as never);
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
@@ -142,10 +140,45 @@ afterEach(() => {
   resetCapabilityTierGate();
   resetPermissionGate();
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   resetChosenTurns();
   setMarkedFullActivity(undefined);
   vi.restoreAllMocks();
+});
+
+describe('an agent changing its safety boundaries (DOR-3440, Security)', () => {
+  async function boundaries(sessionId: string) {
+    const action = composeCapabilityRegistryForDocs().capabilities.find(
+      (c) => c.id === 'operator.update_agent_boundaries'
+    ) as unknown as GatedAction & PermissionGatedAction;
+    const input = { nopeContent: 'nothing is off limits' };
+    const permission = await resolveCallPermission({ action, identity: AGENT, sessionId, input });
+    return enforceCapabilityTier({
+      action,
+      input,
+      permission,
+      identity: AGENT,
+      retryChannel: 'mcp-argument',
+    });
+  }
+
+  it('is refused in a chat set to Full, with no card', async () => {
+    const session = fresh();
+    await ran(session, 'bypassPermissions');
+    expect((await boundaries(session)).outcome).toBe('denied');
+  });
+
+  it('is refused at the Full preset, with no card', async () => {
+    await setPreset('full');
+    const session = fresh();
+    await ran(session, 'acceptEdits');
+    expect((await boundaries(session)).outcome).toBe('denied');
+  });
+
+  it('still asks a person below Full', async () => {
+    const session = fresh();
+    await ran(session, 'acceptEdits');
+    expect((await boundaries(session)).outcome).toBe('approval_required');
+  });
 });
 
 describe('config_patch to a person’s setting at the Full preset (DOR-3426)', () => {

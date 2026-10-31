@@ -7,11 +7,38 @@
  * @module services/core/operator/agent-file-inputs
  */
 import { z } from 'zod';
-import { HEARTBEAT_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
+import {
+  HEARTBEAT_MAX_CHARS,
+  NOPE_MAX_CHARS,
+  SOUL_MAX_CHARS,
+} from '@dorkos/shared/convention-files';
 import { CapabilityToolError } from '../capabilities/mcp-envelope.js';
 import { marksOf } from '../turn-power/turn-levels.js';
-import { hasMarks } from '../turn-power/turn-marks.js';
+import { marksHold } from '../turn-power/turn-marks.js';
 import { choseFullAutonomy } from '../turn-power/full-autonomy.js';
+
+/** `update_agent_boundaries`' fields, spread into its input schema. */
+export const AGENT_BOUNDARY_INPUTS = {
+  nopeContent: z
+    .string()
+    .max(NOPE_MAX_CHARS)
+    .optional()
+    .describe('Full NOPE.md content, replacing whatever is there now'),
+  // The mute, on the same gate as the rewrite because it is the STRONGER
+  // of the two: the file survives, and the agent is simply never given it
+  // (`runtimes/shared/agent-context.ts` skips the whole
+  // `<agent_safety_boundaries>` block on `conventions.nope !== true`).
+  // Leaving it on `update_agent` at tier `act` would have left a quieter
+  // door to the same outcome, which is the defect this split exists to
+  // close (DOR-1698).
+  enabled: z
+    .boolean()
+    .optional()
+    .describe(
+      'Whether the agent is given NOPE.md at all. false mutes the boundaries without ' +
+        'deleting them; true puts them back.'
+    ),
+};
 
 /** `update_agent`'s convention-file fields, spread into its input schema. */
 export const AGENT_FILE_INPUTS = {
@@ -74,16 +101,40 @@ export const AGENT_INSTRUCTION_FIELDS = [
 ] as const;
 
 /**
- * The instruction fields a marked turn is refused at every level, Full included (DOR-3412): limits
- * a person set. NOPE.md is the agent's safety boundaries, MEMORY.md holds what the operator told it
- * in a one-to-one chat under a stamp only DorkOS writes, and the convention switches decide whether
- * either is read at all.
+ * Whether a write names a limit a person set, refused for every agent at every level (DOR-3412,
+ * DOR-3440): MEMORY.md holds what the operator told it in a one-to-one chat under a stamp only DorkOS
+ * writes, and its switch decides whether it is read at all. NOPE.md and its switch are refused for
+ * every caller by `update_agent` itself, which says where the write does live. The other switches
+ * are the agent's own.
  */
-const PERSON_SET_INSTRUCTION_FIELDS: ReadonlySet<string> = new Set([
-  'nopeContent',
-  'memoryContent',
-  'conventions',
-]);
+function namesPersonSetField(input: unknown): boolean {
+  if (typeof input !== 'object' || input === null) return false;
+  const { memoryContent, conventions } = input as {
+    memoryContent?: unknown;
+    conventions?: unknown;
+  };
+  if (memoryContent !== undefined) return true;
+  return (
+    typeof conventions === 'object' &&
+    conventions !== null &&
+    (conventions as { memory?: unknown }).memory !== undefined
+  );
+}
+
+/**
+ * Whether a write names NOPE.md or its switch. For a turn with no hold, `update_agent` itself refuses
+ * them, and says where the write does live; a held turn is refused here, Full included.
+ */
+function namesBoundaries(input: unknown): boolean {
+  if (typeof input !== 'object' || input === null) return false;
+  const { nopeContent, conventions } = input as { nopeContent?: unknown; conventions?: unknown };
+  if (nopeContent !== undefined) return true;
+  return (
+    typeof conventions === 'object' &&
+    conventions !== null &&
+    (conventions as { nope?: unknown }).nope !== undefined
+  );
+}
 
 /**
  * The instruction fields a write names, in {@link AGENT_INSTRUCTION_FIELDS}.
@@ -109,7 +160,7 @@ export function namedInstructionFields(body: unknown): string[] {
  * HEARTBEAT.md, the persona and the dials): they are not a level or a grant, so they are none of
  * the refusals Full keeps. The Activity line is the permission gate's, which writes one for every
  * `update_agent` a marked Full turn runs (`HELD_IN_A_MARKED_TURN`). A person's limits
- * ({@link PERSON_SET_INSTRUCTION_FIELDS}) and a teammate's mark are refused at every level.
+ * ({@link namesPersonSetField}) are refused at every level.
  *
  * @param input - The tool's parsed input.
  * @param context - The verified calling session and agent.
@@ -120,15 +171,13 @@ export function refuseOutsiderAgentFiles(
 ): undefined {
   const fields = namedInstructionFields(input);
   if (fields.length === 0) return undefined;
+  const personSet = namesPersonSetField(input);
+  // A person's limits: refused for every agent, marked or not (DOR-3440, Security's Must).
+  const fromAgent = context.sessionId !== undefined || context.identity !== undefined;
   const marks = marksOf(context.sessionId, context.identity?.agentPath);
-  if (!hasMarks(marks)) return undefined;
-  // A teammate's mark is the space owner's limit, refused at every level, and so is a person's own.
-  if (
-    marks.teammate === undefined &&
-    !fields.some((field) => PERSON_SET_INSTRUCTION_FIELDS.has(field)) &&
-    choseFullAutonomy(context.sessionId)
-  ) {
-    return undefined;
+  if (!(personSet && fromAgent)) {
+    if (!marksHold(marks)) return undefined;
+    if (choseFullAutonomy(context.sessionId) && !namesBoundaries(input)) return undefined;
   }
   throw new CapabilityToolError({
     error: AGENT_FILES_OUTSIDER_REFUSAL,

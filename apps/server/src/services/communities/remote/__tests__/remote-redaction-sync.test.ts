@@ -414,8 +414,6 @@ describe('RemoteRedactionSync', () => {
       (localAgentId) => (localAgentId === 'local-ana' ? ana.id : null),
       () => Date.parse('2026-09-24T00:00:00.000Z')
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = {
       communityRef: REF,
       remoteRoomId: ROOM,

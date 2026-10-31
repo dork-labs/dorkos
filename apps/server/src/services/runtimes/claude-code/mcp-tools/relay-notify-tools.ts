@@ -26,11 +26,6 @@
  * @module services/runtimes/claude-code/mcp-tools/relay-notify-tools
  */
 import { noteBeatBypass } from '../../../heartbeats/beat-turns.js';
-import {
-  OUTSIDER_TURN_LIMIT,
-  releaseOutsiderOutput,
-  reserveOutsiderOutput,
-} from '../../../core/turn-power/outsider-output.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { requireRelay, type SenderIdentity } from './relay-helpers.js';
@@ -175,22 +170,7 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
       );
     }
 
-    // **A stranger's turn is still counted** (DOR-2739): our own agents send
-    // as many notes as they need, but a turn a stranger started may send a few
-    // and no more, so one message from outside the team cannot make it write
-    // to people without end. Taken before delivery, so notes sent at once
-    // cannot all pass, and given back when the note did not land.
     const callingSession = identity.sessionId?.();
-    if (!reserveOutsiderOutput('note', callingSession)) {
-      return jsonContent(
-        {
-          sent: false,
-          error: `A message from outside your team started this turn, so it can send ${OUTSIDER_TURN_LIMIT} notes at most. Put the rest in one note next turn.`,
-          code: 'TOO_MANY_NOTES_THIS_TURN',
-        },
-        true
-      );
-    }
 
     // Delivered here rather than from inside `notify` because the answer this
     // tool owes the agent depends on WHERE the note landed, and the wording
@@ -219,7 +199,6 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
       }
     );
 
-    if (!outcome.ok) releaseOutsiderOutput('note', callingSession);
     // A note sent from a running beat, outside `end_beat`, is counted (spec
     // `heartbeats` §8). Nothing is blocked: the count is how a person sees it.
     noteBeatBypass(identity.sessionId?.());

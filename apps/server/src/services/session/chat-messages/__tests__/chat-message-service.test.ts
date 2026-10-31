@@ -22,6 +22,7 @@ vi.mock('../../message-dispatcher.js', async (importOriginal) => {
 });
 
 import { recordAudit } from '../../../audit/audit-trail.js';
+import { ceilingOnlyRecords, marksOfCeiling } from '../../../core/turn-power/turn-marks.js';
 import { isQueuedMessageLaunching, type DispatchLifecycleEvent } from '../../message-dispatcher.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../message-queue-store.js';
 import type {
@@ -220,9 +221,8 @@ describe('send — to an idle chat', () => {
     expect(dispatched).toHaveLength(1);
     const [opts] = dispatched;
     const [row] = sentByAna();
-    // The sender's level is not known here, which is bounded like a marked
-    // turn: the chat it opens inherits nothing (DOR-3107).
-    expect(opts!.origin).toEqual({ kind: 'chat-message', marked: true });
+    // The sender's level is not known here, which bounds nothing (DOR-3440).
+    expect(opts!.origin).toEqual({ kind: 'chat-message' });
     expect(opts!.sessionId).toBe('chat-b');
     expect(opts!.clientId).toBe('chat:chat-a');
     expect(opts!.messageId).toBe(row!.queueMessageId);
@@ -247,11 +247,23 @@ describe('send — to an idle chat', () => {
     expect(emitActivity).toHaveBeenCalledWith('chat-b');
   });
 
-  it('records the sender’s level as the ceiling the queued row launches under', async () => {
+  it('records no bound from a plain sender, whatever its level (DOR-3440)', async () => {
     chat('chat-b');
     levels.set(ANA.sessionId, MIDDLE);
     await service.send(ANA, { to: 'chat-b', message: 'hi' });
-    expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual(MIDDLE);
+    expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toBeUndefined();
+  });
+
+  it('records a teammate’s chain the sender carries, lowering nothing', async () => {
+    chat('chat-b');
+    const teammate = [{ roomId: 'r', authorId: 'a' }];
+    levels.set(ANA.sessionId, { ...MIDDLE, teammate });
+    await service.send(ANA, { to: 'chat-b', message: 'hi' });
+    const ceiling = service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!);
+    expect(ceiling).toBeDefined();
+    expect(marksOfCeiling(ceiling!)).toEqual({ teammate });
+    expect(ceilingOnlyRecords(ceiling!)).toBe(true);
+    expect(dispatched[0]!.origin).toEqual({ kind: 'chat-message' });
   });
 
   it('keeps the trimmed summary', async () => {
@@ -472,8 +484,8 @@ describe('send — batching', () => {
     const sent = store.listByQueueMessage(tail.id);
     expect(sent.map((r) => r.id)).toEqual([first.messageId, second.messageId]);
     expect(chatMessageFenceNonces(rows[0]!.content)).toEqual(sent.map((r) => r.nonce));
-    // A batched turn is held to every sender's bound.
-    expect(service.ceilingForQueuedMessage(tail.id)).toEqual([TIGHT, TIGHT]);
+    // Plain senders bound nothing (DOR-3440).
+    expect(service.ceilingForQueuedMessage(tail.id)).toBeUndefined();
   });
 
   it('batches another chat’s message behind a third chat’s row too', async () => {
@@ -622,12 +634,8 @@ describe('send — steer', () => {
 
     expect(steerInto).not.toHaveBeenCalled();
     expect(receipt.status).toBe('queued');
-    // Its level, which keeps the mark, and the mark carried on as a bound that
-    // caps nothing (DOR-3107, DOR-3390).
-    expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toEqual([
-      { ...TIGHT, outsider: true },
-      { asks: 'never', reach: 'everything', outsider: true },
-    ]);
+    // The mark rides nowhere (DOR-3440): the row's turn runs at the receiver's own level.
+    expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toBeUndefined();
   });
 
   it('steers into a turn that has read an outsider’s words already', async () => {
@@ -1055,19 +1063,24 @@ describe('ceilingForQueuedMessage', () => {
     });
   }
 
-  it('is the one bound for one row, and the list for several', () => {
-    row('r1', 'q1', JSON.stringify(TIGHT));
-    expect(service.ceilingForQueuedMessage('q1')).toEqual(TIGHT);
-    row('r2', 'q1', JSON.stringify(LOOSE));
-    expect(service.ceilingForQueuedMessage('q1')).toEqual([TIGHT, LOOSE]);
+  it('keeps a teammate’s chain any sender carried, lowering nothing, in an earlier build’s row too', () => {
+    const chain = { ...TIGHT, teammate: [{ roomId: 'r', authorId: 'a' }] };
+    row('r1', 'q1', JSON.stringify(['runtime-default', chain]));
+    row('r2', 'q1', JSON.stringify('none'));
+    const ceiling = service.ceilingForQueuedMessage('q1');
+    expect(ceiling).toBeDefined();
+    expect(marksOfCeiling(ceiling!).teammate).toEqual(chain.teammate);
+    expect(ceilingOnlyRecords(ceiling!)).toBe(true);
   });
 
-  it('is the runtime default for no rows, and for a ceiling it cannot read', () => {
-    expect(service.ceilingForQueuedMessage('nothing')).toBe('runtime-default');
-    row('r1', 'q-bad', 'not json');
-    expect(service.ceilingForQueuedMessage('q-bad')).toBe('runtime-default');
-    row('r2', 'q-shape', JSON.stringify({ asks: 1 }));
-    expect(service.ceilingForQueuedMessage('q-shape')).toBe('runtime-default');
+  it('is nothing for no rows, a plain or older bound, or a ceiling it cannot read', () => {
+    expect(service.ceilingForQueuedMessage('nothing')).toBeUndefined();
+    row('r1', 'q-level', JSON.stringify(TIGHT));
+    expect(service.ceilingForQueuedMessage('q-level')).toBeUndefined();
+    row('r2', 'q-bad', 'not json');
+    expect(service.ceilingForQueuedMessage('q-bad')).toBeUndefined();
+    row('r3', 'q-shape', JSON.stringify({ asks: 1 }));
+    expect(service.ceilingForQueuedMessage('q-shape')).toBeUndefined();
   });
 });
 
@@ -1169,7 +1182,7 @@ describe('beginStart / settleStart', () => {
     });
     expect(chatMessageFenceNonces(begun.content)).toEqual([row.nonce]);
     expect(begun.content).toContain('Kind: first message');
-    expect(service.ceilingForQueuedMessage('q-start')).toEqual(TIGHT);
+    expect(service.ceilingForQueuedMessage('q-start')).toBeUndefined();
 
     service.settleStart(begun.id, 'canonical-chat');
     expect(store.get(begun.id)).toMatchObject({ toSessionId: 'canonical-chat', status: 'working' });

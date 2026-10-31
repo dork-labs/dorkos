@@ -36,7 +36,6 @@ import { personWriter } from '../permission-history.js';
 import { marksForTurn, withMarks } from '../../turn-power/turn-marks.js';
 import { chatLaunchMarks } from '../chat-launch-marks.js';
 import { senderCeilingJson } from '../../../session/chat-messages/chat-message-ceiling.js';
-import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { createPermissionWorld } from './permission-fixtures.js';
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes as DeclaredModes;
@@ -124,7 +123,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   setChatModePort(null);
-  resetOutsiderTurns();
   for (const dir of cleanup) fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -527,12 +525,12 @@ describe('Undo of the raise', () => {
 });
 
 describe('openingMessageMarked', () => {
-  it('reads an outsider or teammate mark on the opening message as marked', () => {
+  it('reads an outsider mark on the opening message as marked, and a teammate record as not', () => {
     const level = { asks: 'never', reach: 'full' };
     expect(openingMessageMarked(JSON.stringify({ ...level, outsider: true }))).toBe(true);
     expect(
       openingMessageMarked(JSON.stringify({ ...level, teammate: [{ roomId: 'r', authorId: 'a' }] }))
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('reads what a sender held to the runtime default (a Wi-Fi turn) stores as marked', () => {
@@ -559,7 +557,7 @@ describe('openingMessageMarked', () => {
     ).toBe(true);
   });
 
-  it('reads an unknown sender stored with a teammate mark as marked', () => {
+  it('reads an unknown sender stored with only a teammate mark as not marked', () => {
     expect(
       openingMessageMarked(
         JSON.stringify({
@@ -567,7 +565,7 @@ describe('openingMessageMarked', () => {
           marks: { teammate: [{ roomId: 'r', authorId: 'a' }] },
         })
       )
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('reads an unknown sender stored with empty or junk marks as not marked', () => {
@@ -590,13 +588,10 @@ describe('openingMessageMarked', () => {
   });
 });
 
-// Security (DOR-3106): a chat an unknown-level sender opened after a stranger
-// reached it stays capped, even when the raise runs a boot late. The row is
-// written by #3107's real `senderCeilingJson` and read by the real
-// `chatLaunchMarks` over a real database.
-describe('a chat an unknown-level, stranger-reached sender opened', () => {
+// The row is written by the real `senderCeilingJson` and read by the real
+// `chatLaunchMarks` over a real database, even when the raise runs a boot late.
+describe('a chat an unknown-level sender opened', () => {
   const NOW = '2026-10-19T12:00:00.000Z';
-  const FULL_LEVEL = levelOfMode(MODES, FULL)!;
 
   /** A database with the sending chat, and the chat its message opened. */
   async function openedBy(sender: string, opened: string): Promise<Db> {
@@ -608,9 +603,9 @@ describe('a chat an unknown-level, stranger-reached sender opened', () => {
       db.run(sql`INSERT INTO session_metadata (session_id, runtime, launch_origin, created_at)
         VALUES (${id}, 'claude-code', ${origin}, ${NOW})`);
     }
-    // The sender's level is unknown (a restart); a stranger may have reached it.
-    const ceilingJson = await senderCeilingJson(
-      { turnLevelOf: () => undefined, ownLevelOf: async () => FULL_LEVEL },
+    // The sender's level is unknown (a restart).
+    const ceilingJson = senderCeilingJson(
+      { turnLevelOf: () => undefined },
       { sessionId: sender, agentPath: '/agents/builder' }
     );
     db.run(sql`INSERT INTO chat_messages (id, to_session_id, from_session_id, from_agent_path,
@@ -633,19 +628,7 @@ describe('a chat an unknown-level, stranger-reached sender opened', () => {
     return { t, first, second };
   }
 
-  it('the raise is put off one boot, and the chat stays capped', async () => {
-    noteTurnOrigin('sender-marked', { kind: 'relay-binding' });
-    const db = await openedBy('sender-marked', 'opened-marked');
-
-    const { t, first, second } = await raiseTwoBoots(db, 'opened-marked');
-
-    expect(first).toBeNull();
-    expect(second).toEqual({ raised: 0 });
-    expect(t.modes.get('opened-marked')).toBe('default');
-    expect(t.writes).toEqual([]);
-  });
-
-  it('control: with no mark, the same chat is raised on the later boot', async () => {
+  it('is raised on the later boot', async () => {
     const db = await openedBy('sender-plain', 'opened-plain');
 
     const { t, first, second } = await raiseTwoBoots(db, 'opened-plain');

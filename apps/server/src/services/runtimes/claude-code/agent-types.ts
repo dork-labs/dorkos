@@ -12,7 +12,6 @@ import type { PendingInteraction } from './messaging/interaction-wait.js';
 import { createToolResultImageState, type ToolResultImageState } from './tool-result-images.js';
 import type { ClaudeConnectorTurnContext } from './connector-turn-context.js';
 import type { UsageLedger } from './sdk/turn-usage.js';
-import type { TeammateTierScope } from '../../core/turn-power/teammate-tier.js';
 
 /** Input-side token usage of a single model request (one API round-trip). */
 export interface RequestUsage {
@@ -156,13 +155,6 @@ export interface AgentSession {
    * outlives the turn that asked for it.
    */
   unattendedTurn?: boolean;
-  /**
-   * The room THIS turn answers when a teammate started it
-   * (`MessageOpts.roomTurn.teammate`, DOR-2955): the only room its DorkOS tools
-   * may reach. Assigned on every send, so it never outlives the turn, and read
-   * at call time by `teammate-tier-hook.ts`.
-   */
-  teammateTier?: TeammateTierScope;
   /**
    * The loosest level THIS turn may run at (`MessageOpts.permissionCeiling`),
    * assigned on every send so it never outlives the turn that carried it. Read

@@ -74,7 +74,6 @@ export function levelReachFor(
       (await permissionGateSources().readAgentPermissions(agentPath))?.filesAndCommands ?? null,
     defaultStops: () => readTrustStops(config),
     // No facts wired reads as marked and not by hand: nothing is counted as rising.
-    marked: (sessionId) => chatRiseFacts()?.marked(sessionId) ?? true,
     personSet: (sessionId) => chatRiseFacts()?.personSet(sessionId) ?? false,
     titleOf: async (sessionId) => {
       const seat = db

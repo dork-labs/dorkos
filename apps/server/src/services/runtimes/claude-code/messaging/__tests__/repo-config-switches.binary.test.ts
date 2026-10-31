@@ -238,7 +238,6 @@ async function dorkosOptions(): Promise<{
     agentName: 'Ops',
     home: undefined,
     cwd: worktree,
-    teammate: false,
     dorkHome: DORK_HOME,
   });
   const options = baseOptions();

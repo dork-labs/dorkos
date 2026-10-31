@@ -15,14 +15,12 @@
  * Marks only add up: no reader here ever takes one away, and only a person clears the durable
  * copies (a parked schedule, a held edit).
  *
- * ## Two readings of the outsider mark
+ * ## What sets a mark
  *
- * **Carried** (the turn read an outsider's words) is the `outsider` field, read through
- * `marksOf` in `turn-levels.ts`, which owns the record. **Direct** (a stranger started this
- * turn) is decided by the origin bookkeeping in `session/origin/outsider-turns.ts` and read
- * through {@link startedByOutsider}. Only the direct reading drives the per-turn post and note
- * cap, `commitments_list` and the failure wake: the carried mark also lands on our own agents'
- * turns, and counting those would bring back caps ADR `261006-225605` retired.
+ * A turn runs at its agent's set level, wherever its message came from (Dorian 2026-10-30,
+ * DOR-3440). Only a Wi-Fi sign-in's hold bounds one (who is calling, DOR-3037), which sets `outsider`
+ * on that turn and goes no further. A teammate's chain in a shared space is a record for the space's
+ * monthly limit, and lowers nothing.
  *
  * ## The seam
  *
@@ -30,8 +28,8 @@
  * every runtime the registry wraps applies marks after the level is recorded, to a turn and to a
  * command intent alike. A turn carrying a mark is counted against its agent while it runs, so a
  * caller that cannot name its session (Codex and OpenCode over the external `/mcp` server) is
- * still read as marked (`live-outsider-turns.ts`), and a teammate-marked turn is refused or held
- * to the teammate tier before the runtime sees it (`teammate-mark.ts`). A runtime that reaches a
+ * still read as marked (`live-outsider-turns.ts`), and a teammate-marked turn past its space's
+ * monthly limit is refused before the runtime sees it (`teammate-mark.ts`). A runtime that reaches a
  * turn without the seam is a gap the census refuses (`turn-marks-seam.census.test.ts`).
  *
  * @module services/core/turn-power/turn-marks
@@ -40,25 +38,18 @@ import type {
   AgentRuntime,
   MessageOpts,
   TeammateOrigin,
-  TurnPermissionBound,
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
-  CARRIED_OUTSIDER_LEVEL,
-  ceilingHoldsForOutsider,
+  ceilingOnlyRecords,
   isNoLooserThan,
   mergeTeammateOrigins,
-  READ_ONLY_LEVEL,
 } from '@dorkos/shared/permission-semantics';
 import { turnAgentOf } from '../agent-identity/agent-home.js';
-import {
-  noteChatHeardOutsider,
-  turnStartedByOutsider,
-} from '../../session/origin/outsider-turns.js';
 import { countWhileRunning, runningMarksOf } from './live-outsider-turns.js';
-import { teammateTurnOpts, teammateTurnRefusal } from './teammate-mark.js';
+import { teammateTurnRefusal } from './teammate-mark.js';
 
 /** Every kind of mark, each a field of `TurnPermissionLevel`. */
 export const TURN_MARK_KINDS = [
@@ -159,13 +150,9 @@ export function marksOfCeiling(ceiling: TurnPermissionCeiling): TurnMarks {
 }
 
 /**
- * The marks one turn carries from what it is sent with: its ceiling, and a stranger's line a room
- * shows it without asking it to answer (`roomTurn.outsiderInView`, fenced rather than ceilinged).
- *
- * A continuation's hold (`MessageOpts.continuationHold`, DOR-3203) is the one `'runtime-default'`
- * bound that marks nothing: the turn reads no new words, it only picks up a chat whose last turn
- * was held. Any other bound beside it still marks, and a chat a stranger reached stays marked on
- * everything it hands on (`chatHeardOutsider`).
+ * The marks one turn carries from its ceiling. A continuation's hold
+ * (`MessageOpts.continuationHold`, DOR-3203) is the one `'runtime-default'` bound that marks
+ * nothing: the turn reads no new words, it only picks up a chat whose last turn was held.
  *
  * @param opts - The send's options.
  */
@@ -174,11 +161,7 @@ export function marksForTurn(opts: MessageOpts | undefined): TurnMarks {
     opts?.continuationHold === true
       ? withoutContinuationBound(opts.permissionCeiling)
       : opts?.permissionCeiling;
-  const fromCeiling = ceiling !== undefined ? marksOfCeiling(ceiling) : NO_MARKS;
-  return mergeMarks(
-    fromCeiling,
-    opts?.roomTurn?.outsiderInView === true ? { outsider: true } : NO_MARKS
-  );
+  return ceiling !== undefined ? marksOfCeiling(ceiling) : NO_MARKS;
 }
 
 /** A ceiling with the one `'runtime-default'` bound a continuation's hold added taken out. */
@@ -210,12 +193,22 @@ export function mergeMarks(a: TurnMarks, b: TurnMarks): TurnMarks {
 }
 
 /**
- * Whether a set carries any mark.
+ * Whether a set carries any mark, a record included.
  *
  * @param marks - The set.
  */
 export function hasMarks(marks: TurnMarks): boolean {
   return presentKinds(marks).length > 0;
+}
+
+/**
+ * Whether a set's marks hold anything back: only a Wi-Fi sign-in's hold does. A teammate's mark is
+ * a record for the space's monthly limit (DOR-3440).
+ *
+ * @param marks - The set.
+ */
+export function marksHold(marks: TurnMarks): boolean {
+  return marks.outsider === true;
 }
 
 /**
@@ -273,22 +266,18 @@ export function agentMarksRunning(agentPath: string): TurnMarks {
 }
 
 /**
- * A ceiling that carries these marks to a turn that reads words written under them (a beat that
- * reads a promise made in a marked turn, a turn our own agent's marked post starts). The outsider
- * mark rides as {@link CARRIED_OUTSIDER_LEVEL}, which caps nothing (DOR-3390): the mark gates the
- * actions that matter, not the turn's level. A teammate's chain is still held to the runtime
- * default and a read-only level holding every teammate origin. `undefined` for no marks.
+ * A ceiling that carries a teammate's chain to a turn that reads words written under it, for the
+ * space's monthly limit: the loosest level, so it lowers nothing (Dorian 2026-10-30, DOR-3440).
+ * `undefined` otherwise: no other mark follows words anywhere.
  *
  * @param marks - The marks the words were written under.
  */
 export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undefined {
-  if (!hasMarks(marks)) return undefined;
-  // A teammate's hold is the runtime default, which carries the outsider mark already.
-  if (marks.teammate !== undefined) {
-    return ['runtime-default', { ...READ_ONLY_LEVEL, teammate: marks.teammate }];
-  }
-  return CARRIED_OUTSIDER_LEVEL;
+  if (marks.teammate === undefined) return undefined;
+  return { asks: 'never', reach: 'everything', teammate: marks.teammate };
 }
+
+export { ceilingOnlyRecords };
 
 /**
  * The marks stored as JSON on a row (a commitment, say), or none when absent or unreadable. Only
@@ -316,48 +305,6 @@ export function parseStoredMarks(stored: string | null | undefined): TurnMarks {
     // Unreadable is not unmarked: a row whose marks cannot be read carries the outsider mark.
     return UNKNOWN_SOURCE;
   }
-}
-
-/**
- * The direct reading of the outsider mark: whether a stranger started the turn running in this
- * chat (a bridged chat, an external room author, an outside agent, a connector event). Decided
- * where the turn is bound to its origin (`session/origin/outsider-turns.ts`).
- *
- * @param sessionId - The chat, by either id it is known by.
- */
-export function startedByOutsider(sessionId: string): boolean {
-  return turnStartedByOutsider(sessionId);
-}
-
-/**
- * Runtimes whose own gate holds the shell of a turn that carries an outsider's words on
- * (DOR-3390): Claude Code's held-turn hook asks before Bash in such a turn. Any other runtime has
- * no such gate yet, so a carried mark still holds its whole turn to the runtime's default there.
- */
-const GATES_CARRIED_SHELL: ReadonlySet<string> = new Set(['claude-code']);
-
-/**
- * The send's options with a carried outsider mark held to the runtime's default on a runtime that
- * cannot gate the shell alone; untouched otherwise, and when the turn is already held.
- */
-function withCarriedHold(
-  runtimeType: string,
-  opts: MessageOpts | undefined,
-  setToFull = false
-): MessageOpts | undefined {
-  // Only a mark the ceiling carries: a stranger's line merely in view is fenced, not held. A chat
-  // SET to Full autonomy is never held for a mark (DOR-3394): it asks nobody anything, and on a
-  // runtime that asks below Full the hold would put its calls in front of a person.
-  const ceiling = opts?.permissionCeiling;
-  if (ceiling === undefined || setToFull || GATES_CARRIED_SHELL.has(runtimeType)) return opts;
-  if (ceilingHoldsForOutsider(ceiling) || marksOfCeiling(ceiling).outsider !== true) return opts;
-  const bounds: TurnPermissionBound[] = Array.isArray(ceiling)
-    ? [...(ceiling as readonly TurnPermissionBound[])]
-    : [ceiling as TurnPermissionBound];
-  bounds.push('runtime-default');
-  // A continuation's hold names only its own bound; this one is a real hold, so it is dropped.
-  const { continuationHold: _dropped, ...rest } = opts ?? {};
-  return { ...rest, permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
 }
 
 /** A turn start: `sendMessage`'s and `executeCommandIntent`'s shape, with the middle argument. */
@@ -395,14 +342,11 @@ function placeOf(runtime: AgentRuntime, sessionId: string, opts: MessageOpts | u
  * @param marksOfSession - The marks of a session's latest recorded turn, for a turn the runtime
  *   starts on its own (a Codex wake after background work), which runs under it.
  * @param recordRefused - Records the level of a turn refused before it reached the runtime.
- * @param setToFull - Whether the chat a turn runs in is SET to Full autonomy, with no ceiling
- *   applied (DOR-3394); such a chat's carried mark is never turned into a hold.
  */
 export function applyTurnMarks(
   runtime: AgentRuntime,
   marksOfSession: (sessionId: string) => TurnMarks,
-  recordRefused?: (sessionId: string, opts: MessageOpts) => void,
-  setToFull?: (sessionId: string, opts: MessageOpts | undefined) => boolean
+  recordRefused?: (sessionId: string, opts: MessageOpts) => void
 ): AgentRuntime {
   // Where each marked turn stood, so a turn its agent starts later counts against the same one.
   // Per wrapper is enough: the registry wraps one instance per runtime type, and a wake comes back
@@ -418,24 +362,21 @@ export function applyTurnMarks(
   ): AsyncGenerator<StreamEvent> {
     const marks = marksForTurn(opts);
     if (!hasMarks(marks)) return start(opts);
-    if (marks.outsider === true) noteChatHeardOutsider(sessionId);
-    let sent = withCarriedHold(target.type, opts, setToFull?.(sessionId, opts) === true);
     if (marks.teammate !== undefined) {
-      sent = teammateTurnOpts(opts);
-      const refusal = teammateTurnRefusal(target.type, marks.teammate);
+      const refusal = teammateTurnRefusal(marks.teammate);
       if (refusal !== null) {
         // Recorded all the same, so what reads the chat afterwards (a failure wake, say) knows it
         // was a marked turn and does not treat its failure as the agent's own.
-        recordRefused?.(sessionId, sent);
+        if (opts) recordRefused?.(sessionId, opts);
         return refused(refusal);
       }
     }
     // A caller that cannot name this session can still name its agent.
-    const place = placeOf(target, sessionId, sent);
+    const place = placeOf(target, sessionId, opts);
     places.delete(sessionId);
     places.set(sessionId, place);
     if (places.size > PLACE_MEMORY) places.delete(places.keys().next().value!);
-    return countWhileRunning(place, marks, start(sent));
+    return countWhileRunning(place, marks, start(opts));
   }
 
   return new Proxy(runtime, {

@@ -138,7 +138,6 @@ describe('update_agent from a turn that read outsider words', () => {
         { nopeContent: 'Never deploy.' },
         { memoryContent: '- a note' },
         { conventions: { nope: false } },
-        { soulContent: 'Kind.', conventions: { soul: false } },
       ]) {
         expect(() =>
           refuseOutsiderAgentFiles(input, { sessionId: 'full-held-turn', identity })

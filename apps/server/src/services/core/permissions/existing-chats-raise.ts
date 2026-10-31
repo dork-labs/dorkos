@@ -90,7 +90,7 @@ import type {
 import type { Logger } from '@dorkos/shared/logger';
 
 import type { ActivityService } from '../../activity/activity-service.js';
-import { hasMarks, NO_MARKS, parseStoredMarks, type TurnMarks } from '../turn-power/turn-marks.js';
+import { marksHold, NO_MARKS, parseStoredMarks, type TurnMarks } from '../turn-power/turn-marks.js';
 import { UPGRADE_WRITER, recordPermissionChange } from './permission-history.js';
 import type { PermissionAgentRef } from './permission-service.js';
 
@@ -267,7 +267,7 @@ export function openingMessageMarked(ceilingJson: string | undefined): boolean {
     return false;
   }
   const bounds = Array.isArray(value) ? value : [value];
-  return bounds.some((bound) => hasMarks(storedBoundMarks(bound)));
+  return bounds.some((bound) => marksHold(storedBoundMarks(bound)));
 }
 
 /** Everything the raise reads and writes through. */
