@@ -62,6 +62,17 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/admin/restart',
     ],
   ],
+  [
+    'a work queue’s routes are a person’s; agents use their own tools, over /mcp',
+    [
+      'DELETE /api/agents/:id/work-queue/items/:itemId',
+      'PATCH /api/agents/:id/work-queue',
+      'POST /api/agents/:id/work-queue/items',
+      'POST /api/agents/:id/work-queue/items/:itemId/requeue',
+      'PUT /api/agents/:id/work-queue/order',
+      'PUT /api/work-queues/stop',
+    ],
+  ],
   ['no person signs in or up here', ['ALL /api/auth/*']],
   ['middleware in front of the routes it guards', ['ALL /api/canvas/docs/*']],
   [

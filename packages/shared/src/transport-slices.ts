@@ -15,6 +15,7 @@ import type { RoomTransport } from './transport-rooms.js';
 import type { CommunityConnectionTransport } from './community-connections.js';
 import type { RemoteCommunityTransport } from './community-views.js';
 import type { CommitmentTransport } from './transport-commitments.js';
+import type { WorkQueueTransport } from './transport-work-queue.js';
 import type { ActivityTransport } from './transport-activity.js';
 import type { AgentPauseTransport } from './transport-agent-pause.js';
 import type { HeartbeatTransport } from './transport-heartbeats.js';
@@ -42,6 +43,7 @@ export interface TransportSlices
     CommunityConnectionTransport,
     RemoteCommunityTransport,
     CommitmentTransport,
+    WorkQueueTransport,
     ActivityTransport,
     AgentPauseTransport,
     HeartbeatTransport,

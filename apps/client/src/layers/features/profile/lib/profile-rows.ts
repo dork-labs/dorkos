@@ -479,6 +479,14 @@ function workFold(ctx: ProfileRowsContext): ProfileRowGroup {
     });
   }
   rows.push(commitmentsRow(ctx));
+  // Yours only, so it is here and not on someone else's agent: the prompts are private.
+  rows.push({
+    id: 'work-queue',
+    kind: 'nav',
+    label: 'Work queue',
+    value: null,
+    page: 'work-queue',
+  });
   rows.push(heartbeatRow(ctx));
   // What it did, and what was done to it, from the audit log. No value: a count
   // of every recorded action is a number nobody acts on.

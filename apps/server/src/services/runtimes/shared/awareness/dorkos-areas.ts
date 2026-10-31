@@ -156,8 +156,9 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Agents',
-    can: 'find, register, create, change, pause and resume agents, and sort the sidebar.',
+    can: 'find, register, create, change, pause and resume agents, sort the sidebar, and queue your own work.',
     covers: [
+      'work-queue.',
       'mesh_',
       'create_agent',
       'get_agent',

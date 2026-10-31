@@ -80,6 +80,7 @@ export interface ComposeCapabilitiesInput {
   agentPauses: WireCoreStoresResult['agentPauses'];
   chatMessaging: WireSessionServicesResult['chatMessaging'];
   commitments: WireSessionServicesResult['commitments'];
+  workQueue: WireSessionServicesResult['workQueue'];
   activityService: WireCoreStoresResult['activityService'];
   roomStore: WireRoomsResult['roomStore'];
   approvalService: WireConnectorEventsAndApprovalsResult['approvalService'];
@@ -118,6 +119,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     agentPauses,
     chatMessaging,
     commitments,
+    workQueue,
     activityService,
     roomStore,
     approvalService,
@@ -233,6 +235,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // What agents promised (spec `heartbeats` §12): an agent records its
       // own, and anyone reads every agent's list.
       commitmentDeps: commitments.capabilityDeps,
+      workQueueDeps: workQueue.capabilityDeps,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({
           resolveRuntime: (sessionId: string) => runtimeRegistry.resolveForSession(sessionId),

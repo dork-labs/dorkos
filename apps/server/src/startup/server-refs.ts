@@ -37,6 +37,7 @@ import type {
 import type { DevLinkWatcher } from '../services/marketplace/dev-links/index.js';
 import type { SearchIndexer } from '../services/search/index.js';
 import type { CommitmentWiring } from '../services/commitments/commitment-wiring.js';
+import type { WorkQueueWiring } from '../services/work-queue/work-queue-wiring.js';
 import type { JitteredSchedule } from '../lib/jittered-schedule.js';
 import type { TerminalManager } from '../services/terminal/index.js';
 import type { CapabilityRegistry } from '../services/core/capabilities/index.js';
@@ -140,6 +141,7 @@ export interface ServerRefs {
   attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<void>) | undefined;
   searchIndexer: SearchIndexer | undefined;
   commitmentWiring: CommitmentWiring | undefined;
+  workQueueWiring: WorkQueueWiring | undefined;
   healthCheckInterval: ReturnType<typeof setInterval> | undefined;
   dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
   sessionAttachmentSweepInterval: ReturnType<typeof setInterval> | undefined;
@@ -242,6 +244,7 @@ export function createServerRefs(): Omit<ServerRefs, BareServerRefs> {
     attachAgentTaskRoots: undefined,
     searchIndexer: undefined,
     commitmentWiring: undefined,
+    workQueueWiring: undefined,
     healthCheckInterval: undefined,
     dailySnapshotInterval: undefined,
     sessionAttachmentSweepInterval: undefined,

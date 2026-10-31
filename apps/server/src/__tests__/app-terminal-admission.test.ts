@@ -317,7 +317,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/mcp-servers');
     // 82 -> 83: the step-up before a task change, on the bare path (DOR-3330).
     expect(mounts).toContain('/api/tasks');
-    expect(mounts).toHaveLength(83);
+    // 83 -> 85: an agent's work queue, and the stop on every queue (DOR-3462).
+    expect(mounts).toContain('/api/work-queues');
+    expect(mounts).toHaveLength(85);
     const byHand = [
       '/',
       '/x/fixture',

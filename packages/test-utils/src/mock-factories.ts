@@ -2,7 +2,7 @@ import { runtimeSigninTransportMocks } from './runtime-signin-mocks.js';
 import { agentBrowserConnection } from '@dorkos/shared/agent-browser';
 import crypto from 'node:crypto';
 import { vi } from 'vitest';
-import { commitmentTransportMocks } from './mock-commitments.js';
+import { agentWorkTransportMocks } from './mock-work-queue.js';
 import { roomFileTransportMocks } from './mock-room-files.js';
 import { directChatTransportMocks } from './mock-direct-chats.js';
 import { remoteCommunityTransportMocks } from './mock-remote-community.js';
@@ -1235,7 +1235,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       exceptions: [],
       agentCount: 0,
     }),
-    ...commitmentTransportMocks(),
+    ...agentWorkTransportMocks(),
     getAgentPermissions: vi.fn().mockImplementation((agentId: string) =>
       Promise.resolve({
         agentId,

@@ -1841,6 +1841,265 @@
           "state"
         ]
       },
+      "WorkQueue": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "integer"
+          },
+          "dailyStartCap": {
+            "type": "integer"
+          },
+          "startsToday": {
+            "type": "integer"
+          },
+          "allStopped": {
+            "type": "boolean"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/WorkQueueHold"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkItem"
+            }
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkItem"
+            }
+          }
+        },
+        "required": [
+          "agentId",
+          "enabled",
+          "target",
+          "dailyStartCap",
+          "startsToday",
+          "allStopped",
+          "hold",
+          "items",
+          "recent"
+        ]
+      },
+      "WorkQueueHold": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "stopped",
+          "daily-cap",
+          "disk",
+          "load",
+          "accounts",
+          "chat-cap",
+          "permission",
+          "agent-paused",
+          "agent-missing",
+          null
+        ]
+      },
+      "WorkItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/WorkItemState"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/WorkItemOutcome"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "addedBy": {
+            "type": "string",
+            "enum": [
+              "person",
+              "agent"
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "title",
+          "prompt",
+          "cwd",
+          "state",
+          "outcome",
+          "note",
+          "sessionId",
+          "accountId",
+          "addedBy",
+          "createdAt",
+          "startedAt",
+          "endedAt"
+        ]
+      },
+      "WorkItemState": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "starting",
+          "running",
+          "ended"
+        ]
+      },
+      "WorkItemOutcome": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "finished",
+          "failed",
+          "stopped",
+          "limit",
+          "interrupted",
+          null
+        ]
+      },
+      "WorkQueueError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
+      "UpdateWorkQueueRequest": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "dailyStartCap": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          }
+        }
+      },
+      "SetWorkQueuesStoppedRequest": {
+        "type": "object",
+        "properties": {
+          "stopped": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stopped"
+        ]
+      },
+      "ReorderWorkQueueRequest": {
+        "type": "object",
+        "properties": {
+          "itemIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "maxItems": 200
+          }
+        },
+        "required": [
+          "itemIds"
+        ]
+      },
+      "AddWorkItemRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "title",
+          "prompt"
+        ]
+      },
       "HeartbeatStatus": {
         "type": "object",
         "properties": {
@@ -22106,6 +22365,416 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommitmentError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue": {
+      "get": {
+        "tags": [
+          "Work queue"
+        ],
+        "summary": "An agent's work queue",
+        "description": "What waits in order, what is running, what recently ended, whether it is on, the target and daily cap, and what is stopping the next start.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueue"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent or item (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Work queue"
+        ],
+        "summary": "Turn a queue on or off, or set its target or daily cap",
+        "description": "A queue is off until a person turns it on. Only a person can change these.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkQueueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The queue, changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueue"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent or item (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work-queues/stop": {
+      "put": {
+        "tags": [
+          "Work queue"
+        ],
+        "summary": "Stop every queue, or lift the stop",
+        "description": "Only a person can do this. Chats already running keep going.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetWorkQueuesStoppedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stop, as set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetWorkQueuesStoppedRequest"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue/order": {
+      "put": {
+        "tags": [
+          "Work queue"
+        ],
+        "summary": "Set the order of what is waiting",
+        "description": "An item that started meanwhile is left out of the change.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderWorkQueueRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The queue, in order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueue"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent or item (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue/items": {
+      "post": {
+        "tags": [
+          "Work queue"
+        ],
+        "summary": "Add an item",
+        "description": "A person adds work to the back of an agent's queue.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddWorkItemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent or item (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The queue is full (`FULL`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue/items/{itemId}": {
+      "delete": {
+        "tags": [
+          "Work queue"
+        ],
+        "summary": "Remove a waiting item",
+        "description": "A running item is its chat's to end, so it is refused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "itemId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent or item (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It already started (`NOT_QUEUED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/{id}/work-queue/items/{itemId}/requeue": {
+      "post": {
+        "tags": [
+          "Work queue"
+        ],
+        "summary": "Queue an ended item again",
+        "description": "It goes to the back of the queue and starts a new chat.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "itemId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item, waiting again",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such agent or item (`NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It has not ended (`NOT_ENDED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueError"
                 }
               }
             }
