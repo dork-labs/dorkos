@@ -241,8 +241,8 @@ export const systemProcessProbe: ProcessProbe = {
 export class WarmProcessLedger {
   private readonly filePath: string;
   private readonly probe: ProcessProbe;
-  /** This server's own start time, or `null` when the platform cannot say. */
-  private ownStartedAt: string | null | undefined;
+  /** This server's own start time, once a read of it has succeeded. */
+  private ownStartedAt: string | undefined;
 
   /**
    * Build a ledger over one data directory.
@@ -288,15 +288,17 @@ export class WarmProcessLedger {
    * better than reaping a process that is in use.
    *
    * @param pid - The process id the spawn returned
+   * @returns True when the process is written down; false when it could not be
+   *   proved or written, so the caller may ask again while the process lives
    */
-  record(pid: number): void {
+  record(pid: number): boolean {
     const startedAt = this.probe.startTimeOf(pid);
     if (startedAt === null) {
       logger.debug('[warm-process-ledger] cannot read a start time; not recording', { pid });
-      return;
+      return false;
     }
     const owner = this.owner();
-    if (owner === null) return;
+    if (owner === null) return false;
     const file = this.read();
     const foreignLiveOwner =
       file !== null && file.owner.pid !== process.pid && stillOurs(file.owner, this.probe);
@@ -312,7 +314,7 @@ export class WarmProcessLedger {
     const inherited = foreignLiveOwner ? [] : (file?.processes ?? []);
     const processes = inherited.filter((entry) => entry.pid !== pid);
     processes.push({ pid, startedAt });
-    this.write({ owner, processes });
+    return this.write({ owner, processes });
   }
 
   /**
@@ -357,23 +359,34 @@ export class WarmProcessLedger {
   }
 
   /**
-   * This server's own identity stamp, resolved once. `null` when the platform
-   * cannot prove it, in which case nothing is written at all — an unstamped
-   * ledger is one a future boot could not tell from another instance's.
+   * This server's own identity stamp. `null` when the platform cannot prove
+   * it, in which case nothing is written at all — an unstamped ledger is one a
+   * future boot could not tell from another instance's.
+   *
+   * Only a SUCCESSFUL read is kept. A failed one is asked again at the next
+   * record: one `ps` that timed out on a loaded machine used to be cached as
+   * "cannot say" for the life of the server, so nothing it spawned afterwards
+   * was ever written down, the next boot reaped none of it, and a chat woken
+   * after the restart ran beside its old process (DOR-3049).
    */
   private owner(): WarmProcessRecord | null {
-    if (this.ownStartedAt === undefined) this.ownStartedAt = this.probe.startTimeOf(process.pid);
-    if (this.ownStartedAt === null) return null;
+    this.ownStartedAt ??= this.probe.startTimeOf(process.pid) ?? undefined;
+    if (this.ownStartedAt === undefined) return null;
     return { pid: process.pid, startedAt: this.ownStartedAt };
   }
 
-  /** Persist the ledger atomically, so a kill mid-write cannot corrupt it. */
-  private write(file: WarmProcessLedgerFile): void {
+  /**
+   * Persist the ledger atomically, so a kill mid-write cannot corrupt it.
+   *
+   * @returns Whether the file now says what was asked
+   */
+  private write(file: WarmProcessLedgerFile): boolean {
     const temp = `${this.filePath}.${process.pid}.tmp`;
     try {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
       fs.writeFileSync(temp, JSON.stringify(file, null, 2));
       fs.renameSync(temp, this.filePath);
+      return true;
     } catch (error) {
       // A ledger we cannot write means the next boot will not reap — the bug we
       // already had. It must never take a warm launch down with it.
@@ -386,6 +399,7 @@ export class WarmProcessLedger {
       } catch {
         // Nothing further to try; the stray temp file is inert.
       }
+      return false;
     }
   }
 }
@@ -434,7 +448,28 @@ export interface ReapOrphanedWarmProcessesInput {
   probe?: ProcessProbe;
   /** Sleep, injectable so tests do not spend the SIGTERM grace window. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * How long to wait for a still-living owner to exit before declining the
+   * sweep. Zero (the default) declines at once.
+   *
+   * Boot passes {@link PREDECESSOR_EXIT_WAIT_MS} when it holds the instance
+   * lock, because then a live owner cannot be a second server: the lock was
+   * free, so the owner is the server this one replaces, which gives the lock
+   * back as the last step of its shutdown and exits a moment later. Declining
+   * on it left its processes running beside the chats this boot then woke —
+   * and the first process this boot spawned re-stamped the ledger and adopted
+   * them, so no later boot could tell they were leftovers (DOR-3049).
+   */
+  ownerExitWaitMs?: number;
 }
+
+/**
+ * How long boot waits for the server it replaces to finish exiting. An admin
+ * restart spawns its successor and exits in the same tick, and the desktop app
+ * starts one as soon as the last has gone or been killed, so the real gap is
+ * milliseconds; this bounds it on a machine too loaded to keep up.
+ */
+export const PREDECESSOR_EXIT_WAIT_MS = 10_000;
 
 /**
  * Wait, so the grace window can be driven synthetically in tests.
@@ -540,10 +575,16 @@ export async function reapOrphanedWarmProcesses(
   const file = ledger.read();
   if (!file) return { reaped: [], descendants: [], skipped: [], declined: 'no-ledger' };
 
+  // A predecessor still on its way out is waited for, not mistaken for a
+  // second server (see `ownerExitWaitMs`).
+  const ownerLives = (): boolean => file.owner.pid !== process.pid && stillOurs(file.owner, probe);
+  const waitUntil = Date.now() + (input.ownerExitWaitMs ?? 0);
+  while (ownerLives() && Date.now() < waitUntil) await sleep(TERM_POLL_MS);
+
   // Another server is alive and holding this data directory: these are its
   // processes, not orphans. Leave the ledger exactly as it is — it is the live
   // owner's, and clearing it would cost that server its own next-boot sweep.
-  if (stillOurs(file.owner, probe) && file.owner.pid !== process.pid) {
+  if (ownerLives()) {
     logger.warn('[warm-process-ledger] another instance owns this data directory; not sweeping', {
       owner: file.owner.pid,
     });

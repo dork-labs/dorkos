@@ -38,13 +38,48 @@
  * @module services/runtimes/claude-code/sessions/tracked-spawn
  */
 import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { logger } from '../../../../lib/logger.js';
 import type { WarmProcessLedger } from './warm-process-ledger.js';
 
 /** How much of the child's stderr is kept to explain a bad exit. */
 const STDERR_TAIL_LIMIT = 4096;
+
+/** How many more times a record that failed at spawn is tried, and how far apart. */
+const RECORD_RETRIES = 5;
+const RECORD_RETRY_MS = 1_000;
+
+/**
+ * Try again to write down a child whose record failed at spawn.
+ *
+ * The usual failure is a `ps` that timed out on a loaded machine, or a disk
+ * that was full for a moment. Giving up there left a process the next boot
+ * could not see, which then ran beside the chat that boot woke (DOR-3049).
+ *
+ * Only while the child lives: once it has exited, its pid can be handed to
+ * somebody else's process, and a record naming that one is the single thing
+ * the ledger must never hold. Node sets `exitCode` or `signalCode` the moment
+ * it reaps the child, before any timer can run, so the check cannot be beaten.
+ *
+ * @param ledger - Where the pid is written down
+ * @param child - The process, asked whether it is still running
+ * @param pid - Its pid
+ * @param left - Tries remaining
+ */
+function recordWhileAlive(
+  ledger: WarmProcessLedger,
+  child: ChildProcess,
+  pid: number,
+  left = RECORD_RETRIES
+): void {
+  if (left === 0) return;
+  const timer = setTimeout(() => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    if (!ledger.record(pid)) recordWhileAlive(ledger, child, pid, left - 1);
+  }, RECORD_RETRY_MS);
+  timer.unref?.();
+}
 
 /**
  * Build the `spawnClaudeCodeProcess` a warm launch runs through.
@@ -67,7 +102,7 @@ export function createTrackedSpawn(
     // Before anything else can happen to it. A pid we hold but have not
     // recorded is precisely the orphan this module exists to prevent.
     const pid = child.pid;
-    if (pid !== undefined) ledger.record(pid);
+    if (pid !== undefined && !ledger.record(pid)) recordWhileAlive(ledger, child, pid);
 
     // The DATA handler is the load-bearing one: it is what puts stderr into
     // flowing mode. Without it the pipe fills at 64 KB and the child BLOCKS

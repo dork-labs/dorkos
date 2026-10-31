@@ -32,4 +32,4 @@ Then report its output in one or two lines: how many days it exported, whether i
 
 DorkOS finds the `schedule:` block above and puts this job on the **Schedules** page as **Waiting for approval**. It does not run until the operator approves it. Approve it with **Approve at Full autonomy**: the job runs Bash and `git push`, and a schedule that arrives in a file is held back to the careful setting, which cannot run either unattended (DOR-2100; `docs/guides/task-scheduler.mdx`). With plain Approve, every run ends Blocked.
 
-If exports stop, the collector notices: an export older than 3 days is a health failure on the daily snapshot, and the SessionStart line says so.
+If exports stop, the collector notices: when no clone has exported in 3 days, that is a health failure on the daily snapshot, and the SessionStart line says so. The clone name follows the machine's hostname, which macOS changes per network (`x.local`, `x.lan`), so one checkout can leave old names behind: a clone over 3 days old is only a warning while another clone exports fresh, and after 14 days it is retired and only reported.

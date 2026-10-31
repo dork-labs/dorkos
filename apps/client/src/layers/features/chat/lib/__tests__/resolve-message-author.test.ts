@@ -20,6 +20,26 @@ const agent: MessageAuthorAgent = {
   color: '#6366f1',
 };
 
+describe('resolveMessageAuthor — a message nobody here typed (DOR-3019)', () => {
+  it.each([
+    [{ kind: 'heartbeat' }, 'system', 'Heartbeat'],
+    [{ kind: 'schedule', label: 'Daily' }, 'system', 'Schedule: Daily'],
+    [{ kind: 'schedule' }, 'system', 'Schedule'],
+    [{ kind: 'agent', label: 'scout (agent)' }, 'system', 'scout (agent)'],
+    [{ kind: 'external' }, 'system', 'Outside DorkOS'],
+    [{ kind: 'channel', label: 'Telegram' }, 'human', 'Telegram'],
+  ] as const)('names %o as its source, never "You"', (promptSource, kind, displayName) => {
+    const author = resolveMessageAuthor(msg({ role: 'user', promptSource }), { agent });
+    expect(author).toMatchObject({ kind, displayName });
+  });
+
+  it('keeps two sources in separate groups', () => {
+    const one = msg({ role: 'user', promptSource: { kind: 'schedule', label: 'A' } });
+    const two = msg({ role: 'user', promptSource: { kind: 'schedule', label: 'B' } });
+    expect(resolveMessageAuthor(one, {}).id).not.toBe(resolveMessageAuthor(two, {}).id);
+  });
+});
+
 describe('resolveMessageAuthor', () => {
   it('resolves an assistant message to the session agent when there is one', () => {
     expect(resolveMessageAuthor(msg(), { agent, runtime: 'claude-code' })).toEqual({

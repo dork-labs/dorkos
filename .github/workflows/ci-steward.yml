@@ -18,7 +18,8 @@
 # pushes those to `local/<clone>/` on the same branch.
 #
 # WHAT A RED RUN MEANS: the collector's own health failed (a truncated fetch, a
-# drifted ruleset, a missing data-branch safeguard, a stale local export), or
+# drifted ruleset, a missing data-branch safeguard, no clone exporting local
+# timings for 3 days; one silent clone beside a fresh one is a warning), or
 # the data branch is missing and must be restored by hand. The snapshot is
 # still published, marked unhealthy, so /ci-status shows why. The job summary
 # names the fix.

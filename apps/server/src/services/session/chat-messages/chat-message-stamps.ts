@@ -20,6 +20,7 @@ import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { ChatMessageRow } from '@dorkos/db';
 import { getChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
+import { promptSourceReader } from './prompt-source.js';
 import { withRoomStamp } from './room-message-stamps.js';
 
 /**
@@ -76,19 +77,33 @@ function stampsFor(
  * @param store - The store; the wired one when omitted.
  */
 export function stampHistory<
-  T extends Pick<HistoryMessage, 'role' | 'content' | 'chatMessages' | 'roomMessage'>,
+  T extends Pick<
+    HistoryMessage,
+    'role' | 'content' | 'chatMessages' | 'roomMessage' | 'messageType' | 'promptSource'
+  >,
 >(
   sessionIds: readonly string[],
   messages: T[],
   store: ChatMessageStore | undefined = getChatMessageStore()
 ): T[] {
   let changed = false;
+  const sourceOf = promptSourceReader(sessionIds);
   const out = messages.map((message) => {
     if (message.role !== 'user') return message;
     let next = message;
     const stamps = store ? stampsFor(store, sessionIds, message.content) : [];
     if (stamps.length > 0) next = { ...next, chatMessages: stamps };
     next = withRoomStamp(next, message.content);
+    // Only plain words can be a prompt. A sender already named needs no source.
+    if (
+      !next.chatMessages?.length &&
+      !next.roomMessage &&
+      !next.promptSource &&
+      !next.messageType
+    ) {
+      const source = sourceOf(message.content);
+      if (source) next = { ...next, promptSource: source };
+    }
     if (next !== message) changed = true;
     return next;
   });

@@ -148,7 +148,7 @@ export function baseSpec(): FixtureSpec {
         retired_after_days: 14,
         heavy_run_slots: 3,
         heavy_lock_wait_seconds: 45,
-        heavy_lock_max_hold_seconds: 900,
+        heavy_job_wait_seconds: 1800,
       },
     },
     requiredChecks: { ruleset: 1, contexts: ['lint', 'test'] },

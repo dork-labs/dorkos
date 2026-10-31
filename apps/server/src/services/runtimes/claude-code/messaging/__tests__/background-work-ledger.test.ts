@@ -63,3 +63,65 @@ describe('BackgroundWorkLedger', () => {
     expect(ledger.read()).toEqual([]);
   });
 });
+
+describe('BackgroundWorkLedger bound to its data directory (DOR-3071)', () => {
+  const record = { key: 'a', sessionId: 'live-chat', cwd: '/p', since: 1 };
+  let elsewhere: string;
+
+  beforeEach(() => {
+    elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'bg-work-copy-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(elsewhere, { recursive: true, force: true });
+  });
+
+  it('wakes on a restart of the same data directory', () => {
+    new BackgroundWorkLedger(dorkHome).hold(record);
+    expect(new BackgroundWorkLedger(dorkHome).readLeftover()).toEqual([record]);
+  });
+
+  it('matches the same data directory reached through a symlink', () => {
+    new BackgroundWorkLedger(dorkHome).hold(record);
+    const link = path.join(elsewhere, 'link');
+    fs.symlinkSync(dorkHome, link);
+    expect(new BackgroundWorkLedger(link).readLeftover()).toEqual([record]);
+  });
+
+  it('wakes nothing from a copied data directory, says so, and drops the file', () => {
+    new BackgroundWorkLedger(dorkHome).hold(record);
+    fs.cpSync(dorkHome, elsewhere, { recursive: true });
+
+    const copy = new BackgroundWorkLedger(elsewhere);
+    expect(fs.existsSync(copy.path)).toBe(true);
+    expect(copy.readLeftover()).toEqual([]);
+    expect(fs.existsSync(copy.path)).toBe(false);
+    // The original is untouched and still wakes its own chat.
+    expect(new BackgroundWorkLedger(dorkHome).readLeftover()).toEqual([record]);
+  });
+
+  it('wakes nothing after the data directory is moved', () => {
+    new BackgroundWorkLedger(dorkHome).hold(record);
+    const moved = path.join(elsewhere, 'moved');
+    fs.renameSync(dorkHome, moved);
+    expect(new BackgroundWorkLedger(moved).readLeftover()).toEqual([]);
+  });
+
+  it('does not carry a copied record into the copy’s own writes', () => {
+    new BackgroundWorkLedger(dorkHome).hold(record);
+    fs.cpSync(dorkHome, elsewhere, { recursive: true });
+
+    const copy = new BackgroundWorkLedger(elsewhere);
+    expect(copy.read()).toEqual([]);
+    const own = { key: 'b', sessionId: 'copy-chat', cwd: '/q', since: 2 };
+    copy.hold(own);
+    expect(new BackgroundWorkLedger(elsewhere).readLeftover()).toEqual([own]);
+  });
+
+  it('still wakes a file written before the binding, so an upgrade keeps its work', () => {
+    const ledger = new BackgroundWorkLedger(dorkHome);
+    fs.mkdirSync(path.dirname(ledger.path), { recursive: true });
+    fs.writeFileSync(ledger.path, JSON.stringify({ sessions: [record] }));
+    expect(ledger.readLeftover()).toEqual([record]);
+  });
+});

@@ -12,6 +12,8 @@ import { roomReplyScenarios, sayInRoom } from './room-reply-scenarios.js';
 import { localBrowserDrivingScenario } from './local-browser-driving-scenario.js';
 import { browserDrivingScenarios } from './browser-driving-scenarios.js';
 import { fileSaveReceiptScenarios } from './file-save-receipt-scenarios.js';
+import { docFrameSdkScenario } from './doc-frame/doc-frame-sdk-scenario.js';
+import { docFrameCompanionScenario } from './doc-frame/doc-frame-companion-scenario.js';
 import { docRouteScenarios } from './doc-route-scenarios.js';
 
 /**
@@ -288,6 +290,8 @@ function compactingTurn(options: { hold: boolean }): ScenarioFn {
  * families are inert unless selected via `POST /api/test/scenario`.
  */
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
+  'doc-frame-sdk-receipt': docFrameSdkScenario,
+  'doc-frame-companion': docFrameCompanionScenario,
   ...DEMO_SCENARIOS,
   // The #team conversation the capture films: each agent answers through a
   // real room turn (`demo-team-room-scenario.ts`).

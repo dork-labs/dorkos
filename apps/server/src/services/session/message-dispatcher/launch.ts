@@ -8,6 +8,7 @@
 import { getMessageQueueStore, setQueuedWaitingOn } from '../message-queue-store.js';
 import { triggerTurn, type TriggerTurnResult } from '../trigger-turn.js';
 import { emitQueueUpdate } from '../queue-stream-events.js';
+import { TURN_NO_ANSWER } from '../launch/turn-not-started.js';
 import {
   getPrivateSessionMessageAcceptanceService,
   PrivateSessionMessageRefusalError,
@@ -199,7 +200,9 @@ export function launchDispatchInner(
           outcome: turnOutcome,
           ...(reason !== undefined ? { reason } : {}),
         });
-        turn.onSettled?.(turnOutcome, reason);
+        // Only the lifecycle hears "nobody read it". To a caller, a reason means
+        // the turn was refused, and this one ran (a beat records a refusal).
+        turn.onSettled?.(turnOutcome, reason === TURN_NO_ANSWER ? undefined : reason);
       },
     });
   } catch (err) {
