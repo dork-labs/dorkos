@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): one badge, one count and one chip, and a number only for what is aimed at you'
+  - 'fix(client): a mention pill stays on one line unless its name is too long to fit'
 ---
 
 ### Changed

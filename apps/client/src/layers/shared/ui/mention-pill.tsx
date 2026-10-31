@@ -24,6 +24,19 @@ import type { IdentityOrigin } from '@/layers/shared/lib/identity-origin';
  */
 const AGENT_TEXT_MIX = '65%';
 
+/**
+ * Longer than this, a label may wrap inside its pill. Pills wrap between each
+ * other, never inside one, so a pill is `whitespace-nowrap`; but a handle this
+ * long can be wider than a phone's line, and on one line it would overflow its
+ * bubble. Past it, the pill falls back to `overflow-wrap:anywhere`.
+ */
+const NOWRAP_MAX_CHARS = 24;
+
+/** `whitespace-nowrap`, unless the label is too long to sit on one line. */
+function nowrapFor(label: string): string | false {
+  return label.length <= NOWRAP_MAX_CHARS && 'whitespace-nowrap';
+}
+
 const mentionPillVariants = cva(
   // Deliberately `inline`, not `inline-flex`/`inline-block`: only a plain
   // inline box fragments across a line wrap, which is what lets
@@ -181,7 +194,11 @@ function MentionPill({
         data-slot="mention-pill"
         data-kind={kind}
         data-cc="true"
-        className={cn(mentionPillVariants({ tone: 'cc', interactive }), className)}
+        className={cn(
+          mentionPillVariants({ tone: 'cc', interactive }),
+          nowrapFor(label),
+          className
+        )}
         {...props}
         title={ccTitle(name)}
         aria-label={`cc @${name}`}
@@ -216,7 +233,11 @@ function MentionPill({
         data-slot="mention-pill"
         data-kind="agent"
         title={title}
-        className={cn(mentionPillVariants({ tone: 'agent', interactive }), className)}
+        className={cn(
+          mentionPillVariants({ tone: 'agent', interactive }),
+          nowrapFor(label),
+          className
+        )}
         style={
           {
             // Published, not painted: the background lives in a class that
@@ -239,7 +260,11 @@ function MentionPill({
       <span
         data-slot="mention-pill"
         data-kind="system"
-        className={cn(mentionPillVariants({ tone: 'neutral', interactive }), className)}
+        className={cn(
+          mentionPillVariants({ tone: 'neutral', interactive }),
+          nowrapFor(label),
+          className
+        )}
         {...props}
       >
         {label}
@@ -254,7 +279,11 @@ function MentionPill({
       data-slot="mention-pill"
       data-kind="human"
       title={title}
-      className={cn(mentionPillVariants({ tone: 'neutral', interactive }), className)}
+      className={cn(
+        mentionPillVariants({ tone: 'neutral', interactive }),
+        nowrapFor(label),
+        className
+      )}
       {...props}
     >
       @{label}
