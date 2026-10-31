@@ -1,10 +1,10 @@
 ---
 id: 261031-012000
-title: credential-free-build keeps its own pnpm store, keyed on the runner image
+title: credential-free-build and test.yml key their pnpm store on the runner image
 kind: incident-fix
 status: proposed
 actor: agent
-gates: [wf.credential-free-build.credential-free-build]
+gates: [wf.credential-free-build.credential-free-build, wf.test.test-shard, wf.test.community-pg]
 prs: []
 hypothesis:
   metric: gate.wf.credential-free-build.credential-free-build.ejections_caused
@@ -16,7 +16,7 @@ ratchet-release: []
 field-changes: []
 ---
 
-`credential-free-build.yml` no longer uses setup-node's `cache: pnpm`. It restores and saves its own store with `actions/cache`, keyed on `ImageOS` as well as OS, arch and lockfile. Same fix as ledger 261030-001500 for the browser suite.
+`credential-free-build.yml` and the two `test.yml` jobs that install the workspace (`test-shard`, `community-pg`) no longer use setup-node's `cache: pnpm`. They restore and save their own store with `actions/cache`, keyed on `ImageOS` as well as OS, arch and lockfile. Same fix as ledger 261030-001500 for the browser suite. `test-shard` hit the same break: its server route test files failed to load node-pty on 24.04 runners.
 
 Why: setup-node keys the pnpm store on OS + arch + lockfile hash only, so every Linux job shares one entry. pnpm keeps native build output in the store, and node-pty 1.1.0 has no linux-x64 prebuild, so it is compiled at install. This job runs on `ubuntu-latest`. The shared store (saved 2026-10-30 12:53Z on main) was built on 26.04. From 23:39Z, `ubuntu-latest` began giving this job 24.04 runners, which cannot load that `pty.node`. node-pty reports only its last probe (`prebuilds/linux-x64/`), so the error reads as a missing file; the doubled slash is node-pty's own path join.
 

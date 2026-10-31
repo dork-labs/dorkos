@@ -329,18 +329,26 @@ describe('credential-free-build workflow', () => {
   // setup-node's `cache: pnpm` shares one store per lockfile across every Linux
   // job, whatever image built it. node-pty compiles at install on linux-x64, so
   // a store saved on ubuntu-26.04 kills the boot probe on a 24.04 runner
-  // (2026-10-30, ledger 261031-012000).
-  it('keys the pnpm store on the runner image', () => {
-    expect(
-      /^\s+cache:\s*pnpm\s*$/m.test(workflow),
-      `${WORKFLOW_REL} uses setup-node's \`cache: pnpm\` again. That store is shared across ` +
-        `runner images, and node-pty's compiled pty.node does not load across them.`
-    ).toBe(false);
-    expect(
-      workflow.includes(
-        "key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}"
-      ),
-      `${WORKFLOW_REL} no longer keys its pnpm store on \`env.ImageOS\`.`
-    ).toBe(true);
+  // (2026-10-30, ledger 261031-012000). test.yml's server suite loads node-pty
+  // the same way, so it carries the same store.
+  it('keys the pnpm store on the runner image, here and in test.yml', () => {
+    const STORE_KEY =
+      "key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}";
+    const testWorkflow = readFileSync(path.join(repoRoot, TEST_WORKFLOW_REL), 'utf8');
+    for (const [rel, text, installs] of [
+      [WORKFLOW_REL, workflow, 1],
+      [TEST_WORKFLOW_REL, testWorkflow, 2],
+    ] as const) {
+      expect(
+        /^\s+cache:\s*pnpm\s*$/m.test(text),
+        `${rel} uses setup-node's \`cache: pnpm\` again. That store is shared across ` +
+          `runner images, and node-pty's compiled pty.node does not load across them.`
+      ).toBe(false);
+      expect(
+        text.split(STORE_KEY).length - 1,
+        `${rel} should key its pnpm store on \`env.ImageOS\` in each of its ${installs} ` +
+          `job(s) that install the workspace.`
+      ).toBe(installs);
+    }
   });
 });
