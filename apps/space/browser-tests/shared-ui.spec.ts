@@ -89,12 +89,18 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await expect(page.getByRole('alert')).toHaveAttribute('data-slot', 'notice');
       await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
       await email.focus();
-      const styles = await email.evaluate((element) => ({
-        height: element.getBoundingClientRect().height,
-        font: getComputedStyle(element).fontSize,
-        focus: getComputedStyle(element).boxShadow,
-        overflow: document.documentElement.scrollWidth > innerWidth,
-      }));
+      const styles = await email.evaluate((element) => {
+        const style = getComputedStyle(element);
+        // The shared focus ring is an outline (the `focus-ring` recipe); a box-shadow ring
+        // counts too. 'none' only when neither is drawn.
+        const outlined = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2;
+        return {
+          height: element.getBoundingClientRect().height,
+          font: style.fontSize,
+          focus: outlined ? `outline ${style.outlineWidth} ${style.outlineColor}` : style.boxShadow,
+          overflow: document.documentElement.scrollWidth > innerWidth,
+        };
+      });
       expect(styles.height).toBe(width < 768 ? 44 : 36);
       expect(styles.font).toBe(width < 768 ? '16px' : '14px');
       expect(styles.focus).not.toBe('none');
