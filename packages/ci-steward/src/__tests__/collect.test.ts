@@ -11,6 +11,7 @@ import { main } from '../cli.ts';
 import * as collectPlan from '../collect.ts';
 import { collect } from '../collect.ts';
 import { LatestSchema, readData, snapshotPath, SnapshotSchema } from '../data.ts';
+import { localExportHealth } from '../local-health.ts';
 import { repeatEjections } from '../ejection-facts.ts';
 import { refreshOlderDays } from '../refresh.ts';
 import { desktopReleaseRuns, trimRun } from '../series.ts';
@@ -565,5 +566,164 @@ describe('refreshOlderDays', () => {
     const rec = dayRecording();
     rec.rest[PUSH_PATH] = { total_count: push.length, workflow_runs: push };
     expect(refresh(rec, dataDir, 5).days).toEqual([]);
+  });
+});
+
+describe('localExportHealth', () => {
+  // NOW is 2026-09-19; the fixture's local config is stale after 3 days, retired after 14.
+  const TODAY = '2026-09-19';
+  function beat(dataDir: string, clone: string, day: string) {
+    writeArtifact(
+      dataDir,
+      `local/${clone}/exported.json`,
+      JSON.stringify({ schema: 1, clone, exported_at: `${day}T04:30:00.000Z` })
+    );
+  }
+
+  it('warns, and stays healthy, when a clone went silent while another exports fresh', () => {
+    const { files, data } = setup();
+    beat(data, 'clone-dead', '2026-09-14');
+    beat(data, 'clone-live', '2026-09-19');
+    const r = localExportHealth(data, files, TODAY);
+    expect(r.failures).toEqual([]);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]).toContain('clone-dead is 5 days old');
+    expect(r.warnings[0]).toContain('clone-live exported fresh');
+    expect(r.exports['clone-dead']!.state).toBe('stale');
+    expect(r.exports['clone-live']!.state).toBe('fresh');
+  });
+
+  it('fails every stale clone when no clone exports fresh', () => {
+    const { files, data } = setup();
+    beat(data, 'clone-a', '2026-09-14');
+    beat(data, 'clone-b', '2026-09-12');
+    const r = localExportHealth(data, files, TODAY);
+    expect(r.warnings).toEqual([]);
+    expect(r.failures).toHaveLength(2);
+    expect(r.failures[0]).toContain('clone-a is 5 days old');
+    expect(r.failures[1]).toContain('clone-b is 7 days old');
+  });
+
+  it('keeps a stopped export loud after every clone has retired, and keeps the retired state', () => {
+    const { files, data } = setup();
+    beat(data, 'clone-old', '2026-08-01');
+    beat(data, 'clone-older', '2026-07-01');
+    const r = localExportHealth(data, files, TODAY);
+    expect(r.exports['clone-old']!.state).toBe('retired');
+    expect(r.failures).toEqual([
+      expect.stringContaining(
+        'No clone has exported in 49 days (newest clone-old, last 2026-08-01)'
+      ),
+    ]);
+  });
+
+  it('says nothing about a retired clone while another exports fresh, or when there are no exports', () => {
+    const { files, data } = setup();
+    expect(localExportHealth(data, files, TODAY)).toEqual({
+      exports: {},
+      failures: [],
+      warnings: [],
+    });
+    beat(data, 'clone-old', '2026-08-01');
+    beat(data, 'clone-live', '2026-09-18');
+    const r = localExportHealth(data, files, TODAY);
+    expect(r.failures).toEqual([]);
+    expect(r.warnings).toEqual([]);
+    expect(r.exports['clone-old']!.state).toBe('retired');
+  });
+
+  it('a dead clone beside a fresh one leaves the collected day healthy, with the warning on it', () => {
+    const data = temp('ci-steward-data-');
+    beat(data, 'clone-dead', '2026-09-14');
+    beat(data, 'clone-live', '2026-09-19');
+    const { r, snap } = runCollect(dayRecording(), 700, data);
+    expect(r.healthy).toBe(true);
+    expect(snap.health.failures).toEqual([]);
+    expect(snap.health.warnings.some((w) => w.includes('clone-dead is 5 days old'))).toBe(true);
+    expect(snap.health.local_exports['clone-dead']!.state).toBe('stale');
+  });
+
+  it('an all-stale export still turns the collected day red', () => {
+    const data = temp('ci-steward-data-');
+    beat(data, 'clone-a', '2026-09-14');
+    const { r } = runCollect(dayRecording(), 700, data);
+    expect(r.healthy).toBe(false);
+    expect(r.failures.some((f) => f.includes('clone-a is 5 days old'))).toBe(true);
+  });
+});
+
+describe('required workflows whose organization rule is not live', () => {
+  // Like security-gate: listed under `workflows` in ci/required-checks.json, but
+  // GitHub does not enforce it on main yet. nightly.yml stands in for it here.
+  function redOnlyOnUnenforced(enforced: boolean) {
+    const s = setup();
+    s.files.requiredChecks!.workflows = [
+      {
+        ruleset_name: 'Trusted workflow',
+        repository: 'o/r',
+        repository_id: 42,
+        path: '.github/workflows/nightly.yml',
+        ref: 'refs/heads/main',
+        bypass_actors: [],
+        enforced,
+      },
+    ];
+    const rec = dayRecording();
+    const listing = rec.rest[`${RUNS_PATH}&page=1`] as {
+      total_count: number;
+      workflow_runs: object[];
+    };
+    const ccc = (RUNS as { head_sha: string; head_branch: string; created_at: string }[]).find(
+      (r) => r.head_sha === 'ccc' && r.head_branch.startsWith('gh-readonly-queue/')
+    )!;
+    const gate = {
+      ...ccc,
+      id: 303,
+      name: 'nightly',
+      path: '.github/workflows/nightly.yml',
+      conclusion: 'failure',
+    };
+    listing.workflow_runs = [...listing.workflow_runs, gate];
+    listing.total_count += 1;
+    const checksKey = 'repos/o/r/commits/ccc/check-runs?filter=all&per_page=100&page=1';
+    const checks = rec.rest[checksKey] as { total_count: number; check_runs: object[] };
+    rec.rest[checksKey] = {
+      total_count: checks.total_count + 1,
+      check_runs: [
+        ...checks.check_runs,
+        {
+          name: 'report',
+          status: 'completed',
+          conclusion: 'failure',
+          started_at: `${DAY}T12:30:10Z`,
+          completed_at: `${DAY}T12:31:10Z`,
+          details_url: 'https://github.com/o/r/actions/runs/303/job/3030',
+          app: { slug: 'github-actions' },
+        },
+      ],
+    };
+    collect({
+      gh: replayGh(rec, 700, writeArtifact),
+      files: s.files,
+      workflows: s.workflows,
+      dataDir: s.data,
+      now: new Date(NOW),
+      days: [DAY],
+      tmpDir: temp('ci-steward-tmp-'),
+    });
+    const snap = readData(s.data, snapshotPath(DAY), SnapshotSchema)!;
+    return snap.queue_builds.find((b) => b.sha === 'ccc')!;
+  }
+
+  it('a build red only on an unenforced required workflow stays green, and still names the failure', () => {
+    const b = redOnlyOnUnenforced(false);
+    expect(b.outcome).toBe('green');
+    expect(b.failed_gates).toEqual(['wf.nightly.report']);
+  });
+
+  it('turns that same build red once the rule is enforced: one config line, no code change', () => {
+    const b = redOnlyOnUnenforced(true);
+    expect(b.outcome).toBe('red');
+    expect(b.failed_gates).toEqual(['wf.nightly.report']);
   });
 });
