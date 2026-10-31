@@ -265,7 +265,7 @@ describe('useTabIdentity', () => {
       expect(result.current).toMatchObject({
         secondary: '1 needs you',
         status: 'needs-you',
-        statusSentence: '1 agent is waiting on you · 3 working',
+        statusSentence: '1 agent is waiting on you\u00a0· 3\u00a0working',
       });
       expect(dotClass(result.current)).toContain('bg-status-warning-dot');
     });

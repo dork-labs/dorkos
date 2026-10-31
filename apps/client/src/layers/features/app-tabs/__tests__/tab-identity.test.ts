@@ -354,10 +354,10 @@ describe('Home and Team', () => {
     expect(one).toMatchObject({
       secondary: '1 needs you',
       status: 'needs-you',
-      statusSentence: '1 agent is waiting on you · 3 working',
+      statusSentence: '1 agent is waiting on you\u00a0· 3\u00a0working',
     });
     expect(one.accessibleName).toBe(
-      'Team, 1 needs you, Needs you: 1 agent is waiting on you · 3 working'
+      'Team, 1 needs you, Needs you: 1 agent is waiting on you\u00a0· 3\u00a0working'
     );
 
     expect(

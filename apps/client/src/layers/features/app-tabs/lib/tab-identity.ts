@@ -585,13 +585,15 @@ export function teamTabIdentity(pathname: string, input: TeamTabInput): TabIdent
         ? `${working} working`
         : undefined,
     status,
+    // Non-breaking spaces keep "3 working" whole: a narrow hover card breaks
+    // after the separator, never between a number and its word.
     statusSentence: waiting
       ? [
           plural(waiting, 'agent is waiting on you', 'agents are waiting on you'),
-          working ? `${working} working` : undefined,
+          working ? `${working}\u00a0working` : undefined,
         ]
           .filter(Boolean)
-          .join(' · ')
+          .join('\u00a0· ')
       : status === 'failed'
         ? 'An agent’s last reply failed'
         : status === 'working'
