@@ -12,6 +12,7 @@ import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
 import { MEMORY_TOOL_NAMES } from '../../../memory/tool-names.js';
 import { inSessionToolName, isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
 import { ceilingOn, type CeilingedMode } from '../turn-permission.js';
+import { ALWAYS_ON_READS } from './always-on-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 
 // ---------------------------------------------------------------------------
@@ -154,6 +155,8 @@ export const DORKOS_AGENT_TOOLS = new Set(
     'mesh_status',
     'mesh_query_topology',
     'get_agent',
+    // Reads of what DorkOS itself is, which nothing switches off (DOR-3373).
+    ...ALWAYS_ON_READS,
     // The agent's own memory, both tools. Always loaded and auto-allowed on
     // identity, for the argument stated in full under IDENTITY_SCOPED_TOOLS below.
     ...MEMORY_TOOL_NAMES,
@@ -163,16 +166,13 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // already resolves on every call. A runtime card on top would be a second
     // ask for one question, raised on the turn with the least room to spare.
     'compact_my_session',
-    // How much of each Claude account is used, and one idle account's own
-    // reading (DOR-3289 slice 1). Usage numbers only: no turn runs, nothing is
-    // spent, and the probe keeps its own once-a-minute floor per account. In a
-    // turn held to a ceiling neither runs unasked: a stranger's question must
-    // not be able to read our accounts (see isAutoAllowedCall).
+    // Account usage, and one idle account's own reading (DOR-3289 slice 1): no
+    // turn runs, nothing is spent, the probe keeps its once-a-minute floor. In a
+    // held turn neither runs unasked (see isAutoAllowedCall).
     'accounts_usage',
     'accounts_probe',
-    // UI control tools. `get_ui_state` only reads. `control_ui` is the multiplexer
-    // — most of its actions only move pixels, but not all of them, so its calls go
-    // through `isAutoAllowedCall` below rather than riding this membership alone.
+    // UI control. `get_ui_state` only reads. Not every `control_ui` action only moves
+    // pixels, so its calls go through `isAutoAllowedCall`, not this membership alone.
     'control_ui',
     'get_ui_state',
   ].map(inSessionToolName)
