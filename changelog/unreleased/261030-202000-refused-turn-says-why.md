@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a refused turn says why, in the chat, the log and the report back (DOR-3167)'
+  - "refactor(server): the turn stream's per-event tap gets its own file, so trigger-turn.ts stays under 500 lines (DOR-3167)"
 ---
 
 ### Fixed
