@@ -164,7 +164,15 @@ export const RULES: Rule[] = [
     except: /^apps\/client\/src\/layers\/features\/mesh\/ui\//,
     fix: 'use rowStateVariants: bg-row-selected, and the inset outline for focus',
   },
-  // Phase 1 motion. One set of curves, none of which overshoots.
+  // Phase 1 motion. One set of springs and curves, none of which overshoots.
+  {
+    id: 'spring-literal',
+    kind: 'ratchet',
+    pattern: /\bstiffness:/g,
+    files: /\.(tsx?|css)$/,
+    except: /^apps\/client\/src\/layers\/shared\/lib\/motion\.ts$/,
+    fix: 'use SPRING from shared/lib/motion.ts',
+  },
   {
     id: 'overshoot-bezier',
     kind: 'hard',
@@ -284,16 +292,43 @@ export function compare(counts: Counts, baseline: Counts, rules: Rule[] = RULES)
 }
 
 /**
+ * Which rules may seed a first baseline: the ratchets whose id the base never
+ * defined. None may, when a rule the base defined is gone from this tree, so a
+ * rename cannot reset a count by starting a new rule at its own number.
+ *
+ * @param rules - The rules on this tree.
+ * @param baseIds - The rule ids the base defined, or null when they are unknown.
+ */
+export function seedableRules(rules: Rule[], baseIds: string[] | null): Set<string> {
+  if (!baseIds) return new Set();
+  if (baseIds.some((id) => !rules.some((r) => r.id === id))) return new Set();
+  return new Set(
+    rules.filter((r) => r.kind === 'ratchet' && !baseIds.includes(r.id)).map((r) => r.id)
+  );
+}
+
+/**
  * Entries the baseline raised against its base.
+ *
+ * A rule in `seedable` has no base entries to raise, so its first baseline is
+ * held to what the check measures here: a number above it is a raise.
  *
  * @param current - The baseline on this tree.
  * @param base - The baseline on the base tree.
+ * @param seedable - Rules that may seed a first baseline, from {@link seedableRules}.
+ * @param counts - What {@link measure} found on this tree, to check a seed against.
  */
-export function raisedAgainst(current: Counts, base: Counts): Finding[] {
+export function raisedAgainst(
+  current: Counts,
+  base: Counts,
+  seedable: ReadonlySet<string> = new Set(),
+  counts: Counts = {}
+): Finding[] {
   const findings: Finding[] = [];
   for (const [rule, files] of Object.entries(current)) {
+    const seeding = seedable.has(rule) && !(rule in base);
     for (const [file, count] of Object.entries(files)) {
-      const before = base[rule]?.[file] ?? 0;
+      const before = seeding ? (counts[rule]?.[file] ?? 0) : (base[rule]?.[file] ?? 0);
       if (count > before) findings.push({ kind: 'raised', rule, file, count, baseline: before });
     }
   }
@@ -382,6 +417,21 @@ function baselineAt(root: string, ref: string): Counts | null {
   }
 }
 
+/** The rule ids `ref` defined, read from its copy of this script, or null when it had none. */
+function ruleIdsAt(root: string, ref: string): string[] | null {
+  try {
+    const text = execFileSync('git', ['show', `${ref}:scripts/check-design-tokens.ts`], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const ids = [...text.matchAll(/^ {4}id: '([^']+)'/gm)].map((m) => m[1] as string);
+    return ids.length ? ids : null;
+  } catch {
+    return null;
+  }
+}
+
 function main(argv: string[]): number {
   const value = (name: string) => {
     const i = argv.indexOf(name);
@@ -415,7 +465,10 @@ function main(argv: string[]): number {
   const findings = compare(counts, baseline);
   const base = value('--base');
   const before = base ? baselineAt(root, base) : null;
-  if (before) findings.push(...raisedAgainst(baseline, before));
+  if (base && before) {
+    const seedable = seedableRules(RULES, ruleIdsAt(root, base));
+    findings.push(...raisedAgainst(baseline, before, seedable, counts));
+  }
 
   if (findings.length === 0) {
     console.log('design-tokens: clean.');
