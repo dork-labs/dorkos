@@ -176,6 +176,21 @@
         "$TURBO_ROOT$/packages/*/src/**/*.test.tsx"
       ]
     },
+    "@dorkos/ci-steward#test": {
+      "dependsOn": ["^build"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.github/workflows/**",
+        "$TURBO_ROOT$/ci/**",
+        "$TURBO_ROOT$/lefthook.yml",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/.claude/settings.json",
+        "$TURBO_ROOT$/.claude/hooks/**",
+        "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/apps/e2e/playwright.config.ts"
+      ]
+    },
     "@dorkos/site#test": {
       "dependsOn": [
         "^build",
