@@ -1,7 +1,7 @@
 ---
 id: 261031-010716
 title: Heavy local runs take a host-wide slot held by flock
-kind: incident-fix
+kind: hygiene
 status: proposed
 actor: agent
 gates: []
