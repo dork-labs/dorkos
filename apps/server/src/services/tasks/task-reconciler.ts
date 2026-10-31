@@ -648,7 +648,9 @@ export class TaskReconciler {
           // kept for it (DOR-2272). After the clock sync so a failed write does
           // not skip it; the row keeps its ownership until the file agrees, so a
           // write that fails here is retried by the next pass.
-          await carrySwitchIntoReleasedFile(task, discovered.def, root);
+          if (this.store.fileSync.isReleasingSwitch(task.id)) {
+            await carrySwitchIntoReleasedFile(task, discovered.def, root);
+          }
         } catch (err) {
           this.report('error', `[TaskReconciler] Failed to sync ${discovered.def.filePath}`, err);
         }

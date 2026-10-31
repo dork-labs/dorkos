@@ -5807,6 +5807,15 @@ export const TaskSchema = z
         "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false.",
     }),
     /**
+     * Whether a person is offered "Turn on" (DOR-3309): the schedule's file now
+     * says on, and a file may switch a schedule off but never on, so it stayed
+     * off. Absent reads as false.
+     */
+    offersTurnOn: z.boolean().optional().openapi({
+      description:
+        'True when the schedule stayed off although its file now says on. A file can switch a schedule off but never on, so a person is offered Turn on. Absent means false.',
+    }),
+    /**
      * What changed since this schedule was last approved, for a schedule
      * waiting again (DOR-2323): each part of the approved work that differs,
      * with its approved value and the one that would run now. Empty when the

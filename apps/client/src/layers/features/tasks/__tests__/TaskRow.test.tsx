@@ -229,6 +229,27 @@ describe('ScheduleRow', () => {
     });
   });
 
+  describe('a schedule whose file now says on while it stayed off (DOR-3309)', () => {
+    it('offers Turn on, which sends enabled: true', async () => {
+      const offered: Task = { ...disabledSchedule, offersTurnOn: true };
+      const updateTask = vi.fn().mockResolvedValue({ ...offered, enabled: true });
+      const transport = createMockTransport({ updateTask });
+      renderScheduleRow(offered, {}, transport);
+
+      expect(screen.getByText(/The file turns this task on/)).toBeTruthy();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Turn on' }));
+      });
+      expect(updateTask).toHaveBeenCalledWith(offered.id, { enabled: true });
+    });
+
+    it('offers nothing on an ordinary switched-off schedule', () => {
+      renderScheduleRow(disabledSchedule);
+
+      expect(screen.queryByText(/The file turns this task on/)).toBeNull();
+    });
+  });
+
   it('shows Approve and Reject buttons for pending_approval schedules', () => {
     renderScheduleRow(pendingSchedule);
 
@@ -356,9 +377,30 @@ describe('ScheduleRow', () => {
     it('still shows Approve/Reject — `origin` is not `file`, so `enabled` cannot quiet it', () => {
       renderScheduleRow(agentHidOwnProposal);
 
-      expect(screen.getByText('Approve')).toBeTruthy();
+      // Off, so approving keeps it off unless the person asks (DOR-3309).
+      expect(screen.getByText('Approve (stays off)')).toBeTruthy();
+      expect(screen.getByText('Approve and turn on')).toBeTruthy();
       expect(screen.getByText('Reject')).toBeTruthy();
       expect(screen.queryByRole('switch')).toBeNull();
+    });
+
+    it('approving it keeps it off; "Approve and turn on" turns it on (DOR-3309)', async () => {
+      const updateTask = vi.fn().mockResolvedValue(agentHidOwnProposal);
+      const transport = createMockTransport({ updateTask });
+      renderScheduleRow(agentHidOwnProposal, {}, transport);
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Approve (stays off)'));
+      });
+      expect(updateTask).toHaveBeenLastCalledWith(agentHidOwnProposal.id, { status: 'active' });
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('Approve and turn on'));
+      });
+      expect(updateTask).toHaveBeenLastCalledWith(agentHidOwnProposal.id, {
+        status: 'active',
+        enabled: true,
+      });
     });
 
     it('names no source, unlike a genuinely file-discovered schedule', () => {
