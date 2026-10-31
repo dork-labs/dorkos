@@ -169,21 +169,30 @@ export interface MarketplaceCardInput {
 }
 
 /**
- * Make a Marketplace card safe to store: every string in the summary and the
- * whole full list swept for secrets like the detail, then checked against the
- * wire schema. The full list is never shortened: a list too long for
- * {@link APPROVAL_FULL_DETAIL_MAX_LENGTH} is refused before it gets here.
- *
- * @param card - The summary and full list, or nothing.
- * @returns The two columns to store, both null when there is no card or the
- *   summary does not parse (the card then falls back to its sentence).
+ * Thrown when a Marketplace card was asked for but cannot be stored whole
+ * (DOR-3070): its summary does not parse, or its full list is too long. The
+ * row is never raised, because the card's `detail` is cut and nothing would
+ * be behind its link, so a yes would cover rows nobody was shown.
  */
-export function storableMarketplaceCard(card: MarketplaceCardInput | undefined): {
-  marketplaceSummary: string | null;
-  fullDetail: string | null;
-} {
-  const none = { marketplaceSummary: null, fullDetail: null };
-  if (!card || card.fullDetail.length > APPROVAL_FULL_DETAIL_MAX_LENGTH) return none;
+export class MarketplaceCardNotStorableError extends Error {
+  constructor() {
+    super('This Marketplace card cannot be stored whole, so it was not raised.');
+    this.name = 'MarketplaceCardNotStorableError';
+  }
+}
+
+/**
+ * A Marketplace card as its two columns, every string in the summary and the
+ * whole full list swept for secrets like the detail, then checked against the
+ * wire schema. The full list is never shortened.
+ *
+ * @param card - The summary and full list.
+ * @returns The two columns, or `null` when the card cannot be stored whole.
+ */
+export function sweptMarketplaceCard(
+  card: MarketplaceCardInput
+): { marketplaceSummary: string; fullDetail: string } | null {
+  if (card.fullDetail.length > APPROVAL_FULL_DETAIL_MAX_LENGTH) return null;
   const sweep = (value: string | undefined) =>
     value === undefined ? undefined : redactSecretsInText(value);
   const swept = {
@@ -202,11 +211,33 @@ export function storableMarketplaceCard(card: MarketplaceCardInput | undefined):
     })),
   };
   const parsed = MarketplaceApprovalSummarySchema.safeParse(swept);
-  if (!parsed.success) return none;
+  if (!parsed.success) return null;
   return {
     marketplaceSummary: JSON.stringify(parsed.data),
     fullDetail: redactSecretsInText(card.fullDetail),
   };
+}
+
+/**
+ * Make a Marketplace card safe to store (see {@link sweptMarketplaceCard}).
+ *
+ * Fails CLOSED for every caller of `ApprovalService.request`: a card that was
+ * asked for and cannot be stored whole throws, so no approvable row exists
+ * with a cut detail and nothing behind its link.
+ *
+ * @param card - The summary and full list, or nothing.
+ * @returns The two columns to store, both null when there is no card.
+ * @throws {MarketplaceCardNotStorableError} When a card was passed and cannot
+ *   be stored whole.
+ */
+export function storableMarketplaceCard(card: MarketplaceCardInput | undefined): {
+  marketplaceSummary: string | null;
+  fullDetail: string | null;
+} {
+  if (!card) return { marketplaceSummary: null, fullDetail: null };
+  const stored = sweptMarketplaceCard(card);
+  if (!stored) throw new MarketplaceCardNotStorableError();
+  return stored;
 }
 
 /**

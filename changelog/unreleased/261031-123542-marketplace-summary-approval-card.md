@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,client): a large Marketplace install or update asks with a summary card instead of refusing (DOR-3070, DOR-3356)'
+  - "fix(server): a Marketplace card that can't be stored whole is refused, never raised (DOR-3070)"
 ---
 
 ### Changed
