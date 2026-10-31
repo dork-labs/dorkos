@@ -4,6 +4,10 @@
 #
 #   bash scripts/heavy-run-lock.sh [--job] <command> [args...]
 #   pnpm heavy <command> [args...]          (the same, with --job)
+#   bash scripts/heavy-run-lock.sh [--job] --hold <pid> [description...]
+#                                           (hold a slot for <pid>'s lifetime;
+#                                           what a bare `turbo` run uses, via
+#                                           scripts/heavy-turbo-slot.mjs)
 #
 # It forwards the command's output and exit code unchanged, so on a quiet
 # machine it is invisible: the first slot is free and the command starts.
@@ -22,7 +26,11 @@
 # typechecks run by hand, other clones, other repos. So the slots now live in
 # one directory per user on the host, `/tmp/dorkos-heavy-locks-<uid>`, which
 # every worktree, clone and agent on the machine shares, and the root `build`,
-# `typecheck`, `test` and `verify` scripts take a slot too.
+# `typecheck`, `test` and `verify` scripts take a slot too. Since DOR-3274
+# Phase 2 a bare `turbo build`, `typecheck`, `test` or `lint` does as well: each
+# of those tasks depends on the root task `//#heavy-slot`, which holds a slot
+# for the turbo process's life (`--hold`). That directory is used only if it is
+# a real directory this user owns (DOR-3509).
 #
 # HOW A SLOT IS HELD: BY A PROCESS, NOT BY A FILE
 #
@@ -59,15 +67,16 @@
 # IT NEVER DEADLOCKS. A slot is released by the holder's death, a wait is
 # bounded, and a nested call (`pnpm verify` running lint, a build inside a test
 # script) sees DORKOS_HEAVY_SLOT_HELD and runs straight through rather than
-# waiting on the slot its own parent holds.
+# waiting on the slot its own parent holds. turbo's strict env mode drops that
+# variable inside a task, so a call whose ANCESTOR holds a slot is nested too.
 #
 # IT NEVER BLOCKS CI. With `CI` set (GitHub Actions sets it) it runs the command
 # directly: a runner is one job on its own machine, and nothing there shares it.
 #
-# IT DEGRADES RATHER THAN REFUSES. No perl, an unwritable lock directory or a
-# sidecar that dies before answering each print one line and run the command
-# uncapped: this wraps gates, and a gate that refuses to run is a gate that gets
-# skipped.
+# IT DEGRADES RATHER THAN REFUSES. No perl, an unwritable lock directory, one
+# that is a symlink or someone else's, or a sidecar that dies before answering
+# each print one line and run the command uncapped: this wraps gates, and a
+# gate that refuses to run is a gate that gets skipped.
 #
 # HARD RULE 7. Nothing here kills anything. The sidecar asks whether a pid
 # exists with `kill 0`, which sends no signal, and it signals no process at all.
@@ -101,6 +110,23 @@ job=0
 if [ "${1:-}" = --job ]; then
   job=1
   shift
+fi
+
+# --hold <pid> <description...>: take a slot for ANOTHER process's lifetime and
+# return as soon as it is taken, running nothing. scripts/heavy-turbo-slot.mjs
+# uses it so a bare `turbo build` holds a slot for as long as that turbo runs
+# (DOR-3274 Phase 2). The description is only what waiters are told.
+hold_pid=''
+if [ "${1:-}" = --hold ]; then
+  case ${2:-} in
+    '' | *[!0-9]*)
+      echo "heavy-run-lock.sh: --hold needs a pid" >&2
+      exit 2
+      ;;
+  esac
+  hold_pid=$2
+  shift 2
+  [ "$#" -eq 0 ] && set -- "pid $hold_pid"
 fi
 
 if [ "$#" -eq 0 ]; then
@@ -145,6 +171,7 @@ POLL_SECONDS="${DORKOS_HEAVY_POLL_SECONDS:-1}"
 PERL="${DORKOS_HEAVY_PERL:-perl}"
 
 run_uncapped() {
+  [ -n "$hold_pid" ] && exit 0
   "$@"
   exit $?
 }
@@ -162,32 +189,79 @@ if ! command -v "$PERL" >/dev/null 2>&1; then
 fi
 
 lock_dir="${DORKOS_HEAVY_LOCK_DIR:-/tmp/dorkos-heavy-locks-$(id -u)}"
+# A trailing slash makes `[ -L ]` test the symlink's target, not the link.
+while [ "$lock_dir" != / ] && [ "${lock_dir%/}" != "$lock_dir" ]; do lock_dir=${lock_dir%/}; done
 # -m on the lock directory only, which is the intent: its parents are /tmp.
 # shellcheck disable=SC2174
 mkdir -p -m 700 -- "$lock_dir" 2>/dev/null
+
+# ONLY A DIRECTORY THAT IS OURS (DOR-3509). /tmp is shared by every user, so the
+# name `/tmp/dorkos-heavy-locks-<uid>` can be taken first by someone else. A
+# symlink there would point our slot writes (and their truncate) at a file of
+# the squatter's choosing; a directory they own lets them plant symlinked slot
+# files or read every holder's command line. Either is refused, the same way an
+# unwritable directory is: one line, and the command runs uncapped, because a
+# squatter must not be able to stop every build and commit on the host.
+# /tmp's sticky bit stops anyone else renaming a directory we own, so checking
+# it once here holds for the run.
+refuse_lock_dir() {
+  echo "[heavy-run-lock] refusing lock directory ${lock_dir}: $1 — running without the host-wide cap." >&2
+  echo "                 Remove it, or point DORKOS_HEAVY_LOCK_DIR at a directory you own." >&2
+}
+if [ -L "$lock_dir" ]; then
+  refuse_lock_dir "it is a symlink, not a directory"
+  run_uncapped "$@"
+fi
+if [ -e "$lock_dir" ] && [ ! -O "$lock_dir" ]; then
+  # One known path, numeric owner field only: `stat` flags differ by platform.
+  # shellcheck disable=SC2012
+  refuse_lock_dir "it is owned by uid $(ls -ldn -- "$lock_dir" 2>/dev/null | awk '{print $3}'), not by you (uid $(id -u))"
+  run_uncapped "$@"
+fi
+# Ours but left open to others (made by an older version, or by hand): close it
+# before anything is created in it. Only group and other bits, so an owner's
+# own read-only directory still reaches the writability probe below.
+chmod go-rwx -- "$lock_dir" 2>/dev/null
+
 # WRITABILITY IS A SEPARATE QUESTION FROM EXISTENCE. `mkdir -p` returns 0 for a
 # directory that is there but unwritable, and every slot open would then fail,
 # so every waiter would sit out its whole bound and blame busy slots. One probe
-# answers it.
-probe="$lock_dir/.probe-$$"
-if ! (: >"$probe") 2>/dev/null; then
+# answers it. mktemp creates exclusively, so a planted name is never followed.
+if ! probe=$(mktemp "$lock_dir/.probe.XXXXXX" 2>/dev/null); then
   echo "[heavy-run-lock] cannot write ${lock_dir} — running without the host-wide cap." >&2
   run_uncapped "$@"
 fi
 rm -f -- "$probe"
 
+# Every ancestor of this wrapper, nearest first. A nested call whose parent
+# holds a slot normally says so through DORKOS_HEAVY_SLOT_HELD, but turbo runs
+# its tasks in strict env mode and drops that variable, so the sidecar also
+# checks whether any slot's holder is one of these pids. `ps` asks about a pid;
+# it signals nothing. Bounded, and empty (so no nesting is seen) without ps.
+ancestors=''
+p=$PPID
+for _ in $(seq 1 64); do
+  case $p in '' | *[!0-9]* | 0 | 1) break ;; esac
+  ancestors="$ancestors $p"
+  p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+done
+
 # The sidecar. Arguments: lock dir, slots, wait bound, poll interval, the pid to
-# hold the slot for, and a one-line description of the holder for waiters.
-# It prints exactly one line on stdout — `acquired <waited>` or `timeout
-# <waited>` — and, once acquired, holds the slot until that pid is gone.
+# hold the slot for, a one-line description of the holder for waiters, the
+# ancestor pids, and 1 to detach once the slot is taken (--hold).
+# It prints exactly one line on stdout — `acquired <waited>`, `timeout
+# <waited>` or `nested 0` — and, once acquired, holds the slot until that pid
+# is gone.
 # shellcheck disable=SC2016
 holder_src='
 use strict;
 use warnings;
-use Fcntl qw(:flock O_RDWR O_CREAT);
+use Fcntl qw(:flock O_RDWR O_RDONLY O_CREAT O_NOFOLLOW);
+use POSIX ();
 use Time::HiRes qw(sleep time);
 
-my ($dir, $slots, $wait, $poll, $owner, $what) = @ARGV;
+my ($dir, $slots, $wait, $poll, $owner, $what, $ancestors, $detach) = @ARGV;
+my %ancestor = map { $_ => 1 } split " ", ($ancestors // "");
 my $start = time;
 my $deadline = $start + $wait;
 STDOUT->autoflush(1);
@@ -197,9 +271,11 @@ sub done { print STDOUT "$_[0] ", int(time - $start), "\n"; close STDOUT }
 
 sub slot_path { "$dir/slot-$_[0]" }
 
+# O_NOFOLLOW on every open (DOR-3509): a slot file that is a symlink is never
+# followed, so neither our write nor our truncate can reach another file.
 sub try_slot {
   my ($k) = @_;
-  sysopen(my $fh, slot_path($k), O_RDWR | O_CREAT, 0600) or return;
+  sysopen(my $fh, slot_path($k), O_RDWR | O_CREAT | O_NOFOLLOW, 0600) or return;
   return $fh if flock($fh, LOCK_EX | LOCK_NB);
   close $fh;
   return;
@@ -216,22 +292,28 @@ sub try_any {
 sub holders {
   my @out;
   for my $k (1 .. $slots) {
-    open(my $fh, "<", slot_path($k)) or next;
+    sysopen(my $fh, slot_path($k), O_RDONLY | O_NOFOLLOW) or next;
     if (flock($fh, LOCK_SH | LOCK_NB)) { close $fh; next }
     my $line = <$fh>;
     close $fh;
     if (defined $line && $line =~ /^(\d+) (\d+) (.*)$/) {
       my $age = int(time - $2);
-      push @out, sprintf("slot-%d: pid %s, %dm%02ds, %s", $k, $1, $age / 60, $age % 60, $3);
+      push @out, [$1, sprintf("slot-%d: pid %s, %dm%02ds, %s", $k, $1, $age / 60, $age % 60, $3)];
     } else {
-      push @out, "slot-$k: taking it now";
+      push @out, [0, "slot-$k: taking it now"];
     }
   }
   return @out;
 }
 
+# Our own ancestor already holds a slot: waiting would wait on it.
+if (grep { $ancestor{ $_->[0] } } holders()) {
+  done("nested");
+  exit 0;
+}
+
 sub say_waiting {
-  my @h = holders();
+  my @h = map { $_->[1] } holders();
   printf STDERR "[heavy-run-lock] all %d heavy-run slots on this machine are busy — queueing, up to %ds more:\n",
     $slots, int(left());
   print STDERR "                 $_\n" for @h;
@@ -243,7 +325,7 @@ unless ($fh) {
   # Line up behind the other waiters. The queue lock is held only while waiting,
   # so the head of the queue is the only one polling slots.
   my $queue;
-  sysopen($queue, "$dir/queue", O_RDWR | O_CREAT, 0600) or undef $queue;
+  sysopen($queue, "$dir/queue", O_RDWR | O_CREAT | O_NOFOLLOW, 0600) or undef $queue;
   if ($queue) {
     my $ok = eval {
       local $SIG{ALRM} = sub { die "timeout\n" };
@@ -281,6 +363,19 @@ syswrite($fh, sprintf("%d %d %s\n", $owner, int(time), $what));
 my $release = sub { truncate($fh, 0); close $fh; exit 0 };
 $SIG{TERM} = $SIG{HUP} = $release;
 done("acquired");
+if ($detach) {
+  # Held for a process that is not our parent (--hold): leave the task that
+  # started us. Its runner waits for EOF on the output we inherited, and its
+  # Ctrl-C or hangup belongs to that task, not to this slot. The slot still goes
+  # when the owner does, or on TERM.
+  $SIG{HUP} = $SIG{INT} = "IGNORE";
+  # STDOUT first: done() closed it, and fd 1 must not be reused by STDIN.
+  open(STDOUT, ">", "/dev/null");
+  open(STDIN, "<", "/dev/null");
+  open(STDERR, ">", "/dev/null");
+  POSIX::close($_) for grep { $_ != fileno($fh) } 3 .. 63;
+  POSIX::setsid();
+}
 sleep(0.2) while kill(0, $owner);
 $release->();
 '
@@ -291,7 +386,10 @@ describe="$(printf '%s' "$*" | tr '\n' ' ' | cut -c1-160) (in $PWD)"
 # shell: same stdin, same terminal, same exit code. fd 9 carries the sidecar's
 # one answer and is closed before the command runs, so the command inherits
 # nothing of the lock.
-exec 9< <(exec "$PERL" -e "$holder_src" -- "$lock_dir" "$SLOTS" "$WAIT_SECONDS" "$POLL_SECONDS" "$$" "$describe")
+owner="${hold_pid:-$$}"
+detach=0
+[ -n "$hold_pid" ] && detach=1
+exec 9< <(exec "$PERL" -e "$holder_src" -- "$lock_dir" "$SLOTS" "$WAIT_SECONDS" "$POLL_SECONDS" "$owner" "$describe" "$ancestors" "$detach")
 verdict=''
 waited=0
 read -r verdict waited <&9
@@ -304,10 +402,14 @@ case $verdict in
   timeout)
     ci_steward_note lock_timeout "$waited"
     ;;
+  nested) ;;
   *)
     echo "[heavy-run-lock] the lock helper exited without an answer — running without the host-wide cap." >&2
     ;;
 esac
+
+# --hold ran nothing: the slot, if taken, is now held for its owner.
+[ -n "$hold_pid" ] && exit 0
 
 # Exported even after a timeout: a nested call must not queue a second time
 # behind slots its own parent already gave up waiting for.

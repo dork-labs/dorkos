@@ -401,8 +401,10 @@ local:
   # is cheaper to try.
   #
   # WHAT HOLDS A SLOT, as of 2026-10-30: the pre-commit `lint` command, the
-  # root `build`, `typecheck`, `test` and `verify` scripts, and anything run
-  # through `pnpm heavy <command>`. A slot is shared by every clone, worktree
+  # root `build`, `typecheck`, `test` and `verify` scripts, anything run
+  # through `pnpm heavy <command>`, and (since DOR-3274 Phase 2) a bare `turbo`
+  # run of build, typecheck, test or lint, through the root task
+  # `//#heavy-slot` in turbo.json. A slot is shared by every clone, worktree
   # and agent of this user on the host. Fast checks are never capped, and CI
   # never waits (a runner shares its machine with nothing).
   #

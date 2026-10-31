@@ -56,8 +56,13 @@
     "ELECTRON_VERSION"
   ],
   "tasks": {
+    "//#heavy-slot": {
+      "cache": false,
+      "inputs": ["scripts/heavy-turbo-slot.mjs"],
+      "passThroughEnv": ["CI", "DORKOS_HEAVY_*"]
+    },
     "build": {
-      "dependsOn": ["generate:api-docs", "^build"],
+      "dependsOn": ["generate:api-docs", "^build", "//#heavy-slot"],
       "outputs": ["dist/**", "dist-server/**", ".next/**", "!.next/cache/**", "!.next/dev/**"],
       "env": ["NODE_ENV", "VITE_*", "!VITE_PORT", "NEXT_PUBLIC_*", "POSTHOG_*"]
     },
@@ -71,11 +76,11 @@
       "persistent": true
     },
     "test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true
     },
     "@dorkos/harness#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -98,7 +103,7 @@
       ]
     },
     "@dorkos/server#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -147,7 +152,7 @@
       ]
     },
     "@dorkos/server#typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -161,7 +166,7 @@
       ]
     },
     "@dorkos/community#build": {
-      "dependsOn": ["generate:api-docs", "^build"],
+      "dependsOn": ["generate:api-docs", "^build", "//#heavy-slot"],
       "outputs": ["dist/**", "dist-server/**"],
       "env": ["NODE_ENV", "VITE_*"],
       "inputs": [
@@ -172,7 +177,7 @@
       ]
     },
     "@dorkos/community#typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -182,7 +187,7 @@
       ]
     },
     "@dorkos/community#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -192,7 +197,7 @@
       ]
     },
     "@dorkos/test-utils#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -260,7 +265,8 @@
         "^build",
         "@dorkos/relay#build",
         "@dorkos/extension-api#build",
-        "@dorkos/keep-awake#build"
+        "@dorkos/keep-awake#build",
+        "//#heavy-slot"
       ],
       "cache": true,
       "inputs": [
@@ -276,15 +282,15 @@
       "persistent": true
     },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true
     },
     "lint": {
-      "dependsOn": ["^lint"],
+      "dependsOn": ["^lint", "//#heavy-slot"],
       "cache": true
     },
     "@dorkos/server#lint": {
-      "dependsOn": ["^lint"],
+      "dependsOn": ["^lint", "//#heavy-slot"],
       "cache": true,
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/space/package.json"]
     },

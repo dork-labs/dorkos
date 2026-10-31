@@ -53,6 +53,7 @@ for path in \
   .claude/scripts/docs-coverage-map.mjs \
   package.json \
   lefthook.yml \
+  turbo.json \
   apps/server/package.json \
   packages/mesh/package.json \
   packages/harness/src/index.ts \
@@ -89,6 +90,7 @@ for path in \
   apps/scripts/tool.sh \
   packageXjson \
   lefthook.yml.bak \
+  apps/site/turbo.json \
   contributing/INDEX.mdx \
   .github/workflows/lint.yml \
   .github/workflows/test.yml.orig \
