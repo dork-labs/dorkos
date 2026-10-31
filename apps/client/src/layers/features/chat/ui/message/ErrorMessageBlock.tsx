@@ -227,7 +227,10 @@ function ErrorCard({
     ? authHeading(runtimeLabel)
     : effectiveCategory === 'runtime_update_required' && runtimeLabel
       ? `${runtimeLabel} update required`
-      : copy?.heading;
+      : (effectiveCategory === 'execution_error' || effectiveCategory === 'model_unavailable') &&
+          runtimeLabel
+        ? `${runtimeLabel} didn’t answer this turn`
+        : copy?.heading;
   const derivedSubtext = isAuthError ? authSubtext(runtimeLabel) : copy?.subtext;
   const heading = isCreditsRefusal
     ? 'Couldn’t reach DorkOS credits'
@@ -252,6 +255,9 @@ function ErrorCard({
   // made a provider message with a trailing newline — exactly the shape the
   // `whitespace-pre-wrap` below exists for — print twice.
   const subtextText = subtext.trim();
+  // The runtime's own words read as a quotation, in mono (DOR-3167). DorkOS's
+  // own sentences, on every other path, stay in the running text's face.
+  const quotesRuntime = effectiveCategory === 'execution_error' && subtextText === runtimeText;
   // What the runtime actually said, when it is worth a line of its own.
   //
   // **A link is the test, and it is not arbitrary.** For a category whose own
@@ -297,7 +303,12 @@ function ErrorCard({
               one unbroken token has no space to wrap at — it would run out of
               the message and off a phone screen (DOR-1747). Prose is unaffected:
               the rule only applies where a word cannot otherwise fit. */}
-          <p className="text-muted-foreground mt-0.5 text-sm wrap-anywhere whitespace-pre-wrap">
+          <p
+            className={cn(
+              'text-muted-foreground mt-0.5 wrap-anywhere whitespace-pre-wrap',
+              quotesRuntime ? 'font-mono text-xs' : 'text-sm'
+            )}
+          >
             <LinkifiedText text={subtext} />
           </p>
           {runtimeMessage && (

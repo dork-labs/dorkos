@@ -461,7 +461,9 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     // the notice's own no-inline-error path is covered by turn-failed-notice.test.tsx).
     const errorBlock = page.getByTestId('error-message-block');
     await expect(errorBlock).toBeVisible({ timeout: 10_000 });
-    await expect(errorBlock.getByText('Agent stopped unexpectedly')).toBeVisible();
+    await expect(
+      errorBlock.getByText(/Agent stopped unexpectedly|didn’t answer this turn/)
+    ).toBeVisible();
     await expect(page.getByTestId('turn-failed-notice')).toHaveCount(0);
     const retry = errorBlock.getByRole('button', { name: /retry/i });
     await expect(retry).toBeVisible();
