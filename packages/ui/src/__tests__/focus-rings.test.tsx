@@ -89,12 +89,11 @@ describe('keyboard focus rings', () => {
   });
 
   // The destructive ring is the only ring an invalid control shows with focus, so it is held to
-  // the same bar. Button and Select trigger share the rule even though their widths differ.
+  // the same bar. Select trigger shares the rule even though its width differs.
   it.each([
     ...controls.filter(({ name }) =>
       ['Input', 'Textarea', 'Checkbox', 'RadioGroupItem'].includes(name)
     ),
-    { name: 'Button', ui: <Button>Save</Button>, selector: '[data-slot="button"]' },
     {
       name: 'SelectTrigger',
       ui: (
@@ -115,6 +114,13 @@ describe('keyboard focus rings', () => {
       ])
     );
     expect(classes.filter((name) => /aria-invalid:ring-.*\//.test(name))).toEqual([]);
+  });
+
+  // Button draws its ring as an outline, so an invalid one turns the outline red.
+  it('Button marks an invalid value with a solid destructive outline', () => {
+    const classes = classesOf(<Button>Save</Button>, '[data-slot="button"]');
+    expect(classes).toContain('aria-invalid:outline-dui-destructive');
+    expect(classes.filter((name) => /aria-invalid:outline-.*\//.test(name))).toEqual([]);
   });
 
   // The thumb's hover glow stays faint: at full strength a hovered thumb would look focused.

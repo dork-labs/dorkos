@@ -143,7 +143,7 @@ export function ResetDialog({ open, onOpenChange, onResetComplete }: ResetDialog
           <AlertDialogAction
             disabled={!isConfirmed || isSubmitting}
             onClick={handleReset}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60"
+            variant="destructive"
           >
             {isSubmitting ? 'Resetting…' : 'Reset all data'}
           </AlertDialogAction>

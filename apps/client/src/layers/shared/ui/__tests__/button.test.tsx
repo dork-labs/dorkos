@@ -38,18 +38,19 @@ describe('Button responsive touch-target height', () => {
     expect(getByRole('button').className).toContain('h-11');
   });
 
-  it('steps compact xs controls up by 1.25x on a phone', () => {
-    const { getByRole } = render(<Button size="xs">More</Button>);
-    expect(getByRole('button')).toHaveClass('h-7.5', 'md:h-6');
+  it('grows xs to 44px below md too: a thumb is the same size on every button', () => {
+    const { getByRole } = render(<Button size="xs">•</Button>);
+    expect(getByRole('button').className).toContain('h-11');
+    expect(getByRole('button').className).toContain('md:h-6');
   });
 
-  it('steps compact icon-xs targets and their unsized glyphs up on a phone', () => {
+  it('grows icon-xs to 44px on a phone and steps its unsized glyph up with the icon scale', () => {
     const { getByRole } = render(
       <Button size="icon-xs" aria-label="Copy">
         <svg />
       </Button>
     );
-    expect(getByRole('button')).toHaveClass('size-7.5', 'md:size-6');
+    expect(getByRole('button')).toHaveClass('size-11', 'md:size-6');
     expect(getByRole('button').className).toContain(
       "[&_svg:not([class*='size-'])]:size-(--dui-size-icon-xs)"
     );
@@ -76,14 +77,14 @@ describe('Button press and disabled feedback', () => {
     // re-ran RESPONSIVE_SIZE_CLASSES as an animation on every button on screen.
     const { getByRole } = render(<Button>Save</Button>);
     expect(getByRole('button').className).not.toContain('transition-all');
-    expect(getByRole('button').className).toContain(
-      'transition-[color,background-color,border-color,box-shadow,scale]'
-    );
+    expect(getByRole('button').className).toContain('transition-[color,background-color,scale]');
   });
 
-  it('says "not allowed" when disabled, like Input and Checkbox do', () => {
+  it('dims a disabled button and takes it out of the pointer path', () => {
     const { getByRole } = render(<Button disabled>Save</Button>);
-    expect(getByRole('button').className).toContain('disabled:cursor-not-allowed');
+    expect(getByRole('button').className).toContain('disabled:opacity-50');
+    expect(getByRole('button').className).toContain('disabled:pointer-events-none');
+    expect(getByRole('button').className).not.toContain('cursor-not-allowed');
   });
 });
 

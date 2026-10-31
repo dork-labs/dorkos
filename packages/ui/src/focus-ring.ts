@@ -6,9 +6,8 @@
  * to draw the ring colour at half strength, which measured about 1.9:1 against
  * a light page and 2.5:1 against a dark one, under the 3:1 WCAG AA asks of a
  * focus indicator and the design system's own rule. The ring colour itself
- * clears 3:1 on both themes, so the ring is simply that colour (DOR-2567 for
- * `Button`, DOR-2609 for the rest). `Button` spells the same three classes in
- * its variant table beside the `has-[:focus-visible]` twins only a button needs.
+ * clears 3:1 on both themes, so the ring is simply that colour (DOR-2609).
+ * `Button` draws its ring as an outline instead, 2px out, in its own variant table.
  *
  * **`focus-visible`, not `focus`.** A checkbox, a radio or a slider thumb that is
  * clicked or dragged takes focus without showing a ring, because the browser
@@ -17,9 +16,7 @@
  * since the caret is about to go there, and that is kept.
  *
  * No colour a control fills itself with is the ring colour, so every ring here
- * sits flush against the control. `Button`'s brand and destructive variants,
- * whose fill IS their ring's colour, are the only ones that need a gap.
- * `SelectTrigger` (1px), `Switch` and `Tabs` (2px with a gap) keep their own
+ * sits flush against the control. `SelectTrigger` (1px), `Switch` and `Tabs` (2px with a gap) keep their own
  * solid rings.
  *
  * Internal: not part of the package's public exports.

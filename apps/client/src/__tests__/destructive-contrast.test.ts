@@ -584,26 +584,31 @@ describe('solid destructive fills dim themselves in dark mode', () => {
     ).toHaveLength(1);
   });
 
-  it('the package button paints the fill token, whose dark value is dimmed and clears AA', () => {
+  it('the package button paints the fill token, whose dark values are dimmed and clear AA', () => {
     const button = readFileSync(join(UI_SRC, 'button.tsx'), 'utf8');
     expect(button).toContain('bg-dui-destructive-fill');
+    expect(button).toContain('hover:bg-dui-destructive-fill-hover');
     expect(undimmedFills(button).offenders).toEqual([]);
 
     const tokens = readFileSync(join(UI_ROOT, 'tokens.css'), 'utf8');
     const dark = section(tokens, '\n.dark {', '\n}');
-    const mix = dark.match(
-      /--dui-destructive-fill: color-mix\(in srgb, hsl\(([\d.]+) (\d+)% (\d+)%\) (\d+)%, hsl\(0 0% (\d+)%\)\)/
-    );
-    expect(mix, 'dark fill token is not the expected mix').not.toBeNull();
-    const [h, s, l, pct, ground] = mix!.slice(1).map(Number) as [
-      number,
-      number,
-      number,
-      number,
-      number,
-    ];
-    const fill = over(hslToRgb(h, s, l), pct / 100, hslToRgb(0, 0, ground));
-    expect(contrast(hslToRgb(0, 0, 98), fill)).toBeGreaterThanOrEqual(AA);
+    for (const name of ['--dui-destructive-fill', '--dui-destructive-fill-hover']) {
+      const mix = dark.match(
+        new RegExp(
+          `${name}: color-mix\\(in srgb, hsl\\(([\\d.]+) (\\d+)% (\\d+)%\\) (\\d+)%, hsl\\(0 0% (\\d+)%\\)\\)`
+        )
+      );
+      expect(mix, `${name} is not the expected mix`).not.toBeNull();
+      const [h, s, l, pct, ground] = mix!.slice(1).map(Number) as [
+        number,
+        number,
+        number,
+        number,
+        number,
+      ];
+      const fill = over(hslToRgb(h, s, l), pct / 100, hslToRgb(0, 0, ground));
+      expect(contrast(hslToRgb(0, 0, 98), fill), name).toBeGreaterThanOrEqual(AA);
+    }
   });
 
   it('every labelled solid fill in the app and package carries the dark dimming', () => {
@@ -614,9 +619,9 @@ describe('solid destructive fills dim themselves in dark mode', () => {
       inspected += result.inspected;
       offenders.push(...result.offenders.map((o) => `${relative(SRC, file)}: ${o}`));
     }
-    // button.tsx, badge.tsx, the dialogs and the composer's Stop button: a scan
-    // that inspected none of them would pass while guarding nothing.
-    expect(inspected).toBeGreaterThanOrEqual(10);
+    // The real fills paint the token now, which this scan doesn't judge. The dev
+    // showcase still spells one out: a scan that inspected none would guard nothing.
+    expect(inspected).toBeGreaterThanOrEqual(1);
     expect(offenders).toEqual([]);
   });
 });
