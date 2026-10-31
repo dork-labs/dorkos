@@ -1,60 +1,51 @@
 #!/usr/bin/env bash
-# Fixture suite for scripts/heavy-run-lock.sh, the machine-wide cap on
-# concurrent heavy local gates (DOR-2160).
+# Fixture suite for scripts/heavy-run-lock.sh, the host-wide cap on concurrent
+# heavy local runs (DOR-2160, host-wide since DOR-3274).
 #
 #   bash scripts/test-heavy-run-lock.sh
 #   CHECK=/path/to/other.sh bash scripts/test-heavy-run-lock.sh
 #
 # CHECK exists so a candidate rewrite can be run against the same fixtures, and
-# so the pre-change behaviour can be too. The behaviour this replaced is one
-# line — `exec "$@"`, no cap at all — and the concurrency cases below fail
-# against exactly that stand-in:
-#
-#   printf '#!/usr/bin/env bash\nexec "$@"\n' > /tmp/old.sh
-#   CHECK=/tmp/old.sh bash scripts/test-heavy-run-lock.sh
+# so the previous behaviour can be too. Against the per-clone mkdir lock this
+# replaced, the host-wide case, the wrapper-SIGKILL case, the nested-call case,
+# the CI case and the "says what it waits on" case all fail.
 #
 # WHY THIS SUITE IS WORTH ITS LINES
 #
-# A lock in a commit hook has two failure modes that matter more than all the
-# others, and they pull in opposite directions.
+# A lock every heavy command on the machine goes through has two failure modes
+# that matter more than all the others, and they pull in opposite directions.
 #
-# It WEDGES. Not slowly — forever, on a machine where the holder was SIGKILLed
-# by a kernel reclaiming memory and will never come back to release anything.
-# That is not a hypothetical here; it is the same machine, on the same day, that
-# killed three background processes for memory while a 22-minute pre-push died
-# on a tree it never touched.
+# It WEDGES: a holder SIGKILLed by the kernel never comes back to release
+# anything, or a nested call waits on the slot its own parent holds, and no
+# build or commit on the machine ever returns.
 #
-# Or it QUIETLY STOPS CAPPING. Every path that removes a slot is a path that can
-# remove somebody else's, and when it does, the victim keeps running with no
-# lock while its slot is handed to a third process. Nothing fails, nothing is
-# logged, and the cap degrades a notch that it never recovers. An earlier
-# version of this script did exactly that twice over — it read the gap between a
-# holder's `mkdir` and its `printf` as abandonment, and it released `$held`
-# without checking the slot was still its own.
+# Or it QUIETLY STOPS CAPPING: the slots are per clone, or a holder's death is
+# missed, and two agents each start a full sweep. Nothing fails, and the host
+# panics (2026-10-24).
 #
 # So the cases split into three groups:
 #
-#   * IT CAPS — two runs at once with one slot really do serialise. Without
-#     this the whole change is decoration.
+#   * IT CAPS — two runs with one slot serialise, across two unrelated
+#     checkouts and outside any checkout, and a waiter names what it waits on.
+#   * IT NEVER WEDGES — a SIGKILLed holder (the whole tree, or only the
+#     wrapper) frees its slot at once; a live holder is waited for and then
+#     given up on; a nested call runs straight through; CI never waits.
+#   * IT DEGRADES RATHER THAN REFUSES — no perl, an unwritable lock directory
+#     and `DORKOS_HEAVY_LOCK=0` all still run the command.
 #
-#   * IT NEVER WEDGES — a dead holder's slot is reclaimed, a live holder's
-#     slot is waited for and then given up on, and neither path ever blocks
-#     past its bound. `a SIGKILLed holder does not wedge the next run` is the
-#     case the whole design is for.
-#
-#   * IT NEVER DELETES A LIVE SLOT — a slot in the act of being acquired is not
-#     reclaimed, and a process whose slot was reclaimed and re-let does not
-#     delete the new holder's on its way out.
-#
-# Hermetic: throwaway git repos and `sleep`, never turbo or this repo's suites,
-# so it needs no `pnpm install`. Bounds are driven to the smallest values that
-# still prove what each case claims, because the thing under test is partly a
-# clock and a clock cannot be shown to fire without letting time pass.
+# Hermetic: every case gets its own DORKOS_HEAVY_LOCK_DIR, and the commands are
+# `sleep` and `echo`, never turbo or this repo's suites, so it needs no
+# `pnpm install`. Bounds are driven to the smallest values that still prove what
+# each case claims.
 
 set -uo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CHECK="${CHECK:-$repo_root/scripts/heavy-run-lock.sh}"
+
+# CI sets these, and the wrapper rightly runs uncapped under them. Every case
+# below except the CI one is about the capped path.
+unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS
 
 work=$(mktemp -d)
 # Only ever the pids this suite itself forked, by the pid, never by name
@@ -69,30 +60,38 @@ trap cleanup EXIT
 pass=0
 fail=0
 
+ok() {
+  pass=$((pass + 1))
+  printf 'ok   %s\n' "$1"
+}
+not_ok() {
+  fail=$((fail + 1))
+  printf 'FAIL %s\n' "$1"
+}
+
 check_eq() {
   local name="$1" want="$2" got="$3"
-  if [ "$want" = "$got" ]; then
-    pass=$((pass + 1))
-    printf 'ok   %s\n' "$name"
-  else
-    fail=$((fail + 1))
-    printf 'FAIL %s — wanted %q, got %q\n' "$name" "$want" "$got"
-  fi
+  if [ "$want" = "$got" ]; then ok "$name"; else not_ok "$name — wanted $want, got $got"; fi
 }
 
 check_contains() {
   local name="$1" needle="$2" hay="$3"
-  if printf '%s' "$hay" | grep -qF -- "$needle"; then
-    pass=$((pass + 1))
-    printf 'ok   %s\n' "$name"
-  else
-    fail=$((fail + 1))
-    printf 'FAIL %s — %q not found in:\n%s\n' "$name" "$needle" "$hay"
-  fi
+  if printf '%s' "$hay" | grep -qF -- "$needle"; then ok "$name"; else not_ok "$name — '$needle' not in: $hay"; fi
 }
 
-# A throwaway clone. The lock lives under the clone's git common dir, so each
-# case gets its own and cases cannot see each other's slots.
+check_lacks() {
+  local name="$1" needle="$2" hay="$3"
+  if printf '%s' "$hay" | grep -qF -- "$needle"; then not_ok "$name — '$needle' found in: $hay"; else ok "$name"; fi
+}
+
+check_le() {
+  local name="$1" most="$2" got="$3"
+  if [ "$got" -le "$most" ]; then ok "$name (${got}s)"; else not_ok "$name — took ${got}s, bound ${most}s"; fi
+}
+
+# A fresh lock directory, standing in for this host's.
+new_locks() { mktemp -d "$work/locks.XXXXXX"; }
+
 new_repo() {
   local d
   d=$(mktemp -d "$work/repo.XXXXXX")
@@ -100,297 +99,245 @@ new_repo() {
   printf '%s' "$d"
 }
 
-lock_dir() { printf '%s' "$1/.git/ci-steward/heavy-locks"; }
+# True while some process holds an exclusive lock on the slot file. Asked of the
+# kernel, which is the only thing that knows: the file itself stays either way.
+slot_locked() {
+  perl -MFcntl=:flock -e 'open(my $f, "<", $ARGV[0]) or exit 1; exit(flock($f, LOCK_SH | LOCK_NB) ? 1 : 0)' "$1/slot-$2"
+}
 
-# Every descendant of $1, plus $1, deepest first. Recursive because the tree
-# here is three deep — the suite's subshell, the wrapper, and the command it is
-# running — and a signal that stops at the wrapper does not reach the thing the
-# wrapper is waiting on. `pgrep -P` matches on parentage, never on a name
-# (Hard Rule 7).
+# Wait (bounded) until slot $2 in $1 is locked, so no case races its holder.
+await_locked() {
+  for _ in $(seq 1 30); do
+    slot_locked "$1" "$2" && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+# Every descendant of $1, plus $1, deepest first. `pgrep -P` matches on
+# parentage, never on a name (Hard Rule 7).
 tree_pids() {
   local pid=$1 child
   for child in $(pgrep -P "$pid" 2>/dev/null); do tree_pids "$child"; done
   printf '%s\n' "$pid"
 }
 
-# Signal a tree this suite forked, by pid.
 signal_tree() {
   local sig=$1 root=$2 p
   for p in $(tree_pids "$root"); do kill "-$sig" "$p" 2>/dev/null; done
 }
 
+# Start a holder of the only slot in $1, running `sleep $2`, in the background.
+# No subshell, so `$holder` is the wrapper's own pid: the one it records.
+start_holder() {
+  DORKOS_HEAVY_LOCK_DIR="$1" DORKOS_HEAVY_SLOTS=1 bash "$CHECK" sleep "$2" >/dev/null 2>&1 &
+  holder=$!
+  own_pids+=("$holder")
+  await_locked "$1" 1 || not_ok "the holder never took slot-1, so the next case proves nothing"
+}
+
 echo "== the happy path must be invisible =="
 
-# If the wrapper is not transparent when a slot is free it is not deployable,
-# whatever else it gets right: every gate on a quiet machine goes through here.
-repo=$(new_repo)
-out=$(cd "$repo" && bash "$CHECK" bash -c 'echo hello-from-the-gate; exit 0' 2>&1)
-status=$?
-check_eq 'a passing command exits 0' 0 "$status"
-check_contains 'its output is forwarded' 'hello-from-the-gate' "$out"
-
-out=$(cd "$repo" && bash "$CHECK" bash -c 'exit 7' 2>&1)
+locks=$(new_locks)
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" bash "$CHECK" bash -c 'echo hello-from-the-gate' 2>&1)
+check_eq 'a passing command exits 0' 0 "$?"
+check_eq 'its output is forwarded, and nothing else is printed' 'hello-from-the-gate' "$out"
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" bash "$CHECK" bash -c 'exit 7' 2>&1)
 check_eq 'a failing command keeps its exit code' 7 "$?"
-
-# The slot must be gone afterwards, or the second push on this machine pays for
-# the first one having finished.
-if [ -d "$(lock_dir "$repo")/slot-1" ]; then
-  fail=$((fail + 1))
-  printf 'FAIL the slot was not released after the command finished\n'
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" bash "$CHECK" --job bash -c 'echo as-a-job' 2>&1)
+check_eq '--job is not passed to the command' 'as-a-job' "$out"
+sleep 0.5
+if slot_locked "$locks" 1; then
+  not_ok 'the slot is still locked after the command finished'
 else
-  pass=$((pass + 1))
-  printf 'ok   the slot is released when the command finishes\n'
+  ok 'the slot is released when the command finishes'
 fi
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" bash "$CHECK" bash -c 'printf %s "$DORKOS_HEAVY_SLOT_HELD"' 2>&1)
+check_eq 'the command is told it holds a slot' 1 "$out"
 
 echo ""
-echo "== it must actually cap concurrency =="
+echo "== it must actually cap, host-wide =="
 
-# One slot, two runs: the second cannot start until the first is done, so the
-# two cannot overlap. Measured by total wall time rather than by peeking at the
-# lock, because overlapping is the thing being prevented, not the mechanism.
-repo=$(new_repo)
+# One slot, two runs in two UNRELATED checkouts: the per-clone lock let these
+# overlap, which is how jobs it never saw panicked the host. Measured by wall
+# time, because overlapping is the thing being prevented.
+locks=$(new_locks)
+repo_a=$(new_repo)
+repo_b=$(new_repo)
 started=$(date +%s)
-(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=30 bash "$CHECK" sleep 2) &
+(cd "$repo_a" && DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 bash "$CHECK" sleep 2) >/dev/null 2>&1 &
 one=$!
 own_pids+=("$one")
-sleep 0.3
-(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=30 bash "$CHECK" sleep 2) &
+await_locked "$locks" 1
+(cd "$repo_b" && DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 bash "$CHECK" sleep 2) >/dev/null 2>&1 &
 two=$!
 own_pids+=("$two")
 wait "$one" "$two" 2>/dev/null
 elapsed=$(($(date +%s) - started))
 if [ "$elapsed" -ge 4 ]; then
-  pass=$((pass + 1))
-  printf 'ok   two runs with one slot serialised (%ss for two 2s runs)\n' "$elapsed"
+  ok "two checkouts with one slot serialised (${elapsed}s for two 2s runs)"
 else
-  fail=$((fail + 1))
-  printf 'FAIL two runs with one slot overlapped (%ss for two 2s runs)\n' "$elapsed"
+  not_ok "two checkouts with one slot overlapped (${elapsed}s for two 2s runs)"
 fi
 
-echo ""
-echo "== a dead holder must never wedge the next run =="
+# Outside any checkout too: a build started from a scratch directory is as
+# heavy as one started in a worktree.
+locks=$(new_locks)
+start_holder "$locks" 30
+out=$(cd "$work" && DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=1 \
+  bash "$CHECK" bash -c 'echo outside-a-checkout' 2>&1)
+check_contains 'outside a checkout a run still queues behind the holder' 'busy' "$out"
+check_contains 'outside a checkout the command still runs' 'outside-a-checkout' "$out"
 
-# THE CASE THE DESIGN EXISTS FOR. A holder SIGKILLed by the kernel runs no trap
-# and releases nothing, so its slot outlives it. Every slot is taken and the
-# owner is gone: the next run must reclaim it and go, promptly, and not sit out
-# even the wait bound — so the bound here is 30s and the assertion is that it
-# finished in a small fraction of that.
-repo=$(new_repo)
-(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=30 bash "$CHECK" sleep 60) &
-holder=$!
-own_pids+=("$holder")
-# Wait for the slot to exist rather than sleeping a guessed amount.
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  [ -d "$(lock_dir "$repo")/slot-1" ] && break
-  sleep 0.3
-done
-if [ ! -d "$(lock_dir "$repo")/slot-1" ]; then
-  fail=$((fail + 1))
-  printf 'FAIL the holder never took a slot, so the reclaim case proves nothing\n'
-fi
-# SIGKILL the tree this suite started, by pid. `sleep` is a child of the
-# wrapper, and killing only the wrapper would leave a live `sleep` that the
-# reclaim could legitimately wait for.
+# A waiter says what it waits on: the holder's pid, its command and where.
+check_contains 'a waiter names the holder command' 'sleep 30' "$out"
+check_contains 'a waiter names the holder pid' "pid $holder" "$out"
+check_contains 'a waiter names where the holder runs' "(in " "$out"
 signal_tree KILL "$holder"
 wait "$holder" 2>/dev/null
-if [ ! -d "$(lock_dir "$repo")/slot-1" ]; then
-  fail=$((fail + 1))
-  printf 'FAIL the killed holder released its slot, so this is not the stale-lock case\n'
+
+echo ""
+echo "== a dead holder must free its slot at once =="
+
+# THE CASE THE DESIGN EXISTS FOR. A holder SIGKILLed by the kernel runs no trap.
+# The slot is a flock, so the kernel drops it with the process: the next run
+# must go straight through, not sit out any bound.
+locks=$(new_locks)
+start_holder "$locks" 60
+signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
+started=$(date +%s)
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=30 \
+  bash "$CHECK" bash -c 'echo got-through' 2>&1)
+status=$?
+check_eq 'the next run after a killed holder exits 0' 0 "$status"
+check_eq 'it ran without waiting or warning' 'got-through' "$out"
+check_le 'a SIGKILLed holder does not wedge the next run' 2 "$(($(date +%s) - started))"
+if [ -e "$locks/slot-1" ]; then
+  ok 'the slot file outlives its holder, and that is harmless'
 else
-  pass=$((pass + 1))
-  printf 'ok   a SIGKILLed holder really does leave its slot behind\n'
+  not_ok 'the slot file vanished, so this case did not exercise a leftover file'
 fi
 
-started=$(date +%s)
-out=$(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=30 bash "$CHECK" bash -c 'echo got-through' 2>&1)
-status=$?
-elapsed=$(($(date +%s) - started))
-check_eq 'the next run after a killed holder exits 0' 0 "$status"
-check_contains 'the next run after a killed holder really ran' 'got-through' "$out"
-if [ "$elapsed" -le 5 ]; then
-  pass=$((pass + 1))
-  printf 'ok   a SIGKILLed holder does not wedge the next run (%ss, bound was 30s)\n' "$elapsed"
-else
-  fail=$((fail + 1))
-  printf 'FAIL the next run waited %ss behind a dead holder\n' "$elapsed"
-fi
+# Only the WRAPPER killed, its command left running: the slot is the wrapper's,
+# and its sidecar must notice and let go within moments.
+locks=$(new_locks)
+start_holder "$locks" 60
+# Its `sleep 60` and sidecar outlive it; remember them by pid for cleanup.
+for p in $(tree_pids "$holder"); do own_pids+=("$p"); done
+kill -KILL "$holder" 2>/dev/null
+wait "$holder" 2>/dev/null
+released=0
+for _ in $(seq 1 20); do
+  if ! slot_locked "$locks" 1; then
+    released=1
+    break
+  fi
+  sleep 0.1
+done
+check_eq 'a SIGKILLed wrapper releases its slot within two seconds' 1 "$released"
 
 echo ""
 echo "== waiting must be bounded, and giving up must run rather than hang =="
 
-# Every slot held by something ALIVE, which is the case a reclaim must not
-# touch. Waiting is right, waiting forever is not: the bound expires and the
-# command runs uncapped, loudly. Skipping would be the other defensible choice
-# and is rejected in the script's header — a silently skipped test gate is a
-# failure this repo has already had.
-repo=$(new_repo)
-(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=30 bash "$CHECK" sleep 30) &
-holder=$!
-own_pids+=("$holder")
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  [ -d "$(lock_dir "$repo")/slot-1" ] && break
-  sleep 0.3
-done
+locks=$(new_locks)
+start_holder "$locks" 30
 started=$(date +%s)
-out=$(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=2 DORKOS_HEAVY_POLL_SECONDS=0.3 \
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=2 DORKOS_HEAVY_POLL_SECONDS=0.3 \
   bash "$CHECK" bash -c 'echo ran-anyway' 2>&1)
 status=$?
-elapsed=$(($(date +%s) - started))
 check_eq 'giving up on the wait still exits 0' 0 "$status"
 check_contains 'giving up runs the command rather than skipping it' 'ran-anyway' "$out"
 check_contains 'giving up says so' 'running anyway' "$out"
-if [ "$elapsed" -le 6 ]; then
-  pass=$((pass + 1))
-  printf 'ok   the wait is bounded (%ss against a 2s bound)\n' "$elapsed"
+check_le 'the wait is bounded against a 2s bound' 5 "$(($(date +%s) - started))"
+if slot_locked "$locks" 1; then
+  ok 'a live holder keeps its slot while a waiter gives up'
 else
-  fail=$((fail + 1))
-  printf 'FAIL the wait ran to %ss against a 2s bound\n' "$elapsed"
+  not_ok 'a waiter took a slot whose holder was still alive'
 fi
-# The live holder must still have its slot: a reclaim here would be the bug.
-if [ -d "$(lock_dir "$repo")/slot-1" ]; then
-  pass=$((pass + 1))
-  printf 'ok   a live holder keeps its slot while a waiter gives up\n'
-else
-  fail=$((fail + 1))
-  printf 'FAIL a waiter reclaimed a slot whose holder was still alive\n'
-fi
+
+# A second waiter queues behind the first and both are bounded: the queue lock
+# must not turn one waiter's bound into the next one's wedge.
+started=$(date +%s)
+(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=2 bash "$CHECK" true) >/dev/null 2>&1 &
+w1=$!
+own_pids+=("$w1")
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=2 \
+  bash "$CHECK" bash -c 'echo second-waiter-ran' 2>&1)
+wait "$w1" 2>/dev/null
+check_contains 'a second queued waiter still runs' 'second-waiter-ran' "$out"
+check_le 'two queued waiters are each bounded' 5 "$(($(date +%s) - started))"
+
+# When the holder finishes, the waiter takes the slot rather than timing out.
 signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
+start_holder "$locks" 1
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 DORKOS_HEAVY_POLL_SECONDS=0.2 \
+  bash "$CHECK" bash -c 'echo took-the-freed-slot' 2>&1)
+check_contains 'a waiter takes a slot as soon as it frees' 'took-the-freed-slot' "$out"
+check_lacks 'and does not report giving up' 'running anyway' "$out"
 wait "$holder" 2>/dev/null
 
 echo ""
 echo "== an interrupted run must release its slot =="
 
-# Ctrl-C is an everyday way a gate ends, and the pre-push watchdog stopping a
-# run over budget is the other. Without the traps the slot survives until
-# MAX_HOLD_SECONDS and every other agent on the machine pays for it.
-#
-# The signal goes to the TREE, which is what both of those really do — a Ctrl-C
-# reaches the whole foreground process group and the watchdog walks the process
-# tree — and it is what the trap needs, because a trap set in a script runs only
-# once its foreground command has returned. Signalling this pid alone would
-# release the slot when `sleep 30` finished, 30 seconds later; that case is
-# covered by the reclaim above rather than by the trap, and the script's header
-# says so.
-repo=$(new_repo)
-(cd "$repo" && bash "$CHECK" sleep 30) &
-holder=$!
-own_pids+=("$holder")
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  [ -d "$(lock_dir "$repo")/slot-1" ] && break
-  sleep 0.3
-done
+locks=$(new_locks)
+start_holder "$locks" 30
 signal_tree TERM "$holder"
 wait "$holder" 2>/dev/null
 sleep 0.5
-if [ -d "$(lock_dir "$repo")/slot-1" ]; then
-  fail=$((fail + 1))
-  printf 'FAIL a TERMed run left its slot behind\n'
-else
-  pass=$((pass + 1))
-  printf 'ok   a TERMed run releases its slot\n'
-fi
+if slot_locked "$locks" 1; then not_ok 'a TERMed run left its slot locked'; else ok 'a TERMed run releases its slot'; fi
 
 echo ""
-echo "== it must never delete a slot that is not its own =="
+echo "== it must never deadlock on itself or block CI =="
 
-# BUG 1, REPRODUCED: an acquire in progress read as abandoned.
-#
-# Taking a slot is two steps — `mkdir` publishes it, the `printf` that writes
-# `owner` lands a moment later. A slot that exists with no owner file is
-# therefore either a holder mid-acquire or a holder that died between the two.
-# Treating it as the second deleted live runs; the grace on the directory's own
-# mtime is what tells them apart, and this hand-builds the ambiguous state.
-repo=$(new_repo)
-mkdir -p "$(lock_dir "$repo")/slot-1"
-out=$(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=2 DORKOS_HEAVY_POLL_SECONDS=0.3 \
-  bash "$CHECK" bash -c 'echo waited-it-out' 2>&1)
-check_contains 'a fresh owner-less slot is not reclaimed' 'running anyway' "$out"
-if [ -d "$(lock_dir "$repo")/slot-1" ]; then
-  pass=$((pass + 1))
-  printf 'ok   an acquire in progress survives another process polling for a slot\n'
-else
-  fail=$((fail + 1))
-  printf 'FAIL a slot with no owner file yet was deleted — that is a live acquire\n'
-fi
+# A nested call — `pnpm verify` running lint, a build inside a test script —
+# must not wait on the slot its own parent holds. With one slot this would hang
+# to the bound and then run uncapped; it must run at once.
+locks=$(new_locks)
+started=$(date +%s)
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 \
+  bash "$CHECK" bash "$CHECK" bash -c 'echo nested-ran' 2>&1)
+check_eq 'a nested call runs straight through' 'nested-ran' "$out"
+check_le 'a nested call does not wait on its parent' 2 "$(($(date +%s) - started))"
 
-# The same slot, backdated past the grace, must now be reclaimed: the guard has
-# to distinguish the two, not simply refuse to ever reclaim an owner-less slot.
-# Backdated two hours so the test never depends on the grace's exact value.
-touch -t "$(date -v-2H '+%Y%m%d%H%M' 2>/dev/null || date -d '2 hours ago' '+%Y%m%d%H%M')" \
-  "$(lock_dir "$repo")/slot-1" 2>/dev/null
-out=$(cd "$repo" && DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=2 DORKOS_HEAVY_POLL_SECONDS=0.3 \
-  bash "$CHECK" bash -c 'echo took-the-abandoned-slot' 2>&1)
-check_contains 'an old owner-less slot IS reclaimed' 'took-the-abandoned-slot' "$out"
-if printf '%s' "$out" | grep -qF 'running anyway'; then
-  fail=$((fail + 1))
-  printf 'FAIL an abandoned owner-less slot was never reclaimed; the grace is now a leak\n'
-else
-  pass=$((pass + 1))
-  printf 'ok   an abandoned owner-less slot is reclaimed rather than waited out\n'
-fi
-
-# BUG 2, REPRODUCED: releasing a slot that has changed hands.
-#
-# A process whose slot was reclaimed while it ran must not delete the new
-# holder's slot on the way out. Staged directly: take a slot, overwrite its
-# owner with another pid (which is what a reclaim-and-re-let leaves behind), and
-# let the original exit.
-repo=$(new_repo)
-(
-  cd "$repo" && bash "$CHECK" bash -c '
-    printf "999999 1\n" > "$0/slot-1/owner"
-    exit 0
-  ' "$(lock_dir "$repo")"
-) >/dev/null 2>&1
-if [ -d "$(lock_dir "$repo")/slot-1" ]; then
-  pass=$((pass + 1))
-  printf 'ok   a slot that changed hands is not deleted by its previous owner\n'
-else
-  fail=$((fail + 1))
-  printf 'FAIL release deleted a slot owned by another process; the cap silently degrades\n'
-fi
+locks=$(new_locks)
+start_holder "$locks" 30
+started=$(date +%s)
+out=$(CI=true DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 \
+  bash "$CHECK" bash -c 'echo ci-ran' 2>&1)
+check_eq 'under CI the command runs with no lock message' 'ci-ran' "$out"
+check_le 'under CI nothing waits' 2 "$(($(date +%s) - started))"
+signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
 
 echo ""
 echo "== it must degrade rather than refuse =="
 
-# Outside a git checkout there is nothing every worktree shares, so there is no
-# machine-wide cap to enforce. This wraps a GATE: refusing would turn a missing
-# lock directory into a failed push.
-out=$(cd "$work" && bash "$CHECK" bash -c 'echo no-repo-still-runs' 2>&1)
-check_eq 'outside a checkout the command still runs' 0 "$?"
-check_contains 'outside a checkout the output is still forwarded' 'no-repo-still-runs' "$out"
+locks=$(new_locks)
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOCK=0 bash "$CHECK" bash -c 'echo cap-switched-off' 2>&1)
+check_eq 'the cap can be switched off for one run' 'cap-switched-off' "$out"
 
-repo=$(new_repo)
-out=$(cd "$repo" && DORKOS_HEAVY_LOCK=0 bash "$CHECK" bash -c 'echo cap-switched-off' 2>&1)
-check_eq 'the cap can be switched off for one run' 0 "$?"
-check_contains 'switched off, the command still runs' 'cap-switched-off' "$out"
-
-out=$(cd "$repo" && bash "$CHECK" 2>&1)
+out=$(bash "$CHECK" 2>&1)
 check_eq 'no command at all is a usage error, not a pass' 2 "$?"
 
-# An existing but UNWRITABLE lock root satisfies `mkdir -p`, so existence alone
-# reads as success while every slot acquire fails. Without the writability probe
-# the acquire loop waits out its whole bound and then reports that all slots are
-# busy when none of them is — every gate on the machine paying the full wait,
-# forever, for a message naming the wrong problem.
-repo=$(new_repo)
-mkdir -p "$(lock_dir "$repo")"
-chmod 500 "$(lock_dir "$repo")"
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_PERL="$work/no-such-perl" bash "$CHECK" bash -c 'echo ran-without-perl' 2>&1)
+check_eq 'without perl the command still runs' 0 "$?"
+check_contains 'without perl it says so' 'no perl' "$out"
+check_contains 'without perl the output is forwarded' 'ran-without-perl' "$out"
+
+# An existing but UNWRITABLE lock directory satisfies `mkdir -p`; without the
+# probe every run would wait out its bound and blame busy slots.
+locks=$(new_locks)
+chmod 500 "$locks"
 started=$(date +%s)
-out=$(cd "$repo" && DORKOS_HEAVY_WAIT_SECONDS=30 bash "$CHECK" bash -c 'echo ran-despite-unwritable-root' 2>&1)
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_WAIT_SECONDS=30 bash "$CHECK" bash -c 'echo ran-despite-unwritable-dir' 2>&1)
 status=$?
-elapsed=$(($(date +%s) - started))
-chmod 700 "$(lock_dir "$repo")"
-check_eq 'an unwritable lock root still runs the command' 0 "$status"
-check_contains 'an unwritable lock root does not swallow the output' 'ran-despite-unwritable-root' "$out"
-check_contains 'an unwritable lock root says what is wrong' 'cannot write' "$out"
-if [ "$elapsed" -le 3 ]; then
-  pass=$((pass + 1))
-  printf 'ok   an unwritable lock root costs no wait at all (%ss of a 30s bound)\n' "$elapsed"
-else
-  fail=$((fail + 1))
-  printf 'FAIL an unwritable lock root cost %ss; every gate would pay that\n' "$elapsed"
-fi
+chmod 700 "$locks"
+check_eq 'an unwritable lock directory still runs the command' 0 "$status"
+check_contains 'an unwritable lock directory does not swallow the output' 'ran-despite-unwritable-dir' "$out"
+check_contains 'an unwritable lock directory says what is wrong' 'cannot write' "$out"
+check_le 'an unwritable lock directory costs no wait' 2 "$(($(date +%s) - started))"
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"

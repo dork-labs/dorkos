@@ -257,8 +257,8 @@ export const ConfigSchema = z
         heavy_run_slots: z.number().int().positive(),
         /** How long a heavy gate waits for a slot before running anyway, loudly. */
         heavy_lock_wait_seconds: z.number().int().positive(),
-        /** A slot held longer than this is reclaimable even from a live owner. */
-        heavy_lock_max_hold_seconds: z.number().int().positive(),
+        /** How long a heavy `--job` (build, typecheck, full tests) waits before running anyway. */
+        heavy_job_wait_seconds: z.number().int().positive(),
       })
       .strict(),
   })
