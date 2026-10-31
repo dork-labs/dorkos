@@ -149,6 +149,12 @@ export interface MentionPillProps extends Omit<React.ComponentProps<'span'>, 'co
    * with the visible word `cc` before the name, so shade is never the only signal.
    */
   cc?: boolean;
+  /**
+   * Draw the visible word `cc` on a cc pill. Defaults to true. The caller turns
+   * it off when the text just before the pill already says "cc", so a typed
+   * "cc @orrin" reads "cc Orrin", not "cc cc Orrin".
+   */
+  ccWord?: boolean;
 }
 
 /**
@@ -184,6 +190,7 @@ function MentionPill({
   resolved,
   interactive,
   cc,
+  ccWord = true,
   className,
   ...props
 }: MentionPillProps) {
@@ -203,7 +210,7 @@ function MentionPill({
         title={ccTitle(name)}
         aria-label={`cc @${name}`}
       >
-        cc{' '}
+        {ccWord && 'cc '}
         {kind === 'agent' && (
           <Bot aria-hidden className="mr-0.5 inline-block size-[0.85em] align-[-0.15em]" />
         )}

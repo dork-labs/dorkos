@@ -144,6 +144,13 @@ describe('MentionPill as a cc (DOR-3401)', () => {
     expect(pill.style.getPropertyValue('--identity-color')).toBe('');
   });
 
+  it('leaves out its own cc when the writer already typed one', () => {
+    render(<MentionPill kind="agent" label="Orrin" handle="orrin" resolved cc ccWord={false} />);
+    const pill = screen.getByLabelText('cc @orrin');
+    expect(pill).toHaveTextContent(/^Orrin$/);
+    expect(pill.querySelector('svg')).not.toBeNull();
+  });
+
   it('labels a person cc by handle too', () => {
     render(<MentionPill kind="human" label="Kai" handle="kai" resolved cc />);
     expect(screen.getByLabelText('cc @kai')).toHaveTextContent(/^cc @Kai$/);

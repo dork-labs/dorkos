@@ -350,3 +350,66 @@ describe('RoomMessage — a drawn mention follows the roster', () => {
     expect(content()).toHaveTextContent('cc definitely bo, thanks');
   });
 });
+
+describe('RoomMessage — a cc the writer typed (C10)', () => {
+  /** A cc span: the same span, marked the way the server marks a copy. */
+  const ccSpan = (text: string, needle: string, authorId: string): MentionSpan => ({
+    ...spanFor(text, needle, authorId),
+    cc: true,
+  });
+  const WITH_ORRIN = new Map<string, RosterAuthor>([
+    ...AUTHORS,
+    [
+      'orrin',
+      { id: 'orrin', kind: 'agent', displayName: 'Orrin', handle: 'orrin', origin: 'local' },
+    ],
+  ]);
+
+  it('reads "cc @orrin" as "cc Orrin", never "cc cc Orrin"', () => {
+    const text = '@bo take a look. cc @orrin';
+    renderRow(
+      entry(text, [spanFor(text, '@bo', 'bo'), ccSpan(text, '@orrin', 'orrin')]),
+      WITH_ORRIN
+    );
+
+    const pill = content().querySelector('[data-cc="true"]');
+    expect(pill).toHaveTextContent(/^Orrin$/);
+    expect(pill?.querySelector('svg')).not.toBeNull();
+    expect(content()).toHaveTextContent('cc Orrin');
+    expect(content()).not.toHaveTextContent(/cc\s+cc/i);
+  });
+
+  it('ignores case and space before the pill, and pills in a row keep their own cc', () => {
+    const text = '@ana see this, CC   @bo @orrin';
+    renderRow(
+      entry(text, [
+        spanFor(text, '@ana', 'ana'),
+        ccSpan(text, '@bo', 'bo'),
+        ccSpan(text, '@orrin', 'orrin'),
+      ]),
+      WITH_ORRIN
+    );
+
+    const [bo, orrin] = Array.from(content().querySelectorAll('[data-cc="true"]'));
+    expect(bo).toHaveTextContent(/^Bo$/);
+    expect(orrin).toHaveTextContent(/^cc Orrin$/);
+  });
+
+  it('keeps the pill’s own cc when no "cc" was typed before it', () => {
+    const text = '@bo take a look, and @orrin too';
+    renderRow(
+      entry(text, [spanFor(text, '@bo', 'bo'), ccSpan(text, '@orrin', 'orrin')]),
+      WITH_ORRIN
+    );
+    expect(content().querySelector('[data-cc="true"]')).toHaveTextContent(/^cc Orrin$/);
+  });
+
+  it('does not treat a word ending in cc as the word', () => {
+    const text = '@bo the occ @orrin';
+    renderRow(
+      entry(text, [spanFor(text, '@bo', 'bo'), ccSpan(text, '@orrin', 'orrin')]),
+      WITH_ORRIN
+    );
+    expect(content().querySelector('[data-cc="true"]')).toHaveTextContent(/^cc Orrin$/);
+  });
+});
