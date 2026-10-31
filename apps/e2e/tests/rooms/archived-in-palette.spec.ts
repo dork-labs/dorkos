@@ -67,8 +67,10 @@ test.describe('Archived rows in the command palette @smoke', () => {
     // 2. The whole announced name, not a substring: `toContainText` would be
     //    satisfied by "#slug Archived in #slug", which is the DOR-583 shape.
     //    The `#` is drawn as a mark, so the visible run must not repeat it.
-    await expect(shutRow).toHaveAccessibleName(`#${shutSlug} Archived 3 unread`);
-    expect(await visibleText(shutRow)).toBe(`${shutSlug} Archived 3`);
+    //    No count: its unread posts mention nobody, and a palette row numbers
+    //    only what was aimed at you.
+    await expect(shutRow).toHaveAccessibleName(`#${shutSlug} Archived`);
+    expect(await visibleText(shutRow)).toBe(`${shutSlug} Archived`);
 
     // 3. Under the live channel, though it is both fresher and unread.
     const [shutTop, liveTop] = await shutRow.evaluate(
