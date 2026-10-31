@@ -248,9 +248,14 @@ IDLE_HOURS=${DORKOS_JANITOR_IDLE_HOURS:-24}
 
 # Newest mtime of the worktree root and its git admin dir, in epoch seconds.
 # BSD and GNU stat disagree on flags, so try both; an unreadable timestamp means
-# "assume active", which is the KEEP direction.
+# "assume active", which is the KEEP direction. GNU goes first: GNU's `stat -f`
+# is not an error but "filesystem status", so trying BSD's form first printed a
+# paragraph of text where a number belonged and crashed the idle check on Linux.
+# Anything that is not a plain number is treated as unreadable.
 mtime_of() {
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo ""
+  local t
+  t=$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)
+  [[ "$t" =~ ^[0-9]+$ ]] && echo "$t" || echo ""
 }
 is_recently_active() {
   local wt=$1 gitdir newest now t
