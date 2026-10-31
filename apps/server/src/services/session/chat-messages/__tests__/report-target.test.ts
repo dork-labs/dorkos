@@ -2,13 +2,14 @@
  * Who a spin-off reports to, past account moves on either side (spec
  * `spin-off-chats` §5).
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   SessionStartedByStore,
   setSessionStartedByStore,
 } from '../../origin/session-started-by-store.js';
-import { reportTargetOf } from '../chat-message-wiring.js';
+import { setRoomSeatReports } from '../chat-message-current.js';
+import { deliverToRoomSeat, reportTargetOf } from '../chat-message-wiring.js';
 
 let store: SessionStartedByStore;
 let clock = 0;
@@ -63,5 +64,28 @@ describe('reportTargetOf', () => {
     start('child', 'parent');
     start('parent-on-b', 'parent', { carried: true });
     expect(reportTargetOf('child')).toEqual({ parentSessionId: 'parent-on-b' });
+  });
+});
+
+describe('deliverToRoomSeat (DOR-3488)', () => {
+  const report = { fromSessionId: 'child', fromAgentPath: '/agents/bo', text: 'Finished.' };
+  afterEach(() => setRoomSeatReports(undefined));
+
+  it('hands a report for a room’s seat to the rooms', async () => {
+    const deliver = vi.fn(() => true);
+    setRoomSeatReports({
+      seatOf: (id) => (id === 'seat' ? { roomId: 'r', authorId: 'a' } : null),
+      deliver,
+    });
+    await expect(deliverToRoomSeat('seat', report)).resolves.toBe(true);
+    expect(deliver).toHaveBeenCalledWith('seat', expect.objectContaining(report));
+  });
+
+  it('is false for a chat that is no room’s seat, or before the rooms boot', async () => {
+    await expect(deliverToRoomSeat('seat', report)).resolves.toBe(false);
+    const deliver = vi.fn(() => true);
+    setRoomSeatReports({ seatOf: () => null, deliver });
+    await expect(deliverToRoomSeat('plain-chat', report)).resolves.toBe(false);
+    expect(deliver).not.toHaveBeenCalled();
   });
 });
