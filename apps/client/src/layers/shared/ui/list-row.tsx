@@ -40,8 +40,16 @@ export interface ListRowProps {
   meta?: ReactNode;
   /** One more line, when it earns it. Makes the row 48 / 60. */
   secondLine?: ReactNode;
-  /** Read-only state at the end: a count pill, a status word, a chevron. Always shown. */
+  /**
+   * Read-only state at the end: a count pill, a status word, a chevron. Always
+   * shown. Under a 24rem row it moves to the start of the subtitle line.
+   */
   trailing?: ReactNode;
+  /**
+   * The title is authored state copy — an empty, filtered or failed list — and
+   * wraps rather than truncating. On a narrow row its `trailing` moves under it.
+   */
+  wrapTitle?: boolean;
   /**
    * Up to two ghost icon buttons. Rendered as siblings of the row's own
    * button, never inside it, and hidden until the row is hovered or focused
@@ -74,6 +82,17 @@ export interface ListRowProps {
   children?: ReactNode;
 }
 
+const META_CLASS = 'text-muted-foreground text-xs font-normal tabular-nums';
+
+/** The " · " between the facts on a subtitle line. */
+function Separator() {
+  return (
+    <span aria-hidden className="text-faint px-1">
+      ·
+    </span>
+  );
+}
+
 const LEADING = {
   sm: 'size-5 max-md:size-6',
   lg: 'size-8 max-md:size-10',
@@ -93,6 +112,7 @@ export function ListRow({
   meta,
   secondLine,
   trailing,
+  wrapTitle,
   actions,
   menu,
   menuLabel,
@@ -115,6 +135,11 @@ export function ListRow({
   const plainTitle = titleText ?? (typeof title === 'string' ? title : '');
   const label = plainTitle ? composeRowLabel(who, plainTitle) : undefined;
   const hasMenu = menu !== undefined && menu.length > 0;
+  // On a narrow row the trailing state moves under the title. For state copy
+  // ("Couldn't load schedules.") that is its way out ("Try again"), which then
+  // sits under the words rather than squeezing them into a sliver.
+  const movesTrailing = trailing !== undefined && trailing !== null;
+  const hasSubtitle = twoLines || Boolean(meta) || movesTrailing;
 
   const body = (
     <>
@@ -137,33 +162,49 @@ export function ListRow({
               {who} <span className="text-faint">{ROW_SESSION_MARKER}</span>
             </span>
           )}
-          <span data-slot="list-row-title" className={ROW_TITLE_CLASS}>
+          <span
+            data-slot="list-row-title"
+            data-wrap={wrapTitle || undefined}
+            className={wrapTitle ? 'min-w-0 flex-auto whitespace-normal' : ROW_TITLE_CLASS}
+          >
             {title}
           </span>
           {meta && (
-            // Inline while the row has room for it; under 24rem it drops to the
-            // second line, so a name truncates instead of wrapping a word a line.
             <span
               data-slot="list-row-meta"
-              className={cn(
-                ROW_TRAILING_CLASS,
-                'text-muted-foreground hidden text-xs font-normal tabular-nums @min-[24rem]/row:inline'
-              )}
+              className={cn(ROW_TRAILING_CLASS, META_CLASS, 'hidden @min-[24rem]/row:inline')}
             >
               {meta}
             </span>
           )}
         </span>
-        {(twoLines || meta) && (
+        {hasSubtitle && (
+          // The subtitle line. Under a 24rem row (a phone) the meta and the
+          // trailing state move here, ahead of the second line and joined by
+          // " · ", so the title gets the row's whole width instead of "Morni…".
           <span
+            data-slot="list-row-subtitle"
             className={cn(
-              'text-muted-foreground flex min-w-0 gap-1.5 text-xs font-normal',
+              'text-muted-foreground flex min-w-0 items-baseline text-xs font-normal',
               !twoLines && '@min-[24rem]/row:hidden'
             )}
           >
             {meta && (
-              <span className={cn(ROW_TRAILING_CLASS, 'tabular-nums @min-[24rem]/row:hidden')}>
+              <span
+                data-slot="list-row-subtitle-meta"
+                className={cn(ROW_TRAILING_CLASS, 'tabular-nums @min-[24rem]/row:hidden')}
+              >
                 {meta}
+                {(movesTrailing || twoLines) && <Separator />}
+              </span>
+            )}
+            {movesTrailing && (
+              <span
+                data-slot="list-row-subtitle-trailing"
+                className={cn(ROW_TRAILING_CLASS, '@min-[24rem]/row:hidden')}
+              >
+                {trailing}
+                {twoLines && <Separator />}
               </span>
             )}
             {twoLines && <span className="min-w-0 truncate">{secondLine}</span>}
@@ -173,7 +214,11 @@ export function ListRow({
       {trailing && (
         <span
           data-slot="list-row-trailing"
-          className={cn(ROW_TRAILING_CLASS, 'flex items-center gap-1.5 text-xs font-normal')}
+          className={cn(
+            ROW_TRAILING_CLASS,
+            'flex items-center gap-1.5 text-xs font-normal',
+            movesTrailing && 'hidden @min-[24rem]/row:flex'
+          )}
         >
           {trailing}
         </span>
@@ -258,6 +303,13 @@ export function ListRow({
           className={cn(
             'flex flex-none items-center gap-0.5 pr-1',
             'opacity-0 transition-opacity duration-100 ease-in',
+            // A wide row reserves the actions' space so the title never
+            // reflows on hover. A narrow one can't afford it: the actions
+            // leave the flow at rest and come back on hover, focus or an open
+            // menu, so the title gets the width (always shown on touch).
+            '@max-[24rem]/row:hidden @max-[24rem]/row:group-hover/row:flex',
+            '@max-[24rem]/row:group-focus-within/row:flex @max-[24rem]/row:group-has-[[data-state=open]]/row:flex',
+            '@max-[24rem]/row:pointer-coarse:flex',
             'group-hover/row:opacity-100 group-hover/row:duration-150 group-hover/row:ease-out',
             'group-focus-within/row:opacity-100 group-has-[[data-state=open]]/row:opacity-100',
             'motion-reduce:transition-none pointer-coarse:opacity-100'

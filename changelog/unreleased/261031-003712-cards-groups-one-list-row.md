@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): borderless cards, settings groups without rules, and one list row'
+  - 'fix(client): on a phone a list row gives its title the width, and state copy wraps'
 ---
 
 ### Changed
