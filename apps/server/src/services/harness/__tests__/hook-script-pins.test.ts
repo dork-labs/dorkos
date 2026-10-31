@@ -9,7 +9,7 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -49,6 +49,7 @@ import {
   describeHookProjectionCapability,
   summariseHookProjection,
 } from '../hook-approval.js';
+import { describeHookScriptPins } from '../hook-script-pins.js';
 import {
   hookApprovalEntry,
   recordHookApproval,
@@ -224,13 +225,38 @@ describe('a yes to package hooks is pinned to the files they run (DOR-3403)', ()
     expect(wouldAsk()).toBe(false);
   });
 
-  it('the card names the file and a short hash of it', () => {
+  it('the card names the file and a short fingerprint of it', () => {
     writePackage(pluginDir());
     const req = request();
     const hash = req.scripts?.[0]?.[1] ?? '';
     expect(summariseHookProjection(req)).toContain(
-      `.dork/plugins/acme/hooks/loop.mjs (sha256 ${hash.slice(0, 12)})`
+      `.dork/plugins/acme/hooks/loop.mjs (fingerprint ${hash.slice(0, 12)})`
     );
+  });
+
+  it('says the other states in words, never a raw marker (DOR-3340)', () => {
+    expect(
+      describeHookScriptPins([
+        ['a.sh', 'absent'],
+        ['b', 'dir'],
+        ['c.sh', 'unreadable'],
+        ['d.bin', 'large:9000000:1:2:3'],
+      ])
+    ).toBe("a.sh (not there yet), b (a folder), c.sh (can't be read), d.bin (large file)");
+  });
+
+  it('pins a file over 8 MB by size, both times and inode, so a restored mtime still counts', () => {
+    writePackage(pluginDir());
+    const big = join(pluginDir(), 'hooks', 'loop.mjs');
+    writeFileSync(big, Buffer.alloc(8 * 1024 * 1024 + 1, 1));
+    const before = request().scripts?.[0]?.[1] ?? '';
+    expect(before).toMatch(/^large:\d+:[\d.]+:[\d.]+:\d+$/);
+
+    // Same size, same modification time: only ctime (or the inode) moves.
+    const { mtime } = statSync(big);
+    writeFileSync(big, Buffer.alloc(8 * 1024 * 1024 + 1, 2));
+    utimesSync(big, mtime, mtime);
+    expect(request().scripts?.[0]?.[1]).not.toBe(before);
   });
 
   it('hooks that name no file keep the entry they always had', () => {
