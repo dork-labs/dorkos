@@ -68,6 +68,7 @@ describe('resolveMessageAuthor', () => {
       kind: 'human',
       id: 'human',
       displayName: 'You',
+      isSelf: true,
     });
   });
 
@@ -89,7 +90,7 @@ describe('resolveMessageAuthor', () => {
   it('keeps a slash-command message with the human who typed it', () => {
     expect(
       resolveMessageAuthor(msg({ role: 'user', messageType: 'command' }), { humanName: 'Dorian' })
-    ).toEqual({ kind: 'human', id: 'human', displayName: 'Dorian' });
+    ).toEqual({ kind: 'human', id: 'human', displayName: 'Dorian', isSelf: true });
   });
 
   it('resolves local command output to the system, not the human', () => {

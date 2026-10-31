@@ -37,6 +37,7 @@ import {
 import {
   isFolderConfigRefused,
   lastApprovedParts,
+  pinPersonCreatedAgent,
   runtimeUnlessHeld,
   withPersonRepin,
   withPersonRepinAtHome,
@@ -468,6 +469,41 @@ describe('the runtime an agent file names (M3)', () => {
       mcpServers: [{ name: 'evil', command: 'sh' }],
     });
     expect(runtimeUnlessHeld(manifest(), home)).toBeUndefined();
+  });
+
+  describe('an agent a person just created (DOR-3459)', () => {
+    beforeEach(() => {
+      store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+    });
+
+    it.each(['codex', 'opencode'])('runs on %s, the runtime its person picked', (runtime) => {
+      write('.dork/agent.json', { id: AGENT.id, runtime, mcpServers: [] });
+      // Unpinned, a non-default runtime alone makes the home "not inert": held.
+      expect(runtimeUnlessHeld(manifest(), home)).toBeUndefined();
+      expect(pinPersonCreatedAgent(AGENT.id, home)).toBe(true);
+      expect(runtimeUnlessHeld(manifest(), home)).toBe(runtime);
+    });
+
+    it('stays held when its home brings something that runs', async () => {
+      write('.claude/settings.json', { hooks: HOOK });
+      write('.dork/agent.json', { id: AGENT.id, runtime: 'codex', mcpServers: [] });
+      expect(pinPersonCreatedAgent(AGENT.id, home)).toBe(false);
+      expect(runtimeUnlessHeld(manifest(), home)).toBeUndefined();
+    });
+
+    it('stays held when its agent file names a server or an account', () => {
+      write('.dork/agent.json', { id: AGENT.id, runtime: 'codex', account: 'work' });
+      expect(pinPersonCreatedAgent(AGENT.id, home)).toBe(false);
+      expect(runtimeUnlessHeld(manifest(), home)).toBeUndefined();
+    });
+
+    it('never replaces a record DorkOS already holds', async () => {
+      write('.dork/agent.json', { id: AGENT.id, runtime: 'claude-code', mcpServers: [] });
+      await ownTurn(); // pinned on first use
+      write('.dork/agent.json', { id: AGENT.id, runtime: 'codex', mcpServers: [] });
+      expect(pinPersonCreatedAgent(AGENT.id, home)).toBe(false);
+      expect(runtimeUnlessHeld(manifest(), home)).toBeUndefined();
+    });
   });
 });
 
