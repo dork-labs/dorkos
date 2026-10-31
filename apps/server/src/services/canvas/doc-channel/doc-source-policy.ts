@@ -19,6 +19,27 @@ export function docInstallationOwner(installationId: string): ConnectorOwnerAuth
   const owner = readOwnerAccount();
   return owner ? { kind: 'user', userId: owner.id } : { kind: 'local_install', installationId };
 }
+/**
+ * Whether `recorded` names this installation (`local_install` with its id).
+ *
+ * The connector runtime mints every agent-turn proof with this owner, whether
+ * or not an owner account exists, so an agent-turn proof is checked against it
+ * rather than against the account: without that, an agent could never
+ * configure or approve a document route once its person had created an account.
+ *
+ * @param recorded - The owner a server-minted proof, or its persisted copy, carries.
+ * @param installationId - This server's installation id.
+ */
+export function isInstallationAuthority(recorded: unknown, installationId: string): boolean {
+  return (
+    !!recorded &&
+    typeof recorded === 'object' &&
+    'kind' in recorded &&
+    recorded.kind === 'local_install' &&
+    'installationId' in recorded &&
+    recorded.installationId === installationId
+  );
+}
 /** Exact persisted/current owner equality, shared by HTTP and original write authority. */
 export function sameDocOwnerAuthority(recorded: unknown, owner: ConnectorOwnerAuthority): boolean {
   if (!recorded || typeof recorded !== 'object' || !('kind' in recorded)) return false;

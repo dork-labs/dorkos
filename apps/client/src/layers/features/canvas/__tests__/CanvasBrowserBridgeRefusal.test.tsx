@@ -44,6 +44,16 @@ vi.mock('@/layers/shared/model', () => {
   };
 });
 vi.mock('../lib/probe-direct', () => ({ probeDirect: async () => true }));
+// The transport above is rebuilt on every render, and the page's document
+// channel keys on transport identity, so it is inert here, as in the other
+// browser suites. Its real composition is covered in CanvasBrowserContentFrame.
+vi.mock('../model/use-doc-frame-channel', () => ({
+  useDocFrameChannel: (params: { resolvedSource: string | null }) => ({
+    frameSource: params.resolvedSource,
+    requiresReload: false,
+    noteFrameLoaded: () => {},
+  }),
+}));
 
 import { CanvasBrowserContent } from '../ui/CanvasBrowserContent';
 

@@ -7,6 +7,7 @@ import type {
   BackgroundTaskStatus,
   CompactMetadata,
 } from '@dorkos/shared/types';
+import type { PromptSource } from '@dorkos/shared/chat-messages';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 import { QuestionItemSchema } from '@dorkos/shared/schemas';
 import { CONTEXT_TAG, stripInjectedTagBlocks } from '@dorkos/shared/additional-context';
@@ -175,6 +176,21 @@ function relayRecordIsFromAPerson(text: string): boolean {
   // `channel` is a person writing from Telegram/Slack/a webhook. Everything
   // else the classifier names — agent, task, external — is not a person.
   return origin === undefined || origin === 'channel';
+}
+
+/**
+ * Where a `<relay_context>` record came from, or null when it is the person's
+ * own console (DOR-3019).
+ *
+ * @param text - Raw text of a record beginning with the relay block.
+ */
+function relayPromptSource(text: string): PromptSource | null {
+  const { origin, originLabel } = classifyOrigin(text);
+  if (origin === undefined) return null;
+  const label = originLabel ? { label: originLabel } : {};
+  if (origin === 'task') return { kind: 'schedule' };
+  if (origin === 'agent' || origin === 'channel') return { kind: origin, ...label };
+  return { kind: 'external', ...label };
 }
 
 /**
@@ -509,9 +525,11 @@ export function createTranscriptParser(): TranscriptParser {
       }
 
       // Strip relay context wrapper, preserving the actual user content after </relay_context>
+      let relaySource: PromptSource | null = null;
       if (text.startsWith('<relay_context>')) {
         const userContent = stripRelayContext(text);
         if (!userContent) return; // Pure metadata or malformed
+        relaySource = relayPromptSource(text);
         text = userContent; // Fall through to process as normal user message
       }
 
@@ -565,7 +583,10 @@ export function createTranscriptParser(): TranscriptParser {
       if (!cleanText.trim()) return;
 
       // Read off the record as stored, not `text`: a relay payload is not context.
-      messages.push(userHistoryMessage(parsed.uuid || crypto.randomUUID(), msgContent, cleanText));
+      messages.push({
+        ...userHistoryMessage(parsed.uuid || crypto.randomUUID(), msgContent, cleanText),
+        ...(relaySource ? { promptSource: relaySource } : {}),
+      });
     } else if (parsed.type === 'assistant' && parsed.message) {
       const contentBlocks = parsed.message.content;
 

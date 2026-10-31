@@ -4,6 +4,7 @@
  * @module features/chat/lib/resolve-message-author
  */
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
+import type { PromptSource } from '@dorkos/shared/chat-messages';
 import type { ChatMessage, MessageAuthor } from '@/layers/shared/model';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 
@@ -39,6 +40,9 @@ const ROOM_AUTHOR_ID_PREFIX = 'room-author:';
 
 /** Name for a room post whose author the room no longer has. */
 const UNKNOWN_ROOM_AUTHOR_NAME = 'Room member';
+
+/** Prefix for a message's source, keeping each source in a group of its own (DOR-3019). */
+const PROMPT_SOURCE_ID_PREFIX = 'prompt-source:';
 
 /** Prefix for runtime-brand identity keys, keeping them distinct from agent ids. */
 const RUNTIME_AUTHOR_ID_PREFIX = 'runtime:';
@@ -136,11 +140,24 @@ export function resolveMessageAuthor(
   const roomPost = message.role === 'user' ? message.roomMessage : undefined;
   if (roomPost && !roomPost.author?.you) return roomAuthor(roomPost, ctx);
 
+  // Words nobody in this chat typed: a schedule, a heartbeat, or something that
+  // reached in over Relay (DOR-3019). Never "You".
+  const source = message.role === 'user' ? message.promptSource : undefined;
+  if (source) {
+    const displayName = promptSourceName(source);
+    return {
+      kind: source.kind === 'channel' ? 'human' : 'system',
+      id: `${PROMPT_SOURCE_ID_PREFIX}${source.kind}:${source.label ?? ''}`,
+      displayName,
+    };
+  }
+
   if (message.role === 'user') {
     return {
       kind: 'human',
       id: HUMAN_AUTHOR_ID,
       displayName: ctx.humanName?.trim() || DEFAULT_HUMAN_NAME,
+      isSelf: true,
     };
   }
 
@@ -160,6 +177,26 @@ export function resolveMessageAuthor(
   }
 
   return { kind: 'agent', id: UNKNOWN_AGENT_ID, displayName: UNKNOWN_AGENT_NAME };
+}
+
+/**
+ * What to call a message's source on its author line.
+ *
+ * @param source - The server's stamp.
+ */
+function promptSourceName(source: PromptSource): string {
+  switch (source.kind) {
+    case 'heartbeat':
+      return 'Heartbeat';
+    case 'schedule':
+      return source.label ? `Schedule: ${source.label}` : 'Schedule';
+    case 'agent':
+      return source.label ?? 'Another agent';
+    case 'channel':
+      return source.label ?? 'Connection';
+    case 'external':
+      return source.label ?? 'Outside DorkOS';
+  }
 }
 
 /**

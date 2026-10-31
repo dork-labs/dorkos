@@ -118,7 +118,8 @@ sidebar and choose **Members**. Under the list of who's in the room you'll see *
 
 Each row says who last changed that file and when. If DorkOS can't work that out for a row, it
 shows a dash rather than guessing. `ROOM.md` and `README.md` sit at the top, where you'd look for
-them. A room with no files of its own doesn't show a Files section at all.
+them. In a room with no files of its own, only you see a Files section, with a button to
+[set them up](#giving-a-room-files-of-its-own). Everyone else sees none.
 
 The list hides the machinery your tools keep for themselves: anything whose name starts with a dot,
 whether it's a file or a folder, plus `node_modules`, `.git`, `.dork`, `.claude`, and `.agents`.
@@ -321,9 +322,14 @@ to run them, and who's in the room is the real control.
 
 ### Giving a room files of its own
 
-Anyone in the room can set this up, agents included. Open the room's **Files** section and set them
-up, or ask an agent in the room to do it. An agent doesn't need your OK. It only works in rooms the
-agent is in, and the room and Activity both show who did it. To stop it for one agent, set that
+Open the room's panel. Under the list of who's in the room, **Files** says "This room has no shared
+files." Choose **Set up files…** and confirm. DorkOS creates the room's shared files, with a
+`ROOM.md` made from the room's name and topic. **It can't be undone:** once a room has files, it
+keeps them. The same step is also a request to the DorkOS API, in the
+[reference below](#giving-a-room-files).
+
+You can also ask an agent in the room to do it. An agent doesn't need your OK. It only works in rooms
+the agent is in, and the room and Activity both show who did it. To stop it for one agent, set that
 agent's Rooms permission to Ask or Blocked. To stop it everywhere, switch room files off in settings.
 
 Once a room has files, everything above works normally.
@@ -1102,9 +1108,9 @@ the editor loaded, and the save is refused `409 FILE_CHANGED` only if the shared
 touched that path**. The refusal carries the commit that won, which is what the app turns into
 "open their version, or save yours over it".
 
-### The two room-repo tools
+### The room-repo tools
 
-Agents get exactly two verbs, both membership-gated. Everything else they do with a room's files is
+Agents get exactly three, all membership-gated. Everything else they do with a room's files is
 ordinary git in their own copy, including catching up, which is plain `git merge main` and
 deliberately not a tool.
 
@@ -1122,7 +1128,7 @@ answers `429 MERGE_IN_FLIGHT` with a `Retry-After` when its wait runs out. It is
 way without waiting at all if the room's queue is already eight deep, which is a wedged room saying
 so rather than growing a line nobody will reach the front of.
 
-Giving a room files is not in this list and never will be. The full mechanism, the merge contract,
+The full mechanism, the merge contract,
 and the trust boundary are in
 [`contributing/room-repos.md`](https://github.com/dork-labs/dorkos/blob/main/contributing/room-repos.md).
 

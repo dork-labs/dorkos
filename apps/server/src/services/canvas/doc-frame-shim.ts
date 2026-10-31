@@ -1,7 +1,21 @@
 /** Fixed Doc SDK source only. F2 owns real injection; CSP and parser execution order stay unchanged. */
+import { CANVAS_DOC_BOOT_PARAM } from '@dorkos/shared/canvas-doc-frame-wire';
+
+/**
+ * The shim runs before any page script (it is the first thing in `<head>`). It
+ * takes the host's boot nonce out of the query with `replaceState` (no new
+ * history entry, nothing sent) and keeps it in this closure, so `location` no
+ * longer shows it to page scripts, and a reload or any later document in the
+ * frame boots without one and cannot connect. The page's own scripts can still
+ * read the original URL elsewhere (the navigation timing entry's `name`); that
+ * only hands the nonce to the document it already belongs to. If the URL cannot
+ * be rewritten, the nonce is dropped rather than left readable.
+ */
 export const DOC_FRAME_SHIM_SCRIPT = String.raw`(()=>{
 'use strict';
 if(window.parent===window)return;
+let boot=null;
+try{const prefix=${JSON.stringify(`${CANVAS_DOC_BOOT_PARAM}=`)},search=location.search.slice(1);if(search){const parts=search.split('&'),kept=parts.filter(part=>!part.startsWith(prefix));const found=parts.find(part=>part.startsWith(prefix));if(found){const value=found.slice(prefix.length);boot=value&&value.length<=128?value:null;history.replaceState(history.state,'',location.pathname+(kept.length?'?'+kept.join('&'):'')+location.hash);}}}catch{boot=null;}
 const parent=window.parent, observers=new Map(), pending=new Map();
 let hostOrigin=null,helloTimer=null,pageRetired=false,handshakeToken={};
 let port=null, binding=null, status='connecting', state=null, stateRev=-1, highest=-1, tries=0, queuedBytes=0;
@@ -37,9 +51,9 @@ function matches(value){return binding&&value.protocol==='dorkos-doc'&&value.v==
 window.addEventListener('message',event=>{
 if(pageRetired||event.source!==parent||!safe(event.data))return;const value=event.data;
 if(valid(value,'challenge')&&event.ports.length===0&&Object.keys(value).length===7){
-if(binding&&matches(value)){parent.postMessage({...binding,kind:'ack'},event.origin==='null'?'*':event.origin);return;}
+if(binding&&matches(value)){parent.postMessage({...binding,kind:'ack',...(boot===null?{}:{boot})},event.origin==='null'?'*':event.origin);return;}
 const token=handshakeToken={};retire();if(pageRetired||token!==handshakeToken)return;binding={protocol:'dorkos-doc',v:1,nonce:value.nonce,requestToken:value.requestToken,loadToken:value.loadToken,generation:value.generation};hostOrigin=event.origin;status='connecting';
-parent.postMessage({protocol:'dorkos-doc',v:1,kind:'ack',nonce:binding.nonce,requestToken:binding.requestToken,loadToken:binding.loadToken,generation:binding.generation},event.origin==='null'?'*':event.origin);return;
+parent.postMessage({protocol:'dorkos-doc',v:1,kind:'ack',nonce:binding.nonce,requestToken:binding.requestToken,loadToken:binding.loadToken,generation:binding.generation,...(boot===null?{}:{boot})},event.origin==='null'?'*':event.origin);return;
 }
 if(!valid(value,'connect')||!matches(value)||event.origin!==hostOrigin||event.ports.length!==1||Object.keys(value).length!==7||port)return;
 port=event.ports[0];if(helloTimer!==null)clearTimeout(helloTimer);helloTimer=null;status='ready';

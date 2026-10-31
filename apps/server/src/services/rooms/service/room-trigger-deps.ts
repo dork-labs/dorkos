@@ -126,6 +126,8 @@ export interface RoomTriggerDeps {
   usageLimitFor?(sessionId: string): { resetsAt: string | null } | null;
   /** The operator's profile name — see `RoomContextDeps.operatorName`. */
   operatorName?(): string | null;
+  /** The owner's IANA zone — see `RoomContextDeps.operatorTimeZone`. */
+  operatorTimeZone?(): string;
   /**
    * The server's room seat mover (re-seat): moves a seat whose account ran out,
    * or nearly did, to another account, and restarts a seat whose transcript

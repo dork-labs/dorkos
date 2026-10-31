@@ -45,6 +45,8 @@ import {
 import { connectorThreadKeys } from '../../services/connectors/principal/thread-keys.js';
 import { isConnectorRuntimeCapabilityId } from '../../services/connectors/runtime-capability-scope.js';
 import { env } from '../../env.js';
+import { createDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-probe.js';
+import { configureDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-scenario.js';
 import type {
   ConnectorRuntimeRequestProbe,
   ConnectorRuntimeExecutionProbe,
@@ -321,6 +323,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
           : personWriter('local-trust'),
     });
   });
+  configureDocFrameSdkProbe(undefined);
   if (connectorRuntimePrincipals) {
     const agentScopedRuntimePrincipals = new AgentIdentitySnapshotPrincipalPort({
       principals: connectorRuntimePrincipals,
@@ -330,6 +333,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     });
     refs.connectorRuntimeMcpListener = await startConnectorRuntimeMcpListener({
       principals: agentScopedRuntimePrincipals,
+      // Only the test runtime's server-run probes speak as Claude Code here.
+      acceptInProcessRuntime: Boolean(env.DORKOS_TEST_RUNTIME),
       serverFactory: (principal) =>
         createConnectorRuntimeMcpServer(refs.capabilityRegistry!, principal),
       agentServerFactory: async (principal) => {
@@ -368,6 +373,28 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       });
     }
     if (env.DORKOS_TEST_RUNTIME) {
+      // Same original boot service and managed-turn lifecycle as the connector probes below.
+      // Fixed log-only Doc workflow: no model call, arbitrary tool dispatch or extra authority policy.
+      configureDocFrameSdkProbe(
+        createDocFrameSdkProbe({
+          enabled: true,
+          tools: {
+            principals: agentScopedRuntimePrincipals,
+            listenerUrl: refs.connectorRuntimeMcpListener.url,
+            agentToolsUrl: refs.connectorRuntimeMcpListener.agentUrl,
+            isConnectorCapabilityId: isConnectorRuntimeCapabilityId,
+          },
+          channels: docChannelHttp.channels,
+          bindProbeSession: async (sessionId, agentPath) => {
+            await runtimeRegistry.persistSessionRuntime(
+              sessionId,
+              'claude-code',
+              { kind: 'test-harness' },
+              agentPath
+            );
+          },
+        })
+      );
       const callRuntimeConnectorTool = async (input: {
         readonly sessionId: string;
         readonly agentPath: string;
