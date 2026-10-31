@@ -85,14 +85,7 @@ describe('the card and row rules', () => {
 });
 
 describe('the motion rules', () => {
-  const MOTION = 'apps/client/src/layers/shared/lib/motion.ts';
   const CSS = 'apps/client/src/index.css';
-
-  it('counts a spring literal, but never in the motion module', () => {
-    const text = "{ type: 'spring', stiffness: 400 } // { stiffness: 1 }";
-    expect(countIn(CLIENT, text)).toEqual({ 'spring-literal': 2 });
-    expect(countIn(MOTION, text)).toEqual({});
-  });
 
   it.each([
     ['a y above 1', 'animation: x 1s cubic-bezier(0.2, 1.4, 0.4, 1);', 1],
@@ -138,10 +131,6 @@ describe('the baseline only goes down', () => {
     expect(raisedAgainst({ 'raw-palette': { [CLIENT]: 2 } }, base)).toEqual([]);
     expect(raisedAgainst({ 'raw-palette': { [CLIENT]: 3 } }, base)[0]?.kind).toBe('raised');
     expect(raisedAgainst({ 'raw-palette': { [UI]: 1 } }, base)[0]?.kind).toBe('raised');
-  });
-
-  it('lets a new rule arrive with its own baseline', () => {
-    expect(raisedAgainst({ 'spring-literal': { [CLIENT]: 3 } }, {})).toEqual([]);
   });
 
   it('update lowers and removes, and never raises or adds', () => {

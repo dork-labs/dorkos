@@ -72,7 +72,7 @@ function stripCssComments(text: string): string {
 
 /** Whether a `cubic-bezier(x1, y1, x2, y2)` leaves 0..1 on the y axis, so overshoots. */
 function overshoots(args: string): boolean {
-  const [, y1, , y2] = args.split(',').map(Number);
+  const [, y1 = 0, , y2 = 0] = args.split(',').map(Number);
   return y1 < 0 || y1 > 1 || y2 < 0 || y2 > 1;
 }
 
@@ -164,15 +164,7 @@ export const RULES: Rule[] = [
     except: /^apps\/client\/src\/layers\/features\/mesh\/ui\//,
     fix: 'use rowStateVariants: bg-row-selected, and the inset outline for focus',
   },
-  // Phase 1 motion. One set of springs and curves, none of which overshoots.
-  {
-    id: 'spring-literal',
-    kind: 'ratchet',
-    pattern: /\bstiffness:/g,
-    files: /\.(tsx?|css)$/,
-    except: /^apps\/client\/src\/layers\/shared\/lib\/motion\.ts$/,
-    fix: 'use SPRING from shared/lib/motion.ts',
-  },
+  // Phase 1 motion. One set of curves, none of which overshoots.
   {
     id: 'overshoot-bezier',
     kind: 'hard',
@@ -185,7 +177,7 @@ export const RULES: Rule[] = [
         .split('\n')
         .filter((line) => !line.includes('reaction-pop'))
         .flatMap((line) => [...line.matchAll(/cubic-bezier\(([^)]+)\)/g)])
-        .filter((match) => overshoots(match[1])).length,
+        .filter((match) => overshoots(match[1] ?? '')).length,
     fix: 'use var(--ease-out), var(--ease-in) or var(--ease-standard)',
   },
 ];
@@ -300,10 +292,8 @@ export function compare(counts: Counts, baseline: Counts, rules: Rule[] = RULES)
 export function raisedAgainst(current: Counts, base: Counts): Finding[] {
   const findings: Finding[] = [];
   for (const [rule, files] of Object.entries(current)) {
-    // A rule the base has never heard of is being introduced, not raised.
-    if (!(rule in base)) continue;
     for (const [file, count] of Object.entries(files)) {
-      const before = base[rule][file] ?? 0;
+      const before = base[rule]?.[file] ?? 0;
       if (count > before) findings.push({ kind: 'raised', rule, file, count, baseline: before });
     }
   }
