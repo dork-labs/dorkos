@@ -66,6 +66,10 @@ the person, or paused at an account limit, its last message arrives in your
 chat as a report. If you are idle, the report starts a turn for you. It does
 not report when a turn ends only to wait.
 
+Started from a room, the report comes to your chat in that room as a turn
+only you see. Nobody else in the room reads it. Post there only if the room
+needs to know.
+
 So after you start one, end your turn. Do not poll it.
 
 ## Check on one

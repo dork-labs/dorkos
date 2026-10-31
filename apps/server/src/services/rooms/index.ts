@@ -73,6 +73,7 @@ import { roomOutsidersReader } from './reseat/room-outsiders.js';
 import { clearStaleReceipts } from './receipts/turn-receipts.js';
 import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
 import { createSessionWorkSource } from './welcome-back/work-source.js';
+import { setRoomSeatReports } from '../session/chat-messages/chat-message-current.js';
 
 /** The wired rooms subsystem. */
 export interface RoomSubsystem {
@@ -762,6 +763,8 @@ onProjectorTurnBoundary((sessionId, kind) => {
  */
 export function setRoomService(service: RoomService): void {
   active = service;
+  // A spin-off started from a room's seat reports back into it (DOR-3488).
+  setRoomSeatReports(service.handoffs.reports);
 }
 
 /** Read the active RoomService (throws if bootstrap has not run). */
