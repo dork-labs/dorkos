@@ -319,7 +319,11 @@ jobs:
   # itself, so this job-level `if:` skips nothing the ruleset reads.
   community-pg:
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-latest
+    # Queue runs only may use the opt-in `RUNNER_LABEL`; every other event, and
+    # every run while it is unset, stays on GitHub's hosted runner. Never drop
+    # the event check: a `pull_request` run executes a fork's code, and it must
+    # not reach an org runner (ledger 261031-090000, Security's Must 1).
+    runs-on: ${{ github.event_name == 'merge_group' && vars.RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 25
     services:
       postgres:
@@ -608,7 +612,8 @@ jobs:
       matrix:
         shard: ${{ fromJSON(github.event_name == 'pull_request' && '[1, 2]' || '[1, 2, 3, 4, 5, 6]') }}
     name: test-shard (${{ matrix.shard }}/${{ strategy.job-total }})
-    runs-on: ubuntu-latest
+    # Same opt-in queue-only runner as `community-pg` above.
+    runs-on: ${{ github.event_name == 'merge_group' && vars.RUNNER_LABEL || 'ubuntu-latest' }}
     # Six file partitions reduce suite work; fixed checkout/install/build
     # still repeats on every runner. Keep the same 30-minute job budget.
     # If healthy shards cross ~20 minutes, adjust measured work division,
