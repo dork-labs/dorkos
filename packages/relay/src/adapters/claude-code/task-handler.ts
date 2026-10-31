@@ -22,6 +22,7 @@ import {
 // The one sentence a run stopped by a clock is described with, written by this
 // path and by the direct-dispatch twin in `apps/server` (DOR-1786).
 import { runTimeLimitError } from '@dorkos/shared/run-time-limit';
+import { awakeTimeout, getAwakeClock, type AwakeClock } from '@dorkos/shared/awake-clock';
 import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
 import type { AgentRuntimeLike, RefusedAskReporter, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
@@ -208,6 +209,12 @@ export interface TasksHandlerDeps {
    * Defaults to `Date.now`, which is what every host gets: nothing wires this.
    */
   now?: () => number;
+  /**
+   * Sees the computer sleep, so the run's deadline counts only awake time: a
+   * plain timer keeps counting through sleep and stopped runs on wake as over
+   * their limit (DOR-3286). The process clock by default.
+   */
+  awakeClock?: AwakeClock;
   logger?: import('@dorkos/shared/logger').Logger;
 }
 
@@ -365,13 +372,15 @@ export async function handleTasksMessage(
   // cannot end up on different sides of the same millisecond.
   const ttlRemaining = ttlRemainingMs(envelope, clock);
   const controller = new AbortController();
-  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let cancelDeadline: (() => void) | undefined;
   if (isExpired(ttlRemaining)) {
     controller.abort();
   } else {
-    // Clamped: a delay past 2^31-1 ms fires at once in Node, which would stop a
-    // run with a very long time limit the moment it started (DOR-3033).
-    timeout = setTimeout(() => controller.abort(), Math.min(ttlRemaining, 2 ** 31 - 1));
+    // Awake time only (DOR-3286). Re-armed in steps, so a time limit past
+    // 2^31-1 ms (which a bare Node timer fires at once) holds too (DOR-3033).
+    cancelDeadline = awakeTimeout(deps.awakeClock ?? getAwakeClock(), ttlRemaining, () =>
+      controller.abort()
+    );
   }
 
   // From here until the `finally` below, this run can be stopped from the
@@ -570,7 +579,7 @@ export async function handleTasksMessage(
       durationMs,
     };
   } finally {
-    if (timeout) clearTimeout(timeout);
+    cancelDeadline?.();
     // Nothing awaits between the run's terminal write above and this line, so
     // a stop request either reached a run that was genuinely still going or
     // finds it gone — never a half-finalized run it could stop twice.
