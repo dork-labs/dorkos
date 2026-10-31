@@ -29,7 +29,8 @@
  *
  * @module services/marketplace/flows/update-installed
  */
-import type { NotifyPluginsChanged } from '../types.js';
+import type { NotifyPluginsChanged, PreviewExtension } from '../types.js';
+import { verifyInstall } from '../lib/integrity/verify-install.js';
 import {
   scanInstallationRecords,
   type AgentScopeRef,
@@ -212,6 +213,14 @@ export interface ApprovableUpdate {
   disclosed: DisclosedEffects | null;
   /** The new version's shipped-content hash, as staged for the check. */
   contentHash: string;
+  /**
+   * What the installed version runs now, set only when its files still match
+   * their install record (DOR-3070). Absent means a summary card cannot vouch
+   * for the installed copy and shows every item as New. Shown, never bound.
+   */
+  installedDisclosed?: DisclosedEffects | null;
+  /** The new version's extensions, for a summary card. Shown, never bound. */
+  extensions?: PreviewExtension[];
 }
 
 /**
@@ -252,26 +261,39 @@ export async function applyApprovedUpdates<R>(
   const installations = selectInstallations(await scanUpdateView(deps, req.projectPath), req);
   const plan = await deps.updateFlow.planInstallations({ installations, disclose: true });
 
-  const updates: ApprovableUpdate[] = plan.checks
-    .filter(
-      (c) =>
-        c.status === 'update-available' && c.disclosed !== undefined && c.contentHash !== undefined
+  const available = plan.checks.filter(
+    (c) =>
+      c.status === 'update-available' && c.disclosed !== undefined && c.contentHash !== undefined
+  );
+  // A tampered or unrecorded install must never make a change look unchanged,
+  // so the installed side is used only for an install whose files still match.
+  const vouched = await Promise.all(
+    available.map((c) =>
+      c.installedDisclosed
+        ? verifyInstall(c.installPath).then(
+            (integrity) => integrity.status === 'clean',
+            () => false
+          )
+        : false
     )
-    .map((c) => {
-      const projectPath = callerSpelling(c.agentPath, req);
-      return {
-        packageName: c.packageName,
-        installPath: c.installPath,
-        type: c.type,
-        scope: c.scope,
-        ...(projectPath !== undefined && { projectPath }),
-        ...(c.agentName !== undefined && { agentName: c.agentName }),
-        installedVersion: c.installedVersion,
-        latestVersion: c.latestVersion,
-        disclosed: c.disclosed ?? null,
-        contentHash: c.contentHash!,
-      };
-    });
+  );
+  const updates: ApprovableUpdate[] = available.map((c, i) => {
+    const projectPath = callerSpelling(c.agentPath, req);
+    return {
+      packageName: c.packageName,
+      installPath: c.installPath,
+      type: c.type,
+      scope: c.scope,
+      ...(projectPath !== undefined && { projectPath }),
+      ...(c.agentName !== undefined && { agentName: c.agentName }),
+      installedVersion: c.installedVersion,
+      latestVersion: c.latestVersion,
+      disclosed: c.disclosed ?? null,
+      contentHash: c.contentHash!,
+      ...(vouched[i] && { installedDisclosed: c.installedDisclosed }),
+      ...(c.extensions && { extensions: c.extensions }),
+    };
+  });
   if (updates.length === 0) return { result: { checks: plan.checks } };
 
   const refused = await gate(updates);

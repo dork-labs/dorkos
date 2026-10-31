@@ -149,6 +149,22 @@ export const approvals = sqliteTable(
      */
     serviceAction: text('service_action'),
 
+    /**
+     * A Marketplace card's summary, as JSON matching the wire schema's
+     * `MarketplaceApprovalSummary`, or null (DOR-3070). Written only when the
+     * full list is too long for `detail`; read back through that schema, so a
+     * row that no longer parses renders with the summary sentence instead.
+     */
+    marketplaceSummary: text('marketplace_summary'),
+
+    /**
+     * Everything a Marketplace card is about, written out whole and swept for
+     * secrets, or null (DOR-3070). Served by `GET /api/approvals/:id/full-detail`
+     * while the card is pending; the approval itself is bound to the
+     * disclosure this text describes, never to the summary.
+     */
+    fullDetail: text('full_detail'),
+
     /** Opaque label for who asked — an agent path, a display name, or null. */
     requestedBy: text('requested_by'),
 

@@ -32,11 +32,13 @@ import type { DocLinksTransport } from './transport-doc-links.js';
 import type { AccountAutoMoveTransport } from './transport-account-auto-move.js';
 import type { FrameBridgeTransport } from './transport-frame-bridge.js';
 import type { AgentLevelTransport } from './transport-agent-level.js';
+import type { ApprovalTransport } from './transport-approvals.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
   extends
     ClaudeSigninPolicyTransport,
+    ApprovalTransport,
     FileSaveRecoveryTransport,
     RoomTransport,
     CommunityConnectionTransport,

@@ -9,10 +9,13 @@
  */
 import {
   APPROVAL_DETAIL_MAX_LENGTH,
+  APPROVAL_FULL_DETAIL_MAX_LENGTH,
   APPROVAL_REQUEST_REASON_MAX_LENGTH,
   APPROVAL_SUMMARY_MAX_LENGTH,
   ApprovalServiceActionSchema,
+  MarketplaceApprovalSummarySchema,
   type ApprovalServiceAction,
+  type MarketplaceApprovalSummary,
 } from '@dorkos/shared/approval-schemas';
 import { redactSecretsInText } from './approval-summary.js';
 
@@ -152,4 +155,89 @@ export function withServiceAction(stored: string | null): {
 } {
   const serviceAction = storedServiceAction(stored);
   return serviceAction ? { serviceAction } : {};
+}
+
+/**
+ * What a Marketplace card too long for `detail` carries instead (DOR-3070):
+ * the summary the card renders, and the full list behind its link.
+ */
+export interface MarketplaceCardInput {
+  /** The sorted rows the card shows. */
+  summary: MarketplaceApprovalSummary;
+  /** Everything the approval is about, written out whole. */
+  fullDetail: string;
+}
+
+/**
+ * Make a Marketplace card safe to store: every string in the summary and the
+ * whole full list swept for secrets like the detail, then checked against the
+ * wire schema. The full list is never shortened: a list too long for
+ * {@link APPROVAL_FULL_DETAIL_MAX_LENGTH} is refused before it gets here.
+ *
+ * @param card - The summary and full list, or nothing.
+ * @returns The two columns to store, both null when there is no card or the
+ *   summary does not parse (the card then falls back to its sentence).
+ */
+export function storableMarketplaceCard(card: MarketplaceCardInput | undefined): {
+  marketplaceSummary: string | null;
+  fullDetail: string | null;
+} {
+  const none = { marketplaceSummary: null, fullDetail: null };
+  if (!card || card.fullDetail.length > APPROVAL_FULL_DETAIL_MAX_LENGTH) return none;
+  const sweep = (value: string | undefined) =>
+    value === undefined ? undefined : redactSecretsInText(value);
+  const swept = {
+    ...card.summary,
+    packages: card.summary.packages.map((pkg) => ({
+      ...pkg,
+      name: redactSecretsInText(pkg.name),
+      where: redactSecretsInText(pkg.where),
+      risks: pkg.risks.map((risk) => ({
+        ...risk,
+        text: redactSecretsInText(risk.text),
+        ...(risk.command !== undefined && { command: sweep(risk.command) }),
+        ...(risk.was !== undefined && { was: sweep(risk.was) }),
+        ...(risk.items && { items: risk.items.map(redactSecretsInText) }),
+      })),
+    })),
+  };
+  const parsed = MarketplaceApprovalSummarySchema.safeParse(swept);
+  if (!parsed.success) return none;
+  return {
+    marketplaceSummary: JSON.stringify(parsed.data),
+    fullDetail: redactSecretsInText(card.fullDetail),
+  };
+}
+
+/**
+ * The stored Marketplace summary as a spreadable field, or nothing when the
+ * row has none or it no longer parses.
+ *
+ * @param stored - The column's JSON.
+ */
+export function withMarketplaceSummary(stored: string | null): {
+  marketplaceSummary?: MarketplaceApprovalSummary;
+} {
+  if (stored === null) return {};
+  try {
+    const parsed = MarketplaceApprovalSummarySchema.safeParse(JSON.parse(stored));
+    return parsed.success ? { marketplaceSummary: parsed.data } : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * A row's full list, only while the card is still answerable: a decided or
+ * expired card has nothing left for a person to read before answering.
+ *
+ * @param row - The stored row's state, expiry and full list.
+ * @param now - The current time in epoch milliseconds.
+ */
+export function storedFullDetail(
+  row: { state: string; expiresAt: string; fullDetail: string | null } | undefined,
+  now: number = Date.now()
+): string | undefined {
+  if (!row || row.state !== 'pending' || Date.parse(row.expiresAt) <= now) return undefined;
+  return row.fullDetail ?? undefined;
 }

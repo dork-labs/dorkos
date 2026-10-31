@@ -21,6 +21,7 @@ import {
   useRecordedApprovalDecision,
   type ApprovalDecision,
 } from '../model/settling-approvals';
+import { ApprovalMarketplaceSummary } from './ApprovalMarketplaceSummary';
 import { ApprovalServiceAction } from './ApprovalServiceAction';
 import { ApprovalSubject } from './ApprovalSubject';
 import { RequestingAgent } from './RequestingAgent';
@@ -249,9 +250,15 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
       }}
       className="@container/approval min-w-0 overflow-hidden"
     >
+      {/* A Marketplace summary stays stacked at every width, so its answers
+          come after the list rather than beside it (DOR-3070, call 10). */}
       <div
         data-slot="approval-card"
-        className="border-status-warning-border bg-background/60 flex min-w-0 flex-col gap-2 rounded-lg border p-3 @[34rem]/approval:flex-row @[34rem]/approval:items-center"
+        className={cn(
+          'border-status-warning-border bg-background/60 flex min-w-0 flex-col gap-2 rounded-lg border p-3',
+          !approval.marketplaceSummary &&
+            '@[34rem]/approval:flex-row @[34rem]/approval:items-center'
+        )}
       >
         <div className="min-w-0 flex-1">
           {/* A connected-app action's heading IS the action ("Delete message"),
@@ -361,13 +368,23 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               phone it gets up to half the screen: the card is full width there,
               and a settings file or a script is otherwise read a few lines at a
               time (DOR-2325). */}
-          {approval.detail !== undefined && (
-            <pre
-              data-slot="approval-detail"
-              className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-[50dvh] overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56"
-            >
-              {approval.detail}
-            </pre>
+          {/* A Marketplace list too long for the detail comes as a summary
+              instead (DOR-3070): every row that adds power, then a link to
+              the whole list. It replaces the detail, which only restates it. */}
+          {approval.marketplaceSummary ? (
+            <ApprovalMarketplaceSummary
+              approvalId={approval.approvalId}
+              summary={approval.marketplaceSummary}
+            />
+          ) : (
+            approval.detail !== undefined && (
+              <pre
+                data-slot="approval-detail"
+                className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-[50dvh] overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56"
+              >
+                {approval.detail}
+              </pre>
+            )
           )}
           <div className="mt-1.5 flex min-w-0 items-center gap-2">
             <RequestingAgent
