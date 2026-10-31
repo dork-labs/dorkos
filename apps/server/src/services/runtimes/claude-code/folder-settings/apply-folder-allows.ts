@@ -19,11 +19,7 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
-import {
-  agentHomesSelfGrantRules,
-  rulePath,
-  writeDenyRules,
-} from '../messaging/directory-grants.js';
+import { agentHomesRulesFor, rulePath, writeDenyRules } from '../messaging/directory-grants.js';
 import { isExactlyAgentHome, readFolderAllowList } from './agent-folder-allows.js';
 import {
   folderAllowEntry,
@@ -112,6 +108,8 @@ export interface SelfGrantFiles {
   dorkHome: string;
   /** The launch's Claude Code account folder (`CLAUDE_CONFIG_DIR`). */
   accountRoot: string;
+  /** The home's own `.claude/`, `.agents/` and `.mcp.json` are open to this turn (DOR-3483). */
+  ownFolderOpen?: boolean;
 }
 
 /**
@@ -128,15 +126,24 @@ export interface SelfGrantFiles {
  * Bash is not covered: a shell rule a person approved writes where it likes,
  * which is why the card has to say what a shell rule means (DOR-3294).
  *
+ * With `ownFolderOpen` (DOR-3483) the home's own `.claude/`, `.agents/` and
+ * `.mcp.json` are left out, and so is the home from the `agents/*` set; its
+ * `.dork/agent.json` and everything else stay denied.
+ *
  * @param files - Where this launch's files live.
  */
 export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined {
   const home = path.resolve(files.home);
   const dorkHome = path.resolve(files.dorkHome);
+  const open = files.ownFolderOpen === true;
   const targets: [string, 'folder' | 'file'][] = [
-    [path.join(home, '.claude'), 'folder'],
-    [path.join(home, '.agents'), 'folder'],
-    [path.join(home, '.mcp.json'), 'file'],
+    ...(open
+      ? []
+      : ([
+          [path.join(home, '.claude'), 'folder'],
+          [path.join(home, '.agents'), 'folder'],
+          [path.join(home, '.mcp.json'), 'file'],
+        ] as [string, 'folder' | 'file'][])),
     [path.join(home, '.dork', 'agent.json'), 'file'],
     [path.resolve(files.accountRoot), 'folder'],
     // DorkOS's data folder: every entry at its top (config.json, host.key, its
@@ -157,9 +164,9 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
   if (rulePath(path.join(dorkHome, 'agents')) === undefined) return undefined;
   // Every agent home in the data folder keeps its own self-grant files, so one
   // agent's approved rule can't rewrite another's list either. Every launch
-  // below Full carries these too (`applyPersonOnlyDataDeny`); named here as
+  // carries these too (`applyPersonOnlyDataDeny`); named here as
   // well, so the set beside a list stays whole whatever else the launch applied.
-  rules.push(...agentHomesSelfGrantRules(dorkHome, 'all'));
+  rules.push(...agentHomesRulesFor(dorkHome, 'all', open ? home : undefined));
   for (const tool of WRITE_TOOL_NAMES) {
     // The home folder's own spellings, which Claude Code expands itself: the
     // default account and its `.claude.json`, and the default data folder's

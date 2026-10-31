@@ -48,6 +48,12 @@ const NOT_READING_INSTALLS: Record<string, string> = {
   // entry, and names `agents` only to leave agent homes out (DOR-3039, M1).
   'apps/server/src/services/runtimes/claude-code/folder-settings/apply-folder-allows.ts':
     'dataEntriesAgentsNeverWrite lists the data folder top for deny rules, and skips `agents`',
+  // `otherAgentHomesSelfGrantRules` lists the data folder's `agents/` only to
+  // name a write-deny rule per home while one home's own folder is open
+  // (DOR-3483). A backup sibling is denied like any home: skipping it would
+  // leave a full copy of an agent's setup writable.
+  'apps/server/src/services/runtimes/claude-code/messaging/directory-grants.ts':
+    'otherAgentHomesSelfGrantRules lists agents/ to deny writes per home, where skipping a sibling would leave it writable',
   // The folder-settings pin hashes everything in an agent home's own `.claude/`
   // folders, and reads `plugins/` only for the hook scripts a command names.
   // Skipping sibling-named entries there would let an agent hide a hook or a
