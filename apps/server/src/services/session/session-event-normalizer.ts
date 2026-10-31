@@ -34,6 +34,7 @@ import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { RawSessionEvent, SessionStateProjector } from './session-state-projector.js';
 import { CAPABILITY_APPROVAL_HOLD_CAP_MS } from '../core/capabilities/capability-approval-hold.js';
 import { sweepStrandedChildren } from './turn-stream/stranded-children.js';
+import { resolutionForCancelledReason, retireStrandedAsks } from './turn-stream/withdrawn-asks.js';
 import { toNoticeEvent } from './turn-stream/notice-events.js';
 
 /** A `StreamEvent`'s `data` payload, read defensively as a loose record. */
@@ -524,24 +525,6 @@ function mapHookOutcome(outcome: unknown): 'success' | 'error' | 'cancelled' {
   if (outcome === 'error') return 'error';
   if (outcome === 'cancelled') return 'cancelled';
   return 'success';
-}
-
-/**
- * Map an `interaction_cancelled` event's `reason` to the resolution its
- * `interaction_resolved` projection carries (DOR-1148). `approved`/`denied`
- * name a real answer (an OpenCode `permission.replied` echo reporting an
- * answer given outside DorkOS); `timeout` names an answer the system gave on
- * the person's behalf. Anything else — including the ordinary `aborted` and a
- * reason a future runtime has not taught this function yet — is a withdrawal,
- * not an answer, so it defaults to `cancelled` rather than inventing a receipt.
- */
-function resolutionForCancelledReason(
-  reason: unknown
-): RawOf<'interaction_resolved'>['resolution'] {
-  if (reason === 'timeout') return 'expired';
-  if (reason === 'approved') return 'approved';
-  if (reason === 'denied') return 'denied';
-  return 'cancelled';
 }
 
 /**
@@ -1057,6 +1040,8 @@ export async function feedProjector(
     if (!turnOpen) return;
     turnOpen = false;
     const reason = terminalReason ?? (sawError ? 'error' : undefined);
+    // A failed turn's prompts died with it, inside the window (DOR-3210).
+    if (sawError || reason === 'error') retireStrandedAsks(projector, opts.stillLive);
     projector.ingest({
       type: 'turn_end',
       ...(reason !== undefined ? { terminalReason: reason } : {}),

@@ -25,6 +25,7 @@ export interface RuntimeDocMcpFixture {
   doc: { id: string };
   otherDoc: { id: string };
   http: ReturnType<typeof createDocChannelHttpComposition>;
+  canvas: ReturnType<typeof createRoomSubsystem>['canvas'];
   principals: ConnectorRuntimePrincipalService;
   registry: CapabilityRegistry;
   calls: Array<{ name: string; arguments: Record<string, unknown> }>;
@@ -228,6 +229,7 @@ export async function runtimeDocMcpFixture(
       doc,
       otherDoc,
       http,
+      canvas: rooms.canvas,
       principals,
       registry,
       calls,

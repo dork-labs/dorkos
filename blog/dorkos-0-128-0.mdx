@@ -1,0 +1,55 @@
+---
+title: DorkOS 0.128.0
+description: Canvas pages that talk to their agent, a list of every running chat, and safer password storage.
+date: 2026-10-31
+author: DorkOS Team
+category: release
+tags: [release, canvas, security, rooms]
+---
+
+DorkOS 0.128.0 lets pages in the canvas send events to their agent. It also lets agents see every running chat, and stores your password more safely.
+
+## Highlights
+
+- **Pages that talk back.** Local pages and dev-server previews in the canvas can send events to their agent, so a click can start its next turn.
+- **Every running chat.** Agents can list every chat running right now, per agent, spin-offs included.
+- **Safer passwords.** Your DorkOS password is stored with a much stronger hash. If you go back to 0.127.1, run `dorkos auth reset-password` to sign in again.
+
+## All Changes
+
+### Security
+
+- Your DorkOS password is now stored with a much stronger hash, so it's far harder to guess from a copy of the file. An older password switches over the next time you set a new one, or enter it when DorkOS asks you to confirm it's you on this computer (DOR-3234)
+- This version stores your DorkOS password in a new way that DorkOS 0.127.1 can't read. If you go back to 0.127.1 after the switch, you can't sign in with your password. To fix it, run `dorkos auth reset-password` in a terminal and choose a new password. This signs everyone out, and you sign in again with the new one.
+
+### Added
+
+- Local pages and dev-server previews in the canvas browser can now send events to your agent. When your agent sets this up for a page, a click in that page can start its next turn. A preview reconnects by itself after it reloads. A local page that reloads, or follows a link to another site, stays offline until you press Reload, so another site can't send events in its place. The offline notice has its own Reload button. (DOR-2665)
+- Agents can now see every chat running right now, for each agent, spin-offs included, each with its title and a link. A person's own chat shows only as a number.
+
+### Changed
+
+- Your own messages now show your name with a muted "(you)" after it, in rooms, chats and DMs, so you read as the same person everyone else sees. A long name is cut short, but "(you)" always shows. If you haven't set a name, your messages still say "You" (DOR-2111, DOR-2839)
+
+### Fixed
+
+- On the Full setting, a package installed from a marketplace source still asked before it could run commands automatically. Full means nothing new asks, so now those commands run, and Activity notes it. A package that is in a project but that DorkOS did not install, or whose files changed after install, waits under Needs you instead, and only you can allow it. Nothing stops while it waits, it doesn't ping your phone, and it stays put until you answer instead of coming back every couple of hours. A yes still counts if DorkOS restarted since the row appeared. If that package's commands don't run a file DorkOS can check, a yes can't vouch for them, so they stay held back and Activity tells you how to run them: install the package through DorkOS, or link its folder as a dev link. On every other setting you're still asked, and a package you turned down stays turned down.
+- An MCP server you add for every agent can't run a program or script from inside your agents' folders, and can't use settings that inject code into the program. A saved server that breaks these rules isn't started.
+- Choosing "Always allow" on one of these servers' tools now applies to that agent only.
+- Suspending or archiving a space could fail with "The space is unavailable" on a small number of servers, every time, once someone had joined by invite. It now works on all of them.
+- When you write to an agent inside a room thread, its answer now lands in that thread. Before, some answers showed up in the main channel instead. An agent asked in the main channel still answers there. (FB-63)
+- A new agent you create on Codex or OpenCode now runs on that runtime from its first chat. Before, it quietly ran on Claude Code instead, and could bill the wrong account. When an agent's chat falls back to Claude Code, the chat now says why: the runtime is waiting for your OK, or it isn't set up on this computer.
+- When an agent sends a message to a chat whose account is out of usage, or that can't reach the API, the sender now sees that the message wasn't answered. Before, it said "delivered" even though the other agent hadn't read it, sometimes for days.
+- An OpenCode agent on a local model (such as Ollama) no longer gets cut off when its model takes more than 2 minutes to start answering. DorkOS used to read that wait as a turn that never started and end it with "the agent didn't start within 2 minutes". It now waits until the model answers or OpenCode's own time limit ends the request. A tool that hangs is still stopped after 10 minutes. (FB-68)
+- Agents in rooms now read times in your time zone. Every time in a room turn used to be UTC with nothing saying so, so an agent could call your afternoon "this evening" and had no idea what day it was for you. Now each time is in the zone set in your profile, and each turn tells the agent which zone that is and the date and time there now (DOR-3253, DOR-3125)
+- An agent listing scheduled tasks now sees when each one runs next. It used to see "no next run" for every task, even ones on a schedule (DOR-3125)
+- Bug reports you send from DorkOS are easier to read. The same event repeated back to back now shows once with a count, the server log excerpt no longer has empty lines, and the report names where it came from as "DorkOS app" instead of an old internal name. (FB-49)
+- An agent's Schedules page opens instead of crashing when that agent has schedules or runs to show (DOR-3124)
+- A message started by a schedule or a heartbeat now says where it came from, instead of looking like you sent it. It shows once the turn has finished. (DOR-3019)
+- The first time an agent opens Documents, Desktop or Downloads, macOS asks; your answer applies to all agents.
+- When DorkOS stops and starts again, an open chat now gets its live updates back on its own, like a room does. Before, it kept saying "Live updates lost" until you sent a message or reloaded the page.
+
+### Known issues
+
+- At Full autonomy, a chat an extension starts, like one from a comment on an "Only you can do these" list, can still stop and show you a card.
+- At Full autonomy, an agent that tries to loosen a permission is told no only if it has read outside words. Otherwise you get a card and you decide, the same as below Full.

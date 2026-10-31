@@ -10,6 +10,9 @@ import {
   openInCanvasBrowser,
   startDrivingFixtureServer,
 } from '../../pages/canvas-dev-server';
+import { registerDocFrameSdkBrowserTests } from './doc-frame-sdk-browser';
+import { registerDocFrameCompanionBrowserTests } from './doc-frame-companion-browser';
+import { registerDocFrameOutsideBrowserTests } from './doc-frame-outside-browser';
 import { RightPanelPage } from '../../pages/RightPanelPage';
 import { ChatPage } from '../../pages/ChatPage';
 
@@ -476,3 +479,8 @@ test.describe('Browser — an agent uses the page @smoke', () => {
       .toBe(true);
   });
 });
+
+// The page channel rides this file's test-mode project and its servers.
+registerDocFrameSdkBrowserTests();
+registerDocFrameCompanionBrowserTests();
+registerDocFrameOutsideBrowserTests();

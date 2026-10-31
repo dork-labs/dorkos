@@ -20,6 +20,7 @@ import {
   resolveToolVisibilityFor,
 } from '../shared/permission-tool-filter.js';
 import { connectionToolName } from './mcp.js';
+import { joinFitted, type ContextPart } from '../shared/window/context-fit.js';
 /** Render all additional context kinds without inserting opaque roomTurn routing metadata. */
 export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
   if (entry.kind === 'doc_events') return renderDocEvents(entry.data);
@@ -87,32 +88,57 @@ export function chatToolsLine(
   return `${noun} ${names} ${verb} loaded: ${parts.join(', and ')}. Use tool_search to discover other tools.`;
 }
 
-/** Every fresh turn receives current identity, SOUL and MemoryProvider snapshot exactly once. */
-export async function buildDoeContext(options: {
+/** What {@link buildDoeContextParts} reads. */
+export interface DoeContextOptions {
   cwd: string;
   agentPath?: AgentHome;
   opts?: MessageOpts;
   hostConnected: boolean;
   agentToAgent?: boolean;
-}): Promise<string> {
+}
+
+/**
+ * The Doe context as tagged parts, in prompt order, so a small window can leave
+ * whole blocks out (`context-fit.ts`, DOR-2839).
+ *
+ * The room tools guide is marked as never left out on a room turn: there the
+ * agent's only way to answer is the posting tool it describes. The chat tools
+ * line rides with the DorkOS tool descriptions, because it says those tools are
+ * loaded and is false once they are not.
+ */
+export async function buildDoeContextParts(options: DoeContextOptions): Promise<ContextPart[]> {
   const append = await buildAgentContextAppend(options.agentPath, options.cwd);
   const visibility = options.hostConnected
     ? await resolveToolVisibilityFor(options.agentPath)
     : undefined;
   const blocked = visibility ? renderBlockedAreaLines(visibility.blockedAreas) : '';
-  return [
-    GEN_UI_CONTEXT,
-    append.text,
-    options.hostConnected ? buildRoomToolsBlock('') : '',
-    blocked,
-    chatToolsLine(
-      options.hostConnected,
-      options.agentToAgent ?? false,
-      visibility?.hiddenToolNames ?? new Set()
-    ),
-    options.opts?.systemPromptAppend ?? '',
-    ...(options.opts?.additionalContext ?? []).map(renderDoeContextEntry),
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+  const roomTurn = options.opts?.roomTurn !== undefined;
+  const parts: ContextPart[] = [
+    { block: 'gen_ui', text: GEN_UI_CONTEXT },
+    ...(append.parts ?? [{ block: null, text: append.text }]),
+    {
+      block: roomTurn ? null : 'room_tools',
+      text: options.hostConnected ? buildRoomToolsBlock('') : '',
+    },
+    { block: null, text: blocked },
+    {
+      block: 'dorkos_tool_schemas',
+      text: chatToolsLine(
+        options.hostConnected,
+        options.agentToAgent ?? false,
+        visibility?.hiddenToolNames ?? new Set()
+      ),
+    },
+    { block: null, text: options.opts?.systemPromptAppend ?? '' },
+    ...(options.opts?.additionalContext ?? []).map((entry) => ({
+      block: null,
+      text: renderDoeContextEntry(entry),
+    })),
+  ];
+  return parts.filter((part) => part.text !== '');
+}
+
+/** Every fresh turn receives current identity, SOUL and MemoryProvider snapshot exactly once. */
+export async function buildDoeContext(options: DoeContextOptions): Promise<string> {
+  return joinFitted(await buildDoeContextParts(options), []);
 }

@@ -146,10 +146,19 @@ collect:
 # (25 minutes at six shards; it was 30 at three). Measured against 45, a
 # three-way shard at 29 minutes read as 65% used when it was 97%.
 #
-# The job's duration includes about 2.5 minutes of setup before Playwright
-# starts, so the ratio reads that much high. That is the safe side for a
-# tripwire. The number is checked against playwright.config.ts's derivation and
-# the workflow's shard count by ruler.test.ts, so it cannot drift silently.
+# Playwright's clock starts at the suite step, after checkout, install, the
+# browser and the build, so the job ends at `lead_minutes + minutes`, not at
+# `minutes`. Counting that setup against the deadline read the shards 0.15 high:
+# p95 job 23.7 min was 94.8% of 25, while the suite step Playwright bounds ran
+# p95 19.4-19.8 (78%), and of 1,788 queue shard jobs the deadline stopped at
+# most one, a run already failing four tests (2026-10-24..31; ledger
+# 261031-121500). The lead is the SHORTEST setup
+# measured over 1,474 green jobs, 2.52 minutes (p50 3.55, p95 4.02), so the
+# ratio still reads a little high, the safe side for a tripwire. Re-measure it
+# when the steps before `Run the browser suite` change.
+#
+# `minutes` is checked against playwright.config.ts's derivation and the
+# workflow's shard count by ruler.test.ts, so it cannot drift silently.
 #
 # Readers apply this to every day they read, not only to days after it
 # changed, so when it drops (30 to 25 on 2026-09-27, ledger 260919-175503) the
@@ -160,6 +169,7 @@ collect:
 deadlines:
   - gate: wf.browser-test.browser-shard
     minutes: 25
+    lead_minutes: 2.5
     source: apps/e2e/playwright.config.ts globalTimeout in CI, derived per shard from E2E_SHARD_TOTAL
 
 # The quarantine lane (plan §4.9 L1): a test data has classified flaky runs and
@@ -373,8 +383,8 @@ local:
   stale_after_days: 3
   retired_after_days: 14
 
-  # THE MACHINE-WIDE CAP ON HEAVY LOCAL RUNS (scripts/heavy-run-lock.sh,
-  # DOR-2160). Several agents and the operator's dev server share this box, and
+  # THE HOST-WIDE CAP ON HEAVY LOCAL RUNS (scripts/heavy-run-lock.sh,
+  # DOR-2160; host-wide, held by flock, since DOR-3274). Several agents and the operator's dev server share this box, and
   # nothing coordinated their test runs: each `turbo test --affected
   # --concurrency=1` runs one suite at a time but lets vitest keep a worker per
   # core, so each gate is a whole machine's worth of work. Four at once measured
@@ -390,11 +400,13 @@ local:
   # with a ledger entry and the load numbers from the daily report; lowering it
   # is cheaper to try.
   #
-  # WHAT HOLDS A SLOT, as of 2026-09-24: the pre-commit `lint` command, and
-  # nothing else. The pre-push test gate left in DOR-2160 and the pre-commit
-  # `typecheck` in ci/ledger/260919-175506-*. Fast checks are never capped.
+  # WHAT HOLDS A SLOT, as of 2026-10-30: the pre-commit `lint` command, the
+  # root `build`, `typecheck`, `test` and `verify` scripts, and anything run
+  # through `pnpm heavy <command>`. A slot is shared by every clone, worktree
+  # and agent of this user on the host. Fast checks are never capped, and CI
+  # never waits (a runner shares its machine with nothing).
   #
-  # The script reads these three with `sed`, because it runs before any
+  # The script reads these with `sed`, because it runs before any
   # node_modules exist; local.test.ts pins its fallbacks to the values here so
   # the fallback can never quietly become the real number.
   heavy_run_slots: 3
@@ -410,11 +422,9 @@ local:
   # uncapped, which is worse for the machine and better than a commit that
   # waits on other agents indefinitely.
   heavy_lock_wait_seconds: 45
-  # A slot held longer than this is reclaimable even if its owner is alive. When
-  # this was set, the slowest heavy command measured here was a pre-commit
-  # typecheck at 473 s (lint peaked at 409 s); 900 was well above both and far
-  # below anything a healthy run reaches. Typecheck has since left the hook, and
-  # lint's worst in the week to 2026-09-24 was 1485 s under heavy load, so a run
-  # that slow can lose its slot to a waiter; the cost is one extra concurrent
-  # run, not a wrong verdict.
-  heavy_lock_max_hold_seconds: 900
+  # How long a `--job` waits: a full build, typecheck or test run started by
+  # hand or through the root package scripts (DOR-3274). Far longer than a
+  # commit's lint, because a job running uncapped is exactly what panicked this
+  # host on 2026-10-24 (load ~40, 12 GB of disk gone). 30 minutes is about the
+  # slowest full test sweep measured here; past it the job runs anyway, loudly.
+  heavy_job_wait_seconds: 1800
