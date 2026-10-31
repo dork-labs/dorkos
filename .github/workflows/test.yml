@@ -384,12 +384,12 @@ jobs:
       # 261031-012000).
       - name: Find the pnpm store
         id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
         uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       # Where the space server lives (ci/space-server.env, DOR-3007): its
       # KEY=value lines become this job's environment, read below as
       # "$SPACE_DIR" and ${{ env.SPACE_DIR }}. A step can read env, a `paths:`
@@ -690,15 +690,17 @@ jobs:
       # across runner images, and node-pty compiles at install on linux-x64. On
       # 2026-10-30 `ubuntu-latest` began handing out 24.04 runners while the
       # shared store had been built on 26.04, so every server test file that
-      # loads node-pty failed. `ImageOS` keeps the images apart.
+      # loads node-pty failed. `ImageOS` keeps the images apart. It is read in
+      # the step below: `${{ env.ImageOS }}` is always empty, since the `env`
+      # context never sees the runner's own variables (ledger 261031-071000).
       - name: Find the pnpm store
         id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Restore the pnpm store built on this runner image
         uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
 
