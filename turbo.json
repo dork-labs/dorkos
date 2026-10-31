@@ -213,7 +213,7 @@
       ]
     },
     "@dorkos/ci-steward#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -230,12 +230,12 @@
       ]
     },
     "dorkos#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/e2e/community-two-desktop/**"]
     },
     "@dorkos/marketplace#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -243,12 +243,12 @@
       ]
     },
     "@dorkos/evals#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/turbo.json"]
     },
     "@dorkos/client#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
