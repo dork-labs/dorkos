@@ -2,9 +2,11 @@ import { build, version as esbuildVersion } from 'esbuild';
 import type { BuildOptions } from 'esbuild';
 import {
   PLUGIN_CHANGED_CODE,
+  containmentBoundaryOf,
   containmentPlugin,
   containmentRootOf,
   stillPinned,
+  type ContainmentBoundary,
 } from './extension-plugin-guard.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -335,6 +337,8 @@ interface BuildContext {
   cwd: string;
   /** The plugin folder every import must stay inside, or null for no limit. */
   containRoot: string | null;
+  /** Which folder `containRoot` is, so a refusal names the rule that applies. */
+  containBoundary: ContainmentBoundary;
 }
 
 /** Per-build state: when it started, the tree before it, and what esbuild read. */
@@ -390,7 +394,8 @@ export class ExtensionCompiler {
         entryPath,
         runDir,
         CLIENT_TARGET,
-        containmentRootOf(record)
+        containmentRootOf(record),
+        containmentBoundaryOf(record)
       );
     }
 
@@ -434,7 +439,8 @@ export class ExtensionCompiler {
         entryPath,
         record.runPath ?? record.path,
         SERVER_TARGET,
-        containmentRootOf(record)
+        containmentRootOf(record),
+        containmentBoundaryOf(record)
       )
     );
   }
@@ -637,7 +643,8 @@ export class ExtensionCompiler {
     entryPath: string,
     extRoot: string,
     target: BuildTarget,
-    containRoot: string | null = null
+    containRoot: string | null = null,
+    containBoundary: ContainmentBoundary = 'extension'
   ): Promise<CompileResult> {
     const cacheDir = target.subDir ? path.join(this.cacheDir, target.subDir) : this.cacheDir;
     await this.ensureCacheDir(cacheDir);
@@ -659,6 +666,7 @@ export class ExtensionCompiler {
       }),
       cwd,
       containRoot,
+      containBoundary,
     };
 
     // Only a record this process wrote is trusted: a cached error or bundle key
@@ -728,7 +736,13 @@ export class ExtensionCompiler {
           // First, so it claims `hono` before containment would refuse it.
           ...(target.hostHono ? [hostHonoPlugin()] : []),
           ...(ctx.containRoot
-            ? [containmentPlugin(ctx.containRoot, target.options.external ?? [])]
+            ? [
+                containmentPlugin(
+                  ctx.containRoot,
+                  target.options.external ?? [],
+                  ctx.containBoundary
+                ),
+              ]
             : []),
           run.recorder.plugin,
         ],
