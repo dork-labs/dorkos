@@ -3765,6 +3765,9 @@
           },
           "roomMessage": {
             "$ref": "#/components/schemas/RoomMessageStamp"
+          },
+          "promptSource": {
+            "$ref": "#/components/schemas/PromptSource"
           }
         },
         "required": [
@@ -5091,6 +5094,27 @@
           "extensionId",
           "appName",
           "itemId"
+        ]
+      },
+      "PromptSource": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "schedule",
+              "heartbeat",
+              "agent",
+              "external",
+              "channel"
+            ]
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
         ]
       },
       "SessionSnapshot": {

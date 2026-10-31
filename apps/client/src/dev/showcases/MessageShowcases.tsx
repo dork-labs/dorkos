@@ -1,4 +1,6 @@
+import type { PromptSource } from '@dorkos/shared/chat-messages';
 import { Conversation, MessageAuthorAvatar } from '@/layers/features/conversation';
+import { resolveMessageAuthor } from '@/layers/features/chat/lib/resolve-message-author';
 import {
   AssistantMessageContent,
   MessageProvider,
@@ -304,6 +306,35 @@ export function MessageShowcases() {
             </ShowcaseDemo>
           </div>
         ))}
+
+        {(
+          [
+            { kind: 'heartbeat' },
+            { kind: 'schedule', label: 'Morning report' },
+            { kind: 'agent', label: 'scout (agent)' },
+            { kind: 'channel', label: 'Telegram · Sam' },
+          ] satisfies PromptSource[]
+        ).map((promptSource) => {
+          const message = createUserMessage({
+            content: 'Check the queue and post a summary.',
+            promptSource,
+          });
+          return (
+            <div key={promptSource.kind}>
+              <ShowcaseLabel>{`Not typed here — ${promptSource.kind}`}</ShowcaseLabel>
+              <ShowcaseDemo>
+                <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES}>
+                  <SessionMessage
+                    message={message}
+                    grouping={{ position: 'only' }}
+                    author={resolveMessageAuthor(message, {})}
+                    sessionId={MOCK_SESSION_ID}
+                  />
+                </Conversation.Root>
+              </ShowcaseDemo>
+            </div>
+          );
+        })}
 
         <ShowcaseLabel>Assistant — position: only</ShowcaseLabel>
         <ShowcaseDemo>
