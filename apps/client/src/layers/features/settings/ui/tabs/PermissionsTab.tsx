@@ -72,7 +72,7 @@ export function PermissionsTab() {
           {RULES_DONT_HIDE_FOLDER_FILES[1]}
         </p>
         <FieldCard>
-          <FieldCardContent className="divide-border divide-y">
+          <FieldCardContent>
             <FilesAndCommandsSetting />
             <PermissionList scope={{ kind: 'default' }} />
           </FieldCardContent>
