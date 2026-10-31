@@ -579,8 +579,12 @@ contractSuite(
       headers: { origin: 'https://evil.example' },
       body: { project: PROJECT, allow: null },
       expect: {
-        status: 500,
-        body: { error: 'Origin https://evil.example not allowed by CORS', code: 'INTERNAL_ERROR' },
+        status: 403,
+        body: {
+          error:
+            'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+          code: 'ORIGIN_NOT_ALLOWED',
+        },
       },
     },
     {

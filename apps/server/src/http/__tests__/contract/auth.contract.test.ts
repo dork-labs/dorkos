@@ -115,11 +115,11 @@ contractSuite(
       headers: { host: PROXIED_HOST, origin: `https://${PROXIED_HOST}` },
       body: OWNER,
       expect: {
-        status: 500,
+        status: 403,
         headers: { 'set-cookie': null, 'ratelimit-limit': null },
         body: {
-          error: `Origin https://${PROXIED_HOST} not allowed by CORS`,
-          code: 'INTERNAL_ERROR',
+          error: `This instance does not answer to pages from "https://${PROXIED_HOST}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
+          code: 'ORIGIN_NOT_ALLOWED',
         },
       },
     },
@@ -179,14 +179,17 @@ contractSuite(
       },
     },
     {
-      // The CORS delegate refuses an untrusted origin with a 500 today; a
-      // move keeps it.
+      // The caller's to fix, so a 403 with its own code, never a 500.
       name: 'an untrusted browser origin is refused',
       path: '/api/auth/get-session',
       headers: { origin: 'https://evil.example' },
       expect: {
-        status: 500,
-        body: { error: 'Origin https://evil.example not allowed by CORS', code: 'INTERNAL_ERROR' },
+        status: 403,
+        body: {
+          error:
+            'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+          code: 'ORIGIN_NOT_ALLOWED',
+        },
       },
     },
   ],

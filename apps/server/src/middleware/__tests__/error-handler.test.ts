@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AmbiguousSessionError } from '../../services/session/resolution/session-lookup-error.js';
+import { corsRefusal } from '../../http/cors-policy.js';
 import { errorReply, logRequestError } from '../error-handler.js';
 
 vi.mock('../../lib/logger.js', () => ({
@@ -51,6 +52,26 @@ describe('errorReply and logRequestError', () => {
         status: 502,
       })
     );
+  });
+
+  it('answers a refused browser origin 403 with its code, and warns rather than errors', async () => {
+    const { logger } = await import('../../lib/logger.js');
+    const error = corsRefusal('http://127.0.0.1:5173');
+    expect(errorReply(error)).toEqual({
+      status: 403,
+      body: {
+        error:
+          'This instance does not answer to pages from "http://127.0.0.1:5173". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+        code: 'ORIGIN_NOT_ALLOWED',
+      },
+    });
+    logRequestError(error, 'POST', '/api/canvas/docs/d1/events');
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith('[CORS] refused origin', {
+      origin: 'http://127.0.0.1:5173',
+      method: 'POST',
+      path: '/api/canvas/docs/d1/events',
+    });
   });
 
   it('returns 500 with error message', () => {

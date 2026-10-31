@@ -65,6 +65,7 @@ const VALIDATION_FAILED = z
   .object({ error: z.literal('Validation failed'), details: z.unknown() })
   .strict();
 const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const OWNER_REQUIRED = {
   error: 'Programs and agents cannot make account decisions.',
@@ -300,7 +301,7 @@ contractSuite('the connector groups, login off, nothing set up', [
     name: 'GET /connections from a page on another origin is refused by CORS',
     path: '/api/connectors/connections',
     headers: { origin: 'http://evil.example' },
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 403, schema: CORS_REFUSED },
   },
   {
     name: 'GET /connections for a foreign Host is refused',
@@ -1607,7 +1608,7 @@ describe('contract: the connector groups with login on', () => {
     await check(server, {
       path: '/api/connectors/connections',
       headers: { ...cookie, origin: 'http://evil.example' },
-      expect: { status: 500, schema: MALFORMED_JSON },
+      expect: { status: 403, schema: CORS_REFUSED },
     });
     await check(server, {
       path: '/api/connectors/reviews',

@@ -53,6 +53,7 @@ const VALIDATION_FAILED = z
   .object({ error: z.literal('Validation failed'), details: z.unknown() })
   .strict();
 const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
 const TOO_LARGE = z.object({ code: z.literal('REQUEST_TOO_LARGE') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
@@ -230,7 +231,7 @@ contractSuite('the Relay groups, login off, nothing set up', [
     name: 'GET /messages from a wrong browser origin is refused by CORS',
     path: '/api/relay/messages',
     headers: { origin: 'https://evil.example' },
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 403, schema: CORS_REFUSED },
   },
   {
     name: 'GET /conversations lists the exchanges',

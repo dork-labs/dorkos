@@ -426,8 +426,12 @@ contractSuite('notification, push, approval, extension-decision, permission and 
     headers: { origin: 'http://evil.example' },
     body: { action: 'approve' },
     expect: {
-      status: 500,
-      body: { error: 'Origin http://evil.example not allowed by CORS', code: 'INTERNAL_ERROR' },
+      status: 403,
+      body: {
+        error:
+          'This instance does not answer to pages from "http://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+        code: 'ORIGIN_NOT_ALLOWED',
+      },
     },
   },
   {
