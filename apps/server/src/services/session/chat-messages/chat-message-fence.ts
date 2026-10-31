@@ -58,7 +58,8 @@ const KIND_LINE: Record<ChatMessageKind, string> = {
 
 /**
  * Neutralise anything in the words that reads as a fence marker: a chat
- * message's, or any other block fenced the same way (a spin-off report).
+ * message's, or any other block fenced the same way (a spin-off report). An
+ * extension's own name and errors go through it too (DOR-3514).
  *
  * @param text - The sender's words.
  */
