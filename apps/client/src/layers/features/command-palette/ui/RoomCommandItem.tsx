@@ -3,8 +3,8 @@
  *
  * @module features/command-palette/ui/RoomCommandItem
  */
-import { CommandItem } from '@/layers/shared/ui';
-import { RoomAvatar, RoomTitle, hasUnread, type RoomSummary } from '@/layers/entities/room';
+import { COUNT_PILL_CAP, CommandItem, CountPill, MENTION_COUNT_CAP } from '@/layers/shared/ui';
+import { RoomAvatar, RoomTitle, type RoomSummary } from '@/layers/entities/room';
 import { ArchivedMark } from './ArchivedMark';
 import { paletteRoomKeywords } from '../model/palette-rooms';
 
@@ -13,6 +13,28 @@ export interface RoomCommandItemProps {
   room: RoomSummary;
   /** Open the room. */
   onSelect: () => void;
+}
+
+/** The count a palette row shows, and how it is read: only what was aimed at you. */
+function directedCount(room: RoomSummary): { count: number; cap: number; label: string } | null {
+  if (room.kind === 'dm') {
+    const count = room.unreadCount ?? 0;
+    if (count <= 0) return null;
+    const amount = count > COUNT_PILL_CAP ? `More than ${COUNT_PILL_CAP}` : String(count);
+    return {
+      count,
+      cap: COUNT_PILL_CAP,
+      label: count === 1 ? '1 new message' : `${amount} new messages`,
+    };
+  }
+  const count = room.mentionCount ?? 0;
+  if (count <= 0 || room.unreadCount === null) return null;
+  const amount = count > MENTION_COUNT_CAP ? `More than ${MENTION_COUNT_CAP}` : String(count);
+  return {
+    count,
+    cap: MENTION_COUNT_CAP,
+    label: count === 1 ? '1 mention' : `${amount} mentions`,
+  };
 }
 
 /**
@@ -31,18 +53,20 @@ export interface RoomCommandItemProps {
  * not write — pressing it opens the existing conversation and shows you what is
  * already in it (spec `sidebar-simplification` §D2).
  *
- * The badge reads `unreadCount` strictly. `null` means "you are not in this
- * room", which is not `0` ("you are in it and caught up") — so a room the
- * operator has only ever looked at carries no badge rather than a zero.
+ * **A number only for what was aimed at you**: a DM's new messages, or a
+ * channel's mentions of you. A busy channel nobody addressed you in carries no
+ * number, the sidebar's rule (AUDIT U6). `unreadCount` is read strictly: `null`
+ * means "you are not in this room", which is not `0`. The count is solid,
+ * because the wash drops to 4.04:1 on the palette's dark hover row.
  *
  * **An archived room says so**, in the same words a retired conversation does
  * ({@link ArchivedMark}).
  *
  * The row is named by its parts: the mark is decorative, the name contributes
- * `#general`, the badge contributes `3 unread`. Nothing names the room twice.
+ * `#general`, the count contributes `3 mentions`. Nothing names the room twice.
  */
 export function RoomCommandItem({ room, onSelect }: RoomCommandItemProps) {
-  const unread = hasUnread(room);
+  const directed = directedCount(room);
 
   return (
     <CommandItem
@@ -60,13 +84,8 @@ export function RoomCommandItem({ room, onSelect }: RoomCommandItemProps) {
         <RoomTitle room={room} className="min-w-0 flex-1 text-sm" />
       )}
       {room.archived && <ArchivedMark />}
-      {unread && (
-        <span
-          className="bg-brand/15 text-brand-text text-3xs shrink-0 rounded-full px-1.5 py-0.5 font-medium tabular-nums"
-          aria-label={`${room.unreadCount} unread`}
-        >
-          {room.unreadCount}
-        </span>
+      {directed && (
+        <CountPill solid count={directed.count} cap={directed.cap} label={directed.label} />
       )}
     </CommandItem>
   );

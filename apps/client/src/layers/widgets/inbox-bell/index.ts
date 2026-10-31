@@ -11,5 +11,5 @@
  * @module widgets/inbox-bell
  */
 export { InboxBell } from './ui/InboxBell';
-export { InboxBellPill, DISPLAY_CAP } from './ui/InboxBellPill';
+export { InboxBellPill } from './ui/InboxBellPill';
 export type { InboxBellPillProps, InboxBellGlyph } from './ui/InboxBellPill';

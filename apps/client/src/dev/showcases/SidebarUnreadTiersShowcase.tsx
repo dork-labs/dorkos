@@ -6,7 +6,11 @@
  */
 import { Hash, Moon, Sun } from 'lucide-react';
 import { CountPill, SidebarMenu, SidebarRow } from '@/layers/shared/ui';
-import { directedCountLabel } from '@/layers/features/dashboard-sidebar/ui/rooms/directed-count-label';
+import {
+  directedCountCap,
+  directedCountLabel,
+  type DirectedCountKind,
+} from '@/layers/features/dashboard-sidebar/ui/rooms/directed-count-label';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 
@@ -24,7 +28,8 @@ export const PANEL_WIDTH = 272;
  *
  * The cockpit's own `CountPill`, not a stand-in — the point of the page is to
  * show what the sidebar draws, so an invented badge here would be showing
- * nothing. Neutral ink on a tint, capped at `9+`.
+ * nothing. Orange ink on its own wash, because orange means you: capped at `9+`
+ * for mentions (the server stops counting at ten) and `99+` for a DM.
  *
  * **axe cannot judge it, and that is expected.** A one-digit label trips
  * axe-core's "content is too short to determine if it is actual text" heuristic,
@@ -33,9 +38,18 @@ export const PANEL_WIDTH = 272;
  * the hole stays exactly this size.
  *
  * @param count - How many things are addressed to you here.
+ * @param kind - Mentions (a channel) or messages (a DM). Defaults to mentions.
  */
-export function DirectedBadge({ count }: { count: number }) {
-  return <CountPill count={count} label={directedCountLabel(count, 'mentions')} />;
+export function DirectedBadge({
+  count,
+  kind = 'mentions',
+}: {
+  count: number;
+  kind?: DirectedCountKind;
+}) {
+  return (
+    <CountPill count={count} cap={directedCountCap(kind)} label={directedCountLabel(count, kind)} />
+  );
 }
 
 /**
@@ -43,7 +57,7 @@ export function DirectedBadge({ count }: { count: number }) {
  *
  * Two tiers and no more (design-decisions §18): something happened here is a
  * **bold label and nothing else**, and something is addressed to you adds a
- * numbered count pill in neutral ink. The tier that draws nothing is the one that keeps
+ * numbered count pill in the orange `you` tone. The tier that draws nothing is the one that keeps
  * getting a dot added back, which is why it is showcased beside the one that
  * does draw something rather than left to a table in a document.
  */
@@ -51,7 +65,7 @@ export function SidebarUnreadTiersShowcase() {
   return (
     <PlaygroundSection
       title="Sidebar Unread Tiers"
-      description="Two tiers, and no third weight. Activity — something happened here — is a bold label with no badge and no dot. Directed at you — a DM, or an @mention anywhere — adds a count pill in neutral ink, capped at 9+. Muting kills both, except that an @mention keeps its count."
+      description="Two tiers, and no third weight. Activity — something happened here — is a bold label with no badge and no dot. Directed at you — a DM, or an @mention anywhere — adds an orange count pill: mentions cap at 9+, a DM's messages at 99+. Muting kills both, except that an @mention keeps its count."
     >
       <ShowcaseLabel>Activity, directed, read, muted</ShowcaseLabel>
       <div className="border-border/50 bg-muted/30 rounded-lg border border-dashed p-4">
@@ -85,6 +99,13 @@ export function SidebarUnreadTiersShowcase() {
               emphasized
               trailing={<DirectedBadge count={14} />}
               dataSlot="sidebar-unread-directed-capped"
+            />
+            <SidebarRow
+              glyph={<Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />}
+              title="Mara Quill"
+              emphasized
+              trailing={<DirectedBadge count={128} kind="messages" />}
+              dataSlot="sidebar-unread-directed-dm"
             />
             <SidebarRow
               glyph={<Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />}

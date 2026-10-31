@@ -46,13 +46,18 @@ const mentionPillVariants = cva(
        * every stylesheet rule, so no `:hover` could ever have moved it.
        */
       tone: {
-        neutral: 'bg-secondary text-secondary-foreground',
+        // The chip tint, not `bg-secondary`: at 92% lightness that vanished on
+        // the 91% sidebar. 7% of the foreground reads on every ground.
+        neutral: 'bg-foreground/7 text-foreground',
         agent: 'bg-[color-mix(in_oklch,var(--identity-color)_14%,transparent)]',
-        /** A cc (DOR-3401): the same shape, theme tokens only, no accent. */
-        cc: 'bg-muted text-muted-foreground',
+        /**
+         * A cc (DOR-3401): the same tint, the quiet grey, regular weight, and
+         * the word `cc` before the name, so it is never told apart by shade.
+         */
+        cc: 'bg-foreground/7 text-muted-foreground font-normal',
       },
       interactive: {
-        true: 'focus-visible:ring-ring cursor-pointer transition-[background-color] duration-(--identity-answer) ease-(--identity-ease-standard) focus-visible:ring-2 focus-visible:outline-none',
+        true: 'focus-ring cursor-pointer transition-[background-color] duration-(--identity-answer) ease-(--identity-ease-standard)',
         false: '',
       },
     },
@@ -64,10 +69,9 @@ const mentionPillVariants = cva(
      *
      * It replaces a `brightness-95` filter, which multiplied a considered
      * identity colour toward grey — the opposite of the identity answering.
-     * The neutral pill has no identity colour to raise, so it steps its own
-     * surface toward the text instead: `--secondary` is lighter than the
-     * foreground in light mode and darker in dark mode, so one mix reads as a
-     * step up in both without asking the theme any questions.
+     * The neutral and cc pills have no identity colour to raise, so they step
+     * the chip tint from 7% to 11% of the foreground, the same step a chip
+     * takes, which reads as a step up in both themes.
      */
     compoundVariants: [
       {
@@ -76,14 +80,9 @@ const mentionPillVariants = cva(
         class: 'hover:bg-[color-mix(in_oklch,var(--identity-color)_20%,transparent)]',
       },
       {
-        tone: 'neutral',
+        tone: ['neutral', 'cc'],
         interactive: true,
-        class: 'hover:bg-[color-mix(in_oklch,hsl(var(--secondary)),hsl(var(--foreground))_10%)]',
-      },
-      {
-        tone: 'cc',
-        interactive: true,
-        class: 'hover:bg-[color-mix(in_oklch,hsl(var(--muted)),hsl(var(--foreground))_10%)]',
+        class: 'hover:bg-foreground/11',
       },
     ],
     defaultVariants: {
@@ -133,8 +132,8 @@ export interface MentionPillProps extends Omit<React.ComponentProps<'span'>, 'co
   interactive?: boolean;
   /**
    * True when the message only copied this member in: named after the names
-   * it starts with, so nobody is asked to answer (DOR-3401). Draws the grey chip,
-   * and says "cc" in words, so colour is never the only signal.
+   * it starts with, so nobody is asked to answer (DOR-3401). Draws the grey chip
+   * with the visible word `cc` before the name, so shade is never the only signal.
    */
   cc?: boolean;
 }
@@ -187,6 +186,7 @@ function MentionPill({
         title={ccTitle(name)}
         aria-label={`cc @${name}`}
       >
+        cc{' '}
         {kind === 'agent' && (
           <Bot aria-hidden className="mr-0.5 inline-block size-[0.85em] align-[-0.15em]" />
         )}

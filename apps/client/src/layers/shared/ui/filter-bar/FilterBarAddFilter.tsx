@@ -277,6 +277,8 @@ function FilterBarAddFilter({ dynamicOptions, className }: FilterBarAddFilterPro
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         data-slot="filter-bar-add-filter"
+        // Where focus lands when the last active-filter chip is removed.
+        data-chip-group-add=""
         className={cn(
           'border-muted text-muted-foreground hover:text-foreground hover:border-input inline-flex h-7 items-center gap-1 rounded-md border border-dashed px-2.5 text-xs',
           TOUCH_REACH,

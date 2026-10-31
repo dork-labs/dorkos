@@ -40,7 +40,9 @@ describe('MentionPill', () => {
     const pill = screen.getByText('@dorian').closest('[data-slot="mention-pill"]') as HTMLElement;
 
     expect(pill).toHaveAttribute('data-kind', 'human');
-    expect(pill).toHaveClass('bg-secondary');
+    // The chip tint: `bg-secondary` vanished on the sidebar.
+    expect(pill).toHaveClass('bg-foreground/7', 'text-foreground');
+    expect(pill).not.toHaveClass('bg-secondary');
     expect(pill.querySelector('svg')).toBeNull();
   });
 
@@ -111,7 +113,7 @@ describe('MentionPill', () => {
       const pill = container.querySelector('[data-slot="mention-pill"]') as HTMLElement;
 
       expect(pill.className).not.toMatch(/brightness/);
-      expect(pill.className).toContain('hover:bg-[color-mix(in_oklch,hsl(var(--secondary))');
+      expect(pill).toHaveClass('hover:bg-foreground/11', 'focus-ring');
     });
 
     it('leaves a non-interactive pill with no hover response at all', () => {
@@ -135,14 +137,15 @@ describe('MentionPill as a cc (DOR-3401)', () => {
 
     expect(pill).toHaveAttribute('data-cc', 'true');
     expect(pill).toHaveAttribute('title', "@bo gets a copy. They aren't asked to answer.");
-    expect(pill.className).toMatch(/bg-muted/);
-    expect(pill.className).toMatch(/text-muted-foreground/);
+    expect(pill).toHaveClass('bg-foreground/7', 'text-muted-foreground', 'font-normal');
+    // The word on screen, not only in the accessible name (C10).
+    expect(pill).toHaveTextContent(/^cc Bo$/);
     // No accent: the identity colour is not published on a cc.
     expect(pill.style.getPropertyValue('--identity-color')).toBe('');
   });
 
   it('labels a person cc by handle too', () => {
     render(<MentionPill kind="human" label="Kai" handle="kai" resolved cc />);
-    expect(screen.getByLabelText('cc @kai')).toHaveTextContent('@Kai');
+    expect(screen.getByLabelText('cc @kai')).toHaveTextContent(/^cc @Kai$/);
   });
 });

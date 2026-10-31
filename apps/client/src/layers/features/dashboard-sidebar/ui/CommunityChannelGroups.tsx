@@ -1,4 +1,4 @@
-import { appRoutes } from '@/layers/shared/lib';
+import { appRoutes, cn } from '@/layers/shared/lib';
 import { Link } from '@tanstack/react-router';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
@@ -9,7 +9,7 @@ import {
   useRemoteCommunityRooms,
 } from '@/layers/entities/community';
 
-import { Button } from '@/layers/shared/ui';
+import { Button, COUNT_PILL_CAP, CountPill } from '@/layers/shared/ui';
 import { useSafeSearch } from '@/layers/shared/model';
 
 /** Remote channels are grouped by community on the shared desktop and mobile library surface. */
@@ -99,15 +99,19 @@ function CommunityChannels({ connection }: { connection: CommunityConnectionDesc
             }
             className="hover:bg-accent aria-[current=page]:bg-accent flex min-h-9 items-center justify-between gap-2 rounded-md px-2 py-1 text-sm"
           >
-            <span className="truncate">#{room.slug ?? room.title}</span>
-            {room.unreadCount !== null && room.unreadCount > 0 && (
-              <span
-                className="text-muted-foreground text-xs"
-                aria-label={`${room.unreadCount} unread messages`}
-              >
-                {room.unreadCount}
-              </span>
-            )}
+            {/* Activity on a channel nobody addressed you in is a bold name and no
+              number: the number is kept for what was aimed at you. */}
+            <span
+              className={cn(
+                'truncate',
+                room.unreadCount !== null && room.unreadCount > 0 && 'font-semibold'
+              )}
+            >
+              #{room.slug ?? room.title}
+              {room.unreadCount !== null && room.unreadCount > 0 && (
+                <span className="sr-only">, unread messages</span>
+              )}
+            </span>
           </Link>
         ))}
       {rooms.data?.rooms.length === 0 && (
@@ -144,13 +148,11 @@ function CommunityDms({ connection }: { connection: CommunityConnectionDescripto
             {remoteDmTitle(dm)}
             {dm.readOnly && <span className="text-muted-foreground"> · read-only</span>}
           </span>
-          {!dm.readOnly && dm.unreadCount > 0 && (
-            <span
-              className="text-muted-foreground text-xs"
-              aria-label={`${dm.unreadCount} unread messages`}
-            >
-              {dm.unreadCount}
-            </span>
+          {!dm.readOnly && (
+            <CountPill
+              count={dm.unreadCount}
+              label={`${dm.unreadCount > COUNT_PILL_CAP ? `More than ${COUNT_PILL_CAP}` : dm.unreadCount} unread messages`}
+            />
           )}
         </Link>
       ))}

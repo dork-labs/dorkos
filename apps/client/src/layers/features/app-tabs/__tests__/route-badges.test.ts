@@ -81,7 +81,7 @@ describe('connectionsBadge', () => {
 describe('a route tab wearing its badge', () => {
   it('Schedules: the count reads as urgent, and the sentence is announced', () => {
     const id = routeTabIdentity('/tasks', schedulesBadge({ waiting: 2, failed: 0, running: [] }));
-    expect(id).toMatchObject({ primary: 'Schedules', count: 2, countEmphasis: true });
+    expect(id).toMatchObject({ primary: 'Schedules', count: 2, countTone: 'warning' });
     expect(id.accessibleName).toBe('Schedules, Needs you: 2 schedules wait for your OK');
   });
 
@@ -100,13 +100,13 @@ describe('a route tab wearing its badge', () => {
       primary: 'Activity',
       status: 'new',
       count: 5,
-      countEmphasis: false,
+      countTone: 'neutral',
     });
     expect(id.accessibleName).toBe('Activity, New: 5 new events since you last looked');
   });
 
   it('Connections: an urgent count', () => {
     const id = routeTabIdentity('/connections', connectionsBadge(1));
-    expect(id).toMatchObject({ primary: 'Connections', count: 1, countEmphasis: true });
+    expect(id).toMatchObject({ primary: 'Connections', count: 1, countTone: 'warning' });
   });
 });
