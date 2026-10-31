@@ -93,7 +93,7 @@ export interface DurableStreamConnection {
   enableVisibilityOptimization?(): void;
   /**
    * The connection's current state, when it tracks one. A `disconnected`
-   * session stream has given up retrying and stays down until it is rebuilt.
+   * stream keeps retrying underneath at the backoff cap (DOR-3482).
    */
   getState?(): ConnectionState;
 }
@@ -480,10 +480,10 @@ export class StreamManager {
       this.attachedCwd === nextCwd &&
       this.sessionConnection
     ) {
-      // A stream that gave up — five failed reconnects, as a laptop waking
-      // without a network can spend in seconds — never tries again on its own,
-      // and returning here kept it dead through every later send. Re-attaching
-      // the same chat (a send, a switch back) is the moment to bring it back.
+      // A stream past five failed reconnects, as a laptop waking without a
+      // network can spend in seconds, says `disconnected` and retries only at
+      // the backoff cap (DOR-3482). Re-attaching the same chat (a send, a
+      // switch back) is the moment to try now with a fresh snapshot.
       if (this.sessionConnection.getState?.() === 'disconnected') this.reconnectSession();
       return;
     }
