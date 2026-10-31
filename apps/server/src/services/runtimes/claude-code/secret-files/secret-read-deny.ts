@@ -11,8 +11,9 @@
  * Bypass included, so these hold everywhere a launch goes.
  *
  * Only the model's tools are stopped: `gh`, `git` and Claude Code itself still
- * read their own files. A read-only SHELL command (`grep -r`, `head`, `sed -n`)
- * is not a `Read` and is not covered here; that is part 2 (DOR-3300).
+ * read their own files. The CLI also holds a shell command that NAMES a denied
+ * file (`cat`, `head`, `sed -n`), but not a search of a whole folder
+ * (`grep -r`, `rg -uu`); that is part 2 (DOR-3300).
  *
  * The rules also name `Grep` and `Glob`, for a Claude Code that has those tools;
  * the bundled CLI has neither, and searches through the shell instead (part 2).
@@ -95,6 +96,56 @@ export const HOME_SECRETS = [
   ...DATA_FOLDER_SECRETS.map((entry) => `.dork/${entry}`),
 ] as const;
 
+/**
+ * Files in the agent's own folder whose names say they hold a secret: the
+ * secret-files scan's list (`core/secret-file-scan/scan-folder.ts`), at any
+ * depth, wherever a rule can spell it (DOR-3292). Templates stay readable, so
+ * `.env.*` is the usual names rather than a wildcard (`.env.example` is not a
+ * secret), and an SSH key is named whole so its `.pub` half still reads.
+ *
+ * What this holds, on the bundled CLI at every level, Bypass included: the
+ * `Read` tool, and a shell command that names the file (`cat .env`, a link
+ * to it, `.ENV`). What it can't: a search of the whole folder (`grep -r`,
+ * `rg -uu`) and any program that opens the file itself (`python3 -c`, which
+ * Bypass runs). Only moving the file out of the folder stops those.
+ */
+export const AGENT_FOLDER_SECRETS = [
+  '.env',
+  '.env.local',
+  '.env.*.local',
+  '.env.development',
+  '.env.dev',
+  '.env.production',
+  '.env.prod',
+  '.env.staging',
+  '.env.test',
+  '*.pem',
+  '*.key',
+  '*.p12',
+  '*.pfx',
+  '*.jks',
+  '*.keystore',
+  '*.tfvars',
+  '*.tfstate',
+  'id_rsa',
+  'id_ed25519',
+  'id_ecdsa',
+  'id_dsa',
+  '.netrc',
+  '.npmrc',
+  '.pypirc',
+  '.envrc',
+  '.dev.vars',
+  '.git-credentials',
+  '.pgpass',
+  'application_default_credentials.json',
+  'credentials',
+  'credentials.json',
+  '*service-account*.json',
+  '.docker/config.json',
+  '.kube/config',
+].map((name) => `**/${name}`);
+
 /** Where this launch's secrets live. */
 export interface SecretFolders {
   /** DorkOS's data folder. */
@@ -103,6 +154,8 @@ export interface SecretFolders {
   accountRoot: string;
   /** Every other account folder DorkOS knows of. */
   otherAccountRoots: readonly string[];
+  /** The agent's own folder and the turn's working folder, when known. */
+  agentFolders?: readonly (string | null | undefined)[];
 }
 
 /** A path and, when it differs, the real place it points to. */
@@ -147,6 +200,11 @@ export function secretReadDenyRules(folders: SecretFolders): string[] {
   named(folders.dorkHome, DATA_FOLDER_SECRETS, true);
   named(folders.accountRoot, ACCOUNT_FOLDER_SECRETS, true);
   for (const account of folders.otherAccountRoots) named(account, ACCOUNT_FOLDER_SECRETS, false);
+  // Not required: an agent folder with an odd name was never covered, and
+  // refusing its turns would be new harm for no new hold.
+  for (const agent of folders.agentFolders ?? []) {
+    if (agent) named(agent, AGENT_FOLDER_SECRETS, false);
+  }
   for (const entry of HOME_SECRETS) targets.push(`~/${entry}`);
   const rules = targets.flatMap((target) => READ_TOOLS.map((tool) => `${tool}(${target})`));
   return [...new Set(rules)];

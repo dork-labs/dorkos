@@ -18,7 +18,14 @@ import { homeOf, resolveAgentHome, type AgentHome } from '../../core/agent-ident
 import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
 import { assembleDoeMcp } from './mcp.js';
 import { assembleDoeResources } from './resources.js';
-import { buildDoeContext } from './context.js';
+import { buildDoeContextParts } from './context.js';
+import {
+  chooseTrims,
+  dorkosContextBudget,
+  fitItemOf,
+  joinFitted,
+} from '../shared/window/context-fit.js';
+import { fitHostTools, hostToolChars, type DoeWindow } from './window-fit.js';
 import { loadsAgentToAgentTools } from '../shared/tools/tool-exposure-policy.js';
 import { doeBuilderTool, type DoeBuilderLifecycle } from './builder.js';
 /** Facade-owned turn binding and explicit child execution/network policies. */
@@ -34,6 +41,11 @@ export interface DoeHostOptions extends DoeBuilderLifecycle {
   builderExecutionPolicy?: ExecutionPolicy;
   onEvent?: (event: DoeEvent) => void;
   webFetchPolicy?: WebFetchOptions;
+  /**
+   * The model's window. When set, DorkOS's own share is trimmed to fit it
+   * (`../shared/window/context-fit.ts`); when absent, nothing is left out.
+   */
+  window?: DoeWindow;
 }
 /** Assemble a new turn with no retained routing or directory grants. Caller owns token revocation. */
 export async function assembleDoeHost(options: DoeHostOptions) {
@@ -50,13 +62,28 @@ export async function assembleDoeHost(options: DoeHostOptions) {
     agentToAgent,
   });
   try {
-    const context = await buildDoeContext({
+    const parts = await buildDoeContextParts({
       cwd: options.cwd,
       agentPath,
       opts: options.opts,
       hostConnected: mcp.hostConnected,
       agentToAgent,
     });
+    // DorkOS's share is its text plus its always-loaded tool descriptions; on a
+    // small window both are trimmed in one order (DOR-2839).
+    const fit = chooseTrims(
+      [
+        ...parts.map(fitItemOf),
+        {
+          block: 'dorkos_tool_schemas' as const,
+          chars: hostToolChars(mcp.tools, mcp.trustedHostToolNames),
+        },
+      ],
+      options.window
+        ? dorkosContextBudget(options.window.contextWindow, options.window.maxOutputTokens)
+        : undefined
+    );
+    const context = joinFitted(parts, fit.dropped);
     const { resources, pathPolicy } = await assembleDoeResources({
       cwd: options.cwd,
       agentPath,
@@ -78,7 +105,9 @@ export async function assembleDoeHost(options: DoeHostOptions) {
         onChildEnd: options.onChildEnd,
       })
     );
-    for (const tool of mcp.tools) registry.register(tool);
+    const roomTurn = options.opts?.roomTurn !== undefined;
+    for (const tool of fitHostTools(mcp.tools, mcp.trustedHostToolNames, fit.dropped, roomTurn))
+      registry.register(tool);
     registry.register(createToolSearch(registry));
     options.signal.throwIfAborted();
     return {

@@ -152,11 +152,24 @@ describe('the daily workflow sequence, end to end against a bare origin', () => 
     (spec.config.collect as { lookback_days: number }).lookback_days = 1;
     const root = writeRepo(spec, path.join(base, 'repo'));
     const origin = path.join(base, 'origin.git');
+    // A bare repository is named with --git-dir, not found from the working directory: git
+    // refuses discovery under `safe.bareRepository=explicit`, which agent shells set.
     const g = (cwd: string, ...a: string[]) =>
-      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], {
-        cwd,
-        encoding: 'utf8',
-      }).trim();
+      execFileSync(
+        'git',
+        [
+          ...(cwd === origin ? ['--git-dir', origin] : []),
+          '-c',
+          'user.name=t',
+          '-c',
+          'user.email=t@t',
+          ...a,
+        ],
+        {
+          cwd,
+          encoding: 'utf8',
+        }
+      ).trim();
     g(base, 'init', '-q', '--bare', '-b', 'main', origin);
     g(root, 'init', '-q', '-b', 'main');
     g(root, 'add', '-A');

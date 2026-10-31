@@ -20,6 +20,7 @@ import {
   resetOwnerPasswordFailuresForTests,
   type OwnerPasswordDeps,
 } from '../owner-password.js';
+import { hashOwnerPassword, verifyOwnerPassword } from '../passwords/password-hash.js';
 
 let hash: string;
 let now: number;
@@ -138,5 +139,55 @@ describe('checkOwnerPassword', () => {
     expect(await checkOwnerPassword('correct horse', failing)).toBe('wrong');
     now += ownerPasswordRetryAfterMs(now);
     expect(await checkOwnerPassword('x'.repeat(129), deps())).toBe('wrong');
+  });
+
+  // DOR-3234 Must 4: a hash at Better Auth's lighter default is rewritten at OWASP's cost the
+  // first time the password is known, and only then.
+  describe('rewriting a weaker hash', () => {
+    function withRehash(stored: () => string) {
+      const rehash = vi.fn(async () => undefined);
+      const d = deps({
+        verifier: async () => ({
+          storedHash: async () => stored(),
+          verify: verifyOwnerPassword,
+          maxLength: 128,
+          rehash,
+        }),
+      });
+      return { d, rehash };
+    }
+
+    it('rewrites a legacy hash after the right password', async () => {
+      const { d, rehash } = withRehash(() => hash);
+      expect(await checkOwnerPassword('correct horse', d)).toBe('ok');
+      expect(rehash).toHaveBeenCalledExactlyOnceWith('user_owner', 'correct horse');
+    });
+
+    it('never rewrites after a wrong password', async () => {
+      const { d, rehash } = withRehash(() => hash);
+      expect(await checkOwnerPassword('wrong horse', d)).toBe('wrong');
+      expect(rehash).not.toHaveBeenCalled();
+    });
+
+    it('leaves a hash already at today’s cost alone', async () => {
+      const current = await hashOwnerPassword('correct horse');
+      const { d, rehash } = withRehash(() => current);
+      expect(await checkOwnerPassword('correct horse', d)).toBe('ok');
+      expect(rehash).not.toHaveBeenCalled();
+    });
+
+    it('still answers ok when the rewrite fails, keeping the old hash', async () => {
+      const d = deps({
+        verifier: async () => ({
+          storedHash: async () => hash,
+          verify: verifyOwnerPassword,
+          maxLength: 128,
+          rehash: async () => {
+            throw new Error('disk full');
+          },
+        }),
+      });
+      expect(await checkOwnerPassword('correct horse', d)).toBe('ok');
+    });
   });
 });

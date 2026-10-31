@@ -23,3 +23,7 @@ Why: setup-node keys the pnpm store on OS + arch + lockfile hash only, so every 
 Evidence: both failing runs restored a store that `db-check` saved on `Image: ubuntu-26.04` (22:27:50Z on #3194's queue ref, 23:36:43Z on #3245's). Green runs (#3251's 40972875642) restored one saved by `copy-spec-drift` on `ubuntu-24.04`. Neither install compiled node-pty; both took it from the store. The cache key and the Node version (24.22.1) were the same in both.
 
 Revert, back to `cache: pnpm`, together with the 24.04 pin, once the browser suite runs on the same image as everything else.
+
+## Correction 2026-10-31
+
+The key this entry added, `${{ env.ImageOS }}`, was always empty: the `env` context never sees the runner's own variables, so the key read `pnpm-store-Linux--X64-…` on every image and the store was still shared. It went green because the one shared store happened to be built on 24.04. Ledger 261031-071000 reads `ImageOS` in a step instead.

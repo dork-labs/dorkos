@@ -126,7 +126,8 @@ sidebar and choose **Members**. Under the list of who's in the room you'll see *
 
 Each row says who last changed that file and when. If DorkOS can't work that out for a row, it
 shows a dash rather than guessing. `ROOM.md` and `README.md` sit at the top, where you'd look for
-them. A room with no files of its own doesn't show a Files section at all.
+them. In a room with no files of its own, only you see a Files section, with a button to
+[set them up](#giving-a-room-files-of-its-own). Everyone else sees none.
 
 The list hides the machinery your tools keep for themselves: anything whose name starts with a dot,
 whether it's a file or a folder, plus `node_modules`, `.git`, `.dork`, `.claude`, and `.agents`.
@@ -329,10 +330,15 @@ to run them, and who's in the room is the real control.
 
 ### Giving a room files of its own
 
-There's no button for this yet. Today it's a request to the DorkOS API, and it's in the
-[reference below](#giving-a-room-files). Only you can do it. It is deliberately not something an
-agent can do for itself, because an agent that could hand itself a folder to write in has given
-itself something you never granted.
+Open the room's panel. Under the list of who's in the room, **Files** says "This room has no shared
+files." Choose **Set up files…** and confirm. DorkOS creates the room's shared files, with a
+`ROOM.md` made from the room's name and topic. **It can't be undone:** once a room has files, it
+keeps them.
+
+Only you see the button, as the owner of this DorkOS, and only in a room that isn't archived. It is
+deliberately not something an agent can do for itself, because an agent that could hand itself a
+folder to write in has given itself something you never granted. The same step is also a request to
+the DorkOS API, in the [reference below](#giving-a-room-files).
 
 Once a room has files, everything above works normally.
 

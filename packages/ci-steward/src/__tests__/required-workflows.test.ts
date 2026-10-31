@@ -26,6 +26,7 @@ function setup() {
     path: '.github/workflows/lint.yml',
     ref: 'refs/heads/main',
     bypass_actors: [],
+    enforced: true,
   };
   files.requiredChecks!.workflows = [source];
   const workflows = loadWorkflows(root, '.github/workflows', () => {});

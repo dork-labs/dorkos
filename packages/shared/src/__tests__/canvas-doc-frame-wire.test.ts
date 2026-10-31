@@ -54,6 +54,39 @@ describe('strict Doc wire', () => {
         parseCanvasDocWire(CanvasDocHandshakeSchema, { ...correlation, kind, ...addition })
       ).toBeNull();
   });
+  it('carries a boot nonce on the acknowledgement only', () => {
+    expect(
+      parseCanvasDocWire(CanvasDocHandshakeSchema, { ...correlation, kind: 'ack', boot: 'b' })
+    ).toMatchObject({ boot: 'b' });
+    expect(
+      parseCanvasDocWire(CanvasDocHandshakeSchema, { ...correlation, kind: 'ack', boot: '' })
+    ).toBeNull();
+    for (const kind of ['challenge', 'connect'])
+      expect(
+        parseCanvasDocWire(CanvasDocHandshakeSchema, { ...correlation, kind, boot: 'b' })
+      ).toBeNull();
+  });
+  it('sends the page an event without the session, room or document it streamed through', () => {
+    const event = {
+      id: '00000000-0000-4000-8000-000000000001',
+      type: 'agent.reply',
+      payload: { x: 1 },
+      direction: 'downstream',
+      receivedAt: '2026-10-02T00:00:02Z',
+    };
+    const frame = { type: 'canvas_event', docSeq: 1, event };
+    expect(
+      parseCanvasDocWire(CanvasDocResultSchema, { ...correlation, kind: 'event', frame })
+    ).not.toBeNull();
+    for (const leak of [{ scope: 'session-a' }, { documentId: 'doc' }, { incarnation: birth }])
+      expect(
+        parseCanvasDocWire(CanvasDocResultSchema, {
+          ...correlation,
+          kind: 'event',
+          frame: { ...frame, ...leak },
+        })
+      ).toBeNull();
+  });
   it('does not execute hostile accessors and bounds raw metadata', () => {
     let reads = 0;
     const value = { ...correlation, kind: 'ack' };

@@ -941,6 +941,17 @@ body {
   display: none;
 }
 
+/* The window's tab strip (`AppTabStrip`) scrolls sideways when tabs overflow,
+   and a scrollbar painted across the tabs there (FB-59). Hidden in every
+   engine; the strip still scrolls by wheel and keeps the active tab in view.
+   Here, not a utility class, for the same reason as the rule above. */
+[data-slot='app-tab-strip'] {
+  scrollbar-width: none;
+}
+[data-slot='app-tab-strip']::-webkit-scrollbar {
+  display: none;
+}
+
 /* Fallback for older Safari that doesn't support dvh */
 @supports not (height: 100dvh) {
   body {

@@ -55,6 +55,7 @@ const WORKFLOW_REL = '.github/workflows/credential-free-build.yml';
 const SCRUB_REL = 'scripts/run-credential-free.sh';
 
 const TEST_WORKFLOW_REL = '.github/workflows/test.yml';
+const BROWSER_WORKFLOW_REL = '.github/workflows/browser-test.yml';
 
 const workflow = readFileSync(path.join(repoRoot, WORKFLOW_REL), 'utf8');
 
@@ -124,9 +125,9 @@ describe('credential-free-build workflow', () => {
     // green. Change it deliberately when you add or remove a step.
     expect(
       commands.length,
-      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 5. If you added or ` +
+      `${WORKFLOW_REL} has ${commands.length} \`run:\` steps, expected 6. If you added or ` +
         `removed one on purpose, update this number; if you did not, a step went missing.`
-    ).toBe(5);
+    ).toBe(6);
     const unscrubbed = commands.filter((c) => !c.startsWith(`bash ${SCRUB_REL}`));
     expect(
       unscrubbed,
@@ -215,9 +216,14 @@ describe('credential-free-build workflow', () => {
     // would say so. The patterns come from the scrub script itself, so the
     // two lists cannot drift apart.
     const testWorkflow = readFileSync(path.join(repoRoot, TEST_WORKFLOW_REL), 'utf8');
+    // The one exemption: the queue-only runner label (ledger 261031-090000).
+    // It picks a machine and never reaches a step's environment, and
+    // merge-group-runner-label.test.ts pins its exact form.
+    const QUEUE_ONLY_RUNS_ON =
+      /^\s+runs-on: \$\{\{ github\.event_name == 'merge_group' && vars\.RUNNER_LABEL \|\| 'ubuntu-latest' \}\}\s*$/;
     const code = testWorkflow
       .split('\n')
-      .filter((line) => !/^\s*#/.test(line))
+      .filter((line) => !/^\s*#/.test(line) && !QUEUE_ONLY_RUNS_ON.test(line))
       .join('\n');
     const secretRefs = [...code.matchAll(/\b(?:secrets|vars)\.[A-Za-z0-9_]+/g)].map((m) => m[0]);
     expect(
@@ -270,7 +276,9 @@ describe('credential-free-build workflow', () => {
           `whole affected set on every run — the reason it had never once finished.`
       ).toBe(true);
     }
-    const keys = [...workflow.matchAll(/^\s+key:\s*(.+)$/gm)].map((m) => (m[1] as string).trim());
+    const keys = [...workflow.matchAll(/^\s+key:\s*(.+)$/gm)]
+      .map((m) => (m[1] as string).trim())
+      .filter((k) => k.startsWith('turbo-'));
     expect(
       keys,
       `the cache keys in ${WORKFLOW_REL} are ${JSON.stringify(keys)}. Restore and save must use ` +
@@ -322,5 +330,55 @@ describe('credential-free-build workflow', () => {
         `save writes into a scope the queue deletes on merge, so it is unreadable waste against ` +
         `the repo's 10GB cache budget).`
     ).toBe("always() && github.event_name == 'pull_request'");
+  });
+
+  // setup-node's `cache: pnpm` shares one store per lockfile across every Linux
+  // job, whatever image built it. node-pty compiles at install on linux-x64, so
+  // a store saved on ubuntu-26.04 kills the boot probe on a 24.04 runner
+  // (2026-10-30, ledger 261031-012000). test.yml's server suite and the
+  // browser suite load node-pty the same way, so they carry the same store.
+  //
+  // The image is read in a step, never as `${{ env.ImageOS }}`: the `env`
+  // context only holds variables a workflow sets, not the runner's own, so that
+  // form was always empty and the key read `pnpm-store-Linux--X64-…` on every
+  // image (ledger 261031-071000).
+  it('keys the pnpm store on the runner image, in every workflow that installs', () => {
+    const STORE_KEY =
+      "key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}";
+    const READ_IMAGE =
+      'echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT"';
+    const testWorkflow = readFileSync(path.join(repoRoot, TEST_WORKFLOW_REL), 'utf8');
+    const browserWorkflow = readFileSync(path.join(repoRoot, BROWSER_WORKFLOW_REL), 'utf8');
+    for (const [rel, text, installs] of [
+      [WORKFLOW_REL, workflow, 1],
+      [TEST_WORKFLOW_REL, testWorkflow, 2],
+      [BROWSER_WORKFLOW_REL, browserWorkflow, 3],
+    ] as const) {
+      expect(
+        /^\s+cache:\s*pnpm\s*$/m.test(text),
+        `${rel} uses setup-node's \`cache: pnpm\` again. That store is shared across ` +
+          `runner images, and node-pty's compiled pty.node does not load across them.`
+      ).toBe(false);
+      // Comments name the bad form on purpose; only code lines count.
+      const code = text
+        .split('\n')
+        .filter((line) => !/^\s*#/.test(line))
+        .join('\n');
+      expect(
+        /\$\{\{\s*env\.ImageOS\s*\}\}/.test(code),
+        `${rel} reads \`\${{ env.ImageOS }}\`, which is always empty: the \`env\` context ` +
+          `never sees the runner's own variables. Read \`$ImageOS\` in a step instead.`
+      ).toBe(false);
+      expect(
+        text.split(STORE_KEY).length - 1,
+        `${rel} should key its pnpm store on the image its \`pnpm-store\` step read, in ` +
+          `each of its ${installs} job(s) that install the workspace.`
+      ).toBe(installs);
+      expect(
+        text.split(READ_IMAGE).length - 1,
+        `${rel} should read \`$ImageOS\` in each of its ${installs} \`pnpm-store\` step(s), ` +
+          `and fail when it is unset rather than key on an empty string.`
+      ).toBe(installs);
+    }
   });
 });

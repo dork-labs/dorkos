@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import {
   DndContext,
@@ -86,6 +86,7 @@ export function AppTabStrip({
 }: AppTabStripProps) {
   const createButtonRef = useRef<HTMLButtonElement>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   // The span the dragged tab may move within, measured once as a drag starts
   // (before other tabs shift to make room). A slot rather than a ref because
   // the modifier built below reads it, and only ever while dragging.
@@ -121,6 +122,25 @@ export function AppTabStrip({
       }),
     };
   }, [latestTabs, dragBounds]);
+
+  // The scrollbar is hidden (FB-59), so a mouse with no tilt wheel needs its
+  // vertical turn to scroll the overflowing tabs sideways. A native listener,
+  // not `onWheel`: React's is passive, so the turn would also scroll whatever
+  // scrolls vertically around the strip. A gesture that is already mostly
+  // sideways (a trackpad, Shift+wheel) scrolls natively, and a strip with
+  // nothing to scroll lets the wheel through.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (scroller.scrollWidth <= scroller.clientWidth) return;
+      event.preventDefault();
+      scroller.scrollLeft += event.deltaY;
+    };
+    scroller.addEventListener('wheel', onWheel, { passive: false });
+    return () => scroller.removeEventListener('wheel', onWheel);
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: TAB_DRAG_DISTANCE_PX } }),
@@ -179,7 +199,15 @@ export function AppTabStrip({
     // scroller for the same reason Chrome pins it — an affordance you have to
     // scroll to find is one you will not find.
     <div className={cn('bg-muted/40 flex shrink-0 items-stretch border-b px-2 py-1', className)}>
-      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
+      {/* The native scrollbar is hidden by `data-slot` in `index.css` (FB-59):
+          it painted across the tabs once they overflowed. The wheel listener
+          above and the active tab scrolling itself into view (`AppTabItem`)
+          keep the overflow reachable. */}
+      <div
+        ref={scrollerRef}
+        data-slot="app-tab-strip"
+        className="flex min-w-0 flex-1 items-stretch overflow-x-auto"
+      >
         <DndContext
           sensors={sensors}
           collisionDetection={collisionDetection}
