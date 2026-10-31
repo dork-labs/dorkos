@@ -40,8 +40,14 @@ type Repo =
  * Run the real "Pick the shard count" step for one event over a fixture repo
  * shaped like actions/checkout's pull request checkout: a test-merge commit
  * whose first parent is the base and whose second parent is the PR's head.
+ * `plan` is what the step before it, "Plan this pull request's suites",
+ * handed over; by default a narrow plan that selected one client suite.
  */
-function pick(event: string, repo: Repo): number[] {
+function pick(
+  event: string,
+  repo: Repo,
+  plan: { scope: string; dirs?: string } = { scope: 'selected', dirs: 'apps/client ' }
+): number[] {
   const cwd = mkdtempSync(path.join(tmpdir(), 'dorkos-shard-count-'));
   try {
     if (repo.kind !== 'none') {
@@ -69,7 +75,13 @@ function pick(event: string, repo: Repo): number[] {
     const result = spawnSync('bash', ['-c', step('Pick the shard count')], {
       cwd,
       encoding: 'utf8',
-      env: { ...gitEnv, EVENT: event, GITHUB_OUTPUT: output },
+      env: {
+        ...gitEnv,
+        EVENT: event,
+        GITHUB_OUTPUT: output,
+        SCOPE: plan.scope,
+        DIRS: plan.dirs ?? '',
+      },
     });
     expect(result.status, result.stdout + result.stderr).toBe(0);
     const line = readFileSync(output, 'utf8').trim();
@@ -246,5 +258,24 @@ describe('how many shards a run gets (ledger 261031-150702)', () => {
   });
   it('falls back to six when there is no repository to diff', () => {
     expect(pick('pull_request', { kind: 'none' })).toEqual(SIX);
+  });
+  // The test plan (DOR-3518, ledger 261031-164008) widens a narrow diff.
+  const narrow: Repo = { kind: 'merge', files: ['apps/client/src/a.ts'] };
+  it('a narrow change whose plan runs every suite gets six', () => {
+    expect(pick('pull_request', narrow, { scope: 'full' })).toEqual(SIX);
+  });
+  it('a narrow change with no plan at all gets six', () => {
+    expect(pick('pull_request', narrow, { scope: '' })).toEqual(SIX);
+  });
+  it.each(['apps/server ', 'apps/client packages/shared '])(
+    'a narrow change whose plan reaches %s gets six',
+    (dirs) => {
+      expect(pick('pull_request', narrow, { scope: 'selected', dirs })).toEqual(SIX);
+    }
+  );
+  it('a narrow change whose plan stays narrow keeps two', () => {
+    expect(
+      pick('pull_request', narrow, { scope: 'selected', dirs: 'apps/client packages/shared-ui ' })
+    ).toEqual([1, 2]);
   });
 });
