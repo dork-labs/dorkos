@@ -201,7 +201,15 @@ export function ListRow({
             {movesTrailing && (
               <span
                 data-slot="list-row-subtitle-trailing"
-                className={cn(ROW_TRAILING_CLASS, '@min-[24rem]/row:hidden')}
+                className={cn(
+                  ROW_TRAILING_CLASS,
+                  '@min-[24rem]/row:hidden',
+                  // A ghost button leading the line ("Try again") pulls back by
+                  // its own inline padding, so its label starts where the
+                  // title's text does.
+                  '[&>[data-variant=ghost][data-size=sm]:first-child]:-ml-3',
+                  '[&>[data-variant=ghost][data-size=xs]:first-child]:-ml-2'
+                )}
               >
                 {trailing}
                 {twoLines && <Separator />}
