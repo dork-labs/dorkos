@@ -10,7 +10,7 @@
 import type { ComponentProps } from 'react';
 import { motion } from 'motion/react';
 import { Bell, TriangleAlert } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, SPRING } from '@/layers/shared/lib';
 
 /**
  * Above this the pill shows a capped "N+" rather than a growing number — the
@@ -94,7 +94,7 @@ export function InboxBellPill({
       animate={{ opacity: 1, scale: 1 }}
       whileHover={{ scale: 1.03 }}
       whileTap={{ scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+      transition={SPRING.snap}
       className={cn(
         // **A 28px square below `lg`, whatever the number.** On a phone and a
         // tablet the pill is the same square as the header's other controls,

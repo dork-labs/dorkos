@@ -1,0 +1,21 @@
+{
+  "$comment": "The design-token ratchet (scripts/check-design-tokens.ts). Counts per file may fall, never rise. Run `pnpm check:design-tokens -- --update` after lowering one; never raise a number by hand.",
+  "rows": {
+    "spring-literal": {
+      "apps/client/src/index.css": 1,
+      "apps/client/src/layers/features/chat/ui/chips/chip-motion.ts": 1,
+      "apps/client/src/layers/features/chat/ui/tasks/TaskRow.tsx": 1,
+      "apps/client/src/layers/features/dashboard-sidebar/ui/motion/sidebar-motion.ts": 1,
+      "apps/client/src/layers/features/gen-ui/ui/nodes/mood/MoodNode.tsx": 1,
+      "apps/client/src/layers/features/gen-ui/ui/nodes/mood/faces.tsx": 2,
+      "apps/client/src/layers/features/gen-ui/ui/nodes/mood/parts.tsx": 1,
+      "apps/client/src/layers/features/pip-panel/ui/PipMiniBar.tsx": 1,
+      "apps/client/src/layers/features/pip-panel/ui/PipSheet.tsx": 1,
+      "apps/client/src/layers/features/team-roster/ui/TeamMemberCard.tsx": 1,
+      "apps/client/src/layers/shared/lib/celebrations/effects.ts": 1,
+      "apps/client/src/layers/shared/ui/image-lightbox/image-lightbox.tsx": 2,
+      "apps/client/src/layers/shared/ui/image-lightbox/use-lightbox-gestures.ts": 1,
+      "apps/client/src/layers/shared/ui/segmented-control.tsx": 1
+    }
+  }
+}

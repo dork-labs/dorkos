@@ -207,15 +207,15 @@ Animation should feel like physics, not decoration. Things should move because t
 
 ### Easing
 
-| Curve      | Value                                         | Usage                               |
-| ---------- | --------------------------------------------- | ----------------------------------- |
-| `ease-out` | `cubic-bezier(0, 0, 0.2, 1)`                  | Entrances (fast start, gentle stop) |
-| `ease-in`  | `cubic-bezier(0.4, 0, 1, 1)`                  | Exits (gentle start, fast finish)   |
-| `spring`   | `type: "spring", stiffness: 400, damping: 30` | Interactive elements                |
+| Curve      | Value                                          | Usage                               |
+| ---------- | ---------------------------------------------- | ----------------------------------- |
+| `ease-out` | `cubic-bezier(0, 0, 0.2, 1)`                   | Entrances (fast start, gentle stop) |
+| `ease-in`  | `cubic-bezier(0.4, 0, 1, 1)`                   | Exits (gentle start, fast finish)   |
+| `spring`   | `SPRING.snap`, `glide` or `fold` (`motion.ts`) | Interactive elements                |
 
 ### Animation Catalog
 
-**Message entrance:** Fade in + slide up 8px, spring `stiffness:320 damping:28` (settles ~250ms, no bounce). User messages also scale from 0.97→1. Only animate the _newest_ message; history loads instantly.
+**Message entrance:** Fade in + slide up 8px, `SPRING.glide` (no bounce). User messages also scale from 0.97→1. Only animate the _newest_ message; history loads instantly.
 
 **Session switch:** 150ms opacity crossfade via `AnimatePresence mode="wait"`. Total transition 300ms (old exits, then new enters). Duration-based easing, not spring.
 

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { AppWindow, ArrowUp, CornerDownLeft, X } from 'lucide-react';
-import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
+import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS, SPRING } from '@/layers/shared/lib';
 import type { QueueItem } from '../../model/use-message-queue';
 import { queueHeaderCount, UNKNOWN_SENDER } from '../../lib/queue-sender';
 import { QueueSenderLine } from './QueueSenderLine';
@@ -116,7 +116,7 @@ export function QueuePanel({
               animate={{
                 opacity: 1,
                 y: 0,
-                transition: { type: 'spring', stiffness: 320, damping: 28 },
+                transition: SPRING.glide,
               }}
               exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
               layout

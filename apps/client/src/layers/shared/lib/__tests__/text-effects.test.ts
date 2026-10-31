@@ -94,6 +94,6 @@ describe('useTextEffectConfig', () => {
     }));
 
     const result = useTextEffectConfig(DEFAULT_TEXT_EFFECT);
-    expect(result.mode).toBe('blur-in');
+    expect(result.mode).toBe('fade');
   });
 });

@@ -286,6 +286,7 @@ export {
   useTextEffectConfig,
 } from './text-effects';
 export type { TextEffectMode, TextEffectConfig } from './text-effects';
+export { DURATION, EASE, SPRING, STAGGER, installReducedMotion } from './motion';
 export { useAppForm, withForm, formOptions, useFieldContext, useFormContext } from './form';
 export { formatDuration } from './format-duration';
 export { humanizePackageName, packageDisplayLabel, isSingleEmoji } from './humanize-name';

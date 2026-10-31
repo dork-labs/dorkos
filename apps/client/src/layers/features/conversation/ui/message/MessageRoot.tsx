@@ -21,7 +21,7 @@
 import { useMemo, useState, type ComponentPropsWithoutRef, type Ref } from 'react';
 import { Slot } from 'radix-ui';
 import { motion } from 'motion/react';
-import { cn } from '@/layers/shared/lib';
+import { cn, SPRING } from '@/layers/shared/lib';
 import type { LongPressState } from '@/layers/shared/model';
 import { ImageLightboxGroup } from '@/layers/shared/ui';
 import {
@@ -69,7 +69,7 @@ export interface MessageRootProps extends Omit<
 }
 
 /** How a row arrives when it is new. Nothing else in the row moves on mount. */
-const ARRIVAL = { type: 'spring', stiffness: 320, damping: 28 } as const;
+const ARRIVAL = SPRING.glide;
 
 /**
  * The row itself: the grid a message is laid out on, and the surface its actions

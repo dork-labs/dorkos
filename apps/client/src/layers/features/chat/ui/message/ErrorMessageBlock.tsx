@@ -4,7 +4,7 @@ import { AlertTriangle, ChevronDown, RotateCcw } from 'lucide-react';
 import type { ErrorCategory } from '@dorkos/shared/types';
 import { describeKnownModelError } from '@dorkos/shared/runtime-error-classification';
 import { Button, LinkifiedText, containsUrl } from '@/layers/shared/ui';
-import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS } from '@/layers/shared/lib';
+import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS, SPRING } from '@/layers/shared/lib';
 import { AccountLimitMarker } from '@/layers/features/continue-on-account';
 import { AgentPausedNotice } from '@/layers/entities/mesh';
 import { AGENT_PAUSED_CODE } from '@dorkos/shared/mesh-schemas';
@@ -312,10 +312,7 @@ function ErrorCard({
               className="text-muted-foreground hover:text-foreground mt-2 flex items-center gap-1 text-xs"
               aria-expanded={showDetails}
             >
-              <motion.div
-                animate={{ rotate: showDetails ? 0 : -90 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              >
+              <motion.div animate={{ rotate: showDetails ? 0 : -90 }} transition={SPRING.fold}>
                 <ChevronDown className="size-3" />
               </motion.div>
               Details

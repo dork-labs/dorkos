@@ -418,9 +418,19 @@
   --msg-tool-radius: var(--radius);
 
   /* === Motion tokens === */
+  /* The same values as `DURATION` and `EASE` in `shared/lib/motion.ts`; a test
+     holds the two together. No curve here overshoots. */
+  --dur-press: 80ms;
+  --dur-instant: 100ms;
+  --dur-fast: 150ms;
+  --dur-normal: 200ms;
+  --dur-slow: 300ms;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --msg-enter-y: 8px;
-  --msg-enter-stiffness: 320;
-  --msg-enter-damping: 28;
+  --msg-enter-stiffness: 280;
+  --msg-enter-damping: 32;
   --msg-tool-expand-duration: 300ms;
   --msg-tool-expand-easing: cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -1094,15 +1104,9 @@ body {
   animation-fill-mode: forwards;
 }
 
-/* The message action capsule's entrance: a 5px rise that overshoots a pixel and
-   settles (design record §5.1). The overshoot is a KEYFRAME, not the curve —
-   cubic-bezier(.2,1.4,.4,1) alone only carries a 5px travel about a quarter of
-   a pixel past its landing (measured), which is invisible. So the pixel the
-   design asks for is stated, and the curve shapes the way there.
-
-   The fade is the 90ms the design names; the rise runs longer so the settle has
-   somewhere to happen, which is the proportion the approved demo shows — and
-   still well inside the 300ms every motion here resolves within.
+/* The message action capsule's entrance: a 5px rise (design record §5.1). The
+   fade is the 90ms the design names; the rise runs a little longer, and is still
+   well inside the 300ms every motion here resolves within.
 
    `translate` rather than `transform` so it composes with anything else the
    capsule is asked to do later, and because that is the property Tailwind's own
@@ -1113,21 +1117,18 @@ body {
   from {
     translate: 0 5px;
   }
-  55% {
-    translate: 0 -1px;
-  }
   to {
     translate: 0 0;
   }
 }
 
 @utility animate-capsule-in {
-  animation: capsule-in 160ms cubic-bezier(0.2, 1.4, 0.4, 1);
+  animation: capsule-in 160ms var(--ease-out);
 }
 
 /* A reaction arriving (design record §5.2): scale 0.4 → 1.28 with a ~2° tilt,
    an undershoot, then settle. The overshoot is stated as a KEYFRAME rather than
-   left to the curve for the same reason `capsule-in` states its pixel — a curve
+   left to the curve, because a curve
    alone cannot carry a scale a quarter of the way past its landing and have it
    read as a pop.
 
@@ -1195,7 +1196,7 @@ body {
 }
 
 @utility animate-reaction-roll {
-  animation: reaction-roll var(--msg-reaction-roll) cubic-bezier(0.2, 1.4, 0.4, 1);
+  animation: reaction-roll var(--msg-reaction-roll) var(--ease-out);
 }
 
 /* A long press in progress (design record §5.6): the message gives 5% under the
@@ -1236,13 +1237,13 @@ body {
 }
 
 @utility animate-press-release {
-  animation: press-release var(--msg-press-release) cubic-bezier(0.2, 1.6, 0.4, 1);
+  animation: press-release var(--msg-press-release) var(--ease-out);
 }
 
 /* A reply landing in the thread panel (design record §5.3 — the bounce, all
    that remains of it since DOR-2110 removed the connector): it comes down from
    above, overshoots 2px, and settles. The bounce is stated as a KEYFRAME for
-   the same reason `capsule-in`'s pixel is — a curve alone cannot carry a 7px
+   the same reason the reaction pop states its scale — a curve alone cannot carry a 7px
    travel 2px past its landing and have it read as weight. */
 @keyframes thread-reply-in {
   from {
@@ -1260,7 +1261,7 @@ body {
 }
 
 @utility animate-thread-reply-in {
-  animation: thread-reply-in var(--msg-thread-reply) cubic-bezier(0.2, 1.6, 0.4, 1);
+  animation: thread-reply-in var(--msg-thread-reply) var(--ease-out);
 }
 
 /* The presence hand-off (design record §5.4): the answer settles UPWARD into
@@ -1287,7 +1288,7 @@ body {
 }
 
 @utility animate-reply-settle {
-  animation: reply-settle var(--msg-presence-handoff) cubic-bezier(0.2, 1.4, 0.4, 1);
+  animation: reply-settle var(--msg-presence-handoff) var(--ease-out);
 }
 
 /* The reply row's count advancing (design record §5.5): it flips up 3px with a
@@ -1314,7 +1315,7 @@ body {
 }
 
 @utility animate-count-flip {
-  animation: count-flip var(--msg-count-flip) cubic-bezier(0.2, 1.6, 0.4, 1);
+  animation: count-flip var(--msg-count-flip) var(--ease-out);
   display: inline-block;
 }
 
