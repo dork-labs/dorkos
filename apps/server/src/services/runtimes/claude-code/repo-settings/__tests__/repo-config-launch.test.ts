@@ -91,7 +91,6 @@ const turn = (cwd: string, extra: Partial<RepoConfigTurn> = {}): RepoConfigTurn 
   agentName: 'Ops',
   home: undefined,
   cwd,
-  teammate: false,
   dorkHome: '/nonexistent-dork-home',
   ...extra,
 });
@@ -283,11 +282,10 @@ describe('committed hooks', () => {
     expect(activity.map((a) => a.state)).toEqual(['paused', 'running']);
   });
 
-  it('skips the agent home and a teammate’s turn', async () => {
+  it('skips the agent home', async () => {
     const wt = repo.addWorktree('wt');
     writeFile(path.join(wt, '.claude/hooks/guard.mjs'), 'x();\n');
     expect((await resolveRepoConfigForLaunch(turn(wt, { home: wt }))).pauseHooks).toBe(false);
-    expect((await resolveRepoConfigForLaunch(turn(wt, { teammate: true }))).pauseHooks).toBe(false);
   });
 });
 

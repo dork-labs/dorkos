@@ -48,7 +48,7 @@ import {
 } from '@dorkos/db';
 import { and, asc, eq, gte, isNotNull, isNull, like, lte, ne, or, sql } from 'drizzle-orm';
 
-import { hasMarks, parseStoredMarks } from '../turn-power/turn-marks.js';
+import { marksHold, parseStoredMarks } from '../turn-power/turn-marks.js';
 import { isOwnLaunchOrigin, openingMessageMarked } from './existing-chats-raise.js';
 
 /** The natural-key prefix of an author outside this computer (`author-registry.ts`). */
@@ -134,7 +134,7 @@ export function roomMarkedReader(db: Db, cacheRooms = false): (roomId: string) =
           )
         )
         .all()
-        .some((row) => hasMarks(parseStoredMarks(row.turnMarks))) ||
+        .some((row) => marksHold(parseStoredMarks(row.turnMarks))) ||
       roomHoldsHeldPost(roomId);
     if (cacheRooms) rooms.set(roomId, answer);
     return answer;

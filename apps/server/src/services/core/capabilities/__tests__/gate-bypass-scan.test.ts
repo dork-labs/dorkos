@@ -131,6 +131,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'replaces a whole config section with no policy and no consent door, which is why every writer that does it owes its own gate and an audit line',
     call: 'configManager.set(',
     allowed: {
+      'services/extensions/pin/path-trust-edits.ts':
+        'pins or unpins one path-trust approval from what the scan read, never from a caller: only the digest moves, on a copy already approved, and it follows the agent’s own level (logConfigWrite: "an extension following its agent")',
       'services/core/operator/config-patch.ts':
         'the one general-purpose merge, reached only through applyGuardedConfigWrite — the two entries above are what pin that',
       'startup/steps/telemetry-extensions-runtimes.ts':

@@ -277,6 +277,10 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       );
     }
 
+    // Before the backfill, which then keeps what these rows already say, and before any sync reads
+    // their files (DOR-3440). They stay off: the backfill grants, it never switches on.
+    await taskStore.approvals.clearOutsiderParks();
+
     const backfilled = taskStore.approvals.backfillApprovalGrants();
     if (backfilled > 0) {
       logger.info(`[Tasks] Kept ${backfilled} already-approved schedule(s) approved`);

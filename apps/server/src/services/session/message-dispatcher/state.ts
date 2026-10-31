@@ -15,8 +15,6 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import type { TriggerTurnDeps, TriggerTurnResult } from '../trigger-turn.js';
 import { isChatClientId } from '../chat-messages/chat-client-id.js';
-import { isRelayClientId } from '../../core/session-relay/relay-client-id.js';
-import { isExtensionClientId } from '../../extensions/agent-send/extension-client-id.js';
 import { logger } from '../../../lib/logger.js';
 import type {
   DispatchLifecycleEvent,
@@ -68,7 +66,7 @@ export const launching = new Set<string>();
  * senders while it waits, and a row adopted after a restart has no in-memory
  * plan to carry one. Wired at boot by the chat-message service.
  */
-export type QueuedChatCeilingResolver = (messageId: string) => TurnPermissionCeiling;
+export type QueuedChatCeilingResolver = (messageId: string) => TurnPermissionCeiling | undefined;
 
 let queuedChatCeiling: QueuedChatCeilingResolver | undefined;
 
@@ -87,14 +85,7 @@ export function setQueuedChatCeilingResolver(
  * The ceiling a launching message runs under: the caller's own, plus a bound
  * read from who queued the row.
  *
- * - A row another chat sent adds its senders' bound; with no resolver wired it
- *   is held to the receiving runtime's default: it fails closed.
- * - A row the session relay sent adds the runtime's default, always. The relay
- *   passes that ceiling itself, but a row adopted after a restart has no
- *   in-memory plan to carry it, and words from the web must still ask before
- *   anything that needs a person (spec `everything-is-a-space` B2, option 2).
- * - A row an extension sent adds the runtime's default too, for the same
- *   reason: an app's code is not the owner's words (DOR-3036).
+ * - A row another chat sent adds a teammate's chain its sender carried, if any.
  * - A row marked held to the default (a Wi-Fi sign-in's words, DOR-3037) adds
  *   the runtime's default, for the same reason: after a restart, or after
  *   somebody on Wi-Fi rewords a row a person queued here, no plan carries it.
@@ -113,11 +104,8 @@ export function launchCeiling(
   const list = (c: TurnPermissionCeiling): readonly TurnPermissionBound[] =>
     Array.isArray(c) ? (c as readonly TurnPermissionBound[]) : [c as TurnPermissionBound];
   const bounds: TurnPermissionBound[] = [];
-  if (isChatClientId(clientId))
-    bounds.push(...list(queuedChatCeiling?.(messageId) ?? 'runtime-default'));
-  else if (isRelayClientId(clientId) || isExtensionClientId(clientId)) {
-    bounds.push('runtime-default');
-  }
+  const fromChat = isChatClientId(clientId) ? queuedChatCeiling?.(messageId) : undefined;
+  if (fromChat !== undefined) bounds.push(...list(fromChat));
   const ownBounds = own === undefined ? [] : list(own);
   if (heldToDefault && ![...ownBounds, ...bounds].includes('runtime-default')) {
     bounds.push('runtime-default');

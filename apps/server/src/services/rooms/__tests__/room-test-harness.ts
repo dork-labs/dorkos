@@ -10,7 +10,6 @@
  * @module server/services/rooms/__tests__/room-test-harness
  */
 import type { RoomSeatMover } from '../reseat/seat-mover.js';
-import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
 import type { InterruptReceipt } from '@dorkos/shared/types';
@@ -778,8 +777,6 @@ export function createRoomHarness(opts: {
   /** The owner's IANA zone, as `config.profile.timezone` supplies it (FB-66). */
   operatorTimeZone?: () => string;
   budgetNow?: () => number;
-  /** The level a person set each poster agent to (DOR-3107). */
-  posterLevel?: (agentPath: string, sessionIds: readonly string[]) => Promise<TurnPermissionBound>;
   /**
    * Which rooms the operator has muted, as a live predicate (spec
    * `notification-system` task T11) — defaults to "nothing is muted", the same
@@ -889,7 +886,6 @@ export function createRoomHarness(opts: {
   const service = new RoomService({
     store,
     ...(opts.mirrorAccess ? { mirrorAccess: opts.mirrorAccess } : {}),
-    ...(opts.posterLevel ? { posterLevel: opts.posterLevel } : {}),
     ...(opts.mirrorWrites ? { mirrorWrites: opts.mirrorWrites } : {}),
     reactions,
     canvasDocuments,

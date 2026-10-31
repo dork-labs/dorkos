@@ -14,8 +14,6 @@ import { shouldWakeForRefusal, wakeForRefusedRoomTurn } from '../room-wakes.js';
 import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
 import type { BeatWake } from '../beat-runner.js';
 import { ConnectorRegistry } from '../../connectors/registry.js';
-import { noteRelayTurnStart } from '../../session/origin/turn-origin.js';
-import { resetOutsiderTurns, turnStartedByOutsider } from '../../session/origin/outsider-turns.js';
 
 let beats: Array<{ agentId: string; wake: BeatWake }>;
 let hub: EventWakes;
@@ -55,7 +53,6 @@ beforeEach(() => {
 afterEach(() => {
   hub.uninstall();
   resetBeatTurns();
-  resetOutsiderTurns();
   vi.useRealTimers();
 });
 
@@ -97,10 +94,10 @@ describe('a refused room turn', () => {
     ).toBe(true);
   });
 
-  // DOR-3036: a beat would read a teammate's chain as the agent's own. A post that carried a
-  // stranger's words on wakes it (DOR-3390, Security): the beat gathers it with its marks, so it
-  // runs as a marked turn whose risky actions ask.
-  it('never wakes for a teammate’s chain, and wakes for a post that carried outside words', () => {
+  // A teammate's chain is a record for the space's limit, and blocks no wake (DOR-3440). A post that
+  // carried a stranger's words on wakes it too (DOR-3390, Security): the beat gathers it with its
+  // marks, so it runs as a marked turn whose risky actions ask.
+  it('wakes for a teammate’s chain, and for a post that carried outside words', () => {
     const level = { asks: 'always', reach: 'read' } as const;
     noteEntryLevel('marked-teammate', {
       ...level,
@@ -112,7 +109,7 @@ describe('a refused room turn', () => {
     const fromOtto = (id: string) => entry({ id, authorId: 'a-otto', sessionId: 'otto-chat' });
     expect(
       shouldWakeForRefusal(JUNO, 'mention', fromOtto('marked-teammate'), 'repeat', AUTHORS)
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldWakeForRefusal(JUNO, 'mention', fromOtto('marked-outsider'), 'repeat', AUTHORS)
     ).toBe(true);
@@ -173,16 +170,5 @@ describe('the connector registry', () => {
     registry.markSignInEnded('conn-1' as never, 'expired');
     vi.advanceTimersByTime(60_000);
     expect(beats).toEqual([{ agentId: 'agent-juno', wake: { wake: 'event:connection-lost' } }]);
-  });
-});
-
-describe('a relay turn', () => {
-  it('marks an A2A or bridged sender a stranger before the turn runs, and our agent not', () => {
-    noteRelayTurnStart({ sessionId: 's-a2a', from: 'a2a-gateway' });
-    noteRelayTurnStart({ sessionId: 's-telegram', from: 'relay.human.telegram.4242' });
-    noteRelayTurnStart({ sessionId: 's-agent', from: 'relay.agent.default.agent-02' });
-    expect(turnStartedByOutsider('s-a2a')).toBe(true);
-    expect(turnStartedByOutsider('s-telegram')).toBe(true);
-    expect(turnStartedByOutsider('s-agent')).toBe(false);
   });
 });

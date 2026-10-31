@@ -18,7 +18,6 @@ import {
   type RelayAgent,
   type RelaySessionFacts,
 } from './relay-serves.js';
-import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 
 /** Text that opens with a slash command, as the composer would run it. */
 const SLASH_COMMAND = /^\s*\/[A-Za-z][\w:.-]*(\s|$)/;
@@ -38,16 +37,12 @@ export type RelayedMessage =
  * - Anything else is not found: a relayed message never starts a chat it did
  *   not ask for.
  *
- * Only the words and the client's message id come from the request. A hub
- * that was broken into could have written them, so two ways past the turn's
- * ceiling ({@link RELAY_TURN_CEILING}) are refused before anything is placed:
+ * Only the words and the client's message id come from the request. Two kinds
+ * of request are refused before anything is placed:
  *
- * - **A disposition other than `queue`.** Staged words wait for the next turn,
- *   whoever starts it, and steered words join a running turn; neither is held
- *   to the relay's ceiling. No disposition is passed on, so the send path
- *   queues the message as its own turn.
- * - **A slash command.** A command's `allowed-tools` approves tools ahead of
- *   time, which would skip the ask. Commands run only at this computer.
+ * - **A disposition other than `queue`.** No disposition is passed on, so the
+ *   send path queues the message as its own turn.
+ * - **A slash command.** Commands run only at this computer.
  *
  * @param request - The parsed `session.send` request.
  * @param facts - The server's records for the chat, or `null` when it does not exist.
@@ -85,13 +80,3 @@ export function relayedMessage(
     startsChat: true,
   };
 }
-
-/**
- * The loosest level a relayed turn may run at: the runtime's own default,
- * which asks before anything that needs a person. It is the bound for words
- * this computer cannot vouch for, and a relayed message is that: it arrives
- * through the hub, so a hub that was broken into could have written it. Each
- * question it raises waits at this computer, or for the passkey-signed
- * approval from the web (spec B4); the relay never answers one without it.
- */
-export const RELAY_TURN_CEILING: TurnPermissionCeiling = 'runtime-default';

@@ -59,11 +59,6 @@ vi.mock('../../message-dispatcher.js', () => ({
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { configManager } from '../../../core/config-manager.js';
 import { dispatchMessage } from '../../message-dispatcher.js';
-import {
-  chatHeardOutsider,
-  messageTurnStarted,
-  resetOutsiderTurns,
-} from '../../origin/outsider-turns.js';
 import { recordDispatchEnd } from '../../../observability/dispatch-buffers.js';
 import { resolveSessionCwdWithRoom } from '../../../workspace/room-session-place.js';
 import {
@@ -423,17 +418,14 @@ describe('dispatchSessionMessage', () => {
 describe('a launch held by a continuation (DOR-3203)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetOutsiderTurns();
     vi.mocked(runtimeRegistry.has).mockReturnValue(true);
     vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockResolvedValue({
       runtime: fakeRuntime as never,
       bound: false,
     });
   });
-  afterEach(() => resetOutsiderTurns());
 
   async function launched(extra: { continuationHold?: true }) {
-    // Queued behind a running turn, so its note waits for the turn's start.
     vi.mocked(dispatchMessage).mockResolvedValueOnce({
       accepted: true,
       canonicalId: SESSION,
@@ -451,21 +443,18 @@ describe('a launch held by a continuation (DOR-3203)', () => {
       permissionCeiling: 'runtime-default',
       ...extra,
     });
-    const passed = vi.mocked(dispatchMessage).mock.calls[0]![0];
-    messageTurnStarted(SESSION, passed.messageId!);
-    return passed;
+    return vi.mocked(dispatchMessage).mock.calls[0]![0];
   }
 
-  it('passes the hold on, and does not count the chat as one a stranger reached', async () => {
+  it('passes the hold on', async () => {
     const passed = await launched({ continuationHold: true });
     expect(passed).toMatchObject({ permissionCeiling: 'runtime-default', continuationHold: true });
-    expect(chatHeardOutsider(SESSION)).toBe(false);
   });
 
-  it('counts a Wi-Fi hold as a stranger’s, as before (DOR-3037)', async () => {
+  it('passes a Wi-Fi hold on without calling it a continuation (DOR-3037)', async () => {
     const passed = await launched({});
+    expect(passed.permissionCeiling).toBe('runtime-default');
     expect(passed.continuationHold).toBeUndefined();
-    expect(chatHeardOutsider(SESSION)).toBe(true);
   });
 });
 

@@ -79,7 +79,7 @@ async function agentWritesAllow(allow: string[]): Promise<void> {
 
 /** What the agent's next launch would do. */
 function nextLaunch() {
-  return resolveFolderAllows({ teammate: false, agent: AGENT, home, cwd: home });
+  return resolveFolderAllows({ agent: AGENT, home, cwd: home });
 }
 
 describe('an agent cannot grant itself its folder allow list', () => {

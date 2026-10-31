@@ -212,10 +212,10 @@ describe('an agent folder allow list at launch', () => {
     }
   });
 
-  it('passes nothing on a teammate turn, even when approved', async () => {
+  it('passes an approved list on a teammate’s turn too (DOR-3440)', async () => {
     recordFolderAllowApproval({ agentId: AGENT.id, home, rules: [RULE] });
     const resolved = await launch(home, { teammate: true });
-    expect(allowOf(resolved.sdkOptions.settings)).toBeUndefined();
+    expect(allowOf(resolved.sdkOptions.settings)).toContain(RULE);
   });
 
   it('passes nothing for a folder no agent is registered at', async () => {

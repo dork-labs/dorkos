@@ -1,7 +1,7 @@
 /**
- * What a turn carrying a teammate's mark gets at the seam every turn passes (DOR-3036): the
- * teammate tier, every space's limit, and only a runtime that can hold it. Read through the real
- * decorators the registry wraps every runtime in.
+ * What a turn carrying a teammate's mark gets at the seam every turn passes (DOR-3036, DOR-3440):
+ * every space's limit and its meter, and nothing lowered. Read through the real decorators the
+ * registry wraps every runtime in.
  *
  * @vitest-environment node
  */
@@ -21,13 +21,8 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-
 import { lastTurnLevelOf, markedBoundOf, marksOf, recordTurnLevels } from '../turn-levels.js';
 import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { meterTeammateTurns, setTeammateTurnCostSink } from '../teammate-turn-cost.js';
-import {
-  setTeammateSpaceGate,
-  TEAMMATE_LIMIT_REFUSAL,
-  teammateRuntimeRefusal,
-} from '../teammate-mark.js';
+import { setTeammateSpaceGate, TEAMMATE_LIMIT_REFUSAL } from '../teammate-mark.js';
 import { ceilingCarrying, parseStoredMarks } from '../turn-marks.js';
-import { TEAMMATE_TIER_DENIAL, teammateTierRefusal } from '../teammate-tier.js';
 import {
   clearTestHomes,
   registerTestHomes,
@@ -35,8 +30,8 @@ import {
 
 const PRIYA: TeammateOrigin = { roomId: 'space-a', authorId: 'priya' };
 const SAM: TeammateOrigin = { roomId: 'space-b', authorId: 'sam' };
-/** What a chat one hop on from a teammate's turn is sent with: the sender's level, as stored. */
-const MARKED: TurnPermissionLevel = { ...READ_ONLY_LEVEL, outsider: true, teammate: [PRIYA] };
+/** What a turn a teammate's chain reached is sent with: the record, which lowers nothing. */
+const MARKED: TurnPermissionLevel = { asks: 'never', reach: 'everything', teammate: [PRIYA] };
 
 /** A runtime of `type`, wrapped the way the registry wraps every runtime, recording what it got. */
 function decorated(type = 'claude-code') {
@@ -74,43 +69,28 @@ afterEach(() => {
 });
 
 describe('a turn carrying a teammate’s mark', () => {
-  it('is held to the teammate tier: nobody asked, no folders, read access, no room', async () => {
+  it('under the limit, reaches the runtime with its caller’s options unchanged', async () => {
+    setTeammateSpaceGate(() => true);
     const { runtime, got } = decorated();
-    await drain(
-      runtime.sendMessage(fresh(), 'hi', {
-        permissionCeiling: MARKED,
-        additionalDirectories: [{ path: '/repo', access: 'write' }],
-      } as MessageOpts)
-    );
-    const opts = got[0]!.opts!;
-    expect(opts).toMatchObject({ teammate: true, unattended: true });
-    expect(opts.additionalDirectories).toBeUndefined();
-    expect(opts.permissionCeiling).toEqual([MARKED, READ_ONLY_LEVEL]);
-    expect(opts.roomTurn).toBeUndefined();
+    const opts: MessageOpts = {
+      permissionCeiling: MARKED,
+      additionalDirectories: [{ path: '/repo', access: 'write' }],
+      roomTurn: { roomId: 'local-room', authorId: 'bo', turnId: 't' },
+    } as MessageOpts;
+    await drain(runtime.sendMessage(fresh(), 'hi', opts));
+    const sent = got[0]!.opts!;
+    expect(sent.permissionCeiling).toBe(MARKED);
+    expect(sent.additionalDirectories).toEqual(opts.additionalDirectories);
+    expect(sent.roomTurn).toEqual(opts.roomTurn);
+    expect(sent.unattended).toBeUndefined();
+    expect(sent).not.toHaveProperty('teammate');
   });
 
-  it('answering a room, is fenced to that room and reads its words as words only', async () => {
-    const { runtime, got } = decorated();
-    await drain(
-      runtime.sendMessage(fresh(), 'hi', {
-        permissionCeiling: MARKED,
-        roomTurn: { roomId: 'local-room', authorId: 'bo', turnId: 't' },
-      })
-    );
-    expect(got[0]!.opts!.roomTurn).toMatchObject({
-      roomId: 'local-room',
-      teammate: true,
-      untrustedText: true,
-    });
-  });
-
-  it('is refused on a runtime that cannot hold the tier, before it runs', async () => {
+  it('runs on every runtime, since there is no tier for one to hold', async () => {
     for (const type of ['codex', 'opencode', 'computer-local']) {
       const { runtime, got } = decorated(type);
-      await expect(
-        drain(runtime.sendMessage(fresh(), 'hi', { permissionCeiling: MARKED }))
-      ).rejects.toThrow(teammateRuntimeRefusal(type));
-      expect(got).toHaveLength(0);
+      await drain(runtime.sendMessage(fresh(), 'hi', { permissionCeiling: MARKED }));
+      expect(got, type).toHaveLength(1);
     }
   });
 
@@ -140,20 +120,25 @@ describe('a turn carrying a teammate’s mark', () => {
 
   it('a command intent carries the marks it was sent with, as a turn does', async () => {
     const { runtime, got } = decorated();
-    await drain(runtime.executeCommandIntent(fresh(), 'compact', { permissionCeiling: MARKED }));
-    expect(got[0]).toMatchObject({ kind: 'command', opts: { teammate: true, unattended: true } });
-    const codex = decorated('codex');
-    await expect(
-      drain(codex.runtime.executeCommandIntent(fresh(), 'compact', { permissionCeiling: MARKED }))
-    ).rejects.toThrow(teammateRuntimeRefusal('codex'));
+    const opts: MessageOpts = { permissionCeiling: MARKED };
+    await drain(runtime.executeCommandIntent(fresh(), 'compact', opts));
+    expect(got[0]!.kind).toBe('command');
+    expect(got[0]!.opts!.permissionCeiling).toBe(MARKED);
+    expect(got[0]!.opts!.unattended).toBeUndefined();
+    setTeammateSpaceGate(() => false);
+    await expect(drain(runtime.executeCommandIntent(fresh(), 'compact', opts))).rejects.toThrow(
+      TEAMMATE_LIMIT_REFUSAL
+    );
+    expect(got).toHaveLength(1);
   });
 
   it('a refused marked turn is still recorded as marked, so its failure is never the agent’s own', async () => {
-    const { runtime } = decorated('codex');
+    setTeammateSpaceGate(() => false);
+    const { runtime } = decorated();
     const id = fresh();
     await expect(
       drain(runtime.sendMessage(id, 'hi', { permissionCeiling: MARKED }))
-    ).rejects.toThrow();
+    ).rejects.toThrow(TEAMMATE_LIMIT_REFUSAL);
     expect(lastTurnLevelOf(id)?.teammate).toEqual([PRIYA]);
   });
 
@@ -197,17 +182,6 @@ describe('a turn carrying a teammate’s mark', () => {
     expect(sink).toHaveBeenLastCalledWith(expect.objectContaining({ roomId: 'space-a' }));
   });
 
-  it('outside a room, reaches no room: it replies in its own chat only', () => {
-    for (const name of ['post_to_room', 'read_room_history', 'get_room']) {
-      expect(
-        teammateTierRefusal({ roomId: null }, { source: 'dorkos', name, input: { roomId: 'r' } })
-      ).toBe(TEAMMATE_TIER_DENIAL);
-    }
-    expect(
-      teammateTierRefusal({ roomId: null }, { source: 'built-in', name: 'TodoWrite', input: {} })
-    ).toBeNull();
-  });
-
   it('an unmarked turn is untouched', async () => {
     const { runtime, got } = decorated();
     const opts: MessageOpts = { permissionCeiling: { asks: 'when-risky', reach: 'edit' } };
@@ -236,12 +210,9 @@ describe('a caller with no session (Codex, OpenCode over the external server)', 
     const { runtime } = decorated();
     const turn = runtime.sendMessage(fresh(), 'hi', { permissionCeiling: MARKED, cwd: home });
     await turn.next();
-    expect(marksOf(undefined, home)).toEqual({ outsider: true, teammate: [PRIYA] });
-    // A spin-off it starts carries the teammate's mark too, not only the runtime default.
-    expect(markedBoundOf(undefined, home)).toEqual([
-      'runtime-default',
-      { ...READ_ONLY_LEVEL, teammate: [PRIYA] },
-    ]);
+    expect(marksOf(undefined, home)).toEqual({ teammate: [PRIYA] });
+    // A spin-off it starts carries the teammate's mark too, and nothing that lowers it.
+    expect(markedBoundOf(undefined, home)).toEqual(MARKED);
     await turn.return(undefined);
     expect(marksOf(undefined, home)).toEqual({});
   });
@@ -256,16 +227,10 @@ describe('teammate origins travel with the level', () => {
   });
 
   it('ride a ceiling built for words written under them, and read back from storage', () => {
-    // An outsider's words alone ride as a mark that caps nothing (DOR-3390).
-    expect(ceilingCarrying({ outsider: true })).toEqual({
-      asks: 'never',
-      reach: 'everything',
-      outsider: true,
-    });
-    expect(ceilingCarrying({ outsider: true, teammate: [PRIYA] })).toEqual([
-      'runtime-default',
-      { ...READ_ONLY_LEVEL, teammate: [PRIYA] },
-    ]);
+    // No other mark follows words anywhere (DOR-3440).
+    expect(ceilingCarrying({ outsider: true })).toBeUndefined();
+    expect(ceilingCarrying({ teammate: [PRIYA] })).toEqual(MARKED);
+    expect(ceilingCarrying({ outsider: true, teammate: [PRIYA] })).toEqual(MARKED);
     expect(ceilingCarrying({})).toBeUndefined();
     expect(parseStoredMarks(JSON.stringify({ teammate: [PRIYA], junk: 1 }))).toEqual({
       teammate: [PRIYA],

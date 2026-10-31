@@ -50,14 +50,6 @@ import {
   onDispatchLifecycle,
   type MessageDispatchResult,
 } from '../message-dispatcher.js';
-import {
-  forgetMessageOrigin,
-  holdTurnOriginFor,
-  noteHeldMessage,
-  messageDispatched,
-  messageTurnStarted,
-} from '../origin/outsider-turns.js';
-import { ceilingHoldsToDefault } from '../message-dispatcher/held-to-default.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
@@ -413,30 +405,10 @@ async function refusedLaunchAccount(opts: {
   }
 }
 
-/** Whether {@link followTurnStarts} subscribed yet. */
-let followingTurnStarts = false;
-
-/**
- * Apply a message's held turn origin when its turn starts, and forget it when
- * it leaves the queue without running (`session/origin/outsider-turns.ts`).
- * Subscribed on the first launch rather than at import, so this module never
- * reaches the dispatcher while the import graph is still loading.
- */
-function followTurnStarts(): void {
-  if (followingTurnStarts) return;
-  followingTurnStarts = true;
-  onDispatchLifecycle((event) => {
-    if (event.phase === 'started') messageTurnStarted(event.sessionId, event.messageId);
-    else forgetMessageOrigin(event.messageId);
-  });
-}
-
 async function launchSessionMessage(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
   const { sessionId, clientId, meshCore, roomSessionPlace, origin, onSettled, unattended } = opts;
-  followTurnStarts();
-  // Minted here when the caller did not, so who sent it can wait for its turn.
   const messageId = opts.messageId ?? randomUUID();
   const {
     content,
@@ -644,16 +616,12 @@ async function launchSessionMessage(
   //
   // The caller's `origin` is passed through untouched: which power it unlocks is
   // `permissionSeedForOrigin`'s decision, never this module's (DOR-2105).
-  // Who sent it counts from when its turn starts, not now: it may queue behind
-  // a turn somebody else started (`session/origin/outsider-turns.ts`).
-  const isNewSession = await holdTurnOriginFor(messageId, () =>
-    runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, origin, verifiedAgentPath)
+  const isNewSession = await runtimeRegistry.persistSessionRuntime(
+    sessionId,
+    runtimeType,
+    origin,
+    verifiedAgentPath
   );
-  // A message held to the default (from Wi-Fi) counts as an outsider's (DOR-3037).
-  // A continuation's hold does not: it carries no new words (DOR-3203).
-  if (ceilingHoldsToDefault(opts.permissionCeiling) && !opts.continuationHold) {
-    noteHeldMessage(messageId);
-  }
   // Fire the anonymous `session_created` usage event exactly once, on the write
   // that binds the session (no-op unless usage telemetry is on).
   if (isNewSession)
@@ -776,10 +744,6 @@ async function launchSessionMessage(
     })
   );
 
-  messageDispatched(sessionId, messageId, {
-    accepted: result.accepted,
-    applied: result.outcome.applied,
-  });
   if (result.queued) {
     logger.info('[POST /messages] queued behind the running turn', {
       sessionId,

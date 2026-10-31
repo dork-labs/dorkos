@@ -32,7 +32,7 @@ import {
 // Both names below are also exported from the barrel, and every consumer
 // outside the session layer reaches them there.
 import {
-  seedForTurn,
+  permissionSeedForOrigin,
   type OriginPermissionSeed,
   type TurnOrigin,
 } from '../session/origin/turn-origin.js';
@@ -361,9 +361,7 @@ export class RuntimeRegistry {
     const agent = await readAgentExecutionDefaults(agentPath);
     // Asked once, here, and handed down to both branches of the statement —
     // they honour different halves of the same answer.
-    // Also notes whether the turn about to run is a stranger's, which is how a
-    // capability learns it (`outsider-turns.ts`).
-    const seedPolicy = seedForTurn(sessionId, origin);
+    const seedPolicy = permissionSeedForOrigin(origin);
     const seed = this.seedForNewRow(runtime, { agent, seedPolicy });
     const result = await db
       .insert(sessionMetadata)

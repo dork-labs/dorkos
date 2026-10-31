@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
+import { notePathTrustEdits } from './pin/path-trust-edits.js';
 import { ExtensionManifestSchema, NO_SERVER_CODE_TO_ISOLATE } from '@dorkos/extension-api';
 import { checkDeclaredTools, summarizeToolCheck } from '@dorkos/extension-api/tool-check';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
@@ -305,6 +306,7 @@ export class ExtensionDiscovery {
           .join(', ') || 'none'
       }${shadowedResults.length > 0 ? `; ${shadowedResults.length} older copy(ies) not used` : ''}`
     );
+    await notePathTrustEdits(results, config, this.dorkHome);
     return [...results, ...shadowedResults];
   }
 

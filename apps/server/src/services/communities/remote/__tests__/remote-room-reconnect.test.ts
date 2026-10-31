@@ -122,9 +122,6 @@ function setup(opts: {
   const bridge = new RemoteRoomSubscriptionBridge(mirrors, harness.service, enrollments, (id) =>
     id === agent.id ? agent.id : null
   );
-  // The mentions here come from a member of the space, so each is a teammate's (DOR-2955): Ana
-  // runs where a teammate's turn can be held to its limits, and one wake sits inside the budget.
-  bridge.useTeammateRuntimes(() => true);
   const markStale = vi.spyOn(bridge, 'markStale');
   let dropLink: () => void = () => undefined;
   const dropped = new Promise<void>((resolve) => (dropLink = resolve));

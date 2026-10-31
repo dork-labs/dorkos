@@ -2,15 +2,14 @@
  * The seat mover on its own: what one move writes and carries (Security Musts
  * 1, 2 and 4), and the rules that keep it to once per message and one launch.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import type { RankedAccount } from '../../../core/usage/account-ranking.js';
-import { postLevelFor, recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
-import { resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
+import { marksOf, recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
 import {
   AGENT_MAY_RESEAT_OWN_SEAT,
   mayReseatByHand,
@@ -85,10 +84,8 @@ function mover(overrides: Partial<SeatMoverDeps> = {}) {
 const SEAT = { roomId: 'room-1', authorId: 'ana', agentPath: '/agents/ana', sessionId: 'old-seat' };
 const OPTS = { alreadyPosted: false, hideAccounts: false };
 
-afterEach(() => resetOutsiderTurns());
-
 describe('RoomSeatMover', () => {
-  it('carries a marked seat’s marks, so the new seat’s posts still cap the agent they wake (Must 2)', async () => {
+  it('carries a marked seat’s marks, before its first turn (Must 2)', async () => {
     const runtime = recordTurnLevels(
       {
         type: 'claude-code',
@@ -108,7 +105,7 @@ describe('RoomSeatMover', () => {
 
     await m.afterLimit(SEAT, 'entry-1', OPTS);
 
-    expect(postLevelFor(['new-seat'])).toMatchObject({ asks: 'always', outsider: true });
+    expect(marksOf('new-seat', undefined)).toEqual({ outsider: true });
   });
 
   it('moves a seat that stored no mode at the level it ran at: an agent at Full stays Full (Must 1)', async () => {

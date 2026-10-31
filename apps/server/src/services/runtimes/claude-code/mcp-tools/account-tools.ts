@@ -20,14 +20,14 @@ import {
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
-import { hasMarks } from '../../../core/turn-power/turn-marks.js';
+import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { markedTurnRunsAtFull } from '../../../core/turn-power/full-autonomy.js';
 import type { TaskProvenanceResolver } from './task-tools.js';
 
 /**
- * Refused in a turn that read words DorkOS cannot vouch for (a stranger's line
- * in a room, a teammate's), ceiling or not (Security on #3201, DOR-3289): the
+ * Refused in a turn that read words DorkOS cannot vouch for (a Wi-Fi sign-in's
+ * hold), ceiling or not (Security on #3201, DOR-3289): the
  * answer carries account ids, plan, credits and spend, and the turn could post
  * it where the stranger reads. Read from the turn's own marks (`marksOf`).
  *
@@ -54,15 +54,12 @@ function refusedForMark(
   if (!resolveProvenance) return false;
   const p = resolveProvenance();
   const marks = marksOf(p.sessionId, p.agentPath);
-  if (!hasMarks(marks)) return false;
-  return !markedTurnRunsAtFull(
-    {
-      ...action,
-      ...(p.agentPath ? { agentPath: p.agentPath } : {}),
-      ...(p.sessionId ? { sessionId: p.sessionId } : {}),
-    },
-    marks
-  );
+  if (!marksHold(marks)) return false;
+  return !markedTurnRunsAtFull({
+    ...action,
+    ...(p.agentPath ? { agentPath: p.agentPath } : {}),
+    ...(p.sessionId ? { sessionId: p.sessionId } : {}),
+  });
 }
 
 /**

@@ -1,8 +1,6 @@
 /**
- * The account tools refuse a turn that read words DorkOS can't vouch for,
- * ceiling or not (Security on #3201, DOR-3289): a room turn with a stranger's
- * line in view is marked (`outsiderInView`) but carries no ceiling, and the
- * answer holds account ids, plan, credits and spend. In a chat set to Full
+ * The account tools refuse a marked turn below Full (Security on #3201, DOR-3289):
+ * the answer holds account ids, plan, credits and spend. In a chat set to Full
  * autonomy the mark refuses nothing (DOR-3412): the read runs and writes one
  * Activity line.
  *
@@ -17,10 +15,10 @@ import {
 } from '../../../../core/turn-power/full-autonomy.js';
 
 vi.mock('../../../../core/turn-power/turn-levels.js', () => ({
-  // The turn the room runner starts with a stranger's line in view.
+  // A turn a Wi-Fi sign-in's hold bound.
   marksOf: (sessionId: string | undefined) =>
     sessionId?.startsWith('marked-turn')
-      ? marksForTurn({ roomTurn: { outsiderInView: true } } as never)
+      ? marksForTurn({ permissionCeiling: 'runtime-default' })
       : {},
 }));
 vi.mock('../../../../core/usage/current-usage-store.js', () => ({
@@ -62,7 +60,7 @@ afterEach(() => {
 });
 
 describe('the account tools in a marked turn', () => {
-  it('refuses both on a turn a stranger’s line marked, with no ceiling', async () => {
+  it('refuses both on a turn a hold marked', async () => {
     const { usage, probe } = handlersFor('marked-turn');
     const read = await usage({}, {});
     expect(read.isError).toBe(true);

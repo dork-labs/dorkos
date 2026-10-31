@@ -14,7 +14,6 @@ import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
-import { posterLevel } from '../../rooms/limits/own-circle.js';
 import {
   describeSessionFor,
   isSessionBusy,
@@ -262,7 +261,6 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     steerInto: steerChatTurn,
     canonicalId: canonicalChatId,
     turnLevelOf: passedOnLevelOf,
-    ownLevelOf: posterLevel,
     emitActivity: emitChatActivity,
   });
   setChatMessageService(service);
