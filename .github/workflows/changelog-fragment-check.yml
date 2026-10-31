@@ -56,6 +56,16 @@ on:
     types: [opened, synchronize, reopened, labeled, unlabeled]
   merge_group:
 
+concurrency:
+  # A push to a pull request makes its older runs here worthless, so they cancel.
+  # Only `pull_request` and `pull_request_target` runs share a group (one per
+  # workflow and pull request). Every other event, `merge_group` included, is
+  # keyed on its own run id, so nothing can cancel it or replace it while it is
+  # pending. The newest run in a group is never the cancelled one, so the
+  # newest head always reports (ledger 261031-020633).
+  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for Node 20 runtime.
 env:
