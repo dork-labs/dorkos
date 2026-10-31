@@ -35,6 +35,7 @@ import { DoeEventQueue } from './event-queue.js';
 import { DoeApprovals } from './approvals.js';
 import { DoeTurnEvents, doeErrorEvent } from './turn.js';
 import { assembleDoeHost, type DoeHostAssembly } from './tools.js';
+import { assertDoeTurnFits } from './window-fit.js';
 import { resolveDoeInference, freezeDoeInference } from './credentials.js';
 import { chooseDoeCreditsInference } from './auto-model.js';
 import type { DoeRuntimeOptions } from './doe-runtime.js';
@@ -258,6 +259,7 @@ export async function executeDoeTurn(
       onEvent: mapper.receive,
       onChildStart: mapper.childStarted,
       onChildEnd: mapper.childEnded,
+      window: { contextWindow: model.contextWindow, maxOutputTokens: model.maxOutputTokens },
     });
     controller.signal.throwIfAborted();
     hostState.connected(host);
@@ -299,6 +301,13 @@ export async function executeDoeTurn(
     else if (compact) await turn.engine.compact({ signal: controller.signal });
     else {
       hostState.sessions.message(id, content!, cwd, opts?.title);
+      // Say plainly when the first request cannot fit, before the model is called (DOR-2839).
+      assertDoeTurnFits({
+        resources: await resources.load(),
+        tools: host.registry.selected(),
+        content: content!,
+        window: model,
+      });
       const result = await turn.engine.run(content!, { signal: controller.signal });
       if (result.stopReason === 'error') {
         const error = result.messages.at(-1)?.errorMessage;

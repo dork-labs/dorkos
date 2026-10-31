@@ -57,6 +57,7 @@ import { currentDistribution } from '../../../lib/distribution/index.js';
 import { currentCliInvocation } from './cli-invocation.js';
 import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
 import { buildDorkosAreasBlock } from './awareness/dorkos-areas.js';
+import type { ContextPart } from './window/context-fit.js';
 
 /**
  * Build the `<dorkos_context>` block: what DorkOS is, how an agent works in it,
@@ -557,7 +558,15 @@ async function buildAgentBlock(
     manifest.capabilities.length > 0 && `Capabilities: ${manifest.capabilities.join(', ')}`,
   ].filter(Boolean);
 
-  const blocks = [`<agent_identity>\n${identityLines.join('\n')}\n</agent_identity>`];
+  // Each block is recorded with its tag, so a small-window runtime can leave out
+  // whole blocks structurally (`context-fit.ts`) without parsing agent-written text.
+  const parts: ContextPart[] = [];
+  const blocks: string[] = [];
+  const push = (block: ContextPart['block'], text: string): void => {
+    parts.push({ block, text });
+    blocks.push(text);
+  };
+  push(null, `<agent_identity>\n${identityLines.join('\n')}\n</agent_identity>`);
 
   // --- Persona block (SOUL.md or legacy persona) ---
   const soulEnabled = conventions?.soul !== false;
@@ -572,10 +581,10 @@ async function buildAgentBlock(
         const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...traits });
         soulContent = buildSoulContent(traitBlock, customProse);
       }
-      blocks.push(`<agent_persona>\n${soulContent}\n</agent_persona>`);
+      push('agent_persona', `<agent_persona>\n${soulContent}\n</agent_persona>`);
     } else if (personaEnabled !== false && persona) {
       // Legacy fallback: use persona field
-      blocks.push(`<agent_persona>\n${persona}\n</agent_persona>`);
+      push('agent_persona', `<agent_persona>\n${persona}\n</agent_persona>`);
     }
   }
 
@@ -585,7 +594,7 @@ async function buildAgentBlock(
   if (nopeEnabled) {
     const nopeContent = await readConventionFile(home, 'NOPE.md');
     if (nopeContent) {
-      blocks.push(`<agent_safety_boundaries>\n${nopeContent}\n</agent_safety_boundaries>`);
+      push(null, `<agent_safety_boundaries>\n${nopeContent}\n</agent_safety_boundaries>`);
     }
   }
 
@@ -593,12 +602,12 @@ async function buildAgentBlock(
   // Not gated on a convention toggle: this is a statement of fact about how the
   // agent runs, not a preference. An agent allowed to switch it off would be an
   // agent allowed to believe it is the only one of itself.
-  blocks.push(buildSessionModelBlock());
+  push('session_model', buildSessionModelBlock());
 
   // --- Working rules (always, after the persona and NOPE.md) ---
   // Not gated either, for the same reason: when to act and when to wait is how
   // DorkOS works, not a preference. See `buildWorkingRulesBlock`.
-  blocks.push(buildWorkingRulesBlock());
+  push(null, buildWorkingRulesBlock());
 
   // --- Agent memory block (default ON) ---
   // Left out, unread, for a turn a teammate started (DOR-2955): the notes are the owner's
@@ -609,17 +618,21 @@ async function buildAgentBlock(
       : '';
 
   // --- Everything after the memory block ---
-  const tail: string[] = [];
+  const tail: ContextPart[] = [];
 
   // --- DorkOS knowledge block (default ON) ---
   if (conventions?.dorkosKnowledge !== false) {
     // The areas ride with it: the same switch, because both say what DorkOS is (DOR-3219).
-    tail.push(buildDorkosContextBlock(), buildDorkosAreasBlock());
+    tail.push(
+      { block: 'dorkos_context', text: buildDorkosContextBlock() },
+      { block: 'dorkos_areas', text: buildDorkosAreasBlock() }
+    );
   }
 
   // --- Agent browser notice (only when its saved session is missing) ---
   const browserBlock = buildAgentBrowserBlock(manifest.mcpServers ?? []);
-  if (browserBlock) tail.push(browserBlock);
+  if (browserBlock) tail.push({ block: null, text: browserBlock });
+  const tailText = tail.map((part) => part.text);
 
   // Two independent assemblies over the same block arrays, and this is the
   // whole mechanism of the fingerprint split (spec D2 §Pinned, review C2).
@@ -635,9 +648,14 @@ async function buildAgentBlock(
   // Assembling twice from the same source arrays is what makes that structural
   // instead of a rule somebody has to keep.
   return {
-    text: [...blocks, memory, ...tail].filter(Boolean).join('\n\n'),
-    stable: [...blocks, ...tail].filter(Boolean).join('\n\n'),
+    text: [...blocks, memory, ...tailText].filter(Boolean).join('\n\n'),
+    stable: [...blocks, ...tailText].filter(Boolean).join('\n\n'),
     memory,
+    parts: [
+      ...parts,
+      ...(memory ? [{ block: 'agent_memory' as const, text: memory }] : []),
+      ...tail,
+    ],
   };
 }
 
@@ -660,6 +678,12 @@ export interface AgentContextAppend {
   readonly stable: string;
   /** The `<agent_memory>` block alone, or `''` when there is none to show. */
   readonly memory: string;
+  /**
+   * The blocks of {@link text}, in the same order, each tagged with what it is,
+   * so a runtime serving a small model can leave whole blocks out
+   * (`context-fit.ts`, DOR-2839). Absent on a hand-built append (tests).
+   */
+  readonly parts?: readonly ContextPart[];
 }
 
 /** What a caller may leave out of the append. */
@@ -678,7 +702,7 @@ export interface AgentContextOptions {
 }
 
 /** What every form of the append is when there is nothing to say. */
-const EMPTY_APPEND: AgentContextAppend = { text: '', stable: '', memory: '' };
+const EMPTY_APPEND: AgentContextAppend = { text: '', stable: '', memory: '', parts: [] };
 
 /**
  * Build the runtime-neutral context append for one session: the agent's identity,
@@ -727,6 +751,10 @@ export async function buildAgentContextAppend(
     text: [agent.text, rules, profile, envBlock].filter(Boolean).join('\n\n'),
     stable: [agent.stable, rules, profile, envBlock].filter(Boolean).join('\n\n'),
     memory: agent.memory,
+    parts: [
+      ...(agent.parts ?? []),
+      ...[rules, profile, envBlock].filter(Boolean).map((text) => ({ block: null, text })),
+    ],
   };
 
   logBlockSizes(append.text);
