@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(server): a scheduled run reads DorkOS's always-on tools at any mode (DOR-3373)"
+  - "fix(server): a stranger's turn still asks before DorkOS's always-on reads (DOR-3373)"
 ---
 
 ### Fixed
