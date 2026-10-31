@@ -45,6 +45,7 @@ import { useTimelineScroll } from '../model/use-timeline-scroll';
 import { PendingRow } from './rows/PendingRow';
 import { ScrollThumb } from './ScrollThumb';
 import { TimelineAffordances } from './TimelineAffordances';
+import { TimelineRow } from './TimelineRow';
 
 /**
  * How long the landing mark stays on the row it lands you on, in milliseconds.
@@ -627,7 +628,12 @@ export function ConversationTimeline({
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                 >
-                  {renderRow(rows[virtualRow.index]!, { ...rowContext, index: virtualRow.index })}
+                  <TimelineRow
+                    row={rows[virtualRow.index]!}
+                    index={virtualRow.index}
+                    context={rowContext}
+                    renderRow={renderRow}
+                  />
                 </div>
               ))}
             </div>
