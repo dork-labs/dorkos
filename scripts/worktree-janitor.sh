@@ -147,6 +147,39 @@ DATA_BRANCH=ci-steward-data
 # The primary worktree — the original clone — is never a candidate.
 PRIMARY_WT=$(git worktree list --porcelain | awk '/^worktree /{print substr($0, 10); exit}')
 
+# Worktrees can live on an external disk under /Volumes/<name>/. When that disk
+# is unplugged, git sees every one of them as a worktree whose directory is gone,
+# and `git worktree prune` deletes their records: the work survives on the disk,
+# but this repo no longer knows it is there. So if any registered worktree sits
+# on a /Volumes/<name> that is not mounted, --fix writes nothing at all (no
+# removals, no prune) and says which disk is missing. A worktree whose directory
+# vanished from the internal disk is not affected by this and is pruned as before.
+#
+# A failed `mount` counts every volume as missing: the refusing direction. A
+# /Volumes entry that is a symlink (macOS's "Macintosh HD" points at /) is the
+# internal disk and counts as present.
+MOUNT_TABLE=$(mount 2>/dev/null || true)
+volume_is_mounted() {
+  local vol=$1
+  [[ -L "$vol" ]] && return 0
+  [[ "$MOUNT_TABLE" == *" on $vol ("* || "$MOUNT_TABLE" == *" on $vol type "* ]]
+}
+MISSING_VOLUMES=()
+while IFS= read -r vol; do
+  [[ -z "$vol" ]] && continue
+  volume_is_mounted "$vol" && continue
+  MISSING_VOLUMES+=("$vol")
+done < <(git worktree list --porcelain |
+  awk '/^worktree \/Volumes\/[^\/]+\//{split(substr($0, 10), p, "/"); print "/Volumes/" p[3]}' | sort -u)
+for vol in "${MISSING_VOLUMES[@]+"${MISSING_VOLUMES[@]}"}"; do
+  # "removed" is load-bearing: the daily LaunchAgent wrapper copies only lines
+  # matching removed|ERROR|error into ~/Library/Logs/dorkos-worktree-janitor.log.
+  note "volume $vol is not mounted: no worktree removed or pruned, so its worktrees keep their records"
+done
+if [[ "$MODE" == fix && ${#MISSING_VOLUMES[@]} -gt 0 ]]; then
+  MODE=report
+fi
+
 # Branch names that exist on origin right now. A failed lookup means every branch
 # is reported as still on origin, which is the KEEP direction.
 ORIGIN_OK=true
