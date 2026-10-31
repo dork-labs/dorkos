@@ -20,14 +20,18 @@ const REQUIRED_CHECKS_END = '<!-- ci-steward:required-checks:end -->';
  */
 export function renderRequiredChecksBlock(
   contexts: readonly string[],
-  workflows: readonly { repository: string; path: string; ref: string }[] = []
+  workflows: readonly { repository: string; path: string; ref: string; enforcement?: string }[] = []
 ): string {
   return [
     REQUIRED_CHECKS_START,
     ...contexts.map((c) => `- \`${c}\``),
     ...workflows.map(
       (w) =>
-        `- Required workflow: ${w.repository}, \`${w.path}\` from \`${w.ref}\` (organization rule; no bypass actors).`
+        `- Required workflow: ${w.repository}, \`${w.path}\` from \`${w.ref}\` (organization rule; no bypass actors)${
+          w.enforcement && w.enforcement !== 'active'
+            ? `. Not enforced yet: the rule is \`${w.enforcement}\`, so it blocks no merge.`
+            : '.'
+        }`
     ),
     REQUIRED_CHECKS_END,
   ].join('\n');

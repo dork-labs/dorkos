@@ -77,7 +77,7 @@ Ruleset 19893973 is the **only** protection on `main`. Classic branch protection
 - `db-check`
 - `openapi-fresh`
 - `fixtures`
-- Required workflow: dork-labs/dorkos, `.github/workflows/security-gate.yml` from `refs/heads/main` (organization rule; no bypass actors).
+- Required workflow: dork-labs/dorkos, `.github/workflows/security-gate.yml` from `refs/heads/main` (organization rule; no bypass actors). Not enforced yet: the rule is `disabled`, so it blocks no merge.
 <!-- ci-steward:required-checks:end -->
 <!-- prettier-ignore-end -->
 

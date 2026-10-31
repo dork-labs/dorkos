@@ -26,6 +26,7 @@ function setup() {
     path: '.github/workflows/lint.yml',
     ref: 'refs/heads/main',
     bypass_actors: [],
+    enforcement: 'active' as const,
   };
   files.requiredChecks!.workflows = [source];
   const workflows = loadWorkflows(root, '.github/workflows', () => {});
@@ -155,7 +156,30 @@ it.each([
 });
 it('collector includes workflow-only required sources with no required context', () => {
   const { workflows, source } = setup();
-  expect(requiredWorkflowPaths(workflows, [], [source])).toEqual([source.path]);
+  expect(requiredWorkflowPaths(workflows, [], [{ ...source, enforcement: 'active' }])).toEqual([
+    source.path,
+  ]);
+});
+it.each(['evaluate', 'disabled'])(
+  'collector does not count a %s source, which blocks no merge',
+  (enforcement) => {
+    const { workflows, source } = setup();
+    expect(requiredWorkflowPaths(workflows, [], [{ ...source, enforcement }])).toEqual([]);
+  }
+);
+it('a source with no enforcement field parses as active, so existing intent keeps counting', () => {
+  const { files, source } = setup();
+  const { enforcement: _omitted, ...legacy } = source;
+  const parsed = RequiredChecksSchema.parse({ ...files.requiredChecks, workflows: [legacy] });
+  expect(parsed.workflows[0]!.enforcement).toBe('active');
+});
+it('live census still refuses a source that is not active yet, whatever the intent says', () => {
+  const { files, rule, rest } = setup();
+  rule.enforcement = 'disabled';
+  files.requiredChecks!.workflows = [
+    { ...files.requiredChecks!.workflows[0]!, enforcement: 'disabled' },
+  ];
+  expect(checkLiveWorkflows(replayGh({ rest }), files).length).toBeGreaterThan(0);
 });
 it('schema rejects bypasses, malformed sources and unknown keys', () => {
   const { files, source } = setup();
@@ -163,6 +187,7 @@ it('schema rejects bypasses, malformed sources and unknown keys', () => {
     { bypass_actors: [1] },
     { ref: 'main' },
     { path: 'elsewhere.yml' },
+    { enforcement: 'on' },
     { unknown: true },
   ])
     expect(
