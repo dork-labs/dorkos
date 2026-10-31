@@ -136,7 +136,7 @@ name: test
 # in a merge group and the entries merged anyway (one of those reds WAS a real
 # two-PR clash, and it landed).
 #
-# On `pull_request` the shards run `--affected` only. This is NOT for
+# On `pull_request` the shards run a narrower plan. This is NOT for
 # thoroughness — the queue owns thoroughness — it exists because a required
 # check must SUCCEED ON THE PULL REQUEST before GitHub lets the PR into the
 # queue at all. That is measured, not assumed: PR #1246 removed the
@@ -144,9 +144,11 @@ name: test
 # `enqueuePullRequest` refused it with "required status checks have not
 # succeeded: expected" — a merge_group-only required check deadlocks every PR
 # out of the queue. So the PR leg is the cheapest run that is still an honest
-# signal: the same `turbo test --affected` the lefthook pre-push gate runs, and
-# it reports the `test` context the ruleset requires. The full-monorepo sweep,
-# the retry budget, the cache-replay assertion and the union check all stay
+# signal, and it reports the `test` context the ruleset requires. Since
+# DOR-3518 (ledger 261031-165048) it runs the suites whose turbo HASH the change
+# moved, which honours the `inputs` turbo.json declares, rather than
+# `turbo --affected`, which ignores them; see test-shard-count. The
+# full-monorepo sweep, the retry budget, the cache-replay assertion and the union check all stay
 # with the queue run, which tests `main` plus everything ahead in the queue
 # plus this PR — the #488/#489 class two branches cannot see alone.
 #
@@ -596,11 +598,21 @@ jobs:
   # errors all get six. The diff is the test-merge commit against its first
   # parent, for the reason community-packaged's scope step gives, with
   # `--no-renames` so a file moved out of apps/server still counts.
+  #
+  # AND WHICH SUITES A PULL REQUEST RUNS (DOR-3518, ledger 261031-165048).
+  # "Plan the pull request's suites" runs scripts/test-plan.sh, which keeps the
+  # `test` tasks whose turbo HASH the change moved, and hands the shards that
+  # list. A hash covers a suite's declared `inputs`, which `turbo --affected`
+  # ignores. The merge queue and the canary never read the plan: they always
+  # run every suite. Every doubt on a pull request also runs every suite.
   test-shard-count:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # Two turbo dry runs on the pull request leg; seconds elsewhere.
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.count.outputs.matrix }}
+      scope: ${{ steps.plan.outputs.scope }}
+      packages: ${{ steps.plan.outputs.packages }}
     steps:
       # A canary run is against `main` or it is nothing.
       #
@@ -646,10 +658,65 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
+      # Writes scope=full, scope=none, or scope=selected with the chosen suites'
+      # package names. No `if:`: every event but pull_request answers full
+      # without looking, and the queue and the canary never read it.
+      #
+      # A PULL REQUEST CANNOT SELECT ITS OWN TESTS AWAY (Security, #dorkos
+      # 2026-10-31). The planner is read from the BASE commit, never this
+      # checkout, so a change cannot edit the rule that grades it (the same
+      # guard as no-code-scope.sh, #3238), and the planner itself runs every
+      # suite for a change to turbo.json, any package.json, the lockfile, the
+      # workspace file, .github/, scripts/ or ci/. A base without the script,
+      # which includes the pull request that adds it, runs everything. turbo is
+      # the exact version the base package.json pins, fetched by npx: a dry run
+      # reads the lockfile and the tree, so it needs no install.
+      - name: Plan the pull request's suites
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          scope=full
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run: every suite runs, always"
+          elif ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null ||
+            ! base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+            echo "::notice title=Test plan::this checkout is not a test-merge commit, so every suite runs."
+          elif ! git cat-file blob "$base:scripts/test-plan.sh" > "$RUNNER_TEMP/test-plan.sh" 2>/dev/null; then
+            echo "::notice title=Test plan::the base commit has no scripts/test-plan.sh, so every suite runs."
+          elif ! version=$(git cat-file blob "$base:package.json" | jq -er '.devDependencies.turbo | strings | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))'); then
+            echo "::notice title=Test plan::the base package.json pins no exact turbo version, so every suite runs."
+          elif ! plan=$(REPO_ROOT="$PWD" TURBO="npx --yes turbo@$version" bash "$RUNNER_TEMP/test-plan.sh" "$base" HEAD); then
+            echo "::notice title=Test plan::the planner failed, so every suite runs."
+          else
+            case $(printf '%s\n' "$plan" | head -n 1) in
+              none)
+                scope=none
+                echo "Only Markdown changed and no suite's hash moved, so no suite runs here. The merge queue runs every suite."
+                ;;
+              selected)
+                scope=selected
+                suites=$(printf '%s\n' "$plan" | tail -n +2)
+                echo "packages=$(printf '%s\n' "$suites" | cut -d' ' -f1 | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+                printf 'This pull request runs these suites:\n%s\n' "$suites"
+                ;;
+              *)
+                echo "::notice title=Test plan::the planner chose every suite (its reason is in the log above)."
+                ;;
+            esac
+          fi
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+      # Every suite gets six. So does a plan that reaches @dorkos/server, which
+      # makes the sweep nearly the whole monorepo, and so does a diff under
+      # apps/server/** or packages/shared/** (ledger 261031-150702). Nothing to
+      # run gets one shard, whose test step is skipped. Anything else gets two.
       - name: Pick the shard count
         id: count
         env:
           EVENT: ${{ github.event_name }}
+          SCOPE: ${{ steps.plan.outputs.scope }}
+          PACKAGES: ${{ steps.plan.outputs.packages }}
         run: |
           set -uo pipefail
           six='[1, 2, 3, 4, 5, 6]'
@@ -659,11 +726,18 @@ jobs:
           elif git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
             base=$(git rev-parse --verify --quiet 'HEAD^1') &&
             changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" HEAD); then
-            if printf '%s\n' "$changed" | grep -qE '^(apps/server|packages/shared)/'; then
+            if [ "${SCOPE:-}" = 'none' ]; then
+              matrix='[1]'
+              echo "nothing to test: one shard, which runs no suite"
+            elif [ "${SCOPE:-}" != 'selected' ]; then
+              echo "every suite runs: six shards"
+            elif printf '%s\n' "$changed" | grep -qE '^(apps/server|packages/shared)/'; then
               echo "this change touches apps/server or packages/shared: six shards"
+            elif printf ' %s ' "${PACKAGES:-}" | grep -qF ' @dorkos/server '; then
+              echo "this change reaches the server suite: six shards"
             else
               matrix='[1, 2]'
-              echo "this change touches neither apps/server nor packages/shared: two shards"
+              echo "this change reaches neither the server suite nor apps/server or packages/shared: two shards"
             fi
           else
             echo "cannot diff this pull request against its base (no test-merge commit, or git failed): six shards"
@@ -973,28 +1047,35 @@ jobs:
       # queue owns thoroughness and owns every proof), not a new hole: no
       # broken glob reaches `main` either way.
       #
-      # TURBO_SCM_BASE names the comparison base explicitly — the checkout is a
-      # detached merge ref with no local `main`, so turbo's default base does
-      # not resolve here.
+      # WHICH SUITES (DOR-3518, ledger 261031-165048): the ones test-shard-count
+      # planned, named as turbo filters, or every suite when the plan is
+      # `full`. Not `turbo --affected`, which ignores the `inputs` turbo.json
+      # declares and ran no test at all for a change to a file the server suite
+      # reads. ONE list for all the shards: the picker computed it once, from
+      # the same test-merge commit every shard checks out, so no two shards can
+      # disagree about which packages they split, the silent failure a
+      # per-shard base used to risk. `none` skips this step: only Markdown
+      # changed and no suite's hash moved.
       #
-      # It is a SHA and not `origin/<base_ref>`, and that matters more now than
-      # it did when one job ran this alone. Six shards check out
-      # independently, seconds to minutes apart; a ref is resolved at each
-      # checkout, so a merge landing on `main` in that window gives two shards
-      # DIFFERENT affected sets. The failure that produces is silent and
-      # exactly the kind this workflow exists to prevent: a package present in
-      # one shard's set and absent from another's gets a quarter of its files
-      # run and nothing notices, because the PR leg has no union check to
-      # notice with. `github.event.pull_request.base.sha` is fixed for the
-      # whole run, identical across all six shards, and is precisely the base
-      # commit of the merge ref actions/checkout materialised — so
-      # base.sha...HEAD is the PR's own diff and nobody else's. `fetch-depth:
-      # 0` above is what guarantees the commit is present to diff against.
-      - name: Run the affected packages' test suites (shard ${{ matrix.shard }}/${{ strategy.job-total }})
-        if: ${{ github.event_name == 'pull_request' && steps.noscope.outputs.run == 'true' }}
+      # `set -f` because the names are split on spaces into filters and must
+      # never glob. A `selected` plan with no names runs every suite.
+      - name: Run the pull request's planned test suites (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+        if: ${{ github.event_name == 'pull_request' && steps.noscope.outputs.run == 'true' && needs.test-shard-count.outputs.scope != 'none' }}
         env:
-          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
-        run: pnpm exec turbo test --affected --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --passWithNoTests
+          SCOPE: ${{ needs.test-shard-count.outputs.scope }}
+          PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
+        run: |
+          set -f
+          filters=()
+          if [ "$SCOPE" = 'selected' ]; then
+            for package in $PACKAGES; do filters+=("--filter=$package"); done
+          fi
+          if [ ${#filters[@]} -gt 0 ]; then
+            echo "test plan: the ${#filters[@]} suite(s) whose hash this change moved: $PACKAGES"
+          else
+            echo "test plan: every package's suite"
+          fi
+          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --passWithNoTests
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -1169,7 +1250,7 @@ jobs:
   # `always()` is still what lets it report when a shard is red — without it
   # GitHub skips this job, and a SKIPPED check run satisfies a required check.
   test:
-    needs: [test-shard, community-pg, community-packaged]
+    needs: [test-shard-count, test-shard, community-pg, community-packaged]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     # This job runs no tests any more, so this is a ceiling on a gate, an
@@ -1283,6 +1364,14 @@ jobs:
       # when a shard is red — without it, GitHub would skip this job and a
       # SKIPPED check run satisfies a required check, which is precisely the
       # false green this workflow exists to prevent.
+      # The picker names the shard count and, on a pull request, the suites
+      # the shards run; a failed picker is a failed run, never a skipped one.
+      - name: Require the shard and suite plan green
+        run: |
+          result="${{ needs.test-shard-count.result }}"
+          echo "plan result: $result"
+          [ "$result" = "success" ]
+
       - name: Require all shards green
         run: |
           result="${{ needs.test-shard.result }}"

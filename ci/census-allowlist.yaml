@@ -193,9 +193,9 @@ entries:
     reason: The full sweep runs in the merge queue and on the main canary; its pull_request twin below runs the affected packages. Exactly one of the pair runs on each event.
   - workflow: test.yml
     job: test-shard
-    step: Run the affected packages' test suites (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    step: Run the pull request's planned test suites (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     kind: step-if
-    reason: The affected-only pull_request leg; the merge_group twin above runs the full sweep. Exactly one of the pair runs on each event. On a pull request it is also gated on the job's noscope step, which skips it only when scripts/no-code-scope.sh finds nothing but changelog, docs or version lines changed, and fails open to running it.
+    reason: The pull_request leg; the merge_group twin above runs the full sweep. Exactly one of the pair runs on each event. On a pull request it is also gated on the job's noscope step, which skips it only when scripts/no-code-scope.sh finds nothing but changelog, docs or version lines changed, and on test-shard-count's plan, which skips it only when only Markdown changed and no suite's turbo hash moved (scripts/test-plan.sh). Both fail open to running it.
   - workflow: test.yml
     job: test-shard
     step: Hand this shard's quarantine lane to the fan-in

@@ -31,6 +31,11 @@ function put(cwd: string, file: string): void {
   writeFileSync(path.join(cwd, file), `${file}\n`);
 }
 
+/** What "Plan the pull request's suites" handed the picker (ledger 261031-165048). */
+type Plan = { SCOPE?: string; PACKAGES?: string };
+/** A plan that reached one suite outside the server: the usual narrow change. */
+const CLIENT: Plan = { SCOPE: 'selected', PACKAGES: '@dorkos/client ' };
+
 type Repo =
   | { kind: 'none' }
   | { kind: 'plain'; files: string[] }
@@ -41,7 +46,7 @@ type Repo =
  * shaped like actions/checkout's pull request checkout: a test-merge commit
  * whose first parent is the base and whose second parent is the PR's head.
  */
-function pick(event: string, repo: Repo): number[] {
+function pick(event: string, repo: Repo, plan: Plan = CLIENT): number[] {
   const cwd = mkdtempSync(path.join(tmpdir(), 'dorkos-shard-count-'));
   try {
     if (repo.kind !== 'none') {
@@ -69,7 +74,7 @@ function pick(event: string, repo: Repo): number[] {
     const result = spawnSync('bash', ['-c', step('Pick the shard count')], {
       cwd,
       encoding: 'utf8',
-      env: { ...gitEnv, EVENT: event, GITHUB_OUTPUT: output },
+      env: { ...gitEnv, ...plan, EVENT: event, GITHUB_OUTPUT: output },
     });
     expect(result.status, result.stdout + result.stderr).toBe(0);
     const line = readFileSync(output, 'utf8').trim();
@@ -228,6 +233,41 @@ describe('how many shards a run gets (ledger 261031-150702)', () => {
         files: ['packages/shared-ui/a.ts', 'apps/server-notes.md', 'docs/apps/server/a.md'],
       })
     ).toEqual([1, 2]);
+  });
+  it.each([
+    ['full', { SCOPE: 'full' }],
+    ['missing', {}],
+    ['unknown', { SCOPE: 'something-else', PACKAGES: '@dorkos/client' }],
+  ])('a pull request whose plan is %s gets six', (_, plan) => {
+    expect(pick('pull_request', { kind: 'merge', files: ['apps/client/src/a.ts'] }, plan)).toEqual(
+      SIX
+    );
+  });
+  it('a pull request whose plan reaches the server suite gets six', () => {
+    expect(
+      pick(
+        'pull_request',
+        { kind: 'merge', files: ['packages/relay/src/a.ts'] },
+        { SCOPE: 'selected', PACKAGES: '@dorkos/relay @dorkos/server dorkos ' }
+      )
+    ).toEqual(SIX);
+  });
+  it('a pull request whose plan reaches a package named like the server keeps two', () => {
+    expect(
+      pick(
+        'pull_request',
+        { kind: 'merge', files: ['packages/x/a.ts'] },
+        { SCOPE: 'selected', PACKAGES: '@dorkos/server-notes ' }
+      )
+    ).toEqual([1, 2]);
+  });
+  it('a pull request with nothing to test gets one shard', () => {
+    expect(
+      pick('pull_request', { kind: 'merge', files: ['research/a.md'] }, { SCOPE: 'none' })
+    ).toEqual([1]);
+  });
+  it('the queue gets six even if a plan were somehow present', () => {
+    expect(pick('merge_group', { kind: 'none' }, { SCOPE: 'none' })).toEqual(SIX);
   });
   it('falls back to six when HEAD is not a test-merge commit', () => {
     expect(pick('pull_request', { kind: 'plain', files: ['apps/client/src/a.ts'] })).toEqual(SIX);
