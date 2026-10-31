@@ -10,6 +10,7 @@
 import type {
   ApprovalAnswer,
   ApprovalDecisionResponse,
+  ApprovalFullDetailResponse,
   PendingApprovalsResponse,
 } from '@dorkos/shared/approval-schemas';
 import { fetchJSON } from './http-client';
@@ -23,6 +24,10 @@ export function createApprovalMethods(baseUrl: string) {
   return {
     listPendingApprovals(): Promise<PendingApprovalsResponse> {
       return fetchJSON(baseUrl, '/approvals/pending');
+    },
+
+    getApprovalFullDetail(approvalId: string): Promise<ApprovalFullDetailResponse> {
+      return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/full-detail`);
     },
 
     grantApproval(

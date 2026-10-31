@@ -5,6 +5,8 @@
  * yes or no.
  *
  * - `GET /api/approvals/pending` — approvals still waiting on a person
+ * - `GET /api/approvals/:id/full-detail` — the full list behind a pending
+ *   Marketplace summary card (DOR-3070), as readable as the card itself
  * - `POST /api/approvals/:id/grant` — allow the requested action, once or always
  * - `POST /api/approvals/:id/deny` — refuse it, with an optional reason
  * - `POST /api/approvals/:id/dismiss-suggestion` — "Not now" on the card's
@@ -544,6 +546,14 @@ export function createApprovalsRoutes(
     // §6.2), so every card this read builds carries its project.
     await projectsOfFolders(approvals.pendingFolders());
     return c.json({ approvals: approvals.listPending() });
+  });
+
+  // GET /:id/full-detail -- the full list behind a Marketplace summary card.
+  // Open like `/pending`: it is the same card's text, swept the same way.
+  router.get('/:id/full-detail', (c) => {
+    const text = approvals.fullDetail(c.req.param('id'));
+    if (text === undefined) return c.json({ error: 'No pending card with a full list' }, 404);
+    return c.json({ text });
   });
 
   // POST /:id/grant -- allow the requested action, once or from now on

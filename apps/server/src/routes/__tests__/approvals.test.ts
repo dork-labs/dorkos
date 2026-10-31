@@ -184,6 +184,56 @@ describe('approvals routes', () => {
     });
   });
 
+  describe('GET /:id/full-detail', () => {
+    const summary = {
+      operation: 'update' as const,
+      packages: [
+        {
+          name: 'sample',
+          where: 'plugin, installed globally',
+          fromVersion: '1.0.0',
+          toVersion: '1.1.0',
+          power: 'none' as const,
+          risks: [],
+          unchangedCount: 3,
+        },
+      ],
+      fullDetailLength: 12,
+    };
+
+    it('serves the full list behind a pending Marketplace summary card', async () => {
+      const ticket = approvals.request({
+        ...BINDING,
+        summary: 'Update 1 installed package',
+        detail: 'short form',
+        marketplace: { summary, fullDetail: 'all of it, whole' },
+      });
+
+      const pending = await request(app).get('/api/approvals/pending');
+      expect(pending.body.approvals[0].marketplaceSummary).toEqual(summary);
+      const res = await request(app).get(`/api/approvals/${ticket.approvalId}/full-detail`);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ text: 'all of it, whole' });
+      expect(res.text).not.toContain(ticket.token);
+    });
+
+    it('answers 404 for a card with no full list, or one already decided', async () => {
+      const plain = requestOne();
+      expect(
+        (await request(app).get(`/api/approvals/${plain.approvalId}/full-detail`)).status
+      ).toBe(404);
+
+      const decided = approvals.request({
+        ...BINDING,
+        summary: 'Update 1 installed package',
+        marketplace: { summary, fullDetail: 'all of it' },
+      });
+      approvals.deny(decided.approvalId);
+      const res = await request(app).get(`/api/approvals/${decided.approvalId}/full-detail`);
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe('POST /:id/grant', () => {
     it('grants a pending approval so its token can be spent once', async () => {
       const ticket = requestOne();

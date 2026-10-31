@@ -81,6 +81,9 @@ import {
   storableServiceAction,
   storableSummary,
   ownAnswerInput,
+  storableMarketplaceCard,
+  storedFullDetail,
+  type MarketplaceCardInput,
 } from './approval-storable.js';
 import {
   raiseCapabilityApproval,
@@ -276,6 +279,8 @@ export interface ApprovalRequestInput {
    * raises one, for a package Full held back.
    */
   passive?: boolean;
+  /** A Marketplace card too long for `detail` (DOR-3070); see `storableMarketplaceCard`. */
+  marketplace?: MarketplaceCardInput;
 }
 
 /** Where a verdict for one approval would be delivered, when there is anywhere. */
@@ -650,6 +655,7 @@ export class ApprovalService {
       subjectLabel: input.subject ? renderRequesterLabel(input.subject.label) : null,
       otherArguments: input.otherArguments ? storableSummary(input.otherArguments) : null,
       serviceAction: input.serviceAction ? storableServiceAction(input.serviceAction) : null,
+      ...storableMarketplaceCard(input.marketplace),
       // Withheld the moment a caller IS named, so the two can never contradict
       // each other on a card.
       origin: input.requestedBy ? null : (input.origin ?? null),
@@ -1132,6 +1138,18 @@ export class ApprovalService {
   getPending(approvalId: string): PendingApproval | undefined {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     return row ? this.toCard(row) : undefined;
+  }
+
+  /**
+   * The full list behind a pending Marketplace card's link (DOR-3070), or
+   * nothing when the card has none or can no longer be answered.
+   *
+   * @param approvalId - ULID of the approval.
+   */
+  fullDetail(approvalId: string): string | undefined {
+    return storedFullDetail(
+      this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get()
+    );
   }
 
   /** One stored row as the card a surface draws. */

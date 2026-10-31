@@ -21,6 +21,7 @@ import type {
 } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
 import { transportSliceMocks } from './mock-transport-slices.js';
+import { createMockApprovalTransport } from './mock-approvals.js';
 export { createMockSchedule, createMockRun } from './mock-tasks.js';
 import { mockOnboardingMethods, mockProfileMethods } from './mock-person-methods.js';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
@@ -1205,20 +1206,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listPushSubscriptions: vi.fn().mockResolvedValue({ subscriptions: [] }),
     deletePushSubscription: vi.fn().mockResolvedValue({ ok: true, removed: 1 }),
     // Approvals (spec `agent-trust` §3.3)
-    listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
-    grantApproval: vi
-      .fn()
-      .mockImplementation((approvalId: string) =>
-        Promise.resolve({ ok: true, approvalId, outcome: 'granted' })
-      ),
-    denyApproval: vi
-      .fn()
-      .mockImplementation((approvalId: string) =>
-        Promise.resolve({ ok: true, approvalId, outcome: 'denied' })
-      ),
-    dismissAlwaysSuggestion: vi
-      .fn()
-      .mockImplementation((approvalId: string) => Promise.resolve({ ok: true, approvalId })),
+    ...createMockApprovalTransport(),
     // Permissions (spec `agent-permissions`)
     getPermissions: vi.fn().mockResolvedValue({
       preset: null,

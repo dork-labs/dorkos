@@ -3,6 +3,7 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
+import { INSTALL_SUMMARY, UPDATE_SUMMARY } from './marketplace-summary-samples';
 
 /**
  * The content width of the header marker's popover: 30rem panel less its 16px
@@ -319,6 +320,39 @@ export function ApprovalCardShowcase() {
             sample({
               approvalId: '01JZ0000000000000000000023',
               expiresAt: expiresIn(0.6),
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>A Marketplace update too long for one card (DOR-3070)</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ApprovalList
+          approvals={[
+            sample({
+              approvalId: '01JZ0000000000000000000071',
+              capabilityId: 'marketplace.update',
+              capabilityTitle: 'Update installed packages',
+              summary:
+                'Update 2 installed packages to a newer version, each where it is installed.',
+              detail: 'The rows as text.',
+              marketplaceSummary: UPDATE_SUMMARY,
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>A large Marketplace install, with an in-process extension</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <ApprovalList
+          approvals={[
+            sample({
+              approvalId: '01JZ0000000000000000000072',
+              capabilityId: 'marketplace.install',
+              capabilityTitle: 'Install a marketplace package',
+              summary: 'Install "sample-flow" from "sample-market"',
+              detail: 'The rows as text.',
+              marketplaceSummary: INSTALL_SUMMARY,
             }),
           ]}
         />
