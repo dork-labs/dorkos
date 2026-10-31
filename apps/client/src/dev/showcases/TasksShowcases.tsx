@@ -79,6 +79,38 @@ const RETIMED_PACKAGE_SCHEDULE: Task = {
 };
 
 /**
+ * An agent's proposal parked while switched off: approving keeps it off, so the
+ * row offers "Approve (stays off)" first and "Approve and turn on" beside it
+ * (DOR-3309).
+ */
+const OFF_PROPOSAL_SCHEDULE: Task = {
+  ...RUNNING_SCHEDULE,
+  id: 'sched-weekly-digest',
+  name: 'Weekly Digest',
+  prompt: 'Write a short digest of the week and post it to #team.',
+  cron: '0 17 * * 5',
+  enabled: false,
+  status: 'pending_approval',
+  nextRun: null,
+};
+
+/**
+ * A task that stayed off when its file started saying on: the row names that
+ * and offers Turn on, because only a person turns a task on (DOR-3309).
+ */
+const FILE_SAYS_ON_SCHEDULE: Task = {
+  ...RUNNING_SCHEDULE,
+  id: 'sched-nightly-sweep',
+  name: 'Nightly Sweep',
+  prompt: 'Sweep stale branches and report what was removed.',
+  cron: '0 2 * * *',
+  enabled: false,
+  offersTurnOn: true,
+  filePath: '~/project/.agents/skills/nightly-sweep/SKILL.md',
+  nextRun: null,
+};
+
+/**
  * Build an isolated, pre-seeded `QueryClient` for a `TasksPanel` demo.
  *
  * `TasksPanel` reads exclusively from hooks (feature gate, the task list, mesh
@@ -104,6 +136,10 @@ function TasksPanelShowcase() {
   const emptyClient = useMemo(() => makeTasksQueryClient(true, []), []);
   const populatedClient = useMemo(
     () => makeTasksQueryClient(true, [RUNNING_SCHEDULE, RETIMED_PACKAGE_SCHEDULE, PAUSED_SCHEDULE]),
+    []
+  );
+  const switchOffersClient = useMemo(
+    () => makeTasksQueryClient(true, [OFF_PROPOSAL_SCHEDULE, FILE_SAYS_ON_SCHEDULE]),
     []
   );
 
@@ -134,6 +170,20 @@ function TasksPanelShowcase() {
       <ShowcaseDemo>
         <QueryClientProvider client={populatedClient}>
           <div className="bg-background h-96 max-w-2xl overflow-hidden rounded-lg border">
+            <TasksPanel />
+          </div>
+        </QueryClientProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Switched off: a proposal that approves without turning on, and a file that says on
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <QueryClientProvider client={switchOffersClient}>
+          <div
+            data-testid="tasks-switch-offers"
+            className="bg-background h-64 max-w-2xl overflow-hidden rounded-lg border"
+          >
             <TasksPanel />
           </div>
         </QueryClientProvider>
