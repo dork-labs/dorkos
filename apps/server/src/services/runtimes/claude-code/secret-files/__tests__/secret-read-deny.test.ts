@@ -11,6 +11,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { DirectoryGrantError } from '@dorkos/shared/directory-grants';
+import { secretNameRule } from '../../../../core/secret-file-scan/scan-folder.js';
 import { applySecretReadDeny, secretReadDenyRules } from '../secret-read-deny.js';
 
 const FOLDERS = {
@@ -124,6 +125,65 @@ describe('every store that holds a live secret', () => {
       return pattern.test(entry);
     });
     expect(covered).toBe(true);
+  });
+});
+
+describe('secret files in the agent’s own folder (DOR-3292)', () => {
+  const AGENT = '/Users/ana/agents/scout';
+  const rules = secretReadDenyRules({ ...FOLDERS, agentFolders: [AGENT, null, undefined] });
+  /** Whether a Read rule on the agent folder covers `rel`, by Claude Code's glob. */
+  const covered = (rel: string): boolean =>
+    rules.some((rule) => {
+      const m = /^Read\(\/(\/Users\/ana\/agents\/scout\/.+)\)$/.exec(rule);
+      if (!m) return false;
+      // `**/` is any depth, the top included; `*` crosses folders.
+      const glob = m[1]!
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*\*\//g, '\0')
+        .replace(/\*/g, '.*')
+        .replace(/\0/g, '(?:.*/)?');
+      return new RegExp(`^${glob}$`).test(`${AGENT}/${rel}`);
+    });
+
+  it.each([
+    '.env',
+    'sub/.env',
+    '.env.local',
+    '.env.production.local',
+    'deploy/.env.production',
+    'certs/server.pem',
+    'tls.key',
+    'id_ed25519',
+    '.ssh/id_rsa',
+    '.npmrc',
+    '.git-credentials',
+    'gcp/my-service-account-prod.json',
+    'credentials.json',
+    'home/.docker/config.json',
+    '.kube/config',
+  ])('denies %s, which the scan also names', (rel) => {
+    expect(secretNameRule(path.basename(rel), rel)).toBeDefined();
+    expect(covered(rel)).toBe(true);
+  });
+
+  it.each(['.env.example', '.env.sample', 'id_ed25519.pub', 'notes.md', 'env.ts'])(
+    'leaves %s readable, which the scan does not name',
+    (rel) => {
+      expect(secretNameRule(path.basename(rel), rel)).toBeUndefined();
+      expect(covered(rel)).toBe(false);
+    }
+  );
+
+  it('names nothing for a turn with no agent folder', () => {
+    expect(secretReadDenyRules(FOLDERS).some((rule) => rule.includes('/agents/scout/'))).toBe(
+      false
+    );
+  });
+
+  it('skips an agent folder no rule can name, rather than refusing the turn', () => {
+    expect(() =>
+      secretReadDenyRules({ ...FOLDERS, agentFolders: ['/Users/ana/odd?'] })
+    ).not.toThrow();
   });
 });
 

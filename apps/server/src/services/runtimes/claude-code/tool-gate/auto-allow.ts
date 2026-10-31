@@ -11,7 +11,8 @@ import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
 import { MEMORY_TOOL_NAMES } from '../../../memory/tool-names.js';
 import { inSessionToolName, isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
-import { ceilingOn, type CeilingedMode } from '../turn-permission.js';
+import { carriesOutsiderMark, ceilingOn, type CeilingedMode } from '../turn-permission.js';
+import { OWN_CONNECTION_READS, OWN_CONNECTION_READS_QUALIFIED } from './own-connection-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 
 // ---------------------------------------------------------------------------
@@ -170,6 +171,9 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // not be able to read our accounts (see isAutoAllowedCall).
     'accounts_usage',
     'accounts_probe',
+    // The agent's OWN connected-account grants, read so a run can find its access with nobody
+    // there (DOR-3205). Never the execute tools. A stranger's turn asks; see own-connection-reads.
+    ...OWN_CONNECTION_READS,
     // UI control tools. `get_ui_state` only reads. `control_ui` is the multiplexer
     // — most of its actions only move pixels, but not all of them, so its calls go
     // through `isAutoAllowedCall` below rather than riding this membership alone.
@@ -536,6 +540,9 @@ export function autoAllowedByCall(
     // served by the server DorkOS registered. A configured server that named
     // itself `dorkos` presents the same `mcp__dorkos__…` names.
     isHostServedOrUnattributed(mcpServer) &&
+    // The agent's own connection grants (DOR-3205): a turn that carries an outsider's words,
+    // a stranger's own or one passed on by our agents, asks for them.
+    !(OWN_CONNECTION_READS_QUALIFIED.has(toolName) && carriesOutsiderMark(session)) &&
     isAutoAllowedCall(toolName, input, ceilingOn(session))
   );
 }

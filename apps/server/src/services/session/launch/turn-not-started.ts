@@ -64,8 +64,25 @@ export function notStartedReason(event: StreamEvent): TurnRefusal | undefined {
     : undefined;
 }
 
-/** How a turn settles: its outcome and, for a refused turn, why. */
-export type SettledAs = [outcome: 'ok' | 'failed', refusal?: TurnRefusal];
+/**
+ * A turn that ended on an error before the agent said or did anything: a usage
+ * limit, or an API it could not reach (DOR-3287). The runtime took the message,
+ * so it is in the chat's history and the agent reads it on its next turn, but
+ * nobody has read it yet. The turn still settles `ok` for everyone else (a
+ * heartbeat must not count a usage limit as its agent failing); only a chat
+ * message riding on it has to stop saying it arrived.
+ */
+export const TURN_NO_ANSWER = 'no-answer';
+
+/** The event types that show the agent read the message and started on it. */
+const AGENT_OUTPUT: ReadonlySet<StreamEvent['type']> = new Set<StreamEvent['type']>([
+  'text_delta',
+  'thinking_delta',
+  'tool_call_start',
+]);
+
+/** How a turn settles: its outcome and, when nobody read the message, why. */
+export type SettledAs = [outcome: 'ok' | 'failed', reason?: TurnRefusal | typeof TURN_NO_ANSWER];
 
 /** A turn's stream, watched for a refusal; see {@link watchNotStarted}. */
 export interface WatchedTurn {
@@ -79,23 +96,31 @@ export interface WatchedTurn {
 
 /**
  * Watch a turn's stream for a refusal, and say how the turn settles: `failed`
- * when it threw or the runtime refused it before the agent saw the message.
+ * when it threw or the runtime refused it before the agent saw the message, and
+ * `ok` with {@link TURN_NO_ANSWER} when it ended on an error with no agent output.
  *
  * @param source - The runtime's per-turn stream.
  */
 export function watchNotStarted(source: AsyncIterable<StreamEvent>): WatchedTurn {
   let reason: TurnRefusal | undefined;
+  let sawError = false;
+  let sawOutput = false;
   async function* stream(): AsyncIterable<StreamEvent> {
     for await (const event of source) {
       reason ??= notStartedReason(event);
+      if (event.type === 'error') sawError = true;
+      if (AGENT_OUTPUT.has(event.type)) sawOutput = true;
       yield event;
     }
   }
   const watched: WatchedTurn = {
     stream: stream(),
     threw: false,
-    settledAs: () =>
-      reason !== undefined ? ['failed', reason] : [watched.threw ? 'failed' : 'ok'],
+    settledAs: () => {
+      if (reason !== undefined) return ['failed', reason];
+      if (watched.threw) return ['failed'];
+      return sawError && !sawOutput ? ['ok', TURN_NO_ANSWER] : ['ok'];
+    },
   };
   return watched;
 }

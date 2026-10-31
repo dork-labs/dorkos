@@ -8,7 +8,7 @@ import { runCensus } from '../census.ts';
 import { requiredWorkflowPaths } from '../gatemap.ts';
 import { replayGh } from '../gh.ts';
 import { loadHandFiles } from '../load.ts';
-import { checkLiveWorkflows, checkWorkflowIntent } from '../required-workflows.ts';
+import { checkLiveWorkflows, checkWorkflowIntent, UNREADABLE_CODE } from '../required-workflows.ts';
 import { RequiredChecksSchema } from '../schemas.ts';
 import { loadWorkflows } from '../workflows.ts';
 import { baseSpec, writeRepo, NOW } from './fixture.ts';
@@ -26,6 +26,7 @@ function setup() {
     path: '.github/workflows/lint.yml',
     ref: 'refs/heads/main',
     bypass_actors: [],
+    enforced: true,
   };
   files.requiredChecks!.workflows = [source];
   const workflows = loadWorkflows(root, '.github/workflows', () => {});
@@ -112,6 +113,19 @@ it('paginates org rules and refuses unreadable org rules or details', () => {
   expect(checkLiveWorkflows(replayGh({ rest }), files)).toEqual([]);
   rest['orgs/o/rulesets/7'] = new Error('HTTP 403');
   expect(checkLiveWorkflows(replayGh({ rest }), files)[0]!.message).toContain('failed');
+});
+it('marks a token that may not read org rules apart from a read that went wrong', () => {
+  const { files, rest } = setup();
+  rest['orgs/o/rulesets?per_page=100&page=1'] = new Error(
+    'gh: Resource not accessible by integration (HTTP 403)'
+  );
+  const [refused] = checkLiveWorkflows(replayGh({ rest }), files);
+  expect(refused).toMatchObject({ code: UNREADABLE_CODE });
+  expect(refused!.message).toContain('failed');
+  rest['orgs/o/rulesets?per_page=100&page=1'] = new Error('HTTP 502');
+  expect(checkLiveWorkflows(replayGh({ rest }), files)[0]).toMatchObject({
+    code: 'required-workflow/drift',
+  });
 });
 it.each([
   'missing',

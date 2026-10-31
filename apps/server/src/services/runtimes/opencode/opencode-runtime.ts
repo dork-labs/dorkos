@@ -77,14 +77,13 @@ import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity/index.js';
 import { logger, logError } from '../../../lib/logger.js';
-import { buildOpenCodeTurnContext } from './messaging/turn-context.js';
+import { buildOpenCodeTurnParts } from './messaging/turn-context.js';
 import {
   checkOpenCodeDependencies,
   getConnectedOpenCodeProvider,
 } from './providers/check-dependencies.js';
 import {
   createOpenCodeEventContext,
-  mapOpenCodeTurn,
   matchesOpenCodeSession,
   matchesOpenCodeSubagentSession,
   type OpenCodeWireEvent,
@@ -120,6 +119,7 @@ import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { listOpenCodeSubagents } from './subagent-list.js';
 import { captureOpenCodeMedia } from './events/media-capture.js';
+import { mapLiveOpenCodeTurn } from './events/model-wait-liveness.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import {
   connectorRuntimeHeaders,
@@ -416,7 +416,12 @@ export class OpenCodeRuntime implements AgentRuntime {
         // The agent this turn acts as — anchored, so a room worktree reads as its
         // agent and a room turn as nobody but the agent it is for (DOR-2091).
         const agentPath = homeOf(resolveAgentHome(cwd, forAgent));
-        const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied, agentPath);
+        const agentContext = await buildOpenCodeTurnParts(
+          cwd,
+          dorkosApplied,
+          agentPath,
+          !!opts?.roomTurn
+        );
         // On credits the prompt always names the credits provider: the
         // session's model when it is a credits model, else the default one.
         const model =
@@ -436,7 +441,15 @@ export class OpenCodeRuntime implements AgentRuntime {
               additionalContext: [...(opts?.additionalContext ?? []), accessContext.entry],
             }
           : opts;
-        const system = buildOpenCodeSystem(turnOpts, agentContext);
+        // The model's window, so a small one gets a trimmed system prompt (DOR-2839).
+        const at = await this.resolveSessionDirectory(client, ocSessionId);
+        const window = await this.contextWindows.lookup(
+          client,
+          at,
+          model?.providerID,
+          model?.modelID
+        );
+        const system = buildOpenCodeSystem(turnOpts, agentContext, window);
         const prompted = await client.session.promptAsync({
           path: { id: ocSessionId },
           body: {
@@ -751,10 +764,11 @@ export class OpenCodeRuntime implements AgentRuntime {
           ? { permissionCeiling: opts.permissionCeiling }
           : {}),
       };
-      for await (const mapped of mapOpenCodeTurn(queue, ctx)) {
+      // Says the turn is alive while a slow model is still answering (FB-68).
+      for await (const mapped of mapLiveOpenCodeTurn(queue, ctx)) {
         // On credits, a refused token is the credits card, never an OpenCode
         // sign-in error: the person's own sign-in was not used.
-        const event = await this.withContextWindow(
+        const event = await this.contextWindows.withWindow(
           client,
           directory,
           ctx.providerId,
@@ -803,40 +817,6 @@ export class OpenCodeRuntime implements AgentRuntime {
         });
       }
     }
-  }
-
-  /**
-   * Add the model's context window to a reply's context reading, so the
-   * reading says how full the conversation is (DOR-2732). OpenCode's own
-   * usage event names the model but not its window; the sidecar's catalog
-   * does ({@link OpenCodeContextWindows}, cached per directory, waited on for
-   * at most `CONTEXT_WINDOW_READ_TIMEOUT_MS`). A model the catalog gives no
-   * window for, or a catalog that does not answer in time, leaves the reading
-   * without one.
-   *
-   * @param client - The sidecar client the turn runs on.
-   * @param directory - The session's directory, for the catalog read.
-   * @param providerId - The reply's provider, as the mapper recorded it.
-   * @param event - One mapped event; only a context reading is touched.
-   */
-  private async withContextWindow(
-    client: OpencodeClient,
-    directory: string,
-    providerId: string | undefined,
-    event: StreamEvent
-  ): Promise<StreamEvent> {
-    if (event.type !== 'session_status') return event;
-    const data = event.data as Record<string, unknown>;
-    if (data.contextTokens === undefined || data.contextMaxTokens !== undefined) return event;
-    const window = await this.contextWindows.lookup(
-      client,
-      directory,
-      providerId,
-      typeof data.model === 'string' ? data.model : undefined
-    );
-    return window === undefined
-      ? event
-      : ({ ...event, data: { ...data, contextMaxTokens: window } } as StreamEvent);
   }
 
   /**

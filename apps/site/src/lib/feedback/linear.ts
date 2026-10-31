@@ -404,6 +404,17 @@ function buildElementLine(element: NonNullable<CreateFeedbackIssueInput['element
 }
 
 /**
+ * The words the issue uses for each stored `surface` value (DOR-2234). The
+ * stored value `cockpit` stays as it is (a DB enum and a wire value the DorkOS
+ * server sends); only what a reader sees changes, because "cockpit" is retired
+ * copy.
+ */
+const SURFACE_LABELS: Record<NonNullable<CreateFeedbackIssueInput['surface']>, string> = {
+  cockpit: 'DorkOS app',
+  site: 'dorkos.ai website',
+};
+
+/**
  * Description = full message + the element pointed at + a rendered identity
  * block + diagnostics + attachments. The message is reporter prose and renders unescaped, so a
  * submitter can imitate the blocks below it — when parsing, the LAST
@@ -424,7 +435,7 @@ function buildDescription(input: CreateFeedbackIssueInput, screenshotLine?: stri
   // guessing. `Kind:` is also the fallback record of what the reporter picked
   // when the `reported/*` label could not be resolved.
   identityLines.push(`Kind: ${input.kind}`);
-  if (input.surface) identityLines.push(`Surface: ${input.surface}`);
+  if (input.surface) identityLines.push(`Surface: ${SURFACE_LABELS[input.surface]}`);
   if (input.route) identityLines.push(`Route: ${oneLine(input.route)}`);
   if (input.submissionUrl) identityLines.push(`Submission: ${input.submissionUrl}`);
   sections.push(['---', '**Submitted by**', ...identityLines].join('\n'));

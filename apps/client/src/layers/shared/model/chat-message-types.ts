@@ -9,6 +9,7 @@
 import type {
   ChatMessageStamp,
   ChatStopNotice,
+  PromptSource,
   RoomMessageStamp,
 } from '@dorkos/shared/chat-messages';
 import type {
@@ -45,6 +46,12 @@ export interface ChatMessage {
    * never "You" unless the room says the person wrote it.
    */
   roomMessage?: RoomMessageStamp;
+  /**
+   * Where this user message came from, when no person in this chat typed it
+   * (DOR-3019). Filled in by the server; the row draws the source from here,
+   * never "You".
+   */
+  promptSource?: PromptSource;
   /** @internal Client-only tag for streaming messages awaiting server ID reconciliation. */
   _streaming?: boolean;
   /**
@@ -110,6 +117,12 @@ export interface MessageAuthor {
    * with its messages kept (DOR-2095). The header says so beside the name.
    */
   retired?: boolean;
+  /**
+   * True when this is the person reading, so the author line can add a muted
+   * "(you)" after their name (FB-38/55). Set by the resolver; a room passes it
+   * to `Message.Author` from its own viewer id instead.
+   */
+  isSelf?: boolean;
 }
 
 export type GroupPosition = 'only' | 'first' | 'middle' | 'last';

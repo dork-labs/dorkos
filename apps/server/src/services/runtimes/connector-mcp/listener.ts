@@ -26,6 +26,8 @@ export interface ConnectorRuntimeMcpListenerOptions {
   readonly port?: number;
   /** Test-only rate ceiling override. */
   readonly maxRequestsPerMinute?: number;
+  /** Accept a Claude Code claim; test runtime only (see `ConnectorRuntimeAuthOptions`). */
+  readonly acceptInProcessRuntime?: boolean;
 }
 
 /** Running listener handle consumed by the server composition root. */
@@ -72,7 +74,11 @@ function createListenerApp(options: ConnectorRuntimeMcpListenerOptions): Hono<Co
         : {}),
     })
   );
-  app.use(createConnectorRuntimeAuth(options.principals));
+  app.use(
+    createConnectorRuntimeAuth(options.principals, {
+      acceptInProcessRuntime: options.acceptInProcessRuntime === true,
+    })
+  );
   app.use(async (c, next) => {
     const incoming = c.env.incoming as IncomingMessage & { body?: unknown };
     await new Promise<void>((resolve, reject) => {

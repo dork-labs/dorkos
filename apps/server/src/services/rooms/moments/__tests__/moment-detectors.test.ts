@@ -467,12 +467,11 @@ describe('moment detectors', () => {
 
   describe('anniversaries', () => {
     it('marks a week with an agent, on the day it comes round', () => {
-      register(TANGERINES, {
-        name: 'tangerines',
-        registeredAt: new Date(Date.now() - 7 * DAY_MS),
-      });
+      // Pinned clear of a daylight-saving change, where seven 24-hour days back
+      // is not seven calendar days back near midnight.
+      register(TANGERINES, { name: 'tangerines', registeredAt: new Date(2026, 5, 8, 9, 0, 0, 0) });
 
-      detectors.activityObserved(event());
+      buildWith({ now: () => new Date(2026, 5, 15, 10, 0, 0, 0) }).activityObserved(event());
 
       const marked = onlyMoment();
       expect(marked.body.text).toBe("It's been a week since tangerines joined your team.");
@@ -480,11 +479,12 @@ describe('moment detectors', () => {
     });
 
     it('marks a month with an agent', () => {
-      const joined = new Date();
-      joined.setMonth(joined.getMonth() - 1);
-      register(TANGERINES, { name: 'tangerines', registeredAt: joined });
+      // A pinned clock, mid-month. Deriving "a month ago" from the real date
+      // with setMonth(-1) rolled 31 October back to 1 October, so on every day
+      // the month before has no such date this test found nothing.
+      register(TANGERINES, { name: 'tangerines', registeredAt: new Date(2026, 4, 15, 9, 0, 0, 0) });
 
-      detectors.activityObserved(event());
+      buildWith({ now: () => new Date(2026, 5, 15, 10, 0, 0, 0) }).activityObserved(event());
 
       expect(onlyMoment().body.text).toBe("It's been a month since tangerines joined your team.");
     });
