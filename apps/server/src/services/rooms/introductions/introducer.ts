@@ -14,11 +14,13 @@
  * 2. **One aside turn**, framed on that line, in which the agent may post its
  *    own introduction in its own words. It is the welcome-back offer's turn
  *    (`RoomTriggerDispatcher.askAside`), so it carries everything that turn
- *    carries: the room's own `(room, agent)` session at the agent's own level;
- *    skipped when the agent is already working; charged to the room's hourly
- *    automatic-turn budget and skipped when that is spent; and claimed AT the
- *    cascade ceiling with no root, so what it posts starts no conversation and
- *    no other agent answers it.
+ *    carries: the room's own `(room, agent)` session; skipped when the agent is
+ *    already working; charged to the room's hourly automatic-turn budget and
+ *    skipped when that is spent; and claimed AT the cascade ceiling with no
+ *    root, so what it posts starts no conversation and no other agent answers
+ *    it. It runs at the runtime's default level, never the agent's own
+ *    ({@link INTRODUCTION_CARRY}), and at most
+ *    {@link MAX_INTRODUCTIONS_PER_AGENT_PER_HOUR} times an hour per agent.
  *
  * **What is introduced.** Ordinary channels only. A direct message is a person
  * and an agent who already know who they are talking to. #team (and any room
@@ -45,6 +47,7 @@ import type {
 import { logger } from '../../../lib/logger.js';
 import type { AuthorRecord } from '../author-registry.js';
 import { joinedRoomText } from '../moments/moment-copy.js';
+import type { AsideCarry } from '../room-trigger/aside.js';
 import type { OpenedRoom } from '../service/room-service-deps.js';
 
 /** Everything an introduction needs, and nothing about how any of it is stored. */
@@ -72,6 +75,7 @@ export interface RoomIntroductionDeps {
     authorId: string;
     aboutEntryId: string;
     prompt: string;
+    carried: AsideCarry;
   }): Promise<void>;
   /** The clock. */
   now?(): Date;
@@ -98,8 +102,34 @@ export function introductionPrompt(roomId: string): string {
   ].join('\n\n');
 }
 
+/**
+ * The bound every introduction turn runs under, whoever did the add (Security's
+ * review of #3317). An introduction needs one thing, `post_to_room`, and the
+ * room it runs in may have been opened by an outsider-marked agent with an
+ * instruction in its title or topic, which the turn's room context carries. So
+ * the turn runs at the runtime's default level, never the agent's own, and is
+ * never treated as answering a stranger: nothing a stranger wrote asked for it.
+ */
+export const INTRODUCTION_CARRY: AsideCarry = {
+  externalAuthor: false,
+  permissionCeiling: 'runtime-default',
+};
+
+/** At most this many introduction turns per agent in any hour (Security's Should on #3317). */
+export const MAX_INTRODUCTIONS_PER_AGENT_PER_HOUR = 5;
+
+const HOUR_MS = 60 * 60_000;
+
 /** Introduces agents to channels they join. See the module docs. */
 export class RoomIntroductions {
+  /**
+   * When each agent was last asked to introduce itself, newest last, within the
+   * hour. In memory on purpose: it caps spend, it decides nothing durable — the
+   * joined line is what says an agent was introduced — so a restart only resets
+   * the window.
+   */
+  private readonly asked = new Map<string, number[]>();
+
   constructor(private readonly deps: RoomIntroductionDeps) {}
 
   /**
@@ -152,18 +182,35 @@ export class RoomIntroductions {
         if (entryId !== null) lines.push({ authorId, entryId });
       }
       for (const line of lines) {
+        // Over the cap, the line stands and the turn is not run, exactly as for
+        // an agent that is busy: "once" means once, not "until it works".
+        if (!this.takeSlot(line.authorId)) continue;
         this.deps
           .ask({
             roomId,
             authorId: line.authorId,
             aboutEntryId: line.entryId,
             prompt: introductionPrompt(roomId),
+            carried: INTRODUCTION_CARRY,
           })
           .catch((err: unknown) => this.warn(roomId, line.authorId, err));
       }
     } catch (err) {
       this.warn(roomId, null, err);
     }
+  }
+
+  /** Take one of this agent's introduction turns for the hour, or say there is none left. */
+  private takeSlot(authorId: string): boolean {
+    const now = (this.deps.now?.() ?? new Date()).getTime();
+    const recent = (this.asked.get(authorId) ?? []).filter((at) => now - at < HOUR_MS);
+    if (recent.length >= MAX_INTRODUCTIONS_PER_AGENT_PER_HOUR) {
+      this.asked.set(authorId, recent);
+      return false;
+    }
+    recent.push(now);
+    this.asked.set(authorId, recent);
+    return true;
   }
 
   /** Whether this room is one agents introduce themselves in. */

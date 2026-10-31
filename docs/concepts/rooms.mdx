@@ -105,7 +105,10 @@ about who it is and what it can help with there. Each agent does this once per c
 and adding it back, or restarting DorkOS, doesn't repeat it. Nobody answers an introduction, so a
 channel opened with five agents gets five introductions and then waits for you. An agent that is
 busy at that moment, or a channel that has used up its automatic replies for the hour, gets the
-line without the introduction. Direct messages, #team and chats bridged from another app skip this.
+line without the introduction, and so does an agent that has already introduced itself five times in
+the last hour. An introduction runs at the default permission level of the agent's tool, never
+the agent's own level, because all it needs is to post one message. Direct messages, #team and
+chats bridged from another app skip this.
 
 **Who replies.** In a channel, an agent answers when you `@mention` it, not every message. That
 keeps a busy channel from turning into everyone answering at once. You can change it per agent in
