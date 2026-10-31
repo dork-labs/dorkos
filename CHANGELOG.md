@@ -13,6 +13,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.128.0] - 2026-10-31
+
+> DorkOS 0.128.0 lets pages in the canvas send events to their agent, lets agents see every running chat, and stores your password more safely.
+
+### Added
+
+- Local pages and dev-server previews in the canvas browser can now send events to your agent. When your agent sets this up for a page, a click in that page can start its next turn. A preview reconnects by itself after it reloads. A local page that reloads, or follows a link to another site, stays offline until you press Reload, so another site can't send events in its place. The offline notice has its own Reload button. (DOR-2665)
+- Agents can now see every chat running right now, for each agent, spin-offs included, each with its title and a link. A person's own chat shows only as a number.
+
+### Changed
+
+- Your own messages now show your name with a muted "(you)" after it, in rooms, chats and DMs, so you read as the same person everyone else sees. A long name is cut short, but "(you)" always shows. If you haven't set a name, your messages still say "You" (DOR-2111, DOR-2839)
+
+### Fixed
+
+- On the Full setting, a package installed from a marketplace source still asked before it could run commands automatically. Full means nothing new asks, so now those commands run, and Activity notes it. A package that is in a project but that DorkOS did not install, or whose files changed after install, waits under Needs you instead, and only you can allow it. Nothing stops while it waits, it doesn't ping your phone, and it stays put until you answer instead of coming back every couple of hours. A yes still counts if DorkOS restarted since the row appeared. If that package's commands don't run a file DorkOS can check, a yes can't vouch for them, so they stay held back and Activity tells you how to run them: install the package through DorkOS, or link its folder as a dev link. On every other setting you're still asked, and a package you turned down stays turned down.
+- An MCP server you add for every agent can't run a program or script from inside your agents' folders, and can't use settings that inject code into the program. A saved server that breaks these rules isn't started.
+- Choosing "Always allow" on one of these servers' tools now applies to that agent only.
+- Suspending or archiving a space could fail with "The space is unavailable" on a small number of servers, every time, once someone had joined by invite. It now works on all of them.
+- When you write to an agent inside a room thread, its answer now lands in that thread. Before, some answers showed up in the main channel instead. An agent asked in the main channel still answers there. (FB-63)
+- A new agent you create on Codex or OpenCode now runs on that runtime from its first chat. Before, it quietly ran on Claude Code instead, and could bill the wrong account. When an agent's chat falls back to Claude Code, the chat now says why: the runtime is waiting for your OK, or it isn't set up on this computer.
+- When an agent sends a message to a chat whose account is out of usage, or that can't reach the API, the sender now sees that the message wasn't answered. Before, it said "delivered" even though the other agent hadn't read it, sometimes for days.
+- An OpenCode agent on a local model (such as Ollama) no longer gets cut off when its model takes more than 2 minutes to start answering. DorkOS used to read that wait as a turn that never started and end it with "the agent didn't start within 2 minutes". It now waits until the model answers or OpenCode's own time limit ends the request. A tool that hangs is still stopped after 10 minutes. (FB-68)
+- Agents in rooms now read times in your time zone. Every time in a room turn used to be UTC with nothing saying so, so an agent could call your afternoon "this evening" and had no idea what day it was for you. Now each time is in the zone set in your profile, and each turn tells the agent which zone that is and the date and time there now (DOR-3253, DOR-3125)
+- An agent listing scheduled tasks now sees when each one runs next. It used to see "no next run" for every task, even ones on a schedule (DOR-3125)
+- Bug reports you send from DorkOS are easier to read. The same event repeated back to back now shows once with a count, the server log excerpt no longer has empty lines, and the report names where it came from as "DorkOS app" instead of an old internal name. (FB-49)
+- An agent's Schedules page opens instead of crashing when that agent has schedules or runs to show (DOR-3124)
+- A message started by a schedule or a heartbeat now says where it came from, instead of looking like you sent it. It shows once the turn has finished. (DOR-3019)
+- The first time an agent opens Documents, Desktop or Downloads, macOS asks; your answer applies to all agents.
+- When DorkOS stops and starts again, an open chat now gets its live updates back on its own, like a room does. Before, it kept saying "Live updates lost" until you sent a message or reloaded the page.
+
+### Security
+
+- Your DorkOS password is now stored with a much stronger hash, so it's far harder to guess from a copy of the file. An older password switches over the next time you set a new one, or enter it when DorkOS asks you to confirm it's you on this computer (DOR-3234)
+- This version stores your DorkOS password in a new way that DorkOS 0.127.1 can't read. If you go back to 0.127.1 after the switch, you can't sign in with your password. To fix it, run `dorkos auth reset-password` in a terminal and choose a new password. This signs everyone out, and you sign in again with the new one.
+
+### Known issues
+
+- At Full autonomy, a chat an extension starts, like one from a comment on an "Only you can do these" list, can still stop and show you a card.
+- At Full autonomy, an agent that tries to loosen a permission is told no only if it has read outside words. Otherwise you get a card and you decide, the same as below Full.
+
 ## [0.127.1] - 2026-10-30
 
 > DorkOS 0.127.1 asks you to confirm it's you before things only you can do, gives each agent one voice in each room, and cuts more waits at Full autonomy.
@@ -210,20 +251,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep agents' browsers away from DorkOS Cloud and dorkos.ai. A DorkOS sign-in is never saved for agents, and one saved by an earlier version is removed. An agent can't open, read or act on a page from either site, and a link or redirect that lands there pauses it. You can still open them yourself (DOR-3196)
 
-## [0.125.2] - 2026-10-22
+Older releases (v0.1.0 – v0.125.2) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.125.2.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.125.2.md).
 
-> DorkOS 0.125.2 keeps running when a network connection drops, opens without waiting on the update check, and keeps an agent waiting on you in view in a folded sidebar section.
-
-### Fixed
-
-- A folded sidebar section now still shows an agent that is waiting on you, like one asking for your approval. Before, it stayed hidden until you opened the section.
-- The app no longer waits on a slow connection to check for updates. On bad Wi-Fi it could take up to 5 seconds to open. Now it opens right away and checks for updates in the background.
-- Fixes a crash on an unhandled network error.
-- If DorkOS stops, the desktop app now starts it again on its own. If it can't, it says so and offers one button to try again.
-
-Older releases (v0.1.0 – v0.125.1) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.125.1.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.125.1.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.127.1...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.128.0...HEAD
+[0.128.0]: https://github.com/dork-labs/dorkos/compare/v0.127.1...v0.128.0
 [0.127.1]: https://github.com/dork-labs/dorkos/compare/v0.127.0...v0.127.1
 [0.127.0]: https://github.com/dork-labs/dorkos/compare/v0.126.4...v0.127.0
 [0.126.4]: https://github.com/dork-labs/dorkos/compare/v0.126.3...v0.126.4
@@ -233,4 +264,3 @@ Older releases (v0.1.0 – v0.125.1) are archived in [changelog/archive/CHANGELO
 [0.126.0]: https://github.com/dork-labs/dorkos/compare/v0.125.4...v0.126.0
 [0.125.4]: https://github.com/dork-labs/dorkos/compare/v0.125.3...v0.125.4
 [0.125.3]: https://github.com/dork-labs/dorkos/compare/v0.125.2...v0.125.3
-[0.125.2]: https://github.com/dork-labs/dorkos/compare/v0.125.1...v0.125.2
