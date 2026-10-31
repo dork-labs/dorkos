@@ -6,12 +6,14 @@
  * scheduled run at `acceptEdits` or `default` had them refused for want of a person, and one at
  * Never ask had them refused by Claude Code before DorkOS was asked, so a health check could
  * not even ping the server it ran on. Only reads join: nothing here acts or changes anything.
+ * A stranger's turn still asks for them (`isAutoAllowedCall`), as it does for any read.
  *
  * Hand-kept, like the list it joins: a tier never grants on its own. `always-on-reads.test.ts`
  * pins that each name is still `observe` with no area, and that no always-on read is left off.
  *
  * @module services/runtimes/claude-code/tool-gate/always-on-reads
  */
+import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
 
 /** The always-on reads, by bare tool name. */
 export const ALWAYS_ON_READS = [
@@ -22,3 +24,8 @@ export const ALWAYS_ON_READS = [
   'list_extensions',
   'get_extension_errors',
 ] as const;
+
+/** The same reads by their in-session names, which a stranger's turn asks about. */
+export const ALWAYS_ON_READS_QUALIFIED: ReadonlySet<string> = new Set(
+  ALWAYS_ON_READS.map(inSessionToolName)
+);

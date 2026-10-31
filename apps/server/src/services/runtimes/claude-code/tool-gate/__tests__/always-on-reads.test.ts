@@ -17,7 +17,7 @@ import { createCanUseTool } from '../../messaging/interactive-handlers.js';
 import type { InteractiveSession, PendingInteraction } from '../../messaging/interaction-wait.js';
 import { NO_APPROVAL_SURFACE_DENIAL } from '../../sessions/tool-result-outcome.js';
 import { ALWAYS_ON_READS } from '../always-on-reads.js';
-import { DORKOS_AGENT_TOOLS } from '../auto-allow.js';
+import { autoAllowedByCall, DORKOS_AGENT_TOOLS } from '../auto-allow.js';
 import { createNeverAskHook } from '../never-ask-hook.js';
 
 const SDK = { name: 'dorkos', source: 'sdk' };
@@ -126,5 +126,33 @@ describe('a scheduled run at Never ask', () => {
   it('gives nothing to a server that only calls itself dorkos', async () => {
     const impostor = { name: 'dorkos', source: 'project' };
     for (const tool of READS) expect(await neverAsk(tool, impostor)).toEqual({});
+  });
+});
+
+describe('a stranger’s turn', () => {
+  // A Telegram stranger's question must not read our computer unasked (Security's Must on
+  // #3343): under a stranger's ceiling the six go to the mode table, which asks, as on main.
+  const STRANGER = { turnPermissionCeiling: 'runtime-default' as const };
+
+  it.each(ALWAYS_ON_READS.map(inSessionToolName))('does not run %s unasked', async (tool) => {
+    for (const permissionMode of ['acceptEdits', 'default', 'dontAsk'] as PermissionModeId[]) {
+      expect(autoAllowedByCall({ permissionMode, ...STRANGER }, tool, {}, SDK)).toBe(false);
+    }
+    const session = { permissionMode: 'dontAsk' as PermissionModeId, ...STRANGER };
+    const input = {
+      hook_event_name: 'PreToolUse',
+      session_id: 's',
+      transcript_path: '/tmp/t.jsonl',
+      cwd: '/agents/ana',
+      tool_name: tool,
+      tool_input: {},
+      tool_use_id: 'use-1',
+      mcp_server: SDK,
+    } as HookInput;
+    expect(
+      await createNeverAskHook(session, IDENTITY, noopLog)(input, 'use-1', {
+        signal: new AbortController().signal,
+      })
+    ).toEqual({});
   });
 });

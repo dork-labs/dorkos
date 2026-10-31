@@ -12,7 +12,7 @@ import { CHAT_SEND_TOOL, CHAT_STOP_TOOL } from '@dorkos/shared/chat-messages';
 import { MEMORY_TOOL_NAMES } from '../../../memory/tool-names.js';
 import { inSessionToolName, isHostServedOrUnattributed } from '../mcp-tools/tool-exposure.js';
 import { ceilingOn, type CeilingedMode } from '../turn-permission.js';
-import { ALWAYS_ON_READS } from './always-on-reads.js';
+import { ALWAYS_ON_READS, ALWAYS_ON_READS_QUALIFIED } from './always-on-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 
 // ---------------------------------------------------------------------------
@@ -434,17 +434,15 @@ const ACCOUNT_TOOLS_QUALIFIED: ReadonlySet<string> = new Set(
  * to {@link resolveModeDecision}, which raises a card in every mode but
  * `bypassPermissions`.
  *
- * **A turn held to a ceiling cannot cut into another chat unasked.** A turn
- * another agent's message or an outside sender started carries a permission
- * ceiling, and trust never extends to strangers. So in such a turn `chat_stop`,
- * the account tools, and `chat_send` with `delivery` `steer` or `interrupt` (or
- * any value that is not the default `queue`), ask. A queued `chat_send` and `chat_read` still skip
- * the card: they only add a message to a chat a person can read.
+ * **A turn held to a ceiling cannot cut into another chat unasked.** A turn another agent's
+ * message or an outside sender started carries a permission ceiling, and trust never extends to
+ * strangers. So in such a turn `chat_stop`, the account tools, and `chat_send` with any `delivery`
+ * but the default `queue`, ask. A queued `chat_send` and `chat_read` only add to a chat a person reads.
  *
  * **A stranger's turn cannot read past its folder unasked** (spec `official-community-space`
- * D10). The CLI asks about a read only when it reaches outside the agent's folder, or the web;
- * under a stranger's ceiling those go to the mode table too, which asks, as the mode that asks
- * would. Otherwise any stranger's question could read the computer and post what it found.
+ * D10), nor run DorkOS's always-on reads (DOR-3373). The CLI asks about a read only outside the
+ * agent's folder, or the web; under a stranger's ceiling those and the always-on reads go to the
+ * mode table, which asks. Otherwise any stranger's question could read the computer and post it.
  *
  * @param toolName - The tool the model called.
  * @param input - The raw arguments it called with.
@@ -462,6 +460,7 @@ function isAutoAllowedCall(
     if (toolName === CHAT_SEND_QUALIFIED) return (input.delivery ?? 'queue') === 'queue';
   }
   if (ceiling === 'stranger' && READ_ONLY_TOOLS.has(toolName)) return false;
+  if (ceiling === 'stranger' && ALWAYS_ON_READS_QUALIFIED.has(toolName)) return false;
   if (toolName !== CONTROL_UI_TOOL) return true;
   const parsed = UiCommandSchema.safeParse(input);
   if (!parsed.success) return false;
