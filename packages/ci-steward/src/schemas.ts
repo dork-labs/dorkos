@@ -222,6 +222,13 @@ export const ConfigSchema = z
               .string()
               .regex(/^wf\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/, 'a wf.<workflow>.<job> gate id'),
             minutes: z.number().positive(),
+            /**
+             * Job minutes that pass before this deadline's clock starts (the
+             * setup steps ahead of it), so the job ends at `lead_minutes +
+             * minutes`. Set it to the shortest setup measured, never a typical
+             * one: a lead that is too short reads high, the safe side.
+             */
+            lead_minutes: z.number().nonnegative().default(0),
             /** Where the deadline is set, so a reader can check it. */
             source: z.string().min(1),
           })
