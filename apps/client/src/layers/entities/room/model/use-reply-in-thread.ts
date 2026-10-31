@@ -18,8 +18,8 @@
  * site because the call site does not reliably exist when a refusal lands: the
  * reader can close the panel first, and a second reply detaches the first one's
  * observer, after which per-call `onError` callbacks are never dispatched at
- * all. See `usePostToRoom` for the full story, including why the words no
- * longer go back into the composer.
+ * all. See `usePostToRoom` for the full story, including when the words go
+ * back into the composer and how the toast's Retry works.
  *
  * There is no aim to give back, and that is the thread panel's doing (design
  * record §3). A reply used to be written in the ROOM's composer, silently
@@ -29,10 +29,18 @@
  *
  * @module entities/room/model/use-reply-in-thread
  */
-import { useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQueryClient,
+  type MutationOptions,
+  type QueryClient,
+  type UseMutationResult,
+} from '@tanstack/react-query';
 import type { PostToRoomResponse } from '@dorkos/shared/room-schemas';
+import type { Transport } from '@dorkos/shared/transport';
 import { useTransport } from '@/layers/shared/model';
 import { usePendingPostStore } from './pending-posts';
+import { failPendingPost, retryPendingPost } from './send/send-failure';
 import { reconcilePendingPost } from './use-post-to-room';
 
 /** What to say, and which thread to say it in. */
@@ -72,8 +80,21 @@ export function useReplyInThread(): UseMutationResult<
 > {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  return useMutation(replyInThreadOptions(transport, queryClient));
+}
 
-  return useMutation({
+/**
+ * The reply mutation, as options the toast's Retry can run again without a
+ * component — the thread panel may be closed by then.
+ *
+ * @param transport - Where the reply goes.
+ * @param queryClient - The cache the stream merges into.
+ */
+function replyInThreadOptions(
+  transport: Transport,
+  queryClient: QueryClient
+): MutationOptions<PostToRoomResponse, Error, ReplyInThreadInput> {
+  const options: MutationOptions<PostToRoomResponse, Error, ReplyInThreadInput> = {
     // `attachmentIds` is omitted rather than sent empty, exactly as in
     // `usePostToRoom`: a reply with no files asks for what it always asked for.
     mutationFn: ({ roomId, rootEntryId, text, attachmentIds }: ReplyInThreadInput) =>
@@ -95,9 +116,34 @@ export function useReplyInThread(): UseMutationResult<
     },
     onSuccess: (accepted, { roomId, clientId }) =>
       reconcilePendingPost(queryClient, roomId, clientId, accepted.entryId),
-    onError: (_error, { clientId }) => usePendingPostStore.getState().failed(clientId),
+    onError: (error, { roomId, rootEntryId, clientId, text }) =>
+      failPendingPost({ clientId, roomId, threadRootId: rootEntryId, text }, error),
     // Reads "Couldn't send your reply — This room is archived" through the
     // shared mutation toast, which is fit to show a person as-is.
-    meta: { errorLabel: 'Couldn’t send your reply' },
-  });
+    meta: {
+      errorLabel: 'Couldn’t send your reply',
+      errorAction: (_error: Error, variables: ReplyInThreadInput) => ({
+        label: 'Retry',
+        onClick: () =>
+          retryPendingPost(queryClient, variables.clientId, (post) => {
+            // Built straight from the cache rather than through an observer:
+            // an observer nobody detaches keeps its mutation alive for good.
+            void queryClient
+              .getMutationCache()
+              .build(queryClient, options)
+              .execute({
+                roomId: post.roomId,
+                rootEntryId: post.threadRootId ?? variables.rootEntryId,
+                text: post.text,
+                clientId: post.clientId,
+                attachmentIds: post.attachmentIds,
+                attachmentNames: post.attachmentNames,
+              })
+              // A second failure is handled by `onError` and its own toast.
+              .catch(() => {});
+          }),
+      }),
+    },
+  };
+  return options;
 }

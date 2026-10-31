@@ -14,14 +14,12 @@ import { File as FileIcon, TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { Spinner } from '@/layers/shared/ui';
 import {
-  findLandedEcho,
+  discardPendingPost,
   PENDING_SLOW_MS,
-  roomKeys,
-  usePendingPostStore,
+  retryPendingPost,
   usePostToRoom,
   useReplyInThread,
   type PendingPost,
-  type RoomEntry,
 } from '@/layers/entities/room';
 
 interface PendingRowProps {
@@ -31,7 +29,7 @@ interface PendingRowProps {
    * This reader's own author id in the room.
    *
    * Read only on a retry, to tell this reader's own words apart from an
-   * identical sentence somebody else happened to send — see {@link findLandedEcho}.
+   * identical sentence somebody else happened to send — see `findLandedEcho`.
    */
   viewerAuthorId: string;
 }
@@ -62,7 +60,8 @@ interface PendingRowProps {
  * back into flight in place rather than a second copy of the sentence appearing
  * underneath the first — and it looks first, because a request that timed out
  * after the server committed it is indistinguishable from one that never landed
- * (see {@link findLandedEcho}, and the copy below, which says so out loud).
+ * (see `findLandedEcho`, and the copy below, which says so out loud). A send
+ * that never reached the server at all says "Not sent." instead (DOR-3481).
  *
  * **Files ride along, and a retry re-sends them.** The row draws their NAMES as
  * inert chips — no link and no thumbnail, because the entry that would serve
@@ -82,36 +81,36 @@ export function PendingRow({ post, viewerAuthorId }: PendingRowProps) {
   const failed = post.status === 'failed';
   const slow = useIsSlow(post);
 
-  const discard = () => usePendingPostStore.getState().discard(post.clientId);
+  const discard = () => discardPendingPost(post.clientId);
 
-  const retry = () => {
-    const { clientId, roomId, threadRootId, text, attachmentIds, attachmentNames } = post;
-    // Look before leaping. If these exact words from this reader are already in
-    // the room, the send DID land and the confirmation is what went missing —
-    // sending again would post it twice and spend a second agent turn on it.
-    const held = queryClient.getQueryData<RoomEntry[]>(roomKeys.entries(roomId));
-    if (findLandedEcho(held, post, viewerAuthorId) !== undefined) {
-      discard();
-      return;
-    }
-    // The files go back with the words. Nothing bound them — an attachment
-    // belongs to whoever uploaded it and stays unbound until an entry claims it
-    // — so the second attempt names the same ids and no bytes go up twice. A
-    // retry that dropped them would send a message ABOUT files it no longer
-    // carried, which is the DOR-480 failure wearing a different hat.
-    if (threadRootId === null) {
-      send.mutate({ roomId, text, clientId, attachmentIds, attachmentNames });
-      return;
-    }
-    reply.mutate({
-      roomId,
-      rootEntryId: threadRootId,
-      text,
-      clientId,
-      attachmentIds,
-      attachmentNames,
-    });
-  };
+  // Looks before leaping and takes the words back out of the box first — the
+  // same retry the toast offers, so the two can never disagree. See
+  // `retryPendingPost` in the room entity.
+  const retry = () =>
+    retryPendingPost(
+      queryClient,
+      post.clientId,
+      ({ clientId, roomId, threadRootId, text, attachmentIds, attachmentNames }) => {
+        // The files go back with the words. Nothing bound them — an attachment
+        // belongs to whoever uploaded it and stays unbound until an entry claims
+        // it — so the second attempt names the same ids and no bytes go up
+        // twice. A retry that dropped them would send a message ABOUT files it
+        // no longer carried, which is the DOR-480 failure wearing a different hat.
+        if (threadRootId === null) {
+          send.mutate({ roomId, text, clientId, attachmentIds, attachmentNames });
+          return;
+        }
+        reply.mutate({
+          roomId,
+          rootEntryId: threadRootId,
+          text,
+          clientId,
+          attachmentIds,
+          attachmentNames,
+        });
+      },
+      viewerAuthorId
+    );
 
   return (
     <div
@@ -157,14 +156,18 @@ export function PendingRow({ post, viewerAuthorId }: PendingRowProps) {
         <div className="text-status-warning flex flex-wrap items-center gap-2 text-xs">
           <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
           {/* WHY it failed is already in the toast, in the server's own
-              sentence. This line says what is true of THIS message — and the
-              second half is not hedging: a request that times out after the
-              server has committed it fails in exactly the same way as one that
-              never arrived, so "not sent" alone would be a claim this client
-              cannot make. Telling somebody to look before re-sending is the
-              honest version until the send carries an idempotency key the
-              server dedupes on (DOR-786). */}
-          <span>DorkOS can’t tell if this sent. Check before trying again.</span>
+              sentence. This line says what is true of THIS message. "Not sent"
+              only when nothing answered at all (DOR-3481): a request that times
+              out after the server has committed it fails in exactly the same
+              way as one that never arrived, so for every other failure "not
+              sent" would be a claim this client cannot make. Telling somebody
+              to look before re-sending is the honest version until the send
+              carries an idempotency key the server dedupes on (DOR-786). */}
+          <span>
+            {post.failure === 'not-sent'
+              ? 'Not sent.'
+              : 'DorkOS can’t tell if this sent. Check before trying again.'}
+          </span>
           <button
             type="button"
             onClick={retry}

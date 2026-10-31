@@ -55,6 +55,16 @@ export const PENDING_ECHO_WINDOW_MS = 5 * 60_000;
 /** Where a message that has been sent has got to. */
 export type PendingPostStatus = 'sending' | 'failed';
 
+/**
+ * What a failed attempt is known to have done.
+ *
+ * `not-sent` when the request never reached a server that could have kept it
+ * (nothing answered at all), so the row can say so plainly. `unknown` for every
+ * other failure: a refusal or a timeout may have landed after the server
+ * committed it, and this client cannot tell the two apart (DOR-786).
+ */
+export type PendingPostFailure = 'not-sent' | 'unknown';
+
 /** One message in flight, or one that did not make it. */
 export interface PendingPost {
   /**
@@ -92,6 +102,8 @@ export interface PendingPost {
   attachmentIds: string[];
   /** Whether it is still in the air, or has come back refused. */
   status: PendingPostStatus;
+  /** What a failed attempt is known to have done. `null` while it is in flight. */
+  failure: PendingPostFailure | null;
   /**
    * The id the server minted, once the 202 has come back. `null` until then.
    *
@@ -143,8 +155,9 @@ interface PendingPostActions {
    * Mark an attempt refused, so its row can offer to try again.
    *
    * @param clientId - The attempt.
+   * @param failure - What the attempt is known to have done. Defaults to `unknown`.
    */
-  failed: (clientId: string) => void;
+  failed: (clientId: string, failure?: PendingPostFailure) => void;
   /**
    * Retire whichever attempt an arriving entry is the echo of.
    *
@@ -200,7 +213,7 @@ export const usePendingPostStore = create<PendingPostState & PendingPostActions>
             const existing = held.posts.findIndex((post) => post.clientId === clientId);
             if (existing >= 0) {
               const posts = [...held.posts];
-              posts[existing] = { ...posts[existing]!, status: 'sending', text };
+              posts[existing] = { ...posts[existing]!, status: 'sending', failure: null, text };
               return { posts };
             }
             return {
@@ -214,6 +227,7 @@ export const usePendingPostStore = create<PendingPostState & PendingPostActions>
                   attachmentNames,
                   attachmentIds,
                   status: 'sending',
+                  failure: null,
                   entryId: null,
                   at: now,
                 },
@@ -235,11 +249,11 @@ export const usePendingPostStore = create<PendingPostState & PendingPostActions>
           'pendingPosts/accepted'
         ),
 
-      failed: (clientId) =>
+      failed: (clientId, failure = 'unknown') =>
         set(
           (held) => ({
             posts: held.posts.map((post) =>
-              post.clientId === clientId ? { ...post, status: 'failed' as const } : post
+              post.clientId === clientId ? { ...post, status: 'failed' as const, failure } : post
             ),
           }),
           false,

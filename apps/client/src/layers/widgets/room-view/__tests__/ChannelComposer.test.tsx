@@ -281,9 +281,9 @@ describe('ChannelComposer', () => {
     type(field, 'the message I do not want to retype');
     fireEvent.keyDown(field, { key: 'Enter' });
 
-    // The words are held by the failed row now, not pushed back into the box.
-    // The box is where the NEXT sentence goes, and a refusal arriving into it
-    // merges two sentences that both have a claim on it — see `usePostToRoom`.
+    // A refusal may have landed, so its words stay in the failed row, which
+    // asks the person to check first. Only a send that never reached the
+    // server goes back to the box (DOR-3481, `failPendingPost`).
     await waitFor(() => {
       const held = usePendingPostStore.getState().posts;
       expect(held).toHaveLength(1);
@@ -297,12 +297,38 @@ describe('ChannelComposer', () => {
     // comes from the shared MutationCache rather than from this component,
     // because this component is not always still here when a refusal lands.
     expect(toastError).toHaveBeenCalledTimes(1);
-    // `expect.anything()` covers the shared "Report" action that cache adds;
-    // its content is query-client.test.ts's subject, not this file's.
+    // It offers Retry rather than only Report (DOR-3481).
     expect(toastError).toHaveBeenCalledWith(
       'Couldn’t send your message',
-      expect.objectContaining({ description: 'This room is archived' })
+      expect.objectContaining({
+        description: 'This room is archived',
+        action: expect.objectContaining({ label: 'Retry' }),
+      })
     );
+  });
+
+  it('retires the failed row when its words are sent again from the box', async () => {
+    const transport = createMockTransport({
+      postToRoom: vi
+        .fn()
+        .mockRejectedValueOnce(
+          Object.assign(new TypeError('Failed to fetch'), { noResponse: true })
+        )
+        .mockReturnValue(neverSettles()),
+    });
+    const field = renderComposer(transport);
+
+    type(field, 'try me again');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(field.value).toBe('try me again'));
+
+    // Sending the words back from the box IS the retry: one row, not two.
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(2));
+    const held = usePendingPostStore.getState().posts;
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({ text: 'try me again', status: 'sending' });
   });
 
   it('sends the same words twice when that is what was asked for', async () => {

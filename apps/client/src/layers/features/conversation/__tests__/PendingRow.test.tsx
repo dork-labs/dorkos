@@ -28,6 +28,7 @@ function post(overrides: Partial<PendingPost> = {}): PendingPost {
     attachmentNames: [],
     attachmentIds: [],
     status: 'sending',
+    failure: null,
     entryId: null,
     // Freshly sent by default: a row only grows controls once it has been in
     // flight past `PENDING_SLOW_MS`, so a fixture pinned at 0 would make every
@@ -71,6 +72,8 @@ function renderRow(
       </QueryClientProvider>
     );
   }
+  // The store is what a retry reads, so it holds the row being drawn.
+  usePendingPostStore.setState({ posts: [pending] });
   render(<PendingRow post={pending} viewerAuthorId={VIEWER} />, { wrapper: Wrapper });
 }
 
@@ -221,6 +224,13 @@ describe('PendingRow', () => {
     expect(screen.getByTestId('room-pending')).toHaveTextContent(
       'DorkOS can’t tell if this sent. Check before trying again.'
     );
+  });
+
+  it('says "Not sent." when the server never answered (DOR-3481)', () => {
+    renderRow(post({ status: 'failed', failure: 'not-sent' }));
+
+    expect(screen.getByTestId('room-pending')).toHaveTextContent('Not sent.');
+    expect(screen.getByTestId('room-pending')).not.toHaveTextContent('can’t tell');
   });
 
   it('throws the words away only when somebody asks it to', () => {

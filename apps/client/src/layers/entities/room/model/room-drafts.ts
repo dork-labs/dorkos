@@ -5,12 +5,12 @@
  * room and coming back finds your half-written sentence where you left it, the
  * way every chat surface behaves.
  *
- * It used to hold a second job — giving a refused post's words back — and that
- * is gone (DOR-783). A refusal now keeps its words in the pending row that has
- * been holding them since the keystroke (`pending-posts`), which is both a
- * better place for them and the only one that can say WHICH of two in-flight
- * messages failed. Merging a refusal into this box meant two sentences with a
- * claim on one field, and a reader who then pressed Enter sent both as one.
+ * It also takes back the words of a send that never reached the server, but
+ * only into an EMPTY box (DOR-3481, `send-failure`). The failed row keeps them
+ * too, and is the only place that can say WHICH of two in-flight messages
+ * failed. Merging a refusal into a box with text in it meant two sentences with
+ * a claim on one field, and a reader who then pressed Enter sent both as one
+ * (DOR-783), so that never happens.
  *
  * Keyed by room id, so one conversation's draft can never surface in another —
  * and by {@link threadDraftKey} for a thread panel's composer, which is a
