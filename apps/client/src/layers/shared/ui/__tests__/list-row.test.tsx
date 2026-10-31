@@ -137,4 +137,63 @@ describe('ListRow', () => {
     expect(link).toHaveAttribute('href', '/settings');
     expect(link).toHaveAttribute('data-slot', 'list-row-target');
   });
+
+  describe('on a narrow row (390px)', () => {
+    it('puts the meta and the trailing state on the subtitle line, joined with " · "', () => {
+      render(
+        <ListRow
+          title="Calendar sync"
+          meta="7:00"
+          trailing="Reconnect"
+          secondLine="Last ran 3h ago"
+          onSelect={() => {}}
+        />
+      );
+      const subtitle = document.querySelector('[data-slot="list-row-subtitle"]') as HTMLElement;
+      expect(subtitle.textContent).toBe('7:00·Reconnect·Last ran 3h ago');
+      // The title-line copies are the wide-row layout; a container query
+      // hides them under 24rem (checked in apps/e2e list-rows-390.spec.ts).
+      expect(document.querySelector('[data-slot="list-row-trailing"]')?.className).toContain(
+        '@min-[24rem]/row:flex'
+      );
+    });
+
+    it('a one-line row with only a meta still gets a subtitle to move it to', () => {
+      render(<ListRow title="Morning digest" meta="7:00" onSelect={() => {}} />);
+      expect(document.querySelector('[data-slot="list-row-subtitle-meta"]')).toHaveTextContent(
+        '7:00'
+      );
+    });
+
+    it('wrapTitle wraps the state copy, and its trailing moves under it on a narrow row', () => {
+      render(
+        <ListRow title="Couldn't load schedules." wrapTitle trailing={<span>Try again</span>} />
+      );
+      const title = document.querySelector('[data-slot="list-row-title"]') as HTMLElement;
+      expect(title).toHaveAttribute('data-wrap', 'true');
+      expect(title.className).not.toContain('truncate');
+      expect(document.querySelector('[data-slot="list-row-subtitle-trailing"]')).toHaveTextContent(
+        'Try again'
+      );
+    });
+
+    it('actions leave the flow at rest on a narrow row, and come back on hover and focus', () => {
+      render(
+        <ListRow
+          title="Morning digest"
+          onSelect={() => {}}
+          actions={
+            <button type="button" aria-label="Run now">
+              ▶
+            </button>
+          }
+        />
+      );
+      const actions = document.querySelector('[data-slot="list-row-actions"]') as HTMLElement;
+      expect(actions.className).toContain('@max-[24rem]/row:hidden');
+      expect(actions.className).toContain('@max-[24rem]/row:group-hover/row:flex');
+      expect(actions.className).toContain('@max-[24rem]/row:group-focus-within/row:flex');
+      expect(actions.className).toContain('@max-[24rem]/row:pointer-coarse:flex');
+    });
+  });
 });

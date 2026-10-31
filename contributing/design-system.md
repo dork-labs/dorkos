@@ -876,7 +876,8 @@ One grammar: **leading glyph · (who ›) title · meta · trailing state · act
 | Leading slot      | `sm` 20, `lg` 32 (two-line rows)                                                                   | `sm` 24, `lg` 40 |
 | Glyph → title     | 8                                                                                                  | 12               |
 
-- **Title** never wraps (`ROW_TITLE_CLASS`): it truncates and the full name is in `title`. **Meta** never shrinks, and under a 24rem row (`@container/row`) it drops to the second line, so a narrow list truncates names instead of wrapping a word per line.
+- **Title** never wraps (`ROW_TITLE_CLASS`): it truncates and the full name is in `title`. **Meta** never shrinks. Under a 24rem row (`@container/row`, so a phone) the meta and the trailing state move to the start of the subtitle line, joined to the second line with " · ", so the title gets the row's whole width. Actions stay at the end, but leave the flow at rest on a narrow row and come back on hover, focus or an open menu (always shown on touch).
+- **State copy wraps.** An empty, filtered or failed list's row takes `wrapTitle`: the words wrap and never truncate. On a narrow row its trailing ("Try again") moves under them.
 - **Actions** (up to two ghost icon buttons) are **siblings** of the row's button, never inside it. They are hidden at rest and shown on hover, on focus-within and while their menu is open; always shown on a coarse pointer. Their space is reserved, so the title never reflows. `menu` adds the ⋮, the right-click menu and the long-press sheet from one node list.
 - **No `onSelect` and no `asChild`** makes a static row: no hover, no press, not a Tab stop.
 - `data-row-state` (`rest | selected | emphasized | disabled`) is stamped so tests read state, not classes.

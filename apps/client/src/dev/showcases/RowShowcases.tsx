@@ -164,6 +164,7 @@ export function RowShowcases() {
                 <span className="text-muted-foreground">Nothing matches &lsquo;foo&rsquo;</span>
               }
               titleText="Nothing matches 'foo'"
+              wrapTitle
               trailing={
                 <Button variant="ghost" size="sm">
                   Clear filter
@@ -173,6 +174,7 @@ export function RowShowcases() {
             <ListRow
               leading={<AlertCircle className="text-status-error-fg size-icon-sm" />}
               title="Couldn't load schedules."
+              wrapTitle
               trailing={
                 <Button variant="ghost" size="sm">
                   Try again
