@@ -206,6 +206,7 @@ import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import {
   PendingApprovalsResponseSchema,
+  ApprovalFullDetailResponseSchema,
   DenyApprovalBodySchema,
   GrantApprovalBodySchema,
   ApprovalDecisionResponseSchema,
@@ -5464,6 +5465,25 @@ registry.registerPath({
       description: 'Pending approvals',
       content: { 'application/json': { schema: PendingApprovalsResponseSchema } },
     },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/approvals/{id}/full-detail',
+  tags: ['Approvals'],
+  summary: 'Read everything a pending Marketplace card is about',
+  description:
+    'The full list behind a Marketplace summary card (DOR-3070): every reinstall or install and ' +
+    'everything it would run, written out whole and swept for secrets, as the approval is bound ' +
+    'to it. Only while the card is pending; 404 for any other approval.',
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'The full list',
+      content: { 'application/json': { schema: ApprovalFullDetailResponseSchema } },
+    },
+    404: { description: 'No pending card with a full list' },
   },
 });
 

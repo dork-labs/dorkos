@@ -55,11 +55,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
-import {
-  isExtensionCapabilityId,
-  type CapabilitySource,
-  type CapabilityTier,
-} from '@dorkos/shared/capabilities';
+import { type CapabilitySource, type CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
   type ApprovalOrigin,
@@ -79,8 +75,11 @@ import {
   storableServiceAction,
   storableSummary,
   ownAnswerInput,
-  withServiceAction,
+  storableMarketplaceCard,
+  storedFullDetail,
+  type MarketplaceCardInput,
 } from './approval-storable.js';
+import { recordedArea, toPendingApproval, type ApprovalRow } from './approval-card.js';
 import {
   raiseCapabilityApproval,
   resolveCapabilityApproval,
@@ -100,7 +99,7 @@ export type {
   ApprovalConsumeOptions,
   ApprovalConsumptionSettlement,
 } from './approval-consumption.js';
-import { extensionSourcePhrase, renderRequesterLabel } from './approval-summary.js';
+import { renderRequesterLabel } from './approval-summary.js';
 
 /**
  * How long an operator has to decide before a token stops being honored.
@@ -268,6 +267,8 @@ export interface ApprovalRequestInput {
    * raises one, for a package Full held back.
    */
   passive?: boolean;
+  /** A Marketplace card too long for `detail` (DOR-3070); see `storableMarketplaceCard`. */
+  marketplace?: MarketplaceCardInput;
 }
 
 /** Where a verdict for one approval would be delivered, when there is anywhere. */
@@ -439,82 +440,6 @@ export interface AwaitDecisionOptions {
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
 function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
-}
-
-/** A stored approval row, as Drizzle infers it. */
-type ApprovalRow = typeof approvals.$inferSelect;
-
-/** The recorded area, read defensively: a hand-edited row never breaks a card. */
-function recordedArea(area: string | null): PermissionAreaId | null {
-  return area === null ? null : (area as PermissionAreaId);
-}
-
-/**
- * Project a stored row into the cockpit-facing shape. Never includes the hash.
- *
- * @param row - The stored approval.
- * @param roomId - The room whose turn raised it, when there is one.
- * @param suggestAlways - Whether the card should suggest Always allow; asked
- *   only of a card that offers it.
- * @param projectForFolder - The project an asking session's folder belongs to.
- * @param sourceOf - The running extension an `ext_` capability comes from.
- */
-function toPendingApproval(
-  row: ApprovalRow,
-  roomId?: string,
-  suggestAlways?: (row: ApprovalRow) => { allowedThisWeek: number } | null,
-  projectForFolder?: (cwd: string) => ProjectRef | null | undefined,
-  sourceOf?: (capabilityId: string) => CapabilitySource | undefined
-): PendingApproval {
-  const alwaysOffered = isAlwaysOffered(row);
-  const suggestion = alwaysOffered ? (suggestAlways?.(row) ?? null) : null;
-  const project = projectForFolder
-    ? row.requestingCwd
-      ? projectForFolder(row.requestingCwd)
-      : null
-    : undefined;
-  // Only an extension's tool names a source, and only while it runs: the card
-  // then says which extension it is from. Read live, like the room above, and
-  // shown only while it is the extension the stored summary named, so the
-  // subtitle never contradicts the sentence under it (a rename or a reinstall
-  // under the same id drops it).
-  const live = isExtensionCapabilityId(row.capabilityId) ? sourceOf?.(row.capabilityId) : undefined;
-  const source = live && row.summary.includes(extensionSourcePhrase(live.name)) ? live : undefined;
-  return {
-    approvalId: row.id,
-    capabilityId: row.capabilityId,
-    capabilityTitle: row.capabilityTitle,
-    tier: row.tier,
-    summary: row.summary,
-    ...(row.detail === null ? {} : { detail: row.detail }),
-    ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
-    // Both halves or neither: a label with no id behind it is the shape this
-    // field exists to avoid, since the id is what makes the name checkable.
-    ...(row.subjectKind && row.subjectLabel && row.subjectId
-      ? { subject: { kind: row.subjectKind, label: row.subjectLabel, id: row.subjectId } }
-      : {}),
-    ...(row.origin && !row.requestedBy ? { origin: row.origin } : {}),
-    // Gated on the SUBJECT, not on itself: the card only swaps the summary out
-    // for this when it has a subject block to swap it for, so a remainder
-    // without one would be a clause nothing renders.
-    ...(row.otherArguments && row.subjectLabel ? { otherArguments: row.otherArguments } : {}),
-    ...withServiceAction(row.serviceAction),
-    // The raw path stays off the wire (see `requestedByPath`'s own comment); what
-    // goes out is the one bit a surface needs, which is whether there is one.
-    hasAgentPath: row.requestedByPath !== null,
-    area: recordedArea(row.area),
-    alwaysOffered,
-    ...(suggestion
-      ? { suggestAlways: true as const, allowedThisWeek: suggestion.allowedThisWeek }
-      : {}),
-    ...(row.blockedRequest ? { blockedRequest: true as const } : {}),
-    ...(row.blockedRequest && row.requestReason ? { requestReason: row.requestReason } : {}),
-    ...(roomId ? { roomId } : {}),
-    ...(project !== undefined ? { project } : {}),
-    ...(source ? { source: { kind: source.kind, id: source.id, name: source.name } } : {}),
-    requestedAt: row.createdAt,
-    expiresAt: row.expiresAt,
-  };
 }
 
 /**
@@ -739,6 +664,7 @@ export class ApprovalService {
       subjectLabel: input.subject ? renderRequesterLabel(input.subject.label) : null,
       otherArguments: input.otherArguments ? storableSummary(input.otherArguments) : null,
       serviceAction: input.serviceAction ? storableServiceAction(input.serviceAction) : null,
+      ...storableMarketplaceCard(input.marketplace),
       // Withheld the moment a caller IS named, so the two can never contradict
       // each other on a card.
       origin: input.requestedBy ? null : (input.origin ?? null),
@@ -1221,6 +1147,18 @@ export class ApprovalService {
   getPending(approvalId: string): PendingApproval | undefined {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     return row ? this.toCard(row) : undefined;
+  }
+
+  /**
+   * The full list behind a pending Marketplace card's link (DOR-3070), or
+   * nothing when the card has none or can no longer be answered.
+   *
+   * @param approvalId - ULID of the approval.
+   */
+  fullDetail(approvalId: string): string | undefined {
+    return storedFullDetail(
+      this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get()
+    );
   }
 
   /** One stored row as the card a surface draws. */

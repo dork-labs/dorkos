@@ -7,6 +7,7 @@ import {
   MOCK_CONTINUE_OPTIONS,
   MOCK_LIMIT_HISTORY,
 } from './showcases/account-mock-data';
+import { SAMPLE_FULL_DETAIL } from './showcases/marketplace-summary-samples';
 
 /**
  * The remote access report the playground's "server" answers with (DOR-2086).
@@ -283,6 +284,8 @@ export function createPlaygroundTransport(): Transport {
       // page is the honest answer for a playground with no server: a quiet bell.
       // The community list also mounts in Messaging; no server means no connections.
       if (prop === 'listCommunityConnections') return async () => [];
+      // A Marketplace summary card's link opens a sheet that reads `text`.
+      if (prop === 'getApprovalFullDetail') return async () => ({ text: SAMPLE_FULL_DETAIL });
       // Re-seat: an agent that has answered, with one other account to move to.
       if (prop === 'getRoomReseatOptions') {
         return async () => ({

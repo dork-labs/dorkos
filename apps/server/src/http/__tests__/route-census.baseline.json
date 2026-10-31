@@ -88,6 +88,7 @@
     "GET /api/agents/current",
     "GET /api/agents/mcp-oauth/callback",
     "GET /api/agents/pauses",
+    "GET /api/approvals/:id/full-detail",
     "GET /api/approvals/pending",
     "GET /api/audit",
     "GET /api/audit/:id",

@@ -128,11 +128,6 @@ import type {
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
 import type {
-  ApprovalAnswer,
-  ApprovalDecisionResponse,
-  PendingApprovalsResponse,
-} from './approval-schemas.js';
-import type {
   AgentPermissionsResponse,
   PatchAgentPermissionsBody,
   PatchPermissionDefaultsBody,
@@ -2611,48 +2606,6 @@ export interface Transport extends TransportSlices {
    * @param name - The skill's folder name.
    */
   adoptHarness(projectPath: string, name: string): Promise<HarnessAdoptResponse>;
-
-  // --- Approvals (spec `agent-trust` §3.3) ---
-
-  /**
-   * List approvals an agent has requested and nobody has decided yet, oldest
-   * first. Expired requests are excluded and no token material is returned.
-   */
-  listPendingApprovals(): Promise<PendingApprovalsResponse>;
-
-  /**
-   * Allow a pending approval, letting the requester spend its token once on
-   * exactly the action it was granted for.
-   *
-   * With `answer: 'always'` it also sets that action to Allowed for the agent
-   * that asked (spec `agent-permissions` D7), written through the permission
-   * service before the agent is told, so the resumed call and the new setting
-   * agree. Refused outright (409 `ALWAYS_NOT_OFFERED`) where the card's
-   * `alwaysOffered` is false, rather than quietly downgraded to a one-time yes.
-   *
-   * @param approvalId - The approval's id, from {@link listPendingApprovals}.
-   * @param options - `answer`: `'once'` (default) or `'always'`.
-   */
-  grantApproval(
-    approvalId: string,
-    options?: { answer?: ApprovalAnswer }
-  ): Promise<ApprovalDecisionResponse>;
-
-  /**
-   * Refuse a pending approval.
-   *
-   * @param approvalId - The approval's id, from {@link listPendingApprovals}.
-   * @param reason - Optional note the requester sees instead of a bare refusal.
-   */
-  denyApproval(approvalId: string, reason?: string): Promise<ApprovalDecisionResponse>;
-
-  /**
-   * "Not now" on a card that suggests Always allow: the suggestion never comes
-   * back for this agent and action. Only a person can call this.
-   *
-   * @param approvalId - The approval whose card suggested it.
-   */
-  dismissAlwaysSuggestion(approvalId: string): Promise<{ ok: true; approvalId: string }>;
 
   // --- Permissions (spec `agent-permissions`) ---
 

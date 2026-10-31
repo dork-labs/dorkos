@@ -264,6 +264,125 @@ export type ApprovalOrigin = (typeof APPROVAL_ORIGINS)[number];
 export const APPROVAL_REQUEST_REASON_MAX_LENGTH = 500;
 
 /**
+ * Longest full disclosure a Marketplace card keeps behind its "See everything
+ * it runs" link (DOR-3070). Far past {@link APPROVAL_DETAIL_MAX_LENGTH} on
+ * purpose: the summary card exists so a long list is shown whole somewhere
+ * rather than refused. A list past even this is still refused, never cut.
+ */
+export const APPROVAL_FULL_DETAIL_MAX_LENGTH = 200_000;
+
+/**
+ * Most rows that run code or reach out, New or Broader, one Marketplace card
+ * may ask about in chat (DOR-3070, spec v1.1 call 13). Past it, DorkOS does
+ * not ask in chat and points a person to Marketplace instead.
+ */
+export const MARKETPLACE_SUMMARY_CODE_ROW_CAP = 40;
+
+/** What kind of power one row on a Marketplace summary card is about. */
+export const MARKETPLACE_RISK_KINDS = [
+  'extension',
+  'hook',
+  'skillCommand',
+  'mcp',
+  'lsp',
+  'monitor',
+  'executable',
+  'schedule',
+  'host',
+  'secret',
+  'skillTools',
+  'dependency',
+  'unreadable',
+] as const;
+
+/** What kind of power one summary row is about. */
+export type MarketplaceRiskKind = (typeof MARKETPLACE_RISK_KINDS)[number];
+
+/**
+ * How one row compares with what is installed: `new` (always, on an install,
+ * or when the installed copy cannot be vouched for), `broader` (the same item
+ * with more power, or a change DorkOS cannot prove is narrower) or `removed`.
+ */
+export const MARKETPLACE_RISK_CHANGES = ['new', 'broader', 'removed'] as const;
+
+/** How one summary row compares with what is installed. */
+export type MarketplaceRiskChange = (typeof MARKETPLACE_RISK_CHANGES)[number];
+
+/**
+ * One row on a Marketplace summary card: a thing the package can do, in a
+ * sentence the server wrote. The client renders `text`, `command`, `was` and
+ * `items` as plain text and never composes a sentence of its own, so a
+ * package cannot shape what the card says about it.
+ */
+export const MarketplaceRiskSchema = z
+  .object({
+    kind: z.enum(MARKETPLACE_RISK_KINDS),
+    change: z.enum(MARKETPLACE_RISK_CHANGES),
+    /** The row's sentence, with every value quoted and hidden characters shown. */
+    text: z.string().max(4_000),
+    /** The whole command it runs, escaped, never shortened. */
+    command: z.string().max(APPROVAL_FULL_DETAIL_MAX_LENGTH).optional(),
+    /** Broader only: what it was before, in words. */
+    was: z.string().max(APPROVAL_FULL_DETAIL_MAX_LENGTH).optional(),
+    /** Named values under the row: an extension's hosts, a skill's tools. */
+    items: z.array(z.string().max(4_000)).optional(),
+  })
+  .openapi('MarketplaceRisk');
+
+/** One row on a Marketplace summary card. */
+export type MarketplaceRisk = z.infer<typeof MarketplaceRiskSchema>;
+
+/** One package on a Marketplace summary card. */
+export const MarketplacePackageSummarySchema = z
+  .object({
+    name: z.string().max(4_000),
+    /** The package's type and where it is or will be installed, in words. */
+    where: z.string().max(4_000),
+    /** Update only: the version installed now. */
+    fromVersion: z.string().max(4_000).optional(),
+    toVersion: z.string().max(4_000),
+    /** `adds` when any row is New or Broader; decided by the server. */
+    power: z.enum(['adds', 'none']),
+    /** New and Broader rows first, most powerful first; Removed rows last. */
+    risks: z.array(MarketplaceRiskSchema),
+    /** Update only: things it already runs that stay exactly the same. */
+    unchangedCount: z.number().int().min(0),
+  })
+  .openapi('MarketplacePackageSummary');
+
+/** One package on a Marketplace summary card. */
+export type MarketplacePackageSummary = z.infer<typeof MarketplacePackageSummarySchema>;
+
+/**
+ * What a Marketplace install or update card shows when its full list is too
+ * long for {@link PendingApprovalSchema.shape.detail} (DOR-3070, DOR-3356):
+ * every row that gives the package more power, sorted, with the full list one
+ * link away. The approval stays bound to the full disclosure, never to this.
+ */
+export const MarketplaceApprovalSummarySchema = z
+  .object({
+    operation: z.enum(['install', 'update']),
+    packages: z.array(MarketplacePackageSummarySchema).min(1),
+    /** How long the full list is, so the link can say what it opens. */
+    fullDetailLength: z.number().int().min(0),
+  })
+  .openapi('MarketplaceApprovalSummary');
+
+/** What a Marketplace summary card shows. */
+export type MarketplaceApprovalSummary = z.infer<typeof MarketplaceApprovalSummarySchema>;
+
+/** Response body of `GET /api/approvals/:id/full-detail`. */
+export const ApprovalFullDetailResponseSchema = z
+  .object({
+    /** Everything the approval is about, written out whole, swept for secrets. */
+    text: z.string().max(APPROVAL_FULL_DETAIL_MAX_LENGTH),
+  })
+  .openapi('ApprovalFullDetailResponse');
+
+/** Response body of `GET /api/approvals/:id/full-detail`. */
+export type ApprovalFullDetailResponse = z.infer<typeof ApprovalFullDetailResponseSchema>;
+
+/**
  * An approval waiting on a person: what would run, why, and who asked. This is
  * exactly what the cockpit's approval card renders.
  */
@@ -366,6 +485,12 @@ export const PendingApprovalSchema = z
      * at render time.
      */
     detail: z.string().max(APPROVAL_DETAIL_MAX_LENGTH).optional(),
+    /**
+     * A Marketplace install or update whose full list is too long for
+     * {@link detail} (DOR-3070): the card renders this instead of the detail,
+     * and the full list is served by `GET /api/approvals/:id/full-detail`.
+     */
+    marketplaceSummary: MarketplaceApprovalSummarySchema.optional(),
     /**
      * The thing this would act on, named — when the server could name it.
      *
