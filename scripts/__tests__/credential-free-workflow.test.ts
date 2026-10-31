@@ -216,9 +216,14 @@ describe('credential-free-build workflow', () => {
     // would say so. The patterns come from the scrub script itself, so the
     // two lists cannot drift apart.
     const testWorkflow = readFileSync(path.join(repoRoot, TEST_WORKFLOW_REL), 'utf8');
+    // The one exemption: the queue-only runner label (ledger 261031-090000).
+    // It picks a machine and never reaches a step's environment, and
+    // merge-group-runner-label.test.ts pins its exact form.
+    const QUEUE_ONLY_RUNS_ON =
+      /^\s+runs-on: \$\{\{ github\.event_name == 'merge_group' && vars\.RUNNER_LABEL \|\| 'ubuntu-latest' \}\}\s*$/;
     const code = testWorkflow
       .split('\n')
-      .filter((line) => !/^\s*#/.test(line))
+      .filter((line) => !/^\s*#/.test(line) && !QUEUE_ONLY_RUNS_ON.test(line))
       .join('\n');
     const secretRefs = [...code.matchAll(/\b(?:secrets|vars)\.[A-Za-z0-9_]+/g)].map((m) => m[0]);
     expect(
