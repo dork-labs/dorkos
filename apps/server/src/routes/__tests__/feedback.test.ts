@@ -155,6 +155,57 @@ describe('feedback route', () => {
     expect(mockSend).not.toHaveBeenCalled();
   });
 
+  describe('agent callers (DOR-3506)', () => {
+    it('refuses a caller presenting an agent token with 403, gathering and sending nothing', async () => {
+      // An agent in a room could otherwise attach that room's messages to a
+      // report with no person involved.
+      mockSend.mockResolvedValue({ ok: true });
+      mockGetRoomTranscript.mockResolvedValue({ text: 'room words', throughSeq: 4 });
+      const res = await request(
+        fixtureTarget.mount(buildApp({ userId: 'u1', credential: 'cookie' }))
+      )
+        .post('/api/feedback')
+        .set('X-DorkOS-Agent', 'agent-token')
+        .send({ kind: 'bug', message: 'hi', includeTranscript: true, roomId: 'room-1' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('PERSON_REQUIRED');
+      expect(mockGetRoomTranscript).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('refuses the older sessionId path for an agent too', async () => {
+      mockGetTranscript.mockResolvedValue('chat words');
+      const res = await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .set('X-DorkOS-Agent', 'agent-token')
+        .send({ kind: 'bug', message: 'hi', includeTranscript: true, sessionId: 'sess-1' });
+
+      expect(res.status).toBe(403);
+      expect(mockGetTranscript).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('refuses an empty agent header, which still says a machine is calling', async () => {
+      const res = await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .set('X-DorkOS-Agent', '')
+        .send({ kind: 'feedback', message: 'hi' });
+
+      expect(res.status).toBe(403);
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('refuses before validating, so an agent learns nothing from the body', async () => {
+      const res = await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .set('X-DorkOS-Agent', 'agent-token')
+        .send({ kind: 'praise' });
+
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe('identity — resolved from the verified session only (ADR 260803-205037)', () => {
     it('rejects a client-supplied reporterEmail with 400 — the field does not exist on the submission', async () => {
       // The security boundary is structural: reporterEmail/reporterName have no
