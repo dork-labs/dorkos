@@ -6,7 +6,7 @@
 import type { Health, Snapshot } from './data.ts';
 import { BudgetExhausted, type Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
-import { checkLiveWorkflows } from './required-workflows.ts';
+import { checkLiveWorkflows, UNREADABLE_CODE } from './required-workflows.ts';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -18,6 +18,8 @@ export interface GlobalChecks {
   cache: Snapshot['cache'];
   releases: { tag: string; published_at: string }[];
   failures: string[];
+  /** Problems reported without marking the collector unhealthy. */
+  warnings: string[];
 }
 
 function readRuleset(gh: Gh, repo: string, id: number): Obj | null {
@@ -138,7 +140,11 @@ function checkSafeguard(
 export function globalChecks(gh: Gh, files: HandFiles): GlobalChecks {
   const { config } = files;
   const repo = config.github_repo;
-  const failures: string[] = checkLiveWorkflows(gh, files).map((f) => f.message);
+  // CI's own token can never read org rules, so that refusal is a warning: the day's data is
+  // whole without it. Every other live-comparison problem still fails closed.
+  const live = checkLiveWorkflows(gh, files);
+  const failures: string[] = live.filter((f) => f.code !== UNREADABLE_CODE).map((f) => f.message);
+  const warnings: string[] = live.filter((f) => f.code === UNREADABLE_CODE).map((f) => f.message);
   const ruleset = reconcileRuleset(readRuleset(gh, repo, config.ruleset.id), files);
   if (!ruleset.ok) {
     failures.push(
@@ -180,5 +186,5 @@ export function globalChecks(gh: Gh, files: HandFiles): GlobalChecks {
   const releases = rel
     .filter((r) => typeof r.published_at === 'string' && r.draft !== true)
     .map((r) => ({ tag: String(r.tag_name), published_at: String(r.published_at) }));
-  return { ruleset, dataRulesets, cache, releases, failures };
+  return { ruleset, dataRulesets, cache, releases, failures, warnings };
 }

@@ -150,7 +150,9 @@ describe('server browser metadata owner scopes', () => {
     ])
       expect(resolveNamespace(req, response(null))).toBeNull();
     expect(state.authorCalls).toBe(0);
-    expect(resolveNamespace(request(), response(null))).not.toBeNull();
+    // At this computer, once an owner exists, only their session is them (DOR-3330).
+    expect(resolveNamespace(request(), response(null))).toBeNull();
+    expect(resolveNamespace(request(), response('cookie'))).not.toBeNull();
   });
 
   it('keeps the existing author namespace when operator resolution delegates to owner binding', () => {

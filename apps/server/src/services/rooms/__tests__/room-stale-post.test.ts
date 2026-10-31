@@ -176,8 +176,11 @@ describe('the stale-post check', () => {
   });
 
   describe('marks the turn that reads what it hands back (Security, DOR-3398)', () => {
-    /** Post as Bo from inside his recorded turn, the way the in-session server calls. */
+    /** Post as Bo from his seat's recorded turn, the way the in-session server calls. */
     function postFromTurn(sessionId: string, text: string): Promise<PostResult> {
+      // The session the room keeps for Bo: only it posts here (DOR-3397).
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+      store.bindRoomSession(channel.id, bo, sessionId, new Date().toISOString());
       return registry.invoke(
         'rooms.post',
         { roomId: channel.id, text },

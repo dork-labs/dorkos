@@ -190,6 +190,7 @@ import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import {
   askAboutWithheldHooks,
   hookPackagesToAskAbout,
+  raisePassiveHookRows,
 } from '../services/harness/ask-withheld-hooks.js';
 import type { HookApprovalGateway } from '../services/harness/hook-approval.js';
 import { storedHookDecisions, type HookDecisions } from '../services/harness/hook-consent.js';
@@ -198,6 +199,7 @@ import { projectWithConsent, withProjectLock } from '../services/harness/project
 import { buildHarnessStatus } from '../services/harness/status.js';
 import { resolveDirectoryOwnership } from '../services/harness/directory-ownership.js';
 import { dorkosHarness } from '../services/harness/dorkos-harness.js';
+import { provenDorkosInstallsIfFull } from '../services/harness/dorkos-installed.js';
 import type { HarnessId } from '@dorkos/shared/harness-schemas';
 
 /**
@@ -341,6 +343,16 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   const readHookDecisions = deps.readHookDecisions ?? storedHookDecisions;
   const readDorkosHarness = deps.dorkosHarness ?? dorkosHarness;
+  /**
+   * Which packages DorkOS installed here, files unchanged, when the preset is
+   * Full: the only ones Full lets run (DOR-3422). Proven before each plan,
+   * outside the lock, because it walks folders.
+   */
+  const proveInstalls = (projectPath: string) =>
+    provenDorkosInstallsIfFull(projectPath, deps.dorkHome, readHookDecisions().full === true);
+  /** The option bag {@link proveInstalls} feeds into a plan or status. */
+  const installsOption = (proven: Awaited<ReturnType<typeof proveInstalls>>) =>
+    proven === undefined ? {} : { dorkosInstalled: proven };
 
   /**
    * Resolve a caller-supplied project path to one this router may answer about,
@@ -405,10 +417,12 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
       // and a route that reshaped it would be a second voice describing one
       // tree. The one addition is the field the model cannot compute, for the
       // reason the module doc gives.
+      const proven = await proveInstalls(resolved);
       const status = buildHarnessStatus({
         projectPath: resolved,
         dorkHome: deps.dorkHome,
         decisions: readHookDecisions(),
+        ...installsOption(proven),
         // The one fact about this DorkOS the tree cannot show: the agent tool
         // its own sessions run on. A project that has never run it has left no
         // files for detection to find, so without this the panel is silent
@@ -474,6 +488,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
       // which is the one thing this response is supposed to be authoritative
       // about. `sweepOrphans: true` is safe here because this plan takes no
       // harness filter — the seam throws if the two are ever combined.
+      const proven = await proveInstalls(resolved);
       const { result, status } = await withProjectLock(resolved, () => {
         // No `dorkosHarness` here, and the seam's own doc is why: that option
         // changes nothing a projection WRITES — its only effect is one entry in
@@ -485,6 +500,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
           dorkHome: deps.dorkHome,
           sweepOrphans: true,
           decisions: readHookDecisions(),
+          ...installsOption(proven),
         });
         return {
           result: applied,
@@ -492,6 +508,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
             projectPath: resolved,
             dorkHome: deps.dorkHome,
             decisions: readHookDecisions(),
+            ...installsOption(proven),
             // The one fact about this DorkOS the tree cannot show, asked the
             // same way `GET /status` asks it: a sync that answered differently
             // from the read before the click would make the panel flicker
@@ -516,31 +533,45 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
           ? []
           : hookPackagesToAskAbout(result.withheld).map(({ packageName }) => packageName);
       if (gateway !== undefined && askedAbout.length > 0) {
-        void askAboutWithheldHooks(result.withheld, {
+        const askOpts = {
           projectPath: resolved,
           approvals: gateway,
-          reproject: () => {
-            void withProjectLock(resolved, () =>
-              projectWithConsent(resolved, {
-                dorkHome: deps.dorkHome,
-                // The same sweep decision as pass one: a second pass that did not
-                // sweep would leave behind exactly what the first one removed.
-                sweepOrphans: true,
-                decisions: readHookDecisions(),
-              })
-            ).catch((err: unknown) => {
-              logger.warn('[harness] POST /sync could not re-project after an approval', {
-                err,
-                projectPath: resolved,
-              });
-            });
-          },
-        }).catch((err: unknown) => {
+          dorkHome: deps.dorkHome,
+          // Proven again: pass two can come hours after pass one. It answers
+          // what it still held back, so a stale yes on a passive row leaves the
+          // row for today's files (DOR-3433).
+          reproject: () =>
+            proveInstalls(resolved)
+              .then((again) =>
+                withProjectLock(resolved, () =>
+                  projectWithConsent(resolved, {
+                    dorkHome: deps.dorkHome,
+                    // The same sweep decision as pass one: a second pass that did
+                    // not sweep would leave behind exactly what the first removed.
+                    sweepOrphans: true,
+                    decisions: readHookDecisions(),
+                    ...installsOption(again),
+                  })
+                )
+              )
+              .then(({ withheld }) => withheld)
+              .catch((err: unknown) => {
+                logger.warn('[harness] POST /sync could not re-project after an approval', {
+                  err,
+                  projectPath: resolved,
+                });
+                return undefined;
+              }),
+        };
+        void askAboutWithheldHooks(result.withheld, askOpts).catch((err: unknown) => {
           logger.warn('[harness] POST /sync could not ask about a package’s hooks', {
             err,
             projectPath: resolved,
           });
         });
+        // The passive rows for packages Full held back (DOR-3427): out here,
+        // outside the lock, because nothing waits on them and their wait has no end.
+        raisePassiveHookRows(result.withheld, askOpts);
       }
 
       return c.json({
@@ -606,6 +637,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
       // gives is what the page renders INSTEAD of re-reading, so a status
       // recomputed outside the lock could describe a tree a watcher (DOR-1850)
       // or a marketplace install rewrote between the move and the read.
+      const provenForAdopt = await proveInstalls(resolved);
       const { result, status } = await withProjectLock(resolved, () => {
         const manifest = loadManifest(resolved);
         const read = readAdoptCandidates(resolved, inventorySourceTree(resolved), manifest);
@@ -643,6 +675,7 @@ export function createHarnessRoutes(deps: HarnessRouterDeps): Hono<ApiEnv> {
             projectPath: resolved,
             dorkHome: deps.dorkHome,
             decisions: readHookDecisions(),
+            ...installsOption(provenForAdopt),
             // Asked the same way `GET /status` asks it, so the page does not
             // flicker between two truths about the tool DorkOS runs (DOR-1901).
             dorkosHarness: readDorkosHarness(),

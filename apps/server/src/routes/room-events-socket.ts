@@ -53,7 +53,7 @@ export const roomEventsRoute: UpgradeRoute = {
       // The identity the chain's session gate and agent-identity step resolve
       // for a request was resolved by `authorizeStreamUpgrade` instead, because
       // no chain runs for an upgrade.
-      viewerAuthorId = resolveCaller(upgradeCaller(headers, locals)).id;
+      viewerAuthorId = resolveCaller(upgradeCaller(headers, locals), 'read').id;
       // Refuse BEFORE any frame is sent. `getRoom` is membership-scoped, so this
       // refuses an unknown room and a room the caller is not in identically —
       // subscribing to somebody else's DM by id is the same leak as reading it.

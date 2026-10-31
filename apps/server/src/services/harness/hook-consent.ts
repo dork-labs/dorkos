@@ -28,13 +28,15 @@
  * it always was.
  *
  * - **Same commands, same files:** the yes applies.
- * - **Same commands, a file changed:** below Full the yes no longer applies and
- *   the person is asked again. On Full it still applies, because on Full
- *   nothing new asks.
+ * - **Same commands, a file changed:** the yes no longer applies, at every
+ *   preset. Below Full the person is asked again; on Full the package waits in
+ *   a passive row under Needs you, unless DorkOS installed it and its folder
+ *   is unchanged (`project-with-consent.ts`, DOR-3433).
  * - **An entry from before pins** (`<name>@<commands>` alone, for hooks that do
  *   name a file): it applies, and the running server pins today's files onto it
  *   the first time it sees it ({@link pinLegacyHookApproval}), the same
- *   one-time pin the agent folder settings took on upgrade.
+ *   one-time pin the agent folder settings took on upgrade. After that it is
+ *   strict like any other.
  * - **A no** is about the commands, so it holds whatever the files hold: a
  *   package a person turned down is not asked about again because it edited a
  *   script.
@@ -135,11 +137,20 @@ export interface HookDecisions {
    */
   unreadable?: string;
   /**
-   * Whether the stored permission preset is Full. On Full a yes keeps applying
-   * after a file it covers changes, because on Full nothing new asks. Absent
-   * means "ask the running server's config"; the read-only disk path sets it.
+   * Whether the stored permission preset is Full. On Full the hooks of a
+   * package DorkOS installed, with its folder unchanged, run without a yes
+   * (DOR-3422); every other package needs a yes for exactly the files it runs
+   * (DOR-3433). A no still holds. Absent means "ask the running server's
+   * config"; the read-only disk path sets it.
    */
   full?: boolean;
+  /**
+   * Set only on the running server's own lists ({@link storedHookDecisions}),
+   * so a caller that passes them in still gets a yes from before pins pinned
+   * once ({@link pinLegacyHookApproval}). Never set on the read-only disk copy
+   * or a list built by hand, which must write nothing.
+   */
+  live?: true;
 }
 
 /** Nothing decided — the shape a fresh install resolves to. */
@@ -304,11 +315,24 @@ export function hookEntryPackageName(entry: string): string {
  */
 export function storedHookDecisions(): HookDecisions {
   const harness = configManager.get('harness');
-  return { approved: harness.approvedHooks, refused: harness.refusedHooks };
+  return {
+    approved: harness.approvedHooks,
+    refused: harness.refusedHooks,
+    // Read when asked, not here: only an undecided package needs the preset,
+    // and most reads of these lists never get that far.
+    get full() {
+      return storedPresetIsFull();
+    },
+    live: true,
+  };
 }
 
-/** Whether the running server's stored permission preset is Full. */
-function storedPresetIsFull(): boolean {
+/**
+ * Whether the running server's stored permission preset is Full.
+ *
+ * @returns True on Full.
+ */
+export function storedPresetIsFull(): boolean {
   return configManager.get('permissions')?.preset === 'full';
 }
 
@@ -378,8 +402,9 @@ function describeReadFailure(err: unknown): string {
  * Whether a person has already allowed exactly this package to install exactly
  * these hooks into exactly this project, running exactly these files.
  *
- * A yes whose files have changed since applies only on Full; see "The files the
- * hooks run are pinned too" above.
+ * A yes whose files have changed since does not apply, at any preset; see "The
+ * files the hooks run are pinned too" above. What Full lets through without a
+ * yes is decided in `planWithConsent`, which knows what DorkOS installed.
  *
  * @param request - The projection about to happen.
  * @param decisions - The stored lists; defaults to the running server's.
@@ -390,9 +415,7 @@ export function isHookProjectionApproved(
   decisions: HookDecisions = storedHookDecisions()
 ): boolean {
   const match = hookApprovalMatch(request, decisions);
-  if (match === 'exact' || match === 'unpinned') return true;
-  // Read only when a file changed: that is the one answer the preset decides.
-  return match === 'changed' && (decisions.full ?? storedPresetIsFull());
+  return match === 'exact' || match === 'unpinned';
 }
 
 /**
@@ -416,8 +439,8 @@ export function isHookProjectionRefused(
 
 /**
  * Pin today's files onto a yes recorded before files were pinned, so the next
- * edit to them asks again (below Full). The running server's store only; the
- * read-only `--check` path never calls this.
+ * edit to them needs a new yes. The running server's store only; the read-only
+ * `--check` path never calls this.
  *
  * @param request - A projection {@link hookApprovalMatch} answered `unpinned` for.
  */

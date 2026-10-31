@@ -82,6 +82,8 @@ const INBOUND_STRIPPED = new Set([
   'authorization',
   'proxy-authorization',
   'x-api-key',
+  // The person proof the app page keeps beside its session (DOR-3330).
+  'x-dorkos-person',
   // Not a credential, but it names the person's browser tab to DorkOS, and
   // nothing in an extension needs it.
   'x-client-id',

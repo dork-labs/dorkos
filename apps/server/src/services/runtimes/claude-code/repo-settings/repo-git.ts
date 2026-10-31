@@ -11,22 +11,21 @@
  * files are read by the caller and hashed in-process ({@link gitBlobId}).
  *
  * **The repo is the agent's.** These reads run in a repo an agent can write,
- * config included, so every one goes through `runSafeGitBuffer`: today the
- * stand-in in `safe-git-interim.ts`, and DOR-3343's shared runner
- * (`@dorkos/shared/safe-git`) once it is on main, which also audits the
- * repo's settings key by key. Either way: no lazy fetch of a missing object (a
- * promisor remote's `core.sshCommand` would otherwise run as the server), no
- * transport at all, no ssh, credential or askpass helper, and none of the
- * server's own environment. A read that would need any of them fails, and a
- * failed read pauses the repo's settings.
+ * config included, so every one goes through DOR-3343's shared runner
+ * (`@dorkos/shared/safe-git`). It audits the repo's own settings key by key
+ * first, refusing a filter, driver, include or partial-clone remote before git
+ * starts; then no lazy fetch of a missing object (a promisor remote's
+ * `core.sshCommand` would otherwise run as the server), no transport at all,
+ * no ssh, credential or askpass helper, and none of the server's own
+ * environment. A refused or failed read pauses the repo's settings.
  *
  * @module services/runtimes/claude-code/repo-settings/repo-git
  */
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-// Switch to '@dorkos/shared/safe-git' once DOR-3343's runner (#3216) is on main.
-import { gitRuns, runSafeGitBuffer } from './safe-git-interim.js';
+import { GitRepoConfigUnsafeError, runSafeGitBuffer } from '@dorkos/shared/safe-git';
+import { isGitInstalled } from '../../../../lib/git-safety.js';
 
 /** How long one git read may take. */
 const GIT_TIMEOUT_MS = 5_000;
@@ -45,9 +44,6 @@ const GIT_MAX_BUFFER = 4 * 1024 * 1024;
  * branch (DOR-3339).
  */
 const BASELINE_GIT_ARGS = ['--no-replace-objects', '-c', 'core.commitGraph=false'];
-
-/** Whether git is installed, asked once per process. */
-let gitInstalled: Promise<boolean> | undefined;
 
 /** Thrown when git itself is not installed: the repo's committed settings then pause. */
 export class GitMissingError extends Error {
@@ -75,12 +71,13 @@ async function git(cwd: string, args: string[]): Promise<Buffer> {
       env: { LC_ALL: 'C' },
     });
   } catch (err) {
-    // A spawn reports a missing folder the same way as a missing program, so
-    // ask git itself rather than guess.
-    gitInstalled ??= gitRuns();
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT' && !(await gitInstalled)) {
-      throw new GitMissingError();
-    }
+    // A spawn reports a missing folder the same way as a missing program, and
+    // the runner's audit reports a git it could not start as a settings file it
+    // could not read, so ask git itself rather than guess.
+    const couldBeMissing =
+      (err as NodeJS.ErrnoException).code === 'ENOENT' ||
+      (err instanceof GitRepoConfigUnsafeError && err.keys.length === 0);
+    if (couldBeMissing && !(await isGitInstalled())) throw new GitMissingError();
     throw err;
   }
 }

@@ -17,6 +17,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { notePersonSessionMissing } from '../lib/person-without-session.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { isInstallOwner } from '../services/core/auth/install-owner.js';
@@ -30,11 +31,12 @@ export interface ConnectorOwnerBoundaryDeps {
   /** Resolve the current deployment's owner from verified server state. */
   readonly resolveOwner: (user: RequestUser | undefined) => ConnectorOwnerAuthority | undefined;
   /**
-   * Whether the gate asked this request for a credential (`credentialGated`);
-   * injected for deterministic route evidence.
+   * Whether a person-only decision needs the person's browser session here
+   * (`personSessionRequired`, DOR-3330); injected for deterministic route
+   * evidence.
    */
   readonly loginEnabled: (
-    facts: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>
+    facts: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress' | 'method'>
   ) => boolean;
   /** Exact DorkOS browser origins; defaults to the server-owned static set. */
   readonly trustedOrigins?: () => readonly string[];
@@ -120,6 +122,7 @@ export function resolveConnectorOperator(
   const user = requestUser(c);
   const gated = deps.loginEnabled(honoRequestFacts(c));
   if (gated && user?.credential !== 'cookie') {
+    if (!user) notePersonSessionMissing(honoRequestFacts(c));
     return ownerRefusal(
       c,
       'operator_cookie_required',

@@ -21,7 +21,10 @@ vi.mock('../extensions-person-bar.js', () => ({
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined), set: vi.fn() },
 }));
-vi.mock('../../services/core/auth/index.js', () => ({ readOwnerAccount: () => null }));
+vi.mock('../../services/core/auth/index.js', () => ({
+  readOwnerAccount: () => null,
+  getAuth: () => undefined,
+}));
 
 let root: string;
 let db: ReturnType<typeof createTestDb>;

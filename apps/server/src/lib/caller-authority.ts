@@ -31,11 +31,12 @@
  * agent header nor an approval token, which an agent with a shell reaches by
  * omitting two headers.
  *
- * {@link requireOperatorCookieUnderLogin} is the second bar: with login on, is
- * this a person in the cockpit rather than something holding a per-user API key?
- * **With login off it allows, because there is no cookie for anyone to present.**
- * That allow is the residual DOR-505 could not close, and putting it in its own
- * function is what makes the posture it covers readable instead of buried.
+ * {@link requireOperatorCookieUnderLogin} is the second bar: is this a person
+ * in the app, proved by their browser session, rather than something holding a
+ * per-user API key or another program? It asks wherever
+ * `personSessionRequired` says so: every request the gate asked for a
+ * credential, and every request at this computer once an owner exists
+ * (DOR-3330). **With no owner it allows, because there is nobody to sign in as.**
  * `PATCH /api/config` runs it on its operator-only paths, and so do extension
  * approval, the permission writes, and answering any approval at all.
  *
@@ -69,8 +70,10 @@ import {
   credentialGated,
   isAtThisComputer,
   isOnEncryptedConnection,
+  personSessionRequired,
 } from '../services/core/auth/gate-policy.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/decision-authority.js';
+import { notePersonSessionMissing } from './person-without-session.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { currentServerRole } from './server-role.js';
 
@@ -79,7 +82,7 @@ import { currentServerRole } from './server-role.js';
  * credential ({@link credentialGated}): its TCP peer, headers and ingress.
  */
 type GatedFacts = Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'> &
-  Partial<Pick<RequestFacts, 'connectionEncrypted'>>;
+  Partial<Pick<RequestFacts, 'connectionEncrypted' | 'method'>>;
 
 /**
  * Build the {@link DecisionAuthorityRequest} for an incoming request.
@@ -102,10 +105,22 @@ export function readCallerAuthority(
     approvalTokenPresented: facts.headers[APPROVAL_TOKEN_HEADER] !== undefined,
     ...(facts.user ? { user: facts.user } : {}),
     // Per request, never the global setting: another device always proved a
-    // credential at the gate, and a person at this computer that does not ask
-    // for a password proved nothing because there is nothing to prove.
-    loginEnabled: () => credentialGated(facts),
+    // credential at the gate. At this computer, once an owner exists, an open
+    // gate proves only the place, so the person's session is asked for too
+    // (DOR-3330); with no owner there is nobody to prove.
+    loginEnabled: () => sessionAskedOf(facts),
   };
+}
+
+/**
+ * Whether a person bar must see this request's session, recording, when it
+ * must and none came, that a bar asked for the one it lacks.
+ */
+function sessionAskedOf(facts: Pick<RequestFacts, 'headers' | 'user'> & GatedFacts): boolean {
+  const asked = personSessionRequired(facts);
+  // `resolveDecisionAuthority` refuses exactly this caller: asked, and nobody proved.
+  if (asked && !facts.user) notePersonSessionMissing(facts);
+  return asked;
 }
 
 /**
@@ -125,8 +140,10 @@ export interface OperatorCookieRefusal {
 }
 
 /**
- * With login ON, require that this request came from a person signed in to the
- * cockpit, proved by a session cookie. With login OFF, allow.
+ * Require that this request came from a person signed in to the app, proved
+ * by a session cookie, wherever one can exist: whenever the gate asked for a
+ * credential, and at this computer once an owner exists (DOR-3330). Allow only
+ * where nobody can sign in.
  *
  * ## Why a cookie, and not something weaker
  *
@@ -138,18 +155,16 @@ export interface OperatorCookieRefusal {
  * Under login-on it also separates a person from a program holding one of their
  * per-user API keys, which the session gate accepts as the same identity (DOR-474).
  *
- * ## The login-off half is an allow, and that is the residual
+ * ## Where it allows
  *
- * With login off there is no cookie for ANYONE, so this bar cannot be applied
- * without locking a person out of their own settings — the cockpit is exactly how
- * they change them, and in the default posture it presents no credential at all.
- * So this returns `undefined` and contributes NOTHING in that posture: whether the
- * caller is refused then rests entirely on whatever other bars the route runs. In
- * `routes/config.ts` that is the agent bar, which refuses a caller naming itself
- * an agent and nothing else. That is the open half of DOR-505, stated here rather
- * than implied: **in the login-off posture DorkOS cannot tell the cockpit from a
- * program on the same machine that strips its agent header, and this function does
- * not pretend otherwise.** Turning on Require login is what closes it.
+ * Only where no session can exist: an install with no owner yet, at this
+ * computer. There the cookie bar contributes nothing and the route's other bars
+ * decide. Everywhere else the person proves themselves once: at this computer,
+ * a password step-up leaves a long-lived session that works only here
+ * (`routes/person-session.ts`), and the gate reads it on every request.
+ *
+ * The limit (DOR-505, DOR-3053): a program running as the same OS user can read
+ * the auth secret and database on disk; this does not close that.
  *
  * This is a SERVER-side guarantee. The cockpit also hides and disables the
  * controls this refuses, but that is a courtesy; this is the guarantee.
@@ -170,9 +185,10 @@ export function requireOperatorCookieUnderLogin(
   subject: string,
   isLoginEnabled?: LoginEnabledLookup
 ): OperatorCookieRefusal | undefined {
-  if (!(isLoginEnabled ? isLoginEnabled() : credentialGated(caller))) return undefined;
+  if (!(isLoginEnabled ? isLoginEnabled() : personSessionRequired(caller))) return undefined;
 
   if (caller.user?.credential === 'cookie') return undefined;
+  if (!caller.user) notePersonSessionMissing(caller);
 
   return {
     status: 403,
@@ -199,8 +215,8 @@ export function requireOperatorCookieUnderLogin(
  *   `X-DorkOS-Agent` header, so an API key is NOT proof of a person. Only a
  *   session cookie is. This bar refuses every credential but a cookie while login
  *   is on, and — being the `...UnderLogin` half, not the full
- *   `requireOperatorCookie` — it ALLOWS with login off, so the shipped default
- *   posture is unchanged and the residual there stays the documented DOR-505 one.
+ *   `requireOperatorCookie` — it ALLOWS only where no session can exist (no
+ *   owner yet, at this computer).
  * - **The agent bar, in every posture** ({@link resolveDecisionAuthority}). A
  *   caller that names itself an agent, or holds an approval token, is refused.
  *
@@ -225,7 +241,8 @@ export function requireOperatorCookieUnderLogin(
  *
  * @param facts - The request's facts.
  * @returns True only when a person is positively established — a session cookie
- *   under login-on, or the operator on the login-off local machine — with neither
+ *   wherever one can exist, or the person at this computer of an install with
+ *   no owner yet — with neither
  *   an agent identity nor an approval token presented.
  */
 export function clearsTheAgentBar(
@@ -260,9 +277,8 @@ export type AccountOwnerRefusal = 'not-a-person' | 'not-the-owner';
  *   registration policy allows only one account today, so this is the same
  *   invariant `routes/profile.ts` and `routes/community-connections.ts` check
  *   rather than assume: an invited person must never be able to buy, export or
- *   delete with the owner's account. With login off there is no signed-in
- *   account to compare, so the person bar alone decides, with the DOR-505
- *   residual {@link requireOperatorCookieUnderLogin} names.
+ *   delete with the owner's account. With no owner yet there is no signed-in
+ *   account to compare, so the person bar alone decides.
  *
  * @param facts - The request's facts.
  * @returns `undefined` when the caller may act, otherwise why not.
@@ -271,7 +287,7 @@ export function refuseUnlessAccountOwner(
   facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts
 ): AccountOwnerRefusal | undefined {
   if (!clearsTheAgentBar(facts)) return 'not-a-person';
-  if (!credentialGated(facts)) return undefined;
+  if (!personSessionRequired(facts)) return undefined;
   // Login is on, so the agent bar above has already required a browser
   // session. An install with no owner account to compare against is refused:
   // nobody can be shown to own it.
@@ -295,7 +311,7 @@ export function refuseUnlessAccountOwner(
  * - **A browser session under login-on** ({@link requireOperatorCookieUnderLogin}).
  *   An API key is not a person (DOR-474).
  *
- * The residual is DOR-505's, unchanged: with login off, a program on this
+ * The residual is DOR-505's: with the password off, a program on this
  * machine that strips its agent header AND sends an `X-Client-Id` reads as the
  * app. That costs only ordering — a chat floats into Today — never power, which
  * is why a marker is enough here when it is not for {@link clearsTheAgentBar}.
@@ -311,7 +327,35 @@ export function isPersonAtTheApp(
   if (presentsAgentIdentity(caller)) return false;
   const clientId = caller.headers['x-client-id'];
   if (typeof clientId !== 'string' || clientId.length === 0) return false;
-  return requireOperatorCookieUnderLogin(caller, 'this', isLoginEnabled) === undefined;
+  // Only ordering rides on this, so the open gate at this computer still
+  // counts as the app without a session (see above).
+  return (
+    requireOperatorCookieUnderLogin(
+      caller,
+      'this',
+      isLoginEnabled ?? (() => credentialGated(caller))
+    ) === undefined
+  );
+}
+
+/**
+ * Whether a message posted to a chat is the person's own turn
+ * (`POST /api/sessions/:id/messages`, DOR-3330), rather than agent work.
+ *
+ * A person's turn can rise to its agent's level and carries no outsider mark,
+ * so it needs what every other person-only act needs: no agent identity, and
+ * the person's browser session wherever one can exist
+ * ({@link requireOperatorCookieUnderLogin}). Anything else still runs, as
+ * agent work: chatting never asks for a password, it only stops counting as
+ * the person until they prove it once.
+ *
+ * @param facts - The request's facts.
+ */
+export function isPersonTurn(
+  facts: Pick<RequestFacts, 'headers' | 'user' | 'agentIdentity'> & GatedFacts
+): boolean {
+  if (presentsAgentIdentity(facts)) return false;
+  return requireOperatorCookieUnderLogin(facts, 'this') === undefined;
 }
 
 /**
@@ -321,6 +365,27 @@ export function isPersonAtTheApp(
  * relay), `not-a-person` for anything else that is not the owner using the app.
  */
 export type PersonAtThisComputerRefusal = 'not-at-this-computer' | 'not-a-person';
+
+/**
+ * Headers only a program sends: a bearer, an API key (the gate accepts
+ * `x-api-key` as one), or a proxy's credential. The app sends none of them, so
+ * any one of them, valid or not, means a program rather than the person.
+ */
+export const PROGRAM_CREDENTIAL_HEADERS = [
+  'authorization',
+  'x-api-key',
+  'proxy-authorization',
+] as const;
+
+/**
+ * Whether a request carries any {@link PROGRAM_CREDENTIAL_HEADERS}: a program,
+ * never the app, valid or not. The one definition every person bar reads.
+ *
+ * @param facts - The request's headers.
+ */
+export function presentsProgramCredential(facts: Pick<RequestFacts, 'headers'>): boolean {
+  return PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined);
+}
 
 /**
  * The strictest person bar: the owner, using the app, at this computer or on
@@ -346,11 +411,13 @@ export type PersonAtThisComputerRefusal = 'not-at-this-computer' | 'not-a-person
  *   must be a browser session (never a per-user API key) of the install's
  *   owner. With none, the request must be at this computer, the gate must have
  *   been open (this computer does not ask for a password) AND the request must
- *   carry no `Authorization` header: an API key, an MCP token or a turn's
- *   bearer is a program, not the app, even where the open gate never read it.
+ *   carry no `Authorization`, `X-Api-Key` or `Proxy-Authorization` header: an
+ *   API key, an MCP token or a turn's bearer is a program, not the app, even
+ *   where the open gate never read it.
  *
- * The residual is DOR-505's: with the password off, a program on this machine
- * that sends no agent header and no bearer reads as the app.
+ * With no owner yet, a program on this machine that sends no agent header and
+ * no credential header reads as the app (DOR-505); once an owner exists it
+ * needs their session (DOR-3330).
  *
  * @param facts - The request's facts.
  * @returns `undefined` when the caller may act, otherwise why not.
@@ -367,9 +434,14 @@ export function requirePersonAtThisComputer(
       ? undefined
       : 'not-a-person';
   }
-  // No proved identity: only the open gate at this computer stands for a person.
-  if (!here || credentialGated(facts)) return 'not-a-person';
-  return facts.headers.authorization === undefined ? undefined : 'not-a-person';
+  // No proved identity: only the open gate at this computer, with no owner who
+  // could prove themselves, stands for a person (DOR-3330).
+  if (!here) return 'not-a-person';
+  if (personSessionRequired(facts)) {
+    notePersonSessionMissing(facts);
+    return 'not-a-person';
+  }
+  return presentsProgramCredential(facts) ? 'not-a-person' : undefined;
 }
 
 /** Refusal code when only the owner, at this computer, may make a change. */

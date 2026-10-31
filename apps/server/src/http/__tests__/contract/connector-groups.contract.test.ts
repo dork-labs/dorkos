@@ -43,6 +43,7 @@ import {
   contractSuite,
   type ComposedServer,
   type ContractCase,
+  stepUpAt,
 } from './harness.js';
 
 /** The offline service's project key and signing secret (`test-composio/data.ts`). */
@@ -783,9 +784,29 @@ contractSuite('the connector groups, login off, nothing set up', [
 /** A request against a hand-driven server, with the case fields that vary. */
 type Ask = Omit<ContractCase, 'name'>;
 
+/**
+ * The owner's own browser session and person proof, sent with every request
+ * that names no other caller while a suite sets it: once an owner exists, the
+ * person at this computer changes things after their step-up (DOR-3330).
+ */
+let personCookie: Record<string, string> = {};
+
+/** `headers`, with the owner's session when they name no other caller. */
+function asThePerson(headers: Record<string, string> = {}): Record<string, string> {
+  const names = Object.keys(headers).map((name) => name.toLowerCase());
+  const other = ['cookie', 'authorization', 'x-dorkos-agent', 'x-dorkos-approval'].some((name) =>
+    names.includes(name)
+  );
+  return other ? headers : { ...personCookie, ...headers };
+}
+
 /** Send one case to the server this file booted itself. */
 async function check(server: ComposedServer | undefined, ask: Ask): Promise<void> {
-  await checkContractCase(server!.baseUrl, { name: ask.path, ...ask });
+  await checkContractCase(server!.baseUrl, {
+    name: ask.path,
+    ...ask,
+    headers: asThePerson(ask.headers),
+  });
 }
 
 /** One answer: its status, JSON body (or `{}`) and headers. */
@@ -805,7 +826,10 @@ async function call(
 ): Promise<Answer> {
   const res = await fetch(new URL(url, server!.baseUrl), {
     method,
-    headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
+    headers: {
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...asThePerson(headers),
+    },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const text = await res.text();
@@ -831,7 +855,7 @@ async function setup(
   return answer;
 }
 
-/** Sign up the owner, sign in, and mint an API key; the cookie and the key. */
+/** Sign up the owner, step up, and mint an API key; the person's headers and the key. */
 async function ownerCredentials(
   server: ComposedServer | undefined
 ): Promise<{ cookie: Record<string, string>; apiKey: Record<string, string> }> {
@@ -841,13 +865,8 @@ async function ownerCredentials(
   };
   const origin = { origin: server!.baseUrl };
   await setup(server, 'POST', '/api/auth/sign-up/email', { ...owner, name: 'Owner' }, origin);
-  const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', owner, origin);
-  const cookie = {
-    cookie: signedIn.headers
-      .getSetCookie()
-      .map((value) => value.split(';')[0]!)
-      .join('; '),
-  };
+  // The owner's step-up at this computer: its cookie and the app's proof (DOR-3330).
+  const cookie = await stepUpAt(server!.baseUrl, owner.password);
   const created = await setup(
     server,
     'POST',
@@ -928,9 +947,10 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
     server = await bootComposedServer();
     ({ providerInstanceId, connectionId } = await connectOfflineGmail(server));
     agent = await seedAgent(server);
-    ({ apiKey } = await ownerCredentials(server));
+    ({ apiKey, cookie: personCookie } = await ownerCredentials(server));
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
+    personCookie = {};
     await server?.close();
     if (agent) rmSync(agent.agentDir, { recursive: true, force: true });
   }, 30_000);
@@ -1533,6 +1553,7 @@ describe('contract: the connector groups with login on', () => {
   beforeAll(async () => {
     server = await bootComposedServer();
     ({ cookie, apiKey } = await ownerCredentials(server));
+    // Asking for a password is the owner's own act, after their step-up (DOR-3330).
     await setup(server, 'PATCH', '/api/config', { auth: { enabled: true } }, cookie);
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {

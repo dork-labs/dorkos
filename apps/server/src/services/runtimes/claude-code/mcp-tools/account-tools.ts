@@ -22,6 +22,7 @@ import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 import { hasMarks } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import { markedTurnRunsAtFull } from '../../../core/turn-power/full-autonomy.js';
 import type { TaskProvenanceResolver } from './task-tools.js';
 
 /**
@@ -29,17 +30,39 @@ import type { TaskProvenanceResolver } from './task-tools.js';
  * in a room, a teammate's), ceiling or not (Security on #3201, DOR-3289): the
  * answer carries account ids, plan, credits and spend, and the turn could post
  * it where the stranger reads. Read from the turn's own marks (`marksOf`).
+ *
+ * Not in a chat set to Full autonomy (DOR-3412): there the mark refuses nothing
+ * and the read runs, with one Activity line saying a marked turn made it. Usage
+ * holds no token or key, so it is none of the three refusals Full keeps.
  */
 const MARKED_TURN_REFUSAL = {
   error: 'This turn read words from outside your team, so it can’t read account usage.',
   code: 'MARKED_TURN',
 };
 
-/** Whether the calling turn is marked, when a session is known. */
-function callerIsMarked(resolveProvenance: TaskProvenanceResolver | undefined): boolean {
+/**
+ * Whether the calling turn is refused for its mark: marked, in a session, and in a chat that is
+ * not set to Full. A marked call in a Full chat runs, and writes the Activity line here.
+ *
+ * @param resolveProvenance - The calling session and agent, in a session.
+ * @param action - The tool's name and title, for the Activity line.
+ */
+function refusedForMark(
+  resolveProvenance: TaskProvenanceResolver | undefined,
+  action: { actionId: string; title: string }
+): boolean {
   if (!resolveProvenance) return false;
   const p = resolveProvenance();
-  return hasMarks(marksOf(p.sessionId, p.agentPath));
+  const marks = marksOf(p.sessionId, p.agentPath);
+  if (!hasMarks(marks)) return false;
+  return !markedTurnRunsAtFull(
+    {
+      ...action,
+      ...(p.agentPath ? { agentPath: p.agentPath } : {}),
+      ...(p.sessionId ? { sessionId: p.sessionId } : {}),
+    },
+    marks
+  );
 }
 
 /**
@@ -47,7 +70,7 @@ function callerIsMarked(resolveProvenance: TaskProvenanceResolver | undefined): 
  * store's memory. A window with no current reading is left out, and an account
  * with nothing to go on reads `unknown`, never zero.
  *
- * @param marked - Whether the calling turn is marked (refused when it is).
+ * @param marked - Whether the calling turn is refused for its mark (marked, below Full).
  */
 export async function handleAccountsUsage(marked = false) {
   if (marked) return jsonContent(MARKED_TURN_REFUSAL, true);
@@ -63,7 +86,7 @@ export async function handleAccountsUsage(marked = false) {
  *
  * @param args - The tool input.
  * @param args.account - A registry id, or `default`.
- * @param marked - Whether the calling turn is marked (refused when it is).
+ * @param marked - Whether the calling turn is refused for its mark (marked, below Full).
  */
 export async function handleAccountsProbe(args: { account: string }, marked = false) {
   if (marked) return jsonContent(MARKED_TURN_REFUSAL, true);
@@ -94,7 +117,13 @@ export function getAccountTools(_deps: McpToolDeps, resolveProvenance?: TaskProv
         '(ok, warning, limited, unknown) and the window that limited it, if any. From memory, ' +
         'so it is cheap. Unknown is never reported as 0%.',
       {},
-      () => handleAccountsUsage(callerIsMarked(resolveProvenance))
+      () =>
+        handleAccountsUsage(
+          refusedForMark(resolveProvenance, {
+            actionId: 'accounts_usage',
+            title: 'Read account usage',
+          })
+        )
     ),
     tool(
       'accounts_probe',
@@ -113,7 +142,14 @@ export function getAccountTools(_deps: McpToolDeps, resolveProvenance?: TaskProv
             "The account's id, as the account usage tool lists it, or `default` for this computer's sign-in."
           ),
       },
-      (args) => handleAccountsProbe(args, callerIsMarked(resolveProvenance))
+      (args) =>
+        handleAccountsProbe(
+          args,
+          refusedForMark(resolveProvenance, {
+            actionId: 'accounts_probe',
+            title: 'Check account usage',
+          })
+        )
     ),
   ];
 }

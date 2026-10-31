@@ -143,13 +143,17 @@ describe('resolveSessionCwd — rung 3, the agent binding', () => {
       rung: 'agent-managed',
       workspaceId: 'ws_1',
     });
-    expect(deps.ensureWorkspace).toHaveBeenCalledWith({
-      projectKey: 'dorkos',
-      key: agentWorkspaceKey('api-bot', AGENT, '/vault/dorkos').key,
-      source: '/vault/dorkos',
-      provider: 'clone',
-      owner: { kind: 'agent', ref: AGENT },
-    });
+    // The second argument is the turn's chat, so a chat set to Full is made without limits.
+    expect(deps.ensureWorkspace).toHaveBeenCalledWith(
+      {
+        projectKey: 'dorkos',
+        key: agentWorkspaceKey('api-bot', AGENT, '/vault/dorkos').key,
+        source: '/vault/dorkos',
+        provider: 'clone',
+        owner: { kind: 'agent', ref: AGENT },
+      },
+      undefined
+    );
   });
 
   it('none falls to the default with no degradation — it is a choice, not a failure', async () => {

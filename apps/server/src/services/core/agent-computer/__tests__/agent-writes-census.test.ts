@@ -272,6 +272,13 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PATCH /api/session-relay/level',
       'POST /api/desktop/sign-in',
       'POST /api/lan-access',
+      'ALL /api/person-session/*',
+      'POST /api/person-session',
+      // "Confirm it's you" before one action (DOR-3234): a person's password, never an agent's.
+      'ALL /api/step-up/*',
+      'DELETE /api/step-up/:heldActionId',
+      'POST /api/step-up/:heldActionId/change-password',
+      'POST /api/step-up/:heldActionId/password',
       'POST /api/remote-access/close',
       'POST /api/remote-access/enrolment',
       'POST /api/remote-access/mode',
@@ -449,6 +456,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
   [
     'schedules are the hub’s',
     [
+      'ALL /api/tasks',
+      'ALL /api/tasks/*',
       'DELETE /api/tasks/:id',
       'PATCH /api/tasks/:id',
       'POST /api/tasks',

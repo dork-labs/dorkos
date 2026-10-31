@@ -2280,7 +2280,7 @@ describe('Marketplace Routes', () => {
       expect(res.body.code).toBe('operator_only_marketplace_source');
       expect(res.body.error).toBe('Only the person running DorkOS can add a package source');
       // Legible to a model: it must learn to ask the person, not to retry.
-      expect(res.body.message).toContain('dorkos marketplace add');
+      expect(res.body.message).toContain('Marketplace sources page');
       expect(res.body.message).toContain('Retrying will not help');
 
       expect(await listSourceNames()).not.toContain('attacker');
@@ -2297,7 +2297,7 @@ describe('Marketplace Routes', () => {
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('operator_only_marketplace_source');
       expect(res.body.error).toBe('Only the person running DorkOS can remove a package source');
-      expect(res.body.message).toContain('dorkos marketplace remove');
+      expect(res.body.message).toContain('Marketplace sources page');
 
       expect(await listSourceNames()).toContain('keeper');
     });
@@ -2329,34 +2329,34 @@ describe('Marketplace Routes', () => {
       expect(await listSourceNames()).not.toContain('mine');
     });
 
-    it('still lets the operator add from their terminal with Require login ON', async () => {
-      // The posture this PR's central argument turns on, pinned so it cannot be
-      // "hardened" away by accident. `dorkos marketplace add` is a first-class
-      // operator verb and the CLI has no cookie — it presents a per-user API key.
-      // Copying the `PATCH /api/config` cookie bar onto this route would therefore
-      // refuse the person at their own terminal on every login-on instance, and
-      // nothing but this test would notice. See source-write-policy.ts.
+    it('refuses a key, which is a program, and says where in the app to do it (DOR-3330)', async () => {
+      // This used to pass: `dorkos marketplace add` presented a per-user API key
+      // and counted as the person. A key is a program, never the person, so the
+      // CLI is told exactly where in the app to add a source instead.
       const { configManager } = await import('../../services/core/config-manager.js');
       configManager.set('auth', { enabled: true });
       agentHeader = undefined;
       signedInUser = { userId: 'user_cli', credential: 'api-key' };
 
-      const added = await request(fixtureServer)
-        .post('/api/marketplace/sources')
-        .send({ name: 'from-cli', source: 'https://example.com/from-cli' });
-      expect(added.status).toBe(201);
-
-      const removed = await request(fixtureServer).delete('/api/marketplace/sources/from-cli');
-      expect(removed.status).toBe(204);
-
-      // And the agent bar still holds in this posture — the allow above is about
-      // WHICH credential the operator may present, not a hole login-on opens.
-      agentHeader = 'agent-token';
       const refused = await request(fixtureServer)
         .post('/api/marketplace/sources')
-        .send({ name: 'attacker', source: 'https://attacker.example/marketplace' });
+        .send({ name: 'from-cli', source: 'https://example.com/from-cli' });
       expect(refused.status).toBe(403);
-      expect(refused.body.code).toBe('operator_only_marketplace_source');
+      expect(refused.body).toEqual({
+        error:
+          'Adding a marketplace needs you signed in. In the DorkOS app, open Marketplace sources and click Add marketplace source.',
+        code: 'marketplace_source_needs_app',
+      });
+      expect(await listSourceNames()).not.toContain('from-cli');
+
+      // The owner's browser session does it.
+      signedInUser = { userId: 'user_cli', credential: 'cookie' };
+      const added = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'from-app', source: 'https://example.com/from-app' });
+      expect(added.status).toBe(201);
+      const removed = await request(fixtureServer).delete('/api/marketplace/sources/from-app');
+      expect(removed.status).toBe(204);
     });
 
     it('leaves reading, refreshing, and listing open to an agent', async () => {

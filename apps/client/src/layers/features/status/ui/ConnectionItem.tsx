@@ -151,14 +151,12 @@ function HoverDescription({ connectionState }: { connectionState: ConnectionStat
     );
   }
 
-  // disconnected
+  // disconnected — still retrying underneath (DOR-3482), so it says so.
   return (
     <div className="space-y-1.5">
-      <p className={base}>
-        Couldn’t reconnect live updates. New messages won’t appear until they’re back.
-      </p>
+      <p className={base}>Can’t reach live updates. New messages appear once they’re back.</p>
       <p className={cn(base, 'text-muted-foreground/70')}>
-        Refresh the page. If that doesn’t help, check that DorkOS is running.
+        Still trying. If this lasts, check that DorkOS is running.
       </p>
     </div>
   );

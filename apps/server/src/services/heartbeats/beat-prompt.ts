@@ -14,6 +14,7 @@
  *
  * @module services/heartbeats/beat-prompt
  */
+import { HEARTBEAT_PROMPT_OPENING } from '@dorkos/shared/chat-messages';
 import type { BeatKind } from '@dorkos/shared/heartbeat-schemas';
 import type { Commitment } from '@dorkos/shared/commitment-schemas';
 import type { Change } from './gatherers/index.js';
@@ -119,7 +120,7 @@ export function buildBeatPrompt(input: BeatPromptInput): string {
       : BUILT_IN_CHECKLIST.map((step, i) => `${i + 1}. ${step}`).join('\n');
 
   const sections = [
-    'This is a heartbeat, not a message from a person. Nobody is waiting on a reply.',
+    HEARTBEAT_PROMPT_OPENING,
     '',
     input.kind === 'report' && input.report
       ? reportSection(input.report)

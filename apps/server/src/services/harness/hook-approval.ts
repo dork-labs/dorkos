@@ -59,6 +59,7 @@
  *
  * @module services/harness/hook-approval
  */
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { ProjectedHook } from '@dorkos/harness';
 import type {
@@ -72,6 +73,8 @@ import {
   quoteSummaryValue,
   redactSecretsInText,
 } from '../core/approvals/index.js';
+import { PASSIVE_APPROVAL_EXPIRES_AT } from '../core/approvals/passive-approval.js';
+import { familyInputHash } from '../core/approvals/approval-retirement.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import {
   hookApprovalEntry,
@@ -128,6 +131,28 @@ export interface HookApprovalGateway {
   request(input: ApprovalRequestInput): ApprovalTicket;
   /** Present the token for the action it was granted for. */
   consume(token: string, binding: ApprovalBinding): ApprovalConsumeResult;
+  /**
+   * A fresh token for the open approval of exactly this action, when there is
+   * one, so a passive card left open across a restart is reused, not raised again.
+   */
+  reissue?(binding: ApprovalBinding): { approvalId: string; token: string } | undefined;
+  /**
+   * Retire every other open approval of the family `binding` belongs to, so a
+   * package edited twice leaves one passive row, not two (DOR-3433).
+   */
+  retireSuperseded?(binding: ApprovalBinding, family: string): number;
+}
+
+/**
+ * The family a passive row belongs to: one package in one project, whatever
+ * files it runs (DOR-3433). Short, because it only has to tell one project's
+ * packages apart, and stable, because a row raised before a restart must match.
+ */
+function passiveRowFamily(projectPath: string, packageName: string): string {
+  return createHash('sha256')
+    .update(`${projectPath}\0${packageName}`, 'utf8')
+    .digest('hex')
+    .slice(0, 16);
 }
 
 /**
@@ -229,23 +254,51 @@ function describeHookTrigger(hook: ProjectedHook): string {
  * quotes and connectives cannot forge the rest of the sentence.
  *
  * @param request - The package, project, and hooks being asked about.
+ * @param options - How the card is worded.
  * @returns One plain sentence.
  */
-export function summariseHookProjection(request: HookProjectionRequest): string {
+export function summariseHookProjection(
+  request: HookProjectionRequest,
+  options: HookCardOptions = {}
+): string {
   const name = quoteSummaryValue(request.packageName);
   const where = quoteSummaryValue(request.projectPath);
   const hooks = request.hooks
     .map((hook) => `${renderCommandForCard(hook.command)} ${describeHookTrigger(hook)}`)
     .join('; ');
   const count = request.hooks.length;
+  const commands = `${count} command${count === 1 ? '' : 's'}`;
   // The files the yes covers, with a short hash, ahead of the commands so the
   // 500-character cap never cuts them off: a reviewer can check the hash
   // against the copy they read, and an edit after the yes asks again (DOR-3403).
   const files = describeHookScriptPins(request.scripts ?? []);
-  return (
-    `Let the installed package ${name} run ${count} command${count === 1 ? '' : 's'} ` +
-    `automatically in ${where}${files ? `, running ${quoteSummaryValue(files)}` : ''}: ${hooks}`
-  );
+  const running = files ? `, running ${quoteSummaryValue(files)}` : '';
+  if (options.notInstalledByDorkos) {
+    // On Full (DOR-3422): said first, because it is the reason this one asks
+    // when nothing else on Full does.
+    return (
+      `Package ${name} found in ${where}, not installed by DorkOS. Allow it to run ` +
+      `${commands} automatically${running}? ${hooks}`
+    );
+  }
+  return `Let the installed package ${name} run ${commands} automatically in ${where}${running}: ${hooks}`;
+}
+
+/** How a hook card is worded. */
+export interface HookCardOptions {
+  /**
+   * The package is in the project but DorkOS did not install it (or its files
+   * changed since); on Full this is the only package hook that asks. Its card
+   * is passive (DOR-3427): it never expires and never escalates, an open one is
+   * reused rather than raised twice, and the wait for it has no deadline.
+   */
+  notInstalledByDorkos?: boolean;
+  /**
+   * Pick up an open passive ticket after a restart and never raise a new one
+   * (`resumePassiveHookRows`). With no open ticket for exactly this request,
+   * the answer is no at once and nothing is put in front of anybody.
+   */
+  resumeOnly?: boolean;
 }
 
 /**
@@ -312,32 +365,51 @@ export const _internal = {
  *
  * @param gateway - The approval primitive.
  * @param request - The package, project, and hooks to ask about.
+ * @param options - How the card is worded.
  * @returns True only when a person granted it.
  */
 export async function askForHookProjection(
   gateway: HookApprovalGateway,
-  request: HookProjectionRequest
+  request: HookProjectionRequest,
+  options: HookCardOptions = {}
 ): Promise<boolean> {
   const { projectPath, packageName, hooks } = canonical(request);
+  // A passive card (DOR-3427) is one ticket per package for good, so its binding
+  // carries the package's family in front of the exact action (DOR-3433).
+  const passive = options.notInstalledByDorkos === true;
+  const family = passive ? passiveRowFamily(projectPath, packageName) : undefined;
+  // Bound to the same facts the stored entry digests, so a token granted for one
+  // package's hooks can never be spent on another's — or on the same commands
+  // moved to a different event, or running other files.
+  const inputHash = hashApprovalInput({
+    projectPath,
+    packageName,
+    hooks: hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
+    scripts: request.scripts ?? [],
+  });
   const binding: ApprovalBinding = {
     capabilityId: HOOK_PROJECTION_CAPABILITY_ID,
-    // Bound to the same facts the stored entry digests, so a token granted for one
-    // package's hooks can never be spent on another's — or on the same commands
-    // moved to a different event.
-    inputHash: hashApprovalInput({
-      projectPath,
-      packageName,
-      hooks: hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
-      scripts: request.scripts ?? [],
-    }),
+    inputHash: family === undefined ? inputHash : familyInputHash(family, inputHash),
   };
 
   const entry = hookApprovalEntry(request);
   askingNow.add(entry);
-  const ticket = gateway.request({
-    ...binding,
-    summary: summariseHookProjection(request),
-  });
+  // The row for files the package has since moved on from is closed, with no
+  // refusal recorded; an open one for these very files, even from before a
+  // restart, is picked up again rather than raised twice.
+  if (family !== undefined) gateway.retireSuperseded?.(binding, family);
+  const reused = passive ? gateway.reissue?.(binding) : undefined;
+  if (options.resumeOnly === true && reused === undefined) {
+    askingNow.delete(entry);
+    return false;
+  }
+  const ticket = reused
+    ? { ...reused, expiresAt: PASSIVE_APPROVAL_EXPIRES_AT }
+    : gateway.request({
+        ...binding,
+        summary: summariseHookProjection(request, options),
+        ...(passive ? { passive: true, requestedBy: 'DorkOS' } : {}),
+      });
   logger.info('[HarnessSync] Waiting on a person to allow a package to install hooks', {
     packageName: request.packageName,
     projectPath: request.projectPath,
@@ -362,8 +434,10 @@ export async function askForHookProjection(
         return false;
       }
       // A finite deadline as well as the primitive's own expiry check: a clock the
-      // store disagrees with must not turn this into a loop that never ends.
-      if (Number.isFinite(deadline) && Date.now() > deadline) return false;
+      // store disagrees with must not turn this into a loop that never ends. A
+      // passive card has none: it waits as long as the person does, and its
+      // callers run it outside any project lock (`ask-withheld-hooks.ts`).
+      if (!passive && Number.isFinite(deadline) && Date.now() > deadline) return false;
       await _internal.sleep(_internal.pollIntervalMs);
     }
   } finally {

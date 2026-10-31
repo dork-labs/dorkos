@@ -63,7 +63,7 @@ import type { WireTeamRoomAndRelayAdaptersResult } from './team-room-relay-adapt
 import type { WireSessionServicesResult } from './session-services.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
 import type { ServerRefs } from '../server-refs.js';
-import { credentialGated } from '../../services/core/auth/gate-policy.js';
+import { personSessionRequired } from '../../services/core/auth/gate-policy.js';
 import {
   watchSessionRelaySwitch,
   wireSessionRelay,
@@ -162,7 +162,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // registry is composed, further down.
   const connectorOwnerBoundary = {
     resolveOwner: () => connectorOwner,
-    loginEnabled: credentialGated,
+    loginEnabled: personSessionRequired,
   };
   const connectorRoutes: ConnectorRoutesDeps = {
     providers: { bootstrapper: connectorBootstrapper, credentialStore },

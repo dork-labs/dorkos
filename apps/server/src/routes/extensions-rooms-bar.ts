@@ -20,8 +20,8 @@
  * 4. **A window of the app.** The `X-Client-Id` every app window sends.
  * 5. **The person's own browser session, or nothing that is not one.** With a
  *    proved identity it must be a session cookie, never a per-user API key or
- *    an MCP token. With none, the gate must have been open for this request
- *    (this computer does not ask for a password) and it must carry no
+ *    an MCP token. With none, there must be no owner yet who could prove
+ *    themselves (DOR-3330), the gate must have been open, and it must carry no
  *    `Authorization` header.
  *
  * ## The residual, named
@@ -37,15 +37,16 @@
  * running in its own process is refused: the proxy strips its cookie and
  * client id, and its network guard blocks DorkOS's own port.
  *
- * And with the password off, a program on this computer that forges a trusted
- * `Origin` and an `X-Client-Id` reads as the app (DOR-505). Turning on "Ask
- * for a password on this computer too" closes that one.
+ * Once an owner exists, a program on this computer that forges a trusted
+ * `Origin` and an `X-Client-Id` still needs the owner's session (DOR-3330).
  *
  * @module routes/extensions-rooms-bar
  */
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
-import { credentialGated } from '../services/core/auth/gate-policy.js';
+import { personSessionRequired } from '../services/core/auth/gate-policy.js';
+import { notePersonSessionMissing } from '../lib/person-without-session.js';
+import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import type { RequestFacts } from '../http/request-facts.js';
 
@@ -75,8 +76,12 @@ export function refuseRoomWrite(facts: RequestFacts): RoomWriteRefusal | undefin
   if (facts.user) {
     return facts.user.credential === 'cookie' ? undefined : 'not-a-browser-session';
   }
-  if (credentialGated(facts)) return 'not-a-browser-session';
-  return facts.headers.authorization === undefined ? undefined : 'not-a-browser-session';
+  // Once an owner exists, only their session proves them (DOR-3330).
+  if (personSessionRequired(facts)) {
+    notePersonSessionMissing(facts);
+    return 'not-a-browser-session';
+  }
+  return presentsProgramCredential(facts) ? 'not-a-browser-session' : undefined;
 }
 
 /** What the person is told for each refusal. */

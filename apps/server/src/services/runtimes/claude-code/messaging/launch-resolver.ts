@@ -79,6 +79,7 @@ import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
+import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
 import { applyLaunchExtensionsDeny } from '../folder-settings/agent-extensions-deny.js';
 import { IN_SESSION_TOOL_PREFIX, loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
@@ -189,6 +190,8 @@ export async function resolveLaunch(args: {
       // No manifest found -- the launch inherits the server defaults
     }
   }
+  // A teammate's turn, or one their mark reached on a later hop (DOR-3036).
+  const teammate = messageOpts?.roomTurn?.teammate === true || messageOpts?.teammate === true;
   // The agent's own hooks, MCP servers and account run only as a person last
   // allowed them; a changed part is held back and a card asks (DOR-3068).
   const folderConfig = await resolveFolderConfigForLaunch({
@@ -197,8 +200,14 @@ export async function resolveLaunch(args: {
       : undefined,
     home: turnAgentPath ?? undefined,
     cwd: effectiveCwd,
+    // The mode this turn really runs at, its ceiling applied. A teammate's turn
+    // is never Full here, whatever its session says (DOR-3432).
+    full: !teammate && turnPermissionMode(session) === 'bypassPermissions',
   });
   const agentFileHeld = folderConfig.held.includes('manifest');
+  // Never a silent switch off the runtime the agent is set to (DOR-3459).
+  const runtimeNotice = heldRuntimeNotice(manifest, turnAgentPath);
+  if (runtimeNotice) statusEvents.push(runtimeNotice);
 
   // Slash commands must reach the CLI as the bare prompt — it only parses a
   // command when `/` starts the message (DOR-107). Verify the name against the
@@ -208,8 +217,6 @@ export async function resolveLaunch(args: {
   // Never for words somebody other than the person here wrote (DOR-2955): a
   // stranger's `/name` would run that command, with the shell its definition
   // allows, before any tool gate sees it. Their text goes out defused below.
-  // A teammate's turn, or one their mark reached on a later hop (DOR-3036).
-  const teammate = messageOpts?.roomTurn?.teammate === true || messageOpts?.teammate === true;
   const untrustedText = teammate || messageOpts?.roomTurn?.untrustedText === true;
   const commandName = untrustedText ? null : detectSlashCommandName(content);
   let isCommandDispatch = false;

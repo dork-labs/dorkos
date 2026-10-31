@@ -105,12 +105,18 @@ import { setHandleRenameActivity } from '../services/rooms/handles/rename-author
 import { createDirectChatRoutes } from '../routes/direct-chats.js';
 import { createRemoteAccessRoutes } from '../routes/remote-access.js';
 import { createSessionRelayRoutes } from '../routes/session-relay.js';
+import { createPersonSessionRoutes } from '../routes/person-session.js';
+import { askForPersonBeforeTaskWrite } from './person-session-refusal.js';
+import { PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
+import { STEP_UP_PATH } from '@dorkos/shared/step-up';
+import { createStepUpRoutes } from '../routes/step-up.js';
 import { createRelayPasskeyPageRoutes } from '../routes/relay-passkey-page.js';
 import { createDevicesRoutes } from '../routes/devices.js';
 import { createDocLinkRoutes } from '../routes/docs-links.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
 import { createSessionLocationsRoutes } from '../routes/session-locations.js';
+import { createRunningChatsRoutes } from '../routes/running-chats.js';
 import { createSessionRoutes, type SessionRouteDeps } from '../routes/sessions.js';
 import { createShapesRoutes, type ShapesRouterDeps } from '../routes/shapes.js';
 import subagentRoutes from '../routes/subagents.js';
@@ -345,6 +351,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // Sessions, their messages and the per-session stream. Its WebSocket twin on
   // `/:id/events` is an upgrade, answered before any route
   // (`routes/session-events-socket.ts`).
+  app.route('/api/sessions/running', createRunningChatsRoutes(deps.sessions ?? {}));
   app.route('/api/sessions', createSessionRoutes(deps.sessions ?? {}));
   // The global event stream over SSE. Its WebSocket twin on the same path is an
   // upgrade, answered before any route (`routes/events-socket.ts`).
@@ -439,7 +446,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.search) app.route('/api/search', createSearchRoutes(deps.search));
   if (deps.activity) app.route('/api/activity', createActivityRoutes(deps.activity));
   if (deps.audit) app.route('/api/audit', createAuditRoutes(deps.audit));
-  if (deps.tasks) app.route('/api/tasks', createTasksRoutes(deps.tasks));
+  if (deps.tasks) {
+    // The person at this computer is asked to step up before a task change (DOR-3330).
+    app.use('/api/tasks', askForPersonBeforeTaskWrite());
+    app.use('/api/tasks/*', askForPersonBeforeTaskWrite());
+    app.route('/api/tasks', createTasksRoutes(deps.tasks));
+  }
   if (deps.connectors) app.route('/api/connectors', createConnectorRoutes(deps.connectors));
   if (deps.notifications) {
     app.route('/api/notifications', createNotificationsRoutes(deps.notifications));
@@ -508,6 +520,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/hub/link', createHubLinkRoutes());
   // This computer's own switch for chatting from the web; the `/api` 404 on a hub.
   app.route('/api/session-relay', createSessionRelayRoutes());
+  // The owner's one password step-up at this computer (DOR-3330).
+  app.route(PERSON_SESSION_PATH, createPersonSessionRoutes());
+  // "Confirm it's you" before one sensitive action runs (DOR-3234).
+  app.route(STEP_UP_PATH, createStepUpRoutes());
   // The loopback page an approvals passkey comes back to (B4c), at this computer only.
   app.route('/', createRelayPasskeyPageRoutes());
   // A person's own signed-in devices, and signing them out (DOR-2969).

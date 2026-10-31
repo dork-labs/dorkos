@@ -190,6 +190,9 @@ export const ROOM_RECEIPT_EMOJI = '👀';
  * - `handle_changed` — a person gave an agent here a new handle (DOR-3156).
  *   Quiet, with the agent as subject; it names the old handle and the new one,
  *   because the reader's next mention is what changes. A bridge never sends it.
+ * - `handoff_shared` / `handoff_declined` — an agent's chat here asked its seat in another room
+ *   to post something (DOR-3397), and the seat did, or did not and said why. Written in the
+ *   room the draft came from, with the agent as subject.
  *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
@@ -227,6 +230,8 @@ export const RoomNoticeCodeSchema = z
     'agent_reseated',
     'handle_changed',
     'files_set_up',
+    'handoff_shared',
+    'handoff_declined',
   ])
   .openapi('RoomNoticeCode');
 

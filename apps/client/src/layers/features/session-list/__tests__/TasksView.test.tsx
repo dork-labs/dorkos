@@ -231,6 +231,33 @@ describe('TasksView', () => {
     expect(screen.getByText('Nightly Sync')).toBeInTheDocument();
   });
 
+  // The agent profile's Schedules page renders this view outside the app shell's
+  // SidebarProvider, where every row used to throw (DOR-3124).
+  it('renders running, upcoming and recent rows outside a SidebarProvider', () => {
+    mockSchedules.mockReturnValue({
+      data: [
+        makeSchedule({ id: 's1', name: 'Nightly Sync', nextRun: '2026-03-10T22:00:00Z' }),
+        makeSchedule({ id: 's2', name: 'Deploy Bot' }),
+        makeSchedule({ id: 's3', name: 'Weekly Report' }),
+      ],
+    });
+    mockRuns.mockReturnValue({
+      data: [
+        makeRun({ id: 'r1', scheduleId: 's2', status: 'running' }),
+        makeRun({
+          id: 'r2',
+          scheduleId: 's3',
+          status: 'completed',
+          finishedAt: '2026-01-01T00:01:00Z',
+        }),
+      ],
+    });
+    render(<TasksView available agentId={null} />);
+    expect(screen.getByText('Nightly Sync')).toBeInTheDocument();
+    expect(screen.getByText('Deploy Bot')).toBeInTheDocument();
+    expect(screen.getByText('Weekly Report')).toBeInTheDocument();
+  });
+
   it('shows relative time for upcoming schedules with nextRun', () => {
     mockSchedules.mockReturnValue({
       data: [

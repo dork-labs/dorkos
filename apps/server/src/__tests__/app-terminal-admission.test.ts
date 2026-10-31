@@ -315,7 +315,11 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/test/account-world');
     // 81 -> 82: the MCP servers a person adds for every agent (DOR-3213).
     expect(mounts).toContain('/api/mcp-servers');
-    expect(mounts).toHaveLength(82);
+    // 82 -> 83: the step-up before a task change, on the bare path (DOR-3330).
+    expect(mounts).toContain('/api/tasks');
+    // 83 -> 84: every chat running now, ahead of `/api/sessions` (DOR-3460).
+    expect(mounts).toContain('/api/sessions/running');
+    expect(mounts).toHaveLength(84);
     const byHand = [
       '/',
       '/x/fixture',
