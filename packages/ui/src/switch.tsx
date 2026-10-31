@@ -82,9 +82,9 @@ const SWITCH_RESPONSIVE_TRACKS = {
  */
 export const switchVariants = tv({
   slots: {
-    root: 'peer focus-visible:ring-dui-ring focus-visible:ring-offset-dui-background data-[state=checked]:bg-dui-primary data-[state=unchecked]:bg-dui-input inline-flex shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent shadow-xs transition-colors motion-reduce:transition-none! focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+    root: 'peer focus-ring data-[state=checked]:bg-dui-primary data-[state=unchecked]:bg-dui-control-edge relative inline-flex shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-[background-color] duration-150 after:absolute after:inset-x-0 after:-inset-y-1.5 motion-reduce:transition-none! disabled:cursor-not-allowed disabled:opacity-50 md:after:-inset-y-0.5',
     thumb:
-      'bg-dui-background pointer-events-none block rounded-full shadow-lg ring-0 transition-transform motion-reduce:transition-none!',
+      'bg-dui-background pointer-events-none block rounded-full shadow-lg ring-0 transition-transform duration-150 motion-reduce:transition-none!',
   },
   variants: { size: SWITCH_TRACKS },
   defaultVariants: { size: 'md' },
@@ -110,9 +110,9 @@ export interface SwitchProps
    * too. It used to be ignored whenever a size was given, so
    * `<Switch size="sm" responsive />` silently did nothing (DOR-1761).
    *
-   * A switch never reaches the full 44px touch target — at that height it would
-   * dwarf the row it sits in. The label beside it is the thumb-sized target, and
-   * clicking that flips the switch.
+   * A switch never draws at the full 44px touch target; at that height it would
+   * dwarf the row it sits in. Its hit area grows past the track instead, and the
+   * label beside it flips the switch too.
    *
    * @default true
    */

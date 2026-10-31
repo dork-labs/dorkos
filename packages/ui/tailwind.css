@@ -37,6 +37,9 @@
   --color-dui-destructive-foreground: hsl(var(--dui-destructive-foreground));
   --color-dui-border: hsl(var(--dui-border));
   --color-dui-input: hsl(var(--dui-input));
+  --color-dui-control-edge: hsl(var(--dui-control-edge));
+  --color-dui-control-edge-hover: hsl(var(--dui-control-edge-hover));
+  --color-dui-destructive-text: hsl(var(--dui-destructive-text));
   --color-dui-ring: hsl(var(--dui-ring));
   --color-dui-brand: hsl(var(--dui-brand));
   --color-dui-brand-foreground: hsl(var(--dui-brand-foreground));
@@ -46,10 +49,43 @@
   --color-dui-destructive-fill-hover: var(--dui-destructive-fill-hover);
   --color-dui-success: hsl(var(--dui-success));
   --animate-dui-breathe: dui-breathe 1.6s var(--dui-ease-standard) infinite;
+  --text-field: var(--dui-text-field);
+  --text-field--line-height: var(--dui-text-field-lh);
 
   @keyframes dui-breathe {
     50% {
       opacity: 0.5;
     }
+  }
+}
+
+/* The one keyboard focus ring: a 2px transparent gap, then a 2px ring. An outline,
+   so the gap is see-through on any ground and it survives forced colours, where a
+   box-shadow disappears. Uses :focus-visible so a pointer on a checkbox, radio,
+   switch or trigger paints nothing; a click in a text box does, by the browser's
+   own rule. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring-color, hsl(var(--dui-ring)));
+    outline-offset: 2px;
+  }
+  &[aria-invalid='true'] {
+    --focus-ring-color: hsl(var(--dui-destructive));
+  }
+}
+
+/* A wrapper whose child takes the focus: PathInput, AgentChipPicker. */
+@utility focus-ring-within {
+  &:has(:focus-visible) {
+    outline: 2px solid var(--focus-ring-color, hsl(var(--dui-ring)));
+    outline-offset: 2px;
+  }
+}
+
+/* A box that fills a clipped parent: ScrollArea viewport, FileTree. */
+@utility focus-ring-inset {
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring-color, hsl(var(--dui-ring)));
+    outline-offset: -2px;
   }
 }

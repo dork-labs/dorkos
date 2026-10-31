@@ -3,9 +3,19 @@ import type { PlaygroundSection } from '../playground-registry';
 /**
  * Form sections from FormsPage.
  *
- * Sources: FormShowcases (Primitives), ComposedFormShowcases (Composed).
+ * Sources: FieldStatesShowcases and FormShowcases (Primitives), ComposedFormShowcases (Composed).
  */
 export const FORMS_SECTIONS: PlaygroundSection[] = [
+  // FieldStatesShowcases — Primitives
+
+  {
+    id: 'field-states',
+    title: 'Field states',
+    page: 'forms',
+    category: 'Primitives',
+    keywords: ['input', 'textarea', 'select', 'invalid', 'error', 'disabled', 'read-only', 'focus'],
+  },
+
   // FormShowcases — Primitives
 
   {

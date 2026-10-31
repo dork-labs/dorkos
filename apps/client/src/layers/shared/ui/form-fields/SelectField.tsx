@@ -7,6 +7,7 @@ import {
 } from '@/layers/shared/ui/select';
 import { Field, FieldLabel, FieldDescription, FieldError } from '@/layers/shared/ui/field';
 import { useFieldContext } from '@/layers/shared/lib/form-context';
+import { useFieldWiring } from './use-field-wiring';
 
 interface SelectOption {
   value: string;
@@ -24,12 +25,11 @@ export interface SelectFieldProps {
  * Select dropdown field wired to TanStack Form field context.
  *
  * Renders a labelled select with options, optional description, and inline validation errors.
- * Errors are shown only after the field has been touched.
+ * Errors show after a blur or a submit, and replace the description while they do.
  */
 export function SelectField({ label, options, placeholder, description }: SelectFieldProps) {
   const field = useFieldContext<string>();
-  const { isTouched, errors } = field.state.meta;
-  const fieldErrors = isTouched ? errors.map((e) => ({ message: String(e) })) : [];
+  const { fieldErrors, helpId, errorId, controlProps } = useFieldWiring(!!description);
 
   return (
     <Field orientation="vertical">
@@ -41,7 +41,7 @@ export function SelectField({ label, options, placeholder, description }: Select
           if (!open) field.handleBlur();
         }}
       >
-        <SelectTrigger id={field.name}>
+        <SelectTrigger id={field.name} {...controlProps}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
@@ -52,8 +52,8 @@ export function SelectField({ label, options, placeholder, description }: Select
           ))}
         </SelectContent>
       </Select>
-      {description && <FieldDescription>{description}</FieldDescription>}
-      <FieldError errors={fieldErrors} />
+      {description && <FieldDescription id={helpId}>{description}</FieldDescription>}
+      <FieldError id={errorId} errors={fieldErrors} />
     </Field>
   );
 }

@@ -33,10 +33,18 @@
     hsl(var(--dui-background))
   );
   --dui-scrim: hsl(0 0% 9% / 0.5);
+  /* An empty field's border is all that identifies it, so it clears 3:1. --dui-input
+     stays for the dark fill and decorative borders. */
+  --dui-control-edge: 0 0% 52%;
+  --dui-control-edge-hover: 0 0% 42%;
+  /* Error text and icon. Borders and rings keep --dui-destructive. */
+  --dui-destructive-text: 0 72% 41%;
   --dui-success: 152 69% 24%;
   --dui-size-icon-xs: 0.75rem;
   --dui-size-icon-sm: 1rem;
   --dui-size-icon-md: 1.25rem;
+  --dui-text-field: calc(0.875rem * var(--user-font-scale, 1));
+  --dui-text-field-lh: calc(1.25rem * var(--user-font-scale, 1));
 }
 
 @media (max-width: 767px) {
@@ -46,6 +54,9 @@
     --dui-size-icon-xs: 0.9375rem;
     --dui-size-icon-sm: 1.25rem;
     --dui-size-icon-md: 1.5625rem;
+    /* Never under 16px: iOS zooms the page on a smaller field. */
+    --dui-text-field: max(1rem, calc(1rem * var(--user-font-scale, 1)));
+    --dui-text-field-lh: calc(1.375rem * var(--user-font-scale, 1));
   }
 }
 
@@ -69,6 +80,9 @@
     --dui-destructive-foreground: 0 0% 98%;
     --dui-border: 0 0% 25%;
     --dui-input: 0 0% 25%;
+    --dui-control-edge: 0 0% 46%;
+    --dui-control-edge-hover: 0 0% 56%;
+    --dui-destructive-text: 0 72% 68%;
     --dui-ring: 24 88% 55%;
     --dui-brand: 23 97% 46%;
     --dui-brand-foreground: 0 0% 9%;
@@ -99,6 +113,9 @@
   --dui-destructive-foreground: 0 0% 98%;
   --dui-border: 0 0% 25%;
   --dui-input: 0 0% 25%;
+  --dui-control-edge: 0 0% 46%;
+  --dui-control-edge-hover: 0 0% 56%;
+  --dui-destructive-text: 0 72% 68%;
   --dui-ring: 24 88% 55%;
   --dui-brand: 23 97% 46%;
   --dui-brand-foreground: 0 0% 9%;

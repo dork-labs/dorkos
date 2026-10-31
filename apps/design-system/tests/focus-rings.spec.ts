@@ -2,10 +2,11 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
-// Purpose (DOR-2609): every shared form control's keyboard focus ring is at least 3:1 against
-// the page, in light and dark, measured as painted. At half strength the ring measured about
-// 1.9:1 light and 2.5:1 dark. A pointer click on a checkbox, a radio or a slider thumb shows no
-// ring; a text box shows one on a click too, which is the browser's own rule for text entry.
+// Purpose (DOR-2609, UI overhaul Phase 2): every shared form control's keyboard focus ring is the
+// one outline recipe (2px wide, 2px off) and at least 3:1 against the ground it sits on, in light
+// and dark, measured as painted. A pointer click on a checkbox, a radio, a switch, a select or a
+// slider thumb shows no ring; a text box shows one on a click too, which is the browser's own rule
+// for text entry. The ring must also survive forced colours, which erase a box-shadow.
 //
 // DORKOS_CATALOG_FOCUS_SHOTS optionally names a directory for reviewable screenshots.
 
@@ -17,14 +18,16 @@ interface RingMeasure {
   focusVisible: boolean;
   /** The ring colour as `r,g,b`, to tell the destructive ring from the normal one. */
   color: string | null;
-  /** Ring width in px, excluding any offset gap; null when no ring is drawn. */
+  /** Ring width in px; null when no ring is drawn. */
   width: number | null;
-  /** The ring against the page right outside the control. */
+  /** The gap between the control and the ring, in px; negative when inset. */
+  offset: number | null;
+  /** The ring against the ground it actually sits on, past the transparent gap. */
   page: number | null;
   /**
-   * The ring against the control's own fill, its inner edge when flush. Reported, not asserted:
-   * WCAG 1.4.11 asks the indicator to stand out from what surrounds it, which is the page side,
-   * and a checked box or white slider thumb in dark is lighter than the ring by design.
+   * The ring against the control's own fill. Reported, not asserted: WCAG 1.4.11 asks the
+   * indicator to stand out from what surrounds it, which is the ground, and a checked box or white
+   * slider thumb in dark is lighter than the ring by design.
    */
   fill: number | null;
 }
@@ -43,10 +46,9 @@ async function settle(page: Page) {
 
 /**
  * Measure a control's focus ring from its computed colours. The canvas read-back and the
- * compositing are the ones apps/space/browser-tests/contrast.ts uses (DOR-2567); the ring
- * lookup differs, because a ring with an offset is two box-shadow layers — the gap in the page
- * colour, then the ring spread past it — so the widest visible layer is the ring and the
- * next one in is the gap.
+ * compositing are the ones apps/space/browser-tests/contrast.ts uses (DOR-2567); the ring itself
+ * is the element's computed outline. An outline with no style or no width is no ring, and a
+ * browser's own default (`auto`) is not the recipe either.
  */
 function measureRing(control: Locator): Promise<RingMeasure> {
   return control.evaluate((element) => {
@@ -86,24 +88,22 @@ function measureRing(control: Locator): Promise<RingMeasure> {
       return Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
     };
 
-    // Every spread-only layer (0 offset, 0 blur) with a colour that is not fully transparent.
-    const layers = [
-      ...getComputedStyle(element).boxShadow.matchAll(
-        /((?:rgba?|oklab|oklch|lab|lch|hsla?|color)\([^)]*\)|#[0-9a-f]+) 0px 0px 0px (\d+(?:\.\d+)?)px/giu
-      ),
-    ]
-      .map((match) => ({ color: rgba(match[1]), spread: Number(match[2]) }))
-      .filter((layer) => layer.spread > 0 && layer.color[3] > 0)
-      .sort((a, b) => b.spread - a.spread);
-    const [ring, gap] = layers;
-    const outside = fillBehind(element.parentElement);
+    const style = getComputedStyle(element);
+    const width = Number.parseFloat(style.outlineWidth);
+    const drawn = style.outlineStyle === 'solid' && width > 0;
+    const color = drawn ? rgba(style.outlineColor) : null;
+    const ring = color && color[3] > 0 ? color : null;
+    const offset = Number.parseFloat(style.outlineOffset);
+    // Past a transparent gap the ring sits on the parent's ground; inset, on the element's own.
+    const ground = fillBehind(offset < 0 ? element : element.parentElement);
     const fill = fillBehind(element);
     const result = {
       focusVisible: element.matches(':focus-visible'),
-      color: ring ? ring.color.slice(0, 3).join(',') : null,
-      width: ring ? ring.spread - (gap?.spread ?? 0) : null,
-      page: ring ? ratio(over(ring.color, outside), outside) : null,
-      fill: ring ? ratio(over(ring.color, fill), fill) : null,
+      color: ring ? ring.slice(0, 3).join(',') : null,
+      width: ring ? width : null,
+      offset: ring ? offset : null,
+      page: ring ? ratio(over(ring, ground), ground) : null,
+      fill: ring ? ratio(over(ring, fill), fill) : null,
     };
     probe.remove();
     return result;
@@ -147,6 +147,8 @@ function controls(page: Page): { name: string; control: Locator }[] {
     { name: 'checkbox', control: page.locator('#demo-check-b') },
     { name: 'checkbox-checked', control: page.locator('#demo-check-a') },
     { name: 'radio', control: page.locator('#demo-radio-cc') },
+    { name: 'switch', control: page.locator('#demo-switch-on') },
+    { name: 'select', control: page.locator('#select [data-slot="select-trigger"]').first() },
     {
       name: 'slider',
       control: page
@@ -182,7 +184,10 @@ test.describe('keyboard focus rings', () => {
           const ring = await measureRing(control);
           measured[`${scheme} ${name}`] = ring;
           expect.soft(ring.focusVisible, `${scheme} ${name}: keyboard focus`).toBe(true);
-          expect.soft(ring.width, `${scheme} ${name}: ring width`).toBe(3);
+          expect.soft(ring.width, `${scheme} ${name}: ring width`).toBe(2);
+          expect
+            .soft(ring.offset, `${scheme} ${name}: ring offset`)
+            .toBe(name === 'scroll-area' ? -2 : 2);
           expect.soft(ring.page ?? 0, `${scheme} ${name}: ring vs page`).toBeGreaterThanOrEqual(3);
           await shot(page, control, `focus-${name}-${scheme}-${width}`);
           await control.blur();
@@ -204,7 +209,22 @@ test.describe('keyboard focus rings', () => {
     });
   }
 
-  test('show no ring when a pointer picks a checkbox, a radio or a slider thumb', async ({
+  // A box-shadow ring disappeared here; an outline is repainted in a system colour and stays.
+  test('survive forced colours', async ({ page }) => {
+    await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
+    await page.goto('/');
+    for (const { name, control } of controls(page)) {
+      await control.scrollIntoViewIfNeeded();
+      await page.mouse.move(0, 0);
+      await keyboardFocus(page, control);
+      await settle(page);
+      const ring = await measureRing(control);
+      expect.soft(ring.width, `${name}: ring in forced colours`).toBe(2);
+      await control.blur();
+    }
+  });
+
+  test('show no ring when a pointer picks a checkbox, a radio, a switch, a select or a slider thumb', async ({
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -216,10 +236,16 @@ test.describe('keyboard focus rings', () => {
     for (const [name, control] of [
       ['checkbox', page.locator('#demo-check-b')],
       ['radio', page.locator('#demo-radio-codex')],
+      ['switch', page.locator('#demo-switch-on')],
+      ['select', page.locator('#select [data-slot="select-trigger"]').first()],
       ['slider', slider],
     ] as const) {
       await control.scrollIntoViewIfNeeded();
-      if (name === 'slider') {
+      if (name === 'select') {
+        await control.click();
+        // By pointer all the way: closing with Escape is keyboard use, and rightly shows the ring.
+        await page.getByRole('option').first().click();
+      } else if (name === 'slider') {
         const box = (await control.boundingBox())!;
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.mouse.down();
