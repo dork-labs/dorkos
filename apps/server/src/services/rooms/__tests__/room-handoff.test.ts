@@ -17,6 +17,7 @@ import { composeRegistry, type CapabilityRegistry } from '../../core/capabilitie
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import { roomsDomain } from '../room-capabilities.js';
 import { resetFreshnessForTests } from '../messages/room-freshness.js';
+import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
@@ -65,8 +66,14 @@ interface PostResult {
 /** What one scripted turn does: the turn, and the session the dispatcher gave it. */
 type Script = (request: RoomTurnRequest, sessionId: string) => Promise<string | null>;
 
-/** A runner whose turns run an async script, counting how many overlap. */
-function asyncRunner(script: Script): ScriptedTurnRunner & { maxLive: () => number } {
+/**
+ * A runner whose turns run an async script, counting how many overlap. A turn `busy` accepts is
+ * refused the way the runtime refuses a session that is still working, and runs no script.
+ */
+function asyncRunner(
+  script: Script,
+  busy: (request: RoomTurnRequest) => boolean = () => false
+): ScriptedTurnRunner & { maxLive: () => number } {
   const turns: RecordedTurn[] = [];
   let live = 0;
   let maxLive = 0;
@@ -99,6 +106,7 @@ function asyncRunner(script: Script): ScriptedTurnRunner & { maxLive: () => numb
       try {
         // Yield first, so two turns that could overlap get the chance to.
         await new Promise((resolve) => setTimeout(resolve, 5));
+        if (busy(request)) return { sessionId, text: null, unanswered: 'busy' as const };
         return { sessionId, text: await script(request, sessionId) };
       } finally {
         live -= 1;
@@ -124,7 +132,10 @@ describe('one seat per agent per room, and the hand-off', () => {
   let bo: string;
   /** What Bo's turns do, per room; set by each test. */
   let scripts: Record<string, Script>;
+  /** Which turns the runtime refuses as busy; set by a test. */
+  let busy: (request: RoomTurnRequest) => boolean;
   let runner: ReturnType<typeof asyncRunner>;
+  let harnessAuthors: AuthorRegistry;
 
   /** Post as Bo from `sessionId`, the way the in-session server calls. */
   function postAsBo(sessionId: string, input: Record<string, unknown>): Promise<PostResult> {
@@ -162,12 +173,17 @@ describe('one seat per agent per room, and the hand-off', () => {
   beforeEach(() => {
     resetFreshnessForTests();
     scripts = {};
-    runner = asyncRunner((request, sessionId) => {
-      const script = scripts[request.room.id];
-      return script ? script(request, sessionId) : Promise.resolve(null);
-    });
+    busy = () => false;
+    runner = asyncRunner(
+      (request, sessionId) => {
+        const script = scripts[request.room.id];
+        return script ? script(request, sessionId) : Promise.resolve(null);
+      },
+      (request) => busy(request)
+    );
     const harness = createRoomHarness({ agents, runner, operatorName: () => 'Dorian' });
     ({ service, store, human } = harness);
+    harnessAuthors = harness.authors;
     registry = composeRegistry([roomsDomain], {
       logger: { debug() {}, info() {}, warn() {}, error() {} },
       roomDeps: { rooms: service },
@@ -282,6 +298,52 @@ describe('one seat per agent per room, and the hand-off', () => {
     expect(attempts.at(-1)).toMatchObject({ posted: true });
     expect(bosPosts(dorkos)).toHaveLength(1);
   });
+
+  it('two busy seats never wake each other: one try a second at most, then one run (DOR-3516)', async () => {
+    const cy = harnessAuthors.resolveAgent('/agents/cy', 'Cy').id;
+    await settle();
+    let seatsBusy = true;
+    const triedAt: Record<string, number[]> = { [bo]: [], [cy]: [] };
+    // The runtime refuses each seat's hand-off turn, as it does a session still running
+    // background work: no claim stands in the way, so every try is a turn that starts and ends.
+    busy = (request) => {
+      if (!request.prompt.includes('BEGIN HANDED-OFF DRAFT')) return false;
+      triedAt[request.authorId]?.push(Date.now());
+      return seatsBusy;
+    };
+    for (const [authorId, chat] of [
+      [bo, 'bo-chat'],
+      [cy, 'cy-chat'],
+    ] as const) {
+      service.handoffs.handOff({
+        roomId: dorkos.id,
+        author: harnessAuthors.getById(authorId)!,
+        text: 'ship it',
+        verbatim: false,
+        callerSessionId: chat,
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+
+    // Each refusal releases a claim; before the fix that woke the other seat at once, so the
+    // two traded tries about ten times a second for as long as the seats stayed busy.
+    for (const times of Object.values(triedAt)) {
+      expect(times.length).toBeGreaterThanOrEqual(2);
+      expect(times.length).toBeLessThanOrEqual(3);
+      for (let i = 1; i < times.length; i += 1) {
+        expect(times[i]! - times[i - 1]!).toBeGreaterThanOrEqual(1_000);
+      }
+    }
+
+    // Each agent's own turn ending is what frees its seat, and each waiting hand-off runs once.
+    const before = { bo: triedAt[bo]!.length, cy: triedAt[cy]!.length };
+    seatsBusy = false;
+    service.post(dorkos.id, { authorId: human, text: '@bo @cy morning' });
+    await settle();
+    expect(triedAt[bo]).toHaveLength(before.bo + 1);
+    expect(triedAt[cy]).toHaveLength(before.cy + 1);
+  }, 15_000);
 
   it('C: an out-of-date request is declined, and the asker is told why', async () => {
     productHandsOff('Please review PR 12.');

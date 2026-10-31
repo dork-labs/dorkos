@@ -5,7 +5,7 @@
  * @module services/runtimes/claude-code/mcp-tools
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
-import { requiresDocPrincipal } from './doc-principal-policy.js';
+import { bindsOpenerWhenAvailable, requiresDocPrincipal } from './doc-principal-policy.js';
 import type { McpToolDeps, McpToolSession } from './types.js';
 import {
   DORKOS_MCP_SERVER_NAME,
@@ -424,6 +424,19 @@ export function createDorkOsToolServer(
       const serverPrincipal = await connectorTurn.resolvePrincipal();
       signal?.throwIfAborted();
       return { ...invocation, serverPrincipal };
+    }
+    // `control_ui` records this agent as the opener of a session document it
+    // opens, from the verified turn and never from its arguments. Optional: a
+    // turn that cannot resolve one still drives the window, with no opener.
+    if (bindsOpenerWhenAvailable(capabilityId)) {
+      const serverPrincipal = await connectorTurn.resolvePrincipal().catch((err: unknown) => {
+        logger.debug('[mcp-tools] control_ui runs without an opener: no turn principal', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return undefined;
+      });
+      signal?.throwIfAborted();
+      return serverPrincipal ? { ...invocation, serverPrincipal } : invocation;
     }
     // `connector_recommend` reads the caller's own granted connections to say
     // what is already connected; without the principal it leaves that out.

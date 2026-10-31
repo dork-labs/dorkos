@@ -39,6 +39,8 @@ const STATUS_BY_CODE = {
   name_taken: 409,
   reserved_name: 409,
   oauth_unsupported: 422,
+  unsafe_command: 422,
+  unsafe_env: 422,
   unreadable: 503,
 } as const;
 

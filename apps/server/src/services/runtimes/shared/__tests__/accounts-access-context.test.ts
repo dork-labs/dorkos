@@ -74,6 +74,8 @@ describe('Accounts turn awareness', () => {
       expect(text).toContain('under Needs you on the Connections page');
       expect(text).toContain('Never send a link to DorkOS');
       expect(text).not.toContain('openUrl');
+      // Setup waits on the person, so the agent never promises a time (DOR-2850).
+      expect(text).toContain('Never promise how long it takes or say it is instant');
     }
   );
 

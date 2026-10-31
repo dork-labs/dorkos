@@ -48,10 +48,22 @@ export interface MessageAuthorProps {
    * (DOR-3074). Omitted, the name is drawn as it always was.
    */
   renderName?: (name: ReactElement) => ReactNode;
+  /**
+   * True when the author is the person reading: their name is followed by a
+   * muted "(you)" (FB-38/55). Defaults to the author's own `isSelf`; a room
+   * passes it from its viewer id, as it does to `Message.Gutter`.
+   */
+  isSelf?: boolean;
   /** Render as the child element instead of a `div`. */
   asChild?: boolean;
   className?: string;
 }
+
+/**
+ * What the line calls the person when they have not given a name
+ * (`resolve-message-author.ts`). "You (you)" would say it twice.
+ */
+const UNNAMED_SELF = 'you';
 
 /**
  * The name, the origin mark, the retired mark when the author is an agent no
@@ -64,6 +76,7 @@ export function MessageAuthor({
   origin,
   mark,
   renderName,
+  isSelf = author.isSelf ?? false,
   asChild = false,
   className,
 }: MessageAuthorProps) {
@@ -74,10 +87,19 @@ export function MessageAuthor({
 
   const Comp = asChild ? Slot.Root : 'div';
   const name = <span className={slots.authorName()}>{author.displayName}</span>;
+  // One person in every view: the name everyone else sees, then "(you)" in the
+  // timestamp's size and colour. Neither it nor the time ever truncates or
+  // wraps; only a long name gives way (FB-38/55).
+  const youMark = isSelf && author.displayName.trim().toLowerCase() !== UNNAMED_SELF;
 
   return (
     <Comp id={id} data-slot="message-author" className={cn(slots.header(), className)}>
       {renderName ? renderName(name) : name}
+      {youMark && (
+        <span data-slot="message-author-self" className="text-msg-timestamp shrink-0 text-xs">
+          (you)
+        </span>
+      )}
       {origin !== undefined && <OriginMark origin={origin} />}
       {mark}
       <RetiredMark retired={author.retired} />
@@ -85,7 +107,7 @@ export function MessageAuthor({
         <time
           dateTime={at}
           title={formatAbsoluteTime(at ?? '')}
-          className={cn(slots.timestamp(), 'text-msg-timestamp')}
+          className={cn(slots.timestamp(), 'text-msg-timestamp shrink-0 whitespace-nowrap')}
         >
           {time}
         </time>

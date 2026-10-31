@@ -16,6 +16,7 @@ import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
 import { NEVER_ASK_REASON_TYPE, NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
 import { alwaysAllowScopeOf, suggestionDestinations } from './always-allow-scope.js';
+import { keepAlwaysAllowToAgent } from '../tool-gate/global-server-always-allow.js';
 import {
   armInteractionWait,
   approvalParkedNotice,
@@ -594,7 +595,14 @@ export function createCanUseTool(
       // A held turn offers no "Always allow" (DOR-3204): it must not write a
       // standing rule into the folder.
       const offered = carriesOutsiderMark(session) ? { ...context, suggestions: [] } : context;
-      return handleToolApproval(session, context.toolUseID, toolName, input, offered);
+      // A yes on a server for every agent's tool stays with this agent (DOR-3213 T9).
+      return handleToolApproval(
+        session,
+        context.toolUseID,
+        toolName,
+        input,
+        keepAlwaysAllowToAgent(toolName, offered)
+      );
     }
     log.debug('[canUseTool] auto-allow', {
       toolName,

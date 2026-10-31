@@ -115,6 +115,7 @@ import { AccountIds } from '../../audit/account-ids.js';
 import { initAuditTrail, recordAudit, resetAuditTrail } from '../../audit/audit-trail.js';
 import { runWithAuditActor } from '../../audit/audit-context.js';
 import { gateHandRegisteredMcpTools, type SdkMcpTool } from '../mcp-tool-gate.js';
+import { isConnectorRuntimeCapabilityId } from '../../connectors/runtime-capability-scope.js';
 
 /** The agent every probe calls as: unrestricted ceiling, so only the tier gates it. */
 const AGENT: AgentIdentity = {
@@ -272,11 +273,16 @@ const declaredNames = Object.keys(MCP_TOOL_TIERS).sort();
  * tier lookup built from it would answer "no such tool" for every domain this
  * file does not happen to wire — which is exactly the false red above, moved.
  */
-const capabilityTiers = new Map(
-  composeCapabilityRegistryForDocs()
+const capabilityTiers = new Map([
+  ...composeCapabilityRegistryForDocs()
     .capabilities.filter((cap) => cap.surfaces.mcp !== undefined)
-    .map((cap) => [cap.surfaces.mcp!.toolName, cap.tier] as const)
-);
+    .map((cap) => [cap.surfaces.mcp!.toolName, cap.tier] as const),
+  // The connector tools declare no ordinary surface: Claude's session registers them by id
+  // (`registerClaudeConnectorCapabilityTools`), and Claude Code may show the dot as `_`.
+  ...composeCapabilityRegistryForDocs()
+    .capabilities.filter((cap) => isConnectorRuntimeCapabilityId(cap.id))
+    .flatMap((cap) => [[cap.id, cap.tier] as const, [cap.id.replace('.', '_'), cap.tier] as const]),
+]);
 
 /** A tool's declared tier, or `undefined` when no surface declares one. */
 function tierOf(bareName: string): string | undefined {

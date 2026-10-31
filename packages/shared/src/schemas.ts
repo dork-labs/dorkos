@@ -44,6 +44,7 @@ import { ProjectRefSchema } from './project-schemas.js';
 import {
   ChatMessageStampSchema,
   QueuedChatEntrySchema,
+  PromptSourceSchema,
   RoomMessageStampSchema,
 } from './chat-messages.js';
 
@@ -3781,6 +3782,11 @@ export const HistoryMessageSchema = z
      * unless the room says the person wrote it.
      */
     roomMessage: RoomMessageStampSchema.optional(),
+    /**
+     * Where this user message came from, when no person in this chat typed it
+     * (DOR-3019). The app draws the source from here, never "You".
+     */
+    promptSource: PromptSourceSchema.optional(),
   })
   .openapi('HistoryMessage');
 

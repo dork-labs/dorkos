@@ -22,7 +22,8 @@
  * outsider's words on may send one: the message carries the mark, so the chat
  * it reaches is gated the same way (DOR-3390, Security's condition on #3201's
  * one-hop laundering point). A turn held to any ceiling, or marked without
- * one, gets no account tools.
+ * one, gets no account tools. A marked turn lists none of its own connection
+ * grants either (DOR-3205).
  *
  * **It only ever allows, and only at Never ask.** In every other mode, and on
  * any doubt (a throw, a slow lookup, an unknown name), it answers nothing, so
@@ -46,6 +47,7 @@ import {
   type CeilingedMode,
 } from '../turn-permission.js';
 import { DORKOS_AGENT_TOOLS, dorkosAutoAllows } from './auto-allow.js';
+import { OWN_CONNECTION_READS_QUALIFIED } from './own-connection-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 
 /** What the hook reads from the session, at call time. */
@@ -70,6 +72,15 @@ const ALLOW = {
     permissionDecisionReason: 'DorkOS runs its own safe tools without asking.',
   },
 };
+
+/** Whether the running turn is marked; a throw counts as marked. */
+function markedOrDoubtful(isMarked: () => boolean): boolean {
+  try {
+    return isMarked();
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Whether DorkOS lets this call run unasked at Never ask. Never throws.
@@ -101,11 +112,11 @@ export async function neverAskAllows(
     if (heldForOutsider(session)) return false;
   } else if (NEVER_IN_A_HELD_OR_MARKED_TURN.has(toolName)) {
     if (ceilingOn(session) !== 'none') return false;
-    try {
-      if (isMarked()) return false;
-    } catch {
-      return false;
-    }
+    if (markedOrDoubtful(isMarked)) return false;
+  } else if (OWN_CONNECTION_READS_QUALIFIED.has(toolName)) {
+    // The agent's own grants (DOR-3205) run in a turn another of our agents holds, but not in
+    // one that read an outsider's words: the gate refuses a carried mark, this the turn's own.
+    if (markedOrDoubtful(isMarked)) return false;
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {

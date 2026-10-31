@@ -2,7 +2,7 @@
  * `/api/mcp-servers` is person-only (DOR-3213): an agent can neither read nor
  * change the servers every agent gets, and no answer carries a secret value.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,6 +23,19 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
 
 vi.mock('../../services/core/auth/install-owner.js', () => ({
   isInstallOwner: (user?: { userId: string }) => user?.userId === 'owner',
+}));
+
+/** Whether this install has an owner account, and who the gate proved. */
+const state = vi.hoisted(() => ({
+  owner: null as unknown,
+  user: undefined as { userId: string; credential: 'cookie' | 'api-key' } | undefined,
+}));
+
+// A plain factory, not `importOriginal`: the gate policy imports this module
+// back, and spreading the original hands it the real lookup, not this one.
+vi.mock('../../services/core/auth/index.js', () => ({
+  readOwnerAccount: () => state.owner,
+  hasAnyUser: () => state.owner !== null,
 }));
 
 import request from '@dorkos/test-utils/supertest';
@@ -62,12 +75,22 @@ function secrets(): CredentialStore {
 
 function app() {
   return target.mount(
-    honoGroupListener({ path: '/api/mcp-servers', routes: createMcpServerRoutes(store) })
+    honoGroupListener(
+      { path: '/api/mcp-servers', routes: createMcpServerRoutes(store) },
+      {
+        before: async (c, next) => {
+          if (state.user) c.set('user', state.user);
+          await next();
+        },
+      }
+    )
   );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  state.owner = null;
+  state.user = undefined;
   home = mkdtempSync(path.join(tmpdir(), 'mcp-servers-route-'));
   store = new GlobalMcpStore(home, secrets());
   mockConfigGet.mockImplementation((key: string) =>
@@ -130,6 +153,88 @@ describe('/api/mcp-servers', () => {
 
     expect((await request(app()).delete('/api/mcp-servers/github')).status).toBe(204);
     expect((await request(app()).delete('/api/mcp-servers/github')).status).toBe(404);
+  });
+
+  describe('once this install has an owner (Security M1, DOR-3330)', () => {
+    beforeEach(async () => {
+      await store.add({ ...SERVER, secretNames: [], excludedAgents: [] } as never);
+      state.owner = { id: 'owner' };
+    });
+
+    it('refuses every write from a program at this computer that sends no headers', async () => {
+      const file = path.join(home, 'mcp', 'global-servers.json');
+      const before = readFileSync(file);
+      const writes = [
+        request(app())
+          .post('/api/mcp-servers')
+          .send({ ...SERVER, name: 'planted' }),
+        request(app()).put('/api/mcp-servers/github').send(SERVER),
+        request(app()).patch('/api/mcp-servers/github').send({ enabled: false }),
+        request(app()).delete('/api/mcp-servers/github'),
+      ];
+      for (const res of await Promise.all(writes)) {
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe(NEEDS_PERSON_AT_THIS_COMPUTER);
+      }
+      expect(store.list().map((s) => [s.name, s.enabled])).toEqual([['github', true]]);
+      expect(readFileSync(file).equals(before)).toBe(true);
+    });
+
+    it("refuses a page on another site, even carrying the owner's session", async () => {
+      state.user = { userId: 'owner', credential: 'cookie' };
+      const file = path.join(home, 'mcp', 'global-servers.json');
+      const before = readFileSync(file);
+      const res = await request(app())
+        .post('/api/mcp-servers')
+        .set('Origin', 'https://evil.example')
+        .set('Sec-Fetch-Site', 'cross-site')
+        .send({ ...SERVER, name: 'planted' });
+      // The chain's CORS check refuses it before the route (its status is the
+      // chain's to choose); what matters is that nothing was written.
+      expect(res.ok).toBe(false);
+      expect(store.list().map((s) => s.name)).toEqual(['github']);
+      expect(readFileSync(file).equals(before)).toBe(true);
+    });
+
+    it("refuses the owner's API key, which a program can read off disk", async () => {
+      state.user = { userId: 'owner', credential: 'api-key' };
+      const res = await request(app()).patch('/api/mcp-servers/github').send({ enabled: false });
+      expect(res.status).toBe(403);
+    });
+
+    it("lets the owner's own session through", async () => {
+      state.user = { userId: 'owner', credential: 'cookie' };
+      const res = await request(app()).patch('/api/mcp-servers/github').send({ enabled: false });
+      expect(res.status).toBe(200);
+      expect(res.body.enabled).toBe(false);
+    });
+  });
+
+  it('refuses a server that runs from a relative path, or with LD_PRELOAD', async () => {
+    const relative = await request(app())
+      .post('/api/mcp-servers')
+      .send({ ...SERVER, connection: { ...SERVER.connection, command: './server.sh' } });
+    expect(relative.status).toBe(422);
+    expect(relative.body.code).toBe('unsafe_command');
+
+    const preload = await request(app())
+      .post('/api/mcp-servers')
+      .send({ ...SERVER, connection: { ...SERVER.connection, env: { LD_PRELOAD: '/tmp/x.so' } } });
+    expect(preload.status).toBe(422);
+    expect(preload.body.code).toBe('unsafe_env');
+    expect(store.list()).toEqual([]);
+  });
+
+  it('keeps a working server when an edit is refused', async () => {
+    await request(app()).post('/api/mcp-servers').send(SERVER);
+    const refused = await request(app())
+      .put('/api/mcp-servers/github')
+      .send({ ...SERVER, connection: { ...SERVER.connection, command: './server.sh' } });
+    expect(refused.status).toBe(422);
+    expect(store.injectableFor('agent-a').github).toMatchObject({
+      command: 'npx',
+      env: { GITHUB_TOKEN: 'ghp_real_secret' },
+    });
   });
 
   it('answers a clash and an incomplete server plainly', async () => {

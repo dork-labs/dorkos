@@ -94,6 +94,8 @@ export interface RoomCore {
   readonly isOwnerAuthor: (authorId: string) => boolean;
   /** The operator's profile name, or `null`; see `RoomServiceDeps.operatorName`. */
   readonly operatorName?: () => string | null;
+  /** The owner's IANA zone; see `RoomServiceDeps.operatorTimeZone`. */
+  readonly operatorTimeZone?: () => string;
   /** The record-based twin of {@link RoomCore.isOwnerAuthor}. */
   readonly isOwnerRecord: (record: AuthorRecord) => boolean;
   /**
@@ -244,6 +246,7 @@ export function createRoomCore(
     ...(deps.seatMover ? { seatMover: deps.seatMover } : {}),
     ...(deps.roomHasOutsiders ? { roomHasOutsiders: deps.roomHasOutsiders } : {}),
     ...(deps.operatorName ? { operatorName: deps.operatorName } : {}),
+    ...(deps.operatorTimeZone ? { operatorTimeZone: deps.operatorTimeZone } : {}),
     // Read per turn, never captured: a room becomes bridged partway through
     // its life, and the standing line in the fence has to follow that rather
     // than whatever was true when the service was built.
@@ -317,6 +320,7 @@ export function createRoomCore(
     ...(deps.canvasNow ? { canvasNow: deps.canvasNow } : {}),
     isOwnerAuthor: deps.isOwnerAuthor,
     ...(deps.operatorName ? { operatorName: deps.operatorName } : {}),
+    ...(deps.operatorTimeZone ? { operatorTimeZone: deps.operatorTimeZone } : {}),
     isOwnerRecord: deps.isOwnerRecord,
     isOwnerVoice: deps.isOwnerVoice,
     bridges: deps.bridges,

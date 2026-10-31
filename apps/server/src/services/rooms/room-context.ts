@@ -187,6 +187,13 @@ export interface RoomContextDeps {
    */
   operatorName?(): string | null;
   /**
+   * The owner's IANA zone (`profile.timezone`, or this server's own until the
+   * app has told it one), read per turn. Every time in an agent's room context
+   * is read in it, and the context says which zone it is (FB-66). Absent where
+   * nothing supplies it; the context's times are then UTC.
+   */
+  operatorTimeZone?(): string;
+  /**
    * What this room's turn is told about the chat it projects, or `null` for an
    * unbridged room (chats-as-channels §8, §9.2, §15).
    *
@@ -826,6 +833,11 @@ export function buildRoomContext(
       addressedNow: addresseesOf(input.entry).includes(input.agentAuthorId),
       ...(input.answerOwed ? { answerOwed: input.answerOwed } : {}),
     },
+    // Whose clock the block's times are on (FB-66), read per turn so a person
+    // who changes their zone is read in the new one from the next message.
+    ...(deps.operatorTimeZone
+      ? { clock: { timeZone: deps.operatorTimeZone(), now: new Date().toISOString() } }
+      : {}),
     budget: {
       automaticRepliesLeftInThisRoomThisHour: input.budget.room,
       automaticRepliesLeftInTotalThisHour: input.budget.global,

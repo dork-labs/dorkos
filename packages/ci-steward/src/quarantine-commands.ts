@@ -434,7 +434,10 @@ export function cmdQuarantine(
     // `{}`, never `opts`: in this command `opts.file` is the TEST file, and
     // handing it to a reader that treats `file` as the list path would make it
     // read the list from a path that does not exist and quietly find nothing.
-    const current = read.honoured ? read.entries : rawEntries(env, {});
+    // Raw even when the list is honoured: honoured entries have expiry applied,
+    // so an expired entry read that way was "not in the lane" and could never
+    // be taken out.
+    const current = rawEntries(env, {});
     if (current === null) {
       env.io.err(
         `quarantine: ${env.files.config.quarantine.file} does not parse at all, so there is nothing to remove from. \`pnpm ci:quarantine reset --publish\` replaces it with an empty list.\n`

@@ -307,8 +307,23 @@ permissions:
 jobs:
   # Real Postgres HTTP and browser assertions are a dependency of the existing required
   # `test` check, so a missing database or a skipped suite cannot merge green.
+  #
+  # QUEUE AND CANARY ONLY (ledger 261030-233825). It ran in full on every pull
+  # request push, whatever changed: 10 to 15 minutes, a Postgres service and a
+  # Chromium install, the one unscoped suite on the PR leg, while PR pushes were
+  # starving the queue of runners. On a pull request it is now skipped, and the
+  # `test` fan-in accepts that skip there and nowhere else: on `merge_group` and
+  # the canary this job always runs and must succeed. A change that breaks a
+  # community suite is found in the queue rather than on the PR, which is the
+  # division of labour the shards already run on. Not a required context
+  # itself, so this job-level `if:` skips nothing the ruleset reads.
   community-pg:
-    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    # Queue runs only may use the opt-in `RUNNER_LABEL`; every other event, and
+    # every run while it is unset, stays on GitHub's hosted runner. Never drop
+    # the event check: a `pull_request` run executes a fork's code, and it must
+    # not reach an org runner (ledger 261031-090000, Security's Must 1).
+    runs-on: ${{ github.event_name == 'merge_group' && vars.RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 25
     services:
       postgres:
@@ -369,7 +384,16 @@ jobs:
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+      # Own pnpm store, keyed on the runner image: see test-shard (ledger
+      # 261031-012000).
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       # Where the space server lives (ci/space-server.env, DOR-3007): its
       # KEY=value lines become this job's environment, read below as
       # "$SPACE_DIR" and ${{ env.SPACE_DIR }}. A step can read env, a `paths:`
@@ -382,8 +406,8 @@ jobs:
       # and image in apps/space (server-merge step 7d). Each half's tests
       # read the other's files, but an affected-only run picks packages by the
       # files a change touched, so a change to one half alone would skip the
-      # other half's checks until the merge queue. This job runs on every pull
-      # request, so it checks both halves here, whatever changed.
+      # other half's checks on a pull request. This job checks both halves,
+      # whatever changed, on every queue build and canary run.
       - name: Check both halves of the space server
         run: |
           pnpm --filter @dorkos/community typecheck
@@ -562,6 +586,94 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
+  # HOW MANY SHARDS THE TEST JOB GETS (ledger 261031-150702). Six in the queue
+  # and on the canary, always. On a pull request, two, unless the change
+  # touches apps/server/** or packages/shared/**: those make the affected sweep
+  # nearly the whole monorepo, which on two shards ran into the 30-minute
+  # ceiling (release PR #3357, #3221), so they get six. This job runs before
+  # test-shard and hands it the list. Not a required context itself; it has no
+  # job-level `if:`, and if it fails, test-shard is skipped and the `test`
+  # fan-in fails, so a broken picker can never turn into a green.
+  #
+  # Every failure on the PR path FAILS OPEN to six, never to two: a HEAD that
+  # is not a test-merge commit, a base git cannot resolve, or a diff that
+  # errors all get six. The diff is the test-merge commit against its first
+  # parent, for the reason community-packaged's scope step gives, with
+  # `--no-renames` so a file moved out of apps/server still counts.
+  test-shard-count:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.count.outputs.matrix }}
+    steps:
+      # A canary run is against `main` or it is nothing.
+      #
+      # `workflow_dispatch` is ref-free, so `--ref <a PR's branch>` would run
+      # this workflow against that branch and post the check run — under the
+      # name of a REQUIRED context — on that pull request's head. This refuses
+      # that, and refuses it by FAILING: a skipped job posts a skipped check
+      # run and GitHub counts skipped as passing, so a skip is how you hand a
+      # pull request a green required check that tested a different tree.
+      #
+      # INLINE, AND FIRST. Inline because this runs BEFORE `actions/checkout`,
+      # where the workspace is still empty: a `bash scripts/…` here would exit
+      # 127 on every event, reddening this required check on every PR and every
+      # queue build (the same 127 that killed a required check on 2026-07-29,
+      # which is why "Prove the browser suite actually executed" carries a
+      # `[ -f ]` guard). First, so a misdirected dispatch costs seconds rather
+      # than 150 job minutes. Byte-identical in every canary job and
+      # pinned that way by packages/ci-steward/src/__tests__/canary-ref-guard.test.ts, which
+      # extracts this very block and runs it.
+      #
+      # No `if:`: the body is a no-op on the gating events, which keeps it out
+      # of the census allowlist while gating exactly the same thing.
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
+      # Depth 2 so the test-merge commit's first parent is here to diff against.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Pick the shard count
+        id: count
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+          six='[1, 2, 3, 4, 5, 6]'
+          matrix=$six
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run: six shards, always"
+          elif git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
+            base=$(git rev-parse --verify --quiet 'HEAD^1') &&
+            changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" HEAD); then
+            if printf '%s\n' "$changed" | grep -qE '^(apps/server|packages/shared)/'; then
+              echo "this change touches apps/server or packages/shared: six shards"
+            else
+              matrix='[1, 2]'
+              echo "this change touches neither apps/server nor packages/shared: two shards"
+            fi
+          else
+            echo "cannot diff this pull request against its base (no test-merge commit, or git failed): six shards"
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   # The suite, split six ways at the vitest file level (see the header), on
   # BOTH events: the full monorepo sweep on `merge_group`, the affected-only
   # sweep on `pull_request`. What differs between the two is one `run:` step
@@ -569,15 +681,31 @@ jobs:
   # them — checkout, toolchain, install, heap, ceiling — is shared, because
   # nothing about it depends on which sweep runs.
   test-shard:
+    needs: [test-shard-count]
     strategy:
       # All six shards report even when one is red — the matrix equivalent of
       # `--continue`, and the same reason: one red package must not hide the
       # other seventeen packages' results.
       fail-fast: false
+      # SIX IN THE QUEUE, TWO ON MOST PULL REQUESTS (ledger 261030-233825). A PR
+      # push started six shards for an affected-only sweep, and PR pushes were
+      # starving the queue of runners: 46 PR runs were active at 23:30 on
+      # 2026-10-30 while a queue build that started at 22:45 still had none, and
+      # each queue build needs about 30 of the plan's 60 jobs. Two, not one: the
+      # unsharded PR leg ran 37 minutes on a PR touching @dorkos/shared and was
+      # killed at its ceiling (see the fan-in's timeout note), so one runner
+      # would bring that back. Two did not keep the widest PR sweep near 20
+      # minutes after all: a change to apps/server or packages/shared still hit
+      # the 30-minute ceiling on two (ledger 261031-150702), so those PRs get six
+      # again. test-shard-count above picks the list; the queue and the canary
+      # always get six. The queue leg's own lines below still name their total as
+      # a literal 6, which scripts/__tests__/unit-shard-workdivision.test.ts holds
+      # equal to the queue's list.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
-    name: test-shard (${{ matrix.shard }}/6)
-    runs-on: ubuntu-latest
+        shard: ${{ fromJSON(needs.test-shard-count.outputs.matrix) }}
+    name: test-shard (${{ matrix.shard }}/${{ strategy.job-total }})
+    # Same opt-in queue-only runner as `community-pg` above.
+    runs-on: ${{ github.event_name == 'merge_group' && vars.RUNNER_LABEL || 'ubuntu-latest' }}
     # Six file partitions reduce suite work; fixed checkout/install/build
     # still repeats on every runner. Keep the same 30-minute job budget.
     # If healthy shards cross ~20 minutes, adjust measured work division,
@@ -654,7 +782,22 @@ jobs:
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+      # THIS JOB'S OWN PNPM STORE, KEYED ON THE RUNNER IMAGE (ledger
+      # 261031-012000). setup-node's `cache: pnpm` shares one store per lockfile
+      # across runner images, and node-pty compiles at install on linux-x64. On
+      # 2026-10-30 `ubuntu-latest` began handing out 24.04 runners while the
+      # shared store had been built on 26.04, so every server test file that
+      # loads node-pty failed. `ImageOS` keeps the images apart. It is read in
+      # the step below: `${{ env.ImageOS }}` is always empty, since the `env`
+      # context never sees the runner's own variables (ledger 261031-071000).
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
 
@@ -854,11 +997,11 @@ jobs:
       # commit of the merge ref actions/checkout materialised — so
       # base.sha...HEAD is the PR's own diff and nobody else's. `fetch-depth:
       # 0` above is what guarantees the commit is present to diff against.
-      - name: Run the affected packages' test suites (shard ${{ matrix.shard }}/6)
+      - name: Run the affected packages' test suites (shard ${{ matrix.shard }}/${{ strategy.job-total }})
         if: ${{ github.event_name == 'pull_request' && steps.noscope.outputs.run == 'true' }}
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
-        run: pnpm exec turbo test --affected --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --passWithNoTests
+        run: pnpm exec turbo test --affected --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --passWithNoTests
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -1159,10 +1302,19 @@ jobs:
           echo "packaged community result: $result"
           [ "$result" = "success" ]
 
+      # Skipped is accepted on a pull request alone, where the job is skipped
+      # on purpose (see its header). Everywhere else it must be green, so a
+      # queue build or canary run that skipped it fails here.
       - name: Require real community Postgres tests green
+        env:
+          EVENT: ${{ github.event_name }}
         run: |
           result="${{ needs.community-pg.result }}"
           echo "community Postgres result: $result"
+          if [ "$EVENT" = 'pull_request' ] && [ "$result" = 'skipped' ]; then
+            echo "pull request: the community Postgres suites run in the merge queue, not here."
+            exit 0
+          fi
           [ "$result" = "success" ]
 
       # Shallow: this job reads scripts/ and the package manifests, nothing

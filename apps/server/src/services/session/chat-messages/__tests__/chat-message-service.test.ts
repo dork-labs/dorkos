@@ -30,6 +30,7 @@ import type {
   DispatchSessionMessageResult,
 } from '../../launch/launch-session.js';
 import type { SessionFacts } from '../../../extensions/agent-send/agent-send-defaults.js';
+import { TURN_NO_ANSWER } from '../../launch/turn-not-started.js';
 import { ChatMessageStore } from '../chat-message-store.js';
 import { chatLaunchCapMessage } from '../chat-queue-standing.js';
 import {
@@ -949,6 +950,24 @@ describe('the lifecycle of a sent message', () => {
       expect(store.get(id)).toMatchObject({
         status: 'failed',
         failureReason: 'Not delivered: that chat is waiting on its person. Send it again later.',
+      });
+    }
+  });
+
+  it('a turn that hit a usage limit before the agent said anything → failed, never delivered (DOR-3287)', async () => {
+    const { queueId, ids } = await queuedPair();
+    lifecycle!({ phase: 'started', messageId: queueId, sessionId: 'chat-b' });
+    lifecycle!({
+      phase: 'settled',
+      messageId: queueId,
+      sessionId: 'chat-b',
+      outcome: 'ok',
+      reason: TURN_NO_ANSWER,
+    });
+    for (const id of ids) {
+      expect(store.get(id)).toMatchObject({
+        status: 'failed',
+        failureReason: expect.stringContaining('It reads this on its next turn.'),
       });
     }
   });
