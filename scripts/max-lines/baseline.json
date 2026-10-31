@@ -30,6 +30,7 @@
     "apps/client/src/space/components/Channel.tsx": 744,
     "apps/client/src/space/components/CommunityAdministration.tsx": 722,
     "apps/client/src/space/components/Manage.tsx": 905,
+    "apps/desktop/scripts/smoke-packaged.ts": 596,
     "apps/e2e/capture/config.ts": 562,
     "apps/server/src/routes/relay-adapters.ts": 541,
     "apps/server/src/routes/sessions.ts": 557,
