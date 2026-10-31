@@ -6,6 +6,8 @@ import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import { ApprovalService } from '../../core/approvals/index.js';
 import type { ApprovableUpdate } from '../../marketplace/flows/update-installed.js';
 import { describeUpdatesInFull } from '../update-approval-detail.js';
+import { planMarketplaceCard } from '../approval-summary-card.js';
+import { MarketplaceCardNotStorableError } from '../../core/approvals/approval-storable.js';
 import {
   NOTHING,
   bulkyUnchanged,
@@ -296,6 +298,57 @@ describe('Marketplace summary approval card', () => {
 
       expect(card().marketplaceSummary).toBeUndefined();
       expect(approvals.fullDetail(card().approvalId)).toBeUndefined();
+    });
+  });
+
+  describe('a summary that cannot be stored whole fails closed (Security, #3356)', () => {
+    /** One host the redactor leaves alone, far past a row's 4,000-character bound. */
+    const longHost = Array.from({ length: 2000 }, (_, i) => `l${i % 10}`).join('.');
+    const withLongHost = () => ({ ...flowSizedPreview(), externalHosts: [longHost] });
+
+    it('raises no card, and nothing can be approved', async () => {
+      const result = await provider.requestInstallConfirmation(install(withLongHost()));
+
+      expect(result.status).toBe('declined');
+      if (result.status !== 'declined') throw new Error('unreachable');
+      expect(result.reason).toContain('Too much to approve in chat');
+      expect(approvals.listPending()).toEqual([]);
+    });
+
+    it('is refused by the planner on its own', () => {
+      const req = install(withLongHost());
+      const plan = planMarketplaceCard(req, 'x'.repeat(APPROVAL_DETAIL_MAX_LENGTH + 1));
+      expect(plan.kind).toBe('refuse');
+    });
+
+    it('is refused by the approval store on its own, for any caller', () => {
+      const summary = {
+        operation: 'install' as const,
+        fullDetailLength: 10,
+        packages: [
+          {
+            name: 'sample',
+            where: 'plugin, installed globally',
+            toVersion: '1.0.0',
+            power: 'adds' as const,
+            unchangedCount: 0,
+            risks: [
+              { kind: 'host' as const, change: 'new' as const, text: `Contacts ${longHost}` },
+            ],
+          },
+        ],
+      };
+
+      expect(() =>
+        approvals.request({
+          capabilityId: 'marketplace.install',
+          inputHash: 'sha256:any',
+          summary: 'Install "sample"',
+          detail: 'cut',
+          marketplace: { summary, fullDetail: 'all of it' },
+        })
+      ).toThrow(MarketplaceCardNotStorableError);
+      expect(approvals.listPending()).toEqual([]);
     });
   });
 

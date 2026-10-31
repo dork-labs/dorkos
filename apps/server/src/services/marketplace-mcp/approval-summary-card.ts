@@ -28,7 +28,10 @@ import {
   type MarketplacePackageSummary,
   type MarketplaceRisk,
 } from '@dorkos/shared/approval-schemas';
-import type { MarketplaceCardInput } from '../core/approvals/approval-storable.js';
+import {
+  sweptMarketplaceCard,
+  type MarketplaceCardInput,
+} from '../core/approvals/approval-storable.js';
 import { disclosedEffectsOf } from '../marketplace/preview/disclosed-effects.js';
 import type { PermissionPreview, PreviewExtension } from '../marketplace/types.js';
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
@@ -259,9 +262,16 @@ export function planMarketplaceCard(req: SummarySource, fullText: string): Marke
         'card. Nothing was changed. A person can review it in Marketplace in DorkOS.',
     };
   }
-  return {
-    kind: 'summary',
-    detail: summaryDetail(summary),
-    marketplace: { summary, fullDetail: fullText },
-  };
+  // Checked exactly as storage checks it: a summary that cannot be stored
+  // whole would leave a card with a cut detail and nothing behind its link.
+  const marketplace = { summary, fullDetail: fullText };
+  if (!sweptMarketplaceCard(marketplace)) {
+    return {
+      kind: 'refuse',
+      reason:
+        'Too much to approve in chat: something this package declares is too long to show ' +
+        'on the card. Nothing was changed. A person can review it in Marketplace in DorkOS.',
+    };
+  }
+  return { kind: 'summary', detail: summaryDetail(summary), marketplace };
 }
