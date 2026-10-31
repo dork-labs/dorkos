@@ -368,7 +368,7 @@ function collectDay(
   // Problems with this day's own data: any one keeps the day incomplete, so
   // the next run fetches it again instead of trusting it forever.
   const dayFailures: string[] = [];
-  const warnings: string[] = [];
+  const warnings: string[] = [...global.warnings];
   const required = requiredWorkflowPaths(
     workflows,
     files.requiredChecks?.contexts ?? [],

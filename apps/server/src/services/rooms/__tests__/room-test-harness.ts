@@ -775,6 +775,8 @@ export function createRoomHarness(opts: {
   ownerUserId?: string;
   /** The operator's profile name, as `config.profile.displayName` supplies it. */
   operatorName?: () => string | null;
+  /** The owner's IANA zone, as `config.profile.timezone` supplies it (FB-66). */
+  operatorTimeZone?: () => string;
   budgetNow?: () => number;
   /** The level a person set each poster agent to (DOR-3107). */
   posterLevel?: (agentPath: string, sessionIds: readonly string[]) => Promise<TurnPermissionBound>;
@@ -961,6 +963,7 @@ export function createRoomHarness(opts: {
     ...(opts.canvasNow ? { canvasNow: opts.canvasNow } : {}),
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
     ...(opts.operatorName ? { operatorName: opts.operatorName } : {}),
+    ...(opts.operatorTimeZone ? { operatorTimeZone: opts.operatorTimeZone } : {}),
     isOwnerRecord: (record) => isOwnerRecord(record, ownerUserId),
     isOwnerVoice: (authorId) => authors.isOwnerVoice(authorId, ownerUserId),
     readCursors,

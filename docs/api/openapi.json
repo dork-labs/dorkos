@@ -3765,6 +3765,9 @@
           },
           "roomMessage": {
             "$ref": "#/components/schemas/RoomMessageStamp"
+          },
+          "promptSource": {
+            "$ref": "#/components/schemas/PromptSource"
           }
         },
         "required": [
@@ -5091,6 +5094,27 @@
           "extensionId",
           "appName",
           "itemId"
+        ]
+      },
+      "PromptSource": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "schedule",
+              "heartbeat",
+              "agent",
+              "external",
+              "channel"
+            ]
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
         ]
       },
       "SessionSnapshot": {
@@ -93852,6 +93876,207 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditQueryResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/running": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "See every running chat",
+        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. Use the link, never the id, when you tell a person about a chat.",
+        "responses": {
+          "200": {
+            "description": "See every running chat result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "agentId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "projectPath": {
+                            "type": "string"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "privateCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "chats": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string",
+                                  "enum": [
+                                    "running",
+                                    "needs-you"
+                                  ]
+                                },
+                                "spinOff": {
+                                  "type": "boolean"
+                                },
+                                "startedBy": {
+                                  "type": [
+                                    "object",
+                                    "null"
+                                  ],
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "title": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "title"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "title",
+                                "link",
+                                "state",
+                                "spinOff",
+                                "startedBy"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "agentId",
+                          "name",
+                          "projectPath",
+                          "count",
+                          "privateCount",
+                          "chats"
+                        ]
+                      }
+                    },
+                    "unassigned": {
+                      "type": "object",
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "privateCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "chats": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "link": {
+                                "type": "string"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "running",
+                                  "needs-you"
+                                ]
+                              },
+                              "spinOff": {
+                                "type": "boolean"
+                              },
+                              "startedBy": {
+                                "type": [
+                                  "object",
+                                  "null"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "title"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "title",
+                              "link",
+                              "state",
+                              "spinOff",
+                              "startedBy"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "count",
+                        "privateCount",
+                        "chats"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "agents",
+                    "unassigned"
+                  ]
                 }
               }
             }

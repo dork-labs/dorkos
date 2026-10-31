@@ -88,4 +88,18 @@ describe('extension child build entry', () => {
       expect(read(file)).not.toMatch(/RunAsNode\]?\s*[:=]\s*false/);
     }
   });
+
+  // Purpose: isolated hosts stay on Node's own fork, with --permission (DOR-3053).
+  // Electron's utilityProcess silently ignores --permission (measured on
+  // 42.11.16: no process.permission, a forbidden write succeeds), so moving a
+  // host there would drop its sandbox. The self-check would then refuse every
+  // isolated extension (isolated-host.integration.test.ts proves it fails
+  // closed); this catches the move before it ships.
+  it('forks isolated hosts with child_process and --permission, never utilityProcess', () => {
+    const host = read('apps/server/src/services/extensions/isolation/isolated-host.ts');
+    expect(host).toMatch(/import \{ fork, type ChildProcess \} from 'node:child_process';/);
+    expect(host).toMatch(/const child = fork\(bootstrapReal,/);
+    expect(host).toMatch(/'--permission',/);
+    expect(host).not.toMatch(/utilityProcess|from 'electron'/);
+  });
 });

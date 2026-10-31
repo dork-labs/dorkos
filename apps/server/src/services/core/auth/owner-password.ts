@@ -35,6 +35,7 @@
  */
 import { logger } from '../../../lib/logger.js';
 import { getAuth, readOwnerAccount } from './index.js';
+import { needsRehash } from './passwords/password-hash.js';
 
 /** The window wrong passwords are counted over. */
 export const OWNER_PASSWORD_FAILURE_WINDOW_MS = 10 * 60 * 1000;
@@ -76,6 +77,11 @@ export interface PasswordVerifier {
   verify: (input: { hash: string; password: string }) => Promise<boolean>;
   /** The longest password Better Auth accepts. */
   maxLength: number;
+  /**
+   * Store the password again at today's cost, after it matched a hash written
+   * at a lower one (`./passwords/password-hash.ts`). Absent where nothing is stored.
+   */
+  rehash?: (userId: string, password: string) => Promise<void>;
 }
 
 /** What the check reads, injectable for tests. */
@@ -98,7 +104,24 @@ async function liveVerifier(): Promise<PasswordVerifier | null> {
       (await context.internalAdapter.findCredentialAccount(userId))?.password ?? null,
     verify: (input) => context.password.verify(input),
     maxLength: context.password.config.maxPasswordLength,
+    rehash: async (userId, password) => {
+      await context.internalAdapter.updatePassword(userId, await context.password.hash(password));
+    },
   };
+}
+
+/** Better Auth's own default, for before auth is initialized. */
+const DEFAULT_MIN_PASSWORD_LENGTH = 8;
+
+/**
+ * The shortest owner password Better Auth accepts (8). A step-up for one
+ * action refuses a password shorter than this even when it matches, and
+ * offers to change it in place (DOR-3234).
+ */
+export async function ownerPasswordMinLength(): Promise<number> {
+  const auth = getAuth();
+  if (!auth) return DEFAULT_MIN_PASSWORD_LENGTH;
+  return (await auth.$context).password.config.minPasswordLength;
 }
 
 const liveDeps: OwnerPasswordDeps = {
@@ -161,6 +184,15 @@ export async function checkOwnerPassword(
       return 'no-password';
     }
     matched = password.length <= verifier.maxLength && (await verifier.verify({ hash, password }));
+    // Only now is the password known, so only now can a weaker hash be
+    // rewritten. A failed rewrite keeps the old hash, which still verifies.
+    if (matched && verifier.rehash && needsRehash(hash)) {
+      await verifier.rehash(ownerId, password).catch((error: unknown) => {
+        logger.warn('[Auth] The owner password could not be stored at the new cost', {
+          error: (error as Error).name,
+        });
+      });
+    }
   } catch (error) {
     logger.warn('[Auth] The owner password could not be checked', {
       error: (error as Error).name,

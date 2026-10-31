@@ -14,7 +14,7 @@
  *
  * @vitest-environment node
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -311,12 +311,24 @@ describe('Must 4: which accounts a seat may move to', () => {
 });
 
 describe('Musts 5 and 6: the tool and the audit', () => {
+  let capabilities: typeof import('../../../core/capabilities/index.js');
+  let rooms: typeof import('../../room-capabilities.js');
+  let roomHarness: typeof import('../../__tests__/room-test-harness.js');
+
+  // The capability registry and the room harness are a large module graph, and
+  // an earlier test resets modules, so they load cold here. Loading them inside
+  // the test spent 4.4s of its 5s budget at load 11 and timed out at load 50
+  // (#3216). The import is not what this block tests, so it gets its own budget.
+  beforeAll(async () => {
+    capabilities = await import('../../../core/capabilities/index.js');
+    rooms = await import('../../room-capabilities.js');
+    roomHarness = await import('../../__tests__/room-test-harness.js');
+  }, 60_000);
+
   it('refuses an agent calling rooms.reseat, even with Rooms allowed, as people-only', async () => {
-    const { composeRegistry, initPermissionGate, resetPermissionGate } =
-      await import('../../../core/capabilities/index.js');
-    const { roomsDomain } = await import('../../room-capabilities.js');
-    const { agentLookupFor, createRoomHarness, scriptedRunner } =
-      await import('../../__tests__/room-test-harness.js');
+    const { composeRegistry, initPermissionGate, resetPermissionGate } = capabilities;
+    const { roomsDomain } = rooms;
+    const { agentLookupFor, createRoomHarness, scriptedRunner } = roomHarness;
     resetPermissionGate();
     initPermissionGate({
       readConfig: () => ({ preset: null, defaults: { areas: { rooms: 'allowed' }, actions: {} } }),

@@ -167,6 +167,22 @@ describe('requirePersonAtThisComputer', () => {
     expect(requirePersonAtThisComputer(facts)).toBe('not-a-person');
   });
 
+  // With no owner yet, the open gate at this computer is the only person there
+  // can be, so these headers are the one thing that tells a program apart.
+  it.each([
+    ['a bearer', { authorization: 'Bearer anything' }],
+    ['an API key header', { 'x-api-key': 'garbage' }],
+    ['a proxy credential', { 'proxy-authorization': 'Basic Zm9vOmJhcg==' }],
+  ])('refuses %s even with no owner yet, valid or not', async (_label, headers) => {
+    state.ownerId = null;
+    expect(requirePersonAtThisComputer(await local({ headers }))).toBe('not-a-person');
+  });
+
+  it('still lets the app through with no owner yet and no credential header', async () => {
+    state.ownerId = null;
+    expect(requirePersonAtThisComputer(await local())).toBeUndefined();
+  });
+
   it('refuses a signed-in person who is not the install’s owner', async () => {
     state.login = true;
     expect(requirePersonAtThisComputer(await local({ user: GUEST_COOKIE }))).toBe('not-a-person');

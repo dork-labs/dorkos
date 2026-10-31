@@ -7,7 +7,13 @@ import { spawnSync } from 'node:child_process';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const workflow = readFileSync(path.join(root, '.github/workflows/test.yml'), 'utf8');
-const shardIds = JSON.parse(workflow.match(/^ {8}shard: (\[[^\n]+\])/m)![1]!) as number[];
+// The matrix is one expression with two lists: the pull request's, then the
+// queue's and the canary's (ledger 261030-233825).
+const matrix = workflow.match(
+  /^ {8}shard: \$\{\{ fromJSON\(github\.event_name == 'pull_request' && '(\[[^']+\])' \|\| '(\[[^']+\])'\) \}\}$/m
+)!;
+const prShardIds = JSON.parse(matrix[1]!) as number[];
+const shardIds = JSON.parse(matrix[2]!) as number[];
 
 /** Extract the real shell body; no copy of the lane intersection algorithm. */
 function step(name: string): string {
@@ -83,12 +89,18 @@ function lane(copies: Copy[]) {
 
 const complete = () => shardIds.map((id) => ({ id }));
 describe('six-way unit file work division', () => {
-  it('uses every matrix identity once and both sweeps partition the same total', () => {
+  it('uses every matrix identity once and each sweep partitions its own leg', () => {
     expect(shardIds).toEqual([1, 2, 3, 4, 5, 6]);
+    // The queue sweep names its total as a literal, which must be the queue list's length.
     const denominators = [...workflow.matchAll(/--shard=\$\{\{ matrix\.shard \}\}\/(\d+)/g)].map(
       (match) => Number(match[1])
     );
-    expect(denominators).toEqual([shardIds.length, shardIds.length]);
+    expect(denominators).toEqual([shardIds.length]);
+    // The pull request leg runs fewer shards and reads its total from the matrix itself.
+    expect(prShardIds).toEqual([1, 2]);
+    expect(
+      workflow.match(/--shard=\$\{\{ matrix\.shard \}\}\/\$\{\{ strategy\.job-total \}\}/g)
+    ).toHaveLength(1);
     const result = lane(complete());
     expect(result.status, result.output).toBe(0);
     expect(result.intersection).toBe('apps/client/shared.test.ts > same\n');

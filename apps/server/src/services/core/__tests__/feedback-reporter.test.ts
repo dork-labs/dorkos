@@ -497,6 +497,51 @@ describe('sendFeedback — durable payload shape', () => {
     expect(diagnostics).toContain('Desktop app log excerpt: (omitted, no room)');
   });
 
+  it('folds a run of identical breadcrumbs into one line with a count (DOR-2234)', async () => {
+    // A retry loop logs the same crumb many times in a row; printed one per
+    // line it buried the crumbs around it and spent the shared budget.
+    const fetchImpl = makeFetch('ok');
+    type Crumb = NonNullable<FeedbackDiagnostics['breadcrumbs']>[number];
+    const crumb = (at: string, kind: Crumb['kind'], message: string): Crumb => ({
+      at,
+      kind,
+      message,
+    });
+    await sendFeedback(
+      baseOptions({
+        submission: {
+          kind: 'bug',
+          message: 'it keeps retrying',
+          diagnostics: {
+            clientReport: { version: '0.47.0', platform: 'darwin-arm64', runtimes: [], flags: {} },
+            breadcrumbs: [
+              crumb('2026-08-03T00:00:00.000Z', 'sse_disconnect', 'stream closed'),
+              crumb('2026-08-03T00:00:01.000Z', 'console_error', 'fetch failed'),
+              crumb('2026-08-03T00:00:02.000Z', 'console_error', 'fetch failed'),
+              crumb('2026-08-03T00:00:03.000Z', 'console_error', 'fetch failed'),
+              crumb('2026-08-03T00:00:04.000Z', 'query_error', 'rooms failed'),
+              // Same words, different kind: not a repeat.
+              crumb('2026-08-03T00:00:05.000Z', 'console_warn', 'rooms failed'),
+              // A repeat that is not adjacent keeps its own place in time.
+              crumb('2026-08-03T00:00:06.000Z', 'console_error', 'fetch failed'),
+            ],
+          },
+        },
+        fetchImpl,
+      })
+    );
+
+    const diagnostics = durableBody(fetchImpl).diagnostics as string;
+    const crumbs = diagnostics.split('Breadcrumbs:\n')[1]!.split('\n');
+    expect(crumbs).toEqual([
+      '[2026-08-03T00:00:00.000Z] sse_disconnect: stream closed',
+      '[2026-08-03T00:00:01.000Z] console_error: fetch failed (x3, last 2026-08-03T00:00:03.000Z)',
+      '[2026-08-03T00:00:04.000Z] query_error: rooms failed',
+      '[2026-08-03T00:00:05.000Z] console_warn: rooms failed',
+      '[2026-08-03T00:00:06.000Z] console_error: fetch failed',
+    ]);
+  });
+
   it('omits diagnostics when the submission has none', async () => {
     const fetchImpl = makeFetch('ok');
     await sendFeedback(baseOptions({ fetchImpl }));

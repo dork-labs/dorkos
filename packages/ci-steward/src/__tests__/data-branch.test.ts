@@ -30,12 +30,17 @@ afterEach(() => {
 });
 
 const ID = ['-c', 'user.name=t', '-c', 'user.email=t@t'];
+/** A bare repository (`*.git`) is named with --git-dir: agent shells set safe.bareRepository=explicit. */
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync('git', [...ID, ...args], {
-    cwd,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim();
+  return execFileSync(
+    'git',
+    [...(cwd.endsWith('.git') ? ['--git-dir', cwd] : []), ...ID, ...args],
+    {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }
+  ).trim();
 }
 
 /** A bare "origin" with a main branch, and a clone of it standing in for the Actions checkout. */

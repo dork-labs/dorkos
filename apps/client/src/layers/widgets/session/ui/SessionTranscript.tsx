@@ -170,6 +170,11 @@ interface SessionTranscriptProps {
    * messages their name, the way a room draws them. Absent for a session.
    */
   directMessage?: DirectMessageSurface | null;
+  /**
+   * What the person is called on their own messages in any chat (FB-38/55).
+   * A DM's own `humanName` wins; absent or `null`, the row says "You".
+   */
+  humanName?: string | null;
 }
 
 /**
@@ -206,6 +211,7 @@ export function SessionTranscript({
   foldFirstPrompt = false,
   directLog,
   directMessage = null,
+  humanName: profileName = null,
 }: SessionTranscriptProps) {
   // Row handlers keep one identity, so a row whose message did not change can
   // skip its render: `onRetry` alone used to change on every streamed word, and
@@ -317,7 +323,7 @@ export function SessionTranscript({
       if (!present.has(id)) arrivedAt.delete(id);
     }
   }, [messages, arrivedAt]);
-  const humanName = directMessage?.humanName ?? null;
+  const humanName = directMessage?.humanName ?? profileName;
   // A DM folds each reply's work into one line under it, timed from the words
   // its turn answers (DOR-3075). Nothing is worked out for a session.
   const foldWork = directMessage?.settled === true;

@@ -108,6 +108,14 @@ export interface McpToolDeps {
    * Undefined when Tasks is disabled, and null before the scheduler is built.
    */
   resolveTaskRegistrar?: () => TaskRegistrar | null;
+  /**
+   * When a task's live job fires next, or `null` when nothing will fire it —
+   * the scheduler's own answer, read at call time for the same boot-order
+   * reason as {@link McpToolDeps.resolveTaskRegistrar}. `tasks_list` used to
+   * hand agents the stored row's `nextRun: null` for every task, scheduled or
+   * not (DOR-3125); `GET /api/tasks` already asked the scheduler.
+   */
+  nextRunOf?: (taskId: string) => Date | null;
   /** Optional RelayCore — undefined when Relay is disabled */
   relayCore?: RelayCore;
   /** Optional AdapterManager — undefined when Relay adapters are not configured */
