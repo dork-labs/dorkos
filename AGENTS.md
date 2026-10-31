@@ -182,6 +182,8 @@ If compaction fires mid-`/flow`, preserve verbatim: the work item id + title, cu
 
 Open PRs from a worktree branch based on `origin/main`. **Direct pushes to `main` are rejected by repository rules — everything lands via PR + merge queue, spec/docs commits included** (docs-only PRs: `skip-changelog` + `review:light`). The automated Claude review runs on-demand: full review on open/ready-for-review, re-review via the `re-review` label (auto-cleared). Control intensity with `skip-review`, `review:light`, `review:deep`. Flow and label semantics: `creating-pull-requests` skill; the reviewer rubric is `REVIEW.md`.
 
+One topic, one PR. If an open PR touches the same files or must land first, stack on it with `gh stack` instead of branching from `origin/main`; merge a stack only with `gh stack merge` from its top PR, never `gh pr merge --auto` on a layer whose base is not `main` (that skips the queue). UI PRs run their affected Playwright specs locally before pushing and say so.
+
 ## Hard Rules
 
 Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s, so they fail the lefthook pre-commit hook, `pnpm verify`, and the required `lint` check in the merge queue. Rule 5 also rides `lint`; 6-7 are hooks; 9 rides the required `typecheck` check:
@@ -198,7 +200,7 @@ Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s,
 
 ## Testing
 
-Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: React Testing Library + jsdom with mock `Transport` via `TransportProvider`. Server session-route tests: `FakeAgentRuntime` + scenarios from `@dorkos/test-utils`; SSE integration via `collectDurableEvents`. Patterns and anti-patterns: `.claude/rules/testing.md`. Single file: `pnpm vitest run <path>`; full runs: `pnpm test -- --run` (see Commands for the bare-vitest gotcha).
+Vitest with `vi.mock()`; tests in `__tests__/` alongside source. Client tests: React Testing Library + jsdom with mock `Transport` via `TransportProvider`. Server session-route tests: `FakeAgentRuntime` + scenarios from `@dorkos/test-utils`; SSE integration via `collectDurableEvents`. Patterns and anti-patterns: `.claude/rules/testing.md`. Single file: `pnpm vitest run <path>`; full runs: `pnpm test -- --run` (see Commands for the bare-vitest gotcha). Local evidence, throwaway `DORK_HOME`s and Playwright output worth keeping go under `/Volumes/ext-ssd-1/dork-os/` when that drive is mounted (`contributing/browser-verification.md#where-local-output-goes`).
 
 ## CI
 
