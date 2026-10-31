@@ -56,7 +56,7 @@ export function createDocChannelGrantCapabilities(
       id: 'ui.configure_doc_channel',
       title: 'Set document event routes',
       description:
-        'Declare which document events may reach an agent. Declaring a route does not approve it or resend old events.',
+        'Declare which document events may reach an agent. A page in the canvas, local pages and dev-server previews included, sends them with window.dorkos.channel.emit(type, payload) once its route is approved. Declaring a route does not approve it or resend old events.',
       tier: 'act',
       area: null,
       areaNote: 'document-scoped declarations with independent exact route grants',

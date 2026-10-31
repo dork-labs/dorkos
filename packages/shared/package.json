@@ -137,6 +137,10 @@
       "types": "./src/session-link.ts",
       "default": "./dist/session-link.js"
     },
+    "./running-chats": {
+      "types": "./src/running-chats.ts",
+      "default": "./dist/running-chats.js"
+    },
     "./telemetry-consent": {
       "types": "./src/telemetry-consent.ts",
       "default": "./dist/telemetry-consent.js"
@@ -420,6 +424,10 @@
     "./person-session": {
       "types": "./src/person-session.ts",
       "default": "./dist/person-session.js"
+    },
+    "./step-up": {
+      "types": "./src/step-up.ts",
+      "default": "./dist/step-up.js"
     },
     "./session-relay-link": {
       "types": "./src/session-relay-link.ts",

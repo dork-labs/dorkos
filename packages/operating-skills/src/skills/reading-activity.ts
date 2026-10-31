@@ -35,6 +35,15 @@ Both reads below are \`observe\` tier: they always run and change nothing.
 Each event carries when it happened, the actor, its category, an event type, and
 a one-line summary. Reading the feed does not change anything.
 
+## Which chats are running right now
+
+- Tool: \`running_chats\` returns the live count and, per agent, every chat with a
+  running turn, spin-offs included, each with its title and a ready link. Agents
+  with none are listed too, so you can see who is free.
+- By capability id: \`dorkos call audit.running_chats\`
+
+A person's own chat is only a number (\`privateCount\`) when an agent asks.
+
 ## Which agents were active recently
 
 - Tool: \`agents_recent_activity\` returns each agent joined with the timestamp of

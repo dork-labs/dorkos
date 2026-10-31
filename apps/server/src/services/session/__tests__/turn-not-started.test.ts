@@ -22,7 +22,7 @@ vi.mock('../../../lib/boundary.js', async (importOriginal) => ({
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { dispatchSessionMessage } from '../launch/launch-session.js';
 import { onDispatchLifecycle, type DispatchLifecycleEvent } from '../message-dispatcher.js';
-import { turnNotStarted } from '../launch/turn-not-started.js';
+import { TURN_NO_ANSWER, turnNotStarted } from '../launch/turn-not-started.js';
 
 const SESSION = '00000000-0000-4000-8000-0000000000d2';
 const REFUSAL = 'Too many chats are holding an agent open right now (the limit is 12).';
@@ -90,6 +90,37 @@ describe('a turn the runtime refused before the agent saw it', () => {
       async function* (): AsyncGenerator<StreamEvent> {
         yield { type: 'text_delta', data: { text: 'Working on it' } } as StreamEvent;
         yield { type: 'error', data: { message: 'The model is overloaded.' } } as StreamEvent;
+        yield { type: 'done', data: { sessionId: SESSION } } as StreamEvent;
+      },
+    ]);
+
+    expect(await send('hello')).toEqual(['ok', undefined]);
+    expect(settled[0]).not.toHaveProperty('reason');
+  });
+
+  // DOR-3287: QA's census sat "delivered" for 3 days behind this exact turn.
+  it('says nobody read it when the turn ended on an error with no agent output', async () => {
+    runtime.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        yield { type: 'session_status', data: { sessionId: SESSION } } as StreamEvent;
+        yield {
+          type: 'error',
+          data: { message: "You've hit your weekly limit", code: 'rate_limit' },
+        } as StreamEvent;
+        yield { type: 'done', data: { sessionId: SESSION } } as StreamEvent;
+      },
+    ]);
+
+    // A caller reads a reason as a refusal, and a beat records one; this turn ran.
+    expect(await send('hello')).toEqual(['ok', undefined]);
+    expect(settled).toEqual([expect.objectContaining({ outcome: 'ok', reason: TURN_NO_ANSWER })]);
+  });
+
+  it('counts a turn the agent answered after an error as one that ran', async () => {
+    runtime.withScenarios([
+      async function* (): AsyncGenerator<StreamEvent> {
+        yield { type: 'error', data: { message: 'Retrying.' } } as StreamEvent;
+        yield { type: 'text_delta', data: { text: 'Done' } } as StreamEvent;
         yield { type: 'done', data: { sessionId: SESSION } } as StreamEvent;
       },
     ]);

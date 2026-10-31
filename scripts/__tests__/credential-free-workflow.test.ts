@@ -55,6 +55,7 @@ const WORKFLOW_REL = '.github/workflows/credential-free-build.yml';
 const SCRUB_REL = 'scripts/run-credential-free.sh';
 
 const TEST_WORKFLOW_REL = '.github/workflows/test.yml';
+const BROWSER_WORKFLOW_REL = '.github/workflows/browser-test.yml';
 
 const workflow = readFileSync(path.join(repoRoot, WORKFLOW_REL), 'utf8');
 
@@ -215,9 +216,14 @@ describe('credential-free-build workflow', () => {
     // would say so. The patterns come from the scrub script itself, so the
     // two lists cannot drift apart.
     const testWorkflow = readFileSync(path.join(repoRoot, TEST_WORKFLOW_REL), 'utf8');
+    // The one exemption: the queue-only runner label (ledger 261031-090000).
+    // It picks a machine and never reaches a step's environment, and
+    // merge-group-runner-label.test.ts pins its exact form.
+    const QUEUE_ONLY_RUNS_ON =
+      /^\s+runs-on: \$\{\{ github\.event_name == 'merge_group' && vars\.RUNNER_LABEL \|\| 'ubuntu-latest' \}\}\s*$/;
     const code = testWorkflow
       .split('\n')
-      .filter((line) => !/^\s*#/.test(line))
+      .filter((line) => !/^\s*#/.test(line) && !QUEUE_ONLY_RUNS_ON.test(line))
       .join('\n');
     const secretRefs = [...code.matchAll(/\b(?:secrets|vars)\.[A-Za-z0-9_]+/g)].map((m) => m[0]);
     expect(
@@ -329,25 +335,49 @@ describe('credential-free-build workflow', () => {
   // setup-node's `cache: pnpm` shares one store per lockfile across every Linux
   // job, whatever image built it. node-pty compiles at install on linux-x64, so
   // a store saved on ubuntu-26.04 kills the boot probe on a 24.04 runner
-  // (2026-10-30, ledger 261031-012000). test.yml's server suite loads node-pty
-  // the same way, so it carries the same store.
-  it('keys the pnpm store on the runner image, here and in test.yml', () => {
+  // (2026-10-30, ledger 261031-012000). test.yml's server suite and the
+  // browser suite load node-pty the same way, so they carry the same store.
+  //
+  // The image is read in a step, never as `${{ env.ImageOS }}`: the `env`
+  // context only holds variables a workflow sets, not the runner's own, so that
+  // form was always empty and the key read `pnpm-store-Linux--X64-…` on every
+  // image (ledger 261031-071000).
+  it('keys the pnpm store on the runner image, in every workflow that installs', () => {
     const STORE_KEY =
-      "key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}";
+      "key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}";
+    const READ_IMAGE =
+      'echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT"';
     const testWorkflow = readFileSync(path.join(repoRoot, TEST_WORKFLOW_REL), 'utf8');
+    const browserWorkflow = readFileSync(path.join(repoRoot, BROWSER_WORKFLOW_REL), 'utf8');
     for (const [rel, text, installs] of [
       [WORKFLOW_REL, workflow, 1],
       [TEST_WORKFLOW_REL, testWorkflow, 2],
+      [BROWSER_WORKFLOW_REL, browserWorkflow, 3],
     ] as const) {
       expect(
         /^\s+cache:\s*pnpm\s*$/m.test(text),
         `${rel} uses setup-node's \`cache: pnpm\` again. That store is shared across ` +
           `runner images, and node-pty's compiled pty.node does not load across them.`
       ).toBe(false);
+      // Comments name the bad form on purpose; only code lines count.
+      const code = text
+        .split('\n')
+        .filter((line) => !/^\s*#/.test(line))
+        .join('\n');
+      expect(
+        /\$\{\{\s*env\.ImageOS\s*\}\}/.test(code),
+        `${rel} reads \`\${{ env.ImageOS }}\`, which is always empty: the \`env\` context ` +
+          `never sees the runner's own variables. Read \`$ImageOS\` in a step instead.`
+      ).toBe(false);
       expect(
         text.split(STORE_KEY).length - 1,
-        `${rel} should key its pnpm store on \`env.ImageOS\` in each of its ${installs} ` +
-          `job(s) that install the workspace.`
+        `${rel} should key its pnpm store on the image its \`pnpm-store\` step read, in ` +
+          `each of its ${installs} job(s) that install the workspace.`
+      ).toBe(installs);
+      expect(
+        text.split(READ_IMAGE).length - 1,
+        `${rel} should read \`$ImageOS\` in each of its ${installs} \`pnpm-store\` step(s), ` +
+          `and fail when it is unset rather than key on an empty string.`
       ).toBe(installs);
     }
   });

@@ -376,8 +376,12 @@ describe('pnpm ci:report', () => {
     const root = temp('ci-steward-repo-');
     writeRepo(baseSpec(), root);
     const origin = temp('ci-steward-origin-');
+    // The bare origin is named with --git-dir: agent shells set safe.bareRepository=explicit.
     const git = (cwd: string, args: string[]) =>
-      execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+      execFileSync('git', [...(cwd === origin ? ['--git-dir', origin] : []), ...args], {
+        cwd,
+        encoding: 'utf8',
+      }).trim();
     git(origin, ['init', '--bare', '--initial-branch=ci-steward-data', '.']);
     const seed = temp('ci-steward-seed-');
     git(seed, ['init', '--initial-branch=ci-steward-data', '.']);
