@@ -373,13 +373,13 @@ describe('signed Relay JSON through the finalized application', () => {
       if (gate === 'origin') pending = pending.set('Origin', 'https://hostile.example');
       if (gate === 'admission') admission.close();
       const result = await pending.send(EXACT.toString('utf8'));
-      expect(result.status).toBe(gate === 'host' ? 403 : gate === 'admission' ? 503 : 500);
+      expect(result.status).toBe(gate === 'admission' ? 503 : 403);
       expect(result.body.code).toBe(
         gate === 'host'
           ? 'HOST_NOT_ALLOWED'
           : gate === 'admission'
             ? 'SERVER_STOPPING'
-            : 'INTERNAL_ERROR'
+            : 'ORIGIN_NOT_ALLOWED'
       );
       expect(inbound).toHaveBeenCalledTimes(0);
       expect(publish).toHaveBeenCalledTimes(0);
