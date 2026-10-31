@@ -18,6 +18,7 @@ import {
   type ConnectorRuntimeMcpListenerOptions,
 } from '../listener.js';
 import { AgentIdentitySnapshotPrincipalPort } from '../agent-identity-snapshots.js';
+import { CONNECTOR_RUNTIME_REFUSAL } from '../auth.js';
 
 type TestListenerOptions = Omit<ConnectorRuntimeMcpListenerOptions, 'agentServerFactory'> &
   Partial<Pick<ConnectorRuntimeMcpListenerOptions, 'agentServerFactory'>>;
@@ -348,6 +349,44 @@ describe('connector runtime MCP listener', () => {
 
     expect(response.status).toBe(401);
     expect(principals.resolve).not.toHaveBeenCalled();
+  });
+
+  it('refuses a Claude Code claim, whose principal is only minted in process', async () => {
+    const principals = port({ status: 'resolved', principal });
+    const listener = await startConnectorRuntimeMcpListener({
+      principals,
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+    });
+    listeners.push(listener);
+
+    for (const url of [listener.url, listener.agentUrl]) {
+      const response = await request(url, { [CONNECTOR_RUNTIME_KIND_HEADER]: 'claude-code' });
+
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toEqual(CONNECTOR_RUNTIME_REFUSAL);
+    }
+    expect(principals.resolve).not.toHaveBeenCalled();
+  });
+
+  it('accepts a Claude Code claim only when the test runtime asks for it', async () => {
+    const principals = port({ status: 'resolved', principal });
+    const listener = await startConnectorRuntimeMcpListener({
+      principals,
+      acceptInProcessRuntime: true,
+      serverFactory: () => new McpServer({ name: 'dorkos-connections-test', version: '1.0.0' }),
+    });
+    listeners.push(listener);
+
+    const response = await request(listener.url, {
+      [CONNECTOR_RUNTIME_KIND_HEADER]: 'claude-code',
+    });
+
+    expect(response.status).toBe(200);
+    expect(principals.resolve).toHaveBeenCalledWith({
+      bearer: 'turn-secret',
+      expectedRuntime: 'claude-code',
+      expectedCanonicalCwd: '/repo',
+    });
   });
 
   it('keeps resolver failures inside the JSON-RPC boundary', async () => {

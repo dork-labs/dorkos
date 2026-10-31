@@ -10,9 +10,12 @@ import { resolveDorkHome } from '../../lib/dork-home.js';
 import { env } from '../../env.js';
 import { initLogger, logger } from '../../lib/logger.js';
 import path from 'path';
-import { acquireInstanceLock } from '../../lib/instance-lock.js';
+import { acquireInstanceLock, isInstanceLockEnabled } from '../../lib/instance-lock.js';
 import { SERVER_VERSION } from '../../lib/version.js';
-import { reapOrphanedWarmProcesses } from '../../services/runtimes/claude-code/sessions/warm-process-ledger.js';
+import {
+  PREDECESSOR_EXIT_WAIT_MS,
+  reapOrphanedWarmProcesses,
+} from '../../services/runtimes/claude-code/sessions/warm-process-ledger.js';
 import { sharedBackgroundWorkLedger } from '../../services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { initMoveStaging } from '../../services/core/cloud/community-move-upload.js';
 import type { ServerRefs } from '../server-refs.js';
@@ -58,8 +61,12 @@ export async function claimDataDirectory(refs: ServerRefs, built: ClaimDataDirec
   // behind (DOR-1310). Deliberately here: after the instance lock, so no live
   // server's processes are in scope, and long before any session can be warmed,
   // so the sweep never races a process this run just spawned. Never fatal — a
-  // boot must not fail over a cleanup.
-  await reapOrphanedWarmProcesses().catch((error: unknown) => {
+  // boot must not fail over a cleanup. Holding the lock means a ledger owner
+  // still alive is the server this one replaces, finishing its exit, so the
+  // sweep waits for it rather than leaving its processes running (DOR-3049).
+  await reapOrphanedWarmProcesses({
+    ownerExitWaitMs: isInstanceLockEnabled() ? PREDECESSOR_EXIT_WAIT_MS : 0,
+  }).catch((error: unknown) => {
     logger.warn('[DorkOS] could not sweep leftover agent processes', {
       error: error instanceof Error ? error.message : String(error),
     });
@@ -71,8 +78,9 @@ export async function claimDataDirectory(refs: ServerRefs, built: ClaimDataDirec
   // before anything can warm a new one, so a record this run writes is never
   // mistaken for one. Not cleared: each record is removed only once its chat is
   // settled, so a boot that dies midway wakes the rest next time. The wakes go
-  // out once the server is listening.
-  const backgroundWorkCutShort = sharedBackgroundWorkLedger().read();
+  // out once the server is listening. A file another data directory wrote (a
+  // copy of this one) wakes nothing (DOR-3071).
+  const backgroundWorkCutShort = sharedBackgroundWorkLedger().readLeftover();
 
   // Empty the hosted-community move staging directory. A copy a previous run
   // left behind can never be sent: its upload token died with that process.

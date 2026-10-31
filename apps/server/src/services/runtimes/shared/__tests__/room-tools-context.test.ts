@@ -43,6 +43,16 @@ describe('the room tools block', () => {
     expect(block).toContain('An OK names exactly what it covers');
   });
 
+  it('hands long work off rather than holding the room (FB-65)', () => {
+    // The chat tools block says what a helper and a spin-off are; this is the one line
+    // that tells a room turn to use them, so the room is not left waiting on it.
+    const words = block.replace(/\s+/g, ' ');
+    expect(words).toContain('Long work does not hold the room.');
+    expect(words).toContain('A few minutes of looking can go to a helper');
+    expect(words).toContain('longer work goes to a spin-off chat');
+    expect(words).toContain('end your turn, and post when it reports');
+  });
+
   it('rules a reaction out as a way of delivering an answer it has', () => {
     // The old text paired the obligation with the escape hatch in the same
     // breath ("Post, or react if that genuinely says it all"), which let a

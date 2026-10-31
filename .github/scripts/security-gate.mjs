@@ -1,6 +1,7 @@
 /* global console, fetch, process, URL */
-import { readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { approvalMode, labelAtHead } from './security-label-at-head.mjs';
 
 const CONTEXT = 'security-review';
 
@@ -77,6 +78,21 @@ function hasApproval(review, sensitive, botUserId) {
   );
 }
 
+/** Label-at-head for a sensitive diff while no App is set; App mode everywhere else. */
+async function verifyApproval(api, number, sha, review, sensitive, botUserId) {
+  if (!sensitive || approvalMode(botUserId) !== 'label-at-head') {
+    const passed = hasApproval(review, sensitive, botUserId);
+    return { passed, reason: 'security-review pending' };
+  }
+  // The initializer's pending is every sensitive head's start; a refusal still refuses.
+  if (review && review.state !== 'pending' && review.state !== 'success')
+    return { passed: false, reason: `security-review is ${review.state}` };
+  const timeline = await api.timeline(number);
+  const pr = await api.pr(number);
+  const activity = await api.activity(pr.head.ref);
+  return labelAtHead({ sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity });
+}
+
 function validateFiles(files) {
   if (
     !Array.isArray(files) ||
@@ -134,17 +150,21 @@ export async function checkPullRequest(
       );
     }
   }
-  if (write) await audit(api, number, sha, review);
+  if (write) await audit(api, number, sha, review, botUserId);
+  // Only ABSENT status permits computed clearance. Never bypass an explicit
+  // pending/failure (or reused automatic approval on a now-sensitive diff).
+  const computed = !write && !review && !sensitive;
+  const verdict =
+    requireApproval && !computed
+      ? await verifyApproval(api, number, sha, review, sensitive, botUserId)
+      : { passed: true };
   const current = await api.pr(number);
   if (current.head.sha !== sha) throw new Error(`PR #${number} head moved`);
   if (current.base.ref !== pr.base.ref || current.base.sha !== pr.base.sha)
     throw new Error(`PR #${number} base moved`);
-  // Only ABSENT status permits computed clearance. Never bypass an explicit
-  // pending/failure (or reused automatic approval on a now-sensitive diff).
-  const computed = !write && !review && !sensitive;
-  if (requireApproval && !computed && !hasApproval(review, sensitive, botUserId))
+  if (!verdict.passed)
     throw new Error(
-      `PR #${number}: security-review pending on ${sha}; Security must approve, then rerun security-gate`
+      `PR #${number}: ${verdict.reason} on ${sha}; Security must approve, then rerun security-gate`
     );
   return computed ? 'no security paths (computed)' : 'Security status verified';
 }
@@ -164,7 +184,7 @@ async function queuedSensitiveDiff(api, base, sha, pattern) {
   return touchesSecurity(files, pattern);
 }
 
-async function audit(api, number, sha, review) {
+async function audit(api, number, sha, review, botUserId) {
   // The creator is the status author, NOT the person who triggered this run.
   const marker = `<!-- security-gate:${sha}:${review?.state ?? 'missing'} -->`;
   const prefix = `<!-- security-gate:${sha}:`;
@@ -174,9 +194,13 @@ async function audit(api, number, sha, review) {
     )
     .at(-1);
   if (previous?.body.includes(marker)) return;
+  const rule =
+    approvalMode(botUserId) === 'label-at-head'
+      ? 'No Security App is set: sensitive approvals require a security-reviewed label newer than the last push, with no hold label.'
+      : 'Sensitive approvals require the configured Security App as status creator. The security-reviewed label is a human signal only.';
   await api.comment(
     number,
-    `Security gate: \`${CONTEXT} = ${review?.state ?? 'missing'}\` on \`${sha}\`, set by @${review?.creator?.login ?? 'unknown'}. Status id: ${review?.id ?? 'unknown'}.\n${marker}\n\nSensitive approvals require the configured Security App as status creator. The security-reviewed label is a human signal only.`
+    `Security gate: \`${CONTEXT} = ${review?.state ?? 'missing'}\` on \`${sha}\`, set by @${review?.creator?.login ?? 'unknown'}. Status id: ${review?.id ?? 'unknown'}.\n${marker}\n\n${rule}`
   );
 }
 
@@ -199,9 +223,12 @@ export async function checkMergeGroup(api, event, pattern, botUserId) {
     );
     const review = latestReview(await api.statuses(sha));
     const computed = !review && !sensitive;
-    if (!computed && !hasApproval(review, sensitive, botUserId))
+    const verdict = computed
+      ? { passed: true }
+      : await verifyApproval(api, number, sha, review, sensitive, botUserId);
+    if (!verdict.passed)
       throw new Error(
-        `PR #${number}: no security-review success on ${sha}; pending Security approval`
+        `PR #${number}: no security-review success on ${sha}; pending Security approval (${verdict.reason})`
       );
     const current = await api.pr(number);
     if (pr.head.sha !== sha || current.head.sha !== sha)
@@ -241,7 +268,7 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
   async function pages(path) {
     const values = [];
     const seen = new Set();
-    let url = `${root}${path}?per_page=100`;
+    let url = `${root}${path}${path.includes('?') ? '&' : '?'}per_page=100`;
     while (url) {
       if (seen.has(url)) throw new Error('Repeated pagination cursor');
       seen.add(url);
@@ -264,6 +291,8 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
     statuses: (sha) => pages(`/commits/${sha}/statuses`),
     setStatus: async (sha, state, description) =>
       (await request(`${root}/statuses/${sha}`, { context: CONTEXT, state, description })).data,
+    timeline: (number) => pages(`/issues/${number}/timeline`),
+    activity: (ref) => pages(`/activity?ref=${encodeURIComponent(ref)}`),
     comments: (number) => pages(`/issues/${number}/comments`),
     comment: (number, body) => request(`${root}/issues/${number}/comments`, { body }),
     async queue(baseRef) {
@@ -342,5 +371,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
+  }
+  // The verifier's env names the mode; the initializer has no bot id here and writes no summary.
+  if (process.env.GITHUB_STEP_SUMMARY && process.env.SECURITY_APPROVAL_BOT_USER_ID) {
+    const mode = approvalMode(process.env.SECURITY_APPROVAL_BOT_USER_ID);
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Security gate mode: **${mode}**\n`);
   }
 }

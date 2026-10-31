@@ -17,6 +17,16 @@ vi.mock('streamdown', () => ({
 }));
 
 vi.mock('streamdown/styles.css', () => ({}));
+// The browser view in this suite rebuilds the transport on every render to test URL resolution;
+// the document channel keys on transport identity, so the page channel is
+// inert here. Its real composition is covered in CanvasBrowserContentFrame.
+vi.mock('../model/use-doc-frame-channel', () => ({
+  useDocFrameChannel: (params: { resolvedSource: string | null }) => ({
+    frameSource: params.resolvedSource,
+    requiresReload: false,
+    noteFrameLoaded: () => {},
+  }),
+}));
 
 // Mock the heavy Blintz wrapper (markdown canvas) so jsdom never loads the real editor.
 vi.mock('../ui/BlintzCanvas', () => ({
