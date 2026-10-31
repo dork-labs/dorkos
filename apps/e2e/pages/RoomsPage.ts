@@ -285,7 +285,9 @@ export class RoomsPage {
 
   /** The right panel's own tab for this room, whether or not it is showing. */
   get roomPanelTab(): Locator {
-    return this.page.getByRole('tab', { name: 'Room' });
+    // Exact, because a channel starts with ROOM.md pinned on its canvas, and
+    // that tab's name ("ROOM.md, Posted by You") also contains "Room".
+    return this.page.getByRole('tab', { name: 'Room', exact: true });
   }
 
   /**

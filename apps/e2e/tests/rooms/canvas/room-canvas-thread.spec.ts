@@ -47,6 +47,25 @@ async function openRoom(
   await expect(roomsPage.roomHeader).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 }
 
+/**
+ * Show one document on the room's canvas. A channel starts with ROOM.md pinned
+ * there, and a pinned document sorts first, so opening the Canvas view alone
+ * lands on ROOM.md rather than the document this test put down (DOR-2112).
+ */
+async function openDocument(
+  page: import('@playwright/test').Page,
+  roomsPage: RoomsPage,
+  title: string
+): Promise<void> {
+  await roomsPage.openCanvasTab();
+  const tab = page.getByRole('tab', { name: new RegExp(`^${title}`) });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(roomsPage.canvasDocuments).toContainText(title, {
+    timeout: SERVER_ROUND_TRIP_MS,
+  });
+}
+
 test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
 test.describe('A document on a room’s canvas has its own discussion', () => {
@@ -63,10 +82,7 @@ test.describe('A document on a room’s canvas has its own discussion', () => {
     await putOnCanvas(request, room.id, title);
 
     await openRoom(page, basePage, roomsPage, room.id);
-    await roomsPage.openCanvasTab();
-    await expect(roomsPage.canvasDocuments).toContainText(title, {
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
+    await openDocument(page, roomsPage, title);
 
     await page.getByRole('button', { name: 'Discuss' }).click();
 
@@ -110,10 +126,7 @@ test.describe('A document on a room’s canvas has its own discussion', () => {
     await putOnCanvas(request, room.id, title);
 
     await openRoom(page, basePage, roomsPage, room.id);
-    await roomsPage.openCanvasTab();
-    await expect(roomsPage.canvasDocuments).toContainText(title, {
-      timeout: SERVER_ROUND_TRIP_MS,
-    });
+    await openDocument(page, roomsPage, title);
     await page.getByRole('button', { name: 'Discuss' }).click();
     await expect(roomsPage.threadPanel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
