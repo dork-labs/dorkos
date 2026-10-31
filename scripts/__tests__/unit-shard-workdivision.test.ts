@@ -208,14 +208,20 @@ describe('how many shards a run gets (ledger 261031-150702)', () => {
   it.each(['merge_group', 'schedule', 'workflow_dispatch'])('%s always gets six', (event) => {
     expect(pick(event, { kind: 'none' })).toEqual(SIX);
   });
-  it.each(['apps/server/src/services/a.ts', 'packages/shared/src/b.ts'])(
-    'a pull request that changes %s gets six',
-    (file) => {
-      expect(
-        pick('pull_request', { kind: 'merge', files: ['apps/client/src/a.ts', file] })
-      ).toEqual(SIX);
-    }
-  );
+  // The last four are files `turbo --affected` reads as touching every package
+  // (#3361 ran all 33 suites on two shards for a turbo.json edit).
+  it.each([
+    'apps/server/src/services/a.ts',
+    'packages/shared/src/b.ts',
+    'turbo.json',
+    'package.json',
+    'pnpm-lock.yaml',
+    'pnpm-workspace.yaml',
+  ])('a pull request that changes %s gets six', (file) => {
+    expect(pick('pull_request', { kind: 'merge', files: ['apps/client/src/a.ts', file] })).toEqual(
+      SIX
+    );
+  });
   it('a pull request that only deletes a server file still gets six', () => {
     expect(
       pick('pull_request', { kind: 'merge', files: [], removed: ['apps/server/src/moved.ts'] })
@@ -225,7 +231,13 @@ describe('how many shards a run gets (ledger 261031-150702)', () => {
     expect(
       pick('pull_request', {
         kind: 'merge',
-        files: ['packages/shared-ui/a.ts', 'apps/server-notes.md', 'docs/apps/server/a.md'],
+        files: [
+          'packages/shared-ui/a.ts',
+          'apps/server-notes.md',
+          'docs/apps/server/a.md',
+          'apps/client/package.json',
+          'docs/turbo.json',
+        ],
       })
     ).toEqual([1, 2]);
   });
