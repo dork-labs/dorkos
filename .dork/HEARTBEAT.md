@@ -19,7 +19,7 @@ Read top to bottom. Stop early when there is nothing to do. Most beats should be
 - [ ] Build lanes (the list is in `.temp/coord/checkin.md`): check each one's status. If one is idle with work left, nudge it with its next step, and remind it to keep its turn alive.
 - [ ] A lane freed up? It pulls the highest-ranked unstarted Must in `.temp/coord/FIX-QUEUE.md`, unless the PM named something else (PM rule, 10-25).
 - [ ] My open PRs, and red required checks on `main`: re-arm once, rerun once, or fix.
-- [ ] Any PR on `hold` for over 24h (`gh pr list --label hold`)? Name its gate, or lift it. A freeze's holds die silently (#3082 sat a week, 10-25).
+- [ ] Any PR on `hold` for over 24h (`gh pr list --label hold`)? Name its gate and @ that gate's owner in #dorkos. Never lift a `hold` that waits on Security yourself; only its owner does (PM, 10-30). A freeze's holds die silently (#3082 sat a week, 10-25).
 - [ ] A lane posted a question meant for Cloud or Dorian? Make sure it reached them.
 
 ## Daily (morning)
