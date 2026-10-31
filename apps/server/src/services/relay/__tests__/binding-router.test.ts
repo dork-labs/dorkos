@@ -67,6 +67,7 @@ describe('BindingRouter', () => {
   let mockRuntimeResolver: RuntimeTypeResolver;
   let mockBridgeIngest: { ingest: ReturnType<typeof vi.fn> };
   let capturedHandler: ((envelope: Record<string, unknown>) => Promise<void>) | undefined;
+  let approvers: string[] = [];
   const mockUnsubscribe = vi.fn();
 
   beforeEach(async () => {
@@ -118,6 +119,7 @@ describe('BindingRouter', () => {
       relayDir: '/tmp/relay',
       runtimeResolver: mockRuntimeResolver,
       bridgeIngest: mockBridgeIngest,
+      approverAllowlistFor: () => approvers,
     });
     await router.init();
   });
@@ -125,6 +127,7 @@ describe('BindingRouter', () => {
   afterEach(async () => {
     await router.shutdown();
     vi.restoreAllMocks();
+    approvers = [];
   });
 
   it('subscribes to relay.human.> on init', () => {
@@ -1114,6 +1117,54 @@ describe('BindingRouter', () => {
         }),
         expect.any(Object)
       );
+    });
+
+    describe('whose words a direct chat holds (DOR-2980)', () => {
+      /** Whether the words of this message are marked untrusted, on the wire to the agent. */
+      async function untrusted(envelope: Record<string, unknown>) {
+        vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+        await capturedHandler!(envelope);
+        const payload = vi.mocked(mockRelayCore.publish).mock.calls[0]![1] as Record<
+          string,
+          unknown
+        >;
+        return payload.__untrustedWords;
+      }
+
+      const from = (userId: string, extra: Record<string, unknown> = {}) => ({
+        ...makeEnvelope(),
+        payload: { content: 'hi', platformData: { userId }, ...extra },
+      });
+
+      it('marks a stranger, an empty list vouching for nobody', async () => {
+        expect(await untrusted(from('stranger'))).toBe(true);
+      });
+
+      it('marks a sender off the list, and a sender with no id', async () => {
+        approvers = ['owner'];
+        expect(await untrusted(from('stranger'))).toBe(true);
+        vi.mocked(mockRelayCore.publish).mockClear();
+        expect(await untrusted(makeEnvelope())).toBe(true);
+      });
+
+      it('vouches for a person on the list, in a direct message', async () => {
+        approvers = ['owner'];
+        expect(await untrusted(from('owner'))).toBe(false);
+      });
+
+      it('never vouches in a group, whoever writes', async () => {
+        approvers = ['owner'];
+        expect(
+          await untrusted({
+            ...from('owner'),
+            subject: 'relay.human.telegram.tg-bot.group.123',
+          })
+        ).toBe(true);
+      });
+
+      it('overwrites a value the publisher put in the payload', async () => {
+        expect(await untrusted(from('stranger', { __untrustedWords: false }))).toBe(true);
+      });
     });
 
     it('names the bound agent as the turn`s agent beside the cwd (DOR-2355)', async () => {

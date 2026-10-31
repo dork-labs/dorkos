@@ -609,6 +609,7 @@ export class BindingSubsystem {
         onUnclaimedChatBurst: deps.onUnclaimedChatBurst,
         chatNotice,
         bridgeIngest,
+        approverAllowlistFor: deps.approverAllowlistFor,
       });
       await subsystem.bindingRouter.init();
       logger.info('[BindingSubsystem] BindingRouter initialized');
