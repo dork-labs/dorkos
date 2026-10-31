@@ -421,6 +421,10 @@
       "types": "./src/person-session.ts",
       "default": "./dist/person-session.js"
     },
+    "./step-up": {
+      "types": "./src/step-up.ts",
+      "default": "./dist/step-up.js"
+    },
     "./session-relay-link": {
       "types": "./src/session-relay-link.ts",
       "default": "./dist/session-relay-link.js"
