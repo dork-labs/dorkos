@@ -22,6 +22,7 @@ import {
   resolveToolVisibilityFor,
 } from '../../shared/permission-tool-filter.js';
 import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
+import { joinFitted, type ContextPart } from '../../shared/window/context-fit.js';
 
 /**
  * Build the DorkOS context for one OpenCode turn.
@@ -60,13 +61,38 @@ export async function buildOpenCodeTurnContext(
   dorkosApplied: boolean,
   agentPath: AgentHome | undefined
 ): Promise<string> {
-  const neutralContext = (await buildAgentContextAppend(agentPath, cwd)).text;
-  if (!dorkosApplied) return neutralContext;
+  return joinFitted(await buildOpenCodeTurnParts(cwd, dorkosApplied, agentPath), []);
+}
+
+/**
+ * The same context as {@link buildOpenCodeTurnContext}, as tagged parts, so a
+ * small window can leave whole blocks out (`context-fit.ts`, DOR-2839).
+ *
+ * The room tools guide is never left out on a room turn: there the agent's only
+ * way to answer is the posting tool it describes.
+ *
+ * @param roomTurn - Whether this turn answers a room.
+ */
+export async function buildOpenCodeTurnParts(
+  cwd: string,
+  dorkosApplied: boolean,
+  agentPath: AgentHome | undefined,
+  roomTurn = false
+): Promise<ContextPart[]> {
+  const append = await buildAgentContextAppend(agentPath, cwd);
+  const neutral = append.parts ?? [{ block: null, text: append.text }];
+  if (!dorkosApplied) return [...neutral];
   // One line per Blocked permission area (spec `agent-permissions` D15); the
   // runtime listener hides the same area's tools from this turn's list.
   // Read at the ANCHORED agent (DOR-2091): a room worktree reads as its agent,
   // and a refused turn as nobody — never the directory's own agent.
   const blocked = renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath)).blockedAreas);
-  const withRooms = `${neutralContext}\n\n${buildRoomToolsBlock(OPENCODE_DORKOS_TOOL_PREFIX)}`;
-  return blocked ? `${withRooms}\n\n${blocked}` : withRooms;
+  return [
+    ...neutral,
+    {
+      block: roomTurn ? null : 'room_tools',
+      text: buildRoomToolsBlock(OPENCODE_DORKOS_TOOL_PREFIX),
+    },
+    ...(blocked ? [{ block: null, text: blocked }] : []),
+  ];
 }

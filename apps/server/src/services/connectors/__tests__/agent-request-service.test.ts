@@ -956,6 +956,7 @@ describe('ConnectorAgentRequestService', () => {
       expect(opened.status).toMatchObject({ status: 'awaiting_owner', serviceSlug: 'gmail' });
       const { note } = opened.status;
       expect(note).toContain("DorkOS can't reach Gmail yet");
+      expect(note).toContain("These are steps the person takes, so don't say how long they take");
       expect(note).toContain('ask which one they want, then help them do it');
       expect(note).toContain(
         'sign in to a DorkOS account, or create one, in Settings › DorkOS account'
@@ -1006,6 +1007,7 @@ describe('ConnectorAgentRequestService', () => {
       const opened = await requests.open(principal(), INPUT);
       expect(opened.waitForOwner).toBe(true);
       expect(opened.status.note).toContain("The person hasn't answered yet");
+      expect(opened.status.note).toContain("don't tell them it will be quick");
       // The capability holds this call next, so the hold stays.
       expect(
         db
@@ -2239,6 +2241,7 @@ describe('ConnectorAgentRequestService', () => {
       status: 'access_pending',
       note: expect.stringContaining('still setting up your access to Gmail'),
     });
+    expect(pending.note).toContain("don't ask again or promise the person a time");
     expect(eventGrants.approve).toHaveBeenLastCalledWith(
       OWNER,
       expect.objectContaining({

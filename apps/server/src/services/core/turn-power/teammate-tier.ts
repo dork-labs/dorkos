@@ -120,6 +120,11 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
   compact_my_session: refuse('rewrites what this conversation remembers'),
   accounts_usage: refuse('reads how much of the person’s accounts is used'),
   accounts_probe: refuse('reads a person’s account usage'),
+  // Both spellings of each, as the gate can see either (DOR-3205, `own-connection-reads.ts`).
+  'connectors.list_granted_connections': refuse('lists which of the owner’s accounts it may use'),
+  connectors_list_granted_connections: refuse('lists which of the owner’s accounts it may use'),
+  'connectors.list_granted_operations': refuse('lists what it may do in the owner’s accounts'),
+  connectors_list_granted_operations: refuse('lists what it may do in the owner’s accounts'),
   // The owner's screen.
   control_ui: refuse('drives the owner’s app'),
   get_ui_state: refuse('reads what the owner has open'),

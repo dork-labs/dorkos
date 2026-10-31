@@ -217,7 +217,10 @@ function SessionMessageRow({
   // Local-command output is a `user`-role message, but its content is a command
   // result (often a wide ANSI table), so it takes the assistant's lighter
   // typography rather than reading as something the human typed (DOR-126).
-  const isUserPrompt = isUser && message.messageType !== 'local_command_output';
+  // A prompt nobody here typed takes that voice too (DOR-3019). A person on a
+  // connection did type theirs, so only the Run-with action below drops for them.
+  const isSourceNote = isUser && !!message.promptSource && message.promptSource.kind !== 'channel';
+  const isUserPrompt = isUser && message.messageType !== 'local_command_output' && !isSourceNote;
   // Words another chat sent: the author line says which chat (spec
   // `spin-off-chats` §6), and they are not this person's to run elsewhere.
   const fromChat = isUser ? message.chatMessages?.[0] : undefined;
@@ -226,6 +229,7 @@ function SessionMessageRow({
   const showRunWith =
     isUserPrompt &&
     fromChat === undefined &&
+    message.promptSource === undefined &&
     (fromRoom === undefined || fromRoom.author?.you === true) &&
     message.messageType !== 'command' &&
     message.messageType !== 'compaction' &&
@@ -288,7 +292,9 @@ function SessionMessageRow({
                 }
               : fromRoom && fromRoom.roomId !== directRoomId
                 ? { mark: <RoomPostMark stamp={fromRoom} />, className: 'flex-wrap gap-y-0.5' }
-                : {})}
+                : message.promptSource
+                  ? { className: 'flex-wrap gap-y-0.5' }
+                  : {})}
           />
           {fromRoom?.via && <ForwardViaLine via={fromRoom.via} />}
           <Message.Content id={contentId}>

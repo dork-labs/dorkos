@@ -65,12 +65,27 @@ mac:
   # value is then deleted (app-builder-lib's macPackager.applyCommonInfo) —
   # so setting these to `null` cleanly strips them rather than shipping
   # unused privacy strings.
+  #
+  # The five file-location strings below are the opposite case: agents do
+  # read and write files there, through the bundled server. Without a purpose
+  # string, macOS never shows a prompt and refuses the read with EPERM — an
+  # agent asked to sort a USB drive simply fails. macOS shows each string in
+  # the access prompt, so they are user-facing copy (writing-app-copy). macOS
+  # grants access to the whole app, so each string says the answer covers
+  # every agent. These five are the only usage strings the app ships; adding
+  # another is a Security review. src/main/permissions/__tests__/
+  # info-plist-usage-strings.test.ts pins both halves.
   extendInfo:
     NSCameraUsageDescription: null
     NSMicrophoneUsageDescription: null
     NSBluetoothAlwaysUsageDescription: null
     NSBluetoothPeripheralUsageDescription: null
     NSAudioCaptureUsageDescription: null
+    NSRemovableVolumesUsageDescription: Lets the agents you run in DorkOS read and change files on external drives. This applies to every agent.
+    NSNetworkVolumesUsageDescription: Lets the agents you run in DorkOS read and change files on network drives. This applies to every agent.
+    NSDesktopFolderUsageDescription: Lets the agents you run in DorkOS read and change files in your Desktop folder. This applies to every agent.
+    NSDocumentsFolderUsageDescription: Lets the agents you run in DorkOS read and change files in your Documents folder. This applies to every agent.
+    NSDownloadsFolderUsageDescription: Lets the agents you run in DorkOS read and change files in your Downloads folder. This applies to every agent.
 
 dmg:
   sign: true
