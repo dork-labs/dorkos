@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import {
   DndContext,
@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { cn, formatShortcutKey, SHORTCUTS, useLatest, useRenderSlot } from '@/layers/shared/lib';
-import type { AppTab } from '@/layers/shared/model';
+import { revealInScroller, useScrollOverflow, type AppTab } from '@/layers/shared/model';
 import { useRovingTabList, type TabActivationSource } from '@/layers/shared/ui';
 import {
   TAB_DRAG_DISTANCE_PX,
@@ -27,6 +27,14 @@ import {
 } from '../lib/tab-reorder';
 import type { AppTabMenuActions } from './AppTabContextMenu';
 import { APP_TAB_ID_ATTRIBUTE, SortableAppTab } from './SortableAppTab';
+
+/**
+ * Room left beside a tab brought into view, in pixels: the edge fade's width
+ * (`--app-tab-strip-fade` in `index.css`, 24px) plus the 8px every revealed
+ * item gets. Any less and the active tab lands under the fade it was scrolled
+ * out from behind.
+ */
+const ACTIVE_TAB_REVEAL_MARGIN_PX = 32;
 
 interface AppTabStripProps {
   /** Open tabs, in strip order. */
@@ -142,6 +150,39 @@ export function AppTabStrip({
     return () => scroller.removeEventListener('wheel', onWheel);
   }, []);
 
+  // Fade whichever edge still has tabs behind it (DOR-3507). The scrollbar is
+  // gone (FB-59), so without this an overflowing strip looks exactly like one
+  // that ends at the window's edge. Never over an edge with nothing behind it:
+  // a cue for tabs that are not there is worse than none (ADR 260725-004456).
+  const edges = useScrollOverflow(scrollerRef, 'horizontal');
+
+  // Keep the active tab on screen and clear of the fade: on mount, whenever
+  // the active tab changes, and whenever the boxes move. Arrow keys get a
+  // scroll for free (focus moves), but flush to the edge, under the fade;
+  // Cmd+9, a closed tab falling through to its neighbour, and a new tab only
+  // change state. A resize covers the window narrowing and the web font
+  // landing, both of which move the active tab without a render. Hand-written
+  // rather than `scrollIntoView`, which also scrolls the app shell around it.
+  const revealActiveTab = useCallback(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || activeId === null) return;
+    const tab = Array.from(
+      scroller.querySelectorAll<HTMLElement>(`[${APP_TAB_ID_ATTRIBUTE}]`)
+    ).find((node) => node.getAttribute(APP_TAB_ID_ATTRIBUTE) === activeId);
+    if (tab) revealInScroller(scroller, tab, ACTIVE_TAB_REVEAL_MARGIN_PX);
+  }, [activeId]);
+
+  useEffect(() => {
+    revealActiveTab();
+    if (typeof ResizeObserver === 'undefined') return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const observer = new ResizeObserver(revealActiveTab);
+    observer.observe(scroller);
+    if (tablistRef.current) observer.observe(tablistRef.current);
+    return () => observer.disconnect();
+  }, [revealActiveTab]);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: TAB_DRAG_DISTANCE_PX } }),
     useSensor(KeyboardSensor, { coordinateGetter, keyboardCodes: TAB_DRAG_KEYS })
@@ -200,12 +241,17 @@ export function AppTabStrip({
     // scroll to find is one you will not find.
     <div className={cn('bg-muted/40 flex shrink-0 items-stretch border-b px-2 py-1', className)}>
       {/* The native scrollbar is hidden by `data-slot` in `index.css` (FB-59):
-          it painted across the tabs once they overflowed. The wheel listener
-          above and the active tab scrolling itself into view (`AppTabItem`)
-          keep the overflow reachable. */}
+          it painted across the tabs once they overflowed. The edge fades say
+          there is more, and the wheel listener and the active-tab reveal above
+          keep it reachable. The fades are a mask, set from the two data
+          attributes, not a gradient laid over the tabs: the strip's surface is
+          translucent, so no solid colour would match it in both themes. */}
       <div
         ref={scrollerRef}
         data-slot="app-tab-strip"
+        data-fade-start={edges.start || undefined}
+        data-fade-end={edges.end || undefined}
+        onScroll={edges.onScroll}
         className="flex min-w-0 flex-1 items-stretch overflow-x-auto"
       >
         <DndContext

@@ -951,6 +951,28 @@ body {
 [data-slot='app-tab-strip']::-webkit-scrollbar {
   display: none;
 }
+/* The window tab strip's edge fades (DOR-3507): a mask, so the tabs themselves
+   fade into whatever is behind the translucent strip. Each side is 0 unless
+   `AppTabStrip` says tabs are hidden past it. Keep the width in step with
+   ACTIVE_TAB_REVEAL_MARGIN_PX there. */
+[data-slot='app-tab-strip'] {
+  --app-tab-strip-fade: 24px;
+  --app-tab-strip-fade-start: 0px;
+  --app-tab-strip-fade-end: 0px;
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--app-tab-strip-fade-start),
+    #000 calc(100% - var(--app-tab-strip-fade-end)),
+    transparent
+  );
+}
+[data-slot='app-tab-strip'][data-fade-start] {
+  --app-tab-strip-fade-start: var(--app-tab-strip-fade);
+}
+[data-slot='app-tab-strip'][data-fade-end] {
+  --app-tab-strip-fade-end: var(--app-tab-strip-fade);
+}
 
 /* Fallback for older Safari that doesn't support dvh */
 @supports not (height: 100dvh) {

@@ -414,4 +414,54 @@ describe('AppTabStrip', () => {
     expect(fireEvent.wheel(scroller, { deltaY: 40, deltaX: 0 })).toBe(true);
     expect(scroller.scrollLeft).toBe(0);
   });
+  // DOR-3507: with no scrollbar, a fade over each edge that still hides tabs is
+  // what says the strip has more. Never over an edge with nothing behind it.
+  it('fades only the edges that hide tabs, following the scroll', () => {
+    renderStrip([DASHBOARD, API_SESSION, AGENTS]);
+    const scroller = stripScroller(1000);
+    fireEvent.scroll(scroller);
+    expect(scroller).not.toHaveAttribute('data-fade-start');
+    expect(scroller).toHaveAttribute('data-fade-end');
+
+    scroller.scrollLeft = 300;
+    fireEvent.scroll(scroller);
+    expect(scroller).toHaveAttribute('data-fade-start');
+    expect(scroller).toHaveAttribute('data-fade-end');
+
+    scroller.scrollLeft = 700;
+    fireEvent.scroll(scroller);
+    expect(scroller).toHaveAttribute('data-fade-start');
+    expect(scroller).not.toHaveAttribute('data-fade-end');
+  });
+
+  it('draws no fade when the tabs fit', () => {
+    renderStrip([DASHBOARD, API_SESSION]);
+    const scroller = stripScroller(300);
+    fireEvent.scroll(scroller);
+    expect(scroller).not.toHaveAttribute('data-fade-start');
+    expect(scroller).not.toHaveAttribute('data-fade-end');
+  });
+
+  it('brings a tab made active without a click into view, clear of the fade', () => {
+    const { rerender } = renderStrip([DASHBOARD, API_SESSION, AGENTS], DASHBOARD.id);
+    const scroller = stripScroller(1000);
+    const box = (left: number, width: number) =>
+      ({ left, right: left + width, width, top: 0, bottom: 30, height: 30 }) as DOMRect;
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue(box(0, 300));
+    const last = scroller.querySelector('[data-app-tab-id="t3"]') as HTMLElement;
+    // 40px past the strip's right edge.
+    vi.spyOn(last, 'getBoundingClientRect').mockReturnValue(box(220, 120));
+
+    rerender(
+      <AppTabStrip
+        tabs={[DASHBOARD, API_SESSION, AGENTS]}
+        activeId={AGENTS.id}
+        onActivate={onActivate}
+        onClose={onClose}
+        onCreate={onCreate}
+      />
+    );
+    // The overshoot plus the 24px fade and 8px of room.
+    expect(scroller.scrollLeft).toBe(40 + 32);
+  });
 });
