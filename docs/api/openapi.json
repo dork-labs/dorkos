@@ -15858,7 +15858,8 @@
           "first_connection",
           "volume_mark",
           "anniversary",
-          "agent_minted"
+          "agent_minted",
+          "joined_room"
         ]
       },
       "RoomMomentSource": {

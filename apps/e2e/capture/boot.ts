@@ -73,6 +73,8 @@ export function baseEnv(): NodeJS.ProcessEnv {
     // messages, full-text-indexed into `~/.dork-capture` by a run whose whole
     // job is taking marketing screenshots.
     DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
+    // No agent introductions: they start a real turn (DOR-2106).
+    DORKOS_NO_ROOM_INTRODUCTIONS: 'true',
     // Confine the server's directory boundary to the capture world. This is a
     // privacy guarantee: the onboarding discovery step can auto-start its scan
     // before the client's config query resolves, and that fallback sweeps the
