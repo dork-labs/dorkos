@@ -92,9 +92,7 @@ describe('NetworkSection', () => {
       companyCertificates: { outcome: 'empty', added: 0, path: BUNDLE },
     });
     const status = screen.getByTestId('company-certificates-status');
-    expect(status).toHaveTextContent(
-      'No certificates found in this file. Choose a different one.'
-    );
+    expect(status).toHaveTextContent('No certificates found in this file. Choose a different one.');
     expect(status.querySelector('svg')).not.toBeNull();
   });
 
