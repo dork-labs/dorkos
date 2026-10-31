@@ -53,6 +53,37 @@ describe('the count and badge rules (Phase 2 Badge A)', () => {
   });
 });
 
+describe('the card and row rules', () => {
+  const SHARED = 'apps/client/src/layers/shared/ui/thing.tsx';
+
+  it('fails a divide-y in shared/ui, except the table', () => {
+    expect(countIn(SHARED, `'divide-border divide-y'`)).toEqual({ 'shared-divide-y': 1 });
+    expect(countIn('apps/client/src/layers/shared/ui/table.tsx', `'divide-y'`)).toEqual({});
+    expect(countIn(CLIENT, `'divide-y'`)).toEqual({});
+  });
+
+  it('fails a border on a FieldCard', () => {
+    expect(countIn(CLIENT, `<FieldCard className="border-destructive/50">`)).toEqual({
+      'field-card-border': 1,
+    });
+    expect(countIn(CLIENT, `<FieldCard className="mt-6">`)).toEqual({});
+  });
+
+  it('fails a border on the card and group primitives only', () => {
+    const card = 'apps/client/src/layers/shared/ui/card.tsx';
+    expect(countIn(card, `'bg-card shadow-soft flex border p-4'`)).toEqual({ 'card-border': 1 });
+    expect(countIn(card, `'bg-card shadow-soft flex p-4'`)).toEqual({});
+    expect(countIn(CLIENT, `'bg-card border'`)).toEqual({});
+  });
+
+  it('fails a ring-2 as a row mark, outside the topology canvas', () => {
+    expect(countIn(CLIENT, `isFocused && 'ring-ring ring-2'`)).toEqual({ 'row-ring-mark': 1 });
+    expect(
+      countIn('apps/client/src/layers/features/mesh/ui/AgentNode.tsx', `selected && 'ring-2'`)
+    ).toEqual({});
+  });
+});
+
 describe('compare', () => {
   it('fails a hard rule even when the baseline names it', () => {
     const counts = { 'black-scrim': { [CLIENT]: 1 } };

@@ -41,7 +41,7 @@ describe('press ladder', () => {
     // One element, one `transition-property` list: a row that kept its own
     // `transition-colors` beside a press class would silently lose one of them.
     for (const stop of [PRESS_CARD, PRESS_ROW, PRESS_MARK]) {
-      expect(stop).toContain('color,background-color,border-color');
+      expect(stop).toContain('color,background-color,box-shadow');
     }
   });
 });

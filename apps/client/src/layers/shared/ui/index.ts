@@ -501,14 +501,15 @@ export type {
 export { SectionHeader, SECTION_HEADER_INSET, SIDEBAR_HOVER_REVEAL } from './section-header';
 export { BottomSlot } from './bottom-slot';
 export type { BottomSlotCandidate, BottomSlotProps } from './bottom-slot';
+export { ListRow, type ListRowProps } from './list-row';
+export { ROW_FOCUS_CLASS, rowState, rowStateVariants, rowTintVariants, type RowState } from './row';
+
 // Three small rows the transcript and the Ask card both draw. They lived inside
 // `features/chat/ui/primitives` until `features/ask` needed them too — and a
 // feature reaching into another feature's internals is the cycle P1 already
 // refused once, so they moved DOWN rather than sideways.
-export { OptionRow } from './option-row';
-export type { OptionRowProps } from './option-row';
-export { CompactResultRow } from './compact-result-row';
-export type { CompactResultRowProps } from './compact-result-row';
+export { OptionRow, type OptionRowProps } from './option-row';
+export { CompactResultRow, type CompactResultRowProps } from './compact-result-row';
 export { UnverifiedCatalogNotice } from './unverified-catalog-notice';
 export { TruncatedOutput } from './truncated-output';
 export type { TruncatedOutputProps } from './truncated-output';

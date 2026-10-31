@@ -133,6 +133,9 @@
   --color-brand-foreground: hsl(var(--brand-foreground));
   --color-brand-text: hsl(var(--brand-text));
   --color-faint: hsl(var(--faint));
+  --color-row-hover: var(--row-hover);
+  --color-row-selected: var(--row-selected);
+  --color-row-group: var(--row-group);
   --color-scrim: var(--scrim);
   --color-chart-1: hsl(var(--chart-1));
   --color-chart-2: hsl(var(--chart-2));
@@ -255,6 +258,13 @@
      of opacity on text. */
   --faint: 0 0% 37%;
   --scrim: var(--dui-scrim);
+  /* The row ladder: one set of tints for every list on every ground. Foreground
+     alpha rather than a grey, so a step reads the same on the page, a card, the
+     sidebar and a popover. Selected never changes on hover; it is one step. A
+     group is the tint a dialog's rows sit on in place of a card. */
+  --row-hover: hsl(var(--foreground) / 0.04);
+  --row-selected: hsl(var(--foreground) / 0.07);
+  --row-group: hsl(var(--foreground) / 0.03);
 
   /* === Status tokens === */
   /* Green is text (dial caption, status word, "unattended" notes, session marks)
@@ -530,6 +540,9 @@
   --brand-text: var(--dui-brand-text);
   --faint: 0 0% 58%;
   --scrim: var(--dui-scrim);
+  --row-hover: hsl(var(--foreground) / 0.05);
+  --row-selected: hsl(var(--foreground) / 0.09);
+  --row-group: hsl(var(--foreground) / 0.04);
 
   --status-success: 152 69% 55%;
   --status-success-bg: 152 69% 12%;
@@ -719,12 +732,25 @@
   --dui-muted: var(--muted);
   --accent: 0 0% calc(11% + var(--elevation-lift-floating));
   --dui-accent: var(--accent);
+  /* A lifted surface takes the gentler row ladder (3/5%): the page's 5/9% on
+     a 12% popover pushed faint text under 4.5:1. */
+  --row-hover: hsl(var(--foreground) / 0.03);
+  --row-selected: hsl(var(--foreground) / 0.05);
+  --row-group: hsl(var(--foreground) / 0.03);
 }
 .dark :where(.shadow-xl, .shadow-modal) {
   --muted: 0 0% calc(8% + var(--elevation-lift-modal));
   --dui-muted: var(--muted);
   --accent: 0 0% calc(11% + var(--elevation-lift-modal));
   --dui-accent: var(--accent);
+  --row-hover: hsl(var(--foreground) / 0.03);
+  --row-selected: hsl(var(--foreground) / 0.05);
+  --row-group: hsl(var(--foreground) / 0.03);
+  /* Inks climb with the tints. On a 15% dialog, a group plus a selected row
+     composites to about 20%, where faint (58%) and error text measured 3.55
+     and 3.66:1. These clear 4.9 and 5.1. */
+  --faint: 0 0% 64%;
+  --status-error-fg: 0 72% 74%;
 }
 
 @utility shadow-elevated {
@@ -739,8 +765,10 @@
   box-shadow: var(--elevation-modal);
 }
 
-/* Hoverable card: lifts to the elevated shadow and firms up its border.
-   Pair with a base surface (bg-card), a border, and shadow-soft.
+/* Hoverable card: lifts to the elevated shadow. Pair with a base surface
+   (bg-card) and shadow-soft; a card has no border. The shadow alone says
+   "higher": no translate (a 1px jump moves the hit target and re-rasterises the
+   text) and no border colour to animate.
 
    **The focus-visible branch is a rule, not a nicety** (design-system.md, the
    identity grammar): if an area has a hover state it has a focus-visible twin
@@ -748,21 +776,14 @@
    user. `:has(:focus-visible)` covers the common shape where the card is a
    plain box and the control inside it is what takes focus.
 
-   The transition names its properties. `transition: all` here animated border
-   width, padding and any layout property a consumer added later — and the
-   `-1px` lift below is exactly the kind of thing that would have dragged the
-   whole box with it. */
+   The transition names its one property. `transition: all` here animated
+   border width, padding and any layout property a consumer added later. */
 @utility card-interactive {
-  transition:
-    box-shadow 150ms ease-out,
-    border-color 150ms ease-out,
-    translate 150ms ease-out;
+  transition: box-shadow 150ms ease-out;
   &:hover,
   &:focus-visible,
   &:has(:focus-visible) {
     box-shadow: var(--elevation-elevated);
-    border-color: hsl(var(--border) / 0.8);
-    translate: 0 -1px;
   }
 }
 
