@@ -148,4 +148,14 @@ describe('MentionPill as a cc (DOR-3401)', () => {
     render(<MentionPill kind="human" label="Kai" handle="kai" resolved cc />);
     expect(screen.getByLabelText('cc @kai')).toHaveTextContent(/^cc @Kai$/);
   });
+
+  // Pills wrap between each other, never inside one; a label too long for a
+  // phone's line keeps the wrap so it cannot overflow its bubble.
+  it('stays on one line unless the label is too long to fit', () => {
+    render(<MentionPill kind="agent" label="Orrin" handle="orrin" resolved cc />);
+    expect(screen.getByLabelText('cc @orrin')).toHaveClass('whitespace-nowrap');
+    const long = 'a-handle-much-longer-than-any-phone-line';
+    render(<MentionPill kind="human" label={long} resolved />);
+    expect(screen.getByText(`@${long}`)).not.toHaveClass('whitespace-nowrap');
+  });
 });
