@@ -52,8 +52,7 @@ function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPr
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        'ring-offset-dui-background inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow,opacity] motion-reduce:transition-none! md:py-1',
-        'focus-visible:ring-dui-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+        'focus-ring inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow,opacity] motion-reduce:transition-none! md:py-1',
         'disabled:pointer-events-none disabled:opacity-50',
         'data-[state=active]:bg-dui-background data-[state=active]:text-dui-foreground data-[state=active]:shadow',
         className
@@ -69,13 +68,12 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
     <TabsPrimitive.Content
       data-slot="tabs-content"
       className={cn(
-        'ring-offset-dui-background mt-2',
+        'focus-ring mt-2',
         // Enter only, no exit: the panel it replaces is already unmounted, so
         // there is never a moment with two panels on screen. 150ms, the in-page
         // transition row of the duration table.
         // Important beats the state-qualified animation under reduced motion.
         'data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-150 motion-reduce:animate-none!',
-        'focus-visible:ring-dui-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
         className
       )}
       {...props}

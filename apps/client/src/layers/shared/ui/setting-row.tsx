@@ -62,7 +62,7 @@ function SettingRow({
     >
       <FieldContent className="min-w-0">
         <FieldLabel className="text-sm font-medium">{label}</FieldLabel>
-        {description && <FieldDescription className="text-xs">{description}</FieldDescription>}
+        {description && <FieldDescription>{description}</FieldDescription>}
       </FieldContent>
       {children}
     </Field>

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { useAppForm } from '@/layers/shared/lib/form';
 
@@ -120,6 +120,94 @@ function SubmitButtonFixture() {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+const required = ({ value }: { value: string }) => (value ? undefined : 'Enter a name.');
+
+function ValidatedFixture({ description }: { description?: string }) {
+  const form = useAppForm({ defaultValues: { username: '' } });
+  return (
+    <form.AppForm>
+      <form.AppField name="username" validators={{ onChange: required }}>
+        {(field) => <field.TextField label="Username" description={description} />}
+      </form.AppField>
+      <button type="button" onClick={() => void form.handleSubmit()}>
+        Save
+      </button>
+    </form.AppForm>
+  );
+}
+
+function ValidatedCheckboxFixture() {
+  const form = useAppForm({ defaultValues: { agreed: false } });
+  return (
+    <form.AppForm>
+      <form.AppField
+        name="agreed"
+        validators={{ onBlur: ({ value }) => (value ? undefined : 'Tick this box.') }}
+      >
+        {(field) => <field.CheckboxField label="Agree" description="Read our terms first" />}
+      </form.AppField>
+    </form.AppForm>
+  );
+}
+
+describe('field wiring', () => {
+  it('describes the control by its help until an error shows', () => {
+    render(<ValidatedFixture description="Your display name" />);
+    const input = screen.getByLabelText('Username');
+    expect(input).toHaveAccessibleDescription('Your display name');
+    expect(input).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('holds the error during first typing, then shows it on blur', async () => {
+    render(<ValidatedFixture description="Your display name" />);
+    const input = screen.getByLabelText('Username');
+    fireEvent.change(input, { target: { value: 'k' } });
+    fireEvent.change(input, { target: { value: '' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(input).not.toHaveAttribute('aria-invalid');
+
+    fireEvent.blur(input);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a name.');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-describedby', 'username-error');
+    expect(input).toHaveAccessibleDescription('Enter a name.');
+  });
+
+  it('clears the error as soon as the value is valid', async () => {
+    render(<ValidatedFixture />);
+    const input = screen.getByLabelText('Username');
+    fireEvent.change(input, { target: { value: 'k' } });
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.blur(input);
+    await screen.findByRole('alert');
+    fireEvent.change(input, { target: { value: 'kai' } });
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(input).not.toHaveAttribute('aria-invalid');
+    expect(input).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('shows the error after a submit, with no blur at all', async () => {
+    render(<ValidatedFixture />);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a name.');
+  });
+
+  // The description and error used to sit beside the label as flex siblings.
+  it('stacks a checkbox label, help and error in one column beside the box', async () => {
+    render(<ValidatedCheckboxFixture />);
+    const box = screen.getByRole('checkbox');
+    const column = screen.getByText('Read our terms first').parentElement;
+    expect(column).toHaveAttribute('data-slot', 'field-content');
+    expect(column).toContainElement(screen.getByText('Agree'));
+    expect(box).toHaveAccessibleDescription('Read our terms first');
+
+    fireEvent.blur(box);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Tick this box.');
+    expect(column).toContainElement(screen.getByRole('alert'));
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+  });
+});
 
 describe('TextField', () => {
   it('renders label and input', () => {

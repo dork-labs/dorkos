@@ -50,7 +50,11 @@ function PasswordInput({
         onClick={toggleVisibility}
         aria-label={isVisible ? 'Hide password' : 'Show password'}
       >
-        {isVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+        {isVisible ? (
+          <EyeOff className="size-(--dui-size-icon-sm)" />
+        ) : (
+          <Eye className="size-(--dui-size-icon-sm)" />
+        )}
       </Button>
     </div>
   );
