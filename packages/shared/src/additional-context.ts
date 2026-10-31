@@ -792,6 +792,18 @@ export interface RoomContextData {
      */
     repliesLeftInThisChain: number | null;
   };
+  /**
+   * Whose clock this turn's times are read on (FB-66, DOR-3125): the owner's
+   * IANA zone (`profile.timezone`, or the server's own while the app has not
+   * told it one) and the moment the context was built.
+   *
+   * Every room timestamp is stored in UTC. Rendered as a bare `HH:MM` with no
+   * zone, an agent read 18:29 as the person's evening when it was their
+   * afternoon, and had no way to say "today" or "tomorrow" in their terms. With
+   * this, every time in the block is in the person's zone and the block says
+   * which zone that is. Absent, times render in UTC as they did before.
+   */
+  clock?: { timeZone: string; now: string };
 }
 
 /**

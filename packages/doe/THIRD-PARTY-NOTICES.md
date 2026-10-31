@@ -8,7 +8,9 @@ Doe depends on the following pinned MIT packages; the extraction listed below in
 
 The core dependency's compatible AI range resolves to exactly 1.0.4 in the workspace lockfile and packed production consumer. Pi model protocols stay behind the internal engine bridge. The full Pi coding product is not a dependency.
 
-MIT permission notice for Earendil Works dependencies:
+MIT permission notice for Earendil Works dependencies, from the `LICENSE` at the root of https://github.com/earendil-works/pi at tag `v1.0.4`, which covers every package in that repository:
+
+Copyright (c) 2025 Mario Zechner
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 

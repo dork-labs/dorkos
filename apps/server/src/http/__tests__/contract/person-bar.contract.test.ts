@@ -9,7 +9,7 @@
  * (the route may still refuse for its own reasons: an unknown id, a bad body).
  */
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
@@ -65,6 +65,38 @@ const PERSON_WRITES: readonly PersonWrite[] = [
   },
   { method: 'POST', path: '/api/runtimes/claude-code/signins/folders', body: { accountId: ID } },
 ];
+
+/**
+ * The MCP servers a person adds for every agent (DOR-3213, Security's M1): a
+ * stdio server here runs in every agent's session. Their bar answers in its own
+ * words (`NEEDS_PERSON_AT_THIS_COMPUTER`), not the step-up, so they are kept
+ * out of the step-up rows above.
+ */
+const MCP_SERVER_WRITES: readonly PersonWrite[] = [
+  {
+    method: 'POST',
+    path: '/api/mcp-servers',
+    body: {
+      name: 'planted',
+      connection: { transport: 'stdio', command: 'npx', args: [], env: {} },
+    },
+  },
+  {
+    method: 'PUT',
+    path: '/api/mcp-servers/planted',
+    body: {
+      name: 'planted',
+      connection: { transport: 'stdio', command: 'npx', args: [], env: {} },
+    },
+  },
+  { method: 'PATCH', path: '/api/mcp-servers/planted', body: { enabled: true } },
+  { method: 'DELETE', path: '/api/mcp-servers/planted' },
+];
+
+/** Every write a program must never make as the person. */
+const ALL_PERSON_WRITES = [...PERSON_WRITES, ...MCP_SERVER_WRITES].map(
+  (write) => [`${write.method} ${write.path}`, write] as const
+);
 
 describe('contract: the person-only routes at this computer, with an owner', () => {
   let server: ComposedServer | undefined;
@@ -127,6 +159,27 @@ describe('contract: the person-only routes at this computer, with an owner', () 
       expect([401, 403]).toContain(res.status);
     }
   );
+
+  // A program can send any header it likes; a made-up key is still a program.
+  it.each(ALL_PERSON_WRITES)('refuses %s with a made-up x-api-key', async (_name, write) => {
+    const res = await send(write, { 'x-api-key': 'not-a-real-key' });
+    expect([401, 403]).toContain(res.status);
+  });
+
+  it.each(MCP_SERVER_WRITES.map((write) => [`${write.method} ${write.path}`, write] as const))(
+    'refuses %s with no headers, and writes no file',
+    async (_name, write) => {
+      const res = await send(write);
+      expect(res.status).toBe(403);
+      expect(existsSync(path.join(server!.dorkHome, 'mcp', 'global-servers.json'))).toBe(false);
+    }
+  );
+
+  it('lets the owner’s session add and remove a server for every agent', async () => {
+    const headers = { origin: server!.baseUrl, 'x-client-id': 'window-1', ...person };
+    expect((await send(MCP_SERVER_WRITES[0]!, headers)).status).toBe(201);
+    expect((await send(MCP_SERVER_WRITES[3]!, headers)).status).toBe(204);
+  });
 
   it.each(PERSON_WRITES.map((write) => [`${write.method} ${write.path}`, write] as const))(
     'asks the app at this computer for the step-up on %s',

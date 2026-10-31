@@ -181,6 +181,18 @@ export const STREAM_LIVE_TIMEOUT_MS = 2_000;
 export const INTERRUPT_ACK_TIMEOUT_MS = 3_000;
 
 /**
+ * How often a turn waiting on its model tells DorkOS it is still alive
+ * (FB-68). See `events/model-wait-liveness.ts`.
+ *
+ * Below the stall guard's first-event window (`SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS`,
+ * 2 minutes) with room to spare, because that window is the one a local model
+ * loading or reading a long prompt used to run out: OpenCode reports nothing
+ * until the first token, and Ollama on a laptop can take many minutes to get
+ * there. A minute apart costs nothing: the signal is never stored.
+ */
+export const MODEL_WAIT_LIVENESS_INTERVAL_MS = 60_000;
+
+/**
  * How many ROOT sessions one `GET /session` may return before the adapter
  * treats the read as truncated.
  *
