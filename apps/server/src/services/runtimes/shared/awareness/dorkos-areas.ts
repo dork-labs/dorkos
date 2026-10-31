@@ -72,7 +72,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Canvas',
-    can: "open documents, files, diffs, widgets and pages beside the chat or on a room's canvas.",
+    can: "open documents, files, diffs, widgets and pages beside the chat or on a room's canvas; a page can send you events.",
     covers: [
       'ui.control',
       'ui.state',

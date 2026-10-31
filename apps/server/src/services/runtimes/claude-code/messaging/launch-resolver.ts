@@ -741,11 +741,11 @@ export async function resolveLaunch(args: {
   applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome(), { sessionId, agentPath: turnAgentPath });
   // And the agent home's self-grant files, plus the switches for held-back parts.
   applyFolderConfigToLaunch(sdkOptions, turnAgentPath ?? undefined, folderConfig);
-  // Every turn, at every level: the model's own Read, Grep and Glob never open
-  // a secret (DOR-3299).
+  // Every turn, at every level: Read, Grep and Glob never open a secret (DOR-3299, DOR-3292).
   applySecretReadDeny(sdkOptions, {
     dorkHome: resolveDorkHome(),
     accountRoot,
+    agentFolders: [turnAgentPath, effectiveCwd],
     otherAccountRoots: resolveClaudeRootSet(),
   });
   // And every other agent's mini apps, whose server edits run on their author's

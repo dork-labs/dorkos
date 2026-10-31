@@ -1,9 +1,20 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.125.1), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.125.2), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.125.2] - 2026-10-22
+
+> DorkOS 0.125.2 keeps running when a network connection drops, opens without waiting on the update check, and keeps an agent waiting on you in view in a folded sidebar section.
+
+### Fixed
+
+- A folded sidebar section now still shows an agent that is waiting on you, like one asking for your approval. Before, it stayed hidden until you opened the section.
+- The app no longer waits on a slow connection to check for updates. On bad Wi-Fi it could take up to 5 seconds to open. Now it opens right away and checks for updates in the background.
+- Fixes a crash on an unhandled network error.
+- If DorkOS stops, the desktop app now starts it again on its own. If it can't, it says so and offers one button to try again.
 
 ## [0.125.1] - 2026-10-22
 

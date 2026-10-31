@@ -39,6 +39,16 @@
  * the same data directory, and writes the same way: synchronously and
  * atomically, so the kill it exists to survive cannot leave half a file.
  *
+ * ## Bound to the data directory that wrote it
+ *
+ * The file names chats by transcript id, and transcripts live in the shared
+ * `~/.claude*` folders, not in the data directory. So a COPY of a data directory
+ * booted elsewhere would wake the original install's live chats and run their
+ * tools (DOR-3071). The file therefore records the data directory it was
+ * written in, and a boot from any other path wakes nothing and says so once. A
+ * file from before the binding (0.127.x and earlier) carries no path and still
+ * wakes, so an upgrade does not lose the work it was holding.
+ *
  * @module services/runtimes/claude-code/messaging/background-work-ledger
  */
 import fs from 'node:fs';
@@ -66,8 +76,27 @@ const BackgroundWorkRecordSchema = z.object({
 });
 
 const BackgroundWorkFileSchema = z.object({
+  /**
+   * The data directory that wrote the file, resolved. Absent in files written
+   * before DOR-3071, which are trusted as this directory's own.
+   */
+  dorkHome: z.string().min(1).optional(),
   sessions: z.array(BackgroundWorkRecordSchema),
 });
+
+/**
+ * A data directory as a comparable path: symlinks resolved, so the same
+ * directory reached two ways still matches itself.
+ *
+ * @param dorkHome - The data directory as given
+ */
+function resolveHome(dorkHome: string): string {
+  try {
+    return fs.realpathSync(dorkHome);
+  } catch {
+    return path.resolve(dorkHome);
+  }
+}
 
 /** One chat whose warm process is holding background work. */
 export type BackgroundWorkRecord = z.infer<typeof BackgroundWorkRecordSchema>;
@@ -81,6 +110,7 @@ export type BackgroundWorkRecord = z.infer<typeof BackgroundWorkRecordSchema>;
  */
 export class BackgroundWorkLedger {
   private readonly filePath: string;
+  private readonly home: string;
 
   /**
    * Build a ledger over one data directory.
@@ -89,6 +119,7 @@ export class BackgroundWorkLedger {
    */
   constructor(dorkHome: string) {
     this.filePath = path.join(dorkHome, LEDGER_RELATIVE_PATH);
+    this.home = resolveHome(dorkHome);
   }
 
   /** Where this ledger is stored. */
@@ -128,21 +159,53 @@ export class BackgroundWorkLedger {
     return found;
   }
 
-  /** Every record as it stands. Unreadable reads as empty. */
+  /**
+   * Every record as it stands. Unreadable reads as empty, and so does a file
+   * another data directory wrote.
+   */
   read(): BackgroundWorkRecord[] {
+    const file = this.readFile();
+    return file === null || this.isForeign(file) ? [] : file.sessions;
+  }
+
+  /**
+   * The records a previous run of THIS data directory left, for the boot to
+   * wake. A file another data directory wrote — this one is a copy, or was
+   * moved — wakes nothing: it is removed with one log line, because the chats
+   * it names belong to the install that wrote it.
+   */
+  readLeftover(): BackgroundWorkRecord[] {
+    const file = this.readFile();
+    if (file === null) return [];
+    if (!this.isForeign(file)) return file.sessions;
+    logger.warn(
+      '[background-work-ledger] written by another data directory; waking none of its chats',
+      { writtenBy: file.dorkHome, dorkHome: this.home, sessions: file.sessions.length }
+    );
+    this.write([]);
+    return [];
+  }
+
+  /** Whether the file was written by a data directory other than this one. */
+  private isForeign(file: z.infer<typeof BackgroundWorkFileSchema>): boolean {
+    return file.dorkHome !== undefined && file.dorkHome !== this.home;
+  }
+
+  /** The file as it sits on disk, or null when absent or unreadable. */
+  private readFile(): z.infer<typeof BackgroundWorkFileSchema> | null {
     let raw: string;
     try {
       raw = fs.readFileSync(this.filePath, 'utf8');
     } catch {
-      return [];
+      return null;
     }
     try {
       const parsed = BackgroundWorkFileSchema.safeParse(JSON.parse(raw));
-      return parsed.success ? parsed.data.sessions : [];
+      return parsed.success ? parsed.data : null;
     } catch {
       // Truncated by a kill mid-write that the rename did not cover, or edited
       // by hand. Nothing in it can be trusted to name a chat.
-      return [];
+      return null;
     }
   }
 
@@ -159,7 +222,7 @@ export class BackgroundWorkLedger {
     const temp = `${this.filePath}.${process.pid}.tmp`;
     try {
       fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-      fs.writeFileSync(temp, JSON.stringify({ sessions }, null, 2));
+      fs.writeFileSync(temp, JSON.stringify({ dorkHome: this.home, sessions }, null, 2));
       fs.renameSync(temp, this.filePath);
     } catch (error) {
       logger.warn('[background-work-ledger] could not write the record', {

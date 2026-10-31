@@ -151,8 +151,9 @@ export function setupRequestNote(app: string, reason: ConnectorAppSetupReason): 
   return (
     `DorkOS can't reach ${app} yet: ${agentSetupReasonLine(reason)}. Before the person can ` +
     `connect it, they choose how DorkOS reaches apps. ${agentConnectChoices(reason)} The card ` +
-    `in this chat offers the same choices. Once they connect ${app}, their answer comes back ` +
-    "to this chat, so don't ask again."
+    `in this chat offers the same choices. These are steps the person takes, so don't say how ` +
+    `long they take. Once they connect ${app}, their answer comes back to this chat, so ` +
+    "don't ask again."
   );
 }
 

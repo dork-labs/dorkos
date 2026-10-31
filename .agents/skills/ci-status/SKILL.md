@@ -36,7 +36,7 @@ The first stop before any pipeline change (`contributing/ci.md`). It joins the l
 
 ## Reading it
 
-- **Health FAILED** means the collector's own numbers cannot be trusted (a truncated fetch, a drifted ruleset, a missing data-branch safeguard, a stale local export). Each failure line names its fix. It is the constraint until it is fixed.
+- **Health FAILED** means the collector's own numbers cannot be trusted (a truncated fetch, a drifted ruleset, a missing data-branch safeguard, no clone exporting local timings for 3 days). Each failure line names its fix. It is the constraint until it is fixed.
 - **insufficient** is a thin sample, not a breach or a win. **unmeasured** means the SLO has no data source yet.
 - **Verdicts** are computed by code, never written by hand: `verified` (reached the target), `partial` (at least halfway from the baseline, short of the target), `failed`, `inconclusive` (a confounding change on the same gate, or too little data), `pending` (the after-window is still open).
 - **Triggers** are computed from the data, not written by a model: what fired, with its numbers, and a suggested next step. `red` means act; `amber` means decide. Each says how long it has been open and whether a `proposed` ledger entry already covers it. A trigger opens no pull request and changes nothing by itself.

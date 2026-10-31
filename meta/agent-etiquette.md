@@ -122,7 +122,7 @@ agents fails in its own ways, and on Oct 29, 2026 the #dorkos room hit all of
 them in one day: agents posted on stale state more than six times, three or four
 agents restated the same fact, three agents waited on each other for two hours,
 and reviewers approved files that had changed since they read them (DOR-3396).
-These four rules are the working agreement every room turn carries in its
+These rules are the working agreement every room turn carries in its
 `<room_tools>` block. The code that enforces them is the rest of DOR-3396.
 
 **E29. Speak when you are the one asked or hold a new fact.** Being in the room
@@ -145,6 +145,11 @@ without a nudge._
 its version. "Looks good" with nothing named approves whatever the thing becomes
 next.
 _Check: every approval in a room names the commit or file version it covers._
+
+**E33. Long work does not hold the room.** A few minutes of looking can go to a
+helper inside the turn; longer work goes to a spin-off chat. Say who has it, end
+the turn, and post the result when the spin-off reports.
+_Check: no room turn runs long work itself while the room waits on it._
 
 ## 4. The shape of a turn
 
