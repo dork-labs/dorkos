@@ -60,6 +60,8 @@ function fixture({ files = ['apps/server/src/http/gate.ts'], statuses = {} } = {
       changed_files: files.length,
       labels: [{ name: 'security-reviewed' }],
     }),
+    timeline: async () => [],
+    activity: async () => [],
     files: async () => files.map((filename) => ({ filename })),
     compare: async (base) => ({
       base_commit: { sha: base },
@@ -411,6 +413,10 @@ test('pinned-main fixture blocks a branch whose workflow and script both exit 0'
   const script = '.github/scripts/security-gate.mjs';
   const workflowPath = '.github/workflows/security-gate.yml';
   writeFileSync(join(dir, script), readFileSync(new URL('./security-gate.mjs', import.meta.url)));
+  writeFileSync(
+    join(dir, '.github/scripts/security-label-at-head.mjs'),
+    readFileSync(new URL('./security-label-at-head.mjs', import.meta.url))
+  );
   writeFileSync(join(dir, workflowPath), workflow);
   git('add', '.');
   git('commit', '-qm', 'trusted main gate');
