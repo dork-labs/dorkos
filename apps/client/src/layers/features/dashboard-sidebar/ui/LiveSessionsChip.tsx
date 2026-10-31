@@ -3,8 +3,7 @@
  *
  * @module features/dashboard-sidebar/ui/LiveSessionsChip
  */
-import { cn } from '@/layers/shared/lib';
-import { statusDotClass } from '@/layers/shared/ui';
+import { Badge } from '@/layers/shared/ui';
 
 /**
  * The "N live" chip — the agent row's door into Switch session, and the mark
@@ -19,9 +18,8 @@ import { statusDotClass } from '@/layers/shared/ui';
  */
 export function LiveSessionsChip({ count }: { count: number }) {
   return (
-    <span className="bg-status-success/15 text-status-success text-3xs flex items-center gap-1 rounded-full px-1.5 py-0.5 font-semibold tabular-nums">
-      <span className={cn('size-1.5 rounded-full', statusDotClass('working'))} />
+    <Badge live size="xs">
       {count} live
-    </span>
+    </Badge>
   );
 }

@@ -103,7 +103,10 @@ describe('community channel discovery', () => {
     expect(address.searchParams.get('id')).toBe('same');
     expect(screen.getByRole('region', { name: 'Community b' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Community a' })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('2 unread messages')).toBeInTheDocument();
+    // A channel's unread is activity, not something aimed at you: a bold name
+    // and the word, never a number.
+    expect(link).toHaveAccessibleName(/general, unread messages/);
+    expect(screen.queryByLabelText('2 unread messages')).not.toBeInTheDocument();
   });
 
   it('renders no remote navigation while the installation route is selected', async () => {

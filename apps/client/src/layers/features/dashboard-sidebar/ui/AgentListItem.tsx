@@ -12,7 +12,7 @@ import { LiveSessionsChip } from './LiveSessionsChip';
 import { SessionSwitcher } from './SessionSwitcher';
 import type { SidebarUnread } from '../model/build-sidebar-model';
 import type { SortableBindings } from './dnd/SidebarDndPrimitives';
-import { directedCountLabel } from './rooms/directed-count-label';
+import { directedCountCap, directedCountLabel } from './rooms/directed-count-label';
 
 /**
  * The empty id list the roster's status hook is called with, hoisted so it is
@@ -270,6 +270,7 @@ export function AgentListItem({
             {directedCount !== undefined && (
               <CountPill
                 count={directedCount}
+                cap={directedCountCap('messages')}
                 label={directedCountLabel(directedCount, 'messages')}
               />
             )}

@@ -55,6 +55,8 @@ export interface Rule {
   pattern: RegExp;
   /** Limits the rule to paths this matches. */
   only?: RegExp;
+  /** Skips paths this matches: the one file allowed to spell the pattern. */
+  except?: RegExp;
   /** What to write instead. */
   fix: string;
 }
@@ -95,6 +97,29 @@ export const RULES: Rule[] = [
     pattern: /\bfocus-visible:ring-/g,
     fix: 'use the focus-ring recipe',
   },
+  // Phase 2 Badge A. A count has one cap per placement, spelled in count-pill.
+  {
+    id: 'local-count-cap',
+    kind: 'hard',
+    pattern: /\b(?:DISPLAY_CAP|MAX_COUNT)\b|\bconst\s+COUNT_PILL_CAP\b/g,
+    except: /^apps\/client\/src\/layers\/shared\/ui\/count-pill\.tsx$/,
+    fix: 'use CountPill and its cap prop, or COUNT_PILL_CAP / CORNER_COUNT_CAP / MENTION_COUNT_CAP',
+  },
+  {
+    id: 'hand-rolled-count',
+    kind: 'hard',
+    pattern: /^(?=.*\btabular-nums\b)(?=.*\brounded-full\b).*$/gm,
+    except:
+      /^apps\/client\/src\/layers\/(?:shared\/ui\/(?:count-pill|badge)\.tsx|features\/chat\/ui\/chips\/TouchChip\.tsx)$/,
+    fix: 'use CountPill for a number, Badge for a label',
+  },
+  {
+    id: 'count-flip',
+    kind: 'hard',
+    pattern: /\banimate-count-flip\b/g,
+    except: /^apps\/client\/src\/layers\/features\/conversation\/ui\/rows\/ThreadReplyRow\.tsx$/,
+    fix: "a count changes instantly; the flip is ThreadReplyRow's alone",
+  },
 ];
 
 /** The baseline: rule id to repo-relative path to count. */
@@ -129,6 +154,7 @@ export function countIn(file: string, text: string, rules: Rule[] = RULES): Reco
   const out: Record<string, number> = {};
   for (const rule of rules) {
     if (rule.only && !rule.only.test(file)) continue;
+    if (rule.except?.test(file)) continue;
     const n = text.match(rule.pattern)?.length ?? 0;
     if (n > 0) out[rule.id] = n;
   }

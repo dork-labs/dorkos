@@ -9,6 +9,7 @@
  * @module widgets/mobile-tabs/ui/MobileTabBar
  */
 import { cn } from '@/layers/shared/lib';
+import { CountPill } from '@/layers/shared/ui';
 import { MOBILE_TABS, MOBILE_TAB_BAR_DOCK, type MobileTabId } from '../model/mobile-tabs';
 
 /** Props for {@link MobileTabBar}. */
@@ -121,37 +122,15 @@ export function MobileTabBar({
             <span className="relative">
               <Icon className="size-5" aria-hidden />
               {badge !== null && (
-                <span
+                // Silent to a screen reader: `MobileTabsLayout`'s live region,
+                // outside the panels, announces the same count once.
+                <CountPill
                   data-testid={`mobile-tab-badge-${tab.id}`}
-                  // Silent to a screen reader on purpose: the same count is
-                  // announced, debounced and politely, by `MobileTabsLayout`'s
-                  // live region — which sits OUTSIDE the panels, beside this
-                  // bar. Saying it twice from two places is how a fleet of
-                  // thirty agents turns a screen reader into a siren.
-                  //
-                  // **Outside the panels, deliberately.** A region inside one
-                  // would be `inert` whenever it is put away — so for every
-                  // moment the operator was in a conversation this number would
-                  // be silent and nothing else saying it (P4.2).
-                  aria-hidden
-                  // Amber, the one colour this product spends on "somebody is
-                  // waiting for you" (design-decisions §18).
-                  //
-                  // **`text-amber-950`, not `text-white`, and the number is a
-                  // measurement.** White on amber-500 is 2.15:1 — a serious
-                  // failure that axe reports as *incomplete* rather than as a
-                  // violation, because a one-digit badge trips its "content is
-                  // too short to be text" heuristic. It would have been pinned
-                  // as undecided and shipped. amber-950 on amber-500 is 6.97:1,
-                  // and because the pill carries its own background that holds
-                  // in both themes without a variant. The panel's tinted
-                  // treatment (`bg-brand/15 text-brand`) was the other
-                  // candidate and measures 3.75:1 on the light bar, so it is
-                  // not one.
-                  className="text-3xs absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-amber-500 px-1 text-center leading-4 font-semibold text-amber-950 tabular-nums"
-                >
-                  {badge}
-                </span>
+                  count={badge}
+                  tone="warning"
+                  placement="corner"
+                  className="-top-1.5 -right-2.5"
+                />
               )}
             </span>
             {tab.label}
