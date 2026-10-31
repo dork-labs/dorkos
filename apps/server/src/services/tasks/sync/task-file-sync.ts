@@ -27,6 +27,7 @@ import {
   type FileSyncSource,
 } from '../file-sync-gates.js';
 import { mapTaskRow } from '../task-row-mappers.js';
+import { resolveFileSwitch } from './file-switch.js';
 import { scheduleContentKey } from '../schedule-permission-clamp.js';
 import { effectiveContentKey } from '../timing/effective-timing.js';
 import {
@@ -151,6 +152,8 @@ export class TaskFileSync {
         : options;
     const { permissionMode, arm, keepsRowEnabled, dropsTimingOverride, packageOwned } =
       this.fileGates.resolve(def, existing, gateOptions);
+    // A file may switch a task off, never on (DOR-3309, `file-switch.ts`).
+    const fileSwitch = resolveFileSwitch(existing, schedule.enabled, options);
 
     if (existing) {
       const patch = {
@@ -165,8 +168,15 @@ export class TaskFileSync {
         // can live: a schedule inside an installed package is one DorkOS
         // refuses to write, so switching it on is recorded on the row and
         // this sync must not copy `enabled: false` back over it (FB-26).
-        // `file-sync-gates.ts` owns that condition.
-        ...(keepsRowEnabled ? {} : { enabled: schedule.enabled }),
+        // `file-sync-gates.ts` owns that condition. And never the file's switch
+        // turning an off task on, which is a person's to do, while a file that
+        // changes to off always switches it off (DOR-3309, `file-switch.ts`).
+        ...(fileSwitch.turnsOff
+          ? { enabled: false }
+          : keepsRowEnabled || fileSwitch.holdsOff
+            ? {}
+            : { enabled: schedule.enabled }),
+        ...fileSwitch.columns,
         sticky: schedule.sticky,
         maxRuntime: maxRuntimeMs,
         permissionMode,
@@ -270,6 +280,7 @@ export class TaskFileSync {
         // A project's copy starts switched off whatever the file says: the
         // project's own person turns it on (DOR-3376).
         enabled: projectOnly ? false : schedule.enabled,
+        fileEnabled: schedule.enabled,
         projectOnly,
         sticky: schedule.sticky,
         maxRuntime: maxRuntimeMs,
@@ -369,6 +380,20 @@ export class TaskFileSync {
       .where(and(eq(pulseSchedules.filePath, filePath), eq(pulseSchedules.projectOnly, false)))
       .get();
     return row ? mapTaskRow(row) : null;
+  }
+
+  /**
+   * Whether this row's file is being released by a package, so its kept switch
+   * is still to be written into the file (DOR-2272, `carrySwitchIntoReleasedFile`).
+   * The row keeps its old ownership until the file agrees. A person's own file
+   * never is: an off task whose file says on stays that way, and its file is
+   * left alone (DOR-3309).
+   *
+   * @param id - The task id.
+   */
+  isReleasingSwitch(id: string): boolean {
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
+    return row !== undefined && row.packageOwned !== null;
   }
 
   /**

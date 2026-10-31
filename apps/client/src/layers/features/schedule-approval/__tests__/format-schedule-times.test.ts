@@ -64,6 +64,14 @@ describe('formatRunMoment', () => {
     expect(phrase).toMatch(/ at /);
   });
 
+  it('keeps the time and its AM/PM together with a no-break space', () => {
+    const phrase = formatRunMoment(hoursFromNow(3), NOW)!;
+    // Whatever the locale's clock, the last break before the end is not a
+    // plain or narrow space.
+    expect(phrase).not.toMatch(/\d[ \u202f]\S+$/);
+    if (/[AP]M$/.test(phrase)) expect(phrase).toMatch(/\d\u00a0[AP]M$/);
+  });
+
   it('answers null for a timestamp it cannot read', () => {
     // Degrades to nothing rather than to "Invalid Date at Invalid Date".
     expect(formatRunMoment('not a date', NOW)).toBeNull();

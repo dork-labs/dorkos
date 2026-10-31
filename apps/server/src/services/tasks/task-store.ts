@@ -293,7 +293,10 @@ export class TaskStore {
     // columns instead, and a reset clears them (DOR-2302) — one rule, in
     // `timingColumnWrites`, so the NOT NULL spelling above holds on both paths.
     Object.assign(updates, timingColumnWrites(existing, input, options?.timingLandsOn ?? 'file'));
-    if (input.enabled !== undefined) updates.enabled = input.enabled;
+    // Switching a task either way answers a "Turn on" offer its file made
+    // (DOR-3309): on takes it, off declines it.
+    if (input.enabled !== undefined)
+      Object.assign(updates, { enabled: input.enabled, offersTurnOn: false });
     if (input.sticky !== undefined) updates.sticky = input.sticky;
     if (input.maxRuntime !== undefined) {
       updates.maxRuntime =
