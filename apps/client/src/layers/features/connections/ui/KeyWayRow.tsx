@@ -214,7 +214,7 @@ export function KeyWayRow({
                 <AlertDialogCancel>Keep key</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={() => remove.mutate({ provider: status.type })}
-                  className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
+                  variant="destructive"
                 >
                   {stopping.length > 0
                     ? `Remove key and stop ${appCount(stopping.length)}`

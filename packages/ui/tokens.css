@@ -27,6 +27,11 @@
   /* Orange for small text: the brand fill misses 4.5:1 as text; this clears it. */
   --dui-brand-text: 23 97% 29%;
   --dui-destructive-fill: hsl(var(--dui-destructive));
+  --dui-destructive-fill-hover: color-mix(
+    in srgb,
+    hsl(var(--dui-destructive)) 90%,
+    hsl(var(--dui-background))
+  );
   --dui-scrim: hsl(0 0% 9% / 0.5);
   --dui-success: 152 69% 24%;
   --dui-size-icon-xs: 0.75rem;
@@ -70,6 +75,7 @@
     --dui-brand-text: 24 90% 60%;
     --dui-destructive-fill: color-mix(in srgb, hsl(2.5 95% 62%) 60%, hsl(0 0% 4%));
     --dui-scrim: hsl(0 0% 2% / 0.6);
+    --dui-destructive-fill-hover: color-mix(in srgb, hsl(2.5 95% 62%) 70%, hsl(0 0% 4%));
     --dui-success: 152 69% 55%;
   }
 }
@@ -99,6 +105,7 @@
   --dui-brand-text: 24 90% 60%;
   --dui-destructive-fill: color-mix(in srgb, hsl(2.5 95% 62%) 60%, hsl(0 0% 4%));
   --dui-scrim: hsl(0 0% 2% / 0.6);
+  --dui-destructive-fill-hover: color-mix(in srgb, hsl(2.5 95% 62%) 70%, hsl(0 0% 4%));
   --dui-success: 152 69% 55%;
 }
 
@@ -114,4 +121,14 @@
   --z-toast: 60;
   --z-tooltip: 70;
   --z-takeover: 100;
+}
+
+/* How a control answers. The package ships with no app around it, so it carries its
+   own copy of the speeds it uses. */
+:root {
+  --dui-dur-press: 80ms;
+  --dui-dur-answer: 120ms;
+  --dui-dur-fast: 150ms;
+  --dui-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --dui-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }

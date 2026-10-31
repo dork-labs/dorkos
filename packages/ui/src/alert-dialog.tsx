@@ -160,27 +160,32 @@ function AlertDialogDescription({
 }
 
 /**
- * The button that goes through with it, already wearing `Button`'s default look.
+ * The button that goes through with it, already wearing `Button`'s primary look.
  *
- * Pass `className={buttonVariants({ variant: 'destructive' })}` when the answer
- * deletes something, so the colour matches the consequence.
+ * Pass `variant="destructive"` when the answer can't be undone, so the colour
+ * matches the consequence.
  */
 function AlertDialogAction({
   className,
+  variant = 'primary',
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Action> & {
+  /** What kind of answer this is. */
+  variant?: 'primary' | 'destructive';
+}) {
   return (
     <AlertDialogPrimitive.Action
       data-slot="alert-dialog-action"
+      data-variant={variant}
       // `buttonVariants()` alone is the 36px desktop height; `Button` adds the
       // phone touch target itself, so these exits add it the same way.
-      className={cn(buttonVariants(), TOUCH_TARGET_RESPONSIVE_H, className)}
+      className={cn(buttonVariants({ variant }), TOUCH_TARGET_RESPONSIVE_H, className)}
       {...props}
     />
   );
 }
 
-/** The button that backs out, already wearing `Button`'s outline look. */
+/** The button that backs out, already wearing `Button`'s secondary look. */
 function AlertDialogCancel({
   className,
   ...props
@@ -189,7 +194,7 @@ function AlertDialogCancel({
     <AlertDialogPrimitive.Cancel
       data-slot="alert-dialog-cancel"
       className={cn(
-        buttonVariants({ variant: 'outline' }),
+        buttonVariants({ variant: 'secondary' }),
         TOUCH_TARGET_RESPONSIVE_H,
         'mt-2 sm:mt-0',
         className

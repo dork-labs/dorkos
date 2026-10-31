@@ -150,7 +150,7 @@ Native Buttons default to `type="button"`. A submit action must opt in. `asChild
 
 An error Notice defaults to `role="alert"`; info and success tones are silent unless the caller explicitly chooses a live role. Render empty errors as nothing. Keep field IDs and error associations in the application, and avoid announcing one failure from both a field alert and a summary alert.
 
-Responsive controls retain their existing dimensions: default Button/Input are 44px below `md`, 36px above. `icon-sm` remains a deliberate 40px exception; `xs` and `icon-xs` remain compact. `responsive={false}` opts out. Reduced-motion preferences suppress the Button press scale.
+Every Button size is at least 44px below `md` and keeps its desktop size above it; default Input is 44px below, 36px above. `responsive={false}` keeps the small box and adds an invisible 44px hit area. Reduced-motion preferences suppress the Button press scale.
 
 ### Run the catalog and feature playground
 

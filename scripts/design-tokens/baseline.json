@@ -4,15 +4,10 @@
     "pure-white-black": {
       "apps/client/src/layers/entities/agent/ui/AvatarPickerGrid.tsx": 1,
       "apps/client/src/layers/features/canvas/lib/encode-recording.ts": 1,
-      "apps/client/src/layers/features/connections/ui/KeyWayRow.tsx": 1,
-      "apps/client/src/layers/features/connections/ui/panel/AccountPanelMore.tsx": 1,
-      "apps/client/src/layers/features/file-explorer/ui/FileExplorer.tsx": 1,
-      "apps/client/src/layers/features/file-explorer/ui/SourceChangeDialogs.tsx": 2,
       "apps/client/src/layers/features/gen-ui/ui/nodes/TimelineNode.tsx": 2,
       "apps/client/src/layers/features/settings/ui/runtimes/sections/AccountColorControl.tsx": 1,
       "apps/client/src/layers/features/space-settings/ui/SettingsBlocks.tsx": 1,
       "apps/client/src/layers/shared/lib/celebrations/celebration-effects.ts": 5,
-      "apps/client/src/layers/widgets/connections/ui/ChatAppPanel.tsx": 1,
       "apps/client/src/main.tsx": 18
     },
     "raw-palette": {
@@ -164,7 +159,6 @@
       "apps/client/src/layers/widgets/one-bar/ui/BarMembersChip.tsx": 2,
       "apps/client/src/layers/widgets/one-bar/ui/RoomLeadChip.tsx": 2,
       "apps/client/src/layers/widgets/room-view/ui/NoAgentHint.tsx": 2,
-      "packages/ui/src/button.tsx": 7,
       "packages/ui/src/focus-ring.ts": 2,
       "packages/ui/src/select.tsx": 2,
       "packages/ui/src/switch.tsx": 4,

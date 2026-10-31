@@ -61,3 +61,12 @@ export const TOUCH_TARGET_RESPONSIVE_H = 'h-11 md:h-9';
  * nothing but its own box to be hit by, so both axes have to grow together.
  */
 export const TOUCH_TARGET_RESPONSIVE_SIZE = 'size-11 md:size-9';
+
+/**
+ * An invisible 44px hit area below `md`, for a control that keeps its small box.
+ *
+ * The box stays the size a toolbar needs, and a thumb still has 44px to land on,
+ * centred on it. `min-w-full` keeps the area at least as wide as a wide control.
+ */
+export const TOUCH_HIT_AREA =
+  'relative max-md:after:absolute max-md:after:left-1/2 max-md:after:top-1/2 max-md:after:-translate-1/2 max-md:after:size-11 max-md:after:min-w-full';

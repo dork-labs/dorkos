@@ -145,7 +145,6 @@ describe('UnregisterAgentDialog', () => {
     );
 
     const confirmBtn = screen.getByRole('button', { name: /unregister/i });
-    expect(confirmBtn).toHaveClass('bg-destructive');
-    expect(confirmBtn).toHaveClass('text-destructive-foreground');
+    expect(confirmBtn).toHaveAttribute('data-variant', 'destructive');
   });
 });
