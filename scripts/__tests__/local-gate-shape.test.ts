@@ -193,3 +193,41 @@ describe('the heavy commit gate runs under the machine-wide cap', () => {
     expect(lockText).not.toMatch(/kill\s+(-\w+\s+)?"?-\$/);
   });
 });
+
+describe('the root heavy scripts take a host-wide slot (DOR-3274)', () => {
+  const scripts = (
+    JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    }
+  ).scripts;
+  // The same nesting rule as the lint gate: turbo must be an ARGUMENT of the
+  // lock, with no command separator in between, or the slot is released before
+  // the job starts.
+  const wraps = (cmd: string, task: string) =>
+    new RegExp(`bash ${LOCK_REL} --job[^;&|]*\\bturbo (run )?${task}\\b`).test(cmd);
+
+  it.each(['build', 'typecheck', 'test'])('`pnpm %s` runs turbo under the lock', (name) => {
+    expect(
+      wraps(scripts[name] ?? '', name),
+      `package.json's \`${name}\` no longer runs turbo as an argument to ${LOCK_REL} --job. ` +
+        'Parallel full builds and typechecks from several agents panicked this host on 2026-10-24.'
+    ).toBe(true);
+  });
+
+  it('`pnpm verify` runs both of its turbo sweeps under the lock', () => {
+    expect(wraps(scripts.verify ?? '', 'typecheck')).toBe(true);
+    expect(wraps(scripts.verify ?? '', 'test')).toBe(true);
+    expect(scripts.verify).not.toMatch(/&& turbo run/);
+  });
+
+  it('`pnpm heavy` is the lock in job mode, for anything else heavy', () => {
+    expect(scripts.heavy).toBe(`bash ${LOCK_REL} --job`);
+  });
+
+  it('rejects a lock that runs beside turbo rather than around it', () => {
+    expect(wraps(`bash ${LOCK_REL} --job dotenv -- turbo build`, 'build')).toBe(true);
+    expect(wraps(`bash ${LOCK_REL} --job true && turbo build`, 'build')).toBe(false);
+    expect(wraps(`bash ${LOCK_REL} dotenv -- turbo build`, 'build')).toBe(false);
+    expect(wraps('dotenv -- turbo build', 'build')).toBe(false);
+  });
+});

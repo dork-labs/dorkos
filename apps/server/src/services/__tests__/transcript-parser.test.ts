@@ -100,6 +100,24 @@ describe('parseTranscript relay context handling', () => {
     expect(result[0].content).toBe('Write a JavaScript bubble sort function with comments');
   });
 
+  it.each([
+    ['relay.system.tasks.daily', { kind: 'schedule' }],
+    ['relay.agent.ns.scout', { kind: 'agent', label: 'scout (agent)' }],
+    ['relay.human.telegram.bot.42', { kind: 'channel', label: 'Telegram' }],
+    ['a2a-gateway', { kind: 'external', label: 'A2A client' }],
+  ])('says a relay message from %s came from there (DOR-3019)', (from, source) => {
+    const content = `<relay_context>\nFrom: ${from}\n</relay_context>\n\nHello`;
+    const [message] = parseTranscript([JSON.stringify({ type: 'user', message: { content } })]);
+    expect(message?.content).toBe('Hello');
+    expect(message?.promptSource).toEqual(source);
+  });
+
+  it("leaves the person's own console message unmarked (DOR-3019)", () => {
+    const content = '<relay_context>\nFrom: relay.human.console\n</relay_context>\n\nHello';
+    const [message] = parseTranscript([JSON.stringify({ type: 'user', message: { content } })]);
+    expect(message?.promptSource).toBeUndefined();
+  });
+
   it('skips pure relay metadata with no user content', () => {
     const lines = [
       JSON.stringify({

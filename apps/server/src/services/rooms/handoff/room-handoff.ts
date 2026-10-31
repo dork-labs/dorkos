@@ -48,8 +48,20 @@ import { RoomSeatReports } from './seat-report.js';
 /** The longest a hand-off waits for a busy seat before it gives up and says so. */
 export const HANDOFF_WAIT_MAX_MS = 60 * 60_000;
 
-/** How often a waiting hand-off looks again even when no turn ended. */
+/** The longest a waiting hand-off goes without looking again, even when no turn ended. */
 const HANDOFF_RECHECK_MS = 30_000;
+
+/**
+ * The first step of a busy seat's backoff. A seat can be busy with no claim to wait on (the
+ * runtime holding a restart for background work), and then every try is a turn that starts, is
+ * refused and flashes the room's banner, so the gap doubles each time (DOR-3516).
+ */
+const HANDOFF_RETRY_FIRST_MS = 1_000;
+
+/** How long a hand-off waits after its `attempt`th busy try: 1 s, 2 s, 4 s, up to the recheck. */
+function retryDelay(attempt: number): number {
+  return Math.min(HANDOFF_RETRY_FIRST_MS * 2 ** attempt, HANDOFF_RECHECK_MS);
+}
 
 /** Told to the seat when the drafting chat read words from outside the team (scenario E). */
 const OUTSIDER_DRAFT_NOTE =
@@ -337,7 +349,7 @@ export class RoomHandoffs {
     let result: AsideResult | null = null;
     this.running.set(key, handoff);
     try {
-      for (;;) {
+      for (let attempt = 0; ; attempt += 1) {
         const room = this.core.store.getRoom(handoff.roomId);
         const [latest] = this.core.store.listEntries(handoff.roomId, { limit: 1 });
         if (room === null || room.archived || latest === undefined) break;
@@ -353,7 +365,12 @@ export class RoomHandoffs {
         });
         const left = deadline - Date.now();
         if (result.outcome !== 'busy' || left <= 0) break;
-        await this.core.triggers.nextRelease(Math.min(HANDOFF_RECHECK_MS, left));
+        // Woken only when this agent's own turn ends: another agent's release says nothing about
+        // this seat (and a refused try wakes nobody, see `releaseClaim`). Otherwise on a backoff.
+        await this.core.triggers.nextRelease(
+          Math.min(retryDelay(attempt), left),
+          (claim) => claim.authorId === handoff.authorId
+        );
       }
     } catch (err) {
       logger.warn('[rooms] a room hand-off failed', {

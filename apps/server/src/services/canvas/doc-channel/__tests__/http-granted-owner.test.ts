@@ -249,3 +249,36 @@ it.each([undefined, 'old-user'] as const)(
     expect(http.channels.listDeliveries(documentId, event.receipt.id)).toEqual(savedDeliveries);
   }
 );
+
+it('an agent’s own turn proof still holds once an owner account exists; another installation’s does not', async () => {
+  // The connector runtime names this installation on every agent-turn proof,
+  // account or not, so the account appearing must not lock the agent out.
+  const live = createDocChannelHttpComposition({
+    db,
+    documents: rooms.canvasDocuments,
+    rooms: rooms.service,
+    roomStore: rooms.store,
+    roomRepos: new RoomRepoStore(db, '/unused'),
+    approvals,
+    installationId: 'test-install',
+    runtimePrincipalCurrent: () => true,
+  });
+  const turn = (installationId: string) => ({
+    surface: 'capability' as const,
+    principal: createServerPrincipal({
+      kind: 'runtime',
+      owner: { kind: 'local_install', installationId },
+      bindingId: 'binding',
+      runtime: 'codex',
+      canonicalSessionId: 'session-a',
+      agentId: 'a',
+      agentPath: '/agents/a',
+    }),
+  });
+  const before = actor();
+  account.owner = { id: 'owner-1' };
+  expect(live.authorization.requireCurrent(documentId, turn('test-install')).id).toBe(documentId);
+  expect(() => live.authorization.requireCurrent(documentId, turn('another-install'))).toThrow();
+  // Anything else from before the account is still the old owner's, and refused.
+  expect(() => live.authorization.requireCurrent(documentId, before)).toThrow();
+});

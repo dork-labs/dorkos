@@ -2184,12 +2184,12 @@ function requestNote(request: ConnectorAgentRequest, answer?: GrantedClasses): s
         "The person hasn't answered yet. They can answer on the card in the chat where you " +
         'asked, or under Needs you on the Connections page in DorkOS. Their answer comes back ' +
         "to this chat when they give it, so don't ask again; carry on with anything that " +
-        `doesn't need ${app}.`
+        `doesn't need ${app}. It waits on the person, so don't tell them it will be quick.`
       );
     case 'access_pending':
       return (
         `The person allowed it, and DorkOS is still setting up your access to ${app}. You'll ` +
-        "hear here when it's ready, so don't ask again."
+        "hear here when it's ready, so don't ask again or promise the person a time."
       );
     case 'granted': {
       const classes = answer ?? { held: new Set<string>(), notGranted: [], noUpdates: false };

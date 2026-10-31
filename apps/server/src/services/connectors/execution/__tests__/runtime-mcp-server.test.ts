@@ -173,6 +173,9 @@ describe('createConnectorRuntimeMcpServer', () => {
       required: expect.arrayContaining(['access']),
     });
     expect(requestTool?.inputSchema.properties).not.toHaveProperty('requestedOperations');
+    // The tool says how long it holds, and that setup time is the person's (DOR-2850).
+    expect(requestTool?.description).toContain('It waits up to 10 minutes for their answer');
+    expect(requestTool?.description).toContain('never promise a time or say it is instant');
 
     const result = payload(
       await client.callTool({

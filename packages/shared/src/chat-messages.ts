@@ -272,6 +272,33 @@ export const RoomMessageStampSchema = z
 export type RoomMessageStamp = z.infer<typeof RoomMessageStampSchema>;
 
 /**
+ * The sentence every heartbeat prompt opens with. The prompt builder writes it
+ * and the server reads it back, so a heartbeat is never shown as the person's.
+ */
+export const HEARTBEAT_PROMPT_OPENING =
+  'This is a heartbeat, not a message from a person. Nobody is waiting on a reply.';
+
+/**
+ * Where a user message came from when a person in this chat did not type it
+ * (DOR-3019). Filled in by the server; the app draws the source from here,
+ * never "You".
+ */
+export const PromptSourceSchema = z
+  .object({
+    /**
+     * `schedule` and `heartbeat` are DorkOS itself; `agent` and `external` are
+     * machines reaching in over Relay; `channel` is a person on a connection.
+     */
+    kind: z.enum(['schedule', 'heartbeat', 'agent', 'external', 'channel']),
+    /** The schedule's name, or who sent it, when that is known. */
+    label: z.string().optional(),
+  })
+  .openapi('PromptSource');
+
+/** One of {@link PromptSourceSchema}. */
+export type PromptSource = z.infer<typeof PromptSourceSchema>;
+
+/**
  * A chat message as its SENDER sees it: what the Sent card in the sending chat
  * draws, read by the receipt id a tool call returned.
  */

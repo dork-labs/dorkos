@@ -10,12 +10,14 @@ import {
   projectDocChannelPort,
   type DocChannelView,
   type NativeFrameAdmission,
+  type DocChannelSnapshot,
 } from './doc-channel-view';
 
 /** Keep loading/refused document actions attached to their own lifetime. */
 export function useDocChannel(documentId: string): {
   channel: WidgetChannelPort;
   events: CanvasChannelFrame[];
+  snapshot?: DocChannelSnapshot;
   frameAdmission?: NativeFrameAdmission;
   fileSaveBinding?: FileSaveBinding;
   fileSaveObservation: 'pending' | 'ready' | 'unavailable';
@@ -49,6 +51,7 @@ export function useDocChannel(documentId: string): {
   return {
     channel,
     events: current.events,
+    snapshot: current.snapshot,
     frameAdmission: current.frameAdmission,
     fileSaveBinding,
     fileSaveObservation:
