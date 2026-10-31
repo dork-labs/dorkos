@@ -84,7 +84,7 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-dui-border relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border shadow-md',
+          'bg-dui-popover text-dui-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dui-dark:border dui-dark:border-dui-border relative z-(--z-overlay) max-h-96 min-w-[8rem] overflow-hidden rounded-md shadow-lg',
           // OPENS WITH AN ANIMATION, CLOSES AT ONCE — the same load-bearing
           // half `dropdown-menu` carries, for the same reason and on the same
           // evidence (DOR-1835, following DOR-1834). Radix keeps this list

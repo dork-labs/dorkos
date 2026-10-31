@@ -548,6 +548,11 @@ beforeAll(async () => {
  * twelve class-token entries and nothing else — no element, no attribute, no
  * text.
  *
+ * A second hand edit (2026-10-30, UI overhaul Phase 1): a card focused on mount
+ * no longer wears the orange ring. `border-ring ring-ring ring-[1px]` out and
+ * `border-foreground/20` in, one class list per file, and for the same reason:
+ * those four tokens were the whole diff.
+ *
  * ## The intended deltas from the flag-off tree, enumerated
  *
  * These are asserted POSITIVELY below rather than accepted as whatever

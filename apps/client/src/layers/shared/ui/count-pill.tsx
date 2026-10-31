@@ -35,10 +35,9 @@ export interface CountPillProps extends Omit<ComponentProps<'span'>, 'children'>
  * A count of things addressed to you: mentions, or a direct message's new
  * messages.
  *
- * **Neutral ink on a neutral tint, never a brand or warning colour.** Bold
- * already says "something happened here"; this says "and this much of it was
- * for you", which is a fact to read, not an alarm. A coloured pill in a column
- * of rows pulls the eye down the sidebar every time anything arrives anywhere.
+ * **Orange, because orange means you.** Bold already says "something happened
+ * here"; this says "and this much of it was for you". A busy row nobody aimed at
+ * you stays bold with no number, so the orange only ever marks your own.
  *
  * Capped at `9+` so the pill never grows wider than two characters and a busy
  * row's name is never squeezed by its own count.
@@ -49,7 +48,7 @@ export function CountPill({ count, label, className, ...props }: CountPillProps)
       data-slot="count-pill"
       aria-label={label}
       className={cn(
-        'bg-foreground/10 text-foreground text-3xs min-w-4 shrink-0 rounded-full px-1.5 py-0.5 text-center font-medium tabular-nums',
+        'bg-brand/15 text-brand-text text-3xs min-w-4 shrink-0 rounded-full px-1.5 py-0.5 text-center font-medium tabular-nums',
         className
       )}
       {...props}

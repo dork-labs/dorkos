@@ -1539,6 +1539,26 @@ describe('ComposerInput', () => {
         expect(screen.getByLabelText(name).className).toContain('focus-ring');
       }
     });
+
+    // A text field matches :focus-visible on a click and on mount too, so the
+    // card's orange ring is earned by a Tab key and by nothing else.
+    it('paints the card ring only after Tab, and drops it on blur', () => {
+      render(<ComposerInput {...defaultProps} />);
+      const field = screen.getByRole('combobox');
+      const card = field.closest('.items-end') as HTMLElement;
+
+      fireEvent.focus(field);
+      expect(card).toHaveClass('border-foreground/20');
+      expect(card).not.toHaveClass('border-ring');
+
+      fireEvent.keyUp(field, { key: 'Tab' });
+      expect(card).toHaveClass('border-ring', 'ring-ring');
+      expect(card).not.toHaveClass('border-foreground/20');
+
+      fireEvent.blur(field);
+      fireEvent.focus(field);
+      expect(card).not.toHaveClass('border-ring');
+    });
   });
 
   describe('autofocus on mount', () => {
