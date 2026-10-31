@@ -32,6 +32,7 @@ import {
 } from '@/layers/shared/lib/row-grammar';
 import { IDENTITY_MARK_GROUP } from './identity-avatar';
 import { PRESS_MARK, PRESS_ROW } from './press';
+import { ROW_FOCUS_CLASS } from './row';
 import { SidebarMenuItem, SIDEBAR_MENU_ITEM_ATTRS, SIDEBAR_MENU_ITEM_CLASS } from './sidebar';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 import { TOUCH_TARGET_MIN_H } from './touch-target';
@@ -149,7 +150,10 @@ export const sidebarRowVariants = cva(
     // line and `py-1` is what keeps a one-line row on it exactly. A row that
     // earned a second line grows past it, which is the point — height carries
     // meaning here.
-    'focus-visible:ring-sidebar-ring flex w-full rounded-md py-1 text-left text-control outline-hidden focus-visible:ring-2',
+    'flex w-full rounded-md py-1 text-left text-control',
+    // The inset outline every row uses (`shared/ui/row`, C7): an outer ring
+    // overlapped the next row and was clipped by the scroller.
+    ROW_FOCUS_CLASS,
     PRESS_ROW,
     SIDEBAR_ROW_INSET
   ),
