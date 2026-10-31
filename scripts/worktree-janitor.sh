@@ -147,6 +147,52 @@ DATA_BRANCH=ci-steward-data
 # The primary worktree — the original clone — is never a candidate.
 PRIMARY_WT=$(git worktree list --porcelain | awk '/^worktree /{print substr($0, 10); exit}')
 
+# Worktrees can live on an external disk under /Volumes/<name>/. When that disk
+# is unplugged or asleep, git sees every one of them as a worktree whose
+# directory is gone, and `git worktree prune` deletes their records: the work
+# survives on the disk, but this repo no longer knows it is there. So:
+#
+#   - a registered worktree under /Volumes/ whose directory is not there right
+#     now is never judged, and neither is its branch (the branch pass below
+#     would otherwise see a branch with no worktree and could reap it);
+#   - while any such worktree exists, --fix skips `git worktree prune` entirely
+#     and logs one ALERT line per missing disk.
+#
+# Worktrees on disks that are present are still judged and reaped as usual.
+# Prune cannot be limited to some paths, so a worktree that vanished from the
+# internal disk keeps its record until a run with every disk present.
+#
+# A /Volumes entry that is a symlink (macOS's "Macintosh HD" points at /) is the
+# internal disk, so its paths are treated like any other internal path.
+HELD_WORKTREES=$'\n'
+HELD_BRANCHES=""
+HELD_VOLUMES=$'\n'
+while IFS=$'\t' read -r wt wt_branch; do
+  [[ "$wt" == /Volumes/*/* ]] || continue
+  [[ -d "$wt" ]] && continue
+  rest=${wt#/Volumes/}
+  vol="/Volumes/${rest%%/*}"
+  [[ -L "$vol" ]] && continue
+  HELD_WORKTREES+="$wt"$'\n'
+  [[ -n "$wt_branch" ]] && HELD_BRANCHES+=" $wt_branch "
+  [[ "$HELD_VOLUMES" == *$'\n'"$vol"$'\n'* ]] && continue
+  HELD_VOLUMES+="$vol"$'\n'
+  if [[ -d "$vol" ]]; then
+    why="has a worktree folder that is gone ($wt)"
+  else
+    why="is not mounted"
+  fi
+  # "removed" is load-bearing: the daily LaunchAgent wrapper copies only lines
+  # matching removed|ERROR|error into ~/Library/Logs/dorkos-worktree-janitor.log.
+  note "ALERT: $vol $why: git worktree prune skipped, and no worktree on it is judged or removed"
+done < <(git worktree list --porcelain | awk '
+  /^worktree /{p = substr($0, 10); b = ""}
+  /^branch refs\/heads\//{b = substr($0, 19)}
+  /^$/{if (p != "") print p "\t" b; p = ""}
+  END{if (p != "") print p "\t" b}')
+PRUNE_HELD=false
+[[ "$HELD_WORKTREES" != $'\n' ]] && PRUNE_HELD=true
+
 # Branch names that exist on origin right now. A failed lookup means every branch
 # is reported as still on origin, which is the KEEP direction.
 ORIGIN_OK=true
@@ -234,7 +280,8 @@ is_recently_active() {
 }
 
 PLAN='[]'
-SEEN_BRANCHES=""
+# Branches of worktrees on a missing disk count as seen, so they are never judged.
+SEEN_BRANCHES="$HELD_BRANCHES"
 
 add_entry() {
   local branch=$1 sha=$2 localonly=$3 dirty=$4 ignored=$5 current=$6 protected=$7 detached=$8 wt=$9 active=${10}
@@ -284,6 +331,7 @@ count_local_only() {
 
 while IFS= read -r wt; do
   [[ -z "$wt" ]] && continue
+  [[ "$HELD_WORKTREES" == *$'\n'"$wt"$'\n'* ]] && continue
   branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
   detached=false
   [[ -z "$branch" ]] && detached=true
@@ -387,7 +435,11 @@ while IFS=$'\x1f' read -r branch wt sha; do
 done < <(jq -r '.[] | select(.verdict == "REAP") | [.branch, .worktree, .branchSha] | join("\u001f")' <<<"$PLAN")
 
 if [[ "$MODE" == fix ]]; then
-  git worktree prune
+  if [[ "$PRUNE_HELD" == true ]]; then
+    echo "worktree-janitor: git worktree prune skipped (a worktree's disk is missing; see ALERT above)"
+  else
+    git worktree prune
+  fi
   echo
   echo "worktree-janitor: removed $removed, failed $failed"
   [[ "$removed" -gt 0 ]] && echo "  recovery log: $REAP_LOG"
