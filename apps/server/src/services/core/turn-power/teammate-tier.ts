@@ -108,6 +108,12 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
   mesh_status: refuse('reads the owner’s agent network'),
   mesh_query_topology: refuse('reads the owner’s agent network'),
   get_agent: refuse('reads an agent’s setup'),
+  ping: refuse('checks on the owner’s DorkOS, outside the room'),
+  get_server_info: refuse('reads how the owner’s DorkOS is set up'),
+  get_session_count: refuse('reads how many chats an agent has'),
+  get_extension_api: refuse('reads the owner’s extension reference'),
+  list_extensions: refuse('lists the owner’s extensions'),
+  get_extension_errors: refuse('reads the owner’s extension errors'),
   // Durable state that outlives the turn.
   memory_write: refuse('writes notes every later conversation reads, the owner’s included'),
   memory_read: refuse('reads the agent’s notes files, which a teammate’s turn is never shown'),
