@@ -93,6 +93,38 @@ afterEach(() => {
 });
 
 describe('ApprovalCard', () => {
+  describe('a card that names what a yes does (DOR-3359)', () => {
+    const repoPin = buildApproval({
+      capabilityId: 'runtime.apply_repo_tools',
+      capabilityTitle: 'Allow a changed skill in "dor-3068-installed-code-deny"?',
+      consequence: 'Widens what agents can run',
+    });
+
+    it('shows the consequence on the red badge, in place of "Cannot be undone"', () => {
+      renderCard(repoPin);
+      const badge = screen.getByText('Widens what agents can run');
+      expect(badge).toHaveClass('text-destructive');
+      expect(screen.queryByText('Cannot be undone')).not.toBeInTheDocument();
+    });
+
+    // jsdom cannot lay text out, so this pins the classes that let the badge
+    // move under a long title instead of cutting the question short; the
+    // 390px wrap itself is checked in a real browser.
+    it('lets the title wrap instead of truncating it', () => {
+      renderCard(repoPin);
+      const title = screen.getByText(repoPin.capabilityTitle);
+      expect(title).toHaveClass('break-words');
+      expect(title).not.toHaveClass('truncate');
+      expect(title.parentElement).toHaveClass('flex-wrap');
+    });
+
+    it('keeps the tier label on a card that names none', () => {
+      renderCard(buildApproval());
+      expect(screen.getByText('Cannot be undone')).toBeInTheDocument();
+      expect(screen.getByText('Uninstall a marketplace package')).toHaveClass('truncate');
+    });
+  });
+
   describe('a row that never runs out (DOR-3427)', () => {
     it('says it waits instead of counting down', () => {
       // A package Full held back is a passive row: its expiry is the far
