@@ -11,7 +11,8 @@
     "credential-free-build",
     "db-check",
     "openapi-fresh",
-    "fixtures"
+    "fixtures",
+    "security-gate"
   ],
   "workflows": [
     {
