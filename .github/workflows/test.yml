@@ -380,7 +380,16 @@ jobs:
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+      # Own pnpm store, keyed on the runner image: see test-shard (ledger
+      # 261031-012000).
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
       # Where the space server lives (ci/space-server.env, DOR-3007): its
       # KEY=value lines become this job's environment, read below as
       # "$SPACE_DIR" and ${{ env.SPACE_DIR }}. A step can read env, a `paths:`
@@ -676,7 +685,20 @@ jobs:
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+      # THIS JOB'S OWN PNPM STORE, KEYED ON THE RUNNER IMAGE (ledger
+      # 261031-012000). setup-node's `cache: pnpm` shares one store per lockfile
+      # across runner images, and node-pty compiles at install on linux-x64. On
+      # 2026-10-30 `ubuntu-latest` began handing out 24.04 runners while the
+      # shared store had been built on 26.04, so every server test file that
+      # loads node-pty failed. `ImageOS` keeps the images apart.
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - run: pnpm install --frozen-lockfile
 
