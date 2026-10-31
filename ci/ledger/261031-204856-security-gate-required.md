@@ -1,19 +1,18 @@
 ---
 id: 261031-204856
-title: security-gate becomes required, so a security-path PR cannot merge past a stale Security label
+title: security-gate becomes a required workflow from main, so a security-path PR cannot merge past a stale Security label
 kind: hygiene
 status: proposed
 actor: agent
 gates:
   - wf.security-gate.security-gate
-  - ruleset.required_status_checks
-prs: []
+prs: [3370]
 ratchet-release: []
 field-changes:
   - gate: wf.security-gate.security-gate
     field: required
     from: 'advisory'
-    to: 'ruleset 19893973, pull_request + merge_group'
+    to: 'org required-workflow rule "DorkOS security gate from main", .github/workflows/security-gate.yml at refs/heads/main, no bypass actors, pull_request + merge_group'
 ---
 
 ## Why
@@ -25,15 +24,21 @@ merge nobody had read. `security-gate` would have refused both: since #3275
 fails it. It only binds once it is required. @dorkos-pm decided this in #dorkos
 at 20:45Z; Security agreed, on both `pull_request` and `merge_group`.
 
-## What changed
+## What changes, in order
 
-- `security-gate` is in `ci/required-checks.json`. The ruleset edit (Dorian,
-  org admin) comes after this merges.
-- The job already meets the deadlock invariant: it runs on `pull_request`
-  (`synchronize` included) and `merge_group`, with no `paths:`, no job-level
-  `if:` and `timeout-minutes: 5`. No workflow change.
-- The org-level required-workflow source in `workflows:` stays `enforced:
-false`. That promotion (ci/security-gate-promotion.md) is separate.
+1. This entry lands first (rule 5). `ci/required-checks.json` already declares
+   the target in `workflows:`: "DorkOS security gate from main", the workflow
+   at `refs/heads/main`, empty bypass list, `enforced: false`.
+2. Dorian switches on the organization rule with exactly those settings.
+3. A follow-up PR flips `enforced` to `true` once `pnpm ci:census --live`
+   sees the rule active.
+
+`security-gate` is **not** added to `contexts`. A named status check can be
+satisfied by a candidate that rewrites `security-gate.yml` to emit a passing
+job of that name; GitHub picks a required workflow from main before candidate
+YAML runs (ci/security-gate-promotion.md). No workflow change: the job runs on
+`pull_request` (`synchronize` included) and `merge_group`, with no `paths:`, no
+job-level `if:` and `timeout-minutes: 5`.
 
 ## Why hygiene
 
@@ -46,13 +51,11 @@ required, so neither has a baseline to beat.
 
 It is only as strong as the label: any agent on the shared token can add
 `security-reviewed` (posture item 22), and DOR-3525's path gaps let some
-sensitive files through as non-sensitive. As a named status check, a candidate
-that edits `security-gate.yml` itself can still emit a passing job of that
-name; the main-pinned required workflow closes that.
+sensitive files through as non-sensitive.
 
 ## Revert
 
-Revert (ledger entry, then ruleset edit) if, in any 7-day window,
+Revert (ledger entry, then the org rule) if, in any 7-day window,
 `gate.wf.security-gate.security-gate.ejections_caused` minus `real_catches` is
 above 1: the gate is then ejecting reviewed PRs and lowering `queue-green`
 rather than stopping unreviewed ones.
