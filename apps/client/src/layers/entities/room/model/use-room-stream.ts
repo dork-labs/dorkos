@@ -424,9 +424,12 @@ export function useRoomStream(roomId: string | null, hydrated: boolean): RoomStr
     // the signal that used to be missing entirely: `/api/events` reconnected
     // forever and re-badged this very room in the sidebar while the room on
     // screen sat dead, which is what made a frozen room look like a quiet one.
+    // From `disconnected` too: the global stream keeps retrying past it now and
+    // can recover from there (DOR-3482).
     let previous = streamManager.getListConnectionState();
     const unsubscribe = streamManager.subscribeListConnectionState((state) => {
-      const recovered = state === 'connected' && previous === 'reconnecting';
+      const recovered =
+        state === 'connected' && (previous === 'reconnecting' || previous === 'disconnected');
       previous = state;
       if (recovered) wake();
     });
