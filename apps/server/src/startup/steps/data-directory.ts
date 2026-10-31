@@ -78,8 +78,9 @@ export async function claimDataDirectory(refs: ServerRefs, built: ClaimDataDirec
   // before anything can warm a new one, so a record this run writes is never
   // mistaken for one. Not cleared: each record is removed only once its chat is
   // settled, so a boot that dies midway wakes the rest next time. The wakes go
-  // out once the server is listening.
-  const backgroundWorkCutShort = sharedBackgroundWorkLedger().read();
+  // out once the server is listening. A file another data directory wrote (a
+  // copy of this one) wakes nothing (DOR-3071).
+  const backgroundWorkCutShort = sharedBackgroundWorkLedger().readLeftover();
 
   // Empty the hosted-community move staging directory. A copy a previous run
   // left behind can never be sent: its upload token died with that process.
