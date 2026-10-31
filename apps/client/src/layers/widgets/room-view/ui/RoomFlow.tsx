@@ -146,6 +146,8 @@ interface RoomFlowProps {
   onLoadOlder?: () => void;
   /** The timeline's handle, so the lane's peek can take a reader to a row. */
   ref?: Ref<ConversationTimelineHandle>;
+  /** The room's kind, so the reader's own channel posts say who they woke. */
+  roomKind?: 'channel' | 'dm';
 }
 
 /**
@@ -258,6 +260,7 @@ export function RoomFlow({
   isLoadingOlder = false,
   onLoadOlder,
   ref,
+  roomKind,
 }: RoomFlowProps) {
   const authors = useMemo(() => authorsById(members, formerAuthors), [members, formerAuthors]);
   // Reactions go with the composer (DOR-1233): a room the operator sees but
@@ -450,12 +453,14 @@ export function RoomFlow({
           // It is where focus comes back to when the thread panel this row
           // opened closes again.
           rowId={entryRowId(row.entry.id)}
+          roomKind={roomKind}
         />
       );
     },
     [
       flowRows,
       roomId,
+      roomKind,
       authors,
       agents.faces,
       viewerAuthorId,
