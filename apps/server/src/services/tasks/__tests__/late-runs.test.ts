@@ -23,6 +23,8 @@ import {
   type SchedulerAgentManager,
 } from '../task-scheduler-service.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
+import type { AwakeClock } from '@dorkos/shared/awake-clock';
+import { WakeSettle } from '../timing/wake-settle.js';
 
 vi.mock('../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn(() => false),
@@ -59,6 +61,25 @@ function taskInput(
   };
 }
 
+/**
+ * A clock that sees no sleep. `vi.setSystemTime` jumps look like a wake to the
+ * real one, which holds the fire for the wake settle (DOR-3286); these cases
+ * are about which occurrence a late fire stands for, and the settle has its
+ * own (`sleep-during-run.test.ts`).
+ */
+const NO_SLEEP: AwakeClock = {
+  now: () => Date.now(),
+  sleptMs: () => 0,
+  lastWakeAt: () => null,
+  timers: {
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+    setInterval: (fn, ms) => setInterval(fn, ms),
+    clearInterval: (h) => clearInterval(h as ReturnType<typeof setInterval>),
+  },
+  dispose: () => {},
+};
+
 /** Both instances believe they lead: the dual-leader handoff window ADR-285 backstops. */
 const BOTH_LEAD = {
   tryAcquire: () => true,
@@ -79,6 +100,7 @@ describe('late scheduled runs (DOR-2718)', () => {
       runtimes: singleRuntimeSource(mockAgent),
       config: { maxConcurrentRuns: 5, retentionCount: 100, mayFire: true, firingReason: 'test' },
       leaderLock: BOTH_LEAD,
+      wakeSettle: new WakeSettle(NO_SLEEP),
     });
     services.push(service);
     return service;

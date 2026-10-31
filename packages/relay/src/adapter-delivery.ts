@@ -29,6 +29,7 @@ import type { ChatNoticeSender } from './chat-notice.js';
 import { requiresInitiateConsent } from './lib/consent-scope.js';
 
 import type { Logger } from '@dorkos/shared/logger';
+import { awakeTimeout, getAwakeClock, type AwakeClock } from '@dorkos/shared/awake-clock';
 
 /**
  * Which chat notice a failed delivery deserves.
@@ -130,6 +131,14 @@ export interface AdapterDeliveryDeps {
 
   /** Logger for delivery diagnostics. Defaults to `console`. */
   logger?: Logger;
+
+  /**
+   * Sees the computer sleep, so a task run's delivery timeout counts only awake
+   * time. That delivery waits out the run's own deadline, and a plain timer
+   * counting through sleep failed it on wake as past its time limit (DOR-3286).
+   * The process clock by default.
+   */
+  awakeClock?: AwakeClock;
 }
 
 /** The longest delay `setTimeout` honours; anything longer fires at once. */
@@ -376,7 +385,7 @@ export class AdapterDelivery {
     context: AdapterContext | undefined,
     refundTurn: (() => void) | undefined
   ): Promise<DeliveryResult | null> {
-    let timer: NodeJS.Timeout | undefined;
+    let cancelTimer: (() => void) | undefined;
     try {
       const deliveryPromise = this.deps.adapterRegistry!.deliver(subject, envelope, context);
       const timeoutMs = deliveryTimeoutMs(subject, envelope);
@@ -384,10 +393,16 @@ export class AdapterDelivery {
       const result = await Promise.race([
         deliveryPromise,
         new Promise<DeliveryResult>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error(`adapter delivery timeout (${Math.round(timeoutMs / 1000)}s)`)),
-            timeoutMs
-          );
+          const expire = () =>
+            reject(new Error(`adapter delivery timeout (${Math.round(timeoutMs / 1000)}s)`));
+          // A task run's delivery lasts as long as the run, so it counts awake
+          // time as the run's own deadline does (DOR-3286).
+          if (isTaskDispatchSubject(subject)) {
+            cancelTimer = awakeTimeout(this.deps.awakeClock ?? getAwakeClock(), timeoutMs, expire);
+          } else {
+            const timer = setTimeout(expire, timeoutMs);
+            cancelTimer = () => clearTimeout(timer);
+          }
         }),
       ]);
 
@@ -407,7 +422,7 @@ export class AdapterDelivery {
         durationMs: undefined,
       };
     } finally {
-      if (timer) clearTimeout(timer);
+      cancelTimer?.();
     }
   }
 
