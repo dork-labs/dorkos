@@ -625,7 +625,9 @@ export class TaskFileWatcher implements TaskWatchHealth {
     // for it. That write comes back through here, finds the file agreeing, and
     // records the release; a write that fails is retried by the next sync.
     try {
-      await carrySwitchIntoReleasedFile(task, discovered.def, root);
+      if (this.store.fileSync.isReleasingSwitch(task.id)) {
+        await carrySwitchIntoReleasedFile(task, discovered.def, root);
+      }
     } catch (err) {
       logger.warn('[TaskFileWatcher] could not write the kept switch into its file', {
         filePath: discovered.def.filePath,
