@@ -26,8 +26,10 @@
  *
  * @module server/services/rooms/handoff/seat-report
  */
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { fenceUntrustedBlock } from '../../runtimes/shared/untrusted-fence.js';
+import { defuseMarkers } from '../../session/chat-messages/chat-message-fence.js';
 import { agentKey } from '../room-claims.js';
 import type { AsideResult } from '../room-trigger/aside.js';
 import type { RoomCore } from '../service/room-core.js';
@@ -166,9 +168,10 @@ export class RoomSeatReports {
  * @param report - The report.
  */
 export function seatReportPrompt(report: SeatReport): string {
-  const from = report.fromTitle
-    ? `"${report.fromTitle}" (chat ${report.fromSessionId})`
-    : `chat ${report.fromSessionId}`;
+  // The title sits outside the fence, and anybody who can rename the chat writes it: reduced to
+  // one plain line and kept from reading as a fence marker, as a chat message's sender is.
+  const title = report.fromTitle ? defuseMarkers(sanitizeIdentity(report.fromTitle) ?? '') : '';
+  const from = title ? `"${title}" (chat ${report.fromSessionId})` : `chat ${report.fromSessionId}`;
   return [
     `A spin-off chat you started from this room, ${from}, reported back. Its report is below.`,
     'Act on it: carry on with the work, read more with chat_read, or message it with chat_send. ' +

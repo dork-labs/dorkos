@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a spin-off started from a room reports back to the agent there (DOR-3488)'
+  - "fix(server): a spin-off's title cannot fake a marker in its room seat's report (DOR-3488)"
 ---
 
 ### Fixed
