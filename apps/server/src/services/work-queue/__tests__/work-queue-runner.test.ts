@@ -91,7 +91,14 @@ describe('WorkQueueRunner', () => {
   beforeEach(() => {
     db = createTestDb();
     store = new WorkQueueStore(db);
-    service = new WorkQueueService({ store, holdOf: () => null, wake: () => undefined });
+    // The service reads the same fake clock as the runner. Without it,
+    // `startsToday` counted against the real date and went red on 2026-10-31.
+    service = new WorkQueueService({
+      store,
+      holdOf: () => null,
+      wake: () => undefined,
+      now: () => new Date(world.today),
+    });
     world = {
       machine: null,
       capFull: false,
