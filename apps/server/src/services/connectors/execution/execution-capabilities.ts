@@ -28,7 +28,10 @@ import type { ConnectorExecutionBroker } from './execution-broker.js';
 import type { DestructiveHoldService } from './destructive-hold.js';
 import { cancelWindowFor } from './destructive-hold-window.js';
 import type { HeldActionOutcome } from '../../notifications/connector-hold-notifications.js';
-import type { ConnectorRuntimeExecutionCapabilityId } from '../runtime-capability-scope.js';
+import {
+  CONNECTOR_REQUEST_LIVE_HOLD_MS,
+  type ConnectorRuntimeExecutionCapabilityId,
+} from '../runtime-capability-scope.js';
 import { SERVICE_CATALOG_TOOL_NAME } from '../connector-capabilities.js';
 import {
   ConnectorAgentRequestError,
@@ -295,11 +298,13 @@ const requestConnection = defineCapability({
     'there, or "read-write" to also change things there; ask for the lowest level the work ' +
     'needs, and say why in reason. Name events only to hear when something new happens there. ' +
     'Asking again for the same service reuses your open request. The owner chooses the account; ' +
-    'this call never lists accounts or grants access by itself. It waits a while for their ' +
-    'answer, except when DorkOS cannot reach the service yet: then it answers at once with the ' +
-    'choices to offer the person. Every result carries a note saying what happens next. A ' +
-    'command-line login in ' +
-    'a shell does not grant access; only the owner connects services.',
+    'this call never lists accounts or grants access by itself. It waits up to ' +
+    `${CONNECTOR_REQUEST_LIVE_HOLD_MS / 60_000} minutes for their answer, except when DorkOS ` +
+    'cannot reach the service yet: then it answers at once with the choices to offer the ' +
+    'person. An answer that comes later still reaches your chat. How long setup takes is up ' +
+    'to the person, so never promise a time or say it is instant. Every result carries a note ' +
+    'saying what happens next. A command-line login in a shell does not grant access; only ' +
+    'the owner connects services.',
   tier: 'observe',
   area: null,
   areaNote: 'connected accounts have their own grant model',
