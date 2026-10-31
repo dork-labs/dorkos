@@ -146,10 +146,19 @@ collect:
 # (25 minutes at six shards; it was 30 at three). Measured against 45, a
 # three-way shard at 29 minutes read as 65% used when it was 97%.
 #
-# The job's duration includes about 2.5 minutes of setup before Playwright
-# starts, so the ratio reads that much high. That is the safe side for a
-# tripwire. The number is checked against playwright.config.ts's derivation and
-# the workflow's shard count by ruler.test.ts, so it cannot drift silently.
+# Playwright's clock starts at the suite step, after checkout, install, the
+# browser and the build, so the job ends at `lead_minutes + minutes`, not at
+# `minutes`. Counting that setup against the deadline read the shards 0.15 high:
+# p95 job 23.7 min was 94.8% of 25, while the suite step Playwright bounds ran
+# p95 19.4-19.8 (78%), and of 1,788 queue shard jobs the deadline stopped at
+# most one, a run already failing four tests (2026-10-24..31; ledger
+# 261031-121500). The lead is the SHORTEST setup
+# measured over 1,474 green jobs, 2.52 minutes (p50 3.55, p95 4.02), so the
+# ratio still reads a little high, the safe side for a tripwire. Re-measure it
+# when the steps before `Run the browser suite` change.
+#
+# `minutes` is checked against playwright.config.ts's derivation and the
+# workflow's shard count by ruler.test.ts, so it cannot drift silently.
 #
 # Readers apply this to every day they read, not only to days after it
 # changed, so when it drops (30 to 25 on 2026-09-27, ledger 260919-175503) the
@@ -160,6 +169,7 @@ collect:
 deadlines:
   - gate: wf.browser-test.browser-shard
     minutes: 25
+    lead_minutes: 2.5
     source: apps/e2e/playwright.config.ts globalTimeout in CI, derived per shard from E2E_SHARD_TOTAL
 
 # The quarantine lane (plan §4.9 L1): a test data has classified flaky runs and
