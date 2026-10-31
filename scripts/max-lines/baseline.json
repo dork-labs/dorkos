@@ -86,7 +86,7 @@
     "apps/server/src/services/runtimes/codex/app-server/notification-mapper.ts": 546,
     "apps/server/src/services/runtimes/codex/codex-runtime.ts": 1085,
     "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts": 1157,
-    "apps/server/src/services/runtimes/opencode/opencode-runtime.ts": 860,
+    "apps/server/src/services/runtimes/opencode/opencode-runtime.ts": 853,
     "apps/server/src/services/session/chat-messages/chat-message-service.ts": 618,
     "apps/server/src/services/session/devtools-capture-store.ts": 666,
     "apps/server/src/services/session/private-messages/acceptance.ts": 567,
