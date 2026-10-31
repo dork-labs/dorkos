@@ -7,7 +7,7 @@ vi.mock('../../../lib/logger.js', () => ({
 }));
 
 import { logger } from '../../../lib/logger.js';
-import { warnOnRuntimeError } from '../trigger-turn.js';
+import { warnOnRuntimeError } from '../turn-stream/tap-each-event.js';
 
 describe('warnOnRuntimeError (DOR-3167)', () => {
   beforeEach(() => vi.mocked(logger.warn).mockClear());
