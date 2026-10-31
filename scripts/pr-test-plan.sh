@@ -43,7 +43,8 @@
 set -uo pipefail
 
 full() {
-  printf 'pr-test-plan: running every suite: %s\n' "$1" >&2
+  local reason=$1
+  printf 'pr-test-plan: running every suite: %s\n' "$reason" >&2
   echo full
   exit 0
 }
