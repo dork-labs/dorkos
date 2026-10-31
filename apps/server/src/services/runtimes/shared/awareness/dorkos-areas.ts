@@ -182,7 +182,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Activity',
-    can: "read what agents did, the audit log and agents' chat transcripts.",
+    can: "read what agents did, every chat running now, the audit log and agents' transcripts.",
     covers: ['audit.', 'operator.activity_list', 'operator.agents_recent_activity'],
     areas: [],
     gate: 'read only',

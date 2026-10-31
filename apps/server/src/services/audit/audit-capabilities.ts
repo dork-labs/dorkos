@@ -10,8 +10,9 @@
  * | `audit.get`               | `audit_get`        | One event                                                |
  * | `audit.account_timeline`  | `account_timeline` | Everything one account did or had done to it             |
  * | `audit.transcript_read`   | `transcript_read`  | A session's transcript, when the caller may read it      |
+ * | `audit.running_chats`     | `running_chats`    | Every chat running right now, per agent                  |
  *
- * All five are `observe` with no permission area: reading the record is the
+ * All six are `observe` with no permission area: reading the record is the
  * point of it (trusted by default: the safety net is a record anyone can read).
  * What a caller may SEE is decided by one rule, `visibility.ts` for events and
  * `session-visibility.ts` for transcripts, never per tool: an agent reads every
@@ -32,6 +33,7 @@ import {
   TranscriptReadQuerySchema,
   type TranscriptPage,
 } from '@dorkos/shared/audit-schemas';
+import { RunningChatsResponseSchema } from '@dorkos/shared/running-chats';
 import {
   CapabilityToolError,
   defineCapability,
@@ -39,6 +41,7 @@ import {
   type CapabilityDomain,
   type CapabilityInvocationContext,
 } from '../core/capabilities/index.js';
+import { listRunningChats } from '../session/running-chats/running-chats.js';
 import type { AuditLog } from './audit-log.js';
 import type { AccountIds } from './account-ids.js';
 import { OWNER_READER, type AuditReader } from './visibility.js';
@@ -281,6 +284,28 @@ export const auditDomain: CapabilityDomain = {
         }
         return page;
       },
+    }),
+    defineCapability({
+      id: 'audit.running_chats',
+      title: 'See every running chat',
+      description:
+        'Every chat running right now, per agent, spin-offs, room turns and scheduled runs ' +
+        'included: its title, a ready markdown link, whether it is working or waiting on an ' +
+        'answer, and who started it. Every registered agent is listed, zero included, so you ' +
+        'can see who is free. `total` is the live count for this server. A person’s own chat ' +
+        'is counted in `privateCount` and never named. Use the link, never the id, when you ' +
+        'tell a person about a chat.',
+      tier: 'observe',
+      area: null,
+      areaNote: 'reading',
+      input: z.object({}),
+      output: RunningChatsResponseSchema,
+      surfaces: {
+        mcp: { toolName: 'running_chats', ...READ_TOOL, servers: [...READ_TOOL.servers] },
+        http: { method: 'get', path: '/api/sessions/running' },
+      },
+      invoke: async (deps, _input, context) =>
+        listRunningChats(deps.operatorDeps?.meshCore, readerFor(requireAuditDeps(deps), context)),
     }),
   ],
 };
