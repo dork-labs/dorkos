@@ -80,9 +80,16 @@ import { chatClientId, isChatClientId } from './chat-client-id.js';
 import { renderChatMessage } from './chat-message-fence.js';
 import { stampOf } from './chat-message-stamps.js';
 import type { ChatMessageStore } from './chat-message-store.js';
+import { ChatCapHold } from './chat-cap-hold.js';
 import { ChatMessageError } from './chat-message-error.js';
 import * as standing from './chat-queue-standing.js';
-import { assertChatSendable, resolveChatTarget, sameChat, type ChatTarget } from './chat-target.js';
+import {
+  assertChatSendable,
+  replyTargetOf,
+  resolveChatTarget,
+  sameChat,
+  type ChatTarget,
+} from './chat-target.js';
 
 export { ChatMessageError } from './chat-message-error.js';
 export { CHAT_SENDABLE_ORIGINS, CHAT_UNATTENDED_ORIGINS } from './chat-target.js';
@@ -188,6 +195,7 @@ export class ChatMessageService {
   private readonly dispatch: NonNullable<ChatMessageServiceDeps['dispatch']>;
   private readonly now: () => number;
   private readonly unsubscribe: () => void;
+  private readonly capHold: ChatCapHold;
   /** Sends opening an agent's DM chat, chained per (sender, agent), so two firsts open one chat. */
   private readonly dmLocks = new Map<string, Promise<unknown>>();
 
@@ -199,12 +207,28 @@ export class ChatMessageService {
   constructor(private readonly deps: ChatMessageServiceDeps) {
     this.dispatch = deps.dispatch ?? dispatchSessionMessage;
     this.now = deps.now ?? Date.now;
+    this.capHold = new ChatCapHold({
+      ...deps,
+      deliver: (caller, row, target, content) =>
+        this.deliver(caller, row, target, content, row.delivery),
+    });
     this.unsubscribe = (deps.onLifecycle ?? onDispatchLifecycle)((event) => this.onDispatch(event));
   }
 
   /** Stop listening, for a server shutting down. */
   stop(): void {
     this.unsubscribe();
+    this.capHold.stop();
+  }
+
+  /** Start offering held messages again on a clock (boot; tests call {@link retryHeld}). */
+  startHeldRetries(): void {
+    this.capHold.start();
+  }
+
+  /** Offer every message waiting for a launch slot again. */
+  retryHeld(): Promise<void> {
+    return this.capHold.retry();
   }
 
   /**
@@ -257,7 +281,8 @@ export class ChatMessageService {
     const sender = this.agentFacts(caller.agentPath);
     const fromChatTitle = await this.deps.chatTitle(caller.sessionId).catch(() => null);
     const replyToId =
-      target.redirectedReplyTo ?? this.replyTarget(caller, target.sessionId, input.replyTo);
+      target.redirectedReplyTo ??
+      replyTargetOf(this.deps.store, caller, target.sessionId, input.replyTo);
     const messageId = crypto.randomUUID();
     const rendered = renderChatMessage(
       {
@@ -333,8 +358,9 @@ export class ChatMessageService {
     content: string,
     delivery: ChatDelivery
   ): Promise<ChatSendReceipt> {
+    // Null when the check failed: not known to be idle, so it never counts toward the cap.
     const busy =
-      target.sessionId !== null && (await this.deps.isBusy(target.sessionId).catch(() => false));
+      target.sessionId !== null && (await this.deps.isBusy(target.sessionId).catch(() => null));
 
     let note: string | undefined;
     if (delivery === 'steer' && target.sessionId !== null && busy) {
@@ -385,9 +411,13 @@ export class ChatMessageService {
       meshCore: this.deps.meshCore() as MeshCore | undefined,
       roomSessionPlace: this.deps.roomSessionPlace?.(),
       // A message into a busy chat adds no turn beside the running one.
-      countsTowardLaunchCap: !busy,
+      countsTowardLaunchCap: busy === false,
     });
     if (isSessionLaunchRefusal(result)) {
+      // Only a chat that does not exist yet is refused for machine load.
+      if (result.refused === 'LAUNCH_CAP_FULL' && target.sessionId !== null) {
+        return this.capHold.hold(row, target.sessionId);
+      }
       throw new ChatMessageError(
         result.refused === 'LAUNCH_CAP_FULL' ? 'UNAVAILABLE' : 'NOT_ALLOWED',
         result.refused === 'LAUNCH_CAP_FULL' ? standing.chatLaunchCapMessage() : result.message
@@ -413,7 +443,7 @@ export class ChatMessageService {
 
     let position = result.queued ? result.queuePosition : undefined;
     if (delivery === 'interrupt' && result.queued && row.queueMessageId) {
-      position = this.moveToHead(chatId, row.queueMessageId);
+      position = standing.moveToHead(chatId, row.queueMessageId);
       // Stopped AFTER the move, so the turn ending releases this message and
       // not whatever was ahead of it.
       const stopped = await this.deps.interruptTurn(chatId).catch(() => false);
@@ -474,17 +504,6 @@ export class ChatMessageService {
     };
   }
 
-  /** Move a queue row to the head of its chat's queue; its new position. */
-  private moveToHead(sessionId: string, queueMessageId: string): number {
-    const queue = getMessageQueueStore();
-    const head = queue?.list(queueKeyOf(sessionId))[0];
-    if (queue && head && head.id !== queueMessageId) {
-      queue.move(queueMessageId, { before: head.id });
-      emitQueueUpdate(sessionId);
-    }
-    return 1;
-  }
-
   /**
    * Whether a steer from one chat may join another's running turn, by the two
    * turns' levels and marks (`mayJoinRunningTurn`). Unknown levels never steer.
@@ -493,30 +512,6 @@ export class ChatMessageService {
     const sender = this.deps.turnLevelOf(fromSessionId);
     const receiver = this.deps.turnLevelOf(toSessionId);
     return sender !== undefined && receiver !== undefined && mayJoinRunningTurn(sender, receiver);
-  }
-
-  /**
-   * The chat message a send answers: the one named, when it was sent to the
-   * calling chat by the target; else the newest unanswered one the target
-   * sent the calling chat.
-   */
-  private replyTarget(
-    caller: ChatCaller,
-    targetSessionId: string | null,
-    replyTo: string | undefined
-  ): string | null {
-    if (replyTo !== undefined) {
-      const row = this.deps.store.get(replyTo);
-      if (!row || row.toSessionId !== caller.sessionId) {
-        throw new ChatMessageError(
-          'NOT_FOUND',
-          'replyTo must be the id of a message another chat sent this one.'
-        );
-      }
-      return row.id;
-    }
-    if (targetSessionId === null) return null;
-    return this.deps.store.latestUnanswered(targetSessionId, caller.sessionId)?.id ?? null;
   }
 
   /** Mark a chat message answered, and tell its sender's windows. */
@@ -673,6 +668,7 @@ export class ChatMessageService {
     // Other chats' queued messages go first, synchronously, so the turn ending
     // below cannot release one of them.
     let dropped = 0;
+    this.capHold.dropFor(input.chat, `${byLine} before it ran.`);
     const queue = getMessageQueueStore();
     for (const queued of queue?.list(queueKeyOf(input.chat)) ?? []) {
       if (!isChatClientId(queued.enqueuedBy)) continue;
@@ -811,6 +807,7 @@ export class ChatMessageService {
 
   /** Follow a sent message through the receiving chat's queue and turn. */
   private onDispatch(event: DispatchLifecycleEvent): void {
+    if (event.phase === 'settled') void this.capHold.retry();
     const rows = this.deps.store.listByQueueMessage(event.messageId);
     if (rows.length === 0) {
       // A turn no chat message rides on — a person's, a schedule's — is
