@@ -125,7 +125,7 @@ export function useBlockingArrivals(handlers: BlockingArrivalHandlers): void {
 
     const current = new Map<string, BlockingItem>();
     for (const signal of signals) {
-      if (!BLOCKING_KINDS.has(signal.kind)) continue;
+      if (!BLOCKING_KINDS.has(signal.kind) || signal.quiet === true) continue;
       current.set(signal.id, {
         id: signal.id,
         who: signal.primary,

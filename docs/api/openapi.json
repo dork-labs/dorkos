@@ -10126,6 +10126,9 @@
           "originMarks": {
             "$ref": "#/components/schemas/ScheduleOriginMarks"
           },
+          "quietHold": {
+            "type": "boolean"
+          },
           "nextRun": {
             "type": [
               "string",
