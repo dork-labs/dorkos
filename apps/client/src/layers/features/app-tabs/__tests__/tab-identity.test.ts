@@ -330,13 +330,39 @@ describe('Home and Team', () => {
 
   it('says how many agents are working on Team, and its hottest status', () => {
     expect(
-      teamTabIdentity('/team', { workingCount: 3, signals: { working: true, failed: true } })
+      teamTabIdentity('/team', {
+        workingCount: 3,
+        needsYouCount: 0,
+        signals: { working: true, failed: true },
+      })
     ).toMatchObject({ primary: 'Team', secondary: '3 working', status: 'failed' });
-    expect(teamTabIdentity('/agents', { workingCount: 0, signals: {} })).toMatchObject({
+    expect(
+      teamTabIdentity('/agents', { workingCount: 0, needsYouCount: 0, signals: {} })
+    ).toMatchObject({
       primary: 'Team',
       secondary: undefined,
       status: undefined,
     });
+  });
+
+  it('says "needs you" on Team when its dot does, and moves working to the sentence (DOR-3533)', () => {
+    const one = teamTabIdentity('/team', {
+      workingCount: 3,
+      needsYouCount: 1,
+      signals: { needsYou: true, working: true },
+    });
+    expect(one).toMatchObject({
+      secondary: '1 needs you',
+      status: 'needs-you',
+      statusSentence: '1 agent is waiting on you · 3 working',
+    });
+    expect(one.accessibleName).toBe(
+      'Team, 1 needs you, Needs you: 1 agent is waiting on you · 3 working'
+    );
+
+    expect(
+      teamTabIdentity('/team', { workingCount: 0, needsYouCount: 2, signals: { needsYou: true } })
+    ).toMatchObject({ secondary: '2 need you', statusSentence: '2 agents are waiting on you' });
   });
 });
 

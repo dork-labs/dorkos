@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { createMockSessionLimit, createMockTransport } from '@dorkos/test-utils';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -22,6 +22,7 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => ({
 
 import { useTabIdentity } from '../model/use-tab-identity';
 import { useTabSignalsStore } from '../model/tab-signals';
+import { TabStatusMark } from '../ui/TabStatusMark';
 
 const transport = createMockTransport();
 
@@ -243,6 +244,57 @@ describe('useTabIdentity', () => {
     });
   });
 
+  describe('the Team label says what its dot says (DOR-3533)', () => {
+    /** The class list of the dot the strip would draw for this identity. */
+    function dotClass(identity: Parameters<typeof TabStatusMark>[0]['identity']): string {
+      const { container } = render(<TabStatusMark identity={identity} />);
+      return container.querySelector('[data-slot="tab-status"]')?.className ?? '';
+    }
+
+    it('says "needs you" beside the amber dot when an agent is waiting, not "working"', () => {
+      // The Dev Playground's Verb Ladder: three live turns and one blocked chat.
+      useSessionListStore.setState({
+        statuses: {
+          a: status({ lifecycle: 'streaming' }),
+          b: status({ lifecycle: 'streaming' }),
+          c: status({ lifecycle: 'streaming' }),
+          d: status({ lifecycle: 'blocked' }),
+        },
+      });
+      const { result } = renderHook(() => useTabIdentity('/team'), { wrapper });
+      expect(result.current).toMatchObject({
+        secondary: '1 needs you',
+        status: 'needs-you',
+        statusSentence: '1 agent is waiting on you · 3 working',
+      });
+      expect(dotClass(result.current)).toContain('bg-status-warning-dot');
+    });
+
+    it('counts agents, not chats, and says "need you" for more than one', () => {
+      useSessionListStore.setState({
+        statuses: {
+          a: status({ lifecycle: 'blocked' }),
+          b: status({ lifecycle: 'blocked' }),
+          c: status({ lifecycle: 'blocked' }),
+        },
+        statusCwds: { a: '/Users/kai/api', b: '/Users/kai/api', c: '/Users/kai/web' },
+      });
+      const { result } = renderHook(() => useTabIdentity('/team'), { wrapper });
+      expect(result.current).toMatchObject({ secondary: '2 need you', status: 'needs-you' });
+    });
+
+    it('keeps "working" with the green dot when nobody is waiting', () => {
+      useSessionListStore.setState({
+        statuses: { a: status({ lifecycle: 'streaming' }) },
+      });
+      const { result } = renderHook(() => useTabIdentity('/team'), { wrapper });
+      expect(result.current).toMatchObject({ secondary: '1 working', status: 'working' });
+      const dot = dotClass(result.current);
+      expect(dot).toContain('bg-status-success');
+      expect(dot).not.toContain('bg-status-warning');
+    });
+  });
+
   it('does not count a scheduled run as an agent working, but still says it needs you', () => {
     useSessionListStore.setState({
       sessions: {
@@ -256,7 +308,11 @@ describe('useTabIdentity', () => {
       statusCwds: { sched: '/Users/kai/api', blocked: '/Users/kai/web' },
     });
     const { result } = renderHook(() => useTabIdentity('/team'), { wrapper });
-    expect(result.current).toMatchObject({ secondary: undefined, status: 'needs-you' });
+    expect(result.current).toMatchObject({
+      secondary: '1 needs you',
+      status: 'needs-you',
+      statusSentence: '1 agent is waiting on you',
+    });
   });
 
   it('names the Settings dialog open over any page after its section', () => {
