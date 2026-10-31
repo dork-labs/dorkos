@@ -32,6 +32,13 @@
 #     given up on; a nested call runs straight through; CI never waits.
 #   * IT DEGRADES RATHER THAN REFUSES — no perl, an unwritable lock directory
 #     and `DORKOS_HEAVY_LOCK=0` all still run the command.
+#   * IT USES ONLY A DIRECTORY THAT IS OURS (DOR-3509) — a symlinked or
+#     foreign lock directory is refused, and a planted symlink slot file is
+#     never followed (the previous script truncated the file it pointed at).
+#   * --hold (DOR-3274 Phase 2) — a slot taken for another pid, as a bare
+#     `turbo` run does, is held until that pid ends and leaves no output open;
+#     a nested call inside a turbo task, which has lost the env, still sees
+#     its ancestor's slot.
 #
 # Hermetic: every case gets its own DORKOS_HEAVY_LOCK_DIR, and the commands are
 # `sleep` and `echo`, never turbo or this repo's suites, so it needs no
@@ -338,6 +345,120 @@ check_eq 'an unwritable lock directory still runs the command' 0 "$status"
 check_contains 'an unwritable lock directory does not swallow the output' 'ran-despite-unwritable-dir' "$out"
 check_contains 'an unwritable lock directory says what is wrong' 'cannot write' "$out"
 check_le 'an unwritable lock directory costs no wait' 2 "$(($(date +%s) - started))"
+
+echo ""
+echo "== it must only use a lock directory that is ours (DOR-3509) =="
+
+# /tmp is shared by every user, so the default name can be taken first. A
+# symlink there would aim our slot writes and truncates at the squatter's pick.
+target=$(mktemp -d "$work/target.XXXXXX")
+ln -s "$target" "$work/squatted"
+for spelling in "$work/squatted" "$work/squatted/"; do
+  out=$(DORKOS_HEAVY_LOCK_DIR="$spelling" bash "$CHECK" bash -c 'echo ran-beside-symlink' 2>&1)
+  check_eq "a symlinked lock directory ($spelling) still runs the command" 0 "$?"
+  check_contains "a symlinked lock directory ($spelling) is refused" 'it is a symlink' "$out"
+  check_contains "a symlinked lock directory ($spelling) keeps the output" 'ran-beside-symlink' "$out"
+done
+check_eq 'nothing is written through a symlinked lock directory' '' "$(ls -A "$target")"
+
+# Owned by someone else: /tmp itself is root's, on macOS behind /private/tmp.
+others=/tmp
+[ -L "$others" ] && others=/private/tmp
+if [ "$(id -u)" = 0 ]; then
+  ok 'a lock directory owned by another user is refused (skipped: running as root)'
+else
+  out=$(DORKOS_HEAVY_LOCK_DIR="$others" bash "$CHECK" bash -c 'echo ran-beside-foreign-dir' 2>&1)
+  check_eq 'a lock directory owned by another user still runs the command' 0 "$?"
+  check_contains 'a lock directory owned by another user is refused' 'is owned by uid' "$out"
+  check_contains 'a lock directory owned by another user keeps the output' 'ran-beside-foreign-dir' "$out"
+fi
+
+# Ours but open to others (an older version, or by hand) is closed, not refused.
+locks=$(new_locks)
+chmod 777 "$locks"
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" bash "$CHECK" bash -c 'echo ran-in-open-dir' 2>&1)
+check_eq 'a lock directory of ours open to others still caps quietly' 'ran-in-open-dir' "$out"
+# shellcheck disable=SC2012 # one known path; `stat` flags differ by platform
+check_eq 'and is closed to group and other' 'drwx------' "$(ls -ld "$locks" | cut -c1-10)"
+
+# A slot file planted as a symlink is never followed: the run takes the next
+# slot and the file the link names keeps its contents.
+locks=$(new_locks)
+printf 'keep me\n' >"$work/victim"
+ln -s "$work/victim" "$locks/slot-1"
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=2 bash "$CHECK" bash -c 'echo ran-past-planted-slot' 2>&1)
+check_eq 'a planted symlink slot does not stop the run' 'ran-past-planted-slot' "$out"
+check_eq 'a planted symlink slot is never written through' 'keep me' "$(cat "$work/victim")"
+
+# A HARD link is a second name for the same file, so O_NOFOLLOW cannot see it,
+# and it can sit in a directory that is ours. Security's probe on #3368 emptied a
+# 35-byte canary this way. A slot file with another name is refused; the queue
+# file too, when every slot is busy and the run has to line up.
+locks=$(new_locks)
+printf 'canary: never empty this\n' >"$work/canary"
+ln "$work/canary" "$locks/slot-1"
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=2 bash "$CHECK" bash -c 'echo ran-past-hard-link' 2>&1)
+check_eq 'a hard-linked slot does not stop the run' 'ran-past-hard-link' "$out"
+check_eq 'a hard-linked slot is never truncated or written' 'canary: never empty this' "$(cat "$work/canary")"
+locks=$(new_locks)
+printf 'canary: never empty this\n' >"$work/canary2"
+ln "$work/canary2" "$locks/slot-1"
+ln "$work/canary2" "$locks/queue"
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=1 \
+  bash "$CHECK" bash -c 'echo ran-past-hard-linked-queue' 2>&1)
+check_contains 'with every slot hard-linked the run still goes ahead' 'ran-past-hard-linked-queue' "$out"
+check_eq 'a hard-linked queue is never written' 'canary: never empty this' "$(cat "$work/canary2")"
+
+# The write check no longer leaves a probe file behind.
+probes=$(cd "$locks" && for f in .probe*; do [ -e "$f" ] && printf '%s ' "$f"; done)
+check_eq 'no probe file is left in the lock directory' '' "$probes"
+
+echo ""
+echo "== --hold takes a slot for another process, for a bare turbo run (DOR-3274 Phase 2) =="
+
+locks=$(new_locks)
+sleep 30 &
+owner=$!
+own_pids+=("$owner")
+started=$(date +%s)
+# Command substitution waits for EOF on stdout and stderr: a sidecar that kept
+# either open would hold this line until the owner died, and so would turbo.
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 bash "$CHECK" --job --hold "$owner" turbo build 2>&1)
+check_eq '--hold exits 0' 0 "$?"
+check_eq '--hold prints nothing on a free slot' '' "$out"
+check_le '--hold returns once the slot is taken' 2 "$(($(date +%s) - started))"
+if await_locked "$locks" 1; then ok '--hold leaves the slot locked for its owner'; else not_ok '--hold did not keep the slot'; fi
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=1 bash "$CHECK" bash -c 'echo behind-turbo' 2>&1)
+check_contains 'a waiter behind --hold names the owner pid' "pid $owner" "$out"
+check_contains 'a waiter behind --hold names the turbo run' 'turbo build' "$out"
+kill -KILL "$owner" 2>/dev/null
+wait "$owner" 2>/dev/null
+released=0
+for _ in $(seq 1 20); do
+  if ! slot_locked "$locks" 1; then
+    released=1
+    break
+  fi
+  sleep 0.1
+done
+check_eq '--hold releases the slot within two seconds of its owner ending' 1 "$released"
+
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" bash "$CHECK" --hold not-a-pid 2>&1)
+check_eq '--hold without a pid is a usage error' 2 "$?"
+
+locks=$(new_locks)
+out=$(CI=true DORKOS_HEAVY_LOCK_DIR="$locks" bash "$CHECK" --job --hold "$$" turbo build 2>&1)
+check_eq '--hold under CI exits 0 and says nothing' '0:' "$?:$out"
+if slot_locked "$locks" 1 2>/dev/null; then not_ok '--hold under CI took a slot'; else ok '--hold under CI takes no slot'; fi
+
+# turbo runs tasks in strict env mode, so DORKOS_HEAVY_SLOT_HELD does not reach
+# a nested call inside a task. A holder that is our own ancestor is enough.
+locks=$(new_locks)
+started=$(date +%s)
+out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 \
+  bash "$CHECK" env -u DORKOS_HEAVY_SLOT_HELD bash "$CHECK" bash -c 'echo nested-without-env' 2>&1)
+check_eq 'a nested call that lost the env still runs straight through' 'nested-without-env' "$out"
+check_le 'a nested call that lost the env does not wait on its ancestor' 2 "$(($(date +%s) - started))"
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"
