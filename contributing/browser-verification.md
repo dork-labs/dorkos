@@ -52,6 +52,28 @@ Do not use the removed Signed-in browser card or `dorkos browser login` as a
 verification recipe. User guide: `docs/guides/agent-browser.mdx`; design:
 `specs/local-playwright-browser/`.
 
+## Where local output goes
+
+On the operator's Mac, anything worth keeping from a local run goes to cold
+storage on the external drive, under `/Volumes/ext-ssd-1/dork-os/`:
+
+| What                                           | Where                                    |
+| ---------------------------------------------- | ---------------------------------------- |
+| Proof runs, screenshots and logs worth keeping | `evidence/`                              |
+| Throwaway `DORK_HOME` folders                  | `test-homes/<YYYY-MM-DD>-<lane>/`        |
+| Playwright and release-check output            | `artifacts/<YYYY-MM-DD>-<PR or ticket>/` |
+| Worktrees idle for more than 24 hours          | `worktrees-cold/<repo>/<branch>/`        |
+
+Nothing goes at the drive's root. Dated names start `YYYY-MM-DD`. The drive's
+own `README.md` lists every folder, its owner and whether it is safe to delete.
+Live worktrees, the pnpm store and `~/.dork` stay on the Mac.
+
+When the drive is not mounted (`/Volumes/ext-ssd-1` is missing), use the usual
+paths: a `/tmp` or `mktemp -d` home and the default `test-results/`. CI runners
+never have the drive, and the scripts' defaults have not moved yet, so pass the
+folder yourself (`DORK_HOME=…`, `--output=…`). A home outside `$HOME` needs its
+own boundary, as the next section explains.
+
 ## Standing up an instance
 
 `apps/e2e/capture/boot.ts` does this properly — isolated ports, an isolated

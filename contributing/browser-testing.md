@@ -381,6 +381,13 @@ leg's port and deleted before every boot — `/tmp/dorkos-cockpit-<port>`,
 is the dev server's own variable, set in the root `.env` and passed through by
 turbo.
 
+The suite's homes stay under `/tmp`: `global-setup.ts` refuses any other home.
+Traces, screenshots and the report worth keeping from a local run go to
+`/Volumes/ext-ssd-1/dork-os/artifacts/<YYYY-MM-DD>-<PR or ticket>/` when that
+drive is mounted (`--output=<dir>` moves `test-results/`; copy
+`playwright-report/` after the run); see
+[Where local output goes](browser-verification.md#where-local-output-goes).
+
 ### Test Control API
 
 Three endpoints on the mock server wire up test state before each spec:
