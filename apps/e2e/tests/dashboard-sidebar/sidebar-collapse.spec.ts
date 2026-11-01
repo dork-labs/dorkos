@@ -107,10 +107,24 @@ test.describe('sidebar collapse', { tag: SOLE_SIDEBAR_TAG }, () => {
       return null;
     });
 
-    // It was caught partway, and from there it went back without reaching the far end.
+    // The reversed spring keeps its speed, so it can travel past the turn point (even
+    // past the panel's width under a slow frame) before coming back. What matters is
+    // that it turns without resting closed.
     expect(run, 'the fold was never caught partway in three tries').not.toBeNull();
-    expect(Math.min(...run!.samples)).toBeGreaterThan(-run!.width);
-    expect(run!.samples[run!.samples.length - 1]).toBeGreaterThan(run!.turnedAt);
+    const { width, turnedAt, samples } = run!;
+    const lowest = Math.min(...samples);
+    const last = samples[samples.length - 1];
+    expect(samples.indexOf(lowest)).toBeLessThan(samples.length - 1);
+    // Back at least halfway from its deepest point.
+    expect(last).toBeGreaterThan(lowest / 2);
+    expect(last).toBeGreaterThan(turnedAt);
+    const restedClosed = samples.some(
+      (_, i) =>
+        i >= 2 &&
+        samples.slice(i - 2, i + 1).every((s) => s <= -width + 1) &&
+        Math.max(...samples.slice(i - 2, i + 1)) - Math.min(...samples.slice(i - 2, i + 1)) <= 1
+    );
+    expect(restedClosed, 'the panel sat closed before coming back').toBe(false);
     await expect.poll(() => panelX(page)).toBe(0);
   });
 
