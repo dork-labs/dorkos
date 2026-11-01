@@ -71,6 +71,8 @@ let root: string;
 let home: string;
 let cards: { capabilityId: string }[];
 let factory: ReturnType<typeof vi.fn>;
+/** Ends the cards this test left open, so no wait outlives it. */
+let closeCards: () => void;
 /** The level the turn runs at. Ask unless a case says Full. */
 let mode: AgentSession['permissionMode'];
 /** The agent the home belongs to. */
@@ -140,13 +142,24 @@ beforeEach(async () => {
   cards = [];
   factory = vi.fn(() => ({}));
   vi.mocked(resolveLaunchAccountRoot).mockClear();
+  // Scoped to this test's gateway, so the next test's setup cannot reopen it.
+  let open = true;
+  closeCards = () => {
+    open = false;
+  };
   const gateway: FolderAllowApprovalGateway = {
     request: (input) => {
       cards.push(input);
-      return { approvalId: 'a', token: 't', expiresAt: new Date(Date.now() + 20).toISOString() };
+      return {
+        approvalId: 'a',
+        token: 't',
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      };
     },
-    // Left open, so a second launch sees the card already on screen.
-    consume: () => ({ outcome: 'pending' }) as never,
+    // Left open for the whole test, however slow, so a later launch sees the
+    // card already on screen. Closing it in afterEach ends the wait the launch
+    // left running in the background.
+    consume: () => (open ? { outcome: 'pending' } : { outcome: 'expired' }) as never,
   };
   setFolderAllowApprovalGateway(gateway);
   _internal.forgetOpenCards();
@@ -155,6 +168,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  closeCards();
   setMarkedFullActivity(undefined);
   setFolderAllowApprovalGateway(null);
   setAgentHomeRegistry(undefined);
