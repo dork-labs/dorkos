@@ -350,7 +350,12 @@ if (refusedSwitch !== null) {
   // "Confirm it's you" (DOR-3234): the password goes in the shell's own window,
   // never the app's page, and the shell posts it through the window's session.
   registerStepUpWindow({
-    isOwnSender: (event) => isOwnOrigin(event.sender.getURL(), getRendererUrl()),
+    // The frame that sent it, and only the main frame: a subframe's message
+    // carries the main frame's URL in `event.sender.getURL()`.
+    isOwnSender: (event) =>
+      event.senderFrame !== null &&
+      event.senderFrame === event.sender.mainFrame &&
+      isOwnOrigin(event.senderFrame.url, getRendererUrl()),
     port: getServerPort,
     fetch: (url, init) => session.defaultSession.fetch(url, init),
     personProof: currentPersonProof,

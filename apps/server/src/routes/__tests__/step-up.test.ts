@@ -183,6 +183,65 @@ describe('a guarded action', () => {
   });
 });
 
+// Security's 13:08 Musts (DOR-3234 PR 2): only the secret, checked on the
+// server on that same request, grants a step-up. The Mac app's own headers
+// and `Origin` are a CSRF guard, never a stand-in for it.
+describe('the secret is the only proof', () => {
+  const MAC_APP = {
+    Origin: OWN_ORIGIN,
+    'Sec-Fetch-Site': 'same-origin',
+    'x-dorkos-person': 'proof-1',
+    'User-Agent': 'Mozilla/5.0 (Macintosh) Electron/42.11.16 DorkOS/0.129.0',
+  };
+
+  it.each([
+    ['no password', {}],
+    ['an empty password', { password: '' }],
+    ['a wrong password', { password: 'not-it' }],
+  ])('the Mac app’s exact headers with %s are refused, and nothing runs', async (_label, body) => {
+    const id = await hold();
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${id}/password`)
+      .set(MAC_APP)
+      .send(body);
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.body.ok).toBeUndefined();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('a change-password with the Mac app’s headers but no current password runs nothing', async () => {
+    const id = await hold();
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${id}/change-password`)
+      .set(MAC_APP)
+      .send({ newPassword: 'a much longer one' });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(commit).not.toHaveBeenCalled();
+    expect(deps.setOwnerPassword).not.toHaveBeenCalled();
+  });
+
+  it('checks the secret on every confirm: a passed one is never a pass for the next', async () => {
+    const first = await hold();
+    expect((await confirm(first, PASSWORD)).status).toBe(200);
+    const second = await hold();
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${second}/password`)
+      .set(MAC_APP)
+      .send({});
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves nothing an agent could replay: no answer or Activity line carries the password', async () => {
+    const id = await hold();
+    const view = await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
+    const done = await confirm(id, PASSWORD);
+    for (const body of [view.body, done.body, vi.mocked(recordAudit).mock.calls]) {
+      expect(JSON.stringify(body)).not.toContain(PASSWORD);
+    }
+  });
+});
+
 describe('POST /api/step-up/:id/password', () => {
   it('runs the held action once the password passes, and answers with its result', async () => {
     const id = await hold();
