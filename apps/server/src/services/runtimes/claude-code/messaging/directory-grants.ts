@@ -40,6 +40,12 @@ import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/directory-grants';
+import {
+  AGENT_HOME_SELF_GRANT_PATHS,
+  PERSON_ONLY_DATA_PATHS,
+  PROJECT_PLUGIN_PATHS,
+  protectedPathGlob,
+} from '../../shared/policy/protected-paths.js';
 
 /**
  * Makes `--add-dir` folders load their `CLAUDE.md`. Never passed to a turn: a
@@ -211,63 +217,33 @@ export function applyDirectoryGrants(
 
 /**
  * The folders under the data directory that only a person may change, never an
- * agent's file tools:
- *
- * - `permissions/` holds the permission levels a person set for agents (the
- *   floor `person-set-agent-permissions.json`, DOR-3107). An agent that could
- *   rewrite it could raise its own level.
- * - `session-relay/` holds the pins that say which hub and which keys this
- *   computer trusts (and, with B4, `approval-keys.json`).
- * - `extension-snapshots/` holds the approved files an extension runs from,
- *   and `cache/extensions/` the bundles built from them (DOR-3068). An agent
- *   that could rewrite either could run code nobody approved. Both are also
- *   checked by content before use; this keeps the file tools out entirely.
- * - `marketplace/` holds what DorkOS's installer recorded, `project-installs.json`
- *   among it: which plugin came from where, which is what gives a copy its
- *   trusted origin (DOR-3068).
- * - `plugins/` holds the plugins installed for every project. A plugin's
- *   commands name the tools they may use and its hooks run code, so an agent
- *   that could rewrite one could hand itself tools (DOR-3068).
+ * agent's file tools: the folder entries of the shared
+ * {@link PERSON_ONLY_DATA_PATHS}, which says why each is there.
  *
  * Bash is not covered, as the module note says: a turn with a shell it was not
  * asked about is outside what file rules can hold.
  */
-export const PERSON_ONLY_DATA_FOLDERS = [
-  'permissions',
-  'session-relay',
-  'extension-snapshots',
-  'cache/extensions',
-  'marketplace',
-  'plugins',
-] as const;
+export const PERSON_ONLY_DATA_FOLDERS: readonly string[] = PERSON_ONLY_DATA_PATHS.filter(
+  (entry) => entry.kind === 'folder'
+).map((entry) => entry.path);
 
 /**
- * The files directly in the data directory only a person may change: the
- * config (`config.json`, its backups and conf's temp files beside it, so
- * `config.json*`) and the timestamped backups. The config holds every
- * extension approval and every other `operator-only` setting (DOR-3068); an
- * agent that could write it with a file tool could approve its own code. And
- * `marketplaces.json`, the package sources the person trusts.
+ * The files directly in the data directory only a person may change: the file
+ * entries of the shared {@link PERSON_ONLY_DATA_PATHS} (the config and its
+ * backups, and `marketplaces.json`). Each keeps its `*` as a glob.
  */
-export const PERSON_ONLY_DATA_FILES = [
-  'config.json*',
-  'config-*.json.bak',
-  'marketplaces.json*',
-] as const;
+export const PERSON_ONLY_DATA_FILES: readonly string[] = PERSON_ONLY_DATA_PATHS.filter(
+  (entry) => entry.kind === 'file'
+).map((entry) => entry.path);
 
 /**
- * The plugins installed into a project, at any depth: `<project>/.dork/plugins/`
- * (DOR-3068). Discovery reads every known project's, not only the turn's own,
- * so one absolute any-depth rule per write tool covers them all without
- * listing projects. A plugin's own `.dork/extensions/` sits inside it.
- *
- * A project's own `.dork/extensions/` is deliberately NOT here: agents build
- * mini apps by editing exactly those files (`test_extension`). What keeps an
- * edit there from running unseen is the approval, which asks again when the
- * folder changes.
+ * The plugins installed into a project, at any depth (the shared
+ * {@link PROJECT_PLUGIN_PATHS}, DOR-3068). Discovery reads every known
+ * project's, not only the turn's own, so one absolute any-depth rule per write
+ * tool covers them all without listing projects.
  */
-export const PROJECT_PLUGIN_DENY_RULES: readonly string[] = WRITE_TOOLS.map(
-  (tool) => `${tool}(//**/.dork/plugins/**)`
+export const PROJECT_PLUGIN_DENY_RULES: readonly string[] = PROJECT_PLUGIN_PATHS.flatMap((entry) =>
+  WRITE_TOOLS.map((tool) => `${tool}(//**/${protectedPathGlob(entry)})`)
 );
 
 /**
@@ -492,22 +468,11 @@ export function otherAgentHomesSelfGrantRules(
 
 /** The self-grant files of one home, relative to it, for a scope. */
 function selfGrantFiles(scope: 'launch' | 'all'): string[] {
-  return [
-    ...(scope === 'all' ? ['.claude/**'] : LAUNCH_SELF_GRANT_CLAUDE_FILES),
-    '.agents/**',
-    '.mcp.json',
-    '.dork/agent.json',
-  ];
+  const files = AGENT_HOME_SELF_GRANT_PATHS.map(protectedPathGlob);
+  return scope === 'all'
+    ? ['.claude/**', ...files.filter((file) => !file.startsWith('.claude/'))]
+    : files;
 }
-
-/** The parts of a home's `.claude/` every launch denies to every agent's file tools. */
-const LAUNCH_SELF_GRANT_CLAUDE_FILES = [
-  '.claude/settings.json',
-  '.claude/settings.local.json',
-  '.claude/skills/**',
-  '.claude/commands/**',
-  '.claude/agents/**',
-];
 
 /**
  * The grants a launch's settings carry, read back from the rules

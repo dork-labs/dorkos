@@ -20,6 +20,11 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { agentHomesRulesFor, rulePath, writeDenyRules } from '../messaging/directory-grants.js';
+import {
+  DATA_GRANT_FILE_PATHS,
+  HOME_SELF_GRANT_PATHS,
+  protectedPathGlob,
+} from '../../shared/policy/protected-paths.js';
 import { isExactlyAgentHome, readFolderAllowList } from './agent-folder-allows.js';
 import {
   folderAllowEntry,
@@ -171,27 +176,16 @@ export function selfGrantDenyRules(files: SelfGrantFiles): string[] | undefined 
     // The home folder's own spellings, which Claude Code expands itself: the
     // default account and its `.claude.json`, and the default data folder's
     // record, whatever this launch's account and data folder are.
-    rules.push(
-      `${tool}(~/.claude/**)`,
-      `${tool}(~/.claude.json)`,
-      ...DATA_FILES_ALWAYS_DENIED.map((name) => `${tool}(~/.dork/${name})`)
-    );
+    rules.push(...HOME_SELF_GRANT_PATHS.map((entry) => `${tool}(~/${protectedPathGlob(entry)})`));
   }
   return [...new Set(rules)];
 }
 
 /**
  * The data folder's files that grant or prove something, denied even before
- * they exist: the config (the approval record among it), the key the secrets
- * are encrypted with, and the local tokens.
+ * they exist: the shared {@link DATA_GRANT_FILE_PATHS}.
  */
-const DATA_FILES_ALWAYS_DENIED = [
-  'config.json',
-  'host.key',
-  'mcp-local-token',
-  'better-auth-secret',
-  'marketplaces.json',
-] as const;
+const DATA_FILES_ALWAYS_DENIED = DATA_GRANT_FILE_PATHS.map((entry) => entry.path);
 
 /** The file tools {@link selfGrantDenyRules} names, `MultiEdit` included for older CLIs. */
 const WRITE_TOOL_NAMES = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] as const;
