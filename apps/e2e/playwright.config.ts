@@ -3,6 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { BOOT_CACHE_DISABLED_KEY } from './boot-cache-flag';
 import { unitKey } from './reporters/balanced-shard';
 import { planSiteLeg, SITE_PROJECT, SITE_SHARD, SITE_SPEC_FILES } from './site-leg';
+import { bootServerOnThrowawayHome, makeThrowawayHome } from './throwaway-home';
 
 /**
  * The checkout root, which the cockpit leg runs boundary-scoped to.
@@ -255,7 +256,7 @@ const SITE_SPECS = SITE_SPEC_FILES.map((file) => `**/${file}`);
  *   by {@link port}.
  */
 function resetThrowawayHome(dorkHome: string): string {
-  return `rm -rf ${dorkHome} && mkdir -m 700 -p ${dorkHome}`;
+  return `rm -rf ${dorkHome} && mkdir -m 700 -p ${dorkHome} && ${makeThrowawayHome(dorkHome)}`;
 }
 
 /**
@@ -277,6 +278,9 @@ function resetThrowawayHome(dorkHome: string): string {
  * used to provide via `^build`. Both legs run it concurrently and turbo
  * deduplicates them, so the second is free.
  *
+ * The server itself runs on a throwaway `HOME` inside the leg's `DORK_HOME`
+ * (DOR-3587, `throwaway-home.ts`); the build before it keeps the real one.
+ *
  * @param env - Leg-specific environment, prefixed onto the command.
  * @param preBoot - Shell run before the build, for a leg that must start from a
  *   known-empty state.
@@ -286,7 +290,7 @@ function resetThrowawayHome(dorkHome: string): string {
  *   with no dist there is no shell to serve and no policy to test.
  */
 function apiLegCommand(
-  env: Record<string, string> = {},
+  env: Record<string, string> & { DORK_HOME: string },
   preBoot?: string,
   alsoBuild: string[] = []
 ): string {
@@ -294,7 +298,7 @@ function apiLegCommand(
     .map(([key, value]) => `${key}=${value}`)
     .join(' ');
   const filters = ['@dorkos/server', ...alsoBuild].map((pkg) => `--filter=${pkg}`).join(' ');
-  const boot = `turbo run build ${filters} --output-logs=new-only && pnpm --filter @dorkos/server exec tsx src/index.ts`;
+  const boot = `turbo run build ${filters} --output-logs=new-only && ${bootServerOnThrowawayHome(env.DORK_HOME)}`;
   const script = preBoot ? `${preBoot} && ${boot}` : boot;
   return `${prefix ? `${prefix} ` : ''}dotenv -- sh -c '${script}'`;
 }

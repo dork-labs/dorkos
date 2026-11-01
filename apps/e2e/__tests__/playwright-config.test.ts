@@ -158,6 +158,49 @@ describe('every leg that stores data isolates it', () => {
 });
 
 /**
+ * A server's home sits inside its data directory (DOR-3587). Deleting these fails
+ * nothing else: a leg on the real home still boots and still goes green, having
+ * read this computer's Claude sign-ins on its way up. The first-run config boots
+ * its own servers, so it is held to the same.
+ */
+describe('every server runs on a throwaway home', () => {
+  let legs: { command: string; dorkHome: string }[];
+
+  beforeAll(async () => {
+    const { default: firstRun } = await import('../playwright.first-run.config.js');
+    const firstRunLegs = Array.isArray(firstRun.webServer) ? firstRun.webServer : [];
+    legs = dataDirectories([...(await allLegs()), ...firstRunLegs].map((leg) => leg.command));
+  });
+
+  it('finds every API leg, so the assertions below have something to check', () => {
+    expect(legs).toHaveLength(5);
+  });
+
+  it('sets HOME and CLAUDE_CONFIG_DIR inside the data directory, on the server only', () => {
+    for (const { command, dorkHome } of legs) {
+      const server = command.slice(command.indexOf('exec env '));
+      expect(server).toContain(`HOME="${dorkHome}/home"`);
+      expect(server).toContain(`CLAUDE_CONFIG_DIR="${dorkHome}/home/.claude"`);
+      // pnpm and turbo read their store and settings from the real home.
+      expect(command.slice(0, command.indexOf('exec env '))).not.toMatch(/[ "]HOME=/);
+    }
+  });
+
+  it('creates that home before the server boots', () => {
+    for (const { command, dorkHome } of legs) {
+      expect(command.indexOf(`mkdir -m 700 -p ${dorkHome}/home/.claude`)).toBeGreaterThan(-1);
+      expect(command.indexOf(`mkdir -m 700 -p ${dorkHome}/home/.claude`)).toBeLessThan(
+        command.indexOf('exec env ')
+      );
+    }
+  });
+
+  it('still tells the server where Playwright keeps its browsers', () => {
+    for (const { command } of legs) expect(command).toMatch(/PLAYWRIGHT_BROWSERS_PATH="[^"]+"/);
+  });
+});
+
+/**
  * The production leg's two load-bearing words (DOR-1723).
  *
  * Same reason as every group above: neither would fail anything on its own.
