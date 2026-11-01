@@ -159,12 +159,20 @@ describe('BrowserHandover sign-in', () => {
     expect(url).toBe('https://accounts.example.com/');
   });
 
-  it('uses the page the agent is on now, never one recorded earlier', async () => {
+  it('refuses when the page left the site the card names', async () => {
     const { handover, set, signIns } = setup();
     const { handoffId } = await handover.ask('chat-1', 'password');
     set(connected('https://login.other.example/'));
+    await expect(handover.signIn({ handoffId })).rejects.toMatchObject({ code: 'site_changed' });
+    expect(signIns.start).not.toHaveBeenCalled();
+  });
+
+  it('opens the origin of the page the agent is on now, on the same site', async () => {
+    const { handover, set, signIns } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    set(connected('https://accounts.example.com/other/step'));
     await handover.signIn({ handoffId });
-    expect(signIns.start.mock.calls[0]![2]).toBe('https://login.other.example/');
+    expect(signIns.start.mock.calls[0]![2]).toBe('https://accounts.example.com/');
   });
 
   it('refuses a handoff sign-in on an http page off this computer', async () => {
@@ -240,13 +248,30 @@ describe('BrowserHandover sign-in', () => {
 });
 
 describe('BrowserHandover answers', () => {
-  it('Stop task ends the handoff and keeps the browser paused', async () => {
+  it('Stop task ends the handoff, pauses, and keeps that chat out of the browser', async () => {
     const { handover, browser } = setup();
     const { handoffId } = await handover.ask('chat-1', 'wall');
     const state = await handover.stop(handoffId);
     expect(state.handoff?.outcome).toBe('stopped');
     expect(state.paused).toBe(true);
     expect(browser.resume).not.toHaveBeenCalled();
+    // The person may now do 2FA or a payment in that window: the chat reads nothing.
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'task_stopped',
+    });
+    await expect(handover.ask('chat-1', 'wall')).rejects.toMatchObject({ code: 'task_stopped' });
+    expect(browser.selectTab).toHaveBeenCalledOnce();
+  });
+
+  it('a person opening or resuming the browser lets the stopped chat back in', async () => {
+    const opened = setup();
+    await opened.handover.stop((await opened.handover.ask('chat-1', 'wall')).handoffId);
+    await opened.handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    await expect(opened.handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
+    const resumed = setup();
+    await resumed.handover.stop((await resumed.handover.ask('chat-1', 'wall')).handoffId);
+    await resumed.handover.resume();
+    await expect(resumed.handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
   });
 
   it('refuses an answer to a handoff that already ended', async () => {

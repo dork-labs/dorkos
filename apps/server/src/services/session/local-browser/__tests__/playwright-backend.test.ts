@@ -5,6 +5,9 @@ import { PassThrough } from 'node:stream';
 import { chromium, type BrowserContext } from 'playwright-core';
 const mocks = vi.hoisted(() => ({
   access: vi.fn(),
+  mkdir: vi.fn(async () => undefined),
+  readFile: vi.fn(async () => '{}'),
+  writeFile: vi.fn(async () => undefined),
   stdout: undefined as PassThrough | undefined,
   failure: undefined as undefined | { code?: string; stderr?: string },
   execFile: vi.fn((...args: unknown[]) => {
@@ -13,7 +16,12 @@ const mocks = vi.hoisted(() => ({
     return { stdout: mocks.stdout };
   }),
 }));
-vi.mock('node:fs/promises', () => ({ access: mocks.access }));
+vi.mock('node:fs/promises', () => ({
+  access: mocks.access,
+  mkdir: mocks.mkdir,
+  readFile: mocks.readFile,
+  writeFile: mocks.writeFile,
+}));
 vi.mock('node:child_process', () => {
   // Match Node's custom promisify contract: its promise retains the observable child.
   const execFile = Object.assign(mocks.execFile, {
@@ -90,6 +98,16 @@ describe('pinned managed browser preparation', () => {
         ignoreDefaultArgs: ['--enable-automation'],
       });
       expect(mocks.execFile).not.toHaveBeenCalled();
+      // The agent's window shares the profile with the sign-in window: neither saves passwords.
+      const [file, written] = mocks.writeFile.mock.calls.at(-1) as unknown as [string, string];
+      expect(file).toMatch(/test-only-storage[\\/]Default[\\/]Preferences$/);
+      expect(JSON.parse(written)).toMatchObject({
+        credentials_enable_service: false,
+        profile: { password_manager_enabled: false },
+      });
+      expect(mocks.writeFile.mock.invocationCallOrder.at(-1)).toBeLessThan(
+        launch.mock.invocationCallOrder[0]!
+      );
     } finally {
       launch.mockRestore();
     }

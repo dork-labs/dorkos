@@ -7,17 +7,25 @@ function fakeChromium() {
   let exit!: (value: PlainChromiumExit) => void;
   const exited = new Promise<PlainChromiumExit>((resolve) => (exit = resolve));
   const quit = vi.fn(() => exit({ code: 0, signal: null }));
-  const spawner = vi.fn((_executable: string, _args: string[]) => ({ exited, quit }));
+  const spawner = vi.fn((_executable: string, _args: string[]) => ({ pid: 4242, exited, quit }));
   return { spawner, quit, exit };
 }
 
-function window(overrides: { held?: () => boolean; prepare?: () => Promise<void> } = {}) {
+function window(
+  overrides: {
+    held?: () => boolean;
+    prepare?: () => Promise<void>;
+    lockOwner?: () => number | undefined | 'unchecked';
+  } = {}
+) {
   const chromium = fakeChromium();
   let clock = 0;
   const signIns = new SignInWindow({
     executable: async () => '/managed/Chromium',
     spawner: chromium.spawner,
     held: overrides.held ?? (() => false),
+    // The window the fake spawned holds the profile.
+    lockOwner: overrides.lockOwner ?? (() => 4242),
     prepare: overrides.prepare ?? (async () => undefined),
     now: () => clock,
     sleep: async (ms) => {
@@ -68,6 +76,7 @@ describe('SignInWindow', () => {
         return chromium.spawner(...args);
       },
       held: () => false,
+      lockOwner: () => 4242,
       prepare: async () => void order.push('prepare'),
     });
     await signIns.start('/profiles/p1', null, 'https://linear.app/');
@@ -97,6 +106,26 @@ describe('SignInWindow', () => {
       code: 'profile_busy',
     });
     expect(chromium.spawner).not.toHaveBeenCalled();
+  });
+
+  it('refuses when another Chromium took the profile between the check and the spawn', async () => {
+    const { signIns, chromium } = window({ lockOwner: () => 999 });
+    await expect(signIns.start('/profiles/p1', null, 'https://linear.app/')).rejects.toMatchObject({
+      code: 'profile_busy',
+    });
+    expect(chromium.quit).toHaveBeenCalledOnce();
+    await settle();
+    await settle();
+    expect(signIns.current?.status).toBe('failed');
+    expect(signIns.active).toBe(false);
+  });
+
+  it('refuses when the window never takes hold of the profile', async () => {
+    const { signIns } = window({ lockOwner: () => undefined });
+    await expect(signIns.start('/profiles/p1', null, 'https://linear.app/')).rejects.toMatchObject({
+      code: 'profile_busy',
+    });
+    expect(signIns.current?.status).toBe('failed');
   });
 
   it('allows one sign-in at a time', async () => {

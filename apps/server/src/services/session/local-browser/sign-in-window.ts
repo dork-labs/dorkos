@@ -6,6 +6,7 @@ import {
   disablePasswordSaving,
   plainChromiumArgs,
   profileHeld,
+  profileLockPid,
   spawnPlainChromium,
   type PlainChromium,
   type PlainChromiumSpawner,
@@ -14,6 +15,13 @@ import {
 /** How long Chromium may take to let go of the profile after its window closes. */
 export const SIGN_IN_SAVE_TIMEOUT_MS = 20_000;
 const SAVE_POLL_MS = 200;
+/** How long a new window may take to take hold of its profile. */
+export const SIGN_IN_LOCK_TIMEOUT_MS = 5_000;
+
+/** The pid holding a profile, or `unchecked` where the lock names none (Windows). */
+type LockOwner = (profileFolder: string) => number | undefined | 'unchecked';
+const lockOwnerHere: LockOwner = (folder) =>
+  process.platform === 'win32' ? 'unchecked' : profileLockPid(folder);
 
 /** The machine pieces a sign-in window uses, swapped for fakes in tests. */
 export interface SignInWindowDeps {
@@ -22,6 +30,8 @@ export interface SignInWindowDeps {
   spawner?: PlainChromiumSpawner;
   /** Whether a Chromium still holds the profile folder. */
   held?: (profileFolder: string) => boolean;
+  /** Which process holds a profile, read after the window starts. */
+  lockOwner?: LockOwner;
   /** Get the profile ready: password saving off. */
   prepare?: (profileFolder: string) => Promise<void>;
   now?: () => number;
@@ -94,13 +104,27 @@ export class SignInWindow {
       this.finish(attempt, 'failed');
       throw new LocalBrowserError('sign_in_failed', 'Couldn’t open the sign-in window. Try again.');
     }
-    void this.window.exited.then((exit) =>
+    const window = this.window;
+    let exited = false;
+    void window.exited.then((exit) => {
+      exited = true;
       // No code and no signal is a process that never started.
-      exit.code === null && exit.signal === null
-        ? this.finish(attempt, 'failed')
-        : this.save(attempt, profileFolder)
-    );
-    return this.record;
+      if (exit.code === null && exit.signal === null) this.finish(attempt, 'failed');
+      else void this.save(attempt, profileFolder);
+    });
+    // Between the check above and the spawn, another Chromium could have taken the
+    // profile, and ours would then pass the page to it and exit. Only a window
+    // that holds the profile itself is the person's.
+    if (!(await this.ownsProfile(profileFolder, window, () => exited))) {
+      window.quit();
+      this.finish(attempt, 'failed');
+      this.attempt += 1;
+      throw new LocalBrowserError(
+        'profile_busy',
+        'Close the browser using this profile, then try again.'
+      );
+    }
+    return this.record!;
   }
 
   /** Ask an open window to quit; its sign-in is saved as if the person closed it. */
@@ -126,6 +150,24 @@ export class SignInWindow {
     if (attempt !== this.attempt || !this.record) return;
     this.record = { ...this.record, status };
     this.window = undefined;
+  }
+
+  private async ownsProfile(
+    profileFolder: string,
+    window: PlainChromium,
+    exited: () => boolean
+  ): Promise<boolean> {
+    const owner = this.deps.lockOwner ?? lockOwnerHere;
+    const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+    const deadline = this.now() + SIGN_IN_LOCK_TIMEOUT_MS;
+    while (this.now() < deadline) {
+      if (exited()) return false;
+      const pid = owner(profileFolder);
+      if (pid === 'unchecked') return true;
+      if (pid !== undefined) return window.pid !== undefined && pid === window.pid;
+      await sleep(SAVE_POLL_MS);
+    }
+    return false;
   }
 
   private isHeld(profileFolder: string): boolean {

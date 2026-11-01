@@ -74,6 +74,9 @@ export function assertSignInUrl(value: string): URL {
 export class BrowserHandover {
   private record: LocalBrowserHandoff | null = null;
   private reopenAt?: ReopenAt;
+  // After Stop task the browser stays open for the person (2FA, a payment), so that
+  // chat reads nothing until a person opens or resumes the browser for it again.
+  private stoppedFor: string | null = null;
   // Fails closed until startup says how to read a turn's marks.
   private outsideTurn: OutsideTurnCheck = async () => true;
 
@@ -101,6 +104,7 @@ export class BrowserHandover {
    * @param sessionId - The calling chat.
    */
   async requireAgentMayUse(sessionId: string): Promise<void> {
+    this.refuseStopped(sessionId);
     if (this.record && this.record.outcome === null && this.record.sessionId === sessionId)
       throw new LocalBrowserError(
         'handed_to_person',
@@ -126,6 +130,7 @@ export class BrowserHandover {
         'outside_turn',
         'This turn read words from outside your team, so it can’t hand the browser to a person.'
       );
+    this.refuseStopped(sessionId);
     const open = this.record?.outcome === null ? this.record : null;
     if (open?.sessionId === sessionId)
       return { handoffId: open.id, site: open.site, next: HANDED_OVER_NEXT };
@@ -166,6 +171,13 @@ export class BrowserHandover {
       // The origin the agent's browser is on now, never one the agent named.
       const tab = state.tabs.find((candidate) => candidate.id === state.selectedTabId);
       if (!tab) throw new LocalBrowserError('no_tab', 'Open the website first, then try again.');
+      // The card names the site the agent asked on. A page that moved since then
+      // (a redirect, a click) must not get the person's sign-in under that name.
+      if (new URL(tab.url).host !== handoff.site)
+        throw new LocalBrowserError(
+          'site_changed',
+          `The page left ${handoff.site}. Check the browser, then try again.`
+        );
       url = assertSignInUrl(new URL(tab.url).origin);
       profileId = this.browser.currentProfileId();
       this.reopenAt = { sessionId: handoff.sessionId, profileId, url: tab.url };
@@ -208,13 +220,15 @@ export class BrowserHandover {
   }
 
   /**
-   * The person ends the agent's task. The browser stays paused. Person only;
-   * the app stops the chat's turn itself.
+   * The person ends the agent's task. The browser stays open for the person, and
+   * that chat can't read or use it until a person opens or resumes it again.
+   * Person only; the app stops the chat's turn itself.
    *
    * @param handoffId - The handoff being answered.
    */
   async stop(handoffId: string): Promise<LocalBrowserPersonState> {
     const handoff = this.openHandoff(handoffId);
+    this.stoppedFor = handoff.sessionId;
     await this.browser.pause();
     this.end(handoff, 'stopped');
     return this.state();
@@ -230,6 +244,7 @@ export class BrowserHandover {
     if (input.mode === 'new-window' && this.signIns.holds(this.folderOf(input.profileId ?? null)))
       throw new LocalBrowserError('signing_in', 'Finish signing in first.');
     await this.browser.open(input);
+    this.stoppedFor = null;
     if (this.record?.outcome === null && this.record.sessionId !== input.sessionId)
       this.end(this.record, 'stopped');
     return this.state();
@@ -242,7 +257,16 @@ export class BrowserHandover {
   async resume(): Promise<LocalBrowserPersonState> {
     if (this.record?.outcome === null) return this.handBack(this.record.id);
     await this.browser.resume();
+    this.stoppedFor = null;
     return this.state();
+  }
+
+  private refuseStopped(sessionId: string): void {
+    if (this.stoppedFor === sessionId)
+      throw new LocalBrowserError(
+        'task_stopped',
+        'The person stopped this task. They can open the browser for you again.'
+      );
   }
 
   private openHandoff(id: string): LocalBrowserHandoff {

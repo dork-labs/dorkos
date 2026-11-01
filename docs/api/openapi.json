@@ -31969,7 +31969,7 @@
           "Local browser"
         ],
         "summary": "Open the plain sign-in window",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens DorkOS’s Chromium on a profile with no debugging channel, so no agent can see or use it. Takes a page the person typed, or a handoff, which opens the agent page’s own origin. Accepts https, or http on this computer only. Password saving is off in that window.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens DorkOS’s Chromium on a profile with no debugging channel, so no agent can see or use it. Takes a page the person typed, or a handoff, which opens the agent page’s own origin and is refused if that page has left the site the handoff names. Accepts https, or http on this computer only. Password saving is off in that window.",
         "requestBody": {
           "required": true,
           "content": {
@@ -32654,7 +32654,7 @@
           "Local browser"
         ],
         "summary": "Stop the task that asked for a person",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Ends the handoff and keeps the browser paused. The app stops the chat itself.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Ends the handoff and keeps the browser paused. That chat can’t read or use the browser until a person opens or resumes it again. The app stops the chat itself.",
         "requestBody": {
           "required": true,
           "content": {

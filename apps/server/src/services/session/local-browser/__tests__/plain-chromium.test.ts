@@ -30,9 +30,15 @@ describe('plainChromiumArgs', () => {
     expect(args).toContain('--password-store=basic');
   });
 
+  it('runs no extensions, which could read the page', () => {
+    expect(args).toContain('--disable-extensions');
+  });
+
   it('uses the profile folder, names the site in the title, and opens the page', () => {
     expect(args).toContain('--user-data-dir=/profiles/default');
-    expect(args).toContain('--window-name=Sign in to linear.app · DorkOS');
+    expect(args).toContain('--window-name=Sign in to linear.app');
+    // DorkOS's name must not vouch for whatever page opens here.
+    expect(args.some((arg) => arg.includes('DorkOS'))).toBe(false);
     expect(args.at(-1)).toBe('https://linear.app/');
   });
 });

@@ -4,8 +4,7 @@ import { realpathSync } from 'node:fs';
 import { createLocalBrowserProfileAccess } from '../../services/session/local-browser/profile-access.js';
 import { loadProfileBindingKey } from '../../services/session/local-browser/profile-folders.js';
 import { createLocalBrowserProfileStore } from '../../services/session/local-browser/profile-store.js';
-import { marksOf } from '../../services/core/turn-power/turn-levels.js';
-import { startedByOutsider } from '../../services/core/turn-power/turn-marks.js';
+import { liveOutsideTurnCheck } from '../../services/session/local-browser/outside-turn.js';
 /**
  * Managed MCP servers, the external MCP server, the route dependency bag,
  * Tasks, and the skills projection watcher.
@@ -397,12 +396,7 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
     }),
     (id) => localBrowserProfiles.get(id) !== undefined
   );
-  // The same reading the destructive hold uses: a stranger started the turn, or it read one's words.
-  localBrowserService.handover.useOutsideTurnCheck(async (sessionId) => {
-    if (startedByOutsider(sessionId)) return true;
-    const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null);
-    return marksOf(sessionId, agentPath ?? undefined).outsider === true;
-  });
+  localBrowserService.handover.useOutsideTurnCheck(liveOutsideTurnCheck());
   const deps: HonoApiDeps = {
     localBrowser: localBrowserService,
     localBrowserProfiles: {

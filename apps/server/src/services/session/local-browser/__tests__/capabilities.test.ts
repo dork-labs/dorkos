@@ -10,6 +10,8 @@ import {
 } from '../../../core/capabilities/mcp-projection.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/capabilities/index.js';
 import { createLocalBrowserDomain } from '../capabilities.js';
+import { BrowserHandover } from '../handover.js';
+import type { SignInWindow } from '../sign-in-window.js';
 import { LocalBrowserError, type LocalBrowserService } from '../service.js';
 
 function setup() {
@@ -220,6 +222,35 @@ describe('local browser scoped tool projection', () => {
     });
     expect(service.handover.ask).toHaveBeenCalledExactlyOnceWith('chat-one', 'password');
     expect(() => ask.invoke(deps, { reason: 'wall' }, context('chat-two'))).toThrow();
+  });
+  it('after Stop task, the chat can neither read nor see the page the person keeps using', async () => {
+    const { domain, deps, context, service } = setup();
+    const browser = {
+      state: async () => service.agentState(),
+      currentProfileId: () => null,
+      open: vi.fn(async () => service.agentState()),
+      selectTab: vi.fn(async () => service.agentState()),
+      pause: vi.fn(async () => service.agentState()),
+      resume: vi.fn(async () => service.agentState()),
+      disconnect: vi.fn(async () => service.agentState()),
+    };
+    const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
+    const handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
+    handover.useOutsideTurnCheck(async () => false);
+    (service as { handover: unknown }).handover = handover;
+    const tool = (id: string) => domain.capabilities.find((item) => item.id === id)!;
+    const { handoffId } = (await tool('local_browser.ask_person').invoke(
+      deps,
+      { reason: 'wall' },
+      context('chat-one')
+    )) as { handoffId: string };
+    await handover.stop(handoffId);
+    for (const id of ['local_browser.observe', 'local_browser.screenshot', 'local_browser.state'])
+      await expect(tool(id).invoke(deps, {}, context('chat-one'))).rejects.toMatchObject({
+        payload: { code: 'task_stopped' },
+      });
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
   });
   it('lets no agent name the site it hands over', () => {
     const { domain } = setup();

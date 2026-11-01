@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import { LocalBrowserError } from './errors.js';
 import { BrowserDownloadProgress, type BrowserPreparationListener } from './preparation.js';
+import { disablePasswordSaving } from './plain-chromium.js';
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
 export const LOCAL_PLAYWRIGHT_VERSION = '1.63.0';
@@ -98,6 +99,9 @@ export const productionBackend: LocalBrowserBackend = {
     await acquireLocalChromium(signal, onPreparation);
     signal?.throwIfAborted();
     onPreparation?.({ stage: 'launching', component: null, percent: null });
+    // The profile is shared with the plain sign-in window, and with the basic
+    // password store a saved password is readable on disk. Neither window saves one.
+    await disablePasswordSaving(storagePath);
     // Playwright launch does not accept AbortSignal. The service retains setup ownership
     // and closes a context that arrives after cancellation; never race this result away.
     return chromium.launchPersistentContext(storagePath, {
@@ -105,7 +109,8 @@ export const productionBackend: LocalBrowserBackend = {
       headless: false,
       viewport: null,
       chromiumSandbox: true,
-      // Chrome's automation flag disables password saving, which this mode promises to keep.
+      // Without the automation flag the window looks like the person's Chrome;
+      // password saving is off in the profile itself.
       ignoreDefaultArgs: ['--enable-automation'],
     });
   },

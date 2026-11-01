@@ -59,7 +59,8 @@ function registerHandoverOpenApi(registry: OpenAPIRegistry): void {
       authority +
       inPerson +
       'Opens DorkOS’s Chromium on a profile with no debugging channel, so no agent can see or use it. ' +
-      'Takes a page the person typed, or a handoff, which opens the agent page’s own origin. ' +
+      'Takes a page the person typed, or a handoff, which opens the agent page’s own origin ' +
+      'and is refused if that page has left the site the handoff names. ' +
       'Accepts https, or http on this computer only. Password saving is off in that window.',
     request: {
       body: {
@@ -89,7 +90,8 @@ function registerHandoverOpenApi(registry: OpenAPIRegistry): void {
     description:
       authority +
       inPerson +
-      'Ends the handoff and keeps the browser paused. The app stops the chat itself.',
+      'Ends the handoff and keeps the browser paused. That chat can’t read or use the browser ' +
+      'until a person opens or resumes it again. The app stops the chat itself.',
     request: answer,
     responses: { ...personStateResponses, 400: refusal('The request is invalid') },
   });

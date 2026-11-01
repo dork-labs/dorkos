@@ -15,6 +15,8 @@ export interface PlainChromiumExit {
 
 /** One running plain window. */
 export interface PlainChromium {
+  /** The process id, once started. */
+  pid?: number;
   /** Resolves once the process has exited. */
   exited: Promise<PlainChromiumExit>;
   /** Quit the way a person would, so Chromium writes the profile out. */
@@ -43,7 +45,9 @@ export const FORBIDDEN_PLAIN_FLAGS = [
  *
  * @param profileFolder - The profile's folder under `browser-profiles/`.
  * @param url - The page to open, already checked.
- * @param site - The page's host, taken from `url`, for the window title.
+ * @param site - The page's host, taken from `url`, for the window title. The title
+ *   never says "DorkOS": any https page can open here, and DorkOS's name must not
+ *   vouch for it.
  */
 export function plainChromiumArgs(profileFolder: string, url: string, site: string): string[] {
   return [
@@ -52,7 +56,9 @@ export function plainChromiumArgs(profileFolder: string, url: string, site: stri
     '--no-default-browser-check',
     '--use-mock-keychain',
     '--password-store=basic',
-    `--window-name=Sign in to ${site} · DorkOS`,
+    // An extension could read the page; the person's own window needs none.
+    '--disable-extensions',
+    `--window-name=Sign in to ${site}`,
     url,
   ];
 }
@@ -102,24 +108,38 @@ export function profileHeld(
   profileFolder: string,
   platform: NodeJS.Platform = process.platform
 ): boolean {
-  if (platform === 'win32') {
-    const lockfile = path.join(profileFolder, 'lockfile');
-    if (!existsSync(lockfile)) return false;
-    try {
-      rmSync(lockfile);
-      return false;
-    } catch {
-      return true;
-    }
+  if (platform !== 'win32') {
+    const pid = profileLockPid(profileFolder);
+    return pid !== undefined && isAlive(pid);
   }
+  const lockfile = path.join(profileFolder, 'lockfile');
+  if (!existsSync(lockfile)) return false;
+  try {
+    rmSync(lockfile);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The pid a profile's `SingletonLock` names on macOS and Linux, or undefined
+ * when there's no lock. Windows has no pid to read.
+ *
+ * @param profileFolder - The profile's folder.
+ */
+export function profileLockPid(profileFolder: string): number | undefined {
   let target: string;
   try {
     target = readlinkSync(path.join(profileFolder, 'SingletonLock'));
   } catch {
-    return false;
+    return undefined;
   }
   const pid = Number(target.slice(target.lastIndexOf('-') + 1));
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+  return Number.isInteger(pid) && pid > 0 ? pid : undefined;
+}
+
+function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -137,6 +157,7 @@ export const spawnPlainChromium: PlainChromiumSpawner = (executable, args) => {
     child.once('error', () => resolve({ code: null, signal: null }));
   });
   return {
+    pid: child.pid,
     exited,
     quit() {
       if (child.pid === undefined || child.exitCode !== null) return;
