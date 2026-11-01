@@ -17,10 +17,9 @@
  * A cliff, not a slope. Any budget you put on that gate lands in the empty
  * middle: it returns no verdict on a single push that had real work to do,
  * while charging the budget to every one of them. So the gate left the push
- * path, and what a push now guarantees is one formatting check — which is
- * cheap, deterministic, and preempts a REQUIRED CI gate that seven PRs in one
- * week went red on — plus, since 2026-10-30, a changelog-fragment validity
- * check of the same shape. The merge queue is the test gate.
+ * path. Push runs formatting, fragment validity, file-size and ledger coverage
+ * checks. These catch deterministic CI failures locally without running suites.
+ * The merge queue is the test gate.
  *
  * THREE REGRESSIONS, all silent:
  *

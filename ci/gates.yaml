@@ -254,6 +254,13 @@ gates:
     source: lefthook.yml
     purpose: Fails a push that carries a broken changelog fragment, usually an unedited seed, using fragment-present's own validity command.
 
+  - id: lefthook.pre-push.max-lines
+    source: lefthook.yml
+    purpose: Refuses file-size ratchet growth before pushing.
+  - id: lefthook.pre-push.ledger-coverage
+    source: lefthook.yml
+    purpose: Requires a ledger entry for changed pipeline paths before pushing.
+
   # --- .claude/settings.json ---
   - id: claude.PreToolUse.file-guard
     source: .claude/settings.json
