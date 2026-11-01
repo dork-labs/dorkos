@@ -92,13 +92,13 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 - Focus rings (`--dui-ring`, drawn by the `focus-ring` utility) — every `focus-visible` interaction carries the brand
 - `brand` button variant — the site and Cloud marketing only. In the app, a primary button is grey, and `apps/client` has no use of it
 - Sidebar active tab indicator — subtle brand presence in navigation
-- Assistant message links and inline code — via `--brand-text`
 
 **Where gray stays:**
 
 - `--primary` — primary buttons, switches, badges, selections (the quiet workhorse)
 - `--accent` — hover backgrounds in menus, dropdowns
 - `--secondary` — user message tint
+- Message links and inline code — ink. A link's signal is its underline (muted, full strength on hover and focus); inline code sits on a `foreground / 0.05` tint
 - All structural surfaces — backgrounds, cards, borders, muted
 
 **Orange text is `text-brand-text`.** The brand fill reads only 3.7:1 as text on the light page; `--brand-text` clears 4.5:1 on every ground it sits on (`__tests__/brand-text-contrast.test.ts`). Plain `brand` stays for fills, rings, icons and large type.
