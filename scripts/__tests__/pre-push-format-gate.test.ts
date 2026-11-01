@@ -19,9 +19,11 @@
  * keep it in front of the test sweep — `piped: true` and the two `priority`
  * keys — went with the second command, because an ordering among one command is
  * a claim about a file that no longer holds. On 2026-10-30 a second sub-second
- * check joined it (`fragments`, scripts/pre-push-fragment-check.sh); the two are
- * independent, so still no ordering. The assertions below pin exactly those two
- * commands; `local-gate-shape.test.ts` beside this one pins that no test
+ * check joined it (`fragments`, scripts/pre-push-fragment-check.sh), and on
+ * 2026-11-01 two more (`max-lines` and `ledger-coverage`, ledger
+ * `261101-191731`), each front-running a ratchet CI enforces. All four are
+ * independent, so still no ordering. The assertions below pin exactly those
+ * four commands; `local-gate-shape.test.ts` beside this one pins that no test
  * command has come back without a ledger entry.
  *
  * WHY A VITEST TEST RATHER THAN A SHELL FIXTURE — the same reasoning its
@@ -97,25 +99,30 @@ function commandPriorities(block: string): Map<string, number | undefined> {
 const prePush = prePushBlock(lefthookText);
 const priorities = commandPriorities(prePush);
 
-describe('the pre-push formatting check is wired beside the fragment check', () => {
-  it('finds the pre-push hook and its two commands at all', () => {
+/** Every command the pre-push hook runs, sorted by name. */
+const PRE_PUSH_COMMANDS = ['formatting', 'fragments', 'ledger-coverage', 'max-lines'];
+
+describe('the pre-push formatting check is wired beside its sibling checks', () => {
+  it('finds the pre-push hook and its four commands at all', () => {
     // Without this, every assertion below passes vacuously the day the hook is
     // renamed or the scanner stops matching — the exact way a guard dies
     // quietly. `fragments` joined on 2026-10-30
-    // (ci/ledger/261030-230941-pre-push-fragment-check.md).
+    // (ci/ledger/261030-230941-pre-push-fragment-check.md); `max-lines` and
+    // `ledger-coverage` on 2026-11-01 (ci/ledger/261101-191731-pre-push-ratchets.md).
     expect(prePush).not.toBe('');
-    expect([...priorities.keys()].sort()).toEqual(['formatting', 'fragments']);
+    expect([...priorities.keys()].sort()).toEqual(PRE_PUSH_COMMANDS);
   });
 
-  it('declares no ordering, because the two checks are independent', () => {
+  it('declares no ordering, because the four checks are independent', () => {
     // `piped` and `priority` earned their lines when a two-second check had to
-    // preempt a six-minute sweep. These two are both sub-second and answer
+    // preempt a six-minute sweep. These four are all quick and answer
     // different questions, so each should report on the same push rather than
     // one hiding the other. Adding a slow command means deciding ordering
     // deliberately and putting them back — this is the line that makes you.
     expect(/^ {2}piped:/m.test(prePush)).toBe(false);
-    expect(priorities.get('formatting')).toBeUndefined();
-    expect(priorities.get('fragments')).toBeUndefined();
+    for (const name of PRE_PUSH_COMMANDS) {
+      expect(priorities.get(name), `${name} declares a priority`).toBeUndefined();
+    }
   });
 
   it('runs the formatting check', () => {
