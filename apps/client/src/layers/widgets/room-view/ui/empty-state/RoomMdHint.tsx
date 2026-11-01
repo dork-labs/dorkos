@@ -61,7 +61,7 @@ export function RoomMdHint({ roomId }: RoomMdHintProps) {
       <button
         type="button"
         onClick={open}
-        className="text-foreground focus-visible:ring-ring rounded-sm underline underline-offset-2 focus-visible:ring-2 focus-visible:outline-none"
+        className="text-foreground focus-ring rounded-sm underline underline-offset-2"
       >
         Open
       </button>
