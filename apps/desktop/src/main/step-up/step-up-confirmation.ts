@@ -71,12 +71,12 @@ export class StepUpConfirmation {
     const headers: Record<string, string> = {};
     const proof = this.deps.personProof();
     if (proof) headers[PERSON_PROOF_HEADER] = proof;
-    // The shell is this server's own app, so it names the server's own origin
-    // on a write, as the app's page would (the step-up routes refuse any other).
-    if (write) {
-      headers.Origin = this.deps.origin;
-      headers['Content-Type'] = 'application/json';
-    }
+    // The shell is this server's own app, so it names the server's own origin,
+    // reads included: without one, Chromium marks a main-process request
+    // `Sec-Fetch-Site: none`, which the step-up routes refuse (measured on
+    // Electron 42; with it, `same-origin`).
+    headers.Origin = this.deps.origin;
+    if (write) headers['Content-Type'] = 'application/json';
     return headers;
   }
 
