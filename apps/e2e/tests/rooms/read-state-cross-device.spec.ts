@@ -68,8 +68,8 @@ test.describe('Read state — one mark, every device @smoke', () => {
       timeout: SERVER_ROUND_TRIP_MS,
     });
     // A channel only counts what was aimed at you: the name is said once and
-    // nothing follows it.
-    await expect(rowA).toHaveAccessibleName(`#${slug}`);
+    // nothing follows it but "new messages", which stands in for the bold.
+    await expect(rowA).toHaveAccessibleName(new RegExp(`^#${slug}\\s*new messages$`));
 
     // Device two: a second context, opened AFTER the room exists so its first
     // read of the room list already holds it (see `openCockpit`).

@@ -10,10 +10,7 @@
  */
 import { useLayoutEffect, useRef, type RefObject } from 'react';
 import type { Transition } from 'motion/react';
-
-/** The same spring a section folds on (`sidebar-motion.ts`): about 180 ms, no overshoot. */
-const SIDEBAR_FOLD_STIFFNESS = 400;
-const SIDEBAR_FOLD_DAMPING = 36;
+import { SPRING } from '@/layers/shared/lib/motion';
 
 /**
  * How the panel moves for this reader: a spring, so ⌘B pressed mid-flight
@@ -24,7 +21,8 @@ const SIDEBAR_FOLD_DAMPING = 36;
  */
 export function sidebarFoldTransition(reducedMotion: boolean | null): Transition {
   if (reducedMotion === true) return { duration: 0 };
-  return { type: 'spring', stiffness: SIDEBAR_FOLD_STIFFNESS, damping: SIDEBAR_FOLD_DAMPING };
+  // The spring a section folds on: about 180 ms, no overshoot.
+  return SPRING.fold;
 }
 
 /** Where focus was when the panel shut, and the section to fall back on. */

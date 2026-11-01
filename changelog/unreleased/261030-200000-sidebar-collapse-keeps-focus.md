@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): hiding the sidebar keeps focus on screen'
+  - "fix(sidebar): fold on SPRING.fold, and keep Button's prop union on the trigger"
 ---
 
 ### Fixed

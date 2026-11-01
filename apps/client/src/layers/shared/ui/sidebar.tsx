@@ -283,12 +283,19 @@ function Sidebar({
   );
 }
 
+/**
+ * Button's props without `ref`, which the trigger owns. The omit distributes, so
+ * Button's `loading` / `loadingLabel` union survives it.
+ */
+export type SidebarTriggerProps =
+  React.ComponentProps<typeof Button> extends infer P
+    ? P extends unknown
+      ? Omit<P, 'ref'>
+      : never
+    : never;
+
 /** Ghost button that toggles the sidebar open or closed. */
-function SidebarTrigger({
-  className,
-  onClick,
-  ...props
-}: Omit<React.ComponentProps<typeof Button>, 'ref'>) {
+function SidebarTrigger({ className, onClick, ...props }: SidebarTriggerProps) {
   const { toggleSidebar, open, panelId, triggerRef } = useSidebar();
 
   return (

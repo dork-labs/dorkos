@@ -98,7 +98,8 @@ test.describe('Rooms — how a room names itself @smoke', () => {
     await expect(row).toHaveAttribute('data-row-state', 'emphasized', {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(row).toHaveAccessibleName(`#${slug}`);
+    // Bold is not read out, so the row says "new messages" after the name, once.
+    await expect(row).toHaveAccessibleName(new RegExp(`^#${slug}\\s*new messages$`));
     expect(await visibleText(row)).toBe(slug);
 
     // Opening the room is what marks it read.
