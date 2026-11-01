@@ -21,8 +21,9 @@ type Props = {
 /**
  * After an invitation's sign-up: the same screen for every address, new or taken (DOR-2730).
  * Either way a mail went out: the finishing link, or for an account that already exists a notice
- * to sign in. Resend asks the anonymous reset route again, which answers the same for every
- * address; the screen shows "Sent again" whatever the server did with it. The page's own heading
+ * to sign in. Resend queues the invitation's own mail again (`/account/invite-link`), which
+ * answers the same for every address and never sends a plain reset; the screen shows "Sent again"
+ * whatever the server did with it. The page's own heading
  * reads "Check your email" and takes focus when this opens.
  */
 export function CheckYourEmail({ email, space, onDifferentEmail }: Props) {
@@ -52,7 +53,7 @@ export function CheckYourEmail({ email, space, onDifferentEmail }: Props) {
     setState('sending');
     setError('');
     try {
-      await hostRequest('/api/v1/account/password-reset', 'POST', { email });
+      await hostRequest('/api/v1/account/invite-link', 'POST', { email });
       setState('sent');
     } catch (cause) {
       setError(describeError(cause));
