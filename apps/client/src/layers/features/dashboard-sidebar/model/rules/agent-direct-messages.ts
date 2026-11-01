@@ -16,10 +16,10 @@
  * @module features/dashboard-sidebar/model/rules/agent-direct-messages
  */
 import { agentAuthorRef, oneToOneDmAgentRef, type RoomSummary } from '@dorkos/shared/room-schemas';
+import { deriveUnreadSignal } from '@/layers/shared/lib/unread-signal';
 import type { SidebarUnread } from '../build-sidebar-model';
 import type { SidebarState } from '../sidebar-state';
 import type { MuteIndex } from './apply-mute-rules';
-import { deriveUnreadSignal } from './derive-unread-signal';
 
 /** Both answers the sections need about agents' direct messages. */
 export interface AgentDmIndex {

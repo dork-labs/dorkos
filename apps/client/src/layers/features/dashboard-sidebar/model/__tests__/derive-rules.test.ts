@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { prefs } from '../fixtures';
 import { muteIndex } from '../rules/apply-mute-rules';
-import { deriveUnreadSignal } from '../rules/derive-unread-signal';
+import { deriveUnreadSignal } from '@/layers/shared/lib/unread-signal';
 import { rowKey, sameTarget } from '../rules/targets';
 
 describe('deriveUnreadSignal', () => {

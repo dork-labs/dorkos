@@ -378,6 +378,71 @@ describe('useTabIdentity', () => {
     expect(result.current).toMatchObject({ primary: 'Add-on', status: undefined });
   });
 
+  describe('a room (DOR-3593)', () => {
+    /** One channel the viewer is in, with this much unread. */
+    function channelRoom(unreadCount: number, mentionCount?: number) {
+      vi.mocked(transport.getRoom).mockResolvedValue({
+        id: 'r1',
+        kind: 'channel',
+        slug: 'general',
+        title: 'general',
+      } as never);
+      vi.mocked(transport.listRooms).mockResolvedValue([
+        {
+          id: 'r1',
+          kind: 'channel',
+          slug: 'general',
+          title: 'general',
+          unreadCount,
+          participants: null,
+          ...(mentionCount === undefined ? {} : { mentionCount }),
+        },
+      ] as never);
+    }
+
+    /** The sidebar prefs, with these rooms muted. */
+    function mutedRooms(...roomIds: string[]) {
+      vi.mocked(transport.getConfig).mockResolvedValue({
+        ui: { sidebar: { muted: roomIds.map((roomId) => ({ kind: 'room', roomId })) } },
+      } as never);
+    }
+
+    it('is bold with no number for a busy channel, and counts only mentions', async () => {
+      mutedRooms();
+      channelRoom(40);
+      const { result } = renderHook(() => useTabIdentity('/channels?id=r1'), { wrapper });
+      await waitFor(() => expect(result.current.emphasized).toBe(true));
+      expect(result.current.count).toBeUndefined();
+
+      channelRoom(40, 2);
+      const { result: mentioned } = renderHook(() => useTabIdentity('/channels?id=r1'), {
+        wrapper,
+      });
+      await waitFor(() => expect(mentioned.current.count).toBe(2));
+      expect(mentioned.current.countTone).toBe('you');
+    });
+
+    it('goes quiet when the room is muted, but a mention still counts', async () => {
+      mutedRooms('r1');
+      channelRoom(40);
+      const { result } = renderHook(() => useTabIdentity('/channels?id=r1'), { wrapper });
+      await waitFor(() => expect(result.current.primary).toMatch(/general/));
+      await waitFor(() => expect(transport.listRooms).toHaveBeenCalled());
+      await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+      // Let both answers land: a muted room must still be quiet once they have.
+      await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+      expect(result.current.emphasized).toBeUndefined();
+      expect(result.current.count).toBeUndefined();
+
+      channelRoom(40, 1);
+      const { result: mentioned } = renderHook(() => useTabIdentity('/channels?id=r1'), {
+        wrapper,
+      });
+      await waitFor(() => expect(mentioned.current.count).toBe(1));
+      expect(mentioned.current.accessibleName).toMatch(/, 1 mention$/);
+    });
+  });
+
   it('names the Marketplace after what is open in it', () => {
     const { result } = renderHook(() => useTabIdentity('/marketplace?pkg=flow'), { wrapper });
     expect(result.current).toMatchObject({ primary: 'Marketplace', secondary: 'flow' });

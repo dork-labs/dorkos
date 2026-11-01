@@ -30,6 +30,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { IdentityFace } from '@/layers/shared/lib';
+import { deriveUnreadSignal, type UnreadSignal } from '@/layers/shared/lib/unread-signal';
 import type { CountTone } from '@/layers/shared/ui';
 
 /**
@@ -72,6 +73,12 @@ export interface TabIdentity {
    * activity. Absent reads as `neutral`.
    */
   countTone?: CountTone;
+  /**
+   * The page has something new for you: a background tab draws its name bold.
+   * A busy channel nobody named you in says so this way and no other — the
+   * sidebar's first tier (`deriveUnreadSignal`), never a number.
+   */
+  emphasized?: boolean;
   /** When the page last had activity, epoch ms: "Last active 2m ago". */
   lastActiveAt?: number;
   /**
@@ -485,6 +492,8 @@ export interface RoomTabInput {
   unreadCount?: number | null;
   /** Times you are @mentioned above your cursor, when known. */
   mentionCount?: number;
+  /** Whether you muted the room. */
+  muted?: boolean;
   /** For a DM, the face of whoever it is with. */
   face?: IdentityFace | null;
   /** When the room last had activity, epoch ms. */
@@ -492,17 +501,35 @@ export interface RoomTabInput {
 }
 
 /**
+ * What a room tab says about its unread messages, in the sidebar row's words:
+ * "3 mentions", "2 new messages", "New messages".
+ */
+function roomUnreadSentence(signal: UnreadSignal, countsMessages: boolean): string | undefined {
+  if (signal.tier === 'activity') return 'New messages';
+  if (signal.tier !== 'directed' || signal.count === undefined) return undefined;
+  return countsMessages
+    ? plural(signal.count, 'new message', 'new messages')
+    : plural(signal.count, 'mention', 'mentions');
+}
+
+/**
  * A channel tab (`#general`) or a DM tab (the person or agent it is with),
- * with its unread count. A DM is aimed at you by nature, and so is a
- * mention of you: either makes the count read as urgent, the sidebar's rule
- * (BC-40).
+ * saying what its unread messages ask of you by the sidebar's rule
+ * ({@link deriveUnreadSignal}, BC-40). A channel with new messages is bold and
+ * carries no number; only your @mentions are counted. A DM is aimed at you by
+ * nature, so every new message in it counts. A muted room says nothing, except
+ * a mention, which gets through.
  *
  * @param input - What is known about the room.
  */
 export function roomTabIdentity(input: RoomTabInput): TabIdentity {
-  const unread = positive(input.unreadCount);
-  const mentions = positive(input.mentionCount);
-  const count = mentions !== undefined ? Math.max(mentions, unread ?? 0) : unread;
+  const muted = input.muted ?? false;
+  const signal = deriveUnreadSignal({
+    unreadCount: input.unreadCount,
+    directed: input.kind === 'dm',
+    ...(input.mentionCount === undefined ? {} : { mentionCount: input.mentionCount }),
+    muted,
+  });
   const icon: TabIcon =
     input.kind === 'dm'
       ? input.face
@@ -512,14 +539,10 @@ export function roomTabIdentity(input: RoomTabInput): TabIdentity {
   return identity({
     icon,
     primary: input.title,
-    count,
-    countTone: input.kind === 'dm' || mentions !== undefined ? 'you' : 'neutral',
-    statusSentence:
-      mentions !== undefined
-        ? plural(mentions, 'mention of you', 'mentions of you')
-        : unread !== undefined
-          ? plural(unread, 'unread message', 'unread messages')
-          : undefined,
+    count: signal.tier === 'directed' ? signal.count : undefined,
+    countTone: signal.tier === 'directed' ? 'you' : undefined,
+    emphasized: signal.tier !== 'none' || undefined,
+    statusSentence: roomUnreadSentence(signal, input.kind === 'dm' && !muted),
     lastActiveAt: input.lastActiveAt,
   });
 }
@@ -740,7 +763,21 @@ export interface TabLabel {
  */
 export function tabLabel(id: TabIdentity, opts: { collapseAgent?: boolean } = {}): TabLabel {
   if (collapsesAgent(id, opts)) return { lead: id.secondary! };
-  return { lead: id.primary, trail: id.secondary };
+  return { lead: glyphName(id), trail: id.secondary };
+}
+
+/**
+ * The name as printed beside the identity's glyph. A channel is `#general`
+ * when spoken, but its glyph already draws the `#`: printing both reads
+ * "# #general" (DOR-2073, the split `RoomTitle` and `SessionHeader` make). So
+ * the visible text drops the leading `#` the Hash glyph draws, and every
+ * caller keeps the full `primary` in the accessible name.
+ *
+ * @param id - The identity whose name sits beside its icon.
+ */
+export function glyphName(id: Pick<TabIdentity, 'icon' | 'primary'>): string {
+  const drawsHash = id.icon.kind === 'route' && id.icon.Icon === Hash;
+  return drawsHash && id.primary.startsWith('#') ? id.primary.slice(1) : id.primary;
 }
 
 /** Whether {@link tabLabel} leads with the chat title rather than the agent. */

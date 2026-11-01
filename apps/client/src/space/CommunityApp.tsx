@@ -1,9 +1,10 @@
 import { Button, Notice } from '@dork-labs/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
+import { Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission, type AdmissionResume } from './components/Admission.js';
 import { isOpenSpace, OpenAdmission } from './components/OpenAdmission.js';
 import { ChannelView } from './components/Channel.js';
+import { ChannelNavItem } from './components/nav/ChannelNavItem.js';
 import { HoldBanner } from './components/HoldBanner.js';
 import { OwnerReplacementBanner } from './owner-replacement/OwnerReplacementBanner.js';
 import { Manage } from './components/Manage.js';
@@ -379,21 +380,12 @@ export function CommunityApp() {
           {channels
             .filter((channel) => channel.joined)
             .map((channel) => (
-              <button
+              <ChannelNavItem
                 key={channel.id}
-                className={`nav-item ${!settings && selectedId === channel.id ? 'active' : ''}`}
-                onClick={() => choose(channel.id)}
-              >
-                <span className="row min-w-0">
-                  <Hash size={15} />
-                  <span className="truncate">{channel.name}</span>
-                </span>
-                {channel.unreadCount > 0 && (
-                  <span className="badge" aria-label={`${channel.unreadCount} unread`}>
-                    {channel.unreadCount}
-                  </span>
-                )}
-              </button>
+                channel={channel}
+                active={!settings && selectedId === channel.id}
+                onChoose={() => choose(channel.id)}
+              />
             ))}
           {!readOnly && channels.some((channel) => !channel.joined) && (
             <>

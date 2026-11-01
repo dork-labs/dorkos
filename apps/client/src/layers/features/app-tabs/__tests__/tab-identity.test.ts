@@ -271,31 +271,85 @@ describe('smart names', () => {
 });
 
 describe('a room tab', () => {
-  it('names a channel #slug with its unread count, quietly', () => {
-    const id = roomTabIdentity({ kind: 'channel', title: '#general', unreadCount: 4 });
+  // The sidebar's rule (`deriveUnreadSignal`, DOR-3593): a channel's number
+  // counts only your mentions, a DM's counts every new message, mute silences
+  // everything a mention does not get through.
+  it('makes a busy channel with no mention of you bold, with no number', () => {
+    const id = roomTabIdentity({ kind: 'channel', title: '#general', unreadCount: 40 });
     expect(id).toMatchObject({
       primary: '#general',
       icon: { kind: 'route', Icon: Hash },
-      count: 4,
-      countTone: 'neutral',
-      accessibleName: '#general, 4 unread messages',
+      emphasized: true,
+      statusSentence: 'New messages',
+      accessibleName: '#general, New messages',
     });
+    expect(id.count).toBeUndefined();
   });
 
-  it('makes an @mention read as urgent', () => {
+  it('counts only your mentions on a channel, however busy it is', () => {
     const id = roomTabIdentity({
       kind: 'channel',
       title: '#general',
-      unreadCount: 4,
-      mentionCount: 1,
+      unreadCount: 40,
+      mentionCount: 3,
     });
-    expect(id).toMatchObject({ count: 4, countTone: 'you', statusSentence: '1 mention of you' });
+    expect(id).toMatchObject({
+      count: 3,
+      countTone: 'you',
+      emphasized: true,
+      accessibleName: '#general, 3 mentions',
+    });
+    expect(
+      roomTabIdentity({ kind: 'channel', title: '#a', unreadCount: 4, mentionCount: 1 })
+        .statusSentence
+    ).toBe('1 mention');
   });
 
-  it('makes a DM’s count read as urgent, and draws whoever it is with', () => {
+  it('counts every new message in a DM, and draws whoever it is with', () => {
     const face = { kind: 'agent' as const, color: '#0a0', emoji: '🔍', fallback: 'S' };
     const id = roomTabIdentity({ kind: 'dm', title: 'Scout', unreadCount: 2, face });
-    expect(id).toMatchObject({ count: 2, countTone: 'you', icon: { kind: 'face', face } });
+    expect(id).toMatchObject({
+      count: 2,
+      countTone: 'you',
+      emphasized: true,
+      icon: { kind: 'face', face },
+      accessibleName: 'Scout, 2 new messages',
+    });
+    expect(roomTabIdentity({ kind: 'dm', title: 'Scout', unreadCount: 1 }).statusSentence).toBe(
+      '1 new message'
+    );
+  });
+
+  it('says nothing for a muted room with no mention of you', () => {
+    for (const kind of ['channel', 'dm'] as const) {
+      const id = roomTabIdentity({ kind, title: 'x', unreadCount: 9, muted: true });
+      expect(id.count).toBeUndefined();
+      expect(id.emphasized).toBeUndefined();
+      expect(id.accessibleName).toBe('x');
+    }
+  });
+
+  it('lets a mention through mute, and counts only the mentions', () => {
+    const channel = roomTabIdentity({
+      kind: 'channel',
+      title: '#general',
+      unreadCount: 9,
+      mentionCount: 2,
+      muted: true,
+    });
+    expect(channel).toMatchObject({
+      count: 2,
+      countTone: 'you',
+      accessibleName: '#general, 2 mentions',
+    });
+    const dm = roomTabIdentity({
+      kind: 'dm',
+      title: 'Scout',
+      unreadCount: 9,
+      mentionCount: 1,
+      muted: true,
+    });
+    expect(dm).toMatchObject({ count: 1, accessibleName: 'Scout, 1 mention' });
   });
 
   it('draws no badge for a read room or a room you are not in', () => {
@@ -303,6 +357,9 @@ describe('a room tab', () => {
     expect(
       roomTabIdentity({ kind: 'channel', title: '#a', unreadCount: null }).count
     ).toBeUndefined();
+    expect(roomTabIdentity({ kind: 'channel', title: '#a', unreadCount: 0 }).emphasized).toBe(
+      undefined
+    );
     expect(roomTabIdentity({ kind: 'dm', title: 'Scout' }).accessibleName).toBe('Scout');
   });
 

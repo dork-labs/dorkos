@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/layers/shared/ui';
-import type { TabIdentity } from '../lib/tab-identity';
+import { glyphName, type TabIdentity } from '../lib/tab-identity';
 import { TabIdentityIcon } from './TabIdentityIcon';
 import { TabStatusMark } from './TabStatusMark';
 
@@ -33,7 +33,16 @@ export function TabIdentityCard({ identity, className }: TabIdentityCardProps) {
       <div className="flex min-w-0 items-start gap-2">
         <TabIdentityIcon icon={identity.icon} className="mt-px" />
         <p className="min-w-0 font-medium break-words">
-          {identity.primary}
+          {/* The glyph draws a channel's `#`, so the text shows the bare slug and
+              the spoken `#general` lives in the sr-only node (DOR-2073). */}
+          {glyphName(identity) === identity.primary ? (
+            identity.primary
+          ) : (
+            <>
+              <span aria-hidden="true">{glyphName(identity)}</span>
+              <span className="sr-only">{identity.primary}</span>
+            </>
+          )}
           {identity.secondary && (
             <span className="text-muted-foreground font-normal"> · {identity.secondary}</span>
           )}

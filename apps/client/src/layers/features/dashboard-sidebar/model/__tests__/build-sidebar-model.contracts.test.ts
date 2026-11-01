@@ -95,6 +95,11 @@ const ALLOWED_VALUE_IMPORTS = [
   // client for other jobs (tool labels, file chips); this is not a claim that
   // every one of them was consolidated.
   '@/layers/shared/lib/basename',
+  // The two-tier unread rule (BC-40). It lived in this model until a room's tab
+  // had to say the same thing (DOR-3593), and a sibling feature cannot import
+  // it from here. A leaf on the same terms as `basename`: it imports nothing
+  // and stays off the barrel.
+  '@/layers/shared/lib/unread-signal',
   // Relative siblings inside the model itself.
   /^\.{1,2}\//,
 ];
@@ -297,7 +302,7 @@ describe('P1 AC-1 — purity, asserted over the module source', () => {
   // this, and the exemption is granted on a promise nobody checks. Listing
   // them by name rather than deriving the list is the point — deriving it from
   // the whitelist would make a new entry silently self-approving.
-  it.each(['basename'])(
+  it.each(['basename', 'unread-signal'])(
     'holds `shared/lib/%s` to the leaf promise that put it on the whitelist',
     (moduleName) => {
       // The whitelist entry above is worth exactly as much as this assertion.
