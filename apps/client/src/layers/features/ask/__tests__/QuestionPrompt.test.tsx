@@ -683,11 +683,9 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
       );
       // Query option wrapper divs with data-selected attribute
       const optionDivs = document.querySelectorAll('[data-selected]');
-      // Index 1 should carry the solid focus ring
-      expect(optionDivs[1].className).toContain('ring-2');
-      expect(optionDivs[1].className).toContain('ring-ring');
-      // Index 0 should not
-      expect(optionDivs[0].className).not.toContain('ring-2');
+      // Index 1 carries the focus mark; index 0 does not
+      expect(optionDivs[1].hasAttribute('data-focused')).toBe(true);
+      expect(optionDivs[0].hasAttribute('data-focused')).toBe(false);
     });
 
     it('adds the focus ring to the "Other" option when focused', () => {
@@ -701,7 +699,7 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
       );
       const optionDivs = document.querySelectorAll('[data-selected]');
       // "Other" is at index 2 (after 2 regular options)
-      expect(optionDivs[2].className).toContain('ring-2');
+      expect(optionDivs[2].hasAttribute('data-focused')).toBe(true);
     });
 
     it('does not add the focus ring when isActive is false', () => {
@@ -714,7 +712,7 @@ describe('QuestionPrompt interactive UX (Phase 2)', () => {
         />
       );
       const optionDivs = document.querySelectorAll('[data-selected]');
-      expect(optionDivs[0].className).not.toContain('ring-2');
+      expect(optionDivs[0].hasAttribute('data-focused')).toBe(false);
     });
   });
 

@@ -25,18 +25,19 @@ describe('OptionRow', () => {
       </OptionRow>
     );
     const row = container.firstElementChild!;
-    expect(row.className).toContain('bg-muted');
+    expect(row.getAttribute('data-row-state')).toBe('selected');
   });
 
-  it('applies focus ring when isFocused is true', () => {
+  it('marks the focused option when isFocused is true', () => {
     const { container } = render(
       <OptionRow isSelected={false} isFocused control={<input type="radio" />}>
         <span>Option A</span>
       </OptionRow>
     );
     const row = container.firstElementChild!;
-    expect(row.className).toContain('ring-2');
-    expect(row.className).toContain('ring-ring');
+    expect(row.hasAttribute('data-focused')).toBe(true);
+    // The inset row outline, never a ring (Phase 2, C7).
+    expect(row.className).not.toContain('ring-2');
   });
 
   it('derives data-selected from isSelected', () => {

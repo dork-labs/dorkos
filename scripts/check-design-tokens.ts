@@ -120,6 +120,35 @@ export const RULES: Rule[] = [
     except: /^apps\/client\/src\/layers\/features\/conversation\/ui\/rows\/ThreadReplyRow\.tsx$/,
     fix: "a count changes instantly; the flip is ThreadReplyRow's alone",
   },
+  // Phase 2, cards and rows (CARD-ROW-SPEC §10, rows 1 to 4).
+  {
+    id: 'shared-divide-y',
+    kind: 'hard',
+    pattern: /(?<![\w-])divide-y\b/g,
+    only: /^apps\/client\/src\/layers\/shared\/ui\//,
+    except: /\/table\.tsx$/,
+    fix: 'separate rows with space (FieldCardContent pays px-4 py-3)',
+  },
+  {
+    id: 'field-card-border',
+    kind: 'hard',
+    pattern: /<FieldCard\b[^>]*className=[^>]*(?<![\w-])border(?:-[\w/]+)?\b/g,
+    fix: 'a group has no border; the heading and the button carry danger',
+  },
+  {
+    id: 'card-border',
+    kind: 'hard',
+    pattern: /'bg-(?:card|row-group)\b[^']*(?<![\w-])border\b/g,
+    only: /^apps\/client\/src\/layers\/shared\/ui\/(?:card|field-card)\.tsx$/,
+    fix: 'a card is a surface and a soft lift, nothing else',
+  },
+  {
+    id: 'row-ring-mark',
+    kind: 'hard',
+    pattern: /\b(?:isSelected|isFocused|selected) && '[^']*\bring-2\b/g,
+    except: /^apps\/client\/src\/layers\/features\/mesh\/ui\//,
+    fix: 'use rowStateVariants: bg-row-selected, and the inset outline for focus',
+  },
 ];
 
 /** The baseline: rule id to repo-relative path to count. */

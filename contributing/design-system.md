@@ -378,12 +378,12 @@ Nav panels separate their levels with tint and whitespace, not hairlines. Add no
 
 Every level of separation comes off **one ramp**, `--sidebar-accent`, and no new colour is introduced:
 
-| Level        | Class                                                  | What it does                          |
-| ------------ | ------------------------------------------------------ | ------------------------------------- |
-| Search pill  | `bg-sidebar-accent/40`                                 | recessive tint, ~2–3% effective delta |
-| Footer strip | `bg-sidebar-accent/60`                                 | separates the footer from the panel   |
-| Row hover    | `bg-sidebar-accent/70`                                 | reads on top of the recessive tint    |
-| Row active   | `bg-sidebar-accent` + `text-sidebar-accent-foreground` | the strongest step                    |
+| Level        | Class                                                  | What it does                                                                    |
+| ------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Search pill  | `bg-sidebar-accent/40`                                 | recessive tint, ~2–3% effective delta                                           |
+| Footer strip | `bg-sidebar-accent/60`                                 | separates the footer from the panel                                             |
+| Row hover    | `bg-sidebar-accent/70`                                 | reads on top of the recessive tint; measures as the same step as `bg-row-hover` |
+| Row active   | `bg-sidebar-accent` + `text-sidebar-accent-foreground` | the strongest step                                                              |
 
 **Never use `--muted` inside the sidebar.** It inverts direction between themes. `--sidebar` is 91% light and 10% dark, while `--muted` is 96% light and 9% dark — so a surface tinted with `--muted` is _lighter_ than its panel in light mode and _darker_ in dark mode. `--sidebar-accent` is 86% light (−5%) and 16% dark (+6%): it moves away from the panel in the same perceptual direction in both themes, at the 5–10% delta this system asks for.
 
@@ -822,18 +822,35 @@ import { PasswordInput } from '@/layers/shared/ui';
 
 Sentinel mode ("saved value" placeholder that clears on focus) is a consumer concern — pass `onFocus`, `placeholder`, and `value` props.
 
-### FieldCard
+### Cards, groups and rows
 
-Rounded card container for grouping related form fields into Apple-style settings groups. Three components work together:
+Three containers, one rule each. A **card** sits on the page. A **group** holds rows inside anything that floats. A **row** is a line in a list. They never nest in one another, and none of them draws a rule between its children.
 
-- **`FieldCard`** — Outer card with `rounded-lg border bg-card`. Use `className` for variants (e.g., `border-destructive/50` for danger zones).
-- **`FieldCardContent`** — Content wrapper that applies automatic thin `divide-y` separators between children. Each child gets `px-4 py-3`.
-- **`CollapsibleFieldCard`** — Collapsible section with a right-aligned ChevronDown that rotates -90deg when collapsed.
+#### Card (`shared/ui/card.tsx`)
+
+`bg-card` plus `shadow-soft`, and **no border**: height comes from elevation, and in dark mode the soft lift paints the card 2% lighter than the page, so its edge reads without a line.
+
+| Axis       | Values                                          | Use                                                                                                                                                                    |
+| ---------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `variant`  | `static` (default), `interactive`               | `interactive` is a whole card you press: `card-interactive` (soft → elevated shadow, 150ms, no translate) plus `PRESS_CARD` and the outer focus outline                |
+| `radius`   | `md` (8px, default), `lg` (12px)                | `lg` only for a hero tile at least 320px wide                                                                                                                          |
+| `padding`  | `md` (16px, default, desktop and phone), `none` | `none` when the body is rows: the rows pay the inset                                                                                                                   |
+| `gap`      | `md`, `sm`, `none`                              | space between children                                                                                                                                                 |
+| `selected` | boolean                                         | a chosen card: `outline-2 outline-foreground` at offset 0 plus a check, top right. Never a tint, never orange. `aria-pressed` and `aria-checked` draw the same outline |
+
+`CardTitle` is `text-sm font-semibold leading-5` (`leading-none` clipped descenders on the phone). `CardFooter` is right-aligned actions separated by space (`pt-1`), never a `border-t`.
+
+#### Group (`FieldCard`, `shared/ui/field-card.tsx`)
+
+`FieldCard` is **a tint, not a card**: `bg-row-group rounded-lg`, no border. It is what rows sit on inside a dialog, sheet, popover or drawer. A card there is a surface inside a surface — outlined in light and a hole in dark (a 4% card in a 15% dialog) — while a foreground tint only ever adds light.
+
+- **`FieldCardContent`** gives each direct child `px-4 py-3`. That space is the only separator: no `divide-y`.
+- **`CollapsibleFieldCard`** is a group with a header that opens it. Its body has no `border-t`.
+- **Danger zone** is the plain group. No `border-destructive`: the "Danger zone" heading and the destructive button carry it, and red is spent on the action, not the frame.
+- **`SettingRow`** has a floor of 48px (60 on the phone) and **no hover**: the control acts, not the row, and a tint promises a click.
+- A section heading goes above a group (24px above, 8px to it), never inside it.
 
 ```tsx
-import { FieldCard, FieldCardContent, CollapsibleFieldCard } from '@/layers/shared/ui';
-
-// Static group
 <FieldCard>
   <FieldCardContent>
     <SettingRow label="Notifications" description="Enable push alerts">
@@ -844,19 +861,76 @@ import { FieldCard, FieldCardContent, CollapsibleFieldCard } from '@/layers/shar
     </SettingRow>
   </FieldCardContent>
 </FieldCard>
-
-// Collapsible group
-<CollapsibleFieldCard
-  open={open}
-  onOpenChange={setOpen}
-  trigger="Advanced"
-  badge={<Badge>3 overrides</Badge>}
->
-  <div className="px-4 py-3">Content here</div>
-</CollapsibleFieldCard>
 ```
 
-Used across settings panels, agent config tabs, adapter wizard, and binding dialogs.
+#### List row (`ListRow`, `shared/ui/list-row.tsx`)
+
+One grammar: **leading glyph · (who ›) title · meta · trailing state · actions**, with an optional second line. `SidebarRow` keeps its own geometry (28 / 44px) and shares the state recipe.
+
+| Part              | Desktop                                                                                            | Phone (< 768)    |
+| ----------------- | -------------------------------------------------------------------------------------------------- | ---------------- |
+| Height, one line  | 32 (`min-h-8`)                                                                                     | 44 (`min-h-11`)  |
+| Height, two lines | 48 (`min-h-12`)                                                                                    | 60 (`min-h-15`)  |
+| `inset="page"`    | `px-2`, `rounded-md`; the list sits at `-mx-2` so the glyph lines up with the text column          | same             |
+| `inset="group"`   | `px-4`, `rounded-none`, full bleed inside a `FieldCard` (its corners clip the first and last rows) | same             |
+| Leading slot      | `sm` 20, `lg` 32 (two-line rows)                                                                   | `sm` 24, `lg` 40 |
+| Glyph → title     | 8                                                                                                  | 12               |
+
+- **Title** never wraps (`ROW_TITLE_CLASS`): it truncates and the full name is in `title`. **Meta** never shrinks. Under a 24rem row (`@container/row`, so a phone) the meta and the trailing state move to the start of the subtitle line, joined to the second line with " · ", so the title gets the row's whole width. Actions stay at the end, but leave the flow at rest on a narrow row and come back on hover, focus or an open menu (always shown on touch).
+- **State copy wraps.** An empty, filtered or failed list's row takes `wrapTitle`: the words wrap and never truncate. On a narrow row its trailing ("Try again") moves under them.
+- **Actions** (up to two ghost icon buttons) are **siblings** of the row's button, never inside it. They are hidden at rest and shown on hover, on focus-within and while their menu is open; always shown on a coarse pointer. Their space is reserved, so the title never reflows. `menu` adds the ⋮, the right-click menu and the long-press sheet from one node list.
+- **No `onSelect` and no `asChild`** makes a static row: no hover, no press, not a Tab stop.
+- `data-row-state` (`rest | selected | emphasized | disabled`) is stamped so tests read state, not classes.
+
+#### The row ladder (`shared/ui/row.ts`)
+
+Every list outside a menu takes its states from `rowTintVariants` (tint and weight) and `rowStateVariants` (that plus focus and press, for a one-element row). The tints are foreground alpha, so one step reads the same on any ground:
+
+| Token             | Light | Dark | Dark, inside `.shadow-lg`/`-floating` and `.shadow-xl`/`-modal` |
+| ----------------- | ----- | ---- | --------------------------------------------------------------- |
+| `bg-row-hover`    | 4%    | 5%   | 3%                                                              |
+| `bg-row-selected` | 7%    | 9%   | 5%                                                              |
+| `bg-row-group`    | 3%    | 4%   | 3%                                                              |
+
+| State                                  | Recipe                                                                                      | Motion                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Hover (only if the row does something) | `bg-row-hover`                                                                              | `background-color`, 150ms                     |
+| Pressed                                | `PRESS_ROW` (0.98) over the hover tint                                                      | 80ms in, 120ms out; none under reduced motion |
+| Focus-visible                          | `outline-2 -outline-offset-2 outline-ring` **and** the hover tint, actions revealed         | instant                                       |
+| Selected / current                     | `bg-row-selected font-medium`, `aria-selected` or `aria-current="page"`; no change on hover | instant                                       |
+| Emphasized (unread)                    | `font-semibold`, full ink                                                                   | —                                             |
+| Disabled                               | `opacity-50`, `aria-disabled`, still focusable when it says why                             | —                                             |
+
+Inside a dark modal the inks climb with the tints: `--faint` goes to 64% and `--status-error-fg` to `0 72% 74%`, because a group plus a selected row on a 15% dialog composites to about 20%, where the page values measured 3.55 and 3.66:1. Every row state clears 4.5:1 for text and 3:1 for the ring in both themes.
+
+#### Nested rules
+
+| Outer                  | Inner                                | Rule                                                                          |
+| ---------------------- | ------------------------------------ | ----------------------------------------------------------------------------- |
+| Page                   | Card                                 | Yes                                                                           |
+| Card                   | Card                                 | Never: the inner one becomes a group or plain space                           |
+| Card or group          | An outlined box or row               | Never: a plain row, tinted on hover only if it acts                           |
+| Dialog, sheet, popover | Card                                 | Never: a group (`FieldCard`)                                                  |
+| Group                  | Group                                | Never: a section heading and 24px of space                                    |
+| Any                    | Input, code block, tool output, diff | Keeps its outline: an object you act on                                       |
+| Any                    | Callout (a warning block, not a row) | A status wash is allowed, with no border                                      |
+| Any                    | A row with a problem                 | A grey row with a status glyph and one word ("Reconnect"). Never wash the row |
+| Dark, anywhere         | Any inner surface                    | Never darker than its container                                               |
+
+#### List states
+
+| Condition                    | What renders                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| A section with nothing in it | Nothing, header included (absent, not empty)                                                                                     |
+| The whole list is empty      | `EmptyState`: one glyph, one fact, one next step ("No schedules yet. Create one.")                                               |
+| A filter matches nothing     | One static row, "Nothing matches 'foo'", and a ghost **Clear filter**                                                            |
+| Loading                      | Nothing for 300ms, then skeleton rows at the real height, `min(expected, 5)` of them, replaced in place. Never a centred spinner |
+| The list failed to load      | The frame stays; one row: error glyph, "Couldn't load schedules.", ghost **Try again**. The raw error is behind More details     |
+| One item is broken           | A grey row, a status glyph, one word in `text-status-*-fg`                                                                       |
+| Pending                      | Title in `text-muted-foreground`, trailing "Saving…", actions hidden                                                             |
+| Offline or stale             | Trailing `text-faint` "Offline" / "Updated 5m ago"                                                                               |
+
+No stagger when a list opens: a list is something you're waiting to read.
 
 ### Disclosure — which "Advanced" to reach for
 
@@ -903,13 +977,7 @@ For rows that have a label but no description (e.g., simple toggles), use `<Fiel
 
 ### Hover
 
-Subtle. 150ms transition. A background tint step of 5-10% — the same mechanism that groups a zone, one step stronger.
-
-```css
-.interactive:hover {
-  background-color: hsl(var(--accent) / 0.5);
-}
-```
+Subtle. 150ms transition. One step of the row ladder: `bg-row-hover` (4% foreground in light, 5% in dark, 3% inside anything that floats), the same mechanism that groups a zone, one step stronger. See [The row ladder](#the-row-ladder-sharedrowts). Only a row that does something gets a hover: a tint promises a click.
 
 Hover and grouping share one tool on purpose: if a zone is separated by tint rather than a rule, a hover tint is already the vocabulary the surface speaks. Reach for a border only after whitespace and tint have both failed. Inside the sidebar specifically, hover uses the `--sidebar-accent` ramp (`bg-sidebar-accent/70` — see [Separation by tint, not by borders](#separation-by-tint-not-by-borders)), not `--muted`: `--muted` is banned there because it inverts direction between light and dark themes.
 
@@ -925,6 +993,8 @@ Visible focus rings for keyboard navigation. Brand orange outline, 2px offset.
   outline-offset: 2px;
 }
 ```
+
+**Rows take it inset**: `outline-2 -outline-offset-2 outline-ring` (`ROW_FOCUS_CLASS` in `shared/ui/row.ts`). Rows tile edge to edge inside clipped scrollers, so an outer ring overlaps the next row and is cut off by `overflow`. Same colour and width; cards and buttons keep the outer offset. A focused row also takes the hover tint.
 
 ### Active/Press
 

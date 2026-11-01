@@ -36,6 +36,23 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Layout',
     keywords: ['card', 'surface', 'panel', 'tile', 'border', 'shadow', 'radius', 'interactive'],
   },
+  {
+    id: 'list-rows',
+    title: 'List rows',
+    page: 'components',
+    category: 'Layout',
+    keywords: [
+      'row',
+      'list',
+      'listrow',
+      'group',
+      'fieldcard',
+      'hover',
+      'selected',
+      'tint',
+      'focus',
+    ],
+  },
   // ControlShowcases
   {
     id: 'press-ladder',
