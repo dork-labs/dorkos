@@ -188,7 +188,17 @@ function specs(scope: ExportJobScope, format: ExportFormat): CollectionSpec[] {
     list.push({
       key: 'auditEvents',
       prefix: 'audit-events',
-      select: `SELECT ae.id,ae.community_id,ae.actor_member_id,ae.actor_kind,ae.action,ae.subject_id,
+      // Who filed a report about the person exporting stays out of it (see reports below). The
+      // CASE order matters: only a report.create row's subject is a report's id.
+      select: `SELECT ae.id,ae.community_id,
+          CASE WHEN ae.action<>'report.create' THEN ae.actor_member_id
+            WHEN EXISTS(SELECT 1 FROM reports r
+              JOIN entries e ON e.id=r.entry_id AND e.community_id=r.community_id
+              LEFT JOIN agents a ON a.id=e.author_agent_id
+              WHERE r.id=ae.subject_id::uuid
+                AND COALESCE(a.owner_member_id,e.author_member_id)=$2::uuid) THEN NULL
+            ELSE ae.actor_member_id END AS actor_member_id,
+          ae.actor_kind,ae.action,ae.subject_id,
           ae.prior_state,ae.next_state,ae.changed_fields,ae.created_at,ae.decision,
           ae.created_at::text AS created_at_key
         FROM audit_events ae WHERE ae.community_id=$1
@@ -240,14 +250,21 @@ function specs(scope: ExportJobScope, format: ExportFormat): CollectionSpec[] {
     });
   // Reports are the moderators' record too: owner and evidence exports carry every one. A
   // personal export carries the reports the person filed, which are theirs, without who
-  // resolved them.
+  // resolved them. Nobody learns who reported them this way: a report about the person exporting
+  // (their message, or their agent's) goes without its reporter. Evidence has no such person.
   list.push({
     key: 'reports',
     prefix: 'reports',
-    select: `SELECT r.id,r.entry_id,r.source,r.reporter_member_id,r.check_name,r.reason,r.note,
+    select: `SELECT r.id,r.entry_id,r.source,
+        CASE WHEN COALESCE(a.owner_member_id,e.author_member_id)=$2::uuid THEN NULL
+          ELSE r.reporter_member_id END AS reporter_member_id,
+        r.check_name,r.reason,r.note,
         r.status,r.action,${owner ? 'r.resolver_member_id' : 'NULL::uuid AS resolver_member_id'},
         r.created_at,r.resolved_at
-      FROM reports r WHERE r.community_id=$1 ${owner ? '' : 'AND r.reporter_member_id=$2'}`,
+      FROM reports r
+      JOIN entries e ON e.id=r.entry_id AND e.community_id=r.community_id
+      LEFT JOIN agents a ON a.id=e.author_agent_id
+      WHERE r.community_id=$1 ${owner ? '' : 'AND r.reporter_member_id=$2'}`,
     keys: [uuidKey('r.id', 'id')],
     line: (row) =>
       JSON.stringify({

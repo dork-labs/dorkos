@@ -253,6 +253,11 @@ export type CommunityWireReport = z.infer<typeof CommunityWireReportSchema>;
 /** Reports, oldest open first. */
 export const CommunityWireReportListResponseSchema = z.strictObject({
   reports: z.array(CommunityWireReportSchema).max(200),
+  /**
+   * Open reports about an owner with no admin to resolve them. They are hidden from the owner, as
+   * every report about its reader is, so this says only how many wait: never what or who.
+   */
+  waitingAboutYou: z.number().int().min(1).optional(),
 });
 /** Which reports to list. */
 export const CommunityWireReportListQuerySchema = z.strictObject({

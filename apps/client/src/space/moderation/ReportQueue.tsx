@@ -72,15 +72,17 @@ export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform
   const [status, setStatus] = useState<'open' | 'resolved'>('open');
   const [checksOnly, setChecksOnly] = useState(false);
   const [reports, setReports] = useState<CommunityWireReport[]>([]);
+  const [waitingAboutYou, setWaitingAboutYou] = useState(0);
   const [error, setError] = useState('');
   const [muting, setMuting] = useState<CommunityWireReport | null>(null);
   const [banning, setBanning] = useState<CommunityWireReport | null>(null);
   const reload = useCallback(async () => {
     try {
-      const body = await request<{ reports: CommunityWireReport[] }>(
+      const body = await request<{ reports: CommunityWireReport[]; waitingAboutYou?: number }>(
         `/api/v1/reports?status=${status}`
       );
       setReports(body.reports);
+      setWaitingAboutYou(body.waitingAboutYou ?? 0);
       setError('');
     } catch (cause) {
       setError(describeError(cause));
@@ -116,13 +118,26 @@ export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform
           </Button>
         </div>
       </div>
-      <p className="small muted">Automatic checks only flag. They never hide a message.</p>
+      <div className="flex flex-col gap-2">
+        {waitingAboutYou > 0 && (
+          <p className="small muted m-0">
+            {waitingAboutYou === 1
+              ? '1 report about you is waiting.'
+              : `${waitingAboutYou} reports about you are waiting.`}{' '}
+            <a className="underline" href="#space-members">
+              Add an admin
+            </a>{' '}
+            to review {waitingAboutYou === 1 ? 'it' : 'them'}.
+          </p>
+        )}
+        <p className="small muted m-0">Automatic checks only flag. They never hide a message.</p>
+      </div>
       {error && (
         <p className="small muted" role="alert">
           {error}
         </p>
       )}
-      {!error && shown.length === 0 && (
+      {!error && shown.length === 0 && (status !== 'open' || waitingAboutYou === 0) && (
         <p className="small muted">
           {status === 'open' ? 'Nothing flagged.' : 'Nothing resolved yet.'}
         </p>

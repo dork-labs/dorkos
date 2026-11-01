@@ -48,6 +48,9 @@ interface ReportRow {
   resolved_at: Date | null;
 }
 
+/** The person a report in {@link REPORT_SELECT} is about: the author, or their agent's owner. */
+const REPORT_SUBJECT = 'COALESCE(subject_agent.owner_member_id,e.author_member_id)';
+
 /**
  * Every report a moderator may see, with its message's author and an excerpt. `$1` is the
  * community, `$2` the reading moderator (whose channel seats decide what they may read).
@@ -68,6 +71,7 @@ const REPORT_SELECT = `SELECT r.id,r.entry_id,e.channel_id,r.source,r.check_name
   FROM reports r
   JOIN entries e ON e.id=r.entry_id AND e.community_id=r.community_id
   JOIN channels ch ON ch.id=e.channel_id AND ch.community_id=e.community_id
+  LEFT JOIN agents subject_agent ON subject_agent.id=e.author_agent_id
   LEFT JOIN members reporter ON reporter.id=r.reporter_member_id
     AND reporter.community_id=r.community_id`;
 
@@ -94,6 +98,24 @@ function project(row: ReportRow, checks: CommunityWireReport['checks'] = []): Co
     resolvedAt: row.resolved_at?.toISOString() ?? null,
     checks,
   };
+}
+
+/**
+ * How many open reports about the owner nobody can resolve, because the space has no admin. They
+ * are told the number and nothing else. With an admin the reports are theirs, and this stays 0.
+ */
+async function waitingAboutOwner(client: PoolClient, owner: Member): Promise<number> {
+  const result = await client.query<{ count: number }>(
+    // member-kind: named-member
+    `SELECT count(*)::int AS count FROM reports r
+     JOIN entries e ON e.id=r.entry_id AND e.community_id=r.community_id
+     LEFT JOIN agents subject_agent ON subject_agent.id=e.author_agent_id
+     WHERE r.community_id=$1 AND r.status='open' AND ${REPORT_SUBJECT}=$2
+       AND NOT EXISTS(SELECT 1 FROM members m WHERE m.community_id=$1 AND m.kind='person'
+         AND m.role='admin' AND m.active)`,
+    [owner.community_id, owner.id]
+  );
+  return result.rows[0].count;
 }
 
 /** The reported message's author, as the human its moderation acts on. */
@@ -145,6 +167,10 @@ async function lockReport(
  * the queue and resolve a report by removing the message, muting or banning its author (an
  * agent's owner), or dismissing it. Resolving closes every open report of the same message,
  * from members and from checks alike, and every step is audited.
+ *
+ * Nobody reads or resolves a report about themselves or their agents, whatever their role: it
+ * answers as no report at all, so nobody learns who reported them or dismisses their own report.
+ * An admin resolves a report about the owner, by dismissing it (the rank rule stops the rest).
  */
 export function registerReportRoutes(
   app: Hono,
@@ -213,10 +239,11 @@ export function registerReportRoutes(
       Object.fromEntries(new URL(c.req.url).searchParams)
     );
     const open = (query.status ?? 'open') === 'open';
-    const reports = await transaction(pool, async (client) => {
-      await requireLiveRole(client, actor, ['owner', 'admin'], { allowHeld: true });
+    const page = await transaction(pool, async (client) => {
+      const role = await requireLiveRole(client, actor, ['owner', 'admin'], { allowHeld: true });
       const rows = await client.query<ReportRow>(
         `${REPORT_SELECT} WHERE r.community_id=$1 AND ${open ? "r.status='open'" : "r.status<>'open'"}
+           AND ${REPORT_SUBJECT} IS DISTINCT FROM $2
          ORDER BY ${open ? 'r.created_at,r.id' : 'r.resolved_at DESC,r.id DESC'} LIMIT 200`,
         [actor.community_id, actor.id]
       );
@@ -226,9 +253,13 @@ export function registerReportRoutes(
         actor.community_id,
         rows.rows.map((row) => row.entry_id)
       );
-      return rows.rows.map((row) => project(row, hints.get(row.entry_id)));
+      const waiting = role === 'owner' ? await waitingAboutOwner(client, actor) : 0;
+      return {
+        reports: rows.rows.map((row) => project(row, hints.get(row.entry_id))),
+        ...(waiting > 0 ? { waitingAboutYou: waiting } : {}),
+      };
     });
-    return json(c, CommunityWireReportListResponseSchema, { reports });
+    return json(c, CommunityWireReportListResponseSchema, page);
   });
 
   app.post('/reports/:id/resolve', async (c) => {
@@ -243,6 +274,8 @@ export function registerReportRoutes(
       if (body.action === 'ban') await lockCommunityForBan(client, actor.community_id);
       const role = await requireLiveRole(client, actor, ['owner', 'admin']);
       const reported = await lockReport(client, reportId.data, actor.community_id);
+      if (reported.human_id === actor.id)
+        throw new ApiError(404, 'NOT_FOUND', 'No open report found.');
       const moderator = { id: actor.id, communityId: actor.community_id, role };
       if (body.action === 'remove') {
         // The same rank rule as removing a message directly.

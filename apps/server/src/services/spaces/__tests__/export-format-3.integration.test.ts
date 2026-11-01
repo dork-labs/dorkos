@@ -370,6 +370,54 @@ describe('export format 3', { timeout: 180_000 }, () => {
     });
   });
 
+  // Purpose: fails if the owner can learn from an export who reported them or their agent, in the
+  // report itself or in the audit row it left. Reports about anyone else keep their reporter.
+  it('leaves out who reported the person exporting', async () => {
+    const ownerAgent = await enroll(owner, 'reported-agent');
+    const report = async (entry: string, who: TenancyMember) =>
+      (
+        await expectStatus(
+          await h.call(`${source.base}/entries/${entry}/reports`, {
+            cookie: who.cookie,
+            body: { reason: 'other' },
+          }),
+          201,
+          'report'
+        )
+      ).status;
+    const aboutOwner = await say({ cookie: owner.cookie }, 'said by the owner');
+    const aboutTheirAgent = await say({ bearer: ownerAgent.token }, 'said by the owner’s agent');
+    const aboutMo = await say({ cookie: mo.cookie }, 'said by Mo');
+    await report(aboutOwner, mo);
+    await report(aboutTheirAgent, mo);
+    await report(aboutMo, owner);
+
+    const archive = await openArchive(await exportSpace(source, owner.cookie));
+    const reports = archive.rows<{ id: string; entry_id: string; reporter_member_id: unknown }>(
+      'reports'
+    );
+    const of = (entry: string) => reports.find((row) => row.entry_id === entry)!;
+    expect(of(aboutOwner).reporter_member_id).toBeNull();
+    expect(of(aboutTheirAgent).reporter_member_id).toBeNull();
+    expect(of(aboutMo).reporter_member_id).toBe(owner.memberId);
+    const created = archive
+      .rows<{ action: string; subject_id: string; actor_member_id: unknown }>('auditEvents')
+      .filter((row) => row.action === 'report.create');
+    const actorOf = (entry: string) =>
+      created.find((row) => row.subject_id === of(entry).id)!.actor_member_id;
+    expect(actorOf(aboutOwner)).toBeNull();
+    expect(actorOf(aboutTheirAgent)).toBeNull();
+    expect(actorOf(aboutMo)).toBe(owner.memberId);
+
+    // The person who filed a report still finds it in their own export.
+    const theirs = await openArchive(await exportSpace(source, mo.cookie, { scope: 'personal' }));
+    expect(
+      theirs
+        .rows<{ entry_id: string; reporter_member_id: unknown }>('reports')
+        .find((row) => row.entry_id === aboutOwner)?.reporter_member_id
+    ).toBe(mo.memberId);
+  });
+
   // Purpose: a person's own export lists them and their agents as members, as it holds their
   // agents and their agents' messages, and as erasing them erases those agents too. It holds
   // every message they and their agents wrote, with their files, and nobody else's agent or
