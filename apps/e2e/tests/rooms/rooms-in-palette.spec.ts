@@ -96,12 +96,13 @@ test.describe('Rooms in the command palette @smoke', () => {
     const unreadRow = palette.results.filter({ hasText: unreadSlug }).first();
     await expect(unreadRow).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
-    // 2. Named once, with its count. The whole announced name, not a substring:
-    //    `toContainText` would be satisfied by "#slug 2 unread in #slug", which
-    //    is the defect (DOR-583).
-    await expect(unreadRow).toHaveAccessibleName(`#${unreadSlug} 2 unread`);
+    // 2. Named once. The whole announced name, not a substring: `toContainText`
+    //    would be satisfied by "#slug in #slug", which is the defect (DOR-583).
+    //    No count: nobody mentioned you, and a palette row numbers only what was
+    //    aimed at you (a channel's mentions, a DM's messages).
+    await expect(unreadRow).toHaveAccessibleName(`#${unreadSlug}`);
     // The `#` is drawn as a mark, so the visible run of text must not repeat it.
-    expect(await visibleText(unreadRow)).toBe(`${unreadSlug} 2`);
+    expect(await visibleText(unreadRow)).toBe(unreadSlug);
 
     // 3. The unread channel is ABOVE this test's read one, even though the read
     //    one spoke more recently.

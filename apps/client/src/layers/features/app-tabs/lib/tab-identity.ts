@@ -30,6 +30,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { IdentityFace } from '@/layers/shared/lib';
+import type { CountTone } from '@/layers/shared/ui';
 
 /**
  * The one status a tab shows, hottest first. Idle is absent: a tab that needs
@@ -65,8 +66,12 @@ export interface TabIdentity {
   statusSentence?: string;
   /** An unread, needs-you or waiting count. */
   count?: number;
-  /** Whether the count is aimed at you (a DM, an @mention, something waiting). */
-  countEmphasis?: boolean;
+  /**
+   * Who the count is for: `you` for a DM or an @mention, `warning` for
+   * something waiting on a person, `error` for a failure, `neutral` for
+   * activity. Absent reads as `neutral`.
+   */
+  countTone?: CountTone;
   /** When the page last had activity, epoch ms: "Last active 2m ago". */
   lastActiveAt?: number;
   /**
@@ -210,6 +215,16 @@ function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+/**
+ * The count tone a page's own status gives it: red for a failure, amber for
+ * something waiting on you, grey for anything else.
+ */
+function statusCountTone(status: TabStatus | undefined): CountTone {
+  if (status === 'failed') return 'error';
+  if (status === 'needs-you') return 'warning';
+  return 'neutral';
+}
+
 /** Drop a zero or absent count, so an idle tab draws no badge. */
 function positive(count: number | null | undefined): number | undefined {
   return count && count > 0 ? count : undefined;
@@ -296,7 +311,7 @@ export function routeTabIdentity(pathname: string, badge?: RouteBadge | null): T
     status,
     statusSentence: badge?.sentence ?? (status ? tabStatusSentence(status) : undefined),
     count: positive(badge?.count),
-    countEmphasis: status === 'needs-you' || status === 'failed',
+    countTone: statusCountTone(status),
   });
 }
 
@@ -498,7 +513,7 @@ export function roomTabIdentity(input: RoomTabInput): TabIdentity {
     icon,
     primary: input.title,
     count,
-    countEmphasis: count !== undefined && (input.kind === 'dm' || mentions !== undefined),
+    countTone: input.kind === 'dm' || mentions !== undefined ? 'you' : 'neutral',
     statusSentence:
       mentions !== undefined
         ? plural(mentions, 'mention of you', 'mentions of you')
@@ -545,7 +560,7 @@ export function homeTabIdentity(needsYouCount: number): TabIdentity {
       ? plural(count, 'thing waiting on you', 'things waiting on you')
       : undefined,
     count,
-    countEmphasis: count !== undefined,
+    countTone: 'warning',
   });
 }
 
@@ -698,7 +713,7 @@ export function extensionTabIdentity(
     status,
     statusSentence: badge?.sentence ?? (status ? tabStatusSentence(status) : undefined),
     count: positive(badge?.count),
-    countEmphasis: status === 'needs-you' || status === 'failed',
+    countTone: statusCountTone(status),
   });
 }
 

@@ -5,6 +5,7 @@
  */
 import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
+import { CountPill } from '@/layers/shared/ui';
 import type { TouchChip as TouchChipData } from '../../lib/touch-chips';
 import { PILE_WOBBLE, PILE_WOBBLE_TRANSITION } from './chip-motion';
 import { VERB_ICON } from './chip-verbs';
@@ -82,12 +83,7 @@ export function ChipPile({ chips, expanded, controls, onExpand }: ChipPileProps)
           </span>
         ))}
       </motion.span>
-      <span
-        data-testid="chip-pile-count"
-        className="bg-primary text-primary-foreground text-3xs rounded-full px-1.5 tabular-nums"
-      >
-        {chips.length}
-      </span>
+      <CountPill data-testid="chip-pile-count" count={chips.length} tone="neutral" solid />
     </button>
   );
 }

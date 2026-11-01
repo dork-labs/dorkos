@@ -277,7 +277,7 @@ describe('a room tab', () => {
       primary: '#general',
       icon: { kind: 'route', Icon: Hash },
       count: 4,
-      countEmphasis: false,
+      countTone: 'neutral',
       accessibleName: '#general, 4 unread messages',
     });
   });
@@ -289,13 +289,13 @@ describe('a room tab', () => {
       unreadCount: 4,
       mentionCount: 1,
     });
-    expect(id).toMatchObject({ count: 4, countEmphasis: true, statusSentence: '1 mention of you' });
+    expect(id).toMatchObject({ count: 4, countTone: 'you', statusSentence: '1 mention of you' });
   });
 
   it('makes a DM’s count read as urgent, and draws whoever it is with', () => {
     const face = { kind: 'agent' as const, color: '#0a0', emoji: '🔍', fallback: 'S' };
     const id = roomTabIdentity({ kind: 'dm', title: 'Scout', unreadCount: 2, face });
-    expect(id).toMatchObject({ count: 2, countEmphasis: true, icon: { kind: 'face', face } });
+    expect(id).toMatchObject({ count: 2, countTone: 'you', icon: { kind: 'face', face } });
   });
 
   it('draws no badge for a read room or a room you are not in', () => {
@@ -322,7 +322,7 @@ describe('Home and Team', () => {
       primary: 'Home',
       status: 'needs-you',
       count: 2,
-      countEmphasis: true,
+      countTone: 'warning',
       accessibleName: 'Home, Needs you: 2 things waiting on you',
     });
     expect(homeTabIdentity(0).status).toBeUndefined();

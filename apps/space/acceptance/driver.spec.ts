@@ -1603,7 +1603,8 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         name: 'Acceptance A',
       });
       const communityALink = communityAChannels.getByRole('link', { name: /#general/ });
-      await expect(communityALink.getByLabel(/unread messages/)).toBeVisible();
+      // A channel's unread state is a bold name plus words in the link's name, not a count badge.
+      await expect(communityALink).toHaveAccessibleName(/unread messages/);
       const markReadResponse = localPage.waitForResponse(
         (response) =>
           response.request().method() === 'PUT' &&
@@ -1630,7 +1631,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
       expect((await markedRead.json()) as { unreadCount: number }).toMatchObject({
         unreadCount: 0,
       });
-      await expect(communityALink.getByLabel(/unread messages/)).toHaveCount(0);
+      await expect(communityALink).not.toHaveAccessibleName(/unread messages/);
 
       // Reply through the local thread composer and prove the remote parent
       // identity, then use the mobile keyboard path to return to the channel.

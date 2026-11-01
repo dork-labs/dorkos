@@ -29,6 +29,30 @@ describe('countIn', () => {
   });
 });
 
+describe('the count and badge rules (Phase 2 Badge A)', () => {
+  const PILL = 'apps/client/src/layers/shared/ui/count-pill.tsx';
+  const THREAD = 'apps/client/src/layers/features/conversation/ui/rows/ThreadReplyRow.tsx';
+
+  it('refuses a local cap, except where the caps are spelled', () => {
+    expect(countIn(CLIENT, `const DISPLAY_CAP = 9; const MAX_COUNT = 99;`)).toEqual({
+      'local-count-cap': 2,
+    });
+    expect(countIn(PILL, `export const COUNT_PILL_CAP = 99;`)).toEqual({});
+    expect(countIn(CLIENT, `import { COUNT_PILL_CAP } from '@/layers/shared/ui';`)).toEqual({});
+  });
+
+  it('refuses a hand-rolled count on one line, in either order', () => {
+    const text = `'rounded-full px-1.5 tabular-nums'\n'tabular-nums text-xs rounded-full'\n'tabular-nums'`;
+    expect(countIn(CLIENT, text)).toEqual({ 'hand-rolled-count': 2 });
+    expect(countIn(PILL, text)).toEqual({});
+  });
+
+  it('keeps the count flip to the thread reply row', () => {
+    expect(countIn(CLIENT, `'motion-safe:animate-count-flip'`)).toEqual({ 'count-flip': 1 });
+    expect(countIn(THREAD, `'motion-safe:animate-count-flip'`)).toEqual({});
+  });
+});
+
 describe('compare', () => {
   it('fails a hard rule even when the baseline names it', () => {
     const counts = { 'black-scrim': { [CLIENT]: 1 } };

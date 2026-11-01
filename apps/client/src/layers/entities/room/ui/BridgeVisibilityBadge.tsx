@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import { cn } from '@/layers/shared/lib';
 import {
-  badgeVariants,
+  chipVariants,
   ResponsivePopover,
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
@@ -69,14 +69,10 @@ export function BridgeVisibilityBadge({ visibility, className }: BridgeVisibilit
           // exactly the claim §8 forbids the badge from making.
           aria-haspopup="dialog"
           aria-expanded={open}
-          // The badge's own shell, from the badge's own recipe — but still a
-          // `<button>`: §8 forbids this from claiming to be a control you flip,
-          // and `Badge` would make it a `<span>` with no popover to open.
-          className={cn(
-            badgeVariants({ shape: 'pill', variant: 'outline' }),
-            'text-muted-foreground hover:text-foreground text-2xs h-6 shrink-0 px-2.5',
-            className
-          )}
+          // The chip recipe: it opens a popover, so it is a target, and the
+          // chip is the pill you can press. Still a plain `<button>` with no
+          // `aria-pressed`: §8 forbids it from claiming a state to flip.
+          className={cn(chipVariants({ size: 'sm' }), className)}
         >
           {label}
         </button>

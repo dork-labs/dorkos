@@ -68,10 +68,6 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
     count: 2,
     reason: `${NOT_STATUS}: a featured star`,
   },
-  'layers/widgets/mobile-tabs/ui/MobileTabBar.tsx': {
-    count: 1,
-    reason: `${NOT_STATUS}: a count badge on an amber fill, tuned for that fill`,
-  },
   'layers/entities/activity/model/activity-types.ts': {
     count: 1,
     reason: `${NOT_STATUS}: an activity category colour`,

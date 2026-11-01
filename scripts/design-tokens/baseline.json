@@ -13,7 +13,6 @@
       "apps/client/src/layers/features/space-settings/ui/SettingsBlocks.tsx": 1,
       "apps/client/src/layers/shared/lib/celebrations/celebration-effects.ts": 5,
       "apps/client/src/layers/widgets/connections/ui/ChatAppPanel.tsx": 1,
-      "apps/client/src/layers/widgets/mobile-tabs/ui/MobileTabBar.tsx": 1,
       "apps/client/src/main.tsx": 18
     },
     "raw-palette": {
@@ -62,7 +61,6 @@
       "apps/client/src/layers/features/status/ui/UsageStatusItem.tsx": 2,
       "apps/client/src/layers/shared/lib/tool-arguments-formatter.tsx": 4,
       "apps/client/src/layers/shared/ui/status-dot.ts": 8,
-      "apps/client/src/layers/widgets/mobile-tabs/ui/MobileTabBar.tsx": 3,
       "apps/client/src/layers/widgets/workspaces/ui/WorkspacesPage.tsx": 2
     },
     "stray-focus-ring": {
@@ -153,12 +151,10 @@
       "apps/client/src/layers/features/tasks/ui/TaskFormInner.tsx": 8,
       "apps/client/src/layers/features/tasks/ui/TaskRunHistoryPanel.tsx": 5,
       "apps/client/src/layers/features/tasks/ui/TimezoneCombobox.tsx": 2,
-      "apps/client/src/layers/shared/ui/badge.tsx": 3,
       "apps/client/src/layers/shared/ui/banner.tsx": 2,
       "apps/client/src/layers/shared/ui/bar-tab-strip.tsx": 3,
       "apps/client/src/layers/shared/ui/identity-hover-card-actions.tsx": 2,
       "apps/client/src/layers/shared/ui/identity-hover-card.tsx": 2,
-      "apps/client/src/layers/shared/ui/mention-pill.tsx": 2,
       "apps/client/src/layers/shared/ui/path-input.tsx": 2,
       "apps/client/src/layers/shared/ui/PromptSuggestionChips.tsx": 3,
       "apps/client/src/layers/shared/ui/section-header.tsx": 2,

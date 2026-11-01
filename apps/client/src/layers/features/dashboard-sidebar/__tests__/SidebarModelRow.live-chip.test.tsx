@@ -195,10 +195,16 @@ describe('SidebarModelRow hands an agent row its Direct chat’s unread', () => 
   const button = () => document.querySelector<HTMLElement>('[data-slot="agent-list-item"]')!;
 
   it('goes bold and counts every waiting message, with the neutral pill', () => {
+    // Messages are counted in full, so the pill spells out up to 99.
     renderRow(agentRow({ unread: { tier: 'directed', count: 11 } }));
     expect(button()).toHaveAttribute('data-row-state', 'emphasized');
-    const pill = screen.getByLabelText('More than 9 new messages');
-    expect(pill).toHaveTextContent('9+');
+    expect(screen.getByLabelText('11 new messages')).toHaveTextContent('11');
+  });
+
+  it('caps a Direct chat at 99+', () => {
+    renderRow(agentRow({ unread: { tier: 'directed', count: 120 } }));
+    const pill = screen.getByLabelText('More than 99 new messages');
+    expect(pill).toHaveTextContent('99+');
     expect(pill).toHaveAttribute('data-slot', 'count-pill');
   });
 

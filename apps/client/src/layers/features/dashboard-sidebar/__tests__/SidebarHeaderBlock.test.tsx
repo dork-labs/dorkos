@@ -987,8 +987,15 @@ describe('SidebarHeaderBlock', () => {
     ];
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
-    expect(await screen.findByLabelText('2 mentions')).toBeVisible();
-    expect(screen.getByLabelText('3 other unread')).toBeVisible();
+    // Both counts are said once, in words, on the description line; the one
+    // pill (mentions, orange) is hidden from a screen reader so it is not
+    // read twice, and the other unread gets no second number.
+    const menu = await screen.findByRole('menu');
+    await waitFor(() => expect(menu).toHaveTextContent('2 mentions, 3 other unread'));
+    const pill = menu.querySelector('[data-slot="count-pill"]');
+    expect(pill).toHaveTextContent('2');
+    expect(pill).toHaveAttribute('aria-hidden', 'true');
+    expect(pill).toHaveAttribute('data-tone', 'you');
   });
 
   it('says when stale counts were last checked, and only for stale counts', async () => {
