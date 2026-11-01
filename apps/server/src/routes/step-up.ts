@@ -253,7 +253,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const taken = takeHeldStepUp(entry.statement.heldActionId);
     if (!taken) return refuse(c, 'expired');
     try {
-      const { status, body } = await taken.commit();
+      const { status, body } = await taken.commit(honoRequestFacts(c));
       audit(taken, 'ok', 'confirmed');
       const answer: StepUpConfirmedBody = { ok: true, status, result: body };
       return c.json(answer);

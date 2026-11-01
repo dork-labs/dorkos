@@ -64,11 +64,15 @@ export function requestActionStepUp(
 }
 
 /**
- * Close the sheet that is showing, say how it ended, and show the next one.
+ * Close the sheet for `heldActionId`, say how it ended, and show the next one.
+ * A late answer for a sheet that already closed does nothing, so it can never
+ * end the next held action's sheet with another action's result.
  *
+ * @param heldActionId - The held action the answer is for.
  * @param outcome - How it ended.
  */
-export function finishActionStepUp(outcome: ActionStepUpOutcome): void {
+export function finishActionStepUp(heldActionId: string, outcome: ActionStepUpOutcome): void {
+  if (queue[0]?.heldActionId !== heldActionId) return;
   const ask = queue.shift();
   if (!ask) return;
   notify();

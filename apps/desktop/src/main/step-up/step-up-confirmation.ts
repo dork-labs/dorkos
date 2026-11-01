@@ -51,6 +51,8 @@ interface ServerFailure {
 export class StepUpConfirmation {
   private outcome: StepUpWindowOutcome = { kind: 'not-confirmed' };
   private confirmed = false;
+  /** The submit still waiting on the server, so closing the window waits for its answer. */
+  private inFlight: Promise<StepUpWindowAnswer> | null = null;
 
   /**
    * Start confirming one held action; nothing is sent until {@link view}.
@@ -123,6 +125,16 @@ export class StepUpConfirmation {
    */
   async submit(submit: StepUpWindowSubmit): Promise<StepUpWindowAnswer> {
     if (this.confirmed) return { kind: 'confirmed' };
+    if (this.inFlight) return this.inFlight;
+    this.inFlight = this.send(submit);
+    try {
+      return await this.inFlight;
+    } finally {
+      this.inFlight = null;
+    }
+  }
+
+  private async send(submit: StepUpWindowSubmit): Promise<StepUpWindowAnswer> {
     const [suffix, payload] =
       submit.kind === 'change'
         ? [
@@ -181,9 +193,12 @@ export class StepUpConfirmation {
 
   /**
    * How it ended, for the app's page, once the window closed. A window closed
-   * before confirming tells the server to drop the held action.
+   * before confirming tells the server to drop the held action; one closed
+   * while a password was being checked waits for that answer first, since the
+   * server may already have run the action.
    */
   async finish(): Promise<StepUpWindowOutcome> {
+    if (this.inFlight) await this.inFlight.catch(() => undefined);
     if (!this.confirmed) {
       await this.deps
         .fetch(this.url(), {

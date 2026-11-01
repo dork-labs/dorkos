@@ -8,7 +8,19 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ ownerId: 'user_owner' as string | null }));
+const state = vi.hoisted(() => ({
+  ownerId: 'user_owner' as string | null,
+  /** Login on and the caller no longer the owner, as `refuseUnlessAccountOwner` would say. */
+  notTheOwner: false,
+}));
+vi.mock('../../lib/caller-authority.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/caller-authority.js')>();
+  return {
+    ...actual,
+    refuseUnlessAccountOwner: (facts: Parameters<typeof actual.refuseUnlessAccountOwner>[0]) =>
+      state.notTheOwner ? 'not-the-owner' : actual.refuseUnlessAccountOwner(facts),
+  };
+});
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: vi.fn((key: string) => (key === 'auth' ? { enabled: false } : undefined)),
@@ -152,6 +164,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   state.ownerId = 'user_owner';
+  state.notTheOwner = false;
 });
 
 describe('Confirm this setting, with "Confirm it’s you"', () => {
@@ -213,6 +226,16 @@ describe('Confirm this setting, with "Confirm it’s you"', () => {
       status: 409,
       result: { code: 'CONFIRMATION_STALE' },
     });
+    expect(connection.paused).toBe(true);
+  });
+
+  it('re-checks the owner when it commits: an owner replaced while the sheet was up writes nothing', async () => {
+    const id = await heldId();
+    // Another account now owns this install; the session that held it does not.
+    state.notTheOwner = true;
+    const res = await confirmWith(id, PASSWORD);
+    expect(res.body).toMatchObject({ ok: true, status: 403, result: { code: 'owner_only' } });
+    expect(confirmReferences).not.toHaveBeenCalled();
     expect(connection.paused).toBe(true);
   });
 

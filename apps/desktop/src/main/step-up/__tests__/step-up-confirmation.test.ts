@@ -127,6 +127,40 @@ describe('StepUpConfirmation', () => {
     expect((drop.init.headers as Record<string, string>).Origin).toBe(ORIGIN);
   });
 
+  it('closed while the password is being checked: waits for the answer, and never cancels an action that ran', async () => {
+    let answer!: () => void;
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    const calls: Call[] = [];
+    const confirmation = new StepUpConfirmation(ID, {
+      origin: ORIGIN,
+      personProof: () => null,
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        if (init.method === 'POST') {
+          await answered;
+          return new Response(JSON.stringify({ ok: true, status: 201, result: { added: 'x' } }), {
+            status: 200,
+          });
+        }
+        return new Response(null, { status: 204 });
+      },
+    });
+    const submitted = confirmation.submit({ kind: 'password', password: 'pw' });
+    // A second press while the first is in flight sends nothing more.
+    const again = confirmation.submit({ kind: 'password', password: 'pw' });
+    const finished = confirmation.finish();
+    answer();
+    await expect(submitted).resolves.toEqual({ kind: 'confirmed' });
+    await expect(again).resolves.toEqual({ kind: 'confirmed' });
+    await expect(finished).resolves.toEqual({
+      kind: 'confirmed',
+      status: 201,
+      result: { added: 'x' },
+    });
+    expect(calls.filter((call) => call.init.method === 'POST')).toHaveLength(1);
+    expect(calls.some((call) => call.init.method === 'DELETE')).toBe(false);
+  });
+
   it('expired: the page asks for the action again', async () => {
     const { confirmation } = server({ 'DELETE /': [204, null] });
     expect(await confirmation.view()).toMatchObject({ askAgain: true });

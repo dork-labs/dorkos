@@ -26,7 +26,9 @@ const VIEW: HeldStepUpView = {
 
 afterEach(() => {
   act(() => {
-    while (getActionStepUpShowing() !== null) finishActionStepUp({ kind: 'not-confirmed' });
+    for (let id = getActionStepUpShowing(); id !== null; id = getActionStepUpShowing()) {
+      finishActionStepUp(id, { kind: 'not-confirmed' });
+    }
   });
   cleanup();
   vi.restoreAllMocks();
@@ -113,6 +115,34 @@ describe('ActionStepUpHost', () => {
     expect(fetchSpy.mock.calls.some(([, init]) => (init as RequestInit)?.method === 'DELETE')).toBe(
       true
     );
+  });
+
+  it('waits for the password check before it can be cancelled', async () => {
+    let answer!: (value: [number, unknown]) => void;
+    const pendingConfirm = new Promise<[number, unknown]>((resolve) => (answer = resolve));
+    const calls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const method = init?.method ?? 'GET';
+      calls.push(method);
+      if (method === 'GET') return new Response(JSON.stringify(VIEW), { status: 200 });
+      const [status, body] = await pendingConfirm;
+      return new Response(JSON.stringify(body), { status });
+    });
+    render(<ActionStepUpHost />);
+    const outcome = ask();
+    await confirmWith('the-password');
+    const cancelButton = await screen.findByRole('button', { name: 'Cancel' });
+    expect(cancelButton).toHaveProperty('disabled', true);
+    // Esc while the check is in flight closes nothing and drops nothing.
+    await userEvent.keyboard('{Escape}');
+    expect(getActionStepUpShowing()).toBe('held-1');
+    expect(calls).not.toContain('DELETE');
+    await act(async () => answer([200, { ok: true, status: 201, result: { added: 'github' } }]));
+    await expect(outcome).resolves.toEqual({
+      kind: 'confirmed',
+      status: 201,
+      result: { added: 'github' },
+    });
   });
 
   it('says how many tries are left after a wrong password, and stays open', async () => {

@@ -64,8 +64,8 @@ function DesktopStepUpSheet({ heldActionId }: { heldActionId: string }) {
       .catch((): ActionStepUpOutcome => ({ kind: 'not-confirmed' }))
       .then((outcome) => {
         askedTheShell.delete(heldActionId);
-        // Only if it is still the one showing; the request waiting on it hears either way.
-        if (getActionStepUpShowing() === heldActionId) finishActionStepUp(outcome);
+        // A no-op unless it is still the one showing.
+        finishActionStepUp(heldActionId, outcome);
       });
   }, [confirm, heldActionId]);
   return (
@@ -80,7 +80,13 @@ function DesktopStepUpSheet({ heldActionId }: { heldActionId: string }) {
           </AlertDialogDescription>
         </AlertDialogHeader>
         {!confirm && (
-          <Button type="button" onClick={() => finishActionStepUp({ kind: 'not-confirmed' })}>
+          <Button
+            type="button"
+            onClick={() => {
+              void cancelHeldAction(heldActionId);
+              finishActionStepUp(heldActionId, { kind: 'not-confirmed' });
+            }}
+          >
             Close
           </Button>
         )}
@@ -120,7 +126,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
       if (!live) return;
       if (read.ok) setStage({ kind: 'password', view: read.view });
       // Gone before it could be read: ask for the action again, on the same sheet.
-      else if (read.reason === 'expired') finishActionStepUp({ kind: 'ask-again' });
+      else if (read.reason === 'expired') finishActionStepUp(heldActionId, { kind: 'ask-again' });
       else setStage(endedBy(read) ?? { kind: 'ended', message: read.message });
     });
     return () => {
@@ -143,9 +149,11 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
     return () => clearInterval(timer);
   }, [waitUntil]);
 
-  function finish(outcome: ActionStepUpOutcome) {
-    if (outcome.kind !== 'confirmed') void cancelHeldAction(heldActionId);
-    finishActionStepUp(outcome);
+  /** Cancel, Esc or Close. Waits while a password check is in flight, whose answer ends the sheet. */
+  function cancel() {
+    if (pending) return;
+    void cancelHeldAction(heldActionId);
+    finishActionStepUp(heldActionId, { kind: 'not-confirmed' });
   }
 
   async function submit() {
@@ -158,7 +166,11 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
         : await confirmWithPassword(heldActionId, password);
     setPending(false);
     if (result.ok) {
-      finishActionStepUp({ kind: 'confirmed', status: result.status, result: result.result });
+      finishActionStepUp(heldActionId, {
+        kind: 'confirmed',
+        status: result.status,
+        result: result.result,
+      });
       return;
     }
     if (result.reason === 'password-too-short' && stage.kind === 'password') {
@@ -169,7 +181,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
     // It expired while open: the action is asked for again, and the new sheet
     // says why (designer, DOR-3467: an expired proof reopens on the same method).
     if (result.reason === 'expired') {
-      finishActionStepUp({ kind: 'ask-again' });
+      finishActionStepUp(heldActionId, { kind: 'ask-again' });
       return;
     }
     if (result.reason === 'too-many-attempts') {
@@ -193,7 +205,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
   const view = stage.kind === 'password' || stage.kind === 'change' ? stage.view : null;
 
   return (
-    <AlertDialog open onOpenChange={(next) => !next && finish({ kind: 'not-confirmed' })}>
+    <AlertDialog open onOpenChange={(next) => !next && cancel()}>
       <AlertDialogContent aria-modal="true">
         <AlertDialogHeader className="text-left">
           <AlertDialogTitle>Confirm it’s you</AlertDialogTitle>
@@ -212,14 +224,11 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
           )}
         </AlertDialogHeader>
         {stage.kind === 'ended' ? (
-          <EndedBody message={stage.message} onClose={() => finish({ kind: 'not-confirmed' })} />
+          <EndedBody message={stage.message} onClose={cancel} />
         ) : view?.passwordUnavailable === 'insecure-connection' ? (
-          <EndedBody
-            message="Confirm this on the computer running DorkOS."
-            onClose={() => finish({ kind: 'not-confirmed' })}
-          />
+          <EndedBody message="Confirm this on the computer running DorkOS." onClose={cancel} />
         ) : view?.passwordUnavailable === 'no-password' ? (
-          <NoPasswordBody onClose={() => finish({ kind: 'not-confirmed' })} />
+          <NoPasswordBody onClose={cancel} />
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             {stage.kind === 'change' && (
@@ -264,7 +273,8 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
                 type="button"
                 variant="ghost"
                 className="h-11 w-full sm:h-9 sm:w-auto"
-                onClick={() => finish({ kind: 'not-confirmed' })}
+                onClick={cancel}
+                disabled={pending}
               >
                 Cancel
               </Button>
