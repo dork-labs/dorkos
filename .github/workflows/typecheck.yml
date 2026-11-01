@@ -158,6 +158,13 @@ jobs:
     # either in the sampled history, so neither shows this failure class and
     # neither changes here. (DOR-1775)
     timeout-minutes: 20
+    # Read-only. `pull-requests` and `checks` are for the design-token gate's
+    # rule guard (DOR-3557), which reads a PR's labels, timeline and first
+    # check suite only when a PR changes a rule. This token writes nothing.
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
     steps:
       # A canary run is against `main` or it is nothing.
       #
@@ -348,19 +355,25 @@ jobs:
           fi
           pnpm run check:max-lines -- --base "$base"
 
-      # The design-token gate (UI overhaul Phase 1). Black scrims and literal
-      # z-indexes in the shared package may not exist; raw palette classes, pure
-      # white and black, stray focus rings and inline spring literals are held to
-      # scripts/design-tokens/baseline.json, where a count may only fall, and a
-      # bounce curve in index.css may not exist. Rides
-      # THIS job and takes `--base` for the file-size ratchet's reasons above:
-      # on `pull_request` and the canary the base is the merge commit's first
-      # parent, and on `merge_group` it is `merge_group.base_sha` (main), NOT
-      # `HEAD^1`, which there is the previous queue entry.
+      # The design-token gate (UI overhaul). The rules are `RULES` in
+      # scripts/check-design-tokens.ts: a `hard` rule may not match at all, and
+      # a `ratchet` is held to scripts/design-tokens/baseline.json, where a
+      # count may only fall. `--base` refuses a raised baseline, and a rule the
+      # base defined that is now removed or changed in any way, unless the PR
+      # has a `guard-rule-change` label a person added after its last push
+      # (DOR-3557; in `merge_group`, each queued PR that touches the script).
+      # The label says when, not who: that only Security adds it is a team rule
+      # GitHub does not enforce. The canary and a dispatch skip the rule check,
+      # since neither merges. Rides THIS job and takes `--base` for the
+      # file-size ratchet's reasons above: on `pull_request` and the canary the
+      # base is the merge commit's first parent, and on `merge_group` it is
+      # `merge_group.base_sha` (main), NOT `HEAD^1`, which there is the
+      # previous queue entry. A label added after this ran needs a re-run.
       - name: Design-token gate
         if: ${{ !cancelled() }}
         env:
           QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
           if [ -n "$QUEUE_BASE" ]; then

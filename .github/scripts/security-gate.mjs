@@ -169,7 +169,7 @@ export async function checkPullRequest(
   return computed ? 'no security paths (computed)' : 'Security status verified';
 }
 
-async function queuedSensitiveDiff(api, base, sha, pattern) {
+export async function queuedSensitiveDiff(api, base, sha, pattern) {
   if (!base || !sha || !pattern) throw new Error('Missing immutable comparison input');
   const comparison = await api.compare(base, sha);
   // Compare files appear only on page 1 and are capped at 300, independently
@@ -292,6 +292,16 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
     setStatus: async (sha, state, description) =>
       (await request(`${root}/statuses/${sha}`, { context: CONTEXT, state, description })).data,
     timeline: (number) => pages(`/issues/${number}/timeline`),
+    commit: async (sha) => (await request(`${root}/commits/${encodeURIComponent(sha)}`)).data,
+    // Not a bare list, so not `pages`. One page of 100; a longer list refuses.
+    async checkSuites(sha) {
+      const { data } = await request(
+        `${root}/commits/${encodeURIComponent(sha)}/check-suites?per_page=100`
+      );
+      if (!Array.isArray(data.check_suites) || data.total_count !== data.check_suites.length)
+        throw new Error('Incomplete check suite list');
+      return data.check_suites;
+    },
     activity: (ref) => pages(`/activity?ref=${encodeURIComponent(ref)}`),
     comments: (number) => pages(`/issues/${number}/comments`),
     comment: (number, body) => request(`${root}/issues/${number}/comments`, { body }),
