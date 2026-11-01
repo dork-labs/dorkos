@@ -47,6 +47,7 @@ import { resolveDorkHome } from '../lib/dork-home.js';
 import { logger, logError } from '../lib/logger.js';
 import { SERVER_VERSION } from '../lib/version.js';
 import { resolveCaller } from './room-caller.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -200,8 +201,28 @@ function stripServerAuthoredFields(submission: FeedbackSubmission): FeedbackSubm
   return { ...rest, diagnostics: safeDiagnostics };
 }
 
-/** POST /api/feedback — validate the submission and forward it to the ingest. */
+/**
+ * POST /api/feedback — validate the submission and forward it to the ingest.
+ *
+ * **Only a person sends a report (DOR-3506).** A caller presenting an agent
+ * token, whether or not it verifies, is refused 403 `PERSON_REQUIRED` before
+ * anything else runs. Pressing Send is the consent this route rests on, and an
+ * agent pressing it would attach a room it is in, or a chat's transcript, with
+ * no person involved: the room's other members never agreed to that. Agents
+ * that want to help someone report something hand them a link instead
+ * (`feedback_draft`), which sends nothing. It is the same predicate the room
+ * routes refuse on (`presentsAgentIdentity`), so an empty or revoked header
+ * counts as a machine calling, and it comes before validation so the refusal
+ * says nothing about the body.
+ */
 router.post('/', async (c) => {
+  if (presentsAgentIdentity(honoRequestFacts(c))) {
+    return c.json(
+      { error: 'Only a person can send feedback. Ask them to send it.', code: 'PERSON_REQUIRED' },
+      403
+    );
+  }
+
   const parsed = FeedbackSubmissionSchema.safeParse(readJsonBody(c));
   if (!parsed.success) {
     return c.json({ error: 'Invalid feedback', code: 'INVALID_FEEDBACK' }, 400);
