@@ -58,6 +58,22 @@
       "apps/client/src/layers/shared/ui/status-dot.ts": 8,
       "apps/client/src/layers/widgets/workspaces/ui/WorkspacesPage.tsx": 2
     },
+    "spring-literal": {
+      "apps/client/src/index.css": 1,
+      "apps/client/src/layers/features/chat/ui/chips/chip-motion.ts": 1,
+      "apps/client/src/layers/features/chat/ui/tasks/TaskRow.tsx": 1,
+      "apps/client/src/layers/features/dashboard-sidebar/ui/motion/sidebar-motion.ts": 1,
+      "apps/client/src/layers/features/gen-ui/ui/nodes/mood/faces.tsx": 2,
+      "apps/client/src/layers/features/gen-ui/ui/nodes/mood/MoodNode.tsx": 1,
+      "apps/client/src/layers/features/gen-ui/ui/nodes/mood/parts.tsx": 1,
+      "apps/client/src/layers/features/pip-panel/ui/PipMiniBar.tsx": 1,
+      "apps/client/src/layers/features/pip-panel/ui/PipSheet.tsx": 1,
+      "apps/client/src/layers/features/team-roster/ui/TeamMemberCard.tsx": 1,
+      "apps/client/src/layers/shared/lib/celebrations/effects.ts": 1,
+      "apps/client/src/layers/shared/ui/image-lightbox/image-lightbox.tsx": 2,
+      "apps/client/src/layers/shared/ui/image-lightbox/use-lightbox-gestures.ts": 1,
+      "apps/client/src/layers/shared/ui/segmented-control.tsx": 1
+    },
     "stray-focus-ring": {
       "apps/client/src/layers/entities/agent/ui/McpClientCredentialsForm.tsx": 2,
       "apps/client/src/layers/entities/agent/ui/McpSigninBody.tsx": 4,

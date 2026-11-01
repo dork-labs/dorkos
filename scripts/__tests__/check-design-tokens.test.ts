@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { RULES, compare, countIn, lowered, raisedAgainst } from '../check-design-tokens.ts';
+import {
+  RULES,
+  compare,
+  countIn,
+  lowered,
+  raisedAgainst,
+  seedableRules,
+  type Rule,
+} from '../check-design-tokens.ts';
 
 const UI = 'packages/ui/src/thing.tsx';
 const CLIENT = 'apps/client/src/thing.tsx';
@@ -85,7 +93,14 @@ describe('the card and row rules', () => {
 });
 
 describe('the motion rules', () => {
+  const MOTION = 'apps/client/src/layers/shared/lib/motion.ts';
   const CSS = 'apps/client/src/index.css';
+
+  it('counts a spring literal, but never in the motion module', () => {
+    const text = "{ type: 'spring', stiffness: 400 } // { stiffness: 1 }";
+    expect(countIn(CLIENT, text)).toEqual({ 'spring-literal': 2 });
+    expect(countIn(MOTION, text)).toEqual({});
+  });
 
   it.each([
     ['a y above 1', 'animation: x 1s cubic-bezier(0.2, 1.4, 0.4, 1);', 1],
@@ -131,6 +146,53 @@ describe('the baseline only goes down', () => {
     expect(raisedAgainst({ 'raw-palette': { [CLIENT]: 2 } }, base)).toEqual([]);
     expect(raisedAgainst({ 'raw-palette': { [CLIENT]: 3 } }, base)[0]?.kind).toBe('raised');
     expect(raisedAgainst({ 'raw-palette': { [UI]: 1 } }, base)[0]?.kind).toBe('raised');
+  });
+
+  describe('seeding a new rule', () => {
+    const NEW = 'spring-literal';
+    const ratchet = (id: string): Rule => ({ id, kind: 'ratchet', pattern: /x/g, fix: '' });
+    const base = { 'raw-palette': { [CLIENT]: 2 } };
+    const baseIds = ['raw-palette', 'stray-focus-ring'];
+    const withNew = [ratchet('raw-palette'), ratchet('stray-focus-ring'), ratchet(NEW)];
+    const seedable = seedableRules(withNew, baseIds);
+    const measured = { [NEW]: { [CLIENT]: 3, [UI]: 1 } };
+
+    it('lets a rule the base never defined start at what the check measures', () => {
+      expect(seedable).toEqual(new Set([NEW]));
+      const seed = { ...base, [NEW]: { [CLIENT]: 3, [UI]: 1 } };
+      expect(raisedAgainst(seed, base, seedable, measured)).toEqual([]);
+    });
+
+    it('refuses a seed above the measured count', () => {
+      const seed = { ...base, [NEW]: { [CLIENT]: 4, [UI]: 1 } };
+      const found = raisedAgainst(seed, base, seedable, measured);
+      expect(found.map((f) => [f.kind, f.file, f.baseline])).toEqual([['raised', CLIENT, 3]]);
+    });
+
+    it('refuses a rename that would reseed the old rule under a new name', () => {
+      const renamed = [ratchet('palette-colour'), ratchet('stray-focus-ring')];
+      expect(seedableRules(renamed, baseIds)).toEqual(new Set());
+      const seed = { 'palette-colour': { [CLIENT]: 2 } };
+      const counts = { 'palette-colour': { [CLIENT]: 2 } };
+      expect(raisedAgainst(seed, base, seedableRules(renamed, baseIds), counts)).toHaveLength(1);
+    });
+
+    it('refuses a rule that was removed, even when another one is new', () => {
+      expect(seedableRules([ratchet('raw-palette'), ratchet(NEW)], baseIds)).toEqual(new Set());
+    });
+
+    it('refuses a seed for a rule the base already defines', () => {
+      const defined = seedableRules(withNew, [...baseIds, NEW]);
+      expect(defined).toEqual(new Set());
+      const seed = { ...base, [NEW]: { [CLIENT]: 3 } };
+      expect(raisedAgainst(seed, base, defined, measured)).toHaveLength(1);
+    });
+
+    it('seeds nothing when the base rule list is unknown, and never seeds a hard rule', () => {
+      expect(seedableRules(withNew, null)).toEqual(new Set());
+      const hard: Rule = { ...ratchet('black-scrim'), kind: 'hard' };
+      expect(seedableRules([...withNew, hard], baseIds)).toEqual(new Set([NEW]));
+    });
   });
 
   it('update lowers and removes, and never raises or adds', () => {
