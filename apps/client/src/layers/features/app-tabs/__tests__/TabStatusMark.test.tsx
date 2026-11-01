@@ -15,18 +15,18 @@ describe('TabStatusMark', () => {
   it('fills a count that needs you in the warning colour', () => {
     const badge = countBadge({ status: 'needs-you', count: 2, countTone: 'warning' });
     expect(badge).toHaveAttribute('data-tone', 'warning');
-    expect(badge?.className).toContain('bg-status-warning-bg');
+    expect(badge?.className).toContain('bg-dui-status-warning-bg');
   });
 
   it('draws a count of failures red, as a failed dot would be', () => {
     const badge = countBadge({ status: 'failed', count: 1, countTone: 'error' });
-    expect(badge?.className).toContain('bg-status-error-bg');
-    expect(badge?.className).not.toContain('bg-status-warning');
+    expect(badge?.className).toContain('bg-dui-status-error-bg');
+    expect(badge?.className).not.toContain('status-warning');
   });
 
   it('draws a DM or a mention in orange, because orange means you', () => {
     const badge = countBadge({ count: 3, countTone: 'you' });
-    expect(badge?.className).toContain('bg-brand/15');
+    expect(badge?.className).toContain('bg-dui-brand/15');
   });
 
   it('keeps a count that is only activity quiet', () => {

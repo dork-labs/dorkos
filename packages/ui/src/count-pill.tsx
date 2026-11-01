@@ -40,11 +40,13 @@ export type CountTone = 'you' | 'warning' | 'error' | 'neutral';
 /** Where the pill sits: in the row's flow, or over a control's corner. */
 export type CountPlacement = 'inline' | 'corner';
 
+// Only @dork-labs/ui's own `dui-*` tokens, so the pill draws the same in any
+// host that imports `@dork-labs/ui/tailwind.css`: the app and a Space alike.
 const WASH: Record<CountTone, string> = {
-  you: 'bg-brand/15 text-brand-text',
-  warning: 'bg-status-warning-bg text-status-warning-fg',
-  error: 'bg-status-error-bg text-status-error-fg',
-  neutral: 'bg-foreground/10 text-foreground',
+  you: 'bg-dui-brand/15 text-dui-brand-text',
+  warning: 'bg-dui-status-warning-bg text-dui-status-warning-fg',
+  error: 'bg-dui-status-error-bg text-dui-status-error-fg',
+  neutral: 'bg-dui-foreground/10 text-dui-foreground',
 };
 
 /**
@@ -52,19 +54,19 @@ const WASH: Record<CountTone, string> = {
  * clear (the `you` wash is 4.04:1 on a dark modal row; solid is 7.90).
  */
 const SOLID: Record<CountTone, string> = {
-  you: 'bg-brand-text text-background',
-  warning: 'bg-status-warning-fg text-background',
-  error: 'bg-status-error-fg text-background',
-  neutral: 'bg-foreground text-background',
+  you: 'bg-dui-brand-text text-dui-background',
+  warning: 'bg-dui-status-warning-fg text-dui-background',
+  error: 'bg-dui-status-error-fg text-dui-background',
+  neutral: 'bg-dui-foreground text-dui-background',
 };
 
 const PLACEMENT: Record<CountPlacement, string> = {
   // 11/16 at 18px, 13/18 at 22px on a phone.
-  inline: 'text-2xs h-4.5 min-w-4.5 px-1.5 max-md:h-5.5 max-md:min-w-5.5 max-md:leading-4.5',
+  inline: 'text-dui-2xs h-4.5 min-w-4.5 px-1.5 max-md:h-5.5 max-md:min-w-5.5 max-md:leading-4.5',
   // 10/14 at 16px, 12/16 at 20px on a phone. Out of flow, so it never widens
   // the control it rides; the parent is `relative`.
   corner:
-    'text-3xs pointer-events-none absolute -top-1 -right-1 h-4 min-w-4 px-1 leading-3.5 max-md:h-5 max-md:min-w-5 max-md:leading-4',
+    'text-dui-3xs pointer-events-none absolute -top-1 -right-1 h-4 min-w-4 px-1 leading-3.5 max-md:h-5 max-md:min-w-5 max-md:leading-4',
 };
 
 /** Props for {@link CountPill}. */
