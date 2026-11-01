@@ -47,12 +47,16 @@ describe('isHeldActionId', () => {
 });
 
 describe('StepUpConfirmation', () => {
-  it('reads the server’s own words, with the window’s proof and its cookie', async () => {
+  it('reads the server’s own words, with the window’s proof, its cookie and the server’s origin', async () => {
     const { confirmation, calls } = server({ 'GET /': [200, { ...VIEW, methods: ['password'] }] });
     expect(await confirmation.view()).toEqual(VIEW);
     const [{ init }] = calls;
     expect(init.credentials).toBe('include');
-    expect((init.headers as Record<string, string>)['x-dorkos-person']).toBe('proof-1');
+    const headers = init.headers as Record<string, string>;
+    expect(headers['x-dorkos-person']).toBe('proof-1');
+    // Without it Chromium sends `Sec-Fetch-Site: none`, which the read refuses.
+    expect(headers.Origin).toBe(ORIGIN);
+    expect(headers['Content-Type']).toBeUndefined();
   });
 
   it('passes on why no password is offered', async () => {

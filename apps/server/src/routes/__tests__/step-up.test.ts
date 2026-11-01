@@ -165,6 +165,22 @@ describe('a guarded action', () => {
     });
     expect(res.headers['cache-control']).toBe('no-store');
   });
+
+  it('answers the Mac app’s own window, which names our origin on its read', async () => {
+    // Measured on Electron 42: a main-process read with `Origin` arrives
+    // `same-origin`; without one it arrives `none`, which is refused.
+    const id = await hold();
+    const shell = await request(app({ user: SESSION_A }))
+      .get(`/api/step-up/${id}`)
+      .set('Origin', OWN_ORIGIN)
+      .set('Sec-Fetch-Site', 'same-origin');
+    expect(shell.status).toBe(200);
+    const bare = await request(app({ user: SESSION_A }))
+      .get(`/api/step-up/${id}`)
+      .set('Sec-Fetch-Site', 'none');
+    expect(bare.status).toBe(403);
+    expect(bare.body.code).toBe('not-a-person');
+  });
 });
 
 describe('POST /api/step-up/:id/password', () => {
