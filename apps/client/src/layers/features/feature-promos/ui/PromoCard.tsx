@@ -1,13 +1,22 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { ArrowRight, X } from 'lucide-react';
 import { usePromoDismissals } from '@/layers/entities/config';
+import { DURATION } from '@/layers/shared/lib';
+import { Button, SIDEBAR_ICON_CONTROL, SIDEBAR_ICON_INLINE } from '@/layers/shared/ui';
 import type { PromoDefinition } from '../model/promo-types';
 import { usePromoActivation } from './use-promo-activation';
 
-const staggerItem = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, scale: 0.95, transition: { duration: 0.15 } },
+/**
+ * The card's entrance and exit: a fade, and nothing else (Phase 4 P5).
+ *
+ * It rose 12px in and shrank to .95 out, two movements for one fact ("an offer
+ * is here", "it is gone") that a fade already says. The slot around it owns the
+ * height, so the card itself only needs to appear and disappear.
+ */
+const fadeItem = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: { duration: DURATION.fast } },
+  exit: { opacity: 0, transition: { duration: DURATION.fast } },
 } as const;
 
 interface PromoCardProps {
@@ -58,18 +67,25 @@ export function PromoCard({ promo }: PromoCardProps) {
     // movement `prefers-reduced-motion` is asking us not to do, and it shipped
     // ungated here (review Appendix C #15).
     <motion.div
-      variants={shouldReduceMotion ? undefined : staggerItem}
-      layout={!shouldReduceMotion}
-      className="group/promo relative"
+      // Variants only, played when a parent names them: in the sidebar the
+      // bottom slot owns the entrance and keeps boot still, so the card never
+      // starts one of its own.
+      variants={shouldReduceMotion ? undefined : fadeItem}
+      className="relative"
     >
       <button
         data-slot="promo-card-compact"
         onClick={activate}
-        className="bg-sidebar-accent/40 text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring flex w-full items-center gap-2 rounded-md py-1.5 pr-7 pl-2 text-left outline-hidden transition-colors duration-150 focus-visible:ring-2"
+        className={
+          // `pr-8` (`pr-12` on a phone) is the room the × sits in, so the
+          // arrow and the words never run under it. 60px on a phone: two lines
+          // in a thumb-sized row.
+          'bg-sidebar-accent/40 text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-ring flex w-full items-center gap-2 rounded-md py-1.5 pr-8 pl-2 text-left transition-colors duration-(--dur-fast) max-md:min-h-15 max-md:pr-12'
+        }
       >
-        <span className="flex size-[18px] shrink-0 items-center justify-center">
-          <Icon className="size-4" />
-        </span>
+        {/* On the panel's 16px edge with the switcher, Find and the footer
+            (Phase 4 S3): the card pays 8, the slot 8. */}
+        <Icon className={`${SIDEBAR_ICON_CONTROL} shrink-0`} />
         <span className="min-w-0 flex-1">
           {/* `/90` and `/70`: the title is what the eye lands on and the line
               under it is the aside, and both clear 4.5:1 on the sidebar in
@@ -79,19 +95,25 @@ export function PromoCard({ promo }: PromoCardProps) {
           </span>
           <span className="text-2xs block truncate">{promo.content.shortDescription}</span>
         </span>
-        <ArrowRight className="size-3.5 shrink-0 opacity-60" />
+        {/* The line's own ink, at full strength: at 60% it was 2.58:1 on the
+            light panel, under the 3:1 a glyph needs (Phase 4 B5). */}
+        <ArrowRight className={`${SIDEBAR_ICON_INLINE} shrink-0`} />
       </button>
-      {/* Always present, never hover-only: a control you cannot see is one a
-          touch screen cannot find, and this is the card's only way out. It
-          fades UP on hover rather than in from nothing. */}
-      <button
-        type="button"
+      {/* **The way out is a real button, as strong as the words** (Phase 4
+          B5). It was an 18px glyph at 40% ink and 70% opacity, 1.81:1 — the
+          weakest control on screen, on the one thing an offer must make easy.
+          `ghost icon-xs`: 24px with a mouse, 44 with a thumb; always shown,
+          because a touch screen has no hover to find it with. A sibling of the
+          card's button, never inside it: nesting one is invalid HTML. */}
+      <Button
+        variant="ghost"
+        size="icon-xs"
         onClick={() => dismissPromo(promo.id)}
         aria-label="Dismiss"
-        className="text-sidebar-foreground/40 hover:text-sidebar-foreground focus-ring absolute top-1/2 right-1.5 -translate-y-1/2 rounded-md p-0.5 opacity-70 transition-[color,opacity] duration-150 group-hover/promo:opacity-100"
+        className="text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/70 focus-ring absolute top-1/2 right-1 -translate-y-1/2 max-md:right-0"
       >
-        <X className="size-3.5" />
-      </button>
+        <X className={SIDEBAR_ICON_INLINE} />
+      </Button>
       {dialog}
     </motion.div>
   );

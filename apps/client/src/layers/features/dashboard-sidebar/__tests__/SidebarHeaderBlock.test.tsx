@@ -546,6 +546,28 @@ describe('SidebarHeaderBlock', () => {
     expect(screen.getByTestId('sidebar-search-pill')).toBeInTheDocument();
   });
 
+  it('puts Find and New on one row on a phone, Find taking the width (Phase 4 S6)', () => {
+    mockIsMobile = true;
+    renderBlock();
+    // The switcher lives in the One Bar on a phone, so it is not drawn here.
+    expect(screen.queryByTestId('sidebar-header-block')).not.toBeInTheDocument();
+    const pill = screen.getByTestId('sidebar-search-pill');
+    const newMenu = screen.getByTestId('new-menu');
+    // Siblings in one row, Find first: a full 44px line is no longer spent on
+    // a 74px button.
+    expect(pill.parentElement).toBe(newMenu.parentElement);
+    expect(pill.nextElementSibling).toBe(newMenu);
+    expect(pill.className).toContain('flex-1');
+    expect(pill.parentElement?.className).toContain('flex-row');
+  });
+
+  it('rings the switcher with the shared focus ring, not one of its own (Phase 4 S5)', async () => {
+    renderBlock();
+    const trigger = await screen.findByTestId('sidebar-header-block');
+    expect(trigger.className).toContain('focus-ring');
+    expect(trigger.className).not.toMatch(/focus-visible:ring-/);
+  });
+
   it('says "workspace" nowhere — not in the block, not in its menu', async () => {
     renderBlock();
     await configAnswered();

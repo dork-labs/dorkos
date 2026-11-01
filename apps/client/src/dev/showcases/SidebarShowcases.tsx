@@ -9,6 +9,7 @@ import { configKeys } from '@/layers/entities/config';
 import { RoomAvatar } from '@/layers/entities/room';
 import {
   SectionHeader,
+  SIDEBAR_FACE_STACK,
   SidebarGroup,
   SidebarMenu,
   SidebarMenuItem,
@@ -106,7 +107,7 @@ function SidebarRowShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        The two levels together — header at --sidebar-header-x (12), glyph at --sidebar-row-x (20),
+        The two levels together — header at --sidebar-header-x (16), glyph at --sidebar-row-x (20),
         label at 46. Every row in the panel, a section’s members included, is on that one x.
       </ShowcaseLabel>
       <ShowcaseDemo>
@@ -144,6 +145,24 @@ function SidebarRowShowcase() {
               }
               title="Ana, Kai"
               dataSlot="sidebar-geometry-stack-row"
+            />
+            {/* The same two faces as the sidebar draws them: held to the slot,
+                so the label starts on the same column as the `#` row's
+                (Phase 4 P3). */}
+            <SidebarRow
+              glyph={
+                <RoomAvatar
+                  room={{ id: 'dm-demo-sidebar', kind: 'dm', title: 'Ana and Kai' }}
+                  visuals={[
+                    { color: '#7c3aed', emoji: '🐙' },
+                    { color: '#3ca078', emoji: '🔔' },
+                  ]}
+                  overlap={SIDEBAR_FACE_STACK.overlap}
+                  faceClassName={SIDEBAR_FACE_STACK.face}
+                />
+              }
+              title="Ana, Kai"
+              dataSlot="sidebar-geometry-sidebar-stack-row"
             />
           </SidebarMenu>
           {/* A hand-made section, flush with everything above it: it is a peer

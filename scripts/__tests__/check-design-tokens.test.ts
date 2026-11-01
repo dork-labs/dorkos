@@ -51,6 +51,29 @@ describe('countIn', () => {
   });
 });
 
+describe('the sidebar rules (Phase 4)', () => {
+  const SIDEBAR = 'apps/client/src/layers/features/dashboard-sidebar/ui/Thing.tsx';
+
+  it('counts each one in the sidebar feature', () => {
+    const text = `'text-sidebar-foreground/50 hover:bg-accent bg-muted/50 size-3.5 max-md:size-4 bg-brand'`;
+    expect(countIn(SIDEBAR, text)).toEqual({
+      'sidebar-faded-text': 1,
+      'sidebar-off-ramp-fill': 2,
+      'sidebar-icon-literal': 2,
+      'sidebar-brand-fill': 1,
+    });
+  });
+
+  it('leaves the ramp, the tokens and the ink alone', () => {
+    const clean = `'text-sidebar-foreground/70 text-sidebar-foreground/60 bg-sidebar-accent/40 bg-accent-foreground size-4.5 size-(--size-icon-sm) bg-brand-text text-brand-text'`;
+    expect(countIn(SIDEBAR, clean)).toEqual({});
+  });
+
+  it('reads nothing outside the sidebar feature', () => {
+    expect(countIn(CLIENT, `'text-sidebar-foreground/50 bg-muted size-4 bg-brand'`)).toEqual({});
+  });
+});
+
 describe('the count and badge rules (Phase 2 Badge A)', () => {
   const PILL = 'apps/client/src/layers/shared/ui/count-pill.tsx';
   const THREAD = 'apps/client/src/layers/features/conversation/ui/rows/ThreadReplyRow.tsx';

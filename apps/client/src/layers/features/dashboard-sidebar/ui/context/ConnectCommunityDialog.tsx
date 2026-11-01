@@ -573,7 +573,7 @@ function ConnectCommunityBody({
               rel="noopener noreferrer"
             >
               Open {connection.label} to approve
-              <ExternalLink className="size-3.5" aria-hidden />
+              <ExternalLink className="size-(--size-icon-xs)" aria-hidden />
             </a>
           </Button>
         ) : (
