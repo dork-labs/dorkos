@@ -22,7 +22,6 @@ overrides:
   lodash-es: ^4.18.1
   dompurify: ^3.4.16
   hono: ^4.13.9
-  '@hono/node-server': ^1.19.15
   axios: ^1.15.1
   fast-uri: ^3.1.8
   undici: ^7.30.0
@@ -753,8 +752,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/skills
       '@hono/node-server':
-        specifier: ^1.19.15
-        version: 1.19.17(hono@4.13.12)
+        specifier: ^2.1.5
+        version: 2.1.5(hono@4.13.12)
       '@modelcontextprotocol/sdk':
         specifier: 1.32.0
         version: 1.32.0(@cfworker/json-schema@4.1.1)(zod@4.6.7)
@@ -1184,8 +1183,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@hono/node-server':
-        specifier: ^1.19.15
-        version: 1.19.17(hono@4.13.12)
+        specifier: 2.1.5
+        version: 2.1.5(hono@4.13.12)
       better-auth:
         specifier: 1.7.7
         version: 1.7.7(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.3(@electric-sql/pglite@0.5.8)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.11.1)(kysely@0.29.2)(pg@8.23.0))(next@16.4.1(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.63.0)(@types/node@24.13.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(pg@8.23.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(solid-js@1.9.17)(vitest@4.1.11)(vue@3.5.44(typescript@5.9.3))
@@ -2021,8 +2020,8 @@ importers:
         specifier: workspace:*
         version: link:../typescript-config
       '@hono/node-server':
-        specifier: ^1.19.15
-        version: 1.19.17(hono@4.13.12)
+        specifier: ^2.1.5
+        version: 2.1.5(hono@4.13.12)
       '@tanstack/react-query':
         specifier: ^5.104.0
         version: 5.104.0(react@19.3.0)
@@ -3392,9 +3391,9 @@ packages:
   '@hexagon/base64@1.1.28':
     resolution: {integrity: sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw==}
 
-  '@hono/node-server@1.19.17':
-    resolution: {integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==}
-    engines: {node: '>=18.14.1'}
+  '@hono/node-server@2.1.5':
+    resolution: {integrity: sha512-MgP/I06GdvsilDspMk/qmRzpk8LOUStP6jFAbSRi40W09DhoyUn+Mj7eyKICPqeYKybOjVFLVIAQzvu1bfIa7Q==}
+    engines: {node: '>=20'}
     peerDependencies:
       hono: ^4.13.9
 
@@ -13961,7 +13960,7 @@ snapshots:
 
   '@hexagon/base64@1.1.28': {}
 
-  '@hono/node-server@1.19.17(hono@4.13.12)':
+  '@hono/node-server@2.1.5(hono@4.13.12)':
     dependencies:
       hono: 4.13.12
 
@@ -14954,7 +14953,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.32.0(@cfworker/json-schema@4.1.1)(zod@4.6.7)':
     dependencies:
-      '@hono/node-server': 1.19.17(hono@4.13.12)
+      '@hono/node-server': 2.1.5(hono@4.13.12)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
