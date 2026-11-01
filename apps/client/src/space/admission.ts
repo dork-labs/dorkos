@@ -152,7 +152,7 @@ export function admissionIntro(page: {
   singleSignOn: string | null;
 }): string | null {
   if (page.isOwner) return 'Claim the first account, name your space, and open a channel.';
-  if (['failed', 'joining', 'reactivate'].includes(page.stage)) return null;
+  if (['failed', 'joining', 'reactivate', 'check-email'].includes(page.stage)) return null;
   if (page.lost && !page.hasPreview) return null;
   if (page.singleSignOn !== null && page.stage === 'account')
     return page.hasPreview
@@ -162,4 +162,47 @@ export function admissionIntro(page: {
     return 'Create an account on this server, or sign in if you already have one.';
   if (page.hasInvite) return 'Check the invitation, then create or sign in to your account.';
   return 'Sign in to your account. To join for the first time, ask a member for an invitation.';
+}
+
+/**
+ * The admission form's one button: setting up the host, an invitation's email-only sign-up (the
+ * mailed link sets the password, DOR-2730), joining, or signing in.
+ */
+export function admissionSubmitLabel(form: {
+  busy: boolean;
+  isOwner: boolean;
+  emailSignUp: boolean;
+  pendingAdmission: boolean;
+}): string {
+  if (form.busy) return 'Working…';
+  if (form.isOwner) return 'Create space';
+  if (form.emailSignUp) return 'Continue';
+  return form.pendingAdmission ? 'Join space' : 'Sign in';
+}
+
+/** Where the join page that sent a finishing link is remembered, across tabs (DOR-2730). */
+const JOIN_PATH_KEY = 'dorkos-space:finish-joining-path';
+
+/**
+ * Remember the join page an invitation's email-only sign-up left from, so the finishing link's
+ * page can continue there once the password is set. Only this origin's own path is kept: the
+ * join itself resumes from the server's HttpOnly join attempt, never from anything stored here.
+ */
+export function rememberJoinPath(): void {
+  try {
+    window.localStorage.setItem(JOIN_PATH_KEY, window.location.pathname);
+  } catch {
+    // Storage off: the link's page continues to the space's front page instead.
+  }
+}
+
+/** The remembered join page, once, or `null`. Anything but a path on this origin is ignored. */
+export function takeJoinPath(): string | null {
+  try {
+    const path = window.localStorage.getItem(JOIN_PATH_KEY);
+    window.localStorage.removeItem(JOIN_PATH_KEY);
+    return path?.startsWith('/') && !path.startsWith('//') ? path : null;
+  } catch {
+    return null;
+  }
 }

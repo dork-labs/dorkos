@@ -140,13 +140,36 @@ describe('ResetPassword', () => {
     });
   });
 
+  it('sets the first password of a never-confirmed account, then goes back to the join', async () => {
+    // Purpose (DOR-2730): fails if the finishing link reads as a reset, or leaves the person on
+    // a "done" page instead of the invitation that sent it. The server decides set-or-reset from
+    // the token: only a never-confirmed account's reset also ends its password.
+    captureEmailLink();
+    localStorage.setItem('dorkos-space:finish-joining-path', '/c/night-shift/join');
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    mockFetch({
+      [PEEK]: peek({ clears: [...ACCESS, 'password', 'sign_in_links'] }),
+      'POST /api/auth/email-link/reset-password': { status: 200, body: { cleared: 'everything' } },
+    });
+    render(<ResetPassword />);
+    expect(await screen.findByRole('heading', { name: 'Set your password' })).toBeTruthy();
+    expect(screen.queryByText('Resetting also ends:')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'brand-new-password-1' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Set password and continue' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/c/night-shift/join'));
+    expect(localStorage.getItem('dorkos-space:finish-joining-path')).toBeNull();
+  });
+
   it('says a dead link is dead and offers a new one', async () => {
     // Purpose: fails if an expired or used link shows a form that can never work.
     captureEmailLink();
     mockFetch({ [PEEK]: refusal(410, 'LINK_EXPIRED', 'gone') });
     render(<ResetPassword />);
-    expect(await screen.findByText('This link expired or was already used.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Forgot password?' })).toBeTruthy();
+    expect(await screen.findByText('This link has expired or already been used.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Send a new link' })).toBeTruthy();
     expect(screen.queryByLabelText('New password')).toBeNull();
   });
 });
