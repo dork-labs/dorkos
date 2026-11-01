@@ -43,6 +43,7 @@ import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
+import { registerExtensionStepUpRoutes } from './extensions-step-up.js';
 import { registerTrustedSourceRoutes } from './extensions-trusted-sources.js';
 import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
@@ -636,6 +637,12 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   });
 
   registerExtensionApprovalRoutes(router, extensionManager, SAFE_EXT_ID, activity);
+  registerExtensionStepUpRoutes(router, {
+    manager: extensionManager,
+    dorkHome,
+    safeId: SAFE_EXT_ID,
+    activity,
+  });
   registerTrustedSourceRoutes(router, extensionManager, activity);
   registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID, activity);
   registerExtensionStartWorkRoute(router, extensionManager, SAFE_EXT_ID);

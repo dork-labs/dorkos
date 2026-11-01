@@ -8,7 +8,7 @@
  * @module startup/steps/core-routes
  */
 import { configManager } from '../../services/core/config-manager.js';
-import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up-extension-risk.js';
+import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
 import type { ConnectorRoutesDeps } from '../../routes/connectors.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
 import { ConnectorSessionAccessService } from '../../services/connectors/resources/session-access-service.js';

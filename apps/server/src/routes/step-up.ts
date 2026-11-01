@@ -52,7 +52,7 @@ import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
-import { currentStepUpExtensionRisks } from '../services/extensions/step-up-extension-risk.js';
+import { currentStepUpExtensionRisks } from '../services/extensions/step-up/step-up-extension-risk.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { getAuth, readOwnerAccount } from '../services/core/auth/index.js';
 import { isAtThisComputer, isOnEncryptedConnection } from '../services/core/auth/gate-policy.js';

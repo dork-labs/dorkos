@@ -23,7 +23,7 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import type { StepUpExtensionRisk } from '@dorkos/shared/step-up';
 
-import { isInsideFolder } from './pin/extension-path-trust.js';
+import { isInsideFolder } from '../pin/extension-path-trust.js';
 
 /** The statuses whose code may be in the app's page. */
 const LOADED: ReadonlySet<ExtensionRecord['status']> = new Set([
