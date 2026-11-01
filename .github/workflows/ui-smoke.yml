@@ -6,21 +6,25 @@ name: ui-smoke
 # UI change that breaks a phone layout is first seen there, where a red ejects
 # the PR and every queue entry stacked on it: #3159 on 2026-10-30 ejected
 # itself and failed the #3263 and #3278 entries behind it on three @smoke specs
-# (home-shell 375px, no-horizontal-scroll 390px). This job runs the specs
+# (home-shell 375px, no-horizontal-scroll 390px). These jobs run the specs
 # tagged @smoke on the pull request itself when its diff touches
 # apps/client/ or packages/ui/, so that break is red on the PR.
 #
-# ONE JOB THAT ALWAYS REPORTS. It is meant to be a required context, and a
-# required check cannot be scoped by `paths:` or a job-level `if:`: either can
-# leave the context missing (the PR waits on "expected" forever) or skipped
-# (GitHub counts that as passing). So the job runs on every pull_request and
-# merge_group event, and a step decides whether the suite runs; out of scope,
-# it passes in seconds and says why. Same shape as test.yml's
-# `community-packaged`.
+# THREE SHARDS (ledger 261101-174117). On one worker the set needs about 44
+# minutes of tests against what was a 25-minute step cap, so it had never
+# finished, and the cap killed Playwright before any reporter flushed. Cut
+# three ways by the balanced-shard reporter it is ~14.7 minutes of tests per
+# shard, plus ~5 of boot.
 #
-# THE QUEUE IS UNCHANGED. On merge_group this passes at once: the queue already
-# runs the whole browser suite, @smoke included, in browser-test.yml. It still
-# reports there, so making it required never leaves a queue entry waiting.
+# ONE CONTEXT THAT ALWAYS REPORTS. `ui-smoke` is the final fan-in, and it is
+# meant to be a required context, which a `paths:` filter cannot serve: that
+# can leave the context missing, and the PR waits on "expected" forever. So
+# every job here runs on every pull_request and merge_group event, except the
+# shards, which `scope` skips on purpose and the fan-in accounts for.
+#
+# THE QUEUE IS UNCHANGED. On merge_group the fan-in passes at once: the queue
+# already runs the whole browser suite, @smoke included, in browser-test.yml. It
+# still reports there, so making it required never leaves a queue entry waiting.
 #
 # NO SECRETS. Fork pull requests run this as they are: it reads nothing but the
 # checkout and a read-only token.
@@ -41,13 +45,13 @@ permissions:
   contents: read
 
 jobs:
-  ui-smoke:
-    name: ui-smoke
+  scope:
+    name: scope
     # Pinned with browser-test.yml (ledger 261027-053504).
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    env:
-      NODE_ENV: development
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
     steps:
       # Depth 2 so the pull request's test-merge commit has its first parent,
       # the base it was merged onto, which is all the scope step diffs against.
@@ -60,8 +64,9 @@ jobs:
       # queue runs the full suite). pull_request diffs the test-merge commit
       # against its first parent. Every failure on the PR path FAILS OPEN to
       # running the set, never to a green that tested nothing: no test-merge
-      # commit, or a git error, runs it. The diff is captured before it is
-      # matched, so a git failure is never read as an empty, out-of-scope diff.
+      # commit, or a git error, runs it, and so does this whole job dying (see
+      # the shards' `if:`). The diff is captured before it is matched, so a git
+      # failure is never read as an empty, out-of-scope diff.
       - name: Decide whether this change touches the UI
         id: scope
         env:
@@ -88,38 +93,68 @@ jobs:
           fi
           echo "run=$verdict" >> "$GITHUB_OUTPUT"
 
+  ui-smoke-shard:
+    name: ui-smoke-shard (${{ matrix.shard }}/${{ strategy.job-total }})
+    needs: [scope]
+    # `!= 'false'`, not `== 'true'`, and `!cancelled()` so this is reached when
+    # `scope` failed: a scope job that died has given no answer, and no answer
+    # runs the set. Only an explicit out-of-scope skips it.
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.scope.outputs.run != 'false' }}
+    runs-on: ubuntu-24.04
+    strategy:
+      # One red shard must leave the others free to report their own results
+      # (browser-test.yml, DOR-1110).
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    # The ladder, innermost first, so the rung that fires leaves a report
+    # behind: Playwright stops itself and flushes at 25 (--global-timeout on the
+    # suite step), the step is killed at 30 and the uploads still run, and this
+    # backstop, which cancels without a report, is at 45.
+    timeout-minutes: 45
+    env:
+      NODE_ENV: development
+      # Same flags as browser-shard, each for the reason written there. No
+      # @smoke spec needs the site leg today; E2E_SITE stays on so a site spec
+      # tagged @smoke later is run rather than silently dropped.
+      E2E_SITE: '1'
+      E2E_PROD: '1'
+      # The config refuses a sharded CI run that does not name its shard, because
+      # the site leg's plan depends on it. Both come from the matrix above, the
+      # one place the shard count is written.
+      E2E_SHARD_INDEX: ${{ matrix.shard }}
+      E2E_SHARD_TOTAL: ${{ strategy.job-total }}
+    steps:
+      # No saved credential, as browser-shard (DOR-3343, ledger 261030-062000).
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       # Setup, browser install and build are the browser shard's, step for step
       # (browser-test.yml explains each one); only the suite step differs.
       - uses: pnpm/action-setup@v6
-        if: steps.scope.outputs.run == 'true'
 
       - uses: actions/setup-node@v7.1.0
-        if: steps.scope.outputs.run == 'true'
         with:
           node-version: 24
 
       - name: Find the pnpm store
-        if: steps.scope.outputs.run == 'true'
         id: pnpm-store
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - name: Restore the pnpm store built on this runner image
-        if: steps.scope.outputs.run == 'true'
         uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
-      - if: steps.scope.outputs.run == 'true'
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
       - name: Resolve the Playwright version the cache is keyed on
-        if: steps.scope.outputs.run == 'true'
         id: pw
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
       - name: Restore the Chromium browser Playwright drives
-        if: steps.scope.outputs.run == 'true'
         id: pw-cache
         uses: actions/cache@v6
         with:
@@ -127,7 +162,6 @@ jobs:
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
       - name: Install the Chromium browser Playwright drives
-        if: steps.scope.outputs.run == 'true'
         timeout-minutes: 10
         run: |
           printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
@@ -147,47 +181,85 @@ jobs:
           exit 1
 
       - name: Build what the webServer legs boot from
-        if: steps.scope.outputs.run == 'true'
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client --filter=@dorkos/site^...
 
       - name: Read the quarantine lane
-        if: steps.scope.outputs.run == 'true'
         run: |
           node packages/ci-steward/src/cli.ts quarantine-list \
             --runner playwright \
             --out "$RUNNER_TEMP/quarantine.json" \
             --lines "$RUNNER_TEMP/quarantine.txt" \
-            --title "Quarantine lane — ui-smoke"
+            --title "Quarantine lane — ui-smoke shard ${{ matrix.shard }}/${{ strategy.job-total }}"
 
-      # The @smoke specs only, unsharded. A quarantined test that fails does
-      # not fail this job, the same rule the shards follow.
+      # This shard's cut of the @smoke specs. A quarantined test that fails does
+      # not fail this job, the same rule browser-shard follows. Filters apply
+      # before the balanced-shard reporter's cut, so it deals only @smoke units,
+      # weighed by their own test counts. --global-timeout overrides the config's
+      # derived deadline (40 minutes at three shards, which is past the step cap)
+      # so Playwright stops and flushes its reporters before the cap kills it.
       - name: Run the @smoke browser set
-        if: steps.scope.outputs.run == 'true'
         id: suite
-        timeout-minutes: 25
+        timeout-minutes: 30
         run: |
           set +e
-          pnpm --filter @dorkos/e2e run e2e --grep @smoke
+          pnpm --filter @dorkos/e2e run e2e --grep @smoke --shard=${{ matrix.shard }}/${{ strategy.job-total }} --global-timeout=1500000
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           exit 0
 
       - name: Refuse any failure the quarantine lane does not cover
-        if: steps.scope.outputs.run == 'true'
         run: |
           node packages/ci-steward/src/cli.ts quarantine-gate \
             --runner playwright \
             --suite-exit "${{ steps.suite.outputs.exit-code }}" \
             --list "$RUNNER_TEMP/quarantine.json" \
             --reports apps/e2e/test-results \
-            --title "Quarantine gate — ui-smoke"
+            --title "Quarantine gate — ui-smoke shard ${{ matrix.shard }}/${{ strategy.job-total }}"
 
+      # `cancelled()` too, and `overwrite` for a re-run: browser-shard says why.
       - name: Upload the Playwright report
-        if: failure() && steps.scope.outputs.run == 'true'
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: ui-smoke-playwright-report
+          name: ui-smoke-playwright-report-shard-${{ matrix.shard }}
           path: |
             apps/e2e/playwright-report/
             apps/e2e/test-results/
+          overwrite: true
           retention-days: 7
+
+  # THE CHECK. `always()` is not optional: a job whose dependency failed is
+  # SKIPPED without it, and a skipped check counts as passing, which would turn a
+  # red shard into a green context. A skipped shard matrix is green only when
+  # `scope` positively said out of scope; a skip for any other reason, a failure
+  # or a cancel is red. So a push that supersedes a run posts a red `ui-smoke` on
+  # the old commit, the same as test.yml's fan-in.
+  ui-smoke:
+    name: ui-smoke
+    needs: [scope, ui-smoke-shard]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every shard green, unless this change is out of scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          SCOPE_RUN: ${{ needs.scope.outputs.run }}
+          SHARD_RESULT: ${{ needs.ui-smoke-shard.result }}
+        run: |
+          echo "event: $EVENT; scope: $SCOPE_RESULT, run=$SCOPE_RUN; shards: $SHARD_RESULT"
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run: the merge queue runs the whole browser suite in browser-test.yml, @smoke included; nothing to do here."
+            exit 0
+          fi
+          if [ "$SCOPE_RESULT" = 'success' ] && [ "$SCOPE_RUN" = 'false' ]; then
+            echo "Out of scope: nothing in this change is under apps/client/ or packages/ui/, so the @smoke set did not run here."
+            exit 0
+          fi
+          if [ "$SHARD_RESULT" = 'success' ]; then
+            echo "Every @smoke shard passed."
+            exit 0
+          fi
+          echo "::error::the @smoke browser set did not pass: the ui-smoke-shard matrix reported '$SHARD_RESULT'. Open the shard jobs above for the failing specs, and the ui-smoke-playwright-report-shard-* artifacts for their traces."
+          exit 1
