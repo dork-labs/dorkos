@@ -2202,6 +2202,45 @@ const actions: Action<unknown>[] = [
     status: 200,
     call: () => ({ method: 'GET', path: scoped('/reports') }),
   }),
+  define({
+    rule: 'Read the queue of reports of people: owner and admin',
+    route: 'GET /member-reports',
+    allowed: MODERATORS,
+    status: 200,
+    call: () => ({ method: 'GET', path: scoped('/member-reports') }),
+  }),
+  define<{ report: string }>({
+    rule: 'Resolve a report of a person: owner and admin',
+    route: 'POST /member-reports/:id/resolve',
+    allowed: MODERATORS,
+    status: 200,
+    prepare: async () => {
+      // Of a plain member, by another: nobody here resolves a report about themselves. A refused
+      // call left the last one open, and a pair holds one open report.
+      await pool.query("DELETE FROM member_reports WHERE subject_member_id=$1 AND status='open'", [
+        spareMemberId,
+      ]);
+      const reporter = await pool.query<{ id: string }>(
+        "SELECT id FROM members WHERE community_id=$1 AND role='owner' AND active LIMIT 1",
+        [alphaId]
+      );
+      const report = await pool.query<{ id: string }>(
+        `INSERT INTO member_reports(community_id,subject_member_id,reporter_member_id,reason)
+         VALUES($1,$2,$3,'spam') RETURNING id`,
+        [alphaId, spareMemberId, reporter.rows[0].id]
+      );
+      return { report: report.rows[0].id };
+    },
+    call: ({ report }) => ({
+      method: 'POST',
+      path: scoped(`/member-reports/${report}/resolve`),
+      body: { action: 'dismiss' },
+    }),
+    effect: async (_body, _role, { report }) => {
+      const row = await pool.query('SELECT status FROM member_reports WHERE id=$1', [report]);
+      expect(row.rows[0].status).toBe('dismissed');
+    },
+  }),
   define<{ report: string }>({
     rule: 'Resolve a report: owner and admin',
     route: 'POST /reports/:id/resolve',
@@ -2634,6 +2673,8 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /channels/:id/slow-mode': 'ordinary reading of a channel the caller can read',
   'POST /entries/:id/reports':
     'any member reports a message they can read; moderation.integration.test.ts',
+  'POST /members/:id/reports':
+    'any member reports another person in the space; moderation.integration.test.ts',
   'POST /open-admission/preflight':
     'this browser asks to join an open space; open-admission.integration.test.ts',
   'POST /open-admission/join':

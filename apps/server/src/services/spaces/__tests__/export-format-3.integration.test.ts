@@ -370,6 +370,34 @@ describe('export format 3', { timeout: 180_000 }, () => {
     });
   });
 
+  // Purpose: fails if an owner can learn from their export who flagged them: nothing in it ties
+  // the reporter's id to a report of a person. They are still a member, so `members` names them.
+  it('leaves out who flagged the owner', async () => {
+    await expectStatus(
+      await h.call(`${source.base}/members/${owner.memberId}/reports`, {
+        cookie: mo.cookie,
+        body: { reason: 'other' },
+      }),
+      201,
+      'flag the owner'
+    );
+    const archive = await openArchive(await exportSpace(source, owner.cookie));
+    const created = archive
+      .rows<{ action: string; actor_member_id: unknown }>('auditEvents')
+      .filter((row) => row.action === 'member_report.create');
+    expect(created.length).toBeGreaterThan(0);
+    expect(created.every((row) => row.actor_member_id === null)).toBe(true);
+    for (const [name, bytes] of archive.files)
+      if (!name.startsWith('members/') && !name.startsWith('data/'))
+        expect(
+          bytes
+            .toString('utf8')
+            .split('\n')
+            .filter((line) => line.includes('member_report')),
+          name
+        ).not.toEqual(expect.arrayContaining([expect.stringContaining(mo.memberId)]));
+  });
+
   // Purpose: a person's own export lists them and their agents as members, as it holds their
   // agents and their agents' messages, and as erasing them erases those agents too. It holds
   // every message they and their agents wrote, with their files, and nobody else's agent or
