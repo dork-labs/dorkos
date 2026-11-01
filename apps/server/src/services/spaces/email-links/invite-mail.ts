@@ -10,14 +10,22 @@ type Queryable = Pick<Pool | PoolClient, 'query'>;
  */
 
 /**
- * The name a mail calls the space by: the community's own name, read from its record, or else the
- * bare hostname of the server's configured public URL (never a request's `Host`, never a port).
+ * What a mail calls the space: its own name, read from its record, with the host it lives on; or,
+ * with no name to give, the bare hostname alone (`host` null). Both come from the record and the
+ * server's configured public URL, never a request's `Host`, and the hostname never has a port.
  */
+export interface SpaceName {
+  space: string;
+  host: string | null;
+}
+
+/** The space's name for a mail, from its record, or the server's bare hostname. */
 export async function spaceNameFor(
   client: Queryable,
   communityId: string | null,
   publicUrl: string
-): Promise<string> {
+): Promise<SpaceName> {
+  const host = new URL(publicUrl).hostname;
   if (communityId) {
     const found = await client.query<{ name: string }>('SELECT name FROM communities WHERE id=$1', [
       communityId,
@@ -25,9 +33,14 @@ export async function spaceNameFor(
     // A space's admin chose its name, and this mail goes to any address an invitation holder
     // types: no control, bidi or zero-width characters reach a subject or body (Security S3).
     const name = found.rows[0]?.name.replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
-    if (name) return name;
+    if (name) return { space: name, host };
   }
-  return new URL(publicUrl).hostname;
+  return { space: host, host: null };
+}
+
+/** The space in a mail body: quoted with its host, or the bare hostname said once (designer). */
+function inSpace(name: SpaceName): string {
+  return name.host ? `\u201c${name.space}\u201d on ${name.host}` : name.space;
 }
 
 /**
@@ -51,9 +64,10 @@ export async function firstPasswordAccount(client: Queryable, userId: string): P
 }
 
 /** The finishing link for a new or never-confirmed account: it sets the password and joins. */
-export function finishJoiningMail(space: string, link: string): ComposedMail {
+export function finishJoiningMail(name: SpaceName, link: string): ComposedMail {
+  const space = name.space;
   return plainTextMail(`Finish joining ${space}`, [
-    `Set a password to finish joining ${space}.`,
+    `Set a password to finish joining ${inSpace(name)}.`,
     // Plain text has no button: one labelled line, like the sign-in notice's.
     `Set your password: ${link}`,
     // Built as words, not one template: a template reading "join ${…}" looks like SQL naming a
@@ -64,11 +78,13 @@ export function finishJoiningMail(space: string, link: string): ComposedMail {
 }
 
 /** The notice for an address that already has a confirmed account: a way to sign in, no token. */
-export function existingAccountMail(space: string, signInUrl: string): ComposedMail {
-  return plainTextMail(`Sign in to ${space}`, [
-    ['Someone tried to join', space, 'with this address, and you already have an account.'].join(
-      ' '
-    ),
+export function existingAccountMail(name: SpaceName, signInUrl: string): ComposedMail {
+  return plainTextMail(`Sign in to ${name.space}`, [
+    [
+      'Someone tried to join',
+      inSpace(name),
+      'with this address, and you already have an account.',
+    ].join(' '),
     `Sign in: ${signInUrl}`,
     "If this wasn't you, you can ignore this email.",
   ]);
