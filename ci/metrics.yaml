@@ -64,6 +64,12 @@ queue:
     definition: Per merged PR, time from its first ADDED_TO_MERGE_QUEUE_EVENT to its merge, ejections and re-entries included; reported as p50 and p90, the verdict reads p50.
 
 tracked:
+  - id: tracked.first-try-pr-pass-rate
+    unit: ratio
+    definition: >-
+      Share of PRs whose first head passes every required check, measured by
+      repeating the engineering coordinator audit over the same cohort.
+      Hand-audited; not computed by the daily collector.
   - id: tracked.escaped
     unit: count
     definition: Fix PRs citing a regression from a PR merged at most 7 days earlier (a prose match, too gameable to score).

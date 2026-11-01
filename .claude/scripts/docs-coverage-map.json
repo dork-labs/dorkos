@@ -570,7 +570,7 @@
     },
     {
       "guide": "ci.md",
-      "description": "The CI pipeline for agents: required checks (ruleset only), the two gates, sharding, the merge queue, merge-tail, the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
+      "description": "The CI pipeline for agents: required checks (ruleset only), local ratchets, sharding, the merge queue, merge-tail, the admin-merge guard, and CI Steward (ledger, census, deadlock invariant, fence)",
       "patterns": [
         ".github/workflows/",
         "lefthook.yml",

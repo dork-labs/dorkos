@@ -162,9 +162,8 @@ pre-commit:
       fail_text: 'Lint failed — see the errors above, or turbo could not resolve the diff base / is not installed.'
 
 pre-push:
-  # WHAT HAPPENS AT PUSH NOW: a formatting check and a changelog-fragment
-  # validity check, and nothing else (DOR-2160; the fragment check joined on
-  # 2026-10-30, ci/ledger/261030-*-pre-push-fragment-check).
+  # Push checks formatting, fragments, file size and pipeline ledger coverage.
+  # No tests or typecheck run here (DOR-2160; ledger 261101-191731).
   #
   # THE TEST GATE IS GONE. It ran `turbo test --affected` here for months, and
   # the measurement that ended it is a cliff, not a slope. 49 pre-push runs on
@@ -196,10 +195,10 @@ pre-push:
   # (p90 10 s, worst 29 s), deterministic, and it preempts a REQUIRED CI gate:
   # `prettier --check .` inside the `lint` job. Seven PRs across five sessions
   # went red on exactly that in one week, every one a single `prettier --write`
-  # from green. It is the one local check whose verdict is both certain and
-  # cheaper than finding out from CI. The fragment check is the second such
-  # check, with the same argument: ~0.1 s, and it front-runs the REQUIRED
-  # `fragment-present` check with that check's own validity command.
+  # from green. Fragment validity, file-size and ledger coverage checks catch
+  # other deterministic CI failures locally (ledger 261101-191731).
+  # Fragment validity front-runs the REQUIRED `fragment-present` check with
+  # that check's own validity command.
   #
   # Nothing at push claims to have tested anything. `contributing/ci.md` says so
   # in the same words, and scripts/__tests__/local-gate-shape.test.ts fails if a
@@ -207,7 +206,7 @@ pre-push:
   #
   # `follow: true` stays: lefthook otherwise buffers a command's output until it
   # exits, and the one thing this hook prints is a failure a person has to read.
-  # No `piped` or `priority` keys: the two commands are independent, and each
+  # No `piped` or `priority` keys: these commands are independent, and each
   # should report its own failure on the same push.
   follow: true
   commands:
@@ -237,3 +236,16 @@ pre-push:
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push fragments
         bash scripts/pre-push-fragment-check.sh
       fail_text: 'Changelog fragment check failed — rewrite or delete the fragment named above, commit, and push again.'
+    max-lines:
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push max-lines
+        pnpm check:max-lines -- --base origin/main
+      fail_text: File-size ratchet failed — fix the files listed above.
+    ledger-coverage:
+      # Coverage discovers gate scripts and checks only changed pipeline paths.
+      # Use the branch point so later main changes are not charged to this PR.
+      run: |
+        [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push ledger-coverage
+        ledger_base=$(git merge-base origin/main HEAD) || exit 1
+        node packages/ci-steward/src/cli.ts ledger-check --coverage --base "$ledger_base"
+      fail_text: Pipeline changes need a ledger entry — see the findings above.

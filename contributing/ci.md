@@ -52,7 +52,7 @@ This guide covers everything between an agent's edit and a change on `main`: the
 EDIT     Claude Code hooks: four PreToolUse guards on every Bash call; typecheck, eslint and an any-ban on every edit
 TURN END prettier --write on changed files (Stop hook); checkpoint in worktrees
 COMMIT   lefthook pre-commit: prettier, drizzle generate, dir-size, turbo lint --affected (under the machine-wide slot cap). No typecheck at commit
-PUSH     lefthook pre-push: a prettier check on the changed files. No tests run at push (DOR-2160)
+PUSH     lefthook pre-push: changed-file formatting, fragment validity, file-size ratchet, pipeline ledger coverage. No tests run at push (DOR-2160)
 PR       ~19-25 Actions jobs; the required checks below must pass ON THE PR before it may enter the queue
 ARM      agents arm with gh pr merge --auto; merge-tail (every 2-3 h, throttled) is the backstop
 QUEUE    merge_group: the required checks re-run on main + everything ahead, up to 5 PRs per group, ALLGREEN
