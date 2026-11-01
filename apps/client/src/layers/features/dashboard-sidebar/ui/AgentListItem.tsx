@@ -237,7 +237,7 @@ export function AgentListItem({
         muted={isMuted}
         onSelect={onSelect}
         menuNodes={menuNodes}
-        actionsLabel="Agent actions"
+        actionsLabel={`${displayName} actions`}
         drag={sortable}
         {...(rowMotion === undefined ? {} : { rowMotion })}
         // An agent's name sits a step heavier than a place's at rest; the bold

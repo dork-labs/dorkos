@@ -447,7 +447,7 @@ export {
   SidebarContext,
   SIDEBAR_MENU_ITEM_ATTRS,
 } from './sidebar';
-export type { SidebarContextProps } from './sidebar';
+export type { SidebarContextProps, SidebarTriggerProps } from './sidebar';
 export { FilterBar } from './filter-bar';
 export type { FilterBarProps } from './filter-bar';
 export { RouteErrorFallback } from './route-error-fallback';
