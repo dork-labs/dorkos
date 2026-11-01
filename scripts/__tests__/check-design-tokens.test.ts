@@ -52,7 +52,9 @@ describe('countIn', () => {
 });
 
 describe('the count and badge rules (Phase 2 Badge A)', () => {
-  const PILL = 'apps/client/src/layers/shared/ui/count-pill.tsx';
+  const PILL = 'packages/ui/src/count-pill.tsx';
+  // The app's re-export holds no pill of its own, so it is not on the allowlist.
+  const OLD_PILL = 'apps/client/src/layers/shared/ui/count-pill.tsx';
   const THREAD = 'apps/client/src/layers/features/conversation/ui/rows/ThreadReplyRow.tsx';
 
   it('refuses a local cap, except where the caps are spelled', () => {
@@ -60,6 +62,9 @@ describe('the count and badge rules (Phase 2 Badge A)', () => {
       'local-count-cap': 2,
     });
     expect(countIn(PILL, `export const COUNT_PILL_CAP = 99;`)).toEqual({});
+    expect(countIn(OLD_PILL, `export const COUNT_PILL_CAP = 99;`)).toEqual({
+      'local-count-cap': 1,
+    });
     expect(countIn(CLIENT, `import { COUNT_PILL_CAP } from '@/layers/shared/ui';`)).toEqual({});
   });
 
@@ -67,6 +72,7 @@ describe('the count and badge rules (Phase 2 Badge A)', () => {
     const text = `'rounded-full px-1.5 tabular-nums'\n'tabular-nums text-xs rounded-full'\n'tabular-nums'`;
     expect(countIn(CLIENT, text)).toEqual({ 'hand-rolled-count': 2 });
     expect(countIn(PILL, text)).toEqual({});
+    expect(countIn(OLD_PILL, text)).toEqual({ 'hand-rolled-count': 2 });
   });
 
   it('keeps the count flip to the thread reply row', () => {

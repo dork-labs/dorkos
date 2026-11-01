@@ -1061,7 +1061,7 @@ Rules that come with it:
 
 - **Numbers are for you, not for volume.** A busy channel nobody addressed you in stays at a bold label however many messages it holds.
 - **Activity draws no mark of its own** (decided 2026-08-09, `specs/sidebar-now-today-library/design-decisions.md` §18). It used to add a dot. A dot is a third weight in a system that deliberately has two, and the avatar corner already owns dots for agent lifecycle — two dot vocabularies on one row is the confusion this removes.
-- **A directed count is orange.** `CountPill` (`shared/ui/count-pill.tsx`) defaults to `tone="you"`, the orange ink on its own wash (`bg-brand/15 text-brand-text`), because orange means you. Its label reads the real figure where one exists. In the sidebar it counts @mentions of you in a channel, and every new message in a direct message, both counted by the server from the room log above your read cursor.
+- **A directed count is orange.** `CountPill` (`packages/ui/src/count-pill.tsx`, re-exported by `shared/ui/count-pill.tsx`) defaults to `tone="you"`, the orange ink on its own wash (`bg-brand/15 text-brand-text`), because orange means you. Its label reads the real figure where one exists. In the sidebar it counts @mentions of you in a channel, and every new message in a direct message, both counted by the server from the room log above your read cursor.
 - **Caps are honest.** Mentions cap at `9+` (`MENTION_COUNT_CAP`): the server stops counting at `ROOM_MENTION_COUNT_CAP` (10), so its `10` means "10 or more" and anything higher would be a claim nobody measured. A DM's messages are counted in full and cap at `99+`. `directedCountCap(kind)` and `directedCountLabel(count, kind)` pick the cap and the words together. A corner count caps at `9+`.
 - **Mute keeps a mention's count, and only that.** A muted row loses its bold, but an @mention of you still shows its number. This holds for a muted direct message too: it counts real @mentions only, never every message. Mute means "stop pulling at me", so a DM that kept counting every message through mute would make mute a lie. Do not "fix" it.
 - **A collapsed container keeps its signal, as rows.** A folded section keeps its unread rows on screen under the header, drawn as they are when open. A section header never carries a count; its one mark is a working dot.
@@ -1074,7 +1074,7 @@ Three primitives, one shape (full radius) and one tint (7% of the foreground). T
 | Primitive       | Is                                                           | Element                   | File                           |
 | --------------- | ------------------------------------------------------------ | ------------------------- | ------------------------------ |
 | `Badge`         | An inert label: a state, a category, a fact                  | `<span>`                  | `shared/ui/badge.tsx`          |
-| `CountPill`     | A number, and who it is for                                  | `<span>`                  | `shared/ui/count-pill.tsx`     |
+| `CountPill`     | A number, and who it is for                                  | `<span>`                  | `@dork-labs/ui/count-pill`     |
 | `Chip`          | A pill you can press: a toggle, an action, a popover trigger | `<button>`, ref forwarded | `shared/ui/chip.tsx`           |
 | `RemovableChip` | A pill you dismiss: an active filter, a tag                  | `<span>` + × `<button>`   | `shared/ui/removable-chip.tsx` |
 

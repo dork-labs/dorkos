@@ -165,12 +165,13 @@ export const RULES: Rule[] = [
     pattern: /\bfocus-visible:ring-/g,
     fix: 'use the focus-ring recipe',
   },
-  // Phase 2 Badge A. A count has one cap per placement, spelled in count-pill.
+  // Phase 2 Badge A. A count has one cap per placement, spelled in count-pill,
+  // which lives in packages/ui so the app and the Space share it (DOR-3635).
   {
     id: 'local-count-cap',
     kind: 'hard',
     pattern: /\b(?:DISPLAY_CAP|MAX_COUNT)\b|\bconst\s+COUNT_PILL_CAP\b/g,
-    except: /^apps\/client\/src\/layers\/shared\/ui\/count-pill\.tsx$/,
+    except: /^packages\/ui\/src\/count-pill\.tsx$/,
     fix: 'use CountPill and its cap prop, or COUNT_PILL_CAP / CORNER_COUNT_CAP / MENTION_COUNT_CAP',
   },
   {
@@ -178,7 +179,7 @@ export const RULES: Rule[] = [
     kind: 'hard',
     pattern: /^(?=.*\btabular-nums\b)(?=.*\brounded-full\b).*$/gm,
     except:
-      /^apps\/client\/src\/layers\/(?:shared\/ui\/(?:count-pill|badge)\.tsx|features\/chat\/ui\/chips\/TouchChip\.tsx)$/,
+      /^(?:packages\/ui\/src\/count-pill\.tsx|apps\/client\/src\/layers\/(?:shared\/ui\/badge\.tsx|features\/chat\/ui\/chips\/TouchChip\.tsx))$/,
     fix: 'use CountPill for a number, Badge for a label',
   },
   {
