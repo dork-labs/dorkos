@@ -1226,6 +1226,13 @@
       "when": 1793562929102,
       "tag": "20261101195529_work_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "6",
+      "when": 1793570032730,
+      "tag": "20261101215352_agent_browser_profiles",
+      "breakpoints": true
     }
   ]
 }
