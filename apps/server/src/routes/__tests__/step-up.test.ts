@@ -242,6 +242,60 @@ describe('the secret is the only proof', () => {
   });
 });
 
+// Security's Must 3 (DOR-3234 part B): a mini app an agent can rewrite runs
+// in the app's page, so the step-up is off, plainly, until it is fixed.
+describe('while a loaded mini app is in an agent’s folder or changed', () => {
+  const RISK = {
+    id: 'social-queue',
+    name: 'Social queue',
+    reason: 'agent-folder' as const,
+    agentName: 'dorkos-marketing',
+  };
+
+  beforeEach(() => {
+    deps.extensionRisks = () => [RISK];
+  });
+
+  it('shows why, and offers no password', async () => {
+    const id = await hold();
+    const res = await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      methods: [],
+      passwordUnavailable: 'extension-risk',
+      blockedBy: [RISK],
+    });
+  });
+
+  it('the right password runs nothing, and names what to fix', async () => {
+    const id = await hold();
+    const res = await confirm(id, PASSWORD);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [RISK] });
+    expect(commit).not.toHaveBeenCalled();
+    expect(deps.checkPassword).not.toHaveBeenCalled();
+  });
+
+  it('change-password runs nothing and changes no password', async () => {
+    const id = await hold();
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${id}/change-password`)
+      .set('Origin', OWN_ORIGIN)
+      .send({ currentPassword: PASSWORD, newPassword: 'a much longer one' });
+    expect(res.status).toBe(409);
+    expect(commit).not.toHaveBeenCalled();
+    expect(deps.setOwnerPassword).not.toHaveBeenCalled();
+  });
+
+  it('reads it fresh: once fixed, the same held action confirms', async () => {
+    const id = await hold();
+    expect((await confirm(id, PASSWORD)).status).toBe(409);
+    deps.extensionRisks = () => [];
+    expect((await confirm(id, PASSWORD)).status).toBe(200);
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('POST /api/step-up/:id/password', () => {
   it('runs the held action once the password passes, and answers with its result', async () => {
     const id = await hold();

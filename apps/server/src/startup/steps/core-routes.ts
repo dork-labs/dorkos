@@ -8,6 +8,7 @@
  * @module startup/steps/core-routes
  */
 import { configManager } from '../../services/core/config-manager.js';
+import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up-extension-risk.js';
 import type { ConnectorRoutesDeps } from '../../routes/connectors.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
 import { ConnectorSessionAccessService } from '../../services/connectors/resources/session-access-service.js';
@@ -666,6 +667,16 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // read lazily because it is composed after the routes are handed over.
   deps.agentPause = { registry: () => refs.capabilityRegistry };
   mountedRouters.push('agent-pause');
+  // "Confirm it's you" stays off while a loaded mini app is in an agent's
+  // folder or changed since it was approved (DOR-3234). Read per request.
+  setStepUpExtensionRiskInputs(() => ({
+    records: refs.extensionManager?.listRecords() ?? [],
+    approvals: configManager.get('extensions')?.approvedSources ?? {},
+    agents: (refs.meshCore?.listWithPaths() ?? []).map((agent) => ({
+      path: agent.projectPath,
+      name: agent.displayName ?? agent.name,
+    })),
+  }));
 
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
