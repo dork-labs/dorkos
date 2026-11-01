@@ -497,6 +497,20 @@ describe('who may remove (AC-4)', { timeout: 180_000 }, () => {
       "UPDATE connection_grants SET history_only=true,scopes=ARRAY['read'] WHERE install_name=$1 AND community_id=$2",
       [`hist-${s.slug}`, s.communityId]
     );
+    const adminGrant = await pairInstall(
+      h,
+      s.communityId,
+      admin.cookie,
+      ['read', 'post'],
+      `admin-${s.slug}`
+    );
+    const ownerGrant = await pairInstall(
+      h,
+      s.communityId,
+      s.owner.cookie,
+      ['read', 'post'],
+      `owner-${s.slug}`
+    );
     const hostKey = await runHostKeyCommand(h.pool, {
       kind: 'issue',
       label: 'removal matrix',
@@ -583,6 +597,37 @@ describe('who may remove (AC-4)', { timeout: 180_000 }, () => {
         200,
       ],
       ['grant with post deletes own', () => say(s, P), { bearer: s.grant }, 200],
+      // A connection never moderates, whatever its person's role: an agent can hold it.
+      [
+        'admin connection removes member',
+        () => say(s, { cookie: s.q.cookie }),
+        { bearer: adminGrant },
+        403,
+      ],
+      [
+        'admin connection removes member agent',
+        () => say(s, { bearer: s.agent.token }),
+        { bearer: adminGrant },
+        403,
+      ],
+      [
+        'admin connection removes former admin',
+        async () => formerEntry,
+        { bearer: adminGrant },
+        403,
+      ],
+      [
+        'owner connection removes member',
+        () => say(s, { cookie: s.q.cookie }),
+        { bearer: ownerGrant },
+        403,
+      ],
+      [
+        'admin connection deletes own',
+        () => say(s, { cookie: admin.cookie }),
+        { bearer: adminGrant },
+        200,
+      ],
       ['grant without post', () => say(s, P), { bearer: readOnly }, 403],
       ['history-only grant', () => say(s, P), { bearer: historyGrant }, 403],
       ['host API key', () => say(s, P), { bearer: hostKey.secret }, 401],
@@ -876,6 +921,23 @@ describe('removing a file (AC-7)', { timeout: 120_000 }, () => {
     // Another member's file is not theirs to remove.
     const qFile = await upload(h, s.communityId, s.channelId, s.q.cookie, 'q.txt', 'q');
     expect((await removeFile(s, qFile, { cookie: s.p.cookie })).status).toBe(403);
+  });
+
+  // Purpose: the file route takes the same rule as the message route: a connection never
+  // moderates, so an agent holding the owner's cannot take someone's file away; the owner can.
+  it('refuses a connection removing someone else’s file, whatever its person’s role', async () => {
+    const s = await scene('filegrant');
+    const ownerGrant = await pairInstall(
+      h,
+      s.communityId,
+      s.owner.cookie,
+      ['read', 'post'],
+      `owner-${s.slug}`
+    );
+    const qFile = await upload(h, s.communityId, s.channelId, s.q.cookie, 'q.txt', 'q');
+    await say(s, { cookie: s.q.cookie }, 'with a file', { attachmentIds: [qFile] });
+    expect((await removeFile(s, qFile, { bearer: ownerGrant })).status).toBe(403);
+    await removed(await removeFile(s, qFile, { cookie: s.owner.cookie }), 'owner in browser');
   });
 });
 
