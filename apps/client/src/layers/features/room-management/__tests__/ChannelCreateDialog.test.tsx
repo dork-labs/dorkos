@@ -16,7 +16,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
-import { TransportProvider } from '@/layers/shared/model';
+import { TransportProvider, useAppStore } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { ChannelCreateDialog } from '../ui/ChannelCreateDialog';
@@ -199,6 +199,37 @@ describe('ChannelCreateDialog', () => {
     await waitFor(() =>
       expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'room-new' }))
     );
+  });
+
+  it('lands a new channel on its conversation, not on a canvas left open (DOR-3477)', async () => {
+    // A new channel pins ROOM.md on its canvas, so a panel left on Canvas would
+    // open the template beside a room nobody has spoken in. View-only: the
+    // stored Canvas choice is not rewritten, because nobody picked Room.
+    // Red if the dialog stops moving the view, or starts persisting the move.
+    const setStored = vi.spyOn(useAppStore.getState(), 'setActiveRightPanelTab');
+    useAppStore.setState({ activeRightPanelTab: 'canvas' });
+    const onCreated = vi.fn();
+    renderDialog({ onCreated });
+
+    nameIt('Backend');
+    fireEvent.click(screen.getByRole('button', { name: 'Create it without agents' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(useAppStore.getState().activeRightPanelTab).toBe('room');
+    expect(setStored).not.toHaveBeenCalled();
+    setStored.mockRestore();
+  });
+
+  it('leaves any other right-panel tab where it was', async () => {
+    useAppStore.setState({ activeRightPanelTab: 'pulse' });
+    const onCreated = vi.fn();
+    renderDialog({ onCreated });
+
+    nameIt('Backend');
+    fireEvent.click(screen.getByRole('button', { name: 'Create it without agents' }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+    expect(useAppStore.getState().activeRightPanelTab).toBe('pulse');
   });
 
   it('trims the name it sends and never sends a blank one', async () => {

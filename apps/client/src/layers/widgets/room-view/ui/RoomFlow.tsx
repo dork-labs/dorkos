@@ -55,6 +55,7 @@ import {
 } from '../lib/room-timeline';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
 import { LoadOlderRow } from './LoadOlderRow';
+import { RoomMdHint } from './empty-state/RoomMdHint';
 import { RoomMessage } from './RoomMessage';
 
 interface RoomFlowProps {
@@ -517,6 +518,7 @@ export function RoomFlow({
       >
         {hasAgents ? 'Add more agents' : 'Add agents'}
       </Button>
+      <RoomMdHint roomId={roomId} />
     </div>
   );
 

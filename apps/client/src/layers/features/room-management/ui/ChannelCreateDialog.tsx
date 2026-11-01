@@ -11,13 +11,28 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
+import { useAppStore } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { isChannelNameConflict, useCreateChannel } from '@/layers/entities/room';
+import { ROOM_PANEL_ID } from '../model/room-panel-focus';
 import { useAgentPickerCandidates } from '../model/use-agent-picker-candidates';
 import { AgentRosterPicker } from './AgentRosterPicker';
 
 /** Longest channel name the server accepts (`CreateRoomRequestSchema.title`). */
 const MAX_NAME = 200;
+
+/**
+ * Land a new channel on its conversation, not on its canvas (DOR-3477).
+ *
+ * A channel starts with `ROOM.md` pinned on its canvas, and a panel last left
+ * on Canvas would show that template beside a room nobody has spoken in yet.
+ * The empty state says the notes are there, with **Open**. View-only, because
+ * nobody picked the Room tab: the Canvas choice stays stored for later.
+ */
+function landOffCanvas(): void {
+  const app = useAppStore.getState();
+  if (app.activeRightPanelTab === 'canvas') app.setActiveRightPanelTabView(ROOM_PANEL_ID);
+}
 
 interface ChannelCreateDialogProps {
   /** Whether the dialog is on screen. */
@@ -100,6 +115,7 @@ export function ChannelCreateDialog({ open, onOpenChange, onCreated }: ChannelCr
       {
         onSuccess: (room) => {
           onOpenChange(false);
+          landOffCanvas();
           onCreated(room);
         },
         // No local onError here either: `useCreateChannel` reports every
