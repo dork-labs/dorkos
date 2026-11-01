@@ -325,6 +325,10 @@
       "types": "./src/run-refusals.ts",
       "default": "./dist/run-refusals.js"
     },
+    "./awake-clock": {
+      "types": "./src/awake-clock.ts",
+      "default": "./dist/awake-clock.js"
+    },
     "./run-time-limit": {
       "types": "./src/run-time-limit.ts",
       "default": "./dist/run-time-limit.js"

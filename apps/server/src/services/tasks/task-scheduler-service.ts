@@ -43,6 +43,7 @@ import { RefusedScheduleLog } from './refused-schedule-log.js';
 import { buildTaskAppend } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
 import { resolveOccurrence, STALE_SKIP_REASON } from './timing/occurrence.js';
+import { runDeadline, WakeSettle } from './timing/wake-settle.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { resolveRunSession } from './session/sticky-session.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
@@ -235,6 +236,11 @@ export interface SchedulerDeps {
    * record the rest. Absent in tests that do not care.
    */
   agentPauses?: TaskAgentPauses;
+  /**
+   * Holds a fire that lands in a dark wake, and its clock is the one a run's
+   * time limit counts awake time on (DOR-3286). The process clock by default.
+   */
+  wakeSettle?: WakeSettle;
 }
 
 /**
@@ -297,6 +303,8 @@ export class TaskSchedulerService {
   private keepAwake: TaskAwakeHolds | null = null;
   /** See {@link SchedulerDeps.agentPauses}. */
   private pauseHold = new TaskPauseHold(null);
+  /** See {@link SchedulerDeps.wakeSettle}. */
+  private wakeSettle = new WakeSettle();
 
   constructor(
     store: TaskStore,
@@ -325,6 +333,7 @@ export class TaskSchedulerService {
       this.beforeScheduledFire = storeOrDeps.beforeScheduledFire ?? null;
       this.keepAwake = storeOrDeps.keepAwake ?? null;
       this.pauseHold = new TaskPauseHold(storeOrDeps.agentPauses ?? null);
+      this.wakeSettle = storeOrDeps.wakeSettle ?? this.wakeSettle;
       this.leaderLock =
         storeOrDeps.leaderLock ??
         (storeOrDeps.dorkHome ? new SchedulerLock({ dorkHome: storeOrDeps.dorkHome }) : null);
@@ -508,6 +517,7 @@ export class TaskSchedulerService {
     // Said first, so nothing registers a job into a scheduler that is on its way
     // down — a watcher event can land while this is still awaiting active runs.
     this.started = false;
+    this.wakeSettle.stop();
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -611,14 +621,12 @@ export class TaskSchedulerService {
           // sleep it is late, and `dispatch` resolves which occurrence it stands
           // for. What croner was waiting for is read, then moved on to the next
           // occurrence, synchronously here, before anything awaits.
-          const fire: ScheduledFire = {
-            firedAt: new Date(),
-            expected: this.expectedTicks.get(task.id) ?? null,
-          };
+          //
+          // A fire right after a wake waits for the computer to settle, and is
+          // then judged at the instant it runs (`timing/wake-settle.ts`).
+          const expected = this.expectedTicks.get(task.id) ?? null;
           this.expectedTicks.set(task.id, self.nextRun());
-          this.dispatch(task, fire).catch((err) => {
-            logger.error(`dispatch error for ${task.name}:`, err);
-          });
+          this.wakeSettle.run((at) => this.dispatch(task, { firedAt: at, expected }), task.name);
         })
       );
     } catch (err) {
@@ -1364,12 +1372,11 @@ export class TaskSchedulerService {
 
     // Two ways a run stops early: an operator cancels it, or it outlives its
     // maxRuntime. `AbortSignal.any` adopts the reason of whichever fired FIRST,
-    // and `AbortSignal.timeout` aborts with a DOMException named 'TimeoutError' —
-    // which is how the finalized row below tells the two apart.
-    const timeoutSignal = task.maxRuntime ? AbortSignal.timeout(task.maxRuntime) : null;
-    const combinedSignal = timeoutSignal
-      ? AbortSignal.any([controller.signal, timeoutSignal])
-      : controller.signal;
+    // and the deadline aborts with a DOMException named 'TimeoutError' — which
+    // is how the finalized row below tells the two apart. The deadline counts
+    // only time the computer was awake: a plain timer keeps counting through
+    // sleep, and stopped runs on wake as over their limit (DOR-3286).
+    const stop = runDeadline(this.wakeSettle.clock, task.maxRuntime, controller.signal);
 
     const startTime = Date.now();
     let outputChars = 0;
@@ -1532,7 +1539,7 @@ export class TaskSchedulerService {
 
       const stopped = await consumeRunStream(
         stream,
-        combinedSignal,
+        stop.signal,
         () => void interruptRun(agentManager, sessionId),
         (event) => {
           // First, so the card reaches the app before anything else is done with
@@ -1578,9 +1585,8 @@ export class TaskSchedulerService {
         // task-handler.ts`) so the same event cannot be worded two ways in one
         // run history (DOR-1786). This path is the one that names the duration:
         // it holds the task's own `maxRuntime`, which the relay path never sees.
-        const timedOut =
-          (combinedSignal.reason as { name?: string } | null)?.name === 'TimeoutError';
-        const operatorCancelled = combinedSignal.reason === OPERATOR_CANCEL;
+        const timedOut = stop.timedOut();
+        const operatorCancelled = stop.signal.reason === OPERATOR_CANCEL;
         this.store.updateRun(run.id, {
           status: 'cancelled',
           finishedAt: new Date().toISOString(),
@@ -1653,6 +1659,7 @@ export class TaskSchedulerService {
       // session back — whichever way the run ended, including the throw above. A
       // session left `streaming` forever, or a card left standing for a run that
       // is over, is how a finished run keeps claiming a person's attention.
+      stop.cancel();
       await turn?.finish();
       this.runs.release(run.id);
     }
