@@ -6,6 +6,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { UpdateStatus } from '../main/auto-updater';
 import type { AdminActionResult } from '../main/admin';
 import type { CaptureAppViewResult } from '../main/capture';
+import type { CertificateFilePickResult } from '../main/certificate-file-picker';
 import type { HeartbeatReport } from '../main/renderer-health';
 import type { ClosedTab, StartupMode, WindowTabs } from '../main/tab-session';
 
@@ -32,6 +33,8 @@ const RESET_ALL_DATA_CHANNEL = 'admin:reset-all-data';
 
 /** IPC channel "Capture app" goes out on (mirrors `CAPTURE_APP_VIEW_CHANNEL` in main/capture/index.ts). */
 const CAPTURE_APP_VIEW_CHANNEL = 'capture:app-view';
+/** IPC channel Settings' certificate "Choose…" goes out on (mirrors `main/certificate-file-picker.ts`). */
+const CHOOSE_CERTIFICATE_FILE_CHANNEL = 'company-certificates:choose-file';
 
 /** IPC channel a mounted renderer reports itself alive on (mirrors `ALIVE_CHANNEL` in renderer-health/index.ts). */
 const ALIVE_CHANNEL = 'renderer:alive';
@@ -191,6 +194,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * meant for the person who clicked.
    */
   captureAppView: (): Promise<CaptureAppViewResult> => ipcRenderer.invoke(CAPTURE_APP_VIEW_CHANNEL),
+  /**
+   * The native file dialog, for Settings → Server → Network's "Choose…" on
+   * company certificates. Answers with the picked path, or `null` when the
+   * person cancelled; saving it is the renderer's job, through the
+   * operator-only config route. Never rejects.
+   */
+  chooseCertificateFile: (): Promise<CertificateFilePickResult> =>
+    ipcRenderer.invoke(CHOOSE_CERTIFICATE_FILE_CHANNEL),
   /**
    * A scrubbed, bounded tail of the shell's OWN log, for a bug report filed
    * from the desktop app (DOR-2045).

@@ -5,6 +5,11 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 
 const BUNDLE = '/Users/kai/certs/company-ca.pem';
+const LONG_BUNDLE =
+  '/Users/kai/Library/Application Support/Acme Corp/Network/certs/acme-root-ca.pem';
+
+/** The desktop window, as the card sees it: a file dialog that picks a file, and a restart. */
+const DESKTOP = { picker: async () => BUNDLE, canRestart: true };
 
 /** A config carrying only what the Network card reads. */
 function configWith(path: string | null, status: CompanyCertificatesStatus | null): ServerConfig {
@@ -14,10 +19,14 @@ function configWith(path: string | null, status: CompanyCertificatesStatus | nul
 }
 
 /** Every state the desktop app can report at start-up, and a save it has not loaded yet. */
-const STATES: { label: string; config: ServerConfig }[] = [
+const STATES: { label: string; config: ServerConfig; browser?: true }[] = [
   {
     label: 'Loaded',
     config: configWith(BUNDLE, { outcome: 'added', added: 3, path: BUNDLE }),
+  },
+  {
+    label: 'Loaded, one certificate, long path',
+    config: configWith(LONG_BUNDLE, { outcome: 'added', added: 1, path: LONG_BUNDLE }),
   },
   {
     label: 'NODE_EXTRA_CA_CERTS set, no file chosen',
@@ -32,8 +41,21 @@ const STATES: { label: string; config: ServerConfig }[] = [
     config: configWith(BUNDLE, { outcome: 'empty', added: 0, path: BUNDLE }),
   },
   {
-    label: 'Saved, restart due',
+    label: 'Changed, restart due',
     config: configWith('/Users/kai/certs/new-ca.pem', { outcome: 'added', added: 3, path: BUNDLE }),
+  },
+  {
+    label: 'Stopped, restart due',
+    config: configWith(null, { outcome: 'added', added: 3, path: BUNDLE }),
+  },
+  {
+    label: 'First file chosen, restart due',
+    config: configWith(BUNDLE, { outcome: 'not-set', added: 0, path: null }),
+  },
+  {
+    label: 'In a browser (no file dialog, no restart)',
+    config: configWith('/Users/kai/certs/new-ca.pem', { outcome: 'added', added: 3, path: BUNDLE }),
+    browser: true,
   },
   {
     label: 'Nothing set',
@@ -57,7 +79,10 @@ export function CompanyCertificatesShowcases() {
           <ShowcaseLabel>{state.label}</ShowcaseLabel>
           <ShowcaseDemo>
             <div className="max-w-lg">
-              <NetworkSection config={state.config} />
+              <NetworkSection
+                config={state.config}
+                desktop={state.browser ? { picker: null, canRestart: false } : DESKTOP}
+              />
             </div>
           </ShowcaseDemo>
         </div>

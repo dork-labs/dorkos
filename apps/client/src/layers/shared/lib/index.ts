@@ -16,6 +16,7 @@ export {
 export { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
 export { resolveApiBaseUrl } from './api-base-url';
 export { getDesktopAdmin, restartDorkOS, unwrapDesktopAdminResult } from './desktop-admin';
+export { getCertificateFilePicker, type CertificateFilePicker } from './certificate-file-picker';
 export { getDesktopShellLogExcerpt } from './desktop-shell-log';
 export {
   captureAppShot,
