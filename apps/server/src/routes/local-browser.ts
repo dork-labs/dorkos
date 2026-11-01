@@ -1,11 +1,15 @@
 /** Human browser setup and controls. Agent actions travel through the capability gate. */
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
-import { LocalBrowserOpenSchema } from '@dorkos/shared/local-browser';
+import {
+  LocalBrowserHandoffAnswerSchema,
+  LocalBrowserOpenSchema,
+  LocalBrowserSignInRequestSchema,
+} from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { refuseUnlessAccountOwner, requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import {
   LocalBrowserError,
   type LocalBrowserService,
@@ -15,6 +19,13 @@ import {
   mountLocalBrowserProfileRoutes,
   type LocalBrowserProfileRouteDeps,
 } from './local-browser-profiles.js';
+
+/** Refuse anything but the owner, in person, at this computer. */
+const personOnly: MiddlewareHandler<ApiEnv> = async (c, next) => {
+  if (requirePersonAtThisComputer(honoRequestFacts(c)) !== undefined)
+    return c.json({ error: 'Only you can do this, from DorkOS.', code: 'person_only' }, 403);
+  return next();
+};
 
 /** Mount owner-only human controls under /api/local-browser. */
 export function createLocalBrowserRoutes(
@@ -47,9 +58,9 @@ export function createLocalBrowserRoutes(
     return c.json({ error: 'Couldn’t use the browser. Try again.', code: 'browser_error' }, 500);
   });
   router.get('/capabilities', (c) => c.json(service.capabilities()));
-  router.get('/state', async (c) => c.json(await service.state()));
+  router.get('/state', async (c) => c.json(await service.handover.state()));
   router.post('/open', async (c) =>
-    c.json(await service.open(LocalBrowserOpenSchema.parse(readJsonBody(c))))
+    c.json(await service.handover.open(LocalBrowserOpenSchema.parse(readJsonBody(c))))
   );
   router.post('/tabs/:id/select', async (c) => c.json(await service.selectTab(c.req.param('id'))));
   router.post('/navigate', async (c) => {
@@ -57,7 +68,19 @@ export function createLocalBrowserRoutes(
     return c.json(await service.navigate(url));
   });
   router.post('/pause', async (c) => c.json(await service.pause()));
-  router.post('/resume', async (c) => c.json(await service.resume()));
+  router.post('/resume', async (c) => c.json(await service.handover.resume()));
+  // Signing in and answering a handoff take a person: no agent, API key or approval token.
+  router.post('/sign-in', personOnly, async (c) =>
+    c.json(await service.handover.signIn(LocalBrowserSignInRequestSchema.parse(readJsonBody(c))))
+  );
+  router.post('/handoff/hand-back', personOnly, async (c) => {
+    const { handoffId } = LocalBrowserHandoffAnswerSchema.parse(readJsonBody(c));
+    return c.json(await service.handover.handBack(handoffId));
+  });
+  router.post('/handoff/stop', personOnly, async (c) => {
+    const { handoffId } = LocalBrowserHandoffAnswerSchema.parse(readJsonBody(c));
+    return c.json(await service.handover.stop(handoffId));
+  });
   router.post('/disconnect', async (c) => c.json(await service.disconnect()));
   if (profiles) mountLocalBrowserProfileRoutes(router, profiles);
   return router;

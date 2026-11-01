@@ -109,6 +109,11 @@ export interface LocalBrowserState {
   revision: number;
   preparation: LocalBrowserPreparation | null;
 }
+/** What a person's controls see: the browser plus its handoff and sign-in. Never sent to an agent. */
+export interface LocalBrowserPersonState extends LocalBrowserState {
+  handoff: LocalBrowserHandoff | null;
+  signIn: LocalBrowserSignIn | null;
+}
 export interface LocalBrowserObservation {
   revision: number;
   snapshot: string;
@@ -136,6 +141,74 @@ export const LocalBrowserStateSchema = z.object({
   selectedTabId: z.string().nullable(),
   revision: z.number().int().nonnegative(),
 });
+/** A plain sign-in window and whether its sign-in reached the disk. */
+export const LocalBrowserSignInSchema = z.object({
+  profileId: z.string().nullable(),
+  /** The host of the page the window opened, from its URL. */
+  site: z.string(),
+  status: z.enum(['open', 'saving', 'saved', 'failed']),
+  startedAt: z.string(),
+});
+export type LocalBrowserSignIn = z.infer<typeof LocalBrowserSignInSchema>;
+
+/** Why an agent handed the browser to the person. */
+export const LocalBrowserHandoffReasonSchema = z.enum(['wall', 'password']);
+export type LocalBrowserHandoffReason = z.infer<typeof LocalBrowserHandoffReasonSchema>;
+
+/**
+ * An agent handed the browser to the person. While `outcome` is null the agent
+ * can't read or use the browser. The record stays after it ends, so every place
+ * that shows it can say how it ended.
+ */
+export const LocalBrowserHandoffSchema = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  reason: LocalBrowserHandoffReasonSchema,
+  /** The host of the agent's page when it asked, from its URL. Never a name the agent gave. */
+  site: z.string(),
+  askedAt: z.string(),
+  outcome: z.enum(['handed-back', 'stopped']).nullable(),
+});
+export type LocalBrowserHandoff = z.infer<typeof LocalBrowserHandoffSchema>;
+
+/** Start a sign-in: a page the person typed, or the agent's current page during a handoff. */
+export const LocalBrowserSignInRequestSchema = z.union([
+  z
+    .object({
+      url: z.string().url(),
+      /** A named profile. Left out, the default sign-ins are used. */
+      profileId: z.string().uuid().optional(),
+    })
+    .strict(),
+  z.object({ handoffId: z.string().min(1) }).strict(),
+]);
+export type LocalBrowserSignInRequest = z.infer<typeof LocalBrowserSignInRequestSchema>;
+
+/** Which handoff a person's Hand back or Stop task answers. */
+export const LocalBrowserHandoffAnswerSchema = z.object({ handoffId: z.string().min(1) }).strict();
+
+/** What an agent sends to hand the browser to the person. */
+export const LocalBrowserAskPersonSchema = z
+  .object({
+    reason: LocalBrowserHandoffReasonSchema.describe(
+      '"password" when the page asks for a password or sign-in; "wall" for any other step only a person can finish.'
+    ),
+  })
+  .strict();
+
+/** The person's view of the browser; see {@link LocalBrowserPersonState}. */
+export const LocalBrowserPersonStateSchema = LocalBrowserStateSchema.extend({
+  handoff: LocalBrowserHandoffSchema.nullable(),
+  signIn: LocalBrowserSignInSchema.nullable(),
+});
+
+/** What the agent hears back. */
+export const LocalBrowserAskPersonResultSchema = z.object({
+  handoffId: z.string(),
+  site: z.string(),
+  next: z.string(),
+});
+
 export const LocalBrowserObservationSchema = z.object({
   revision: z.number().int().nonnegative(),
   snapshot: z.string(),

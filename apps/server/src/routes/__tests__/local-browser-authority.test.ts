@@ -24,7 +24,7 @@ import type { LocalBrowserService } from '../../services/session/local-browser/s
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
-const service = {
+const spies = {
   capabilities: vi.fn(() => ({})),
   state: vi.fn(async () => ({})),
   open: vi.fn(async () => ({})),
@@ -33,6 +33,25 @@ const service = {
   pause: vi.fn(async () => ({})),
   resume: vi.fn(async () => ({})),
   disconnect: vi.fn(async () => ({})),
+  signIn: vi.fn(async () => ({})),
+  handBack: vi.fn(async () => ({})),
+  stop: vi.fn(async () => ({})),
+};
+// The person's view, opening and resuming go through the handoff, so a sign-in can't be raced.
+const service = {
+  capabilities: spies.capabilities,
+  selectTab: spies.selectTab,
+  navigate: spies.navigate,
+  pause: spies.pause,
+  disconnect: spies.disconnect,
+  handover: {
+    state: spies.state,
+    open: spies.open,
+    resume: spies.resume,
+    signIn: spies.signIn,
+    handBack: spies.handBack,
+    stop: spies.stop,
+  },
 };
 let user = { userId: 'user_owner', credential: 'cookie' as 'cookie' | 'api-key' };
 let managed = false;
@@ -62,6 +81,9 @@ const endpoints = [
   ['post', '/pause', undefined, 'pause'],
   ['post', '/resume', undefined, 'resume'],
   ['post', '/disconnect', undefined, 'disconnect'],
+  ['post', '/sign-in', { url: 'https://example.test/' }, 'signIn'],
+  ['post', '/handoff/hand-back', { handoffId: 'h1' }, 'handBack'],
+  ['post', '/handoff/stop', { handoffId: 'h1' }, 'stop'],
 ] as const;
 
 beforeEach(() => {
@@ -85,12 +107,28 @@ describe.each(endpoints)('%s %s authority', (method, path, body, effect) => {
       const response = await call;
       if (caller === 'owner') {
         expect(response.status).toBe(200);
-        expect(service[effect]).toHaveBeenCalledOnce();
+        expect(spies[effect]).toHaveBeenCalledOnce();
       } else {
         expect(response.status).toBe(403);
         expect(response.body.code).toBe(caller === 'managed' ? 'local_only' : 'owner_only');
-        for (const spy of Object.values(service)) expect(spy).not.toHaveBeenCalled();
+        for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
       }
     }
   );
+});
+
+describe.each([
+  ['/sign-in', { url: 'https://example.test/' }],
+  ['/handoff/hand-back', { handoffId: 'h1' }],
+  ['/handoff/stop', { handoffId: 'h1' }],
+] as const)('POST %s takes a person', (path, body) => {
+  it('refuses an approval token, even from the owner', async () => {
+    const response = await request(server)
+      .post('/api/local-browser' + path)
+      .set('Host', 'localhost')
+      .set('X-DorkOS-Approval', 'anything')
+      .send(body);
+    expect(response.status).toBe(403);
+    for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
+  });
 });

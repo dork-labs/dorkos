@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import {
   LocalBrowserActionSchema,
+  LocalBrowserAskPersonResultSchema,
+  LocalBrowserAskPersonSchema,
   LocalBrowserObservationSchema,
   LocalBrowserStateSchema,
 } from '@dorkos/shared/local-browser';
@@ -45,15 +47,20 @@ async function answer<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Sharing is rechecked after every await before any answer can reach another chat. */
+/**
+ * Sharing is rechecked after every await before any answer can reach another chat.
+ * While a person has the browser, every call but the handoff itself is refused.
+ */
 function scopedAnswer<T>(
   service: LocalBrowserService,
   context: CapabilityHandlerContext,
-  run: () => Promise<T>
+  run: () => Promise<T>,
+  handingOver = false
 ): Promise<T> {
   requireSession(service, context);
   const allowed = async () => {
     await answer(() => service.requireProfileAccess(context.sessionId!));
+    if (!handingOver) await answer(() => service.handover.requireAgentMayUse(context.sessionId!));
     requireSession(service, context);
   };
   return (async () => {
@@ -166,6 +173,32 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
             return service.agentState();
           });
         },
+      }),
+      defineCapability({
+        id: 'local_browser.ask_person',
+        title: 'Hand the browser to the person',
+        description:
+          'Hand the shared browser to the person when the page needs something only a person may do: a password or sign-in, a human check, or a step you must not take. The browser pauses and the person sees which site needs them. Then end your turn and wait; a message tells you when they hand it back. Never type a password, never retry a wall yourself, and never use this to get past a refusal.',
+        tier: 'act',
+        area: null,
+        areaNote:
+          'Pauses the browser this chat already shares and asks the person to take over; it reads and changes no page.',
+        input: LocalBrowserAskPersonSchema,
+        output: LocalBrowserAskPersonResultSchema,
+        surfaces: {
+          mcp: {
+            toolName: 'local_browser_ask_person',
+            servers: ['in-session'],
+            annotations: { idempotentHint: true },
+          },
+        },
+        invoke: (_deps, input, context) =>
+          scopedAnswer(
+            service,
+            context,
+            () => service.handover.ask(context.sessionId!, input.reason),
+            true
+          ),
       }),
     ],
   };

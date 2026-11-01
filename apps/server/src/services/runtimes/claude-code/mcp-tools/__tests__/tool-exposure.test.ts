@@ -573,9 +573,12 @@ describe('in-session tool exposure', () => {
     // 136 -> 137 total, 124 -> 125 deferred: `running_chats` (DOR-3460).
     // 137 -> 140 total, 125 -> 128 deferred: the work queue's three tools (DOR-3462).
     // 140 -> 141 total, 128 -> 129 deferred: `set_up_room_files` (DOR-3468).
-    expect(tools).toHaveLength(141);
-    expect(deferred).toHaveLength(129);
+    // 141 -> 142 total, 129 -> 130 deferred: `local_browser_ask_person`
+    // (DOR-3218), reached only by an agent already using the shared page.
+    expect(tools).toHaveLength(142);
+    expect(deferred).toHaveLength(130);
     for (const name of [
+      'local_browser_ask_person',
       'local_browser_state',
       'local_browser_observe',
       'local_browser_screenshot',
