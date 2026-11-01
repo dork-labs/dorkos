@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): sidebar header, footer and phone Home share one edge, and every control is a real button (UI overhaul Phase 4 C)'
+  - 'fix(client): New menu renders its guarded list once, and the close-focus guard counts the responsive menu (UI overhaul Phase 4 C)'
 ---
 
 ### Changed
