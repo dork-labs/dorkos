@@ -20,6 +20,10 @@
  * `*` in a rule crosses folders, so a file is named exactly and a folder ends
  * in `/**`.
  *
+ * The paths themselves are the runtime-neutral list in
+ * `runtimes/shared/policy/protected-paths.ts`; this module only spells them as Claude
+ * Code deny rules (DOR-3594).
+ *
  * @module services/runtimes/claude-code/secret-files/secret-read-deny
  */
 import { realpathSync } from 'node:fs';
@@ -27,81 +31,49 @@ import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { DirectoryGrantError } from '@dorkos/shared/directory-grants';
 import { rulePath } from '../messaging/directory-grants.js';
+import {
+  ACCOUNT_FOLDER_SECRET_PATHS,
+  AGENT_FOLDER_SECRET_PATHS,
+  ANYWHERE_SECRET_PATHS,
+  DATA_FOLDER_SECRET_PATHS,
+  HOME_SECRET_PATHS,
+  protectedPathGlob,
+  type ProtectedPath,
+} from '../../shared/policy/protected-paths.js';
 
 /** The file-reading tools a secret-read rule names. */
 const READ_TOOLS = ['Read', 'Grep', 'Glob'] as const;
 
+/**
+ * The shared secret lists ({@link ProtectedPath}) in Claude Code's rule
+ * spelling, relative to their root. `*` in a rule crosses folders, so a file is
+ * named exactly and a folder ends in `/**`.
+ */
+const globs = (entries: readonly ProtectedPath[]): readonly string[] =>
+  entries.map(protectedPathGlob);
+
 /** DorkOS's own secrets, relative to its data folder. A trailing `/**` is a folder. */
-export const DATA_FOLDER_SECRETS = [
-  'host.key',
-  // The config (cloud and tunnel tokens among it), its backups beside it
-  // (`config.json.bak`, `config-<time>.json.bak`), and full database and
-  // settings snapshots.
-  'config.json*',
-  'config-*.json.bak',
-  'backups/**',
-  'mcp-local-token',
-  'better-auth-secret',
-  // The key the CLI calls this server with.
-  'api-key',
-  // The database: sign-in sessions and connected-app tokens, with its -wal/-shm,
-  // under its current and its old name (`dorkos.db`).
-  'dork*.db*',
-  // Chat bot tokens, stored as written (`relay/adapter-config.ts`).
-  'relay/adapters.json',
-  // The web-push private key.
-  'push/**',
-  'extension-secrets/**',
-  // Secrets moved out of agent folders (DOR-3292).
-  'secrets/**',
-  // The agent browser's signed-in state, and its profiles' cookies.
-  'browser/storage-state.json',
-  'browser/profile/**',
-  'browser-profiles/**',
-  'local-browser/saved-logins/**',
-] as const;
+export const DATA_FOLDER_SECRETS = globs(DATA_FOLDER_SECRET_PATHS);
 
 /** The sign-in files inside every Claude Code account folder, backups included. */
-export const ACCOUNT_FOLDER_SECRETS = ['.credentials*', '.claude.json*', 'backups/**'] as const;
+export const ACCOUNT_FOLDER_SECRETS = globs(ACCOUNT_FOLDER_SECRET_PATHS);
 
 /**
  * Sign-ins named wherever they sit, since `*` crosses folders: any Claude
  * account (an odd or added-later folder too), and the Codex and OpenCode
  * sign-ins in their default and moved homes.
  */
-export const ANYWHERE_SECRETS = [
-  '//**/.credentials*',
-  '//**/.claude.json*',
-  '//**/.codex/auth.json',
-  '//**/opencode/auth.json',
-] as const;
+export const ANYWHERE_SECRETS = globs(ANYWHERE_SECRET_PATHS).map((glob) => `//**/${glob}`);
 
 /**
  * The person's own keys and tokens, in the home-folder spelling Claude Code
  * expands itself. Only well-known spots that hold a credential.
  */
-export const HOME_SECRETS = [
-  '.ssh/**',
-  '.aws/**',
-  '.config/gh/hosts.yml',
-  '.netrc',
-  '.npmrc',
-  '.docker/config.json',
-  '.config/gcloud/**',
-  // The default account's sign-in, whatever account this launch uses.
-  '.claude.json*',
-  '.claude/.credentials*',
-  '.claude/backups/**',
-  // The default data folder's secrets, whatever data folder this launch uses.
-  ...DATA_FOLDER_SECRETS.map((entry) => `.dork/${entry}`),
-] as const;
+export const HOME_SECRETS = globs(HOME_SECRET_PATHS);
 
 /**
- * Files in the agent's own folder whose names say they hold a secret: the
- * secret-files scan's list (`core/secret-file-scan/scan-folder.ts`), at any
- * depth, wherever a rule can spell it (DOR-3292). Templates stay readable, so
- * `.env.*` is the usual names rather than a wildcard (`.env.example` is not a
- * secret), and an SSH key is named whole so its `.pub` half still reads.
+ * Files in the agent's own folder whose names say they hold a secret, at any
+ * depth, wherever a rule can spell it (DOR-3292).
  *
  * What this holds, on the bundled CLI at every level, Bypass included: the
  * `Read` tool, and a shell command that names the file (`cat .env`, a link
@@ -109,42 +81,7 @@ export const HOME_SECRETS = [
  * `rg -uu`) and any program that opens the file itself (`python3 -c`, which
  * Bypass runs). Only moving the file out of the folder stops those.
  */
-export const AGENT_FOLDER_SECRETS = [
-  '.env',
-  '.env.local',
-  '.env.*.local',
-  '.env.development',
-  '.env.dev',
-  '.env.production',
-  '.env.prod',
-  '.env.staging',
-  '.env.test',
-  '*.pem',
-  '*.key',
-  '*.p12',
-  '*.pfx',
-  '*.jks',
-  '*.keystore',
-  '*.tfvars',
-  '*.tfstate',
-  'id_rsa',
-  'id_ed25519',
-  'id_ecdsa',
-  'id_dsa',
-  '.netrc',
-  '.npmrc',
-  '.pypirc',
-  '.envrc',
-  '.dev.vars',
-  '.git-credentials',
-  '.pgpass',
-  'application_default_credentials.json',
-  'credentials',
-  'credentials.json',
-  '*service-account*.json',
-  '.docker/config.json',
-  '.kube/config',
-].map((name) => `**/${name}`);
+export const AGENT_FOLDER_SECRETS = globs(AGENT_FOLDER_SECRET_PATHS).map((glob) => `**/${glob}`);
 
 /** Where this launch's secrets live. */
 export interface SecretFolders {
