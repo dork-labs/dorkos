@@ -429,7 +429,7 @@ describe('the chain matrix', () => {
   }
 
   it('really varies: the cells it compares do not all answer alike', async () => {
-    // A snapshot of 500 for everything would match in every cell. Pin a few
+    // A snapshot of one status for everything would match in every cell. Pin a few
     // cells that must differ from each other.
     const loopback = { host: HOSTS.loopback };
     state.login = false;
@@ -448,7 +448,7 @@ describe('the chain matrix', () => {
           headers: { ...loopback, origin: ORIGINS.foreign },
         })
       ).status
-    ).toBe(500);
+    ).toBe(403);
     state.login = true;
     expect(
       (await answer({ method: 'GET', path: '/api/chain-probe', headers: loopback })).status

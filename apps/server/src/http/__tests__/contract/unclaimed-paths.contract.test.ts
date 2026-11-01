@@ -103,9 +103,13 @@ contractSuite(
       path: '/team',
       headers: { origin: 'https://evil.example' },
       expect: {
-        status: 500,
+        status: 403,
         headers: { 'access-control-allow-origin': null, 'content-type': /^application\/json\b/ },
-        body: { error: 'Internal Server Error', code: 'INTERNAL_ERROR' },
+        body: {
+          error:
+            'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+          code: 'ORIGIN_NOT_ALLOWED',
+        },
       },
     },
     {

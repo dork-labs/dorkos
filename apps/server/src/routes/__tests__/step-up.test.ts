@@ -263,18 +263,23 @@ describe('POST /api/step-up/:id/password', () => {
 
 // Security Must 2: the password path needs this server's own page, port included.
 describe('who may confirm', () => {
+  // Each case names who refuses it: CORS stops a foreign origin before the route runs
+  // (`ORIGIN_NOT_ALLOWED`); the route itself refuses everything else (`not-a-person`).
   const REFUSED: Array<
     [
       string,
+      'ORIGIN_NOT_ALLOWED' | 'not-a-person',
       (r: ReturnType<typeof request>, id: string) => ReturnType<ReturnType<typeof request>['post']>,
     ]
   > = [
     [
       'no Origin header',
+      'not-a-person',
       (r, id) => r.post(`/api/step-up/${id}/password`).send({ password: PASSWORD }),
     ],
     [
       'another port’s page on this computer',
+      'ORIGIN_NOT_ALLOWED',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -283,6 +288,7 @@ describe('who may confirm', () => {
     ],
     [
       'another site',
+      'ORIGIN_NOT_ALLOWED',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -291,6 +297,7 @@ describe('who may confirm', () => {
     ],
     [
       'a cross-site fetch carrying our Origin',
+      'not-a-person',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -300,6 +307,7 @@ describe('who may confirm', () => {
     ],
     [
       'an agent',
+      'not-a-person',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -309,6 +317,7 @@ describe('who may confirm', () => {
     ],
     [
       'a program with a key',
+      'not-a-person',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -318,6 +327,7 @@ describe('who may confirm', () => {
     ],
     [
       'a program with an API key header',
+      'not-a-person',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -327,6 +337,7 @@ describe('who may confirm', () => {
     ],
     [
       'a program with a proxy credential',
+      'not-a-person',
       (r, id) =>
         r
           .post(`/api/step-up/${id}/password`)
@@ -336,13 +347,12 @@ describe('who may confirm', () => {
     ],
   ];
 
-  // A foreign origin may already be stopped by CORS before the route; either way nothing runs
-  // and no password is checked.
-  it.each(REFUSED)('refuses %s, and writes nothing', async (_label, send) => {
+  // Whoever refuses, nothing runs and no password is checked.
+  it.each(REFUSED)('refuses %s, and writes nothing', async (_label, code, send) => {
     const id = await hold();
     const res = await send(request(app({ user: SESSION_A })), id);
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    if (res.status === 403) expect(res.body.code).toBe('not-a-person');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe(code);
     expect(commit).not.toHaveBeenCalled();
     expect(deps.checkPassword).not.toHaveBeenCalled();
   });

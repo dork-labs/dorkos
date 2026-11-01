@@ -39,7 +39,7 @@ const JSON_TYPE = { 'content-type': /^application\/json\b/ };
 const NOT_FOUND = { error: 'Not found', code: 'API_NOT_FOUND' };
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
-const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 /** The global stream's ceiling on concurrent readers (`SSE.MAX_TOTAL_CLIENTS`). */
@@ -239,7 +239,7 @@ contractSuite('the global event stream, login off, the refusals', [
     name: 'GET /api/events from a wrong browser origin is refused by CORS',
     path: '/api/events',
     headers: { origin: 'https://evil.example' },
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 403, schema: CORS_REFUSED },
   },
 ]);
 
