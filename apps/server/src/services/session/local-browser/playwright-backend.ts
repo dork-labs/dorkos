@@ -87,6 +87,12 @@ export async function acquireLocalChromium(
     );
   }
 }
+/** The managed Chromium's path, downloading it first if needed. The sign-in window runs it plainly. */
+export async function managedChromiumPath(): Promise<string> {
+  await acquireLocalChromium();
+  return chromium.executablePath();
+}
+
 export const productionBackend: LocalBrowserBackend = {
   async launch(storagePath, signal, onPreparation) {
     await acquireLocalChromium(signal, onPreparation);

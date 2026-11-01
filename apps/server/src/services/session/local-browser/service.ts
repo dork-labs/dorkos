@@ -27,6 +27,8 @@ import {
   type LocalBrowserHostFacts,
 } from './presentation.js';
 import { productionBackend, type LocalBrowserBackend } from './playwright-backend.js';
+import { BrowserHandover } from './handover.js';
+import { SignInWindow } from './sign-in-window.js';
 export { LocalBrowserError } from './errors.js';
 import type {
   LocalBrowserAction,
@@ -75,6 +77,8 @@ export class LocalBrowserService {
   private lifecycle = 0;
   private readonly preparation = new BrowserPreparation();
   private readonly metadata = new LocalBrowserTabMetadata();
+  /** Handing the browser to the person and back, and the plain sign-in window. */
+  readonly handover = new BrowserHandover(this, new SignInWindow(), () => this.dataDirectory);
 
   constructor(
     private readonly dataDirectory: string,
@@ -209,6 +213,11 @@ export class LocalBrowserService {
         'not_shared',
         'Open this chat’s browser to share it with your agent.'
       );
+  }
+
+  /** The profile the browser opened last, or null for the default one. */
+  currentProfileId(): string | null {
+    return this.profileId;
   }
 
   /** Set once at startup. Until then, no agent can use a named profile. */
