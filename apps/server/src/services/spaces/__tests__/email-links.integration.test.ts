@@ -1118,12 +1118,12 @@ describe("an invitation's sign-up (DOR-2730)", () => {
     const finish = lastMailTo('invite-mail-new@example.com')!;
     expect(finish.subject).toBe('Finish joining Email links');
     expect(finish.page).toBe('/reset-password');
-    expect(finish.text).toContain('Set a password to finish joining Email links.');
+    expect(finish.text).toContain('Set a password to finish joining “Email links” on localhost.');
     expect(finish.text).toContain('The link expires in 1 hour.');
     const notice = lastMailTo('invite-mail-taken@example.com')!;
     expect(notice.subject).toBe('Sign in to Email links');
     expect(notice.text).toContain(
-      'Someone tried to join Email links with this address, and you already have an account.'
+      'Someone tried to join “Email links” on localhost with this address, and you already have an account.'
     );
     expect(notice.text).toContain(`Sign in: ${PUBLIC_URL}/`);
     // No token anywhere: no link page, no fragment, and nothing minted for the account.
