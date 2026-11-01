@@ -993,6 +993,8 @@ describe('DorkOS app origins (DOR-3218)', () => {
     'http://localhost:4242',
     'http://127.0.0.1:4242',
     'http://[::1]:4242',
+    'http://0.0.0.0:4242',
+    'http://fixture.local:4242',
     'http://192.168.1.20:4242',
     'https://fixture.ngrok.app',
   ];
@@ -1005,6 +1007,110 @@ describe('DorkOS app origins (DOR-3218)', () => {
       service.action({ kind: 'navigate', url, revision: observed.revision })
     ).rejects.toMatchObject(refused);
     expect(page.goto).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it.each(origins())('refuses a redirect to %s and gives the agent nothing', async (url) => {
+    const { service, page, context, navigate, change } = await create(origins);
+    const cookies = vi.fn(async () => []);
+    Object.assign(context, { cookies, storageState: cookies });
+    await selectOwned(service);
+    const observed = await service.observe();
+    vi.mocked(page.evaluateHandle).mockClear();
+    vi.mocked(page.goto).mockImplementationOnce(async () => {
+      change('- text "PAGE-SECRET"');
+      navigate(`${url}/connections?token=URL-SECRET`);
+      return null;
+    });
+    const error = await service
+      .action({
+        kind: 'navigate',
+        url: 'http://fixture.test/redirect',
+        revision: observed.revision,
+      })
+      .catch((caught: unknown) => caught as Error);
+    expect(error).toMatchObject(refused);
+    expect(JSON.stringify({ message: (error as Error).message })).not.toMatch(/SECRET/);
+    expect((await service.state()).paused).toBe(true);
+    await expect(service.observe()).rejects.toMatchObject(refused);
+    await expect(service.screenshot()).rejects.toMatchObject(refused);
+    await expect(service.agentState()).rejects.toMatchObject(refused);
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    expect(page.screenshot).not.toHaveBeenCalled();
+    expect(cookies).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it.each(['file:///etc/hosts', 'view-source:http://localhost:4242/'])(
+    'refuses an agent navigation to %s before dispatch',
+    async (url) => {
+      const { service, page } = await create(origins);
+      await selectOwned(service);
+      const observed = await service.observe();
+      await expect(
+        service.action({ kind: 'navigate', url, revision: observed.revision })
+      ).rejects.toMatchObject({ code: 'unsupported_address' });
+      expect(page.goto).not.toHaveBeenCalled();
+      await service.disconnect();
+    }
+  );
+
+  it.each([
+    ['view-source:http://localhost:4242/connections', 'dorkos_origin'],
+    ['view-source:https://fixture.ngrok.app/', 'dorkos_origin'],
+    ['view-source:https://cloud.dorkos.ai/', 'cloud_origin'],
+    ['file:///Users/someone/.dork/page.html', 'unsupported_address'],
+  ])('never reads a tab already showing %s', async (url, code) => {
+    const { service, navigate, page } = await create(origins);
+    await selectOwned(service);
+    navigate(url);
+    vi.mocked(page.evaluateHandle).mockClear();
+    await expect(service.observe()).rejects.toMatchObject({ code });
+    await expect(service.screenshot()).rejects.toMatchObject({ code });
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    expect(page.screenshot).not.toHaveBeenCalled();
+    expect((await service.state()).paused).toBe(true);
+    await service.disconnect();
+  });
+
+  it.each(['frameattached', 'framedetached', 'framenavigated'])(
+    'fails a screenshot when a sub-frame event %s lands during it',
+    async (event) => {
+      const { service, page, events, pixels } = await create(origins);
+      await selectOwned(service);
+      vi.mocked(page.screenshot).mockImplementationOnce(async () => {
+        events.emit(event, {});
+        return Buffer.from(pixels);
+      });
+      await expect(service.screenshot()).rejects.toMatchObject({ code: 'stale_page' });
+      await service.disconnect();
+    }
+  );
+
+  it('fails an observation when a frame came and went during it', async () => {
+    const { service, locator, events } = await create(origins);
+    await selectOwned(service);
+    locator.ariaSnapshot.mockImplementationOnce(async () => {
+      events.emit('frameattached', {});
+      events.emit('framedetached', {});
+      return '- button "Save"';
+    });
+    await expect(service.observe()).rejects.toMatchObject({ code: 'stale_page' });
+    await service.disconnect();
+  });
+
+  it('lets an action through when a frame changes between reading and acting', async () => {
+    const { service, click, events } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    events.emit('frameattached', {});
+    await service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: observed.revision,
+    });
+    expect(click).toHaveBeenCalled();
     await service.disconnect();
   });
 

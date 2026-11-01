@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(browser): refuse agent tools on DorkOS app pages'
+  - 'fix(browser): refuse DorkOS under every name a person set or a browser resolves'
 ---
 
 ### Security

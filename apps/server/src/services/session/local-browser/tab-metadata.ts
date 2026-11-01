@@ -13,12 +13,19 @@ export class LocalBrowserTabMetadata {
       active(): boolean;
       selected(): boolean;
       invalidate(): void;
+      framesChanged(): void;
       closed(): void;
     }
   ): void {
     if (this.tracked.has(page)) return;
     this.tracked.add(page);
+    const framesChanged = () => {
+      if (owner.active() && owner.selected()) owner.framesChanged();
+    };
+    page.on('frameattached', framesChanged);
+    page.on('framedetached', framesChanged);
     page.on('framenavigated', (frame) => {
+      framesChanged();
       if (frame !== page.mainFrame() || !owner.active()) return;
       this.refresh(page, { newDocument: true });
       if (owner.selected()) owner.invalidate();

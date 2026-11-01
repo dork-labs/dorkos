@@ -4,14 +4,9 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { Browser, BrowserContext, Page, JSHandle } from 'playwright-core';
 import { localBrowserAuditWriter, type LocalBrowserAuditWriter } from './action-audit.js';
-import {
-  LocalBrowserError,
-  assertLocalBrowserUrl,
-  cloudOriginRefusal,
-  appOriginRefusal,
-} from './errors.js';
-import { isLocalBrowserAppUrl, localBrowserAppOrigins } from './app-origins.js';
-import { isCloudOriginUrl, type CloudOriginEntry } from '@dorkos/shared/cloud-origin';
+import { LocalBrowserError, assertLocalBrowserUrl, protectedPageRefusal } from './errors.js';
+import { localBrowserAppOrigins } from './app-origins.js';
+import type { CloudOriginEntry } from '@dorkos/shared/cloud-origin';
 import { cloudOriginsForThisServer } from '../../core/cloud/cloud-api-origin.js';
 import {
   BrowserActionFlight,
@@ -63,6 +58,9 @@ export class LocalBrowserService {
   private tabs = new Map<string, Page>();
   private selectedTabId: string | null = null;
   private revision = 0;
+  // A frame that came and went during a read fails that read, but a page that churns
+  // frames (ads) must not stale every action, so this is separate from `revision`.
+  private frameChanges = 0;
   private observation?: LocalBrowserObservation;
   private observedNodes?: JSHandle<ObservedPageNodes>;
   private readonly actions = new BrowserActionFlight();
@@ -236,7 +234,7 @@ export class LocalBrowserService {
     this.refuseProtectedPage(page);
     this.invalidate();
     const revision = this.revision;
-    if (revision !== this.revision) throw this.stale();
+    const frames = this.frameChanges;
     // One remote handle records node identity at observation time, including open shadow roots.
     // The function is fixed internal bookkeeping, never supplied by an agent or HTTP caller.
     let expired = false;
@@ -253,7 +251,7 @@ export class LocalBrowserService {
     try {
       if (revision !== this.revision) throw this.stale();
       const snapshot = await boundedPageSnapshot(page, ACTION_TIMEOUT_MS);
-      if (revision !== this.revision) throw this.stale();
+      if (revision !== this.revision || frames !== this.frameChanges) throw this.stale();
       this.refuseProtectedPage(page);
       this.observedNodes = nodes;
       this.observation = { revision, snapshot, url: page.url(), tabId: this.selectedTabId! };
@@ -270,10 +268,11 @@ export class LocalBrowserService {
     this.refuseProtectedPage(page);
     const revision = this.revision;
     const tabId = this.selectedTabId!;
-    if (revision !== this.revision) throw this.stale();
+    const frames = this.frameChanges;
     const bytes = await boundedPageScreenshot(page, ACTION_TIMEOUT_MS);
     this.refuseProtectedPage(page);
-    if (revision !== this.revision || tabId !== this.selectedTabId) throw this.stale();
+    if (revision !== this.revision || tabId !== this.selectedTabId || frames !== this.frameChanges)
+      throw this.stale();
     return { data: bytes.toString('base64'), mimeType: 'image/png', revision, tabId };
   }
 
@@ -459,6 +458,7 @@ export class LocalBrowserService {
       active: () => [...this.tabs.values()].includes(page),
       selected: () => this.tabs.get(this.selectedTabId ?? '') === page,
       invalidate: () => this.invalidate(),
+      framesChanged: () => void this.frameChanges++,
       closed: () => {
         this.selectedTabId = null;
         this.invalidate();
@@ -507,15 +507,12 @@ export class LocalBrowserService {
    * person resumes it, and the agent is refused.
    */
   private refuseProtectedPage(page: Page): void {
-    const origins = this.cloudOrigins();
     const urls = [page.url(), ...page.frames().map((frame) => frame.url())];
-    const cloud = urls.some((url) => isCloudOriginUrl(url, origins));
-    const appOrigins = this.appOrigins();
-    const app = urls.some((url) => isLocalBrowserAppUrl(url, appOrigins));
-    if (!cloud && !app) return;
+    const refusal = protectedPageRefusal(urls, this.cloudOrigins(), this.appOrigins());
+    if (!refusal) return;
     this.paused = true;
     this.invalidate();
-    throw cloud ? cloudOriginRefusal() : appOriginRefusal();
+    throw refusal;
   }
   private stale(): LocalBrowserError {
     return new LocalBrowserError('stale_page', 'The page changed. Read it again before acting.');
