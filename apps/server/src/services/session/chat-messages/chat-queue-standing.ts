@@ -10,6 +10,7 @@
 import type { ChatMessageRow } from '@dorkos/db';
 import type { ChatMessageStatus } from '@dorkos/shared/chat-messages';
 import { getMessageQueueStore } from '../message-queue-store.js';
+import { emitQueueUpdate } from '../queue-stream-events.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { AGENT_LAUNCH_CAP_SETTING, agentLaunchMaxLive } from '../launch/launch-session.js';
 import type { ChatMessageStore } from './chat-message-store.js';
@@ -23,7 +24,8 @@ import { TURN_NO_ANSWER, type TurnRefusal } from '../launch/turn-not-started.js'
  */
 export function chatLaunchCapMessage(): string {
   return (
-    `Not sent: ${agentLaunchMaxLive()} agent chats are already running on this computer. ` +
+    `Not sent: ${agentLaunchMaxLive()} agent chats are already running on this computer, ` +
+    'and this one would be new. ' +
     'Nothing was kept. Send the same message again in a few minutes. ' +
     `A person can raise the limit with the ${AGENT_LAUNCH_CAP_SETTING} setting.`
   );
@@ -64,6 +66,23 @@ export function queueStanding(chatId: string, queueMessageId: string): QueueStan
   const index = rows.findIndex((row) => row.id === queueMessageId);
   if (index < 0) return undefined;
   return { position: index + 1, ahead: index };
+}
+
+/**
+ * Move a queue row to the head of its chat's queue.
+ *
+ * @param chatId - The receiving chat.
+ * @param queueMessageId - The queue row.
+ * @returns Its new position.
+ */
+export function moveToHead(chatId: string, queueMessageId: string): number {
+  const queue = getMessageQueueStore();
+  const head = queue?.list(queueKeyOf(chatId))[0];
+  if (queue && head && head.id !== queueMessageId) {
+    queue.move(queueMessageId, { before: head.id });
+    emitQueueUpdate(chatId);
+  }
+  return 1;
 }
 
 /**

@@ -266,6 +266,7 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     emitActivity: emitChatActivity,
   });
   setChatMessageService(service);
+  service.startHeldRetries();
   wireChatReportBack(service, deps.store);
   setQueuedChatCeilingResolver((messageId) => service.ceilingForQueuedMessage(messageId));
   // A person reads a row another chat sent as its senders and their words,

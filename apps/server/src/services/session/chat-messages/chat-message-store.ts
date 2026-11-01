@@ -19,6 +19,7 @@ import {
   desc,
   eq,
   inArray,
+  isNull,
   or,
   type ChatMessageRow,
   type Db,
@@ -177,6 +178,16 @@ export class ChatMessageStore {
       .select()
       .from(chatMessages)
       .where(eq(chatMessages.queueMessageId, queueMessageId))
+      .orderBy(asc(chatMessages.createdAt))
+      .all();
+  }
+
+  /** The messages waiting for a launch slot, oldest first (`chat-cap-hold.ts`). */
+  listHeldForSlot(): ChatMessageRow[] {
+    return this.db
+      .select()
+      .from(chatMessages)
+      .where(and(eq(chatMessages.status, 'queued'), isNull(chatMessages.queueMessageId)))
       .orderBy(asc(chatMessages.createdAt))
       .all();
   }

@@ -76,6 +76,37 @@ export interface ChatTargetDeps {
 }
 
 /**
+ * The chat message a send answers: the one named, when it was sent to the
+ * calling chat by the target; else the newest unanswered one the target sent
+ * the calling chat.
+ *
+ * @param store - The store.
+ * @param caller - The calling chat.
+ * @param targetSessionId - The chat it is sending to, when one exists.
+ * @param replyTo - The message named, when one was.
+ * @throws ChatMessageError when the named message was not sent to this chat.
+ */
+export function replyTargetOf(
+  store: ChatMessageStore,
+  caller: ChatCaller,
+  targetSessionId: string | null,
+  replyTo: string | undefined
+): string | null {
+  if (replyTo !== undefined) {
+    const row = store.get(replyTo);
+    if (!row || row.toSessionId !== caller.sessionId) {
+      throw new ChatMessageError(
+        'NOT_FOUND',
+        'replyTo must be the id of a message another chat sent this one.'
+      );
+    }
+    return row.id;
+  }
+  if (targetSessionId === null) return null;
+  return store.latestUnanswered(targetSessionId, caller.sessionId)?.id ?? null;
+}
+
+/**
  * Where a send is going, or the refusal that says why it cannot go.
  *
  * @param deps - What it reads.
