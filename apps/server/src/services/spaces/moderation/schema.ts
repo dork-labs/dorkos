@@ -363,3 +363,81 @@ export const reports = pgTable(
     }),
   ]
 );
+
+/**
+ * Reports of a member rather than of one message (0050): one open report per reporter and person.
+ * A moderator resolves one by muting or banning the person, or by dismissing it. If this table
+ * ever enters an export, the person a report is about never learns who filed it.
+ */
+export const memberReports = pgTable(
+  'member_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    subjectMemberId: uuid('subject_member_id').notNull(),
+    reporterMemberId: uuid('reporter_member_id'),
+    reason: text('reason').notNull(),
+    note: text('note'),
+    status: text('status').notNull().default('open'),
+    action: text('action'),
+    resolverMemberId: uuid('resolver_member_id'),
+    /** `imported` for a report an import restored from an owner export. */
+    origin: text('origin').notNull().default('native'),
+    createdAt: time('created_at'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      'member_reports_reason_check',
+      sql`${table.reason} IN ('spam','harassment','off_topic','illegal','other')`
+    ),
+    check(
+      'member_reports_note_check',
+      sql`${table.note} IS NULL OR char_length(${table.note}) BETWEEN 1 AND 1000`
+    ),
+    check('member_reports_status_check', sql`${table.status} IN ('open','actioned','dismissed')`),
+    check(
+      'member_reports_action_check',
+      sql`${table.action} IS NULL OR ${table.action} IN ('mute','ban')`
+    ),
+    check('member_reports_origin_check', sql`${table.origin} IN ('native','imported')`),
+    check('member_reports_not_self', sql`${table.reporterMemberId} <> ${table.subjectMemberId}`),
+    check(
+      'member_reports_reporter_shape',
+      sql`${table.reporterMemberId} IS NOT NULL OR ${table.origin} = 'imported'`
+    ),
+    check(
+      'member_reports_status_shape',
+      sql`(${table.status} = 'open' AND ${table.resolvedAt} IS NULL AND ${table.action} IS NULL AND ${table.resolverMemberId} IS NULL) OR (${table.status} = 'actioned' AND ${table.resolvedAt} IS NOT NULL AND ${table.action} IS NOT NULL) OR (${table.status} = 'dismissed' AND ${table.resolvedAt} IS NOT NULL AND ${table.action} IS NULL)`
+    ),
+    uniqueIndex('member_reports_community_id_unique').on(table.communityId, table.id),
+    uniqueIndex('member_reports_open_once')
+      .on(table.subjectMemberId, table.reporterMemberId)
+      .where(sql`${table.status} = 'open' AND ${table.reporterMemberId} IS NOT NULL`),
+    index('member_reports_queue_idx').on(table.communityId, table.status, table.createdAt),
+    index('member_reports_subject_idx').on(table.subjectMemberId),
+    index('member_reports_reporter_idx')
+      .on(table.reporterMemberId)
+      .where(sql`${table.reporterMemberId} IS NOT NULL`),
+    index('member_reports_resolver_idx')
+      .on(table.resolverMemberId)
+      .where(sql`${table.resolverMemberId} IS NOT NULL`),
+    foreignKey({
+      name: 'member_reports_subject_tenant_fk',
+      columns: [table.communityId, table.subjectMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'member_reports_reporter_tenant_fk',
+      columns: [table.communityId, table.reporterMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+    foreignKey({
+      name: 'member_reports_resolver_tenant_fk',
+      columns: [table.communityId, table.resolverMemberId],
+      foreignColumns: [members.communityId, members.id],
+    }),
+  ]
+);
