@@ -111,13 +111,18 @@ export function InboxBellPill({
         <>
           {/* Below `lg`, the corner count: out of flow, so the number never
             widens the control, and solid in the pill's own ink. Capped at 9+:
-            the size of a long queue is on the cards, not on a header chip. */}
+            the size of a long queue is on the cards, not on a header chip.
+            On a phone it sits INSIDE the 44px square, not over its corner:
+            the square fills the 44px row, so the shared corner offset put
+            the top of the number above the bar, where the viewport's edge
+            cut it off (QA, 0.129.0). From `md` the control is 24px tall in a
+            36px row and the corner offset has room to stand proud. */}
           <CountPill
             data-slot="inbox-bell-count"
             count={count}
             placement="corner"
             tone={tone === 'waiting' ? 'warning' : 'neutral'}
-            className="lg:hidden"
+            className="max-md:top-0.5 max-md:right-0.5 lg:hidden"
           />
           {/* From `lg`, the number sits inline beside its word, where the row
             has room for it. */}

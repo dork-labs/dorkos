@@ -790,14 +790,19 @@ export function AppShell() {
                             // air, and the bell showing a number was enough to
                             // push the bar past its own box (DOR-2524).
                             //
-                            // `basis-32` is the width a phone's identity keeps
-                            // before the actions wrap: at 390px the bar has 374px
-                            // inside its padding, the four actions take 188 and the
-                            // space switcher about 34, so 8rem stays on one row with
-                            // the inbox bell showing. A bar with a tab strip needs
-                            // the row to itself beside the switcher, or its tabs and
-                            // chips paint over the actions, so there they wrap.
-                            className="flex h-11 min-w-0 grow basis-32 items-center gap-1 has-[[data-slot=bar-tab-strip]]:basis-[calc(100%-2.5rem)] md:h-auto md:flex-1 md:self-stretch md:has-[[data-slot=bar-tab-strip]]:basis-0 lg:gap-2"
+                            // `basis-24` is the width a phone's identity keeps
+                            // before the actions wrap. The four actions take 188,
+                            // the space switcher about 34 and the row's gaps 12,
+                            // so at 375px (359 inside the padding) 8rem did NOT
+                            // fit and a chat's actions fell to a second row; 6rem
+                            // stays on one row from 375 up with the bell showing.
+                            // It is a floor, not a width: `grow` hands the
+                            // identity everything left over (a chat's two-line
+                            // identity gets about 125px at 375, 140 at 390). A
+                            // bar with a tab strip needs the row to itself beside
+                            // the switcher, or its tabs and chips paint over the
+                            // actions, so there they wrap.
+                            className="flex h-11 min-w-0 grow basis-24 items-center gap-1 has-[[data-slot=bar-tab-strip]]:basis-[calc(100%-2.5rem)] md:h-auto md:flex-1 md:self-stretch md:has-[[data-slot=bar-tab-strip]]:basis-0 lg:gap-2"
                           >
                             <OneBarProvider value={oneBarState}>
                               <routeHeader.Header />

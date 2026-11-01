@@ -171,6 +171,47 @@ describe('SessionHeader', () => {
     );
   });
 
+  // --- Phone: two lines, no chevron (chat spec §4, S12) ---
+  // jsdom evaluates no container queries, so these pin the rules; the e2e spec
+  // `chat-mock.spec.ts` measures the rendered widths at 390px.
+
+  it('stacks name over title below the `@md/bar` width, each on its own line', () => {
+    renderBar({ agentName: 'dorkbot', agentVisual: VISUAL, sessionTitle: 'A very long title' });
+    const name = screen.getByTestId('session-agent-name');
+    const title = screen.getByTestId('session-title');
+    const lines = name.parentElement;
+    expect(lines).toBe(title.parentElement);
+    expect(lines).toHaveClass('@max-md/bar:flex-col', '@max-md/bar:items-stretch');
+    expect(lines).toHaveClass('@max-md/bar:text-2xs');
+    expect(name).toHaveClass('@max-md/bar:text-xs', 'font-medium', 'truncate');
+    expect(title).toHaveClass('text-muted-foreground', 'truncate');
+  });
+
+  it('drops the chevron on a phone and draws it at full muted ink on a desktop (B4)', () => {
+    renderBar({ agentName: 'dorkbot', agentVisual: VISUAL, sessionTitle: 'A title' });
+    const chevron = screen
+      .getByTestId('session-identity')
+      .querySelector('svg.lucide-chevron-right') as SVGElement;
+    expect(chevron).toHaveClass('@max-md/bar:hidden', 'text-muted-foreground');
+    expect(chevron.getAttribute('class')).not.toMatch(/text-muted-foreground\//);
+  });
+
+  it('draws the face at 28px on a phone and 18px on a desktop', () => {
+    renderBar({ agentName: 'dorkbot', agentVisual: VISUAL, sessionTitle: 'A title' });
+    const face = screen.getByText(VISUAL.emoji).parentElement as HTMLElement;
+    expect(face).toHaveClass('size-[18px]', '@max-md/bar:size-7');
+  });
+
+  it('puts the behind-DM line where the title goes, at the title’s phone size', () => {
+    render(
+      <BarHarness agentName="dorkbot" agentVisual={VISUAL} sessionTitle="Hidden">
+        <SessionHeader behindDm={<span data-testid="behind">behind your DM</span>} />
+      </BarHarness>
+    );
+    expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
+    expect(screen.getByTestId('behind').parentElement).toHaveClass('@max-md/bar:text-2xs');
+  });
+
   it('caps the origin chip and lets it shrink, so it cannot shove the identity', () => {
     renderBar({ agentName: 'dorkbot', agentVisual: VISUAL, origin: 'task' });
     const chip = screen.getByTestId('session-origin-chip');

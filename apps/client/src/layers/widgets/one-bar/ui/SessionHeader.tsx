@@ -97,44 +97,64 @@ export function SessionHeader({
   return (
     <OneBar
       identity={
-        <div className="flex min-w-0 shrink items-center gap-1.5 text-sm">
+        <div
+          className="flex min-w-0 shrink items-center gap-1.5 text-sm @max-md/bar:gap-2"
+          data-testid="session-identity"
+        >
           {heldVisual ? (
             // 18px is the same glyph slot the sidebar's session rows use, so the
             // face in the bar and the face in the list are the same size. No
             // badge: the Bot mark disambiguates a column of identities, and this
-            // is one identity in a 36px row.
-            <AgentAvatar color={heldVisual.color} emoji={heldVisual.emoji} size="xs" badge={null} />
+            // is one identity in a 36px row. On a phone the face is 28px
+            // (`sm`'s own size and radius), centred on both lines beside it.
+            <AgentAvatar
+              color={heldVisual.color}
+              emoji={heldVisual.emoji}
+              size="xs"
+              badge={null}
+              className="@max-md/bar:size-7 @max-md/bar:rounded-lg @max-md/bar:text-sm"
+            />
           ) : (
             <Folder
-              className="text-muted-foreground size-4 shrink-0"
+              className="text-muted-foreground size-4 shrink-0 @max-md/bar:size-(--size-icon-md)"
               data-testid="session-directory-mark"
               aria-hidden
             />
           )}
-          {/* Shrink weights, not shrink-0: which agent you are talking to is the
-              fact worth keeping, so the name yields last — but it still yields,
-              and it still stops at a floor wide enough to read a few letters
-              plus the ellipsis. */}
-          <span
-            className="min-w-0 shrink truncate font-medium @sm/bar:min-w-[3.5rem]"
-            data-testid="session-agent-name"
-            title={name}
-          >
-            {name}
-          </span>
-          <ChevronRight
-            className="text-muted-foreground/50 size-(--size-icon-xs) shrink-0"
-            aria-hidden
-          />
-          {behindDm ?? (
+          {/* **Two lines on a phone, one on a desktop (chat spec §4, S12).**
+              Below `@md/bar` the row has about 140px for the whole identity,
+              and `name › title` on one line spent it on the name and left the
+              title a single glyph ("qa-tasks › C"). Stacked, each line gets the
+              full width and truncates on its own: the name over the title, no
+              chevron, 38px inside the 44px row — iOS's own nav-bar pattern.
+              The phone size is set here rather than on the title so a
+              `behindDm` line inherits it too. */}
+          <div className="@max-md/bar:text-2xs flex min-w-0 shrink items-center gap-1.5 @max-md/bar:flex-col @max-md/bar:items-stretch @max-md/bar:gap-0">
+            {/* Shrink weights, not shrink-0: which agent you are talking to is
+                the fact worth keeping, so the name yields last — but it still
+                yields, and it still stops at a floor wide enough to read a few
+                letters plus the ellipsis. */}
             <span
-              className="text-muted-foreground min-w-0 shrink-[9999] truncate @sm/bar:min-w-[3rem]"
-              data-testid="session-title"
-              title={title}
+              className="min-w-0 shrink truncate font-medium @max-md/bar:text-xs @sm/bar:min-w-[3.5rem]"
+              data-testid="session-agent-name"
+              title={name}
             >
-              {title}
+              {name}
             </span>
-          )}
+            <ChevronRight
+              className="text-muted-foreground size-(--size-icon-xs) shrink-0 @max-md/bar:hidden"
+              aria-hidden
+            />
+            {behindDm ?? (
+              <span
+                className="text-muted-foreground min-w-0 shrink-[9999] truncate @sm/bar:min-w-[3rem]"
+                data-testid="session-title"
+                title={title}
+              >
+                {title}
+              </span>
+            )}
+          </div>
         </div>
       }
       chips={
