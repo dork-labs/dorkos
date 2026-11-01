@@ -134,5 +134,10 @@ describe('agentBrowserNotice', () => {
     expect(agentBrowserNotice('missing')).toContain('will fail');
     expect(agentBrowserNotice('empty')).toContain('start signed out');
     expect(agentBrowserNotice('missing')).not.toContain('storage-state');
+    // DOR-3157: the way forward is a shared page, never a command to run.
+    for (const gap of ['missing', 'empty'] as const) {
+      expect(agentBrowserNotice(gap)).toContain('share a browser page with this chat');
+      expect(agentBrowserNotice(gap)).not.toContain('dorkos browser login');
+    }
   });
 });

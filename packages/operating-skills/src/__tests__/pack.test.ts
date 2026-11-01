@@ -615,3 +615,19 @@ describe('working-on-a-heartbeat', () => {
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(40);
   });
 });
+
+describe('using-the-agent-browser (DOR-3157)', () => {
+  const browser = bodyOf('using-the-agent-browser');
+
+  it('sends a person to the shared browser, never a terminal', () => {
+    expect(browser).toContain('Never send the person to a terminal');
+    expect(browser).toContain("Browser, in the right\n   panel's + menu");
+    expect(browser).not.toMatch(/run `dorkos browser login/i);
+  });
+
+  it('says what to do when a browser tool fails, with nobody there too', () => {
+    expect(browser).toContain('## When a browser tool fails');
+    expect(browser).toContain('If nobody is there to share a page');
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(46);
+  });
+});

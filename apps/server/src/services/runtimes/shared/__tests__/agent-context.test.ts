@@ -1460,7 +1460,9 @@ describe('buildAgentBlock <agent_browser> notice', () => {
     const { text, stable } = await blockFor([browserServer(missing)]);
     expect(text).toContain('<agent_browser>');
     expect(text).toContain('will fail');
-    expect(text).toContain('dorkos browser login <site>');
+    expect(text).toContain('share a browser page with this chat');
+    expect(text).toContain('Never send them to a\nterminal');
+    expect(text).not.toContain('dorkos browser login');
     expect(text).toContain('Never type a password');
     expect(text).not.toContain('<evil>');
     // A fact about the machine, not agent-written: it belongs in the pinned half.
