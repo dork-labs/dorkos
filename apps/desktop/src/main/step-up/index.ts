@@ -21,7 +21,7 @@
  */
 import { join } from 'node:path';
 
-import { BrowserWindow, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron';
+import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import log from 'electron-log';
 
 import {
@@ -51,8 +51,10 @@ export interface StepUpWindowDeps {
 /** The open windows, by the contents of each, so a preload only reaches its own. */
 const open = new Map<number, StepUpConfirmation>();
 
-function confirmationOf(sender: WebContents): StepUpConfirmation | undefined {
-  return open.get(sender.id);
+/** A window's own confirmation, only for a message from that window's main frame. */
+function confirmationOf(event: IpcMainInvokeEvent): StepUpConfirmation | undefined {
+  if (event.senderFrame === null || event.senderFrame !== event.sender.mainFrame) return undefined;
+  return open.get(event.sender.id);
 }
 
 function isSubmit(value: unknown): value is StepUpWindowSubmit {
@@ -113,7 +115,13 @@ export function registerStepUpWindow(deps: StepUpWindowDeps): void {
     STEP_UP_CONFIRM_CHANNEL,
     async (event, heldActionId: unknown): Promise<StepUpWindowOutcome> => {
       const port = deps.port();
-      if (!deps.isOwnSender(event) || !isHeldActionId(heldActionId) || port === null) {
+      // One password window at a time: a page holding many actions can't stack them.
+      if (
+        !deps.isOwnSender(event) ||
+        !isHeldActionId(heldActionId) ||
+        port === null ||
+        open.size > 0
+      ) {
         return { kind: 'not-confirmed' };
       }
       const confirmation = new StepUpConfirmation(heldActionId, {
@@ -127,12 +135,12 @@ export function registerStepUpWindow(deps: StepUpWindowDeps): void {
   );
 
   ipcMain.handle(STEP_UP_WINDOW_VIEW_CHANNEL, async (event) => {
-    const confirmation = confirmationOf(event.sender);
+    const confirmation = confirmationOf(event);
     return confirmation ? confirmation.view() : { ended: 'Nothing to confirm.', askAgain: false };
   });
 
   ipcMain.handle(STEP_UP_WINDOW_SUBMIT_CHANNEL, async (event, submit: unknown) => {
-    const confirmation = confirmationOf(event.sender);
+    const confirmation = confirmationOf(event);
     if (!confirmation || !isSubmit(submit))
       return { kind: 'ended', message: 'Nothing to confirm.' };
     const answer = await confirmation.submit(submit);
@@ -141,6 +149,6 @@ export function registerStepUpWindow(deps: StepUpWindowDeps): void {
   });
 
   ipcMain.handle(STEP_UP_WINDOW_CLOSE_CHANNEL, (event) => {
-    if (confirmationOf(event.sender)) BrowserWindow.fromWebContents(event.sender)?.close();
+    if (confirmationOf(event)) BrowserWindow.fromWebContents(event.sender)?.close();
   });
 }
