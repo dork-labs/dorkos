@@ -1,6 +1,7 @@
 import { Button, Field, FieldLabel, Input } from '@dork-labs/ui';
 import { useId, useState } from 'react';
 import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
+import { takeJoinPath } from '../admission.js';
 import { hostRequest } from '../api.js';
 import {
   ClearsList,
@@ -28,6 +29,13 @@ export function ResetPassword() {
   const [done, setDone] = useState<Done | null>(null);
   const passwordId = useId();
   const { state } = link;
+  // A reset that also ends the password is one for a never-confirmed account: the link an
+  // invitation's sign-up mailed (DOR-2730). The server decides this from the token at peek, so
+  // it is never read from the address; only the mailbox's owner reaches this page.
+  const setting =
+    state.kind === 'ready' &&
+    state.peek.kind === 'password_reset' &&
+    state.peek.clears.includes('password');
 
   async function reset(event: React.FormEvent) {
     event.preventDefault();
@@ -41,6 +49,8 @@ export function ResetPassword() {
         { token, newPassword: password }
       );
       link.token.current = null;
+      // Setting the first password goes straight on: to the join page that sent the link.
+      if (setting) return window.location.assign(takeJoinPath() ?? '/');
       setDone(body.cleared);
     } catch (cause) {
       link.setState(failure(cause));
@@ -52,8 +62,10 @@ export function ResetPassword() {
   const title = done
     ? 'Password reset'
     : state.kind === 'expired'
-      ? 'This link expired or was already used.'
-      : 'Choose a new password';
+      ? 'This link has expired or already been used.'
+      : setting
+        ? 'Set your password'
+        : 'Choose a new password';
 
   return (
     <EmailLinkPage title={title} busy={busy || state.kind === 'checking'}>
@@ -70,13 +82,12 @@ export function ResetPassword() {
         </>
       ) : state.kind === 'expired' ? (
         <>
-          <p className="muted mb-4">Ask for a new one.</p>
           <Button
             type="button"
             variant="outline"
             onClick={() => window.location.assign(FORGOT_PASSWORD_HREF)}
           >
-            Forgot password?
+            Send a new link
           </Button>
         </>
       ) : state.kind === 'ready' ? (
@@ -86,9 +97,9 @@ export function ResetPassword() {
             peek={state.peek}
             text={(other) => `You're signed in as ${other}. This resets ${state.peek.email}.`}
           />
-          <ClearsList lead="Resetting also ends:" clears={state.peek.clears} />
+          {!setting && <ClearsList lead="Resetting also ends:" clears={state.peek.clears} />}
           <Field className="mb-4 gap-1.5">
-            <FieldLabel htmlFor={passwordId}>New password</FieldLabel>
+            <FieldLabel htmlFor={passwordId}>{setting ? 'Password' : 'New password'}</FieldLabel>
             <Input
               id={passwordId}
               type="password"
@@ -102,7 +113,7 @@ export function ResetPassword() {
             <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
           </Field>
           <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? 'Resetting…' : 'Reset password'}
+            {busy ? 'Saving…' : setting ? 'Set password and continue' : 'Reset password'}
           </Button>
         </form>
       ) : (

@@ -13,6 +13,7 @@ export const NOTICE_KINDS = [
   'account.password_reset',
   'account.sign_in_link',
   'account.email_confirmation',
+  'account.existing_account',
 ] as const;
 
 /** One kind of mailed notice. */

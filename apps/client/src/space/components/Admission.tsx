@@ -1,12 +1,12 @@
 import { Button, Field, FieldLabel, Input, Notice, Separator } from '@dork-labs/ui';
 import { useEffect, useRef, useState } from 'react';
-import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
 import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, KeyRound, UsersRound } from 'lucide-react';
 import { describeError, RequestError, request } from '../api.js';
 import { ProviderButtons, type SignInProvider } from '../sign-up/ProviderButtons.js';
 import {
   admissionIntro,
+  admissionSubmitLabel,
   describeAdmissionFailure,
   readPendingAdmission,
   type AdmissionFailure,
@@ -28,6 +28,8 @@ import { LinkWithPassword } from '../sign-up/LinkWithPassword.js';
 import { ForgotPassword } from '../email-links/ForgotPassword.js';
 import { SingleSignOnFirst } from '../sign-up/SingleSignOnFirst.js';
 import { confirmSignUp, SignUpConfirmation, signUpRules } from '../sign-up/SignUpConfirmation.js';
+import { CheckYourEmail } from '../sign-up/CheckYourEmail.js';
+import { PasswordField } from '../sign-up/PasswordField.js';
 
 /**
  * What the clean join URL found on the server before this component mounted: a live join
@@ -47,7 +49,7 @@ type Props = {
   hostSignIn?: boolean;
   resume?: AdmissionResume | null;
 };
-type Stage = 'initial' | 'account' | 'joining' | 'reactivate' | 'failed';
+type Stage = 'initial' | 'account' | 'check-email' | 'joining' | 'reactivate' | 'failed';
 const authClient = createAuthClient({ baseURL: window.location.origin });
 
 function initialStage(
@@ -119,6 +121,8 @@ export function Admission({
   const leading = lead !== null && lead !== 'loading';
   // A new account must first confirm the host's sign-up rules, when it set any.
   const rules = mode === 'signup' ? signUpRules(providers) : null;
+  // An invitation's sign-up on a space that mails links takes no password: the link sets it.
+  const emailSignUp = mode === 'signup' && pendingAdmission && providers.emailLinks;
 
   // Move focus to the new heading on every step change, so keyboard and screen-reader users
   // land on what changed instead of on a control that just disappeared.
@@ -269,11 +273,20 @@ export function Admission({
         onAdmitted(false);
         return;
       }
-      await request(
+      const result = await request<{ token?: string | null } | null>(
         path,
         'POST',
-        mode === 'signup' ? { name, email, password } : { email, password }
+        mode === 'signin'
+          ? { email, password }
+          : emailSignUp
+            ? { name, email }
+            : { name, email, password }
       );
+      // A sign-up the server finishes by email signs nobody in, whatever this page expected.
+      if (mode === 'signup' && result?.token === null) {
+        setStage('check-email');
+        return;
+      }
       if (!pendingAdmission) {
         onAdmitted(false);
         return;
@@ -301,15 +314,17 @@ export function Admission({
   const joinName = preview?.communityName ?? community?.name ?? null;
   const title = isOwner
     ? 'Make it yours.'
-    : stage === 'failed' && failure
-      ? failure.title
-      : stage === 'reactivate' && joinName
-        ? `Rejoin ${joinName}?`
-        : stage === 'joining' && joinName
-          ? `Joining ${joinName}…`
-          : stage === 'account' && preview
-            ? `Join ${preview.communityName}`
-            : 'Come on in.';
+    : stage === 'check-email'
+      ? 'Check your email'
+      : stage === 'failed' && failure
+        ? failure.title
+        : stage === 'reactivate' && joinName
+          ? `Rejoin ${joinName}?`
+          : stage === 'joining' && joinName
+            ? `Joining ${joinName}…`
+            : stage === 'account' && preview
+              ? `Join ${preview.communityName}`
+              : 'Come on in.';
   const eyebrow = isOwner
     ? 'Set up your space'
     : hostSignIn
@@ -356,6 +371,16 @@ export function Admission({
         )}
         {forgot && providers.emailLinks ? (
           <ForgotPassword initialEmail={email} onBack={() => setForgot(false)} />
+        ) : stage === 'check-email' ? (
+          <CheckYourEmail
+            email={email}
+            space={joinName ?? window.location.hostname}
+            onDifferentEmail={() => {
+              setName('');
+              setEmail('');
+              setStage('account');
+            }}
+          />
         ) : stage === 'failed' && failure ? (
           <AdmissionFailurePanel failure={failure} busy={busy} onRetry={() => void retryFailed()} />
         ) : stage === 'joining' ? (
@@ -478,35 +503,15 @@ export function Admission({
                   required
                 />
               </Field>
-              <Field className="mb-4 gap-1.5">
-                <FieldLabel htmlFor="password">Password</FieldLabel>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                  // Only a new password must meet today's length; an older, shorter one still signs in.
-                  minLength={mode === 'signup' ? COMMUNITY_PASSWORD_MIN_LENGTH : undefined}
+              {!emailSignUp && (
+                <PasswordField
+                  mode={mode}
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
+                  onChange={setPassword}
+                  emailLinks={providers.emailLinks}
+                  onForgot={() => setForgot(true)}
                 />
-                {mode === 'signin' && providers.emailLinks ? (
-                  <Button
-                    type="button"
-                    variant="link"
-                    className="h-auto justify-start p-0"
-                    onClick={() => setForgot(true)}
-                  >
-                    Forgot password?
-                  </Button>
-                ) : mode === 'signin' ? (
-                  <span className="hint">
-                    Forgot your password? Ask the person running this space for help.
-                  </span>
-                ) : (
-                  <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
-                )}
-              </Field>
+              )}
               {isOwner && (
                 <>
                   <Separator className="my-4" />
@@ -539,14 +544,8 @@ export function Admission({
                 />
               )}
               <Button type="submit" className="w-full" disabled={busy}>
-                {busy
-                  ? 'Working…'
-                  : isOwner
-                    ? 'Create space'
-                    : pendingAdmission
-                      ? 'Join space'
-                      : 'Sign in'}
-                <KeyRound size={16} aria-hidden="true" />
+                {admissionSubmitLabel({ busy, isOwner, emailSignUp, pendingAdmission })}
+                {!emailSignUp && <KeyRound size={16} aria-hidden="true" />}
               </Button>
             </form>
             {!isOwner && stage === 'account' && (

@@ -13,7 +13,7 @@ import { requireBrowserSession } from '../routes/account/account-password.js';
 import { livePendingLink, pendingTokenHash } from '../routes/account/sign-in-link.js';
 import { hmacSecret, readCookie } from '../security.js';
 import { cookieOptions, linkCookieName } from '../sign-in/link-gate.js';
-import { callerLimitKey, type EmailLinkLimiter } from './limiter.js';
+import { emailLinkCallerLimits, type EmailLinkLimiter } from './limiter.js';
 import { EMAIL_LINK_CAPS, emailLinksUnavailable, type EmailLinkKind } from './model.js';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
@@ -87,10 +87,7 @@ async function limitAccount(client: Queryable, userId: string, kind: EmailLinkKi
 export function registerEmailLinkRequestRoutes(app: Hono, deps: EmailLinkRequestDeps): void {
   const { pool, auth, config, now } = deps;
   const limitCaller = (c: Context) =>
-    deps.limiter.spend(`email-link-request:${callerLimitKey(deps.peer(c))}`, {
-      perMinute: config.limits.emailLinkRequestsPerMinute,
-      perHour: EMAIL_LINK_CAPS.perCallerPerHour,
-    });
+    emailLinkCallerLimits(deps.limiter, config).request(deps.peer(c));
 
   app.post('/account/password-reset', async (c) => {
     if (!deps.on) throw emailLinksUnavailable();
