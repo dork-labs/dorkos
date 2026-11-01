@@ -15,7 +15,15 @@
  *   - grew:   a file holds more of a ratcheted pattern than its baseline;
  *   - stale:  a count fell and the baseline still says the old number. Run
  *             `--update`, which only lowers or removes;
- *   - raised: with `--base <ref>`, an entry is higher than the base's.
+ *   - raised: with `--base <ref>`, an entry is higher than the base's;
+ *   - rule:   with `--base <ref>`, a rule the base defined is gone, or its id,
+ *             kind, pattern, only, except, files or count differs, and no
+ *             fresh `guard-rule-change` label covers it (DOR-3557). What the
+ *             label does and does not prove is in design-tokens/rule-guard.ts.
+ *
+ * THIS FILE IMPORTS NOTHING RELATIVE, at the top level. The rule guard reads a
+ * base's rules by importing the base's copy of this file alone, from a scratch
+ * directory; a relative import would fail there, and the guard would refuse.
  *
  * Exit 2 means it could not run: a gate that cannot measure must not pass.
  *
@@ -36,11 +44,31 @@ import { pathToFileURL } from 'node:url';
 /** Where the baseline lives, relative to the root. */
 export const BASELINE_PATH = 'scripts/design-tokens/baseline.json';
 
+/** This file, relative to the root: where the base's rules are read from. */
+export const SCRIPT_PATH = 'scripts/check-design-tokens.ts';
+
+/** The PR label that lets a PR remove or change a rule the base defined. */
+export const OVERRIDE_LABEL = 'guard-rule-change';
+
 /** The trees the rules cover. */
 const SCOPES = ['apps/client/src', 'packages/ui/src'];
 
 /** Tests and the dev playground may spell anything. */
 const EXEMPT = /(^|\/)__tests__\/|\.(test|spec)\.tsx?$|^apps\/client\/src\/dev\//;
+
+/** The file types the gate reads at all. */
+const MEASURED = /\.(tsx?|css)$/;
+
+/** The file types a rule reads when it names none. */
+const DEFAULT_FILES = /\.tsx?$/;
+
+/** What every rule reads, compared like a rule: narrowing it loosens all of them. */
+export const COVERAGE = {
+  scopes: SCOPES,
+  exempt: EXEMPT,
+  measured: MEASURED,
+  files: DEFAULT_FILES,
+};
 
 const PALETTE =
   'red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone';
@@ -75,6 +103,27 @@ function overshoots(args: string): boolean {
   const [, y1 = 0, , y2 = 0] = args.split(',').map(Number);
   return y1 < 0 || y1 > 1 || y2 < 0 || y2 > 1;
 }
+
+/**
+ * The one line `overshoot-bezier` skips: `animation: reaction-pop <time>
+ * cubic-bezier(…);`, alone on its line, where the time is a number or one
+ * `var(--…)`. A selector, a second animation or a custom property beside it is
+ * not this line, so it is read.
+ */
+const REACTION_POP =
+  /^\s*animation:\s*reaction-pop\s+(?:var\(--[\w-]+\)|[\d.]+m?s)\s+cubic-bezier\([^()]*\)\s*;?\s*$/;
+
+/**
+ * What a rule's `count` calls besides itself. Its source is compared with the
+ * rule's, so loosening a helper is a rule change too. A helper missing from
+ * this list could change unseen, so a test fails when a `count` calls a
+ * function or names a constant that is not here.
+ */
+export const RULE_HELPERS: Record<string, unknown> = {
+  stripCssComments,
+  overshoots,
+  REACTION_POP,
+};
 
 /** Every rule. A later phase adds its own patterns here. */
 export const RULES: Rule[] = [
@@ -179,11 +228,12 @@ export const RULES: Rule[] = [
     pattern: /(?!)/g,
     only: /^apps\/client\/src\/index\.css$/,
     files: /\.css$/,
-    // `reaction-pop` is the one overshoot a reaction gets (spec D6).
+    // `reaction-pop` is the one overshoot a reaction gets (spec D6): exactly its
+    // `animation:` declaration, alone on its line.
     count: (text) =>
       stripCssComments(text)
         .split('\n')
-        .filter((line) => !line.includes('reaction-pop'))
+        .filter((line) => !REACTION_POP.test(line))
         .flatMap((line) => [...line.matchAll(/cubic-bezier\(([^)]+)\)/g)])
         .filter((match) => overshoots(match[1] ?? '')).length,
     fix: 'use var(--ease-out), var(--ease-in) or var(--ease-standard)',
@@ -196,7 +246,7 @@ export type Counts = Record<string, Record<string, number>>;
 /** One reason the check fails. */
 export interface Finding {
   /** Which part of the gate was broken. */
-  kind: 'hard' | 'grew' | 'stale' | 'raised';
+  kind: 'hard' | 'grew' | 'stale' | 'raised' | 'rule';
   /** The rule involved. */
   rule: string;
   /** The repo-relative file. */
@@ -205,6 +255,8 @@ export interface Finding {
   count: number;
   /** The number the baseline holds. */
   baseline?: number;
+  /** For `rule`: what changed, and why no label covers it. */
+  detail?: string;
 }
 
 /** A thrown failure that means "could not measure", exit 2. */
@@ -223,7 +275,7 @@ export function countIn(file: string, text: string, rules: Rule[] = RULES): Reco
   for (const rule of rules) {
     if (rule.only && !rule.only.test(file)) continue;
     if (rule.except?.test(file)) continue;
-    if (!(rule.files ?? /\.tsx?$/).test(file)) continue;
+    if (!(rule.files ?? DEFAULT_FILES).test(file)) continue;
     const n = rule.count ? rule.count(text) : (text.match(rule.pattern)?.length ?? 0);
     if (n > 0) out[rule.id] = n;
   }
@@ -243,7 +295,7 @@ export function measure(root: string): Counts {
     { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   )
     .split('\0')
-    .filter((f, i, all) => /\.(tsx?|css)$/.test(f) && !EXEMPT.test(f) && all.indexOf(f) === i);
+    .filter((f, i, all) => MEASURED.test(f) && !EXEMPT.test(f) && all.indexOf(f) === i);
 
   const counts: Counts = {};
   for (const file of files) {
@@ -364,6 +416,8 @@ export function describe(f: Finding, rules: Rule[] = RULES): string {
       return `${f.file}: ${f.rule} fell to ${f.count} (baseline ${f.baseline}). Run \`pnpm check:design-tokens -- --update\` to lock that in.`;
     case 'raised':
       return `${f.file}: ${f.rule} baseline raised from ${f.baseline} to ${f.count}. The baseline only goes down.`;
+    case 'rule':
+      return `${f.file}: ${f.detail}.`;
   }
 }
 
@@ -417,22 +471,7 @@ function baselineAt(root: string, ref: string): Counts | null {
   }
 }
 
-/** The rule ids `ref` defined, read from its copy of this script, or null when it had none. */
-function ruleIdsAt(root: string, ref: string): string[] | null {
-  try {
-    const text = execFileSync('git', ['show', `${ref}:scripts/check-design-tokens.ts`], {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const ids = [...text.matchAll(/^ {4}id: '([^']+)'/gm)].map((m) => m[1] as string);
-    return ids.length ? ids : null;
-  } catch {
-    return null;
-  }
-}
-
-function main(argv: string[]): number {
+async function main(argv: string[]): Promise<number> {
   const value = (name: string) => {
     const i = argv.indexOf(name);
     return i === -1 ? undefined : argv[i + 1];
@@ -464,10 +503,16 @@ function main(argv: string[]): number {
 
   const findings = compare(counts, baseline);
   const base = value('--base');
-  const before = base ? baselineAt(root, base) : null;
-  if (base && before) {
-    const seedable = seedableRules(RULES, ruleIdsAt(root, base));
-    findings.push(...raisedAgainst(baseline, before, seedable, counts));
+  if (base) {
+    const before = baselineAt(root, base);
+    // Loaded here, never at the top: see "imports nothing relative" above.
+    const { checkRules } = await import('./design-tokens/rule-guard.ts');
+    const rules = await checkRules(root, base);
+    findings.push(...rules.findings);
+    if (before) {
+      const seedable = seedableRules(RULES, rules.baseIds);
+      findings.push(...raisedAgainst(baseline, before, seedable, counts));
+    }
   }
 
   if (findings.length === 0) {
@@ -480,10 +525,15 @@ function main(argv: string[]): number {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  try {
-    process.exit(main(process.argv.slice(2)));
-  } catch (err) {
-    console.error(`design-tokens: cannot run: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(2);
-  }
+  // A promise, not a top-level await: the rule guard imports this module, and
+  // a module still in its top-level await would never finish loading for it.
+  main(process.argv.slice(2)).then(
+    (code) => process.exit(code),
+    (err: unknown) => {
+      console.error(
+        `design-tokens: cannot run: ${err instanceof Error ? err.message : String(err)}`
+      );
+      process.exit(2);
+    }
+  );
 }
