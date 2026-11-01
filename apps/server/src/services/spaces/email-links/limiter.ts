@@ -1,5 +1,7 @@
 import { isIPv4, isIPv6 } from 'node:net';
+import type { CommunityConfig } from '../config.js';
 import { RateLimited } from '../http.js';
+import { EMAIL_LINK_CAPS } from './model.js';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -96,4 +98,27 @@ function limited(waitMs: number) {
     'Too many requests. Wait a minute, then try again.',
     Math.max(1, Math.ceil(waitMs / 1000))
   );
+}
+
+/**
+ * The two per-caller budgets mailed links spend, by the caller's address (an IPv6 /64 counts as
+ * one). `request` is spent by every route that queues a link, an invitation's sign-up too
+ * (DOR-2730), so neither can fill the host's mail cap faster than the other. `use` is spent by
+ * every use of a link: tokens are 256-bit, so it caps load, not guessing.
+ */
+export function emailLinkCallerLimits(
+  limiter: EmailLinkLimiter,
+  config: Pick<CommunityConfig, 'limits'>
+) {
+  return {
+    request: (address: string) =>
+      limiter.spend(`email-link-request:${callerLimitKey(address)}`, {
+        perMinute: config.limits.emailLinkRequestsPerMinute,
+        perHour: EMAIL_LINK_CAPS.perCallerPerHour,
+      }),
+    use: (address: string) =>
+      limiter.spend(`email-link-use:${callerLimitKey(address)}`, {
+        perMinute: config.limits.emailLinkRequestsPerMinute * EMAIL_LINK_CAPS.useMultiplier,
+      }),
+  };
 }

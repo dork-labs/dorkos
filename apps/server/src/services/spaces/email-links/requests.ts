@@ -13,7 +13,8 @@ import { requireBrowserSession } from '../routes/account/account-password.js';
 import { livePendingLink, pendingTokenHash } from '../routes/account/sign-in-link.js';
 import { hmacSecret, readCookie } from '../security.js';
 import { cookieOptions, linkCookieName } from '../sign-in/link-gate.js';
-import { callerLimitKey, type EmailLinkLimiter } from './limiter.js';
+import { invitationSpace, queueInviteMail } from '../sign-up/invite-sign-up.js';
+import { emailLinkCallerLimits, type EmailLinkLimiter } from './limiter.js';
 import { EMAIL_LINK_CAPS, emailLinksUnavailable, type EmailLinkKind } from './model.js';
 
 type Queryable = Pick<Pool | PoolClient, 'query'>;
@@ -87,10 +88,7 @@ async function limitAccount(client: Queryable, userId: string, kind: EmailLinkKi
 export function registerEmailLinkRequestRoutes(app: Hono, deps: EmailLinkRequestDeps): void {
   const { pool, auth, config, now } = deps;
   const limitCaller = (c: Context) =>
-    deps.limiter.spend(`email-link-request:${callerLimitKey(deps.peer(c))}`, {
-      perMinute: config.limits.emailLinkRequestsPerMinute,
-      perHour: EMAIL_LINK_CAPS.perCallerPerHour,
-    });
+    emailLinkCallerLimits(deps.limiter, config).request(deps.peer(c));
 
   app.post('/account/password-reset', async (c) => {
     if (!deps.on) throw emailLinksUnavailable();
@@ -100,6 +98,26 @@ export function registerEmailLinkRequestRoutes(app: Hono, deps: EmailLinkRequest
       `INSERT INTO email_link_requests(kind,email_hash,email,state)
        VALUES('password_reset',$1,$2,'pending')`,
       [hmacSecret(email, config.authSecret), email]
+    );
+    return accepted(c);
+  });
+
+  // Resend on an invitation's "Check your email" (DOR-2730): the invitation's own mail again, so
+  // it keeps the space, the existing-account notice and the per-address cap, never a plain reset.
+  // The same answer for every address; the invitation is read from this browser's join attempt.
+  app.post('/account/invite-link', async (c) => {
+    if (!deps.on) throw emailLinksUnavailable();
+    limitCaller(c);
+    const { email } = await readJson(c, CommunityWirePasswordResetRequestSchema);
+    const communityId = await invitationSpace(
+      pool,
+      c.req.header('cookie') ?? null,
+      config.authSecret
+    );
+    if (!communityId)
+      throw new ApiError(403, 'FORBIDDEN', 'This invitation has expired. Open it again.');
+    await transaction(pool, (client) =>
+      queueInviteMail(client, { email, communityId, authSecret: config.authSecret })
     );
     return accepted(c);
   });

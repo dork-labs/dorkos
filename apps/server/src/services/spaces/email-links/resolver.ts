@@ -5,7 +5,7 @@ import { accountErasureOpen, signInRefusal } from '../erasure/guards.js';
 import { queueNotice } from '../mail/outbox.js';
 import { hmacSecret } from '../security.js';
 import { liveHoldFor } from './tokens.js';
-import { EMAIL_LINK_CAPS, EMAIL_LINK_NOTICE_KIND, type EmailLinkKind } from './model.js';
+import { EMAIL_LINK_CAPS, EMAIL_REQUEST_NOTICE_KIND, type EmailRequestKind } from './model.js';
 
 /** The most requests one resolver pass decides, so one tick never runs unbounded. */
 const REQUESTS_PER_PASS = 20;
@@ -17,11 +17,13 @@ const RESOLVER_LOCK = 77_281_710;
 
 interface PendingRequest {
   id: string;
-  kind: EmailLinkKind;
+  kind: EmailRequestKind;
   email_hash: string;
   email: string | null;
   user_id: string | null;
   pending_link_hash: string | null;
+  /** The space an invitation's sign-up was for; null for every other request. */
+  community_id: string | null;
 }
 
 /** What one request became. */
@@ -71,6 +73,17 @@ async function overCap(
   now: Date,
   hostPerHour: number
 ): Promise<boolean> {
+  // An invitation's sign-up mails one address at most once an hour, the finishing link and the
+  // existing-account notice counted together (DOR-2730), on top of the caps below.
+  if (request.community_id) {
+    const invited = await client.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM email_link_requests
+       WHERE email_hash=$1 AND community_id IS NOT NULL AND state='queued'
+         AND resolved_at > $2::timestamptz - interval '1 hour'`,
+      [request.email_hash, now]
+    );
+    if (invited.rows[0].n >= EMAIL_LINK_CAPS.invitePerAddressPerHour) return true;
+  }
   // Both caps are per kind, so a stranger's reset requests never use up the owner's sign-in or
   // confirmation mail, and the daily one is never tighter than the hourly one over a day.
   const address = await client.query<{ hour: number; day: number }>(
@@ -108,7 +121,7 @@ export async function resolveNextEmailLinkRequest(
   return transaction(pool, async (client) => {
     await client.query('SELECT pg_advisory_xact_lock($1)', [RESOLVER_LOCK]);
     const claimed = await client.query<PendingRequest>(
-      `SELECT id,kind,email_hash,email,user_id,pending_link_hash FROM email_link_requests
+      `SELECT id,kind,email_hash,email,user_id,pending_link_hash,community_id FROM email_link_requests
        WHERE state='pending' ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`
     );
     const request = claimed.rows[0];
@@ -125,7 +138,7 @@ export async function resolveNextEmailLinkRequest(
           client,
           {
             communityId: null,
-            kind: EMAIL_LINK_NOTICE_KIND[request.kind],
+            kind: EMAIL_REQUEST_NOTICE_KIND[request.kind],
             subjectId: request.id,
             recipientUserId: userId,
           },

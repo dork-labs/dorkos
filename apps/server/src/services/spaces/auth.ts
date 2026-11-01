@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import type { Pool } from 'pg';
@@ -6,6 +7,7 @@ import { authAdvancedOptions } from './sign-in/auth-advanced.js';
 import type { CommunityConfig } from './config.js';
 import { signInRefusal } from './erasure/guards.js';
 import { signUpConfirmationCookies, signUpRefusal } from './sign-up/confirmations.js';
+import { invitationSpace, inviteSignUp } from './sign-up/invite-sign-up.js';
 import { communityOidc, isOidcCallback, OIDC_PROVIDER_ID } from './oidc.js';
 import {
   ownerReplacementAdmission,
@@ -98,20 +100,8 @@ export function createCommunityAuth(
       );
       if (result.rowCount) return { by: 'grant' };
     }
-    const pending = verifyValue(readCookie(cookieHeader, 'community_admission'), config.authSecret);
-    if (pending) {
-      const result = await pool.query<{ community_id: string }>(
-        // member-kind: named-member
-        `SELECT i.community_id FROM pending_admissions p JOIN invites i ON i.id=p.invite_id
-         JOIN members m ON m.id=i.issuer_member_id
-         JOIN communities c ON c.id=i.community_id
-         WHERE p.token_hash=$1 AND p.expires_at>now() AND i.expires_at>now()
-           AND i.revoked_at IS NULL
-           AND c.lifecycle='active' AND m.active AND m.role IN ('owner','admin')`,
-        [hashSecret(pending)]
-      );
-      if (result.rows[0]) return { by: 'grant', communityId: result.rows[0].community_id };
-    }
+    const invited = await invitationSpace(pool, cookieHeader, config.authSecret);
+    if (invited) return { by: 'grant', communityId: invited };
     // A claim to replace an owner admits a new account only while it can be claimed.
     const replacement = await ownerReplacementAdmission(
       pool,
@@ -138,6 +128,19 @@ export function createCommunityAuth(
    * which rolls the new user back with it.
    */
   const namedSubjects = new WeakMap<object, string>();
+  /** Clear this browser's age and country confirmations: one confirmation makes one account. */
+  const clearSignUpCookies = (ctx: {
+    setCookie: (name: string, value: string, options: Record<string, unknown>) => unknown;
+  }) => {
+    for (const cookie of signUpConfirmationCookies(config))
+      ctx.setCookie(cookie, '', {
+        path: '/',
+        maxAge: 0,
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: config.publicUrl.startsWith('https:'),
+      });
+  };
   /**
    * The Better Auth requests that created a user. Its account row comes next, in the same
    * transaction, and is a sign-up, not a link to an existing account. Marked in
@@ -238,6 +241,24 @@ export function createCommunityAuth(
             });
           }
           refuseUnconfirmedSignUp(ctx.headers);
+          // An invitation's sign-up takes no password and answers the same for a new and a taken
+          // address; a mailed link finishes it (DOR-2730). Owner grants and claims, held by one
+          // person each, and hosts without mail keep Better Auth's own sign-up.
+          if (
+            ctx.path === '/sign-up/email' &&
+            emailLinksOn &&
+            admission.by === 'grant' &&
+            admission.communityId
+          ) {
+            const user = await inviteSignUp(pool, {
+              authSecret: config.authSecret,
+              communityId: admission.communityId,
+              body: ctx.body,
+              generateId: () => ctx.context.generateId({ model: 'user' }) || randomUUID(),
+            });
+            clearSignUpCookies(ctx);
+            return ctx.json({ token: null, user });
+          }
         }
       }),
     },
@@ -313,15 +334,7 @@ export function createCommunityAuth(
                 sameSite: 'lax',
                 secure: config.publicUrl.startsWith('https:'),
               });
-            if (!ctx) return;
-            for (const cookie of signUpConfirmationCookies(config))
-              ctx.setCookie(cookie, '', {
-                path: '/',
-                maxAge: 0,
-                httpOnly: true,
-                sameSite: 'lax',
-                secure: config.publicUrl.startsWith('https:'),
-              });
+            if (ctx) clearSignUpCookies(ctx);
           },
         },
         update: {

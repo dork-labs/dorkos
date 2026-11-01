@@ -214,6 +214,7 @@
     "POST /api/v1/account/email-confirmation/confirm": "locked",
     "POST /api/v1/account/erasures": "locked",
     "POST /api/v1/account/erasures/:id/cancel": "locked",
+    "POST /api/v1/account/invite-link": "locked",
     "POST /api/v1/account/password": "locked",
     "POST /api/v1/account/password-reset": "locked",
     "POST /api/v1/age-confirmation": "locked",
