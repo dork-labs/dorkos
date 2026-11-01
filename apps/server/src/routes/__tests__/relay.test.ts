@@ -1076,6 +1076,15 @@ describe('Adapter routes', () => {
       const missing = await request(server).post('/api/relay/adapters/wh-1/confirm-references');
       expect(missing.status).toBe(400);
 
+      // This install has no owner yet, so the person at this computer confirms
+      // with no sheet (Security on DOR-3467). With an owner it waits for
+      // "Confirm it's you": `relay-confirm-step-up.test.ts`.
+      vi.mocked(adapterManager.getCatalog).mockReturnValueOnce([
+        {
+          manifest: { displayName: 'Webhook' },
+          instances: [{ id: 'wh-1', label: 'Deploy hooks' }],
+        },
+      ] as unknown as ReturnType<AdapterManager['getCatalog']>);
       const ok = await request(server)
         .post('/api/relay/adapters/wh-1/confirm-references')
         .send({ fingerprint: 'abc' });

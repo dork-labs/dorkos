@@ -76,7 +76,11 @@ const MAX_PASSWORD_LENGTH = 128;
  * The same list as `requirePersonAtThisComputer`'s (DOR-3213); whichever of
  * the two lands second makes them one export.
  */
-const PROGRAM_CREDENTIAL_HEADERS = ['authorization', 'x-api-key', 'proxy-authorization'] as const;
+export const PROGRAM_CREDENTIAL_HEADERS = [
+  'authorization',
+  'x-api-key',
+  'proxy-authorization',
+] as const;
 
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {
@@ -249,7 +253,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const taken = takeHeldStepUp(entry.statement.heldActionId);
     if (!taken) return refuse(c, 'expired');
     try {
-      const { status, body } = await taken.commit();
+      const { status, body } = await taken.commit(honoRequestFacts(c));
       audit(taken, 'ok', 'confirmed');
       const answer: StepUpConfirmedBody = { ok: true, status, result: body };
       return c.json(answer);

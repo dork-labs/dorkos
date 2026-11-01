@@ -117,6 +117,15 @@ describe('mutation error toast policy', () => {
     }
   );
 
+  // DOR-3234: closing "Confirm it's you" without confirming is the person's
+  // choice, and nothing changed, so no failure toast, whatever the label.
+  it('stays silent when the person did not confirm it was them', () => {
+    vi.mocked(toast).mockClear();
+    fireMutationError({ errorLabel: 'Couldn’t confirm that setting' }, 'step_up_required');
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
   it('stays silent when the mutation opts out via meta.suppressErrorToast', () => {
     fireMutationError({ suppressErrorToast: true });
 

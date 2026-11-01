@@ -13,7 +13,11 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readJsonBody } from '../http/request-body.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
-import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { holdForStepUp } from './step-up-guard.js';
+import { PROGRAM_CREDENTIAL_HEADERS } from './step-up.js';
+import { refuseUnlessAccountOwner, requirePersonAtThisComputer } from '../lib/caller-authority.js';
+import { errorBody } from '../lib/route-utils.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import type { SecretWriter } from '../services/relay/adapter-secret-policy.js';
 
@@ -53,6 +57,50 @@ export function secretWriter(c: Context<ApiEnv>): SecretWriter {
   return refuseUnlessAccountOwner(honoRequestFacts(c)) === undefined ? 'person' : 'agent';
 }
 
+/** What the owner was shown for one connection: its name, and what it sends where. */
+interface PausedView {
+  name: string;
+  references: readonly { ref: string }[];
+  host?: string;
+}
+
+/** A connection as the catalog lists it, or `undefined` when there is none by that id. */
+function pausedView(adapterManager: AdapterManager, id: string): PausedView | undefined {
+  for (const entry of adapterManager.getCatalog()) {
+    const instance = entry.instances.find((candidate) => candidate.id === id);
+    if (!instance) continue;
+    return {
+      name: instance.label || entry.manifest.displayName,
+      references: instance.confirmation?.references ?? [],
+      ...(instance.confirmation?.host ? { host: instance.confirmation.host } : {}),
+    };
+  }
+  return undefined;
+}
+
+/** A setting's name without its scheme: `env:DEPLOY_TOKEN` → `DEPLOY_TOKEN`. */
+function settingName(ref: string): string {
+  const colon = ref.indexOf(':');
+  return colon >= 0 ? ref.slice(colon + 1) : ref;
+}
+
+/**
+ * The step-up sheet's line, built here from what the server holds, never from
+ * the request: "Lets Deploy hooks send DEPLOY_TOKEN to hooks.example.dev
+ * again." The host is the catalog's, always ASCII.
+ */
+export function confirmReason(shown: PausedView): string {
+  const names = shown.references.map((r) => settingName(r.ref));
+  const what =
+    names.length === 0
+      ? 'its settings'
+      : names.length <= 2
+        ? names.join(' and ')
+        : `${names.length} settings`;
+  const where = shown.host ? ` to ${shown.host}` : '';
+  return `Lets ${shown.name} send ${what}${where} again.`;
+}
+
 /** How the confirm routes word a refusal: to anything but a person, and to a non-owner. */
 const CONFIRM_WORDING = {
   personOnly: 'Only a person can confirm this setting.',
@@ -63,35 +111,89 @@ const CONFIRM_WORDING = {
  * `POST /adapters/:id/confirm-references` with `{ fingerprint }`: the owner
  * confirms a connection paused for `env:`/`keychain:` references nobody
  * recorded a person saving (DOR-3271). It approves exactly the summary the
- * owner was shown, so a connection that changed since answers 409.
+ * owner was shown, so a connection that changed since answers 409. It runs
+ * only after "Confirm it's you" (DOR-3234): the route holds it and answers
+ * `428`, and the step-up runs it once the owner's password passes.
  * `DELETE` on the same path is the toast's Undo: it takes the approval back
- * and pauses the connection again. Both write the record that decides what a
+ * and pauses the connection again, and asks for nothing, since it only narrows. Both write the record that decides what a
  * connection may send, so both admit only the owner of this install
  * (`person_only` for an agent, `owner_only` for a signed-in person who does not
  * own it); anything else gets a 403.
  *
  * @param router - The adapter routes' router.
  * @param adapterManager - The adapter manager.
+ * @param ownerExists - Whether this install has an owner yet; the owner account by default.
  */
 export function registerConfirmReferencesRoute(
   router: Hono<ApiEnv>,
-  adapterManager: AdapterManager
+  adapterManager: AdapterManager,
+  ownerExists: () => boolean = () => readOwnerAccount() !== null
 ): void {
+  /** Run the confirm (or its Undo), as the answer the route gives. */
+  const run = async (id: string, fingerprint: string | null, undo: boolean) => {
+    try {
+      await adapterManager.confirmReferences(id, fingerprint, undo);
+      return { status: 200, body: { ok: true } };
+    } catch (err) {
+      if (err instanceof AdapterError) {
+        return {
+          status: ADAPTER_ERROR_STATUS[err.code] ?? 500,
+          body: { error: err.message, code: err.code },
+        };
+      }
+      return {
+        status: 500,
+        body: { error: err instanceof Error ? err.message : 'Confirm failed' },
+      };
+    }
+  };
   const handle = async (c: Context<ApiEnv>, undo: boolean) => {
     const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), CONFIRM_WORDING);
     if (refusal) return c.json(refusal, 403);
-    const body = undo ? undefined : (readJsonBody(c) as { fingerprint?: unknown } | undefined);
-    if (!undo && typeof body?.fingerprint !== 'string') {
+    const id = c.req.param('id') ?? '';
+    if (undo) {
+      // Undo only narrows (it pauses the connection again), so it asks for nothing.
+      const { status, body } = await run(id, null, true);
+      return c.json(body, status as ContentfulStatusCode);
+    }
+    const body = readJsonBody(c) as { fingerprint?: unknown } | undefined;
+    if (typeof body?.fingerprint !== 'string') {
       return c.json({ error: 'Missing what you confirmed.', code: 'INVALID_CONFIG' }, 400);
     }
-    try {
-      const fingerprint = undo ? null : (body?.fingerprint as string);
-      await adapterManager.confirmReferences(c.req.param('id') ?? '', fingerprint, undo);
-      return c.json({ ok: true });
-    } catch (err) {
-      if (err instanceof AdapterError) return sendAdapterError(c, err);
-      return c.json({ error: err instanceof Error ? err.message : 'Confirm failed' }, 500);
+    const fingerprint = body.fingerprint;
+    const shown = pausedView(adapterManager, id);
+    if (!shown)
+      return sendAdapterError(c, new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND'));
+    // No owner yet (Security, DOR-3467): there is no password to ask for, and
+    // the person at this computer is the person, as everywhere else with no
+    // owner (DOR-3330). So it runs with no sheet, but only for a person at this
+    // computer: an agent, an approval token or any credential header is
+    // refused. The residual is DOR-505's: a program here that sends none of
+    // them reads as the person until an owner exists.
+    if (!ownerExists()) {
+      const facts = honoRequestFacts(c);
+      const program = PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined);
+      if (program || requirePersonAtThisComputer(facts) !== undefined) {
+        return c.json(errorBody(CONFIRM_WORDING.personOnly, 'person_only'), 403);
+      }
+      const { status, body: answer } = await run(id, fingerprint, false);
+      return c.json(answer, status as ContentfulStatusCode);
     }
+    // "Confirm it's you" (DOR-3234, DOR-3467): held until the owner's step-up
+    // passes. The commit re-checks the owner bar on the request that confirmed
+    // it, then runs the same confirm, which re-reads the connection and refuses
+    // with 409 if it changed since it was shown.
+    return holdForStepUp(c, {
+      kind: 'connection.confirm-setting',
+      target: id,
+      input: { id, fingerprint },
+      reason: confirmReason(shown),
+      commit: async (confirming) => {
+        const stale = errorRefusalUnlessOwner(confirming, CONFIRM_WORDING);
+        if (stale) return { status: 403, body: stale };
+        return run(id, fingerprint, false);
+      },
+    });
   };
   router.post('/adapters/:id/confirm-references', (c) => handle(c, false));
   router.delete('/adapters/:id/confirm-references', (c) => handle(c, true));

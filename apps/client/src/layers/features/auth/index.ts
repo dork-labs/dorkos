@@ -13,6 +13,7 @@ export { LoginScreen } from './ui/LoginScreen';
 export { OwnerSetupScreen } from './ui/OwnerSetupScreen';
 export { OwnerSetupHost } from './ui/OwnerSetupHost';
 export { PersonStepUpHost } from './ui/PersonStepUpHost';
+export { ActionStepUpHost } from './ui/ActionStepUpHost';
 export { SecurityPanel } from './ui/SecurityPanel';
 export { ApiKeysSection } from './ui/ApiKeysSection';
 export { SignedInDevicesSection } from './ui/SignedInDevicesSection';
