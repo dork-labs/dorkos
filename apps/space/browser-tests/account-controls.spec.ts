@@ -319,7 +319,13 @@ test('signing out ends this browser only, from settings and from the chooser', a
     expect((await laptop.request.get(`${baseUrl}/api/v1/memberships`)).status()).toBe(401);
     expect((await phone.request.get(`${baseUrl}/api/v1/memberships`)).status()).toBe(200);
     await page.getByRole('button', { name: 'Sign in again' }).click();
-    await expect(page).toHaveURL(`${baseUrl}/`);
+    // The root resolves this host's only space before showing its sign-in form.
+    // Assert the settled page, rather than racing its brief stop at `/`.
+    await expect(page).toHaveURL(`${baseUrl}/c/${communityId}`);
+    await expect(page.getByRole('heading', { name: 'Come on in.', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+    // A cached sign-in page is not proof that the server ended this browser's session.
+    expect((await laptop.request.get(`${baseUrl}/api/v1/memberships`)).status()).toBe(401);
 
     // The chooser offers the same control, by keyboard.
     const phonePage = await phone.newPage();
