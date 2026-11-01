@@ -4799,6 +4799,17 @@ export const ServerConfigSchema = z
         description:
           'The way THIS request reached DorkOS, as the server classified it: `local` at the computer DorkOS runs on, `wifi` over the Wi-Fi listener, and so on. Read only. A Wi-Fi request answers approvals with Allow once or Deny, never Always allow, so the app hides that choice there. Null for the relay; absent from an older server',
       }),
+    capacity: z
+      .object({
+        maxAgentChats: z.number().int(),
+        loadAverage: z.number().nullable(),
+        freeDiskBytes: z.number().nullable(),
+      })
+      .optional()
+      .openapi({
+        description:
+          'How much room this computer has right now, for the Team view: the cap on chats agents may run at once, the one-minute load average (null where the system reports none) and the free bytes on the DorkOS data disk (null when it cannot be read). Absent from an older server',
+      }),
     dismissedUpgradeVersions: z
       .array(z.string())
       .openapi({ description: 'Versions the user has dismissed upgrade notifications for' }),

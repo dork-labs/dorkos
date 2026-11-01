@@ -2,6 +2,7 @@ import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { SETTINGS_SECTIONS } from '../playground-registry';
 import { SettingsShowcases } from '../showcases/SettingsShowcases';
 import { RemoteAccessShowcases } from '../showcases/RemoteAccessShowcases';
+import { TeamBoardShowcases } from '../showcases/TeamBoardShowcases';
 import { KeepAwakeShowcases } from '../showcases/KeepAwakeShowcases';
 import { CompanyCertificatesShowcases } from '../showcases/CompanyCertificatesShowcases';
 import { RuntimeCardShowcases } from '../showcases/RuntimeCardShowcases';
@@ -20,6 +21,7 @@ export function SettingsPage() {
       <CreditsOfferShowcases />
       <SettingsShowcases />
       <RemoteAccessShowcases />
+      <TeamBoardShowcases />
       <KeepAwakeShowcases />
       <CompanyCertificatesShowcases />
       <CloudUsageShowcases />

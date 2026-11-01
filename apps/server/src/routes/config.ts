@@ -37,6 +37,7 @@ import {
 } from '@dorkos/shared/config-schema';
 import { describeExperiments } from '../services/core/config/describe-experiments.js';
 import { describeCompanyCertificates } from '../services/core/config/company-certificates.js';
+import { describeCapacity } from '../services/core/config/describe-capacity.js';
 import { officialSpaceUrl } from '../services/communities/spaces-config.js';
 import { usableOfficialLink } from '../services/communities/official-space.js';
 import { deepMerge, sanitizedConfigSnapshot } from '../services/core/operator/config-patch.js';
@@ -151,6 +152,7 @@ router.get('/', async (c) => {
       isAtThisComputer(honoRequestFacts(c)) || isOnEncryptedConnection(honoRequestFacts(c)),
     callerRoute: requestSessionRoute(honoRequestFacts(c)),
     serverRole: currentServerRole(),
+    capacity: await describeCapacity(process.env.DORK_HOME!),
     dismissedUpgradeVersions:
       (configManager.get('ui') as { dismissedUpgradeVersions?: string[] } | undefined)
         ?.dismissedUpgradeVersions ?? [],
