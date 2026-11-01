@@ -18,6 +18,9 @@
  *   before the server answered), or nobody sees the failure at all; every other
  *   failure of the same mutation still toasts.
  *
+ *   A mutation that can offer a way forward sets `meta.errorAction(error,
+ *   variables)`, whose answer replaces the toast's "Report" button.
+ *
  *   Prefer `meta.errorLabel` over opting out. This handler is the only failure
  *   report that always reaches the user: it runs on the mutation itself
  *   (`mutation.js:148`), whereas a `mutate(…, { onError })` callback is
@@ -63,8 +66,16 @@ function reportBugFromToast(message: string): void {
   );
 }
 
+/** A button on a failure toast. */
+interface ToastAction {
+  /** What the button says. */
+  label: string;
+  /** What pressing it does. */
+  onClick: () => void;
+}
+
 /** The "Report" toast action that opens a prefilled bug report. */
-function reportAction(message: string): { label: string; onClick: () => void } {
+function reportAction(message: string): ToastAction {
   return { label: 'Report', onClick: () => reportBugFromToast(message) };
 }
 
@@ -139,7 +150,7 @@ export function createQueryClientConfig(): QueryClientConfig {
       },
     }),
     mutationCache: new MutationCache({
-      onError: (error, _variables, _onMutateResult, mutation) => {
+      onError: (error, variables, _onMutateResult, mutation) => {
         console.error('[dorkos:mutation-error]', { error: error.message });
         // Recorded under `query_error`, which the breadcrumb enum uses for any
         // failed data operation (query or mutation) — the bug-report trail only
@@ -182,9 +193,16 @@ export function createQueryClientConfig(): QueryClientConfig {
         //
         // The `id` (when set) still collapses repeats; it is merged into the
         // same options object as the action.
+        //
+        // `errorAction` lets a mutation offer something better than a report:
+        // a send that failed because the server was down wants "Retry", which
+        // only the mutation knows how to do (DOR-3481). It is asked with the
+        // failed call's own variables, and answering `undefined` keeps Report.
+        const errorAction = mutation.meta?.errorAction as
+          ((error: Error, variables: unknown) => ToastAction | undefined) | undefined;
         toast.error(headline, {
           description: error.message,
-          action: reportAction(`${headline}: ${error.message}`),
+          action: errorAction?.(error, variables) ?? reportAction(`${headline}: ${error.message}`),
           ...(id !== undefined ? { id } : {}),
         });
       },

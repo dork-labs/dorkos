@@ -67,6 +67,11 @@ async function request(
         cause: err,
       });
     }
+    // `fetch` rejects with a TypeError when no response came back at all: the
+    // server is down, or the network is. Marked so a caller can tell this from
+    // a body that broke AFTER a response, which also throws a TypeError but
+    // means the server did answer (DOR-3481).
+    if (err instanceof TypeError) throw Object.assign(err, { noResponse: true });
     throw err;
   }
   if (!res.ok) {
