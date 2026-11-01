@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -197,6 +198,24 @@ describe('every server runs on a throwaway home', () => {
 
   it('still tells the server where Playwright keeps its browsers', () => {
     for (const { command } of legs) expect(command).toMatch(/PLAYWRIGHT_BROWSERS_PATH="[^"]+"/);
+  });
+
+  it('names the boundary on every leg whose home moved', () => {
+    // The boundary defaults to the home folder, so moving HOME moves it too, to
+    // an empty folder that holds none of the fixtures. The leg still boots and
+    // answers its health check; the first spec to seed an agent is then refused
+    // with a 403 about a root nothing changed. Worked out here rather than taken
+    // from `throwaway-home.ts`, so a wrong constant there fails too.
+    const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
+    const moved = legs.filter(({ command }) => /\sHOME="/.test(command));
+    // Without this the loop below passes vacuously if HOME's spelling changes.
+    expect(moved).toHaveLength(legs.length);
+    for (const { command, dorkHome } of moved) {
+      expect({ dorkHome, boundary: /\bDORKOS_BOUNDARY="?([^"\s]+)/.exec(command)?.[1] }).toEqual({
+        dorkHome,
+        boundary: repoRoot,
+      });
+    }
   });
 });
 

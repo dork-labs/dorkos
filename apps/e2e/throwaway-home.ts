@@ -17,6 +17,23 @@ import { join } from 'node:path';
  */
 
 /**
+ * The checkout root, which every server this harness boots from source is
+ * boundary-scoped to.
+ *
+ * The server refuses any agent path outside `DORKOS_BOUNDARY`, and that defaults
+ * to the **home directory**. So the fixtures' own scratch dir under
+ * `apps/e2e/.temp` is out of bounds on a throwaway home, and on any checkout
+ * parked outside `$HOME`: every seeded agent answers `Path outside boundary` and
+ * specs fail for a reason no diff explains.
+ *
+ * Naming the boundary makes that true by construction instead of by coincidence.
+ * The checkout is the right root because the server's own default working
+ * directory is already the repo root (`resolve-root.ts`), so nothing the suite
+ * legitimately reaches falls outside it.
+ */
+const REPO_ROOT = join(import.meta.dirname, '..', '..');
+
+/**
  * The environment that gives a server a home of its own: `HOME`, and every
  * variable the server's carve-outs read before it.
  *
@@ -73,12 +90,17 @@ export function makeThrowawayHome(dorkHome: string): string {
  * The shell that starts a server from source on its throwaway home. `env` sits
  * after `pnpm exec`, so pnpm itself still runs on the real home.
  *
+ * It names the boundary too, so no leg can move its home without it: the boundary
+ * defaults to the home folder, and an empty home holds none of the fixtures. See
+ * {@link REPO_ROOT}.
+ *
  * @param dorkHome - The server's `DORK_HOME`.
  */
 export function bootServerOnThrowawayHome(dorkHome: string): string {
   const assignments = Object.entries({
     ...isolatedHomeEnv(throwawayHomeOf(dorkHome)),
     PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath(),
+    DORKOS_BOUNDARY: REPO_ROOT,
   })
     // Double quotes: this lands inside the leg's single-quoted `sh -c`.
     .map(([key, value]) => `${key}="${value}"`)
