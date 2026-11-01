@@ -5,6 +5,11 @@ import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { broadcastExtensionReloaded } from '../../../../routes/extensions.js';
 import {
+  EXTENSION_TEXT_NOTE,
+  extensionForAgents,
+  extensionPartsForAgents,
+} from '../../../extensions/extension-agent-text.js';
+import {
   createCreateExtensionHandler,
   type ExtensionCreatorResolver,
 } from './extension-create-tool.js';
@@ -334,36 +339,16 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
     if (!manager) {
       return jsonContent({ error: 'Extension system is not available' }, true);
     }
+    // The author's words are labelled and defused before an agent reads them (DOR-3514).
     const extensions = manager.listPublic().map((ext) => ({
-      id: ext.id,
-      name: ext.manifest.name,
-      version: ext.manifest.version,
-      status: ext.status,
-      scope: ext.scope,
+      ...extensionForAgents(ext),
       bundleReady: ext.bundleReady,
       hasServerEntry: ext.hasServerEntry,
       hasDataProxy: ext.hasDataProxy,
       serverStatus: manager.getServerHandler(ext.id) ? ('active' as const) : ('inactive' as const),
-      ...(ext.manifest.description && { description: ext.manifest.description }),
-      ...(ext.error && { error: ext.error }),
-      // What it gives agents, and why a tool is not offered (DOR-2685).
-      ...(ext.tools && {
-        tools: ext.tools.map((tool) => ({
-          name: tool.name,
-          status: tool.status,
-          ...(tool.reason ? { reason: tool.reason } : {}),
-        })),
-      }),
-      // Its skills, and why one is left out, so an author sees it here too.
-      ...(ext.skills && {
-        skills: ext.skills.map((skill) => ({
-          name: skill.name,
-          status: skill.status,
-          ...(skill.reason ? { reason: skill.reason } : {}),
-        })),
-      }),
+      ...extensionPartsForAgents(ext),
     }));
-    return jsonContent({ extensions, count: extensions.length });
+    return jsonContent({ note: EXTENSION_TEXT_NOTE, extensions, count: extensions.length });
   };
 }
 
@@ -386,16 +371,8 @@ export function createGetExtensionErrorsHandler(deps: McpToolDeps) {
     const errors = manager
       .listPublic()
       .filter((ext) => ERROR_STATUSES.has(ext.status))
-      .map((ext) => ({
-        id: ext.id,
-        name: ext.manifest.name,
-        version: ext.manifest.version,
-        status: ext.status,
-        scope: ext.scope,
-        ...(ext.manifest.description && { description: ext.manifest.description }),
-        ...(ext.error && { error: ext.error }),
-      }));
-    return jsonContent({ errors, count: errors.length });
+      .map(extensionForAgents);
+    return jsonContent({ note: EXTENSION_TEXT_NOTE, errors, count: errors.length });
   };
 }
 
