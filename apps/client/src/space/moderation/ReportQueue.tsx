@@ -118,24 +118,26 @@ export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform
           </Button>
         </div>
       </div>
-      {waitingAboutYou > 0 && (
-        <p className="small muted">
-          {waitingAboutYou === 1
-            ? '1 report about you is waiting.'
-            : `${waitingAboutYou} reports about you are waiting.`}{' '}
-          <a className="underline" href="#space-members">
-            Add an admin
-          </a>{' '}
-          to review it.
-        </p>
-      )}
-      <p className="small muted">Automatic checks only flag. They never hide a message.</p>
+      <div className="flex flex-col gap-2">
+        {waitingAboutYou > 0 && (
+          <p className="small muted m-0">
+            {waitingAboutYou === 1
+              ? '1 report about you is waiting.'
+              : `${waitingAboutYou} reports about you are waiting.`}{' '}
+            <a className="underline" href="#space-members">
+              Add an admin
+            </a>{' '}
+            to review {waitingAboutYou === 1 ? 'it' : 'them'}.
+          </p>
+        )}
+        <p className="small muted m-0">Automatic checks only flag. They never hide a message.</p>
+      </div>
       {error && (
         <p className="small muted" role="alert">
           {error}
         </p>
       )}
-      {!error && shown.length === 0 && (
+      {!error && shown.length === 0 && (status !== 'open' || waitingAboutYou === 0) && (
         <p className="small muted">
           {status === 'open' ? 'Nothing flagged.' : 'Nothing resolved yet.'}
         </p>

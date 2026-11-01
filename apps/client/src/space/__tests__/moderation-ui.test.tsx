@@ -176,11 +176,31 @@ describe('the flagged-message queue', () => {
     });
     render(<ReportQueue busy={false} perform={perform} />);
     const line = await screen.findByText(/2 reports about you are waiting\./u);
-    expect(line.textContent).toBe('2 reports about you are waiting. Add an admin to review it.');
+    expect(line.textContent).toBe('2 reports about you are waiting. Add an admin to review them.');
     expect(screen.getByRole('link', { name: 'Add an admin' }).getAttribute('href')).toBe(
       '#space-members'
     );
-    expect(screen.getByText('Nothing flagged.')).toBeTruthy();
+  });
+
+  it('keeps the waiting line its own block, 8px above the helper line', async () => {
+    mockFetch({
+      'GET /api/v1/reports': () => ({ status: 200, body: { reports: [], waitingAboutYou: 3 } }),
+    });
+    render(<ReportQueue busy={false} perform={perform} />);
+    const line = await screen.findByText(/3 reports about you are waiting\./u);
+    const helper = screen.getByText('Automatic checks only flag. They never hide a message.');
+    expect(line.tagName).toBe('P');
+    expect(line.nextElementSibling).toBe(helper);
+    expect(line.parentElement?.className).toContain('gap-2');
+  });
+
+  it('drops “Nothing flagged” when reports about the owner wait', async () => {
+    mockFetch({
+      'GET /api/v1/reports': () => ({ status: 200, body: { reports: [], waitingAboutYou: 1 } }),
+    });
+    render(<ReportQueue busy={false} perform={perform} />);
+    await screen.findByText(/1 report about you is waiting\./u);
+    expect(screen.queryByText('Nothing flagged.')).toBeNull();
   });
 
   it('says it in the singular for one report, and nothing when none wait', async () => {
