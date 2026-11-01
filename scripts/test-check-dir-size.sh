@@ -213,11 +213,66 @@ case_e() {
   check "e: no WARN or ERROR noise" eq "" "$sut_out"
 }
 
+# Seed a repo where main grows src/big past the limit while a branch, cut
+# before that, works elsewhere; leave a `--no-commit` merge of main staged on
+# the branch. This is how main really grows (squash merges on GitHub, no hook).
+setup_merge_of_main() {
+  local repo=$1
+  init_repo "$repo"
+  (
+    cd "$repo" || exit 1
+    make_files src/big 25
+    git add -A
+    git commit -qm 'seed: dir already at 25 files'
+    git switch -qc lane
+    make_files src/small 2
+    git add -A
+    git commit -qm 'lane: unrelated work'
+    git switch -q main
+    make_files src/big 27
+    git add -A
+    git commit -qm 'main: grew src/big to 27'
+    git switch -q lane
+    git merge -q --no-commit --no-ff main
+  ) >/dev/null 2>&1
+}
+
+# --- (f) DOR-3520: merging main brings main's own growth; never blocks. -----
+# Before the fix, main's two new files read as adds against HEAD and the
+# merge commit failed with "ERROR: src/big has 27 source files".
+case_f() {
+  local repo=$work_dir/case-f
+  setup_merge_of_main "$repo"
+
+  run_sut "$repo"
+  check "f: merge of main exits 0" eq 0 "$sut_status"
+  check "f: no ERROR for main's own growth" lacks "ERROR:" "$sut_out"
+  check "f: census still reports the over-limit dir" has \
+    "WARN:  src/big has 27 source files (over 25; not touched by this commit)" "$sut_out"
+}
+
+# --- (g) A file added while resolving a merge is real growth; still blocks. -
+case_g() {
+  local repo=$work_dir/case-g
+  setup_merge_of_main "$repo"
+  (
+    cd "$repo" || exit 1
+    make_files src/big 28
+    git add -A
+  ) >/dev/null 2>&1
+
+  run_sut "$repo"
+  check "g: new file in a merge exits 1" eq 1 "$sut_status"
+  check "g: ERROR for the merge's own add" has "ERROR: src/big has 28 source files (max 25)" "$sut_out"
+}
+
 case_a
 case_b
 case_c
 case_d
 case_e
+case_f
+case_g
 
 printf '\ncheck-dir-size fixtures: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
