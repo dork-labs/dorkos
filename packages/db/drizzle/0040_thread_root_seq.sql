@@ -1,0 +1,2 @@
+DROP INDEX `idx_room_entries_thread_root`;--> statement-breakpoint
+CREATE INDEX `idx_room_entries_thread_root` ON `room_entries` (`room_id`,`thread_root_entry_id`,`seq`) WHERE "thread_root_entry_id" IS NOT NULL;

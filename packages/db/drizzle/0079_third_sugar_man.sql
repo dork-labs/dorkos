@@ -1,0 +1,1 @@
+ALTER TABLE `pulse_schedules` ADD `sticky` integer DEFAULT false NOT NULL;

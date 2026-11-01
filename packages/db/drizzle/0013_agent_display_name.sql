@@ -1,0 +1,1 @@
+ALTER TABLE `agents` ADD `display_name` text;

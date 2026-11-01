@@ -1,0 +1,1 @@
+ALTER TABLE `session_metadata` ADD `permission_mode_by_person` integer;

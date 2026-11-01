@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idx_rate_limit_agent_minute` ON `rate_limit_buckets` (`agent_id`,`bucket_minute`);

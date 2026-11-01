@@ -1,0 +1,1 @@
+ALTER TABLE `session_started_by` ADD `report_back` integer DEFAULT true NOT NULL;

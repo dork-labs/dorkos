@@ -1,0 +1,1 @@
+CREATE INDEX `idx_relay_index_sender_created_at` ON `relay_index` (`sender`,"created_at" desc);
