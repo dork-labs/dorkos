@@ -43,5 +43,13 @@
   --color-dui-brand-text: hsl(var(--dui-brand-text));
   --color-dui-destructive-fill: var(--dui-destructive-fill);
   --color-dui-scrim: var(--dui-scrim);
+  --color-dui-destructive-fill-hover: var(--dui-destructive-fill-hover);
   --color-dui-success: hsl(var(--dui-success));
+  --animate-dui-breathe: dui-breathe 1.6s var(--dui-ease-standard) infinite;
+
+  @keyframes dui-breathe {
+    50% {
+      opacity: 0.5;
+    }
+  }
 }

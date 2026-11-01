@@ -80,6 +80,14 @@
  * one attribute change. Same two baselines, edited by hand for the same reason
  * as above. The measured diff before the edit was exactly those three entries
  * per file; nothing else moved.
+ *
+ * ## The destructive fill token amendment (2026-10-30)
+ *
+ * The dimmed red became a token, so the Stop button in the two `streaming-queue`
+ * baselines swapped `bg-destructive` and `dark:bg-destructive/60` for
+ * `bg-dui-destructive-fill`, and its hover for `hover:bg-dui-destructive-fill-hover`.
+ * Same two baselines, edited by hand for the same reason as above. Only that
+ * button's classes moved.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { createRef } from 'react';

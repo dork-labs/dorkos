@@ -77,7 +77,7 @@ A black shadow can't darken a 4% page, so in dark mode the `--elevation-*` token
 2. **Surface lift:** `inset 0 0 0 100vmax` white, 2 → 5 → 8 → 11%. It paints over the background and under the content, so a higher surface is a lighter one with no extra surface token.
    3–4. **The black drop**, kept (50 → 70%). It still reads over anything lighter: the sidebar, a muted panel, an image.
 
-Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: inputs, select triggers, switches and outline buttons use `shadow-xs`, because they should read as recessed, not raised.
+Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: inputs, select triggers and switches use `shadow-xs`, because they should read as recessed, not raised. No button variant has a shadow or a border.
 
 **Use a shadow token for height and never hand-roll a black `box-shadow`**: it'll vanish in dark mode. **Known gap:** `bg-popover` is 4% in dark, so a menu that opens over the 10% sidebar reads as a hole, not a lift. That's a surface-token fix (popover and accent together), tracked separately.
 
@@ -90,13 +90,13 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 **Where brand orange appears:**
 
 - Focus rings (`--ring`) — every `focus-visible` interaction carries the brand
-- `brand` button variant — opt-in for exceptional CTAs (`<Button variant="brand">`)
+- `brand` button variant — the site and Cloud marketing only. In the app, a primary button is grey, and `apps/client` has no use of it
 - Sidebar active tab indicator — subtle brand presence in navigation
 - Assistant message links and inline code — via `--brand-text`
 
 **Where gray stays:**
 
-- `--primary` — default buttons, switches, badges, selections (the quiet workhorse)
+- `--primary` — primary buttons, switches, badges, selections (the quiet workhorse)
 - `--accent` — hover backgrounds in menus, dropdowns
 - `--secondary` — user message tint
 - All structural surfaces — backgrounds, cards, borders, muted
@@ -225,7 +225,7 @@ Animation should feel like physics, not decoration. Things should move because t
 
 **Tool card expand:** Height + opacity transition, 300ms ease-in-out.
 
-**Button press:** Scale to 0.97 on active, spring back.
+**Button press:** Scale to 0.97 in 80ms, back in 120ms, both ease-out, as a CSS transition that can be interrupted. Nothing under reduced motion. See [Button](#button).
 
 **Send button:** Subtle scale pulse on hover (1.05), quick press feedback.
 
@@ -1128,9 +1128,33 @@ The app uses a CSS custom property scale multiplier system that makes text, icon
 | Icon xs                  | 12px    | 15px           |
 | Icon sm                  | 16px    | 20px           |
 | Icon md                  | 20px    | 25px           |
-| Button sm                | 32px    | 40px           |
-| Button md                | 36px    | 45px           |
-| Button lg                | 40px    | 50px           |
+| Button xs                | 24px    | 44px           |
+| Button sm                | 32px    | 44px           |
+| Button md                | 36px    | 44px           |
+| Button lg                | 40px    | 48px           |
+| Button icon-xs           | 24px    | 44px           |
+| Button icon-sm           | 32px    | 44px           |
+| Button icon-md           | 36px    | 44px           |
+| Button icon-lg           | 40px    | 48px           |
+
+### Button
+
+| Variant       | Use                               | Rest                     | Hover         |
+| ------------- | --------------------------------- | ------------------------ | ------------- |
+| `primary`     | The one main action in a view     | Solid foreground         | 90%           |
+| `secondary`   | Every other labelled action       | 7% foreground            | 11%           |
+| `ghost`       | Toolbars, rows, icon buttons      | Transparent              | 7% foreground |
+| `destructive` | Can't be undone                   | The fill token           | The hover one |
+| `link`        | Inline, in running text           | Underline at 35%         | Full          |
+| `brand`       | The site and Cloud marketing only | Orange, near-black label | 90%           |
+
+`default` and `outline` are deprecated aliases of `primary` and `secondary`, kept until Cloud has moved. `data-variant` always reports the new name.
+
+- **Secondary is a tint, not a grey.** A fixed grey vanishes on the sidebar, and a tint reads on every ground. `aria-pressed` and `data-state=on` hold the 11% step on `secondary` and `ghost`.
+- **One focus ring:** a 2px solid outline, 2px out, on every variant. The gap is transparent, so it works on any ground, and an outline survives forced-colours mode. Don't add `outline-none` beside it: in Tailwind v4 that stops the ring drawing at all.
+- **Disabled:** 50%, no pointer events. Pass `disabledReason="Connect Telegram first"` whenever a reason exists: the button stays focusable and shows it in a tooltip. A greyed button with no reason is a locked door with no sign.
+- **Loading:** `loading` and `loadingLabel` come together, as a gerund (Save, "Saving…"). No spinner. Focus stays put and the width doesn't move, because both labels share one grid cell.
+- **`responsive={false}`** keeps the small box and adds an invisible 44px hit area below `md`.
 
 ### Icon Size Convention
 
@@ -1152,7 +1176,7 @@ Usage:
 
 **Parentheses, not brackets.** `size-(--size-icon-sm)` is Tailwind v4's syntax for "this arbitrary value is a custom property". The v3 spelling `size-[--size-icon-sm]` compiles to `width: --size-icon-sm`, which is not valid CSS — the browser drops it and the icon falls back to its intrinsic 24px. Two files shipped that way until DOR-1750; if an icon looks too big, check the brackets first.
 
-The shared `Button` applies its namespaced `--dui-size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Client-owned icon examples above keep the local token names. Its compact `xs` and `icon-xs` sizes use `--dui-size-icon-xs`, so their glyphs step from 12px to 15px on a phone with the rest of the icon scale.
+The shared `Button` applies its namespaced `--dui-size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Client-owned icon examples above keep the local token names. Every size uses it except the compact `xs` and `icon-xs`, which use `--dui-size-icon-xs`, so their glyphs step from 12px to 15px on a phone with the rest of the icon scale.
 
 ### Hover Pattern Mobile Alternatives
 
@@ -1293,7 +1317,7 @@ Two sizing rules that only surface once a software keyboard is involved, both of
 - **Never pad for the keyboard.** vaul already shrinks the drawer to the visual viewport while a field inside it has focus, so compensating again subtracts the same height twice — it collapsed a result list to 0px on a 390×844 phone.
 - **Give a scrollable list a `min-h` floor.** A landscape phone with the keyboard up leaves under 200px of sheet. A list that is only `flex-1` hands all of it to the parts that do not shrink and renders zero rows — a search field above a blank space. A floor plus the sheet's scroll of last resort keeps two rows on screen and the commit button one short scroll away.
 
-Sizes come from the system, not by hand: `Button` is already `responsive` by default (`size="sm"` → `h-10 md:h-8`), rows use `min-h-11` / `min-h-[44px]`, and `--_st` already scales every text token 1.25× below 768px — so writing `text-base md:text-sm` double-scales. When a control has to stay visually small, grow the target rather than the glyph with `after:absolute after:-inset-3 md:after:hidden`, the way `SidebarGroupAction` does.
+Sizes come from the system, not by hand: `Button` is already `responsive` by default (`size="sm"` → `h-11 md:h-8`), rows use `min-h-11` / `min-h-[44px]`, and `--_st` already scales every text token 1.25× below 768px — so writing `text-base md:text-sm` double-scales. When a control has to stay visually small, grow the target rather than the glyph with `after:absolute after:-inset-3 md:after:hidden`, the way `SidebarGroupAction` does.
 
 ### `ResponsiveSheet`
 

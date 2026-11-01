@@ -3,7 +3,20 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { Slot } from 'radix-ui';
 
 import { cn } from './cn.js';
-import { TOUCH_TARGET_RESPONSIVE_H, TOUCH_TARGET_RESPONSIVE_SIZE } from './touch-target.js';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip.js';
+import {
+  TOUCH_HIT_AREA,
+  TOUCH_TARGET_RESPONSIVE_H,
+  TOUCH_TARGET_RESPONSIVE_SIZE,
+} from './touch-target.js';
+
+const PRIMARY =
+  'bg-dui-primary text-dui-primary-foreground hover:bg-dui-primary/90 aria-disabled:hover:bg-dui-primary';
+
+// A tint of the foreground, not a fixed grey. A fixed fill vanishes on the sidebar,
+// which is nearly the same grey, and a tint reads on every ground a button sits on.
+const SECONDARY =
+  'bg-dui-foreground/7 text-dui-foreground hover:bg-dui-foreground/11 aria-pressed:bg-dui-foreground/11 data-[state=on]:bg-dui-foreground/11 aria-disabled:hover:bg-dui-foreground/7';
 
 // `[&_svg:not([class*='size-'])]:size-(--dui-size-icon-sm)` is the default size for
 // any `<svg>` a caller drops in without sizing it. The TOKEN, not a flat
@@ -13,46 +26,52 @@ import { TOUCH_TARGET_RESPONSIVE_H, TOUCH_TARGET_RESPONSIVE_SIZE } from './touch
 // proportion at both. The `:not([class*='size-'])` guard is the opt-out: any
 // `size-*` class on the svg, token or literal, wins over this default.
 const buttonVariants = cva(
-  // **The focus ring is solid.** It was the ring colour at half strength (a fifth
-  // for destructive and brand), which measured 1.9:1 against a light page and
-  // 2.4:1 against a dark one — under the 3:1 WCAG AA asks of a focus indicator,
-  // and the design system's own rule (DOR-2567). The ring colour itself clears it
-  // on both themes. `has-[:focus-visible]` is the same ring for a button that
-  // wraps its real control: a file picker is a label around a hidden input, and
-  // keyboard focus lands on the input, which nobody can see. Brand and destructive
-  // fill the button with the ring's own colour, so a flush ring would only make
-  // the button look bigger; theirs sits 2px out, past a gap in the page colour,
-  // as the client's `focus-ring` utility draws it. An invalid button's ring is
-  // the destructive colour, solid for the same reason (DOR-2609); the form
-  // controls share both rings from `focus-ring.ts`.
+  // **One focus ring for every variant: a solid outline, 2px out.** The gap is
+  // transparent, so it works on any ground, where a `ring-offset` painted the page
+  // colour onto a sidebar. An outline also survives forced-colours mode, which
+  // drops box-shadows. There is deliberately no `outline-none` here: in Tailwind v4
+  // it sets the outline style a later `outline-2` reads, so the ring would never
+  // draw. The browser only paints its own outline on `:focus-visible` anyway.
+  // `has-[:focus-visible]` is the same ring for a button that wraps its real
+  // control: a file picker is a label around a hidden input, and keyboard focus
+  // lands on the input, which nobody can see. An invalid button's ring is the
+  // destructive colour.
   //
   // **The press lives here, not at the call site.** The design system asks every
   // button for "scale to 0.97 on active, spring back", and for a long time the
   // primitive answered a press with nothing — which is why fifteen hand-rolled
   // controls grew their own press and no two picked the same number (DOR-1751).
   // `motion-safe:` because a shrink that only ever reads as movement has no
-  // static half worth keeping for a reader who asked for less of it.
+  // static half worth keeping for a reader who asked for less of it. In over 80ms,
+  // back over 120ms; a CSS transition can be interrupted mid-press.
   //
   // **The transition names its properties.** `transition-all` also animated the
   // `h-11 md:h-9` swap in `RESPONSIVE_SIZE_CLASSES`, so dragging a window
   // across 768px animated the height of every button on screen. `scale` is
   // named as itself: Tailwind v4's scale utilities write the standalone `scale`
-  // property, so a list saying `transform` would transition nothing.
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow,scale] duration-150 motion-safe:active:scale-[0.97] motion-safe:active:duration-100 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-(--dui-size-icon-sm) shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-dui-ring focus-visible:ring-dui-ring focus-visible:ring-[3px] has-[:focus-visible]:border-dui-ring has-[:focus-visible]:ring-dui-ring has-[:focus-visible]:ring-[3px] aria-invalid:border-dui-destructive aria-invalid:ring-dui-destructive",
+  // property, so a list saying `transform` would transition nothing. The three
+  // durations and curves line up with the three properties, in order.
+  //
+  // **`aria-disabled` keeps the pointer.** Loading and `disabledReason` stay
+  // focusable, and a reason's tooltip needs the hover, so neither can use
+  // `pointer-events-none` the way a natively disabled button does.
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,scale] [transition-duration:var(--dui-dur-fast),var(--dui-dur-fast),var(--dui-dur-answer)] [transition-timing-function:var(--dui-ease-standard),var(--dui-ease-standard),var(--dui-ease-out)] motion-safe:active:scale-[0.97] motion-safe:active:[transition-duration:var(--dui-dur-fast),var(--dui-dur-fast),var(--dui-dur-press)] disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-default not-aria-busy:aria-disabled:opacity-50 motion-safe:aria-disabled:active:scale-100 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-(--dui-size-icon-sm) shrink-0 [&_svg]:shrink-0 outline-dui-ring focus-visible:outline-2 focus-visible:outline-offset-2 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 aria-invalid:outline-dui-destructive",
   {
     variants: {
       variant: {
-        default: 'bg-dui-primary text-dui-primary-foreground hover:bg-dui-primary/90',
+        primary: PRIMARY,
+        secondary: SECONDARY,
+        /** @deprecated Use `primary`. */
+        default: PRIMARY,
+        /** @deprecated Use `secondary`. */
+        outline: SECONDARY,
         destructive:
-          'bg-dui-destructive-fill text-dui-destructive-foreground hover:bg-dui-destructive-fill/90 focus-visible:ring-dui-destructive has-[:focus-visible]:ring-dui-destructive focus-visible:ring-offset-2 focus-visible:ring-offset-dui-background has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-dui-background',
-        outline:
-          'border border-dui-border bg-dui-background text-dui-foreground shadow-xs hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:bg-dui-input/30 dui-dark:border-dui-input dui-dark:hover:bg-dui-input/50',
-        secondary: 'bg-dui-secondary text-dui-secondary-foreground hover:bg-dui-secondary/80',
+          'bg-dui-destructive-fill text-dui-destructive-foreground hover:bg-dui-destructive-fill-hover aria-disabled:hover:bg-dui-destructive-fill',
         ghost:
-          'hover:bg-dui-accent hover:text-dui-accent-foreground dui-dark:hover:bg-dui-accent/50',
+          'text-dui-foreground hover:bg-dui-foreground/7 aria-pressed:bg-dui-foreground/11 data-[state=on]:bg-dui-foreground/11 aria-disabled:hover:bg-transparent',
         brand:
-          'bg-dui-brand text-dui-brand-foreground hover:bg-dui-brand/90 focus-visible:ring-offset-2 focus-visible:ring-offset-dui-background has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-dui-background',
-        link: 'text-dui-primary underline-offset-4 hover:underline',
+          'bg-dui-brand text-dui-brand-foreground hover:bg-dui-brand/90 aria-disabled:hover:bg-dui-brand',
+        link: 'text-current underline decoration-current/35 underline-offset-3 hover:decoration-current aria-disabled:hover:decoration-current/35',
       },
       size: {
         xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-(--dui-size-icon-xs)",
@@ -66,11 +85,14 @@ const buttonVariants = cva(
       },
     },
     defaultVariants: {
-      variant: 'default',
+      variant: 'primary',
       size: 'md',
     },
   }
 );
+
+/** The names that are on their way out, and the name each one now means. */
+const VARIANT_ALIASES = { default: 'primary', outline: 'secondary' } as const;
 
 /**
  * The button's size steps: an ordinal scale, plus a square one for icon-only.
@@ -82,39 +104,98 @@ const buttonVariants = cva(
  */
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'icon-xs' | 'icon-sm' | 'icon-md' | 'icon-lg';
 
-const RESPONSIVE_SIZE_CLASSES: Partial<Record<ButtonSize, string>> = {
-  // Compact controls still follow the 1.25× phone scale. These are deliberately
-  // smaller than the 44px primary-action floor: they live in dense, grouped
-  // chrome such as a message action capsule. `responsive={false}` keeps the box
-  // at its desktop size for a toolbar that supplies its own reach.
-  xs: 'h-7.5 md:h-6',
+const RESPONSIVE_SIZE_CLASSES: Record<ButtonSize, string> = {
   // 44px below the `md` breakpoint, spelled once in `touch-target.ts` — read its
   // module doc for why the gate is viewport width rather than touch capability,
   // and why the two sizes that match it exactly compose from the constant while
-  // the rest state their own numbers.
+  // the rest state their own numbers. Every size clears 44, the small ones included:
+  // a thumb is the same size whatever the button looks like on a desktop.
+  xs: 'h-11 md:h-6',
   sm: 'h-11 md:h-8',
   md: TOUCH_TARGET_RESPONSIVE_H,
   lg: 'h-12 md:h-10',
-  'icon-xs': 'size-7.5 md:size-6',
-  'icon-sm': 'size-10 md:size-8',
+  'icon-xs': 'size-11 md:size-6',
+  'icon-sm': 'size-11 md:size-8',
   'icon-md': TOUCH_TARGET_RESPONSIVE_SIZE,
   'icon-lg': 'size-12 md:size-10',
 };
 
+/** The busy state's two props, which only come together. */
+type ButtonLoadingProps =
+  | {
+      /** Show the busy state: the label swaps, the width holds and clicks do nothing. */
+      loading: boolean;
+      /** What the button says while busy, as a gerund: Save becomes "Saving…". */
+      loadingLabel: string;
+    }
+  | { loading?: undefined; loadingLabel?: undefined };
+
 /** Props for {@link Button}. */
-export interface ButtonProps
-  extends React.ComponentProps<'button'>, VariantProps<typeof buttonVariants> {
-  /** Render the child element instead of a `<button>`, keeping the styling. */
-  asChild?: boolean;
-  /**
-   * Grow to a 44px touch target below `md`, back to `size` past it.
-   *
-   * On by default. Turn it off for chrome that is not meant to be a thumb target
-   * — a filter bar, a toolbar — where the taller box would crowd its neighbours.
-   *
-   * @default true
-   */
-  responsive?: boolean;
+export type ButtonProps = React.ComponentProps<'button'> &
+  VariantProps<typeof buttonVariants> &
+  ButtonLoadingProps & {
+    /** Render the child element instead of a `<button>`, keeping the styling. */
+    asChild?: boolean;
+    /**
+     * Grow to a 44px touch target below `md`, back to `size` past it.
+     *
+     * On by default. Turn it off for chrome that is not meant to be a thumb target
+     * — a filter bar, a toolbar — where the taller box would crowd its neighbours.
+     * The box then keeps its size and gains an invisible 44px hit area.
+     *
+     * @default true
+     */
+    responsive?: boolean;
+    /**
+     * Why this can't be pressed right now. Disables the button, keeps it focusable
+     * and shows the reason in a tooltip, because a greyed button with no reason is
+     * a locked door with no sign.
+     */
+    disabledReason?: string;
+  };
+
+/**
+ * Split a button's children into a leading icon and the label after it.
+ *
+ * Only the label swaps while busy, so the icon stays put. With no bare text to
+ * split on, the last child is taken as the label.
+ */
+function splitLeading(children: React.ReactNode) {
+  const nodes = React.Children.toArray(children);
+  const firstText = nodes.findIndex((n) => typeof n === 'string' || typeof n === 'number');
+  const at = firstText === -1 ? nodes.length - 1 : firstText;
+  return { leading: nodes.slice(0, at), label: nodes.slice(at) };
+}
+
+/**
+ * Both labels in one grid cell, the idle one hidden while busy.
+ *
+ * The box is always as wide as the wider of the two, so the button never shifts.
+ */
+function StableLabel({
+  children,
+  loading,
+  loadingLabel,
+}: {
+  children: React.ReactNode;
+  loading: boolean;
+  loadingLabel: string;
+}) {
+  const { leading, label } = splitLeading(children);
+  return (
+    <>
+      {leading}
+      <span className="grid justify-items-center *:[grid-area:1/1]">
+        <span className={loading ? 'invisible' : undefined}>{label}</span>
+        <span className={loading ? undefined : 'invisible'}>{loadingLabel}</span>
+      </span>
+    </>
+  );
+}
+
+function swallowClick(event: React.MouseEvent) {
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 /**
@@ -127,19 +208,31 @@ export interface ButtonProps
  */
 function Button({
   className,
-  variant = 'default',
+  variant = 'primary',
   size = 'md',
   asChild = false,
   responsive = true,
+  loading = false,
+  loadingLabel,
+  disabledReason,
+  disabled,
+  onClick,
+  children,
   ...props
 }: ButtonProps) {
   const Comp = asChild ? Slot.Root : 'button';
+  const resolvedVariant = VARIANT_ALIASES[variant as keyof typeof VARIANT_ALIASES] ?? variant;
+  const resolvedSize = size ?? 'md';
+  const iconOnly = resolvedSize.startsWith('icon');
+  // `aria-disabled`, not `disabled`: a native disabled button drops focus to the
+  // body the moment a save starts, and cannot be focused to read its reason.
+  const blocked = loading || Boolean(disabledReason);
 
-  return (
+  const button = (
     <Comp
       data-slot="button"
-      data-variant={variant}
-      data-size={size}
+      data-variant={resolvedVariant}
+      data-size={resolvedSize}
       // A real `<button>` inside a `<form>` is a SUBMIT button unless it says
       // otherwise, so `<Button onClick={…}>Cancel</Button>` in a form used to
       // submit it — presenting as "the dialog closes when I click Cancel".
@@ -150,11 +243,38 @@ function Button({
       {...(asChild ? {} : { type: props.type ?? 'button' })}
       className={cn(
         buttonVariants({ variant, size }),
-        responsive ? RESPONSIVE_SIZE_CLASSES[size ?? 'md'] : undefined,
+        responsive ? RESPONSIVE_SIZE_CLASSES[resolvedSize] : TOUCH_HIT_AREA,
+        loading &&
+          iconOnly &&
+          '[&_svg]:motion-safe:animate-dui-breathe [&_svg]:motion-reduce:opacity-50',
         className
       )}
       {...props}
-    />
+      disabled={blocked ? undefined : disabled}
+      onClick={blocked ? swallowClick : onClick}
+      {...(blocked && { 'aria-disabled': true })}
+      {...(loading && { 'aria-busy': true })}
+      {...(loading && iconOnly && { 'aria-label': loadingLabel })}
+    >
+      {loadingLabel === undefined || asChild || iconOnly ? (
+        children
+      ) : (
+        <StableLabel loading={loading} loadingLabel={loadingLabel}>
+          {children}
+        </StableLabel>
+      )}
+    </Comp>
+  );
+
+  if (!disabledReason) return button;
+  return (
+    // Its own provider, so a consumer with no app-level one still gets the reason.
+    <TooltipProvider delayDuration={400}>
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent>{disabledReason}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
