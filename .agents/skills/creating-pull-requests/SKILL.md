@@ -33,10 +33,14 @@ exists**. Opening the PR is the last step, not the first:
 
 **A pushed branch that will not become a PR is yours to delete.** GitHub removes a
 branch from origin only when its PR merges, so a review branch you abandon, or an
-attempt that lost to a sibling, stays forever, and each one keeps a Neon preview
-database alive. Delete it from origin (`git push origin --delete <branch>`) the
-moment it is abandoned or superseded. A `codex/archive/*` twin goes the same way
-once the PR it certifies has merged.
+attempt that lost to a sibling, stays forever. Delete it from origin
+(`git push origin --delete <branch>`) the moment it is abandoned or superseded. A
+`codex/archive/*` twin goes the same way once the PR it certifies has merged.
+
+**Only `main` and `*/site-*` branches get a Vercel preview.** Each preview makes a
+Neon database branch, so `apps/site/vercel.json` turns deploys off for every other
+branch. A PR that needs a preview site names its topic `site-…`
+(`designer/site-hero-copy`); every other PR still gets the `site-build` check.
 
 Every reason below is a cost measured on 2026-07-27/28, not a preference:
 
