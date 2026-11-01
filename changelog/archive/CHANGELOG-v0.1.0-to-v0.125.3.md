@@ -1,7 +1,27 @@
-# Changelog archive: v0.1.0 – v0.125.2
+# Changelog archive: v0.1.0 – v0.125.3
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.125.3] - 2026-10-23
+
+> DorkOS 0.125.3 keeps approvals in view in folded sidebar sections, shows new replies live in a chat left open, and lets a room have shared files.
+
+### Added
+
+- Set up shared files from a live room’s panel, then start with its shared `ROOM.md`. Only the room's owner can set them up: agents, guests and archived rooms can't. (DOR-3127)
+
+### Fixed
+
+- A folded sidebar section now also shows a muted agent that is waiting on you, like one asking for your approval. Mute still hides its chatter, but never a request.
+- A folded sidebar section now still shows a room where an agent is waiting on you.
+- A chat you left open for half an hour or more now shows the agent working and its reply as it comes in. Before, the next reply only appeared after you refreshed the app.
+- If the app ever misses a reply again, it now notices on its own within about 20 seconds, catches up, and writes a note about it to the DorkOS log.
+- A turn started by someone DorkOS can't vouch for, like a message from a stranger or a Wi-Fi sign-in, now asks before running commands the project's settings allow. The project's blocked commands stay blocked, and these approval cards don't offer Always allow. (DOR-3204)
+
+### Security
+
+- Keep agents' browsers away from DorkOS Cloud and dorkos.ai. A DorkOS sign-in is never saved for agents, and one saved by an earlier version is removed. An agent can't open, read or act on a page from either site, and a link or redirect that lands there pauses it. You can still open them yourself (DOR-3196)
 
 ## [0.125.2] - 2026-10-22
 
@@ -7566,6 +7586,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.125.3]: https://github.com/dork-labs/dorkos/compare/v0.125.2...v0.125.3
 [0.125.2]: https://github.com/dork-labs/dorkos/compare/v0.125.1...v0.125.2
 [0.125.1]: https://github.com/dork-labs/dorkos/compare/v0.125.0...v0.125.1
 [0.125.0]: https://github.com/dork-labs/dorkos/compare/v0.124.1...v0.125.0
