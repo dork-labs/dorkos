@@ -44,7 +44,7 @@ import { registerHostAccountClosureRoutes } from './routes/host/host-account-clo
 import { registerHostErasureJournalRoutes } from './routes/host/host-erasure-journal.js';
 import { registerHostLifecycleRoutes } from './routes/host/host-lifecycle.js';
 import { registerShortNameRoutes } from './routes/host/short-names.js';
-import { callerAddress } from './caller-address.js';
+import { callerAddress, withCallerAddressRequest } from './caller-address.js';
 import { createAttemptLimiter } from './limits/attempt-limiter.js';
 import { registerOwnerClaimRoutes } from './routes/host/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host/host-keys.js';
@@ -208,7 +208,8 @@ export function createCommunityApp({
   app.all('/api/auth/reset-password/*', () => {
     throw new ApiError(404, 'NOT_FOUND', 'Not found.');
   });
-  app.all('/api/auth/*', (c) => auth.handler(c.req.raw));
+  // Better Auth reads the caller's address only from the header written here (DOR-2846).
+  app.all('/api/auth/*', (c) => auth.handler(withCallerAddressRequest(c.req.raw, peer(c))));
 
   const now = hooks?.now ?? (() => new Date());
   app.post('/api/v1/bootstrap/preflight', async (c) => {

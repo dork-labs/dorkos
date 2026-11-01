@@ -9,6 +9,7 @@ import {
   type CommunityWireSignInLinkNotice,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../../auth.js';
+import { callerAddress, withCallerAddress } from '../../caller-address.js';
 import type { CommunityConfig } from '../../config.js';
 import { transaction } from '../../data.js';
 import { signInRefusal } from '../../erasure/guards.js';
@@ -193,7 +194,8 @@ export function registerSignInLinkRoutes(
     // Signed in exactly as a password sign-in is: Better Auth's own session hooks and cookie.
     const signedIn = await auth.api.signInEmail({
       body: { email, password: body.password },
-      headers: c.req.raw.headers,
+      // The session records the address Better Auth reads from this server's own header.
+      headers: withCallerAddress(c.req.raw.headers, callerAddress(c, config.trustedProxyHeader)),
       asResponse: true,
     });
     if (!signedIn.ok)
