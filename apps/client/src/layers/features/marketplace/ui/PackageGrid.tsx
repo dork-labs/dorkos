@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { asMarketplaceCategory, CATEGORY_LABELS } from '@dorkos/marketplace';
-import { cn } from '@/layers/shared/lib';
+import { cn, STAGGER } from '@/layers/shared/lib';
 import { useMarketplacePackages, useInstalledPackages } from '@/layers/entities/marketplace';
 import { useRequestInstall } from '../model/use-request-install';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
@@ -17,10 +17,6 @@ import { PackageErrorState } from './PackageErrorState';
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Cap stagger to avoid slow entry on large catalogs. */
-const MAX_STAGGER_ITEMS = 20;
-const STAGGER_DELAY = 0.03;
-
 // ---------------------------------------------------------------------------
 // Motion variants
 // ---------------------------------------------------------------------------
@@ -28,14 +24,14 @@ const STAGGER_DELAY = 0.03;
 const gridVariants = {
   hidden: {},
   visible: {
-    transition: { staggerChildren: STAGGER_DELAY },
+    transition: { staggerChildren: STAGGER.step },
   },
 } as const;
 
 const cardVariants = {
   hidden: (i: number) => ({
-    opacity: i < MAX_STAGGER_ITEMS ? 0 : 1,
-    y: i < MAX_STAGGER_ITEMS ? 12 : 0,
+    opacity: i < STAGGER.max ? 0 : 1,
+    y: i < STAGGER.max ? 12 : 0,
   }),
   visible: {
     opacity: 1,
@@ -156,7 +152,7 @@ export function PackageGrid() {
           <motion.div
             key={pkg.name}
             variants={prefersReducedMotion ? undefined : cardVariants}
-            custom={index < MAX_STAGGER_ITEMS ? index : 0}
+            custom={index < STAGGER.max ? index : 0}
             className="h-full"
           >
             <PackageCard

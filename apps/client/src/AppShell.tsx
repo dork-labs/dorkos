@@ -17,6 +17,7 @@ import { useCommunityWatchers } from './app/use-community-watchers';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
+import { GlobalHeaderActions } from './app/GlobalHeaderActions';
 import { FIRST_RUN_SLOTS } from './app/first-run-slots';
 import { ServerErrorScreen } from './app/ServerErrorScreen';
 import { latestFailure, refetchUntilAnsweredThisLaunch } from './app/config-failure-memory';
@@ -70,7 +71,6 @@ import {
   OnboardingFlow,
 } from '@/layers/features/onboarding';
 import {
-  BarFixedCluster,
   OneBarProvider,
   resolveRouteHeader,
   type OneBarRouteState,
@@ -87,9 +87,7 @@ import {
   SidebarRail,
 } from '@/layers/shared/ui';
 import { MobileTabsLayout, useMobilePanelStore } from '@/layers/widgets/mobile-tabs';
-import { ControlCenter, useControlCenterShortcut } from '@/layers/widgets/control-center';
-import { RemoteAccessBeacon } from '@/layers/widgets/remote-access';
-import { KeepAwakeBeacon } from '@/layers/widgets/keep-awake';
+import { useControlCenterShortcut } from '@/layers/widgets/control-center';
 import {
   AppTabBar,
   APP_TAB_PANEL_ID,
@@ -772,7 +770,7 @@ export function AppShell() {
                       // to the viewport would answer the wrong question — and
                       // answer it wrongly in the playground too, where a 390px
                       // bar sits inside a 1440px page.
-                      className="app-drag-region @container/bar relative flex h-9 shrink-0 items-center gap-1 border-b px-2 transition-[border-color] duration-300 lg:gap-2"
+                      className="app-drag-region @container/bar relative flex h-auto min-h-11 shrink-0 flex-wrap items-center gap-x-1 border-b px-2 transition-[border-color] duration-300 md:h-9 md:min-h-0 md:flex-nowrap lg:gap-x-2"
                     >
                       {/* A phone has no panel to toggle, so it gets no toggle.
                           A hamburger that opens nothing is worse than no
@@ -815,7 +813,15 @@ export function AppShell() {
                             // phone or tablet header has no width to spend on
                             // air, and the bell showing a number was enough to
                             // push the bar past its own box (DOR-2524).
-                            className="flex min-w-0 flex-1 items-center gap-1 self-stretch lg:gap-2"
+                            //
+                            // `basis-32` is the width a phone's identity keeps
+                            // before the actions wrap: at 390px the bar has 374px
+                            // inside its padding, the four actions take 188 and the
+                            // space switcher about 34, so 8rem stays on one row with
+                            // the inbox bell showing. A bar with a tab strip needs
+                            // the row to itself beside the switcher, or its tabs and
+                            // chips paint over the actions, so there they wrap.
+                            className="flex h-11 min-w-0 grow basis-32 items-center gap-1 has-[[data-slot=bar-tab-strip]]:basis-[calc(100%-2.5rem)] md:h-auto md:flex-1 md:self-stretch md:has-[[data-slot=bar-tab-strip]]:basis-0 lg:gap-2"
                           >
                             <OneBarProvider value={oneBarState}>
                               <routeHeader.Header />
@@ -823,28 +829,11 @@ export function AppShell() {
                           </motion.div>
                         )}
                       </AnimatePresence>
-                      {/* The Control Center glyph, in the persistent cluster so
-                            it is present on every route and on both desktop and
-                            mobile — the honest "always visible" anchor (spec
-                            D7). Outside the cross-fade like the cluster, so it
-                            never blinks on navigation. */}
-                      <ControlCenter />
-                      {/* The remote-access beacon, beside it and on the same
-                            terms — present on every route, outside the
-                            cross-fade — but only while a tunnel is actually
-                            starting, up, or re-establishing itself. With remote
-                            access off it draws nothing at all (DOR-1743). */}
-                      <RemoteAccessBeacon />
-                      {/* The keep-awake cup, on the same terms: machine-wide,
-                            outside the cross-fade, and drawn only while DorkOS
-                            is keeping this computer awake for work. */}
-                      <KeepAwakeBeacon />
-                      {/* ── Search · inbox · right-panel toggle. Outside the
-                            cross-fade and after it, which is both halves of
-                            I1: they stay mounted so the corner never blinks on
-                            navigation, and the route's bar — confined to the
-                            sibling above — cannot render anything past them. ── */}
-                      <BarFixedCluster />
+                      {/* Phone actions share the identity's row while they fit,
+                            each a 44px target, and wrap to their own row only when
+                            a beacon needs the room. From `md` the header no longer
+                            wraps, so they close the desktop's one row. */}
+                      <GlobalHeaderActions />
                     </header>
                     {/* ── Global banner slot — one standing banner at a time, ranked
                           by priority. Sits below the header and inside the inset, so the

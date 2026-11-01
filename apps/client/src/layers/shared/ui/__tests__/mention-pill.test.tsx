@@ -40,7 +40,9 @@ describe('MentionPill', () => {
     const pill = screen.getByText('@dorian').closest('[data-slot="mention-pill"]') as HTMLElement;
 
     expect(pill).toHaveAttribute('data-kind', 'human');
-    expect(pill).toHaveClass('bg-secondary');
+    // The chip tint: `bg-secondary` vanished on the sidebar.
+    expect(pill).toHaveClass('bg-foreground/7', 'text-foreground');
+    expect(pill).not.toHaveClass('bg-secondary');
     expect(pill.querySelector('svg')).toBeNull();
   });
 
@@ -111,7 +113,7 @@ describe('MentionPill', () => {
       const pill = container.querySelector('[data-slot="mention-pill"]') as HTMLElement;
 
       expect(pill.className).not.toMatch(/brightness/);
-      expect(pill.className).toContain('hover:bg-[color-mix(in_oklch,hsl(var(--secondary))');
+      expect(pill).toHaveClass('hover:bg-foreground/11', 'focus-ring');
     });
 
     it('leaves a non-interactive pill with no hover response at all', () => {
@@ -135,14 +137,32 @@ describe('MentionPill as a cc (DOR-3401)', () => {
 
     expect(pill).toHaveAttribute('data-cc', 'true');
     expect(pill).toHaveAttribute('title', "@bo gets a copy. They aren't asked to answer.");
-    expect(pill.className).toMatch(/bg-muted/);
-    expect(pill.className).toMatch(/text-muted-foreground/);
+    expect(pill).toHaveClass('bg-foreground/7', 'text-muted-foreground', 'font-normal');
+    // The word on screen, not only in the accessible name (C10).
+    expect(pill).toHaveTextContent(/^cc Bo$/);
     // No accent: the identity colour is not published on a cc.
     expect(pill.style.getPropertyValue('--identity-color')).toBe('');
   });
 
+  it('leaves out its own cc when the writer already typed one', () => {
+    render(<MentionPill kind="agent" label="Orrin" handle="orrin" resolved cc ccWord={false} />);
+    const pill = screen.getByLabelText('cc @orrin');
+    expect(pill).toHaveTextContent(/^Orrin$/);
+    expect(pill.querySelector('svg')).not.toBeNull();
+  });
+
   it('labels a person cc by handle too', () => {
     render(<MentionPill kind="human" label="Kai" handle="kai" resolved cc />);
-    expect(screen.getByLabelText('cc @kai')).toHaveTextContent('@Kai');
+    expect(screen.getByLabelText('cc @kai')).toHaveTextContent(/^cc @Kai$/);
+  });
+
+  // Pills wrap between each other, never inside one; a label too long for a
+  // phone's line keeps the wrap so it cannot overflow its bubble.
+  it('stays on one line unless the label is too long to fit', () => {
+    render(<MentionPill kind="agent" label="Orrin" handle="orrin" resolved cc />);
+    expect(screen.getByLabelText('cc @orrin')).toHaveClass('whitespace-nowrap');
+    const long = 'a-handle-much-longer-than-any-phone-line';
+    render(<MentionPill kind="human" label={long} resolved />);
+    expect(screen.getByText(`@${long}`)).not.toHaveClass('whitespace-nowrap');
   });
 });

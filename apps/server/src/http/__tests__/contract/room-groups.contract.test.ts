@@ -61,7 +61,8 @@ const UNVERIFIED = {
 const NO_SUCH_ROOM = z.object({ code: z.literal('ROOM_NOT_FOUND') }).loose();
 const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed'), details: z.unknown() });
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
-const CORS_REFUSED = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
+const INTERNAL_ERROR = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 /** A ULID nobody minted: a well-formed room id for a room that does not exist. */
 const NO_ROOM = '01HZZZZZZZZZZZZZZZZZZZZZZZ';
@@ -288,7 +289,7 @@ contractSuite('the room routes, login off, the refusals', [
     name: 'GET /api/rooms from a wrong browser origin is refused by CORS',
     path: '/api/rooms',
     headers: { origin: 'https://evil.example' },
-    expect: { status: 500, schema: CORS_REFUSED },
+    expect: { status: 403, schema: CORS_REFUSED },
   },
   {
     name: 'GET /api/rooms with an unverifiable agent is refused 401',
@@ -366,7 +367,7 @@ contractSuite('the room routes, login off, the refusals', [
     path: '/api/rooms',
     headers: { 'content-type': 'application/json' },
     body: '{"kind":',
-    expect: { status: 500, schema: CORS_REFUSED },
+    expect: { status: 500, schema: INTERNAL_ERROR },
   },
   {
     name: 'POST /api/rooms over the JSON limit is refused 413',

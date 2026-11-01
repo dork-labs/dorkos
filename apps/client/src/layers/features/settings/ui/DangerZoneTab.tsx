@@ -26,7 +26,7 @@ export function DangerZoneTab() {
       {/* No heading of its own: the dialog draws the panel's "Danger zone"
           header, and repeating it a few pixels below is the duplication
           DOR-918 removed everywhere else. */}
-      <FieldCard className="border-destructive/50">
+      <FieldCard>
         <FieldCardContent>
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">

@@ -77,7 +77,7 @@ A black shadow can't darken a 4% page, so in dark mode the `--elevation-*` token
 2. **Surface lift:** `inset 0 0 0 100vmax` white, 2 → 5 → 8 → 11%. It paints over the background and under the content, so a higher surface is a lighter one with no extra surface token.
    3–4. **The black drop**, kept (50 → 70%). It still reads over anything lighter: the sidebar, a muted panel, an image.
 
-Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: inputs, select triggers, switches and outline buttons use `shadow-xs`, because they should read as recessed, not raised.
+Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: outline buttons use `shadow-xs`, because they should read as recessed, not raised. Fields, checkboxes, radios and switches carry no shadow; their edge is `--dui-control-edge` (see [Form Fields](#form-fields)).
 
 **Use a shadow token for height and never hand-roll a black `box-shadow`**: it'll vanish in dark mode. **Known gap:** `bg-popover` is 4% in dark, so a menu that opens over the 10% sidebar reads as a hole, not a lift. That's a surface-token fix (popover and accent together), tracked separately.
 
@@ -89,21 +89,21 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 
 **Where brand orange appears:**
 
-- Focus rings (`--ring`) — every `focus-visible` interaction carries the brand
-- `brand` button variant — opt-in for exceptional CTAs (`<Button variant="brand">`)
+- Focus rings (`--dui-ring`, drawn by the `focus-ring` utility) — every `focus-visible` interaction carries the brand
+- `brand` button variant — the site and Cloud marketing only. In the app, a primary button is grey, and `apps/client` has no use of it
 - Sidebar active tab indicator — subtle brand presence in navigation
 - Assistant message links and inline code — via `--brand-text`
 
 **Where gray stays:**
 
-- `--primary` — default buttons, switches, badges, selections (the quiet workhorse)
+- `--primary` — primary buttons, switches, badges, selections (the quiet workhorse)
 - `--accent` — hover backgrounds in menus, dropdowns
 - `--secondary` — user message tint
 - All structural surfaces — backgrounds, cards, borders, muted
 
 **Orange text is `text-brand-text`.** The brand fill reads only 3.7:1 as text on the light page; `--brand-text` clears 4.5:1 on every ground it sits on (`__tests__/brand-text-contrast.test.ts`). Plain `brand` stays for fills, rings, icons and large type.
 
-**Usage rule:** Orange means interaction or action. If you're adding it to a static, structural element — stop. The brand lives in moments of engagement, not in decoration. Like a single red chair in a white room.
+**Usage rule:** Orange means you: focus, a count directed at you, Needs you. If you're adding it to a static, structural element — stop. The brand lives in moments of engagement, not in decoration. Like a single red chair in a white room.
 
 ---
 
@@ -126,15 +126,15 @@ Users can override font family via Settings → Appearance. The app store (`setF
 
 Base values at desktop (no mobile scaling applied). Actual rendered sizes multiply by `--_st` on mobile (default 1.25x). Users can apply a further `--user-font-scale` via Settings → Appearance.
 
-| Token          | Base size | Usage                                       |
-| -------------- | --------- | ------------------------------------------- |
-| `text-3xs`     | 10px      | Count badges, avatar initials               |
-| `text-2xs`     | 11px      | Section labels, secondary metadata          |
-| `text-xs`      | 12px      | Timestamps, tool status                     |
-| `text-control` | 13px      | Control-surface labels: sidebar rows, menus |
-| `text-sm`      | 14px      | Message body text, code, metadata, labels   |
-| `text-base`    | 16px      | (unused in chat UI)                         |
-| `text-lg`      | 18px      | In-message headings (h3+)                   |
+| Token          | Base size | Usage                                         |
+| -------------- | --------- | --------------------------------------------- |
+| `text-3xs`     | 10px      | Corner counts, avatar initials only           |
+| `text-2xs`     | 11px      | Section labels, metadata, `xs` badges, counts |
+| `text-xs`      | 12px      | Timestamps, tool status                       |
+| `text-control` | 13px      | Control-surface labels: sidebar rows, menus   |
+| `text-sm`      | 14px      | Message body text, code, metadata, labels     |
+| `text-base`    | 16px      | (unused in chat UI)                           |
+| `text-lg`      | 18px      | In-message headings (h3+)                     |
 
 Literal sizes (`text-[13px]`) ignore the user's font size; use tokens. `text-control` sets no line height, so it keeps the one its surroundings give it.
 
@@ -207,15 +207,15 @@ Animation should feel like physics, not decoration. Things should move because t
 
 ### Easing
 
-| Curve      | Value                                         | Usage                               |
-| ---------- | --------------------------------------------- | ----------------------------------- |
-| `ease-out` | `cubic-bezier(0, 0, 0.2, 1)`                  | Entrances (fast start, gentle stop) |
-| `ease-in`  | `cubic-bezier(0.4, 0, 1, 1)`                  | Exits (gentle start, fast finish)   |
-| `spring`   | `type: "spring", stiffness: 400, damping: 30` | Interactive elements                |
+| Curve      | Value                                          | Usage                               |
+| ---------- | ---------------------------------------------- | ----------------------------------- |
+| `ease-out` | `cubic-bezier(0, 0, 0.2, 1)`                   | Entrances (fast start, gentle stop) |
+| `ease-in`  | `cubic-bezier(0.4, 0, 1, 1)`                   | Exits (gentle start, fast finish)   |
+| `spring`   | `SPRING.snap`, `glide` or `fold` (`motion.ts`) | Interactive elements                |
 
 ### Animation Catalog
 
-**Message entrance:** Fade in + slide up 8px, spring `stiffness:320 damping:28` (settles ~250ms, no bounce). User messages also scale from 0.97→1. Only animate the _newest_ message; history loads instantly.
+**Message entrance:** Fade in + slide up 8px, `SPRING.glide` (no bounce). User messages also scale from 0.97→1. Only animate the _newest_ message; history loads instantly.
 
 **Session switch:** 150ms opacity crossfade via `AnimatePresence mode="wait"`. Total transition 300ms (old exits, then new enters). Duration-based easing, not spring.
 
@@ -225,7 +225,7 @@ Animation should feel like physics, not decoration. Things should move because t
 
 **Tool card expand:** Height + opacity transition, 300ms ease-in-out.
 
-**Button press:** Scale to 0.97 on active, spring back.
+**Button press:** Scale to 0.97 in 80ms, back in 120ms, both ease-out, as a CSS transition that can be interrupted. Nothing under reduced motion. See [Button](#button).
 
 **Send button:** Subtle scale pulse on hover (1.05), quick press feedback.
 
@@ -378,16 +378,16 @@ Nav panels separate their levels with tint and whitespace, not hairlines. Add no
 
 Every level of separation comes off **one ramp**, `--sidebar-accent`, and no new colour is introduced:
 
-| Level        | Class                                                  | What it does                          |
-| ------------ | ------------------------------------------------------ | ------------------------------------- |
-| Search pill  | `bg-sidebar-accent/40`                                 | recessive tint, ~2–3% effective delta |
-| Footer strip | `bg-sidebar-accent/60`                                 | separates the footer from the panel   |
-| Row hover    | `bg-sidebar-accent/70`                                 | reads on top of the recessive tint    |
-| Row active   | `bg-sidebar-accent` + `text-sidebar-accent-foreground` | the strongest step                    |
+| Level        | Class                                                  | What it does                                                                    |
+| ------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Search pill  | `bg-sidebar-accent/40`                                 | recessive tint, ~2–3% effective delta                                           |
+| Footer strip | `bg-sidebar-accent/60`                                 | separates the footer from the panel                                             |
+| Row hover    | `bg-sidebar-accent/70`                                 | reads on top of the recessive tint; measures as the same step as `bg-row-hover` |
+| Row active   | `bg-sidebar-accent` + `text-sidebar-accent-foreground` | the strongest step                                                              |
 
 **Never use `--muted` inside the sidebar.** It inverts direction between themes. `--sidebar` is 91% light and 10% dark, while `--muted` is 96% light and 9% dark — so a surface tinted with `--muted` is _lighter_ than its panel in light mode and _darker_ in dark mode. `--sidebar-accent` is 86% light (−5%) and 16% dark (+6%): it moves away from the panel in the same perceptual direction in both themes, at the 5–10% delta this system asks for.
 
-Status colour stays on the semantic tokens, which are already calibrated per theme and are already what `status-dot.ts` uses: `bg-status-success` (working), `bg-status-warning` (needs you, directed badges), `bg-status-error` (error or wedged), `bg-status-info` (unseen). No raw hex, and no new `--sidebar-*` tint variable — one ramp is the point.
+Status colour stays on the semantic tokens, which are already calibrated per theme and are already what `status-dot.ts` uses: `bg-status-success` (working), `bg-status-warning` (needs you), `bg-status-error` (error or wedged), `bg-status-info` (unseen). No raw hex, and no new `--sidebar-*` tint variable — one ramp is the point.
 
 Label-on-tint must still meet 4.5:1 in both themes. Check it with an axe-core run over the playground showcase rather than by eye.
 
@@ -761,7 +761,7 @@ The filter engine provides five filter factories:
 ### Styling
 
 - Root container: `flex flex-wrap items-center gap-2 px-4 py-3`
-- Active filter chips: removable badges with `X` icon
+- Active filter chips: `RemovableChip`, in a `data-chip-group` so removing one moves focus to its neighbour
 - Primary filters: enum pills inline in the bar
 - Search input: standard input with `text-sm` and debounced URL sync
 - Enum filter colors: defined per-option via `colors` record in filter schema (Tailwind classes like `text-emerald-400`)
@@ -778,7 +778,41 @@ The filter engine provides five filter factories:
 
 ## Form Fields
 
-DorkOS uses [Shadcn Field](https://ui.shadcn.com/docs/components/field) as the foundation for all form field layouts. Field provides accessible label/description/error association via `aria-describedby` and `role="alert"`. Two higher-level components sit on top.
+DorkOS uses [Shadcn Field](https://ui.shadcn.com/docs/components/field) as the foundation for all form field layouts. Its parts find each other through `data-slot` and wire no ARIA on their own: `FieldError` carries `role="alert"`, and the caller gives the description or error an `id` and points the control's `aria-describedby` at it. The `form-fields/*` wrappers do this through `useFieldWiring`. Two higher-level components sit on top.
+
+### Field states
+
+Every field takes `FIELD_CONTROL` from `@dork-labs/ui/field-control`, so a primitive and a raw `<input>` or native `<select>` cannot drift. Text entry adds `FIELD_READ_ONLY`. Fields are 36px past `md`, 44px below; text is `text-field`, 14/20 past `md` and 16/22 below, never less, because iOS zooms the page on a smaller field.
+
+| State           | Border                   | Fill                       | Text                                         | Ring                  |
+| --------------- | ------------------------ | -------------------------- | -------------------------------------------- | --------------------- |
+| Rest            | `dui-control-edge`       | clear, `dui-input/30` dark | `foreground`, placeholder `muted-foreground` | none                  |
+| Hover           | `dui-control-edge-hover` | same                       | same                                         | none                  |
+| Focus           | unchanged                | same                       | same                                         | `focus-ring`          |
+| Invalid         | `dui-destructive`        | same                       | same, message `dui-destructive-text`         | none                  |
+| Invalid + focus | `dui-destructive`        | same                       | same                                         | `focus-ring`, in red  |
+| Disabled        | `dui-input` (exempt)     | `muted`                    | `muted-foreground`, no opacity               | none, not focusable   |
+| Read-only       | none                     | `muted`                    | `foreground`                                 | `focus-ring` on focus |
+
+`--dui-control-edge` exists because an empty field's border is the only thing that identifies it, so it clears 3:1 (WCAG 1.4.11). `--dui-input` stays for the dark fill and for decorative or button borders.
+
+A clicked text box shows the ring: it holds focus for a moment, and the ring says where the caret is. A pointer on a checkbox, radio, switch or trigger shows none. Only colours transition (150ms); the ring, the invalid edge and the error message all appear at once.
+
+### Field layout
+
+| Part                   | Rule                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Label → control        | `gap-1.5`, 8px below `md`                                                                                     |
+| Help                   | `text-xs`, muted, under the control                                                                           |
+| Error                  | Replaces the help in the same slot: `text-xs`, `dui-destructive-text`, a leading icon, `role="alert"`         |
+| Field → field          | `FieldGroup`, 16px, 20px below `md`                                                                           |
+| Bare stack of controls | `gap-3`, 16px below `md`                                                                                      |
+| Group → group          | `gap-6`, 32px below `md`                                                                                      |
+| Checkbox or radio row  | `gap-2`, 12px below `md`, option label `font-normal`, `min-h-11` below `md`                                   |
+| Small control hit area | Checkbox, radio and switch grow a pseudo-element past what they draw: 24px past `md`, 44px below              |
+| Compact trigger        | `SelectTrigger density="compact"`: 32px past `md`, 40px below with a 44px hit area. A filter bar or a toolbar |
+
+**A failed field gives three signals: a red edge, an icon and a message.** Colour is never alone, and the label keeps its colour. Show it after a blur or a submit, never during first typing, and clear it as soon as the value is valid. Mark the control `aria-invalid`, and point `aria-describedby` at the error while it shows, at the help otherwise. Say what to do: "Enter a full URL, starting with https://".
 
 ### SettingRow
 
@@ -797,7 +831,7 @@ For compound controls (e.g., Badge + Switch), wrap them in a flex container:
 ```tsx
 <SettingRow label="Feature" description="Toggle feature access">
   <div className="flex items-center gap-2">
-    <Badge variant="secondary">Disabled</Badge>
+    <Badge>Disabled</Badge>
     <Switch checked={enabled} onCheckedChange={setEnabled} />
   </div>
 </SettingRow>
@@ -822,18 +856,35 @@ import { PasswordInput } from '@/layers/shared/ui';
 
 Sentinel mode ("saved value" placeholder that clears on focus) is a consumer concern — pass `onFocus`, `placeholder`, and `value` props.
 
-### FieldCard
+### Cards, groups and rows
 
-Rounded card container for grouping related form fields into Apple-style settings groups. Three components work together:
+Three containers, one rule each. A **card** sits on the page. A **group** holds rows inside anything that floats. A **row** is a line in a list. They never nest in one another, and none of them draws a rule between its children.
 
-- **`FieldCard`** — Outer card with `rounded-lg border bg-card`. Use `className` for variants (e.g., `border-destructive/50` for danger zones).
-- **`FieldCardContent`** — Content wrapper that applies automatic thin `divide-y` separators between children. Each child gets `px-4 py-3`.
-- **`CollapsibleFieldCard`** — Collapsible section with a right-aligned ChevronDown that rotates -90deg when collapsed.
+#### Card (`shared/ui/card.tsx`)
+
+`bg-card` plus `shadow-soft`, and **no border**: height comes from elevation, and in dark mode the soft lift paints the card 2% lighter than the page, so its edge reads without a line.
+
+| Axis       | Values                                          | Use                                                                                                                                                                    |
+| ---------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `variant`  | `static` (default), `interactive`               | `interactive` is a whole card you press: `card-interactive` (soft → elevated shadow, 150ms, no translate) plus `PRESS_CARD` and the outer focus outline                |
+| `radius`   | `md` (8px, default), `lg` (12px)                | `lg` only for a hero tile at least 320px wide                                                                                                                          |
+| `padding`  | `md` (16px, default, desktop and phone), `none` | `none` when the body is rows: the rows pay the inset                                                                                                                   |
+| `gap`      | `md`, `sm`, `none`                              | space between children                                                                                                                                                 |
+| `selected` | boolean                                         | a chosen card: `outline-2 outline-foreground` at offset 0 plus a check, top right. Never a tint, never orange. `aria-pressed` and `aria-checked` draw the same outline |
+
+`CardTitle` is `text-sm font-semibold leading-5` (`leading-none` clipped descenders on the phone). `CardFooter` is right-aligned actions separated by space (`pt-1`), never a `border-t`.
+
+#### Group (`FieldCard`, `shared/ui/field-card.tsx`)
+
+`FieldCard` is **a tint, not a card**: `bg-row-group rounded-lg`, no border. It is what rows sit on inside a dialog, sheet, popover or drawer. A card there is a surface inside a surface — outlined in light and a hole in dark (a 4% card in a 15% dialog) — while a foreground tint only ever adds light.
+
+- **`FieldCardContent`** gives each direct child `px-4 py-3`. That space is the only separator: no `divide-y`.
+- **`CollapsibleFieldCard`** is a group with a header that opens it. Its body has no `border-t`.
+- **Danger zone** is the plain group. No `border-destructive`: the "Danger zone" heading and the destructive button carry it, and red is spent on the action, not the frame.
+- **`SettingRow`** has a floor of 48px (60 on the phone) and **no hover**: the control acts, not the row, and a tint promises a click.
+- A section heading goes above a group (24px above, 8px to it), never inside it.
 
 ```tsx
-import { FieldCard, FieldCardContent, CollapsibleFieldCard } from '@/layers/shared/ui';
-
-// Static group
 <FieldCard>
   <FieldCardContent>
     <SettingRow label="Notifications" description="Enable push alerts">
@@ -844,19 +895,76 @@ import { FieldCard, FieldCardContent, CollapsibleFieldCard } from '@/layers/shar
     </SettingRow>
   </FieldCardContent>
 </FieldCard>
-
-// Collapsible group
-<CollapsibleFieldCard
-  open={open}
-  onOpenChange={setOpen}
-  trigger="Advanced"
-  badge={<Badge variant="secondary">3 overrides</Badge>}
->
-  <div className="px-4 py-3">Content here</div>
-</CollapsibleFieldCard>
 ```
 
-Used across settings panels, agent config tabs, adapter wizard, and binding dialogs.
+#### List row (`ListRow`, `shared/ui/list-row.tsx`)
+
+One grammar: **leading glyph · (who ›) title · meta · trailing state · actions**, with an optional second line. `SidebarRow` keeps its own geometry (28 / 44px) and shares the state recipe.
+
+| Part              | Desktop                                                                                            | Phone (< 768)    |
+| ----------------- | -------------------------------------------------------------------------------------------------- | ---------------- |
+| Height, one line  | 32 (`min-h-8`)                                                                                     | 44 (`min-h-11`)  |
+| Height, two lines | 48 (`min-h-12`)                                                                                    | 60 (`min-h-15`)  |
+| `inset="page"`    | `px-2`, `rounded-md`; the list sits at `-mx-2` so the glyph lines up with the text column          | same             |
+| `inset="group"`   | `px-4`, `rounded-none`, full bleed inside a `FieldCard` (its corners clip the first and last rows) | same             |
+| Leading slot      | `sm` 20, `lg` 32 (two-line rows)                                                                   | `sm` 24, `lg` 40 |
+| Glyph → title     | 8                                                                                                  | 12               |
+
+- **Title** never wraps (`ROW_TITLE_CLASS`): it truncates and the full name is in `title`. **Meta** never shrinks. Under a 24rem row (`@container/row`, so a phone) the meta and the trailing state move to the start of the subtitle line, joined to the second line with " · ", so the title gets the row's whole width. Actions stay at the end, but leave the flow at rest on a narrow row and come back on hover, focus or an open menu (always shown on touch).
+- **State copy wraps.** An empty, filtered or failed list's row takes `wrapTitle`: the words wrap and never truncate. On a narrow row its trailing ("Try again") moves under them.
+- **Actions** (up to two ghost icon buttons) are **siblings** of the row's button, never inside it. They are hidden at rest and shown on hover, on focus-within and while their menu is open; always shown on a coarse pointer. Their space is reserved, so the title never reflows. `menu` adds the ⋮, the right-click menu and the long-press sheet from one node list.
+- **No `onSelect` and no `asChild`** makes a static row: no hover, no press, not a Tab stop.
+- `data-row-state` (`rest | selected | emphasized | disabled`) is stamped so tests read state, not classes.
+
+#### The row ladder (`shared/ui/row.ts`)
+
+Every list outside a menu takes its states from `rowTintVariants` (tint and weight) and `rowStateVariants` (that plus focus and press, for a one-element row). The tints are foreground alpha, so one step reads the same on any ground:
+
+| Token             | Light | Dark | Dark, inside `.shadow-lg`/`-floating` and `.shadow-xl`/`-modal` |
+| ----------------- | ----- | ---- | --------------------------------------------------------------- |
+| `bg-row-hover`    | 4%    | 5%   | 3%                                                              |
+| `bg-row-selected` | 7%    | 9%   | 5%                                                              |
+| `bg-row-group`    | 3%    | 4%   | 3%                                                              |
+
+| State                                  | Recipe                                                                                      | Motion                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Hover (only if the row does something) | `bg-row-hover`                                                                              | `background-color`, 150ms                     |
+| Pressed                                | `PRESS_ROW` (0.98) over the hover tint                                                      | 80ms in, 120ms out; none under reduced motion |
+| Focus-visible                          | `outline-2 -outline-offset-2 outline-ring` **and** the hover tint, actions revealed         | instant                                       |
+| Selected / current                     | `bg-row-selected font-medium`, `aria-selected` or `aria-current="page"`; no change on hover | instant                                       |
+| Emphasized (unread)                    | `font-semibold`, full ink                                                                   | —                                             |
+| Disabled                               | `opacity-50`, `aria-disabled`, still focusable when it says why                             | —                                             |
+
+Inside a dark modal the inks climb with the tints: `--faint` goes to 64% and `--status-error-fg` to `0 72% 74%`, because a group plus a selected row on a 15% dialog composites to about 20%, where the page values measured 3.55 and 3.66:1. Every row state clears 4.5:1 for text and 3:1 for the ring in both themes.
+
+#### Nested rules
+
+| Outer                  | Inner                                | Rule                                                                          |
+| ---------------------- | ------------------------------------ | ----------------------------------------------------------------------------- |
+| Page                   | Card                                 | Yes                                                                           |
+| Card                   | Card                                 | Never: the inner one becomes a group or plain space                           |
+| Card or group          | An outlined box or row               | Never: a plain row, tinted on hover only if it acts                           |
+| Dialog, sheet, popover | Card                                 | Never: a group (`FieldCard`)                                                  |
+| Group                  | Group                                | Never: a section heading and 24px of space                                    |
+| Any                    | Input, code block, tool output, diff | Keeps its outline: an object you act on                                       |
+| Any                    | Callout (a warning block, not a row) | A status wash is allowed, with no border                                      |
+| Any                    | A row with a problem                 | A grey row with a status glyph and one word ("Reconnect"). Never wash the row |
+| Dark, anywhere         | Any inner surface                    | Never darker than its container                                               |
+
+#### List states
+
+| Condition                    | What renders                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| A section with nothing in it | Nothing, header included (absent, not empty)                                                                                     |
+| The whole list is empty      | `EmptyState`: one glyph, one fact, one next step ("No schedules yet. Create one.")                                               |
+| A filter matches nothing     | One static row, "Nothing matches 'foo'", and a ghost **Clear filter**                                                            |
+| Loading                      | Nothing for 300ms, then skeleton rows at the real height, `min(expected, 5)` of them, replaced in place. Never a centred spinner |
+| The list failed to load      | The frame stays; one row: error glyph, "Couldn't load schedules.", ghost **Try again**. The raw error is behind More details     |
+| One item is broken           | A grey row, a status glyph, one word in `text-status-*-fg`                                                                       |
+| Pending                      | Title in `text-muted-foreground`, trailing "Saving…", actions hidden                                                             |
+| Offline or stale             | Trailing `text-faint` "Offline" / "Updated 5m ago"                                                                               |
+
+No stagger when a list opens: a list is something you're waiting to read.
 
 ### Disclosure — which "Advanced" to reach for
 
@@ -903,13 +1011,7 @@ For rows that have a label but no description (e.g., simple toggles), use `<Fiel
 
 ### Hover
 
-Subtle. 150ms transition. A background tint step of 5-10% — the same mechanism that groups a zone, one step stronger.
-
-```css
-.interactive:hover {
-  background-color: hsl(var(--accent) / 0.5);
-}
-```
+Subtle. 150ms transition. One step of the row ladder: `bg-row-hover` (4% foreground in light, 5% in dark, 3% inside anything that floats), the same mechanism that groups a zone, one step stronger. See [The row ladder](#the-row-ladder-sharedrowts). Only a row that does something gets a hover: a tint promises a click.
 
 Hover and grouping share one tool on purpose: if a zone is separated by tint rather than a rule, a hover tint is already the vocabulary the surface speaks. Reach for a border only after whitespace and tint have both failed. Inside the sidebar specifically, hover uses the `--sidebar-accent` ramp (`bg-sidebar-accent/70` — see [Separation by tint, not by borders](#separation-by-tint-not-by-borders)), not `--muted`: `--muted` is banned there because it inverts direction between light and dark themes.
 
@@ -917,14 +1019,20 @@ Hover and grouping share one tool on purpose: if a zone is separated by tint rat
 
 ### Focus
 
-Visible focus rings for keyboard navigation. Brand orange outline, 2px offset.
+One focus ring: the `focus-ring` utility in `packages/ui/tailwind.css`. A 2px brand orange outline, 2px off the control, drawn at once with no fade. It turns destructive on its own under `aria-invalid="true"`.
 
 ```css
-:focus-visible {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: 2px;
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring-color, hsl(var(--dui-ring)));
+    outline-offset: 2px;
+  }
 }
 ```
+
+An outline, not a box-shadow: its gap is see-through on any ground, it follows the control's radius, and it survives forced colours. Use `focus-ring-within` on a wrapper whose child takes the focus, and `focus-ring-inset` on a box that fills a clipped parent. A clipping parent needs 4px of padding around a `focus-ring` child.
+
+**Rows take it inset**: `outline-2 -outline-offset-2 outline-ring` (`ROW_FOCUS_CLASS` in `shared/ui/row.ts`). Rows tile edge to edge inside clipped scrollers, so an outer ring overlaps the next row and is cut off by `overflow`. Same colour and width; cards and buttons keep the outer offset. A focused row also takes the hover tint.
 
 ### Active/Press
 
@@ -953,10 +1061,43 @@ Rules that come with it:
 
 - **Numbers are for you, not for volume.** A busy channel nobody addressed you in stays at a bold label however many messages it holds.
 - **Activity draws no mark of its own** (decided 2026-08-09, `specs/sidebar-now-today-library/design-decisions.md` §18). It used to add a dot. A dot is a third weight in a system that deliberately has two, and the avatar corner already owns dots for agent lifecycle — two dot vocabularies on one row is the confusion this removes.
-- **The count pill is neutral.** `CountPill` (`shared/ui/count-pill.tsx`) is neutral ink on a neutral tint (`bg-foreground/10 text-foreground`), never brand or warning colour, and caps at `9+` while its label reads the real number. In the sidebar it counts @mentions of you in a channel, and every new message in a direct message, both counted by the server from the room log above your read cursor.
+- **A directed count is orange.** `CountPill` (`shared/ui/count-pill.tsx`) defaults to `tone="you"`, the orange ink on its own wash (`bg-brand/15 text-brand-text`), because orange means you. Its label reads the real figure where one exists. In the sidebar it counts @mentions of you in a channel, and every new message in a direct message, both counted by the server from the room log above your read cursor.
+- **Caps are honest.** Mentions cap at `9+` (`MENTION_COUNT_CAP`): the server stops counting at `ROOM_MENTION_COUNT_CAP` (10), so its `10` means "10 or more" and anything higher would be a claim nobody measured. A DM's messages are counted in full and cap at `99+`. `directedCountCap(kind)` and `directedCountLabel(count, kind)` pick the cap and the words together. A corner count caps at `9+`.
 - **Mute keeps a mention's count, and only that.** A muted row loses its bold, but an @mention of you still shows its number. This holds for a muted direct message too: it counts real @mentions only, never every message. Mute means "stop pulling at me", so a DM that kept counting every message through mute would make mute a lie. Do not "fix" it.
 - **A collapsed container keeps its signal, as rows.** A folded section keeps its unread rows on screen under the header, drawn as they are when open. A section header never carries a count; its one mark is a working dot.
-- **Only "happening right now" pulses.** An agent mid-turn pulses (see [Identity](#identity)); an unread count does not.
+- **Only "happening right now" pulses.** An agent mid-turn pulses (see [Identity](#identity)); an unread count does not. A count also never flips or crossfades when its number changes: tabular figures keep the width, and the number is the news. `animate-count-flip` belongs to `ThreadReplyRow` alone, and the design-token check refuses it anywhere else.
+
+### Badge, count and chip
+
+Three primitives, one shape (full radius) and one tint (7% of the foreground). The playground shows every state: `/dev` Components → Badge, Count pill, Chip, Mention pill.
+
+| Primitive       | Is                                                           | Element                   | File                           |
+| --------------- | ------------------------------------------------------------ | ------------------------- | ------------------------------ |
+| `Badge`         | An inert label: a state, a category, a fact                  | `<span>`                  | `shared/ui/badge.tsx`          |
+| `CountPill`     | A number, and who it is for                                  | `<span>`                  | `shared/ui/count-pill.tsx`     |
+| `Chip`          | A pill you can press: a toggle, an action, a popover trigger | `<button>`, ref forwarded | `shared/ui/chip.tsx`           |
+| `RemovableChip` | A pill you dismiss: an active filter, a tag                  | `<span>` + × `<button>`   | `shared/ui/removable-chip.tsx` |
+
+**Badge.** `tone` is `neutral | warning | error | success | info` (`info` draws neutral: blue is not a resting state). `size` is `sm` (12px, 20px high) or `xs` (11px, 18px). No border, no shadow, `font-medium tabular-nums`. **Colour goes on the glyph, never the word:** `warning` brings `TriangleAlert` in `text-status-warning-fg`, `error` brings `CircleX`, `success` a `Check`, and the word stays on the neutral tint at full strength. A coloured word fails AA on the tint (amber 4.28:1 on the sidebar, red 4.13:1 on a dark selected row); the glyphs clear 3:1 everywhere. `icon` overrides the glyph and `icon={null}` removes it. `live` draws the pulsing working dot. A badge is never a target: one that links or toggles is a `Chip`. `variant` and `shape` are deprecated aliases (`destructive` resolves to `error`) until the codemod removes them.
+
+**CountPill.** `tone` says who the count is for:
+
+| Tone            | Means                                   | Inline wash                                   | Solid                                  |
+| --------------- | --------------------------------------- | --------------------------------------------- | -------------------------------------- |
+| `you` (default) | Somebody wrote to you: a mention, a DM  | `bg-brand/15 text-brand-text`                 | `bg-brand-text text-background`        |
+| `warning`       | Something stopped and waits on a person | `bg-status-warning-bg text-status-warning-fg` | `bg-status-warning-fg text-background` |
+| `error`         | Something failed                        | `bg-status-error-bg text-status-error-fg`     | `bg-status-error-fg text-background`   |
+| `neutral`       | Activity you asked to see               | `bg-foreground/10 text-foreground`            | `bg-foreground text-background`        |
+
+`placement="inline"` is 18px (22 on a phone) in `text-2xs` semibold and caps at `99+`; `placement="corner"` is 16px (20) in `text-3xs`, always solid, absolutely placed on a `relative` parent, and caps at `9+`. Use `solid` inline where the wash cannot clear the ground: the `you` wash is 4.04:1 on a dark modal hover row, solid is 7.90:1, so the command palette counts solid. `count <= 0` draws nothing. Omit `label` when the parent's own accessible name already says the number, and the pill hides itself from assistive tech, so the count is read once. A count is a glyph, so it may have a coloured ground; a badge may not.
+
+**Chip.** Rests on `bg-foreground/7 text-muted-foreground`, hovers to `/11` and full-strength text in 150ms, presses at `0.98` (80ms in, 120ms out, `motion-safe` only), focuses with `focus-ring`. `pressed` sets `aria-pressed` and **inverts** to `bg-foreground text-background`: 7% against 11% is about 1.1:1, so a tinted selection would be colour-only. `sm` is 24px on a desktop and 40 on a phone with a 44px hit area; `md` is 32 and 44. Long text truncates at `max-w-56`; put the full text in `title`. Neighbours sit `gap-1 max-md:gap-2`.
+
+**RemovableChip.** The body is inert; only the × is a button, 24×24 on a desktop and 44×40 (44 hit) on a phone, and `removeLabel` names the thing removed. Wrap a row of them in `data-chip-group`: removing one moves focus to the next chip, else the previous, else the nearest `data-chip-group-add` control. Never to `<body>`. Nothing animates out.
+
+**Mention pill.** Stays `inline` so it wraps with `box-decoration-break`, and is exempt from target sizes. A person is `bg-foreground/7 text-foreground` (the old `bg-secondary` vanished on the sidebar); an agent keeps its identity tint; a **cc** is the same tint in the muted grey at regular weight, with the visible word `cc` before the name, so it is never told apart by shade alone.
+
+**Guards** (`pnpm check:design-tokens`): `local-count-cap` (no `DISPLAY_CAP` or `MAX_COUNT`; caps live in `count-pill.tsx`), `hand-rolled-count` (`tabular-nums` and `rounded-full` on one line outside `count-pill.tsx`, `badge.tsx` and `TouchChip`'s string), and `count-flip`. All three are hard fails.
 
 ### 3-State Status Pattern
 
@@ -985,7 +1126,7 @@ Reading it back is three states resolved by one function (`resolvePermission`) r
 ## Accessibility
 
 - All interactive elements keyboard-accessible
-- Focus indicators meet 3:1 contrast ratio (WCAG 2.1 AA). The ring colour clears it only at full strength, so never draw it at part opacity (`ring-ring/50` measured 1.9:1 light, 2.5:1 dark). Shared form controls take theirs from `packages/ui/src/focus-ring.ts`, and `apps/design-system/tests/focus-rings.spec.ts` measures them painted (a local run, not in CI yet: `pnpm --filter @dorkos/design-system test:browser`)
+- Focus indicators meet 3:1 contrast ratio (WCAG 2.1 AA). The ring colour clears it only at full strength, so never draw it at part opacity (`ring-ring/50` measured 1.9:1 light, 2.5:1 dark). Shared form controls take theirs from the `focus-ring` utility in `packages/ui/tailwind.css`, and `apps/design-system/tests/focus-rings.spec.ts` measures them painted (a local run, not in CI yet: `pnpm --filter @dorkos/design-system test:browser`)
 - Color is never the sole indicator of state
 - `aria-label` on icon-only buttons
 - `prefers-reduced-motion` respected — disable entrance animations, reduce transitions to instant
@@ -1025,9 +1166,33 @@ The app uses a CSS custom property scale multiplier system that makes text, icon
 | Icon xs                  | 12px    | 15px           |
 | Icon sm                  | 16px    | 20px           |
 | Icon md                  | 20px    | 25px           |
-| Button sm                | 32px    | 40px           |
-| Button md                | 36px    | 45px           |
-| Button lg                | 40px    | 50px           |
+| Button xs                | 24px    | 44px           |
+| Button sm                | 32px    | 44px           |
+| Button md                | 36px    | 44px           |
+| Button lg                | 40px    | 48px           |
+| Button icon-xs           | 24px    | 44px           |
+| Button icon-sm           | 32px    | 44px           |
+| Button icon-md           | 36px    | 44px           |
+| Button icon-lg           | 40px    | 48px           |
+
+### Button
+
+| Variant       | Use                               | Rest                     | Hover         |
+| ------------- | --------------------------------- | ------------------------ | ------------- |
+| `primary`     | The one main action in a view     | Solid foreground         | 90%           |
+| `secondary`   | Every other labelled action       | 7% foreground            | 11%           |
+| `ghost`       | Toolbars, rows, icon buttons      | Transparent              | 7% foreground |
+| `destructive` | Can't be undone                   | The fill token           | The hover one |
+| `link`        | Inline, in running text           | Underline at 35%         | Full          |
+| `brand`       | The site and Cloud marketing only | Orange, near-black label | 90%           |
+
+`default` and `outline` are deprecated aliases of `primary` and `secondary`, kept until Cloud has moved. `data-variant` always reports the new name.
+
+- **Secondary is a tint, not a grey.** A fixed grey vanishes on the sidebar, and a tint reads on every ground. `aria-pressed` and `data-state=on` hold the 11% step on `secondary` and `ghost`.
+- **One focus ring:** a 2px solid outline, 2px out, on every variant. The gap is transparent, so it works on any ground, and an outline survives forced-colours mode. Don't add `outline-none` beside it: in Tailwind v4 that stops the ring drawing at all.
+- **Disabled:** 50%, no pointer events. Pass `disabledReason="Connect Telegram first"` whenever a reason exists: the button stays focusable and shows it in a tooltip. A greyed button with no reason is a locked door with no sign.
+- **Loading:** `loading` and `loadingLabel` come together, as a gerund (Save, "Saving…"). No spinner. Focus stays put and the width doesn't move, because both labels share one grid cell.
+- **`responsive={false}`** keeps the small box and adds an invisible 44px hit area below `md`.
 
 ### Icon Size Convention
 
@@ -1049,7 +1214,7 @@ Usage:
 
 **Parentheses, not brackets.** `size-(--size-icon-sm)` is Tailwind v4's syntax for "this arbitrary value is a custom property". The v3 spelling `size-[--size-icon-sm]` compiles to `width: --size-icon-sm`, which is not valid CSS — the browser drops it and the icon falls back to its intrinsic 24px. Two files shipped that way until DOR-1750; if an icon looks too big, check the brackets first.
 
-The shared `Button` applies its namespaced `--dui-size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Client-owned icon examples above keep the local token names. Its `xs` and `icon-xs` sizes deliberately opt out and stay at a flat 12px — they are small chrome that should not grow.
+The shared `Button` applies its namespaced `--dui-size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Client-owned icon examples above keep the local token names. Every size uses it except the compact `xs` and `icon-xs`, which use `--dui-size-icon-xs`, so their glyphs step from 12px to 15px on a phone with the rest of the icon scale.
 
 ### Hover Pattern Mobile Alternatives
 
@@ -1190,7 +1355,7 @@ Two sizing rules that only surface once a software keyboard is involved, both of
 - **Never pad for the keyboard.** vaul already shrinks the drawer to the visual viewport while a field inside it has focus, so compensating again subtracts the same height twice — it collapsed a result list to 0px on a 390×844 phone.
 - **Give a scrollable list a `min-h` floor.** A landscape phone with the keyboard up leaves under 200px of sheet. A list that is only `flex-1` hands all of it to the parts that do not shrink and renders zero rows — a search field above a blank space. A floor plus the sheet's scroll of last resort keeps two rows on screen and the commit button one short scroll away.
 
-Sizes come from the system, not by hand: `Button` is already `responsive` by default (`size="sm"` → `h-10 md:h-8`), rows use `min-h-11` / `min-h-[44px]`, and `--_st` already scales every text token 1.25× below 768px — so writing `text-base md:text-sm` double-scales. When a control has to stay visually small, grow the target rather than the glyph with `after:absolute after:-inset-3 md:after:hidden`, the way `SidebarGroupAction` does.
+Sizes come from the system, not by hand: `Button` is already `responsive` by default (`size="sm"` → `h-11 md:h-8`), rows use `min-h-11` / `min-h-[44px]`, and `--_st` already scales every text token 1.25× below 768px — so writing `text-base md:text-sm` double-scales. When a control has to stay visually small, grow the target rather than the glyph with `after:absolute after:-inset-3 md:after:hidden`, the way `SidebarGroupAction` does.
 
 ### `ResponsiveSheet`
 

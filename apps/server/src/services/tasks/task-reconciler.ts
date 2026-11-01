@@ -46,6 +46,7 @@ import {
   syncProjectCopies,
 } from './sync/project-only-schedules.js';
 import { carrySwitchIntoReleasedFile, packageOwnershipInRoot } from './task-file-update.js';
+import { fileAgentLevel } from './sync/file-agent-level.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { UNWATCHED_ROOT_SWEEP_SECONDS, type TaskWatchHealth } from './task-file-watcher.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
@@ -612,6 +613,7 @@ export class TaskReconciler {
             // See the watcher's call: the same rule, on the pass that catches
             // what the watcher missed (FB-26, DOR-2272).
             packageOwned,
+            agentLevel: await fileAgentLevel(root, discovered.def.meta.schedule.runtime),
           };
           // The watcher's rule for a global `scope: project` file, over every
           // root this reconciler knows (DOR-3376): one copy per project.
@@ -648,7 +650,9 @@ export class TaskReconciler {
           // kept for it (DOR-2272). After the clock sync so a failed write does
           // not skip it; the row keeps its ownership until the file agrees, so a
           // write that fails here is retried by the next pass.
-          await carrySwitchIntoReleasedFile(task, discovered.def, root);
+          if (this.store.fileSync.isReleasingSwitch(task.id)) {
+            await carrySwitchIntoReleasedFile(task, discovered.def, root);
+          }
         } catch (err) {
           this.report('error', `[TaskReconciler] Failed to sync ${discovered.def.filePath}`, err);
         }

@@ -61,7 +61,8 @@ function proposal(overrides: Partial<Task> = {}): Task {
     packageOwned: null,
     approvalChanges: [],
     agentId: null,
-    enabled: false,
+    // A proposal asks to run: `tasks_create` stores it switched on.
+    enabled: true,
     sticky: false,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
@@ -404,14 +405,55 @@ describe('ScheduleApprovalCard — the conversation behind it', () => {
 });
 
 describe('ScheduleApprovalCard — answering it', () => {
-  it('approves with both the status and the enabled flag', async () => {
+  it('approves with the status alone, so the switch stays as it is (DOR-3309)', async () => {
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
     renderCard(proposal(), { updateTask });
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    // Sending only one of them leaves a schedule that is approved and will never
-    // fire — the exact half-armed state the Tasks page's mutation guards against.
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    expect(slot('schedule-approve-turn-on')).toBeNull();
+  });
+
+  it('keeps an off schedule off by default, and turns it on only when asked (DOR-3309)', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active', enabled: false }));
+    renderCard(proposal({ enabled: false }), { updateTask });
+
+    const stayOff = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    expect(stayOff).toHaveTextContent(/^Approve$/);
+    await userEvent.click(stayOff);
+
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    expect(await findSlot('schedule-receipt')).toHaveTextContent(
+      'Approved. Off until you turn it on.'
+    );
+  });
+
+  it('orders the answers Approve, Approve and turn on, Run it once, Reject', async () => {
+    renderCard(proposal({ enabled: false }));
+
+    await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    const order = [
+      'schedule-approve',
+      'schedule-approve-turn-on',
+      'schedule-test-run-start',
+      'schedule-reject',
+    ].map((name) => slot(name));
+    for (let i = 1; i < order.length; i++) {
+      expect(
+        order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    }
+  });
+
+  it('sends enabled: true with "Approve and turn on" (DOR-3309)', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(proposal({ enabled: false }), { updateTask });
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Approve Nightly sweep and turn it on' })
+    );
+
     expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
   });
 
@@ -510,7 +552,7 @@ describe('ScheduleApprovalCard — answering it', () => {
     card().focus();
     await userEvent.keyboard('a');
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
   });
 
   it('denies on D', async () => {
@@ -917,7 +959,7 @@ describe('ScheduleApprovalCard — running it once', () => {
     await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'running'));
 
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
   });
 });
 
@@ -1091,7 +1133,6 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(updateTask).toHaveBeenCalledWith('task-1', {
       status: 'active',
-      enabled: true,
       permissionMode: 'bypassPermissions',
     });
   });
@@ -1109,7 +1150,6 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(updateTask).toHaveBeenCalledWith('task-1', {
       status: 'active',
-      enabled: true,
       permissionMode: 'acceptEdits',
     });
   });
@@ -1128,7 +1168,7 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     await userEvent.keyboard('a');
 
     await waitFor(() => expect(updateTask).toHaveBeenCalled());
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
   });
 
   it('leaves the plain Approve at the level the proposal was clamped to', async () => {
@@ -1142,7 +1182,7 @@ describe('ScheduleApprovalCard — granting the operator’s own level', () => {
     await findSlot('schedule-approve-elevated');
     await userEvent.click(screen.getByRole('button', { name: /^Approve Nightly sweep as/ }));
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
   });
 
   it('names the level on the plain Approve too, once there are two of them', async () => {

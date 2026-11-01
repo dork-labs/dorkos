@@ -164,10 +164,9 @@ export function Catalog({ playgroundUrl }: { playgroundUrl: string }) {
           >
             <Example title="Variants">
               <div className="flex flex-wrap items-center gap-3">
-                <Button>Default</Button>
+                <Button>Primary</Button>
                 <Button variant="secondary">Secondary</Button>
                 <Button variant="destructive">Destructive</Button>
-                <Button variant="outline">Outline</Button>
                 <Button variant="ghost">Ghost</Button>
                 <Button variant="brand">Brand</Button>
                 <Button variant="link">Link</Button>
@@ -183,13 +182,19 @@ export function Catalog({ playgroundUrl }: { playgroundUrl: string }) {
                   ✦
                 </Button>
                 <Button disabled>Disabled example</Button>
+                <Button loading loadingLabel="Saving…">
+                  Save
+                </Button>
+                <Button variant="secondary" disabledReason="Connect Telegram first">
+                  Send a test
+                </Button>
               </div>
             </Example>
             <Example title="Native form and slotted link">
               <form onSubmit={submitExample} className="flex flex-wrap items-center gap-3">
                 <Button onClick={() => setSubmitted(false)}>Cancel example</Button>
                 <Button type="submit">Submit example</Button>
-                <Button asChild variant="outline">
+                <Button asChild variant="secondary">
                   <a href="#forms">Slotted link example</a>
                 </Button>
                 {submitted && (

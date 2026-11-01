@@ -112,10 +112,15 @@ function spanFor(text: string, needle: string, authorId: string): MentionSpan {
  * The row under test, as an element — so a test can render it twice with a
  * different roster and assert on what the SECOND render leaves on screen.
  */
-function row(target: RoomEntry, authors: ReadonlyMap<string, RosterAuthor>) {
+function row(
+  target: RoomEntry,
+  authors: ReadonlyMap<string, RosterAuthor>,
+  roomKind?: 'channel' | 'dm'
+) {
   return (
     <RoomMessage
       roomId="room-1"
+      roomKind={roomKind}
       entry={target}
       author={{ id: 'ana', kind: 'human', displayName: 'Ana' }}
       authorRef={authors.get('ana')}
@@ -128,11 +133,15 @@ function row(target: RoomEntry, authors: ReadonlyMap<string, RosterAuthor>) {
   );
 }
 
-function renderRow(target: RoomEntry, authors: ReadonlyMap<string, RosterAuthor> = AUTHORS) {
+function renderRow(
+  target: RoomEntry,
+  authors: ReadonlyMap<string, RosterAuthor> = AUTHORS,
+  roomKind?: 'channel' | 'dm'
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(row(target, authors), {
+  return render(row(target, authors, roomKind), {
     wrapper: ({ children }) => (
       <QueryClientProvider client={queryClient}>
         <TransportProvider transport={createMockTransport()}>
@@ -348,5 +357,92 @@ describe('RoomMessage — a drawn mention follows the roster', () => {
 
     expect(pillOf()).toBeNull();
     expect(content()).toHaveTextContent('cc definitely bo, thanks');
+  });
+});
+
+describe('RoomMessage — who your own post reached (DOR-3454)', () => {
+  const text = 'thanks. cc @bo';
+  const copied = () => entry(text, [{ ...spanFor(text, '@bo', 'bo'), cc: true }]);
+
+  it('says who your own channel post woke and who it only cc’d', () => {
+    renderRow(copied(), AUTHORS, 'channel');
+    expect(screen.getByTestId('room-entry-reach')).toHaveTextContent('Woke nobody. Cc: @bo.');
+  });
+
+  it('names the agent a post woke', () => {
+    const asked = 'can you check, @bo';
+    renderRow(entry(asked, [spanFor(asked, '@bo', 'bo')]), AUTHORS, 'channel');
+    expect(screen.getByTestId('room-entry-reach')).toHaveTextContent('Woke @bo.');
+  });
+
+  it('says nothing in a DM, or on a post that names nobody', () => {
+    renderRow(copied(), AUTHORS, 'dm');
+    expect(screen.queryByTestId('room-entry-reach')).toBeNull();
+    cleanup();
+    renderRow(entry('morning'), AUTHORS, 'channel');
+    expect(screen.queryByTestId('room-entry-reach')).toBeNull();
+  });
+});
+
+describe('RoomMessage — a cc the writer typed (C10)', () => {
+  /** A cc span: the same span, marked the way the server marks a copy. */
+  const ccSpan = (text: string, needle: string, authorId: string): MentionSpan => ({
+    ...spanFor(text, needle, authorId),
+    cc: true,
+  });
+  const WITH_ORRIN = new Map<string, RosterAuthor>([
+    ...AUTHORS,
+    [
+      'orrin',
+      { id: 'orrin', kind: 'agent', displayName: 'Orrin', handle: 'orrin', origin: 'local' },
+    ],
+  ]);
+
+  it('reads "cc @orrin" as "cc Orrin", never "cc cc Orrin"', () => {
+    const text = '@bo take a look. cc @orrin';
+    renderRow(
+      entry(text, [spanFor(text, '@bo', 'bo'), ccSpan(text, '@orrin', 'orrin')]),
+      WITH_ORRIN
+    );
+
+    const pill = content().querySelector('[data-cc="true"]');
+    expect(pill).toHaveTextContent(/^Orrin$/);
+    expect(pill?.querySelector('svg')).not.toBeNull();
+    expect(content()).toHaveTextContent('cc Orrin');
+    expect(content()).not.toHaveTextContent(/cc\s+cc/i);
+  });
+
+  it('ignores case and space before the pill, and pills in a row keep their own cc', () => {
+    const text = '@ana see this, CC   @bo @orrin';
+    renderRow(
+      entry(text, [
+        spanFor(text, '@ana', 'ana'),
+        ccSpan(text, '@bo', 'bo'),
+        ccSpan(text, '@orrin', 'orrin'),
+      ]),
+      WITH_ORRIN
+    );
+
+    const [bo, orrin] = Array.from(content().querySelectorAll('[data-cc="true"]'));
+    expect(bo).toHaveTextContent(/^Bo$/);
+    expect(orrin).toHaveTextContent(/^cc Orrin$/);
+  });
+
+  it('keeps the pill’s own cc when no "cc" was typed before it', () => {
+    const text = '@bo take a look, and @orrin too';
+    renderRow(
+      entry(text, [spanFor(text, '@bo', 'bo'), ccSpan(text, '@orrin', 'orrin')]),
+      WITH_ORRIN
+    );
+    expect(content().querySelector('[data-cc="true"]')).toHaveTextContent(/^cc Orrin$/);
+  });
+
+  it('does not treat a word ending in cc as the word', () => {
+    const text = '@bo the occ @orrin';
+    renderRow(
+      entry(text, [spanFor(text, '@bo', 'bo'), ccSpan(text, '@orrin', 'orrin')]),
+      WITH_ORRIN
+    );
+    expect(content().querySelector('[data-cc="true"]')).toHaveTextContent(/^cc Orrin$/);
   });
 });

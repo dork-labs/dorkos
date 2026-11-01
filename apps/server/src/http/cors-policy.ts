@@ -85,14 +85,33 @@ export function corsAllowsOrigin(facts: RequestFacts): boolean {
 }
 
 /**
- * The error a refused origin raises. It reaches the chain's error handler,
- * which answers `500` with this message outside production: the `cors`
- * package's own behaviour, kept so the chain refuses the same way it did.
+ * A browser origin this server does not answer. It is the caller's to fix, not
+ * a server fault, so the chain's error handler answers `403` with its code and
+ * logs a warning rather than an error (`middleware/error-handler.ts`).
+ *
+ * It used to be a bare `Error`, the `cors` package's own behaviour, which every
+ * route answered as `500 INTERNAL_ERROR` with an ERROR log line — a page on a
+ * foreign origin posting with a person's cookie looked like a server crash.
+ */
+export class OriginRefusedError extends Error {
+  readonly code = 'ORIGIN_NOT_ALLOWED';
+  readonly status = 403;
+
+  constructor(readonly origin: string | undefined) {
+    super(
+      `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`
+    );
+    this.name = 'OriginRefusedError';
+  }
+}
+
+/**
+ * The error a refused origin raises; it reaches the chain's error handler.
  *
  * @param origin - The refused `Origin` header.
  */
-export function corsRefusal(origin: string | undefined): Error {
-  return new Error(`Origin ${origin} not allowed by CORS`);
+export function corsRefusal(origin: string | undefined): OriginRefusedError {
+  return new OriginRefusedError(origin);
 }
 
 /**

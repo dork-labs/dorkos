@@ -476,8 +476,8 @@ test.describe('Sidebar model showcase @smoke', () => {
         `a count badge axe could not judge is below 4.5:1 in the ${theme} theme`
       ).toEqual([]);
 
-      // **The sidebar's count pill, paid back the same way.** Neutral ink on a
-      // translucent neutral tint: the tint is composited over the first solid
+      // **The sidebar's count pill, paid back the same way.** Orange ink on a
+      // translucent orange tint: the tint is composited over the first solid
       // backdrop behind the pill, and the ink is read against that.
       const pillContrast = await page.evaluate((selector) => {
         const canvas = document.createElement('canvas');

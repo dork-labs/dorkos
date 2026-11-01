@@ -2,9 +2,10 @@ import { Fragment, useCallback, useEffect, useRef } from 'react';
 import { Link, type LinkProps } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib/utils';
+import { SPRING } from '@/layers/shared/lib/motion';
 import { revealInScroller, useScrollOverflow } from '@/layers/shared/model';
 
-const INDICATOR_SPRING = { type: 'spring', stiffness: 500, damping: 32 } as const;
+const INDICATOR_SPRING = SPRING.glide;
 
 /** One tab of a {@link BarTabStrip}: what it says and where it goes. */
 export interface BarTab {

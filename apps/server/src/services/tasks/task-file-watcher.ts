@@ -84,6 +84,7 @@ import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { readTaskRootFile, scanTaskRoot, type ReadOutcome } from './skills-root-discovery.js';
 import { carrySwitchIntoReleasedFile, packageOwnershipInRoot } from './task-file-update.js';
+import { fileAgentLevel } from './sync/file-agent-level.js';
 import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
 import {
   dropProjectCopies,
@@ -602,6 +603,8 @@ export class TaskFileWatcher implements TaskWatchHealth {
       // the row, because its file is one DorkOS never writes (FB-26). The row
       // keeps the answer, so the sync sees ownership lapse (DOR-2272).
       packageOwned,
+      // What a file asking for every prompt off gets (DOR-3425).
+      agentLevel: await fileAgentLevel(root, discovered.def.meta.schedule.runtime),
     };
     // A global `scope: project` file is one copy per project, never a global
     // row, and its shared file is never written for any one of them (DOR-3376).
@@ -625,7 +628,9 @@ export class TaskFileWatcher implements TaskWatchHealth {
     // for it. That write comes back through here, finds the file agreeing, and
     // records the release; a write that fails is retried by the next sync.
     try {
-      await carrySwitchIntoReleasedFile(task, discovered.def, root);
+      if (this.store.fileSync.isReleasingSwitch(task.id)) {
+        await carrySwitchIntoReleasedFile(task, discovered.def, root);
+      }
     } catch (err) {
       logger.warn('[TaskFileWatcher] could not write the kept switch into its file', {
         filePath: discovered.def.filePath,

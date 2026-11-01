@@ -3,8 +3,8 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import { Sparkles } from 'lucide-react';
 import '@testing-library/jest-dom/vitest';
-import { STATUS_TONE_TEXT } from '../status-dot';
 import { Badge } from '../badge';
 
 afterEach(cleanup);
@@ -17,27 +17,107 @@ describe('Badge', () => {
     expect(screen.getByText('New').tagName).toBe('SPAN');
   });
 
-  it('names itself with data-slot and data-variant', () => {
-    render(<Badge variant="outline">Beta</Badge>);
+  // One tint, one radius: no border, no fill per variant.
+  it('draws every badge as a full-radius pill on the 7% tint, with no border', () => {
+    render(<Badge>Beta</Badge>);
     const badge = screen.getByText('Beta');
     expect(badge).toHaveAttribute('data-slot', 'badge');
-    expect(badge).toHaveAttribute('data-variant', 'outline');
+    expect(badge).toHaveClass('rounded-full', 'bg-foreground/7', 'tabular-nums');
+    expect(badge.className).not.toMatch(/\bborder\b|rounded-md/);
   });
 
-  // A badge that navigates should BE the link, not sit inside one — wrapping
-  // changes the layout, composing does not.
-  it('becomes the child element with asChild', () => {
+  it('says a neutral fact in the quiet grey', () => {
+    render(<Badge>Installed</Badge>);
+    const badge = screen.getByText('Installed');
+    expect(badge).toHaveAttribute('data-tone', 'neutral');
+    expect(badge).toHaveClass('text-muted-foreground');
+    expect(badge.querySelector('svg')).toBeNull();
+  });
+
+  // Colour on the glyph, never the word: a coloured word fails AA on the tint.
+  it.each([
+    ['warning', 'text-status-warning-fg', 'lucide-triangle-alert'],
+    ['error', 'text-status-error-fg', 'lucide-circle-x'],
+    ['success', 'text-status-success-fg', 'lucide-check'],
+  ] as const)('a %s badge brings its own glyph in its colour', (tone, color, glyph) => {
+    render(<Badge tone={tone}>State</Badge>);
+    const badge = screen.getByText('State');
+    expect(badge).toHaveClass('text-foreground');
+    expect(badge.className).not.toMatch(/text-status-/);
+    const icon = badge.querySelector('svg');
+    expect(icon).toHaveClass(color, glyph);
+    expect(icon).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  // Agents send `info` over the gen-ui wire; blue is not a resting state.
+  it('draws info as neutral', () => {
+    render(<Badge tone="info">Note</Badge>);
+    expect(screen.getByText('Note')).toHaveAttribute('data-tone', 'neutral');
+  });
+
+  it('takes another glyph, or none', () => {
     render(
-      <Badge asChild variant="secondary">
-        <a href="/marketplace">Browse</a>
+      <>
+        <Badge tone="success" icon={Sparkles}>
+          Swapped
+        </Badge>
+        <Badge tone="warning" icon={null}>
+          Bare
+        </Badge>
+      </>
+    );
+    expect(screen.getByText('Swapped').querySelector('svg')).toHaveClass('lucide-sparkles');
+    expect(screen.getByText('Bare').querySelector('svg')).toBeNull();
+  });
+
+  it('draws the pulsing working dot when live', () => {
+    render(<Badge live>3 live</Badge>);
+    const badge = screen.getByText('3 live');
+    expect(badge).toHaveAttribute('data-live', 'true');
+    expect(badge).toHaveClass('text-foreground');
+    const dot = badge.querySelector('[data-slot="badge-live-dot"]');
+    expect(dot).toHaveClass('bg-status-success', 'motion-safe:animate-pulse');
+  });
+
+  // The deprecated props still compile and resolve here until the codemod.
+  it('resolves the deprecated variant and shape', () => {
+    render(
+      <>
+        <Badge variant="destructive">Broken</Badge>
+        <Badge variant="outline" shape="default">
+          Old
+        </Badge>
+      </>
+    );
+    expect(screen.getByText('Broken')).toHaveAttribute('data-tone', 'error');
+    const old = screen.getByText('Old');
+    expect(old).toHaveAttribute('data-tone', 'neutral');
+    expect(old).toHaveClass('rounded-full');
+  });
+
+  it('lets an explicit tone win over the deprecated variant', () => {
+    render(
+      <Badge variant="destructive" tone="warning">
+        Held
       </Badge>
     );
-    const link = screen.getByRole('link', { name: 'Browse' });
-    expect(link).toHaveAttribute('data-slot', 'badge');
-    expect(link).toHaveClass('bg-secondary');
+    expect(screen.getByText('Held')).toHaveAttribute('data-tone', 'warning');
   });
 
-  it('defaults to the sm size and takes xs', () => {
+  // A badge that navigates should BE the link, not sit inside one.
+  it('becomes the child element with asChild, glyph and all', () => {
+    render(
+      <Badge asChild tone="warning">
+        <a href="/connections">Waiting</a>
+      </Badge>
+    );
+    const link = screen.getByRole('link', { name: 'Waiting' });
+    expect(link).toHaveAttribute('data-slot', 'badge');
+    expect(link).toHaveClass('bg-foreground/7');
+    expect(link.querySelector('svg')).toHaveClass('lucide-triangle-alert');
+  });
+
+  it('defaults to the sm size and takes xs at 11px, not the 10px of counts', () => {
     render(
       <>
         <Badge>Default</Badge>
@@ -45,45 +125,8 @@ describe('Badge', () => {
       </>
     );
     expect(screen.getByText('Default')).toHaveClass('text-xs');
-    expect(screen.getByText('Tiny')).toHaveClass('text-3xs');
-  });
-
-  // The pill is the shape four components wanted and could not get, so each
-  // drew its own. It has to come OUT of the primitive, not off the call site.
-  it('defaults to the rounded rectangle and takes the pill', () => {
-    render(
-      <>
-        <Badge>Boxy</Badge>
-        <Badge shape="pill">Round</Badge>
-      </>
-    );
-    expect(screen.getByText('Boxy')).toHaveClass('rounded-md');
-    const pill = screen.getByText('Round');
-    expect(pill).toHaveClass('rounded-full');
-    expect(pill).not.toHaveClass('rounded-md');
-  });
-
-  // The tone comes from the app's shared status vocabulary, so a warning badge
-  // is the same amber as a warning banner — in both themes.
-  it('paints a tone from the shared status tokens', () => {
-    render(
-      <Badge variant="outline" tone="warning">
-        Not protected
-      </Badge>
-    );
-    expect(screen.getByText('Not protected')).toHaveClass(STATUS_TONE_TEXT.warning);
-  });
-
-  // Declaration order is load-bearing: `tone` is a colour correction on top of
-  // a shape, so tailwind-merge has to see it after the variant's own colour.
-  it('lets a tone beat the variant colour it sits on', () => {
-    render(
-      <Badge variant="outline" tone="error">
-        Failed
-      </Badge>
-    );
-    const badge = screen.getByText('Failed');
-    expect(badge).toHaveClass(STATUS_TONE_TEXT.error);
-    expect(badge).not.toHaveClass('text-foreground');
+    const tiny = screen.getByText('Tiny');
+    expect(tiny).toHaveClass('text-2xs');
+    expect(tiny).not.toHaveClass('text-3xs');
   });
 });

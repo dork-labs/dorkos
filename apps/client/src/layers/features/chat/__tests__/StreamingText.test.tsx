@@ -72,7 +72,7 @@ describe('StreamingText', () => {
     render(<StreamingText content="Hello" isStreaming={true} />);
     const call = MockStreamdown.mock.calls[0][0];
     expect(call.animated).toEqual({
-      animation: 'blurIn',
+      animation: 'fadeIn',
       duration: 150,
       easing: 'ease-out',
       sep: 'word',
@@ -98,11 +98,11 @@ describe('StreamingText', () => {
     expect(call.isAnimating).toBe(false);
   });
 
-  it('defaults to DEFAULT_TEXT_EFFECT (blur-in) when no textEffect prop provided', () => {
+  it('defaults to DEFAULT_TEXT_EFFECT (fade) when no textEffect prop provided', () => {
     render(<StreamingText content="Hello" />);
     const call = MockStreamdown.mock.calls[0][0];
     expect(call.animated).toEqual({
-      animation: 'blurIn',
+      animation: 'fadeIn',
       duration: 150,
       easing: 'ease-out',
       sep: 'word',

@@ -141,10 +141,10 @@ describe('standalone catalog', () => {
       'aria-describedby',
       'catalog-email-error'
     );
-    expect(screen.getByText('Enter a valid email address.')).toHaveAttribute(
-      'id',
-      'catalog-email-error'
-    );
+    // The message sits beside its icon inside the field error, which carries the id.
+    expect(
+      screen.getByText('Enter a valid email address.').closest('[data-slot="field-error"]')
+    ).toHaveAttribute('id', 'catalog-email-error');
     expect(
       within(screen.getByRole('region', { name: 'Notices' })).getAllByRole('alert')
     ).toHaveLength(1);

@@ -79,8 +79,8 @@ const NEEDS_CREDENTIAL = rpcError(
     'Use your personal API key from Settings → Advanced → Tools → Connect other apps to DorkOS.'
 );
 const NOT_ALLOWED_BY_CORS = (origin: string) => ({
-  error: `Origin ${origin} not allowed by CORS`,
-  code: 'INTERNAL_ERROR',
+  error: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
+  code: 'ORIGIN_NOT_ALLOWED',
 });
 const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR'), error: z.string() }).strict();
 const TOO_LARGE = { error: 'That is too large to send in one request.', code: 'REQUEST_TOO_LARGE' };
@@ -419,7 +419,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     path: '/.well-known/agent-card.json',
     headers: { origin: 'https://evil.example' },
     expect: {
-      status: 500,
+      status: 403,
       headers: { ...JSON_TYPE, ...NOT_COUNTED, 'access-control-allow-origin': null },
       body: NOT_ALLOWED_BY_CORS('https://evil.example'),
     },
@@ -842,7 +842,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     headers: { ...WITH_TOKEN, origin: 'https://evil.example' },
     body: rpc('message/send', legacyMessage('m-evil', { agentId: AGENT })),
     expect: {
-      status: 500,
+      status: 403,
       headers: { ...NOT_COUNTED, 'access-control-allow-origin': null },
       body: NOT_ALLOWED_BY_CORS('https://evil.example'),
     },

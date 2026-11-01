@@ -365,8 +365,12 @@ export interface OperatingSkill {
  * - 44: `reading-activity` teaches `running_chats` (DOR-3460): every chat running
  *   now, per agent, spin-offs included. An agent seeded at 43 would guess at who
  *   is free from `get_session_count`, which counts every chat ever kept on disk.
+ * - 45: `working-with-spin-off-chats` says a spin-off started from a room
+ *   reports into the starter's chat in that room as a turn only it sees
+ *   (DOR-3488). An agent seeded at 44 would not expect the report there, and
+ *   might repost it to the whole room.
  */
-export const OPERATING_SKILLS_VERSION = 44;
+export const OPERATING_SKILLS_VERSION = 45;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

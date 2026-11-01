@@ -207,7 +207,8 @@ describe('ConfigFieldInput', () => {
     renderField(textField, { error: 'This field is required' });
     const errorEl = screen.getByText('This field is required');
     expect(errorEl).toBeInTheDocument();
-    expect(errorEl).toHaveClass('text-dui-destructive');
+    // The text sits beside its icon inside the field error, which carries the error colour.
+    expect(errorEl.closest('[data-slot="field-error"]')).toHaveClass('text-dui-destructive-text');
   });
 
   it('does not show an error message when error prop is absent', () => {

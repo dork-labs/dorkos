@@ -47,6 +47,7 @@ import {
   TaskOpenScheduleButton,
 } from './TaskHealthParts';
 import { isFailing } from '../lib/schedule-health';
+import { TaskApproveButtons, TaskFileSaysOnNote } from './TaskSwitchOffers';
 
 /**
  * Density steps controlling how much detail a TaskRow displays.
@@ -221,23 +222,6 @@ export function TaskRow({
     });
   };
 
-  const handleApprove = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    // No local onError: the shared mutation toast (`useUpdateTask`'s
-    // `meta.errorLabel`) reports a failure. Bare, matching Run started above.
-    updateTask.mutate(
-      { id: task.id, status: 'active', enabled: true },
-      { onSuccess: () => toast('Schedule approved') }
-    );
-  };
-
-  const handleReject = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    // No local onError: the shared mutation toast (`useDeleteTask`'s
-    // `meta.errorLabel`) reports a failure.
-    deleteTask.mutate(task.id);
-  };
-
   // A schedule that came with an installed package, running on the person's
   // own timing (DOR-2302): put it back on the package's. A person's reset is
   // itself the approval of the timing it restores, so it stays live.
@@ -399,6 +383,7 @@ export function TaskRow({
                 panel — otherwise a package-shipped schedule found switched off
                 is indistinguishable from one the person switched off
                 themselves (DOR-2059 review). */}
+            {!isMinimal && <TaskFileSaysOnNote task={task} />}
             {!isMinimal && isQuietlyParkedFromFile && task.filePath && (
               <div
                 data-slot="task-quiet-source"
@@ -410,21 +395,9 @@ export function TaskRow({
           </div>
 
           {/* Actions — vary by size */}
+          {/* Approving keeps the switch as it is (DOR-3309). */}
           {!isMinimal && isScheduleAwaitingApproval(task) ? (
-            <div className="flex gap-1">
-              <button
-                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium shadow-xs transition-colors"
-                onClick={handleApprove}
-              >
-                Approve
-              </button>
-              <button
-                className="hover:bg-accent hover:text-accent-foreground inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
-                onClick={handleReject}
-              >
-                Reject
-              </button>
-            </div>
+            <TaskApproveButtons task={task} />
           ) : isCompact ? (
             <button
               className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-xs transition-colors"
@@ -456,7 +429,7 @@ export function TaskRow({
                     // ordinary switched-off task (DOR-2059) — so switching it
                     // ON here is the FIRST time anybody has approved it, and
                     // has to run the same door the Approve button does
-                    // (`handleApprove`, above): `status` is operator-only, and
+                    // (`TaskApproveButtons`): `status` is operator-only, and
                     // sending it alongside `enabled` is what runs the arm
                     // blocker and the permission clamp before anything is
                     // armed. Flipping an already-approved schedule off and
@@ -585,12 +558,9 @@ export function TaskRow({
               >
                 Cancel
               </button>
-              <button
-                onClick={confirmDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60 inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
-              >
+              <Button variant="destructive" size="sm" onClick={confirmDelete}>
                 Delete task
-              </button>
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

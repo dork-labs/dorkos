@@ -52,13 +52,17 @@ function SettingRow({
     <Field
       orientation={orientation}
       className={cn(
+        // A floor, not a height: 48 on desktop, 60 on the phone, so a row with
+        // no description still holds the rhythm of its neighbours. No hover:
+        // the control acts, not the row, and a tint would promise a click.
+        'min-h-12 max-md:min-h-15',
         orientation === 'horizontal' ? 'items-center justify-between gap-4' : 'gap-1.5',
         className
       )}
     >
       <FieldContent className="min-w-0">
         <FieldLabel className="text-sm font-medium">{label}</FieldLabel>
-        {description && <FieldDescription className="text-xs">{description}</FieldDescription>}
+        {description && <FieldDescription>{description}</FieldDescription>}
       </FieldContent>
       {children}
     </Field>

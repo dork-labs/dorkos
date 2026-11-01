@@ -225,14 +225,14 @@ Choose the right transition type for the animation feel.
 
 ### Chat Microinteraction Spring Presets
 
-DorkOS uses a small set of named spring presets for chat interactions. Prefer these over ad-hoc values for consistency:
+The three springs live in `SPRING` (`shared/lib/motion.ts`), beside `DURATION`, `EASE` and `STAGGER`. Use them instead of typing numbers: `check-design-tokens` refuses a new `stiffness:` anywhere else.
 
-| Use case                             | Preset                                            | Character                                            |
-| ------------------------------------ | ------------------------------------------------- | ---------------------------------------------------- |
-| Message entry (new messages)         | `{ type: 'spring', stiffness: 320, damping: 28 }` | Snappy, no bounce, settles ~250ms                    |
-| Sidebar active indicator slide       | `{ type: 'spring', stiffness: 280, damping: 32 }` | Smooth, deliberate navigation feel                   |
-| Tap feedback (buttons, session rows) | `{ type: 'spring', stiffness: 400, damping: 30 }` | Quick response, already used in ToolCallCard chevron |
-| Session crossfade                    | `{ duration: 0.15, ease: 'easeInOut' }`           | Linear opacity — intentional, not spring             |
+| Use case                                 | Preset                                  | Character                  |
+| ---------------------------------------- | --------------------------------------- | -------------------------- |
+| Small controls, badges, marks            | `SPRING.snap` (400/40)                  | Quick, no bounce           |
+| Something arriving or sliding into place | `SPRING.glide` (280/32)                 | Smooth, deliberate         |
+| A section opening or closing             | `SPRING.fold` (400/36)                  | Quick, no bounce           |
+| Session crossfade                        | `{ duration: 0.15, ease: 'easeInOut' }` | Linear opacity, on purpose |
 
 Session crossfade uses duration-based easing rather than spring physics because opacity fades are perceptually linear and a spring would add unnecessary overshoot to a simple visibility transition.
 
@@ -489,8 +489,8 @@ The chat uses `streamdown`'s built-in animation system for per-word text animati
 | Mode       | Animation | Description                                                   |
 | ---------- | --------- | ------------------------------------------------------------- |
 | `none`     | Disabled  | Text appears instantly (default for `prefers-reduced-motion`) |
-| `fade`     | `fadeIn`  | Words fade in from transparent                                |
-| `blur-in`  | `blurIn`  | Words blur-in from defocused (default)                        |
+| `fade`     | `fadeIn`  | Words fade in from transparent (default)                      |
+| `blur-in`  | `blurIn`  | Words blur-in from defocused                                  |
 | `slide-up` | `slideUp` | Words slide up from below                                     |
 
 ### Configuration
@@ -499,9 +499,9 @@ The chat uses `streamdown`'s built-in animation system for per-word text animati
 import { DEFAULT_TEXT_EFFECT, resolveStreamdownAnimation } from '@/layers/shared/lib';
 import type { TextEffectConfig } from '@/layers/shared/lib';
 
-// Default: blur-in at word level, 150ms, ease-out
+// Default: fade at word level, 150ms, ease-out
 const config: TextEffectConfig = {
-  mode: 'blur-in',
+  mode: 'fade',
   duration: 150,
   easing: 'ease-out',
   sep: 'word',
@@ -509,7 +509,7 @@ const config: TextEffectConfig = {
 
 // Convert to streamdown's animated prop format
 const animated = resolveStreamdownAnimation(config);
-// Returns: { animation: 'blurIn', duration: 150, easing: 'ease-out', sep: 'word' }
+// Returns: { animation: 'fadeIn', duration: 150, easing: 'ease-out', sep: 'word' }
 // Or returns false when mode is 'none'
 ```
 

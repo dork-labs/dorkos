@@ -73,6 +73,30 @@ git gtr new <branch> --from origin/main --yes   # the repo's worktree helper
 Commit conventions and the pre-push gate live in the `git:commit` / `git:push`
 commands. End commit messages with the `Co-Authored-By` trailer.
 
+### Stack on a PR you depend on, otherwise branch from `origin/main`
+
+**One topic, one PR.** Fold related fixes from one lane into one PR. Keep
+security-sensitive changes, migrations and risky work in a PR of their own.
+
+Before you start, check whether an open PR touches the same files or has to land
+first (`gh pr list -R dork-labs/dorkos --search <path or ticket>`, then
+`gh pr diff <n> --name-only`):
+
+- **There is one:** stack on it with GitHub's native stacks, `gh stack` (gh 2.90+;
+  `gh stack init` on that PR's branch, then `gh stack add <your-branch>`, then
+  `gh stack submit`). Your PR's base is the branch below it, so its diff is only
+  your change.
+- **There is none:** branch from `origin/main` as above.
+
+A stack merges only with **`gh stack merge` from the top** (`gh stack merge
+<top-pr> --yes`). It lands every layer up to that PR together, through the merge
+queue. **Never `gh pr merge --auto` a layer whose base is not `main`**: it merges
+into the branch below and skips the queue, so nothing tested it on top of `main`.
+
+**UI PRs** (anything under `apps/client/**` or `packages/ui/**`) run their
+affected Playwright specs locally before pushing, and say so in the PR body. Write
+the output under the cold-storage folder (see `contributing/browser-verification.md#where-local-output-goes`).
+
 ## Include a changelog fragment
 
 A PR with user-facing changes must include a **changelog fragment** under

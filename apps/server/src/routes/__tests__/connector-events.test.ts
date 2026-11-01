@@ -252,8 +252,10 @@ describe('owner notification HTTP boundary', () => {
     const res = await request(target.server)
       .get(`${prefix}/definitions`)
       .set('origin', 'https://evil.example');
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe('Origin https://evil.example not allowed by CORS');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe(
+      'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.'
+    );
     expect(f.discover).not.toHaveBeenCalled();
   });
   it('answers a DorkOS account refusal behind the definitions honestly, not as an outage', async () => {

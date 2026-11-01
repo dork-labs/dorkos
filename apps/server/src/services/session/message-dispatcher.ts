@@ -462,6 +462,7 @@ interface FoldStageOpts {
 function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
   const privateMessages = getPrivateSessionMessageAcceptanceService();
   return {
+    type: runtime.type,
     acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
     releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
     sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),

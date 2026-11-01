@@ -1,3 +1,4 @@
+import { introductionsOnAtStartup } from '../../services/rooms/introductions/introducer.js';
 import { roomAudience } from '../../services/rooms/service/room-audience.js';
 /**
  * Rooms: read state, the rooms graph, remote community mirrors and
@@ -148,6 +149,9 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     // A channel turn waits for its burst to go quiet (DOR-3398). Not under the
     // scripted test runtime, whose browser specs would wait 20s per answer.
     burstQuietMs: env.DORKOS_TEST_RUNTIME ? 0 : ROOM_BURST_QUIET_MS,
+    // Agents introduce themselves to an ordinary channel they join, once each
+    // (DOR-2106). See `introductionsOnAtStartup` for when it is off.
+    introduceAgents: introductionsOnAtStartup(env),
     runtimePrincipalCurrent: (proof) =>
       docChannelRuntimePrincipals.current?.isPrincipalCurrent(proof) ?? false,
     readCursors: readCursorService,

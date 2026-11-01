@@ -32,12 +32,8 @@ import type { SessionStateProjector } from './session-state-projector.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { settleOpenTurnBefore } from './settle-open-turn.js';
 import { withStallGuard } from './stall-guard.js';
-import {
-  DetachedTurnLifecycle,
-  guardTurnErrors,
-  sessionTurnQueue,
-  tapEachEvent,
-} from './trigger-turn.js';
+import { DetachedTurnLifecycle, guardTurnErrors, sessionTurnQueue } from './trigger-turn.js';
+import { tapEachEvent } from './turn-stream/tap-each-event.js';
 import { SESSIONS } from '../../config/constants.js';
 import { logError, logger } from '../../lib/logger.js';
 

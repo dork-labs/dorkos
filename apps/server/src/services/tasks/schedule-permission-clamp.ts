@@ -67,6 +67,51 @@ export function clampSchedulePermissionMode(declared: PermissionMode): {
 }
 
 /**
+ * The level of the agent a schedule file belongs to, as a sync needs it
+ * (DOR-3425): read by the caller, because the level is a read of the agent's
+ * file and the content gates are synchronous. Absent or `null` means no agent's
+ * level applies (a global file, one project's copy of it, or a level nothing
+ * set or nothing could read), and the file gets the fixed cap.
+ */
+export interface FileAgentLevel {
+  /**
+   * What a file asking for `bypassPermissions` gets under this agent: the
+   * runtime's own id for the loosest mode the level admits.
+   */
+  bypassAs: string;
+  /** Whether the level is Full autonomy, so a held schedule asks nobody. */
+  full: boolean;
+}
+
+/**
+ * How loose each mode a schedule file can name is, strictest first. `dontAsk`
+ * refuses what is not already allowed, so it sits below the modes that act.
+ */
+const MODE_LOOSENESS: Readonly<Record<PermissionMode, number>> = {
+  plan: 0,
+  default: 1,
+  dontAsk: 1,
+  acceptEdits: 2,
+  auto: 2,
+  bypassPermissions: 3,
+};
+
+/**
+ * Whether a schedule's mode would get looser (DOR-3425). A mode a file cannot
+ * name (another runtime's own id) reads as the loosest when it is the new one
+ * and the strictest when it is the old one, so anything unknown asks a person.
+ *
+ * @param next - The mode the sync would write.
+ * @param current - The mode the row holds.
+ */
+export function isLooserMode(next: string, current: string): boolean {
+  if (next === current) return false;
+  const rankOf = (mode: string) =>
+    Object.hasOwn(MODE_LOOSENESS, mode) ? MODE_LOOSENESS[mode as PermissionMode] : undefined;
+  return (rankOf(next) ?? Infinity) > (rankOf(current) ?? -Infinity);
+}
+
+/**
  * The parts of an existing schedule row that decide whether a file may keep the
  * bypass that row already carries. Structural on purpose — the store passes the
  * four columns it read, and nothing here needs a Drizzle type.
@@ -74,6 +119,11 @@ export function clampSchedulePermissionMode(declared: PermissionMode): {
 export interface ApprovedSchedule extends ScheduleSettings {
   /** The mode the row holds. */
   permissionMode: PermissionMode;
+  /**
+   * Whether the row was written in a marked turn and no person has approved it
+   * since (`originMarks`, DOR-3036): it keeps the fixed cap (DOR-3425).
+   */
+  marked?: boolean;
   /** The row's lifecycle status. Only `active` is a live approval. */
   status: string;
   /** The prompt text the row holds — the work a person actually approved. */
@@ -391,6 +441,33 @@ export const AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON =
   'outside DorkOS, so it is waiting for you again. Check what changed, then approve it or ' +
   'change the agent back.';
 
+/**
+ * Why a schedule whose agent is at Full autonomy is held: its file asks for more
+ * than a person approved (DOR-3425). Passive: it is a row under Needs you that
+ * nothing knocks or escalates for, and {@link isQuietHold} is how every surface
+ * tells. Fixed, so the next sync recognises it (`file-sync-gates.ts`).
+ */
+export const FILE_ASKS_FOR_MORE_REASON =
+  'This schedule’s file asks for fewer prompts, so it waits until you approve it.';
+
+/**
+ * Whether a parked schedule is the passive kind ({@link FILE_ASKS_FOR_MORE_REASON}).
+ * Reads `reasonSource` too, because `reason` alone can be an agent's own words.
+ *
+ * @param row - The columns that decide it.
+ */
+export function isQuietHold(row: {
+  status: string;
+  reason: string | null;
+  reasonSource: string | null;
+}): boolean {
+  return (
+    row.status === 'pending_approval' &&
+    row.reasonSource === 'dorkos' &&
+    row.reason === FILE_ASKS_FOR_MORE_REASON
+  );
+}
+
 /** One of an agent's execution defaults a schedule can follow. */
 export type FollowedAgentField = 'runtime' | 'model' | 'effort';
 
@@ -507,15 +584,29 @@ export interface FileArmVerdict {
  * @param problem - What is wrong with the file, when something is. A schedule
  *   DorkOS cannot fully read never arms, whatever the row says — the grant
  *   cannot cover content that does not mean anything yet.
+ * @param mode - The mode this sync would write and what the file asked for: a
+ *   looser mode than the row holds is new work to approve, whatever the key says
+ *   (DOR-3425), and at Full autonomy a file asking for more parks quietly.
  * @returns The status to write and, when parked, why.
  */
 export function resolveFileArmStatus(
   existing: ApprovedSchedule | undefined,
   incoming: IncomingTaskContent,
-  problem?: string | null
+  problem?: string | null,
+  mode?: { next: string; asked: PermissionMode; agent?: FileAgentLevel | null }
 ): FileArmVerdict {
   if (problem) return { status: 'pending_approval', reason: problem };
-  if (existing && holdsGrantFor(existing, incoming)) return { status: 'active', reason: null };
+  const loosened =
+    existing !== undefined &&
+    mode !== undefined &&
+    isLooserMode(mode.next, existing.permissionMode);
+  if (existing && holdsGrantFor(existing, incoming) && !loosened) {
+    return { status: 'active', reason: null };
+  }
+  const asksForMore = loosened || mode?.asked === 'bypassPermissions';
+  if (mode?.agent?.full === true && existing?.marked !== true && asksForMore) {
+    return { status: 'pending_approval', reason: FILE_ASKS_FOR_MORE_REASON };
+  }
   return {
     status: 'pending_approval',
     // A row that has been approved before and drifted is a different story from
@@ -558,15 +649,26 @@ export function resolveFileArmStatus(
  * @param existing - The schedule row this file is landing on, or undefined when
  *   it is landing as a new task.
  * @param incoming - The material content of the file being synced.
+ * @param agent - The level of the agent the file belongs to, when one applies.
+ *   Since DOR-3425 that level, not the fixed cap, is what a bypass clamps to: an
+ *   agent at Full gets Full and one at Ask gets Ask. The arm gate still decides
+ *   whether it runs: a row holding this mode runs only once a person approved it
+ *   ({@link resolveFileArmStatus}). No agent, or a row written in a marked turn
+ *   that no person has approved since, keeps the fixed cap.
  * @returns The mode to write, and whether the file asked for more than it got.
  */
 export function resolveFilePermissionMode(
   declared: PermissionMode,
   existing: ApprovedSchedule | undefined,
-  incoming: IncomingTaskContent
+  incoming: IncomingTaskContent,
+  agent?: FileAgentLevel | null
 ): { mode: PermissionMode; clamped: boolean } {
   if (declared === 'bypassPermissions' && keepsApprovedBypass(existing, incoming)) {
     return { mode: 'bypassPermissions', clamped: false };
+  }
+  if (declared === 'bypassPermissions' && agent && existing?.marked !== true) {
+    // A runtime's own id is a string to the row, as it is everywhere else.
+    return { mode: agent.bypassAs as PermissionMode, clamped: !agent.full };
   }
   return clampSchedulePermissionMode(declared);
 }

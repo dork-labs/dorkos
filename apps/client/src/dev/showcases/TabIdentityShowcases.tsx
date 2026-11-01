@@ -53,7 +53,10 @@ const EVERY_ROUTE: { key: string; identity: TabIdentity }[] = [
   { key: 'dm', identity: roomTabIdentity({ kind: 'dm', title: 'Maya Chen', face: mayaFace }) },
   { key: 'channels', identity: channelsTabIdentity(0) },
   { key: 'home', identity: homeTabIdentity(0) },
-  { key: 'team', identity: teamTabIdentity('/team', { workingCount: 0, signals: {} }) },
+  {
+    key: 'team',
+    identity: teamTabIdentity('/team', { workingCount: 0, needsYouCount: 0, signals: {} }),
+  },
   {
     key: 'profile',
     identity: profileTabIdentity({ name: 'Scout', face: scoutFace }),
@@ -130,7 +133,20 @@ const EVERY_STATUS: { key: string; identity: TabIdentity }[] = [
   { key: 'home', identity: homeTabIdentity(3) },
   {
     key: 'team',
-    identity: teamTabIdentity('/team', { workingCount: 2, signals: { working: true } }),
+    identity: teamTabIdentity('/team', {
+      workingCount: 2,
+      needsYouCount: 0,
+      signals: { working: true },
+    }),
+  },
+  {
+    // The label says what the dot says: waiting on you outranks working (DOR-3533).
+    key: 'team-needs-you',
+    identity: teamTabIdentity('/team', {
+      workingCount: 3,
+      needsYouCount: 1,
+      signals: { needsYou: true, working: true },
+    }),
   },
   {
     key: 'mention',

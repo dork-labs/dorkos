@@ -436,15 +436,15 @@ describe('ChannelComposer — Escape', () => {
   });
 });
 
-describe('the cc line under the composer (DOR-3401)', () => {
+describe('the cc line under the composer (DOR-3453)', () => {
   it('shows nothing until the draft copies somebody in, then names both', () => {
     const { field } = renderComposer();
 
     type(field, '@ana ship it');
-    expect(screen.queryByText(/^Asks /)).toBeNull();
+    expect(screen.queryByText(/^Wakes /)).toBeNull();
 
     type(field, '@ana ship it, cc @priya');
-    expect(screen.getByText('Asks @ana · cc @priya')).toBeInTheDocument();
+    expect(screen.getByText('Wakes @ana · cc @priya')).toBeInTheDocument();
   });
 
   it('never shows in a DM', () => {
@@ -458,6 +458,6 @@ describe('the cc line under the composer (DOR-3401)', () => {
       </QueryClientProvider>
     );
     type(screen.getByRole('combobox') as HTMLTextAreaElement, '@ana ship it, cc @priya');
-    expect(screen.queryByText(/^Asks /)).toBeNull();
+    expect(screen.queryByText(/^Wakes /)).toBeNull();
   });
 });

@@ -408,15 +408,16 @@ contractSuite(
       expect: { status: 403, headers: JSON_TYPE },
     },
     {
-      name: 'POST /api/cloud/link/start answers a foreign Origin with the CORS 500',
+      name: 'POST /api/cloud/link/start answers a foreign Origin with the CORS 403',
       method: 'POST',
       path: '/api/cloud/link/start',
       headers: { origin: 'https://evil.example.com' },
       expect: {
-        status: 500,
+        status: 403,
         body: {
-          error: 'Origin https://evil.example.com not allowed by CORS',
-          code: 'INTERNAL_ERROR',
+          error:
+            'This instance does not answer to pages from "https://evil.example.com". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+          code: 'ORIGIN_NOT_ALLOWED',
         },
       },
     },

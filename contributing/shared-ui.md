@@ -11,7 +11,8 @@
 | Public exports and release metadata           | `packages/ui/package.json`, `packages/ui/src/index.ts`                            |
 | Theme values and Tailwind source registration | `packages/ui/tokens.css`, `packages/ui/tailwind.css`                              |
 | Behavior tests                                | `packages/ui/src/__tests__/`                                                      |
-| Keyboard focus ring and its browser proof     | `packages/ui/src/focus-ring.ts`, `apps/design-system/tests/focus-rings.spec.ts`   |
+| Keyboard focus ring and its browser proof     | `packages/ui/tailwind.css`, `apps/design-system/tests/focus-rings.spec.ts`        |
+| The look of a form field                      | `packages/ui/src/field-control.ts`                                                |
 | Client FSD facade                             | `apps/client/src/layers/shared/ui/index.ts`                                       |
 | Standalone examples                           | `apps/design-system/`                                                             |
 | Client feature simulations                    | `apps/client/src/dev/`                                                            |
@@ -150,7 +151,7 @@ Native Buttons default to `type="button"`. A submit action must opt in. `asChild
 
 An error Notice defaults to `role="alert"`; info and success tones are silent unless the caller explicitly chooses a live role. Render empty errors as nothing. Keep field IDs and error associations in the application, and avoid announcing one failure from both a field alert and a summary alert.
 
-Responsive controls retain their existing dimensions: default Button/Input are 44px below `md`, 36px above. `icon-sm` remains a deliberate 40px exception; `xs` and `icon-xs` remain compact. `responsive={false}` opts out. Reduced-motion preferences suppress the Button press scale.
+Every Button size is at least 44px below `md` and keeps its desktop size above it; `responsive={false}` keeps the small box and adds an invisible 44px hit area. Default Input is 44px below `md` and 36px above, with no opt-out, and `SelectTrigger` has `density="compact"` (32px, 40px below `md`). Reduced-motion preferences suppress the Button press scale.
 
 ### Run the catalog and feature playground
 
