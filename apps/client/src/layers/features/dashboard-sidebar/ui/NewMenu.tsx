@@ -425,15 +425,13 @@ export function NewMenu() {
             ref={contentRef}
             {...(isMobile ? { role: 'menu', 'aria-label': 'New' } : { className: 'contents' })}
           >
-            {isMobile ? (
-              <SidebarMenuNodes
-                variant="sheet"
-                nodes={guarded.nodes}
-                onSheetClose={() => setMenuOpen(false)}
-              />
-            ) : (
-              <SidebarMenuNodes variant="dropdown" nodes={guarded.nodes} />
-            )}
+            {/* One render of the guarded list, whichever surface is up; the
+                dropdown ignores `onSheetClose`. */}
+            <SidebarMenuNodes
+              variant={isMobile ? 'sheet' : 'dropdown'}
+              nodes={guarded.nodes}
+              onSheetClose={() => setMenuOpen(false)}
+            />
           </div>
         </ResponsiveDropdownMenuContent>
       </ResponsiveDropdownMenu>
