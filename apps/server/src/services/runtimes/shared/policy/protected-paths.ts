@@ -182,7 +182,10 @@ export const AGENT_FOLDER_SECRET_PATHS = group(
     '.git-credentials',
     '.pgpass',
     'application_default_credentials.json',
-    'credentials',
+    // Not a bare `credentials`: a rule names a folder too, and refused every file
+    // under a `credentials/` docs folder on the real CLI (DOR-3510). The scan
+    // still flags a bare one.
+    '.aws/credentials',
     'credentials.json',
     '*service-account*.json',
     '.docker/config.json',

@@ -13,6 +13,10 @@ import {
 import { recordToolResultImages } from '../../tool-result-images.js';
 import { rememberToolCommand } from '../turn-work-stop.js';
 import { logger } from '../../../../../lib/logger.js';
+import {
+  noteSecretDenyRefusal,
+  rememberReadTarget,
+} from '../../secret-files/secret-deny-refusal.js';
 
 /** Extract text from a tool_result content field (file-local, loosely-typed for SDK messages). */
 function extractToolResultText(content: unknown): string {
@@ -187,6 +191,7 @@ export async function* mapMessageEvent(
       for (const block of contentBlocks as Array<Record<string, unknown>>) {
         // A shell's command, for the task it may start (DOR-3285).
         rememberToolCommand(session, block);
+        rememberReadTarget(block);
         if (
           block.type === 'tool_use' &&
           typeof block.id === 'string' &&
@@ -258,11 +263,17 @@ export async function* mapMessageEvent(
           // not the risk: the identity is the tool call plus the block index,
           // and `recordToolResultImages` is single-shot on that.
           recordToolResultImages(toolState, block.tool_use_id, block.content);
+          const resultText = extractToolResultText(block.content);
+          // Before the skip below: a refused built-in tool can be resolved already (DOR-3510).
+          noteSecretDenyRefusal(
+            block.tool_use_id,
+            toolState.toolNameById.get(block.tool_use_id) ?? '',
+            resultText,
+            block.is_error === true
+          );
 
           // Skip tools already resolved via tool_use_summary (built-in tools)
           if (toolState.resolvedResultIds.has(block.tool_use_id)) continue;
-
-          const resultText = extractToolResultText(block.content);
 
           // TaskCreate carries no id in its input — the tool_result is the
           // only place the SDK's real id ever appears. Resolve the pending

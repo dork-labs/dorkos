@@ -27,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { query, type Options, type PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { resolveBundledClaudeBinary } from '../../sdk/sdk-utils.js';
 import { applySecretReadDeny } from '../secret-read-deny.js';
+import { secretDenyRefusalName } from '../secret-deny-refusal.js';
 
 const BINARY = resolveBundledClaudeBinary();
 /** The dotenv name, spelled in parts so no tool sees a bare secret-file path. */
@@ -205,9 +206,48 @@ const READABLE: [string, string, (file: string) => ToolCall][] = [
     () => ({ name: 'Bash', input: { command: `cat ${ENV}.example` } }),
   ],
   ['a plain file', 'notes.md', (file) => ({ name: 'Read', input: { file_path: file } })],
+  // Bare names Security flagged as false-refusal risks (DOR-3510): a file
+  // beside or under the name, not the name itself.
+  [
+    'a file in a credentials docs folder',
+    'docs/credentials/setup.md',
+    (file) => ({ name: 'Read', input: { file_path: file } }),
+  ],
+  [
+    'a credentials source file',
+    'src/credentials.ts',
+    (file) => ({ name: 'Read', input: { file_path: file } }),
+  ],
+  [
+    'a key-named source file',
+    'src/i18n/keys.ts',
+    () => ({ name: 'Bash', input: { command: 'cat src/i18n/keys.ts' } }),
+  ],
 ];
 
 const canaryOf = (label: string): string => `CANARY-${label.replace(/\W/g, '')}`;
+
+/** The probe call's tool-result text, as the model got it back. */
+function probeResultOf(out: string): string {
+  for (const line of out.split('\n')) {
+    if (!line.trim()) continue;
+    const body = JSON.parse(line) as {
+      messages?: { content?: unknown }[];
+    };
+    for (const message of body.messages ?? []) {
+      if (!Array.isArray(message.content)) continue;
+      for (const block of message.content as Record<string, unknown>[]) {
+        if (block.type !== 'tool_result' || block.tool_use_id !== 'toolu_probe') continue;
+        const content = block.content;
+        if (typeof content === 'string') return content;
+        if (Array.isArray(content)) {
+          return (content as { text?: string }[]).map((part) => part.text ?? '').join('');
+        }
+      }
+    }
+  }
+  return '';
+}
 
 describe.skipIf(BINARY === null)('secret files in the agent’s own folder (DOR-3292)', () => {
   beforeEach(() => {
@@ -226,6 +266,21 @@ describe.skipIf(BINARY === null)('secret files in the agent’s own folder (DOR-
     async (label, rel, call) => {
       const file = plant(rel, canaryOf(label));
       expect(await resultsOf(call(file), 'default', false)).toContain(canaryOf(label));
+    },
+    60_000
+  );
+
+  // DOR-3510: the server log can only name a false refusal if it reads the
+  // CLI's real refusal sentence, for the Read tool and a shell read alike.
+  it.each(SECRETS)(
+    'names the secret in the refusal of the %s, as the server log reads it',
+    async (label, rel, call) => {
+      const file = plant(rel, canaryOf(label));
+      const probe = call(file);
+      const refusal = probeResultOf(await resultsOf(probe, 'default', true));
+      // A `Read` refusal names no file, so the log has the call's own path.
+      const target = typeof probe.input.file_path === 'string' ? probe.input.file_path : undefined;
+      expect(secretDenyRefusalName(refusal, target), refusal).toBeDefined();
     },
     60_000
   );

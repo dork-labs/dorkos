@@ -91,7 +91,7 @@ describe('Claude Code protected-path adapter', () => {
         '.git-credentials',
         '.pgpass',
         'application_default_credentials.json',
-        'credentials',
+        '.aws/credentials',
         'credentials.json',
         '*service-account*.json',
         '.docker/config.json',

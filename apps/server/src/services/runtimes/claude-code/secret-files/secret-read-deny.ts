@@ -75,11 +75,20 @@ export const HOME_SECRETS = globs(HOME_SECRET_PATHS);
  * Files in the agent's own folder whose names say they hold a secret, at any
  * depth, wherever a rule can spell it (DOR-3292).
  *
- * What this holds, on the bundled CLI at every level, Bypass included: the
- * `Read` tool, and a shell command that names the file (`cat .env`, a link
- * to it, `.ENV`). What it can't: a search of the whole folder (`grep -r`,
- * `rg -uu`) and any program that opens the file itself (`python3 -c`, which
- * Bypass runs). Only moving the file out of the folder stops those.
+ * This stops a slip, not an agent set on reading the file. Proven on the
+ * bundled CLI 0.3.304 (DOR-3511):
+ * - Refused at every level, Bypass included: the `Read` tool, and a shell
+ *   command that names the file (`cat .env`, a link to it, `.ENV`).
+ * - Still read at every level: a search of the whole folder (`grep -r X .`,
+ *   `rg -uu X .`), which never names the file.
+ * - Still read at Full (Bypass): a program that opens the file itself
+ *   (`python3 -c "open('.env')"`). Below Full it is a card or a refusal.
+ * Only moving the file out of the folder stops those, or Claude Code's Bash
+ * sandbox, which isn't on.
+ *
+ * Bare names (`credentials`, `*.key`) can catch an ordinary file, so every
+ * refusal under one of these names logs a `[SecretReadDeny]` line
+ * (`secret-deny-refusal.ts`, DOR-3510). Narrow a name that bites.
  */
 export const AGENT_FOLDER_SECRETS = globs(AGENT_FOLDER_SECRET_PATHS).map((glob) => `**/${glob}`);
 
