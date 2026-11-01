@@ -37,7 +37,7 @@ function answerWith(...outcomes: ActionStepUpOutcome[]): { asked: string[]; stop
     if (showing === null || asked.includes(showing)) return;
     asked.push(showing);
     const outcome = outcomes.shift() ?? { kind: 'not-confirmed' };
-    queueMicrotask(() => finishActionStepUp(outcome));
+    queueMicrotask(() => finishActionStepUp(showing, outcome));
   });
   return { asked, stop };
 }
@@ -46,7 +46,9 @@ let stops: Array<() => void> = [];
 afterEach(() => {
   for (const stop of stops) stop();
   stops = [];
-  while (getActionStepUpShowing() !== null) finishActionStepUp({ kind: 'not-confirmed' });
+  for (let id = getActionStepUpShowing(); id !== null; id = getActionStepUpShowing()) {
+    finishActionStepUp(id, { kind: 'not-confirmed' });
+  }
 });
 
 describe('personAwareFetch and a held action', () => {
@@ -106,6 +108,25 @@ describe('personAwareFetch and a held action', () => {
     const res = await personAwareFetch(base, ORIGIN)('/api/x', { method: 'POST', body: '{}' });
     expect(res.status).toBe(428);
     expect(base.mock.calls.length).toBeLessThanOrEqual(4);
+  });
+
+  it('a late answer for a closed sheet never ends the next one', async () => {
+    const first = vi.fn(async () => held('held-1'));
+    const second = vi.fn(async () => held('held-2'));
+    const fetchFirst = personAwareFetch(first, ORIGIN)('/api/a', { method: 'POST', body: '{}' });
+    const fetchSecond = personAwareFetch(second, ORIGIN)('/api/b', { method: 'POST', body: '{}' });
+    await vi.waitFor(() => expect(getActionStepUpShowing()).toBe('held-1'));
+    // held-1's sheet is cancelled; held-2's shows.
+    finishActionStepUp('held-1', { kind: 'not-confirmed' });
+    expect((await fetchFirst).status).toBe(428);
+    await vi.waitFor(() => expect(getActionStepUpShowing()).toBe('held-2'));
+    // held-1's password check answers late, as confirmed: it must not touch held-2.
+    finishActionStepUp('held-1', { kind: 'confirmed', status: 201, result: { wrong: true } });
+    expect(getActionStepUpShowing()).toBe('held-2');
+    finishActionStepUp('held-2', { kind: 'confirmed', status: 200, result: { right: true } });
+    const res = await fetchSecond;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ right: true });
   });
 
   it('leaves a 428 that names no held action alone', async () => {

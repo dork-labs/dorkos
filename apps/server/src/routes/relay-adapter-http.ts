@@ -180,14 +180,19 @@ export function registerConfirmReferencesRoute(
       return c.json(answer, status as ContentfulStatusCode);
     }
     // "Confirm it's you" (DOR-3234, DOR-3467): held until the owner's step-up
-    // passes. The commit runs the same confirm, which re-reads the connection
-    // and refuses with 409 if it changed since it was shown.
+    // passes. The commit re-checks the owner bar on the request that confirmed
+    // it, then runs the same confirm, which re-reads the connection and refuses
+    // with 409 if it changed since it was shown.
     return holdForStepUp(c, {
       kind: 'connection.confirm-setting',
       target: id,
       input: { id, fingerprint },
       reason: confirmReason(shown),
-      commit: () => run(id, fingerprint, false),
+      commit: async (confirming) => {
+        const stale = errorRefusalUnlessOwner(confirming, CONFIRM_WORDING);
+        if (stale) return { status: 403, body: stale };
+        return run(id, fingerprint, false);
+      },
     });
   };
   router.post('/adapters/:id/confirm-references', (c) => handle(c, false));

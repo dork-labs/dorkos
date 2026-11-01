@@ -36,6 +36,7 @@ import {
   type StepUpActionKind,
 } from '@dorkos/shared/step-up';
 
+import type { RequestFacts } from '../../../../http/request-facts.js';
 import { hashApprovalInput } from '../../approvals/approval-input-hash.js';
 
 /** The most actions held at once; past it the oldest is dropped. */
@@ -61,9 +62,13 @@ export interface StepUpActionInput {
   /**
    * Run the action. Called once, only after a step-up passed, never with the
    * request that held it in scope: it must re-check anything that may have
-   * changed in the meantime and answer the way the route would have.
+   * changed in the meantime, its own person bar included, and answer the way
+   * the route would have.
+   *
+   * @param confirming - The request that confirmed it: the same browser
+   *   session, already checked to be a person in this server's own page.
    */
-  commit: () => Promise<StepUpCommitResult>;
+  commit: (confirming: RequestFacts) => Promise<StepUpCommitResult>;
 }
 
 /** One held action. */
@@ -73,7 +78,7 @@ export interface HeldStepUp {
   notes: readonly string[];
   /** The browser session that held it, or `null` when the caller had none. */
   sessionId: string | null;
-  commit: () => Promise<StepUpCommitResult>;
+  commit: StepUpActionInput['commit'];
   /** Wrong passwords it will still take. */
   triesLeft: number;
 }
