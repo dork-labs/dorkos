@@ -1,4 +1,4 @@
-import { execFileSync, spawn, spawnSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import {
   chmodSync,
   existsSync,
@@ -18,9 +18,10 @@ import { LOGIN_SHELL_PATH_MARKER } from '../src/shared/login-shell-path';
 import { TRAY_IMAGE_FILES } from '../src/shared/tray-images';
 import { assertTunnelBinaryUnpacked, TUNNEL_BINARY } from './smoke-tunnel-binary';
 import {
-  assertCompanyCertificateLoaded,
+  assertCertificatesReloadOnRestart,
   seedCompanyCertificate,
 } from './smoke-company-certificates';
+import { relaxAdhocLibraryValidation } from './smoke-codesign';
 
 /**
  * Packaged-runtime smoke test for the macOS desktop app.
@@ -322,49 +323,6 @@ function assertTrayImagesPackaged(appPath: string): void {
         `runs with no tray — and an app with no tray and no window is unreachable.`
     );
   }
-}
-
-/**
- * Make an unsigned build launchable, without touching a signed one.
- *
- * `hardenedRuntime: true` turns on macOS **library validation**: every Mach-O
- * loaded into the process must share the main executable's signing identity.
- * A Developer ID build satisfies that — electron-builder signs the app, its
- * frameworks and its native modules with one identity. An unsigned build may
- * not: when electron-builder ad-hoc-signs each binary separately, the loader
- * refuses the app's own Electron Framework with
- *
- * > Library not loaded: @rpath/Electron Framework.framework/Electron Framework
- * > … mapping process and mapped file (non-platform) have different Team IDs
- *
- * and the app dies before `main` runs. Re-signing ad-hoc in one pass clears the
- * hardened-runtime flag and makes it load.
- *
- * This does not weaken what the smoke proves. Library validation is about
- * *code identity*, not about the packaged layout, the asar reads, the native
- * `dlopen`s or the server boot — the things under test here. The shipped build
- * keeps `hardenedRuntime: true` (with the entitlements that make it work), and
- * `desktop-release.yml`'s "Verify the macOS app bundle" step is what asserts its signature.
- *
- * Conditional, not unconditional, because it is not always needed — a local
- * pack hit this; the same pack on a GitHub macOS runner did not (electron-
- * builder left the Electron-signed binaries alone there). A build signed with a
- * real identity is left strictly alone either way: re-signing one would destroy
- * the signature the release is about to notarize.
- *
- * @param appPath - Absolute path to the `.app` bundle.
- * @returns Whether the app was re-signed.
- */
-function relaxAdhocLibraryValidation(appPath: string): boolean {
-  // codesign writes its description to stderr, not stdout.
-  const probe = spawnSync('codesign', ['-dvvv', appPath], { encoding: 'utf-8' });
-  const description = `${probe.stdout ?? ''}${probe.stderr ?? ''}`;
-  const isAdhoc = /^Signature=adhoc$/m.test(description);
-  const hasHardenedRuntime = /flags=\S*\(.*\bruntime\b.*\)/.test(description);
-  if (!isAdhoc || !hasHardenedRuntime) return false;
-
-  execFileSync('codesign', ['--force', '--deep', '--sign', '-', appPath], { stdio: 'inherit' });
-  return true;
 }
 
 /** Direct children of `pid`, or `[]` if it has none. */
@@ -1073,7 +1031,7 @@ async function main(): Promise<void> {
   const fixtures = mkdtempSync(path.join(os.tmpdir(), 'dorkos-smoke-shell-'));
   const loginShell = createFakeLoginShell(fixtures);
   const launchedAt = Date.now();
-  const app = launchApp(appPath, home, loginShell);
+  let app = launchApp(appPath, home, loginShell);
   console.log(`[3/7] Launched (pid ${app.pid}) against throwaway home ${home}`);
   console.log(`      PATH is launchd's (${LAUNCHD_PATH}); $SHELL is ${loginShell.shell}`);
 
@@ -1098,11 +1056,22 @@ async function main(): Promise<void> {
 
     console.log('[5/7] What the app can see from a launchd-style launch:');
     await assertAppSeesItsMachine(endpoint, home, app.output);
-    const origin = `http://${endpoint.host}:${endpoint.port}`;
-    console.log(`      ✓ ${await assertCompanyCertificateLoaded(origin, certificate)}`);
 
     await assertRendererPainted(home, app, launchedAt);
     console.log('[6/7] The window rendered — the renderer reported a first paint.');
+
+    // DOR-3053/3361: the seeded certificate loaded with the fuses on; then choose
+    // a file, see it pending, restart (a quit and relaunch on the same home, see
+    // the module for why), and see the count reload.
+    let serving = endpoint;
+    const restart = async (): Promise<Endpoint> => {
+      await quitApp(app);
+      await assertPortReleased(serving);
+      app = launchApp(appPath, home, loginShell);
+      serving = (await waitForHealthyServer(app)).endpoint;
+      return serving;
+    };
+    await assertCertificatesReloadOnRestart(endpoint, home, certificate, restart);
 
     await quitApp(app);
     // Assert the (code, signal) PAIR, not the code alone. `child.on('exit')`
@@ -1123,7 +1092,7 @@ async function main(): Promise<void> {
           : `The app exited with code ${app.exitCode} on quit; expected a clean 0.`
       );
     }
-    await assertPortReleased(endpoint);
+    await assertPortReleased(serving);
     // Only on success: a failed run's throwaway home holds the DB and logs of
     // whatever went wrong, and the path is printed above.
     rmSync(home, { recursive: true, force: true });
