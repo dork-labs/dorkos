@@ -215,7 +215,11 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
           {/* New stays in the header — no FAB (§9). The header block is the
               whole of it: whose cockpit this is, one New button, one search
               pill (BC-43 → BC-46). */}
-          <PageContainer width="full" className="px-3 py-2">
+          {/* `px-2`: the panel pays 8, as the desktop panel does, so the
+              header's controls, the section labels and the row glyphs all land
+              on one 16px edge and a row's tint bleeds out to 8 (Phase 4 S2).
+              */}
+          <PageContainer width="full" className="px-2 py-2">
             <SidebarHeaderBlock />
             {nowAttention.slot}
             {/* A contributed body takes over the list and nothing else here. */}
@@ -228,7 +232,7 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
         </MobileTabPanel>
 
         <MobileTabPanel id="you" active={active === 'you'}>
-          <PageContainer width="full" className="px-3 py-4">
+          <PageContainer width="full" className="px-4 py-4">
             <h1 className="text-foreground px-2 pb-2 text-sm font-semibold">You</h1>
             {/* You, then your DorkOS account: the header menu's first two
                 rows, at the top of the tab that holds who you are. */}
