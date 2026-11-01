@@ -32,7 +32,11 @@ describe('MentionPill', () => {
     expect(pill.className).toContain(
       'bg-[color-mix(in_oklch,var(--identity-color)_14%,transparent)]'
     );
-    expect(pill.style.color).toContain('color-mix');
+    // The words are the theme's foreground, never the identity colour: a
+    // yellow agent's name read 3.6:1 on its own wash (ROOMS-SPEC B2). The wash
+    // carries the colour; the text only has to be read.
+    expect(pill).toHaveClass('text-foreground');
+    expect(pill.style.color).toBe('');
   });
 
   it('draws a local person as a neutral @name pill with no glyph', () => {

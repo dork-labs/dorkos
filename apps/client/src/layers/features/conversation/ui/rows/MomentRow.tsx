@@ -114,9 +114,11 @@ export function MomentRow({
       role="article"
       aria-label={`Moment: ${entry.body.text}`}
       {...feedArticleProps(feedPosition)}
-      className="focus-visible:ring-ring px-[var(--msg-padding-x)] py-1 outline-none focus-visible:ring-2"
+      className="focus-ring-inset px-[var(--msg-padding-x)] py-1"
     >
-      <div className="border-border/60 bg-muted/40 flex items-center gap-2.5 rounded-lg border px-3 py-2">
+      {/* A tint and nothing else: a border would make the one calm band in
+          the feed the only boxed thing in it. */}
+      <div className="bg-foreground/4 flex items-center gap-2.5 rounded-lg px-3 py-2">
         <IdentityHoverCard
           identity={{
             kind: subject.kind,
@@ -145,7 +147,7 @@ export function MomentRow({
         <MomentMark
           data-testid="room-moment-mark"
           aria-hidden
-          className="text-muted-foreground size-3.5 shrink-0"
+          className="text-muted-foreground size-(--size-icon-xs) shrink-0"
         />
         <p className="min-w-0 flex-1 text-sm">{entry.body.text}</p>
         {time.length > 0 && (

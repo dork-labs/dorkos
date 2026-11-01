@@ -57,7 +57,7 @@ export function ThreadNotice({ kind }: { kind: ThreadNoticeKind }) {
     <p
       data-slot="thread-notice"
       data-testid="room-thread-orphan"
-      className="text-muted-foreground border-b px-[var(--msg-padding-x)] pb-3 text-xs italic"
+      className="text-muted-foreground border-b px-[var(--msg-padding-x)] pb-3 text-xs"
     >
       This thread’s first message is gone. Its replies remain.
     </p>

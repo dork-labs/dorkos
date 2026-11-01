@@ -1,4 +1,5 @@
 import { useId, useMemo, useState, type KeyboardEvent, type Ref } from 'react';
+import { SmilePlus } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
   Button,
@@ -214,15 +215,20 @@ export function EntryReactionPicker({
             'leading-none',
             capsule
               ? 'text-control'
-              : // The ghost + ends the pill row and measures 45×24 on a phone,
-                // which clears WCAG 2.5.8 on its own. It carries no invisible
-                // reach for the reason `EntryReactionRow` measures out: down
-                // here, reach overlaps the thread reply row and costs more than
-                // it buys.
-                'text-muted-foreground/60 hover:text-foreground h-auto rounded-full px-2 py-0.5 text-xs'
+              : // The add glyph ends the pill row at the pills' own height —
+                // 24px on a desktop, 40px on a phone — in full muted ink: it is
+                // a control, and a faded one read under 3:1. It carries no
+                // invisible reach for the reason `EntryReactionRow` measures
+                // out: down here, reach overlaps the thread reply row and costs
+                // more than it buys.
+                'text-muted-foreground hover:text-foreground h-10 rounded-full px-3 md:h-6 md:px-2'
           )}
         >
-          <span aria-hidden>🙂+</span>
+          {capsule ? (
+            <span aria-hidden>🙂+</span>
+          ) : (
+            <SmilePlus aria-hidden className="size-(--size-icon-sm)" />
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[19rem] p-2">

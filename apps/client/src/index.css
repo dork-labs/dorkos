@@ -394,15 +394,14 @@
      together, which is the only way the asymmetry stays deliberate. */
   --msg-actions-fade-in: 90ms;
   --msg-actions-fade-out: 60ms;
-  /* A reaction's arrival, in three parts that run together (design record §5.2):
-     the pill pops, a ring bursts out of it once, and a count that changed rolls
-     up into place. Removal is deliberately none of them — a plain fade, because
+  /* A reaction's arrival, in two parts that run together (design record §5.2):
+     the pill pops, and a count that changed rolls up into place. The pop is the
+     one celebration a reaction gets; the ring that once burst around it is cut. Removal is deliberately none of them — a plain fade, because
      the celebration belongs to arriving. Every one of these is well inside the
      300ms all motion here resolves within, and the whole set is `motion-safe:`
      at its call sites, so a reader who asked for less motion is handed the pill
      already where it settles. */
   --msg-reaction-pop: 240ms;
-  --msg-reaction-ring: 260ms;
   --msg-reaction-roll: 180ms;
   --msg-reaction-fade-out: 120ms;
   /* Touch press acknowledgment (design record §5.6): how long the message takes
@@ -1209,29 +1208,6 @@ body {
 @utility animate-reaction-pop {
   animation: reaction-pop var(--msg-reaction-pop) cubic-bezier(0.2, 1.8, 0.35, 1);
   transform-origin: left center;
-}
-
-/* The one-shot ring that fires outward as the pill lands. Drawn as a border on
-   an inset overlay, so it costs no layout and animates on transform/opacity
-   only — and it is `pointer-events-none`, because a ring expanding past the
-   pill must never eat the click that would take the reaction back. */
-@keyframes reaction-ring {
-  from {
-    opacity: 0;
-    transform: scale(0.4);
-  }
-  27% {
-    opacity: 0.7;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(1.9);
-  }
-}
-
-@utility animate-reaction-ring {
-  animation: reaction-ring var(--msg-reaction-ring) ease-out;
 }
 
 /* A count that changed rolls up into its new value, like a mechanical counter

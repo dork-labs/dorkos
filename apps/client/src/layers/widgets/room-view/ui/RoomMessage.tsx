@@ -172,6 +172,13 @@ interface RoomMessageProps {
    * says who it woke and who it only cc'd (DOR-3454). Omitted draws no line.
    */
   roomKind?: 'channel' | 'dm';
+  /**
+   * True when a thread reply row hangs under this message in the flow. The
+   * message then gives up its bottom padding, the reply row's own 8px margin
+   * is the whole gap, and the row carries the group's end instead — so a
+   * message and its own replies read as one block, with the air after both.
+   */
+  headsThread?: boolean;
 }
 
 /** One line of a room's history. */
@@ -192,6 +199,7 @@ export function RoomMessage({
   feedPosition,
   rowId,
   roomKind,
+  headsThread = false,
 }: RoomMessageProps) {
   const time = formatTime(entry.createdAt);
   // `null` for a message that already reads as one line — see `entrySummary`.
@@ -366,6 +374,7 @@ export function RoomMessage({
       ref={rowRef}
       id={rowId}
       position={grouping.position}
+      className={headsThread ? 'pb-0' : undefined}
       actions={actions}
       reactions={quickRow}
       data-testid="room-entry"
@@ -415,7 +424,7 @@ export function RoomMessage({
           renderName={agentCard?.wrapName}
         />
         {orphanedReply === true && (
-          <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs italic">
+          <p data-testid="room-entry-orphan" className="text-muted-foreground text-xs">
             Replying to an earlier message
           </p>
         )}
@@ -430,7 +439,7 @@ export function RoomMessage({
             // `mb-1` so the quote reads as a caption over the answer rather
             // than as its first line: flush against the words, the two ran
             // together (DOR-2120).
-            className="text-muted-foreground mb-1 truncate text-xs italic"
+            className="text-muted-foreground mb-1 truncate text-xs"
           >
             {`Answering \u201C${answers.excerpt}\u201D`}
           </p>

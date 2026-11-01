@@ -153,8 +153,10 @@ export function PendingRow({ post, viewerAuthorId }: PendingRowProps) {
         </ul>
       )}
       {failed ? (
-        <div className="text-status-warning flex flex-wrap items-center gap-2 text-xs">
-          <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+        // Amber on the mark only, as a warm notice draws it: amber words read
+        // 2:1 on the light page.
+        <div className="text-foreground flex flex-wrap items-center gap-2 text-xs">
+          <TriangleAlert aria-hidden className="text-status-warning-fg size-3.5 shrink-0" />
           {/* WHY it failed is already in the toast, in the server's own
               sentence. This line says what is true of THIS message. "Not sent"
               only when nothing answered at all (DOR-3481): a request that times

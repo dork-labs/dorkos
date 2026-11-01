@@ -21,9 +21,10 @@
  *
  * @module widgets/room-view/ui/RoomFlow
  */
-import { useCallback, useMemo, type Ref } from 'react';
-import { MessagesSquare } from 'lucide-react';
-import { buildTimelineRows, unreadPlacement } from '@/layers/shared/lib';
+import { useCallback, useMemo, useState, type Ref } from 'react';
+import { motion } from 'motion/react';
+import { ChevronRight, MessagesSquare } from 'lucide-react';
+import { buildTimelineRows, DURATION, EASE, unreadPlacement } from '@/layers/shared/lib';
 import type { MessageGrouping } from '@/layers/shared/model';
 import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
@@ -53,6 +54,7 @@ import {
   displayAuthorIdOf,
   toMessageAuthor,
 } from '../lib/room-timeline';
+import { foldNoticeRuns, type NoticeFold } from '../lib/notice-fold';
 import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
 import { LoadOlderRow } from './LoadOlderRow';
 import { RoomMdHint } from './empty-state/RoomMdHint';
@@ -210,6 +212,7 @@ type RoomFlowRow =
   | { kind: 'load-older'; id: string }
   | { kind: 'day-divider'; id: string; label: string }
   | { kind: 'unread-divider'; id: string }
+  | { kind: 'notice-fold'; id: string; fold: NoticeFold }
   | {
       kind: 'message';
       id: string;
@@ -218,6 +221,8 @@ type RoomFlowRow =
       position: number;
       /** What this post answers, when it is not the row directly above it. */
       answers: { entryId: string; excerpt: string } | null;
+      /** True when a thread reply row hangs directly under this message. */
+      headsThread: boolean;
     }
   | {
       kind: 'thread-reply';
@@ -230,6 +235,8 @@ type RoomFlowRow =
        * page (`RoomEntry.threadReplyCount`). `undefined` for every other thread.
        */
       totalReplies: number | undefined;
+      /** True when the message above it closes its author group. */
+      endsGroup: boolean;
     };
 
 /**
@@ -287,7 +294,30 @@ export function RoomFlow({
   // and threading it through the page would put a prop on every caller for a
   // fact this component can simply ask for.
   const pending = usePendingPosts(roomId, null);
-  const { topLevel, repliesByRoot, orphaned } = useMemo(() => groupByThread(entries), [entries]);
+  const {
+    topLevel: allTopLevel,
+    repliesByRoot,
+    orphaned,
+  } = useMemo(() => groupByThread(entries), [entries]);
+  // A run of three or more notices folds to its latest (spec P4). Folded
+  // notices leave the flow entirely while folded, so Page Down never lands on
+  // a line nobody can see. `revealed` is the run the reader just opened, so
+  // its notices fade in once and never again on a later remount.
+  const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(() => new Set());
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const folded = useMemo(() => foldNoticeRuns(allTopLevel, openRuns), [allTopLevel, openRuns]);
+  const topLevel = folded.visible;
+  const toggleRun = useCallback(
+    (runId: string) => {
+      const opening = !openRuns.has(runId);
+      const next = new Set(openRuns);
+      if (opening) next.add(runId);
+      else next.delete(runId);
+      setOpenRuns(next);
+      setRevealed(opening ? runId : null);
+    },
+    [openRuns]
+  );
   // Every loaded entry by id, so resolving what a post answers is one lookup
   // rather than a scan per row.
   const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
@@ -334,6 +364,9 @@ export function RoomFlow({
         continue;
       }
       const entry = topLevel[row.index]!;
+      const fold = folded.foldBefore.get(entry.id);
+      if (fold) built.push({ kind: 'notice-fold', id: `notice-fold:${fold.runId}`, fold });
+      const replies = repliesByRoot.get(entry.id);
       built.push({
         kind: 'message',
         id: entry.id,
@@ -344,8 +377,8 @@ export function RoomFlow({
         // directly above this one here, not the previous entry in the log. A
         // thread reply sits in the panel, so it is not what is above anything.
         answers: answeredReference(entry, topLevel[row.index - 1], byId.get.bind(byId)),
+        headsThread: replies !== undefined,
       });
-      const replies = repliesByRoot.get(entry.id);
       if (replies) {
         built.push({
           kind: 'thread-reply',
@@ -357,17 +390,20 @@ export function RoomFlow({
           // everything else carries nothing because for it the replies here are
           // the thread.
           totalReplies: entry.threadReplyCount,
+          endsGroup: row.grouping.position === 'last' || row.grouping.position === 'only',
         });
       }
     }
     return built;
-  }, [topLevel, repliesByRoot, byId, lastReadSeq, now, canLoadOlder, isLoading]);
+  }, [topLevel, folded, repliesByRoot, byId, lastReadSeq, now, canLoadOlder, isLoading]);
 
   const rows = useMemo<ConversationRow[]>(
     () =>
       flowRows.map((row) => {
         // The room speaking about its own history — see `LOAD_OLDER_ROW_ID`.
         if (row.kind === 'load-older') return { kind: 'notice', id: row.id, at: '', body: null };
+        // The room folding its own lines — the same carve-out as above.
+        if (row.kind === 'notice-fold') return { kind: 'notice', id: row.id, at: '', body: null };
         if (row.kind === 'day-divider')
           return { kind: 'day-divider', id: row.id, label: row.label };
         if (row.kind === 'unread-divider') return { kind: 'unread-divider', id: row.id };
@@ -405,6 +441,9 @@ export function RoomFlow({
         if (onLoadOlder === undefined) return null;
         return <LoadOlderRow loading={isLoadingOlder} onLoad={onLoadOlder} />;
       }
+      if (row.kind === 'notice-fold') {
+        return <NoticeFoldRow fold={row.fold} onToggle={() => toggleRun(row.fold.runId)} />;
+      }
       if (row.kind === 'day-divider') return <DayDivider label={row.label} />;
       if (row.kind === 'unread-divider') return <UnreadDivider />;
       if (row.kind === 'thread-reply') {
@@ -419,6 +458,7 @@ export function RoomFlow({
             summary={threadReplySummary(row.replies, lastReadSeq, row.totalReplies)}
             open={openThreadId === row.rootId}
             onOpen={() => open(row.rootId)}
+            endsGroup={row.endsGroup}
           />
         );
       }
@@ -427,7 +467,7 @@ export function RoomFlow({
       // `entry.authorId` — so a line the room wrote about somebody drew that
       // person and then resolved nobody behind them.
       const rowAuthorId = displayAuthorIdOf(row.entry, authors);
-      return (
+      const message = (
         <RoomMessage
           roomId={roomId}
           entry={row.entry}
@@ -455,8 +495,25 @@ export function RoomFlow({
           // opened closes again.
           rowId={entryRowId(row.entry.id)}
           roomKind={roomKind}
+          headsThread={row.headsThread}
         />
       );
+      // A notice the reader just unfolded fades in where it was held, once:
+      // the answer to "where did these come from". Opacity only, so the
+      // timeline's measured row heights never move under the fade.
+      if (revealed !== null && folded.runOf.get(row.entry.id) === revealed) {
+        return (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: DURATION.normal, ease: EASE.out }}
+            onAnimationComplete={() => setRevealed(null)}
+          >
+            {message}
+          </motion.div>
+        );
+      }
+      return message;
     },
     [
       flowRows,
@@ -474,6 +531,9 @@ export function RoomFlow({
       openThreadId,
       isLoadingOlder,
       onLoadOlder,
+      folded,
+      revealed,
+      toggleRun,
     ]
   );
 
@@ -504,7 +564,7 @@ export function RoomFlow({
   const hasAgents = members.some((member) => member.author.kind === 'agent');
   const emptyState = (
     <div className="text-muted-foreground flex flex-col items-center gap-2 p-10 text-center text-sm">
-      <MessagesSquare className="text-muted-foreground/50 size-8" aria-hidden />
+      <MessagesSquare className="text-muted-foreground size-8 md:size-6" aria-hidden />
       <p className="text-foreground font-medium">Nothing said here yet</p>
       <p className="max-w-sm">
         {hasAgents ? 'Say something to get it going.' : 'Nothing answers until you add an agent.'}
@@ -546,5 +606,48 @@ export function RoomFlow({
         feedTestId="room-timeline"
       />
     </AgentInfoProvider>
+  );
+}
+
+/**
+ * The button a folded run of notices leaves in its place: "2 earlier", or
+ * "Hide 2 earlier" once it is open (#3307's disclosure).
+ *
+ * Ghost and small, with a chevron that turns down when the run is open, so it
+ * reads as a control rather than a line of the room's own voice. It sits on
+ * the notices' own rhythm, with the chevron on the text edge the notices'
+ * words start at. Named in full for a screen reader, with the visible words
+ * inside the name.
+ */
+function NoticeFoldRow({ fold, onToggle }: { fold: NoticeFold; onToggle: () => void }) {
+  const noun = fold.count === 1 ? 'notice' : 'notices';
+  return (
+    <div
+      data-testid="room-notice-fold"
+      className="py-0.5 pr-[var(--msg-padding-x)] pl-[calc(var(--msg-padding-x)+var(--msg-gutter-width)+var(--msg-gap))]"
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        aria-expanded={fold.expanded}
+        aria-label={`${fold.expanded ? 'Hide' : 'Show'} ${fold.count} earlier ${noun}`}
+        onClick={onToggle}
+        // Pulled left by its own padding, so the chevron starts on the text
+        // edge the notices' words start at.
+        className="text-muted-foreground hover:text-foreground -ml-2 font-normal"
+      >
+        <motion.span
+          aria-hidden
+          className="inline-flex"
+          initial={false}
+          animate={{ rotate: fold.expanded ? 90 : 0 }}
+          transition={{ duration: DURATION.fast, ease: EASE.out }}
+        >
+          <ChevronRight className="size-(--size-icon-xs)" />
+        </motion.span>
+        {fold.expanded ? `Hide ${fold.count} earlier` : `${fold.count} earlier`}
+      </Button>
+    </div>
   );
 }

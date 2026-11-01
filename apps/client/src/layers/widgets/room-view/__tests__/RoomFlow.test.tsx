@@ -395,18 +395,18 @@ describe('RoomFlow — thread reply rows', () => {
     //     top of the pill's reach also sat over the last 8px of message text
     //     (text ended y136), and the bottom of this row's landed 2px inside the
     //     next message's text (y206).
-    //   after  — msg text ⋯136 │ 4px │ pill 140–166 (26px) │ 6px │ this row
-    //     172–208 (36px) │ 10px │ next msg text 218⋯. The column scan is
-    //     strictly ordered with a non-interactive gap between every control:
-    //     pill 26px effective, this row 35px, nothing overlapping anything.
-    //
-    // Rerun by rendering this component at 390×844 with the built CSS and
-    // walking `document.elementFromPoint` down each control's centre line.
+    //   after  — real boxes: 40px pills and this row at 44px below the
+    //     breakpoint, 24px and 28px above it, with 8px of the row's own margin
+    //     between the pills and it (ROOMS-SPEC B3). The phone walk lives in
+    //     `room-entry-actions.spec.ts`, which scans a grid of points inside
+    //     every pill and this row with `document.elementFromPoint`.
     renderTimeline({ entries: [entry(1), reply(2, 1)] });
 
     const row = screen.getByTestId('room-thread-replies');
-    expect(row.className).toContain('px-2 py-2');
-    expect(row.className).toContain('md:px-1 md:py-0.5');
+    expect(row).toHaveClass('h-11', 'md:h-7', 'px-2', 'mt-2', 'rounded-md');
+    // The row is a flex box, which would trim the spaces between bare text
+    // runs ("3replies · last09:20"), so its words sit in one inline wrapper.
+    expect(row.children).toHaveLength(1);
     // No invisible reach, at any breakpoint.
     expect(row.className).not.toContain('after:');
   });
@@ -1171,5 +1171,96 @@ describe('RoomFlow — reading past the page the room opened on (DOR-1734)', () 
     renderTimeline({ entries: [entry(1)], canLoadOlder: true });
 
     expect(screen.queryByTestId('room-load-older')).not.toBeInTheDocument();
+  });
+});
+
+describe('RoomFlow — the rows a room draws (Phase 4 rooms A)', () => {
+  function reply(seq: number, parentSeq: number): RoomEntry {
+    return entry(seq, {
+      parentEntryId: `entry-${parentSeq}`,
+      threadRootEntryId: `entry-${parentSeq}`,
+    });
+  }
+
+  function notice(seq: number, code?: RoomEntry['body']['notice']): RoomEntry {
+    return entry(seq, {
+      kind: 'notice',
+      authorId: 'system-author',
+      body: { text: `notice ${seq}`, ...(code && { notice: code }) },
+    });
+  }
+
+  it('keeps a message with its own replies, and puts the air after both (S1)', () => {
+    renderTimeline({ entries: [entry(1), reply(2, 1)] });
+
+    // The head gives up its bottom padding, so the row's 8px margin is the gap…
+    expect(screen.getByTestId('room-entry')).toHaveClass('pb-0');
+    // …and the reply row under it carries the end instead.
+    expect(screen.getByTestId('room-thread-replies')).toHaveClass('mb-[var(--msg-padding-y-end)]');
+  });
+
+  it('leaves a message with no thread its ordinary end padding', () => {
+    renderTimeline({ entries: [entry(1)] });
+
+    expect(screen.getByTestId('room-entry')).not.toHaveClass('pb-0');
+  });
+
+  it('marks an unread thread with full ink and weight, never the primary token (P6)', () => {
+    renderTimeline({ entries: [entry(1), reply(2, 1)], lastReadSeq: 1 });
+
+    const row = screen.getByTestId('room-thread-replies');
+    expect(row).toHaveClass('text-foreground', 'font-medium');
+    expect(row.className).not.toContain('text-primary');
+  });
+
+  it('folds three notices in a row to the latest, and opens them in place (P4)', async () => {
+    const user = userEvent.setup();
+    renderTimeline({ entries: [entry(1), notice(2), notice(3), notice(4), entry(5)] });
+
+    // Only the latest notice is in the feed while folded, so Page Down can
+    // never land on a line nobody can see.
+    expect(screen.getAllByTestId('room-notice')).toHaveLength(1);
+    expect(screen.getByText('notice 4')).toBeInTheDocument();
+    const fold = screen.getByRole('button', { name: 'Show 2 earlier notices' });
+    expect(fold).toHaveAttribute('aria-expanded', 'false');
+    // A control, not a line of text: it carries the disclosure chevron.
+    expect(fold.querySelector('svg.lucide-chevron-right')).not.toBeNull();
+    expect(fold).toHaveTextContent('2 earlier');
+
+    await user.click(fold);
+    expect(screen.getAllByTestId('room-notice')).toHaveLength(3);
+    const open = screen.getByRole('button', { name: 'Hide 2 earlier notices' });
+    expect(open).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(open);
+    expect(screen.getAllByTestId('room-notice')).toHaveLength(1);
+  });
+
+  it('never folds a warm notice away', () => {
+    renderTimeline({
+      entries: [notice(1), notice(2, 'turn_failed'), notice(3), notice(4)],
+    });
+
+    // The failure waits on the reader, so it stays; the two cool ones fold.
+    expect(screen.getByText('notice 2')).toBeInTheDocument();
+    expect(screen.getByText('notice 4')).toBeInTheDocument();
+    expect(screen.queryByText('notice 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('notice 3')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show 2 earlier notices' })).toBeInTheDocument();
+  });
+
+  it('leaves two notices in a row alone', () => {
+    renderTimeline({ entries: [notice(1), notice(2), entry(3)] });
+
+    expect(screen.getAllByTestId('room-notice')).toHaveLength(2);
+    expect(screen.queryByTestId('room-notice-fold')).not.toBeInTheDocument();
+  });
+
+  it('draws the empty room glyph in full muted ink (B5)', () => {
+    renderTimeline({ entries: [] });
+
+    const glyph = document.querySelector('svg.lucide-messages-square');
+    expect(glyph).toHaveClass('text-muted-foreground');
+    expect(glyph?.getAttribute('class')).not.toContain('/50');
   });
 });

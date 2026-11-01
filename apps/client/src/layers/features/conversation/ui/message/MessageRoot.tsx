@@ -113,7 +113,12 @@ export function MessageRoot({
       // element with no tab stop never matches.
       className={cn(
         styles.slots.root(),
-        'focus-visible:ring-ring outline-none focus-visible:ring-2',
+        // A room's row draws the list's inset outline, which stays inside the
+        // row's own box and so never runs under its neighbours (Card C7). A
+        // session keeps its ring until the chat pass decides it.
+        anchor === 'rail'
+          ? 'focus-ring-inset'
+          : 'focus-visible:ring-ring outline-none focus-visible:ring-2',
         // The press acknowledgment. Touch-only in practice: nothing else
         // reports a press state. The squish is a transition and the spring-back
         // is an animation, which is what makes a CANCELLED press snap back with

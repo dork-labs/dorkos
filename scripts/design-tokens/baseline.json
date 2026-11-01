@@ -115,8 +115,6 @@
       "apps/client/src/layers/features/connections/ui/ConnectDialog.tsx": 2,
       "apps/client/src/layers/features/continue-on-account/ui/AccountLimitMarker.tsx": 2,
       "apps/client/src/layers/features/conversation/ui/message/MessageRoot.tsx": 2,
-      "apps/client/src/layers/features/conversation/ui/rows/MomentRow.tsx": 2,
-      "apps/client/src/layers/features/conversation/ui/rows/NoticeRow.tsx": 2,
       "apps/client/src/layers/features/dashboard-sidebar/ui/context/CommunityContextSwitcher.tsx": 2,
       "apps/client/src/layers/features/dashboard-sidebar/ui/context/YouRows.tsx": 2,
       "apps/client/src/layers/features/dashboard-sidebar/ui/GroupCreateInput.tsx": 2,
