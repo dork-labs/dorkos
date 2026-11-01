@@ -9,6 +9,9 @@ import { describeError, request } from '../api.js';
 import { BanDialog } from '../components/members/BanDialogs.js';
 import { MuteDialog } from './MuteDialog.js';
 import type { Perform } from '../components/members/SpaceMembers.js';
+import { announceReportsChanged, OpenReportCount } from './OpenReportBadge.js';
+
+export { OpenReportCount };
 
 /** Who a mute or ban from a report lands on: an agent's owner, never the agent. */
 function subjectOf(report: CommunityWireReport): string {
@@ -94,7 +97,10 @@ export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform
     void perform(
       () => request(`/api/v1/reports/${report.id}/resolve`, 'POST', resolution),
       success
-    ).then(reload);
+    ).then(() => {
+      announceReportsChanged();
+      return reload();
+    });
   }
   return (
     <section className="panel" aria-labelledby="report-queue-title">
