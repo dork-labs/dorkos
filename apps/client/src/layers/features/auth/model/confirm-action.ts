@@ -12,6 +12,7 @@
 import {
   HeldStepUpViewSchema,
   STEP_UP_PATH,
+  STEP_UP_REFUSAL_CODES,
   StepUpConfirmedBodySchema,
   type HeldStepUpView,
   type StepUpRefusalCode,
@@ -46,18 +47,7 @@ const OFFLINE: ConfirmActionFailure = {
   message: 'Can’t reach DorkOS. Check that it’s running.',
 };
 
-const KNOWN: readonly string[] = [
-  'expired',
-  'wrong-password',
-  'too-many-tries',
-  'too-many-attempts',
-  'password-too-short',
-  'new-password-invalid',
-  'no-password',
-  'insecure-connection',
-  'not-a-person',
-  'not-your-action',
-];
+const KNOWN: readonly string[] = STEP_UP_REFUSAL_CODES;
 
 async function failureOf(res: Response): Promise<ConfirmActionFailure> {
   const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;

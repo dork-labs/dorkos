@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
-import type { HeldStepUpView, StepUpActionKind } from '@dorkos/shared/step-up';
+import type { HeldStepUpView, StepUpActionKind, StepUpExtensionRisk } from '@dorkos/shared/step-up';
+import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -227,6 +228,8 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
           <EndedBody message={stage.message} onClose={cancel} />
         ) : view?.passwordUnavailable === 'insecure-connection' ? (
           <EndedBody message="Confirm this on the computer running DorkOS." onClose={cancel} />
+        ) : view?.passwordUnavailable === 'extension-risk' ? (
+          <ExtensionRiskBody risks={view.blockedBy ?? []} onClose={cancel} />
         ) : view?.passwordUnavailable === 'no-password' ? (
           <NoPasswordBody onClose={cancel} />
         ) : (
@@ -315,6 +318,7 @@ function endedBy(failure: ConfirmActionFailure): Extract<Stage, { kind: 'ended' 
       };
     case 'not-your-action':
     case 'not-a-person':
+    case 'extension-risk':
     case 'offline':
       return { kind: 'ended', message: failure.message };
     case 'no-password':
@@ -346,6 +350,59 @@ function EndedBody({ message, onClose }: { message: string; onClose: () => void 
  */
 function primaryLabel(kind: StepUpActionKind | undefined): string {
   return kind === 'connection.confirm-setting' ? 'Confirm setting' : 'Confirm';
+}
+
+/** One line for a mini app that keeps confirming off (PM, DOR-3234 Must 3). */
+function extensionRiskLine(risk: StepUpExtensionRisk): string {
+  return risk.reason === 'agent-folder'
+    ? `Confirming is off while ${risk.name} can be edited by ${risk.agentName ?? 'an agent'}.`
+    : `Confirming is off while ${risk.name} has changed since you approved it.`;
+}
+
+/**
+ * The sheet while a loaded mini app keeps confirming off: no password field,
+ * one line per mini app, and the way to fix it in Settings → Extensions.
+ */
+function ExtensionRiskBody({
+  risks,
+  onClose,
+}: {
+  risks: readonly StepUpExtensionRisk[];
+  onClose: () => void;
+}) {
+  const settings = useSettingsDeepLink();
+  return (
+    <div className="space-y-4">
+      <div role="status" className="space-y-1 text-sm">
+        {risks.length === 0 ? (
+          <p>Confirming is off while a mini app can be edited by an agent.</p>
+        ) : (
+          risks.map((risk) => <p key={risk.id}>{extensionRiskLine(risk)}</p>)
+        )}
+      </div>
+      <div className="flex flex-col-reverse gap-2 sm:flex-row">
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-11 w-full sm:h-9 sm:w-auto"
+          onClick={onClose}
+        >
+          Close
+        </Button>
+        <Button
+          type="button"
+          className="h-11 w-full sm:h-9 sm:flex-1"
+          autoFocus
+          onClick={() => {
+            onClose();
+            settings.open('extensions');
+          }}
+        >
+          How to fix
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function NoPasswordBody({ onClose }: { onClose: () => void }) {

@@ -59,6 +59,37 @@ describe('StepUpConfirmation', () => {
     expect(headers['Content-Type']).toBeUndefined();
   });
 
+  it('passes on the mini apps that keep confirming off, in the sheet’s words', async () => {
+    const { confirmation } = server({
+      'GET /': [
+        200,
+        {
+          ...VIEW,
+          methods: [],
+          passwordUnavailable: 'extension-risk',
+          blockedBy: [
+            {
+              id: 'sq',
+              name: 'Social queue',
+              reason: 'agent-folder',
+              agentName: 'dorkos-marketing',
+            },
+            { id: 'n', name: 'Notes', reason: 'changed' },
+            { bogus: true },
+          ],
+        },
+      ],
+    });
+    expect(await confirmation.view()).toEqual({
+      ...VIEW,
+      unavailable: 'extension-risk',
+      blockedLines: [
+        'Confirming is off while Social queue can be edited by dorkos-marketing.',
+        'Confirming is off while Notes has changed since you approved it.',
+      ],
+    });
+  });
+
   it('passes on why no password is offered', async () => {
     const { confirmation } = server({
       'GET /': [200, { ...VIEW, methods: [], passwordUnavailable: 'insecure-connection' }],

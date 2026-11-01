@@ -40,6 +40,23 @@ export function isHeldActionId(id: unknown): id is string {
   return typeof id === 'string' && HELD_ACTION_ID.test(id);
 }
 
+/**
+ * One line for a mini app the server says keeps confirming off, in the same
+ * words as the app's sheet; nothing for an entry that isn't one.
+ */
+function blockedLineOf(entry: unknown): string[] {
+  if (typeof entry !== 'object' || entry === null) return [];
+  const { name, reason, agentName } = entry as Record<string, unknown>;
+  if (typeof name !== 'string') return [];
+  if (reason === 'agent-folder') {
+    const who = typeof agentName === 'string' ? agentName : 'an agent';
+    return [`Confirming is off while ${name} can be edited by ${who}.`];
+  }
+  if (reason === 'changed')
+    return [`Confirming is off while ${name} has changed since you approved it.`];
+  return [];
+}
+
 interface ServerFailure {
   code?: unknown;
   error?: unknown;
@@ -112,10 +129,20 @@ export class StepUpConfirmation {
       : [];
     const unavailable =
       body?.passwordUnavailable === 'insecure-connection' ||
-      body?.passwordUnavailable === 'no-password'
+      body?.passwordUnavailable === 'no-password' ||
+      body?.passwordUnavailable === 'extension-risk'
         ? body.passwordUnavailable
         : undefined;
-    return { reason, notes, ...(unavailable ? { unavailable } : {}) };
+    const blockedLines =
+      unavailable === 'extension-risk' && Array.isArray(body?.blockedBy)
+        ? body.blockedBy.flatMap(blockedLineOf)
+        : [];
+    return {
+      reason,
+      notes,
+      ...(unavailable ? { unavailable } : {}),
+      ...(blockedLines.length > 0 ? { blockedLines } : {}),
+    };
   }
 
   /**

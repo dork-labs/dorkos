@@ -53,6 +53,13 @@ function show(view: StepUpWindowView): void {
     end('Confirm this on the computer running DorkOS.');
     return;
   }
+  if (view.unavailable === 'extension-risk') {
+    const lines = view.blockedLines?.length
+      ? view.blockedLines
+      : ['Confirming is off while a mini app can be edited by an agent.'];
+    end(`${lines.join(' ')} Fix it in Settings → Extensions.`);
+    return;
+  }
   if (view.unavailable === 'no-password') {
     end(
       `This computer has no DorkOS password yet. Set one in a terminal: ${RESET_PASSWORD_COMMAND}`

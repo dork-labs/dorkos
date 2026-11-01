@@ -201,6 +201,34 @@ describe('ActionStepUpHost', () => {
     expect(screen.queryByLabelText('DorkOS password')).toBeNull();
   });
 
+  it('offers no password while a mini app can be edited by an agent, and says how to fix it', async () => {
+    heldWith(
+      {
+        ...VIEW,
+        methods: [],
+        passwordUnavailable: 'extension-risk',
+        blockedBy: [
+          { id: 'sq', name: 'Social queue', reason: 'agent-folder', agentName: 'dorkos-marketing' },
+          { id: 'notes', name: 'Notes', reason: 'changed' },
+        ],
+      },
+      [200, { ok: true, status: 200, result: {} }]
+    );
+    render(<ActionStepUpHost />);
+    const outcome = ask();
+    expect(
+      await screen.findByText(
+        'Confirming is off while Social queue can be edited by dorkos-marketing.'
+      )
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Confirming is off while Notes has changed since you approved it.')
+    ).toBeTruthy();
+    expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'How to fix' }));
+    await expect(outcome).resolves.toEqual({ kind: 'not-confirmed' });
+  });
+
   it('says how to set a password when the owner has none', async () => {
     heldWith({ ...VIEW, methods: [], passwordUnavailable: 'no-password' }, [
       200,
