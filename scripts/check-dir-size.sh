@@ -7,7 +7,8 @@
 #     `git diff --cached --diff-filter=ACR`: adds, copies, renames all land a
 #     file at a destination dir, which is the moment worth stopping). This is
 #     the only tier that can fail the commit — growing an already-large
-#     directory is the one action the author can act on right now.
+#     directory is the one action the author can act on right now. On a
+#     merge, a file a merged parent already has is not growth (DOR-3520).
 #   CENSUS (informational) — every tracked source dir, whether or not this
 #     commit touches it. A directory can drift over the limit through years
 #     of modify-only commits, since nothing ever adds a file there again, and
@@ -51,9 +52,30 @@ has_error=0
 has_warning=0
 
 # ---- Tier 1: GROWTH (blocking) ----
-# Unique dirs the commit added/copied/renamed a source file into.
-growth_dirs=$(git diff --cached --name-only --diff-filter=ACR \
-  | grep -E '\.(ts|tsx|js|jsx|css)$' \
+# Source files the commit added/copied/renamed, relative to HEAD.
+added_files=$(git diff --cached --name-only --diff-filter=ACR \
+  | grep -E '\.(ts|tsx|js|jsx|css)$' || true)
+
+# Merge commits (DOR-3520): `git diff --cached` compares against HEAD only, so
+# every file the OTHER parent brought in reads as an add. Merging main into a
+# branch then blocked on folders main itself had grown (main lands by squash
+# on GitHub, where no hook runs), and lanes had to commit with LEFTHOOK=0. A
+# file that already exists in a merged parent is not growth this commit
+# authored, so drop it. A file in neither parent (written while resolving the
+# merge) is still an add and still blocks.
+merge_head_file=$(git rev-parse --git-path MERGE_HEAD 2>/dev/null || true)
+if [ -n "$added_files" ] && [ -n "$merge_head_file" ] && [ -s "$merge_head_file" ]; then
+  parent_files=$(while read -r parent; do
+    [ -n "$parent" ] && git ls-tree -r --name-only "$parent" 2>/dev/null
+  done <"$merge_head_file" | sort -u || true)
+  if [ -n "$parent_files" ]; then
+    added_files=$(printf '%s\n' "$added_files" | grep -vxF -f <(printf '%s\n' "$parent_files") || true)
+  fi
+fi
+
+# Unique dirs that gained a source file.
+growth_dirs=$(printf '%s\n' "$added_files" \
+  | grep -v '^$' \
   | xargs -I{} dirname {} \
   | sort -u || true)
 
