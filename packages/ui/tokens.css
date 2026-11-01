@@ -40,11 +40,20 @@
   /* Error text and icon. Borders and rings keep --dui-destructive. */
   --dui-destructive-text: 0 72% 41%;
   --dui-success: 152 69% 24%;
+  /* A count's tones (CountPill): the wash behind it and the ink on it. The
+     DorkOS app's --status-* values, so a pill reads the same in the app and a Space. */
+  --dui-status-warning-bg: 38 92% 96%;
+  --dui-status-warning-fg: 38 92% 28%;
+  --dui-status-error-bg: 0 72% 96%;
+  --dui-status-error-fg: 0 72% 41%;
   --dui-size-icon-xs: 0.75rem;
   --dui-size-icon-sm: 1rem;
   --dui-size-icon-md: 1.25rem;
   --dui-text-field: calc(0.875rem * var(--user-font-scale, 1));
   --dui-text-field-lh: calc(1.25rem * var(--user-font-scale, 1));
+  /* A count's figures: 11px inline, 10px in a control's corner. */
+  --dui-text-2xs: calc(0.6875rem * var(--user-font-scale, 1));
+  --dui-text-3xs: calc(0.625rem * var(--user-font-scale, 1));
 }
 
 @media (max-width: 767px) {
@@ -57,6 +66,9 @@
     /* Never under 16px: iOS zooms the page on a smaller field. */
     --dui-text-field: max(1rem, calc(1rem * var(--user-font-scale, 1)));
     --dui-text-field-lh: calc(1.375rem * var(--user-font-scale, 1));
+    /* The count figures take the phone's 1.25 text scale, as the app's do. */
+    --dui-text-2xs: calc(0.859375rem * var(--user-font-scale, 1));
+    --dui-text-3xs: calc(0.78125rem * var(--user-font-scale, 1));
   }
 }
 
@@ -91,6 +103,10 @@
     --dui-scrim: hsl(0 0% 2% / 0.6);
     --dui-destructive-fill-hover: color-mix(in srgb, hsl(2.5 95% 62%) 70%, hsl(0 0% 4%));
     --dui-success: 152 69% 55%;
+    --dui-status-warning-bg: 38 92% 12%;
+    --dui-status-warning-fg: 38 92% 56%;
+    --dui-status-error-bg: 0 72% 12%;
+    --dui-status-error-fg: 0 72% 68%;
   }
 }
 
@@ -124,6 +140,10 @@
   --dui-scrim: hsl(0 0% 2% / 0.6);
   --dui-destructive-fill-hover: color-mix(in srgb, hsl(2.5 95% 62%) 70%, hsl(0 0% 4%));
   --dui-success: 152 69% 55%;
+  --dui-status-warning-bg: 38 92% 12%;
+  --dui-status-warning-fg: 38 92% 56%;
+  --dui-status-error-bg: 0 72% 12%;
+  --dui-status-error-fg: 0 72% 68%;
 }
 
 /* The stacking ladder. Portaled menus, popovers and selects sit on `overlay`, not

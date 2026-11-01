@@ -9,10 +9,13 @@ import { extendTailwindMerge } from 'tailwind-merge';
  * 13px `text-control` label size into these components through `className`;
  * unregistered, it would keep the component's own `text-sm` beside it, and a
  * text colour passed with it (`text-foreground`) would drop it altogether. The
- * fields' `text-field` is the same kind of name.
+ * fields' `text-field` and the count's `text-dui-2xs` / `text-dui-3xs` are the
+ * same kind of name.
  */
 const twMerge = extendTailwindMerge({
-  extend: { classGroups: { 'font-size': [{ text: ['control', 'field'] }] } },
+  extend: {
+    classGroups: { 'font-size': [{ text: ['control', 'field', 'dui-2xs', 'dui-3xs'] }] },
+  },
 });
 
 /** Merge classes while resolving Tailwind conflicts. */

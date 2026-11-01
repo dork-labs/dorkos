@@ -414,7 +414,7 @@ describe('rooms in the command palette', () => {
       // A DM is aimed at you, so it counts, solid, and the count names itself.
       const pill = within(row).getByLabelText('2 new messages');
       expect(pill).toHaveTextContent('2');
-      expect(pill).toHaveClass('bg-brand-text', 'text-background');
+      expect(pill).toHaveClass('bg-dui-brand-text', 'text-dui-background');
       expect(rowNames().findIndex((n) => n?.includes('Open DM with Bo'))).toBeLessThan(
         rowNames().findIndex((n) => n?.includes('Open DM with Ana'))
       );

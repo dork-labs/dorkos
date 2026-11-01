@@ -128,3 +128,5 @@ export {
 } from './context-menu.js';
 export { UiProvider } from './ui-provider.js';
 export type { UiProviderProps } from './ui-provider.js';
+export { CountPill, COUNT_PILL_CAP, CORNER_COUNT_CAP, formatPillCount } from './count-pill.js';
+export type { CountPillProps, CountPlacement, CountTone } from './count-pill.js';
