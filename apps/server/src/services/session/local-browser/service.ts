@@ -4,8 +4,9 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { Browser, BrowserContext, Page, JSHandle } from 'playwright-core';
 import { localBrowserAuditWriter, type LocalBrowserAuditWriter } from './action-audit.js';
-import { LocalBrowserError, assertLocalBrowserUrl, cloudOriginRefusal } from './errors.js';
-import { isCloudOriginUrl, type CloudOriginEntry } from '@dorkos/shared/cloud-origin';
+import { LocalBrowserError, assertLocalBrowserUrl, protectedPageRefusal } from './errors.js';
+import { localBrowserAppOrigins } from './app-origins.js';
+import type { CloudOriginEntry } from '@dorkos/shared/cloud-origin';
 import { cloudOriginsForThisServer } from '../../core/cloud/cloud-api-origin.js';
 import {
   BrowserActionFlight,
@@ -57,6 +58,9 @@ export class LocalBrowserService {
   private tabs = new Map<string, Page>();
   private selectedTabId: string | null = null;
   private revision = 0;
+  // A frame that came and went during a read fails that read, but a page that churns
+  // frames (ads) must not stale every action, so this is separate from `revision`.
+  private frameChanges = 0;
   private observation?: LocalBrowserObservation;
   private observedNodes?: JSHandle<ObservedPageNodes>;
   private readonly actions = new BrowserActionFlight();
@@ -75,7 +79,8 @@ export class LocalBrowserService {
     private readonly backend: LocalBrowserBackend = productionBackend,
     private readonly audit: LocalBrowserAuditWriter = localBrowserAuditWriter(dataDirectory),
     private readonly hostFacts: () => LocalBrowserHostFacts = localBrowserHostFacts,
-    private readonly cloudOrigins: () => readonly CloudOriginEntry[] = cloudOriginsForThisServer
+    private readonly cloudOrigins: () => readonly CloudOriginEntry[] = cloudOriginsForThisServer,
+    private readonly appOrigins: () => readonly string[] = localBrowserAppOrigins
   ) {}
 
   capabilities(): LocalBrowserCapabilities {
@@ -199,10 +204,11 @@ export class LocalBrowserService {
       );
   }
 
-  /** A tool may describe the selected tab only, never other browser tabs, and never a Cloud one. */
+  /** A tool describes only the selected tab, excluding DorkOS and Cloud pages. */
   async agentState(): Promise<LocalBrowserState> {
+    this.syncTabs();
     const selected = this.tabs.get(this.selectedTabId ?? '');
-    if (selected && !selected.isClosed()) this.refuseCloudPage(selected);
+    if (selected && !selected.isClosed()) this.refuseProtectedPage(selected);
     return this.snapshot(true);
   }
 
@@ -225,10 +231,10 @@ export class LocalBrowserService {
 
   async observe(): Promise<LocalBrowserObservation> {
     const page = this.page();
-    this.refuseCloudPage(page);
+    this.refuseProtectedPage(page);
     this.invalidate();
     const revision = this.revision;
-    if (revision !== this.revision) throw this.stale();
+    const frames = this.frameChanges;
     // One remote handle records node identity at observation time, including open shadow roots.
     // The function is fixed internal bookkeeping, never supplied by an agent or HTTP caller.
     let expired = false;
@@ -245,8 +251,8 @@ export class LocalBrowserService {
     try {
       if (revision !== this.revision) throw this.stale();
       const snapshot = await boundedPageSnapshot(page, ACTION_TIMEOUT_MS);
-      if (revision !== this.revision) throw this.stale();
-      this.refuseCloudPage(page);
+      if (revision !== this.revision || frames !== this.frameChanges) throw this.stale();
+      this.refuseProtectedPage(page);
       this.observedNodes = nodes;
       this.observation = { revision, snapshot, url: page.url(), tabId: this.selectedTabId! };
       return this.observation;
@@ -259,13 +265,14 @@ export class LocalBrowserService {
   /** Capture pixels from the same selected page; this grants no new action observation. */
   async screenshot(): Promise<{ data: string; mimeType: string; revision: number; tabId: string }> {
     const page = this.page();
-    this.refuseCloudPage(page);
+    this.refuseProtectedPage(page);
     const revision = this.revision;
     const tabId = this.selectedTabId!;
-    if (revision !== this.revision) throw this.stale();
+    const frames = this.frameChanges;
     const bytes = await boundedPageScreenshot(page, ACTION_TIMEOUT_MS);
-    this.refuseCloudPage(page);
-    if (revision !== this.revision || tabId !== this.selectedTabId) throw this.stale();
+    this.refuseProtectedPage(page);
+    if (revision !== this.revision || tabId !== this.selectedTabId || frames !== this.frameChanges)
+      throw this.stale();
     return { data: bytes.toString('base64'), mimeType: 'image/png', revision, tabId };
   }
 
@@ -288,6 +295,8 @@ export class LocalBrowserService {
     input: LocalBrowserAction,
     dispatch: () => void
   ): Promise<LocalBrowserState> {
+    const selected = this.tabs.get(this.selectedTabId ?? '');
+    if (selected && !selected.isClosed()) this.refuseProtectedPage(selected);
     if (this.paused)
       throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
     if (this.actions.active)
@@ -302,8 +311,9 @@ export class LocalBrowserService {
     )
       throw this.stale();
     const page = this.page();
-    this.refuseCloudPage(page);
-    if (input.kind === 'navigate') assertLocalBrowserUrl(input.url, 'agent', this.cloudOrigins());
+    this.refuseProtectedPage(page);
+    if (input.kind === 'navigate')
+      assertLocalBrowserUrl(input.url, 'agent', this.cloudOrigins(), this.appOrigins());
     const lifecycle = this.lifecycle;
     const operation = async (admit: () => void, dispatched: () => void) => {
       admit();
@@ -321,15 +331,15 @@ export class LocalBrowserService {
         }
       );
     } catch (error) {
-      // A click or a redirect that ended on the Cloud origin is that refusal, not a stale page.
-      this.refuseCloudPage(page);
+      // A click or redirect onto DorkOS or Cloud gets that refusal, not a stale-page error.
+      this.refuseProtectedPage(page);
       if (error instanceof LocalBrowserError) throw error;
       throw new LocalBrowserError(
         'uncertain',
         'The page changed. Check what happened before continuing.'
       );
     }
-    this.refuseCloudPage(page);
+    this.refuseProtectedPage(page);
     return this.agentState();
   }
 
@@ -448,6 +458,7 @@ export class LocalBrowserService {
       active: () => [...this.tabs.values()].includes(page),
       selected: () => this.tabs.get(this.selectedTabId ?? '') === page,
       invalidate: () => this.invalidate(),
+      framesChanged: () => void this.frameChanges++,
       closed: () => {
         this.selectedTabId = null;
         this.invalidate();
@@ -488,19 +499,20 @@ export class LocalBrowserService {
     if (this.paused)
       throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
     if (revision !== this.revision) throw this.stale();
+    this.refuseProtectedPage(this.page());
   }
   /**
-   * An agent never reads or acts on a page showing the Cloud origin, in the
+   * An agent never reads or acts on a page showing DorkOS or Cloud, in the
    * tab or in any of its frames (DOR-3196): agent control pauses until the
    * person resumes it, and the agent is refused.
    */
-  private refuseCloudPage(page: Page): void {
-    const origins = this.cloudOrigins();
+  private refuseProtectedPage(page: Page): void {
     const urls = [page.url(), ...page.frames().map((frame) => frame.url())];
-    if (!urls.some((url) => isCloudOriginUrl(url, origins))) return;
+    const refusal = protectedPageRefusal(urls, this.cloudOrigins(), this.appOrigins());
+    if (!refusal) return;
     this.paused = true;
     this.invalidate();
-    throw cloudOriginRefusal();
+    throw refusal;
   }
   private stale(): LocalBrowserError {
     return new LocalBrowserError('stale_page', 'The page changed. Read it again before acting.');

@@ -133,16 +133,24 @@ afterEach(async () => {
   vi.useRealTimers();
   await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
-async function create() {
+async function create(appOrigins?: () => readonly string[]) {
   const dir = await mkdtemp(path.join(tmpdir(), 'local-browser-unit-'));
   directories.push(dir);
   const f = fixture();
   return {
     ...f,
     dir,
-    service: new LocalBrowserService(dir, undefined, f.backend, undefined, () => ({
-      platform: 'darwin',
-    })),
+    service: new LocalBrowserService(
+      dir,
+      undefined,
+      f.backend,
+      undefined,
+      () => ({
+        platform: 'darwin',
+      }),
+      undefined,
+      appOrigins
+    ),
   };
 }
 async function selectOwned(service: LocalBrowserService) {
@@ -975,6 +983,242 @@ describe('bounded browser lifecycle ownership', () => {
     ]);
     expect(new Set(journal.map((record) => record.operationId)).size).toBe(1);
     expect(click).toHaveBeenCalledTimes(2);
+    await service.disconnect();
+  });
+});
+
+describe('DorkOS app origins (DOR-3218)', () => {
+  const refused = { code: 'dorkos_origin' };
+  const origins = () => [
+    'http://localhost:4242',
+    'http://127.0.0.1:4242',
+    'http://[::1]:4242',
+    'http://0.0.0.0:4242',
+    'http://fixture.local:4242',
+    'http://192.168.1.20:4242',
+    'https://fixture.ngrok.app',
+  ];
+
+  it.each(origins())('refuses navigation to %s before dispatch', async (url) => {
+    const { service, page } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    await expect(
+      service.action({ kind: 'navigate', url, revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect(page.goto).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it.each(origins())('refuses a redirect to %s and gives the agent nothing', async (url) => {
+    const { service, page, context, navigate, change } = await create(origins);
+    const cookies = vi.fn(async () => []);
+    Object.assign(context, { cookies, storageState: cookies });
+    await selectOwned(service);
+    const observed = await service.observe();
+    vi.mocked(page.evaluateHandle).mockClear();
+    vi.mocked(page.goto).mockImplementationOnce(async () => {
+      change('- text "PAGE-SECRET"');
+      navigate(`${url}/connections?token=URL-SECRET`);
+      return null;
+    });
+    const error = await service
+      .action({
+        kind: 'navigate',
+        url: 'http://fixture.test/redirect',
+        revision: observed.revision,
+      })
+      .catch((caught: unknown) => caught as Error);
+    expect(error).toMatchObject(refused);
+    expect(JSON.stringify({ message: (error as Error).message })).not.toMatch(/SECRET/);
+    expect((await service.state()).paused).toBe(true);
+    await expect(service.observe()).rejects.toMatchObject(refused);
+    await expect(service.screenshot()).rejects.toMatchObject(refused);
+    await expect(service.agentState()).rejects.toMatchObject(refused);
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    expect(page.screenshot).not.toHaveBeenCalled();
+    expect(cookies).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it.each(['file:///etc/hosts', 'view-source:http://localhost:4242/'])(
+    'refuses an agent navigation to %s before dispatch',
+    async (url) => {
+      const { service, page } = await create(origins);
+      await selectOwned(service);
+      const observed = await service.observe();
+      await expect(
+        service.action({ kind: 'navigate', url, revision: observed.revision })
+      ).rejects.toMatchObject({ code: 'unsupported_address' });
+      expect(page.goto).not.toHaveBeenCalled();
+      await service.disconnect();
+    }
+  );
+
+  it.each([
+    ['view-source:http://localhost:4242/connections', 'dorkos_origin'],
+    ['view-source:https://fixture.ngrok.app/', 'dorkos_origin'],
+    ['view-source:https://cloud.dorkos.ai/', 'cloud_origin'],
+    ['file:///Users/someone/.dork/page.html', 'unsupported_address'],
+  ])('never reads a tab already showing %s', async (url, code) => {
+    const { service, navigate, page } = await create(origins);
+    await selectOwned(service);
+    navigate(url);
+    vi.mocked(page.evaluateHandle).mockClear();
+    await expect(service.observe()).rejects.toMatchObject({ code });
+    await expect(service.screenshot()).rejects.toMatchObject({ code });
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    expect(page.screenshot).not.toHaveBeenCalled();
+    expect((await service.state()).paused).toBe(true);
+    await service.disconnect();
+  });
+
+  it.each(['frameattached', 'framedetached', 'framenavigated'])(
+    'fails a screenshot when a sub-frame event %s lands during it',
+    async (event) => {
+      const { service, page, events, pixels } = await create(origins);
+      await selectOwned(service);
+      vi.mocked(page.screenshot).mockImplementationOnce(async () => {
+        events.emit(event, {});
+        return Buffer.from(pixels);
+      });
+      await expect(service.screenshot()).rejects.toMatchObject({ code: 'stale_page' });
+      await service.disconnect();
+    }
+  );
+
+  it('fails an observation when a frame came and went during it', async () => {
+    const { service, locator, events } = await create(origins);
+    await selectOwned(service);
+    locator.ariaSnapshot.mockImplementationOnce(async () => {
+      events.emit('frameattached', {});
+      events.emit('framedetached', {});
+      return '- button "Save"';
+    });
+    await expect(service.observe()).rejects.toMatchObject({ code: 'stale_page' });
+    await service.disconnect();
+  });
+
+  it('lets an action through when a frame changes between reading and acting', async () => {
+    const { service, click, events } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    events.emit('frameattached', {});
+    await service.action({
+      kind: 'click',
+      role: 'button',
+      name: 'Save',
+      revision: observed.revision,
+    });
+    expect(click).toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('checks live origins rather than the set at connection time', async () => {
+    const live: string[] = [];
+    const { service, page } = await create(() => live);
+    await selectOwned(service);
+    const observed = await service.observe();
+    live.push('https://new-tunnel.example');
+    await expect(
+      service.action({
+        kind: 'navigate',
+        url: 'https://new-tunnel.example/connections',
+        revision: observed.revision,
+      })
+    ).rejects.toMatchObject(refused);
+    expect(page.goto).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('pauses after a click redirects to DorkOS and refuses all later reads', async () => {
+    const { service, click, navigate, page } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    click.mockImplementationOnce(async () => {
+      navigate('http://localhost:4242/connections');
+    });
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect((await service.state()).paused).toBe(true);
+    vi.mocked(page.evaluateHandle).mockClear();
+    await expect(service.agentState()).rejects.toMatchObject(refused);
+    await expect(service.observe()).rejects.toMatchObject(refused);
+    await expect(service.screenshot()).rejects.toMatchObject(refused);
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    expect(page.screenshot).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('refuses a page framing DorkOS before observing it', async () => {
+    const { service, addFrame, page } = await create(origins);
+    await selectOwned(service);
+    addFrame('https://fixture.ngrok.app/settings');
+    await expect(service.observe()).rejects.toMatchObject(refused);
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('refuses acting on DorkOS even with a stale observation', async () => {
+    const { service, navigate, click } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    navigate('http://localhost:4242/connections');
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect(click).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('keeps an unrelated website on another port usable', async () => {
+    const { service, page } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    await service.action({
+      kind: 'navigate',
+      url: 'http://localhost:9000',
+      revision: observed.revision,
+    });
+    expect(page.goto).toHaveBeenCalled();
+    await service.observe();
+    await service.disconnect();
+  });
+
+  it('rechecks origins after the audit wait, before any page effect', async () => {
+    const f = await create();
+    const live: string[] = [];
+    const service = new LocalBrowserService(
+      f.dir,
+      undefined,
+      f.backend,
+      async (record) => {
+        if (record.phase === 'started') live.push('http://fixture.test');
+      },
+      () => ({ platform: 'darwin' }),
+      undefined,
+      () => live
+    );
+    await selectOwned(service);
+    const observed = await service.observe();
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect(f.click).not.toHaveBeenCalled();
+    expect((await service.state()).paused).toBe(true);
+    await service.disconnect();
+  });
+
+  it('checks a replacement tab before returning its state to an agent', async () => {
+    const { service, context, page } = await create(origins);
+    const other = fixture();
+    other.navigate('http://localhost:4242/connections');
+    vi.spyOn(context, 'pages').mockReturnValue([page, other.page]);
+    await service.open({ mode: 'new-window' });
+    vi.spyOn(page, 'isClosed').mockReturnValue(true);
+    await expect(service.agentState()).rejects.toMatchObject(refused);
+    expect((await service.state()).paused).toBe(true);
     await service.disconnect();
   });
 });
