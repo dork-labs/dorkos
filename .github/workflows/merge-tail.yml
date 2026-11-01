@@ -33,6 +33,9 @@ name: merge-tail
 # again until a new commit lands, and the author is told once, in a PR comment.
 # The PR's own checks cannot see this (the browser suite runs only in the
 # queue), and #1964 was re-armed unchanged five times before anyone fixed it.
+# This tick only governs its own arming; an agent's `gh pr merge --auto` goes
+# straight past it, so queue-repeat-guard.yml enforces the same rule at the
+# queue's door, on every entry, whoever armed it.
 #
 # WHOSE KEY IT HOLDS: the `dorkos-merge-tail` GitHub App (client id in the
 # `MERGE_TAIL_APP_CLIENT_ID` secret, key in the `MERGE_TAIL_APP_PRIVATE_KEY`
@@ -587,7 +590,7 @@ jobs:
                   echo
                   echo "**What to do:** open the failing job in the merge-group run (\`gh run list --event merge_group -L 100 --json headBranch,name,conclusion,databaseId\`, rows whose \`headBranch\` contains \`pr-$pr-\`), fix the cause and push. merge-tail arms the new commit once it is green."
                   echo
-                  echo "If the same check is also red on \`main\` or on other pull requests, the fault is not in this branch: once \`main\` is fixed, re-arm this one yourself with \`gh pr merge --auto $pr\`."
+                  echo "If the same check is also red on \`main\` or on other pull requests, the fault is not in this branch: once \`main\` is fixed, add the \`requeue-ok\` label and re-arm this one yourself with \`gh pr merge --auto $pr\`. Without the label, queue-repeat-guard takes it straight back out of the queue."
                   echo
                   echo "$marker"
                 } > "$work/comment.md"
