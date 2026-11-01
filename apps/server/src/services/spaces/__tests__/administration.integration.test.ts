@@ -1701,6 +1701,16 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
        WHERE community_id=$1 AND role='owner' AND active`,
       [id]
     );
+  // A resolved report of a person in each: it names a member twice, and must not block the
+  // deleted space's members from going, nor outlast them (0050).
+  for (const id of [survivorId, communityId])
+    await pool.query(
+      `INSERT INTO member_reports(community_id,subject_member_id,reason,status,action,
+         resolver_member_id,origin,resolved_at)
+       SELECT $1,id,'other','actioned','mute',id,'imported',now() FROM members
+       WHERE community_id=$1 AND role='owner' AND active`,
+      [id]
+    );
   // Its tenant rows, its community row, and every account and session.
   const survivorManifest = () => isolationSnapshot([survivorId]);
   const survivorBefore = await survivorManifest();
@@ -1905,6 +1915,14 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
     expect(
       (await pool.query('SELECT 1 FROM communities WHERE id=$1', [communityId])).rowCount
     ).toBe(0);
+    expect(
+      (await pool.query('SELECT 1 FROM member_reports WHERE community_id=$1', [communityId]))
+        .rowCount
+    ).toBe(0);
+    expect(
+      (await pool.query('SELECT 1 FROM member_reports WHERE community_id=$1', [survivorId]))
+        .rowCount
+    ).toBe(1);
     expect(
       (await pool.query('SELECT 1 FROM communities WHERE id=$1', [other.rows[0].id])).rowCount
     ).toBe(1);

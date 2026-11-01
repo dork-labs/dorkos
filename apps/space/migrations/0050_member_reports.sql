@@ -36,7 +36,8 @@ CREATE TABLE member_reports (
   ),
   CONSTRAINT member_reports_status_shape CHECK (
     (status = 'open' AND resolved_at IS NULL AND action IS NULL AND resolver_member_id IS NULL)
-    OR (status = 'actioned' AND resolved_at IS NOT NULL AND action IS NOT NULL)
+    OR (status = 'actioned' AND resolved_at IS NOT NULL AND action IS NOT NULL
+        AND (resolver_member_id IS NOT NULL OR origin = 'imported'))
     OR (status = 'dismissed' AND resolved_at IS NOT NULL AND action IS NULL)
   ),
   CONSTRAINT member_reports_subject_tenant_fk FOREIGN KEY (community_id, subject_member_id)
