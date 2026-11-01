@@ -123,7 +123,7 @@ describe('ResetPassword', () => {
       'Pairings in progress',
       'Invitation links you made',
       'Server API keys you made',
-      'Google, GitHub and single sign-on sign-ins',
+      'Google, GitHub and single sign-on',
       // A key this page does not know yet still shows.
       'Other ways in',
     ])

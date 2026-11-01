@@ -25,9 +25,9 @@ import { hashSecret, hmacSecret, readCookie, verifyValue } from '../security.js'
  * The mail differs, and only the mailbox's owner sees it. An empty account gets the finishing
  * link ("Finish joining {space}"): it sets the password, confirms the email, clears every other
  * way in and signs the browser in, so someone who typed another person's address gains nothing
- * (`email-links/plugin.ts`). An account in use gets the usual reset mail, and a confirmed one a
- * plain notice ("Sign in to {space}") with no token, so a member who chose sign-up by mistake is
- * never sent a reset that would end their sessions and keys (`email-links/composers.ts`). With no
+ * (`email-links/plugin.ts`). Any account in use, confirmed or not, gets a plain notice ("Sign in
+ * to {space}") with no token, so a member who chose sign-up by mistake is never sent a reset that
+ * would end their sessions and keys (`email-links/composers.ts`). With no
  * password stored, a password sign-in to the new account fails exactly as one to a taken address
  * with the wrong password does.
  *
