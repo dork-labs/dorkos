@@ -29,7 +29,7 @@ import {
 } from '../../../../tasks/task-registrar.js';
 import type { Task } from '@dorkos/shared/types';
 import type { McpToolDeps } from '../types.js';
-import { getTasksTools } from '../task-tools.js';
+import { getTasksTools } from '../tasks/task-tools.js';
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
 interface SessionTool {

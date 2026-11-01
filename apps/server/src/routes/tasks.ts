@@ -37,8 +37,8 @@ import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { wifiRunNowRefusal, wifiScheduleRefusal } from './task-wifi-guard.js';
 import {
+  deleteOrDeclineTask,
   PROJECT_COPY_DELETE_REFUSAL,
-  removeScheduledTaskFile,
 } from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
@@ -827,13 +827,10 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       return c.json({ error: PROJECT_COPY_DELETE_REFUSAL, code: 'schedule_project_copy' }, 409);
     }
 
-    // The file goes first, through the seam `tasks_delete` shares: a row deleted
-    // while its SKILL.md remains is brought straight back by the next reconcile.
-    await removeScheduledTaskFile(schedule.filePath);
+    const declined = (await deleteOrDeclineTask(schedule, store, meshCore)) === 'declined';
 
-    // Row first, then the seam: with no row to read, `syncTask` unregisters —
-    // the same answer the direct call gave, arrived at the one way.
-    store.deleteTask(id);
+    // Row first, then the seam: with no row to read, or a row no longer active,
+    // `syncTask` unregisters — the same answer the direct call gave.
     registrar.syncTask(id);
 
     activityService?.emit({
@@ -841,11 +838,11 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       // so this is not always the person.
       ...readActivityActor(caller),
       category: 'tasks',
-      eventType: 'tasks.task_deleted',
+      eventType: declined ? 'tasks.task_declined' : 'tasks.task_deleted',
       resourceType: 'schedule',
       resourceId: id,
       resourceLabel: schedule.displayName ?? schedule.name,
-      summary: `Deleted scheduled task ${schedule.displayName ?? schedule.name}`,
+      summary: `${declined ? 'Declined' : 'Deleted'} scheduled task ${schedule.displayName ?? schedule.name}`,
     });
 
     // Rejecting a proposed schedule is deleting it — the cockpit's Reject button

@@ -26,7 +26,7 @@ import type { Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
-import { getTasksTools } from '../task-tools.js';
+import { getTasksTools } from '../tasks/task-tools.js';
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
 interface SessionTool {

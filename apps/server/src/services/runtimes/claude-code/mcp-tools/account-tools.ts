@@ -23,7 +23,7 @@ import { jsonContent, structuredJsonContent } from './types.js';
 import { hasMarks } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { markedTurnRunsAtFull } from '../../../core/turn-power/full-autonomy.js';
-import type { TaskProvenanceResolver } from './task-tools.js';
+import type { TaskProvenanceResolver } from './tasks/task-tools.js';
 
 /**
  * Refused in a turn that read words DorkOS cannot vouch for (a stranger's line

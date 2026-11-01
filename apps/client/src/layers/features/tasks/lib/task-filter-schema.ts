@@ -25,7 +25,7 @@ import { createFilterSchema, textFilter, enumFilter, createSortOptions } from '@
  */
 function taskStatusBucket(task: Task): 'active' | 'paused' | 'pending_approval' {
   if (isScheduleAwaitingApproval(task)) return 'pending_approval';
-  if (!task.enabled || task.status === 'paused') return 'paused';
+  if (!task.enabled || task.status === 'paused' || task.declined) return 'paused';
   return 'active';
 }
 

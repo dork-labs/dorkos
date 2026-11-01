@@ -136,7 +136,7 @@ function TaskOverrideChip({ task }: { task: Task }) {
 function StatusSlot({ task }: { task: Task }) {
   const tone: StatusTone | null = isScheduleAwaitingApproval(task)
     ? 'warning'
-    : !task.enabled || task.status === 'paused'
+    : !task.enabled || task.status === 'paused' || task.declined
       ? 'neutral'
       : null;
 
@@ -420,8 +420,9 @@ export function TaskRow({
                 <Switch
                   // A paused row's file is gone, so nothing will run whatever
                   // `enabled` says; the switch reads off and cannot be flipped
-                  // until the file comes back.
-                  checked={task.enabled && task.status !== 'paused'}
+                  // until the file comes back. A declined one reads off too
+                  // (DOR-2097), and flipping it on is approving it, below.
+                  checked={task.enabled && task.status !== 'paused' && !task.declined}
                   disabled={task.status === 'paused'}
                   onCheckedChange={(checked) => {
                     // A package-shipped schedule that ships off is
@@ -471,7 +472,7 @@ export function TaskRow({
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={handleRunNow}
-                    disabled={!task.enabled || task.status === 'paused'}
+                    disabled={!task.enabled || task.status === 'paused' || task.declined}
                   >
                     <Play className="mr-2 size-3.5" />
                     Run now
@@ -546,9 +547,13 @@ export function TaskRow({
         <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Delete “{task.name}”?</DialogTitle>
+              <DialogTitle>
+                {task.packageOwned ? 'Switch off this schedule?' : `Delete “${task.name}”?`}
+              </DialogTitle>
               <DialogDescription>
-                Its run history is deleted too. This can’t be undone.
+                {task.packageOwned
+                  ? 'It came with a package, so it stays, switched off, until the package changes it.'
+                  : 'Its run history is deleted too. This can’t be undone.'}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -559,7 +564,7 @@ export function TaskRow({
                 Cancel
               </button>
               <Button variant="destructive" size="sm" onClick={confirmDelete}>
-                Delete task
+                {task.packageOwned ? 'Switch off' : 'Delete task'}
               </Button>
             </DialogFooter>
           </DialogContent>

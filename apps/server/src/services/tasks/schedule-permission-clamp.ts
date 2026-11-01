@@ -708,13 +708,22 @@ export function resolveFilePermissionMode(
  * knock (`entities/tasks/lib/is-schedule-awaiting-approval.ts`, which this
  * mirrors).
  *
- * @param task - The status, switch, and origin a schedule's row carries.
+ * A schedule a person declined (DOR-2097) has had its answer: it stays
+ * `pending_approval` so it can never run, and asks nobody until its content
+ * changes, which is when `declined` reads false again.
+ *
+ * @param task - The status, switch, origin and decline a schedule carries.
  * @returns True for a schedule a person still has to decide about.
  */
 export function needsScheduleApprovalAttention(task: {
   status: string;
   enabled: boolean;
   origin: string | null;
+  declined?: boolean;
 }): boolean {
-  return task.status === 'pending_approval' && (task.origin !== 'file' || task.enabled);
+  return (
+    task.status === 'pending_approval' &&
+    task.declined !== true &&
+    (task.origin !== 'file' || task.enabled)
+  );
 }

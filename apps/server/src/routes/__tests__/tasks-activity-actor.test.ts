@@ -55,7 +55,7 @@ vi.mock('../../lib/boundary.js', () => ({
 
 vi.mock('../../services/tasks/lifecycle/delete-task.js', () => ({
   PROJECT_COPY_DELETE_REFUSAL: 'shared by every project',
-  removeScheduledTaskFile: vi.fn(async () => undefined),
+  deleteOrDeclineTask: vi.fn(async () => 'deleted'),
 }));
 
 vi.mock('../../services/tasks/lifecycle/update-task-file.js', () => ({
@@ -74,6 +74,7 @@ import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import { createScheduledTask } from '../../services/tasks/lifecycle/create-task.js';
+import { deleteOrDeclineTask } from '../../services/tasks/lifecycle/delete-task.js';
 
 vi.mock('../../services/tasks/lifecycle/create-task.js', () => ({
   createScheduledTask: vi.fn(),
@@ -209,6 +210,22 @@ describe('who the Activity feed says changed a scheduled task', () => {
 
   afterEach(() => {
     store.close();
+  });
+
+  it('says Declined when the delete kept a package schedule (DOR-2097)', async () => {
+    vi.mocked(deleteOrDeclineTask).mockResolvedValueOnce('declined');
+
+    const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
+
+    expect(res.status).toBe(200);
+    expect(emitted[0]?.summary).toBe('Declined scheduled task nightly');
+  });
+
+  it('says Deleted for any other schedule', async () => {
+    const res = await request(fixtureServer).delete(`/api/tasks/${schedule.id}`);
+
+    expect(res.status).toBe(200);
+    expect(emitted[0]?.summary).toBe('Deleted scheduled task nightly');
   });
 
   describe.each(ROUTES)('$name', ({ drive, expectStatus }) => {

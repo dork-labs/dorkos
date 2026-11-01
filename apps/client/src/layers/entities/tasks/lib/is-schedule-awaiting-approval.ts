@@ -33,6 +33,10 @@
  * A package that ships a schedule switched ON (`schedule.enabled: true`) is
  * asking to run, and keeps today's card even though its origin is `'file'`.
  *
+ * A schedule a person declined (DOR-2097) is not waiting either: it came with an
+ * installed package, so declining kept its file and recorded the answer. It asks
+ * again when the package changes it, and `declined` then reads false.
+ *
  * @param task - The fields of a task this decision reads.
  * @returns True when a person still has to look at this schedule.
  */
@@ -40,6 +44,11 @@ export function isScheduleAwaitingApproval(task: {
   status: string;
   enabled: boolean;
   origin: string | null;
+  declined?: boolean;
 }): boolean {
-  return task.status === 'pending_approval' && (task.origin !== 'file' || task.enabled);
+  return (
+    task.status === 'pending_approval' &&
+    task.declined !== true &&
+    (task.origin !== 'file' || task.enabled)
+  );
 }

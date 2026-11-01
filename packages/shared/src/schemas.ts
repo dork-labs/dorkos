@@ -5797,6 +5797,18 @@ export const TaskSchema = z
         "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own).",
     }),
     /**
+     * Whether a person declined this schedule as it reads now (DOR-2097).
+     *
+     * Only a schedule an installed package owns can be declined rather than
+     * deleted: removing its file would break the package. A declined schedule
+     * never runs and asks nobody. When the package changes the schedule, it asks
+     * again and this reads false.
+     */
+    declined: z.boolean().optional().openapi({
+      description:
+        'Whether a person declined this schedule as it reads now. A declined schedule never runs and asks again only when its file changes.',
+    }),
+    /**
      * Whether this is one project's copy of a global schedule marked
      * `scope: project` (DOR-3376). Its switch and timing belong to this project
      * alone; what it does is the shared file's, which DorkOS never rewrites for
