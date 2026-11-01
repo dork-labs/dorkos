@@ -836,6 +836,14 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       [otherId, entry, otherPlainMember]
     )
   ).rows[0].id;
+  // An open report of a person in B, for the same probe (0050).
+  const foreignMemberReport = (
+    await pool.query<{ id: string }>(
+      `INSERT INTO member_reports(community_id,subject_member_id,reporter_member_id,reason)
+       VALUES($1,$2,$3,'spam') RETURNING id`,
+      [otherId, otherPlainMember, otherOwner]
+    )
+  ).rows[0].id;
   // Community A's own public channel, for probes that pair it with a foreign id.
   const home = await jsonRequest(`${own}/channels`, 'POST', {
     name: 'Isolation home',
@@ -893,6 +901,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     replacement: string;
     ban: string;
     report: string;
+    memberReport: string;
   };
   const foreign: Ids = {
     channel,
@@ -911,6 +920,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     replacement: foreignReplacement,
     ban: foreignBan,
     report: foreignReport,
+    memberReport: foreignMemberReport,
   };
   const foreignPublic: Ids = { ...foreign, channel: publicChannel };
   // The same shapes with ids that exist nowhere: a foreign id must be refused
@@ -933,6 +943,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     replacement: randomUUID(),
     ban: randomUUID(),
     report: randomUUID(),
+    memberReport: randomUUID(),
   };
   const { lifecycle_version: ownLifecycleVersion } = (
     await pool.query<{ lifecycle_version: number }>(
@@ -1025,6 +1036,17 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     {
       route: 'POST /reports/:id/resolve',
       call: (x) => ({ path: `/reports/${x.report}/resolve`, body: { action: 'dismiss' } }),
+    },
+    {
+      route: 'POST /members/:id/reports',
+      call: (x) => ({ path: `/members/${x.member}/reports`, body: { reason: 'spam' } }),
+    },
+    {
+      route: 'POST /member-reports/:id/resolve',
+      call: (x) => ({
+        path: `/member-reports/${x.memberReport}/resolve`,
+        body: { action: 'dismiss' },
+      }),
     },
     {
       route: 'POST /owner/transfer',
@@ -1246,6 +1268,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'GET /bans': 'lists the URL community',
     'GET /mutes': 'lists the URL community',
     'GET /reports': 'lists the URL community',
+    'GET /member-reports': 'lists the URL community',
     'GET /me/standing': 'the caller only',
     'PATCH /me': 'the caller renames themselves only',
     'GET /rules': "reads the URL community's rules only",
@@ -1920,8 +1943,12 @@ it('deletes only the due tenant after every owned blob is confirmed absent', asy
         .rowCount
     ).toBe(0);
     expect(
-      (await pool.query('SELECT 1 FROM member_reports WHERE community_id=$1', [survivorId]))
-        .rowCount
+      (
+        await pool.query(
+          "SELECT 1 FROM member_reports WHERE community_id=$1 AND origin='imported'",
+          [survivorId]
+        )
+      ).rowCount
     ).toBe(1);
     expect(
       (await pool.query('SELECT 1 FROM communities WHERE id=$1', [other.rows[0].id])).rowCount
