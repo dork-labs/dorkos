@@ -179,7 +179,7 @@ describe('Confirm this setting, with "Confirm it’s you"', () => {
     const view = await request(app()).get(`/api/step-up/${id}`);
     // The name is the connection's label, which an agent may set: quoted and cut short.
     expect(view.body.reason).toBe(
-      'Lets “Deploy hooks” send DEPLOY_TOKEN to hooks.example.dev again.'
+      'Lets “Deploy hooks” (Webhook) send DEPLOY_TOKEN to hooks.example.dev again.'
     );
   });
 

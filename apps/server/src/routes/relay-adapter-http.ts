@@ -14,8 +14,11 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { readJsonBody } from '../http/request-body.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import { holdForStepUp } from './step-up-guard.js';
-import { PROGRAM_CREDENTIAL_HEADERS } from './step-up.js';
-import { refuseUnlessAccountOwner, requirePersonAtThisComputer } from '../lib/caller-authority.js';
+import {
+  presentsProgramCredential,
+  refuseUnlessAccountOwner,
+  requirePersonAtThisComputer,
+} from '../lib/caller-authority.js';
 import { errorBody } from '../lib/route-utils.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
@@ -60,6 +63,8 @@ export function secretWriter(c: Context<ApiEnv>): SecretWriter {
 /** What the owner was shown for one connection: its name, and what it sends where. */
 interface PausedView {
   name: string;
+  /** The connection type's own name, shown beside a label someone chose. */
+  typeName?: string;
   references: readonly { ref: string }[];
   host?: string;
 }
@@ -71,6 +76,7 @@ function pausedView(adapterManager: AdapterManager, id: string): PausedView | un
     if (!instance) continue;
     return {
       name: instance.label || entry.manifest.displayName,
+      typeName: entry.manifest.displayName,
       references: instance.confirmation?.references ?? [],
       ...(instance.confirmation?.host ? { host: instance.confirmation.host } : {}),
     };
@@ -119,7 +125,8 @@ export function quotedName(name: string): string {
 export function confirmReason(shown: PausedView): string {
   const what = settingNamesText(shown.references.map((r) => settingName(r.ref)));
   const where = shown.host ? ` to ${shown.host}` : '';
-  return `Lets ${quotedName(shown.name)} send ${what}${where} again.`;
+  const type = shown.typeName && shown.typeName !== shown.name ? ` (${shown.typeName})` : '';
+  return `Lets ${quotedName(shown.name)}${type} send ${what}${where} again.`;
 }
 
 /**
@@ -160,8 +167,7 @@ export async function adapterResult(
  */
 export function noOwnerRefusal(c: Context<ApiEnv>, personOnly: string): Response | undefined {
   const facts = honoRequestFacts(c);
-  const program = PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined);
-  if (program || requirePersonAtThisComputer(facts) !== undefined) {
+  if (presentsProgramCredential(facts) || requirePersonAtThisComputer(facts) !== undefined) {
     return c.json(errorBody(personOnly, 'person_only'), 403);
   }
   return undefined;

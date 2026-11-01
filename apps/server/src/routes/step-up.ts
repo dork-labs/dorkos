@@ -50,6 +50,7 @@ import { logger } from '../lib/logger.js';
 import { errorBody } from '../lib/route-utils.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 import { currentStepUpExtensionRisks } from '../services/extensions/step-up-extension-risk.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
@@ -71,18 +72,6 @@ import {
 
 /** The longest password Better Auth stores. */
 const MAX_PASSWORD_LENGTH = 128;
-
-/**
- * Headers only a program sends: a bearer, an API key (the gate takes
- * `x-api-key` as one) or a proxy's credential. The app sends none of them.
- * The same list as `requirePersonAtThisComputer`'s (DOR-3213); whichever of
- * the two lands second makes them one export.
- */
-export const PROGRAM_CREDENTIAL_HEADERS = [
-  'authorization',
-  'x-api-key',
-  'proxy-authorization',
-] as const;
 
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {
@@ -204,7 +193,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const program =
       presentsAgentIdentity(facts) ||
       facts.headers[APPROVAL_TOKEN_HEADER] !== undefined ||
-      PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined);
+      presentsProgramCredential(facts);
     const origin = facts.headers.origin;
     const site = facts.headers['sec-fetch-site'];
     const ownPage =
