@@ -15,6 +15,7 @@
  * @module features/chat/ui/chips/chip-motion
  */
 import type { MotionProps, SpringOptions, Transition } from 'motion/react';
+import { SPRING } from '@/layers/shared/lib';
 
 /** How many chips stay in the live row; older ones are absorbed into the pile. */
 export const LIVE_WINDOW = 4;
@@ -26,7 +27,7 @@ export const LIVE_WINDOW = 4;
 const EASE: [number, number, number, number] = [0.4, 0, 0.2, 1];
 
 /** Arrival: a spring with just enough overshoot to read as a landing. */
-export const CHIP_POP_IN: Transition = { type: 'spring', stiffness: 320, damping: 28 };
+export const CHIP_POP_IN: Transition = SPRING.glide;
 
 /** Absorption: the chip shrinks leftward toward the pile, and is gone. */
 export const CHIP_ABSORB: Transition = { duration: 0.25, ease: EASE };

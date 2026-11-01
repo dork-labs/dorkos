@@ -118,8 +118,7 @@ export const messageItem = tv({
           'relative',
           'pointer-fine:group-focus-within:pointer-events-auto pointer-fine:group-focus-within:opacity-100',
           // How it arrives (design record §5.1): a 90ms fade with a 5px rise
-          // that overshoots about a pixel and settles (`animate-capsule-in`,
-          // defined in `index.css`). Leaving is a plain, faster fade with
+          // (`animate-capsule-in`, defined in `index.css`). Leaving is a plain, faster fade with
           // nothing moving — which is why the rise is an ANIMATION and not a
           // transition: an animation only exists while the row is revealed, so
           // there is no return leg to suppress. A transition would slide the

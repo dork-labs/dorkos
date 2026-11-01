@@ -84,6 +84,25 @@ describe('the card and row rules', () => {
   });
 });
 
+describe('the motion rules', () => {
+  const CSS = 'apps/client/src/index.css';
+
+  it.each([
+    ['a y above 1', 'animation: x 1s cubic-bezier(0.2, 1.4, 0.4, 1);', 1],
+    ['a y below 0', 'animation: x 1s cubic-bezier(0.2, -0.4, 0.4, 1);', 1],
+    ['a curve that stays in range', 'animation: x 1s cubic-bezier(0.4, 0, 0.2, 1);', 0],
+    ['the reaction pop', 'animation: reaction-pop 1s cubic-bezier(0.2, 1.8, 0.35, 1);', 0],
+    ['a comment', '/* cubic-bezier(0.2, 1.4, 0.4, 1) */', 0],
+  ])('overshoot rule on %s', (_name, text, expected) => {
+    expect(countIn(CSS, text)['overshoot-bezier'] ?? 0).toBe(expected);
+  });
+
+  it('reads the overshoot rule only in index.css, and no colour rule reads CSS', () => {
+    expect(countIn('apps/client/src/other.css', 'x: cubic-bezier(0.2, 1.4, 0.4, 1)')).toEqual({});
+    expect(countIn(CSS, 'color: #fff; bg-black/50')).toEqual({});
+  });
+});
+
 describe('compare', () => {
   it('fails a hard rule even when the baseline names it', () => {
     const counts = { 'black-scrim': { [CLIENT]: 1 } };

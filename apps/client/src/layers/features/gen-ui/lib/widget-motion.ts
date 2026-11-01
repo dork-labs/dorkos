@@ -12,9 +12,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { animate, useReducedMotion } from 'motion/react';
 import type { Transition, Variants } from 'motion/react';
+import { SPRING } from '@/layers/shared/lib';
 
 /** Spring for content settling into place — snappy, well damped, no visible bounce. */
-export const WIDGET_SPRING: Transition = { type: 'spring', stiffness: 400, damping: 32, mass: 0.8 };
+export const WIDGET_SPRING: Transition = SPRING.snap;
 
 /** Expo-out curve for draws and fills that should decelerate hard without overshooting. */
 export const WIDGET_EASE_OUT = [0.22, 1, 0.36, 1] as const;
