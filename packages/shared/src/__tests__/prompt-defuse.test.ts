@@ -5,7 +5,7 @@
  * zero-width space, so no start set has to be guessed right.
  */
 import { describe, expect, it } from 'vitest';
-import { defuseFileReferences, defuseUntrustedPrompt } from '../prompt-defuse.js';
+import { defuseFileReferences, defuseUntrustedPrompt } from '../untrusted-text.js';
 
 const ZW = '​';
 

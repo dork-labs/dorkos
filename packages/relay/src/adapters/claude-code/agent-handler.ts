@@ -14,7 +14,7 @@ import { StreamEventTypeSchema, type PermissionMode } from '@dorkos/shared/schem
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
-import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
+import { defuseSystemTags, defuseUntrustedPrompt } from '@dorkos/shared/untrusted-text';
 // One answer to "is this error the turn failing?", shared with the scheduled-run
 // tracker that reads the same streams (DOR-1658). The denylist and the reasoning
 // behind its direction live there.
@@ -27,6 +27,7 @@ import type {
 } from '../../types.js';
 import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-utils.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
+import { isTurnShapingSender } from './turn-shaping-sender.js';
 import type {
   AgentRuntimeLike,
   AgentSessionStoreLike,
@@ -325,28 +326,6 @@ function followLateResults(
   if (!ended) followers?.set(scope, stopFollowing);
 }
 
-/**
- * Senders whose payload may shape a turn — its folder, the agent it acts as and
- * its permission mode: a person reached through a binding (`relay.human.*`),
- * the server's own principals (`relay.system.*`) and chat bridges
- * (`relay.bridge.*`). Every other sender — an agent (`relay.agent.*`), a
- * session (`relay.session.*`), an external MCP caller — is read for its words
- * only. An agent's `from` is stamped by the server from its own identity, so
- * an agent cannot claim to be a person. A caller of the HTTP API
- * (`POST /api/relay/messages`) may name a `relay.human.*` sender and is then
- * trusted as the person, exactly as the rest of `/api` trusts its caller; only
- * the server's own principals are refused there.
- *
- * @param from - The envelope's sender address.
- */
-export function isTurnShapingSender(from: string): boolean {
-  return (
-    from.startsWith('relay.human.') ||
-    from.startsWith('relay.system.') ||
-    from.startsWith('relay.bridge.')
-  );
-}
-
 /** Why a turn was stopped before it started: its folder is not its agent's desk. */
 class DeskRefusal extends Error {
   constructor(message: string) {
@@ -622,13 +601,22 @@ export async function handleAgentMessage(
   }
 
   const correlationId = payloadObj?.correlationId as string | undefined;
-  const prompt = formatPromptWithContext(
+  const formatted = formatPromptWithContext(
     extractPayloadContent(envelope.payload),
     envelope,
     agentId,
     ccaSessionKey,
     now
   );
+  // Words nobody here vouched for go as words: a sender that may not shape the
+  // turn, or a chat the binding router could not place as the owner's (DOR-2980).
+  // This takes nothing from the turn's level. It only stops a stranger's `@path`
+  // from being read before any tool gate sees it. The whole prompt, since their
+  // name and their chat's title ride in the block above the words.
+  const prompt =
+    !trustedShaper || shaping?.__untrustedWords === true
+      ? defuseUntrustedPrompt(formatted)
+      : formatted;
   const formatBlock = buildResponseFormatBlock(responseContext);
 
   // The deadline, from the SAME reading the refusal above was decided on.
