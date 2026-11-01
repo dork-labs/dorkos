@@ -198,6 +198,28 @@ test.describe('SidebarRow — the reserved right gutter @smoke', { tag: SOLE_SID
     expect(sectionHeaderBox.x - headerBox.x).toBeCloseTo(0, 1);
   });
 
+  test('puts headers and glyphs on one 16px edge on a phone', async ({ page }) => {
+    // **One edge, not two, at 390** (Phase 4 S2, §7). The Home tab is the
+    // whole screen, so the indent that tells a header from its rows on a
+    // 272px desktop panel is gone: the panel pays 8 and both levels pay the
+    // other 8. Read from the tokens at this width, never restated.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openShowcase(page);
+
+    const headerX = await token(page, '--sidebar-header-x');
+    const rowX = await token(page, '--sidebar-row-x');
+    expect(headerX).toBe(16);
+    expect(rowX).toBe(headerX);
+
+    const geometry = page.locator('[data-slot="sidebar-geometry-frame"]');
+    const left = (locator: Locator) =>
+      locator.evaluate((node) => parseFloat(getComputedStyle(node).paddingLeft));
+    const header = geometry.locator('[data-sidebar-section-toggle]').first();
+    expect(await left(header)).toBeCloseTo(headerX - PANEL_X, 1);
+    const row = geometry.locator('[data-slot="sidebar-geometry-row"]');
+    expect(await left(row)).toBeCloseTo(rowX - PANEL_X, 1);
+  });
+
   test('starts the widest glyph on the same x as the narrowest one', async ({ page }) => {
     await openShowcase(page);
 
@@ -225,6 +247,39 @@ test.describe('SidebarRow — the reserved right gutter @smoke', { tag: SOLE_SID
       firstFace.x,
       'a group conversation’s faces start left of every other row’s glyph'
     ).toBeCloseTo(hash.x, 0);
+  });
+
+  test('holds a group conversation’s faces to the slot, so its label lines up', async ({
+    page,
+  }) => {
+    await openShowcase(page);
+
+    // **The sidebar's own stack, measured against a `#` row** (Phase 4 P3).
+    // The case above proves a wider mark still starts on the glyph column; this
+    // one proves the sidebar no longer draws a wider mark at all. Two faces
+    // used to overlap to 22px in the 18px slot, which ran 4px into the gap and
+    // left 4px before the name where every other row has 8.
+    const geometry = page.locator('[data-slot="sidebar-geometry-frame"]');
+    const stackRow = geometry.locator('[data-slot="sidebar-geometry-sidebar-stack-row"]');
+    const stack = await box(stackRow.locator('[data-slot="room-avatar"]'));
+    expect(stack.width, 'the sidebar’s stack is wider than its 18px slot').toBeLessThanOrEqual(
+      18.5
+    );
+
+    const hash = await box(geometry.locator('[data-slot="sidebar-geometry-row"] svg').first());
+    const firstFace = await box(stackRow.locator('[data-slot="identity-avatar"]').first());
+    expect(firstFace.x).toBeCloseTo(hash.x, 0);
+
+    // The words keep the same 8px of air after the faces as after a `#`.
+    const stackLabel = await box(stackRow.getByText('Ana, Kai', { exact: true }));
+    const hashLabel = await box(
+      geometry.locator('[data-slot="sidebar-geometry-row"]').getByText('general', { exact: true })
+    );
+    expect(stackLabel.x).toBeCloseTo(hashLabel.x, 0);
+    expect(
+      stackLabel.x - (stack.x + stack.width),
+      'the faces crowd the name'
+    ).toBeGreaterThanOrEqual(7.5);
   });
 
   test('keeps the gutter even when a caller passes padding of its own', async ({ page }) => {

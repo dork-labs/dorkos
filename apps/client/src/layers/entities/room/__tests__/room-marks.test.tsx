@@ -93,6 +93,28 @@ describe('RoomAvatar', () => {
     expect(stack.className).toContain('-space-x-3.5');
   });
 
+  it('sizes each stacked face from faceClassName, and leaves faces alone without it', () => {
+    // The sidebar shrinks its two faces to hold the 18px slot (Phase 4 P3); no
+    // other surface passes the prop, so their faces keep the size's own box.
+    const two = [
+      { color: '#7c3aed', emoji: 'a' },
+      { color: '#3ca078', emoji: 'b' },
+    ];
+    const room = { id: 'dm-two', kind: 'dm' as const, title: 'Two agents' };
+    const { container, rerender } = render(
+      <RoomAvatar room={room} visuals={two} faceClassName="size-3.5" overlap="-space-x-2.5" />
+    );
+    const faces = container.querySelectorAll('[data-slot="identity-avatar"]');
+    for (const face of faces) expect(face.className).toContain('size-3.5');
+    expect(container.querySelector('[data-slot="room-avatar"]')!.className).toContain(
+      '-space-x-2.5'
+    );
+    rerender(<RoomAvatar room={room} visuals={two} />);
+    for (const face of container.querySelectorAll('[data-slot="identity-avatar"]')) {
+      expect(face.className).toContain('size-[18px]');
+    }
+  });
+
   it('lets a roomier surface keep three faces and the roster’s own overlap', () => {
     // The cap is the SIDEBAR's, not the mark's: the masthead and the picker have
     // width to spend, and a group there still reads as a group. Without this the

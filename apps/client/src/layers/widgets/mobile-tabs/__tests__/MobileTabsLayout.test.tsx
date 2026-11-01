@@ -317,6 +317,18 @@ describe('MobileTabsLayout', () => {
       expect(await screen.findByTestId('mobile-tab-badge-home')).toHaveTextContent('2');
     });
 
+    it('draws the count as the solid warning pill, on a bar with no hairline (Phase 4 S16)', async () => {
+      renderLayout(null, twoWaiting());
+      const badge = await screen.findByTestId('mobile-tab-badge-home');
+      // The shared pill, not palette literals of its own.
+      expect(badge).toHaveAttribute('data-slot', 'count-pill');
+      expect(badge).toHaveAttribute('data-tone', 'warning');
+      expect(badge).toHaveAttribute('data-placement', 'corner');
+      expect(badge.className).not.toMatch(/amber/);
+      // The bar's tint separates it; a border above it was a second edge.
+      expect(screen.getByTestId('mobile-tab-bar').className).not.toMatch(/\bborder/);
+    });
+
     it('is the same number the live region announces', async () => {
       const { container } = renderLayout(null, twoWaiting());
       const badge = (await screen.findByTestId('mobile-tab-badge-home')).textContent;

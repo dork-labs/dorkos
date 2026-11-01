@@ -21,17 +21,42 @@
  * @module features/dashboard-sidebar/ui/SidebarFooterMenu
  */
 import { useCallback, useMemo } from 'react';
-import { Check, Copy, ExternalLink, LayoutGrid, MoreHorizontal, UserRound } from 'lucide-react';
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
+  Check,
+  Copy,
+  ExternalLink,
+  LayoutGrid,
+  Monitor,
+  Moon,
+  MoreHorizontal,
+  Sun,
+  SunMoon,
+  UserRound,
+  type LucideIcon,
+} from 'lucide-react';
+import {
+  Button,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  ResponsiveDropdownMenu,
+  ResponsiveDropdownMenuContent,
+  ResponsiveDropdownMenuItem,
+  ResponsiveDropdownMenuLabel,
+  ResponsiveDropdownMenuRadioGroup,
+  ResponsiveDropdownMenuRadioItem,
+  ResponsiveDropdownMenuSeparator,
+  ResponsiveDropdownMenuTrigger,
+  SIDEBAR_ICON_CONTROL,
   TOUCH_TARGET_MIN_H,
 } from '@/layers/shared/ui';
-import { useAppStore, useSlotContributions, useTheme, type Theme } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useIsMobile,
+  useSlotContributions,
+  useTheme,
+  type Theme,
+} from '@/layers/shared/model';
 import { cn, formatShortcutKey, openLink, SHORTCUTS, useCopyFeedback } from '@/layers/shared/lib';
 import { useConfig } from '@/layers/entities/config';
 import { AccountMenuContainer } from '@/layers/features/profile';
@@ -83,6 +108,13 @@ const THEME_LABELS: Record<Theme, string> = {
   system: 'System',
 };
 
+/** Each stop's glyph, for the phone sheet's three rows. */
+const THEME_ICONS: Record<Theme, LucideIcon> = {
+  light: Sun,
+  dark: Moon,
+  system: Monitor,
+};
+
 /** Props for {@link SidebarFooterMenu}. */
 export interface SidebarFooterMenuProps {
   /**
@@ -111,7 +143,9 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
   const { devtoolsOpen, routerDevtoolsOpen, toggleDevtools, toggleRouterDevtools } = useAppStore();
   const { data: config } = useConfig();
   const version = config?.version;
-  const label = foldLabel(useCurrentUser() !== null);
+  const isMobile = useIsMobile();
+  const canSignOut = useCurrentUser() !== null;
+  const label = foldLabel(canSignOut);
   // Pressing the item closes the menu, so there is no chrome left to morph a
   // check mark into — the toast fallback is the pattern for exactly that
   // (`useCopyFeedback`'s TSDoc). Before this it was a bare
@@ -152,30 +186,48 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
   const rows = visible.filter((b) => b.id !== 'devtools');
   const showDevTools = visible.some((b) => b.id === 'devtools');
 
+  // **The trigger's glyph says what is behind it** (Phase 4 S9). A person icon
+  // on a fold that holds only the theme read as "your account", which this
+  // fold is not; the person comes back only when signing out is in here too.
+  const FoldIcon = canSignOut ? UserRound : SunMoon;
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={labelled ? label : 'More'}
-          data-testid="sidebar-footer-menu-trigger"
-          className={cn(
-            'hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring transition-colors duration-150',
-            labelled
-              ? cn(FOOTER_LABELLED_ROW, 'text-sidebar-foreground/80')
-              : 'text-sidebar-foreground/60 rounded-md p-1'
-          )}
-        >
-          {labelled ? (
-            <UserRound className="size-(--size-icon-sm) shrink-0" />
-          ) : (
-            <MoreHorizontal className="size-(--size-icon-sm)" />
-          )}
-          {labelled && label}
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="end" className="w-56">
-        {}
+    // A menu under a pointer, a bottom sheet on a phone (Overlay B). The sheet
+    // is where this fold lives on the You tab, so its rows are thumb-sized and
+    // the theme is three choices you can see rather than a cycle you guess at.
+    <ResponsiveDropdownMenu>
+      <ResponsiveDropdownMenuTrigger asChild>
+        {labelled ? (
+          <button
+            type="button"
+            aria-label={label}
+            data-testid="sidebar-footer-menu-trigger"
+            className={cn(
+              'hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring transition-colors duration-150',
+              FOOTER_LABELLED_ROW,
+              'text-sidebar-foreground/80'
+            )}
+          >
+            <FoldIcon className="size-(--size-icon-sm) shrink-0" />
+            {label}
+          </button>
+        ) : (
+          // The real Button (Phase 4 S17), the destinations' own shape. Its
+          // name stays "More".
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="More"
+            data-testid="sidebar-footer-menu-trigger"
+            className="text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar/50 data-[state=open]:bg-sidebar/50 focus-ring"
+          >
+            <MoreHorizontal className={SIDEBAR_ICON_CONTROL} />
+          </Button>
+        )}
+      </ResponsiveDropdownMenuTrigger>
+      <ResponsiveDropdownMenuContent side="top" align="end" className="w-56">
+        {/* A sheet is a dialog, and a dialog needs a name: the fold's own. */}
+        {isMobile && <ResponsiveDropdownMenuLabel>{label}</ResponsiveDropdownMenuLabel>}
         {/* Both of the account block's doors yield to the header block, which
             BC-43 gives "Settings" and your profile ("you"). Two menus offering
             one dialog under two different names is the same defect as one menu
@@ -183,10 +235,32 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
             notice. What stays is what the header menu does NOT carry: who you
             are signed in as, and how to stop being. */}
         <AccountMenuContainer variant="rows" showSettings={false} showViewProfile={false} />
-        <DropdownMenuSeparator />
+        <ResponsiveDropdownMenuSeparator />
         {rows.map((button) => {
           const Icon = button.icon;
           if (button.id === 'theme') {
+            if (isMobile) {
+              // Three rows, the current one ticked, and the sheet stays up so
+              // the change can be seen behind it.
+              return (
+                <ResponsiveDropdownMenuRadioGroup
+                  key={button.id}
+                  value={theme}
+                  onValueChange={(next) => setTheme(next as Theme)}
+                  closeOnSelect={false}
+                >
+                  {THEME_ORDER.map((option) => (
+                    <ResponsiveDropdownMenuRadioItem
+                      key={option}
+                      value={option}
+                      icon={THEME_ICONS[option]}
+                    >
+                      {THEME_LABELS[option]}
+                    </ResponsiveDropdownMenuRadioItem>
+                  ))}
+                </ResponsiveDropdownMenuRadioGroup>
+              );
+            }
             return (
               <DropdownMenuItem
                 key={button.id}
@@ -197,10 +271,17 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
               >
                 <Icon className="size-(--size-icon-sm)" />
                 Theme
-                <span className="text-sidebar-foreground/50 text-2xs ml-auto">
+                <span className="text-muted-foreground text-2xs ml-auto">
                   {THEME_LABELS[theme]}
                 </span>
               </DropdownMenuItem>
+            );
+          }
+          if (isMobile) {
+            return (
+              <ResponsiveDropdownMenuItem key={button.id} icon={Icon} onSelect={button.onClick}>
+                {button.label}
+              </ResponsiveDropdownMenuItem>
             );
           }
           return (
@@ -211,16 +292,16 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
           );
         })}
 
-        {showDevTools && (
+        {showDevTools && !isMobile && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuLabel>Developer tools</DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => openLink('/dev')}>
               <LayoutGrid className="size-(--size-icon-sm)" />
               Dev Playground
-              <span className="text-sidebar-foreground/50 ml-auto flex items-center gap-1.5">
+              <span className="text-muted-foreground ml-auto flex items-center gap-1.5">
                 <kbd className="text-3xs">{formatShortcutKey(SHORTCUTS.DEV_PLAYGROUND)}</kbd>
-                <ExternalLink className="size-3" />
+                <ExternalLink className="size-(--size-icon-xs)" />
               </span>
             </DropdownMenuItem>
             <DropdownMenuItem
@@ -247,6 +328,20 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
             </DropdownMenuItem>
           </>
         )}
+        {/* On a phone the developer tools are plain rows: the sheet has no
+            room for a toggle that keeps it open, and a build that ships them
+            is a development build on somebody's own machine. */}
+        {showDevTools && isMobile && (
+          <>
+            <ResponsiveDropdownMenuSeparator />
+            <ResponsiveDropdownMenuItem icon={LayoutGrid} onSelect={() => openLink('/dev')}>
+              Dev Playground
+            </ResponsiveDropdownMenuItem>
+            <ResponsiveDropdownMenuItem icon={Copy} onSelect={handleCopyDebugInfo}>
+              Copy debug info
+            </ResponsiveDropdownMenuItem>
+          </>
+        )}
 
         {/* Help and feedback, which used to be its own `?` trigger beside the
             footer's icons. One row has room for one fold, so it folds here —
@@ -255,11 +350,11 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
             rather than offering them twice. */}
         {!labelled && (
           <>
-            <DropdownMenuSeparator />
+            <ResponsiveDropdownMenuSeparator />
             <HelpMenuItems />
           </>
         )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </ResponsiveDropdownMenuContent>
+    </ResponsiveDropdownMenu>
   );
 }

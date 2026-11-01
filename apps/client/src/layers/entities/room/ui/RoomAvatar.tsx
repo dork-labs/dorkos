@@ -98,6 +98,14 @@ export interface RoomAvatarProps {
    */
   overlap?: string;
   /**
+   * Classes for each face in a group conversation's stack, not the stack.
+   *
+   * For a caller whose slot is narrower than two full faces: the sidebar shrinks
+   * them so the stack holds its 18px slot (Phase 4 P3). Absent, every face is
+   * drawn at {@link RoomAvatarProps.size}, as everywhere else.
+   */
+  faceClassName?: string;
+  /**
    * Whether an agent in this direct message is working right now. Draws a soft
    * live dot on the face's top-right corner; ignored for a channel, whose `#`
    * is a place rather than somebody who could be busy.
@@ -156,6 +164,7 @@ export function RoomAvatar({
   size = DEFAULT_SIZE,
   maxFaces = FACE_STACK[size].maxFaces,
   overlap = FACE_STACK[size].overlap,
+  faceClassName,
   working = false,
   className,
 }: RoomAvatarProps) {
@@ -213,6 +222,7 @@ export function RoomAvatar({
             size={size}
             color={face.color}
             emoji={face.emoji}
+            className={faceClassName}
           />
         ))}
         {working && <WorkingFaceDot />}

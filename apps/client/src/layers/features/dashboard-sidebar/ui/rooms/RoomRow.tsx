@@ -15,6 +15,7 @@ import { cn } from '@/layers/shared/lib';
 import {
   CountPill,
   SIDEBAR_FACE,
+  SIDEBAR_FACE_STACK,
   SidebarRow,
   type SidebarMenuNode,
   type SidebarRowMotion,
@@ -395,6 +396,10 @@ export const RoomRow = memo(function RoomRow({
             // A place's `#` is a control-sized glyph in the sidebar (Phase 4 B2);
             // a face fills the slot, 18 with a mouse and 24 on a phone.
             className={isDm ? SIDEBAR_FACE : ROW_GLYPH_CLASS}
+            // A group's two faces overlap to fit the same slot, so its label
+            // starts on the same column as every other row's (Phase 4 P3).
+            overlap={SIDEBAR_FACE_STACK.overlap}
+            faceClassName={SIDEBAR_FACE_STACK.face}
           />
         }
         title={
@@ -449,7 +454,7 @@ export const RoomRow = memo(function RoomRow({
           <>
             {!isMember && (
               <span
-                className="text-muted-foreground bg-muted text-3xs shrink-0 rounded-full px-1.5 py-0.5 font-medium"
+                className="text-sidebar-foreground/70 bg-sidebar-accent text-3xs shrink-0 rounded-full px-1.5 py-0.5 font-medium"
                 // A hint, not a repeat of the mute icon's shape: the room is
                 // still visible (the owner sees every room whether or not
                 // they are on its roster), only unpostable — a fact the

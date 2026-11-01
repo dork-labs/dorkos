@@ -8,7 +8,7 @@
 import type { ReactNode } from 'react';
 import { ChevronRight, CircleUserRound } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { TOUCH_TARGET_MIN_H } from '@/layers/shared/ui';
+import { SIDEBAR_ICON_INLINE, TOUCH_TARGET_MIN_H } from '@/layers/shared/ui';
 import { useIdentityModel } from './use-header-block-menu';
 
 /** The two rows at the top of the phone's You tab. */
@@ -59,7 +59,9 @@ function Row({
       type="button"
       onClick={onClick}
       className={cn(
-        'hover:bg-accent focus-visible:ring-ring flex w-full items-center gap-3 rounded-md px-2 py-2 text-left outline-hidden focus-visible:ring-2',
+        // The sidebar's own tint step and the shared ring: `--accent` is not
+        // this family's ramp (Phase 4 S5, guard rows).
+        'hover:bg-sidebar-accent/70 active:bg-sidebar-accent focus-ring flex w-full items-center gap-3 rounded-md px-2 py-2 text-left transition-colors duration-(--dur-fast)',
         TOUCH_TARGET_MIN_H
       )}
     >
@@ -70,7 +72,10 @@ function Row({
           <span className="text-muted-foreground block truncate text-xs">{description}</span>
         )}
       </span>
-      <ChevronRight className="text-muted-foreground size-4 shrink-0" aria-hidden />
+      <ChevronRight
+        className={cn('text-muted-foreground shrink-0', SIDEBAR_ICON_INLINE)}
+        aria-hidden
+      />
     </button>
   );
 }

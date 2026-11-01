@@ -64,7 +64,11 @@ export function MobileTabBar({
       // floating over it, so no page has to know it exists to avoid being
       // covered by it. The height is the dock the panels stop at — one string,
       // two uses.
-      className="bg-sidebar border-border/60 flex shrink-0 items-stretch border-t"
+      //
+      // **No `border-t`.** The bar's own tint is the separation, as it is
+      // everywhere in the sidebar's family: a hairline above it was a second
+      // way of saying the same edge (Phase 4 S16, R1).
+      className="bg-sidebar flex shrink-0 items-stretch"
       style={{ height: MOBILE_TAB_BAR_DOCK, paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       {MOBILE_TABS.map((tab) => {
@@ -129,6 +133,7 @@ export function MobileTabBar({
                   count={badge}
                   tone="warning"
                   placement="corner"
+                  solid
                   className="-top-1.5 -right-2.5"
                 />
               )}
