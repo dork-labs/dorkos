@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): Confirm this setting asks "Confirm it''s you" first (DOR-3467)'
+  - 'fix(desktop): the "Confirm it''s you" window names the server''s origin on its read too (DOR-3234)'
 ---
 
 ### Security
