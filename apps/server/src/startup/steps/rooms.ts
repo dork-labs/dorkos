@@ -339,6 +339,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     enabled: () => readRoomRepoConfig().enabled,
     getRoom: (roomId, viewerAuthorId) => roomService.getRoom(roomId, viewerAuthorId),
     isOwnerAuthor: (authorId) => roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    getAuthor: (authorId) => roomAuthors.getById(authorId),
     // The person's own name from their profile, which is the only place a
     // real human name is stored on this machine — never the room registry's
     // label for them, which `bindOwner` fixes at 'You' forever (right in
@@ -620,6 +621,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     roomRepoStore,
     roomWorktrees,
     roomMerges,
+    roomRepos: roomRepoService,
   };
 }
 

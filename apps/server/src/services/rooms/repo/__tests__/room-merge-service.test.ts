@@ -213,6 +213,7 @@ describe('RoomMergeService', () => {
       getRoom: () => room,
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
       operatorGitName: () => 'Dorian',
+      getAuthor: () => null,
       pinRoomMd: () => {},
       caps: () => caps,
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
@@ -556,6 +557,19 @@ describe('RoomMergeService', () => {
       expect(announced).toHaveLength(0);
     });
 
+    it('setting up the files gives an agent no power over somebody else’s copy', async () => {
+      // DOR-3468 opened the setup and nothing past it.
+      await repos.enable(ROOM_ID, ANA);
+      await commitIn(BEN, 'ben.md', 'ben\n');
+
+      const refusal = await refusalOf(
+        merges.merge(ROOM_ID, ANA, { summary: 'not mine', worktree: slugOf(BEN) })
+      );
+
+      expect(refusal.code).toBe('OPERATOR_ONLY');
+      expect(announced).toHaveLength(0);
+    });
+
     it('lets the operator merge an agent’s working copy, credited to that agent', async () => {
       await enableRepo();
       await commitIn(BEN, 'ben.md', 'ben\n');
@@ -594,7 +608,11 @@ describe('RoomMergeService', () => {
           merges.merge(ROOM_ID, OPERATOR, { summary: 'Land Ben’s work', worktree: slugOf(BEN) })
         );
 
-        const rows = auditDb.select().from(auditEvents).all();
+        const rows = auditDb
+          .select()
+          .from(auditEvents)
+          .all()
+          .filter((row) => row.action === 'room.merged');
         expect(rows).toMatchObject([
           {
             action: 'room.merged',

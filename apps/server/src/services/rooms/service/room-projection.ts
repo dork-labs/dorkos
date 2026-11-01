@@ -156,7 +156,9 @@ export class RoomProjection {
       // (spec `canvas-agent-seat` §8).
       viewerIsOperator: this.isOwnerAuthor(viewerAuthorId),
       viewerCan: {
-        setUpFiles: this.isOwnerAuthor(viewerAuthorId) && !room.archived,
+        // Seeing the room is what the setup itself asks (DOR-3468), so a reader
+        // of this answer has already passed it.
+        setUpFiles: !room.archived,
       },
       // Here for the same reason `reactionFrequents` is, and it buys more: this
       // one method feeds the room read, the create response AND the stream's

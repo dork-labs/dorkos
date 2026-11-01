@@ -369,8 +369,10 @@ export interface OperatingSkill {
  *   reports into the starter's chat in that room as a turn only it sees
  *   (DOR-3488). An agent seeded at 44 would not expect the report there, and
  *   might repost it to the whole room.
- */
-export const OPERATING_SKILLS_VERSION = 45;
+ * - 47: a member agent can set up its room's files (DOR-3468).
+ *   `working-in-room-repos` names `set_up_room_files` where a merge finds a room
+ *   with no files. An agent seeded at 46 would stop there and answer in the room. */
+export const OPERATING_SKILLS_VERSION = 47;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

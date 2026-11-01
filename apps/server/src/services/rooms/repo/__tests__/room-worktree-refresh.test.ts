@@ -141,6 +141,7 @@ describe('the turn-start refresh', () => {
       getRoom: () => ROOM,
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
       operatorGitName: () => 'Dorian',
+      getAuthor: () => null,
       pinRoomMd: () => {},
       caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
       maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
