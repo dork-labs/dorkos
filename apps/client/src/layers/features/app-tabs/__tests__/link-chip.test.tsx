@@ -290,6 +290,8 @@ describe('a channel link in markdown', () => {
 
     const link = await screen.findByRole('link', { name: /^#general/ });
     expect(link).toHaveAttribute('data-chip', 'ready');
+    // The Hash glyph draws the `#`; the text beside it never doubles it (DOR-2073).
+    expect(link.textContent).toBe('general');
   });
 
   it('says "Channel not found" for a room that is gone', async () => {

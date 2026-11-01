@@ -13,6 +13,7 @@ import { resolveIdentityFace, SETTINGS_TAB_DIRECTORY } from '@/layers/shared/lib
 import { useExtensionPageAtPath, usePageBadge } from '@/layers/shared/model';
 import { nonAutomatedSessionIds, useSessionListStore } from '@/layers/entities/session';
 import { hasUnread, roomDisplayTitle, useRoom, useRooms } from '@/layers/entities/room';
+import { mutedRoomIds, useSidebarPrefs } from '@/layers/entities/config';
 import {
   communityAccessState,
   useCommunityConnections,
@@ -119,8 +120,8 @@ function fleetStatus(fleet: typeof NO_FLEET): TabStatusSignals {
 }
 
 /**
- * Read a channel or DM tab's room: its title, unread count and, for a DM,
- * whoever it is with.
+ * Read a channel or DM tab's room: its title, unread and mention counts,
+ * whether you muted it and, for a DM, whoever it is with.
  */
 function useRoomTabInput(target: TabTarget, enabled: boolean) {
   // A community channel's id is that community's, not a local room's: asking
@@ -146,6 +147,9 @@ function useRoomTabInput(target: TabTarget, enabled: boolean) {
   const summary = !community && roomId ? rooms?.find((room) => room.id === roomId) : undefined;
   const room = community ? communityRoom : localRoom;
   const unreadRooms = useMemo(() => (rooms ?? []).filter(hasUnread).length, [rooms]);
+  // The sidebar's mute list: a muted room's tab goes as quiet as its row.
+  const { muted: mutedRefs } = useSidebarPrefs();
+  const muted = useMemo(() => mutedRoomIds(mutedRefs), [mutedRefs]);
 
   if (!room) return { room: null, unreadRooms } as const;
   const other =
@@ -159,6 +163,8 @@ function useRoomTabInput(target: TabTarget, enabled: boolean) {
       kind: room.kind,
       title: roomDisplayTitle(room),
       unreadCount: summary?.unreadCount ?? null,
+      ...(summary?.mentionCount === undefined ? {} : { mentionCount: summary.mentionCount }),
+      muted: roomId !== null && muted.has(roomId),
       face: other
         ? resolveIdentityFace({
             record: {

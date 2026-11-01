@@ -1,6 +1,6 @@
 /**
  * Which targets the operator has muted (BC-40). A muted row keeps its place and
- * is drawn dimmed; only an @mention pierces it (`derive-unread-signal`).
+ * is drawn dimmed; only an @mention pierces it (`shared/lib/unread-signal`).
  *
  * @module features/dashboard-sidebar/model/rules/apply-mute-rules
  */

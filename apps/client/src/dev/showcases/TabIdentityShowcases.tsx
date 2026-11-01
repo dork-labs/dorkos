@@ -291,6 +291,48 @@ const ACTIVE_AMONG: { key: string; identity: TabIdentity; pinned?: boolean }[] =
   { key: 'settings', identity: settingsTabIdentity('Appearance') },
 ];
 
+/**
+ * Room tabs under the sidebar's unread rule (DOR-3593): a busy channel is bold
+ * with no number, only your mentions are counted, a DM counts every new
+ * message, and mute keeps quiet except for a mention. Home is on screen, so
+ * every room tab is a background tab.
+ */
+const ROOM_UNREAD: { key: string; identity: TabIdentity; pinned?: boolean }[] = [
+  { key: 'home', identity: routeTabIdentity('/'), pinned: true },
+  {
+    key: 'busy',
+    identity: roomTabIdentity({ kind: 'channel', title: '#general', unreadCount: 40 }),
+  },
+  {
+    key: 'mentioned',
+    identity: roomTabIdentity({
+      kind: 'channel',
+      title: '#launch',
+      unreadCount: 40,
+      mentionCount: 3,
+    }),
+  },
+  {
+    key: 'dm',
+    identity: roomTabIdentity({ kind: 'dm', title: 'Maya Chen', unreadCount: 2, face: mayaFace }),
+  },
+  {
+    key: 'muted',
+    identity: roomTabIdentity({ kind: 'channel', title: '#random', unreadCount: 12, muted: true }),
+  },
+  {
+    key: 'muted-mention',
+    identity: roomTabIdentity({
+      kind: 'channel',
+      title: '#ops',
+      unreadCount: 12,
+      mentionCount: 1,
+      muted: true,
+    }),
+  },
+  { key: 'read', identity: roomTabIdentity({ kind: 'channel', title: '#design', unreadCount: 0 }) },
+];
+
 /** Tab identity showcases: every route, every status, smart names, the hover card and the title. */
 export function TabIdentityShowcases() {
   return (
@@ -306,6 +348,18 @@ export function TabIdentityShowcases() {
       <ShowcaseLabel>Every status and count, hottest first</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <Strip tabs={EVERY_STATUS} label="Every status" />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Room tabs: bold for new messages, a number only for you</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex flex-col gap-3" data-testid="room-unread-tabs">
+          {(['light', 'dark'] as const).map((theme) => (
+            <div key={theme} className={cn(theme, 'bg-background text-foreground rounded-lg p-2')}>
+              <p className="text-muted-foreground text-2xs mb-1">{theme}</p>
+              <Strip tabs={ROOM_UNREAD} activeKey="home" label={`Room tabs, ${theme}`} />
+            </div>
+          ))}
+        </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Pages that report their own status</ShowcaseLabel>

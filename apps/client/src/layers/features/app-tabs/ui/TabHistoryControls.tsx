@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from '@/layers/shared/ui';
 import { goBack, goForward, goToHistoryEntry } from '../model/tab-history';
+import { glyphName } from '../lib/tab-identity';
 import { useTabIdentity } from '../model/use-tab-identity';
 import { TabIdentityIcon } from './TabIdentityIcon';
 import { TabStatusMark } from './TabStatusMark';
@@ -60,7 +61,8 @@ function HistoryRow({ href, isCurrent, onSelect }: HistoryRowProps) {
     >
       <TabIdentityIcon icon={identity.icon} />
       <span className="min-w-0 flex-1 truncate">
-        {identity.primary}
+        {/* The item's name is its aria-label; the glyph draws a channel's `#`. */}
+        {glyphName(identity)}
         {identity.secondary && (
           <span className="text-muted-foreground"> · {identity.secondary}</span>
         )}

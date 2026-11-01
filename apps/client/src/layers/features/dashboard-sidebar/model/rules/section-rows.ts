@@ -10,10 +10,10 @@
  */
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { basename } from '@/layers/shared/lib/basename';
+import { deriveUnreadSignal } from '@/layers/shared/lib/unread-signal';
 import type { SidebarRowModel, SidebarUnread } from '../build-sidebar-model';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
 import type { MuteIndex } from './apply-mute-rules';
-import { deriveUnreadSignal } from './derive-unread-signal';
 import { liveSessionIdsForPath } from './live-sessions';
 import { rowKey } from './targets';
 

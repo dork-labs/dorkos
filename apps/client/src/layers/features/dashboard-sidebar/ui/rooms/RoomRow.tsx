@@ -39,7 +39,7 @@ import {
   roomDisplayTitle,
   useRoomWorking,
 } from '@/layers/entities/room';
-import { deriveUnreadSignal } from '../../model/rules/derive-unread-signal';
+import { deriveUnreadSignal } from '@/layers/shared/lib/unread-signal';
 import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-item';
 import { directedCountCap, directedCountLabel } from './directed-count-label';
 import { RowStatusMark } from '../RowStatusMark';

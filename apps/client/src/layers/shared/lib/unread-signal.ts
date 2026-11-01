@@ -1,14 +1,33 @@
 /**
  * Two tiers of unread and no more (design-decisions §18, BC-40).
  *
- * @module features/dashboard-sidebar/model/rules/derive-unread-signal
+ * Shared because every surface that says a room has unread messages has to say
+ * it the same way: the sidebar row, the room's tab and the window title cannot
+ * disagree about whether a busy channel earns a number. It imports nothing, so
+ * the sidebar model can deep-import it without pulling in this barrel.
+ *
+ * @module shared/lib/unread-signal
  */
-import type { SidebarUnread } from '../build-sidebar-model';
+
+/** How much of the operator's attention a room's unread state is asking for. */
+export interface UnreadSignal {
+  /**
+   * `'activity'` = bold label and nothing else; `'directed'` = bold and a
+   * numbered count pill; `'none'` = nothing. Two tiers and no more.
+   *
+   * **`'activity'` draws no dot.** A dot would be a third weight in a system
+   * that deliberately has two, and the avatar corner already owns dots for
+   * agent lifecycle.
+   */
+  tier: 'none' | 'activity' | 'directed';
+  /** How many. Carried by `'directed'` only — the only tier that renders a mark. */
+  count?: number;
+}
 
 /** Nothing to say. Shared so every "no unread" answer is the same object shape. */
-const NONE: SidebarUnread = { tier: 'none' };
+const NONE: UnreadSignal = { tier: 'none' };
 
-/** What {@link deriveUnreadSignal} needs to know about one row's subject. */
+/** What {@link deriveUnreadSignal} needs to know about one room. */
 export interface UnreadInput {
   /** Messages above the reader's cursor. `null` when they are not a member. */
   unreadCount: number | null | undefined;
@@ -21,7 +40,7 @@ export interface UnreadInput {
 }
 
 /**
- * What one row's unread state is.
+ * What one room's unread state is.
  *
  * Tier 1 (`activity`) is a bold label and nothing else: something happened in a
  * place you are in. Tier 2 (`directed`) adds a numbered count pill: something
@@ -42,9 +61,9 @@ export interface UnreadInput {
  * wins — a badge that undercounts is worse than one that rounds toward the
  * thing the reader will find when they open it.
  *
- * @param input - What is known about the row's subject.
+ * @param input - What is known about the room.
  */
-export function deriveUnreadSignal(input: UnreadInput): SidebarUnread {
+export function deriveUnreadSignal(input: UnreadInput): UnreadSignal {
   const mentions = input.mentionCount ?? 0;
   if (input.muted) {
     return mentions > 0 ? { tier: 'directed', count: mentions } : NONE;

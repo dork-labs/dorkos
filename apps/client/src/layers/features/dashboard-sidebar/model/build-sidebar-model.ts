@@ -35,6 +35,7 @@ import type {
   SidebarDisplayFilter,
   SidebarSectionId as PersistedSectionId,
 } from '@dorkos/shared/config-schema';
+import type { UnreadSignal } from '@/layers/shared/lib/unread-signal';
 import { buildSections } from './rules/build-sections';
 import type { SidebarState } from './sidebar-state';
 
@@ -134,21 +135,11 @@ export type SidebarTarget =
    */
   | { kind: 'add-on'; extensionId: string; path: string };
 
-/** How much of the operator's attention a row's unread state is asking for. */
-export interface SidebarUnread {
-  /**
-   * `'activity'` = bold label and nothing else; `'directed'` = bold and a
-   * numbered count pill in neutral ink; `'none'` = nothing. Two tiers and no
-   * more.
-   *
-   * **`'activity'` draws no dot.** A dot would be a third weight in a system
-   * that deliberately has two, and the avatar corner already owns dots for
-   * agent lifecycle.
-   */
-  tier: 'none' | 'activity' | 'directed';
-  /** How many. Carried by `'directed'` only — the only tier that renders a mark. */
-  count?: number;
-}
+/**
+ * How much of the operator's attention a row's unread state is asking for. The
+ * room's tab reads the same rule, so the shape lives with it in `shared/lib`.
+ */
+export type SidebarUnread = UnreadSignal;
 
 /** One row, whatever it points at. */
 export interface SidebarRowModel {

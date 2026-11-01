@@ -10,7 +10,13 @@
  * @module features/app-tabs/lib/link-chip
  */
 import { Hash, MessageSquare } from 'lucide-react';
-import { tabAccessibleName, type TabIcon, type TabIdentity, type TabStatus } from './tab-identity';
+import {
+  glyphName,
+  tabAccessibleName,
+  type TabIcon,
+  type TabIdentity,
+  type TabStatus,
+} from './tab-identity';
 import type { TabTarget } from './tab-target';
 
 /** The pages a link chip can name. */
@@ -89,7 +95,8 @@ export function linkChipFace(
   if (state === 'resolving') return { icon: identity.icon, missing: false };
   return {
     icon: identity.icon,
-    name: kind === 'chat' ? identity.secondary || identity.primary : identity.primary,
+    // The glyph draws a channel's `#`; the chip's aria-label keeps it (DOR-2073).
+    name: kind === 'chat' ? identity.secondary || identity.primary : glyphName(identity),
     status: identity.status,
     sentence: identity.statusSentence,
     // The title leads the chip, so it leads what a screen reader hears too.

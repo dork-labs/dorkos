@@ -52,6 +52,9 @@ export function AppTabItemView({
   onClose,
 }: AppTabItemViewProps) {
   const label = tabLabel(identity, { collapseAgent });
+  // Something new behind a background tab: its name goes bold at full ink, the
+  // sidebar row's first tier. The tab on screen is already being read.
+  const emphasized = identity.emphasized === true && !isActive;
 
   const showClose = canClose && !pinned;
 
@@ -78,13 +81,16 @@ export function AppTabItemView({
             // `bg-background` read darker than the strip in dark mode.
             isActive
               ? 'bg-secondary text-foreground contrast-more:ring-foreground/40 contrast-more:ring-1'
-              : 'text-muted-foreground/80 hover:bg-secondary/50 hover:text-foreground contrast-more:text-muted-foreground'
+              : emphasized
+                ? 'text-foreground hover:bg-secondary/50'
+                : 'text-muted-foreground/80 hover:bg-secondary/50 hover:text-foreground contrast-more:text-muted-foreground'
           )}
+          data-emphasized={emphasized || undefined}
         >
           <TabIdentityIcon icon={identity.icon} />
           {!pinned && (
             <span className="min-w-0 truncate">
-              <span className="font-medium">{label.lead}</span>
+              <span className={emphasized ? 'font-semibold' : 'font-medium'}>{label.lead}</span>
               {label.trail && <span className="opacity-70"> · {label.trail}</span>}
             </span>
           )}
