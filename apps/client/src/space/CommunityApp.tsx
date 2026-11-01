@@ -8,6 +8,7 @@ import { ChannelNavItem } from './components/nav/ChannelNavItem.js';
 import { HoldBanner } from './components/HoldBanner.js';
 import { OwnerReplacementBanner } from './owner-replacement/OwnerReplacementBanner.js';
 import { Manage } from './components/Manage.js';
+import { ManageButton } from './moderation/ManageButton.js';
 import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
 import { rememberCommunity } from './remembered-community.js';
@@ -459,10 +460,7 @@ export function CommunityApp() {
               <span className="small muted hidden sm:inline">
                 {selected.archived ? 'Archived' : selected.joined ? 'Joined' : 'Explore'}
               </span>
-              <Button variant="outline" aria-label="Manage" onClick={() => setSettings(true)}>
-                <Settings2 size={16} />
-                <span className="hidden sm:inline">Manage</span>
-              </Button>
+              <ManageButton memberRole={me.member.role} onOpen={() => setSettings(true)} />
             </div>
           )}
           {settings && (
