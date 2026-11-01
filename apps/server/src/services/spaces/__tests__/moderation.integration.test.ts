@@ -17,6 +17,7 @@ import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { migrate } from '../migrate.js';
 import { eraseMembership } from '../erasure/erasure.js';
+import { MEMBER_REPORTS_PER_HOUR } from '../routes/community/moderation/member-reports.js';
 import { OPEN_REPORTS_PER_MEMBER } from '../routes/community/moderation/reports.js';
 import { hashSecret, randomToken } from '../security.js';
 import {
@@ -682,6 +683,274 @@ describe('reports', () => {
       [target.memberId]
     );
     expect(ban.rows).toEqual([{ reason: 'Repeated' }]);
+  });
+});
+
+describe('reports of a person (DOR-3624)', () => {
+  const owner = () => human({ cookie: ownerCookie });
+  const reportOf = (subject: string, who: Who, note?: string) =>
+    call(scoped(`/members/${subject}/reports`), 'POST', who, {
+      reason: 'harassment',
+      ...(note ? { note } : {}),
+    });
+  const queueOf = async (who: Who, status = 'open') =>
+    (await expectStatus(await call(scoped(`/member-reports?status=${status}`), 'GET', who), 200))
+      .reports as {
+      id: string;
+      subject: { memberId: string };
+      reporter: { memberId: string } | null;
+      note: string | null;
+      status: string;
+      action: string | null;
+    }[];
+
+  it('takes one open report per person, quietly, and refuses yourself and strangers', async () => {
+    const zed = await person('Zed');
+    expect(
+      await expectStatus(await reportOf(zed.memberId, human(alice), 'Rude name'), 201)
+    ).toEqual({ reported: true });
+    expect(await expectStatus(await reportOf(zed.memberId, human(alice)), 200)).toEqual({
+      reported: true,
+    });
+    expect(
+      (await queueOf(owner())).filter((row) => row.subject.memberId === zed.memberId)
+    ).toHaveLength(1);
+    expect(await auditCount('member_report.create')).toBeGreaterThan(0);
+
+    await expectStatus(await reportOf(alice.memberId, human(alice)), 409);
+    await expectStatus(await reportOf(randomUUID(), human(alice)), 404);
+    await expectStatus(await reportOf('not-a-uuid', human(alice)), 404);
+    // An agent never reports; its id is not a person's either.
+    await expectStatus(await reportOf(zed.memberId, agentOf(bob)), 403);
+    await expectStatus(await reportOf(bob.agentId, human(alice)), 404);
+  });
+
+  it('shows only moderators the queue, and never the person it is about', async () => {
+    await expectStatus(await reportOf(adminPerson.memberId, human(alice)), 201);
+    await expectStatus(await call(scoped('/member-reports'), 'GET', human(alice)), 403);
+    await expectStatus(await call(scoped('/member-reports'), 'GET', agentOf(alice)), 401);
+
+    const ownerView = await queueOf(owner());
+    const report = ownerView.find((row) => row.subject.memberId === adminPerson.memberId)!;
+    expect(report.reporter).toMatchObject({ memberId: alice.memberId });
+    expect((await queueOf(human(adminPerson))).map((row) => row.subject.memberId)).not.toContain(
+      adminPerson.memberId
+    );
+    await expectStatus(
+      await call(scoped(`/member-reports/${report.id}/resolve`), 'POST', human(adminPerson), {
+        action: 'dismiss',
+      }),
+      404
+    );
+    await expectStatus(
+      await call(scoped(`/member-reports/${report.id}/resolve`), 'POST', owner(), {
+        action: 'dismiss',
+      }),
+      200
+    );
+    expect(
+      (await queueOf(human(adminPerson), 'resolved')).map((row) => row.subject.memberId)
+    ).not.toContain(adminPerson.memberId);
+  });
+
+  it('holds the owner to the same rule, and an admin can only dismiss a report of them', async () => {
+    await expectStatus(await reportOf(ownerId, human(alice)), 201);
+    expect((await queueOf(owner())).map((row) => row.subject.memberId)).not.toContain(ownerId);
+    const report = (await queueOf(human(adminPerson))).find(
+      (row) => row.subject.memberId === ownerId
+    )!;
+    await expectStatus(
+      await call(scoped(`/member-reports/${report.id}/resolve`), 'POST', owner(), {
+        action: 'dismiss',
+      }),
+      404
+    );
+    for (const body of [{ action: 'ban' }, { action: 'mute', minutes: 10 }])
+      await expectStatus(
+        await call(
+          scoped(`/member-reports/${report.id}/resolve`),
+          'POST',
+          human(adminPerson),
+          body
+        ),
+        403
+      );
+    await expectStatus(
+      await call(scoped(`/member-reports/${report.id}/resolve`), 'POST', human(adminPerson), {
+        action: 'dismiss',
+      }),
+      200
+    );
+  });
+
+  it('mutes or bans the person, closing every open report of them, and allows a new one after', async () => {
+    const yan = await person('Yan');
+    for (const who of [human(alice), human(bob)])
+      await expectStatus(await reportOf(yan.memberId, who), 201);
+    const first = (await queueOf(owner())).find((row) => row.subject.memberId === yan.memberId)!;
+    expect(
+      await expectStatus(
+        await call(scoped(`/member-reports/${first.id}/resolve`), 'POST', human(adminPerson), {
+          action: 'mute',
+          minutes: 10,
+        }),
+        200
+      )
+    ).toEqual({ resolved: 2 });
+    expect((await expectStatus(await post(human(yan)), 403)).code).toBe('COMMUNITY_MUTED');
+    const closed = (await queueOf(owner(), 'resolved')).filter(
+      (row) => row.subject.memberId === yan.memberId
+    );
+    expect(closed.map((row) => row.action)).toEqual(['mute', 'mute']);
+    expect(await auditCount('member_report.resolve', first.id)).toBe(1);
+    await expectStatus(
+      await call(scoped(`/member-reports/${first.id}/resolve`), 'POST', owner(), {
+        action: 'dismiss',
+      }),
+      404
+    );
+
+    await expectStatus(await reportOf(yan.memberId, human(alice)), 201);
+    const second = (await queueOf(owner())).find((row) => row.subject.memberId === yan.memberId)!;
+    await expectStatus(
+      await call(scoped(`/member-reports/${second.id}/resolve`), 'POST', owner(), {
+        action: 'ban',
+        reason: 'Repeated',
+      }),
+      200
+    );
+    const ban = await pool.query(
+      'SELECT reason FROM bans WHERE member_id=$1 AND lifted_at IS NULL',
+      [yan.memberId]
+    );
+    expect(ban.rows).toEqual([{ reason: 'Repeated' }]);
+    // A banned person cannot be reported, and cannot report.
+    await expectStatus(await reportOf(yan.memberId, human(alice)), 404);
+    expect((await reportOf(alice.memberId, human(yan))).status).toBe(403);
+  });
+
+  it('holds an admin to the rank rule: no muting or banning another admin', async () => {
+    const peer = await person('Peer Admin');
+    await expectStatus(
+      await call(scoped(`/members/${peer.memberId}/role`), 'PATCH', owner(), { role: 'admin' }),
+      200
+    );
+    await expectStatus(await reportOf(peer.memberId, human(alice)), 201);
+    const report = (await queueOf(human(adminPerson))).find(
+      (row) => row.subject.memberId === peer.memberId
+    )!;
+    for (const body of [{ action: 'ban' }, { action: 'mute', minutes: 10 }])
+      await expectStatus(
+        await call(
+          scoped(`/member-reports/${report.id}/resolve`),
+          'POST',
+          human(adminPerson),
+          body
+        ),
+        403
+      );
+    const still = await pool.query('SELECT status FROM member_reports WHERE id=$1', [report.id]);
+    expect(still.rows[0].status).toBe('open');
+    const membership = await pool.query('SELECT active,muted_until FROM members WHERE id=$1', [
+      peer.memberId,
+    ]);
+    expect(membership.rows[0]).toEqual({ active: true, muted_until: null });
+  });
+
+  it('tells the person reported nothing: no notice, no mail, no stream entry', async () => {
+    const quinn = await person('Quinn');
+    const noticesBefore = await pool.query('SELECT count(*)::int AS n FROM notice_outbox');
+    const stream = await call(scoped(`/channels/${general}/events`), 'GET', human(quinn));
+    expect(stream.status).toBe(200);
+    const reader = stream.body!.getReader();
+    let markAt = () => {};
+    let sliceAfter = () => '';
+    const seen = (async () => {
+      let text = '';
+      // Only what arrives after the report: the opening snapshot rightly shows old messages.
+      const mark = { at: 0 };
+      markAt = () => {
+        mark.at = text.length;
+      };
+      sliceAfter = () => text.slice(mark.at);
+      const decoder = new TextDecoder();
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) return text;
+        text += decoder.decode(part.value);
+      }
+    })();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    markAt();
+    await expectStatus(await reportOf(quinn.memberId, human(alice), 'A private note'), 201);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await reader.cancel();
+    await seen;
+    const text = sliceAfter();
+    expect(text).not.toContain(alice.memberId);
+    expect(text).not.toContain('A private note');
+    expect(text).not.toContain('member_report');
+    const noticesAfter = await pool.query('SELECT count(*)::int AS n FROM notice_outbox');
+    expect(noticesAfter.rows[0].n).toBe(noticesBefore.rows[0].n);
+    const standing = await expectStatus(
+      await call(scoped('/me/standing'), 'GET', human(quinn)),
+      200
+    );
+    expect(JSON.stringify(standing)).not.toContain('report');
+  });
+
+  it('caps how many people one member flags in an hour', async () => {
+    const vic = await person('Vic');
+    const target = await person('Quiet');
+    await pool.query(
+      `INSERT INTO member_reports(community_id,subject_member_id,reporter_member_id,reason,status,
+         action,resolver_member_id,resolved_at)
+       SELECT $1,$2,$3,'spam','dismissed',NULL,$2,now() FROM generate_series(1,$4)`,
+      [communityId, target.memberId, vic.memberId, MEMBER_REPORTS_PER_HOUR]
+    );
+    const refused = await reportOf(target.memberId, human(vic));
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get('retry-after')).toBe('3600');
+    await pool.query(
+      "UPDATE member_reports SET created_at=now()-interval '2 hours' WHERE reporter_member_id=$1",
+      [vic.memberId]
+    );
+    await expectStatus(await reportOf(target.memberId, human(vic)), 201);
+  });
+
+  it('never names the reporter in the audit log, which an owner export carries', async () => {
+    const una = await person('Una');
+    const target = await person('Named');
+    await expectStatus(await reportOf(target.memberId, human(una)), 201);
+    const rows = await pool.query(
+      `SELECT ae.actor_member_id FROM audit_events ae
+       JOIN member_reports r ON r.id::text=ae.subject_id
+       WHERE ae.action='member_report.create' AND r.reporter_member_id=$1`,
+      [una.memberId]
+    );
+    expect(rows.rows).toEqual([{ actor_member_id: null }]);
+  });
+
+  it('counts both kinds of report against one bound', async () => {
+    const wes = await person('Wes');
+    const target = await person('Target');
+    const filler = await pool.query<{ id: string }>(
+      `INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_display_name,text,
+         idempotency_key,payload_hash)
+       SELECT $1,$2,c.last_seq+g,$3,'Target','bound','bound-'||g||'-'||$4,md5('bound')
+       FROM channels c, generate_series(1,$5) g WHERE c.id=$2 RETURNING id`,
+      [communityId, general, target.memberId, randomUUID(), OPEN_REPORTS_PER_MEMBER]
+    );
+    await pool.query('UPDATE channels SET last_seq=last_seq+$2 WHERE id=$1', [
+      general,
+      OPEN_REPORTS_PER_MEMBER,
+    ]);
+    await pool.query(
+      `INSERT INTO reports(community_id,entry_id,reporter_member_id,reason)
+       SELECT $1,unnest($2::uuid[]),$3,'spam'`,
+      [communityId, filler.rows.map((row) => row.id), wes.memberId]
+    );
+    expect((await reportOf(target.memberId, human(wes))).status).toBe(429);
   });
 });
 

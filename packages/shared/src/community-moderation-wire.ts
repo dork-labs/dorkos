@@ -283,6 +283,47 @@ export const CommunityWireReportResolveResponseSchema = z.strictObject({
   resolved: z.int().nonnegative(),
 });
 
+/**
+ * A report of a person rather than of one message, as owners and admins read it. The person it is
+ * about never reads it. `reporter` is null when an import left it out.
+ */
+export const CommunityWireMemberReportSchema = z.strictObject({
+  id,
+  subject: z.strictObject({ memberId: id, displayName: z.string(), handle: z.string().nullable() }),
+  reason: CommunityWireReportReasonSchema,
+  note: z.string().nullable(),
+  status: z.enum(['open', 'actioned', 'dismissed']),
+  action: z.enum(['mute', 'ban']).nullable(),
+  reporter: z.strictObject({ memberId: id, displayName: z.string() }).nullable(),
+  createdAt: timestamp,
+  resolvedAt: timestamp.nullable(),
+});
+/** One report of a person. */
+export type CommunityWireMemberReport = z.infer<typeof CommunityWireMemberReportSchema>;
+/** A page of reports of people, oldest open first or newest resolved first. */
+export const CommunityWireMemberReportListResponseSchema = z.strictObject({
+  reports: z.array(CommunityWireMemberReportSchema).max(200),
+});
+/**
+ * Resolve a report of a person, and with it every open report of them: mute or ban them, or
+ * dismiss. There is no message to remove.
+ */
+export const CommunityWireMemberReportResolveRequestSchema = z.discriminatedUnion('action', [
+  z.strictObject({
+    action: z.literal('mute'),
+    minutes: z.int().min(1).max(COMMUNITY_MUTE_MAX_MINUTES),
+  }),
+  z.strictObject({
+    action: z.literal('ban'),
+    reason: z.string().trim().min(1).max(500).optional(),
+  }),
+  z.strictObject({ action: z.literal('dismiss') }),
+]);
+/** One way to resolve a report of a person. */
+export type CommunityWireMemberReportResolveRequest = z.infer<
+  typeof CommunityWireMemberReportResolveRequestSchema
+>;
+
 /** Ban a member: they leave the space and cannot come back with that account or email. */
 export const CommunityWireBanRequestSchema = z.strictObject({
   reason: z.string().trim().min(1).max(500).optional(),
