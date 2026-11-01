@@ -73,6 +73,10 @@ export const COVERAGE = {
 const PALETTE =
   'red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone';
 
+/** The folders a room's timeline rows are drawn from (ROOMS-SPEC §11, guard rows). */
+const ROOM_ROWS =
+  /^apps\/client\/src\/layers\/(?:widgets\/room-view|features\/entry-actions|features\/conversation\/ui\/rows)\//;
+
 /** One pattern the gate counts. */
 export interface Rule {
   /** The name a failure and the baseline use. */
@@ -212,6 +216,34 @@ export const RULES: Rule[] = [
     pattern: /\b(?:isSelected|isFocused|selected) && '[^']*\bring-2\b/g,
     except: /^apps\/client\/src\/layers\/features\/mesh\/ui\//,
     fix: 'use rowStateVariants: bg-row-selected, and the inset outline for focus',
+  },
+  // Phase 4 rooms A (ROOMS-SPEC §11): the timeline rows a room draws.
+  {
+    id: 'room-warning-text',
+    kind: 'hard',
+    pattern: /\btext-status-warning(?![\w-])/g,
+    only: ROOM_ROWS,
+    fix: 'amber goes on the glyph: text-status-warning-fg; the words stay text-foreground',
+  },
+  {
+    id: 'reaction-ring',
+    kind: 'hard',
+    pattern: /\banimate-reaction-ring\b/g,
+    fix: 'a reaction gets one celebration, the pop',
+  },
+  {
+    id: 'room-italic',
+    kind: 'hard',
+    pattern: /['"`][^'"`\n]*(?<![\w-])italic(?![\w-])[^'"`\n]*['"`]/g,
+    only: ROOM_ROWS,
+    fix: 'the room speaks in one voice: text-xs text-muted-foreground, no italic',
+  },
+  {
+    id: 'reaction-pill-border',
+    kind: 'hard',
+    pattern: /['"`][^'"`\n]*(?<![\w:-])border(?:-[a-z]+(?:\/\d+)?)?(?![\w-])[^'"`\n]*['"`]/g,
+    only: /^apps\/client\/src\/layers\/features\/entry-actions\/ui\/EntryReactionRow\.tsx$/,
+    fix: 'a reaction pill is a tint: bg-foreground/5, or bg-brand/15 for yours',
   },
   // Phase 1 motion. One set of springs and curves, none of which overshoots.
   {

@@ -106,6 +106,34 @@ describe('the card and row rules', () => {
   });
 });
 
+describe('the room row rules (Phase 4 rooms A)', () => {
+  const NOTICE = 'apps/client/src/layers/features/conversation/ui/rows/NoticeRow.tsx';
+  const PILLS = 'apps/client/src/layers/features/entry-actions/ui/EntryReactionRow.tsx';
+
+  it('refuses amber words in a room row, but never the glyph token', () => {
+    expect(countIn(NOTICE, `'text-status-warning'`)).toEqual({ 'room-warning-text': 1 });
+    expect(countIn(NOTICE, `'text-status-warning-fg'`)).toEqual({});
+    expect(countIn(CLIENT, `'text-status-warning'`)).toEqual({});
+  });
+
+  it('refuses the reaction ring anywhere', () => {
+    expect(countIn(CLIENT, `'motion-safe:animate-reaction-ring'`)).toEqual({ 'reaction-ring': 1 });
+  });
+
+  it('refuses italic in a room row class, not in prose about it', () => {
+    expect(countIn(NOTICE, `className="text-xs italic"`)).toEqual({ 'room-italic': 1 });
+    expect(countIn(NOTICE, ` * one italic muted line, with \`body.notice\``)).toEqual({});
+    expect(countIn(CLIENT, `className="italic"`)).toEqual({});
+  });
+
+  it('refuses a border on a reaction pill, not the word in a comment', () => {
+    expect(countIn(PILLS, `'rounded-full border px-2'`)).toEqual({ 'reaction-pill-border': 1 });
+    expect(countIn(PILLS, `'border-brand/70 bg-brand/12'`)).toEqual({ 'reaction-pill-border': 1 });
+    expect(countIn(PILLS, `// No border on either kind`)).toEqual({});
+    expect(countIn(PILLS, `'bg-foreground/5 dui-dark:border'`)).toEqual({});
+  });
+});
+
 describe('the motion rules', () => {
   const MOTION = 'apps/client/src/layers/shared/lib/motion.ts';
   const CSS = 'apps/client/src/index.css';
