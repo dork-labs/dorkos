@@ -9,6 +9,24 @@ import { useAppStore, useIsMobile } from '@/layers/shared/model';
 import { ControlCenterBody } from './ControlCenterBody';
 
 /**
+ * Open on the preset picker, not on the first control. The Power / Team switch
+ * sits above it (DOR-3461), and the dial is what a keyboard user came to change.
+ * Takes the checked preset, or the first one while the picker is still loading;
+ * with no picker in the panel, the default first-control focus stands.
+ */
+function focusPresetPicker(event: Event) {
+  const panel = event.currentTarget;
+  if (!(panel instanceof HTMLElement)) return;
+  const group = panel.querySelector('[role="radiogroup"][aria-label="Preset"]');
+  const radio =
+    group?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]') ??
+    group?.querySelector<HTMLElement>('[role="radio"]');
+  if (!radio) return;
+  event.preventDefault();
+  radio.focus();
+}
+
+/**
  * The Control Center — one always-present place to see and change the fleet's
  * power at a glance (spec `full-power-defaults`, D7).
  *
@@ -27,8 +45,8 @@ import { ControlCenterBody } from './ControlCenterBody';
  *
  * `modal`, because the flyout is a task — you change something and dismiss it —
  * not a glance. Escape and an outside click both close it. `autoFocus`, so the
- * phone's sheet puts focus on its first control, the preset picker, the way
- * the desktop popover does, rather than leaving it on the glyph the sheet hides.
+ * phone's sheet moves focus in, the way the desktop popover does, rather than
+ * leaving it on the glyph the sheet hides; both land on the preset picker.
  */
 export function ControlCenter() {
   const open = useAppStore((s) => s.controlCenterOpen);
@@ -51,6 +69,7 @@ export function ControlCenter() {
         side="bottom"
         align="end"
         aria-label="Control Center"
+        onOpenAutoFocus={focusPresetPicker}
         className="w-96 max-w-[calc(100vw-1.5rem)] p-3"
       >
         {/* Desktop shows a visible identity header; on mobile the drawer's own

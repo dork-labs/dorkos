@@ -15,8 +15,26 @@ import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 import { useAppStore } from '@/layers/shared/model';
 
+// The view switch comes first and the preset picker second, as in the real
+// body, so the focus test proves the flyout skips past the switch.
 vi.mock('../ui/ControlCenterBody', () => ({
-  ControlCenterBody: () => <div data-testid="cc-body" />,
+  ControlCenterBody: () => (
+    <div data-testid="cc-body">
+      <div role="radiogroup" aria-label="Control Center view">
+        <button type="button" role="radio" aria-checked="true">
+          Power
+        </button>
+      </div>
+      <div role="radiogroup" aria-label="Preset">
+        <button type="button" role="radio" aria-checked="false">
+          Careful
+        </button>
+        <button type="button" role="radio" aria-checked="true">
+          Trusted
+        </button>
+      </div>
+    </div>
+  ),
 }));
 
 import { ControlCenter } from '../ui/ControlCenter';
@@ -45,6 +63,14 @@ describe('ControlCenter shell', () => {
 
     act(() => useAppStore.getState().setControlCenterOpen(false));
     expect(screen.queryByTestId('cc-body')).not.toBeInTheDocument();
+  });
+
+  it('opens with focus on the checked preset, not on the view switch above it', () => {
+    render(<ControlCenter />);
+
+    fireEvent.click(screen.getByTestId('control-center-trigger'));
+
+    expect(screen.getByRole('radio', { name: 'Trusted' })).toHaveFocus();
   });
 
   it('exposes an accessible name on the icon-only trigger', () => {
