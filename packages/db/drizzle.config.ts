@@ -4,6 +4,7 @@ export default defineConfig({
   schema: [
     './src/schema/a2a.ts',
     './src/schema/browser/registry.ts',
+    './src/schema/browser/agent-profiles.ts',
     './src/schema/activity.ts',
     './src/schema/audit/audit-events.ts',
     './src/schema/approvals.ts',

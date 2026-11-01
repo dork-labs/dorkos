@@ -1,11 +1,11 @@
 /** One DorkOS-owned visible browser, embedded or in a separate persistent window. */
 import { randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
-import path from 'node:path';
 import type { Browser, BrowserContext, Page, JSHandle } from 'playwright-core';
 import { localBrowserAuditWriter, type LocalBrowserAuditWriter } from './action-audit.js';
 import { LocalBrowserError, assertLocalBrowserUrl, protectedPageRefusal } from './errors.js';
 import { localBrowserAppOrigins } from './app-origins.js';
+import { prepareProfileFolder } from './profile-folders.js';
+import type { LocalBrowserProfileAccess } from './profile-access.js';
 import type { CloudOriginEntry } from '@dorkos/shared/cloud-origin';
 import { cloudOriginsForThisServer } from '../../core/cloud/cloud-api-origin.js';
 import {
@@ -49,6 +49,9 @@ export interface EmbeddedBrowserPort {
 export class LocalBrowserService {
   private connectionId: string | null = null;
   private sessionId: string | null = null;
+  private profileId: string | null = null;
+  private profileAccess?: LocalBrowserProfileAccess;
+  private profileExists?: (id: string) => boolean;
   private mode: LocalBrowserMode | null = null;
   private status: LocalBrowserState['status'] = 'disconnected';
   private paused = false;
@@ -120,6 +123,10 @@ export class LocalBrowserService {
       throw new LocalBrowserError('busy', 'The browser is starting. Wait a moment.');
     if (input.mode === 'embedded' && !this.embedded)
       throw new LocalBrowserError('unsupported', 'Use the desktop app for the DorkOS browser.');
+    if (input.mode === 'embedded' && input.profileId)
+      throw new LocalBrowserError('unsupported', 'Open a browser profile in a new window.');
+    if (input.profileId && !this.profileExists?.(input.profileId))
+      throw new LocalBrowserError('profile_not_found', 'That browser profile no longer exists.');
     if (input.mode === 'new-window') {
       const capabilities = this.capabilities();
       if (!capabilities.newWindow)
@@ -136,11 +143,11 @@ export class LocalBrowserService {
       const connectionId = randomUUID();
       this.connectionId = connectionId;
       this.sessionId = input.sessionId ?? null;
+      this.profileId = input.profileId ?? null;
       this.mode = input.mode;
       const acquisition = (async () => {
         if (input.mode === 'new-window') {
-          const storage = path.join(this.dataDirectory, 'local-browser', 'saved-logins');
-          await mkdir(storage, { recursive: true, mode: 0o700 });
+          const storage = await prepareProfileFolder(this.dataDirectory, input.profileId ?? null);
           setupAbort.signal.throwIfAborted();
           this.ownedContext = await this.backend.launch(
             storage,
@@ -202,6 +209,20 @@ export class LocalBrowserService {
         'not_shared',
         'Open this chat’s browser to share it with your agent.'
       );
+  }
+
+  /** Set once at startup. Until then, no agent can use a named profile. */
+  useProfileAccess(access: LocalBrowserProfileAccess, exists: (id: string) => boolean): void {
+    this.profileAccess = access;
+    this.profileExists = exists;
+  }
+
+  /** On a named profile, the chat's agent must be one a person added, on every call. */
+  async requireProfileAccess(sessionId: string): Promise<void> {
+    if (!this.profileId) return;
+    if (!this.profileAccess)
+      throw new LocalBrowserError('profile_not_allowed', 'This agent can’t use this profile.');
+    await this.profileAccess(this.profileId, sessionId);
   }
 
   /** A tool describes only the selected tab, excluding DorkOS and Cloud pages. */
