@@ -537,6 +537,10 @@ export default defineConfig({
           // the product under test needs somebody's history in the index; the
           // rooms the specs seed are indexed exactly as before.
           DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
+          // An agent introduction is a real turn on a real runtime (DOR-2106),
+          // claimed inside the create that seats the agent, so the fixtures'
+          // silencing cannot stop it. This leg's specs start no real turn.
+          DORKOS_NO_ROOM_INTRODUCTIONS: 'true',
           // The SERVER reads VITE_PORT too, and not for listening: in dev its
           // trusted-origin list is localhost/127.0.0.1 on the API port AND on
           // the Vite port (`getStaticLocalOrigins`), and the same value picks
@@ -636,6 +640,10 @@ export default defineConfig({
           // boots the same server and swept the same real transcripts into its
           // own temp directory (DOR-1551).
           DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
+          // An agent introduction is a real turn on a real runtime (DOR-2106),
+          // claimed inside the create that seats the agent, so the fixtures'
+          // silencing cannot stop it. This leg's specs start no real turn.
+          DORKOS_NO_ROOM_INTRODUCTIONS: 'true',
         },
         resetThrowawayHome(MOCK_DORK_HOME)
       ),
@@ -764,6 +772,10 @@ export default defineConfig({
                 // it the message-search sweep full-text-copies the operator's
                 // real transcripts into the directory below (DOR-1551).
                 DORKOS_SEARCH_NO_EXTERNAL_HISTORY: 'true',
+                // An agent introduction is a real turn on a real runtime (DOR-2106),
+                // claimed inside the create that seats the agent, so the fixtures'
+                // silencing cannot stop it. This leg's specs start no real turn.
+                DORKOS_NO_ROOM_INTRODUCTIONS: 'true',
               },
               // Wiped and recreated `0700` before every boot — see resetThrowawayHome.
               resetThrowawayHome(PROD_DORK_HOME),

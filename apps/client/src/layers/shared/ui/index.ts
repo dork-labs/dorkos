@@ -16,8 +16,7 @@ export {
   AlertDialogAction,
   AlertDialogCancel,
 } from './alert-dialog';
-export { Badge, badgeVariants } from './badge';
-export type { BadgeProps } from './badge';
+export { Badge, badgeVariants, type BadgeProps, type BadgeTone } from './badge';
 export { BarTabStrip } from './bar-tab-strip';
 export type { BarTab, BarTabStripProps } from './bar-tab-strip';
 export { Banner, bannerVariants } from './banner';
@@ -46,8 +45,7 @@ export { ExternalLinkAnchor } from './external-link-anchor';
 export type { ExternalLinkAnchorProps } from './external-link-anchor';
 export { QueryErrorState } from './query-error-state';
 export type { QueryErrorStateProps } from './query-error-state';
-export { RemovableChip } from './removable-chip';
-export type { RemovableChipProps } from './removable-chip';
+export { RemovableChip, type RemovableChipProps } from './removable-chip';
 export { Spinner, spinnerVariants } from './spinner';
 export type { SpinnerProps } from './spinner';
 export { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsible';
@@ -486,7 +484,9 @@ export type {
 } from './sidebar-menu-node';
 export type { SidebarMenuNodesProps, SidebarMenuSurfaceProps } from './sidebar-menu-node';
 export { SidebarRow, SIDEBAR_ROW_INSET, sidebarRowVariants } from './sidebar-row';
-export { CountPill, COUNT_PILL_CAP, type CountPillProps } from './count-pill';
+export { CountPill, COUNT_PILL_CAP, CORNER_COUNT_CAP, MENTION_COUNT_CAP } from './count-pill';
+export { formatPillCount, type CountPillProps, type CountTone } from './count-pill';
+export { Chip, chipVariants, type ChipProps } from './chip';
 export {
   TOUCH_TARGET_MIN_H,
   TOUCH_TARGET_RESPONSIVE_H,
@@ -501,14 +501,15 @@ export type {
 export { SectionHeader, SECTION_HEADER_INSET, SIDEBAR_HOVER_REVEAL } from './section-header';
 export { BottomSlot } from './bottom-slot';
 export type { BottomSlotCandidate, BottomSlotProps } from './bottom-slot';
+export { ListRow, type ListRowProps } from './list-row';
+export { ROW_FOCUS_CLASS, rowState, rowStateVariants, rowTintVariants, type RowState } from './row';
+
 // Three small rows the transcript and the Ask card both draw. They lived inside
 // `features/chat/ui/primitives` until `features/ask` needed them too — and a
 // feature reaching into another feature's internals is the cycle P1 already
 // refused once, so they moved DOWN rather than sideways.
-export { OptionRow } from './option-row';
-export type { OptionRowProps } from './option-row';
-export { CompactResultRow } from './compact-result-row';
-export type { CompactResultRowProps } from './compact-result-row';
+export { OptionRow, type OptionRowProps } from './option-row';
+export { CompactResultRow, type CompactResultRowProps } from './compact-result-row';
 export { UnverifiedCatalogNotice } from './unverified-catalog-notice';
 export { TruncatedOutput } from './truncated-output';
 export type { TruncatedOutputProps } from './truncated-output';

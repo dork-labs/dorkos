@@ -128,6 +128,10 @@ An extension can say where its tab belongs by default, with `showIn` on `registe
 
 The host discovers extensions from two directories: `.dork/extensions/<id>/` in your project for a local extension, or `~/.dork/extensions/<id>/` for a global one available everywhere. It also loads extensions that come inside an installed marketplace plugin, once you approve them. Drop your manifest and entry file in one of those two directories, then open **Settings → Extensions** and click **Reload Extensions** to pick up the change without restarting the client.
 
+**What an extension can import.** An extension that comes inside a plugin may import any file in that plugin's folder, so it can share code with the plugin's scripts (for example `../../../scripts/x.ts` from `.dork/extensions/<id>/index.ts`). Any other extension may import only files inside its own `.dork/extensions/<id>/` folder. An import that lands anywhere else, a link pointing out of the folder included, stops the build, and the error names the import and the folder it had to stay in. Packages work the same way: install them in the plugin's folder, or the extension's.
+
+**When more than one plugin carries the same extension**, DorkOS uses one copy, and the warning in the server log names it. It picks the copy you approved, or the newest one when several come from the same approved or trusted source. With none approved, a plugin installed for all your projects comes before a project's, then folders and plugin names go in alphabetical order, and the copy it picks still waits for your yes before it runs. The other copies run nothing.
+
 A mini app an agent makes lives in that agent's own folder, at `.dork/extensions/<id>/`, and shows in the app whichever agent or folder you have open. If it runs separately, the agent can change its behind-the-scenes code and it keeps running. A change to what it shows on screen waits for you to approve it again.
 
 An extension that saves files into its own folder changes the files you approved, so it stops and waits for you. Save data with `loadData`/`saveData` instead.

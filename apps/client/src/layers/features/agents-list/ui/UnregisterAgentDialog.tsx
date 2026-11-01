@@ -50,10 +50,7 @@ export function UnregisterAgentDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60"
-            onClick={() => unregister(agentId)}
-          >
+          <AlertDialogAction variant="destructive" onClick={() => unregister(agentId)}>
             Unregister agent
           </AlertDialogAction>
         </AlertDialogFooter>

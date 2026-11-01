@@ -1,7 +1,7 @@
 import { Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAppStore } from '@/layers/shared/model';
-import { isMac } from '@/layers/shared/lib';
+import { isMac, SPRING } from '@/layers/shared/lib';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 import { Kbd } from '@/layers/shared/ui/kbd';
 
@@ -19,15 +19,15 @@ export function CommandPaletteTrigger() {
       <TooltipTrigger asChild>
         <motion.button
           onClick={() => setGlobalPaletteOpen(true)}
-          className="text-muted-foreground hover:bg-accent hover:text-foreground flex h-7 w-7 items-center justify-center rounded-md transition-colors"
+          className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-11 items-center justify-center rounded-md transition-colors md:size-7"
           // Hover is a tint, not a jump: this is always-on chrome, and the
           // rest of the app's icon buttons answer the cursor the same way.
           // The press stays — that is feedback, not decoration.
           whileTap={{ scale: 0.97 }}
-          transition={{ type: 'spring', stiffness: 600, damping: 35 }}
+          transition={SPRING.snap}
           aria-label="Open command palette"
         >
-          <Search className="size-4" />
+          <Search className="size-(--size-icon-sm)" />
         </motion.button>
       </TooltipTrigger>
       <TooltipContent side="bottom">

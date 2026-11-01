@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '@/layers/shared/lib';
+import { cn, SPRING } from '@/layers/shared/lib';
 import { Spinner } from '@/layers/shared/ui';
 
 /** Time after mount at which each step becomes active (milliseconds). */
@@ -32,7 +32,7 @@ const stepsContainerVariants = {
 /** Each step row fades and slides up from 8px below. */
 const stepRowVariants = {
   hidden: { opacity: 0, y: 8 },
-  show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 320, damping: 28 } },
+  show: { opacity: 1, y: 0, transition: SPRING.glide },
 } as const;
 
 /** Checkmark springs in from 50% scale — snappy, no visible bounce. */
@@ -42,7 +42,7 @@ const checkmarkVariants = {
 } as const;
 
 /** Spring transition for the checkmark scale-in. */
-const checkmarkTransition = { type: 'spring', stiffness: 400, damping: 30 } as const;
+const checkmarkTransition = SPRING.fold;
 
 /** Connecting view — shown while the tunnel is being established.
  *

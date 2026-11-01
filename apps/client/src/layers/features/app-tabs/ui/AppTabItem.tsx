@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { AppTab } from '@/layers/shared/model';
@@ -54,16 +53,6 @@ export function AppTabItemView({
 }: AppTabItemViewProps) {
   const label = tabLabel(identity, { collapseAgent });
 
-  // Keep the tab you switched to on screen once the strip overflows. Arrow-key
-  // traversal gets this free from the browser (it moves focus), but Cmd+9 and
-  // the close-and-fall-through cases only change state — without this they can
-  // leave you looking at a strip that shows every tab except the live one.
-  // Optional-called: jsdom has no `scrollIntoView`.
-  const wrapper = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (isActive) wrapper.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-  }, [isActive]);
-
   const showClose = canClose && !pinned;
 
   return (
@@ -71,7 +60,7 @@ export function AppTabItemView({
     // so this exists only to anchor the close control as a SIBLING of the tab
     // (a button inside a button is invalid HTML) — the same shape TerminalTabs
     // and VS Code use.
-    <div ref={wrapper} role="presentation" className="group relative flex shrink-0">
+    <div role="presentation" className="group relative flex shrink-0">
       <TabHoverCard identity={identity}>
         <button
           type="button"

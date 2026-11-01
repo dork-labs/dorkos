@@ -146,7 +146,7 @@ describe('TurnFailedNotice', () => {
     mockSessionRuntime.mockReturnValue('codex');
     render(<TurnFailedNotice sessionId="s-codex" />);
 
-    expect(screen.getByText('Codex stopped unexpectedly')).toBeInTheDocument();
+    expect(screen.getByText('Codex didn’t answer this turn')).toBeInTheDocument();
     expect(screen.getByText('The turn ended before completing.')).toBeInTheDocument();
     expect(screen.queryByText('Agent stopped unexpectedly')).not.toBeInTheDocument();
   });
@@ -155,14 +155,14 @@ describe('TurnFailedNotice', () => {
     mockSessionRuntime.mockReturnValue('opencode');
     render(<TurnFailedNotice sessionId="s-oc" />);
 
-    expect(screen.getByText('OpenCode stopped unexpectedly')).toBeInTheDocument();
+    expect(screen.getByText('OpenCode didn’t answer this turn')).toBeInTheDocument();
   });
 
   it('names the runtime in the heading for a Claude Code session', () => {
     mockSessionRuntime.mockReturnValue('claude-code');
     render(<TurnFailedNotice sessionId="s-cc" />);
 
-    expect(screen.getByText('Claude Code stopped unexpectedly')).toBeInTheDocument();
+    expect(screen.getByText('Claude Code didn’t answer this turn')).toBeInTheDocument();
   });
 
   it('falls back to the runtime-neutral heading when the session row is not listed yet', () => {
@@ -225,9 +225,8 @@ describe('TurnFailedNotice', () => {
     );
     render(<TurnFailedNotice sessionId="s1" onRetry={vi.fn()} onChooseModel={onChooseModel} />);
 
-    expect(screen.getByText('Model unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Codex didn’t answer this turn')).toBeInTheDocument();
     expect(screen.getByText(/Choose another model from the model menu/)).toBeInTheDocument();
-    expect(screen.queryByText('Codex stopped unexpectedly')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
     screen.getByRole('button', { name: 'Choose model' }).click();
     expect(onChooseModel).toHaveBeenCalledOnce();

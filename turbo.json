@@ -56,8 +56,13 @@
     "ELECTRON_VERSION"
   ],
   "tasks": {
+    "//#heavy-slot": {
+      "cache": false,
+      "inputs": ["scripts/heavy-turbo-slot.mjs"],
+      "passThroughEnv": ["CI", "DORKOS_HEAVY_*"]
+    },
     "build": {
-      "dependsOn": ["generate:api-docs", "^build"],
+      "dependsOn": ["generate:api-docs", "^build", "//#heavy-slot"],
       "outputs": ["dist/**", "dist-server/**", ".next/**", "!.next/cache/**", "!.next/dev/**"],
       "env": ["NODE_ENV", "VITE_*", "!VITE_PORT", "NEXT_PUBLIC_*", "POSTHOG_*"]
     },
@@ -71,11 +76,11 @@
       "persistent": true
     },
     "test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true
     },
     "@dorkos/harness#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -89,11 +94,16 @@
         "$TURBO_ROOT$/apps/server/src/services/runtimes/codex/__tests__/scan-skill-commands.test.ts",
         "$TURBO_ROOT$/apps/server/src/services/runtimes/codex/__tests__/skill-parity.test.ts",
         "$TURBO_ROOT$/packages/cli/src/__tests__/harness-sync*.test.ts",
-        "$TURBO_ROOT$/apps/e2e/tests/harness/**"
+        "$TURBO_ROOT$/apps/e2e/tests/harness/**",
+        "$TURBO_ROOT$/.agents/harness.manifest.json",
+        "$TURBO_ROOT$/meta/harness-smoke/**",
+        "$TURBO_ROOT$/scripts/lib/space-server.mjs",
+        "$TURBO_ROOT$/ci/space-server.env",
+        "$TURBO_ROOT$/turbo.json"
       ]
     },
     "@dorkos/server#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -113,11 +123,36 @@
         "$TURBO_ROOT$/apps/space/load/**",
         "$TURBO_ROOT$/apps/space/scripts/**",
         "$TURBO_ROOT$/apps/client/src/space/**",
-        "$TURBO_ROOT$/apps/client/vite.space.config.ts"
+        "$TURBO_ROOT$/apps/client/vite.space.config.ts",
+        "$TURBO_ROOT$/.env.example",
+        "$TURBO_ROOT$/pnpm-workspace.yaml",
+        "$TURBO_ROOT$/turbo.json",
+        "$TURBO_ROOT$/.github/**",
+        "$TURBO_ROOT$/docs/**",
+        "$TURBO_ROOT$/blog/**",
+        "$TURBO_ROOT$/decisions/**",
+        "$TURBO_ROOT$/changelog/unreleased/**",
+        "$TURBO_ROOT$/contributing/**",
+        "$TURBO_ROOT$/specs/community-tenancy-contract/**",
+        "$TURBO_ROOT$/scripts/generate-community-release-manifest.ts",
+        "$TURBO_ROOT$/apps/client/src/**",
+        "$TURBO_ROOT$/apps/site/src/**",
+        "$TURBO_ROOT$/apps/desktop/src/**",
+        "$TURBO_ROOT$/apps/desktop/package.json",
+        "$TURBO_ROOT$/apps/space/*.md",
+        "$TURBO_ROOT$/apps/e2e/capture/config.ts",
+        "$TURBO_ROOT$/apps/e2e/tests/rooms/canvas/room-follow.spec.ts",
+        "$TURBO_ROOT$/apps/e2e/tests/connections/community-switching-proof.spec.ts",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "$TURBO_ROOT$/packages/*/scripts/**",
+        "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/packages/*/*.md",
+        "$TURBO_ROOT$/packages/*/*.{ts,mts,mjs,cjs,js}",
+        "$TURBO_ROOT$/packages/db/drizzle/**"
       ]
     },
     "@dorkos/server#typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -131,7 +166,7 @@
       ]
     },
     "@dorkos/community#build": {
-      "dependsOn": ["generate:api-docs", "^build"],
+      "dependsOn": ["generate:api-docs", "^build", "//#heavy-slot"],
       "outputs": ["dist/**", "dist-server/**"],
       "env": ["NODE_ENV", "VITE_*"],
       "inputs": [
@@ -142,7 +177,7 @@
       ]
     },
     "@dorkos/community#typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -152,7 +187,7 @@
       ]
     },
     "@dorkos/community#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -162,7 +197,7 @@
       ]
     },
     "@dorkos/test-utils#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -173,7 +208,56 @@
         "$TURBO_ROOT$/apps/server/src/**/*.test.ts",
         "$TURBO_ROOT$/apps/e2e/tests/**",
         "$TURBO_ROOT$/packages/*/src/**/*.test.ts",
-        "$TURBO_ROOT$/packages/*/src/**/*.test.tsx"
+        "$TURBO_ROOT$/packages/*/src/**/*.test.tsx",
+        "$TURBO_ROOT$/turbo.json"
+      ]
+    },
+    "@dorkos/ci-steward#test": {
+      "dependsOn": ["^build", "//#heavy-slot"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.github/workflows/**",
+        "$TURBO_ROOT$/ci/**",
+        "$TURBO_ROOT$/lefthook.yml",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/.claude/settings.json",
+        "$TURBO_ROOT$/.claude/hooks/**",
+        "$TURBO_ROOT$/scripts/**",
+        "!$TURBO_ROOT$/scripts/node_modules/**",
+        "$TURBO_ROOT$/apps/e2e/playwright.config.ts",
+        "$TURBO_ROOT$/turbo.json"
+      ]
+    },
+    "dorkos#test": {
+      "dependsOn": ["^build", "//#heavy-slot"],
+      "cache": true,
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/e2e/community-two-desktop/**"]
+    },
+    "@dorkos/marketplace#test": {
+      "dependsOn": ["^build", "//#heavy-slot"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/server/src/services/marketplace/fixtures/valid-shape/**"
+      ]
+    },
+    "@dorkos/evals#test": {
+      "dependsOn": ["^build", "//#heavy-slot"],
+      "cache": true,
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/turbo.json"]
+    },
+    "@dorkos/client#test": {
+      "dependsOn": ["^build", "//#heavy-slot"],
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/scripts/lib/code-only.mjs",
+        "$TURBO_ROOT$/apps/design-system/src/**",
+        "$TURBO_ROOT$/apps/site/package.json",
+        "$TURBO_ROOT$/apps/site/eslint.config.mjs",
+        "$TURBO_ROOT$/apps/site/src/lib/rate-limit/fixed-window.ts",
+        "$TURBO_ROOT$/packages/eslint-config/*.{js,mjs,cjs,json}"
       ]
     },
     "@dorkos/site#test": {
@@ -181,24 +265,32 @@
         "^build",
         "@dorkos/relay#build",
         "@dorkos/extension-api#build",
-        "@dorkos/keep-awake#build"
+        "@dorkos/keep-awake#build",
+        "//#heavy-slot"
       ],
-      "cache": true
+      "cache": true,
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/**",
+        "$TURBO_ROOT$/blog/**",
+        "$TURBO_ROOT$/scripts/lib/code-only.mjs",
+        "$TURBO_ROOT$/apps/server/src/**"
+      ]
     },
     "test:watch": {
       "cache": false,
       "persistent": true
     },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true
     },
     "lint": {
-      "dependsOn": ["^lint"],
+      "dependsOn": ["^lint", "//#heavy-slot"],
       "cache": true
     },
     "@dorkos/server#lint": {
-      "dependsOn": ["^lint"],
+      "dependsOn": ["^lint", "//#heavy-slot"],
       "cache": true,
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/space/package.json"]
     },

@@ -1,7 +1,7 @@
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { Badge, InlineCode, Kbd, PRESS_CARD, PRESS_MARK, PRESS_ROW } from '@/layers/shared/ui';
+import { InlineCode, Kbd, PRESS_CARD, PRESS_MARK, PRESS_ROW } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
 /**
@@ -72,76 +72,11 @@ function PressLadderSection() {
   );
 }
 
-/** Client-local press, badge, and small utility showcases. */
+/** Client-local press and small utility showcases. Badges live in BadgeChipShowcases. */
 export function ControlShowcases() {
   return (
     <>
       <PressLadderSection />
-
-      <PlaygroundSection
-        title="Badge"
-        description="Shape, fill, size, and status tone — four axes that compose."
-      >
-        <ShowcaseLabel>Variants</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="default">Default</Badge>
-            <Badge variant="secondary">Secondary</Badge>
-            <Badge variant="destructive">Destructive</Badge>
-            <Badge variant="outline">Outline</Badge>
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Sizes</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge size="sm">Small (default)</Badge>
-            <Badge size="xs">Extra small</Badge>
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Shapes — the pill four components used to redraw by hand</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge shape="default">Default</Badge>
-            <Badge shape="pill">Pill</Badge>
-            <Badge shape="pill" variant="outline">
-              Pill outline
-            </Badge>
-            <Badge shape="pill" size="xs" variant="secondary">
-              Pill xs
-            </Badge>
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Tones</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline" tone="success">
-              Success
-            </Badge>
-            <Badge variant="outline" tone="warning">
-              Warning
-            </Badge>
-            <Badge variant="outline" tone="error">
-              Error
-            </Badge>
-            <Badge variant="outline" tone="info">
-              Info
-            </Badge>
-            <Badge variant="outline" tone="neutral">
-              Neutral
-            </Badge>
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>asChild — the badge IS the link</ShowcaseLabel>
-        <ShowcaseDemo>
-          <Badge asChild variant="secondary">
-            <a href="#badge-aschild">Open the docs</a>
-          </Badge>
-        </ShowcaseDemo>
-      </PlaygroundSection>
 
       <PlaygroundSection title="Kbd" description="Keyboard shortcut hints.">
         <ShowcaseDemo>

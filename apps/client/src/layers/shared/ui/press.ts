@@ -37,13 +37,16 @@
  * element has exactly one `transition-property` list, so a row that carries
  * both `transition-colors` and a press class would silently lose one of them.
  * Naming both here means a press class is the only transition a control needs.
+ * `box-shadow` stays for the same reason: an interactive card lifts its shadow
+ * on hover, and that one list has to carry it. `border-color` went with the
+ * card's border (Phase 2, C8).
  *
  * Two speeds, the way the identity grammar asks for them: the press lands in
  * 80ms (`--identity-press`, before the finger lifts) and the release rides the
  * slower answer speed back up.
  */
 const PRESS_TRANSITION =
-  'motion-safe:transition-[color,background-color,border-color,box-shadow,scale] motion-safe:duration-(--identity-answer) motion-safe:ease-(--identity-ease-out) motion-safe:active:duration-(--identity-press)';
+  'motion-safe:transition-[color,background-color,box-shadow,scale] motion-safe:duration-(--identity-answer) motion-safe:ease-(--identity-ease-out) motion-safe:active:duration-(--identity-press)';
 
 /**
  * A whole card is the target — a roster tile, a gallery card, a full-width CTA.

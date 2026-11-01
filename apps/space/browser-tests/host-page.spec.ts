@@ -843,12 +843,17 @@ test('a host moves a community in from its owner’s export and watches it throu
     // The file chooser is a button whose visible words are its name, and keyboard focus on it
     // shows a ring even though the file input inside it is invisible.
     const chooser = section.getByLabel('Choose export file');
-    const shadow = () =>
-      chooser.evaluate((input) => getComputedStyle(input.closest('label')!).boxShadow);
-    const resting = await shadow();
+    // The ring is an outline on the shared controls (the `focus-ring` recipe) and a box-shadow
+    // on older ones, so read both: either changing is the ring appearing.
+    const ring = () =>
+      chooser.evaluate((input) => {
+        const style = getComputedStyle(input.closest('label')!);
+        return `${style.boxShadow} | ${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}`;
+      });
+    const resting = await ring();
     await section.getByLabel('Name of the moved space').press('Tab');
     await expect(chooser).toBeFocused();
-    await expect.poll(shadow).not.toBe(resting);
+    await expect.poll(ring).not.toBe(resting);
     await chooser.setInputFiles(
       fileURLToPath(
         new URL(

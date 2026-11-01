@@ -43,6 +43,12 @@ name: scripts-test
 # entry the one PR shape that regression takes, an edit to lefthook.yml alone,
 # would never trigger the job that would catch it.
 #
+# turbo.json is in the scope for the same reason (DOR-3274 Phase 2):
+# `scripts/__tests__/heavy-turbo-slot.test.ts` asserts that every build,
+# typecheck, test and lint task in it depends on `//#heavy-slot`, the host-wide
+# heavy-run cap for a bare `turbo` run. A package override that drops it runs
+# uncapped with nothing red, and an edit to turbo.json alone is that PR's shape.
+#
 # `.claude/scripts/__tests__/*.test.ts` (spec-manifest-ops.ts, id.ts, and the
 # changelog-fragment merge-behavior experiments, DOR-751/DOR-818) rides
 # `fixtures` for the same "no node_modules needed" reason: every file there
@@ -381,6 +387,12 @@ jobs:
       # before the gate ever sees it.
       - name: Auto-merge arming-gate input fixtures
         run: bash scripts/test-should-arm-automerge-input.sh
+
+      # The same rule at the queue's door (queue-repeat-guard.yml), where it
+      # binds every arm, not only merge-tail's. Both mistakes are pinned: a
+      # broken head let back in, and a good one taken out.
+      - name: Queue repeat-guard fixtures
+        run: bash scripts/test-queue-repeat-guard.sh
 
       # The other decision merge-tail makes on the same tick: whether to
       # re-request a review that failed. Its stakes run the opposite way to the

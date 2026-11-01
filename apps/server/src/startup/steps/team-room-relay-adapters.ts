@@ -325,6 +325,8 @@ export async function wireTeamRoomAndRelayAdapters(
             // parks it, but it is not asking to run, so a restart must not
             // re-arm an escalation for it (DOR-2059).
             .filter((task) => needsScheduleApprovalAttention(task))
+            // Nor for a quiet hold, which nothing waits on (DOR-3425).
+            .filter((task) => task.quietHold !== true)
             .map(async (task) => ({
               kind: 'schedule.parked' as const,
               // Resolved here too, not just at the live edges: a proposal that

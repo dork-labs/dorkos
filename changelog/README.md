@@ -222,6 +222,15 @@ This is the normal shape of the workflow, not an edge case: commit, let the hook
 then curate it before opening the PR — exactly what "By hand" above already asks for. The marker
 just makes skipping that step loud instead of silent.
 
+Two things keep a seed from reaching CI unedited (ci/ledger/261030-230941):
+
+- **No seed beside a real fragment.** Once your branch has a fragment you wrote (added or edited
+  since it forked from `origin/main`, no marker, a block-form `covers:` list), the hook adds each
+  later commit's subject to that fragment's `covers:` list instead of seeding a new file. Add a
+  bullet there if the commit deserves its own.
+- **A push refuses an unedited seed.** `pre-push` runs `scripts/pre-push-fragment-check.sh`, the
+  same `--validate --changed-only` command CI runs, and names the file to rewrite or delete.
+
 **The guard's real limit.** This is a comment, not a lock: deleting the marker line without
 touching the entry below it defeats the guard completely, and nothing else notices. That is a
 deliberate honor-system boundary, not an oversight — the alternative is inspecting prose for

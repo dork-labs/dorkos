@@ -45,10 +45,10 @@ import {
 import { logError, logger } from '../../../lib/logger.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageService } from './chat-message-service.js';
-import { setChatMessageService } from './chat-message-current.js';
+import { getRoomSeatReports, setChatMessageService } from './chat-message-current.js';
 import { setChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
 import { stampHistory } from './chat-message-stamps.js';
-import { ChatReportBack } from './chat-report-back.js';
+import { ChatReportBack, type RoomSeatReport } from './chat-report-back.js';
 import type { ChatReadDeps } from './chat-read.js';
 
 /** How far down a chat's chain of spin-offs a reader may follow. */
@@ -365,6 +365,28 @@ export function reportTargetOf(sessionId: string): { parentSessionId: string } |
 }
 
 /**
+ * Deliver a spin-off's report to a parent that is a room's seat, as a turn
+ * there (DOR-3488). The parent is looked up under the id it was named by and
+ * the one it is known by now, since a seat's first turn is renamed mid-turn.
+ * False when it is no room's seat.
+ *
+ * @param parentSessionId - The chat the spin-off reports to.
+ * @param report - The report.
+ */
+export async function deliverToRoomSeat(
+  parentSessionId: string,
+  report: RoomSeatReport
+): Promise<boolean> {
+  const seats = getRoomSeatReports();
+  if (!seats) return false;
+  const canonical = await canonicalChatId(parentSessionId).catch(() => parentSessionId);
+  const seat = [parentSessionId, canonical].find((id) => seats.seatOf(id) !== null);
+  if (seat === undefined) return false;
+  const fromTitle = await chatTitleOf(report.fromSessionId);
+  return seats.deliver(seat, { ...report, fromTitle });
+}
+
+/**
  * Make spin-off chats report back on their own (spec `spin-off-chats` §5):
  * listen for every turn that ends and every ask that opens, on every runtime.
  *
@@ -387,6 +409,7 @@ export function wireChatReportBack(
     },
     statusOf: (sessionId) => peekProjector(sessionId)?.getStatus() ?? null,
     history: chatHistoryOf,
+    toRoomSeat: (parentSessionId, report) => deliverToRoomSeat(parentSessionId, report),
   });
   // What each chat's open ask is about, kept from the interaction events so the
   // "needs the person" report can say it; a DorkOS capability hold has none.

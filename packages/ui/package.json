@@ -48,6 +48,10 @@
       "types": "./dist/touch-target.d.ts",
       "default": "./dist/touch-target.js"
     },
+    "./field-control": {
+      "types": "./dist/field-control.d.ts",
+      "default": "./dist/field-control.js"
+    },
     "./tokens.css": "./tokens.css",
     "./tailwind.css": "./tailwind.css",
     "./package.json": "./package.json",

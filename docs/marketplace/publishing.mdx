@@ -67,7 +67,7 @@ Every package needs a `.dork/manifest.json`. This is the file DorkOS reads to kn
 
 Each type adds its own fields on top of the base manifest:
 
-- **`plugin`** adds `extensions`: an array of extension IDs your package registers with the DorkOS extension API (for sidebar widgets, Activity tab sections, and similar UI slots).
+- **`plugin`** adds `extensions`: an array of extension IDs your package registers with the DorkOS extension API (for sidebar widgets, Activity tab sections, and similar UI slots). A plugin's extension may import any file inside the plugin's own folder, and nothing outside it.
 - **`agent`** adds `agentDefaults`: an optional `persona` string describing the agent, a `capabilities` list, and `traits` (each scored 1 to 5): `verbosity`, `autonomy`, `chaos`, `creativity`, `humor`, and `spice`.
 - **`adapter`** adds `adapterType`, required: a short identifier for what it bridges to, like `"matrix"` or `"slack"`.
 - **`skill-pack`** adds nothing. The manifest is the whole story.

@@ -1,6 +1,7 @@
 /**
  * How a room verb answers: a typed refusal becomes the MCP `isError` payload,
- * and a roster change reports what happened to each member it named.
+ * a roster change reports what happened to each member it named, and a post
+ * says who it woke and who it only copied in.
  *
  * @module server/services/rooms/service/room-capability-answers
  */
@@ -12,6 +13,8 @@ import { normalizeMemberHandle, type RoomService } from '../room-service.js';
 import type { CapabilityDeps } from '../../core/capabilities/index.js';
 import { readOwnerAccount } from '../../core/auth/index.js';
 import { isOwnerRecord } from '../author-registry.js';
+
+export { reachOf } from '../messages/post-reach.js';
 
 /**
  * Narrow the shared bag to the rooms service, throwing if the registry was

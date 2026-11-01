@@ -171,11 +171,11 @@ describe('FoundAccountsGroup in ClaudeAccountsSection', () => {
     expect(within(plain!).queryByText('managed by an organization')).toBeNull();
     expect(within(group).getByRole('button', { name: 'Add .claude-ab1' })).toHaveAttribute(
       'data-variant',
-      'outline'
+      'secondary'
     );
     expect(within(group).getByRole('button', { name: 'Add .claude2' })).toHaveAttribute(
       'data-variant',
-      'default'
+      'primary'
     );
   });
 

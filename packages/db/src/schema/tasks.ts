@@ -135,6 +135,20 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   followedAgentChanges: text('followed_agent_changes'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   /**
+   * The SKILL.md's own `enabled`, as the last sync read it (DOR-3309). A file
+   * may switch a task off but never on, so the row and its file can disagree;
+   * this is how a sync tells a file that has just started saying "on" from one
+   * that always did. NULL: the row is older than the column, so nothing is
+   * known yet and nothing is offered.
+   */
+  fileEnabled: integer('file_enabled', { mode: 'boolean' }),
+  /**
+   * Whether a person is being offered "Turn on", because the task's file now
+   * says on while the task stays off (DOR-3309). Cleared when anybody switches
+   * the task either way, or the file says off again.
+   */
+  offersTurnOn: integer('offers_turn_on', { mode: 'boolean' }).notNull().default(false),
+  /**
    * Whether every fire of this schedule RESUMES one persistent session instead
    * of starting a fresh one (DOR-1571).
    *

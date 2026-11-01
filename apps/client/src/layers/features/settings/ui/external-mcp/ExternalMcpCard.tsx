@@ -157,7 +157,7 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
 
         {/* Expanded content — sectioned with auto-dividers */}
         <CollapsibleContent>
-          <FieldCardContent className="border-t">
+          <FieldCardContent>
             <DuplicateToolWarning />
             <OutboundToolsCrossLink />
             <EndpointRow endpoint={mcp.endpoint} />

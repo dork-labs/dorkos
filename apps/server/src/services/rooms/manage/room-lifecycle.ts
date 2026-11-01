@@ -20,6 +20,7 @@ import { isDmMemberSetTaken } from './room-dm-key.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomUpdates } from './room-updates.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
+import type { RoomIntroductions } from '../introductions/introducer.js';
 
 /** Every way a room comes into existence. */
 export class RoomLifecycle {
@@ -32,7 +33,8 @@ export class RoomLifecycle {
     private readonly visibility: RoomVisibility,
     private readonly authority: RoomAuthority,
     private readonly projection: RoomProjection,
-    private readonly updates: RoomUpdates
+    private readonly updates: RoomUpdates,
+    private readonly introductions: RoomIntroductions
   ) {
     this.roomAudience = core.roomAudience;
     this.store = core.store;
@@ -224,7 +226,12 @@ export class RoomLifecycle {
       { roomId: room.id, kind: room.kind, title: room.title },
       this.roomAudience(room.id)
     );
-    return { ...this.projection.withRoster(room, creatorAuthorId), created: true };
+    // The agents it opened with introduce themselves (DOR-2106) — never on the
+    // adopted-DM paths above, which open nothing.
+    return this.introductions.opened(
+      { ...this.projection.withRoster(room, creatorAuthorId), created: true },
+      creatorAuthorId
+    );
   }
 
   /**

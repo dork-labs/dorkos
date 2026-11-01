@@ -8,7 +8,7 @@ const NAMESPACE_PALETTE = [
   // apart (DOR-3154).
   '#d946ef', // fuchsia
   '#14b8a6', // teal
-  '#f97316', // orange
+  'hsl(var(--chart-1))', // orange
   '#06b6d4', // cyan
 ] as const;
 

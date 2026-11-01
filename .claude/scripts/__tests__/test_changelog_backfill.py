@@ -1146,6 +1146,143 @@ class TestPopulatorHook(GateTestCase):
         self.repo.git("cherry-pick", original)
         self.assertEqual(len(list(self.repo.unreleased.glob("*.md"))), 1)
 
+    CURATED = (
+        "---\n"
+        "covers:\n"
+        "  - 'feat(client): the composer follows you'\n"
+        "---\n"
+        "\n"
+        "### Added\n"
+        "\n"
+        "- The message box follows you to every page\n"
+    )
+
+    def on_branch_with_curated_fragment(self) -> Path:
+        """A feature branch whose author already wrote the fragment."""
+        self.repo.git("switch", "-q", "-c", "feature")
+        self.repo.write("apps/client/src/composer.tsx", "// one\n")
+        path = self.repo.fragment("261030-120000-composer.md", self.CURATED)
+        self.repo.git("add", "-A")
+        self.repo.git(
+            "-c", "core.hooksPath=/dev/null", "commit", "-qm",
+            "feat(client): the composer follows you",
+        )
+        return path
+
+    def test_a_branch_with_a_curated_fragment_gets_a_claim_not_a_seed(self):
+        """The #3290/#3294/#3295/#3297/#3205 shape: a second fix( commit on a
+        branch that already has its fragment must not seed a file CI refuses."""
+        curated = self.on_branch_with_curated_fragment()
+        self.install_hook()
+        subject = "fix(client): keep the composer focused after a send"
+        self.repo.commit(subject, touch="apps/client/src/composer.tsx")
+
+        fragments = list(self.repo.unreleased.glob("*.md"))
+        self.assertEqual([f.name for f in fragments], [curated.name], "no seed minted")
+        text = curated.read_text()
+        self.assertNotIn("dorkos-changelog:seeded", text)
+        self.assert_declares(text, subject)
+        self.assertIn("- The message box follows you to every page", text)
+        # The claim landed inside the commit, so CI sees the same file.
+        self.assertIn(curated.name, self.repo.git("show", "--name-only", "HEAD"))
+
+        # Both commits are covered and the fragment is valid: CI goes green.
+        result = self.repo.check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("2 covered, 0 uncovered", result.stdout)
+
+    def test_a_branch_with_only_a_seed_still_seeds_the_next_commit(self):
+        """A seed is not a fragment anyone wrote; it is never extended."""
+        self.repo.git("switch", "-q", "-c", "feature")
+        self.install_hook()
+        self.repo.commit("feat(client): one", touch="apps/client/src/a.tsx")
+        self.repo.commit("fix(client): two", touch="apps/client/src/b.tsx")
+        self.assertEqual(len(list(self.repo.unreleased.glob("*.md"))), 2)
+
+    def test_a_fragment_already_on_main_is_not_extended(self):
+        """Only this branch's own fragments are candidates, never main's."""
+        self.repo.commit_fragment("261030-110000-old.md", self.CURATED, "docs: old fragment")
+        self.repo.git("switch", "-q", "-c", "feature")
+        self.install_hook()
+        self.repo.commit("fix(client): two", touch="apps/client/src/b.tsx")
+        names = sorted(f.name for f in self.repo.unreleased.glob("*.md"))
+        self.assertEqual(len(names), 2)
+        self.assertNotIn("fix(client): two", (self.repo.unreleased / "261030-110000-old.md").read_text())
+
+    def test_an_inline_covers_list_falls_back_to_a_seed(self):
+        """The hook only extends the block-list shape it can edit safely."""
+        self.repo.git("switch", "-q", "-c", "feature")
+        self.repo.commit_fragment(
+            "261030-120000-inline.md",
+            "---\ncovers: ['feat(client): one']\n---\n\n### Added\n\n- One\n",
+            "docs: inline fragment",
+        )
+        self.install_hook()
+        self.repo.commit("fix(client): two", touch="apps/client/src/b.tsx")
+        self.assertEqual(len(list(self.repo.unreleased.glob("*.md"))), 2)
+
+
+class TestPrePushFragmentCheck(GateTestCase):
+    """`scripts/pre-push-fragment-check.sh` refuses a push that carries an
+    unedited seed, names the file and says what to do, and passes otherwise."""
+
+    SCRIPT_SH = REPO_ROOT / "scripts" / "pre-push-fragment-check.sh"
+
+    def setUp(self) -> None:
+        super().setUp()
+        # The script runs the analyzer by its repo-relative path.
+        target = self.repo.path / ".claude" / "scripts" / "changelog_backfill.py"
+        target.parent.mkdir(parents=True)
+        target.write_text(SCRIPT.read_text())
+        self.repo.git("add", "-A")
+        self.repo.git("commit", "-qm", "chore: add the analyzer")
+        self.repo.git("switch", "-q", "-c", "feature")
+
+    def run_check(self) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["bash", str(self.SCRIPT_SH)],
+            cwd=self.repo.path,
+            env=GIT_ENV,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_an_unedited_seed_refuses_the_push_naming_the_file(self):
+        self.repo.commit_fragment(
+            "261030-120000-seeded.md",
+            "---\ncovers:\n  - 'fix(client): two'\n---\n\n### Fixed\n\n"
+            "<!-- dorkos-changelog:seeded — rewrite this bullet -->\n- Two\n",
+            "fix(client): two",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("261030-120000-seeded.md", result.stdout)
+        self.assertIn("git push refused", result.stdout)
+        self.assertIn("delete the whole file", result.stdout)
+
+    def test_a_curated_fragment_passes(self):
+        self.repo.commit_fragment(
+            "261030-120000-curated.md",
+            "---\ncovers:\n  - 'fix(client): two'\n---\n\n### Fixed\n\n- Two works now\n",
+            "fix(client): two",
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_a_seed_already_on_main_does_not_refuse_this_push(self):
+        """Same `--changed-only` scope as CI: not your file, not your red."""
+        self.repo.git("switch", "-q", "main")
+        self.repo.commit_fragment(
+            "261030-110000-stray.md",
+            "---\ncovers:\n  - 'fix(client): one'\n---\n\n### Fixed\n\n"
+            "<!-- dorkos-changelog:seeded -->\n- One\n",
+            "fix(client): one",
+        )
+        self.repo.git("switch", "-q", "-c", "feature-2")
+        self.repo.commit("chore: unrelated", touch="src/x.ts")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout)
+
 
 def load_analyzer():
     """Import the analyzer module for direct unit assertions."""

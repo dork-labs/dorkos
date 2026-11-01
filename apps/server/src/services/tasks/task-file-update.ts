@@ -114,11 +114,11 @@ export interface FileBackedRow {
  * Whether this request CHANGES anything that lives in the SKILL.md.
  *
  * Not "mentions" — changes. That distinction is the whole fix for B1: the
- * cockpit's Approve button sends `{status, enabled: true}` together, always,
- * because a schedule approved but left switched off would never run. `enabled`
- * does live in the file, so a request that merely mentions it looks
- * file-worthy — and every Approve would then drag the person's own SKILL.md
- * through a read-merge-write that had nothing to write.
+ * cockpit's "Approve and turn on" sends `{status, enabled: true}` together
+ * (a plain Approve sends `status` alone and keeps the switch, DOR-3309).
+ * `enabled` does live in the file, so a request that merely mentions it looks
+ * file-worthy — and every such Approve would then drag the person's own
+ * SKILL.md through a read-merge-write that had nothing to write.
  *
  * Comparing against the row is what makes Approve free of the file entirely:
  * `enabled: true` on a row that is already enabled is not a change, so nothing
@@ -174,8 +174,8 @@ export function fileBackedChanges(
 
 /**
  * Whether an update request changes the work a person approved: the prompt,
- * the timing, or any of the settings in the approval key
- * (`ScheduleSettings`, DOR-2323).
+ * the timing, any of the settings in the approval key
+ * (`ScheduleSettings`, DOR-2323), or the permission mode (DOR-3425).
  *
  * Compared against the task as it stands, so a field re-sent at its current
  * value is not a change. `maxRuntime` arrives as a duration string and is
@@ -196,6 +196,7 @@ export function changesApprovedWork(
     maxRuntime?: string | null;
     sticky?: boolean;
     account?: string | null;
+    permissionMode?: string;
   },
   existing: {
     prompt: string;
@@ -208,6 +209,7 @@ export function changesApprovedWork(
     maxRuntime: number | null;
     sticky: boolean;
     account: string | null;
+    permissionMode: string;
   }
 ): boolean {
   const differs = <T>(sent: T | undefined, current: T) => sent !== undefined && sent !== current;
@@ -223,7 +225,8 @@ export function changesApprovedWork(
       (data.maxRuntime === null ? null : parseDuration(data.maxRuntime)) !==
         (existing.maxRuntime ?? null)) ||
     differs(data.sticky, existing.sticky) ||
-    differs(data.account, existing.account ?? null)
+    differs(data.account, existing.account ?? null) ||
+    differs(data.permissionMode, existing.permissionMode)
   );
 }
 

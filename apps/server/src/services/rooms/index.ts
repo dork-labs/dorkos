@@ -73,6 +73,7 @@ import { roomOutsidersReader } from './reseat/room-outsiders.js';
 import { clearStaleReceipts } from './receipts/turn-receipts.js';
 import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
 import { createSessionWorkSource } from './welcome-back/work-source.js';
+import { setRoomSeatReports } from '../session/chat-messages/chat-message-current.js';
 
 /** The wired rooms subsystem. */
 export interface RoomSubsystem {
@@ -440,6 +441,12 @@ export function createRoomSubsystem(opts: {
    * and does not wait 20s for every channel answer.
    */
   burstQuietMs?: number;
+  /**
+   * Whether agents introduce themselves to an ordinary channel they join
+   * (DOR-2106). The server's own startup turns it on; absent, off, so a suite
+   * counting turns or entries is not handed an introduction it did not ask for.
+   */
+  introduceAgents?: boolean;
   runtimePrincipalCurrent?: (proof: ServerPrincipalProof) => boolean;
   mirrorAccess?: RoomMirrorAccess;
   mirrorWrites?: RoomMirrorWritePolicy;
@@ -676,6 +683,7 @@ export function createRoomSubsystem(opts: {
     // in the sidebar has to silence the very next `dm.received`, not the next
     // server start.
     isRoomMuted: readRoomMuted,
+    ...(opts.introduceAgents ? { introduceAgents: () => true } : {}),
   });
   // The last subsystem built owns the live awaiting-count watch (DOR-3236).
   stopAwaitingWatch?.();
@@ -762,6 +770,8 @@ onProjectorTurnBoundary((sessionId, kind) => {
  */
 export function setRoomService(service: RoomService): void {
   active = service;
+  // A spin-off started from a room's seat reports back into it (DOR-3488).
+  setRoomSeatReports(service.handoffs.reports);
 }
 
 /** Read the active RoomService (throws if bootstrap has not run). */

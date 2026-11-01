@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
-import { STATUS_TONE_SURFACE, STATUS_TONE_TEXT } from './status-dot';
+import { Badge } from './badge';
+import { Chip } from './chip';
+import { STATUS_TONE_TEXT } from './status-dot';
 import {
   ResponsivePopover,
   ResponsivePopoverContent,
@@ -11,13 +13,10 @@ import {
 } from './responsive-popover';
 
 /**
- * The 120ms crossfade with the messaging spring settle (spec `execution-defaults`
- * §3.1). Written out here rather than imported because there is no shared motion
- * token module yet; the numbers are the messaging set's, and this is the second
- * place to want them — a third should lift them into one.
+ * The label's crossfade: opacity only, 120ms ease-out. It says "what changed"
+ * and nothing else, so there is no travel and no spring to settle.
  */
-const CHIP_TRANSITION = { duration: 0.12, ease: 'easeOut' } as const;
-const CHIP_SETTLE = { type: 'spring', stiffness: 320, damping: 28 } as const;
+const LABEL_FADE = { duration: 0.12, ease: 'easeOut' } as const;
 
 /** What a {@link ProvenanceChip} is saying about one setting. */
 export interface ProvenanceChipProps {
@@ -60,9 +59,10 @@ export interface ProvenanceChipProps {
  * a value is the place that clears it, so nobody hunts for a reset button
  * (spec `execution-defaults` §3.1).
  *
- * The label crossfades over 120ms and settles on the messaging spring, so the
- * change from "set here" to "server default · Opus" reads as the same chip
- * changing its mind rather than two chips swapping places.
+ * Inert, it is a {@link Badge}; set here, it is a {@link Chip} that opens the
+ * one action. The label crossfades over 120ms, opacity only, so "set here" to
+ * "server default · Opus" reads as the same chip changing its mind rather than
+ * two chips swapping places. Under reduced motion the label just changes.
  */
 export function ProvenanceChip({
   isSetHere,
@@ -79,48 +79,52 @@ export function ProvenanceChip({
   const [open, setOpen] = useState(false);
   const label = isSetHere ? 'Set here' : `Server default · ${serverDefault ?? 'none'}`;
   const interactive = isSetHere && !!onUseServerDefault;
+  const reducedMotion = useReducedMotion();
 
-  const chip = (
-    <span
-      className={cn(
-        'text-3xs inline-flex h-5 items-center gap-1 rounded-full px-2 leading-none whitespace-nowrap',
-        warning ? STATUS_TONE_SURFACE.warning : STATUS_TONE_SURFACE.neutral,
-        interactive && 'hover:bg-accent hover:text-accent-foreground transition-colors',
-        className
-      )}
-      data-testid={testId}
-    >
-      {warning && <TriangleAlert className="size-2.5 shrink-0" aria-hidden />}
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.span
-          key={label}
-          initial={{ opacity: 0, y: 2 }}
-          animate={{ opacity: 1, y: 0, transition: CHIP_SETTLE }}
-          exit={{ opacity: 0 }}
-          transition={CHIP_TRANSITION}
-        >
-          {label}
-        </motion.span>
-      </AnimatePresence>
-    </span>
+  const words = (
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.span
+        key={label}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={reducedMotion ? { duration: 0 } : LABEL_FADE}
+        className="block truncate"
+      >
+        {label}
+      </motion.span>
+    </AnimatePresence>
   );
 
   if (!interactive) {
-    return warning ? (
-      <span title={warning} aria-label={`${label}: ${warning}`}>
-        {chip}
-      </span>
-    ) : (
-      chip
+    return (
+      <Badge
+        size="xs"
+        tone={warning ? 'warning' : 'neutral'}
+        title={warning ? `${label}: ${warning}` : label}
+        aria-label={warning ? `${label}: ${warning}` : undefined}
+        className={cn('max-w-56', className)}
+        data-testid={testId}
+      >
+        {words}
+      </Badge>
     );
   }
 
   return (
     <ResponsivePopover open={open} onOpenChange={setOpen}>
       <ResponsivePopoverTrigger asChild>
-        <button type="button" aria-label={`Set here${warning ? `: ${warning}` : ''}`}>
-          {chip}
-        </button>
+        <Chip
+          size="sm"
+          icon={warning ? TriangleAlert : undefined}
+          iconClassName={warning ? STATUS_TONE_TEXT.warning : undefined}
+          aria-label={`Set here${warning ? `: ${warning}` : ''}`}
+          title={warning ? `${label}: ${warning}` : label}
+          className={className}
+          data-testid={testId}
+        >
+          {words}
+        </Chip>
       </ResponsivePopoverTrigger>
       <ResponsivePopoverContent className="w-64 p-2" align="start">
         <ResponsivePopoverTitle>Where this value comes from</ResponsivePopoverTitle>

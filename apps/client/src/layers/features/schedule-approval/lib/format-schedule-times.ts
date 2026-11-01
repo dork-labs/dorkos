@@ -60,7 +60,11 @@ export function formatRunMoment(iso: string, now: number): string | null {
   const ms = at.getTime();
   if (Number.isNaN(ms)) return null;
 
-  const clock = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  // Never broken between the time and its AM/PM: whatever space the locale
+  // puts there becomes a no-break space, so "9:00" and "AM" stay together.
+  const clock = at
+    .toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    .replace(/[ \u202f](?=\S+$)/, '\u00a0');
   // Compared as local calendar days rather than as a span of hours: a run eight
   // hours out is "tomorrow" at 11pm and "today" at 9am, and only the date knows
   // which of those it is.

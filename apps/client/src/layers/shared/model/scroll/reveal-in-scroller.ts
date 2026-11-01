@@ -28,12 +28,18 @@ const REVEAL_MARGIN_PX = 8;
  *
  * @param scroller - The element carrying `overflow-x: auto`.
  * @param target - The item to reveal, a descendant of `scroller`.
+ * @param margin - Room left beside it, in pixels. A strip that fades its edges
+ *   needs at least the fade's width, or the item lands underneath it.
  */
-export function revealInScroller(scroller: HTMLElement, target: HTMLElement): void {
+export function revealInScroller(
+  scroller: HTMLElement,
+  target: HTMLElement,
+  margin = REVEAL_MARGIN_PX
+): void {
   const box = scroller.getBoundingClientRect();
   const rect = target.getBoundingClientRect();
   const pastEnd = rect.right - box.right;
   const pastStart = box.left - rect.left;
-  if (pastStart > 0) scroller.scrollLeft -= pastStart + REVEAL_MARGIN_PX;
-  else if (pastEnd > 0) scroller.scrollLeft += pastEnd + REVEAL_MARGIN_PX;
+  if (pastStart > 0) scroller.scrollLeft -= pastStart + margin;
+  else if (pastEnd > 0) scroller.scrollLeft += pastEnd + margin;
 }

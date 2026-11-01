@@ -63,7 +63,7 @@ function AlertDialogOverlay({
     <AlertDialogPrimitive.Overlay
       data-slot="alert-dialog-overlay"
       className={cn(
-        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/80 motion-reduce:animate-none!',
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 bg-dui-scrim fixed inset-0 z-(--z-overlay) motion-reduce:animate-none!',
         className
       )}
       {...props}
@@ -91,7 +91,7 @@ function AlertDialogContent({
           // the-column track as `DialogContent` — a confirmation is the dialog
           // people meet on a phone most often, and it must not be the one that
           // meets both screen edges.
-          'bg-dui-background text-dui-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 border-dui-border fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto rounded-lg border p-6 shadow-lg duration-200 motion-reduce:animate-none! motion-reduce:transition-none!',
+          'bg-dui-background text-dui-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 border-dui-border fixed top-[50%] left-[50%] z-(--z-overlay) grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto rounded-lg border p-6 shadow-xl duration-200 motion-reduce:animate-none! motion-reduce:transition-none!',
           className
         )}
         {...props}
@@ -160,27 +160,32 @@ function AlertDialogDescription({
 }
 
 /**
- * The button that goes through with it, already wearing `Button`'s default look.
+ * The button that goes through with it, already wearing `Button`'s primary look.
  *
- * Pass `className={buttonVariants({ variant: 'destructive' })}` when the answer
- * deletes something, so the colour matches the consequence.
+ * Pass `variant="destructive"` when the answer can't be undone, so the colour
+ * matches the consequence.
  */
 function AlertDialogAction({
   className,
+  variant = 'primary',
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Action> & {
+  /** What kind of answer this is. */
+  variant?: 'primary' | 'destructive';
+}) {
   return (
     <AlertDialogPrimitive.Action
       data-slot="alert-dialog-action"
+      data-variant={variant}
       // `buttonVariants()` alone is the 36px desktop height; `Button` adds the
       // phone touch target itself, so these exits add it the same way.
-      className={cn(buttonVariants(), TOUCH_TARGET_RESPONSIVE_H, className)}
+      className={cn(buttonVariants({ variant }), TOUCH_TARGET_RESPONSIVE_H, className)}
       {...props}
     />
   );
 }
 
-/** The button that backs out, already wearing `Button`'s outline look. */
+/** The button that backs out, already wearing `Button`'s secondary look. */
 function AlertDialogCancel({
   className,
   ...props
@@ -189,7 +194,7 @@ function AlertDialogCancel({
     <AlertDialogPrimitive.Cancel
       data-slot="alert-dialog-cancel"
       className={cn(
-        buttonVariants({ variant: 'outline' }),
+        buttonVariants({ variant: 'secondary' }),
         TOUCH_TARGET_RESPONSIVE_H,
         'mt-2 sm:mt-0',
         className

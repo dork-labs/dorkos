@@ -319,7 +319,7 @@ function FieldCardSection() {
       <ShowcaseLabel>Danger variant</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-full max-w-md">
-          <FieldCard className="border-destructive/50">
+          <FieldCard>
             <FieldCardContent>
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">

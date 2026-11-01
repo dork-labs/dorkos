@@ -55,8 +55,9 @@ const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const CROSS_SITE = { Origin: 'https://evil.example' };
 /** CORS refuses a page from another site before any route's own bar runs. */
 const CORS_REFUSED = {
-  error: 'Origin https://evil.example not allowed by CORS',
-  code: 'INTERNAL_ERROR',
+  error:
+    'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+  code: 'ORIGIN_NOT_ALLOWED',
 };
 /** A DELETE's JSON body, framed: Node sends a DELETE body only with a length. */
 const deleteBody = (body: object) => ({
@@ -161,7 +162,7 @@ const CASES: ContractCase[] = [
     method: 'POST',
     path: `/api/extensions/${MISSING}/enable`,
     headers: CROSS_SITE,
-    expect: { status: 500, body: CORS_REFUSED },
+    expect: { status: 403, body: CORS_REFUSED },
   },
   {
     name: 'enable of an extension that is not installed is a 404',
@@ -190,7 +191,7 @@ const CASES: ContractCase[] = [
     method: 'POST',
     path: `/api/extensions/${MISSING}/approve`,
     headers: CROSS_SITE,
-    expect: { status: 500, body: CORS_REFUSED },
+    expect: { status: 403, body: CORS_REFUSED },
   },
   {
     name: 'approve of an extension that is not installed is a 404',
@@ -813,7 +814,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       path: `/api/ext/${ROUTED}/person`,
       headers: CROSS_SITE,
       body: {},
-      expect: { status: 500, body: CORS_REFUSED },
+      expect: { status: 403, body: CORS_REFUSED },
     });
     await check(server, {
       method: 'POST',
@@ -1369,7 +1370,7 @@ describe('contract: the extension routes with login on', () => {
       path: `/api/extensions/${MISSING}/approve`,
       headers: { ...cookie, ...CROSS_SITE },
       body: {},
-      expect: { status: 500, body: CORS_REFUSED },
+      expect: { status: 403, body: CORS_REFUSED },
     });
   });
 });

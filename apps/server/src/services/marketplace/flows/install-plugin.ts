@@ -220,7 +220,9 @@ export class PluginInstallFlow {
       stagingDir,
       this.deps.extensionCompiler,
       this.deps.logger,
-      '[install-plugin]'
+      '[install-plugin]',
+      // Discovery names a plugin by its install folder; match it (DOR-3537).
+      path.basename(installRoot)
     );
   }
 

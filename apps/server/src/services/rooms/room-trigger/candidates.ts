@@ -239,7 +239,7 @@ export function selectCandidates(
   // agent is that agent's to answer, and a post an AGENT wrote is a
   // conversation already underway — the seat catches neither. See
   // `standDownFallbackSeat` for the two escapes.
-  // **Only the leading @mentions ask anybody to answer** (DOR-3401). Every
+  // **A mention after `cc` on its line asks nobody to answer** (DOR-3453). Every
   // rule below sees the post as addressed to them alone, and a member it only
   // copied in is struck from the result whatever its mode: a cc takes no turn.
   const asked = { authorId: entry.authorId, mentions: addresseesOf(entry) };

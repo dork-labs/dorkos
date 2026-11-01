@@ -583,7 +583,7 @@ describe('connector management routes', () => {
     await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/reviews')
       .set('Origin', 'https://evil.example')
-      .expect(500);
+      .expect(403);
     expect(reviews.create).not.toHaveBeenCalled();
     expect(reviews.list).not.toHaveBeenCalled();
   });

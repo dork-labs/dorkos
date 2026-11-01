@@ -466,7 +466,7 @@ describe('InboxBell', () => {
     await userEvent.click(marker);
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
     // Still open, and the schedule that was NOT decided is still answerable.
     expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
   });

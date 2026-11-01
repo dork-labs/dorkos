@@ -7,6 +7,7 @@ import {
   COLLAPSE_TRANSITION,
   COLLAPSE_VARIANTS,
   sessionHref,
+  SPRING,
   useCopyFeedback,
 } from '@/layers/shared/lib';
 import { TunnelQrCode, tunnelHost } from '@/layers/entities/tunnel';
@@ -26,7 +27,7 @@ const urlCardVariants = {
 } as const;
 
 /** Spring transition for the URL card entrance. */
-const urlCardTransition = { type: 'spring', stiffness: 400, damping: 28 } as const;
+const urlCardTransition = SPRING.snap;
 
 /** Latency text fades in after 500ms — appears once the tunnel has settled. */
 const latencyVariants = {

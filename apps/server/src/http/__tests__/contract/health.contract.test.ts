@@ -52,15 +52,18 @@ contractSuite('health', [
     },
   },
   {
-    // Pinned as it is today, a 500 from the CORS delegate's thrown error, so a
-    // move keeps it. A plainer refusal is a change of its own, after the move.
+    // The caller's to fix, so a 403 with its own code, never a 500.
     name: 'an untrusted browser origin is refused',
     path: '/api/health',
     headers: { origin: 'https://evil.example' },
     expect: {
-      status: 500,
+      status: 403,
       headers: { 'access-control-allow-origin': null },
-      body: { error: 'Origin https://evil.example not allowed by CORS', code: 'INTERNAL_ERROR' },
+      body: {
+        error:
+          'This instance does not answer to pages from "https://evil.example". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.',
+        code: 'ORIGIN_NOT_ALLOWED',
+      },
     },
   },
   {

@@ -57,6 +57,7 @@ import {
   formatTime,
 } from '@/layers/features/conversation';
 import { ForwardViaLine } from '@/layers/features/chat';
+import { postedReachLine } from '@/layers/features/mentions';
 import {
   useEntryActions,
   type EntryActionBarHandle,
@@ -166,6 +167,11 @@ interface RoomMessageProps {
    * comes back to, so the timeline is the one that names it.
    */
   rowId?: string;
+  /**
+   * The room's kind. In a channel, the reader's own post that names anybody
+   * says who it woke and who it only cc'd (DOR-3454). Omitted draws no line.
+   */
+  roomKind?: 'channel' | 'dm';
 }
 
 /** One line of a room's history. */
@@ -185,6 +191,7 @@ export function RoomMessage({
   answers,
   feedPosition,
   rowId,
+  roomKind,
 }: RoomMessageProps) {
   const time = formatTime(entry.createdAt);
   // `null` for a message that already reads as one line — see `entrySummary`.
@@ -278,6 +285,13 @@ export function RoomMessage({
   });
   const focusRow = useCallback(() => rowRef.current?.focus(), []);
   const renderBody = useMemo(() => makeRoomBodyRenderer(authors), [authors]);
+  const reach = useMemo(
+    () =>
+      roomKind === 'channel' && entry.authorId === viewerAuthorId
+        ? postedReachLine(entry, authors)
+        : null,
+    [roomKind, entry, viewerAuthorId, authors]
+  );
   const renderSaveToFiles = useCallback(
     (attachment: RoomAttachment) => (
       <Suspense fallback={null}>
@@ -444,6 +458,11 @@ export function RoomMessage({
             renderBody(entry, { rowId: entry.id, isStreaming: false })
           )}
         </Message.Content>
+        {reach !== null && (
+          <p data-testid="room-entry-reach" className="text-muted-foreground text-xs">
+            {reach}
+          </p>
+        )}
         {summary !== null && (
           /*
             The article's description, for a message too long or too code-heavy

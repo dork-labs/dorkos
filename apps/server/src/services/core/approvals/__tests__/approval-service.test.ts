@@ -423,6 +423,84 @@ describe('ApprovalService', () => {
       });
     });
 
+    // DOR-3359: a repo-pin card asks its own question and names what a yes does.
+    it('takes a per-request title and the capability’s consequence badge', () => {
+      const described = new ApprovalService(db, {
+        describeCapability: (id) =>
+          id === 'runtime.apply_repo_tools'
+            ? {
+                title: 'Allow a changed repo skill',
+                tier: 'destructive',
+                consequence: 'Widens what agents can run',
+                titledPerRequest: true,
+              }
+            : { title: 'Install a marketplace package', tier: 'act' },
+      });
+
+      described.request({
+        capabilityId: 'runtime.apply_repo_tools',
+        inputHash: BINDING.inputHash,
+        summary: 'A skill differs from the default branch.',
+        title: 'Allow a changed skill in "wt"?',
+      });
+      described.request({
+        capabilityId: 'marketplace.install',
+        inputHash: 'other',
+        summary: 'Install "sentry-monitor"',
+      });
+
+      const [repo, install] = described.listPending();
+      expect(repo).toMatchObject({
+        capabilityTitle: 'Allow a changed skill in "wt"?',
+        tier: 'destructive',
+        consequence: 'Widens what agents can run',
+      });
+      expect(install.capabilityTitle).toBe('Install a marketplace package');
+      expect(install).not.toHaveProperty('consequence');
+    });
+
+    // Security, DOR-3359: only the server's fixed templates title a card.
+    it('ignores a request’s title for a capability that does not take one', () => {
+      const described = new ApprovalService(db, {
+        describeCapability: () => ({ title: 'Install a marketplace package', tier: 'act' }),
+      });
+      described.request({
+        capabilityId: 'marketplace.install',
+        inputHash: BINDING.inputHash,
+        summary: 'Install "sentry-monitor"',
+        title: 'Allow a harmless read?',
+      });
+      expect(described.listPending()[0].capabilityTitle).toBe('Install a marketplace package');
+    });
+
+    it('never spends a tools-card yes on the hooks card, or the other way round', () => {
+      const described = new ApprovalService(db, { describeCapability: () => undefined });
+      const tools = described.request({
+        capabilityId: 'runtime.apply_repo_tools',
+        inputHash: 'same',
+        summary: 'A skill changed.',
+      });
+      const hooks = described.request({
+        capabilityId: 'runtime.apply_repo_hooks',
+        inputHash: 'same',
+        summary: 'A hook changed.',
+      });
+      described.grant(tools.approvalId);
+      described.grant(hooks.approvalId);
+      expect(
+        described.consume(tools.token, {
+          capabilityId: 'runtime.apply_repo_hooks',
+          inputHash: 'same',
+        }).outcome
+      ).toBe('mismatched');
+      expect(
+        described.consume(hooks.token, {
+          capabilityId: 'runtime.apply_repo_tools',
+          inputHash: 'same',
+        }).outcome
+      ).toBe('mismatched');
+    });
+
     it('over-warns rather than under-warns on an id the registry does not know', () => {
       const described = new ApprovalService(db, { describeCapability: () => undefined });
 

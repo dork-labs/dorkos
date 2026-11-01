@@ -29,6 +29,7 @@ import type { RoomStore } from '../room-store.js';
 import type { RoomSystemPosts } from '../messages/room-system-posts.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
+import type { RoomIntroductions } from '../introductions/introducer.js';
 
 /** Every write that changes who is in a room. */
 export class RoomMembership {
@@ -46,7 +47,8 @@ export class RoomMembership {
     core: RoomCore,
     private readonly visibility: RoomVisibility,
     private readonly authority: RoomAuthority,
-    private readonly systemPosts: RoomSystemPosts
+    private readonly systemPosts: RoomSystemPosts,
+    private readonly introductions: RoomIntroductions
   ) {
     this.roomAudience = core.roomAudience;
     this.store = core.store;
@@ -194,7 +196,8 @@ export class RoomMembership {
       this.roomAudience(roomId)
     );
     this.followRosterTitle(room, priorTitleNames);
-    return member;
+    // An agent joining a channel introduces itself, once per room (DOR-2106).
+    return this.introductions.joined(roomId, member);
   }
 
   /**

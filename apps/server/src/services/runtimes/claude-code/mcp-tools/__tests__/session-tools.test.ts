@@ -9,7 +9,10 @@
  * The launch service is real here, down to the dispatcher, so what reaches the
  * turn (the account hint, the origin, the cap) is what production sends.
  */
-import { setChatMessageService } from '../../../../session/chat-messages/chat-message-current.js';
+import {
+  setChatMessageService,
+  setRoomSeatReports,
+} from '../../../../session/chat-messages/chat-message-current.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -870,6 +873,26 @@ describe('session_start records who started the new session (spec flow-multiproj
     // Nor points it at chat_send, which that parent refuses (2026-10-12).
     expect(seed).not.toContain('chat_send to parent-chat');
     expect(seed).toContain('post_to_room');
+  });
+
+  it('promises reports to a parent that is a room’s seat, and keeps it off chat_send (DOR-3488)', async () => {
+    wireChats(false);
+    setRoomSeatReports({
+      seatOf: (id: string) => (id === 'parent-chat' ? { roomId: 'r', authorId: 'a' } : null),
+      deliver: () => true,
+    });
+    try {
+      const result = payloadOf(await fromChat('parent-chat')(BASE)) as { sessionId: string };
+      expect(store.get(result.sessionId)?.reportBack).toBe(true);
+      const seed = vi.mocked(dispatchMessage).mock.calls.at(-1)![0].seedContext as string;
+      expect(seed).toContain('goes back to that chat on its own');
+      expect(seed).not.toContain('chat_send to parent-chat');
+      // A plain chat that is no seat and takes no messages still gets none.
+      const run = payloadOf(await fromChat('a-scheduled-run')(BASE)) as { sessionId: string };
+      expect(store.get(run.sessionId)?.reportBack).toBe(false);
+    } finally {
+      setRoomSeatReports(undefined);
+    }
   });
 
   it('points a spin-off told reportBack off at chat_send, when its parent takes messages', async () => {

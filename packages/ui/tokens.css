@@ -3,9 +3,9 @@
 .light {
   --dui-background: 0 0% 98%;
   --dui-foreground: 0 0% 9%;
-  --dui-card: 0 0% 100%;
+  --dui-card: 0 0% 99.5%;
   --dui-card-foreground: 0 0% 9%;
-  --dui-popover: 0 0% 100%;
+  --dui-popover: 0 0% 99.5%;
   --dui-popover-foreground: 0 0% 9%;
   --dui-primary: 0 0% 9%;
   --dui-primary-foreground: 0 0% 98%;
@@ -19,15 +19,32 @@
   --dui-destructive-foreground: 0 0% 98%;
   --dui-border: 0 0% 83%;
   --dui-input: 0 0% 83%;
-  --dui-ring: 24 90% 44%;
-  --dui-brand: 24 90% 44%;
-  --dui-brand-foreground: 0 0% 100%;
-  /* Orange for small text: the brand fill reads 3.7:1 as text; this clears 4.5:1. */
-  --dui-brand-text: 24 90% 29%;
+  /* Darker than the fill: at 46% a ring misses 3:1 on the sidebar and a selected row. */
+  --dui-ring: 23 97% 40%;
+  --dui-brand: 23 97% 46%;
+  /* Near-black: white on this orange reads 3.50:1, this reads 5.12:1. */
+  --dui-brand-foreground: 0 0% 9%;
+  /* Orange for small text: the brand fill misses 4.5:1 as text; this clears it. */
+  --dui-brand-text: 23 97% 29%;
+  --dui-destructive-fill: hsl(var(--dui-destructive));
+  --dui-destructive-fill-hover: color-mix(
+    in srgb,
+    hsl(var(--dui-destructive)) 90%,
+    hsl(var(--dui-background))
+  );
+  --dui-scrim: hsl(0 0% 9% / 0.5);
+  /* An empty field's border is all that identifies it, so it clears 3:1. --dui-input
+     stays for the dark fill and decorative borders. */
+  --dui-control-edge: 0 0% 52%;
+  --dui-control-edge-hover: 0 0% 42%;
+  /* Error text and icon. Borders and rings keep --dui-destructive. */
+  --dui-destructive-text: 0 72% 41%;
   --dui-success: 152 69% 24%;
   --dui-size-icon-xs: 0.75rem;
   --dui-size-icon-sm: 1rem;
   --dui-size-icon-md: 1.25rem;
+  --dui-text-field: calc(0.875rem * var(--user-font-scale, 1));
+  --dui-text-field-lh: calc(1.25rem * var(--user-font-scale, 1));
 }
 
 @media (max-width: 767px) {
@@ -37,6 +54,9 @@
     --dui-size-icon-xs: 0.9375rem;
     --dui-size-icon-sm: 1.25rem;
     --dui-size-icon-md: 1.5625rem;
+    /* Never under 16px: iOS zooms the page on a smaller field. */
+    --dui-text-field: max(1rem, calc(1rem * var(--user-font-scale, 1)));
+    --dui-text-field-lh: calc(1.375rem * var(--user-font-scale, 1));
   }
 }
 
@@ -60,10 +80,16 @@
     --dui-destructive-foreground: 0 0% 98%;
     --dui-border: 0 0% 25%;
     --dui-input: 0 0% 25%;
+    --dui-control-edge: 0 0% 46%;
+    --dui-control-edge-hover: 0 0% 56%;
+    --dui-destructive-text: 0 72% 68%;
     --dui-ring: 24 88% 55%;
-    --dui-brand: 24 88% 55%;
-    --dui-brand-foreground: 0 0% 100%;
-    --dui-brand-text: 24 88% 60%;
+    --dui-brand: 23 97% 46%;
+    --dui-brand-foreground: 0 0% 9%;
+    --dui-brand-text: 24 90% 60%;
+    --dui-destructive-fill: color-mix(in srgb, hsl(2.5 95% 62%) 60%, hsl(0 0% 4%));
+    --dui-scrim: hsl(0 0% 2% / 0.6);
+    --dui-destructive-fill-hover: color-mix(in srgb, hsl(2.5 95% 62%) 70%, hsl(0 0% 4%));
     --dui-success: 152 69% 55%;
   }
 }
@@ -87,9 +113,39 @@
   --dui-destructive-foreground: 0 0% 98%;
   --dui-border: 0 0% 25%;
   --dui-input: 0 0% 25%;
+  --dui-control-edge: 0 0% 46%;
+  --dui-control-edge-hover: 0 0% 56%;
+  --dui-destructive-text: 0 72% 68%;
   --dui-ring: 24 88% 55%;
-  --dui-brand: 24 88% 55%;
-  --dui-brand-foreground: 0 0% 100%;
-  --dui-brand-text: 24 88% 60%;
+  --dui-brand: 23 97% 46%;
+  --dui-brand-foreground: 0 0% 9%;
+  --dui-brand-text: 24 90% 60%;
+  --dui-destructive-fill: color-mix(in srgb, hsl(2.5 95% 62%) 60%, hsl(0 0% 4%));
+  --dui-scrim: hsl(0 0% 2% / 0.6);
+  --dui-destructive-fill-hover: color-mix(in srgb, hsl(2.5 95% 62%) 70%, hsl(0 0% 4%));
   --dui-success: 152 69% 55%;
+}
+
+/* The stacking ladder. Portaled menus, popovers and selects sit on `overlay`, not
+   `floating`: one opened inside a dialog portals to the body, so at 40 it would
+   paint under the dialog that owns it. On one layer, the later one wins. */
+:root {
+  --z-base: 0;
+  --z-raised: 10;
+  --z-chrome: 20;
+  --z-floating: 40;
+  --z-overlay: 50;
+  --z-toast: 60;
+  --z-tooltip: 70;
+  --z-takeover: 100;
+}
+
+/* How a control answers. The package ships with no app around it, so it carries its
+   own copy of the speeds it uses. */
+:root {
+  --dui-dur-press: 80ms;
+  --dui-dur-answer: 120ms;
+  --dui-dur-fast: 150ms;
+  --dui-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --dui-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }

@@ -1,4 +1,4 @@
-import { PageHeading, Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
+import { CountPill, PageHeading, Tabs, TabsList, TabsTrigger } from '@/layers/shared/ui';
 import { MarketplaceToolbar } from './MarketplaceToolbar';
 import { FeaturedRail } from './FeaturedRail';
 import { PackageGrid } from './PackageGrid';
@@ -56,12 +56,7 @@ export function Marketplace() {
               Installed
               {updateCount > 0 && (
                 <>
-                  <span
-                    aria-hidden
-                    className="bg-status-info-bg text-status-info-fg text-2xs ml-1.5 rounded-full px-1.5 font-medium tabular-nums"
-                  >
-                    {updateCount}
-                  </span>
+                  <CountPill count={updateCount} tone="neutral" className="ml-1.5" />
                   <span className="sr-only">
                     , {updateCount} {updateCount === 1 ? 'update' : 'updates'} available
                   </span>

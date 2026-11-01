@@ -23,7 +23,9 @@ import {
   ResponsiveDropdownMenuRadioItem,
   ResponsiveDropdownMenuSeparator,
   ResponsiveDropdownMenuTrigger,
+  CountPill,
   Input,
+  MENTION_COUNT_CAP,
   SidebarMenuNodes,
   Skeleton,
   TOUCH_TARGET_MIN_H,
@@ -417,22 +419,10 @@ export function CommunityContextSwitcher({
                           title="Someone asked to take over this space"
                         />
                       )}
-                      {mentions > 0 && (
-                        <span
-                          className="bg-primary text-primary-foreground shrink-0 rounded-full px-1.5 text-xs"
-                          aria-label={`${mentions} ${mentions === 1 ? 'mention' : 'mentions'}`}
-                        >
-                          @{mentions}
-                        </span>
-                      )}
-                      {otherUnread > 0 && (
-                        <span
-                          className="bg-muted text-muted-foreground shrink-0 rounded-full px-1.5 text-xs"
-                          aria-label={`${otherUnread} other unread`}
-                        >
-                          {otherUnread}
-                        </span>
-                      )}
+                      {/* Mentions are the one number here, and the description
+                        line already says both counts in words, so the pill is
+                        hidden from a screen reader rather than read twice. */}
+                      <CountPill count={mentions} cap={MENTION_COUNT_CAP} />
                     </span>
                   </ResponsiveDropdownMenuRadioItem>
                 );

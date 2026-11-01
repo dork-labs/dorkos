@@ -10,13 +10,8 @@
 import type { ComponentProps } from 'react';
 import { motion } from 'motion/react';
 import { Bell, TriangleAlert } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
-
-/**
- * Above this the pill shows a capped "N+" rather than a growing number — the
- * exact size of a long queue is on the cards, not on a header chip.
- */
-export const DISPLAY_CAP = 9;
+import { cn, SPRING } from '@/layers/shared/lib';
+import { CORNER_COUNT_CAP, CountPill, formatPillCount } from '@/layers/shared/ui';
 
 /**
  * Which silhouette the pill wears.
@@ -94,16 +89,16 @@ export function InboxBellPill({
       animate={{ opacity: 1, scale: 1 }}
       whileHover={{ scale: 1.03 }}
       whileTap={{ scale: 0.98 }}
-      transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+      transition={SPRING.snap}
       className={cn(
-        // **A 28px square below `lg`, whatever the number.** On a phone and a
-        // tablet the pill is the same square as the header's other controls,
+        // **A 44px square below `md`, whatever the number.** On a phone the
+        // pill is the same touch target as the header's other controls,
         // and the number rides its corner as a badge. A pill that grew with its
         // count ("9+ unread") spent 23 to 70px of a row that has none to give:
         // with one unread row the bar beside it painted past its own box on
         // Home, Tasks and Team (DOR-2524). From `lg` up the number and its word
         // sit inline again, where the row has room for them.
-        'focus-visible:ring-ring relative flex h-6 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-colors outline-none focus-visible:ring-2 lg:w-auto lg:justify-start lg:gap-1 lg:px-1.5',
+        'focus-visible:ring-ring relative flex size-11 shrink-0 items-center justify-center rounded-md border text-xs font-medium transition-colors outline-none focus-visible:ring-2 md:h-6 md:w-7 lg:w-auto lg:justify-start lg:gap-1 lg:px-1.5',
         tone === 'waiting'
           ? 'bg-status-warning-bg text-status-warning-fg border-status-warning-border/60 hover:border-status-warning-border hover:bg-status-warning-border/25 active:bg-status-warning-border/40'
           : 'text-muted-foreground border-border/60 hover:border-border hover:bg-muted active:bg-muted/70',
@@ -111,24 +106,25 @@ export function InboxBellPill({
       )}
       {...rest}
     >
-      <Glyph aria-hidden className="size-3.5 shrink-0" />
+      <Glyph aria-hidden className="size-(--size-icon-sm) shrink-0" />
       {count !== undefined && (
-        <span
-          data-slot="inbox-bell-count"
-          className={cn(
-            'tabular-nums',
-            // The corner badge, below `lg`: out of flow, so the number never
-            // widens the control. Solid in the pill's own ink, so it reads as
-            // the same signal at a glance.
-            'text-3xs absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 leading-none',
-            tone === 'waiting'
-              ? 'bg-status-warning-fg text-background'
-              : 'bg-foreground text-background',
-            'lg:static lg:h-auto lg:min-w-0 lg:rounded-none lg:bg-transparent lg:px-0 lg:text-xs lg:leading-normal lg:text-inherit'
-          )}
-        >
-          {count > DISPLAY_CAP ? `${DISPLAY_CAP}+` : count}
-        </span>
+        <>
+          {/* Below `lg`, the corner count: out of flow, so the number never
+            widens the control, and solid in the pill's own ink. Capped at 9+:
+            the size of a long queue is on the cards, not on a header chip. */}
+          <CountPill
+            data-slot="inbox-bell-count"
+            count={count}
+            placement="corner"
+            tone={tone === 'waiting' ? 'warning' : 'neutral'}
+            className="lg:hidden"
+          />
+          {/* From `lg`, the number sits inline beside its word, where the row
+            has room for it. */}
+          <span aria-hidden className="hidden tabular-nums lg:inline">
+            {formatPillCount(count, CORNER_COUNT_CAP)}
+          </span>
+        </>
       )}
       <span className="hidden lg:inline">{text}</span>
     </motion.button>

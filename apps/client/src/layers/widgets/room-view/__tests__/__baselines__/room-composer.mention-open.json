@@ -177,14 +177,12 @@
               "classes": [
                 "bg-background",
                 "border",
-                "border-ring",
+                "border-foreground/20",
                 "flex",
                 "gap-1.5",
                 "items-end",
                 "p-1.5",
                 "pl-3",
-                "ring-[1px]",
-                "ring-ring",
                 "rounded-md",
                 "shadow-xs",
                 "transition-[color,box-shadow]"

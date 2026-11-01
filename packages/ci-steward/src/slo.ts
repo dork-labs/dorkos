@@ -67,12 +67,13 @@ export function sloRuler(config: Config): Required<Pick<SloInputs, 'deadlines' |
 }
 
 /**
- * The inner deadlines of `ci/config.yaml`, in minutes by gate.
+ * The inner deadlines of `ci/config.yaml`, in minutes by gate, as job time:
+ * the deadline plus the setup that runs before its clock starts.
  *
  * @param config - Parsed `ci/config.yaml`.
  */
 export function deadlineMinutes(config: Config): Record<string, number> {
-  return Object.fromEntries(config.deadlines.map((d) => [d.gate, d.minutes]));
+  return Object.fromEntries(config.deadlines.map((d) => [d.gate, d.lead_minutes + d.minutes]));
 }
 
 /**

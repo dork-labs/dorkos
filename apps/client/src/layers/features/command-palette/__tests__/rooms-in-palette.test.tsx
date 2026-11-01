@@ -384,8 +384,9 @@ describe('rooms in the command palette', () => {
       // `roomDisplayTitle` as plain text beside the mark breaks both halves.
       expect(within(row).getByText('urgent')).toHaveAttribute('aria-hidden', 'true');
       expect(within(row).getByText('#urgent')).toHaveClass('sr-only');
-      // The count names itself and not the room, so the row is not "#urgent 2 unread in #urgent".
-      expect(within(row).getByLabelText('2 unread')).toHaveTextContent('2');
+      // A channel's unread is activity nobody aimed at you, so the palette
+      // draws no number for it (AUDIT U6); only mentions and DMs are counted.
+      expect(row.querySelector('[data-slot="count-pill"]')).toBeNull();
     });
 
     it('shows a caught-up room too, but underneath everything that is waiting', async () => {
@@ -410,7 +411,10 @@ describe('rooms in the command palette', () => {
       await screen.findByText('#urgent');
 
       const row = await optionFor('Open DM with Bo');
-      expect(within(row).getByLabelText('2 unread')).toHaveTextContent('2');
+      // A DM is aimed at you, so it counts, solid, and the count names itself.
+      const pill = within(row).getByLabelText('2 new messages');
+      expect(pill).toHaveTextContent('2');
+      expect(pill).toHaveClass('bg-brand-text', 'text-background');
       expect(rowNames().findIndex((n) => n?.includes('Open DM with Bo'))).toBeLessThan(
         rowNames().findIndex((n) => n?.includes('Open DM with Ana'))
       );

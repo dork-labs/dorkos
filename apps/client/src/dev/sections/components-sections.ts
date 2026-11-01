@@ -36,6 +36,23 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Layout',
     keywords: ['card', 'surface', 'panel', 'tile', 'border', 'shadow', 'radius', 'interactive'],
   },
+  {
+    id: 'list-rows',
+    title: 'List rows',
+    page: 'components',
+    category: 'Layout',
+    keywords: [
+      'row',
+      'list',
+      'listrow',
+      'group',
+      'fieldcard',
+      'hover',
+      'selected',
+      'tint',
+      'focus',
+    ],
+  },
   // ControlShowcases
   {
     id: 'press-ladder',
@@ -49,7 +66,28 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     title: 'Badge',
     page: 'components',
     category: 'Buttons',
-    keywords: ['label', 'tag', 'chip', 'status', 'pill'],
+    keywords: ['label', 'tag', 'status', 'pill', 'tone', 'live'],
+  },
+  {
+    id: 'count-pill',
+    title: 'Count pill',
+    page: 'components',
+    category: 'Buttons',
+    keywords: ['count', 'unread', 'mention', 'number', 'badge', 'cap'],
+  },
+  {
+    id: 'chip',
+    title: 'Chip',
+    page: 'components',
+    category: 'Buttons',
+    keywords: ['chip', 'filter', 'toggle', 'pressed', 'removable', 'pill'],
+  },
+  {
+    id: 'mention-pill',
+    title: 'Mention pill',
+    page: 'components',
+    category: 'Buttons',
+    keywords: ['mention', 'cc', 'at', 'handle', 'pill'],
   },
   {
     id: 'kbd',

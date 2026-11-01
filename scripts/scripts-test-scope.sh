@@ -43,6 +43,7 @@ SCOPE_PATTERNS=(
   '^\.claude/scripts/'
   '^package\.json$'
   '^lefthook\.yml$'
+  '^turbo\.json$'
   '^apps/[^/]+/package\.json$'
   '^packages/[^/]+/package\.json$'
   '^packages/harness/src/'

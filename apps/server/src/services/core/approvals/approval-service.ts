@@ -55,11 +55,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
-import {
-  isExtensionCapabilityId,
-  type CapabilitySource,
-  type CapabilityTier,
-} from '@dorkos/shared/capabilities';
+import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import {
   type ApprovalOrigin,
@@ -71,6 +67,12 @@ import {
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
 import { isAlwaysOffered } from './always-offered.js';
+import {
+  recordedArea,
+  toPendingApproval,
+  type ApprovalRow,
+  type CapabilityDescriptorLookup,
+} from './approval-card.js';
 
 export { isAlwaysOffered };
 import {
@@ -79,7 +81,6 @@ import {
   storableServiceAction,
   storableSummary,
   ownAnswerInput,
-  withServiceAction,
 } from './approval-storable.js';
 import {
   raiseCapabilityApproval,
@@ -100,7 +101,7 @@ export type {
   ApprovalConsumeOptions,
   ApprovalConsumptionSettlement,
 } from './approval-consumption.js';
-import { extensionSourcePhrase, renderRequesterLabel } from './approval-summary.js';
+import { renderRequesterLabel } from './approval-summary.js';
 
 /**
  * How long an operator has to decide before a token stops being honored.
@@ -185,6 +186,13 @@ export interface ApprovalRequestInput {
   inputHash: string;
   /** One plain sentence describing what the operator is about to allow. */
   summary: string;
+  /**
+   * The card's title for this one request, in place of the capability's own
+   * title. For a card whose question depends on what it is about, such as a
+   * repo pin naming its worktree (DOR-3359). Honoured only for a capability
+   * whose descriptor sets `titledPerRequest`; swept and capped like the summary.
+   */
+  title?: string;
   /**
    * The one argument a person has to read IN FULL before answering, verbatim.
    *
@@ -313,30 +321,6 @@ export interface ApprovalConnectorAuthority {
   readonly operationRevisionId: string;
 }
 
-/**
- * How the service learns a capability's human-facing title and permission tier.
- *
- * Deliberately NOT part of {@link ApprovalRequestInput}: if a requester could
- * state its own tier, an `act` operation could dress itself as `destructive` to
- * scare an operator, or a `destructive` one could soften itself to look routine.
- * The card's identity region is derived from the capability registry, which is
- * the single source of truth every other agent-facing surface is generated from,
- * so it cannot be spoofed by whoever is asking.
- *
- * Injected as a function rather than a registry import because the registry is
- * composed from the very domains that request approvals — a static import would
- * close a cycle, and the registry is composed later in boot than this service.
- *
- * Deliberately not exported: it is the shape of one option, and no consumer needs
- * to name it.
- *
- * @param capabilityId - The capability id to describe.
- * @returns Its title and tier, or `undefined` when the registry has no such id.
- */
-type CapabilityDescriptorLookup = (
-  capabilityId: string
-) => { title: string; tier: CapabilityTier; source?: CapabilitySource } | undefined;
-
 /** Construction options for {@link ApprovalService}. */
 export interface ApprovalServiceOptions {
   /** How long an operator has to decide. Defaults to {@link APPROVAL_TTL_MS}. */
@@ -439,82 +423,6 @@ export interface AwaitDecisionOptions {
 /** Hash a token exactly as it is stored: SHA-256, lowercase hex. */
 function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
-}
-
-/** A stored approval row, as Drizzle infers it. */
-type ApprovalRow = typeof approvals.$inferSelect;
-
-/** The recorded area, read defensively: a hand-edited row never breaks a card. */
-function recordedArea(area: string | null): PermissionAreaId | null {
-  return area === null ? null : (area as PermissionAreaId);
-}
-
-/**
- * Project a stored row into the cockpit-facing shape. Never includes the hash.
- *
- * @param row - The stored approval.
- * @param roomId - The room whose turn raised it, when there is one.
- * @param suggestAlways - Whether the card should suggest Always allow; asked
- *   only of a card that offers it.
- * @param projectForFolder - The project an asking session's folder belongs to.
- * @param sourceOf - The running extension an `ext_` capability comes from.
- */
-function toPendingApproval(
-  row: ApprovalRow,
-  roomId?: string,
-  suggestAlways?: (row: ApprovalRow) => { allowedThisWeek: number } | null,
-  projectForFolder?: (cwd: string) => ProjectRef | null | undefined,
-  sourceOf?: (capabilityId: string) => CapabilitySource | undefined
-): PendingApproval {
-  const alwaysOffered = isAlwaysOffered(row);
-  const suggestion = alwaysOffered ? (suggestAlways?.(row) ?? null) : null;
-  const project = projectForFolder
-    ? row.requestingCwd
-      ? projectForFolder(row.requestingCwd)
-      : null
-    : undefined;
-  // Only an extension's tool names a source, and only while it runs: the card
-  // then says which extension it is from. Read live, like the room above, and
-  // shown only while it is the extension the stored summary named, so the
-  // subtitle never contradicts the sentence under it (a rename or a reinstall
-  // under the same id drops it).
-  const live = isExtensionCapabilityId(row.capabilityId) ? sourceOf?.(row.capabilityId) : undefined;
-  const source = live && row.summary.includes(extensionSourcePhrase(live.name)) ? live : undefined;
-  return {
-    approvalId: row.id,
-    capabilityId: row.capabilityId,
-    capabilityTitle: row.capabilityTitle,
-    tier: row.tier,
-    summary: row.summary,
-    ...(row.detail === null ? {} : { detail: row.detail }),
-    ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
-    // Both halves or neither: a label with no id behind it is the shape this
-    // field exists to avoid, since the id is what makes the name checkable.
-    ...(row.subjectKind && row.subjectLabel && row.subjectId
-      ? { subject: { kind: row.subjectKind, label: row.subjectLabel, id: row.subjectId } }
-      : {}),
-    ...(row.origin && !row.requestedBy ? { origin: row.origin } : {}),
-    // Gated on the SUBJECT, not on itself: the card only swaps the summary out
-    // for this when it has a subject block to swap it for, so a remainder
-    // without one would be a clause nothing renders.
-    ...(row.otherArguments && row.subjectLabel ? { otherArguments: row.otherArguments } : {}),
-    ...withServiceAction(row.serviceAction),
-    // The raw path stays off the wire (see `requestedByPath`'s own comment); what
-    // goes out is the one bit a surface needs, which is whether there is one.
-    hasAgentPath: row.requestedByPath !== null,
-    area: recordedArea(row.area),
-    alwaysOffered,
-    ...(suggestion
-      ? { suggestAlways: true as const, allowedThisWeek: suggestion.allowedThisWeek }
-      : {}),
-    ...(row.blockedRequest ? { blockedRequest: true as const } : {}),
-    ...(row.blockedRequest && row.requestReason ? { requestReason: row.requestReason } : {}),
-    ...(roomId ? { roomId } : {}),
-    ...(project !== undefined ? { project } : {}),
-    ...(source ? { source: { kind: source.kind, id: source.id, name: source.name } } : {}),
-    requestedAt: row.createdAt,
-    expiresAt: row.expiresAt,
-  };
 }
 
 /**
@@ -706,7 +614,10 @@ export class ApprovalService {
       id: ulid(),
       tokenHash: hashToken(token),
       capabilityId: input.capabilityId,
-      capabilityTitle: descriptor?.title ?? input.capabilityId,
+      capabilityTitle:
+        input.title && descriptor?.titledPerRequest
+          ? storableSummary(input.title)
+          : (descriptor?.title ?? input.capabilityId),
       tier: descriptor?.tier ?? ('destructive' as const),
       inputHash: input.inputHash,
       authorityBindingDigest: input.connectorAuthority?.digest ?? null,
@@ -1225,13 +1136,13 @@ export class ApprovalService {
 
   /** One stored row as the card a surface draws. */
   private toCard(row: ApprovalRow): PendingApproval {
-    return toPendingApproval(
-      row,
-      this.roomFor(row.requestingSessionId),
-      (r) => this.suggestsAlways(r),
-      this.options.projectForFolder,
-      (capabilityId) => this.options.describeCapability?.(capabilityId)?.source
-    );
+    return toPendingApproval(row, {
+      roomId: this.roomFor(row.requestingSessionId),
+      suggestAlways: (r) => this.suggestsAlways(r),
+      projectForFolder: this.options.projectForFolder,
+      sourceOf: (capabilityId) => this.options.describeCapability?.(capabilityId)?.source,
+      consequenceOf: (capabilityId) => this.options.describeCapability?.(capabilityId)?.consequence,
+    });
   }
 
   /**

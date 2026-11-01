@@ -9,6 +9,8 @@
  *   MultiEdit and NotebookEdit are denied `<home>/.claude/**`, `<home>/.agents/**`
  *   (where its skills really live), `<home>/.mcp.json` and `<home>/.dork/agent.json`. Run on the real CLI, Claude Code does not
  *   protect these under Bypass. Bash still can, which is why the pin exists.
+ *   An agent a person set to Full, on an unmarked turn, may write all but
+ *   `agent.json` (DOR-3483, `own-folder-open.ts`).
  * - **A changed part is held back** (`folder-config-pin.ts`). Hooks or the MCP
  *   servers file: when the turn stands in the home or a folder inside it (by
  *   real path: Claude Code collects settings and `.mcp.json` up the tree), the launch turns
@@ -27,7 +29,8 @@
  * is held and nobody is asked, and one Activity line says what loaded that would
  * have waited below Full. **That is not a person's allow:** no approval is
  * recorded, so the same files are held and asked about the moment the agent is
- * below Full. The deny rules on the self-grant files still apply.
+ * below Full: the card comes back once, for the content as it stands at the drop. The deny
+ * rules on `agent.json` still apply, and on the rest unless its own folder is open.
  *
  * @module services/runtimes/claude-code/folder-settings/launch-folder-config
  */
@@ -234,9 +237,14 @@ export async function isInsideHome(cwd: string, home: string): Promise<boolean> 
  * under every spelling of the home (as given, and its real path). `undefined`
  * when one can't be named exactly in a rule.
  *
+ * When the home's own folder is open (DOR-3483, `own-folder-open.ts`), only
+ * `.dork/agent.json` is left: it holds the level a person set, the account and
+ * the MCP servers held for a person, so editing its own hooks never reaches it.
+ *
  * @param home - The registered agent home.
+ * @param ownFolderOpen - Whether the turn may write its own `.claude/`, `.agents/` and `.mcp.json`.
  */
-export function homeWriteDenyRules(home: string): string[] | undefined {
+export function homeWriteDenyRules(home: string, ownFolderOpen = false): string[] | undefined {
   const resolved = path.resolve(home);
   const spellings = [resolved];
   try {
@@ -248,11 +256,15 @@ export function homeWriteDenyRules(home: string): string[] | undefined {
   const rules: string[] = [];
   for (const spelling of spellings) {
     const targets: [string, 'folder' | 'file'][] = [
-      [path.join(spelling, '.claude'), 'folder'],
-      // Where the home's skills really live: `.claude/skills/<x>` is a symlink
-      // into it, so an edit here is an edit to the skill.
-      [path.join(spelling, '.agents'), 'folder'],
-      [path.join(spelling, '.mcp.json'), 'file'],
+      ...(ownFolderOpen
+        ? []
+        : ([
+            [path.join(spelling, '.claude'), 'folder'],
+            // Where the home's skills really live: `.claude/skills/<x>` is a symlink
+            // into it, so an edit here is an edit to the skill.
+            [path.join(spelling, '.agents'), 'folder'],
+            [path.join(spelling, '.mcp.json'), 'file'],
+          ] as [string, 'folder' | 'file'][])),
       [path.join(spelling, '.dork', 'agent.json'), 'file'],
     ];
     for (const [target, kind] of targets) {
@@ -272,6 +284,7 @@ export function homeWriteDenyRules(home: string): string[] | undefined {
  * @param sdkOptions - The launch options, mutated.
  * @param home - The registered agent home, if any.
  * @param decision - What {@link resolveFolderConfigForLaunch} held back.
+ * @param ownFolderOpen - Whether the turn may write its own folder setup (DOR-3483).
  *
  * A home no rule can name exactly (a `?`, a backslash, a control character, a
  * trailing space) gets no deny rules and a warning, rather than a refused
@@ -280,10 +293,11 @@ export function homeWriteDenyRules(home: string): string[] | undefined {
 export function applyFolderConfigToLaunch(
   sdkOptions: Options,
   home: string | undefined,
-  decision: FolderConfigLaunch
+  decision: FolderConfigLaunch,
+  ownFolderOpen = false
 ): void {
   if (!home) return;
-  const deny = homeWriteDenyRules(home) ?? [];
+  const deny = homeWriteDenyRules(home, ownFolderOpen) ?? [];
   if (deny.length === 0) {
     logger.warn("[FolderConfig] Can't name the agent home in a deny rule; its pin still holds", {
       home,

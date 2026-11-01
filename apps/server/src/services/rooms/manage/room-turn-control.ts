@@ -22,6 +22,7 @@ import type { RoomCore } from '../service/room-core.js';
 import { RoomError } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+import type { AsideCarry } from '../room-trigger/aside.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
 import { mayReseatByHand } from '../reseat/seat-mover.js';
 import type { ReseatOptions } from '@dorkos/shared/room-schemas';
@@ -356,12 +357,15 @@ export class RoomTurnControl {
    * @param input.authorId - The agent being asked.
    * @param input.aboutEntryId - The status line it just posted.
    * @param input.prompt - The question, as the model will see it.
+   * @param input.carried - The marks and the level ceiling the turn runs under, when the
+   *   caller bounds it (an agent introduction, DOR-2106). Absent, the welcome-back default.
    */
   async askAside(input: {
     roomId: string;
     authorId: string;
     aboutEntryId: string;
     prompt: string;
+    carried?: AsideCarry;
   }): Promise<void> {
     const room = this.store.getRoom(input.roomId);
     // An archived room takes no new posts, so an offer for it could never be
@@ -375,6 +379,7 @@ export class RoomTurnControl {
       entry,
       authorId: input.authorId,
       prompt: input.prompt,
+      ...(input.carried ? { carried: input.carried } : {}),
     });
   }
 }

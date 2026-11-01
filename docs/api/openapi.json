@@ -4365,6 +4365,10 @@
               "destructive"
             ]
           },
+          "consequence": {
+            "type": "string",
+            "maxLength": 40
+          },
           "summary": {
             "type": "string",
             "maxLength": 500
@@ -9934,6 +9938,10 @@
             "type": "boolean",
             "description": "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false."
           },
+          "offersTurnOn": {
+            "type": "boolean",
+            "description": "True when the schedule stayed off although its file now says on. A file can switch a schedule off but never on, so a person is offered Turn on. Absent means false."
+          },
           "approvalChanges": {
             "type": "array",
             "items": {
@@ -10125,6 +10133,9 @@
           },
           "originMarks": {
             "$ref": "#/components/schemas/ScheduleOriginMarks"
+          },
+          "quietHold": {
+            "type": "boolean"
           },
           "nextRun": {
             "type": [
@@ -15851,7 +15862,8 @@
           "first_connection",
           "volume_mark",
           "anniversary",
-          "agent_minted"
+          "agent_minted",
+          "joined_room"
         ]
       },
       "RoomMomentSource": {
@@ -16046,7 +16058,7 @@
           },
           "cc": {
             "type": "boolean",
-            "description": "True when this mention only copies its author in: it came after the leading run of @mentions in a channel message, so no agent takes a turn for it (DOR-3401). Absent means the author was asked, which is how every older entry reads."
+            "description": "True when this mention only copies its author in: it came after `cc` on its line in a channel message, so no agent takes a turn for it (DOR-3453). Absent means the author was asked, which is how every older entry reads."
           }
         },
         "required": [
