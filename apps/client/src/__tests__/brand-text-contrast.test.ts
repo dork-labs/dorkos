@@ -7,9 +7,10 @@
  * ring. As text it measured 3.74:1 on the light page, 3.19:1 on the sidebar,
  * and 3.40:1 for a directed-unread count on its own `bg-brand/15` tint over a
  * selected sidebar row (style-guide audit, 2026-10-17). `--brand-text` is the
- * orange for words: message links and inline code (`.msg-prose`), the unread
- * divider, the unread count badges, a selected answer mode. Same hue, moved in
- * lightness only.
+ * orange for words: the unread divider, the unread count badges, a selected
+ * answer mode. Same hue, moved in lightness only. Message links and inline code
+ * are NOT orange: orange means "this is for you", so `.msg-prose` paints them in
+ * ink (pinned at the bottom of this file).
  *
  * **The badges decide the light value.** A count badge paints `--brand-text`
  * on `bg-brand/15` over the sidebar, a hovered row and a selected row. The
@@ -133,7 +134,6 @@ function grounds(theme: string): Record<string, Rgb> {
     background: bg,
     card: hsl(theme, '--card'),
     popover,
-    // Inline code paints on `bg-muted`.
     muted: hsl(theme, '--muted'),
     'accent (hovered menu row)': accent,
     secondary: hsl(theme, '--secondary'),
@@ -192,10 +192,29 @@ describe('brand text contrast', () => {
     expectAll(ratios(themes.dark, hsl(themes.dark, '--brand-text')));
   });
 
-  it('message links and inline code paint with the text token, not the ring', () => {
+  it('message links and inline code are ink, not orange (orange means "for you")', () => {
     const link = section(css, '.msg-prose a,', '}');
-    const code = section(css, '.msg-prose code {', '}');
-    expect(link).toContain('color: hsl(var(--brand-text))');
-    expect(code).toContain('color: hsl(var(--brand-text))');
+    const code = section(css, '.msg-prose :not(pre) > code {', '}');
+    expect(link).toContain('color: inherit');
+    expect(link).not.toContain('brand');
+    expect(code).toContain('color: inherit');
+    expect(code).not.toContain('brand');
+    // The tint is foreground at 5%: the one alpha the contrast check below uses.
+    expect(code).toContain('background: hsl(var(--foreground) / 0.05)');
   });
+
+  it.each(['light', 'dark'] as const)(
+    '%s: inline code text clears AA on its tint over every message ground',
+    (name) => {
+      const theme = themes[name];
+      const ink = hsl(theme, '--foreground');
+      const pairs = Object.fromEntries(
+        (['--background', '--card', '--popover'] as const).map((ground) => [
+          `foreground on foreground/5 over ${ground}`,
+          contrast(ink, over(ink, 0.05, hsl(theme, ground))),
+        ])
+      );
+      expectAll(pairs);
+    }
+  );
 });

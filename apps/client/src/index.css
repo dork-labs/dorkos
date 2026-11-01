@@ -1948,14 +1948,35 @@ body {
   margin-top: 1em;
 }
 
+/* Links and inline code are ink, not orange. Orange in a message means "this is
+   for you" (a mention, your reaction, a directed count), so a link cannot spend
+   it. The underline is the link signal: thin, set below the descenders, and
+   quiet until the pointer or the keyboard lands on it. Only the underline's
+   colour moves, so nothing shifts and the global reduced-motion rule covers it. */
 .msg-prose a,
 .msg-prose [data-streamdown='link'] {
-  color: hsl(var(--brand-text));
-  text-decoration: underline;
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+  text-decoration-color: color-mix(in oklab, currentColor 45%, transparent);
+  transition: text-decoration-color var(--dur-fast) var(--ease-out);
 }
 
-.msg-prose code {
-  color: hsl(var(--brand-text));
+.msg-prose a:hover,
+.msg-prose a:focus-visible,
+.msg-prose [data-streamdown='link']:hover,
+.msg-prose [data-streamdown='link']:focus-visible {
+  text-decoration-color: currentColor;
+}
+
+/* Inline code only: a block's `pre > code` keeps its own surface. */
+.msg-prose :not(pre) > code {
+  color: inherit;
+  background: hsl(var(--foreground) / 0.05);
+  border: 0;
+  border-radius: calc(var(--radius) / 2);
+  padding: 0.1em 0.3em;
 }
 
 .msg-prose ul {
