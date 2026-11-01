@@ -40,6 +40,7 @@ import { memoryDomain } from '../../memory/memory-capabilities.js';
 import { sessionDomain } from '../../session/agent-compaction/compaction-capabilities.js';
 import { chatDomain } from '../../session/chat-messages/chat-capabilities.js';
 import { commitmentsDomain } from '../../commitments/commitment-capabilities.js';
+import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
@@ -76,6 +77,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
   if (deps.commitmentDeps) domains.push(commitmentsDomain);
+  if (deps.workQueueDeps) domains.push(workQueueDomain);
   if (deps.auditDeps) domains.push(auditDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
   if (deps.localBrowserDeps) domains.push(createLocalBrowserDomain(deps.localBrowserDeps));
@@ -147,6 +149,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     sessionDomain,
     chatDomain,
     commitmentsDomain,
+    workQueueDomain,
     auditDomain,
     agentPauseDomain,
     createLocalBrowserDomain({} as NonNullable<CapabilityDeps['localBrowserDeps']>),
@@ -167,6 +170,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
     commitmentDeps: {} as CapabilityDeps['commitmentDeps'],
+    workQueueDeps: {} as CapabilityDeps['workQueueDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],
   };

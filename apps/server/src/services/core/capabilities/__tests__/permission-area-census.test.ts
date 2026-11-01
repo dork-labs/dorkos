@@ -80,6 +80,8 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
     'operator.update_agent',
     'operator.update_agent_execution',
     'session_start',
+    'work-queue.add',
+    'work-queue.remove',
   ],
   // One action, an agent summarizing its own conversation (DOR-2732).
   own_chat: ['session.compact'],

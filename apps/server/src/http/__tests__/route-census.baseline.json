@@ -29,6 +29,7 @@
     "ALL /api/tasks/*",
     "ALL /api/test/mcp-oauth/mcp",
     "ALL /mcp",
+    "DELETE /api/agents/:id/work-queue/items/:itemId",
     "DELETE /api/communities/:ref/agents/:localAgentId",
     "DELETE /api/communities/:ref/rooms/:roomId/agents/:localAgentId/membership",
     "DELETE /api/communities/:ref/rooms/:roomId/membership",
@@ -85,6 +86,7 @@
     "GET /api/agents/:id/heartbeat",
     "GET /api/agents/:id/level",
     "GET /api/agents/:id/permissions",
+    "GET /api/agents/:id/work-queue",
     "GET /api/agents/current",
     "GET /api/agents/mcp-oauth/callback",
     "GET /api/agents/pauses",
@@ -358,6 +360,7 @@
     "GET /relay-passkey",
     "GET /relay-passkey.js",
     "PATCH /api/agents/:id/permissions",
+    "PATCH /api/agents/:id/work-queue",
     "PATCH /api/agents/current",
     "PATCH /api/commitments/:id",
     "PATCH /api/config",
@@ -387,6 +390,8 @@
     "POST /api/agents/:id/commitments",
     "POST /api/agents/:id/pause",
     "POST /api/agents/:id/resume",
+    "POST /api/agents/:id/work-queue/items",
+    "POST /api/agents/:id/work-queue/items/:itemId/requeue",
     "POST /api/agents/create",
     "POST /api/agents/current/migrate-persona",
     "POST /api/agents/resolve",
@@ -662,6 +667,7 @@
     "POST /api/workspaces/:id/pin",
     "POST /api/workspaces/ports",
     "POST /mcp",
+    "PUT /api/agents/:id/work-queue/order",
     "PUT /api/cloud/credits/default",
     "PUT /api/communities/:ref/agents/:localAgentId/dms",
     "PUT /api/communities/:ref/me/display-name",
@@ -695,6 +701,7 @@
     "PUT /api/runtimes/claude-code/accounts/:id/only-projects",
     "PUT /api/runtimes/claude-code/project-accounts",
     "PUT /api/runtimes/doe/inference",
-    "PUT /api/test/account-world"
+    "PUT /api/test/account-world",
+    "PUT /api/work-queues/stop"
   ]
 }

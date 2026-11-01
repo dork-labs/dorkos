@@ -40,7 +40,8 @@ test.describe('Profile — a page pushes in @smoke', () => {
 
     // Chats lives in the Work fold, closed by default since the profile
     // redesign (DOR-3171): open it the way a person does, by its header.
-    const work = docked.getByRole('button', { name: /^Work/ });
+    // Not the fold's own "Work queue" row, which opens inside it.
+    const work = docked.getByRole('button', { name: /^Work(?! queue)/ });
     await expect(work).toHaveAttribute('aria-expanded', 'false');
     await work.click();
     await expect(work).toHaveAttribute('aria-expanded', 'true');

@@ -40,7 +40,11 @@ function realOr(dir: string): string {
  * @param cwd - The folder the session would work in, already boundary-checked.
  * @param callerPath - The calling agent's own home.
  */
-export function isOtherAgentsFolder(deps: McpToolDeps, cwd: string, callerPath: string): boolean {
+export function isOtherAgentsFolder(
+  deps: Pick<McpToolDeps, 'meshCore'>,
+  cwd: string,
+  callerPath: string
+): boolean {
   if (resolveAgentHome(cwd, callerPath).kind === 'refused') return true;
   const target = realOr(cwd);
   const owner = (deps.meshCore?.listWithPaths() ?? [])

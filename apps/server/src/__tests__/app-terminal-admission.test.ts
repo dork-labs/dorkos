@@ -319,7 +319,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/tasks');
     // 83 -> 84: every chat running now, ahead of `/api/sessions` (DOR-3460).
     expect(mounts).toContain('/api/sessions/running');
-    expect(mounts).toHaveLength(84);
+    // 84 -> 86: an agent's work queue, and the stop on every queue (DOR-3462).
+    expect(mounts).toContain('/api/work-queues');
+    expect(mounts).toHaveLength(86);
     const byHand = [
       '/',
       '/x/fixture',

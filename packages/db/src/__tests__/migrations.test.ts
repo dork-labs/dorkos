@@ -143,6 +143,9 @@ describe('Database Migrations', () => {
       // Agents paused everywhere, current state only; history is audit rows
       // (spec audit-trail PR5).
       'agent_pauses',
+      // An agent's ordered work, and how its queue runs (DOR-3462); `work_queue_control` below.
+      'agent_work_items',
+      'agent_work_queues',
       'agents',
       'apikey',
       // Approval records for capability invocations that need a person's
@@ -369,6 +372,7 @@ describe('Database Migrations', () => {
       'unclaimed_chats',
       'user',
       'verification',
+      'work_queue_control',
       'workspaces',
     ]);
   });

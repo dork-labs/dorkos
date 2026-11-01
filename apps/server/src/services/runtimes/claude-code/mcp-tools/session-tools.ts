@@ -97,8 +97,7 @@ import { outsiderStartCeiling, startLevelFacts } from './session-start-facts.js'
 import { recordMarkedFullAction } from '../../../core/turn-power/full-autonomy.js';
 import { isOtherAgentsFolder } from './other-agents-folder.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import { jsonContent, type McpToolDeps } from './types.js';
 
 /** The client id every `session_start` launch holds its session's write lock under. */
 export const SESSION_START_CLIENT_ID = 'mcp:session_start';
@@ -284,7 +283,7 @@ interface CallerAgent {
 
 /** The calling agent, when it is one Mesh has registered, and the chat it calls from. */
 function callerOf(
-  deps: McpToolDeps,
+  deps: Pick<McpToolDeps, 'meshCore'>,
   resolveCaller: SessionStartCallerResolver | undefined
 ): (CallerAgent & { chat: CallingChat | null }) | null {
   const resolved = resolveCaller?.();
@@ -373,10 +372,15 @@ async function discardUnstartedSession(sessionId: string): Promise<void> {
  *
  * @param deps - Shared MCP tool dependencies (Mesh, Activity).
  * @param resolveCaller - Who is calling.
+ * @param checkAccount - Whether the named account may launch. An agent naming one
+ *   needs the account policy's yes; the work queue picks from core's own ranking
+ *   instead, as a room seat's move does. The launch service still applies the
+ *   account's project rules either way.
  */
 export function createSessionStartHandler(
-  deps: McpToolDeps,
-  resolveCaller?: SessionStartCallerResolver
+  deps: Pick<McpToolDeps, 'meshCore' | 'activityService'>,
+  resolveCaller?: SessionStartCallerResolver,
+  checkAccount: typeof checkAccountLaunch = checkAccountLaunch
 ) {
   return async (args: SessionStartArgs) => {
     const caller = callerOf(deps, resolveCaller);
@@ -439,7 +443,7 @@ export function createSessionStartHandler(
             'UNKNOWN_ACCOUNT'
           );
         }
-        const decision = await checkAccountLaunch({
+        const decision = await checkAccount({
           accountId: account.id,
           cwd,
           runtime: runtimeType,

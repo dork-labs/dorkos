@@ -513,7 +513,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // the memory block name it as a searchable ending, and it is always loaded.
     // 136 -> 137 for `running_chats` (DOR-3460): no prompt block names it, so it
     // stays deferred and unprefixed.
-    expect(advertised.size).toBe(137);
+    // 137 -> 140 for the work queue's three tools (DOR-3462).
+    expect(advertised.size).toBe(140);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

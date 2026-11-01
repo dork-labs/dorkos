@@ -98,7 +98,8 @@ export type WifiRefusedSurface =
   | 'front-door'
   | 'host'
   | 'sign-out-all'
-  | 'spending';
+  | 'spending'
+  | 'work-queue';
 
 /** One refused route pattern, and why. */
 export interface WifiRefusedRoute {
@@ -123,6 +124,21 @@ const ON_THE_COMPUTER = 'at this computer.';
 
 /** Every route a Wi-Fi sign-in is refused on. The single source of the level. */
 export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
+  // A queue starts chats later with nobody watching, at the agent's own level, so
+  // turning one on or filling it is a standing grant (DOR-3462). The stop goes with
+  // it, so this list stays one rule: every queue write is made at the computer.
+  {
+    surface: 'work-queue',
+    methods: 'writes',
+    pattern: /^\/api\/agents\/[^/]+\/work-queue(?:\/|$)/,
+    reason: `A work queue can be changed only ${ON_THE_COMPUTER}`,
+  },
+  {
+    surface: 'work-queue',
+    methods: 'writes',
+    pattern: /^\/api\/work-queues(?:\/|$)/,
+    reason: `Work queues can be stopped only ${ON_THE_COMPUTER}`,
+  },
   {
     surface: 'terminal',
     methods: 'all',
