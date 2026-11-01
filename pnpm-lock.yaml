@@ -20,7 +20,7 @@ overrides:
   vite@7: 7.3.6
   '@esbuild-kit/core-utils>esbuild': ^0.25.0
   lodash-es: ^4.18.1
-  dompurify: ^3.4.16
+  dompurify: ^3.4.17
   hono: ^4.13.9
   '@hono/node-server': ^1.19.15
   axios: ^1.15.1
@@ -7873,8 +7873,8 @@ packages:
   dom-accessibility-api@0.6.3:
     resolution: {integrity: sha512-7ZgogeTnjuHbo+ct10G9Ffp0mif17idi0IyWNVA/wcwcm7NPOD/WEHVP3n7n3MhXqxoIYm8d6MuZohYWIZ4T3w==}
 
-  dompurify@3.4.16:
-    resolution: {integrity: sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ==}
+  dompurify@3.4.17:
+    resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==}
 
   dot-prop@10.1.0:
     resolution: {integrity: sha512-MVUtAugQMOff5RnBy2d9N31iG0lNwg1qAoAOn7pOK5wf94WIaE3My2p3uwTQuvS2AcqchkcR3bHByjaM0mmi7Q==}
@@ -14671,7 +14671,7 @@ snapshots:
       '@milkdown/utils': 7.22.1
       '@types/lodash-es': 4.17.12
       clsx: 2.1.1
-      dompurify: 3.4.16
+      dompurify: 3.4.17
       lodash-es: 4.18.1
       nanoid: 6.0.2
       unist-util-visit: 5.1.0
@@ -14704,7 +14704,7 @@ snapshots:
       '@types/lodash-es': 4.17.12
       clsx: 2.1.1
       codemirror: 6.0.2
-      dompurify: 3.4.16
+      dompurify: 3.4.17
       katex: 0.18.7
       lodash-es: 4.18.1
       prosemirror-virtual-cursor: 0.4.2(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)
@@ -18279,7 +18279,7 @@ snapshots:
       '@prosemirror-adapter/react': 0.5.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@types/mdast': 4.0.4
       codemirror: 6.0.2
-      dompurify: 3.4.16
+      dompurify: 3.4.17
       katex: 0.17.0
       lucide-static: 1.21.0
       mdast-util-directive: 3.1.1
@@ -19015,7 +19015,7 @@ snapshots:
 
   dom-accessibility-api@0.6.3: {}
 
-  dompurify@3.4.16:
+  dompurify@3.4.17:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -21557,7 +21557,7 @@ snapshots:
       d3-sankey: 0.12.3
       dagre-d3-es: 7.0.14
       dayjs: 1.11.23
-      dompurify: 3.4.16
+      dompurify: 3.4.17
       elkjs: 0.9.3
       es-toolkit: 1.52.0
       katex: 0.18.7
@@ -22475,7 +22475,7 @@ snapshots:
       '@posthog/core': 1.55.2
       '@posthog/types': 1.413.0
       core-js: 3.50.0
-      dompurify: 3.4.16
+      dompurify: 3.4.17
       fflate: 0.4.9
       preact: 10.29.8
       query-selector-shadow-dom: 1.0.1
