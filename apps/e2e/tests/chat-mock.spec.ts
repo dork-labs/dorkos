@@ -110,6 +110,73 @@ test.describe('TestModeRuntime — mock browser tests', () => {
     });
   });
 
+  // QA's 0.129.0 gate shot the phone bar reading "🎨 qa-tasks › C": the title cut
+  // to one glyph, and the bell's count cut off by the top of the screen. Only a
+  // laid-out page sees either, so this measures the boxes (chat spec §4, S12).
+  test('on a phone, the header says who and which conversation, and the bell count is whole', async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.route('**/api/notifications*', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({ response, json: { ...body, unreadCount: 4 } });
+    });
+
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.sendAndLand('Hello from a phone');
+    const sessionId = await chatPage.getSessionId();
+    expect(sessionId).toBeTruthy();
+    const longTitle = 'Add rate limiting to the public API before the launch';
+    const renamed = await request.patch(
+      `${API_URL}/api/sessions/${sessionId}?cwd=${encodeURIComponent(agentDir)}`,
+      { data: { title: longTitle } }
+    );
+    expect(renamed.ok()).toBe(true);
+    await page.reload();
+
+    const name = page.getByTestId('session-agent-name');
+    const title = page.getByTestId('session-title');
+    await expect(title).toHaveText(longTitle, { timeout: 10_000 });
+    const nameBox = (await name.boundingBox())!;
+    const titleBox = (await title.boundingBox())!;
+    const cluster = (await page.locator('[data-slot="bar-fixed-cluster"]').boundingBox())!;
+
+    // Two lines: the title under the name, both with room to be read.
+    expect(titleBox.y).toBeGreaterThanOrEqual(nameBox.y + nameBox.height - 1);
+    expect(titleBox.width).toBeGreaterThanOrEqual(80);
+    expect(nameBox.width).toBeGreaterThanOrEqual(40);
+    // Neither line paints into Search, the bell or the panel toggle.
+    expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(cluster.x);
+    expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(cluster.x);
+
+    // The count rides inside the bell, inside the bar, inside the screen.
+    const bell = page.getByTestId('inbox-bell');
+    const count = bell.locator('[data-slot="inbox-bell-count"]');
+    await expect(count).toHaveText('4');
+    const bellBox = (await bell.boundingBox())!;
+    const countBox = (await count.boundingBox())!;
+    const bar = (await page.locator('header.\\@container\\/bar').boundingBox())!;
+    expect(countBox.y).toBeGreaterThanOrEqual(Math.max(0, bar.y, bellBox.y));
+    expect(countBox.x + countBox.width).toBeLessThanOrEqual(bellBox.x + bellBox.width);
+    expect(countBox.y + countBox.height).toBeLessThanOrEqual(bar.y + bar.height);
+
+    // A chat never gets a second row, down to 375 (S12): the bar stays one 44px
+    // row with the cluster beside the identity, not under it.
+    for (const width of [390, 375]) {
+      await page.setViewportSize({ width, height: 844 });
+      const row = (await page.locator('header.\\@container\\/bar').boundingBox())!;
+      const titleNow = (await title.boundingBox())!;
+      const clusterNow = (await page.locator('[data-slot="bar-fixed-cluster"]').boundingBox())!;
+      expect(row.height, `bar height at ${width}`).toBeLessThanOrEqual(46);
+      expect(titleNow.width, `title width at ${width}`).toBeGreaterThanOrEqual(80);
+      expect(titleNow.x + titleNow.width).toBeLessThanOrEqual(clusterNow.x);
+    }
+  });
+
   test('renders tool call card for tool-call scenario', async ({ page, request }) => {
     await request.post(`${API_URL}/api/test/scenario`, {
       data: { name: 'tool-call' },
