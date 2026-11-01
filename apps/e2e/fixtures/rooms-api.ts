@@ -28,8 +28,8 @@ import type { APIRequestContext } from '@playwright/test';
  * - **In the boundary.** The server refuses an agent path outside
  *   `DORKOS_BOUNDARY`, which defaults to the home directory. A root under the
  *   checkout is therefore only in bounds while the checkout itself sits under
- *   `$HOME` — which is why `playwright.config.ts` points the cockpit leg's
- *   boundary at the checkout rather than leaving it to chance. Stating that
+ *   `$HOME` — which is why `throwaway-home.ts` points every leg's boundary at
+ *   the checkout rather than leaving it to chance. Stating that
  *   constraint and relying on it held is what made the suite fail 14 ways from
  *   a worktree in `/private/tmp`.
  * - **In the boundary for *deletion* too.** `DELETE /api/mesh/agents/:id/data`
@@ -250,16 +250,16 @@ export class RoomsApi {
       const body = await res.text();
       // A 403 here is always the same thing, and the raw message does not say
       // so: the server refuses agent paths outside `DORKOS_BOUNDARY`, and this
-      // root has to be inside it. `playwright.config.ts` points the boundary at
-      // the checkout for exactly that reason, so reaching this means something
+      // root has to be inside it. `throwaway-home.ts` points the boundary at the
+      // checkout for exactly that reason, so reaching this means something
       // overrode it.
       if (res.status() === 403) {
         throw new Error(
           `Could not register ${name}: the fixtures' root is outside the server's boundary.\n` +
             `  root:     ${FIXTURE_AGENT_ROOT}\n` +
             `  response: ${body}\n` +
-            `Set DORKOS_BOUNDARY to a directory containing that root (the cockpit ` +
-            `leg in playwright.config.ts sets it to the checkout).`
+            `Set DORKOS_BOUNDARY to a directory containing that root ` +
+            `(throwaway-home.ts sets it to the checkout on every leg).`
         );
       }
       throw new Error(`Could not register ${name}: ${body}`);

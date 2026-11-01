@@ -166,6 +166,11 @@ E2E_INTEGRATION=1 pnpm --filter @dorkos/e2e e2e --project chromium
 Off by default everywhere, not just in CI. Forgetting the flag costs you a
 skipped test; forgetting the opposite default costs you money.
 
+Every server this suite starts runs on a throwaway `HOME` inside its `DORK_HOME`
+(DOR-3587, `throwaway-home.ts`), so it never sees this computer's `claude` or
+`codex` sign-in. These specs therefore need their credentials in the environment
+(an API key), not a signed-in CLI.
+
 Tag a spec `@integration` whenever it cannot pass without a live model. If you
 can express it against `TestModeRuntime` instead, put it on the mock leg (next
 section) and it runs everywhere.
