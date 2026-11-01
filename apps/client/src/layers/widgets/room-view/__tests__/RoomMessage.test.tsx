@@ -598,7 +598,10 @@ describe('RoomMessage — telling one notice from another', () => {
         body: { text: 'Kai ran into a problem', notice: 'turn_failed', subjectAuthorId: 'kai' },
       })
     );
-    expect(screen.getByTestId('room-notice')).toHaveClass('text-status-warning');
+    // Warm on the MARK, never the words (spec B1): amber words read 2:1 on the
+    // light page, so the sentence that most needs reading takes full ink.
+    expect(screen.getByTestId('room-notice')).toHaveClass('text-foreground');
+    expect(mark()).toHaveClass('text-status-warning-fg');
     const failedMark = mark()?.outerHTML;
     cleanup();
 
@@ -608,7 +611,7 @@ describe('RoomMessage — telling one notice from another', () => {
       renderRow(entry({ kind: 'notice', body: { text: 'the room said something', notice: code } }));
       const row = screen.getByTestId('room-notice');
       expect(row).toHaveClass('text-muted-foreground');
-      expect(row).not.toHaveClass('text-status-warning');
+      expect(mark()).not.toHaveClass('text-status-warning-fg');
       // …and still tells itself apart from the failure, by its mark.
       expect(mark()?.outerHTML).not.toBe(failedMark);
       cleanup();
@@ -627,6 +630,17 @@ describe('RoomMessage — telling one notice from another', () => {
 
     expect(mark()).toHaveAttribute('aria-hidden', 'true');
     expect(screen.getByTestId('room-notice').textContent).toBe('Kai ran into a problem');
+  });
+
+  it('puts the words on the message text edge and the mark in the gutter (S4, S11)', () => {
+    renderRow(entry({ kind: 'notice', body: { text: 'the room said something' } }));
+
+    const row = screen.getByTestId('room-notice');
+    expect(row).toHaveClass('focus-ring-inset', 'gap-[var(--msg-gap)]', 'py-1.5');
+    expect(row.className).not.toContain('ring-2');
+    const gutter = row.querySelector('[data-slot="notice-mark"]');
+    expect(gutter).toHaveClass('w-[var(--msg-gutter-width)]');
+    expect(mark()).toHaveClass('size-(--size-icon-xs)');
   });
 
   it('still draws a notice whose code this client has never heard of', () => {
@@ -665,6 +679,35 @@ describe('RoomMessage — the pills under a message', () => {
     expect(mine).toHaveAttribute('aria-pressed', 'true');
     expect(theirs).not.toHaveAttribute('data-mine');
     expect(theirs).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('draws pills as tints with no border, yours in brand ink and weight (S2)', () => {
+    renderRow(entry({ reactions: [pill('👍', ['ana', 'author-you']), pill('🎉', ['ana'])] }));
+
+    const [mine, theirs] = screen.getAllByTestId('entry-reaction');
+    expect(mine).toHaveClass('bg-brand/15', 'text-brand-text', 'font-medium');
+    expect(theirs).toHaveClass('bg-foreground/5', 'text-muted-foreground');
+    for (const p of [mine!, theirs!]) {
+      expect(p.className).not.toMatch(/(^|\s)border(-|\s|$)/);
+      // A real box: 40px on a phone, 24px on a desktop (B3).
+      expect(p).toHaveClass('h-10', 'md:h-6');
+    }
+    expect(screen.getByTestId('entry-reactions')).toHaveClass('gap-2', 'md:gap-1');
+  });
+
+  it('ends the row with a full-ink add glyph as tall as the pills (B5)', () => {
+    renderRow(entry({ reactions: [pill('👍', ['ana'])] }));
+
+    const add = screen.getByTestId('entry-reactions-add');
+    expect(add).toHaveClass('text-muted-foreground', 'h-10', 'md:h-6');
+    expect(add.className).not.toContain('/60');
+    expect(add.querySelector('svg')).not.toBeNull();
+  });
+
+  it('never draws the ring burst around a pill (S3)', () => {
+    renderRow(entry({ reactions: [pill('👍', ['ana'])] }));
+
+    expect(screen.getByTestId('entry-reaction').innerHTML).not.toContain('reaction-ring');
   });
 
   it('names who reacted rather than counting them', () => {
@@ -895,7 +938,17 @@ describe('RoomMessage — the layout slot each part is drawn with', () => {
   it('draws the row itself from the root slot', () => {
     renderRow();
 
-    expect(screen.getByTestId('room-entry')).toHaveClass('rounded-msg');
+    // A room's row is a list row: the row tint, at a list's radius (spec S9).
+    expect(screen.getByTestId('room-entry')).toHaveClass('rounded-md', 'hover:bg-row-hover');
+    // Inset from the timeline's edges so the radius shows, with the padding
+    // giving the inset back so the words stay where they were (S9).
+    expect(screen.getByTestId('room-entry')).toHaveClass(
+      'mx-2',
+      'w-[calc(100%-1rem)]',
+      'px-[calc(var(--msg-padding-x)-0.5rem)]'
+    );
+    expect(screen.getByTestId('room-entry')).not.toHaveClass('w-full');
+    expect(screen.getByTestId('room-entry')).not.toHaveClass('px-[var(--msg-padding-x)]');
   });
 
   it('draws the identity column from the gutter slot, and the rest from the body slot', () => {
@@ -940,6 +993,9 @@ describe('RoomMessage — the layout slot each part is drawn with', () => {
     );
     // Opaque, because the capsule is drawn ON TOP of the words it acts on.
     expect(screen.getByTestId('entry-actions')).toHaveClass('bg-popover');
+    // A surface and a lift, edged only in dark where a shadow cannot be seen (S10).
+    expect(screen.getByTestId('entry-actions')).toHaveClass('dui-dark:border');
+    expect(screen.getByTestId('entry-actions')).not.toHaveClass('border');
   });
 });
 

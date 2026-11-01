@@ -17,7 +17,12 @@ import { tv } from 'tailwind-variants';
  */
 export const messageItem = tv({
   slots: {
-    root: 'group hover:bg-muted rounded-msg relative flex w-full gap-[var(--msg-gap)] px-[var(--msg-padding-x)] transition-colors duration-150',
+    /**
+     * The hover wash and the radius it is drawn at belong to the `anchor`
+     * variant below: a room's row has actions and keeps a quiet hover; a
+     * session's row keeps what it had until the chat pass decides it.
+     */
+    root: 'group relative flex w-full gap-[var(--msg-gap)] px-[var(--msg-padding-x)] transition-colors duration-150',
     /** Identity column — the avatar on a group start, the hover timestamp on a continuation. */
     gutter: 'relative flex w-[var(--msg-gutter-width)] shrink-0 justify-center',
     /**
@@ -56,10 +61,12 @@ export const messageItem = tv({
      * would all but vanish against a near-black background.
      *
      * How it ARRIVES is the `anchor` variant's business, not this slot's — the
-     * two anchors reveal at different speeds and only one of them moves.
+     * two anchors reveal at different speeds and only one of them moves. Its
+     * edge is the anchor's too: a room's capsule is a surface and a lift, with
+     * a border only in dark, where a shadow cannot be seen.
      */
     actions:
-      'bg-popover shadow-elevated pointer-events-none z-10 flex items-center gap-0.5 rounded-md border p-0.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
+      'bg-popover shadow-elevated pointer-events-none z-10 flex items-center gap-0.5 rounded-md p-0.5 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100',
     // desktop:select-text: the desktop shell defaults chrome to non-selectable
     // on every platform (index.css, DOR-562), but message bodies — text, code
     // blocks, command output — are exactly what a user copies out of a chat,
@@ -112,9 +119,19 @@ export const messageItem = tv({
      * already gated the same way by Tailwind v4.
      */
     anchor: {
-      corner: { actions: 'absolute top-1 right-2 transition-opacity duration-150' },
+      corner: {
+        root: 'hover:bg-muted rounded-msg',
+        actions: 'absolute top-1 right-2 border transition-opacity duration-150',
+      },
       rail: {
+        // The row tint every list uses (4% light, 5% dark), at a list's radius:
+        // a room's message has actions, so it answers the pointer, but no louder
+        // than a sidebar row does. Inset 8px from the timeline's edges so the
+        // wash reads as a rounded row, not a slab; the padding gives the same
+        // 8px back, so the avatar and the words do not move.
+        root: 'hover:bg-row-hover mx-2 w-[calc(100%-1rem)] rounded-md px-[calc(var(--msg-padding-x)-0.5rem)]',
         actions: [
+          'dui-dark:border',
           'relative',
           'pointer-fine:group-focus-within:pointer-events-auto pointer-fine:group-focus-within:opacity-100',
           // How it arrives (design record §5.1): a 90ms fade with a 5px rise

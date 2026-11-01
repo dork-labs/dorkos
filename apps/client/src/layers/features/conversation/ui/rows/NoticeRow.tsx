@@ -110,26 +110,39 @@ interface NoticeRowProps {
  * mark is what tells them apart at a glance; the colour is what says one of
  * them is waiting on you.
  *
+ * **Warm colours the mark, never the words.** Amber at its fill lightness reads
+ * 2:1 as text on the light page, so a warm line drew the one sentence that most
+ * needed reading at the lowest contrast in the room. The words take full
+ * `text-foreground` instead, which is what lifts them above the cool lines'
+ * muted grey, and the mark takes `text-status-warning-fg`, which clears 3:1 as
+ * a glyph in both themes (Badge's rule: colour goes on the glyph).
+ *
  * The WORDS are never touched here. The server owns them (`rooms/notices/notice-copy.ts`)
  * and writes them for a person who did not configure this room; a second
  * sentence invented at the render would be a second voice saying the same thing
  * slightly differently.
  */
-const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }> = {
+/** How one kind of notice is drawn: its mark, and whether it waits on the reader. */
+interface NoticeStyle {
+  Icon: LucideIcon;
+  warm?: boolean;
+}
+
+const NOTICE_STYLES: Record<RoomNoticeCode, NoticeStyle> = {
   // Something went wrong and the answer is not coming.
-  turn_failed: { Icon: TriangleAlert, tone: 'text-status-warning' },
+  turn_failed: { Icon: TriangleAlert, warm: true },
   // Occupied, not broken — and the message has to be sent again.
   agent_busy: { Icon: Hourglass },
   // The agent is not installed here any more, so no answer is coming until
   // somebody re-registers it. Warm for the same reason `turn_failed` is: this
   // one is waiting on the reader, and waiting longer will not help.
-  agent_gone: { Icon: UserX, tone: 'text-status-warning' },
+  agent_gone: { Icon: UserX, warm: true },
   // The member left the room before the turn it was owed ever ran, so the
   // message this room accepted is still waiting. Warm like `agent_gone`: nothing
   // more happens here until the reader adds the agent back. A different mark
   // from `agent_gone` because the remedy is different — that one is missing from
   // the machine, this one is only missing from the room.
-  agent_left: { Icon: UserMinus, tone: 'text-status-warning' },
+  agent_left: { Icon: UserMinus, warm: true },
   // An agent put the channel away. Cool: nothing is broken and nothing is lost —
   // archiving is a flag the person can undo.
   room_archived: { Icon: Archive },
@@ -152,7 +165,7 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // answer comes until somebody turns it back on or re-adds the agent. Warm,
   // and a plug rather than `agent_gone`'s missing-person mark: the agent is
   // there and answering elsewhere — what is missing is what it runs on.
-  runtime_gone: { Icon: PowerOff, tone: 'text-status-warning' },
+  runtime_gone: { Icon: PowerOff, warm: true },
   // Somebody paused the agent everywhere (spec `audit-trail` PR5). Cool: a
   // person or an agent chose it, nothing is broken, and the remedy (Resume on
   // its profile) is a choice too, not a repair.
@@ -170,7 +183,7 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // Stopped, and waiting for THIS reader to do something about it. Warm like
   // `turn_failed`, and for the same reason: both are lines a person has to act
   // on, and the rest are the room reporting that it is working as designed.
-  awaiting_approval: { Icon: Hand, tone: 'text-status-warning' },
+  awaiting_approval: { Icon: Hand, warm: true },
   // Somebody stopped everything here, on purpose.
   halted: { Icon: CircleStop },
   // A cap was reached. Nothing is wrong; the room is doing what it was told.
@@ -182,11 +195,11 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // A bridge delivery was refused by a consent switch, or by a provenance
   // misclassification after a restart. Warm: the switch is something a person
   // can go flip.
-  bridge_blocked: { Icon: Unplug, tone: 'text-status-warning' },
+  bridge_blocked: { Icon: Unplug, warm: true },
   // A bridge delivery exhausted its retry budget. Warm for the same reason
   // `turn_failed` is: the message did not reach the chat and nothing here will
   // retry it further.
-  bridge_undelivered: { Icon: WifiOff, tone: 'text-status-warning' },
+  bridge_undelivered: { Icon: WifiOff, warm: true },
   // An inbound rate ceiling refused a message. The room is protecting itself
   // as designed, not broken.
   bridge_rate_limited: { Icon: Timer },
@@ -207,7 +220,24 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
 };
 
 /** The mark on a notice whose code this client does not recognise. */
-const UNKNOWN_NOTICE: { Icon: LucideIcon; tone?: string } = { Icon: Info };
+const UNKNOWN_NOTICE: NoticeStyle = { Icon: Info };
+
+/** How a notice's code is drawn, falling back to the unknown mark. */
+function noticeStyle(code: RoomNoticeCode | undefined): NoticeStyle {
+  return (code && NOTICE_STYLES[code]) ?? UNKNOWN_NOTICE;
+}
+
+/**
+ * Whether a notice is one the reader has to act on.
+ *
+ * Exported for the host that folds a run of notices: a warm line is never
+ * folded away, because folding is for lines nobody needs to read twice.
+ *
+ * @param code - The notice's code, when it has one.
+ */
+export function isWarmNotice(code: RoomNoticeCode | undefined): boolean {
+  return noticeStyle(code).warm === true;
+}
 
 /** How much of a notice its name carries before it is cut short. */
 const NOTICE_NAME_MAX = 80;
@@ -270,7 +300,7 @@ function linkedText(
       href={link.href}
       onClick={link.onOpen}
       data-testid="room-notice-session-link"
-      className="focus-ring hover:text-foreground rounded py-2 font-medium underline underline-offset-2"
+      className="focus-ring hover:text-foreground rounded py-2 font-medium underline underline-offset-3"
     >
       {words}
     </a>
@@ -337,7 +367,7 @@ export function NoticeRow({
   sessionLink,
   subjectName,
 }: NoticeRowProps) {
-  const { Icon, tone } = (entry.body.notice && NOTICE_STYLES[entry.body.notice]) ?? UNKNOWN_NOTICE;
+  const { Icon, warm } = noticeStyle(entry.body.notice);
 
   return (
     <p
@@ -351,17 +381,32 @@ export function NoticeRow({
       data-notice={entry.body.notice ?? 'unknown'}
       {...(feedPosition && { role: 'article', 'aria-label': noticeName(entry.body.text) })}
       {...feedArticleProps(feedPosition)}
+      // On the message grid: the mark centred in the avatar column and the
+      // words on the same left edge a message's text starts at, so a room has
+      // two edges, not three. The outline is drawn inside the row, as a list
+      // row's is, so it never runs under the line above or below.
       className={cn(
-        'focus-visible:ring-ring flex items-start gap-2 px-[var(--msg-padding-x)] py-2 text-xs outline-none focus-visible:ring-2',
-        tone ?? 'text-muted-foreground'
+        'focus-ring-inset flex items-start gap-[var(--msg-gap)] px-[var(--msg-padding-x)] py-1.5 text-xs',
+        warm ? 'text-foreground' : 'text-muted-foreground'
       )}
     >
-      {/* Decoration, and it has to stay decoration: the words beside it already
-          say everything the mark stands for, and naming the icon would make a
-          screen reader read "warning" before a sentence that goes on to
-          explain itself. */}
-      <Icon aria-hidden className="mt-px size-3.5 shrink-0" />
-      <span>
+      <span
+        data-slot="notice-mark"
+        className="flex w-[var(--msg-gutter-width)] shrink-0 justify-center"
+      >
+        {/* Decoration, and it has to stay decoration: the words beside it
+            already say everything the mark stands for, and naming the icon
+            would make a screen reader read "warning" before a sentence that
+            goes on to explain itself. */}
+        <Icon
+          aria-hidden
+          className={cn(
+            'mt-0.5 size-(--size-icon-xs) shrink-0',
+            warm ? 'text-status-warning-fg' : 'text-muted-foreground'
+          )}
+        />
+      </span>
+      <span className="min-w-0">
         {sessionLink ? linkedText(entry.body.text, sessionLink, subjectName) : entry.body.text}
       </span>
     </p>

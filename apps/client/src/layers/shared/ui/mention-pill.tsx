@@ -11,20 +11,6 @@ import { cn } from '@/layers/shared/lib/utils';
 import type { IdentityOrigin } from '@/layers/shared/lib/identity-origin';
 
 /**
- * How much of an agent's own colour tints the pill's text, mixed toward the
- * theme's own foreground token rather than toward transparent. Mixing
- * against `hsl(var(--foreground))` — which the browser resolves at paint
- * time — is what makes this adapt to dark mode for free: the same mix lands
- * as a darkened shade of the colour in light mode and a lightened tint of it
- * in dark mode, without reading the theme in script. The `hsl()` wrapper is
- * load-bearing: this app's theme tokens store a bare `H S% L%` triple (e.g.
- * `0 0% 9%`), which is not a valid `<color>` on its own — `color-mix()` with
- * an unwrapped triple is invalid CSS and the whole declaration is silently
- * dropped, not just the offending channel.
- */
-const AGENT_TEXT_MIX = '65%';
-
-/**
  * Longer than this, a label may wrap inside its pill. Pills wrap between each
  * other, never inside one, so a pill is `whitespace-nowrap`; but a handle this
  * long can be wider than a phone's line, and on one line it would overflow its
@@ -53,6 +39,11 @@ const mentionPillVariants = cva(
        * directly behind body text rather than behind a large, mostly-empty
        * disc.
        *
+       * **The words are always `text-foreground`.** They used to take the
+       * identity colour mixed 65% toward the foreground, and a light identity
+       * (yellow, lime) read 3.6:1 on its own wash. The wash is what carries the
+       * agent's colour; the text only has to be read.
+       *
        * The colour arrives through `--identity-color`, which the pill publishes
        * inline, rather than through an inline `background-color`. That is what
        * makes the hover step below possible at all: an inline background beats
@@ -62,7 +53,7 @@ const mentionPillVariants = cva(
         // The chip tint, not `bg-secondary`: at 92% lightness that vanished on
         // the 91% sidebar. 7% of the foreground reads on every ground.
         neutral: 'bg-foreground/7 text-foreground',
-        agent: 'bg-[color-mix(in_oklch,var(--identity-color)_14%,transparent)]',
+        agent: 'bg-[color-mix(in_oklch,var(--identity-color)_14%,transparent)] text-foreground',
         /**
          * A cc (DOR-3401): the same tint, the quiet grey, regular weight, and
          * the word `cc` before the name, so it is never told apart by shade.
@@ -249,9 +240,8 @@ function MentionPill({
           {
             // Published, not painted: the background lives in a class that
             // reads this (see the `tone` variant), so a `:hover` rule can step
-            // it. The text colour stays inline because it does not move.
+            // it. The text is the theme's foreground, from the class.
             '--identity-color': color ?? 'currentColor',
-            color: `color-mix(in oklch, ${color ?? 'currentColor'} ${AGENT_TEXT_MIX}, hsl(var(--foreground)))`,
           } as React.CSSProperties
         }
         {...props}

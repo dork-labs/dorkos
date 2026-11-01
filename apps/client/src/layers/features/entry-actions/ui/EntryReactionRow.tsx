@@ -32,16 +32,13 @@ import { EntryReactionPicker } from './EntryReactionPicker';
  * Mounted fresh by its parent's `key={count}`, so "changed" and "mounted" are
  * the same event.
  */
-function RollingCount({ count, roll, mine }: { count: number; roll: boolean; mine: boolean }) {
+function RollingCount({ count, roll }: { count: number; roll: boolean }) {
   const [rolling] = useState(roll);
   return (
+    // The pill's own ink: brand on yours, muted on everybody else's.
     <span
       aria-hidden
-      className={cn(
-        'tabular-nums',
-        mine ? 'text-foreground/80' : 'text-muted-foreground',
-        rolling && 'motion-safe:animate-reaction-roll'
-      )}
+      className={cn('tabular-nums', rolling && 'motion-safe:animate-reaction-roll')}
     >
       {count}
     </span>
@@ -109,43 +106,31 @@ function ReactionPill({
       data-emoji={reaction.emoji}
       data-mine={mine ? 'true' : undefined}
       className={cn(
-        'focus-ring relative inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
+        'focus-ring inline-flex items-center gap-1 rounded-full text-xs',
+        // **A real box, sized for the finger it serves, and no invisible
+        // reach.** 24px on a desktop; 40px on a phone (the compact control
+        // height, 2px short of 44 each way), with the row's 8px gaps keeping
+        // every pill clear of the next. Reach was tried once and measured
+        // worse: in Chromium at 390x844 a 12px `::after` above and below put
+        // 18px of the pill's own target under the thread reply row, so a tap
+        // meant for a reaction opened a thread. A box that occupies what it
+        // claims cannot collide, and `room-entry-actions.spec.ts` holds
+        // `elementFromPoint` to that at 390.
+        'h-10 px-3 md:h-6 md:px-2',
         'disabled:pointer-events-none disabled:opacity-50',
-        // **No invisible reach on a pill, and that is measured rather than
-        // assumed.** A pill renders 50.7×26 CSS px on a 390px phone (the mobile
-        // type scale does it — `text-xs` is 1.25× below 768px), which clears
-        // WCAG 2.5.8's 24×24 minimum on its own.
-        //
-        // It briefly had 12px of `::after` reach above and below to make 44px,
-        // and that made it WORSE. Measured in Chromium at 390×844: the reach
-        // spanned y128–178, the thread reply row's reach spanned y160–208, and
-        // `elementFromPoint` down the middle of the pill returned
-        // `room-thread-replies` for every pixel from y159 — so the pill's real
-        // target shrank to 30px and an 18px band inside its own claimed area
-        // opened a thread instead of adding a reaction. The reach also reached
-        // up over the last 8px of the message's own text.
-        //
-        // A real 26px target with clear space around it beats a claimed 44px
-        // that another control is standing on.
+        // No border on either kind: a tint is the shape. Yours is the one
+        // orange on a message, and the weight is what says "you" to a reader
+        // who cannot see the colour (`aria-pressed` says it to everyone else).
         mine
-          ? 'border-brand/70 bg-brand/12 text-foreground'
-          : 'border-border bg-muted/60 text-muted-foreground hover:bg-muted',
+          ? 'bg-brand/15 text-brand-text font-medium'
+          : 'bg-foreground/5 text-muted-foreground hover:bg-foreground/8',
         pops && 'motion-safe:animate-reaction-pop'
       )}
     >
-      {/* The one-shot ring burst, drawn only for a pill that arrived. It ends at
-          `opacity: 0` and its resting class says the same, so it costs nothing
-          once it has fired — and it is `pointer-events-none`, because it expands
-          past the pill and must never eat the click that takes the reaction
-          back. */}
-      {pops && (
-        <span
-          aria-hidden
-          className="border-brand motion-safe:animate-reaction-ring pointer-events-none absolute -inset-1 rounded-full border opacity-0"
-        />
-      )}
-      <span aria-hidden>{reaction.emoji}</span>
-      <RollingCount key={count} count={count} roll={rolled} mine={mine} />
+      <span aria-hidden className="text-sm">
+        {reaction.emoji}
+      </span>
+      <RollingCount key={count} count={count} roll={rolled} />
     </motion.button>
   );
 }
@@ -172,9 +157,9 @@ interface EntryReactionRowProps {
  *
  * All five approved behaviours (`specs/room-messaging-design` §2) live here:
  * the pill you added carries the accent and IS the toggle; hovering names names
- * rather than counting; arrival pops with a ring burst and a count that rolls,
+ * rather than counting; arrival pops (the one celebration) and a count rolls,
  * while removal is a plain fade; and once a message has any reaction a faint
- * 🙂+ ends the row. A message with none renders nothing at all — no ghost, no
+ * add glyph ends the row. A message with none renders nothing at all — no ghost, no
  * empty rail — which is what keeps a quiet room quiet.
  *
  * **Only reactions that ARRIVE animate.** The pop is keyed to what changed since
@@ -258,7 +243,10 @@ export const EntryReactionRow = forwardRef<RovingGroupHandle, EntryReactionRowPr
     return (
       <div
         data-testid="entry-reactions"
-        className="mt-1 flex flex-wrap items-center gap-1"
+        // 8px between pills on a phone, where they are 40px thumb targets; 4px
+        // on a desktop, where they are 24px pointer targets (design review
+        // 11.3, "gap between small adjacent targets").
+        className="mt-2 flex flex-wrap items-center gap-2 md:gap-1"
         // A row of buttons, named so a screen reader reaching it knows what the
         // group under the message is before stepping into it.
         role="group"
@@ -299,7 +287,7 @@ export const EntryReactionRow = forwardRef<RovingGroupHandle, EntryReactionRowPr
             data-testid="entry-reactions-more"
             // Sized like the pills it sits beside, and with the same measured
             // reason for carrying no invisible reach.
-            className="focus-ring text-muted-foreground hover:text-foreground rounded-full px-2 py-0.5 text-xs"
+            className="focus-ring text-muted-foreground hover:text-foreground inline-flex h-10 items-center rounded-full px-3 text-xs md:h-6 md:px-2"
           >
             +{hidden} more
           </button>

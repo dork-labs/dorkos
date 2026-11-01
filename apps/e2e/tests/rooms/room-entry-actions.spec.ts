@@ -1,6 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
+import { PHONE } from './room-sheet-helpers';
 
 // Same shape as its siblings `room-conversation.spec.ts` and
 // `room-presence.spec.ts`: one cockpit at a time, and a ceiling sized for a
@@ -1061,5 +1062,91 @@ test.describe('Rooms — a thread on a phone', () => {
     // The same message at the top of the viewport, and the room did NOT decide
     // to open at its newest message instead.
     expect(await roomsPage.settledTopVisibleEntryText()).toBe(topBefore);
+  });
+});
+
+/**
+ * Where a press lands on a phone, measured — the half of the pill row and the
+ * reply row that only a laid-out page can answer (ROOMS-SPEC B3).
+ *
+ * Both used to reach for 44px with an invisible `::after`, and the two reaches
+ * stood on each other: `elementFromPoint` down the middle of a pill handed back
+ * the thread row for 18px of the pill's own box. They are real boxes now, 40px
+ * pills and a 44px reply row, and this walks a grid of points inside every one
+ * of them to prove each point belongs to the control drawn there.
+ */
+test.describe('Rooms — the pills and the reply row on a phone', () => {
+  test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
+
+  test('every pill and the reply row are thumb-sized, and no press lands on a neighbour', async ({
+    page,
+    roomsApi,
+    roomsPage,
+  }) => {
+    const slug = `e2e-actions-phone-${roomsApi.runId}`;
+    const room = await roomsApi.createChannel(slug, slug);
+    await roomsApi.postEntries(room.id, ['why is the build slow?']);
+    const [rootId] = await roomsApi.entryIds(room.id);
+    await roomsApi.react(room.id, rootId!, '👍');
+    await roomsApi.react(room.id, rootId!, '🎉');
+    await roomsApi.postThreadReply(room.id, rootId!, 'the cache is cold');
+    await roomsApi.postThreadReply(room.id, rootId!, 'warming it now');
+
+    await page.goto(`/channels?id=${room.id}`);
+    await expect(roomsPage.entries).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+    const root = roomsPage.entries.first();
+    const row = roomsPage.replyRow(root);
+    await expect(roomsPage.reaction(root, '🎉')).toBeVisible();
+    await expect(row).toBeVisible();
+
+    const controls = [
+      roomsPage.reaction(root, '👍'),
+      roomsPage.reaction(root, '🎉'),
+      roomsPage.reactionAdd(root),
+      row,
+    ];
+    const boxes = [];
+    for (const control of controls) {
+      const box = await control.boundingBox();
+      expect(box).not.toBeNull();
+      boxes.push(box!);
+    }
+    // 40px pills (the compact control height on a phone), a 44px reply row.
+    for (const box of boxes.slice(0, 3)) expect(box.height).toBeGreaterThanOrEqual(39.5);
+    expect(boxes[3]!.height).toBeGreaterThanOrEqual(43.5);
+
+    // A 5×5 grid inside each box, inset 2px from its edge: no point may land on
+    // a neighbouring control, and the centre must land on the control itself.
+    for (const [i, control] of controls.entries()) {
+      const box = boxes[i]!;
+      const misses = await control.evaluate((el, b) => {
+        const out: string[] = [];
+        for (let xi = 0; xi < 5; xi++) {
+          for (let yi = 0; yi < 5; yi++) {
+            const x = b.x + 2 + ((b.width - 4) * xi) / 4;
+            const y = b.y + 2 + ((b.height - 4) * yi) / 4;
+            const hit = document.elementFromPoint(x, y);
+            // A rounded pill's corners fall through to the row behind it, which
+            // does nothing. What must never happen is a press landing on ANOTHER
+            // control, so that is what counts as a miss.
+            const owner = hit?.closest('button, a[href], [role="button"]');
+            if (owner && owner !== el && !el.contains(owner)) {
+              out.push(
+                `${Math.round(x)},${Math.round(y)} -> ${hit?.getAttribute('data-testid') ?? hit?.tagName}`
+              );
+            }
+          }
+        }
+        // And the middle of the box is always the control itself.
+        const mid = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+        if (!mid || !el.contains(mid)) out.push(`centre -> ${mid?.tagName ?? 'nothing'}`);
+        return out;
+      }, box);
+      expect(misses, `presses inside control ${i} that land elsewhere`).toEqual([]);
+    }
+
+    // And the pills sit fully above the reply row, with air between them.
+    const lowestPill = Math.max(...boxes.slice(0, 3).map((b) => b.y + b.height));
+    expect(boxes[3]!.y).toBeGreaterThanOrEqual(lowestPill + 4);
   });
 });

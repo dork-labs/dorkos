@@ -166,7 +166,7 @@ export const EntryActionBar = forwardRef<EntryActionBarHandle, EntryActionBarPro
 
           return (
             <Fragment key={button.kind === 'quick' ? button.emoji : button.action.id}>
-              {divider && <span aria-hidden className="bg-border mx-0.5 my-1 w-px self-stretch" />}
+              {divider && <span aria-hidden data-slot="capsule-gap" className="mx-1" />}
               {button.kind === 'quick' ? (
                 <Button
                   ref={register(index)}
@@ -203,7 +203,7 @@ export const EntryActionBar = forwardRef<EntryActionBarHandle, EntryActionBarPro
                   onClick={button.action.run}
                   onKeyDown={onKeyDown}
                 >
-                  <button.action.icon aria-hidden className="size-3.5" />
+                  <button.action.icon aria-hidden className="size-(--size-icon-sm)" />
                 </Button>
               )}
             </Fragment>
