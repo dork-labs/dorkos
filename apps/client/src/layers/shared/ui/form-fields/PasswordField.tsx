@@ -1,6 +1,7 @@
 import { PasswordInput } from '@/layers/shared/ui/password-input';
 import { Field, FieldLabel, FieldDescription, FieldError } from '@/layers/shared/ui/field';
 import { useFieldContext } from '@/layers/shared/lib/form-context';
+import { useFieldWiring } from './use-field-wiring';
 
 export interface PasswordFieldProps {
   label: string;
@@ -12,12 +13,12 @@ export interface PasswordFieldProps {
  * Password input field wired to TanStack Form field context.
  *
  * Renders a labelled password input with show/hide toggle, optional description, and inline
- * validation errors. Errors are shown only after the field has been touched.
+ * validation errors. Errors show after a blur or a submit, and replace the description while
+ * they do.
  */
 export function PasswordField({ label, placeholder, description }: PasswordFieldProps) {
   const field = useFieldContext<string>();
-  const { isTouched, errors } = field.state.meta;
-  const fieldErrors = isTouched ? errors.map((e) => ({ message: String(e) })) : [];
+  const { fieldErrors, helpId, errorId, controlProps } = useFieldWiring(!!description);
 
   return (
     <Field orientation="vertical">
@@ -28,9 +29,10 @@ export function PasswordField({ label, placeholder, description }: PasswordField
         placeholder={placeholder}
         onBlur={field.handleBlur}
         onChange={(e) => field.handleChange(e.target.value)}
+        {...controlProps}
       />
-      {description && <FieldDescription>{description}</FieldDescription>}
-      <FieldError errors={fieldErrors} />
+      {description && <FieldDescription id={helpId}>{description}</FieldDescription>}
+      <FieldError id={errorId} errors={fieldErrors} />
     </Field>
   );
 }

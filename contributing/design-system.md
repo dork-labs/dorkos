@@ -77,7 +77,7 @@ A black shadow can't darken a 4% page, so in dark mode the `--elevation-*` token
 2. **Surface lift:** `inset 0 0 0 100vmax` white, 2 → 5 → 8 → 11%. It paints over the background and under the content, so a higher surface is a lighter one with no extra surface token.
    3–4. **The black drop**, kept (50 → 70%). It still reads over anything lighter: the sidebar, a muted panel, an image.
 
-Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: inputs, select triggers and switches use `shadow-xs`, because they should read as recessed, not raised. No button variant has a shadow or a border.
+Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: outline buttons use `shadow-xs`, because they should read as recessed, not raised. Fields, checkboxes, radios and switches carry no shadow; their edge is `--dui-control-edge` (see [Form Fields](#form-fields)).
 
 **Use a shadow token for height and never hand-roll a black `box-shadow`**: it'll vanish in dark mode. **Known gap:** `bg-popover` is 4% in dark, so a menu that opens over the 10% sidebar reads as a hole, not a lift. That's a surface-token fix (popover and accent together), tracked separately.
 
@@ -89,7 +89,7 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 
 **Where brand orange appears:**
 
-- Focus rings (`--ring`) — every `focus-visible` interaction carries the brand
+- Focus rings (`--dui-ring`, drawn by the `focus-ring` utility) — every `focus-visible` interaction carries the brand
 - `brand` button variant — the site and Cloud marketing only. In the app, a primary button is grey, and `apps/client` has no use of it
 - Sidebar active tab indicator — subtle brand presence in navigation
 - Assistant message links and inline code — via `--brand-text`
@@ -778,7 +778,41 @@ The filter engine provides five filter factories:
 
 ## Form Fields
 
-DorkOS uses [Shadcn Field](https://ui.shadcn.com/docs/components/field) as the foundation for all form field layouts. Field provides accessible label/description/error association via `aria-describedby` and `role="alert"`. Two higher-level components sit on top.
+DorkOS uses [Shadcn Field](https://ui.shadcn.com/docs/components/field) as the foundation for all form field layouts. Its parts find each other through `data-slot` and wire no ARIA on their own: `FieldError` carries `role="alert"`, and the caller gives the description or error an `id` and points the control's `aria-describedby` at it. The `form-fields/*` wrappers do this through `useFieldWiring`. Two higher-level components sit on top.
+
+### Field states
+
+Every field takes `FIELD_CONTROL` from `@dork-labs/ui/field-control`, so a primitive and a raw `<input>` or native `<select>` cannot drift. Text entry adds `FIELD_READ_ONLY`. Fields are 36px past `md`, 44px below; text is `text-field`, 14/20 past `md` and 16/22 below, never less, because iOS zooms the page on a smaller field.
+
+| State           | Border                   | Fill                       | Text                                         | Ring                  |
+| --------------- | ------------------------ | -------------------------- | -------------------------------------------- | --------------------- |
+| Rest            | `dui-control-edge`       | clear, `dui-input/30` dark | `foreground`, placeholder `muted-foreground` | none                  |
+| Hover           | `dui-control-edge-hover` | same                       | same                                         | none                  |
+| Focus           | unchanged                | same                       | same                                         | `focus-ring`          |
+| Invalid         | `dui-destructive`        | same                       | same, message `dui-destructive-text`         | none                  |
+| Invalid + focus | `dui-destructive`        | same                       | same                                         | `focus-ring`, in red  |
+| Disabled        | `dui-input` (exempt)     | `muted`                    | `muted-foreground`, no opacity               | none, not focusable   |
+| Read-only       | none                     | `muted`                    | `foreground`                                 | `focus-ring` on focus |
+
+`--dui-control-edge` exists because an empty field's border is the only thing that identifies it, so it clears 3:1 (WCAG 1.4.11). `--dui-input` stays for the dark fill and for decorative or button borders.
+
+A clicked text box shows the ring: it holds focus for a moment, and the ring says where the caret is. A pointer on a checkbox, radio, switch or trigger shows none. Only colours transition (150ms); the ring, the invalid edge and the error message all appear at once.
+
+### Field layout
+
+| Part                   | Rule                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Label → control        | `gap-1.5`, 8px below `md`                                                                                     |
+| Help                   | `text-xs`, muted, under the control                                                                           |
+| Error                  | Replaces the help in the same slot: `text-xs`, `dui-destructive-text`, a leading icon, `role="alert"`         |
+| Field → field          | `FieldGroup`, 16px, 20px below `md`                                                                           |
+| Bare stack of controls | `gap-3`, 16px below `md`                                                                                      |
+| Group → group          | `gap-6`, 32px below `md`                                                                                      |
+| Checkbox or radio row  | `gap-2`, 12px below `md`, option label `font-normal`, `min-h-11` below `md`                                   |
+| Small control hit area | Checkbox, radio and switch grow a pseudo-element past what they draw: 24px past `md`, 44px below              |
+| Compact trigger        | `SelectTrigger density="compact"`: 32px past `md`, 40px below with a 44px hit area. A filter bar or a toolbar |
+
+**A failed field gives three signals: a red edge, an icon and a message.** Colour is never alone, and the label keeps its colour. Show it after a blur or a submit, never during first typing, and clear it as soon as the value is valid. Mark the control `aria-invalid`, and point `aria-describedby` at the error while it shows, at the help otherwise. Say what to do: "Enter a full URL, starting with https://".
 
 ### SettingRow
 
@@ -985,14 +1019,18 @@ Hover and grouping share one tool on purpose: if a zone is separated by tint rat
 
 ### Focus
 
-Visible focus rings for keyboard navigation. Brand orange outline, 2px offset.
+One focus ring: the `focus-ring` utility in `packages/ui/tailwind.css`. A 2px brand orange outline, 2px off the control, drawn at once with no fade. It turns destructive on its own under `aria-invalid="true"`.
 
 ```css
-:focus-visible {
-  outline: 2px solid hsl(var(--ring));
-  outline-offset: 2px;
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--focus-ring-color, hsl(var(--dui-ring)));
+    outline-offset: 2px;
+  }
 }
 ```
+
+An outline, not a box-shadow: its gap is see-through on any ground, it follows the control's radius, and it survives forced colours. Use `focus-ring-within` on a wrapper whose child takes the focus, and `focus-ring-inset` on a box that fills a clipped parent. A clipping parent needs 4px of padding around a `focus-ring` child.
 
 **Rows take it inset**: `outline-2 -outline-offset-2 outline-ring` (`ROW_FOCUS_CLASS` in `shared/ui/row.ts`). Rows tile edge to edge inside clipped scrollers, so an outer ring overlaps the next row and is cut off by `overflow`. Same colour and width; cards and buttons keep the outer offset. A focused row also takes the hover tint.
 
@@ -1088,7 +1126,7 @@ Reading it back is three states resolved by one function (`resolvePermission`) r
 ## Accessibility
 
 - All interactive elements keyboard-accessible
-- Focus indicators meet 3:1 contrast ratio (WCAG 2.1 AA). The ring colour clears it only at full strength, so never draw it at part opacity (`ring-ring/50` measured 1.9:1 light, 2.5:1 dark). Shared form controls take theirs from `packages/ui/src/focus-ring.ts`, and `apps/design-system/tests/focus-rings.spec.ts` measures them painted (a local run, not in CI yet: `pnpm --filter @dorkos/design-system test:browser`)
+- Focus indicators meet 3:1 contrast ratio (WCAG 2.1 AA). The ring colour clears it only at full strength, so never draw it at part opacity (`ring-ring/50` measured 1.9:1 light, 2.5:1 dark). Shared form controls take theirs from the `focus-ring` utility in `packages/ui/tailwind.css`, and `apps/design-system/tests/focus-rings.spec.ts` measures them painted (a local run, not in CI yet: `pnpm --filter @dorkos/design-system test:browser`)
 - Color is never the sole indicator of state
 - `aria-label` on icon-only buttons
 - `prefers-reduced-motion` respected — disable entrance animations, reduce transitions to instant

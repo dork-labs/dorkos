@@ -174,11 +174,7 @@
       "apps/client/src/layers/widgets/inbox-bell/ui/InboxBellPill.tsx": 2,
       "apps/client/src/layers/widgets/one-bar/ui/BarMembersChip.tsx": 2,
       "apps/client/src/layers/widgets/one-bar/ui/RoomLeadChip.tsx": 2,
-      "apps/client/src/layers/widgets/room-view/ui/NoAgentHint.tsx": 2,
-      "packages/ui/src/focus-ring.ts": 2,
-      "packages/ui/src/select.tsx": 2,
-      "packages/ui/src/switch.tsx": 4,
-      "packages/ui/src/tabs.tsx": 6
+      "apps/client/src/layers/widgets/room-view/ui/NoAgentHint.tsx": 2
     }
   }
 }

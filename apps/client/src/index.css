@@ -689,7 +689,7 @@
 /* ============================================
    Design-system utilities (ported from apps/site, DOR-191)
    ============================================
-   Elevation, interactive-card, focus-ring, and container helpers that the
+   Elevation, interactive-card, and container helpers that the
    marketing site defines and client components already reference. They are
    adapted rather than copied verbatim: the client stores colors as HSL
    triplets (wrapped in hsl(...)) and shadows in the --elevation-* scale above,
@@ -794,17 +794,6 @@
   &:focus-visible,
   &:has(:focus-visible) {
     box-shadow: var(--elevation-elevated);
-  }
-}
-
-/* Keyboard focus ring: a 2px gap in the background colour, then a 2px accent
-   ring. Uses :focus-visible so it never fires on pointer clicks. */
-@utility focus-ring {
-  &:focus-visible {
-    outline: none;
-    box-shadow:
-      0 0 0 2px hsl(var(--background)),
-      0 0 0 4px hsl(var(--ring));
   }
 }
 
@@ -2057,14 +2046,19 @@ body {
   overscroll-behavior: contain;
 }
 
-/* iOS input zoom prevention (fallback for low --mobile-scale values) */
+/* iOS input zoom prevention: the floor for anything not on a shared field. */
 @media (max-width: 767px) {
   textarea,
   input[type='text'],
   input[type='email'],
   input[type='search'],
+  input[type='password'],
+  input[type='url'],
+  input[type='number'],
+  [contenteditable]:not([contenteditable='false']),
   select {
-    font-size: max(1rem, var(--text-sm, 0.875rem)) !important;
+    font-size: var(--dui-text-field) !important;
+    line-height: var(--dui-text-field-lh) !important;
   }
 
   /* Prevent pull-to-refresh */
