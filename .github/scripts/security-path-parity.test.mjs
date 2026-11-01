@@ -92,6 +92,12 @@ const additions = [
   ['apps/desktop/src/server-entry.ts', 'apps/client/src/server-entry.ts'],
   ['apps/desktop/electron-builder.yml', 'apps/desktop-notes/electron-builder.yml'],
   ['apps/desktop/scripts/build-server.ts', 'apps/desktopx/scripts/build-server.ts'],
+  // S2 from Security's #3375 review: the design-token guard runs from the PR's own
+  // code, so an edit that makes it always pass must wait for Security. Its tests stay
+  // ungated: changing them alone cannot change what the guard decides.
+  ['scripts/check-design-tokens.ts', 'scripts/check-design-tokens.test.ts'],
+  ['scripts/design-tokens/rule-guard.ts', 'scripts/design-tokensx/rule-guard.ts'],
+  ['scripts/design-tokens/fixtures/rules.json', 'scripts/__tests__/check-design-tokens.test.ts'],
 ];
 for (const [match, miss] of additions) {
   test(`new trust path and rename: ${match}`, () => {

@@ -60,6 +60,12 @@ func refuses(_ label: String, _ body: () throws -> Void) throws {
       throw ApprovalError(message: "TEST FAILED: DORKOS_GATE_VARIANTS not set")
     }
     try require(touchesGate("CODEOWNERS") && touchesGate(".node-version"), "#3191 paths")
+    try require(
+      touchesGate("scripts/check-design-tokens.ts")
+        && touchesGate("scripts/design-tokens/rule-guard.ts"), "#3375 design-token guard")
+    try require(
+      !touchesGate("scripts/check-design-tokens.test.ts")
+        && !touchesGate("scripts/design-tokensx/rule-guard.ts"), "design-token guard near-misses")
 
     // Never-batch paths.
     for path in [
