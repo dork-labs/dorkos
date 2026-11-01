@@ -97,8 +97,7 @@ import { outsiderStartCeiling, startLevelFacts } from './session-start-facts.js'
 import { recordMarkedFullAction } from '../../../core/turn-power/full-autonomy.js';
 import { isOtherAgentsFolder } from './other-agents-folder.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
-import type { McpToolDeps } from './types.js';
-import { jsonContent } from './types.js';
+import { jsonContent, type McpToolDeps } from './types.js';
 
 /** The client id every `session_start` launch holds its session's write lock under. */
 export const SESSION_START_CLIENT_ID = 'mcp:session_start';
