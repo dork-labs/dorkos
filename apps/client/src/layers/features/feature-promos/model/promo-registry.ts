@@ -55,7 +55,9 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
     content: {
       icon: Globe,
       title: 'Use DorkOS on the go',
-      shortDescription: 'Access your agents from anywhere',
+      // Short enough to fit the 272px card on one line (Phase 4 P4): the
+      // longer line truncated to "Access your agents from anyw…".
+      shortDescription: 'Your agents, from anywhere',
       ctaLabel: 'Learn more',
     },
     // Flips the shared flag rather than mounting a `<TunnelDialog>` of its own

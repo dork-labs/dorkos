@@ -67,7 +67,12 @@ describe('PromoCard', () => {
     const dismiss = screen.getByRole('button', { name: 'Dismiss' });
     // Not hover-gated: a control a touch screen cannot reveal is a control it
     // does not have.
-    expect(dismiss.className).not.toMatch(/\bopacity-0\b/);
+    // No resting opacity of its own (a disabled state's is the Button's).
+    expect(dismiss.className).not.toMatch(/(^|\s)opacity-\d+\b/);
+    // A real 24px button in the line's own ink, not an 18px glyph at 40% ink
+    // and 70% opacity, which measured 1.81:1 (Phase 4 B5).
+    expect(dismiss).toHaveAttribute('data-size', 'icon-xs');
+    expect(dismiss.className).toContain('text-sidebar-foreground/70');
 
     fireEvent.click(dismiss);
     expect(dismissPromo).toHaveBeenCalledWith('test-promo');

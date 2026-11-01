@@ -266,6 +266,24 @@ describe('SidebarFooterStrip', () => {
     }
   });
 
+  it('draws every control as the real Button, at least 24px (Phase 4 S17)', () => {
+    renderStrip();
+
+    // `data-size` is the Button's own stamp (a tooltip trigger takes over its
+    // `data-slot`), so every control here carrying one is the real Button.
+    for (const button of within(row()).getAllByRole('button')) {
+      expect(button).toHaveAttribute('data-size');
+    }
+    for (const name of ['Home', 'Team', 'Marketplace', 'Connections', 'More']) {
+      expect(screen.getByLabelText(name)).toHaveAttribute('data-size', 'icon-xs');
+    }
+    // A primary door reads at the small body size, not 11px (Phase 4 S8).
+    const ask = screen.getByLabelText('Ask DorkBot');
+    expect(ask).toHaveAttribute('data-size', 'xs');
+    expect(ask.className).toContain('text-xs');
+    expect(ask.className).not.toContain('text-2xs');
+  });
+
   it('keeps the Ask DorkBot label on one line', () => {
     renderStrip();
 
@@ -538,8 +556,48 @@ describe('SidebarFooterStrip', () => {
       const user = userEvent.setup();
       renderStrip();
       await user.click(screen.getByTestId('sidebar-footer-menu-trigger'));
-      // The fold is the same menu; only its trigger changed shape.
-      expect(await screen.findByRole('menu')).toBeInTheDocument();
+      // The fold holds the same rows; on a phone it rises as a bottom sheet
+      // (Overlay B, Phase 4 S9), named for what it holds.
+      expect(await screen.findByRole('dialog', { name: 'Theme' })).toBeInTheDocument();
+      expect(screen.getByTestId('account-menu-rows')).toBeInTheDocument();
+    });
+
+    it('wears the theme’s glyph while it holds only the theme, and the person once it signs out too', () => {
+      // A person icon on a fold that holds only the theme read as "your
+      // account" (Phase 4 S9).
+      mockCurrentUser = null;
+      renderStrip();
+      const trigger = screen.getByTestId('sidebar-footer-menu-trigger');
+      expect(trigger.querySelector('svg.lucide-sun-moon')).not.toBeNull();
+      expect(trigger.querySelector('svg.lucide-user-round')).toBeNull();
+      cleanup();
+      mockCurrentUser = { email: 'owner@example.com' };
+      try {
+        renderStrip();
+        const signedIn = screen.getByTestId('sidebar-footer-menu-trigger');
+        expect(signedIn.querySelector('svg.lucide-user-round')).not.toBeNull();
+      } finally {
+        mockCurrentUser = null;
+      }
+    });
+
+    it('offers the theme as three choices in the sheet, and keeps the sheet up after one', async () => {
+      const user = userEvent.setup();
+      mockTheme = 'light';
+      renderStrip();
+      await user.click(screen.getByTestId('sidebar-footer-menu-trigger'));
+      const sheet = await screen.findByRole('dialog', { name: 'Theme' });
+      const choices = within(sheet).getAllByRole('radio');
+      expect(choices.map((c) => c.textContent)).toEqual(['Light', 'Dark', 'System']);
+      expect(within(sheet).getByRole('radio', { name: 'Light' })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      );
+      // `fireEvent`: the drawer's own drag handling asks for pointer capture,
+      // which jsdom does not have.
+      fireEvent.click(within(sheet).getByRole('radio', { name: 'Dark' }));
+      expect(mockSetTheme).toHaveBeenCalledWith('dark');
+      expect(sheet).toBeInTheDocument();
     });
 
     it('gives Ask DorkBot a thumb-sized row of its own', () => {
@@ -560,7 +618,7 @@ describe('SidebarFooterStrip', () => {
       const user = userEvent.setup();
       renderStrip();
       await user.click(screen.getByTestId('sidebar-footer-menu-trigger'));
-      await screen.findByRole('menu');
+      await screen.findByRole('dialog');
       expect(screen.queryByTestId('help-menu-items')).not.toBeInTheDocument();
     });
 

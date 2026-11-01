@@ -192,11 +192,12 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         // `h-11 w-11` rather than `size-11`: the primitive already declares
         // `w-5`, and tailwind-merge drops a `size-*` that a later `w-*`
         // conflicts with — leaving a control with a width and no height.
-        // Measured against the GROUP, which pads `py-2` the header does not
+        // Measured against the GROUP, which pads a top the header does not
         // share — so `top-3` is what centres a 20px control on a 28px header
-        // that starts 8px down, and `top-2` does the same for the 44px pair on
-        // a phone (Phase 4 S4).
-        isMobile ? 'top-2 right-0 h-11 w-11 opacity-100 after:hidden' : 'top-3 right-2',
+        // that starts 8px down (Phase 4 S4), and on a phone, where the group
+        // pads `py-3` (Phase 4 P2), `top-3` lays the 44px pair exactly over
+        // the 44px header.
+        isMobile ? 'top-3 right-0 h-11 w-11 opacity-100 after:hidden' : 'top-3 right-2',
         '[&>svg]:size-(--size-icon-sm) max-md:[&>svg]:size-(--size-icon-md)'
       )}
       aria-label={label}

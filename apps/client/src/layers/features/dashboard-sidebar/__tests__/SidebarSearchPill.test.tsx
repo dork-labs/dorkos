@@ -37,6 +37,13 @@ describe('SidebarSearchPill', () => {
     expect(html).not.toMatch(/\bbg-muted\b/);
   });
 
+  it('wears the shared focus ring, not a ring of its own (Phase 4 S5)', () => {
+    render(<SidebarSearchPill />);
+    const pill = screen.getByTestId('sidebar-search-pill');
+    expect(pill.className).toContain('focus-ring');
+    expect(pill.className).not.toMatch(/focus-visible:ring-/);
+  });
+
   it('opens the one global palette, through the flag the ⌘K chord itself flips', () => {
     render(<SidebarSearchPill />);
     // Observable before: the flag really is down, so the change below is the

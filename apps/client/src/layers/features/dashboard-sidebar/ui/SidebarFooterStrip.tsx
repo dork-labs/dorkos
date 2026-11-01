@@ -35,7 +35,14 @@ import { useStartNewSession } from '@/layers/entities/session';
 import { isHomeSurfacePath, TOUR_ANCHORS } from '@/layers/shared/config';
 import { cn, openLink, setAskDorkBotOrigin } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import {
+  Button,
+  SIDEBAR_ICON_CONTROL,
+  SIDEBAR_ICON_INLINE,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/layers/shared/ui';
 import { HelpRows } from '@/layers/features/report-issue';
 import { FOOTER_LABELLED_ROW, SidebarFooterMenu } from './SidebarFooterMenu';
 
@@ -113,7 +120,10 @@ export function SidebarFooterStrip() {
         data-testid="sidebar-footer-strip-row"
         className={cn(
           'bg-sidebar-accent/60 rounded-lg',
-          isMobile ? 'flex flex-col gap-0.5 p-1' : 'flex items-center gap-1 px-1.5 py-1'
+          // `px-1` under a pointer: the strip pays 4, a 24px button centres its
+          // 16px glyph 4 further in, and the footer pays 8 — so the first glyph
+          // lands on the panel's 16px edge with everything else (Phase 4 S3).
+          isMobile ? 'flex flex-col gap-0.5 p-1' : 'flex items-center gap-1 p-1'
         )}
       >
         {DESTINATIONS.map((destination) => (
@@ -223,8 +233,11 @@ function DestinationButton({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          type="button"
+        {/* The real Button, `ghost icon-xs` (Phase 4 S17): 24px, the 7.2
+            floor, where the raw `p-1` glyph was 24 by luck of its padding. */}
+        <Button
+          variant="ghost"
+          size="icon-xs"
           onClick={onClick}
           aria-label={destination.label}
           aria-current={isActive ? 'page' : undefined}
@@ -236,19 +249,17 @@ function DestinationButton({
           data-sidebar-destination=""
           data-testid={destination.testId}
           className={cn(
-            // `focus-ring` explicitly: these are bare buttons, and the shadcn
-            // `SidebarMenuButton` they replaced carried the ring for them. The
-            // repo's ring is a utility, not a global `:focus-visible` rule, so
-            // dropping it would have left the whole strip invisible to a
-            // keyboard.
-            'focus-ring rounded-md p-1 transition-colors duration-150',
+            // `focus-ring` by name, the panel's one ring for a standalone
+            // control: the Button draws the same outline, and saying so here
+            // keeps the strip's controls on one recipe (Phase 4 S5).
+            'focus-ring',
             isActive
-              ? 'text-sidebar-accent-foreground bg-sidebar/70'
+              ? 'text-sidebar-accent-foreground bg-sidebar/70 hover:bg-sidebar/70'
               : 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar/50'
           )}
         >
-          <Icon className="size-(--size-icon-sm)" />
-        </button>
+          <Icon className={SIDEBAR_ICON_CONTROL} />
+        </Button>
       </TooltipTrigger>
       <TooltipContent side="top">{destination.label}</TooltipContent>
     </Tooltip>
@@ -299,21 +310,39 @@ export function useAskDorkBot(): { ask: () => void; ready: boolean } {
 function AskDorkBotButton({ labelled }: { labelled: boolean }) {
   const { ask, ready } = useAskDorkBot();
 
+  if (labelled) {
+    return (
+      <button
+        type="button"
+        onClick={ask}
+        disabled={!ready}
+        aria-label="Ask DorkBot"
+        className={cn(
+          'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring font-medium whitespace-nowrap transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50',
+          FOOTER_LABELLED_ROW
+        )}
+      >
+        <Sparkles className="size-(--size-icon-sm) shrink-0" />
+        Ask DorkBot
+      </button>
+    );
+  }
+
+  // **A primary door, so it reads at the body's small size** (Phase 4 S8). It
+  // was 11px beside a 12px glyph, the type size of incidental metadata, on the
+  // one control that answers "where do I get help". `ghost xs` is 12/24 with
+  // an inline glyph; the label still fits the 272px strip on one line.
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="xs"
       onClick={ask}
       disabled={!ready}
       aria-label="Ask DorkBot"
-      className={cn(
-        'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring font-medium whitespace-nowrap transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50',
-        labelled
-          ? FOOTER_LABELLED_ROW
-          : 'text-2xs inline-flex items-center gap-1.5 rounded-md px-1.5 py-1'
-      )}
+      className="text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring whitespace-nowrap"
     >
-      <Sparkles className={cn('shrink-0', labelled ? 'size-(--size-icon-sm)' : 'size-3')} />
+      <Sparkles className={SIDEBAR_ICON_INLINE} />
       Ask DorkBot
-    </button>
+    </Button>
   );
 }

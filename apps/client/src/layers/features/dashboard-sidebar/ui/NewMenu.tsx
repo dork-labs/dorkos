@@ -22,14 +22,16 @@ import { useNavigate } from '@tanstack/react-router';
 import { AtSign, Bot, CornerDownLeft, Hash, MessageSquarePlus, Plus, Users } from 'lucide-react';
 import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { cn, formatShortcutKey, isDesktopShell, SHORTCUTS } from '@/layers/shared/lib';
+import { formatShortcutKey, isDesktopShell, SHORTCUTS } from '@/layers/shared/lib';
 import { useAgentCreationStore, useIsMobile } from '@/layers/shared/model';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
+  Button,
+  ResponsiveDropdownMenu,
+  ResponsiveDropdownMenuContent,
+  ResponsiveDropdownMenuLabel,
+  ResponsiveDropdownMenuTrigger,
+  SIDEBAR_ICON_INLINE,
   SidebarMenuNodes,
-  TOUCH_TARGET_MIN_H,
   useGuardedMenuNodes,
   type SidebarMenuNode,
 } from '@/layers/shared/ui';
@@ -389,31 +391,52 @@ export function NewMenu() {
 
   return (
     <>
-      <DropdownMenu open={open} onOpenChange={setMenuOpen}>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
+      {/* A menu under a mouse, a bottom sheet under a thumb (Overlay B): the
+          same node list either way, flattened on a phone so a submenu is a
+          labelled run of rows rather than a second popup over the first. */}
+      <ResponsiveDropdownMenu open={open} onOpenChange={setMenuOpen}>
+        <ResponsiveDropdownMenuTrigger asChild>
+          {/* The real Button (Phase 4 S17): `secondary xs`, 24px with a mouse
+              and 44 with a thumb, its ring the shared one. On this panel the
+              secondary tint is the sidebar's own accent step, so it reads as
+              a control on the sidebar ground in both themes rather than as a
+              faint wash of the foreground. */}
+          <Button
+            variant="secondary"
+            size="xs"
             data-testid="sidebar-new-button"
-            className={cn(
-              'bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium outline-hidden transition-colors duration-150 focus-visible:ring-2',
-              // 27px measured at 390×844 — the smallest control in the phone's
-              // Home tab, and the one it exists to be pressed (P4 AC-4).
-              isMobile && cn(TOUCH_TARGET_MIN_H, 'px-3')
-            )}
+            className="bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/70 data-[state=open]:bg-sidebar-accent/70 max-md:has-[>svg]:px-3"
           >
-            <Plus className="size-3.5" />
+            <Plus className={SIDEBAR_ICON_INLINE} />
             New
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          ref={contentRef}
+          </Button>
+        </ResponsiveDropdownMenuTrigger>
+        <ResponsiveDropdownMenuContent
           align="end"
           className="w-56"
           onCloseAutoFocus={guarded.onCloseAutoFocus}
         >
-          <SidebarMenuNodes variant="dropdown" nodes={guarded.nodes} />
-        </DropdownMenuContent>
-      </DropdownMenu>
+          {/* A drawer is a dialog, and a dialog needs a name. */}
+          {isMobile && <ResponsiveDropdownMenuLabel>New</ResponsiveDropdownMenuLabel>}
+          {/* `contents`, so the box adds nothing to the menu's layout. It is
+              here to give the deep link below one root to look in, whichever of
+              the two surfaces is up. */}
+          <div
+            ref={contentRef}
+            {...(isMobile ? { role: 'menu', 'aria-label': 'New' } : { className: 'contents' })}
+          >
+            {isMobile ? (
+              <SidebarMenuNodes
+                variant="sheet"
+                nodes={guarded.nodes}
+                onSheetClose={() => setMenuOpen(false)}
+              />
+            ) : (
+              <SidebarMenuNodes variant="dropdown" nodes={guarded.nodes} />
+            )}
+          </div>
+        </ResponsiveDropdownMenuContent>
+      </ResponsiveDropdownMenu>
 
       {/* Mounted only while open, so a half-typed name and a half-picked roster
           are forgotten between attempts rather than waiting there next time. */}

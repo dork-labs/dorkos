@@ -26,6 +26,7 @@ import {
   CountPill,
   Input,
   MENTION_COUNT_CAP,
+  SIDEBAR_ICON_INLINE,
   SidebarMenuNodes,
   Skeleton,
   TOUCH_TARGET_MIN_H,
@@ -294,10 +295,11 @@ export function CommunityContextSwitcher({
             className={triggerClassName}
           >
             {compact ? (
+              // The One Bar's icon-only trigger: chrome-sized, 20px on a phone.
               selectedRef === undefined ? (
-                <InstallationIcon className="size-4 shrink-0" aria-hidden />
+                <InstallationIcon className="size-(--size-icon-sm) shrink-0" aria-hidden />
               ) : (
-                <UsersRound className="size-4 shrink-0" aria-hidden />
+                <UsersRound className="size-(--size-icon-sm) shrink-0" aria-hidden />
               )
             ) : labelPending ? (
               <Skeleton
@@ -307,15 +309,14 @@ export function CommunityContextSwitcher({
             ) : (
               <>
                 {isHub && selectedRef === undefined && (
-                  <Lock className="size-3.5 shrink-0" aria-hidden />
+                  <Lock className={cn(SIDEBAR_ICON_INLINE, 'shrink-0')} aria-hidden />
                 )}
                 <span className="truncate">{label}</span>
               </>
             )}
-            <ChevronDown
-              className={compact ? 'size-3 shrink-0 opacity-50' : 'size-3.5 shrink-0 opacity-50'}
-              aria-hidden
-            />
+            {/* Inline-sized, a mark beside the name rather than a control of
+                its own (Phase 4 §5). */}
+            <ChevronDown className={cn(SIDEBAR_ICON_INLINE, 'shrink-0 opacity-50')} aria-hidden />
             <span className="sr-only">Choose context</span>
           </button>
         </ResponsiveDropdownMenuTrigger>
@@ -486,8 +487,10 @@ export function MobileCommunityContextSwitcher() {
   return (
     <CommunityContextSwitcher
       compact
+      // The One Bar's ghost tint and the shared ring, as the bar's own icon
+      // buttons wear them (Phase 4 S5).
       triggerClassName={cn(
-        'hover:bg-accent focus-visible:ring-ring text-foreground flex shrink-0 items-center rounded-md px-1 py-1.5 outline-hidden focus-visible:ring-2',
+        'hover:bg-foreground/7 data-[state=open]:bg-foreground/7 focus-ring text-foreground flex shrink-0 items-center rounded-md px-1 py-1.5 transition-colors duration-(--dur-fast)',
         TOUCH_TARGET_MIN_H
       )}
     />
