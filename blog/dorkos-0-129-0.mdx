@@ -1,0 +1,107 @@
+---
+title: DorkOS 0.129.0
+description: Approving keeps a task off, spin-off reports reach the room, every @ wakes its agent, and a calmer look.
+date: 2026-11-01
+author: DorkOS Team
+category: release
+tags: [release, rooms, tasks, design]
+---
+
+DorkOS 0.129.0 keeps a task off when you approve it, and gets spin-off reports back to the agent in a room. Every agent you @ in a channel now wakes up, and the app has a calmer look.
+
+## Highlights
+
+- **Approving keeps a task off.** "Approve" leaves a switched-off task off. "Approve and turn on" turns it on too.
+- **Spin-off reports reach the room.** When an agent in a room starts a separate chat for a long job, its updates now reach that agent.
+- **Every @ wakes.** In a channel, every @name wakes that agent. Write `cc` before a name to keep it posted without waking it.
+- **A calmer look.** One orange that means "you", quieter buttons, borderless cards, clearer form fields and motion without bounce.
+
+## All Changes
+
+### Added
+
+- Agents introduce themselves when you create a channel with them in it, or add one to a channel later. The channel says "Ana joined this room.", and Ana is asked to post a sentence or two about who it is and what it can help with. Each agent does this once per channel, never again after a restart or if it leaves and comes back, and no agent replies to another's introduction. It uses the channel's normal hourly allowance of automatic replies, so a busy agent or a channel that has used its allowance just gets the "joined" line. An introduction runs no higher than the default level of the program the agent runs on, whatever the agent's own level, and an agent introduces itself at most five times an hour. Direct messages, #team, chats bridged from another app and rooms copied in from a Community are left alone. (DOR-2106, FB-33)
+- Attach a room to a feedback report. In a channel, a direct message or Home, a "This room" chip sends up to that room's last 30 messages, threads left out. It stays off until you turn it on, because a room holds other people's words. Preview shows exactly what goes, with home paths and secrets removed and file names left out. A message that arrives after you open the preview is not sent. (DOR-2108, FB-35, FB-62)
+
+### Changed
+
+- In a channel, every @name in a message now wakes that agent, wherever it sits. To keep an agent posted without asking it to act, write `cc` before its name: "cc @ana @bo" wakes neither, for the rest of that line. Before, only the names at the start of a message woke anyone, so a message that answered a person and then gave agents work woke none of them. Direct messages work as before.
+- Your own channel messages now say who they reached, like "Woke @ana. Cc: @bo." Agents get the same line back when they post, so a name that only got a copy is caught straight away. Once your draft has a cc, the line under the box reads "Wakes @ana · cc @bo".
+- On Claude Code, an agent you set to Full autonomy on its own Files & commands row (not through a preset) can now change its own setup in turns that run at Full: its hooks, skills, rules and settings, and its list of MCP servers. Before, it had to ask you to copy the files in by hand. Each change it makes there shows in Activity, however it made it. Its file tools still stay out of its own agent file, other agents' folders, DorkOS's settings, your Claude account files, and any file its folder links to from somewhere else. A turn started by a teammate, or one that read a message from outside your team, keeps the old limits. If you move the agent below Full, what it changed waits for your OK once before it runs. (DOR-3483)
+- A channel you open now starts with its own shared files and a `ROOM.md`, so you no longer need to press **Set up files…** first. Rooms you already have are left as they are and keep the button. Direct messages, and channels opened by an agent or anyone other than this computer's owner, start without files, and nothing changes while room files are switched off in Settings. (FB-39)
+- Agents in a room are now told to hand long work to a helper or a spin-off chat, say who has it, end their turn, and post the result when it comes back, so the room isn't kept waiting. (FB-65)
+- When a repo's hooks or skills need your OK before a Claude Code agent uses them, the card now asks a plain question, like "Allow a changed skill in "my-app"?" or "Trust this repo's hooks and skills?". Its red label says what a yes does: "Runs code on this Mac" for hooks and settings, or "Widens what agents can run" for skills, subagents and commands.
+- In the Mac app, pick your company's certificate file with **Choose…** in Settings → Server → Network, instead of typing its path. The row shows how many certificates DorkOS trusts and which file they come from. After you pick a new file or stop using one, it says what's still in use and offers **Restart** to switch. (DOR-3361)
+- Orange now means one thing in DorkOS: "you". It marks a count aimed at you, keyboard focus, and things that need you.
+- The count on a mention or a direct message is now orange, so it stands out from a row that is only busy.
+- In light mode, menus and popovers cast a softer shadow and lose their outline. The dimmed background behind a dialog is lighter.
+- Clicking into the message box no longer lights it up orange. The orange ring now shows only when you reach it with the Tab key.
+- Motion across the app is calmer and more consistent. Panels, badges and new messages settle without a bounce, and streaming text now fades in word by word with no blur. If your computer is set to reduce motion, these animations finish at once.
+- Most badges are one quiet grey pill now. A warning, an error or a success shows its own icon in colour, and the words stay easy to read on every background.
+- Counts say who they are for: orange for a mention or a direct message, amber for something waiting on you, red for a failure, grey for everything else.
+- In the command palette, a channel shows a number only when you were mentioned. In a community's channel list, a channel with new messages shows its name in bold instead of a number.
+- A direct message counts up to 99+ instead of stopping at 9+. Mentions still stop at 9+, because that is as far as they are counted.
+- A cc in a message now says "cc" before the name, so you can tell it from a mention without relying on its colour. If you already typed "cc" before the name, it isn't said twice.
+- Outlined buttons lose their border and shadow and become a soft grey tint, so they read clearly on every background, sidebar included.
+- On a phone, every button gives your thumb at least 44 pixels to tap, the small ones too.
+- Keyboard focus looks the same on every button: an orange outline with a small gap around it. It also shows in high-contrast modes, where the old ring disappeared.
+- Delete buttons are one red everywhere, in light and dark.
+- Cards no longer draw a border. Their soft shadow sets them off the page, and in dark mode they sit a step lighter.
+- Settings groups are a soft tint instead of an outlined card, with no lines between rows, and in dark mode they no longer look like a hole in the dialog.
+- The danger zone in Settings loses its red outline. The heading and the red button say it.
+- In the sidebar and in pick-one lists, keyboard focus on a row is an outline inside the row, so it is no longer cut off at the edge of the list, and hovered and selected choices share one set of tints.
+- Interactive cards lift with their shadow only, without the one-pixel jump.
+- Form fields have a firmer edge, so an empty box is easier to see. Off switches are easier to see too.
+- Every field, checkbox, radio, switch and select now shows the same focus ring when you move with the keyboard. High-contrast modes keep it.
+- Error messages replace the help text under a field, with an icon and a red edge. In the task form and other updated forms, they wait until you leave the field or press Save.
+- Disabled text fields stay readable. Checkboxes, radios and switches are easier to tap on a phone.
+- The "Also send" chips in the feedback form show a check when they are on, and their preview button is easier to tap on a phone.
+
+### Fixed
+
+- Approving a task or changing its file no longer turns a scheduled task back on. Approving a task you had switched off now keeps it off: "Approve" leaves it off, and "Approve and turn on" beside it turns it on too. And when a task's file starts saying it is on again (a git pull that restores `enabled: true`, or a file with no `enabled` line), the task stays off and its row says "Its file says on. It stays off until you switch it on." Use the row's switch to turn it on. A file can still switch a task off. (DOR-3309)
+- Declining or deleting a schedule that came with an installed package now leaves the package's files alone. The schedule stays switched off and asks again only if the package changes it. An agent can't delete one of these schedules. (DOR-2097)
+- When an agent in a room starts a separate chat for a long job, that chat's updates now reach the agent when the work finishes, fails or needs you. The agent sees the update on its own and decides whether the room needs to hear it. Before, those updates were dropped, and the agent never knew the work was done. (DOR-3488)
+- Run a scheduled task at its agent's own level. A task whose file asks to run without prompts now runs at its agent's level: an agent at Full autonomy runs it at Full autonomy, and an agent at Ask first runs it at Ask first. Before, every such task ran at "accept edits". A task file outside an agent's folder still runs at "accept edits". If a file changes to ask for fewer prompts than you approved, the task waits for you again; for an agent at Full autonomy, that wait is a quiet row under Needs you, with no alert. (DOR-3425)
+- When an agent's turn fails while it is waiting for your approval, the approval card now closes with it. Before, the card stayed open with a working Approve button that did nothing, and the room kept showing the agent as waiting on you. (DOR-3210)
+- When Codex, Claude Code or OpenCode refuses a turn, the chat names which one, quotes what it said, and offers the next step. A chat started from another chat now passes that reason back instead of only saying the turn failed. (DOR-3167)
+- When the computer is already running its limit of agent chats, a message from one agent to an existing chat now waits and starts when a slot frees. Before, it was dropped and the sender had to try again. The limit still stops brand-new chats from starting. (DOR-3375)
+- When two agents were each asked to post in a room while their chat there was still busy, they could keep waking each other up, about ten times a second. The "working on it" line flickered nonstop and the app used a lot of CPU. Now an agent tries again as soon as its own turn ends. Until then it waits longer between tries: 1 second, then 2, then 4, up to 30. (DOR-3516)
+- After DorkOS restarts, a Claude Code chat runs one agent process again. On a busy machine, an old agent process could keep running beside the new one for the same chat. DorkOS now tries again when it fails to record a process it started, and a restart waits up to 10 seconds for the previous server to exit before ending what it left running. (DOR-3049)
+- Starting DorkOS from a copy of your data folder no longer wakes the chats of the install you copied it from. Before, a copy could restart those chats and run their tools a second time. A normal restart or upgrade still picks up the Claude Code background work a restart cut short. This works for chats this version started. (DOR-3071)
+- A scheduled task's time limit now counts only the time your computer was awake. Before, a run that was a few minutes in when your Mac went to sleep was stopped the moment it woke and marked as having gone past its time limit.
+- A task that comes due while your Mac is asleep no longer starts during one of the brief moments it wakes on its own, only to be cut off seconds later. It now waits until the computer has been awake for two minutes, and a run that ends up too late to be useful is marked as skipped because the computer was asleep. (DOR-3286)
+- A scheduled task on Claude Code can check on DorkOS itself (whether it's up, its version, its extensions and their errors) at any permission level. Before, a task set to Ask first, Accept edits or Never ask was refused those reads. (DOR-3373)
+- A scheduled run on Claude Code can now see which connected accounts it was given, and what each one lets it do, without a person there to approve. Using those accounts still needs approval as before, and a turn started by someone outside your team still asks first. (DOR-3205)
+- An agent on a local model with a small context window, such as 32k, run through Doe or OpenCode, no longer stops on its first message. When the window is small, DorkOS leaves out its own extras until they fit: first the widget guide, the list of DorkOS areas and the room guide outside rooms, then, if needed, its tool descriptions, orientation, persona and saved memory. The agent is told what was left out. Safety boundaries, working rules and the rules for using DorkOS's tools safely always stay. On Doe, tool descriptions load when needed, and if the agent still can't fit, the chat says so and suggests a model with a larger window or a shorter AGENTS.md. (DOR-2839)
+- When an agent asks you to connect an app, it's now told not to promise that connecting will be quick. Connecting waits on you, and you may need to sign in to the app first, so it says that it asked and where you can answer. (DOR-2850)
+- A plugin whose mini app uses files from elsewhere in the same plugin now installs. A mini app still can't use anything outside its plugin's folder.
+- When a mini app can't be built during an install, the error now gives the reason and where it happened. If it reached for a file outside its folder, the error names that file and the folder it had to stay in. Before, it only said the build failed. (DOR-3537)
+- The card that asks before a package runs commands now shows each file's "fingerprint" instead of "sha256". A file that isn't there yet, a folder, a file it can't read, or a very large file is now said in plain words. A very large file is also tracked more closely, so changing it while keeping its timestamp still asks you again. (DOR-3340)
+- A request from a web page on an address DorkOS doesn't trust is now refused with a clear "not allowed" answer that names the address and how to allow it. Before, it came back as a server error and wrote an error to the log, so a harmless refusal looked like DorkOS had crashed. (DOR-3247)
+- When DorkOS isn't answering and a message to a room or thread can't go out, your words go back into the message box if it's empty, and the message says "Not sent." The error now has a Retry button, which works even if you've left the room. (DOR-3481)
+- A busy room or chat uses less CPU. Each new message used to redraw every message on screen many times while the view scrolled down to it. Now only the messages that changed are redrawn. (DOR-3312)
+- When an agent was waiting on you, the Team tab showed an amber "needs you" dot but still read "Team · 3 working", so amber looked like it meant "working". Now the label says the same thing as the dot: "Team · 1 needs you" (or "2 need you"). The working count moves to the hover text: "1 agent is waiting on you · 3 working". In a narrow hover card, "3 working" stays on one line. When nobody is waiting, it still reads "Team · 3 working" with the green dot. (DOR-3533)
+- On a phone, the bar at the top of each page no longer crowds its title, and its buttons are big enough to tap. On a tablet, the bar's buttons stay inside it. (DOR-3186, DOR-3187, DOR-3190, DOR-3191, DOR-3192)
+- In the desktop app, a scrollbar no longer appears under your tabs when there are more than fit. Your mouse wheel scrolls the tabs sideways instead, and the tab you're on still scrolls into view. (DOR-3490)
+- When you have more tabs than fit across the top of the window, the strip now fades out at the edge where more tabs are hidden, so you can tell there are more. The tab you are on also scrolls into view on its own, clear of that fade, when you switch with a shortcut, close the tab next to it, or make the window narrower. (DOR-3507)
+- Keep keyboard focus on screen after you hide the sidebar with ⌘B. Tab no longer lands on controls you can't see, and focus goes back where it was when the sidebar reopens.
+- Slide the sidebar with a spring, so pressing ⌘B mid-way turns it around smoothly.
+- Name each agent's menu after the agent, and read out when a channel has new messages, for people using a screen reader.
+- Message times, and red and amber status text in dark mode, are now easier to read.
+- Removing a filter chip now moves keyboard focus to the next chip instead of losing it, and its × is big enough to tap on a phone.
+- A "Set here" chip on a setting now shows the keyboard focus ring.
+- Faint and red text on a selected row inside a dark dialog is easier to read.
+- A card's title no longer clips its descenders on a phone.
+- Screen readers now read a field's error or help text when you reach the field.
+- A checkbox's help and error text sit under its label, not beside it.
+- Deleting a task no longer resizes the button while it works, and keyboard focus stays on it.
+
+### Security
+
+- On a Telegram or Slack chat linked straight to an agent, `@` and a file path now stay plain words, so a message can't pull a file into the agent's turn. It works as before only in a direct message from someone on that connection's Approvers list, so add yourself there if you use `@` from your own chat. The agent's level does not change. (DOR-2980)
+- An agent running on Claude Code can no longer open a file like `.env` or a private key in its own folder, or in the folder it is working in, by name, with its Read tool or a shell command, at any permission level. A search of the whole folder, or a program that opens the file itself, can still read what's inside, so move secrets out of agent folders. (DOR-3292)
+
+### Known issues
+
+- Going back to 0.128.0 is safe. This version only adds three columns to the task table, and 0.128.0 ignores them. On 0.128.0, approving a task can turn it back on again, so check your schedules after you switch.
