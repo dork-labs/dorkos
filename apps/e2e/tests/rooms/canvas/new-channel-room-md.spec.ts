@@ -54,11 +54,16 @@ for (const theme of ['light', 'dark'] as const) {
     const roomsPage = new RoomsPage(page);
     const stamp = Date.now().toString(36);
 
-    // Leave the panel on Canvas in another room, the way a person would.
+    // Leave the panel on Canvas in another room, the way a person would: by
+    // pressing a document's own tab. Not `openCanvasTab`, whose "Add view" menu
+    // item detaches while the room's live canvas frames redraw the header.
     const before = await roomsApi.createChannel(`dor3477-before-${theme}-${stamp}`);
     await putOnCanvas(page.request, before.id, 'Earlier plan');
     await openRoom(page, basePage, roomsPage, before.id);
-    await roomsPage.openCanvasTab();
+    await roomsPage.ensureRoomPanelOpen();
+    const earlier = page.getByRole('tab', { name: /^Earlier plan/ });
+    await earlier.click({ timeout: SERVER_ROUND_TRIP_MS });
+    await expect(earlier).toHaveAttribute('aria-selected', 'true');
 
     await roomsPage.createChannel(`dor3477 new ${theme} ${stamp}`);
 
