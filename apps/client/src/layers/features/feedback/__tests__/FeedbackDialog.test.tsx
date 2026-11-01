@@ -1030,6 +1030,190 @@ describe('FeedbackDialog', () => {
     });
   });
 
+  describe('"Also send" chips (designer, DOR-2108)', () => {
+    it('shows a check when a chip is on and nothing when it is off', () => {
+      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
+      renderDialog();
+      for (const name of ['Diagnostics', 'This room']) {
+        const chip = screen.getByRole('button', { name });
+        expect(chip).toHaveAttribute('aria-pressed', 'false');
+        expect(chip.querySelector('svg')).toBeNull();
+        fireEvent.click(chip);
+        expect(chip).toHaveAttribute('aria-pressed', 'true');
+        expect(chip.querySelector('svg')).not.toBeNull();
+      }
+    });
+
+    it('gives the preview button a 44px target on a phone, ring inside the chip', () => {
+      renderDialog();
+      const preview = screen.getByRole('button', { name: 'Preview diagnostics' });
+      expect(preview.className).toMatch(/max-sm:min-h-11/);
+      expect(preview.className).toMatch(/max-sm:min-w-11/);
+      expect(preview.className).toMatch(/\bfocus-ring-inset\b/);
+    });
+  });
+
+  describe('room attachment (DOR-2108)', () => {
+    /** Write the report (its kind already picked) and send it. */
+    async function sendBug(transport: ReturnType<typeof createMockTransport>): Promise<void> {
+      fireEvent.change(screen.getByPlaceholderText(/what happened/i), {
+        target: { value: 'The board went blank' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      await waitFor(() => expect(transport.sendFeedback).toHaveBeenCalledTimes(1));
+    }
+
+    it('offers "This room" in a channel, off until the person turns it on', async () => {
+      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
+      const transport = createMockTransport();
+      vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+      renderDialog(transport);
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
+      const chip = screen.getByRole('button', { name: 'This room' });
+      expect(chip).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.queryByRole('button', { name: 'This chat' })).not.toBeInTheDocument();
+
+      await sendBug(transport);
+      const submission = vi.mocked(transport.sendFeedback).mock.calls[0][0];
+      expect(submission.includeTranscript).toBeUndefined();
+      expect(submission.roomId).toBeUndefined();
+    });
+
+    it('attaches that room, and only that room, once the chip is on', async () => {
+      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
+      const transport = createMockTransport();
+      vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+      renderDialog(transport);
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
+      fireEvent.click(screen.getByRole('button', { name: 'This room' }));
+      await sendBug(transport);
+
+      const submission = vi.mocked(transport.sendFeedback).mock.calls[0][0];
+      expect(submission).toMatchObject({ roomId: 'room_1', includeTranscript: true });
+      expect(submission.sessionId).toBeUndefined();
+    });
+
+    it('offers Home’s room too, which is #team', async () => {
+      routerState.location = { pathname: '/', search: {} };
+      const transport = createMockTransport();
+      vi.mocked(transport.listRooms).mockResolvedValue([
+        { id: 'room_team', wellKnown: 'team', kind: 'channel', title: 'team' },
+      ] as Awaited<ReturnType<typeof transport.listRooms>>);
+      vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+      renderDialog(transport);
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'This room' }));
+      await sendBug(transport);
+      expect(vi.mocked(transport.sendFeedback).mock.calls[0][0]).toMatchObject({
+        roomId: 'room_team',
+        includeTranscript: true,
+      });
+    });
+
+    it('previews the exact excerpt the server would attach, and says how much', async () => {
+      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
+      const transport = createMockTransport();
+      vi.mocked(transport.previewRoomTranscript).mockResolvedValue({
+        text: 'Sam: the board is empty',
+        throughSeq: 12,
+      });
+      renderDialog(transport);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Preview this room' }));
+
+      expect(await screen.findByText('Sam: the board is empty')).toBeInTheDocument();
+      expect(transport.previewRoomTranscript).toHaveBeenCalledWith('room_1');
+      expect(screen.getByRole('tab', { name: 'Room' })).toBeInTheDocument();
+      expect(screen.getByText(/last 30 messages/i)).toBeInTheDocument();
+    });
+
+    // The PM's Must: a room holds other people's words, so the chip never
+    // starts on in one, whatever the kind, crash prefill or carried-over draft.
+    it.each([
+      ['a bug', { initialKind: 'bug' as const }],
+      ['a crash report', { initialKind: 'bug' as const, crashStack: 'Error: boom\n  at x' }],
+    ])('starts the room chip OFF for %s in a room with other people', (_label, props) => {
+      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
+      // Opened the way the host opens it, so the kind's defaults apply.
+      renderDialog(createMockTransport(), { ...props, startClosed: true }).setOpen(true);
+      expect(screen.getByRole('button', { name: 'This room' })).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      );
+      // A 1:1 chat keeps its own default: on for a bug.
+      cleanup();
+      routerState.location = { pathname: '/session', search: { session: 'sess_1' } };
+      renderDialog(createMockTransport(), { ...props, startClosed: true }).setOpen(true);
+      expect(screen.getByRole('button', { name: 'This chat' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      );
+    });
+
+    it('does not carry "This chat" being on over to a room', () => {
+      routerState.location = { pathname: '/session', search: { session: 'sess_1' } };
+      const { setOpen } = renderDialog(createMockTransport(), {
+        initialKind: 'bug',
+        startClosed: true,
+      });
+      setOpen(true);
+      fireEvent.change(screen.getByPlaceholderText(/what happened/i), {
+        target: { value: 'draft kept' },
+      });
+      expect(screen.getByRole('button', { name: 'This chat' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      );
+      setOpen(false);
+      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
+      setOpen(true);
+      expect(screen.getByRole('button', { name: 'This room' })).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      );
+    });
+
+    it('sends only up to the newest message the preview showed', async () => {
+      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
+      const transport = createMockTransport();
+      vi.mocked(transport.previewRoomTranscript).mockResolvedValue({
+        text: 'Sam: seen',
+        throughSeq: 12,
+      });
+      vi.mocked(transport.sendFeedback).mockResolvedValue({ ok: true });
+      renderDialog(transport);
+
+      fireEvent.click(screen.getByRole('radio', { name: 'Bug' }));
+      fireEvent.click(screen.getByRole('button', { name: 'This room' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Preview this room' }));
+      expect(await screen.findByText('Sam: seen')).toBeInTheDocument();
+      fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByText('Sam: seen')).not.toBeInTheDocument());
+
+      await sendBug(transport);
+      expect(vi.mocked(transport.sendFeedback).mock.calls[0][0]).toMatchObject({
+        roomId: 'room_1',
+        roomThroughSeq: 12,
+        includeTranscript: true,
+      });
+    });
+
+    it('says only the DorkOS team sees it, in the preview too', async () => {
+      routerState.location = { pathname: '/channels', search: { id: 'room_1' } };
+      renderDialog();
+      fireEvent.click(screen.getByRole('button', { name: 'Preview this room' }));
+      expect(await screen.findByText(/Only the DorkOS team sees these/)).toBeInTheDocument();
+    });
+
+    it('has no room chip off a room page', () => {
+      renderDialog();
+      expect(screen.queryByRole('button', { name: 'This room' })).not.toBeInTheDocument();
+    });
+  });
+
   describe('screenshot attachment (feedback-attachments PR 2)', () => {
     const SHOT = 'data:image/webp;base64,COMPRESSED';
 

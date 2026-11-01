@@ -15,7 +15,11 @@
  *
  * @module shared/lib/transport/feedback-methods
  */
-import type { FeedbackListItem, FeedbackSubmission } from '@dorkos/shared/telemetry-events';
+import type {
+  FeedbackListItem,
+  FeedbackSubmission,
+  RoomTranscriptPreview,
+} from '@dorkos/shared/telemetry-events';
 import { fetchJSON } from './http-client';
 
 /**
@@ -46,6 +50,20 @@ export function createFeedbackMethods(baseUrl: string) {
      */
     async listMyFeedback(): Promise<FeedbackListItem[]> {
       return fetchJSON<FeedbackListItem[]>(baseUrl, '/feedback/mine');
+    },
+
+    /**
+     * The room excerpt a report written in `roomId` would attach, and its
+     * newest message's `seq`, from the server's
+     * `GET /api/feedback/room-transcript` (DOR-2108). Rejects on failure, so
+     * the preview can say it could not load.
+     */
+    async previewRoomTranscript(roomId: string): Promise<RoomTranscriptPreview> {
+      const params = new URLSearchParams({ roomId });
+      return fetchJSON<RoomTranscriptPreview>(
+        baseUrl,
+        `/feedback/room-transcript?${params.toString()}`
+      );
     },
   };
 }

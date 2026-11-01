@@ -1,5 +1,9 @@
 import { Lock } from 'lucide-react';
-import type { FeedbackDiagnostics, FeedbackSubmissionKind } from '@dorkos/shared/telemetry-events';
+import {
+  ROOM_TRANSCRIPT_MAX_MESSAGES,
+  type FeedbackDiagnostics,
+  type FeedbackSubmissionKind,
+} from '@dorkos/shared/telemetry-events';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -15,7 +19,7 @@ import {
 } from '@/layers/shared/ui';
 import { cn, isDesktopShell } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
-import { useTranscriptPreview } from '../model/use-transcript-preview';
+import { useRoomTranscriptPreview, useTranscriptPreview } from '../model/use-transcript-preview';
 
 /** Which preview tab is showing. */
 export type FeedbackPreviewTab = 'diagnostics' | 'conversation' | 'screenshot';
@@ -33,10 +37,12 @@ interface FeedbackPreviewDialogProps {
   kind: FeedbackSubmissionKind;
   /** The page address that will be recorded (pathname + allowlisted query). */
   route: string;
-  /** Whether the Conversation tab is available (a session is resolvable). */
+  /** Whether the Conversation tab is available (a session or a room is resolvable). */
   showConversation: boolean;
   /** The session the transcript preview reads from. */
   sessionId: string | undefined;
+  /** The room the report is written in; when set, the tab previews that room instead. */
+  roomId?: string | undefined;
   /**
    * The compressed screenshot that will be sent, or `undefined` when none is
    * attached — in which case the Screenshot tab does not exist at all.
@@ -72,7 +78,7 @@ function PrivacyNote() {
     >
       <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
         <Lock className="size-3 shrink-0" aria-hidden />
-        Private. Only the DorkOS core team sees these. Never public.
+        Private. Only the DorkOS team sees these. Never public.
       </p>
     </div>
   );
@@ -217,6 +223,38 @@ function ConversationPreview({
   );
 }
 
+/** The room preview: exactly the excerpt the server would attach (DOR-2108). */
+function RoomPreview({ roomId, active }: { roomId: string; active: boolean }) {
+  const { text, isLoading, isError } = useRoomTranscriptPreview(roomId, active);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-2/3" />
+      </div>
+    );
+  }
+  if (isError) {
+    return <p className="text-muted-foreground text-xs">Couldn’t load the room preview.</p>;
+  }
+  if (!text) {
+    return <p className="text-muted-foreground text-xs">No recent messages to attach.</p>;
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-muted-foreground space-y-1 text-xs">
+        <p>The last {ROOM_TRANSCRIPT_MAX_MESSAGES} messages in this room, without threads.</p>
+        <p>Home paths shown as ~, tokens removed, file names left out.</p>
+      </div>
+      <pre className="text-foreground bg-muted/40 rounded-md p-3 font-mono text-xs break-words whitespace-pre-wrap">
+        {text}
+      </pre>
+    </div>
+  );
+}
+
 /** The screenshot preview: the exact bytes that will be sent, at full width. */
 function ScreenshotPreview({ dataUrl }: { dataUrl: string }) {
   return (
@@ -249,6 +287,7 @@ export function FeedbackPreviewDialog({
   route,
   showConversation,
   sessionId,
+  roomId,
   screenshotDataUrl,
 }: FeedbackPreviewDialogProps) {
   const isDesktop = !useIsMobile();
@@ -290,7 +329,9 @@ export function FeedbackPreviewDialog({
             )}
           >
             <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
-            {showConversation && <TabsTrigger value="conversation">Chat</TabsTrigger>}
+            {showConversation && (
+              <TabsTrigger value="conversation">{roomId ? 'Room' : 'Chat'}</TabsTrigger>
+            )}
             {screenshotDataUrl && <TabsTrigger value="screenshot">Screenshot</TabsTrigger>}
           </TabsList>
 
@@ -303,7 +344,11 @@ export function FeedbackPreviewDialog({
           {showConversation && (
             <TabsContent value="conversation" className="min-h-0">
               <ScrollArea className="max-h-[45vh]">
-                <ConversationPreview sessionId={sessionId} active={open} />
+                {roomId ? (
+                  <RoomPreview roomId={roomId} active={open} />
+                ) : (
+                  <ConversationPreview sessionId={sessionId} active={open} />
+                )}
               </ScrollArea>
             </TabsContent>
           )}

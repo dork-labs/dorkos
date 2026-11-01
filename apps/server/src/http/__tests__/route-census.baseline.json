@@ -206,6 +206,7 @@
     "GET /api/extensions/pending-approvals",
     "GET /api/extensions/trusted-sources",
     "GET /api/feedback/mine",
+    "GET /api/feedback/room-transcript",
     "GET /api/files",
     "GET /api/files/content",
     "GET /api/files/raw",

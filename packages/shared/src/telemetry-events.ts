@@ -282,6 +282,26 @@ export const MAX_REPORTER_NAME_LEN = 128;
  */
 export const MAX_TRANSCRIPT_LEN = 20_000;
 
+/** Maximum length of an optional room id attached to a submission (DOR-2108). */
+export const MAX_FEEDBACK_ROOM_ID_LEN = 128;
+
+/**
+ * How many of a room's latest messages a feedback report can carry (DOR-2108).
+ * A room runs far longer than one chat and holds other people's words, so the
+ * excerpt is the room's recent end, not its history. The dialog states this
+ * number, so changing it changes what the person is told.
+ */
+export const ROOM_TRANSCRIPT_MAX_MESSAGES = 30;
+
+/**
+ * Whole-excerpt cap on a room transcript (DOR-2108). Set to the site intake's
+ * own transcript cap (8,000) rather than {@link MAX_TRANSCRIPT_LEN}, because the
+ * forwarder slices anything longer from the END, and a room excerpt keeps its
+ * NEWEST messages when it runs long. At this size the forwarder's slice never
+ * cuts, so what the preview shows is what arrives.
+ */
+export const ROOM_TRANSCRIPT_MAX_LEN = 8_000;
+
 /**
  * Maximum length of the server-gathered, scrubbed log excerpt attached to a bug
  * report (see {@link FeedbackDiagnosticsSchema}). Built server-side only — the
@@ -637,7 +657,11 @@ export type FeedbackElement = z.infer<typeof FeedbackElementSchema>;
  * the log file itself; `includeTranscript` is the parallel opt-in that asks the
  * server to gather and attach a bounded, scrubbed `transcriptExcerpt` from
  * `sessionId` (gathered server-side, mirroring `serverLogExcerpt` — the client
- * never truncates or scrubs the transcript itself); `anonymous` is the dialog's
+ * never truncates or scrubs the transcript itself), or from `roomId` when the
+ * report was written in a room (DOR-2108: that room's latest messages, read as
+ * the reporter, so a room they are not in yields nothing; `roomThroughSeq` is the
+ * last message the preview showed, so a message that lands after it is never
+ * sent unseen); `anonymous` is the dialog's
  * "Send anonymously" flag — when `true`, the route skips the server-side
  * identity lookup even for a verified session, so no `reporterEmail`/
  * `reporterName` is attached (the pseudonymous `instanceId` still rides along).
@@ -649,6 +673,8 @@ export const FeedbackSubmissionSchema = z
     contact: z.string().min(1).max(MAX_FEEDBACK_CONTACT_LEN).optional(),
     route: z.string().min(1).max(MAX_FEEDBACK_ROUTE_LEN).optional(),
     sessionId: z.string().min(1).max(MAX_FEEDBACK_SESSION_ID_LEN).optional(),
+    roomId: z.string().min(1).max(MAX_FEEDBACK_ROOM_ID_LEN).optional(),
+    roomThroughSeq: z.number().int().min(1).optional(),
     diagnostics: FeedbackDiagnosticsSchema.optional(),
     transcriptExcerpt: z.string().max(MAX_TRANSCRIPT_LEN).optional(),
     screenshot: FeedbackScreenshotSchema.optional(),
@@ -658,6 +684,17 @@ export const FeedbackSubmissionSchema = z
     anonymous: z.boolean().optional(),
   })
   .strict();
+
+/**
+ * What the feedback dialog's room preview shows (DOR-2108): the exact excerpt a
+ * send would attach, and the `seq` of its newest message. A send hands that
+ * `seq` back as `roomThroughSeq`, so nothing that lands after the preview is
+ * sent unseen. `throughSeq` is `null` when there is nothing to show.
+ */
+export interface RoomTranscriptPreview {
+  text: string;
+  throughSeq: number | null;
+}
 
 /** The submission payload a client sends to `POST /api/feedback`. */
 export type FeedbackSubmission = z.infer<typeof FeedbackSubmissionSchema>;
@@ -747,7 +784,7 @@ export interface FeedbackEventContext {
  * `feedback_submitted` (carrying `kind`).
  *
  * Only `message`/`contact`/`route`/`dorkosVersion`/`reporterEmail`/`reporterName`
- * ride the built event — `sessionId`, `diagnostics`, `transcriptExcerpt`,
+ * ride the built event — `sessionId`, `roomId`, `diagnostics`, `transcriptExcerpt`,
  * `screenshot`, `element`, `includeServerLogs`, `includeTranscript`, and `anonymous`
  * are NOT part of the PostHog wire shape (they have no property slot on
  * {@link FeedbackSubmittedProperties} /

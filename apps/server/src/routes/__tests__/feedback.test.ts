@@ -30,6 +30,14 @@ vi.mock('../../lib/log-excerpt.js', () => ({
 vi.mock('../../lib/transcript-excerpt.js', () => ({
   getSessionTranscriptExcerpt: vi.fn(),
 }));
+vi.mock('../../services/rooms/messages/room-transcript-excerpt.js', () => ({
+  getRoomTranscriptExcerpt: vi.fn(),
+}));
+// Who the reporter is in rooms. The real resolver reads the room service; the
+// route only needs the id it hands over.
+vi.mock('../room-caller.js', () => ({
+  resolveCaller: vi.fn(),
+}));
 vi.mock('../../lib/dork-home.js', () => ({
   resolveDorkHome: vi.fn().mockReturnValue('/tmp/dork-test'),
 }));
@@ -45,6 +53,8 @@ import {
 } from '../../services/core/feedback-reporter.js';
 import { getRecentLogExcerpt } from '../../lib/log-excerpt.js';
 import { getSessionTranscriptExcerpt } from '../../lib/transcript-excerpt.js';
+import { getRoomTranscriptExcerpt } from '../../services/rooms/messages/room-transcript-excerpt.js';
+import { resolveCaller } from '../room-caller.js';
 import feedbackRouter, { feedbackBodyRule } from '../feedback.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
@@ -55,6 +65,8 @@ const mockResolveIdentity = vi.mocked(resolveFeedbackIdentity);
 const mockGetLogExcerpt = vi.mocked(getRecentLogExcerpt);
 const mockListMyFeedback = vi.mocked(listMyFeedback);
 const mockGetTranscript = vi.mocked(getSessionTranscriptExcerpt);
+const mockGetRoomTranscript = vi.mocked(getRoomTranscriptExcerpt);
+const mockResolveCaller = vi.mocked(resolveCaller);
 
 /**
  * Build the test app. `sessionUser`, when passed, simulates what the session
@@ -80,6 +92,8 @@ describe('feedback route', () => {
     mockResolveIdentity.mockResolvedValue(undefined);
     mockGetLogExcerpt.mockResolvedValue(undefined);
     mockGetTranscript.mockResolvedValue(undefined);
+    mockGetRoomTranscript.mockResolvedValue(undefined);
+    mockResolveCaller.mockReturnValue({ id: 'author-me' } as ReturnType<typeof resolveCaller>);
   });
 
   it('forwards a valid submission and relays ok:true', async () => {
@@ -356,6 +370,91 @@ describe('feedback route', () => {
       };
       expect(submitted.submission.transcriptExcerpt).toBe('user: it broke\nassistant: looking');
       expect(submitted.submission.transcriptExcerpt).not.toContain('/Users/dorian');
+    });
+  });
+
+  describe('room transcript excerpt (DOR-2108)', () => {
+    it('gathers the room’s excerpt as the reporter when the room chip asked for one', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      mockGetRoomTranscript.mockResolvedValue({ text: 'Sam: the board is empty', throughSeq: 3 });
+
+      const res = await request(fixtureTarget.mount(buildApp())).post('/api/feedback').send({
+        kind: 'bug',
+        message: 'board broke',
+        roomId: 'room-1',
+        includeTranscript: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockGetRoomTranscript).toHaveBeenCalledWith('room-1', 'author-me', undefined);
+      expect(mockGetTranscript).not.toHaveBeenCalled();
+      expect(mockSend.mock.calls[0][0]).toMatchObject({
+        submission: { roomId: 'room-1', transcriptExcerpt: 'Sam: the board is empty' },
+      });
+    });
+
+    it('holds the room to the newest message the preview showed', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      await request(fixtureTarget.mount(buildApp())).post('/api/feedback').send({
+        kind: 'bug',
+        message: 'x',
+        roomId: 'room-1',
+        roomThroughSeq: 41,
+        includeTranscript: true,
+      });
+      expect(mockGetRoomTranscript).toHaveBeenCalledWith('room-1', 'author-me', 41);
+    });
+
+    it('reads the reporter as a reader, so a report needs no write session', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'x', roomId: 'room-1', includeTranscript: true });
+      expect(mockResolveCaller.mock.calls[0][1]).toBe('read');
+    });
+
+    it('does NOT read the room when the chip is off', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'x', roomId: 'room-1' });
+      expect(mockGetRoomTranscript).not.toHaveBeenCalled();
+    });
+
+    it('still sends the report when the reporter cannot be resolved', async () => {
+      mockSend.mockResolvedValue({ ok: true });
+      mockResolveCaller.mockImplementation(() => {
+        throw new Error('unverified agent');
+      });
+      const res = await request(fixtureTarget.mount(buildApp()))
+        .post('/api/feedback')
+        .send({ kind: 'bug', message: 'x', roomId: 'room-1', includeTranscript: true });
+      expect(res.body).toEqual({ ok: true });
+      expect(mockGetRoomTranscript).not.toHaveBeenCalled();
+    });
+
+    it('previews exactly the excerpt a send would attach', async () => {
+      mockGetRoomTranscript.mockResolvedValue({ text: 'Sam: hi', throughSeq: 7 });
+      const res = await request(fixtureTarget.mount(buildApp())).get(
+        '/api/feedback/room-transcript?roomId=room-1'
+      );
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ text: 'Sam: hi', throughSeq: 7 });
+      expect(mockGetRoomTranscript).toHaveBeenCalledWith('room-1', 'author-me', undefined);
+    });
+
+    it('previews nothing for a room the reporter cannot see', async () => {
+      const res = await request(fixtureTarget.mount(buildApp())).get(
+        '/api/feedback/room-transcript?roomId=room-2'
+      );
+      expect(res.body).toEqual({ text: '', throughSeq: null });
+    });
+
+    it('refuses a preview with no room id', async () => {
+      const res = await request(fixtureTarget.mount(buildApp())).get(
+        '/api/feedback/room-transcript'
+      );
+      expect(res.status).toBe(400);
     });
   });
 

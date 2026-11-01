@@ -23,9 +23,14 @@
  * @module routes/feedback
  */
 import bodyParser from 'body-parser';
-import { Hono } from 'hono';
-import { FeedbackSubmissionSchema, type FeedbackSubmission } from '@dorkos/shared/telemetry-events';
+import { Hono, type Context } from 'hono';
+import {
+  FeedbackSubmissionSchema,
+  MAX_FEEDBACK_ROOM_ID_LEN,
+  type FeedbackSubmission,
+} from '@dorkos/shared/telemetry-events';
 import type { ApiEnv } from '../http/api-chain.js';
+import { honoRequestFacts } from '../http/request-facts.js';
 import { readJsonBody, underMount, type BodyRule } from '../http/request-body.js';
 import {
   sendFeedback,
@@ -34,9 +39,14 @@ import {
 } from '../services/core/feedback-reporter.js';
 import { getRecentLogExcerpt } from '../lib/log-excerpt.js';
 import { getSessionTranscriptExcerpt } from '../lib/transcript-excerpt.js';
+import {
+  getRoomTranscriptExcerpt,
+  type RoomTranscriptExcerpt,
+} from '../services/rooms/messages/room-transcript-excerpt.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { logger, logError } from '../lib/logger.js';
 import { SERVER_VERSION } from '../lib/version.js';
+import { resolveCaller } from './room-caller.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -90,20 +100,66 @@ async function withServerLogExcerpt(submission: FeedbackSubmission): Promise<Fee
 }
 
 /**
- * Fold a bounded, scrubbed transcript excerpt into a validated submission, when
- * the submitter turned the "Conversation" toggle on (`includeTranscript` + a
- * `sessionId`). Gathered SERVER-SIDE from the session's own transcript (never a
- * client-supplied excerpt), so the scrubbing and bounding are enforced here, not
- * trusted from the browser. Only ever called after validation, so a malformed
- * submission never triggers a transcript read; a session with nothing readable
- * leaves the submission unchanged (best-effort, like the log excerpt).
+ * The reporter's own room author id, for reading a room AS them (DOR-2108).
+ * Resolved as a READ, the same way the room view's own reads are: sending a
+ * report changes nothing in the room, so it must not need a write session.
+ * `undefined` when the caller cannot be resolved at all (an agent token this
+ * machine cannot verify) — the report still sends, without the room.
  *
+ * @param c - The request context.
+ */
+function reporterAuthorId(c: Context<ApiEnv>): string | undefined {
+  try {
+    return resolveCaller(honoRequestFacts(c), 'read').id;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Gather a room's excerpt as the reporter, or `undefined` when there is none
+ * they may read.
+ *
+ * @param c - The request context.
+ * @param roomId - The room the report was written in.
+ */
+async function roomExcerptFor(
+  c: Context<ApiEnv>,
+  roomId: string,
+  throughSeq?: number
+): Promise<RoomTranscriptExcerpt | undefined> {
+  const viewer = reporterAuthorId(c);
+  return viewer ? getRoomTranscriptExcerpt(roomId, viewer, throughSeq) : undefined;
+}
+
+/**
+ * Fold a bounded, scrubbed transcript excerpt into a validated submission, when
+ * the submitter turned the conversation chip on (`includeTranscript`). Gathered
+ * SERVER-SIDE (never a client-supplied excerpt), so the scrubbing and bounding
+ * are enforced here, not trusted from the browser. A report written in a room
+ * carries `roomId` and gets that one room's latest messages, read as the
+ * reporter (DOR-2108); otherwise a `sessionId` gets that chat's transcript.
+ * Only ever called after validation, so a malformed submission never triggers
+ * a read; nothing readable leaves the submission unchanged (best-effort, like
+ * the log excerpt).
+ *
+ * @param c - The request context, for reading a room as the reporter.
  * @param submission - The Zod-validated submission.
  */
-async function withTranscriptExcerpt(submission: FeedbackSubmission): Promise<FeedbackSubmission> {
-  if (!submission.includeTranscript || !submission.sessionId) return submission;
+async function withTranscriptExcerpt(
+  c: Context<ApiEnv>,
+  submission: FeedbackSubmission
+): Promise<FeedbackSubmission> {
+  if (!submission.includeTranscript) return submission;
 
-  const transcriptExcerpt = await getSessionTranscriptExcerpt(submission.sessionId);
+  let transcriptExcerpt: string | undefined;
+  if (submission.roomId) {
+    // Held to the newest message the preview showed, when it was opened.
+    transcriptExcerpt = (await roomExcerptFor(c, submission.roomId, submission.roomThroughSeq))
+      ?.text;
+  } else if (submission.sessionId) {
+    transcriptExcerpt = await getSessionTranscriptExcerpt(submission.sessionId);
+  }
   if (!transcriptExcerpt) return submission;
 
   return { ...submission, transcriptExcerpt };
@@ -170,7 +226,7 @@ router.post('/', async (c) => {
   // shell's own log, which this process cannot read (DOR-2045 — the reasoning is
   // on `stripServerAuthoredFields`).
   const inbound = stripServerAuthoredFields(parsed.data);
-  const submission = await withTranscriptExcerpt(await withServerLogExcerpt(inbound));
+  const submission = await withTranscriptExcerpt(c, await withServerLogExcerpt(inbound));
 
   const result = await sendFeedback({
     submission,
@@ -200,6 +256,25 @@ router.get('/mine', async (c) => {
     return c.json({ error: 'Could not reach the feedback service' }, 502);
   }
 });
+/**
+ * GET /api/feedback/room-transcript?roomId= — the room excerpt a report would
+ * attach, for the dialog's preview (DOR-2108). It runs the very function a send
+ * runs, so the preview IS what leaves the machine, not an approximation of it.
+ * `throughSeq` is the newest message shown, which a send hands back so nothing
+ * that lands after the preview is sent unseen (`null` with nothing to show).
+ * A room the reporter cannot see answers an empty `text`, the same as a room
+ * with nothing in it: the preview has nothing to show either way, and this
+ * route says nothing about which rooms exist.
+ */
+router.get('/room-transcript', async (c) => {
+  const roomId = c.req.query('roomId');
+  if (!roomId || roomId.length > MAX_FEEDBACK_ROOM_ID_LEN) {
+    return c.json({ error: 'roomId is required', code: 'INVALID_ROOM_ID' }, 400);
+  }
+  const excerpt = await roomExcerptFor(c, roomId);
+  return c.json({ text: excerpt?.text ?? '', throughSeq: excerpt?.throughSeq ?? null });
+});
+
 /**
  * Claim every path under `/api/feedback`, served or not, so a request to one
  * no route serves still gets this group's body limit before its `/api` 404,

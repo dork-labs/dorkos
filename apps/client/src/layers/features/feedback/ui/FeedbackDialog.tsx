@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import {
   MAX_FEEDBACK_MESSAGE_LEN,
+  ROOM_TRANSCRIPT_MAX_MESSAGES,
   type FeedbackSubmissionKind,
 } from '@dorkos/shared/telemetry-events';
 import {
@@ -16,6 +17,7 @@ import {
 import { useIsMobile, useReportIssue } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import { useSendFeedback } from '../model/use-send-feedback';
+import { useRoomTranscriptPreview } from '../model/use-transcript-preview';
 import { useScreenshotAttachment } from '../model/use-screenshot-attachment';
 import {
   describeElement,
@@ -118,9 +120,16 @@ export function FeedbackDialog({
   initialScreenshotDataUrl,
 }: FeedbackDialogProps) {
   const isDesktop = !useIsMobile();
-  const { isSubmitting, sessionId, route, buildDiagnostics, send } = useSendFeedback();
+  const { isSubmitting, sessionId, roomId, route, buildDiagnostics, send } = useSendFeedback();
   const reportIssue = useReportIssue();
-  const showConversation = Boolean(sessionId);
+  const showConversation = Boolean(sessionId || roomId);
+  // What "This chat" or "This room" points at, as one key. A room starts OFF
+  // even for a bug, unlike a chat: it carries other people's words, so it goes
+  // only when the person turns it on (DOR-2108).
+  const transcriptKey = sessionId ? `session:${sessionId}` : roomId ? `room:${roomId}` : undefined;
+  // The newest message the room preview showed, read from its cache without
+  // fetching: a send goes no further than what the person saw.
+  const { throughSeq: roomThroughSeq } = useRoomTranscriptPreview(roomId, false);
   const signedIn = Boolean(currentUser);
 
   const messageId = useId();
@@ -176,7 +185,7 @@ export function FeedbackDialog({
   // The conversation this draft was started beside. "This conversation" means
   // that one; a draft carried onto another session's page must not quietly
   // attach the new session's transcript instead.
-  const [draftSessionId, setDraftSessionId] = useState(sessionId);
+  const [draftTranscriptKey, setDraftTranscriptKey] = useState(transcriptKey);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const screenshot = useScreenshotAttachment({ enabled: open });
 
@@ -199,7 +208,7 @@ export function FeedbackDialog({
       const callerBroughtContent = Boolean(prefillMessage || crashStack || initialShot);
       if (callerBroughtContent || !hasDraft) {
         const nextKind = initialKind ?? 'feedback';
-        const defaults = defaultsForKind(nextKind, showConversation, Boolean(crashStack));
+        const defaults = defaultsForKind(nextKind, Boolean(sessionId), Boolean(crashStack));
         setKind(nextKind);
         setMessage(prefillMessage ?? '');
         setContact(readReplyEmail());
@@ -210,16 +219,16 @@ export function FeedbackDialog({
         setElement(null);
         setElementShot(null);
         setDraftCrashStack(crashStack);
-        setDraftSessionId(sessionId);
+        setDraftTranscriptKey(transcriptKey);
         // A picture from the last report must never ride along with the next
         // one. A capture that is STILL RUNNING is disowned by the epoch.
         screenshot.reset(initialShot);
         setDraftEpoch((epoch) => epoch + 1);
-      } else if (sessionId !== draftSessionId) {
-        // Kept draft, different page: the person chose "This conversation"
-        // about the other one. Off, and theirs to turn back on.
+      } else if (transcriptKey !== draftTranscriptKey) {
+        // Kept draft, different page: the person chose "This chat" or "This
+        // room" about the other one. Off, and theirs to turn back on.
         setIncludeConversation(false);
-        setDraftSessionId(sessionId);
+        setDraftTranscriptKey(transcriptKey);
       }
     }
   }
@@ -229,7 +238,7 @@ export function FeedbackDialog({
     // Thread the crash flag so switching kind on a crash-prefilled report keeps
     // diagnostics on (the crash stack rides in diagnostics — dropping it here
     // would silently discard it).
-    const defaults = defaultsForKind(next, showConversation, Boolean(draftCrashStack));
+    const defaults = defaultsForKind(next, Boolean(sessionId), Boolean(draftCrashStack));
     setIncludeDiagnostics(defaults.diagnostics);
     setIncludeConversation(defaults.conversation);
   }
@@ -324,6 +333,7 @@ export function FeedbackDialog({
       ...(signedIn ? {} : { contact }),
       includeDiagnostics,
       includeConversation,
+      ...(roomId && roomThroughSeq ? { roomThroughSeq } : {}),
       anonymous,
       ...(draftCrashStack ? { crashStack: draftCrashStack } : {}),
       ...(screenshot.dataUrl ? { screenshotDataUrl: screenshot.dataUrl } : {}),
@@ -518,8 +528,12 @@ export function FeedbackDialog({
                 />
                 {showConversation && (
                   <AlsoSendChip
-                    label="This chat"
-                    summary="Shows what led to the bug."
+                    label={roomId ? 'This room' : 'This chat'}
+                    summary={
+                      roomId
+                        ? `The last ${ROOM_TRANSCRIPT_MAX_MESSAGES} messages in this room.`
+                        : 'Shows what led to the bug.'
+                    }
                     pressed={includeConversation}
                     onPressedChange={(next) => {
                       setAttachmentsTouched(true);
@@ -558,6 +572,7 @@ export function FeedbackDialog({
             route={route}
             showConversation={showConversation}
             sessionId={sessionId}
+            roomId={roomId}
             {...(screenshot.dataUrl ? { screenshotDataUrl: screenshot.dataUrl } : {})}
           />
         </ResponsiveDialogContent>
