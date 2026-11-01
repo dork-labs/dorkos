@@ -21,3 +21,25 @@ export function callerAddress(c: Context, trustedProxyHeader: string | undefined
   }
   return getConnInfo(c).remote.address ?? 'unknown';
 }
+
+/**
+ * The one header Better Auth reads a caller's address from (`authAdvancedOptions`).
+ *
+ * Better Auth keys its sign-in limits and each session's recorded address by a request header,
+ * and by default trusts `X-Forwarded-For`, which a caller with no proxy in front sends as it
+ * likes (DOR-2846). This server writes the address `callerAddress` resolved into this header on
+ * every request it hands Better Auth, over anything the caller sent under the same name.
+ */
+export const CALLER_ADDRESS_HEADER = 'x-dorkos-caller-address';
+
+/** A copy of `headers` whose caller-address header holds `address`, whatever the caller sent. */
+export function withCallerAddress(headers: Headers, address: string): Headers {
+  const copy = new Headers(headers);
+  copy.set(CALLER_ADDRESS_HEADER, address);
+  return copy;
+}
+
+/** `request` as Better Auth must see it: its caller-address header set by this server. */
+export function withCallerAddressRequest(request: Request, address: string): Request {
+  return new Request(request, { headers: withCallerAddress(request.headers, address) });
+}
