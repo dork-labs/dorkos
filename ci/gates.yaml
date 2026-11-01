@@ -47,9 +47,15 @@ gates:
     purpose: Warns when a copy change will break a browser spec's expected text, so it is fixed before the queue finds it.
 
   # --- ui-smoke.yml ---
+  - id: wf.ui-smoke.scope
+    source: .github/workflows/ui-smoke.yml
+    purpose: Decides whether a pull request's diff touches apps/client or packages/ui, failing open to running the @smoke set when it cannot tell.
+  - id: wf.ui-smoke.ui-smoke-shard
+    source: .github/workflows/ui-smoke.yml
+    purpose: Runs one third of the @smoke browser specs on an in-scope pull request, so a UI break is red before the queue.
   - id: wf.ui-smoke.ui-smoke
     source: .github/workflows/ui-smoke.yml
-    purpose: Runs the @smoke browser specs on a pull request whose diff touches apps/client or packages/ui, so a UI break is red before the queue; passes at once otherwise and on merge_group.
+    purpose: The single ui-smoke context; fails unless every @smoke shard passed, and passes at once when the change is out of scope and on merge_group.
 
   # --- changelog-fragment-check.yml ---
   - id: wf.changelog-fragment-check.fragment-present
