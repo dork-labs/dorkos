@@ -79,26 +79,92 @@ function pausedView(adapterManager: AdapterManager, id: string): PausedView | un
 }
 
 /** A setting's name without its scheme: `env:DEPLOY_TOKEN` → `DEPLOY_TOKEN`. */
-function settingName(ref: string): string {
+export function settingName(ref: string): string {
   const colon = ref.indexOf(':');
   return colon >= 0 ? ref.slice(colon + 1) : ref;
 }
 
 /**
+ * Every setting named, never a count, so the sheet shows exactly what it
+ * approves (Security, #3401 Should 1): "A", "A and B", "A, B and C".
+ *
+ * @param names - The settings' names.
+ */
+export function settingNamesText(names: readonly string[]): string {
+  if (names.length === 0) return 'its settings';
+  if (names.length === 1) return names[0]!;
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** The longest connection name the sheet shows before cutting it. */
+const MAX_SHOWN_NAME = 40;
+
+/**
+ * A connection's name as the sheet shows it: quoted and cut short, since an
+ * agent may have chosen it (Security, #3401 Should 2).
+ *
+ * @param name - The connection's label or type name.
+ */
+export function quotedName(name: string): string {
+  const flat = name.replace(/\s+/g, ' ').trim();
+  const cut = flat.length > MAX_SHOWN_NAME ? `${flat.slice(0, MAX_SHOWN_NAME - 1)}…` : flat;
+  return `“${cut}”`;
+}
+
+/**
  * The step-up sheet's line, built here from what the server holds, never from
- * the request: "Lets Deploy hooks send DEPLOY_TOKEN to hooks.example.dev
+ * the request: "Lets “Deploy hooks” send DEPLOY_TOKEN to hooks.example.dev
  * again." The host is the catalog's, always ASCII.
  */
 export function confirmReason(shown: PausedView): string {
-  const names = shown.references.map((r) => settingName(r.ref));
-  const what =
-    names.length === 0
-      ? 'its settings'
-      : names.length <= 2
-        ? names.join(' and ')
-        : `${names.length} settings`;
+  const what = settingNamesText(shown.references.map((r) => settingName(r.ref)));
   const where = shown.host ? ` to ${shown.host}` : '';
-  return `Lets ${shown.name} send ${what}${where} again.`;
+  return `Lets ${quotedName(shown.name)} send ${what}${where} again.`;
+}
+
+/**
+ * An adapter call's answer, as a held action's commit gives it: its own status
+ * and body, or the refusal an {@link AdapterError} maps to.
+ *
+ * @param run - The adapter call.
+ * @param failed - What to say when it throws something else.
+ */
+export async function adapterResult(
+  run: () => Promise<{ status: number; body: unknown }>,
+  failed: string
+): Promise<{ status: number; body: unknown }> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof AdapterError) {
+      return {
+        status: ADAPTER_ERROR_STATUS[err.code] ?? 500,
+        body: { error: err.message, code: err.code },
+      };
+    }
+    return { status: 500, body: { error: err instanceof Error ? err.message : failed } };
+  }
+}
+
+/**
+ * With no owner yet there is no password to ask for, and the person at this
+ * computer is the person (DOR-3330, Security on DOR-3467). So an action runs
+ * with no sheet, but only for a person at this computer: an agent, an
+ * approval token or any credential header is refused. The residual is
+ * DOR-505's: a program here that sends none of them reads as the person until
+ * an owner exists.
+ *
+ * @param c - The request.
+ * @param personOnly - The refusal's sentence.
+ * @returns The 403, or `undefined` when the person at this computer may go on.
+ */
+export function noOwnerRefusal(c: Context<ApiEnv>, personOnly: string): Response | undefined {
+  const facts = honoRequestFacts(c);
+  const program = PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined);
+  if (program || requirePersonAtThisComputer(facts) !== undefined) {
+    return c.json(errorBody(personOnly, 'person_only'), 403);
+  }
+  return undefined;
 }
 
 /** How the confirm routes word a refusal: to anything but a person, and to a non-owner. */
@@ -130,23 +196,11 @@ export function registerConfirmReferencesRoute(
   ownerExists: () => boolean = () => readOwnerAccount() !== null
 ): void {
   /** Run the confirm (or its Undo), as the answer the route gives. */
-  const run = async (id: string, fingerprint: string | null, undo: boolean) => {
-    try {
+  const run = (id: string, fingerprint: string | null, undo: boolean) =>
+    adapterResult(async () => {
       await adapterManager.confirmReferences(id, fingerprint, undo);
       return { status: 200, body: { ok: true } };
-    } catch (err) {
-      if (err instanceof AdapterError) {
-        return {
-          status: ADAPTER_ERROR_STATUS[err.code] ?? 500,
-          body: { error: err.message, code: err.code },
-        };
-      }
-      return {
-        status: 500,
-        body: { error: err instanceof Error ? err.message : 'Confirm failed' },
-      };
-    }
-  };
+    }, 'Confirm failed');
   const handle = async (c: Context<ApiEnv>, undo: boolean) => {
     const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), CONFIRM_WORDING);
     if (refusal) return c.json(refusal, 403);
@@ -164,18 +218,10 @@ export function registerConfirmReferencesRoute(
     const shown = pausedView(adapterManager, id);
     if (!shown)
       return sendAdapterError(c, new AdapterError(`Adapter '${id}' not found`, 'NOT_FOUND'));
-    // No owner yet (Security, DOR-3467): there is no password to ask for, and
-    // the person at this computer is the person, as everywhere else with no
-    // owner (DOR-3330). So it runs with no sheet, but only for a person at this
-    // computer: an agent, an approval token or any credential header is
-    // refused. The residual is DOR-505's: a program here that sends none of
-    // them reads as the person until an owner exists.
+    // No owner yet: the person at this computer confirms with no sheet.
     if (!ownerExists()) {
-      const facts = honoRequestFacts(c);
-      const program = PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined);
-      if (program || requirePersonAtThisComputer(facts) !== undefined) {
-        return c.json(errorBody(CONFIRM_WORDING.personOnly, 'person_only'), 403);
-      }
+      const refused = noOwnerRefusal(c, CONFIRM_WORDING.personOnly);
+      if (refused) return refused;
       const { status, body: answer } = await run(id, fingerprint, false);
       return c.json(answer, status as ContentfulStatusCode);
     }

@@ -60,6 +60,11 @@ export const STEP_UP_ACTION_KINDS = [
   'browser-profile.bind',
   /** Confirm a paused connection's setting (DOR-3271). */
   'connection.confirm-setting',
+  /**
+   * Add, save or test a connection with an `env:`/`keychain:` setting a
+   * person gives it (DOR-3234): each approves or resolves that setting.
+   */
+  'connection.use-setting',
 ] as const;
 
 /** One kind of guarded action. */

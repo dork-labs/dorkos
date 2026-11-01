@@ -55,7 +55,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 import { AdapterError, type AdapterManager } from '../../services/relay/adapter-manager.js';
-import { registerConfirmReferencesRoute } from '../relay-adapter-http.js';
+import { confirmReason, registerConfirmReferencesRoute } from '../relay-adapter-http.js';
 import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
 
 const target = swappableServer();
@@ -177,9 +177,19 @@ describe('Confirm this setting, with "Confirm it’s you"', () => {
   it('shows the server’s own line about what it lets the connection do', async () => {
     const id = await heldId();
     const view = await request(app()).get(`/api/step-up/${id}`);
+    // The name is the connection's label, which an agent may set: quoted and cut short.
     expect(view.body.reason).toBe(
-      'Lets Deploy hooks send DEPLOY_TOKEN to hooks.example.dev again.'
+      'Lets “Deploy hooks” send DEPLOY_TOKEN to hooks.example.dev again.'
     );
+  });
+
+  it('names every setting, never a count, and cuts a long name short', () => {
+    expect(
+      confirmReason({
+        name: 'A'.repeat(60),
+        references: [{ ref: 'env:ONE' }, { ref: 'env:TWO' }, { ref: 'keychain:THREE' }],
+      })
+    ).toBe(`Lets “${'A'.repeat(39)}…” send ONE, TWO and THREE again.`);
   });
 
   it('right password: the record is written and it sends again', async () => {
