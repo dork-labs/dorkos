@@ -48,6 +48,9 @@
   --dui-size-icon-xs: calc(0.75rem * var(--_si));
   --dui-size-icon-sm: calc(1rem * var(--_si));
   --dui-size-icon-md: calc(1.25rem * var(--_si));
+  /* And CountPill's figures follow the app's text dial, as text-2xs and text-3xs do. */
+  --dui-text-2xs: calc(0.6875rem * var(--_st) * var(--user-font-scale, 1));
+  --dui-text-3xs: calc(0.625rem * var(--_st) * var(--user-font-scale, 1));
 
   /* ============================================
      SIDEBAR GEOMETRY (specs/sidebar-simplification D1)
@@ -760,6 +763,7 @@
      and 3.66:1. These clear 4.9 and 5.1. */
   --faint: 0 0% 64%;
   --status-error-fg: 0 72% 74%;
+  --dui-status-error-fg: var(--status-error-fg);
 }
 
 @utility shadow-elevated {

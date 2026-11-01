@@ -48,9 +48,17 @@
   --color-dui-scrim: var(--dui-scrim);
   --color-dui-destructive-fill-hover: var(--dui-destructive-fill-hover);
   --color-dui-success: hsl(var(--dui-success));
+  --color-dui-status-warning-bg: hsl(var(--dui-status-warning-bg));
+  --color-dui-status-warning-fg: hsl(var(--dui-status-warning-fg));
+  --color-dui-status-error-bg: hsl(var(--dui-status-error-bg));
+  --color-dui-status-error-fg: hsl(var(--dui-status-error-fg));
   --animate-dui-breathe: dui-breathe 1.6s var(--dui-ease-standard) infinite;
   --text-field: var(--dui-text-field);
   --text-field--line-height: var(--dui-text-field-lh);
+  --text-dui-2xs: var(--dui-text-2xs);
+  --text-dui-2xs--line-height: 1rem;
+  --text-dui-3xs: var(--dui-text-3xs);
+  --text-dui-3xs--line-height: 0.875rem;
 
   @keyframes dui-breathe {
     50% {

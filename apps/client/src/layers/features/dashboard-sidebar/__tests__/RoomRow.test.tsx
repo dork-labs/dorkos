@@ -771,7 +771,7 @@ describe('RoomRow unread', () => {
   it('draws the pill in the orange ink, because it is aimed at you', () => {
     renderRow(channel({ unreadCount: 3, mentionCount: 1 }));
     const pill = screen.getByLabelText('1 mention');
-    expect(pill.className).toContain('text-brand-text');
+    expect(pill.className).toContain('text-dui-brand-text');
     expect(pill.className).not.toMatch(/warning/);
   });
 
