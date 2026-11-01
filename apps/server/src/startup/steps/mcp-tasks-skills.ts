@@ -1,4 +1,9 @@
 import { localBrowserHost } from '../local-browser.js';
+import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
+import { realpathSync } from 'node:fs';
+import { createLocalBrowserProfileAccess } from '../../services/session/local-browser/profile-access.js';
+import { loadProfileBindingKey } from '../../services/session/local-browser/profile-folders.js';
+import { createLocalBrowserProfileStore } from '../../services/session/local-browser/profile-store.js';
 /**
  * Managed MCP servers, the external MCP server, the route dependency bag,
  * Tasks, and the skills projection watcher.
@@ -55,6 +60,7 @@ import { credentialStore } from '../../services/core/credential-provider.js';
 
 /** What {@link wireMcpTasksAndSkills} reads from the startup steps before it. */
 export interface WireMcpTasksAndSkillsInput {
+  db: OpenConfigAndDatabaseResult['db'];
   activityService: WireCoreStoresResult['activityService'];
   dorkHome: ClaimDataDirectoryResult['dorkHome'];
   PORT: number;
@@ -366,8 +372,39 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   // `deps` is what the route groups read (`http/hono-api.ts`), each set where
   // the service it hands over is ready.
   const localBrowserService = localBrowserHost.start(dorkHome);
+  // Read once and kept in memory, so a key swapped on disk changes nothing until a restart.
+  let bindingKey: Buffer | undefined;
+  const localBrowserProfiles = createLocalBrowserProfileStore(
+    built.db,
+    () => (bindingKey ??= loadProfileBindingKey(dorkHome))
+  );
+  const realFolder = (folder: string) => {
+    try {
+      return realpathSync(folder);
+    } catch {
+      return undefined;
+    }
+  };
+  localBrowserService.useProfileAccess(
+    createLocalBrowserProfileAccess({
+      profiles: localBrowserProfiles,
+      resolveSessionRuntime: (sessionId) => runtimeRegistry.resolveSessionRuntime(sessionId),
+      getSessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+      agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
+      realFolder,
+    }),
+    (id) => localBrowserProfiles.get(id) !== undefined
+  );
   const deps: HonoApiDeps = {
     localBrowser: localBrowserService,
+    localBrowserProfiles: {
+      profiles: localBrowserProfiles,
+      agent: (agentId) => {
+        const agent = refs.meshCore?.listWithPaths().find((entry) => entry.id === agentId);
+        const projectPath = agent && realFolder(agent.projectPath);
+        return agent && projectPath ? { name: agent.name, projectPath } : undefined;
+      },
+    },
     mcpServers: globalMcpServers,
     connectorEventIngress: connectorSignedIngress,
     mcp: mcpServerFactory,

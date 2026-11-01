@@ -1,5 +1,6 @@
 import { createLocalBrowserRoutes } from '../routes/local-browser.js';
 import type { LocalBrowserService } from '../services/session/local-browser/service.js';
+import type { LocalBrowserProfileRouteDeps } from '../routes/local-browser-profiles.js';
 /**
  * The server's routing: the chain (`http/api-chain.ts`) with every route group
  * mounted on it, and the client build behind them in production.
@@ -223,6 +224,7 @@ export interface ComposedGroupDeps {
   terminal?: TerminalManager;
   computers?: ComputerRoutesService;
   localBrowser?: LocalBrowserService;
+  localBrowserProfiles?: LocalBrowserProfileRouteDeps;
   /** The MCP servers a person added for every agent (`/api/mcp-servers`, DOR-3213). */
   mcpServers?: GlobalMcpStore;
   /** Agent identity, by folder (`/api/agents`). */
@@ -546,7 +548,10 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   }
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
   if (deps.localBrowser)
-    app.route('/api/local-browser', createLocalBrowserRoutes(deps.localBrowser));
+    app.route(
+      '/api/local-browser',
+      createLocalBrowserRoutes(deps.localBrowser, deps.localBrowserProfiles)
+    );
   if (deps.mcpServers) app.route('/api/mcp-servers', createMcpServerRoutes(deps.mcpServers));
   mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));

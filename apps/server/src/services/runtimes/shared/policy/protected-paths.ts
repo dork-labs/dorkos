@@ -210,6 +210,9 @@ export const AGENT_FOLDER_SECRET_PATHS = group(
  *   timestamped backups hold every extension approval and every other
  *   `operator-only` setting (DOR-3068); `marketplaces.json` holds the package
  *   sources the person trusts.
+ * - `browser-profiles/` and `local-browser/saved-logins/` hold live sign-ins and
+ *   the key browser profile bindings are signed with, and `dork*.db*` holds those
+ *   bindings and every other record (DOR-3218).
  */
 export const PERSON_ONLY_DATA_PATHS = group('data', 'write', [
   ['permissions', 'folder'],
@@ -221,6 +224,9 @@ export const PERSON_ONLY_DATA_PATHS = group('data', 'write', [
   ['config.json*', 'file'],
   ['config-*.json.bak', 'file'],
   ['marketplaces.json*', 'file'],
+  ['browser-profiles', 'folder'],
+  ['local-browser/saved-logins', 'folder'],
+  ['dork*.db*', 'file'],
 ]);
 
 /**

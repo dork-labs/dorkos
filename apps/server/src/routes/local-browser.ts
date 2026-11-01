@@ -11,9 +11,16 @@ import {
   type LocalBrowserService,
 } from '../services/session/local-browser/service.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import {
+  mountLocalBrowserProfileRoutes,
+  type LocalBrowserProfileRouteDeps,
+} from './local-browser-profiles.js';
 
 /** Mount owner-only human controls under /api/local-browser. */
-export function createLocalBrowserRoutes(service: LocalBrowserService): Hono<ApiEnv> {
+export function createLocalBrowserRoutes(
+  service: LocalBrowserService,
+  profiles?: LocalBrowserProfileRouteDeps
+): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   router.use('*', async (c, next) => {
     const facts = honoRequestFacts(c);
@@ -52,5 +59,6 @@ export function createLocalBrowserRoutes(service: LocalBrowserService): Hono<Api
   router.post('/pause', async (c) => c.json(await service.pause()));
   router.post('/resume', async (c) => c.json(await service.resume()));
   router.post('/disconnect', async (c) => c.json(await service.disconnect()));
+  if (profiles) mountLocalBrowserProfileRoutes(router, profiles);
   return router;
 }
