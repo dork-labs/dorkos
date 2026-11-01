@@ -149,4 +149,25 @@ describe('member_reports (0050)', () => {
       )
     ).rejects.toThrow(/member_reports_action_check/u);
   });
+
+  it('makes every native action record who took it; an import may not know', async () => {
+    const { rows } = await report(await member(spaceA, 'gus'), ann);
+    await expect(
+      db.query(
+        "UPDATE member_reports SET status='actioned',action='mute',resolved_at=now() WHERE id=$1",
+        [rows[0].id]
+      )
+    ).rejects.toThrow(/member_reports_status_shape/u);
+    await db.query(
+      `UPDATE member_reports SET status='actioned',action='mute',resolved_at=now(),
+         resolver_member_id=$2 WHERE id=$1`,
+      [rows[0].id, ann]
+    );
+    const imported = await db.query(
+      `INSERT INTO member_reports(community_id,subject_member_id,reason,status,action,origin,
+         resolved_at) VALUES($1,$2,'other','actioned','ban','imported',now())`,
+      [spaceA, ann]
+    );
+    expect(imported.rowCount).toBe(1);
+  });
 });

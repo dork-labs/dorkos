@@ -410,7 +410,7 @@ export const memberReports = pgTable(
     ),
     check(
       'member_reports_status_shape',
-      sql`(${table.status} = 'open' AND ${table.resolvedAt} IS NULL AND ${table.action} IS NULL AND ${table.resolverMemberId} IS NULL) OR (${table.status} = 'actioned' AND ${table.resolvedAt} IS NOT NULL AND ${table.action} IS NOT NULL) OR (${table.status} = 'dismissed' AND ${table.resolvedAt} IS NOT NULL AND ${table.action} IS NULL)`
+      sql`(${table.status} = 'open' AND ${table.resolvedAt} IS NULL AND ${table.action} IS NULL AND ${table.resolverMemberId} IS NULL) OR (${table.status} = 'actioned' AND ${table.resolvedAt} IS NOT NULL AND ${table.action} IS NOT NULL AND (${table.resolverMemberId} IS NOT NULL OR ${table.origin} = 'imported')) OR (${table.status} = 'dismissed' AND ${table.resolvedAt} IS NOT NULL AND ${table.action} IS NULL)`
     ),
     uniqueIndex('member_reports_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('member_reports_open_once')
