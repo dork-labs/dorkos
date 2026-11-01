@@ -236,7 +236,9 @@ async function authorize(
       humanActive: human.active,
     }
   );
-  if (!removedBy)
+  // A connection stands in for the person, and an agent can hold it, so it takes back only what
+  // is theirs. Removing someone else's words is a move they make themselves, in their browser.
+  if (!removedBy || (removedBy === 'moderator' && principal.credentialKind === 'grant'))
     throw joined
       ? new ApiError(403, 'FORBIDDEN', messages.refusal)
       : new ApiError(404, 'NOT_FOUND', messages.notFound);
