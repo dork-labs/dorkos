@@ -3,7 +3,7 @@
  "id": "261030-193801",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-11-07T08:22:09Z; the verdict is computed on 2026-11-08.",
- "computed_at": "2026-10-31T10:50:05.113Z",
+ "computed_at": "2026-11-01T11:46:15.782Z",
  "hypothesis_hash": "890f1e51f3bc252e",
  "metric": "tracked.job-minutes-per-merged-pr",
  "anchor": "2026-10-31T08:22:09Z",
@@ -11,8 +11,8 @@
   3310
  ],
  "baseline": {
-  "value": 1163.2,
-  "source": "ledger"
+  "value": 1458,
+  "source": "before-window"
  },
  "target": 1140,
  "min_n": 10,
