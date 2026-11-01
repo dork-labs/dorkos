@@ -45,7 +45,7 @@ export function AlsoSendChip({
             type="button"
             aria-pressed={pressed}
             onClick={() => onPressedChange(!pressed)}
-            className="hover:text-foreground focus-visible:ring-ring flex items-center gap-1 rounded-full py-1 pr-1.5 pl-2.5 focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset"
+            className="hover:text-foreground focus-ring-inset flex items-center gap-1 rounded-full py-1 pr-1.5 pl-2.5"
           >
             {pressed && <Check className="size-3" aria-hidden />}
             {label}
@@ -57,7 +57,7 @@ export function AlsoSendChip({
         type="button"
         onClick={onPreview}
         aria-label={`Preview ${label.toLowerCase()}`}
-        className="text-muted-foreground hover:text-foreground focus-visible:ring-ring flex items-center justify-center rounded-full py-1 pr-2.5 pl-1 focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset max-sm:min-h-11 max-sm:min-w-11 max-sm:px-0"
+        className="text-muted-foreground hover:text-foreground focus-ring-inset flex items-center justify-center rounded-full py-1 pr-2.5 pl-1 max-sm:min-h-11 max-sm:min-w-11 max-sm:px-0"
       >
         <Eye className="size-3.5" aria-hidden />
       </button>

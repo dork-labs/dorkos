@@ -126,7 +126,6 @@
       "apps/client/src/layers/features/dashboard-sidebar/ui/SidebarSearchPill.tsx": 2,
       "apps/client/src/layers/features/dashboard-sidebar/ui/useSectionChrome.tsx": 2,
       "apps/client/src/layers/features/feature-promos/ui/PromoCard.tsx": 2,
-      "apps/client/src/layers/features/feedback/ui/AlsoSendChip.tsx": 4,
       "apps/client/src/layers/features/feedback/ui/AttachmentThumbnail.tsx": 4,
       "apps/client/src/layers/features/feedback/ui/FeedbackDialog.tsx": 1,
       "apps/client/src/layers/features/feedback/ui/FeedbackFormFooter.tsx": 2,

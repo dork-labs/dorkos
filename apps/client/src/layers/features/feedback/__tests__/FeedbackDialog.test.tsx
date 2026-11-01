@@ -1049,7 +1049,7 @@ describe('FeedbackDialog', () => {
       const preview = screen.getByRole('button', { name: 'Preview diagnostics' });
       expect(preview.className).toMatch(/max-sm:min-h-11/);
       expect(preview.className).toMatch(/max-sm:min-w-11/);
-      expect(preview.className).toMatch(/focus-visible:ring-inset/);
+      expect(preview.className).toMatch(/\bfocus-ring-inset\b/);
     });
   });
 
