@@ -1082,7 +1082,7 @@ Usage:
 
 **Parentheses, not brackets.** `size-(--size-icon-sm)` is Tailwind v4's syntax for "this arbitrary value is a custom property". The v3 spelling `size-[--size-icon-sm]` compiles to `width: --size-icon-sm`, which is not valid CSS — the browser drops it and the icon falls back to its intrinsic 24px. Two files shipped that way until DOR-1750; if an icon looks too big, check the brackets first.
 
-The shared `Button` applies its namespaced `--dui-size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Client-owned icon examples above keep the local token names. Its `xs` and `icon-xs` sizes deliberately opt out and stay at a flat 12px — they are small chrome that should not grow.
+The shared `Button` applies its namespaced `--dui-size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Client-owned icon examples above keep the local token names. Its compact `xs` and `icon-xs` sizes use `--dui-size-icon-xs`, so their glyphs step from 12px to 15px on a phone with the rest of the icon scale.
 
 ### Hover Pattern Mobile Alternatives
 

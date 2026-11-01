@@ -116,16 +116,19 @@ export function SessionHeader({
               and it still stops at a floor wide enough to read a few letters
               plus the ellipsis. */}
           <span
-            className="min-w-[3.5rem] shrink truncate font-medium"
+            className="min-w-0 shrink truncate font-medium @sm/bar:min-w-[3.5rem]"
             data-testid="session-agent-name"
             title={name}
           >
             {name}
           </span>
-          <ChevronRight className="text-muted-foreground/50 size-3 shrink-0" aria-hidden />
+          <ChevronRight
+            className="text-muted-foreground/50 size-(--size-icon-xs) shrink-0"
+            aria-hidden
+          />
           {behindDm ?? (
             <span
-              className="text-muted-foreground min-w-[3rem] shrink-[9999] truncate"
+              className="text-muted-foreground min-w-0 shrink-[9999] truncate @sm/bar:min-w-[3rem]"
               data-testid="session-title"
               title={title}
             >

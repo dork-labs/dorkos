@@ -66,7 +66,7 @@ export function OneBar({ identity, fill, chips, actions }: OneBarProps) {
   return (
     <>
       {identity}
-      {chips ? <div className="flex shrink-0 items-center gap-1.5">{chips}</div> : null}
+      {chips ? <div className="flex min-w-0 shrink items-center gap-1.5">{chips}</div> : null}
       {fill ? (
         // `self-stretch` passes the row's height through to fill content that
         // asks for it. Without it this wrapper is sized by its own content

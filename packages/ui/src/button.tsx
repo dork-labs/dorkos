@@ -55,11 +55,11 @@ const buttonVariants = cva(
         link: 'text-dui-primary underline-offset-4 hover:underline',
       },
       size: {
-        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
+        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-(--dui-size-icon-xs)",
         sm: 'h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5',
         md: 'h-9 px-4 py-2 has-[>svg]:px-3',
         lg: 'h-10 rounded-md px-6 has-[>svg]:px-4',
-        'icon-xs': "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
+        'icon-xs': "size-6 rounded-md [&_svg:not([class*='size-'])]:size-(--dui-size-icon-xs)",
         'icon-sm': 'size-8',
         'icon-md': 'size-9',
         'icon-lg': 'size-10',
@@ -82,8 +82,12 @@ const buttonVariants = cva(
  */
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'icon-xs' | 'icon-sm' | 'icon-md' | 'icon-lg';
 
-// xs and icon-xs are intentionally small UI chrome — excluded from responsive scaling
 const RESPONSIVE_SIZE_CLASSES: Partial<Record<ButtonSize, string>> = {
+  // Compact controls still follow the 1.25× phone scale. These are deliberately
+  // smaller than the 44px primary-action floor: they live in dense, grouped
+  // chrome such as a message action capsule. `responsive={false}` keeps the box
+  // at its desktop size for a toolbar that supplies its own reach.
+  xs: 'h-7.5 md:h-6',
   // 44px below the `md` breakpoint, spelled once in `touch-target.ts` — read its
   // module doc for why the gate is viewport width rather than touch capability,
   // and why the two sizes that match it exactly compose from the constant while
@@ -91,6 +95,7 @@ const RESPONSIVE_SIZE_CLASSES: Partial<Record<ButtonSize, string>> = {
   sm: 'h-11 md:h-8',
   md: TOUCH_TARGET_RESPONSIVE_H,
   lg: 'h-12 md:h-10',
+  'icon-xs': 'size-7.5 md:size-6',
   'icon-sm': 'size-10 md:size-8',
   'icon-md': TOUCH_TARGET_RESPONSIVE_SIZE,
   'icon-lg': 'size-12 md:size-10',

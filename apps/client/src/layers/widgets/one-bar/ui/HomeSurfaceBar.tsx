@@ -78,6 +78,9 @@ export function HomeSurfaceBar() {
           activeTabId={activeTabId}
           label="Home sections"
           indicatorLayoutId="home-tab-indicator"
+          // The strip scrolls and the chips cannot, so on a phone it gives up its
+          // width first; otherwise the members chip paints over the actions.
+          className="shrink-[9999]"
           // The tour spotlights this strip, and it is one of the few things on
           // screen at every width — the sidebar it replaced in the tour is a
           // sheet on a phone, unmounted until you open it (TOUR_ANCHORS.navAgents).

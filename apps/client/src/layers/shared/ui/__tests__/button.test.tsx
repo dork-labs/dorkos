@@ -38,11 +38,21 @@ describe('Button responsive touch-target height', () => {
     expect(getByRole('button').className).toContain('h-11');
   });
 
-  it('does not touch the fixed xs and icon-xs sizes, which opt out of responsive scaling', () => {
-    // These are deliberately small UI chrome (button.tsx's own comment), not
-    // reachable touch targets in a busy toolbar — out of scope for DOR-771.
-    const { getByRole } = render(<Button size="xs">•</Button>);
-    expect(getByRole('button').className).not.toContain('h-11');
+  it('steps compact xs controls up by 1.25x on a phone', () => {
+    const { getByRole } = render(<Button size="xs">More</Button>);
+    expect(getByRole('button')).toHaveClass('h-7.5', 'md:h-6');
+  });
+
+  it('steps compact icon-xs targets and their unsized glyphs up on a phone', () => {
+    const { getByRole } = render(
+      <Button size="icon-xs" aria-label="Copy">
+        <svg />
+      </Button>
+    );
+    expect(getByRole('button')).toHaveClass('size-7.5', 'md:size-6');
+    expect(getByRole('button').className).toContain(
+      "[&_svg:not([class*='size-'])]:size-(--dui-size-icon-xs)"
+    );
   });
 });
 
