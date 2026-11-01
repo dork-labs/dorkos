@@ -43,14 +43,14 @@ const connection = (ref: string) =>
       verifiedAt: '2026-09-16T10:00:00Z',
     },
   });
-const room = (community: string) =>
+const room = (community: string, slug: string | null = 'general', title = 'General') =>
   RemoteCommunityRoomSchema.parse({
     community,
     roomId: 'same',
     remoteCommunityId: `deployment-${community}`,
     kind: 'channel',
-    title: 'General',
-    slug: 'general',
+    title,
+    slug,
     topic: null,
     archived: false,
     createdAt: '2026-09-16T10:00:00Z',
@@ -66,7 +66,7 @@ const room = (community: string) =>
     access,
   });
 
-function mount(community?: string, failFirst = false) {
+function mount(community?: string, failFirst = false, makeRoom = (ref: string) => room(ref)) {
   const transport = withSpacesExperiment(createMockTransport());
   vi.mocked(transport.listCommunityConnections).mockResolvedValue([
     connection('a'),
@@ -74,7 +74,8 @@ function mount(community?: string, failFirst = false) {
   ]);
   vi.mocked(transport.listRemoteCommunityRooms).mockImplementation(async (ref) => {
     if (ref === 'a' && failFirst) throw new Error('offline');
-    return { community: room(ref).community, rooms: [room(ref)], stale: false };
+    const made = makeRoom(ref);
+    return { community: made.community, rooms: [made], stale: false };
   });
   const root = createRootRoute({ component: CommunityChannelGroups, staticData: { header: null } });
   const router = createRouter({
@@ -103,10 +104,22 @@ describe('community channel discovery', () => {
     expect(address.searchParams.get('id')).toBe('same');
     expect(screen.getByRole('region', { name: 'Community b' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Community a' })).not.toBeInTheDocument();
-    // A channel's unread is activity, not something aimed at you: a bold name
-    // and the word, never a number.
-    expect(link).toHaveAccessibleName(/general, unread messages/);
-    expect(screen.queryByLabelText('2 unread messages')).not.toBeInTheDocument();
+    // A busy channel is bold and says so in words, never with a bare number (D2).
+    expect(link).toHaveAccessibleName('#general, new messages');
+    expect(link).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByText('2')).not.toBeInTheDocument();
+    // A space's channels are rows of the sidebar's own roving list (S13).
+    expect(link).toHaveAttribute('data-sidebar-row');
+    expect(link.tabIndex).toBe(0);
+  });
+
+  it('says the # for a space channel that has no slug, as the packaged space sends it', async () => {
+    // `slug` is nullable on the wire, and a space's own `#general` arrives with
+    // none: `RoomTitle` alone would read it "general", and the row would no
+    // longer be the "#general" a local channel is (community-packaged proof).
+    mount('b', false, (ref) => room(ref, null, 'general'));
+    const link = await screen.findByRole('link', { name: /^#general/ });
+    expect(link).toHaveAccessibleName('#general, new messages');
   });
 
   it('renders no remote navigation while the installation route is selected', async () => {

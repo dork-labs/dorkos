@@ -3,11 +3,12 @@ import { BellOff, Pause } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { getAgentDisplayName } from '@/layers/shared/lib';
-import { CountPill, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
+import { CountPill, SIDEBAR_FACE, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
 import { AgentAvatar, type AgentVisual } from '@/layers/entities/agent';
 import { useAgentHottestStatus } from '@/layers/entities/session';
 import { useAgentRowMenuNodes } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
+import { ROW_QUIET_MARK_CLASS } from './row-glyph';
 import { LiveSessionsChip } from './LiveSessionsChip';
 import { SessionSwitcher } from './SessionSwitcher';
 import type { SidebarUnread } from '../model/build-sidebar-model';
@@ -227,7 +228,14 @@ export function AgentListItem({
         // draws over the glyph square sat 8px off the face it was supposed to
         // cover. One slot for one mark is what makes `#`, a single face and an
         // agent's face line up.
-        glyph={<AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />}
+        glyph={
+          <AgentAvatar
+            color={visual.color}
+            emoji={visual.emoji}
+            size="xs"
+            className={SIDEBAR_FACE}
+          />
+        }
         title={displayName}
         // The FACE opens the profile; the row keeps its own click, which selects
         // the agent and opens its last conversation.
@@ -245,15 +253,13 @@ export function AgentListItem({
         className={emphasized ? undefined : 'font-medium'}
         trailing={
           <>
-            {isMuted && (
-              <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />
-            )}
+            {isMuted && <BellOff className={ROW_QUIET_MARK_CLASS} aria-label="Muted" />}
             {/* Paused everywhere (spec `audit-trail` PR5): a quiet mark after
                 the name, like the mute one. The row stays clickable: a paused
                 agent is still readable and messageable. */}
             {isPaused && (
               <Pause
-                className="text-sidebar-foreground/50 size-3"
+                className={ROW_QUIET_MARK_CLASS}
                 aria-label="Paused"
                 data-testid="agent-row-paused"
               />
@@ -262,9 +268,11 @@ export function AgentListItem({
               No chip here: `trailingAction` below draws it, and reserves its own
               width inside this slot. The dot and the chip are still mutually
               exclusive — the chip carries a dot of its own, so showing both
-              would say "working" twice in two vocabularies.
+              would say "working" twice in two vocabularies. Needs-you is the
+              exception: the chip only says "live", so a live agent waiting on
+              you would lose the one mark that is for you (Phase 4 §4).
             */}
-            {chipCount === undefined && (
+            {(chipCount === undefined || agentStatus.kind === 'pendingApproval') && (
               <AgentActivityBadge status={agentStatus.kind} label={agentStatus.label} />
             )}
             {directedCount !== undefined && (

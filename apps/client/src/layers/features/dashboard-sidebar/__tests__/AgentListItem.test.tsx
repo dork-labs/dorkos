@@ -241,6 +241,19 @@ describe('AgentListItem', () => {
     expect(screen.queryByTestId('activity-badge')).not.toBeInTheDocument();
   });
 
+  it('keeps the needs-you mark beside the chip: the chip only says "live"', () => {
+    // Phase 4 §4: when the chip would hide it, needs-you wins.
+    mockAgentStatus.mockReturnValue({
+      kind: 'pendingApproval',
+      color: 'rgb(245,158,11)',
+      pulse: false,
+      label: 'Awaiting your approval',
+    });
+    renderItem({ liveCount: 3 });
+    expect(screen.getByRole('button', { name: /chat switcher/i })).toBeInTheDocument();
+    expect(screen.getByTestId('activity-badge')).toHaveTextContent('Awaiting your approval');
+  });
+
   it('opens the switcher from the chip, and only from the chip', () => {
     const { props } = renderItem({ liveCount: 2 });
     expect(screen.queryByTestId('session-switcher')).not.toBeInTheDocument();

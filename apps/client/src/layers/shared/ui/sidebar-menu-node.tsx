@@ -697,7 +697,7 @@ export interface SidebarMenuSurfaceProps {
 /**
  * How wide a gutter the "⋮" needs, by pointer.
  *
- * Two numbers because the control is two sizes: 20px in a 28px gutter under a
+ * Two numbers because the control is two sizes: 24px in a 28px gutter under a
  * mouse, 44px in a 44px one under a thumb (P4 AC-4). Exported so the row and
  * the section header — which own their own right padding and their own trailing
  * satellites — spell the same numbers this surface positions against, instead of
@@ -871,16 +871,19 @@ export function SidebarMenuSurface({
         // 60-agent Library would be 121 Tab presses rather than one.
         {...{ [SIDEBAR_ACTIONS_ATTRIBUTE]: '' }}
         className={cn(
-          'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent focus-visible:ring-sidebar-ring',
-          'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-md outline-hidden transition-opacity',
-          'group-hover/sidebar-menu:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 data-[state=open]:opacity-100',
-          // A thumb's target, not a pointer's: 44px of button in the wider
-          // gutter its caller is paying for, with the same 16px glyph inside.
-          isMobile ? 'right-0 size-11 opacity-100' : 'right-1 size-5 opacity-0',
+          'text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent',
+          // The ring is drawn inside the button: the same inset outline as the
+          // row it belongs to (`ROW_FOCUS_CLASS`, C7), so it never bleeds out.
+          'focus-visible:outline-ring absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-md outline-hidden transition-opacity focus-visible:outline-2 focus-visible:-outline-offset-2',
+          'group-hover/sidebar-menu:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100',
+          // Button `ghost icon-xs` geometry (Phase 4 S17): 24px under a mouse,
+          // the 7.2 floor, in the 28px gutter; 44px under a thumb, in the wider
+          // gutter its caller is paying for.
+          isMobile ? 'right-0 size-11 opacity-100' : 'right-0.5 size-6 opacity-0',
           kebabClassName
         )}
       >
-        <MoreVertical className="size-4" />
+        <MoreVertical className="size-(--size-icon-sm) max-md:size-(--size-icon-md)" />
       </button>
     </DropdownMenuTrigger>
   );
