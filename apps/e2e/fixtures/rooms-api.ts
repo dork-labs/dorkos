@@ -726,7 +726,14 @@ export class RoomsApi {
    */
   async enableRepo(roomId: string, files: Record<string, string> = {}): Promise<string | null> {
     const enabled = await this.request.post(`/api/rooms/${roomId}/repo`, { data: {} });
-    if (!enabled.ok()) {
+    // A channel the person opens already starts with files (DOR-2112), so
+    // "already has files" is the same outcome as giving it some. Any other
+    // refusal still fails the seed.
+    const alreadyHad =
+      enabled.status() === 409 &&
+      ((await enabled.json().catch(() => null)) as { code?: string } | null)?.code ===
+        'ROOM_REPO_EXISTS';
+    if (!enabled.ok() && !alreadyHad) {
       throw new Error(`Could not give room ${roomId} files: ${await enabled.text()}`);
     }
     // `undefined`, not `null`, and the difference is a real refusal: `null`

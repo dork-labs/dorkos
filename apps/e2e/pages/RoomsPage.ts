@@ -285,7 +285,9 @@ export class RoomsPage {
 
   /** The right panel's own tab for this room, whether or not it is showing. */
   get roomPanelTab(): Locator {
-    return this.page.getByRole('tab', { name: 'Room' });
+    // Exact, because a channel starts with ROOM.md pinned on its canvas, and
+    // that tab's name ("ROOM.md, Posted by You") also contains "Room".
+    return this.page.getByRole('tab', { name: 'Room', exact: true });
   }
 
   /**
@@ -356,6 +358,16 @@ export class RoomsPage {
    * Named by what a screen reader calls it, which is also what tells the two
    * strips apart: the Browser tab draws its own over the pages.
    */
+  /**
+   * Every document tab on the room's canvas, one per document. A channel the
+   * person opens starts with one already: its pinned ROOM.md (DOR-2112).
+   */
+  get canvasDocumentTabs(): Locator {
+    return this.page.locator(
+      '[data-slot="right-panel-header"] [role="tab"][data-view-category="canvas"][id^="right-panel-tab-resource/"]'
+    );
+  }
+
   get canvasDocuments(): Locator {
     return this.page.getByRole('tablist', { name: 'Right panel tabs' }).filter({
       has: this.page.locator(

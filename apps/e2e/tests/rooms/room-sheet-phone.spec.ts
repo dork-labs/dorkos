@@ -68,7 +68,7 @@ test.describe('Room panel on a phone — 390×844 @smoke', () => {
     // says which panel you are in, and the way back to Pulse — and lets the
     // room's name scroll with the roster it belongs to. The footer is still
     // pinned, because Archive must not be forty-six rows away.
-    const tabs = page.getByRole('tab', { name: 'Room' });
+    const tabs = page.getByRole('tab', { name: 'Room', exact: true });
     const footer = sheet.getByRole('button', { name: 'Archive room' });
     await expect(footer).toBeVisible();
 

@@ -288,6 +288,43 @@ export class RoomRepoService {
   }
 
   /**
+   * Give a channel the person just opened its files and `ROOM.md`, so a new
+   * room has somewhere to keep things without anyone finding the button first
+   * (DOR-2112).
+   *
+   * **Only when {@link RoomRepoService.enable} would say yes to the creator
+   * anyway, and asked before it, so nothing is refused or logged on the way.**
+   * The feature off, a DM, or a creator who is not the person who owns this
+   * install (an agent opening a room through its tool) all answer `false` and
+   * write nothing: an agent never gets a room repo by opening a room, and the
+   * first `ROOM.md` is only ever committed as a person who made the room. The
+   * gates themselves are `enable`'s, unchanged.
+   *
+   * **It never throws.** The room exists by the time this runs, and a room
+   * without files is still a room: a machine with no git, or a disk that
+   * refused, leaves it exactly as one made with the feature off, with "Set up
+   * files" in its panel.
+   *
+   * @param roomId - The room that was just created.
+   * @param creatorAuthorId - Who created it.
+   * @returns Whether the room now has files because of this call.
+   */
+  async setUpForNewRoom(roomId: string, creatorAuthorId: string): Promise<boolean> {
+    if (!this.deps.enabled() || !this.deps.isOwnerAuthor(creatorAuthorId)) return false;
+    const room = this.deps.getRoom(roomId, creatorAuthorId);
+    if (!room || room.kind !== 'channel' || room.archived) return false;
+    try {
+      return (await this.enable(roomId, creatorAuthorId)).created;
+    } catch (err) {
+      logger.warn('[rooms] a new room was made without files of its own', {
+        roomId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  }
+
+  /**
    * The body of {@link RoomRepoService.enable}, run while holding the room's
    * queue.
    *

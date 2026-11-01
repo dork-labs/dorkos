@@ -62,7 +62,8 @@ export class RightPanelPage {
     this.singleTabTitle = this.header.getByText('Pulse', { exact: true });
     this.profileTab = this.header.getByRole('tab', { name: 'Profile' });
     this.pulseTab = this.header.getByRole('tab', { name: 'Pulse' });
-    this.roomTab = this.header.getByRole('tab', { name: 'Room' });
+    // Exact: a channel's pinned ROOM.md tab also has "Room" in its name.
+    this.roomTab = this.header.getByRole('tab', { name: 'Room', exact: true });
     this.canvasTab = this.header.getByRole('tab', { name: 'Canvas' });
     this.browserTab = this.header
       .locator('[role="tab"][data-view-category="local-browser"]')

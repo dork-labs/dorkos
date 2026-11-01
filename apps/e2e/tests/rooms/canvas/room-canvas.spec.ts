@@ -244,12 +244,15 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
         timeout: SERVER_ROUND_TRIP_MS,
       });
 
-      // Closed in one window, gone in the other.
+      // Closed in one window, gone in the other. The channel's own pinned
+      // ROOM.md is the one document left (DOR-2112).
       const closed = await request.delete(`/api/rooms/${room.id}/canvas/${documentId}`);
       expect(closed.ok()).toBe(true);
-      await expect(secondRooms.canvasDocuments).toHaveCount(0, {
+      await expect(secondRooms.canvasDocumentTabs).toHaveCount(1, {
         timeout: SERVER_ROUND_TRIP_MS,
       });
+      await expect(secondRooms.canvasDocumentTabs).toHaveAccessibleName(/^ROOM\.md\b/);
+      await expect(secondRooms.canvasDocuments).not.toContainText(title);
     } finally {
       await second.close();
     }
@@ -279,7 +282,15 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     });
     const tabs = () =>
       roomsPage.canvasDocuments.locator('[role="tab"][data-view-category="canvas"]');
-    await expect(tabs().first()).toContainText(first);
+    // The channel's own ROOM.md is pinned from the start (DOR-2112), so it
+    // leads; the two unpinned documents follow in the order they were opened.
+    const expectOrder = async (titles: string[]): Promise<void> => {
+      await expect(tabs()).toHaveCount(titles.length, { timeout: SERVER_ROUND_TRIP_MS });
+      for (const [i, title] of titles.entries()) {
+        await expect(tabs().nth(i)).toContainText(title, { timeout: SERVER_ROUND_TRIP_MS });
+      }
+    };
+    await expectOrder(['ROOM.md', first, second]);
 
     // Pinned from the tab's own control, as a member — nothing here is
     // owner-only.
@@ -287,7 +298,8 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     await page.getByRole('button', { name: 'Add view', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Pin document', exact: true }).click();
 
-    await expect(tabs().first()).toContainText(second, { timeout: SERVER_ROUND_TRIP_MS });
+    // Pinned documents lead, in the order they were opened: ROOM.md, then this one.
+    await expectOrder(['ROOM.md', second, first]);
     // The control now offers the way back, which is how the tab says it is
     // pinned without a tooltip nobody opens.
     await page.getByRole('button', { name: 'Add view', exact: true }).click();
@@ -299,7 +311,8 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     await page.reload();
     await basePage.waitForAppReady();
     await roomsPage.openCanvasTab();
-    await expect(tabs().first()).toContainText(second, { timeout: SERVER_ROUND_TRIP_MS });
+    await expectOrder(['ROOM.md', second, first]);
+    await roomsPage.canvasDocumentTab(second).click();
     await page.getByRole('button', { name: 'Add view', exact: true }).click();
     await expect(page.getByRole('menuitem', { name: 'Unpin document', exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
@@ -339,17 +352,24 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
     await expect(roomsPage.canvasDocuments).toContainText(watched, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    // Nobody is reading yet, so nothing is on the tab.
+    // The scenario reads the FIRST document on the table, and a channel starts
+    // with its ROOM.md pinned there (DOR-2112), so that is the one it reads.
+    // `watched` stays on the table to prove the face lands on the document that
+    // was really read, and on no other.
+    const read = 'ROOM\\.md';
+    // Nobody is reading yet, so nothing is on either tab.
+    await expect(roomsPage.canvasDocumentWatchers(read)).toHaveCount(0);
     await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0);
 
     await roomsApi.postEntries(room.id, [`@${name} what is on the canvas?`]);
 
     // Mid-turn: the claim is held, the read happened, and the face arrived over
     // this window's own stream with no reload.
-    await expect(roomsPage.canvasDocumentWatchers(watched)).toBeVisible({
+    await expect(roomsPage.canvasDocumentWatchers(read)).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
-    await expect(roomsPage.canvasDocumentTab(watched)).toContainText(`${name} is looking at this.`);
+    await expect(roomsPage.canvasDocumentTab(read)).toContainText(`${name} is looking at this.`);
+    await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0);
 
     // The turn ends, and the face goes with it — from the one block every ending
     // reaches, rather than from anything the agent chose to say.
@@ -359,7 +379,7 @@ test.describe('A room has a canvas everybody shares @smoke', () => {
       (entry) => entry.authorId === seat,
       `an answer from ${name}`
     );
-    await expect(roomsPage.canvasDocumentWatchers(watched)).toHaveCount(0, {
+    await expect(roomsPage.canvasDocumentWatchers(read)).toHaveCount(0, {
       timeout: SERVER_ROUND_TRIP_MS,
     });
   });
