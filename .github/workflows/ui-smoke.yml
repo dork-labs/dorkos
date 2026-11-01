@@ -1,0 +1,193 @@
+name: ui-smoke
+
+# THE @smoke BROWSER SET ON PULL REQUESTS THAT TOUCH THE UI (ledger 261030-180020).
+#
+# The full browser suite (browser-test.yml) runs only in the merge queue, so a
+# UI change that breaks a phone layout is first seen there, where a red ejects
+# the PR and every queue entry stacked on it: #3159 on 2026-10-30 ejected
+# itself and failed the #3263 and #3278 entries behind it on three @smoke specs
+# (home-shell 375px, no-horizontal-scroll 390px). This job runs the specs
+# tagged @smoke on the pull request itself when its diff touches
+# apps/client/ or packages/ui/, so that break is red on the PR.
+#
+# ONE JOB THAT ALWAYS REPORTS. It is meant to be a required context, and a
+# required check cannot be scoped by `paths:` or a job-level `if:`: either can
+# leave the context missing (the PR waits on "expected" forever) or skipped
+# (GitHub counts that as passing). So the job runs on every pull_request and
+# merge_group event, and a step decides whether the suite runs; out of scope,
+# it passes in seconds and says why. Same shape as test.yml's
+# `community-packaged`.
+#
+# THE QUEUE IS UNCHANGED. On merge_group this passes at once: the queue already
+# runs the whole browser suite, @smoke included, in browser-test.yml. It still
+# reports there, so making it required never leaves a queue entry waiting.
+#
+# NO SECRETS. Fork pull requests run this as they are: it reads nothing but the
+# checkout and a read-only token.
+on:
+  pull_request:
+  merge_group:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+# A new push supersedes the PR's run; queue refs are unique per build, so queue
+# runs never share a group.
+concurrency:
+  group: ui-smoke-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ui-smoke:
+    name: ui-smoke
+    # Pinned with browser-test.yml (ledger 261027-053504).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      NODE_ENV: development
+    steps:
+      # Depth 2 so the pull request's test-merge commit has its first parent,
+      # the base it was merged onto, which is all the scope step diffs against.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # Writes run=true|false. merge_group answers false without looking (the
+      # queue runs the full suite). pull_request diffs the test-merge commit
+      # against its first parent. Every failure on the PR path FAILS OPEN to
+      # running the set, never to a green that tested nothing: no test-merge
+      # commit, or a git error, runs it. The diff is captured before it is
+      # matched, so a git failure is never read as an empty, out-of-scope diff.
+      - name: Decide whether this change touches the UI
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != 'pull_request' ]; then
+            echo "$EVENT run: the merge queue runs the whole browser suite in browser-test.yml, @smoke included; nothing to do here."
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          verdict=true
+          if git rev-parse --verify --quiet 'HEAD^2' >/dev/null &&
+            base=$(git rev-parse --verify --quiet 'HEAD^1') &&
+            changed=$(git -c core.quotePath=false diff --no-renames --name-only "$base" HEAD); then
+            if printf '%s\n' "$changed" | grep -qE '^(apps/client|packages/ui)/'; then
+              echo "This change touches apps/client/ or packages/ui/; running the @smoke browser set."
+            else
+              verdict=false
+              echo "Nothing in this change is under apps/client/ or packages/ui/, so the @smoke set did not run here. The merge queue runs the whole browser suite on every change."
+            fi
+          else
+            echo "cannot diff this pull request against its base (no test-merge commit, or git failed); running the @smoke set"
+          fi
+          echo "run=$verdict" >> "$GITHUB_OUTPUT"
+
+      # Setup, browser install and build are the browser shard's, step for step
+      # (browser-test.yml explains each one); only the suite step differs.
+      - uses: pnpm/action-setup@v6
+        if: steps.scope.outputs.run == 'true'
+
+      - uses: actions/setup-node@v7.1.0
+        if: steps.scope.outputs.run == 'true'
+        with:
+          node-version: 24
+
+      - name: Find the pnpm store
+        if: steps.scope.outputs.run == 'true'
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store built on this runner image
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ env.ImageOS }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - if: steps.scope.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve the Playwright version the cache is keyed on
+        if: steps.scope.outputs.run == 'true'
+        id: pw
+        run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Chromium browser Playwright drives
+        if: steps.scope.outputs.run == 'true'
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install the Chromium browser Playwright drives
+        if: steps.scope.outputs.run == 'true'
+        timeout-minutes: 10
+        run: |
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-ci-acquire-timeouts >/dev/null
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+          fi
+          for attempt in 1 2; do
+            if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+              pnpm --filter @dorkos/e2e exec playwright install-deps chromium && exit 0
+            else
+              pnpm --filter @dorkos/e2e exec playwright install --with-deps chromium && exit 0
+            fi
+            echo "playwright install attempt $attempt failed; retrying once" >&2
+            sleep 15
+          done
+          exit 1
+
+      - name: Build what the webServer legs boot from
+        if: steps.scope.outputs.run == 'true'
+        run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client --filter=@dorkos/site^...
+
+      - name: Read the quarantine lane
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          node packages/ci-steward/src/cli.ts quarantine-list \
+            --runner playwright \
+            --out "$RUNNER_TEMP/quarantine.json" \
+            --lines "$RUNNER_TEMP/quarantine.txt" \
+            --title "Quarantine lane — ui-smoke"
+
+      # The @smoke specs only, unsharded. A quarantined test that fails does
+      # not fail this job, the same rule the shards follow.
+      - name: Run the @smoke browser set
+        if: steps.scope.outputs.run == 'true'
+        id: suite
+        timeout-minutes: 25
+        run: |
+          set +e
+          pnpm --filter @dorkos/e2e run e2e --grep @smoke
+          code=$?
+          echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Refuse any failure the quarantine lane does not cover
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          node packages/ci-steward/src/cli.ts quarantine-gate \
+            --runner playwright \
+            --suite-exit "${{ steps.suite.outputs.exit-code }}" \
+            --list "$RUNNER_TEMP/quarantine.json" \
+            --reports apps/e2e/test-results \
+            --title "Quarantine gate — ui-smoke"
+
+      - name: Upload the Playwright report
+        if: failure() && steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-smoke-playwright-report
+          path: |
+            apps/e2e/playwright-report/
+            apps/e2e/test-results/
+          retention-days: 7
