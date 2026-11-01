@@ -67,27 +67,50 @@ test.describe('sidebar collapse', { tag: SOLE_SIDEBAR_TAG }, () => {
   });
 
   test('a press mid-flight turns the panel around from where it is', async ({ page }) => {
-    // Both presses run inside one page task, so a slow machine cannot let the fold
-    // finish between them, and every frame after is sampled.
-    const frames = await page.evaluate(async () => {
+    // The second press waits for a frame that shows the panel partway, not for a
+    // fixed time: under CI load one long frame can carry the fold to the end, and
+    // a timed press would then test nothing. A fold that is never caught partway
+    // is reopened and tried again, up to three times.
+    const run = await page.evaluate(async () => {
       const press = () =>
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true }));
       const el = document.querySelector('[data-slot="sidebar-container"]')!;
-      const samples: number[] = [];
-      press();
-      await new Promise((done) => setTimeout(done, 60));
-      press();
-      for (let i = 0; i < 40; i++) {
-        await new Promise(requestAnimationFrame);
-        samples.push(el.getBoundingClientRect().x);
+      const x = () => el.getBoundingClientRect().x;
+      const frame = () => new Promise(requestAnimationFrame);
+      const width = el.getBoundingClientRect().width;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        press();
+        let turnedAt: number | null = null;
+        for (let i = 0; i < 60 && turnedAt === null; i++) {
+          await frame();
+          const now = x();
+          // Caught too late, the spring's own speed could carry it to the end.
+          if (now <= -width * 0.6) break;
+          if (now < -8) {
+            turnedAt = now;
+            press();
+          }
+        }
+        if (turnedAt === null) {
+          for (let i = 0; i < 60 && x() > -width; i++) await frame();
+          press();
+          for (let i = 0; i < 60 && x() < 0; i++) await frame();
+          continue;
+        }
+        const samples: number[] = [];
+        for (let i = 0; i < 40; i++) {
+          await frame();
+          samples.push(x());
+        }
+        return { width, turnedAt, samples };
       }
-      return samples;
+      return null;
     });
 
-    // It never reached the far end, and it had started from partway rather than
-    // from the start or the end.
-    expect(Math.min(...frames)).toBeGreaterThan(-288);
-    expect(frames[0]).toBeLessThan(0);
+    // It was caught partway, and from there it went back without reaching the far end.
+    expect(run, 'the fold was never caught partway in three tries').not.toBeNull();
+    expect(Math.min(...run!.samples)).toBeGreaterThan(-run!.width);
+    expect(run!.samples[run!.samples.length - 1]).toBeGreaterThan(run!.turnedAt);
     await expect.poll(() => panelX(page)).toBe(0);
   });
 
