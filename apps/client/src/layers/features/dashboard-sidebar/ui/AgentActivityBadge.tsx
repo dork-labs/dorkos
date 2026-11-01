@@ -1,6 +1,5 @@
 import type { SessionBorderKind } from '@/layers/entities/session';
-import { cn } from '@/layers/shared/lib';
-import { statusDotClass, type StatusSignal } from '@/layers/shared/ui';
+import { RowStatusMark, type RowMark } from './RowStatusMark';
 
 interface AgentActivityBadgeProps {
   status: SessionBorderKind;
@@ -8,16 +7,14 @@ interface AgentActivityBadgeProps {
 }
 
 /**
- * How a session's border kind reads as a dot. `idle` is absent on purpose —
+ * How a session's border kind reads as a row mark. `idle` is absent on purpose —
  * a row with nothing to report shows nothing, which is what makes the rows
  * that do report mean something.
  *
- * The colours themselves live in the shared token map, not here: this dot said
- * `bg-green-500` while the tab strip said the same thing in the same green and
- * a room row said it in `bg-status-success`, and one fact wearing three
- * spellings is one that drifts the first time either theme moves.
+ * The shapes and colours live in {@link RowStatusMark}, the sidebar's one mark,
+ * so an agent row and a room row cannot say the same thing two ways.
  */
-const DOT_SIGNAL: Partial<Record<SessionBorderKind, StatusSignal>> = {
+const ROW_MARK: Partial<Record<SessionBorderKind, RowMark>> = {
   streaming: 'working',
   pendingApproval: 'needs-you',
   error: 'error',
@@ -25,27 +22,15 @@ const DOT_SIGNAL: Partial<Record<SessionBorderKind, StatusSignal>> = {
 };
 
 /**
- * Compact dot badge showing aggregate agent activity status.
+ * The agent row's status mark, or nothing when the agent is idle.
  *
- * Renders a 6px (`size-1.5`) colored dot. Returns null when idle.
- * Designed for the dashboard sidebar agent row — visible even when
- * the agent is collapsed.
- *
- * Only the streaming dot moves ({@link statusDotClass}): an agent mid-turn is
- * an event, an agent waiting on you is a state, and a state that pulsed would
- * claim to still be going.
+ * Visible even when the agent is collapsed. Needs you is a diamond, the rest
+ * are dots, and only working moves: an agent mid-turn is an event, an agent
+ * waiting on you is a state, and a state that pulsed would claim to still be
+ * going.
  */
 export function AgentActivityBadge({ status, label }: AgentActivityBadgeProps) {
-  const signal = DOT_SIGNAL[status];
-  if (!signal) return null;
-
-  return (
-    <span
-      className={cn('size-1.5 shrink-0 rounded-full', statusDotClass(signal))}
-      // `img`, never `status`: a live region per row would read every agent's
-      // state aloud as it changes, and the row's own name already carries it.
-      role="img"
-      aria-label={label}
-    />
-  );
+  const mark = ROW_MARK[status];
+  if (!mark) return null;
+  return <RowStatusMark mark={mark} label={label} />;
 }

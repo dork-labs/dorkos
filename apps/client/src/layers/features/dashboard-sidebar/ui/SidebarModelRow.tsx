@@ -31,6 +31,7 @@ import { RoomRow } from './rooms/RoomRow';
 import { Sortable, sidebarDndData, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import { buildRowMotion } from './motion/sidebar-motion';
 import { useSidebarChrome } from './SidebarChrome';
+import { ROW_GLYPH_CLASS } from './row-glyph';
 
 /**
  * Whether a row points at what is currently on screen.
@@ -250,7 +251,7 @@ function AddOnRowFromModel({
         // Hidden from the accessibility tree: an extension's SVG can carry a
         // `<title>`, which would otherwise be read into the row's name.
         <span aria-hidden className="contents">
-          <ContributedIcon icon={icon} className="text-sidebar-foreground/60 size-3.5" />
+          <ContributedIcon icon={icon} className={ROW_GLYPH_CLASS} />
         </span>
       }
       // Two pages sharing a title read `extension › title` (`add-on-rows`).
@@ -378,7 +379,7 @@ function DoorRowFromModel({
   const Icon = row.glyph.kind === 'icon' ? ICON[row.glyph.icon] : Plus;
   return (
     <SidebarRow
-      glyph={<Icon className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+      glyph={<Icon className={ROW_GLYPH_CLASS} aria-hidden />}
       title={row.primary}
       isActive={isActive}
       emphasized={false}

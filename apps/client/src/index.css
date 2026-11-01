@@ -1386,12 +1386,13 @@ body {
 }
 
 /* What a drop target wears while a drag is over it: a 2px ring drawn INSIDE the
-   box, at 45% of the sidebar's ring colour. Inset rather than outset because a
-   folding section clips its own body, and an outer ring is the first thing that
-   clipping eats; 45% rather than full because this marks where a row would land,
-   which is a quieter claim than "this has focus". */
+   box, in the brand ink. Inset rather than outset because a folding section
+   clips its own body, and an outer ring is the first thing that clipping eats.
+   Full ink rather than a faded ring: it is the only sign that a row can land
+   here, and the 45% ring it replaces measured 2.1:1 on the light panel, under
+   the 3:1 a mark needs (Phase 4 S15). */
 @utility sidebar-drop-ring {
-  box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-sidebar-ring) 45%, transparent);
+  box-shadow: inset 0 0 0 2px var(--color-brand-text);
 }
 
 /* ===========================================================================

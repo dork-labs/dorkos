@@ -101,7 +101,7 @@ function AgentActivityBadgeShowcase() {
   return (
     <PlaygroundSection
       title="AgentActivityBadge"
-      description="Compact 6px dot badge showing aggregate agent status. Returns null when idle (no dot rendered)."
+      description="The agent row's one status mark (RowStatusMark): a 7px diamond in the brand ink for needs-you, a 6px dot for the rest, and only working moves. Returns null when idle."
     >
       <ShowcaseLabel>All statuses</ShowcaseLabel>
       <ShowcaseDemo>

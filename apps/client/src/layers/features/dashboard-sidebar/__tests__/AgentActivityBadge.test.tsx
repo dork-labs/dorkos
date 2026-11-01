@@ -1,7 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { AgentActivityBadge } from '../ui/AgentActivityBadge';
-import type { SessionBorderKind } from '@/layers/entities/session';
 
 afterEach(cleanup);
 
@@ -11,46 +10,47 @@ describe('AgentActivityBadge', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('gives the dot a name without making it a live region', () => {
-    // One announcer per page: a `status` role here was a live region per row.
+  it('is a named image, never a live region of its own', () => {
+    // A `status` role on every agent row is a live region per row, and the
+    // whole list would be read out at once.
     render(<AgentActivityBadge status="streaming" label="Working" />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Working' })).toBeInTheDocument();
-    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('renders the theme success token for streaming, never a raw palette green', () => {
-    // `bg-green-500` here and `bg-status-success` in a room was one fact wearing
-    // two spellings, each free to move when either theme did.
     render(<AgentActivityBadge status="streaming" label="Working" />);
     const dot = screen.getByRole('img');
-    expect(dot).toBeInTheDocument();
     expect(dot.className).toContain('bg-status-success');
     expect(dot.className).not.toContain('bg-green-500');
-    expect(dot).toHaveAttribute('aria-label', 'Working');
+    expect(dot.className).toContain('rounded-full');
   });
 
-  it('renders the contrast-safe warning token for pendingApproval status', () => {
-    // `bg-status-warning-dot`, not the fill-tuned `bg-status-warning`: a 6px
-    // mark that means something by colour alone owes 3:1 against the surface
-    // (WCAG 1.4.11), and the general amber is 2.15:1 on a light one.
+  it('draws needs-you as a diamond in the brand ink, not an amber dot', () => {
+    // The amber dot was 2.69:1 on the light panel, under 3:1, and a colour
+    // alone beside a green and a grey dot (Phase 4 B4). A shape says it
+    // without the colour.
     render(<AgentActivityBadge status="pendingApproval" label="Awaiting your approval" />);
-    const dot = screen.getByRole('img');
-    expect(dot.className.split(' ')).toContain('bg-status-warning-dot');
-    expect(dot.className.split(' ')).not.toContain('bg-status-warning');
-    expect(dot.className).not.toContain('bg-amber-500');
+    const mark = screen.getByRole('img');
+    const classes = mark.className.split(' ');
+    expect(mark).toHaveAttribute('data-row-mark', 'needs-you');
+    expect(classes).toContain('bg-brand-text');
+    expect(classes).toContain('rotate-45');
+    expect(classes).not.toContain('rounded-full');
+    expect(mark.className).not.toContain('status-warning');
   });
 
   it('renders the error token for error status', () => {
     render(<AgentActivityBadge status="error" label="Error" />);
-    const dot = screen.getByRole('img');
-    expect(dot.className).toContain('bg-status-error');
+    expect(screen.getByRole('img').className).toContain('bg-status-error');
   });
 
-  it('renders the info token for unseen status', () => {
+  it('draws unseen in the panel ink, not blue', () => {
+    // The blue was 2.96:1 on the light panel; unseen is the quietest mark.
     render(<AgentActivityBadge status="unseen" label="New activity" />);
     const dot = screen.getByRole('img');
-    expect(dot.className).toContain('bg-status-info');
-    expect(dot.className).not.toContain('bg-blue-500');
+    expect(dot.className).toContain('bg-sidebar-foreground/60');
+    expect(dot.className).not.toContain('status-info');
   });
 
   it('moves only for streaming — every other state holds still', () => {
@@ -67,14 +67,10 @@ describe('AgentActivityBadge', () => {
     }
   });
 
-  it('has size-1.5 for compact 6px dot', () => {
+  it('is a 6px dot with a mouse and grows to 8px on a phone', () => {
     render(<AgentActivityBadge status="streaming" label="Streaming" />);
     const dot = screen.getByRole('img');
     expect(dot.className).toContain('size-1.5');
-  });
-
-  it('passes aria-label for screen readers', () => {
-    render(<AgentActivityBadge status="error" label="Error: check session" />);
-    expect(screen.getByLabelText('Error: check session')).toBeInTheDocument();
+    expect(dot.className).toContain('max-md:size-2');
   });
 });

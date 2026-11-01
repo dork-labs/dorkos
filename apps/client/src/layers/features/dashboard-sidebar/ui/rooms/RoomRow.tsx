@@ -14,8 +14,8 @@ import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
 import {
   CountPill,
+  SIDEBAR_FACE,
   SidebarRow,
-  statusDotClass,
   type SidebarMenuNode,
   type SidebarRowMotion,
 } from '@/layers/shared/ui';
@@ -42,6 +42,8 @@ import {
 import { deriveUnreadSignal } from '../../model/rules/derive-unread-signal';
 import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-item';
 import { directedCountCap, directedCountLabel } from './directed-count-label';
+import { RowStatusMark } from '../RowStatusMark';
+import { ROW_GLYPH_CLASS, ROW_QUIET_MARK_CLASS } from '../row-glyph';
 import { DISABLED_SORTABLE_BINDINGS, type SortableBindings } from '../dnd/SidebarDndPrimitives';
 import { buildRoomRowMenuNodes } from './RoomRowMenuItems';
 import { useRoomRowMenu, type RoomRowActs } from './use-room-row-menu';
@@ -390,6 +392,9 @@ export const RoomRow = memo(function RoomRow({
             participants={room.participants}
             visuals={faces}
             working={isDm && showWorking}
+            // A place's `#` is a control-sized glyph in the sidebar (Phase 4 B2);
+            // a face fills the slot, 18 with a mouse and 24 on a phone.
+            className={isDm ? SIDEBAR_FACE : ROW_GLYPH_CLASS}
           />
         }
         title={
@@ -457,9 +462,7 @@ export const RoomRow = memo(function RoomRow({
                 {NOT_IN_ROOM_PILL}
               </span>
             )}
-            {isMuted && (
-              <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />
-            )}
+            {isMuted && <BellOff className={ROW_QUIET_MARK_CLASS} aria-label="Muted" />}
             {showWorking &&
               (isDm ? (
                 // The face carries the dot (`RoomAvatar`'s `working`), and the
@@ -469,22 +472,14 @@ export const RoomRow = memo(function RoomRow({
                   {working === 1 ? '1 agent working' : `${working} agents working`}
                 </span>
               ) : (
-                <span
-                  // `img` because the dot has no text of its own: a bare
-                  // `aria-label` on a generic element is not reliably read out,
-                  // and a role is what turns this from decoration into something
-                  // with a name.
-                  role="img"
-                  // The shared dot vocabulary — `statusDotClass('working')` is
-                  // the success token plus the one pulse this sidebar spends on
-                  // "right now".
-                  className={cn('size-1.5 rounded-full', statusDotClass('working'))}
-                  // A dot, and nothing else: work in flight is a fact about
-                  // right now that needs no number on screen. A reader who
-                  // cannot see it gets the count in the label, which does not
-                  // name the room again — the row's own name is already the
-                  // first half of what a screen reader reads out.
-                  aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
+                // The sidebar's one mark. A dot, and nothing else: work in
+                // flight is a fact about right now that needs no number on
+                // screen. A reader who cannot see it gets the count in the
+                // label, which does not name the room again — the row's own
+                // name is already the first half of what a screen reader reads.
+                <RowStatusMark
+                  mark="working"
+                  label={working === 1 ? '1 agent working' : `${working} agents working`}
                 />
               ))}
             {/* A busy channel is bold and nothing else, and bold is not read out. */}

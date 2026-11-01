@@ -33,6 +33,7 @@ import {
 import { IDENTITY_MARK_GROUP } from './identity-avatar';
 import { PRESS_MARK, PRESS_ROW } from './press';
 import { ROW_FOCUS_CLASS } from './row';
+import { SIDEBAR_GLYPH_GAP, SIDEBAR_GLYPH_SLOT } from './sidebar-glyph';
 import { SidebarMenuItem, SIDEBAR_MENU_ITEM_ATTRS, SIDEBAR_MENU_ITEM_CLASS } from './sidebar';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 import { TOUCH_TARGET_MIN_H } from './touch-target';
@@ -263,7 +264,7 @@ function useReservationGuard(
  * clipped. The height is the part that was missing.
  */
 const ROW_SECOND_LINE_CLASS =
-  'text-sidebar-foreground/50 block min-h-4 truncate text-2xs leading-4 font-normal';
+  'text-sidebar-foreground/70 block min-h-4 truncate text-2xs leading-4 font-normal';
 
 /**
  * What a drag layer hands a row it has made a drag source.
@@ -661,7 +662,7 @@ export function SidebarRow({
     editor !== undefined ? (
       <div className={cn('flex w-full items-center gap-2 rounded-md py-1.5', SIDEBAR_ROW_INSET)}>
         {glyph !== undefined && (
-          <span className="flex size-[18px] shrink-0 items-center">{glyph}</span>
+          <span className={cn('flex shrink-0 items-center', SIDEBAR_GLYPH_SLOT)}>{glyph}</span>
         )}
         {editor}
       </div>
@@ -707,14 +708,17 @@ export function SidebarRow({
               // sat 8px LEFT of the gutter every other row's glyph starts on.
               // Anchored at the start, the first face lands exactly where a
               // `#` and a single face do (design-decisions §1).
-              'flex size-[18px] shrink-0 items-center justify-start',
+              'flex shrink-0 items-center justify-start',
+              SIDEBAR_GLYPH_SLOT,
               showSecondLine && 'mt-px'
             )}
           >
             {glyph}
           </span>
         )}
-        <span className={cn('flex min-w-0 flex-1 flex-col', glyph !== undefined && 'ml-2')}>
+        <span
+          className={cn('flex min-w-0 flex-1 flex-col', glyph !== undefined && SIDEBAR_GLYPH_GAP)}
+        >
           <span className="flex w-full items-center gap-1.5">
             {who ? (
               <>

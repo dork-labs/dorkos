@@ -22,6 +22,8 @@ import {
   SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
   type SidebarDragActivatorProps,
 } from '@/layers/shared/model';
+import { ROW_FOCUS_CLASS } from './row';
+import { SIDEBAR_ICON_INLINE } from './sidebar-glyph';
 import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 
 /**
@@ -66,7 +68,7 @@ const SECTION_HEADER_GUTTER = {
  * to `opacity-100`; `focus-within` is what makes it reachable from a keyboard.
  */
 export const SIDEBAR_HOVER_REVEAL =
-  'opacity-0 group-hover/section:opacity-100 group-focus-within/section:opacity-100 motion-safe:transition-opacity motion-safe:duration-[120ms]';
+  'opacity-0 group-hover/section:opacity-100 group-focus-within/section:opacity-100 motion-safe:transition-opacity motion-safe:duration-(--dur-fast)';
 
 /** Props for {@link SectionHeader}. */
 export interface SectionHeaderProps {
@@ -240,12 +242,13 @@ export function SectionHeader({
         <ChevronDown
           aria-hidden
           className={cn(
-            'size-3.5 shrink-0',
+            'shrink-0',
+            SIDEBAR_ICON_INLINE,
             SIDEBAR_HOVER_REVEAL,
             // The fold state, as a rotation rather than as a second icon: one
             // element, so the label beside it never shifts by a pixel when the
             // section opens.
-            'motion-safe:transition-transform motion-safe:duration-[120ms]',
+            'motion-safe:transition-transform motion-safe:duration-(--dur-fast)',
             collapsed && '-rotate-90'
           )}
         />
@@ -285,7 +288,9 @@ export function SectionHeader({
         {...{ [SIDEBAR_SECTION_TOGGLE_ATTRIBUTE]: '' }}
         className={cn(
           line,
-          'hover:text-sidebar-foreground focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2'
+          // Inside the box (Phase 4 S5): an outer ring touched the first row.
+          'hover:text-sidebar-foreground rounded-md',
+          ROW_FOCUS_CLASS
         )}
       >
         {/* The name and its count share one gapless box, so the space before

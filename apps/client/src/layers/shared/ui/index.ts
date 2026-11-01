@@ -484,6 +484,7 @@ export type {
 } from './sidebar-menu-node';
 export type { SidebarMenuNodesProps, SidebarMenuSurfaceProps } from './sidebar-menu-node';
 export { SidebarRow, SIDEBAR_ROW_INSET, sidebarRowVariants } from './sidebar-row';
+export * from './sidebar-glyph';
 export { CountPill, COUNT_PILL_CAP, CORNER_COUNT_CAP, MENTION_COUNT_CAP } from './count-pill';
 export { formatPillCount, type CountPillProps, type CountTone } from './count-pill';
 export { Chip, chipVariants, type ChipProps } from './chip';
@@ -499,8 +500,7 @@ export type {
   SidebarRowProps,
 } from './sidebar-row';
 export { SectionHeader, SECTION_HEADER_INSET, SIDEBAR_HOVER_REVEAL } from './section-header';
-export { BottomSlot } from './bottom-slot';
-export type { BottomSlotCandidate, BottomSlotProps } from './bottom-slot';
+export { BottomSlot, type BottomSlotCandidate, type BottomSlotProps } from './bottom-slot';
 export { ListRow, type ListRowProps } from './list-row';
 export { ROW_FOCUS_CLASS, rowState, rowStateVariants, rowTintVariants, type RowState } from './row';
 

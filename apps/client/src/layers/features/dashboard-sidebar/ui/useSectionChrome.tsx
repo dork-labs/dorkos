@@ -28,6 +28,7 @@ import {
 } from '@/layers/shared/model';
 import {
   SIDEBAR_HOVER_REVEAL,
+  SIDEBAR_ICON_INLINE,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -191,7 +192,12 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         // `h-11 w-11` rather than `size-11`: the primitive already declares
         // `w-5`, and tailwind-merge drops a `size-*` that a later `w-*`
         // conflicts with — leaving a control with a width and no height.
-        isMobile ? 'top-0 right-0 h-11 w-11 opacity-100 after:hidden' : 'top-1.5 right-2'
+        // Measured against the GROUP, which pads `py-2` the header does not
+        // share — so `top-3` is what centres a 20px control on a 28px header
+        // that starts 8px down, and `top-2` does the same for the 44px pair on
+        // a phone (Phase 4 S4).
+        isMobile ? 'top-2 right-0 h-11 w-11 opacity-100 after:hidden' : 'top-3 right-2',
+        '[&>svg]:size-(--size-icon-sm) max-md:[&>svg]:size-(--size-icon-md)'
       )}
       aria-label={label}
       onClick={() => openNewMenu(item)}
@@ -305,7 +311,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       adornment: isSmart ? (
         <ListFilter
           aria-label="Smart section: membership is rule-based"
-          className="size-3 shrink-0"
+          className={cn('shrink-0', SIDEBAR_ICON_INLINE)}
         />
       ) : undefined,
       editor: isRenaming ? (
@@ -334,7 +340,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       // looking broken.
       footer:
         section.rows.length === 0 ? (
-          <p className="text-sidebar-foreground/50 px-3 py-1.5 text-xs italic">
+          <p className="text-sidebar-foreground/70 px-3 py-1.5 text-xs italic">
             {isSmart ? 'No agents match these rules' : 'Drag channels, DMs or agents here'}
           </p>
         ) : undefined,

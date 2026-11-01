@@ -295,7 +295,7 @@ describe('SectionHeader', () => {
       render(<SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} nodes={menu} />);
       const trigger = screen.getByRole('button', { name: 'Channels section actions' });
       expect(trigger.className).toContain('opacity-0');
-      expect(trigger.className).toContain('size-5');
+      expect(trigger.className).toContain('size-6');
     });
 
     it('grows the whole header to a touch target, header and toggle together', () => {
