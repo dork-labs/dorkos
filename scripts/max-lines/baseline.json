@@ -97,7 +97,7 @@
     "apps/server/src/services/spaces/erasure/erasure.ts": 534,
     "apps/server/src/services/spaces/routes/community/administration.ts": 605,
     "apps/server/src/services/spaces/routes/community/pairings.ts": 531,
-    "apps/server/src/services/spaces/schema.ts": 1822,
+    "apps/server/src/services/spaces/schema.ts": 1774,
     "apps/server/src/services/tasks/task-scheduler-service.ts": 768,
     "apps/server/src/services/workbench-serve/devtools-driving.ts": 801,
     "packages/browser/src/engine.ts": 741,
