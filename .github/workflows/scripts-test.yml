@@ -413,6 +413,13 @@ jobs:
       - name: Worktree reaping-gate fixtures
         run: bash scripts/test-should-reap-worktree.sh
 
+      # The janitor's own driver, not the gate: while any registered worktree
+      # sits on an unplugged /Volumes disk, --fix must skip the prune and leave
+      # that disk's worktrees alone, or a nightly run deletes their records.
+      # Hermetic (throwaway repos, a fake gh), like the suite above.
+      - name: Worktree janitor unplugged-disk fixtures
+        run: bash scripts/test-worktree-janitor-volumes.sh
+
       # seeded-pack-changed.sh is the only scoping the `version-outranks-base`
       # required check has, so it can fail in two directions and both are quiet.
       # Too broad demands a version bump nobody owes, and the cheap way out is a
