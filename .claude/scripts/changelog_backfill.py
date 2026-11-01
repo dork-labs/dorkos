@@ -88,6 +88,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+# No __pycache__ in .claude/scripts/: it is not gitignored, and this import would
+# write one on every run, in a repo full of concurrent agents.
+sys.dont_write_bytecode = True
+from release_mentions import describe as describe_mention, find_mentions  # noqa: E402
+
 
 @dataclass
 class Commit:
@@ -563,6 +568,16 @@ def classify_fragment_problems(body: list[str]) -> list[FragmentProblem]:
                     "the body. Move it inside the frontmatter block, or delete it."
                 ),
             ))
+    # Same shape as a seed marker: the prose is wrong, the declaration is not.
+    for mention in find_mentions(body):
+        problems.append(FragmentProblem(
+            # Body-relative numbers would be wrong in the file, so quote the line.
+            message=(
+                f"{describe_mention(mention).split(': ', 1)[1]} "
+                f"The line: {body[mention.line - 1].strip()}"
+            ),
+            suppresses_claims=False,
+        ))
     return problems
 
 

@@ -579,6 +579,19 @@ class TestSeededFragments(GateTestCase):
             "- Watch the relay's runtime too, and regenerate the API spec\n",
         )
 
+    def test_a_bare_mention_fails_validate_and_quotes_the_line(self):
+        """v0.129.0 pinged strangers through a bullet just like this one."""
+        self.repo.commit(self.SUBJECT, touch="apps/server/src/relay.ts")
+        self.repo.fragment(
+            "260901-000000-mention.md",
+            f'---\ncovers:\n  - "{self.SUBJECT}"\n---\n\n### Added\n\n- Say cc @ana to copy them\n',
+        )
+        result = self.repo.validate()
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("260901-000000-mention.md", result.stderr)
+        self.assertIn("backticks", result.stderr)
+        self.assertIn("- Say cc @ana to copy them", result.stderr)
+
     def test_a_seeded_fragment_fails_validate(self):
         self.repo.commit(self.SUBJECT, touch="apps/server/src/relay.ts")
         self.seeded_fragment()
@@ -1234,6 +1247,8 @@ class TestPrePushFragmentCheck(GateTestCase):
         target = self.repo.path / ".claude" / "scripts" / "changelog_backfill.py"
         target.parent.mkdir(parents=True)
         target.write_text(SCRIPT.read_text())
+        mentions = SCRIPT.with_name("release_mentions.py")
+        target.with_name(mentions.name).write_text(mentions.read_text())
         self.repo.git("add", "-A")
         self.repo.git("commit", "-qm", "chore: add the analyzer")
         self.repo.git("switch", "-q", "-c", "feature")

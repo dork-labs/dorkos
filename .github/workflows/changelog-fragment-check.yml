@@ -124,6 +124,11 @@ jobs:
       - name: Test the fragment analyzer
         run: python3 .claude/scripts/__tests__/test_changelog_backfill.py
 
+      # Same reasoning, same hermetic rule: the validity step below refuses a bare
+      # `@handle` through this module, so a regression in it must fail here first.
+      - name: Test the bare-mention check
+        run: python3 .claude/scripts/__tests__/test_release_mentions.py
+
       # VALIDITY — deliberately separate from coverage below, on both axes:
       #
       #   * No `skip-changelog` bypass. A fragment with a broken `covers:` block is
