@@ -97,6 +97,7 @@ const TENANT_TABLES = [
   'connection_administer_grants',
   'connection_grants',
   'connection_pairings',
+  'email_link_requests',
   'entries',
   'entry_mentions',
   'entry_redactions',
