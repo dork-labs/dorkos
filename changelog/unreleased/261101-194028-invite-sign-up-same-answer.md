@@ -2,6 +2,7 @@
 covers:
   - "fix(spaces): an invitation's sign-up no longer tells anyone which emails have accounts (DOR-2730)"
   - 'fix(spaces): only an empty account gets "Finish joining"; Resend re-sends the invitation''s mail (DOR-2730)'
+  - 'fix(spaces): invitation mail bodies name the space with its host (DOR-2730)'
 ---
 
 ### Security
