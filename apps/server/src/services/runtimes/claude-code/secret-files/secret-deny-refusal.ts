@@ -12,6 +12,10 @@
  * path (DorkOS's own `host.key`) logs too; the path in the line tells them
  * apart.
  *
+ * The line never carries the refusal's text: a shell refusal echoes the
+ * whole command, token in a `curl -H` and all (Security, #3379). Only the
+ * tool, the name and a file tool's own path go in.
+ *
  * @module services/runtimes/claude-code/secret-files/secret-deny-refusal
  */
 import { logger } from '../../../../lib/logger.js';
@@ -115,6 +119,5 @@ export function noteSecretDenyRefusal(
     tool: toolName,
     name,
     ...(target !== undefined && { path: target }),
-    refusal: resultText.slice(0, 300),
   });
 }
