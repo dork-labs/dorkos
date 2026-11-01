@@ -17,7 +17,7 @@
 import { useCallback, type KeyboardEvent, type ReactNode, type Ref } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Check, X } from 'lucide-react';
-import { cn } from '@/layers/shared/lib';
+import { cn, SPRING } from '@/layers/shared/lib';
 import { askExitTransition } from '@/layers/shared/lib';
 import {
   AgentAvatar,
@@ -36,7 +36,7 @@ import {
 const ENTRANCE = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
-  transition: { type: 'spring', stiffness: 320, damping: 28 },
+  transition: SPRING.glide,
 } as const;
 
 /** Reduced motion gets the end state, with no travel and no time. */

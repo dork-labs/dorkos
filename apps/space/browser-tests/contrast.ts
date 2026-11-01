@@ -8,7 +8,10 @@ export interface ControlContrast {
   icon: number | null;
   /** Whether keyboard focus is on the control or on the input it wraps. */
   focusVisible: boolean;
-  /** The 3px focus ring against the page right outside the control, when one is drawn. */
+  /**
+   * The keyboard focus ring against the page right outside the control, when one is drawn:
+   * a solid outline at least 2px wide, or a 3px box-shadow spread.
+   */
   ring: number | null;
 }
 
@@ -73,11 +76,15 @@ export function measureContrast(control: Locator): Promise<ControlContrast> {
     const fill = fillBehind(element);
     const outside = fillBehind(element.parentElement);
     const icon = element.querySelector('svg');
-    // The ring is the box-shadow layer with a 3px spread; its colour is the text before it.
-    const ringColor =
-      /((?:rgba?|oklab|oklch|lab|lch|hsla?|color)\([^)]*\)|#[0-9a-f]+) 0px 0px 0px 3px/iu.exec(
-        style.boxShadow
-      )?.[1];
+    // The shared controls draw their ring as an outline (the `focus-ring` recipe: 2px solid,
+    // 2px off the control); older ones as a box-shadow layer with a 3px spread, whose colour is
+    // the text before it. Either counts, and the outline wins when both are present.
+    const outlined = style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2;
+    const ringColor = outlined
+      ? style.outlineColor
+      : /((?:rgba?|oklab|oklch|lab|lch|hsla?|color)\([^)]*\)|#[0-9a-f]+) 0px 0px 0px 3px/iu.exec(
+          style.boxShadow
+        )?.[1];
     const result = {
       text: ratio(over(rgba(style.color), fill), fill),
       icon: icon ? ratio(over(rgba(getComputedStyle(icon).color), fill), fill) : null,

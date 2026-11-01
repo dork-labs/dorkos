@@ -30,6 +30,7 @@
  */
 import { useMemo } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { CircleAlert } from 'lucide-react';
 
 import { cn } from './cn.js';
 import { Label } from './label.js';
@@ -46,8 +47,8 @@ function FieldSet({ className, ...props }: React.ComponentProps<'fieldset'>) {
     <fieldset
       data-slot="field-set"
       className={cn(
-        'flex flex-col gap-6',
-        'has-[>[data-slot=checkbox-group]]:gap-3 has-[>[data-slot=radio-group]]:gap-3',
+        'flex flex-col gap-6 max-md:gap-8',
+        'has-[>[data-slot=checkbox-group]]:gap-3 has-[>[data-slot=radio-group]]:gap-3 max-md:has-[>[data-slot=checkbox-group]]:gap-4 max-md:has-[>[data-slot=radio-group]]:gap-4',
         className
       )}
       {...props}
@@ -93,7 +94,7 @@ function FieldGroup({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="field-group"
       className={cn(
-        'group/field-group @container/field-group flex w-full flex-col gap-7 data-[slot=checkbox-group]:gap-3 [&>[data-slot=field-group]]:gap-4',
+        'group/field-group @container/field-group flex w-full flex-col gap-4 data-[slot=checkbox-group]:gap-3 max-md:gap-5 max-md:data-[slot=checkbox-group]:gap-4 [&>[data-slot=field-group]]:gap-4',
         className
       )}
       {...props}
@@ -111,18 +112,19 @@ function FieldGroup({ className, ...props }: React.ComponentProps<'div'>) {
  * ternary of its own.
  */
 const fieldVariants = cva(
-  'group/field flex w-full gap-3 data-[invalid=true]:text-dui-destructive',
+  // An error takes the help's slot, so a field never shows both.
+  'group/field flex w-full [&:has([data-slot=field-error])_[data-slot=field-description]]:hidden',
   {
     variants: {
       orientation: {
-        vertical: ['flex-col [&>*]:w-full [&>.sr-only]:w-auto'],
+        vertical: ['flex-col gap-1.5 max-md:gap-2 [&>*]:w-full [&>.sr-only]:w-auto'],
         horizontal: [
-          'flex-row items-center',
+          'flex-row items-center gap-2 max-md:gap-3',
           '[&>[data-slot=field-label]]:flex-auto',
           'has-[>[data-slot=field-content]]:items-start has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px',
         ],
         responsive: [
-          'flex-col @md/field-group:flex-row @md/field-group:items-center [&>*]:w-full @md/field-group:[&>*]:w-auto [&>.sr-only]:w-auto',
+          'flex-col gap-1.5 max-md:gap-2 @md/field-group:flex-row @md/field-group:items-center @md/field-group:gap-3 [&>*]:w-full @md/field-group:[&>*]:w-auto [&>.sr-only]:w-auto',
           '@md/field-group:[&>[data-slot=field-label]]:flex-auto',
           '@md/field-group:has-[>[data-slot=field-content]]:items-start @md/field-group:has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px',
         ],
@@ -139,8 +141,8 @@ const fieldVariants = cva(
  *
  * `orientation` decides where the control sits: `vertical` stacks it under the
  * label, `horizontal` puts it beside, `responsive` starts stacked and goes
- * side-by-side once the enclosing {@link FieldGroup} is wide enough. Marking it
- * `data-invalid` turns the whole field, label included, destructive.
+ * side-by-side once the enclosing {@link FieldGroup} is wide enough. A failed
+ * field shows a red edge, an icon and a message; its label keeps its colour.
  */
 function Field({
   className,
@@ -189,7 +191,7 @@ function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>)
     <Label
       data-slot="field-label"
       className={cn(
-        'group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50',
+        'group/field-label peer/field-label group-data-[disabled=true]/field:text-dui-muted-foreground flex w-fit gap-2',
         'has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col has-[>[data-slot=field]]:rounded-md has-[>[data-slot=field]]:border [&>*]:data-[slot=field]:p-4',
         'has-data-[state=checked]:border-dui-primary has-data-[state=checked]:bg-dui-primary/5 dui-dark:has-data-[state=checked]:bg-dui-primary/10',
         className
@@ -211,7 +213,7 @@ function FieldTitle({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="field-label"
       className={cn(
-        'flex w-fit items-center gap-2 text-sm leading-snug font-medium group-data-[disabled=true]/field:opacity-50',
+        'group-data-[disabled=true]/field:text-dui-muted-foreground flex w-fit items-center gap-2 text-sm font-medium',
         className
       )}
       {...props}
@@ -231,8 +233,8 @@ function FieldDescription({ className, ...props }: React.ComponentProps<'p'>) {
     <p
       data-slot="field-description"
       className={cn(
-        'text-dui-muted-foreground text-sm leading-normal font-normal group-has-[[data-orientation=horizontal]]/field:text-balance',
-        'last:mt-0 nth-last-2:-mt-1 [[data-variant=legend]+&]:-mt-1.5',
+        'text-dui-muted-foreground text-xs font-normal group-has-[[data-orientation=horizontal]]/field:text-balance',
+        '[[data-variant=legend]+&]:-mt-1.5',
         '[&>a:hover]:text-dui-primary [&>a]:underline [&>a]:underline-offset-4',
         className
       )}
@@ -283,7 +285,9 @@ function FieldSeparator({
  * Give it `children` for one hand-written message, or `errors` to render a
  * validator's list — duplicates are collapsed, one message renders as a line and
  * several as a bulleted list. Renders nothing at all when there is no problem,
- * so it can stay mounted in the field.
+ * so it can stay mounted in the field. It takes the help's slot while it shows,
+ * and pass it an `id` so the control can point `aria-describedby` at it: the
+ * parts find each other by `data-slot`, which wires no ARIA on its own.
  */
 function FieldError({
   className,
@@ -323,10 +327,14 @@ function FieldError({
     <div
       role="alert"
       data-slot="field-error"
-      className={cn('text-dui-destructive text-sm font-normal', className)}
+      className={cn(
+        'text-dui-destructive-text flex items-start gap-1.5 text-xs font-normal',
+        className
+      )}
       {...props}
     >
-      {content}
+      <CircleAlert aria-hidden className="mt-0.5 size-(--dui-size-icon-xs) shrink-0" />
+      <div className="min-w-0">{content}</div>
     </div>
   );
 }

@@ -1,1 +1,0 @@
-ALTER TABLE `unclaimed_chats` ADD `platform_chat_type` text;

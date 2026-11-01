@@ -44,6 +44,7 @@ import { ProjectRefSchema } from './project-schemas.js';
 import {
   ChatMessageStampSchema,
   QueuedChatEntrySchema,
+  PromptSourceSchema,
   RoomMessageStampSchema,
 } from './chat-messages.js';
 
@@ -3781,6 +3782,11 @@ export const HistoryMessageSchema = z
      * unless the room says the person wrote it.
      */
     roomMessage: RoomMessageStampSchema.optional(),
+    /**
+     * Where this user message came from, when no person in this chat typed it
+     * (DOR-3019). The app draws the source from here, never "You".
+     */
+    promptSource: PromptSourceSchema.optional(),
   })
   .openapi('HistoryMessage');
 
@@ -5801,6 +5807,15 @@ export const TaskSchema = z
         "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false.",
     }),
     /**
+     * Whether a person is offered "Turn on" (DOR-3309): the schedule's file now
+     * says on, and a file may switch a schedule off but never on, so it stayed
+     * off. Absent reads as false.
+     */
+    offersTurnOn: z.boolean().optional().openapi({
+      description:
+        'True when the schedule stayed off although its file now says on. A file can switch a schedule off but never on, so a person is offered Turn on. Absent means false.',
+    }),
+    /**
      * What changed since this schedule was last approved, for a schedule
      * waiting again (DOR-2323): each part of the approved work that differs,
      * with its approved value and the one that would run now. Empty when the
@@ -5938,6 +5953,12 @@ export const TaskSchema = z
      * the trust preset; approving it clears this.
      */
     originMarks: ScheduleOriginMarksSchema.nullable().optional(),
+    /**
+     * Held for a person, but nothing is waiting on them (DOR-3425): the file of a
+     * schedule whose agent is at Full autonomy asks for more than was approved. It
+     * stays a row under Needs you, with no knock and no escalation.
+     */
+    quietHold: z.boolean().optional(),
     nextRun: z.string().nullable().optional(),
     /**
      * When the schedule last started a run (ISO 8601), or null when it never

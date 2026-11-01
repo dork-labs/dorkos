@@ -4,31 +4,33 @@ import { cn } from '@/layers/shared/lib/utils';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsible';
 
 /**
- * Rounded card container for grouping related form fields.
+ * A group: the tint a set of related rows sits on, in place of a card.
  *
- * Accepts `className` for variants like `border-destructive/50` (danger zone).
+ * Not a card on purpose. This lives in dialogs, sheets and popovers, and a
+ * card there is a surface inside a surface: outlined in light, a hole in dark
+ * (a 4% card in a 15% dialog). A foreground tint only ever adds light, so the
+ * group is always a step above whatever it sits on (Phase 2, C2). No border,
+ * and no variant for danger: the heading and the destructive button say it.
  */
 function FieldCard({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="field-card"
-      className={cn('bg-card overflow-hidden rounded-lg border', className)}
+      className={cn('bg-row-group overflow-hidden rounded-lg', className)}
       {...props}
     />
   );
 }
 
 /**
- * Content wrapper that applies automatic thin separators between children.
- *
- * Each direct child receives horizontal padding and vertical spacing via
- * `divide-y` and `[&>*]` selectors.
+ * The rows of a group. Each direct child pays `px-4 py-3`, and that space is
+ * the only thing between rows: no rule (Phase 2, C3).
  */
 function FieldCardContent({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="field-card-content"
-      className={cn('divide-border divide-y [&>*]:px-4 [&>*]:py-3', className)}
+      className={cn('[&>*]:px-4 [&>*]:py-3', className)}
       {...props}
     />
   );
@@ -125,7 +127,7 @@ function CollapsibleFieldCard({
           </div>
         </div>
         <CollapsibleContent>
-          <FieldCardContent className="border-t">{children}</FieldCardContent>
+          <FieldCardContent>{children}</FieldCardContent>
         </CollapsibleContent>
       </FieldCard>
     </Collapsible>

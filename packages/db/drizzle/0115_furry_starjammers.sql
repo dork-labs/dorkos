@@ -1,1 +1,0 @@
-ALTER TABLE `agent_identity_tokens` DROP COLUMN `tier_ceiling`;

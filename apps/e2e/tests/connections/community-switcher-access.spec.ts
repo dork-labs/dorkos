@@ -55,10 +55,13 @@ test.describe('switcher accessibility and scale (task 4.2)', () => {
     await expect(menu.getByRole('menuitemradio', { name: /^The Very Long/ })).toHaveAccessibleName(
       new RegExp(LONG.label)
     );
-    // Mention and other activity differ in text, not only colour.
+    // Mentions are the one number on the row; other activity is in the words
+    // above, not a second count. The pill is hidden, since the name says it.
     const alphaRow = menu.getByRole('menuitemradio', { name: /^Alpha/ });
-    await expect(alphaRow.getByLabel('1 mention', { exact: true })).toHaveText('@1');
-    await expect(alphaRow.getByLabel('1 other unread', { exact: true })).toHaveText('1');
+    const counts = alphaRow.locator('[data-slot="count-pill"]');
+    await expect(counts).toHaveCount(1);
+    await expect(counts).toHaveText('1');
+    await expect(counts).toHaveAttribute('aria-hidden', 'true');
 
     // Reduced motion narrows the theme's colour transition to the CSS
     // reset's 0.01ms floor, but that's still a real, non-zero window — under

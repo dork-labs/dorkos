@@ -73,7 +73,7 @@ const BUTTON_CONFIG = {
   },
   stop: {
     className:
-      'bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60',
+      'bg-dui-destructive-fill text-destructive-foreground hover:bg-dui-destructive-fill-hover',
     label: 'Stop generating',
   },
   queue: {
@@ -93,7 +93,7 @@ const BUTTON_CONFIG = {
     // the send that is happening — so it borrows Stop's exact pairing rather
     // than a literal colour, which would have been white on both themes.
     className:
-      'bg-muted text-muted-foreground hover:bg-destructive/90 hover:text-destructive-foreground dark:hover:bg-destructive/60',
+      'bg-muted text-muted-foreground hover:bg-dui-destructive-fill-hover hover:text-destructive-foreground',
     label: 'Cancel upload',
   },
   dispatching: {
@@ -271,7 +271,7 @@ export function InputActionButton({
             whileTap={{ scale: 0.97 }}
             onClick={onStop}
             type="button"
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60 shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2"
+            className="bg-dui-destructive-fill text-destructive-foreground hover:bg-dui-destructive-fill-hover shrink-0 rounded-lg p-1.5 transition-colors max-md:p-2"
             aria-label="Stop generating"
           >
             <Square className="size-(--size-icon-sm)" />

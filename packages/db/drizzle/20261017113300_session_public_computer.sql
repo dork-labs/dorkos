@@ -1,1 +1,0 @@
-ALTER TABLE `session` ADD `public_computer` integer DEFAULT false NOT NULL;

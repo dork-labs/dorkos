@@ -1,13 +1,13 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn, AGENT_COLOR_PRESETS, AGENT_EMOJI_SET } from '@/layers/shared/lib';
+import { cn, AGENT_COLOR_PRESETS, AGENT_EMOJI_SET, SPRING, STAGGER } from '@/layers/shared/lib';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/layers/shared/ui';
 
 /** Stagger orchestration for the celebratory grids' entrance animation. */
 const containerVariants = {
   hidden: {},
-  visible: { transition: { staggerChildren: 0.04 } },
+  visible: { transition: { staggerChildren: STAGGER.step } },
 } as const;
 
 const popIn = {
@@ -15,7 +15,7 @@ const popIn = {
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { type: 'spring', stiffness: 500, damping: 25 },
+    transition: SPRING.snap,
   },
 } as const;
 
@@ -354,7 +354,7 @@ function EmojiButton({
       variants={popIn}
       whileHover={{ scale: 1.25 }}
       whileTap={{ scale: 0.85 }}
-      transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+      transition={SPRING.snap}
     >
       {children}
       {burst}

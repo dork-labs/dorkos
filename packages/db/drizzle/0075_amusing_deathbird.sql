@@ -1,1 +1,0 @@
-ALTER TABLE `room_entries` ADD `dispatch_id` text;

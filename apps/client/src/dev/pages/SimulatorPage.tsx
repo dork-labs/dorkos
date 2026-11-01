@@ -10,7 +10,7 @@ export function SimulatorPage() {
   const scenario = SCENARIOS.find((s) => s.id === scenarioId) ?? null;
   const sim = useSimulator(scenario);
 
-  const [textEffectMode, setTextEffectMode] = useState<TextEffectMode>('blur-in');
+  const [textEffectMode, setTextEffectMode] = useState<TextEffectMode>('fade');
   const [animationEnabled, setAnimationEnabled] = useState(true);
 
   const textEffect: TextEffectConfig = animationEnabled

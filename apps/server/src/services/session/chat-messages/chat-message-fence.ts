@@ -57,11 +57,12 @@ const KIND_LINE: Record<ChatMessageKind, string> = {
 };
 
 /**
- * Neutralise anything in the words that reads as a chat-message fence marker.
+ * Neutralise anything in the words that reads as a fence marker: a chat
+ * message's, or any other block fenced the same way (a spin-off report).
  *
  * @param text - The sender's words.
  */
-function defuseMarkers(text: string): string {
+export function defuseMarkers(text: string): string {
   return text.replace(/---\s*(?:BEGIN|END)\s/giu, '[chat fence marker] ');
 }
 

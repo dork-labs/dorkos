@@ -64,7 +64,7 @@ function DropdownMenuContent({
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground border-dui-border z-50 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-md',
+          'bg-dui-popover text-dui-popover-foreground dui-dark:border dui-dark:border-dui-border z-(--z-overlay) min-w-[8rem] overflow-hidden rounded-md p-1 shadow-lg',
           // The menu grows out of the control you clicked, not out of its own
           // middle — Radix publishes the trigger-relative origin, and every other
           // overlay in the app already reads it.
@@ -225,7 +225,7 @@ function DropdownMenuSubContent({
       <DropdownMenuPrimitive.SubContent
         data-slot="dropdown-menu-sub-content"
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground border-dui-border z-50 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-md',
+          'bg-dui-popover text-dui-popover-foreground dui-dark:border dui-dark:border-dui-border z-(--z-overlay) min-w-[8rem] overflow-hidden rounded-md p-1 shadow-lg',
           // Same trigger-relative origin as the top-level menu: a submenu grows
           // out of the item that opened it.
           'origin-(--radix-dropdown-menu-content-transform-origin)',

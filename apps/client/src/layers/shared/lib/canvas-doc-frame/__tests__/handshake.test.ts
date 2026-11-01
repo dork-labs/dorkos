@@ -1,7 +1,12 @@
 import { MessageChannel } from 'node:worker_threads';
 import { describe, it, expect, vi } from 'vitest';
 import { DocFrameHandshake } from '../doc-handshake';
+import type { BoundDocPort } from '../bound-doc-port';
 import { fixture, clock, flush, envelope, receipt } from './fixtures';
+/** The nonce the host put on a served frame's `src`; the shim answers with it. */
+const BOOT = 'boot-nonce';
+const bootFor = (bound: BoundDocPort) =>
+  bound.binding.observation.eligibility === 'served-document' ? BOOT : null;
 function setup(origin = 'null') {
   const f = fixture({}, origin),
     c = clock(),
@@ -9,6 +14,7 @@ function setup(origin = 'null') {
     offline = vi.fn();
   let nonce = 0;
   const h = new DocFrameHandshake(f.bound, {
+    boot: bootFor(f.bound),
     nonce: () => `nonce${++nonce}`,
     channel: () => {
       const ch = new MessageChannel();
@@ -20,7 +26,7 @@ function setup(origin = 'null') {
   });
   h.start();
   const challenge = vi.mocked(f.frame.postMessage).mock.calls[0][0];
-  const ack = { ...challenge, kind: 'ack' };
+  const ack = { ...challenge, kind: 'ack', ...(origin === 'null' ? { boot: BOOT } : {}) };
   const event = { source: f.frame, origin, data: ack, ports: [] as MessagePort[] };
   return { ...f, ...c, h, channels, offline, challenge, event };
 }
@@ -54,6 +60,60 @@ describe('Doc-only strict host handshake', () => {
     expect(f.h.receive(event)).toBe(false);
     expect(f.channels).toHaveLength(0);
     f.h.close();
+  });
+  // A served frame's every document is origin `null` in the same window: only
+  // the boot nonce tells the one DorkOS navigated to from one a link reached.
+  it.each([
+    ['no boot nonce', undefined],
+    ['another boot nonce', 'guessed-nonce'],
+  ])('a served document answering with %s gets no port', (_case, boot) => {
+    const f = setup();
+    const data = { ...f.event.data, boot };
+    if (boot === undefined) delete data.boot;
+    expect(f.h.receive({ ...f.event, data })).toBe(false);
+    expect(f.channels).toHaveLength(0);
+    // The same challenge, answered with the right nonce, still connects.
+    expect(f.h.receive(f.event)).toBe(true);
+    expect(f.channels).toHaveLength(1);
+    f.h.close();
+    f.channels[0].port2.close();
+  });
+  it('a preview, pinned by its own origin, needs no boot nonce', () => {
+    const f = setup('https://preview.example');
+    expect(f.event.data).not.toHaveProperty('boot');
+    expect(f.h.receive(f.event)).toBe(true);
+    f.h.close();
+    f.channels[0].port2.close();
+  });
+  it('refuses to start a served handshake without a boot nonce, or a preview with one', () => {
+    const ports = (boot: string | null) => ({
+      nonce: () => 'n',
+      channel: () => new MessageChannel() as unknown as { port1: MessagePort; port2: MessagePort },
+      scheduler: clock().scheduler,
+      offline: () => {},
+      boot,
+    });
+    expect(() => new DocFrameHandshake(fixture().bound, ports(null))).toThrow();
+    expect(() => new DocFrameHandshake(fixture().bound, ports(''))).toThrow();
+    expect(
+      () => new DocFrameHandshake(fixture({}, 'https://p.example').bound, ports('b'))
+    ).toThrow();
+  });
+  it('tells a connected page it was revoked, then closes its port', async () => {
+    const f = setup();
+    f.h.receive(f.event);
+    const received: unknown[] = [];
+    f.channels[0].port2.on('message', (value) => received.push(value));
+    f.h.close('revoked');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(received).toContainEqual({
+      ...f.challenge,
+      kind: 'status',
+      status: 'revoked',
+      unconfirmed: true,
+    });
+    expect(f.offline).toHaveBeenCalledOnce();
+    f.channels[0].port2.close();
   });
   it('slowload late listener can ACK until bounded host timeout; timedout ACK cannot transfer', () => {
     const f = setup();
@@ -110,6 +170,7 @@ describe('Doc-only strict host handshake', () => {
       throw new Error('observer');
     });
     const h = new DocFrameHandshake(f.bound, {
+      boot: bootFor(f.bound),
       nonce: () => `${++n}`,
       channel: () => {
         throw new Error('channel');
@@ -120,11 +181,21 @@ describe('Doc-only strict host handshake', () => {
     h.start();
     const challenge = vi.mocked(f.frame.postMessage).mock.calls[0][0];
     expect(
-      h.receive({ source: f.frame, origin: 'null', ports: [], data: { ...challenge, kind: 'ack' } })
+      h.receive({
+        source: f.frame,
+        origin: 'null',
+        ports: [],
+        data: { ...challenge, kind: 'ack', boot: BOOT },
+      })
     ).toBe(false);
     expect(offline).toHaveBeenCalledOnce();
     expect(
-      h.receive({ source: f.frame, origin: 'null', ports: [], data: { ...challenge, kind: 'ack' } })
+      h.receive({
+        source: f.frame,
+        origin: 'null',
+        ports: [],
+        data: { ...challenge, kind: 'ack', boot: BOOT },
+      })
     ).toBe(false);
   });
 });
@@ -149,6 +220,7 @@ describe('reentrant establishment resources', () => {
         },
       };
       const h: DocFrameHandshake = new DocFrameHandshake(f.bound, {
+        boot: bootFor(f.bound),
         nonce: () => `${++n}`,
         scheduler,
         offline: () => {},
@@ -186,7 +258,7 @@ describe('reentrant establishment resources', () => {
           source: f.frame,
           origin: 'null',
           ports: [],
-          data: { ...challenge, kind: 'ack' },
+          data: { ...challenge, kind: 'ack', boot: BOOT },
         };
         expect(h.receive(ack)).toBe(false);
         expect(
@@ -216,6 +288,7 @@ describe('reentrant establishment resources', () => {
     let ack!: Parameters<DocFrameHandshake['receive']>[0],
       n = 0;
     const h: DocFrameHandshake = new DocFrameHandshake(f.bound, {
+      boot: bootFor(f.bound),
       nonce: () => `${++n}`,
       scheduler: c.scheduler,
       offline: () => {},
@@ -229,7 +302,12 @@ describe('reentrant establishment resources', () => {
     try {
       h.start();
       const challenge = vi.mocked(f.frame.postMessage).mock.calls[0][0];
-      ack = { source: f.frame, origin: 'null', ports: [], data: { ...challenge, kind: 'ack' } };
+      ack = {
+        source: f.frame,
+        origin: 'null',
+        ports: [],
+        data: { ...challenge, kind: 'ack', boot: BOOT },
+      };
       expect(h.receive(ack)).toBe(true);
       expect(
         vi.mocked(f.frame.postMessage).mock.calls.filter(([value]) => value.kind === 'connect')
@@ -267,6 +345,7 @@ describe('provisional initial handshake deadline', () => {
         },
       };
       const h: DocFrameHandshake = new DocFrameHandshake(f.bound, {
+        boot: bootFor(f.bound),
         nonce: () => 'initial',
         channel: () => {
           throw Error('no transfer permitted');

@@ -66,11 +66,11 @@ function tabKind(target: TabTarget): TabKind {
 }
 
 /** Fleet facts with nothing in them, minted once for a stable selector result. */
-const NO_FLEET = { workingCount: 0, needsYou: false, failed: false };
+const NO_FLEET = { workingCount: 0, needsYouCount: 0, failed: false };
 
 /**
  * Fold the live status of every chat in `paths` (or all of them, for `null`)
- * into how many agents are working and whether any needs you or failed.
+ * into how many agents are working, how many need you, and whether any failed.
  *
  * A scheduled or automated run is not an agent "working" for you, so it never
  * counts toward the working number, the rule `useAgentHottestStatus` follows
@@ -87,12 +87,13 @@ function useFleetSignals(enabled: boolean, paths: string | null) {
         (s) => {
           if (!enabled) return NO_FLEET;
           const streaming: string[] = [];
-          let needsYou = false;
+          // Agents, not chats: two blocked chats with one agent are one agent waiting.
+          const blocked = new Set<string>();
           let failed = false;
           for (const [id, status] of Object.entries(s.statuses)) {
             if (paths !== null && s.statusCwds[id] !== paths) continue;
             if (status.lifecycle === 'streaming') streaming.push(id);
-            else if (status.lifecycle === 'blocked') needsYou = true;
+            else if (status.lifecycle === 'blocked') blocked.add(s.statusCwds[id] ?? id);
             else if (status.lifecycle === 'error') failed = true;
           }
           const working = new Set(
@@ -100,7 +101,7 @@ function useFleetSignals(enabled: boolean, paths: string | null) {
               (id) => s.statusCwds[id] ?? id
             )
           );
-          return { workingCount: working.size, needsYou, failed };
+          return { workingCount: working.size, needsYouCount: blocked.size, failed };
         },
         [enabled, paths]
       )
@@ -110,7 +111,11 @@ function useFleetSignals(enabled: boolean, paths: string | null) {
 
 /** Turn folded fleet facts into status signals. */
 function fleetStatus(fleet: typeof NO_FLEET): TabStatusSignals {
-  return { needsYou: fleet.needsYou, failed: fleet.failed, working: fleet.workingCount > 0 };
+  return {
+    needsYou: fleet.needsYouCount > 0,
+    failed: fleet.failed,
+    working: fleet.workingCount > 0,
+  };
 }
 
 /**
@@ -225,6 +230,7 @@ export function useTabIdentity(href: string): TabIdentity {
     case 'team':
       return teamTabIdentity(target.pathname, {
         workingCount: fleet.workingCount,
+        needsYouCount: fleet.needsYouCount,
         signals: fleetStatus(fleet),
       });
     case 'marketplace':

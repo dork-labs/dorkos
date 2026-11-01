@@ -10,7 +10,7 @@ import { FieldCard, FieldCardContent, CollapsibleFieldCard } from '../field-card
 afterEach(cleanup);
 
 describe('FieldCard', () => {
-  it('renders children inside a rounded bordered container', () => {
+  it('renders children inside the group', () => {
     render(
       <FieldCard>
         <p>Card content</p>
@@ -21,11 +21,11 @@ describe('FieldCard', () => {
 
   it('applies custom className', () => {
     const { container } = render(
-      <FieldCard className="border-destructive/50">
-        <p>Danger</p>
+      <FieldCard className="mt-6">
+        <p>Spaced</p>
       </FieldCard>
     );
-    expect(container.firstChild).toHaveClass('border-destructive/50');
+    expect(container.firstChild).toHaveClass('mt-6');
   });
 
   it('has the field-card data-slot', () => {
@@ -39,8 +39,8 @@ describe('FieldCard', () => {
 });
 
 describe('FieldCardContent', () => {
-  it('renders children with divide-y separator classes', () => {
-    const { container } = render(
+  it('renders its rows', () => {
+    render(
       <FieldCardContent>
         <div>Item 1</div>
         <div>Item 2</div>
@@ -48,7 +48,6 @@ describe('FieldCardContent', () => {
     );
     expect(screen.getByText('Item 1')).toBeInTheDocument();
     expect(screen.getByText('Item 2')).toBeInTheDocument();
-    expect(container.firstChild).toHaveClass('divide-y');
   });
 
   it('has the field-card-content data-slot', () => {
@@ -188,16 +187,11 @@ describe('CollapsibleFieldCard', () => {
 
   it('applies custom className to the outer card', () => {
     const { container } = render(
-      <CollapsibleFieldCard
-        open={false}
-        onOpenChange={vi.fn()}
-        trigger="Section"
-        className="border-destructive"
-      >
+      <CollapsibleFieldCard open={false} onOpenChange={vi.fn()} trigger="Section" className="mt-6">
         <div>Content</div>
       </CollapsibleFieldCard>
     );
     const card = container.querySelector('[data-slot="collapsible-field-card"]');
-    expect(card).toHaveClass('border-destructive');
+    expect(card).toHaveClass('mt-6');
   });
 });

@@ -73,6 +73,16 @@ export function joinedTeamText(name: string): string {
 }
 
 /**
+ * An agent joining an ordinary channel (DOR-2106) — the line its introduction
+ * answers under.
+ *
+ * @param name - The agent's display name.
+ */
+export function joinedRoomText(name: string): string {
+  return `${named(name, 'An agent')} joined this room.`;
+}
+
+/**
  * The first schedule this install ever made.
  *
  * Says it was set up and stops there. Whether it is switched ON is a separate

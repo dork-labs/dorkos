@@ -249,7 +249,7 @@ function DisconnectConfirm({
           <AlertDialogCancel>Keep connected</AlertDialogCancel>
           <AlertDialogAction
             disabled={!impact.data || disconnect.isPending}
-            className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
+            variant="destructive"
             onClick={(event) => {
               event.preventDefault();
               disconnect.mutate(

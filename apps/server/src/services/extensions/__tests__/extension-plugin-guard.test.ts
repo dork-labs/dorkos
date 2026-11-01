@@ -84,7 +84,7 @@ describe('containment (N1)', () => {
     );
     const result = await compiler.compile(record());
     expect('error' in result && JSON.stringify(result.error)).toContain(
-      "outside this plugin's folder"
+      `outside this plugin's folder (${pluginRoot})`
     );
   });
 
@@ -122,8 +122,9 @@ describe('containment (N1)', () => {
       "import { secret } from '../../../../../secret';\nexport const x = secret;\n"
     );
     const escaped = await compiler.compile(direct);
+    // It names the boundary that applies: its own folder, not a plugin's (DOR-3537).
     expect('error' in escaped && JSON.stringify(escaped.error)).toContain(
-      "outside this plugin's folder"
+      `outside this extension's folder (${own})`
     );
 
     await write(

@@ -19,15 +19,15 @@ function NamespaceGroupNodeComponent({ data }: NodeProps) {
     <div
       className="bg-card/50 rounded-xl border-2"
       style={{
-        borderColor: `${d.color}40`,
-        backgroundColor: `${d.color}08`,
+        borderColor: `color-mix(in srgb, ${d.color} 25%, transparent)`,
+        backgroundColor: `color-mix(in srgb, ${d.color} 3%, transparent)`,
         width: '100%',
         height: '100%',
       }}
     >
       <div
         className="flex items-center gap-2 rounded-t-[10px] px-3 py-1.5"
-        style={{ backgroundColor: `${d.color}15` }}
+        style={{ backgroundColor: `color-mix(in srgb, ${d.color} 8%, transparent)` }}
       >
         <span className="text-xs font-semibold" style={{ color: d.color }}>
           {d.namespace}

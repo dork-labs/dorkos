@@ -245,7 +245,7 @@ export class RoomTriggerDispatcher {
   readonly claimed = new Map<string, ActiveClaim>();
 
   /** Who is waiting for the next claim to be released (room hand-offs, DOR-3397). */
-  readonly releaseWaiters = new Set<() => void>();
+  readonly releaseWaiters = new Set<(claim: ActiveClaim) => void>();
 
   /**
    * Rooms waiting on an agent that is mid-turn in a DIFFERENT room, keyed
@@ -925,19 +925,25 @@ export class RoomTriggerDispatcher {
   }
 
   /**
-   * Resolve when the next claim is released, or after `timeoutMs`, whichever is first: how a
-   * room hand-off waits out a busy seat (DOR-3397) without polling the claim map.
+   * Resolve when the next claim `matches` accepts is released, or after `timeoutMs`, whichever
+   * is first: how a room hand-off waits out a busy seat (DOR-3397) without polling the claim map.
+   * A waiter woken by every release ping-pongs with any other busy waiter, since each refused
+   * try releases a claim of its own (DOR-3516), so a hand-off passes the agent it waits for.
    *
    * @param timeoutMs - The longest to wait.
+   * @param matches - Which released claims end the wait; every one when omitted.
    */
-  nextRelease(timeoutMs: number): Promise<void> {
+  nextRelease(timeoutMs: number, matches?: (claim: ActiveClaim) => boolean): Promise<void> {
     return new Promise((resolve) => {
-      const wake = (): void => {
+      const done = (): void => {
         clearTimeout(timer);
         this.releaseWaiters.delete(wake);
         resolve();
       };
-      const timer = setTimeout(wake, timeoutMs);
+      const wake = (claim: ActiveClaim): void => {
+        if (matches === undefined || matches(claim)) done();
+      };
+      const timer = setTimeout(done, timeoutMs);
       timer.unref?.();
       this.releaseWaiters.add(wake);
     });

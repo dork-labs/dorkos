@@ -41,8 +41,10 @@ export function TabIdentityCard({ identity, className }: TabIdentityCardProps) {
       </div>
       {identity.origin && <p className="text-muted-foreground">{identity.origin}</p>}
       {identity.statusSentence && (
-        <p className="flex items-center gap-1.5">
-          <TabStatusMark identity={identity} />
+        // Top-aligned so a wrapped sentence keeps its dot on the first line;
+        // 5px centres the 6px dot on text-xs's 16px line.
+        <p className="flex items-start gap-1.5">
+          <TabStatusMark identity={identity} className="mt-[5px]" />
           <span>{identity.statusSentence}</span>
         </p>
       )}

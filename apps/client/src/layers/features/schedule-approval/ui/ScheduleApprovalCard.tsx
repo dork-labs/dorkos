@@ -164,6 +164,8 @@ export function ScheduleApprovalCard({
   // A raise the server turned down, kept so the card can say which half failed.
   const [refusedRaise, setRefusedRaise] = useState<ScheduleApprovalRaise | null>(null);
   const [revealed, setRevealed] = useState(false);
+  // Whether the approval also turned the schedule on, for the receipt (DOR-3309).
+  const [turnedOn, setTurnedOn] = useState(false);
 
   // The undo window belongs to the module, not to this component: a card that
   // was unmounted and drawn again mid-window comes back showing its receipt.
@@ -237,11 +239,15 @@ export function ScheduleApprovalCard({
    *   (`task-write-policy.ts`), so an OMITTED key is the difference between
    *   "yes, run it" and "yes, run it at my level" — it is never sent with the
    *   value the row already holds.
+   * @param turnOn - Also switch it on. Only a person's explicit "Approve and
+   *   turn on" sends `enabled: true`; a plain approval keeps the switch as it
+   *   is, so an off schedule stays off (DOR-3309).
    */
-  const approve = (raised?: ScheduleApprovalRaise) => {
+  const approve = (raised?: ScheduleApprovalRaise, turnOn = false) => {
     if (answered !== null) return;
     setDecision('approved');
     setGranted(raised ?? null);
+    setTurnedOn(turnOn);
     setRefusedRaise(null);
     // Hold the card on screen BEFORE the mutation settles. The race being lost
     // is the refetch that drops this task out of the parked list and unmounts
@@ -249,13 +255,13 @@ export function ScheduleApprovalCard({
     // waiting for the very thing that ends the card. Held at the level just
     // granted, so the held copy does not contradict the receipt over it.
     holdApprovedSchedule(raised ? { ...task, permissionMode: raised.mode } : task);
-    // Both fields, always: `status` alone leaves a schedule that is approved and
-    // still switched off, which is a schedule that will never run.
+    // `status` alone keeps the switch where the person left it: a schedule
+    // switched off stays off unless they choose to turn it on here.
     updateTask.mutate(
       {
         id: task.id,
         status: 'active',
-        enabled: true,
+        ...(turnOn && { enabled: true }),
         ...(raised && { permissionMode: raised.mode }),
       },
       // A refusal hands the card back rather than leaving a checkmark over a
@@ -559,6 +565,20 @@ export function ScheduleApprovalCard({
           >
             Approve
           </Button>
+          {/* An off schedule stays off when approved (DOR-3309); turning it on
+              is the second, deliberate choice. */}
+          {!task.enabled && (
+            <Button
+              variant="outline"
+              size="sm"
+              data-slot="schedule-approve-turn-on"
+              aria-label={`Approve ${name} and turn it on`}
+              className="h-7 px-2.5 text-xs"
+              onClick={() => approve(undefined, true)}
+            >
+              Approve and turn on
+            </Button>
+          )}
           {/* The raise, offered on this ONE task. Outline rather than primary:
               the safe level stays the default answer, and this is the
               deliberate second choice beside it. */}
@@ -574,19 +594,10 @@ export function ScheduleApprovalCard({
               Approve at {stopLabel(raise.stop)}
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            data-slot="schedule-reject"
-            aria-label={`Reject ${name}`}
-            className="h-7 px-2.5 text-xs"
-            onClick={reject}
-          >
-            Reject
-          </Button>
-          {/* Third, and quieter than Approve: it is the evidence-gathering move,
-              not the decision. Disabled only while a run of its own is in
-              flight — two supervised runs from one card is two things to read. */}
+          {/* After the approvals and quieter than Approve: it is the
+              evidence-gathering move, not the decision. Disabled only while a
+              run of its own is in flight — two supervised runs from one card is
+              two things to read. */}
           <Button
             variant="outline"
             size="sm"
@@ -597,6 +608,17 @@ export function ScheduleApprovalCard({
             onClick={testRun.start}
           >
             Run it once
+          </Button>
+          {/* Last, so the answers that keep the schedule read first. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            data-slot="schedule-reject"
+            aria-label={`Reject ${name}`}
+            className="h-7 px-2.5 text-xs"
+            onClick={reject}
+          >
+            Reject
           </Button>
         </AskCard.Actions>
       ) : (
@@ -610,7 +632,9 @@ export function ScheduleApprovalCard({
                 // changed nothing about the power, so saying it would turn the
                 // receipt into a sentence about a decision nobody made.
                 `Approved${granted ? ` at ${stopLabel(granted.stop)}` : ''}` +
-                `${firstRuns ? `. First run ${firstRuns.first}` : ''}`
+                (task.enabled || turnedOn
+                  ? `${firstRuns ? `. First run ${firstRuns.first}` : ''}`
+                  : '. Off until you turn it on.')
               : 'Rejected'}
           </AskCard.Receipt>
           {/* Live for as long as the DELETE has not been sent. Once the window

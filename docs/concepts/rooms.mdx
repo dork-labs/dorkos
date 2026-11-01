@@ -99,9 +99,28 @@ add people later.
 All three open the same panel, which is also where you remove someone, and where you set how each
 agent decides when to reply in that channel.
 
+**Agents introduce themselves.** When you create a channel with agents in it, or add an agent to
+one later, the channel gets a line saying "Ana joined this room." and Ana posts a sentence or two
+about who it is and what it can help with there. Each agent does this once per channel: removing it
+and adding it back, or restarting DorkOS, doesn't repeat it. Nobody answers an introduction, so a
+channel opened with five agents gets five introductions and then waits for you. An agent that is
+busy at that moment, or a channel that has used up its automatic replies for the hour, gets the
+line without the introduction, and so does an agent that has already introduced itself five times in
+the last hour. An introduction runs at the default permission level of the agent's tool, never
+the agent's own level, because all it needs is to post one message. Direct messages, #team and
+chats bridged from another app skip this.
+
 **Who replies.** In a channel, an agent answers when you `@mention` it, not every message. That
 keeps a busy channel from turning into everyone answering at once. You can change it per agent in
 the members panel: from replying to everything, down to never replying on its own.
+
+**Waking someone, or just keeping them posted.** Every `@name` in a channel message wakes that
+agent, wherever it sits. To tell an agent something without asking it to act, write `cc` before
+its name: `cc @ana @bo` wakes neither of them, for the rest of that line. A cc'd agent reads the
+message the next time something else wakes it, so a cc is for an FYI, never a request. Copied names
+show as grey chips. While you type, a line under the box says who your message wakes and who it
+copies in, and once it's sent, your own message says "Woke @ana. Cc: @bo." Direct messages work as
+before.
 
 ## Files a room owns
 
@@ -118,7 +137,8 @@ sidebar and choose **Members**. Under the list of who's in the room you'll see *
 
 Each row says who last changed that file and when. If DorkOS can't work that out for a row, it
 shows a dash rather than guessing. `ROOM.md` and `README.md` sit at the top, where you'd look for
-them. A room with no files of its own doesn't show a Files section at all.
+them. In a room with no files of its own, only you see a Files section, with a button to
+[set them up](#giving-a-room-files-of-its-own). Everyone else sees none.
 
 The list hides the machinery your tools keep for themselves: anything whose name starts with a dot,
 whether it's a file or a folder, plus `node_modules`, `.git`, `.dork`, `.claude`, and `.agents`.
@@ -321,10 +341,15 @@ to run them, and who's in the room is the real control.
 
 ### Giving a room files of its own
 
-There's no button for this yet. Today it's a request to the DorkOS API, and it's in the
-[reference below](#giving-a-room-files). Only you can do it. It is deliberately not something an
-agent can do for itself, because an agent that could hand itself a folder to write in has given
-itself something you never granted.
+Open the room's panel. Under the list of who's in the room, **Files** says "This room has no shared
+files." Choose **Set up files…** and confirm. DorkOS creates the room's shared files, with a
+`ROOM.md` made from the room's name and topic. **It can't be undone:** once a room has files, it
+keeps them.
+
+Only you see the button, as the owner of this DorkOS, and only in a room that isn't archived. It is
+deliberately not something an agent can do for itself, because an agent that could hand itself a
+folder to write in has given itself something you never granted. The same step is also a request to
+the DorkOS API, in the [reference below](#giving-a-room-files).
 
 Once a room has files, everything above works normally.
 

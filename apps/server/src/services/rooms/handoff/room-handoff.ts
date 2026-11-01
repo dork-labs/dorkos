@@ -29,17 +29,11 @@
  * @module server/services/rooms/handoff/room-handoff
  */
 import { randomUUID } from 'node:crypto';
-import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
-import { markedBoundOf, marksOf } from '../../core/turn-power/turn-levels.js';
-import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import { getChatMessageService } from '../../session/chat-messages/chat-message-current.js';
 import { fenceUntrustedBlock } from '../../runtimes/shared/untrusted-fence.js';
-import { teammateOf } from '../limits/space-teammates.js';
-import { ceilingForEntries, isEntryAuthorExternal } from '../limits/turn-ceiling.js';
-import { STALE_POST_SHOWN_MAX } from '../messages/room-freshness.js';
 import type { AuthorRecord } from '../author-registry.js';
 import { resolveOperatorAuthor } from '../operator-author.js';
 import { agentKey } from '../room-claims.js';
@@ -48,12 +42,26 @@ import { nameForAgents } from '../room-context.js';
 import { RoomError } from '../room-errors.js';
 import type { AsideCarry, AsideResult } from '../room-trigger/aside.js';
 import type { RoomCore } from '../service/room-core.js';
+import { carryFrom, withRoomMarks } from './seat-carry.js';
+import { RoomSeatReports } from './seat-report.js';
 
 /** The longest a hand-off waits for a busy seat before it gives up and says so. */
 export const HANDOFF_WAIT_MAX_MS = 60 * 60_000;
 
-/** How often a waiting hand-off looks again even when no turn ended. */
+/** The longest a waiting hand-off goes without looking again, even when no turn ended. */
 const HANDOFF_RECHECK_MS = 30_000;
+
+/**
+ * The first step of a busy seat's backoff. A seat can be busy with no claim to wait on (the
+ * runtime holding a restart for background work), and then every try is a turn that starts, is
+ * refused and flashes the room's banner, so the gap doubles each time (DOR-3516).
+ */
+const HANDOFF_RETRY_FIRST_MS = 1_000;
+
+/** How long a hand-off waits after its `attempt`th busy try: 1 s, 2 s, 4 s, up to the recheck. */
+function retryDelay(attempt: number): number {
+  return Math.min(HANDOFF_RETRY_FIRST_MS * 2 ** attempt, HANDOFF_RECHECK_MS);
+}
 
 /** Told to the seat when the drafting chat read words from outside the team (scenario E). */
 const OUTSIDER_DRAFT_NOTE =
@@ -122,6 +130,8 @@ export class RoomHandoffs {
   private readonly running = new Map<string, RoomHandoff>();
   /** Every hand-off not yet settled, for {@link RoomHandoffs.idle}. */
   private readonly pending = new Set<Promise<HandoffOutcome>>();
+  /** Spin-off reports into the seat that started them (DOR-3488). */
+  readonly reports: RoomSeatReports;
 
   /**
    * Build the seats and hand-offs for one room service.
@@ -132,7 +142,9 @@ export class RoomHandoffs {
   constructor(
     private readonly core: RoomCore,
     private readonly postNotice: (roomId: string, body: RoomEntry['body']) => RoomEntry
-  ) {}
+  ) {
+    this.reports = new RoomSeatReports(core);
+  }
 
   /**
    * Whether `sessionId` is this agent's seat in this room: the session its live turn there runs
@@ -330,35 +342,6 @@ export class RoomHandoffs {
     return { sessionId, roomId, label: roomLabel(room), requester };
   }
 
-  /**
-   * The drafting chat's marks joined with the room's own (Security, DOR-3397): the seat re-reads
-   * the room, so its turn is held as a triggered turn answering the room's recent posts would be,
-   * a stranger's among them included. Every bound holds at once, so the narrowest wins.
-   */
-  private withRoomMarks(handoff: RoomHandoff, room: Room, latest: RoomEntry): AsideCarry {
-    // The same window the stale-post check hands the seat back when it re-reads, by the same
-    // constant, so the posts that mark this turn and the posts it is shown cannot drift apart.
-    const recent = this.core.store
-      .listEntries(room.id, { limit: STALE_POST_SHOWN_MAX })
-      .filter((entry) => entry.kind === 'post' && entry.authorId !== handoff.authorId);
-    const read = recent.length > 0 ? recent : [latest];
-    const inSpaceRoom = this.core.triggers.deps.isSpaceRoom?.(room.id) === true;
-    const authors = this.core.authors;
-    const { carried } = handoff;
-    const ceiling = joinCeilings(
-      carried.permissionCeiling,
-      ceilingForEntries(authors, read, inSpaceRoom, room.id).permissionCeiling
-    );
-    const teammate = carried.teammate ?? teammateOf(authors, read, inSpaceRoom, room.id).teammate;
-    return {
-      externalAuthor:
-        carried.externalAuthor ||
-        read.some((entry) => isEntryAuthorExternal(authors, entry.authorId)),
-      ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
-      ...(teammate ? { teammate: true } : {}),
-    };
-  }
-
   /** Run one hand-off in its seat, waiting out a busy one, and send the answer back. */
   private async run(handoff: RoomHandoff): Promise<HandoffOutcome> {
     const key = agentKey(handoff.roomId, handoff.authorId);
@@ -366,7 +349,7 @@ export class RoomHandoffs {
     let result: AsideResult | null = null;
     this.running.set(key, handoff);
     try {
-      for (;;) {
+      for (let attempt = 0; ; attempt += 1) {
         const room = this.core.store.getRoom(handoff.roomId);
         const [latest] = this.core.store.listEntries(handoff.roomId, { limit: 1 });
         if (room === null || room.archived || latest === undefined) break;
@@ -375,14 +358,19 @@ export class RoomHandoffs {
           entry: latest,
           authorId: handoff.authorId,
           prompt: seatPrompt(handoff, roomLabel(room)),
-          carried: this.withRoomMarks(handoff, room, latest),
+          carried: withRoomMarks(this.core, handoff.authorId, handoff.carried, room, latest),
           onClaimed: (dispatchId) => {
             handoff.dispatchId = dispatchId;
           },
         });
         const left = deadline - Date.now();
         if (result.outcome !== 'busy' || left <= 0) break;
-        await this.core.triggers.nextRelease(Math.min(HANDOFF_RECHECK_MS, left));
+        // Woken only when this agent's own turn ends: another agent's release says nothing about
+        // this seat (and a refused try wakes nobody, see `releaseClaim`). Otherwise on a backoff.
+        await this.core.triggers.nextRelease(
+          Math.min(retryDelay(attempt), left),
+          (claim) => claim.authorId === handoff.authorId
+        );
       }
     } catch (err) {
       logger.warn('[rooms] a room hand-off failed', {
@@ -444,39 +432,6 @@ function logReportFailure(handoff: RoomHandoff, err: unknown): void {
     authorId: handoff.authorId,
     error: err instanceof Error ? err.message : String(err),
   });
-}
-
-/**
- * What the drafting chat's turn carries into the seat's (scenario E): a stranger's words, and
- * the ceiling every bound work it starts is held to.
- *
- * @param sessionId - The drafting chat.
- * @param agentPath - Its agent's home.
- */
-function carryFrom(sessionId: string, agentPath: string): AsideCarry {
-  const marks = marksOf(sessionId, agentPath);
-  const ceiling = markedBoundOf(sessionId, agentPath);
-  return {
-    externalAuthor: marks.outsider === true || chatHeardOutsider(sessionId),
-    ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
-    ...(marks.teammate !== undefined && marks.teammate.length > 0 ? { teammate: true } : {}),
-  };
-}
-
-/** Two ceilings as one: every bound of each holds, so the runtime keeps the strictest. */
-function joinCeilings(
-  a: TurnPermissionCeiling | undefined,
-  b: TurnPermissionCeiling | undefined
-): TurnPermissionCeiling | undefined {
-  const bounds = [a, b].flatMap((ceiling): TurnPermissionBound[] =>
-    ceiling === undefined
-      ? []
-      : Array.isArray(ceiling)
-        ? [...ceiling]
-        : [ceiling as TurnPermissionBound]
-  );
-  if (bounds.length === 0) return undefined;
-  return bounds.length === 1 ? bounds[0]! : bounds;
 }
 
 /** Why the seat did not post, in a line the sender can act on. */

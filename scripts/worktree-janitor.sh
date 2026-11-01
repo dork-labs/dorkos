@@ -148,37 +148,50 @@ DATA_BRANCH=ci-steward-data
 PRIMARY_WT=$(git worktree list --porcelain | awk '/^worktree /{print substr($0, 10); exit}')
 
 # Worktrees can live on an external disk under /Volumes/<name>/. When that disk
-# is unplugged, git sees every one of them as a worktree whose directory is gone,
-# and `git worktree prune` deletes their records: the work survives on the disk,
-# but this repo no longer knows it is there. So if any registered worktree sits
-# on a /Volumes/<name> that is not mounted, --fix writes nothing at all (no
-# removals, no prune) and says which disk is missing. A worktree whose directory
-# vanished from the internal disk is not affected by this and is pruned as before.
+# is unplugged or asleep, git sees every one of them as a worktree whose
+# directory is gone, and `git worktree prune` deletes their records: the work
+# survives on the disk, but this repo no longer knows it is there. So:
 #
-# A failed `mount` counts every volume as missing: the refusing direction. A
-# /Volumes entry that is a symlink (macOS's "Macintosh HD" points at /) is the
-# internal disk and counts as present.
-MOUNT_TABLE=$(mount 2>/dev/null || true)
-volume_is_mounted() {
-  local vol=$1
-  [[ -L "$vol" ]] && return 0
-  [[ "$MOUNT_TABLE" == *" on $vol ("* || "$MOUNT_TABLE" == *" on $vol type "* ]]
-}
-MISSING_VOLUMES=()
-while IFS= read -r vol; do
-  [[ -z "$vol" ]] && continue
-  volume_is_mounted "$vol" && continue
-  MISSING_VOLUMES+=("$vol")
-done < <(git worktree list --porcelain |
-  awk '/^worktree \/Volumes\/[^\/]+\//{split(substr($0, 10), p, "/"); print "/Volumes/" p[3]}' | sort -u)
-for vol in "${MISSING_VOLUMES[@]+"${MISSING_VOLUMES[@]}"}"; do
+#   - a registered worktree under /Volumes/ whose directory is not there right
+#     now is never judged, and neither is its branch (the branch pass below
+#     would otherwise see a branch with no worktree and could reap it);
+#   - while any such worktree exists, --fix skips `git worktree prune` entirely
+#     and logs one ALERT line per missing disk.
+#
+# Worktrees on disks that are present are still judged and reaped as usual.
+# Prune cannot be limited to some paths, so a worktree that vanished from the
+# internal disk keeps its record until a run with every disk present.
+#
+# A /Volumes entry that is a symlink (macOS's "Macintosh HD" points at /) is the
+# internal disk, so its paths are treated like any other internal path.
+HELD_WORKTREES=$'\n'
+HELD_BRANCHES=""
+HELD_VOLUMES=$'\n'
+while IFS=$'\t' read -r wt wt_branch; do
+  [[ "$wt" == /Volumes/*/* ]] || continue
+  [[ -d "$wt" ]] && continue
+  rest=${wt#/Volumes/}
+  vol="/Volumes/${rest%%/*}"
+  [[ -L "$vol" ]] && continue
+  HELD_WORKTREES+="$wt"$'\n'
+  [[ -n "$wt_branch" ]] && HELD_BRANCHES+=" $wt_branch "
+  [[ "$HELD_VOLUMES" == *$'\n'"$vol"$'\n'* ]] && continue
+  HELD_VOLUMES+="$vol"$'\n'
+  if [[ -d "$vol" ]]; then
+    why="has a worktree folder that is gone ($wt)"
+  else
+    why="is not mounted"
+  fi
   # "removed" is load-bearing: the daily LaunchAgent wrapper copies only lines
   # matching removed|ERROR|error into ~/Library/Logs/dorkos-worktree-janitor.log.
-  note "volume $vol is not mounted: no worktree removed or pruned, so its worktrees keep their records"
-done
-if [[ "$MODE" == fix && ${#MISSING_VOLUMES[@]} -gt 0 ]]; then
-  MODE=report
-fi
+  note "ALERT: $vol $why: git worktree prune skipped, and no worktree on it is judged or removed"
+done < <(git worktree list --porcelain | awk '
+  /^worktree /{p = substr($0, 10); b = ""}
+  /^branch refs\/heads\//{b = substr($0, 19)}
+  /^$/{if (p != "") print p "\t" b; p = ""}
+  END{if (p != "") print p "\t" b}')
+PRUNE_HELD=false
+[[ "$HELD_WORKTREES" != $'\n' ]] && PRUNE_HELD=true
 
 # Branch names that exist on origin right now. A failed lookup means every branch
 # is reported as still on origin, which is the KEEP direction.
@@ -235,9 +248,14 @@ IDLE_HOURS=${DORKOS_JANITOR_IDLE_HOURS:-24}
 
 # Newest mtime of the worktree root and its git admin dir, in epoch seconds.
 # BSD and GNU stat disagree on flags, so try both; an unreadable timestamp means
-# "assume active", which is the KEEP direction.
+# "assume active", which is the KEEP direction. GNU goes first: GNU's `stat -f`
+# is not an error but "filesystem status", so trying BSD's form first printed a
+# paragraph of text where a number belonged and crashed the idle check on Linux.
+# Anything that is not a plain number is treated as unreadable.
 mtime_of() {
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo ""
+  local t
+  t=$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)
+  [[ "$t" =~ ^[0-9]+$ ]] && echo "$t" || echo ""
 }
 is_recently_active() {
   local wt=$1 gitdir newest now t
@@ -267,7 +285,8 @@ is_recently_active() {
 }
 
 PLAN='[]'
-SEEN_BRANCHES=""
+# Branches of worktrees on a missing disk count as seen, so they are never judged.
+SEEN_BRANCHES="$HELD_BRANCHES"
 
 add_entry() {
   local branch=$1 sha=$2 localonly=$3 dirty=$4 ignored=$5 current=$6 protected=$7 detached=$8 wt=$9 active=${10}
@@ -317,6 +336,7 @@ count_local_only() {
 
 while IFS= read -r wt; do
   [[ -z "$wt" ]] && continue
+  [[ "$HELD_WORKTREES" == *$'\n'"$wt"$'\n'* ]] && continue
   branch=$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null || echo "")
   detached=false
   [[ -z "$branch" ]] && detached=true
@@ -420,7 +440,11 @@ while IFS=$'\x1f' read -r branch wt sha; do
 done < <(jq -r '.[] | select(.verdict == "REAP") | [.branch, .worktree, .branchSha] | join("\u001f")' <<<"$PLAN")
 
 if [[ "$MODE" == fix ]]; then
-  git worktree prune
+  if [[ "$PRUNE_HELD" == true ]]; then
+    echo "worktree-janitor: git worktree prune skipped (a worktree's disk is missing; see ALERT above)"
+  else
+    git worktree prune
+  fi
   echo
   echo "worktree-janitor: removed $removed, failed $failed"
   [[ "$removed" -gt 0 ]] && echo "  recovery log: $REAP_LOG"

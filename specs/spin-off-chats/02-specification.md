@@ -70,6 +70,7 @@ Area `messages` (Messages: "Message other agents, and message you"). `chat_send`
 
 - When a spin-off's turn ends **finished, failed, needing the person, or paused at an account limit**, the server sends its last assistant message to the chat that started it, kind `report`, `queue` delivery, from the spin-off.
 - A turn that ends while background work is still running (a helper, a CI watch, a timer) is waiting, not finished: nothing is sent, and the report follows the later turn that ends with no background work (`followLateTurns`).
+- A parent that is an agent's seat in a room takes no chat messages, so its report wakes the seat with a private aside turn that carries the report, fenced as data (DOR-3488, `rooms/handoff/seat-report.ts`). A busy seat, including one mid-turn in the room, takes it when that turn ends; reports to one seat run in order. Nothing is posted into the room unless the seat's turn decides the room needs it.
 - `session_start({ reportBack: 'off' })` turns it off for that spin-off. Stored on `session_started_by`.
 - The spin-off's first-turn context names its parent and says to send milestones with `chat_send` without being asked.
 

@@ -18,6 +18,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
   ResponsiveDialogDescription,
+  Button,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -388,13 +389,15 @@ export function CreateTaskDialog({
               >
                 Cancel
               </button>
-              <button
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={handleDelete}
-                disabled={deleteTask.isPending}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive/60 inline-flex items-center rounded-md px-3 py-1.5 text-sm font-medium shadow-sm transition-colors"
+                loading={deleteTask.isPending}
+                loadingLabel="Deleting…"
               >
-                {deleteTask.isPending ? 'Deleting…' : 'Delete task'}
-              </button>
+                Delete task
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -33,6 +33,13 @@ import { formatApprovalVerdict } from '../../shared/approval-verdict-block.js';
 import { formatDirectNotes } from '../../shared/prose/direct-notes-block.js';
 import { formatSeedContext } from '../../shared/seed-context-block.js';
 import { formatStagedContext } from '../../shared/staged-context-block.js';
+import {
+  chooseTrims,
+  dorkosContextBudget,
+  fitItemOf,
+  joinFitted,
+  type ContextPart,
+} from '../../shared/window/context-fit.js';
 
 /** The `session.promptAsync` text-part input shape (SDK `TextPartInput`). */
 export interface OpenCodeTextPartInput {
@@ -152,16 +159,38 @@ function renderContextBody(entry: AdditionalContextEntry): string {
  * Codex has no equivalent field and pays for that differently — see
  * `codex/context-gate.ts`.
  *
+ * ## On a small window (DOR-2839)
+ *
+ * When the model's window is known and small, DorkOS's blocks are left out in
+ * `context-fit.ts`'s order until they use at most a quarter of it. OpenCode's
+ * own prompt and tool list are the sidecar's, outside DorkOS's reach, so only
+ * DorkOS's text is counted and trimmed here.
+ *
  * @param opts - Per-turn options carrying `systemPromptAppend`
- * @param agentContext - The runtime-neutral DorkOS context blocks, or `''`/omitted
- *   when the working directory hosts no agent manifest
+ * @param agentContext - The runtime-neutral DorkOS context blocks, as text or as
+ *   tagged parts, or `''`/omitted when the working directory hosts no agent manifest
+ * @param contextWindow - The model's context window in tokens, when the catalog
+ *   states it; nothing is left out without one
  * @returns The joined system prompt, or `undefined` when there is nothing to say
  */
-export function buildOpenCodeSystem(opts?: MessageOpts, agentContext?: string): string | undefined {
-  const blocks = [GEN_UI_CONTEXT, agentContext ?? '', opts?.systemPromptAppend ?? ''].filter(
-    Boolean
+export function buildOpenCodeSystem(
+  opts?: MessageOpts,
+  agentContext?: string | readonly ContextPart[],
+  contextWindow?: number
+): string | undefined {
+  const parts: ContextPart[] = [
+    { block: 'gen_ui' as const, text: GEN_UI_CONTEXT },
+    ...(typeof agentContext === 'string' || agentContext === undefined
+      ? [{ block: null, text: agentContext ?? '' }]
+      : agentContext),
+    { block: null, text: opts?.systemPromptAppend ?? '' },
+  ].filter((part) => part.text !== '');
+  const fit = chooseTrims(
+    parts.map(fitItemOf),
+    contextWindow === undefined ? undefined : dorkosContextBudget(contextWindow)
   );
-  return blocks.length > 0 ? blocks.join('\n\n') : undefined;
+  const system = joinFitted(parts, fit.dropped);
+  return system === '' ? undefined : system;
 }
 
 /**

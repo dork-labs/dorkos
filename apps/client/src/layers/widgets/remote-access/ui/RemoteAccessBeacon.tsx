@@ -121,7 +121,7 @@ export function RemoteAccessBeacon() {
               data-state-name={remote.state}
               aria-label={beaconLabel(remote.state, remote.host)}
               className={cn(
-                'focus-ring text-muted-foreground hover:text-foreground relative inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors',
+                'focus-ring text-muted-foreground hover:text-foreground relative inline-flex size-11 shrink-0 items-center justify-center rounded-md transition-colors md:size-7',
                 // Dimmed while the session is being re-established: still on,
                 // visibly not at its best.
                 remote.state === 'reconnecting' && 'opacity-70'
@@ -129,7 +129,7 @@ export function RemoteAccessBeacon() {
             >
               <Globe
                 className={cn(
-                  'size-4',
+                  'size-(--size-icon-sm)',
                   remote.state === 'starting' && 'motion-safe:animate-breath'
                 )}
                 aria-hidden

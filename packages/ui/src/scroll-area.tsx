@@ -2,7 +2,6 @@ import * as React from 'react';
 import { ScrollArea as ScrollAreaPrimitive } from 'radix-ui';
 
 import { cn } from './cn.js';
-import { FOCUS_RING } from './focus-ring.js';
 
 /** Styled scroll container with custom scrollbar overlay. */
 function ScrollArea({
@@ -25,9 +24,7 @@ function ScrollArea({
         ref={viewportRef}
         data-slot="scroll-area-viewport"
         className={cn(
-          'size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:outline-1 motion-reduce:transition-none!',
-          FOCUS_RING,
-          '[&>div]:!block',
+          'focus-ring-inset size-full rounded-[inherit] [&>div]:!block',
           viewportClassName
         )}
       >

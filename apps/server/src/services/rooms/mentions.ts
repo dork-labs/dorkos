@@ -253,7 +253,7 @@ interface AddressedEntry {
 
 /**
  * Who an entry ASKS to answer: its mentions minus the ones it only copies in
- * (DOR-3401, `@dorkos/shared/mention-addressing`).
+ * (DOR-3453, `@dorkos/shared/mention-addressing`).
  *
  * Every rule that decides who takes a turn reads this rather than
  * `entry.mentions`, which still lists everybody named so pills, search and
@@ -270,7 +270,7 @@ export function addresseesOf(entry: AddressedEntry): string[] {
 }
 
 /**
- * Who an entry only copies in: named after the leading run, never asked.
+ * Who an entry only copies in: named only after `cc` on a line, never asked.
  *
  * @param entry - The stored entry.
  * @returns Distinct author ids, in text order.

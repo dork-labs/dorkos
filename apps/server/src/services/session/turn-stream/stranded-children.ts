@@ -38,7 +38,7 @@ export function sweepStrandedChildren(
 }
 
 /** What a runtime says is still running, read once. A failure spares none. */
-function liveChildren(stillLive: (() => readonly string[]) | undefined): readonly string[] {
+export function liveChildren(stillLive: (() => readonly string[]) | undefined): readonly string[] {
   if (!stillLive) return [];
   try {
     return stillLive();

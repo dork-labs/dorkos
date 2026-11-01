@@ -497,8 +497,10 @@ describe('POST /api/extensions/:id/approve', () => {
         .set('origin', 'null')
         .send(SHOWN_FILES);
 
-      expect(res.status).toBe(500);
-      expect(res.body.error).toBe('Origin null not allowed by CORS');
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe(
+        'This instance does not answer to pages from "null". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.'
+      );
       expect(manager.approveToRun).not.toHaveBeenCalled();
       expect(state.extensions.approvedToRun).toEqual([]);
     });

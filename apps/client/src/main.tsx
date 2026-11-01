@@ -17,6 +17,7 @@ import {
   installClientErrorHandlers,
   installBreadcrumbHandlers,
   installPersonAwareFetch,
+  installReducedMotion,
   isDesktopShell,
   registerCommunityAuthorityCleanup,
   registerLinkNavigator,
@@ -526,6 +527,7 @@ installClientErrorHandlers(transport);
 // never persisted. QueryCache/MutationCache and the durable session stream
 // record their own breadcrumbs directly (query-client.ts, stream-manager.ts).
 installBreadcrumbHandlers();
+installReducedMotion();
 
 ReactDOM.createRoot(document.getElementById('root')!, {
   onCaughtError: (error, errorInfo) => {

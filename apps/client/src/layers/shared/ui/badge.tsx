@@ -1,90 +1,169 @@
 import * as React from 'react';
-import { cva, type VariantProps } from 'class-variance-authority';
+import { cva } from 'class-variance-authority';
+import { Check, CircleX, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { Slot } from 'radix-ui';
 import { cn } from '@/layers/shared/lib/utils';
-import { STATUS_TONE_TEXT } from './status-dot';
+import { STATUS_DOT_PULSE } from './status-dot';
+
+/**
+ * The meanings a badge can carry. `info` is accepted because agents send it
+ * over the gen-ui wire, and it draws as `neutral`: blue is not a resting state
+ * in this product, so a badge has no blue.
+ */
+export type BadgeTone = 'neutral' | 'warning' | 'error' | 'success' | 'info';
+
+/** The two badge sizes. */
+export type BadgeSize = 'sm' | 'xs';
+
+/**
+ * The glyph each tone brings with it, so colour is never the only signal.
+ * `neutral` brings none: a fact has nothing to warn about.
+ */
+const TONE_ICON: Partial<Record<BadgeTone, LucideIcon>> = {
+  warning: TriangleAlert,
+  error: CircleX,
+  success: Check,
+};
+
+/**
+ * The status colour, spent on the glyph and never on the word. A coloured word
+ * on the 7% tint fails AA on the sidebar and a selected row (amber 4.28, red
+ * 4.13 dark selected); the glyph only has to clear 3:1, and does everywhere.
+ */
+const TONE_ICON_COLOR: Partial<Record<BadgeTone, string>> = {
+  warning: 'text-status-warning-fg',
+  error: 'text-status-error-fg',
+  success: 'text-status-success-fg',
+};
 
 const badgeVariants = cva(
-  'inline-flex items-center border font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+  // No border and no shadow: one 7% tint of the foreground, so a badge reads the
+  // same on the page, a card, the sidebar and a selected row in both themes.
+  // `rounded-full` always: the guide's radius table gives pills, avatars and
+  // badges the full radius, and nothing else.
+  'bg-foreground/7 inline-flex items-center rounded-full font-medium whitespace-nowrap tabular-nums [&>svg]:size-(--size-icon-xs) [&>svg]:shrink-0',
   {
     variants: {
-      // The pill was the shape four components wanted and could not get, so
-      // each drew its own — four slightly different pill geometries, none of
-      // them this component (DOR-1763 finding 17.4).
-      shape: {
-        default: 'rounded-md',
-        pill: 'rounded-full',
-      },
-      variant: {
-        default: 'border-transparent bg-primary text-primary-foreground',
-        secondary: 'border-transparent bg-secondary text-secondary-foreground',
-        destructive:
-          'border-transparent bg-destructive text-destructive-foreground dark:bg-destructive/60',
-        outline: 'text-foreground',
-      },
-      // The two sizes that actually exist. Before this axis, two thirds of the
-      // badges in the app corrected the primitive from the call site — 30 of
-      // them re-stating the size it already had, 32 shrinking it by hand.
       size: {
-        sm: 'px-2 py-0.5 text-xs',
-        xs: 'px-1.5 py-0 text-3xs',
+        // 12/16 at 20px high on desktop; the type token scales it to 15px on a
+        // phone, and the height follows.
+        sm: 'gap-1 px-2 py-0.5 text-xs max-md:gap-1.5',
+        // 11/16 at 18px: `text-3xs` is kept for counts and initials, so the
+        // small badge moved up a step from 10px.
+        xs: 'text-2xs gap-1 px-1.5 py-px max-md:gap-1.5',
       },
-      // Declared AFTER `variant` on purpose: a tone is a colour correction on
-      // top of a shape, so tailwind-merge must see it last for it to win.
-      tone: STATUS_TONE_TEXT,
+      // A neutral badge states a fact in the quiet grey; a toned one names a
+      // state, so its word is full strength beside the coloured glyph.
+      emphasis: {
+        quiet: 'text-muted-foreground',
+        strong: 'text-foreground',
+      },
     },
     defaultVariants: {
-      shape: 'default',
-      variant: 'default',
       size: 'sm',
+      emphasis: 'quiet',
     },
   }
 );
 
-/** Everything a badge draws — shape, size, and an optional status colour. */
-export interface BadgeProps
-  extends React.ComponentProps<'span'>, VariantProps<typeof badgeVariants> {
-  /** Render the caller's own element as the badge — a link, a button, a `<dd>`. */
+/**
+ * The old fill axis. Every value now draws the one tint, and `destructive`
+ * resolves to `tone="error"`.
+ *
+ * @deprecated Removed with the Badge codemod (Phase 2 PR B). Drop it.
+ */
+type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline' | null;
+
+/**
+ * The old shape axis. Every badge is a pill now.
+ *
+ * @deprecated Removed with the Badge codemod (Phase 2 PR B). Drop it.
+ */
+type BadgeShape = 'default' | 'pill' | null;
+
+/** Everything a badge draws. */
+export interface BadgeProps extends React.ComponentProps<'span'> {
+  /** What the badge means. Defaults to `neutral`. */
+  tone?: BadgeTone | null;
+  /** `sm` (12px) or `xs` (11px). Defaults to `sm`. */
+  size?: BadgeSize | null;
+  /**
+   * Overrides the glyph the tone brings. `null` removes it, for a badge whose
+   * own children already carry one.
+   */
+  icon?: LucideIcon | null;
+  /** Running this second: the pulsing green dot, and the word at full strength. */
+  live?: boolean;
+  /** Render the caller's own element as the badge: a link, a `<dd>`. */
   asChild?: boolean;
+  /** @deprecated See {@link BadgeVariant}. */
+  variant?: BadgeVariant;
+  /** @deprecated See {@link BadgeShape}. */
+  shape?: BadgeShape;
+}
+
+/** The tone a badge draws, after the deprecated `variant` and `info` resolve. */
+function resolveTone(tone: BadgeTone | null | undefined, variant: BadgeVariant | undefined) {
+  if (tone && tone !== 'info') return tone;
+  if (!tone && variant === 'destructive') return 'error';
+  return 'neutral';
 }
 
 /**
- * A small inline label: a count, a state, a category.
+ * A small inert label: a state, a category, a fact.
  *
- * A `<span>`, so it is legal inside a sentence — as a `<div>` it was invalid
- * HTML inside every `<p>` it landed in, which React renders without complaint
- * and a validator does not. `asChild` is how it becomes something else: a badge
- * that navigates should BE the link, not sit inside one.
+ * A `<span>`, so it is legal inside a sentence. A badge is not a target: one
+ * that links or toggles is a {@link Chip}.
  *
- * `tone` is separate from `variant` because they answer different questions.
- * `variant` is the shape (filled, quiet, outlined); `tone` is what the state
- * means, and it spends the app's shared `--status-*` colours so a warning badge
- * is the same amber as a warning banner in both themes.
+ * **Colour goes on the glyph, never the word.** `warning`, `error` and
+ * `success` each bring their own icon in their own colour, and the word stays
+ * on the neutral tint. That is what keeps every pairing at AA on every ground
+ * the app has, and it means colour is never the only signal.
  *
+ * @param tone - `neutral`, `warning`, `error`, `success`, or `info` (drawn
+ *   neutral). Defaults to `neutral`.
+ * @param size - `sm` (12px) or `xs` (11px). Defaults to `sm`.
+ * @param icon - Overrides the tone's glyph; `null` removes it.
+ * @param live - Draw the pulsing working dot.
  * @param asChild - Render the child element instead of a `<span>`.
- * @param shape - `default` (rounded rectangle) or `pill`. Defaults to `default`.
- * @param variant - Fill treatment. Defaults to `default`.
- * @param size - `sm` (12px) or `xs` (10px). Defaults to `sm`.
- * @param tone - Status colour override, from the shared tone vocabulary.
  */
 function Badge({
   className,
-  shape = 'default',
-  variant = 'default',
-  size = 'sm',
   tone,
+  size = 'sm',
+  icon,
+  live = false,
   asChild = false,
+  variant,
+  shape: _shape,
+  children,
   ...props
 }: BadgeProps) {
+  const resolved = resolveTone(tone, variant);
+  const Icon = icon === undefined ? TONE_ICON[resolved] : icon;
   const Comp = asChild ? Slot.Root : 'span';
 
   return (
     <Comp
       data-slot="badge"
-      data-variant={variant}
-      className={cn(badgeVariants({ shape, variant, size, tone }), className)}
+      data-tone={resolved}
+      data-live={live || undefined}
+      className={cn(
+        badgeVariants({ size, emphasis: resolved === 'neutral' && !live ? 'quiet' : 'strong' }),
+        className
+      )}
       {...props}
-    />
+    >
+      {live && (
+        <span
+          aria-hidden
+          data-slot="badge-live-dot"
+          className={cn('bg-status-success size-1.5 shrink-0 rounded-full', STATUS_DOT_PULSE)}
+        />
+      )}
+      {Icon && <Icon aria-hidden className={TONE_ICON_COLOR[resolved]} />}
+      {asChild ? <Slot.Slottable>{children}</Slot.Slottable> : children}
+    </Comp>
   );
 }
 

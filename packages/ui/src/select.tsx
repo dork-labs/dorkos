@@ -14,6 +14,7 @@ import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown } from 'lucide-react';
 
 import { cn } from './cn.js';
+import { FIELD_CONTROL } from './field-control.js';
 import { usePortalContainer } from './ui-provider.js';
 import { TOUCH_TARGET_RESPONSIVE_H } from './touch-target.js';
 
@@ -40,32 +41,46 @@ function SelectValue({ ...props }: React.ComponentProps<typeof SelectPrimitive.V
 /** Props for {@link SelectTrigger}. */
 export interface SelectTriggerProps extends React.ComponentProps<typeof SelectPrimitive.Trigger> {
   /**
-   * Grow to a 44px touch target below `md`, back to 36px past it.
+   * `default` is 36px past `md` and 44px below it. `compact` is for a filter bar
+   * or a toolbar: 32px past `md`, 40px below it with a hit area grown to 44.
    *
-   * On by default. Turn it off for chrome that is not meant to be a thumb
-   * target — a filter bar, a toolbar — where the taller box would crowd
-   * everything beside it.
-   *
-   * @default true
+   * @default 'default'
+   */
+  density?: 'default' | 'compact';
+  /**
+   * @deprecated Use `density="compact"`. `false` holds 36px on a phone, under the
+   * touch floor; it goes once its last callers have moved.
    */
   responsive?: boolean;
 }
 
 /** The closed control: the chosen value, and the chevron that opens the list. */
-function SelectTrigger({ className, children, responsive = true, ...props }: SelectTriggerProps) {
+function SelectTrigger({
+  className,
+  children,
+  density = 'default',
+  responsive = true,
+  ...props
+}: SelectTriggerProps) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
+      data-density={density}
       className={cn(
-        'border-dui-input ring-offset-dui-background placeholder:text-dui-muted-foreground focus-visible:ring-dui-ring aria-invalid:border-dui-destructive aria-invalid:ring-dui-destructive flex w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs focus-visible:ring-1 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
-        responsive ? TOUCH_TARGET_RESPONSIVE_H : 'h-9',
+        FIELD_CONTROL,
+        'data-[placeholder]:text-dui-muted-foreground data-[state=open]:border-dui-control-edge-hover flex items-center justify-between py-2 whitespace-nowrap [&>span]:line-clamp-1',
+        density === 'compact'
+          ? 'relative h-10 after:absolute after:inset-x-0 after:-inset-y-0.5 md:h-8 md:after:hidden'
+          : responsive
+            ? TOUCH_TARGET_RESPONSIVE_H
+            : 'h-9',
         className
       )}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDown className="h-4 w-4 opacity-50" />
+        <ChevronDown className="text-dui-muted-foreground size-(--dui-size-icon-sm) shrink-0" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
@@ -84,7 +99,7 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-dui-border relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border shadow-md',
+          'bg-dui-popover text-dui-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dui-dark:border dui-dark:border-dui-border relative z-(--z-overlay) max-h-96 min-w-[8rem] overflow-hidden rounded-md shadow-lg',
           // OPENS WITH AN ANIMATION, CLOSES AT ONCE — the same load-bearing
           // half `dropdown-menu` carries, for the same reason and on the same
           // evidence (DOR-1835, following DOR-1834). Radix keeps this list

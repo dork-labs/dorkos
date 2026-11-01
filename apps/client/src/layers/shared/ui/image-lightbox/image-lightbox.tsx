@@ -276,7 +276,7 @@ export function ImageLightbox({
             <motion.div
               data-slot="image-lightbox-backdrop"
               style={{ opacity: backdrop }}
-              className="bg-background/90 fixed inset-0 z-50 backdrop-blur-xl"
+              className="bg-background/90 fixed inset-0 z-(--z-overlay) backdrop-blur-xl"
             />
           </DialogPrimitive.Overlay>
           <DialogPrimitive.Content
@@ -319,7 +319,7 @@ export function ImageLightbox({
               if (!onPicture) void close();
             }}
             {...gestures.handlers}
-            className="fixed inset-0 z-50 flex touch-none flex-col outline-none select-none"
+            className="fixed inset-0 z-(--z-overlay) flex touch-none flex-col outline-none select-none"
           >
             <DialogPrimitive.Title className="sr-only">
               {current.alt || 'Image'}

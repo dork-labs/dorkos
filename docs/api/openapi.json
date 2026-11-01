@@ -3765,6 +3765,9 @@
           },
           "roomMessage": {
             "$ref": "#/components/schemas/RoomMessageStamp"
+          },
+          "promptSource": {
+            "$ref": "#/components/schemas/PromptSource"
           }
         },
         "required": [
@@ -4361,6 +4364,10 @@
               "act",
               "destructive"
             ]
+          },
+          "consequence": {
+            "type": "string",
+            "maxLength": 40
           },
           "summary": {
             "type": "string",
@@ -5091,6 +5098,27 @@
           "extensionId",
           "appName",
           "itemId"
+        ]
+      },
+      "PromptSource": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "schedule",
+              "heartbeat",
+              "agent",
+              "external",
+              "channel"
+            ]
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
         ]
       },
       "SessionSnapshot": {
@@ -9910,6 +9938,10 @@
             "type": "boolean",
             "description": "True when this is one project's copy of a global schedule that only runs inside a project. Its switch and timing are this project's; its file is shared. Absent means false."
           },
+          "offersTurnOn": {
+            "type": "boolean",
+            "description": "True when the schedule stayed off although its file now says on. A file can switch a schedule off but never on, so a person is offered Turn on. Absent means false."
+          },
           "approvalChanges": {
             "type": "array",
             "items": {
@@ -10101,6 +10133,9 @@
           },
           "originMarks": {
             "$ref": "#/components/schemas/ScheduleOriginMarks"
+          },
+          "quietHold": {
+            "type": "boolean"
           },
           "nextRun": {
             "type": [
@@ -15827,7 +15862,8 @@
           "first_connection",
           "volume_mark",
           "anniversary",
-          "agent_minted"
+          "agent_minted",
+          "joined_room"
         ]
       },
       "RoomMomentSource": {
@@ -16022,7 +16058,7 @@
           },
           "cc": {
             "type": "boolean",
-            "description": "True when this mention only copies its author in: it came after the leading run of @mentions in a channel message, so no agent takes a turn for it (DOR-3401). Absent means the author was asked, which is how every older entry reads."
+            "description": "True when this mention only copies its author in: it came after `cc` on its line in a channel message, so no agent takes a turn for it (DOR-3453). Absent means the author was asked, which is how every older entry reads."
           }
         },
         "required": [
@@ -93849,6 +93885,207 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditQueryResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/running": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "See every running chat",
+        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. Use the link, never the id, when you tell a person about a chat.",
+        "responses": {
+          "200": {
+            "description": "See every running chat result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "agents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "agentId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "projectPath": {
+                            "type": "string"
+                          },
+                          "count": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "privateCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "chats": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "link": {
+                                  "type": "string"
+                                },
+                                "state": {
+                                  "type": "string",
+                                  "enum": [
+                                    "running",
+                                    "needs-you"
+                                  ]
+                                },
+                                "spinOff": {
+                                  "type": "boolean"
+                                },
+                                "startedBy": {
+                                  "type": [
+                                    "object",
+                                    "null"
+                                  ],
+                                  "properties": {
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "title": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "title"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "title",
+                                "link",
+                                "state",
+                                "spinOff",
+                                "startedBy"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "agentId",
+                          "name",
+                          "projectPath",
+                          "count",
+                          "privateCount",
+                          "chats"
+                        ]
+                      }
+                    },
+                    "unassigned": {
+                      "type": "object",
+                      "properties": {
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "privateCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "chats": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "link": {
+                                "type": "string"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "running",
+                                  "needs-you"
+                                ]
+                              },
+                              "spinOff": {
+                                "type": "boolean"
+                              },
+                              "startedBy": {
+                                "type": [
+                                  "object",
+                                  "null"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "title"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "title",
+                              "link",
+                              "state",
+                              "spinOff",
+                              "startedBy"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "count",
+                        "privateCount",
+                        "chats"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "agents",
+                    "unassigned"
+                  ]
                 }
               }
             }

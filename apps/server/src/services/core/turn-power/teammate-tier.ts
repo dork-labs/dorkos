@@ -108,12 +108,23 @@ export const TEAMMATE_DORKOS_TOOLS: Readonly<Record<string, TeammateToolRule>> =
   mesh_status: refuse('reads the owner’s agent network'),
   mesh_query_topology: refuse('reads the owner’s agent network'),
   get_agent: refuse('reads an agent’s setup'),
+  ping: refuse('checks on the owner’s DorkOS, outside the room'),
+  get_server_info: refuse('reads how the owner’s DorkOS is set up'),
+  get_session_count: refuse('reads how many chats an agent has'),
+  get_extension_api: refuse('reads the owner’s extension reference'),
+  list_extensions: refuse('lists the owner’s extensions'),
+  get_extension_errors: refuse('reads the owner’s extension errors'),
   // Durable state that outlives the turn.
   memory_write: refuse('writes notes every later conversation reads, the owner’s included'),
   memory_read: refuse('reads the agent’s notes files, which a teammate’s turn is never shown'),
   compact_my_session: refuse('rewrites what this conversation remembers'),
   accounts_usage: refuse('reads how much of the person’s accounts is used'),
   accounts_probe: refuse('reads a person’s account usage'),
+  // Both spellings of each, as the gate can see either (DOR-3205, `own-connection-reads.ts`).
+  'connectors.list_granted_connections': refuse('lists which of the owner’s accounts it may use'),
+  connectors_list_granted_connections: refuse('lists which of the owner’s accounts it may use'),
+  'connectors.list_granted_operations': refuse('lists what it may do in the owner’s accounts'),
+  connectors_list_granted_operations: refuse('lists what it may do in the owner’s accounts'),
   // The owner's screen.
   control_ui: refuse('drives the owner’s app'),
   get_ui_state: refuse('reads what the owner has open'),

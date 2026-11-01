@@ -84,8 +84,8 @@ const NEEDS_CREDENTIAL = rpcError(
 );
 const AUTH_REQUIRED = { error: 'Unauthorized', code: 'AUTH_REQUIRED' };
 const NOT_ALLOWED_BY_CORS = (origin: string) => ({
-  error: `Origin ${origin} not allowed by CORS`,
-  code: 'INTERNAL_ERROR',
+  error: `This instance does not answer to pages from "${origin}". If that is how you reach DorkOS, list it in DORKOS_CORS_ORIGIN, or open DorkOS at its own address.`,
+  code: 'ORIGIN_NOT_ALLOWED',
 });
 const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR'), error: z.string() }).strict();
 const TOO_LARGE = { error: 'That is too large to send in one request.', code: 'REQUEST_TOO_LARGE' };
@@ -391,7 +391,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     headers: { ...WITH_TOKEN, origin: 'https://evil.example' },
     body: rpc('ping'),
     expect: {
-      status: 500,
+      status: 403,
       headers: { ...NOT_COUNTED, 'access-control-allow-origin': null },
       body: NOT_ALLOWED_BY_CORS('https://evil.example'),
     },
@@ -402,7 +402,7 @@ const LOGIN_OFF_CASES: readonly ContractCase[] = [
     path: '/mcp',
     headers: { ...MCP_CLIENT, origin: 'null' },
     body: rpc('ping'),
-    expect: { status: 500, body: NOT_ALLOWED_BY_CORS('null') },
+    expect: { status: 403, body: NOT_ALLOWED_BY_CORS('null') },
   },
   {
     // A rebound page names a host that is not this computer, so it is another

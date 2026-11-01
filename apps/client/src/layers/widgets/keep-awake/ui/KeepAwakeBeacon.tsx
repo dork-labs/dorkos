@@ -59,9 +59,9 @@ export function KeepAwakeBeacon() {
           type="button"
           data-testid="keep-awake-beacon"
           aria-label={`Keeping this computer awake: ${work}. Show details`}
-          className="focus-ring text-muted-foreground hover:text-foreground inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors"
+          className="focus-ring text-muted-foreground hover:text-foreground inline-flex size-11 shrink-0 items-center justify-center rounded-md transition-colors md:size-7"
         >
-          <Coffee className="size-4" aria-hidden />
+          <Coffee className="size-(--size-icon-sm)" aria-hidden />
         </button>
       </ResponsivePopoverTrigger>
       <ResponsivePopoverContent

@@ -126,19 +126,33 @@ const GET_UI_STATE_DESCRIPTION =
  * Narrow a capability's handler context to the three facts a `ui` verb reads.
  *
  * `fromRuntimeSurface` is derived from the verified server principal and nothing
- * else: a `runtime` principal is minted only by the loopback listener, for one
- * turn, from a bearer the server itself issued — so no tool argument and no
- * header can claim or disclaim it.
+ * else: a `runtime` principal comes from a bearer the server itself issued for
+ * one turn, so no tool argument and no header can claim or disclaim it.
+ *
+ * **Except a Claude Code one, which is the in-process surface.** Claude Code
+ * resolves its own turn's principal inside this process and hands it to
+ * `control_ui` only so a document it opens records its opener. Its bearer
+ * never leaves the server, so an agent never brings one over the loopback
+ * listener. Only server-run test-runtime probes do: the Doc probe, a fixed
+ * workflow that opens a page and never sends `apply_layout`, is the one on the
+ * agent-tools URL that serves this verb (the connector probes use the
+ * connector-only URL, which does not). And
+ * Claude Code's own surface CAN ask a person: `apply_layout` raises an approval
+ * card there (DOR-625). Reading its principal as the loopback surface would
+ * refuse an action the person was just asked about and approved.
  *
  * @param context - What the registry handed the handler.
  * @returns The caller, as the `ui` handlers see it.
  */
 function callerOf(context: CapabilityHandlerContext): UiCallerContext {
+  const claims = context.serverPrincipal?.claims;
   return {
     ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
     ...(context.cwd !== undefined ? { cwd: context.cwd } : {}),
     ...(context.serverPrincipal ? { principal: context.serverPrincipal } : {}),
-    ...(context.serverPrincipal?.claims.kind === 'runtime' ? { fromRuntimeSurface: true } : {}),
+    ...(claims?.kind === 'runtime' && claims.runtime !== 'claude-code'
+      ? { fromRuntimeSurface: true }
+      : {}),
   };
 }
 

@@ -3,7 +3,7 @@ import { CircleIcon } from 'lucide-react';
 import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
 
 import { cn } from './cn.js';
-import { FOCUS_RING, INVALID_RING } from './focus-ring.js';
+import { FOCUS_RING } from './focus-ring.js';
 
 /**
  * A set of choices where exactly one can be picked.
@@ -18,7 +18,7 @@ function RadioGroup({
   return (
     <RadioGroupPrimitive.Root
       data-slot="radio-group"
-      className={cn('grid gap-3', className)}
+      className={cn('grid gap-3 max-md:gap-4', className)}
       {...props}
     />
   );
@@ -29,9 +29,9 @@ export interface RadioGroupItemProps extends React.ComponentProps<typeof RadioGr
   /**
    * Grow the dot a step on smaller screens, back to 16px past `md`.
    *
-   * On by default, matching `Checkbox` and `Switch`. Like them, it never reaches
-   * the full 44px touch target — the label beside it is the thumb-sized target,
-   * and clicking that picks the option.
+   * On by default, matching `Checkbox` and `Switch`. Like them, it never draws at
+   * the full 44px touch target. Its hit area grows to 44 instead (24 past `md`),
+   * and the label beside it picks the option too.
    *
    * @default true
    */
@@ -49,9 +49,8 @@ function RadioGroupItem({ className, responsive = true, ...props }: RadioGroupIt
     <RadioGroupPrimitive.Item
       data-slot="radio-group-item"
       className={cn(
-        'border-dui-input text-dui-primary dui-dark:bg-dui-input/30 aspect-square shrink-0 rounded-full border shadow-xs transition-[color,box-shadow] outline-none disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none!',
+        'border-dui-control-edge hover:border-dui-control-edge-hover disabled:hover:border-dui-control-edge aria-invalid:border-dui-destructive text-dui-primary dui-dark:bg-dui-input/30 relative aspect-square shrink-0 rounded-full border transition-[color,background-color,border-color] duration-150 after:absolute after:-inset-3 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none! md:after:-inset-1',
         FOCUS_RING,
-        INVALID_RING,
         responsive ? 'size-5 md:size-4' : 'size-4',
         className
       )}

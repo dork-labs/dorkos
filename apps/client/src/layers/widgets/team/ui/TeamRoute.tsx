@@ -1,4 +1,4 @@
-import { appRoutes } from '@/layers/shared/lib';
+import { appRoutes, SPRING } from '@/layers/shared/lib';
 import { lazy, Suspense, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useSearch, useNavigate } from '@tanstack/react-router';
@@ -144,11 +144,7 @@ function TeamRouteBody() {
         {viewMode === 'topology' && (
           <motion.div key="view-topology" {...FADE} className="relative flex-1 overflow-hidden">
             <div className="flex h-full">
-              <motion.div
-                layout
-                className="min-w-0 flex-1"
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              >
+              <motion.div layout className="min-w-0 flex-1" transition={SPRING.glide}>
                 <div className="absolute inset-0">
                   <Suspense
                     fallback={
@@ -204,7 +200,7 @@ function TeamRouteBody() {
                       initial={{ width: 0, opacity: 0 }}
                       animate={{ width: 256, opacity: 1 }}
                       exit={{ width: 0, opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                      transition={SPRING.glide}
                       className="bg-background overflow-y-auto border-l"
                     >
                       <AgentHealthDetail agentId={selectedAgentId} onClose={clearSelectedAgent} />

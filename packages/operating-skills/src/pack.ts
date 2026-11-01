@@ -362,8 +362,15 @@ export interface OperatingSkill {
  *   the same message again; an agent that does not know wakes in a fresh
  *   session and answers twice. The new skill seeds without a bump; the bump is
  *   for the sibling lists in `operating-dorkos` and `answering-dorkos-questions`.
+ * - 44: `reading-activity` teaches `running_chats` (DOR-3460): every chat running
+ *   now, per agent, spin-offs included. An agent seeded at 43 would guess at who
+ *   is free from `get_session_count`, which counts every chat ever kept on disk.
+ * - 45: `working-with-spin-off-chats` says a spin-off started from a room
+ *   reports into the starter's chat in that room as a turn only it sees
+ *   (DOR-3488). An agent seeded at 44 would not expect the report there, and
+ *   might repost it to the whole room.
  */
-export const OPERATING_SKILLS_VERSION = 43;
+export const OPERATING_SKILLS_VERSION = 45;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

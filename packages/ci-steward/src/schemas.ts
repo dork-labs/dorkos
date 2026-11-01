@@ -222,6 +222,13 @@ export const ConfigSchema = z
               .string()
               .regex(/^wf\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/, 'a wf.<workflow>.<job> gate id'),
             minutes: z.number().positive(),
+            /**
+             * Job minutes that pass before this deadline's clock starts (the
+             * setup steps ahead of it), so the job ends at `lead_minutes +
+             * minutes`. Set it to the shortest setup measured, never a typical
+             * one: a lead that is too short reads high, the safe side.
+             */
+            lead_minutes: z.number().nonnegative().default(0),
             /** Where the deadline is set, so a reader can check it. */
             source: z.string().min(1),
           })
@@ -249,7 +256,7 @@ export const ConfigSchema = z
         tool_ceiling_seconds: z.number().int().positive(),
         retention_days: z.number().int().positive(),
         max_bytes: z.number().int().positive(),
-        /** An export older than this is a health failure... */
+        /** An export older than this is a health failure when no clone is fresher, else a warning... */
         stale_after_days: z.number().int().positive(),
         /** ...until this old, when the clone is treated as retired and only reported. */
         retired_after_days: z.number().int().positive(),
@@ -257,8 +264,8 @@ export const ConfigSchema = z
         heavy_run_slots: z.number().int().positive(),
         /** How long a heavy gate waits for a slot before running anyway, loudly. */
         heavy_lock_wait_seconds: z.number().int().positive(),
-        /** A slot held longer than this is reclaimable even from a live owner. */
-        heavy_lock_max_hold_seconds: z.number().int().positive(),
+        /** How long a heavy `--job` (build, typecheck, full tests) waits before running anyway. */
+        heavy_job_wait_seconds: z.number().int().positive(),
       })
       .strict(),
   })
@@ -282,6 +289,13 @@ export const RequiredChecksSchema = z
             path: z.string().regex(/^\.github\/workflows\/[\w.-]+\.ya?ml$/),
             ref: z.string().regex(/^refs\/heads\/[\w./-]+$/),
             bypass_actors: z.array(z.never()).length(0),
+            /**
+             * Whether the organization rule is live, so this workflow can block a
+             * merge. False is intent only: the census still checks the rule for
+             * drift, but a failure of this workflow never makes a queue build red
+             * and pull-request feedback does not wait for it.
+             */
+            enforced: z.boolean().default(true),
           })
           .strict()
       )

@@ -61,7 +61,7 @@ function Slider({
           // without matching `:focus-visible`, so a drag shows the glow, never
           // the ring.
           className={cn(
-            'border-dui-primary hover:ring-dui-ring/50 block size-4 shrink-0 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none!',
+            'border-dui-primary hover:ring-dui-ring/50 block size-4 shrink-0 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none!',
             FOCUS_RING
           )}
         />

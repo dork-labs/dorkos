@@ -93,6 +93,11 @@ export interface AttentionSignal {
   since: string;
   /** Where clicking it goes — the approval, the question, the wedged session. */
   deepLink: string;
+  /**
+   * Listed, but nothing waits on it, so it never knocks: a schedule held at Full
+   * autonomy (DOR-3425).
+   */
+  quiet?: boolean;
   /** The agent this is about, when there is a face to draw. */
   agentPath?: string;
 }

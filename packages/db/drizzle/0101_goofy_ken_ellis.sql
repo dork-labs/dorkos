@@ -1,1 +1,0 @@
-ALTER TABLE `community_mirror_entries` ADD `entry_json` text;

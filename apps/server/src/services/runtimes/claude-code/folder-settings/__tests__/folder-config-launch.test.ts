@@ -368,6 +368,57 @@ describe('applyFolderConfigToLaunch', () => {
     applyFolderConfigToLaunch(options, undefined, { held: [], inHome: false });
     expect(options.settings).toBeUndefined();
   });
+  it('denies only agent.json when the agent’s own folder is open (DOR-3483)', () => {
+    const options: Options = {};
+    applyFolderConfigToLaunch(options, home, { held: [], inHome: false }, true);
+    const deny = settingsOf(options).permissions.deny;
+    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      expect(deny).toContain(`${tool}(/${home}/.dork/agent.json)`);
+      expect(deny).not.toContain(`${tool}(/${home}/.claude/**)`);
+      expect(deny).not.toContain(`${tool}(/${home}/.agents/**)`);
+      expect(deny).not.toContain(`${tool}(/${home}/.mcp.json)`);
+    }
+  });
+});
+
+describe('a drop below Full after the agent wrote its own setup (DOR-3483)', () => {
+  it('holds the hooks when only the script they run changed at Full', async () => {
+    const guard = {
+      PreToolUse: [{ hooks: [{ type: 'command', command: '.claude/hooks/guard.py' }] }],
+    };
+    write('.claude/settings.json', { hooks: guard });
+    write('.claude/hooks/guard.py', 'print(1)');
+    answer.outcome = 'granted';
+    await ownTurn();
+    await settle();
+    expect((await ownTurn()).held).toEqual([]);
+    answer.outcome = 'pending';
+    write('.claude/hooks/guard.py', 'print(2)');
+    expect(
+      (await resolveFolderConfigForLaunch({ agent: AGENT, home, cwd: home, full: true })).held
+    ).toEqual([]);
+    expect((await ownTurn()).held).toEqual(['hooks']);
+  });
+
+  it('loads at Full without a card, then holds and asks once, for the content at the drop', async () => {
+    await ownTurn();
+    write('.claude/settings.json', { hooks: HOOK });
+    const atDrop = readFolderConfigParts(home).digests;
+    expect(
+      await resolveFolderConfigForLaunch({ agent: AGENT, home, cwd: home, full: true })
+    ).toEqual({ held: [], inHome: false });
+    await settle();
+    expect(requests).toEqual([]);
+    expect(lastApprovedParts(AGENT.id, home)).not.toEqual(atDrop);
+    expect((await ownTurn()).held).toEqual(['hooks']);
+    expect((await ownTurn()).held).toEqual(['hooks']);
+    await settle();
+    expect(requests).toHaveLength(1);
+    answer.outcome = 'granted';
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(lastApprovedParts(AGENT.id, home)).toEqual(atDrop);
+    expect(await ownTurn()).toEqual({ held: [], inHome: false });
+  });
 });
 
 describe('an agent that renames itself', () => {

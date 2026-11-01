@@ -54,6 +54,24 @@ export function containmentRootOf(
 }
 
 /**
+ * Which folder {@link containmentRootOf} holds a copy to, in words a refusal
+ * can name: the plugin's folder for a plugin-carried copy, and the
+ * extension's own folder for every other.
+ */
+export type ContainmentBoundary = 'plugin' | 'extension';
+
+/**
+ * The boundary {@link containmentRootOf} applies to a copy.
+ *
+ * @param record - The copy being compiled.
+ */
+export function containmentBoundaryOf(
+  record: Pick<ExtensionRecord, 'sourcePlugin'>
+): ContainmentBoundary {
+  return record.sourcePlugin ? 'plugin' : 'extension';
+}
+
+/**
  * Whether `target` is `root` or inside it.
  *
  * @param target - An absolute, canonical path.
@@ -71,10 +89,22 @@ function isInside(target: string, root: string): boolean {
  * where the answer is on disk, links followed. Host externals and anything
  * esbuild itself marks external (Node built-ins on the server) pass through.
  *
- * @param root - The plugin's install folder.
+ * @param root - The folder imports must stay inside ({@link containmentRootOf}).
  * @param externals - The build's `external` list, which the host provides.
+ * @param boundary - Which folder `root` is, so a refusal names the rule that
+ *   applies ({@link containmentBoundaryOf}).
  */
-export function containmentPlugin(root: string, externals: readonly string[]): Plugin {
+export function containmentPlugin(
+  root: string,
+  externals: readonly string[],
+  boundary: ContainmentBoundary = 'plugin'
+): Plugin {
+  const rule =
+    boundary === 'plugin'
+      ? `outside this plugin's folder (${root}). A plugin's extension may import only files ` +
+        `its plugin ships`
+      : `outside this extension's folder (${root}). An extension may import only files ` +
+        `inside its own folder`;
   return {
     name: 'dorkos-plugin-containment',
     setup(build) {
@@ -101,9 +131,7 @@ export function containmentPlugin(root: string, externals: readonly string[]): P
           return {
             errors: [
               {
-                text:
-                  `'${args.path}' resolves to ${real}, outside this plugin's folder. DorkOS ` +
-                  `only bundles files the plugin itself ships, so it did not build it.`,
+                text: `'${args.path}' resolves to ${real}, ${rule}, so DorkOS did not build it.`,
               },
             ],
           };

@@ -68,6 +68,7 @@ const AGENT_UNVERIFIED = {
   code: 'AGENT_IDENTITY_UNVERIFIED',
 };
 const MALFORMED_JSON = z.object({ code: z.literal('INTERNAL_ERROR') }).loose();
+const CORS_REFUSED = z.object({ code: z.literal('ORIGIN_NOT_ALLOWED') }).loose();
 const HOST_REFUSED = z.object({ code: z.literal('HOST_NOT_ALLOWED') }).loose();
 const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
 const OUTSIDE_BOUNDARY = {
@@ -965,7 +966,7 @@ contractSuite('the session routes, login off, nothing started', [
     name: 'GET /api/sessions from a wrong browser origin is refused by CORS',
     path: S,
     headers: { origin: 'https://evil.example' },
-    expect: { status: 500, schema: MALFORMED_JSON },
+    expect: { status: 403, schema: CORS_REFUSED },
   },
   {
     name: 'GET /api/sessions from the server’s own origin carries the CORS answer',

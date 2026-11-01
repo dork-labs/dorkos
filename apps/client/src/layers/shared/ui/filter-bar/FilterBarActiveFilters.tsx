@@ -139,6 +139,7 @@ function FilterBarActiveFilters({ className }: FilterBarActiveFiltersProps) {
   return (
     <div
       data-slot="filter-bar-active-filters"
+      data-chip-group=""
       className={cn('flex flex-wrap items-center gap-1', className)}
     >
       {activeEntries.map(({ name, label, displayValue }) => (

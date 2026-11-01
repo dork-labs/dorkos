@@ -30,6 +30,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { IdentityFace } from '@/layers/shared/lib';
+import type { CountTone } from '@/layers/shared/ui';
 
 /**
  * The one status a tab shows, hottest first. Idle is absent: a tab that needs
@@ -65,8 +66,12 @@ export interface TabIdentity {
   statusSentence?: string;
   /** An unread, needs-you or waiting count. */
   count?: number;
-  /** Whether the count is aimed at you (a DM, an @mention, something waiting). */
-  countEmphasis?: boolean;
+  /**
+   * Who the count is for: `you` for a DM or an @mention, `warning` for
+   * something waiting on a person, `error` for a failure, `neutral` for
+   * activity. Absent reads as `neutral`.
+   */
+  countTone?: CountTone;
   /** When the page last had activity, epoch ms: "Last active 2m ago". */
   lastActiveAt?: number;
   /**
@@ -210,6 +215,16 @@ function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+/**
+ * The count tone a page's own status gives it: red for a failure, amber for
+ * something waiting on you, grey for anything else.
+ */
+function statusCountTone(status: TabStatus | undefined): CountTone {
+  if (status === 'failed') return 'error';
+  if (status === 'needs-you') return 'warning';
+  return 'neutral';
+}
+
 /** Drop a zero or absent count, so an idle tab draws no badge. */
 function positive(count: number | null | undefined): number | undefined {
   return count && count > 0 ? count : undefined;
@@ -296,7 +311,7 @@ export function routeTabIdentity(pathname: string, badge?: RouteBadge | null): T
     status,
     statusSentence: badge?.sentence ?? (status ? tabStatusSentence(status) : undefined),
     count: positive(badge?.count),
-    countEmphasis: status === 'needs-you' || status === 'failed',
+    countTone: statusCountTone(status),
   });
 }
 
@@ -498,7 +513,7 @@ export function roomTabIdentity(input: RoomTabInput): TabIdentity {
     icon,
     primary: input.title,
     count,
-    countEmphasis: count !== undefined && (input.kind === 'dm' || mentions !== undefined),
+    countTone: input.kind === 'dm' || mentions !== undefined ? 'you' : 'neutral',
     statusSentence:
       mentions !== undefined
         ? plural(mentions, 'mention of you', 'mentions of you')
@@ -545,7 +560,7 @@ export function homeTabIdentity(needsYouCount: number): TabIdentity {
       ? plural(count, 'thing waiting on you', 'things waiting on you')
       : undefined,
     count,
-    countEmphasis: count !== undefined,
+    countTone: 'warning',
   });
 }
 
@@ -553,12 +568,19 @@ export function homeTabIdentity(needsYouCount: number): TabIdentity {
 export interface TeamTabInput {
   /** Agents with a turn streaming right now. */
   workingCount: number;
+  /** Agents with a chat blocked on you: a pending approval or question. */
+  needsYouCount: number;
   /** The fleet's live facts, folded across every agent. */
   signals: TabStatusSignals;
 }
 
 /**
  * Team · N working, wearing the hottest status across the fleet.
+ *
+ * **The label says what the dot says** (DOR-3533). A tab has room for one
+ * status, so when anyone is waiting on you the label switches to that
+ * ("Team · 1 needs you") and the working count moves to the hover sentence.
+ * "Team · 3 working" beside an amber dot read as "amber means working".
  *
  * @param pathname - `/team`, or its `/agents` alias.
  * @param input - What the fleet is doing.
@@ -567,19 +589,31 @@ export function teamTabIdentity(pathname: string, input: TeamTabInput): TabIdent
   const route = ROUTE_IDENTITY[pathname] ?? ROUTE_IDENTITY['/team']!;
   const status = pickTabStatus(input.signals);
   const working = positive(input.workingCount);
+  // A needs-you signal always names at least one agent, even before the count lands.
+  const waiting = status === 'needs-you' ? Math.max(input.needsYouCount, 1) : undefined;
   return identity({
     icon: { kind: 'route', Icon: route.Icon },
     primary: route.primary,
-    secondary: working ? `${working} working` : undefined,
+    secondary: waiting
+      ? plural(waiting, 'needs you', 'need you')
+      : working
+        ? `${working} working`
+        : undefined,
     status,
-    statusSentence:
-      status === 'needs-you'
-        ? 'An agent is waiting on you'
-        : status === 'failed'
-          ? 'An agent’s last reply failed'
-          : status === 'working'
-            ? plural(input.workingCount, 'agent working', 'agents working')
-            : undefined,
+    // Non-breaking spaces keep "3 working" whole: a narrow hover card breaks
+    // after the separator, never between a number and its word.
+    statusSentence: waiting
+      ? [
+          plural(waiting, 'agent is waiting on you', 'agents are waiting on you'),
+          working ? `${working}\u00a0working` : undefined,
+        ]
+          .filter(Boolean)
+          .join('\u00a0· ')
+      : status === 'failed'
+        ? 'An agent’s last reply failed'
+        : status === 'working'
+          ? plural(input.workingCount, 'agent working', 'agents working')
+          : undefined,
   });
 }
 
@@ -679,7 +713,7 @@ export function extensionTabIdentity(
     status,
     statusSentence: badge?.sentence ?? (status ? tabStatusSentence(status) : undefined),
     count: positive(badge?.count),
-    countEmphasis: status === 'needs-you' || status === 'failed',
+    countTone: statusCountTone(status),
   });
 }
 

@@ -34,6 +34,8 @@ export interface FolderAllowsLaunch extends FolderAllowsTurn {
   neverAsk: boolean;
   /** The chat's session object, so the waiting notice is told once per chat. */
   chat: object;
+  /** Whether the turn may write its own folder setup (DOR-3483). */
+  ownFolderOpen?: boolean;
 }
 
 /**
@@ -59,6 +61,7 @@ export async function applyFolderAllowsToLaunch(
           home: launch.home,
           dorkHome: launch.dorkHome,
           accountRoot: launch.accountRoot,
+          ownFolderOpen: launch.ownFolderOpen === true,
         })
       : undefined;
     if (!deny) {

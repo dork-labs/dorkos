@@ -80,7 +80,10 @@ import {
   agentLaunchCapMessage,
 } from '../../../session/launch/launch-session.js';
 import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
-import { getChatMessageService } from '../../../session/chat-messages/chat-message-current.js';
+import {
+  getChatMessageService,
+  getRoomSeatReports,
+} from '../../../session/chat-messages/chat-message-current.js';
 import { spinOffBriefing } from '../../../session/chat-messages/chat-report-back.js';
 import { rememberedChatTitle } from '../../../session/origin/started-by-origin-overlay.js';
 import {
@@ -214,7 +217,8 @@ export const SessionStartInputShape = {
     .describe(
       '`auto` (default): whenever the new chat ends a turn finished, failed, needing the ' +
         'person or paused at an account limit, its last message comes back to this chat as a ' +
-        'message. `off`: it never reports back on its own.'
+        'message (from a room, it wakes your chat there with a turn only you see). `off`: it ' +
+        'never reports back on its own.'
     ),
 };
 
@@ -486,13 +490,18 @@ export function createSessionStartHandler(
     // Who started it, and the start limits of the extension at the root of the
     // calling chat's chain: asked before the settings write, so a refused start
     // leaves nothing behind.
-    // Reports go back only to a chat that can take chat messages: a room's
-    // turn, a scheduled run or a bridged chat cannot, so its spin-offs are
+    // Reports go back to a chat that can take chat messages, and to an agent's
+    // seat in a room, which a report wakes with a turn of its own (DOR-3488).
+    // A scheduled run or a bridged chat takes neither, so its spin-offs are
     // never promised one (spec `spin-off-chats` §5).
     const parentChatId = caller.chat?.sessionId ?? null;
     const parentTakesMessages =
       parentChatId !== null && ((await getChatMessageService()?.canReceive(parentChatId)) ?? false);
-    const reportBack = args.reportBack !== 'off' && parentTakesMessages;
+    const parentIsRoomSeat =
+      parentChatId !== null &&
+      !parentTakesMessages &&
+      (getRoomSeatReports()?.seatOf(parentChatId) ?? null) !== null;
+    const reportBack = args.reportBack !== 'off' && (parentTakesMessages || parentIsRoomSeat);
     const claimed = reserveChatStart(sessionId, parentChatId, args.reason, permission, reportBack);
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
@@ -558,6 +567,7 @@ export function createSessionStartHandler(
                   parentAgentName: caller.label,
                   reportBack,
                   parentTakesMessages,
+                  parentIsRoomSeat,
                 })
               : null;
             // The starter's own background is never cut: the briefing gives
