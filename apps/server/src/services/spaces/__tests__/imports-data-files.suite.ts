@@ -955,7 +955,8 @@ export function importSuite(format: 2 | 3): void {
       {
         id: derive(reported.open),
         entry_id: derive(marked.root),
-        reporter_member_id: derive(pat.memberId),
+        // The owner wrote this message and made the export, which leaves out who reported them.
+        reporter_member_id: null,
         reason: 'spam',
         note: 'Loud',
         status: 'open',

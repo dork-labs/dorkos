@@ -72,15 +72,17 @@ export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform
   const [status, setStatus] = useState<'open' | 'resolved'>('open');
   const [checksOnly, setChecksOnly] = useState(false);
   const [reports, setReports] = useState<CommunityWireReport[]>([]);
+  const [waitingAboutYou, setWaitingAboutYou] = useState(0);
   const [error, setError] = useState('');
   const [muting, setMuting] = useState<CommunityWireReport | null>(null);
   const [banning, setBanning] = useState<CommunityWireReport | null>(null);
   const reload = useCallback(async () => {
     try {
-      const body = await request<{ reports: CommunityWireReport[] }>(
+      const body = await request<{ reports: CommunityWireReport[]; waitingAboutYou?: number }>(
         `/api/v1/reports?status=${status}`
       );
       setReports(body.reports);
+      setWaitingAboutYou(body.waitingAboutYou ?? 0);
       setError('');
     } catch (cause) {
       setError(describeError(cause));
@@ -116,6 +118,17 @@ export function ReportQueue({ busy, perform }: { busy: boolean; perform: Perform
           </Button>
         </div>
       </div>
+      {waitingAboutYou > 0 && (
+        <p className="small muted">
+          {waitingAboutYou === 1
+            ? '1 report about you is waiting.'
+            : `${waitingAboutYou} reports about you are waiting.`}{' '}
+          <a className="underline" href="#space-members">
+            Add an admin
+          </a>{' '}
+          to review it.
+        </p>
+      )}
       <p className="small muted">Automatic checks only flag. They never hide a message.</p>
       {error && (
         <p className="small muted" role="alert">

@@ -625,7 +625,10 @@ describe('reports', () => {
         await call(scoped(`/entries/${id}/reports`), 'POST', who, { reason: 'harassment' }),
         201
       );
-      const queue = await expectStatus(await call(scoped('/reports'), 'GET', owner), 200);
+      const queue = await expectStatus(
+        await call(scoped('/reports'), 'GET', human(adminPerson)),
+        200
+      );
       return (queue.reports as { id: string; entryId: string }[]).find((row) => row.entryId === id)!
         .id;
     };
@@ -682,6 +685,101 @@ describe('reports', () => {
       [target.memberId]
     );
     expect(ban.rows).toEqual([{ reason: 'Repeated' }]);
+  });
+
+  describe('about the moderator reading the queue', () => {
+    const owner = () => human({ cookie: ownerCookie });
+    const queueOf = async (who: Who, status = 'open') =>
+      (await expectStatus(await call(scoped(`/reports?status=${status}`), 'GET', who), 200))
+        .reports as { id: string; entryId: string; reporter: unknown }[];
+    const reported = async (author: Who) => {
+      const entry = await posted(author, 'said by a moderator');
+      await expectStatus(
+        await call(scoped(`/entries/${entry}/reports`), 'POST', human(alice), { reason: 'other' }),
+        201
+      );
+      return entry;
+    };
+
+    it.each([
+      ['their own message', () => human(adminPerson)],
+      ['their agent’s message', () => agentOf(adminPerson)],
+    ])('hides a report about %s from that admin', async (_name, author) => {
+      const entry = await reported(author());
+      const others = await queueOf(owner());
+      const report = others.find((row) => row.entryId === entry)!;
+      expect(report.reporter).toMatchObject({ memberId: alice.memberId });
+
+      expect((await queueOf(human(adminPerson))).map((row) => row.entryId)).not.toContain(entry);
+      for (const body of [{ action: 'dismiss' }, { action: 'remove' }])
+        await expectStatus(
+          await call(scoped(`/reports/${report.id}/resolve`), 'POST', human(adminPerson), body),
+          404
+        );
+      const still = await pool.query('SELECT status FROM reports WHERE id=$1', [report.id]);
+      expect(still.rows[0].status).toBe('open');
+
+      await expectStatus(
+        await call(scoped(`/reports/${report.id}/resolve`), 'POST', owner(), { action: 'dismiss' }),
+        200
+      );
+      expect(
+        (await queueOf(human(adminPerson), 'resolved')).map((row) => row.entryId)
+      ).not.toContain(entry);
+    });
+
+    it('holds the owner to the same rule: an admin resolves a report about the owner', async () => {
+      const entry = await reported(owner());
+      const report = (await queueOf(human(adminPerson))).find((row) => row.entryId === entry)!;
+      expect(report.reporter).toMatchObject({ memberId: alice.memberId });
+
+      expect((await queueOf(owner())).map((row) => row.entryId)).not.toContain(entry);
+      await expectStatus(
+        await call(scoped(`/reports/${report.id}/resolve`), 'POST', owner(), { action: 'dismiss' }),
+        404
+      );
+      const still = await pool.query('SELECT status FROM reports WHERE id=$1', [report.id]);
+      expect(still.rows[0].status).toBe('open');
+
+      await expectStatus(
+        await call(scoped(`/reports/${report.id}/resolve`), 'POST', human(adminPerson), {
+          action: 'dismiss',
+        }),
+        200
+      );
+      expect((await queueOf(owner(), 'resolved')).map((row) => row.entryId)).not.toContain(entry);
+    });
+
+    it('tells an owner with no admin how many reports about them wait, and nothing else', async () => {
+      const entry = await reported(owner());
+      const page = async () =>
+        expectStatus(await call(scoped('/reports'), 'GET', owner()), 200) as Promise<{
+          reports: { entryId: string }[];
+          waitingAboutYou?: number;
+        }>;
+      // An admin can resolve it, so the owner is told nothing.
+      expect((await page()).waitingAboutYou).toBeUndefined();
+
+      await pool.query("UPDATE members SET role='member' WHERE id=$1", [adminPerson.memberId]);
+      try {
+        const alone = await page();
+        expect(alone.waitingAboutYou).toBeGreaterThanOrEqual(1);
+        expect(alone.reports.map((row) => row.entryId)).not.toContain(entry);
+        expect(JSON.stringify(alone)).not.toContain(alice.memberId);
+        // Only the owner hears of it, and the owner still cannot act on it.
+        const row = await pool.query<{ id: string }>('SELECT id FROM reports WHERE entry_id=$1', [
+          entry,
+        ]);
+        await expectStatus(
+          await call(scoped(`/reports/${row.rows[0].id}/resolve`), 'POST', owner(), {
+            action: 'dismiss',
+          }),
+          404
+        );
+      } finally {
+        await pool.query("UPDATE members SET role='admin' WHERE id=$1", [adminPerson.memberId]);
+      }
+    });
   });
 });
 

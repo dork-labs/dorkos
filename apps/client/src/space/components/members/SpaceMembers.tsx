@@ -74,7 +74,7 @@ export function SpaceMembers({
     void perform(operation, success).then(reload);
   return (
     <>
-      <section className="panel">
+      <section className="panel" id="space-members">
         <h3>Space members</h3>
         {directory.map((member) => (
           <div

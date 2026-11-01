@@ -2208,11 +2208,18 @@ const actions: Action<unknown>[] = [
     allowed: MODERATORS,
     status: 200,
     prepare: async () => {
-      const entry = await ownerEntry();
+      // A plain member's message: nobody here, the owner included, resolves a report about them.
+      const entry = await pool.query<{ id: string }>(
+        `WITH next AS (UPDATE channels SET last_seq=last_seq+1 WHERE id=$2 RETURNING last_seq)
+         INSERT INTO entries(community_id,channel_id,seq,author_member_id,author_display_name,text,
+           idempotency_key,payload_hash)
+         SELECT $1,$2,next.last_seq,$3,'Spare','reported',$4,md5('reported') FROM next RETURNING id`,
+        [alphaId, moderationChannelId, spareMemberId, randomUUID()]
+      );
       const report = await pool.query<{ id: string }>(
         `INSERT INTO reports(community_id,entry_id,reporter_member_id,reason)
          VALUES($1,$2,$3,'spam') RETURNING id`,
-        [alphaId, entry, spareMemberId]
+        [alphaId, entry.rows[0].id, spareMemberId]
       );
       return { report: report.rows[0].id };
     },
