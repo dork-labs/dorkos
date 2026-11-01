@@ -74,6 +74,7 @@
     "POST /api/v1/account/email-confirmation/confirm",
     "POST /api/v1/account/erasures",
     "POST /api/v1/account/erasures/:id/cancel",
+    "POST /api/v1/account/invite-link",
     "POST /api/v1/account/password",
     "POST /api/v1/account/password-reset",
     "POST /api/v1/age-confirmation",

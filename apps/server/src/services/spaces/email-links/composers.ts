@@ -5,7 +5,12 @@ import { accountErasureOpen, signInRefusal } from '../erasure/guards.js';
 import { plainTextMail, type ComposedMail } from '../mail/messages.js';
 import type { NoticeComposer, NoticeComposers } from '../mail/worker.js';
 import { hashSecret, hmacSecret, randomToken } from '../security.js';
-import { existingAccountMail, finishJoiningMail, spaceNameFor } from './invite-mail.js';
+import {
+  existingAccountMail,
+  finishJoiningMail,
+  firstPasswordAccount,
+  spaceNameFor,
+} from './invite-mail.js';
 import {
   EMAIL_LINK_LIFETIME_MS,
   EMAIL_LINK_NOTICE_KIND,
@@ -88,8 +93,15 @@ function composeEmailLink(kind: EmailLinkKind, settings: Settings): NoticeCompos
       if (kind === 'sign_in' && !(await liveHoldFor(client, request.pending_link_hash, userId)))
         return null;
       if (kind === 'email_confirmation' && account.emailVerified) return null;
-      // Confirmed since the sign-up asked: then it is the usual reset mail, not a finishing link.
-      const finish = finishing && !account.emailVerified;
+      // Only an empty account gets the finishing link (Security M1). An invitation's request for
+      // an account that came into use since it was asked mints nothing: it gets the notice instead,
+      // never a reset that would end its sessions and keys.
+      const finish = finishing && (await firstPasswordAccount(client, userId));
+      if (finishing && !finish)
+        return {
+          raw: null,
+          space: await spaceNameFor(client, request.community_id, settings.publicUrl),
+        };
       await client.query(
         `UPDATE email_link_tokens SET superseded_at=now()
          WHERE user_id=$1 AND kind=$2 AND consumed_at IS NULL AND superseded_at IS NULL`,
@@ -119,6 +131,7 @@ function composeEmailLink(kind: EmailLinkKind, settings: Settings): NoticeCompos
       };
     });
     if (!minted) return null;
+    if (minted.raw === null) return existingAccountMail(minted.space, `${settings.publicUrl}/`);
     const link = `${settings.publicUrl}${COMMUNITY_EMAIL_LINK_PAGES[kind]}#${minted.raw}`;
     return minted.space
       ? finishJoiningMail(minted.space, link)
@@ -129,8 +142,8 @@ function composeEmailLink(kind: EmailLinkKind, settings: Settings): NoticeCompos
 /**
  * The existing-account notice (DOR-2730): no token is minted, and the only link is the space's
  * plain sign-in page. It checks again, as a link's composer does, that the request is still
- * queued and fresh, the address still the account's, and the account still confirmed, able to
- * sign in and not being forgotten.
+ * queued and fresh, the address still the account's, and the account able to sign in and not
+ * being forgotten. Any account in use gets it, confirmed or not (Security M1).
  */
 function composeExistingAccount(settings: Settings): NoticeComposer {
   return async ({ pool, notice, now }) => {
@@ -149,12 +162,12 @@ function composeExistingAccount(settings: Settings): NoticeComposer {
       return null;
     if (now.getTime() - request.created_at.getTime() > INVITE_LINK_LIFETIME_MS) return null;
     const userId = notice.recipientUserId;
-    const user = await pool.query<{ email: string; emailVerified: boolean }>(
-      'SELECT email,"emailVerified" FROM "user" WHERE id=$1',
-      [userId]
-    );
+    // Any account in use may get it, confirmed or not: it carries no token and changes nothing.
+    const user = await pool.query<{ email: string }>('SELECT email FROM "user" WHERE id=$1', [
+      userId,
+    ]);
     const account = user.rows[0];
-    if (!account?.emailVerified) return null;
+    if (!account) return null;
     if (hmacSecret(account.email.toLowerCase(), settings.authSecret) !== request.email_hash)
       return null;
     if ((await signInRefusal(pool, userId)) || (await accountErasureOpen(pool, userId)))

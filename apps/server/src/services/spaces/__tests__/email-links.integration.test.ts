@@ -1210,16 +1210,74 @@ describe("an invitation's sign-up (DOR-2730)", () => {
     }
   });
 
-  it('answers Resend the same for a new and a taken address', async () => {
+  it('answers Resend the same for every address, and re-sends the invitation’s own mail', async () => {
+    // Fails if Resend sends a plain reset (a real reset token to a member), skips the invitation's
+    // per-address cap, loses the space, or answers differently by address (Security S1/S2).
     await account('invite-resend-taken@example.com', { confirmed: true });
-    await signUp('invite-resend-new@example.com');
-    const resend = async (email: string) => {
-      const response = await call(on, '/api/v1/account/password-reset', 'POST', { email });
+    const admission = await invite();
+    await signUp('invite-resend-new@example.com', {}, admission);
+    await deliverAll();
+    const resend = async (email: string, cookie = admission) => {
+      const response = await call(on, '/api/v1/account/invite-link', 'POST', { email }, cookie);
       return { status: response.status, body: await response.text() };
     };
-    expect(await resend('invite-resend-new@example.com')).toEqual(
-      await resend('invite-resend-taken@example.com')
+    const answers = [
+      await resend('invite-resend-new@example.com'),
+      await resend('invite-resend-taken@example.com'),
+      await resend('invite-resend-nobody@example.com'),
+    ];
+    expect(answers[0]).toEqual({ status: 202, body: answers[1].body });
+    expect(answers[2]).toEqual(answers[0]);
+    // Without the browser's live join attempt there is nothing to resend.
+    expect((await resend('invite-resend-new@example.com', '')).status).toBe(403);
+    await deliverAll();
+    const mails = (email: string) =>
+      smtp.received.filter((message) => message.recipients.includes(email));
+    // The new address already had its one invitation mail this hour; the member gets the notice,
+    // with no token, never a reset.
+    expect(mails('invite-resend-new@example.com')).toHaveLength(1);
+    const notice = lastMailTo('invite-resend-taken@example.com')!;
+    expect(notice.subject).toBe('Sign in to Email links');
+    expect(notice.token).toBeNull();
+    expect(mails('invite-resend-nobody@example.com')).toHaveLength(0);
+  });
+
+  it('sends a never-confirmed account in use the notice, and its reset page keeps the warning', async () => {
+    // Security M1: a first owner who never confirmed has a password, a membership and keys. An
+    // invitation sign-up with that address must not send "Finish joining", and the page a reset
+    // link opens must show what a reset ends, not "Set your password".
+    const owner = await account('invite-live-owner@example.com', { confirmed: false });
+    await derivedAccess(owner.userId, owner.memberId);
+    await signUp('invite-live-owner@example.com');
+    await deliverAll();
+    const notice = lastMailTo('invite-live-owner@example.com')!;
+    expect(notice.subject).toBe('Sign in to Email links');
+    expect(notice.token).toBeNull();
+    // Its own Forgot password link stays a reset, with the full list of what it ends.
+    const token = await resetToken('invite-live-owner@example.com');
+    const peeked = await call(on, '/api/v1/email-links/peek', 'POST', { token });
+    const body = (await peeked.json()) as { firstPassword?: boolean; clears: string[] };
+    expect(body.firstPassword).toBe(false);
+    expect(body.clears).toEqual(expect.arrayContaining(['sessions', 'host_api_keys', 'password']));
+    // An empty account an invitation made is the only first password.
+    await signUp('invite-empty@example.com');
+    await deliverAll();
+    const first = lastMailTo('invite-empty@example.com')!;
+    const peekFirst = await call(on, '/api/v1/email-links/peek', 'POST', { token: first.token });
+    expect(((await peekFirst.json()) as { firstPassword?: boolean }).firstPassword).toBe(true);
+  });
+
+  it('names the invitation’s space, whatever space id the body claims', async () => {
+    // Fails if a sign-up body can choose the space its mail names (Security S2). The claimed id
+    // is made up: a second real space here would change which space this host's routes default to.
+    await signUp('invite-forged@example.com', { communityId: randomUUID() });
+    const rows = await pool.query<{ community_id: string }>(
+      'SELECT community_id FROM email_link_requests WHERE email_hash=$1',
+      [hmacSecret('invite-forged@example.com', SECRET)]
     );
+    expect(rows.rows).toEqual([{ community_id: communityId }]);
+    await deliverAll();
+    expect(lastMailTo('invite-forged@example.com')?.subject).toBe('Finish joining Email links');
   });
 
   it('spends the same per-caller mail budget as Resend, so sign-ups cannot flood the host', async () => {

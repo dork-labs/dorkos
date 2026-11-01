@@ -140,16 +140,28 @@ describe('ResetPassword', () => {
     });
   });
 
-  it('sets the first password of a never-confirmed account, then goes back to the join', async () => {
+  it('keeps the reset wording and its warning for a never-confirmed account in use', async () => {
+    // Purpose (Security M1): fails if a never-confirmed owner with sessions and keys is shown
+    // "Set your password" with no list of what the reset ends. Only the server's firstPassword
+    // makes the page a first-password page; a reset that also ends the password is not enough.
+    captureEmailLink();
+    mockFetch({ [PEEK]: peek({ clears: [...ACCESS, 'password', 'sign_in_links'] }) });
+    render(<ResetPassword />);
+    expect(await screen.findByRole('heading', { name: 'Reset your password' })).toBeTruthy();
+    expect(screen.getByText('Resetting also ends:')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reset password' })).toBeTruthy();
+  });
+
+  it('sets the first password of an empty account, then goes back to the join', async () => {
     // Purpose (DOR-2730): fails if the finishing link reads as a reset, or leaves the person on
     // a "done" page instead of the invitation that sent it. The server decides set-or-reset from
-    // the token: only a never-confirmed account's reset also ends its password.
+    // the account behind the token.
     captureEmailLink();
     localStorage.setItem('dorkos-space:finish-joining-path', '/c/night-shift/join');
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
     mockFetch({
-      [PEEK]: peek({ clears: [...ACCESS, 'password', 'sign_in_links'] }),
+      [PEEK]: peek({ clears: [...ACCESS, 'password', 'sign_in_links'], firstPassword: true }),
       'POST /api/auth/email-link/reset-password': { status: 200, body: { cleared: 'everything' } },
     });
     render(<ResetPassword />);

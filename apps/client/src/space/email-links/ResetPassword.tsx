@@ -29,13 +29,10 @@ export function ResetPassword() {
   const [done, setDone] = useState<Done | null>(null);
   const passwordId = useId();
   const { state } = link;
-  // A reset that also ends the password is one for a never-confirmed account: the link an
-  // invitation's sign-up mailed (DOR-2730). The server decides this from the token at peek, so
-  // it is never read from the address; only the mailbox's owner reaches this page.
-  const setting =
-    state.kind === 'ready' &&
-    state.peek.kind === 'password_reset' &&
-    state.peek.clears.includes('password');
+  // The link an invitation's sign-up mailed to an empty account (DOR-2730). The server decides it
+  // from the account behind the token at peek, never from the address. Any account in use, even a
+  // never-confirmed one, gets the reset wording and the list of what it ends (Security M1).
+  const setting = state.kind === 'ready' && state.peek.firstPassword === true;
 
   async function reset(event: React.FormEvent) {
     event.preventDefault();
@@ -65,7 +62,7 @@ export function ResetPassword() {
       ? 'This link has expired or already been used.'
       : setting
         ? 'Set your password'
-        : 'Choose a new password';
+        : 'Reset your password';
 
   return (
     <EmailLinkPage title={title} busy={busy || state.kind === 'checking'}>

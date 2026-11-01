@@ -15,7 +15,7 @@ vi.mock('better-auth/react', () => ({
 // password. A space that mails nothing keeps the password form.
 const OPTIONS = 'GET /api/v1/auth-options';
 const SIGN_UP = 'POST /api/auth/sign-up/email';
-const RESEND = 'POST /api/v1/account/password-reset';
+const RESEND = 'POST /api/v1/account/invite-link';
 
 const options = (emailLinks: boolean): Reply => ({
   status: 200,
@@ -106,9 +106,9 @@ describe("an invitation's sign-up", () => {
     expect(sent.closest('button')).toBeNull();
     expect(sent.closest('[aria-live="polite"]')).not.toBeNull();
     expect(screen.queryByRole('button', { name: /Resend/u })).toBeNull();
-    expect(calls.find((call) => call.url.endsWith('/api/v1/account/password-reset'))?.body).toEqual(
-      { email: 'sam@example.com' }
-    );
+    expect(calls.find((call) => call.url.endsWith('/api/v1/account/invite-link'))?.body).toEqual({
+      email: 'sam@example.com',
+    });
     await act(async () => vi.advanceTimersByTime(3_000));
     expect(resend().textContent).toBe('Resend in 0:30');
   });

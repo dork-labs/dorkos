@@ -59,8 +59,8 @@ export const EMAIL_LINK_CAPS = {
 } as const;
 
 /**
- * What an invitation's sign-up records for an address whose account is already confirmed
- * (migration 0049, DOR-2730): a plain notice that names the space and carries no link token.
+ * What an invitation's sign-up or Resend records for an address whose account is in use, confirmed
+ * or not (migration 0049, DOR-2730): a plain notice that names the space and carries no token.
  */
 export const EXISTING_ACCOUNT_REQUEST = 'existing_account';
 

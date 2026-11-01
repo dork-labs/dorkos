@@ -201,7 +201,12 @@ export function takeJoinPath(): string | null {
   try {
     const path = window.localStorage.getItem(JOIN_PATH_KEY);
     window.localStorage.removeItem(JOIN_PATH_KEY);
-    return path?.startsWith('/') && !path.startsWith('//') ? path : null;
+    if (!path?.startsWith('/')) return null;
+    // Resolved against this origin, so `//evil` or `/\evil` can never leave it.
+    const target = new URL(path, window.location.origin);
+    return target.origin === window.location.origin
+      ? `${target.pathname}${target.search}${target.hash}`
+      : null;
   } catch {
     return null;
   }

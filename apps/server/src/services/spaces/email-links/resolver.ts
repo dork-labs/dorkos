@@ -60,8 +60,6 @@ async function eligibleAccount(
   )
     return null;
   if (request.kind === 'email_confirmation' && account.emailVerified) return null;
-  // The existing-account notice is only ever for a confirmed account (DOR-2730).
-  if (request.kind === 'existing_account' && !account.emailVerified) return null;
   return account.id;
 }
 
