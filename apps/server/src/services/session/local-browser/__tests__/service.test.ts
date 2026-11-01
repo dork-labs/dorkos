@@ -133,16 +133,24 @@ afterEach(async () => {
   vi.useRealTimers();
   await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
-async function create() {
+async function create(appOrigins?: () => readonly string[]) {
   const dir = await mkdtemp(path.join(tmpdir(), 'local-browser-unit-'));
   directories.push(dir);
   const f = fixture();
   return {
     ...f,
     dir,
-    service: new LocalBrowserService(dir, undefined, f.backend, undefined, () => ({
-      platform: 'darwin',
-    })),
+    service: new LocalBrowserService(
+      dir,
+      undefined,
+      f.backend,
+      undefined,
+      () => ({
+        platform: 'darwin',
+      }),
+      undefined,
+      appOrigins
+    ),
   };
 }
 async function selectOwned(service: LocalBrowserService) {
@@ -975,6 +983,136 @@ describe('bounded browser lifecycle ownership', () => {
     ]);
     expect(new Set(journal.map((record) => record.operationId)).size).toBe(1);
     expect(click).toHaveBeenCalledTimes(2);
+    await service.disconnect();
+  });
+});
+
+describe('DorkOS app origins (DOR-3218)', () => {
+  const refused = { code: 'dorkos_origin' };
+  const origins = () => [
+    'http://localhost:4242',
+    'http://127.0.0.1:4242',
+    'http://[::1]:4242',
+    'http://192.168.1.20:4242',
+    'https://fixture.ngrok.app',
+  ];
+
+  it.each(origins())('refuses navigation to %s before dispatch', async (url) => {
+    const { service, page } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    await expect(
+      service.action({ kind: 'navigate', url, revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect(page.goto).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('checks live origins rather than the set at connection time', async () => {
+    const live: string[] = [];
+    const { service, page } = await create(() => live);
+    await selectOwned(service);
+    const observed = await service.observe();
+    live.push('https://new-tunnel.example');
+    await expect(
+      service.action({
+        kind: 'navigate',
+        url: 'https://new-tunnel.example/connections',
+        revision: observed.revision,
+      })
+    ).rejects.toMatchObject(refused);
+    expect(page.goto).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('pauses after a click redirects to DorkOS and refuses all later reads', async () => {
+    const { service, click, navigate, page } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    click.mockImplementationOnce(async () => {
+      navigate('http://localhost:4242/connections');
+    });
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect((await service.state()).paused).toBe(true);
+    vi.mocked(page.evaluateHandle).mockClear();
+    await expect(service.agentState()).rejects.toMatchObject(refused);
+    await expect(service.observe()).rejects.toMatchObject(refused);
+    await expect(service.screenshot()).rejects.toMatchObject(refused);
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    expect(page.screenshot).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('refuses a page framing DorkOS before observing it', async () => {
+    const { service, addFrame, page } = await create(origins);
+    await selectOwned(service);
+    addFrame('https://fixture.ngrok.app/settings');
+    await expect(service.observe()).rejects.toMatchObject(refused);
+    expect(page.evaluateHandle).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('refuses acting on DorkOS even with a stale observation', async () => {
+    const { service, navigate, click } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    navigate('http://localhost:4242/connections');
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect(click).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('keeps an unrelated website on another port usable', async () => {
+    const { service, page } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    await service.action({
+      kind: 'navigate',
+      url: 'http://localhost:9000',
+      revision: observed.revision,
+    });
+    expect(page.goto).toHaveBeenCalled();
+    await service.observe();
+    await service.disconnect();
+  });
+
+  it('rechecks origins after the audit wait, before any page effect', async () => {
+    const f = await create();
+    const live: string[] = [];
+    const service = new LocalBrowserService(
+      f.dir,
+      undefined,
+      f.backend,
+      async (record) => {
+        if (record.phase === 'started') live.push('http://fixture.test');
+      },
+      () => ({ platform: 'darwin' }),
+      undefined,
+      () => live
+    );
+    await selectOwned(service);
+    const observed = await service.observe();
+    await expect(
+      service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).rejects.toMatchObject(refused);
+    expect(f.click).not.toHaveBeenCalled();
+    expect((await service.state()).paused).toBe(true);
+    await service.disconnect();
+  });
+
+  it('checks a replacement tab before returning its state to an agent', async () => {
+    const { service, context, page } = await create(origins);
+    const other = fixture();
+    other.navigate('http://localhost:4242/connections');
+    vi.spyOn(context, 'pages').mockReturnValue([page, other.page]);
+    await service.open({ mode: 'new-window' });
+    vi.spyOn(page, 'isClosed').mockReturnValue(true);
+    await expect(service.agentState()).rejects.toMatchObject(refused);
+    expect((await service.state()).paused).toBe(true);
     await service.disconnect();
   });
 });
