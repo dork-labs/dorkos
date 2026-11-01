@@ -3,10 +3,13 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import {
   LocalBrowserCapabilitiesSchema,
+  LocalBrowserHandoffAnswerSchema,
   LocalBrowserOpenSchema,
+  LocalBrowserPersonStateSchema,
   LocalBrowserProfileBindSchema,
   LocalBrowserProfileCreateSchema,
   LocalBrowserProfileSchema,
+  LocalBrowserSignInRequestSchema,
   LocalBrowserStateSchema,
 } from '@dorkos/shared/local-browser';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
@@ -28,6 +31,69 @@ const stateResponses = {
   409: refusal('The browser cannot complete this request in its current state'),
   500: refusal('The browser operation failed'),
 };
+
+const personStateResponses = {
+  ...stateResponses,
+  200: {
+    description: 'Current browser state, with its handoff and sign-in',
+    content: { 'application/json': { schema: LocalBrowserPersonStateSchema } },
+  },
+};
+const inPerson =
+  'Only the owner, in person, can call this route: no agent, API key or approval token. ';
+
+/** Register the plain sign-in window and the handoff answers. */
+function registerHandoverOpenApi(registry: OpenAPIRegistry): void {
+  const answer = {
+    body: {
+      required: true,
+      content: { 'application/json': { schema: LocalBrowserHandoffAnswerSchema } },
+    },
+  };
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/sign-in',
+    tags: ['Local browser'],
+    summary: 'Open the plain sign-in window',
+    description:
+      authority +
+      inPerson +
+      'Opens DorkOS’s Chromium on a profile with no debugging channel, so no agent can see or use it. ' +
+      'Takes a page the person typed, or a handoff, which opens the agent page’s own origin. ' +
+      'Accepts https, or http on this computer only. Password saving is off in that window.',
+    request: {
+      body: {
+        required: true,
+        content: { 'application/json': { schema: LocalBrowserSignInRequestSchema } },
+      },
+    },
+    responses: { ...personStateResponses, 400: refusal('The request is invalid') },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/handoff/hand-back',
+    tags: ['Local browser'],
+    summary: 'Hand the browser back to the agent',
+    description:
+      authority +
+      inPerson +
+      'Ends the handoff and resumes the agent’s browser, reopening its window if a sign-in closed it.',
+    request: answer,
+    responses: { ...personStateResponses, 400: refusal('The request is invalid') },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/handoff/stop',
+    tags: ['Local browser'],
+    summary: 'Stop the task that asked for a person',
+    description:
+      authority +
+      inPerson +
+      'Ends the handoff and keeps the browser paused. The app stops the chat itself.',
+    request: answer,
+    responses: { ...personStateResponses, 400: refusal('The request is invalid') },
+  });
+}
 
 /** Register the local browser setup and human controls. */
 export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
@@ -51,8 +117,10 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     path: '/api/local-browser/state',
     tags: ['Local browser'],
     summary: 'Read the browser connection',
-    description: authority + 'Includes preparation, selected tab, sharing chat and Pause state.',
-    responses: stateResponses,
+    description:
+      authority +
+      'Includes preparation, selected tab, sharing chat, Pause state, any handoff and the latest sign-in.',
+    responses: personStateResponses,
   });
   registry.registerPath({
     method: 'post',
@@ -66,7 +134,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     request: {
       body: { required: true, content: { 'application/json': { schema: LocalBrowserOpenSchema } } },
     },
-    responses: { ...stateResponses, 400: refusal('The browser choice is invalid') },
+    responses: { ...personStateResponses, 400: refusal('The browser choice is invalid') },
   });
   registry.registerPath({
     method: 'post',
@@ -108,8 +176,10 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     path: '/api/local-browser/resume',
     tags: ['Local browser'],
     summary: 'Resume agent browser actions',
-    description: authority + 'The agent must read a fresh observation before its next action.',
-    responses: stateResponses,
+    description:
+      authority +
+      'The agent must read a fresh observation before its next action. During a handoff this hands the browser back.',
+    responses: personStateResponses,
   });
   const profileResponse = {
     description: 'The browser profile',
@@ -201,4 +271,5 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       'A pending close blocks new opens.',
     responses: stateResponses,
   });
+  registerHandoverOpenApi(registry);
 }
