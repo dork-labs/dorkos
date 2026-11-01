@@ -368,7 +368,8 @@ Compile every fragment in `changelog/unreleased/` into a new version section (se
 3. Insert that as `## [X.Y.Z] - YYYY-MM-DD` (today's date) directly below the `## [Unreleased]` note at the top of `CHANGELOG.md`. Leave the `## [Unreleased]` heading + its "add a fragment" HTML comment in place.
 4. **Delete the compiled fragment files** (`git rm changelog/unreleased/*.md`) so `changelog/unreleased/` holds only `.gitkeep`.
 5. **Refresh the `[Unreleased]` link-reference** at the bottom of `CHANGELOG.md` to point at the new release: `[Unreleased]: https://github.com/dork-labs/dorkos/compare/vX.Y.Z...HEAD`.
-6. **Enforce the 10-version cap**: `CHANGELOG.md` keeps the 10 most recent version sections. Move any older section — byte-for-byte, with its link-reference definition if it has one — into the archive file under `changelog/archive/`: **prepend** it above the current top section (the archive is newest-first), then rename the file so its upper bound is the newest archived version (e.g. when `0.36.0` ages out, `CHANGELOG-v0.1.0-to-v0.35.0.md` → `CHANGELOG-v0.1.0-to-v0.36.0.md` via `git mv`) and update the archive's header line, the "Older releases…" pointer at the bottom of `CHANGELOG.md`, and the archive pointer in `docs/changelog.mdx` to the new range/filename.
+6. **Refuse bare mentions.** GitHub turns a bare `@word` into a real ping, and All Changes (6.11) copies this section verbatim. Run `python3 .claude/scripts/release_mentions.py CHANGELOG.md --section X.Y.Z`. On a failure, put each named handle in backticks and run it again.
+7. **Enforce the 10-version cap**: `CHANGELOG.md` keeps the 10 most recent version sections. Move any older section — byte-for-byte, with its link-reference definition if it has one — into the archive file under `changelog/archive/`: **prepend** it above the current top section (the archive is newest-first), then rename the file so its upper bound is the newest archived version (e.g. when `0.36.0` ages out, `CHANGELOG-v0.1.0-to-v0.35.0.md` → `CHANGELOG-v0.1.0-to-v0.36.0.md` via `git mv`) and update the archive's header line, the "Older releases…" pointer at the bottom of `CHANGELOG.md`, and the archive pointer in `docs/changelog.mdx` to the new range/filename.
 
 ### 6.5: Sync changelog to docs
 
@@ -638,8 +639,11 @@ Generate **narrative release notes**, using the `writing-changelogs` skill for s
 - **All Changes** is copied **verbatim** from the just-created `## [X.Y.Z]` section of `CHANGELOG.md` — do NOT rewrite, regenerate, or summarize; those entries were already reviewed.
 - End with install/update instructions (`npm update -g dorkos`) and the compare link: `https://github.com/dork-labs/dorkos/compare/v[prev]...v[new]`.
 
+Write the notes to a file outside the repo, then check that exact file and publish it. **Never create the release if the check fails.** GitHub turns a bare `@word` into a real ping to a stranger (v0.129.0 pinged three), and a draft sends its pings when it is published. Put each named handle in backticks and run the check again.
+
 ```bash
-gh release create vX.Y.Z --draft --title "vX.Y.Z" --notes "[narrative release notes]"
+python3 .claude/scripts/release_mentions.py /tmp/dorkos-notes-vX.Y.Z.md
+gh release create vX.Y.Z --draft --title "vX.Y.Z" --notes-file /tmp/dorkos-notes-vX.Y.Z.md
 ```
 
 If `gh` is unavailable: `brew install gh && gh auth login`, or create the release manually (as a draft) at `https://github.com/dork-labs/dorkos/releases/new?tag=vX.Y.Z`.
