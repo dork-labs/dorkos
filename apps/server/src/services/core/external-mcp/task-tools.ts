@@ -52,7 +52,13 @@ export function registerTaskTools(
 ): void {
   registerFromDefinitions(
     registrar,
-    getTasksTools(deps, undefined, () => externalCallerMarks(identity)),
+    // An agent's schedules are its own only (DOR-3640 R1), so its token names it.
+    getTasksTools(
+      deps,
+      undefined,
+      () => externalCallerMarks(identity),
+      () => identity?.agentPath
+    ),
     TASKS_EXTERNAL_CONFIGS
   );
 }

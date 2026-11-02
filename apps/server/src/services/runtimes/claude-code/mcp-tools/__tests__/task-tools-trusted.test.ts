@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { MeshCore } from '@dorkos/mesh';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
@@ -47,7 +48,8 @@ const GOOD_ARGS = {
   name: 'nightly-sweep',
   prompt: 'sweep the backlog',
   cron: '0 3 * * *',
-  target: 'global',
+  // Filed under the agent itself: only that arms unasked (DOR-3640 R1).
+  target: 'agent-nb',
   reason: 'The overnight backlog needs sweeping before you start.',
 };
 
@@ -56,16 +58,28 @@ describe('tasks_* on a Trusted install', () => {
   let deps: McpToolDeps;
   let emit: ReturnType<typeof vi.fn>;
   let dorkHome: string;
+  let agentHome: string;
 
   beforeEach(async () => {
     store = new TaskStore(createTestDb());
     emit = vi.fn();
-    dorkHome = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-task-tools-trusted-'));
+    dorkHome = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-task-tools-trusted-'))
+    );
+    agentHome = path.join(dorkHome, 'agents', 'nb');
+    await fs.mkdir(agentHome, { recursive: true });
+    const agents = [{ id: 'agent-nb', name: 'nb', projectPath: agentHome }];
     deps = {
       taskStore: store,
       defaultCwd: '/tmp/test',
       dorkHome,
       activityService: { emit },
+      meshCore: {
+        listWithPaths: () => agents,
+        getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
+        // The in-session tool set reads the relay subject of the session's agent.
+        getSubjectByPath: () => undefined,
+      } as unknown as MeshCore,
     } as unknown as McpToolDeps;
   });
 
@@ -90,7 +104,7 @@ describe('tasks_* on a Trusted install', () => {
     };
   }
 
-  const inSession = () => toolsWith(() => ({ sessionId: 'ses-1', agentPath: '/tmp/agents/nb' }));
+  const inSession = () => toolsWith(() => ({ sessionId: 'ses-1', agentPath: agentHome }));
 
   it('arms an agent’s schedule in a session, says so, and records it', async () => {
     const { isError, payload } = await call(inSession().tasks_create!, GOOD_ARGS);
@@ -101,7 +115,7 @@ describe('tasks_* on a Trusted install', () => {
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({
         actorType: 'agent',
-        actorId: '/tmp/agents/nb',
+        actorId: agentHome,
         eventType: 'schedule.armed_by_agent',
         metadata: { status: 'active' },
       })
@@ -109,7 +123,7 @@ describe('tasks_* on a Trusted install', () => {
   });
 
   it('arms through the REAL composition root, which passes the session in', async () => {
-    const session = { eventQueue: [], cwd: '/tmp/agents/nb', sdkSessionId: 'ses-canonical' };
+    const session = { eventQueue: [], cwd: agentHome, sdkSessionId: 'ses-canonical' };
     const wired = Object.fromEntries(
       (handRegisteredInSessionTools(deps, { session }) as unknown as SessionTool[]).map((t) => [
         t.name,
@@ -144,16 +158,40 @@ describe('tasks_* on a Trusted install', () => {
     expect(store.getTask(id)!.status).toBe('active');
   });
 
-  it('re-asks when the same edit comes over the external /mcp server', async () => {
+  it('re-asks when the same edit comes over the external /mcp server as the agent', async () => {
     const created = await call(inSession().tasks_create!, GOOD_ARGS);
     const id = (created.payload.schedule as { id: string }).id;
 
-    const { payload } = await call(toolsWith().tasks_update!, {
+    const external = Object.fromEntries(
+      (
+        getTasksTools(
+          deps,
+          undefined,
+          () => ({}),
+          () => agentHome
+        ) as unknown as SessionTool[]
+      ).map((t) => [t.name, t])
+    );
+    const { payload } = await call(external.tasks_update!, {
       id,
       prompt: 'sweep the backlog and the inbox',
     });
 
     expect(payload.needsReapproval).toBe(true);
     expect(store.getTask(id)!.status).toBe('pending_approval');
+  });
+
+  it('refuses the same edit from a caller DorkOS cannot name (DOR-3640 R1)', async () => {
+    const created = await call(inSession().tasks_create!, GOOD_ARGS);
+    const id = (created.payload.schedule as { id: string }).id;
+
+    const { isError, payload } = await call(toolsWith().tasks_update!, {
+      id,
+      prompt: 'sweep the backlog and the inbox',
+    });
+
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('not_your_schedule');
+    expect(store.getTask(id)!.status).toBe('active');
   });
 });

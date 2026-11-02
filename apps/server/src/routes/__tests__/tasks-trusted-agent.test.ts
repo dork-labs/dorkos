@@ -31,6 +31,7 @@ import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import { raiseStanding } from '../../services/notifications/standing-events.js';
+import type { MeshCore } from '@dorkos/mesh';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   countWhileRunning,
@@ -73,6 +74,7 @@ const SKILL = [
 describe('tasks routes, one of our agents on a Trusted install', () => {
   let store: TaskStore;
   let dorkHome: string;
+  let agentHome: string;
   let emit: ReturnType<typeof vi.fn>;
 
   /** Sync a SKILL.md the way the watcher and the reconciler do. */
@@ -103,6 +105,14 @@ describe('tasks routes, one of our agents on a Trusted install', () => {
     } as unknown as TaskSchedulerService;
     store = new TaskStore(createTestDb());
     dorkHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dork-trusted-agent-')));
+    // The agent's own home: a schedule arms unasked only under its own maker (DOR-3640 R1).
+    agentHome = path.join(dorkHome, 'agents', 'nb');
+    await fs.mkdir(agentHome, { recursive: true });
+    const agents = [{ id: 'agent-nb', name: 'nb', projectPath: agentHome }];
+    const meshCore = {
+      listWithPaths: () => agents,
+      getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
+    } as unknown as MeshCore;
 
     fixtureTarget.mount(
       honoGroupListener(
@@ -113,6 +123,7 @@ describe('tasks routes, one of our agents on a Trusted install', () => {
             scheduler,
             registrar: new TaskRegistrar({ store, scheduler }),
             dorkHome,
+            meshCore,
             activity: { emit } as unknown as ActivityService,
           }),
         },
@@ -121,7 +132,7 @@ describe('tasks routes, one of our agents on a Trusted install', () => {
           before: async (c, next) => {
             if (c.req.header(AGENT[0]) === AGENT[1]) {
               c.set('agentIdentity', {
-                agentPath: '/tmp/agents/nb',
+                agentPath: agentHome,
                 displayName: 'Nightly Bot',
                 createdAt: '2026-10-01T00:00:00.000Z',
               });
@@ -143,7 +154,7 @@ describe('tasks routes, one of our agents on a Trusted install', () => {
     description: 'Sweep the backlog',
     prompt: 'Sweep the backlog.',
     cron: '0 3 * * *',
-    target: 'global',
+    target: 'agent-nb',
     reason: 'The overnight backlog needs sweeping before you start.',
   };
 
@@ -210,7 +221,7 @@ describe('tasks routes, one of our agents on a Trusted install', () => {
     /** Start a marked turn of the agent and keep it running until the returned stop. */
     async function markedTurnRunning(): Promise<() => Promise<void>> {
       const turn = countWhileRunning(
-        { cwd: '/tmp/agents/nb' },
+        { cwd: agentHome },
         { outsider: true },
         (async function* () {
           yield { type: 'done', data: {} } as StreamEvent;

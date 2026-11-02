@@ -5950,6 +5950,13 @@ export const TaskSchema = z
      */
     proposedByName: z.string().nullable().default(null),
     /**
+     * The name of the agent this schedule runs as (the agent `agentId` names),
+     * resolved when the task is READ, like `proposedByName`, so an approval card
+     * and its notification say whose turn it would be (DOR-3640 R1). `null` for
+     * a global schedule, or when the agent cannot be named; absent on a task not yet read that way.
+     */
+    runsAsName: z.string().nullable().optional(),
+    /**
      * Where this schedule came from, when that is not a person using DorkOS.
      *
      * `file` means DorkOS found a `schedule:` block in a SKILL.md on disk and

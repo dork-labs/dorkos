@@ -15,7 +15,7 @@ import type { Task } from '@dorkos/shared/types';
 import type { NotificationPayload } from '../notification-registry.js';
 import { notify } from '../notification-service.js';
 import { withProposerName } from '../../tasks/task-provenance.js';
-import { UNNAMED_PROPOSER } from './schedule-park.js';
+import { runsAsOf, UNNAMED_PROPOSER } from './schedule-park.js';
 
 /**
  * When a schedule runs, as the end of the sentence "Runs …".
@@ -53,6 +53,7 @@ export async function resolveScheduleArmedPayload(
     ...(named.agentId ? { agentId: named.agentId } : {}),
     ...(named.proposedBySessionId ? { proposedBySessionId: named.proposedBySessionId } : {}),
     armedBy: named.proposedByName ?? UNNAMED_PROPOSER,
+    runsAs: runsAsOf(named),
     cadence: scheduleCadence(named),
   };
 }

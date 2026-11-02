@@ -26,6 +26,17 @@ import { withProposerName } from '../../tasks/task-provenance.js';
 export const UNNAMED_PROPOSER = 'An agent';
 
 /**
+ * Who a schedule's runs act as, for its card and notifications (DOR-3640 R1):
+ * the agent it is filed under, by name, or `no agent` for a global one.
+ *
+ * @param task - The task, with its read-time names.
+ */
+export function runsAsOf(task: Pick<Task, 'agentId' | 'runsAsName'>): string {
+  if (!task.agentId) return 'no agent';
+  return task.runsAsName ?? 'an agent';
+}
+
+/**
  * Describe a parked schedule, from what the task already carries.
  *
  * Deliberately not exported: naming the proposer takes a database read, and a
@@ -42,6 +53,7 @@ function scheduleParkPayload(task: Task): NotificationPayload<'schedule.parked'>
     ...(task.agentId ? { agentId: task.agentId } : {}),
     ...(task.proposedBySessionId ? { proposedBySessionId: task.proposedBySessionId } : {}),
     proposedBy: task.proposedByName ?? UNNAMED_PROPOSER,
+    runsAs: runsAsOf(task),
   };
 }
 

@@ -57,6 +57,7 @@ import {
 } from '../../../../tasks/task-write-policy.js';
 import { createScheduledTask } from '../../../../tasks/lifecycle/create-task.js';
 import { agentSchedulesArmWithoutAsking } from '../../../../tasks/approvals/agent-trust.js';
+import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/schedule-owner.js';
 import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
 import { changesApprovedWork } from '../../../../tasks/task-file-update.js';
 import { refuseStickyAccountChange } from '../../../../tasks/session/sticky-session.js';
@@ -102,6 +103,27 @@ export type TaskProvenanceResolver = () => {
  * (the external `/mcp` server, DOR-3036). The in-session server reads them from its session.
  */
 export type CallerMarksResolver = () => TurnMarks;
+
+/**
+ * The verified home of the calling agent when the provenance names none: the
+ * agent an external `/mcp` token names (DOR-3640 R1). Never read from the input.
+ */
+export type CallerAgentResolver = () => string | undefined;
+
+/**
+ * The calling agent's verified home, as the spread a create takes: the
+ * in-session provenance's, else the external token's.
+ *
+ * @param provenance - The in-session caller, when there is one.
+ * @param callerAgent - The external caller, when a token names one.
+ */
+function callerAgentPathOf(
+  provenance: ReturnType<TaskProvenanceResolver>,
+  callerAgent: CallerAgentResolver | undefined
+): { callerAgentPath?: string } {
+  const callerAgentPath = provenance.agentPath ?? callerAgent?.();
+  return callerAgentPath ? { callerAgentPath } : {};
+}
 
 /**
  * The `maxRuntime` argument, validated to the shape the SKILL.md frontmatter
@@ -217,7 +239,8 @@ function readOutsiderWords(provenance: { sessionId?: string; agentPath?: string 
 export function createCreateScheduleHandler(
   deps: McpToolDeps,
   resolveProvenance?: TaskProvenanceResolver,
-  callerMarks?: CallerMarksResolver
+  callerMarks?: CallerMarksResolver,
+  callerAgent?: CallerAgentResolver
 ) {
   return async (args: {
     name: string;
@@ -316,6 +339,8 @@ export function createCreateScheduleHandler(
           sessionId: provenance.sessionId ?? null,
           agentPath: provenance.agentPath ?? null,
         },
+        // An agent files a schedule only under itself or `global` (DOR-3640 R1).
+        ...callerAgentPathOf(provenance, callerAgent),
       }
     );
 
@@ -391,7 +416,8 @@ export function createCreateScheduleHandler(
 export function createUpdateScheduleHandler(
   deps: McpToolDeps,
   resolveProvenance?: TaskProvenanceResolver,
-  callerMarks?: CallerMarksResolver
+  callerMarks?: CallerMarksResolver,
+  callerAgent?: CallerAgentResolver
 ) {
   return async (args: {
     id: string;
@@ -440,6 +466,17 @@ export function createUpdateScheduleHandler(
     // person approved.
     const existing = deps.taskStore!.getTask(args.id);
     if (!existing) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    // An agent changes only its own schedule, or a global one no other agent
+    // made: a schedule runs as the agent it is filed under (DOR-3640 R1).
+    // A tool call is never the person: one DorkOS cannot name is held tightest.
+    const { callerAgentPath } = callerAgentPathOf(resolveProvenance?.() ?? {}, callerAgent);
+    const edit = scheduleEdit(
+      existing,
+      callerAgentPath ? { kind: 'agent', agentPath: callerAgentPath } : { kind: 'unidentified' },
+      deps.meshCore,
+      fields
+    );
+    if (edit.refusal) return jsonContent(edit.refusal, true);
 
     // Naming DorkOS credits, or switching a schedule on them back on, starts
     // spending the DorkOS account's money: the owner's call, never an agent's
@@ -612,9 +649,12 @@ export function createUpdateScheduleHandler(
       { ...taskWorkOf(existing), status: existing.status },
       {
         trusted: false,
-        armsAgentWork: agentSchedulesArmWithoutAsking(
-          resolveProvenance !== undefined && !readOutsiderWords(resolveProvenance())
-        ),
+        // Only an agent's own schedule stays live through its edit (DOR-3640 R1).
+        armsAgentWork:
+          edit.armsAgentWork &&
+          agentSchedulesArmWithoutAsking(
+            resolveProvenance !== undefined && !readOutsiderWords(resolveProvenance())
+          ),
       }
     );
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
@@ -636,6 +676,8 @@ export function createUpdateScheduleHandler(
     // told it worked, and watch it keep running at the old time (DOR-1493).
     deps.resolveTaskRegistrar?.()?.syncTask(updated.id);
     broadcastTasksChanged();
+    // Which fields changed, and a prompt only by its hashes (DOR-3640).
+    auditScheduleUpdate(existing, updated);
 
     // An agent switching a schedule back ON is recorded where the person will see
     // it. A schedule that came with an installed package is switched on the row
@@ -703,7 +745,8 @@ export function createGetRunHistoryHandler(deps: McpToolDeps) {
 export function getTasksTools(
   deps: McpToolDeps,
   resolveProvenance?: TaskProvenanceResolver,
-  callerMarks?: CallerMarksResolver
+  callerMarks?: CallerMarksResolver,
+  callerAgent?: CallerAgentResolver
 ) {
   return [
     tool(
@@ -735,7 +778,7 @@ export function getTasksTools(
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },
-      createCreateScheduleHandler(deps, resolveProvenance, callerMarks)
+      createCreateScheduleHandler(deps, resolveProvenance, callerMarks, callerAgent)
     ),
     tool(
       'tasks_update',
@@ -775,7 +818,7 @@ export function getTasksTools(
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },
-      createUpdateScheduleHandler(deps, resolveProvenance, callerMarks)
+      createUpdateScheduleHandler(deps, resolveProvenance, callerMarks, callerAgent)
     ),
     tool(
       'tasks_delete',

@@ -10372,6 +10372,12 @@
             ],
             "default": null
           },
+          "runsAsName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "origin": {
             "type": [
               "string",

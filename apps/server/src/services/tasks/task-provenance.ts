@@ -17,6 +17,7 @@
 import type { Task } from '@dorkos/shared/types';
 import { getAgentIdentityService, homeOf, resolveAgentHome } from '../core/agent-identity/index.js';
 import { logger } from '../../lib/logger.js';
+import { resolveAgentNameForId } from '../mesh/agent-path-lookup.js';
 
 /**
  * The display name of the agent rooted at `agentPath`, or `null`.
@@ -68,7 +69,18 @@ export async function resolveProposerName(
  */
 export async function withProposerName(task: Task): Promise<Task> {
   const proposedByName = await resolveProposerName(task.proposedByAgentPath);
-  return proposedByName === null ? task : { ...task, proposedByName };
+  return withRunsAsName(proposedByName === null ? task : { ...task, proposedByName });
+}
+
+/**
+ * The task with the name of the agent it runs as (DOR-3640 R1), when one is
+ * known. Read-time, like the proposer's name.
+ *
+ * @param task - The task as stored.
+ */
+function withRunsAsName(task: Task): Task {
+  const runsAsName = task.agentId ? resolveAgentNameForId(task.agentId) : undefined;
+  return runsAsName ? { ...task, runsAsName } : task;
 }
 
 /**
@@ -83,7 +95,7 @@ export async function withProposerName(task: Task): Promise<Task> {
  */
 export async function withProposerNames(tasks: Task[]): Promise<Task[]> {
   const paths = [...new Set(tasks.map((t) => t.proposedByAgentPath).filter((p) => p !== null))];
-  if (paths.length === 0) return tasks;
+  if (paths.length === 0) return tasks.map(withRunsAsName);
 
   const resolved = new Map(
     await Promise.all(paths.map(async (path) => [path, await resolveProposerName(path)] as const))
@@ -91,6 +103,6 @@ export async function withProposerNames(tasks: Task[]): Promise<Task[]> {
 
   return tasks.map((task) => {
     const name = task.proposedByAgentPath ? resolved.get(task.proposedByAgentPath) : null;
-    return name ? { ...task, proposedByName: name } : task;
+    return withRunsAsName(name ? { ...task, proposedByName: name } : task);
   });
 }

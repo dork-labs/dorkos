@@ -77,10 +77,22 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
       // Production's `getProjectPath` returns the agent's OWN directory, and the
       // package-ownership check asks about exactly that — so a case about an
       // agent has to move this, not hand-build roots around it (DOR-1789 review).
-      meshCore: { getProjectPath: () => agentDir },
+      meshCore: {
+        getProjectPath: () => agentDir,
+        listWithPaths: () => (agentDir ? [{ id: 'agent-1', projectPath: agentDir }] : []),
+      },
     } as unknown as McpToolDeps;
+    // Called as the agent whose schedule it is: only its owner may edit an
+    // agent's schedule (DOR-3640 R1).
     tools = Object.fromEntries(
-      (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
+      (
+        getTasksTools(
+          deps,
+          undefined,
+          undefined,
+          () => agentDir ?? undefined
+        ) as unknown as SessionTool[]
+      ).map((t) => [t.name, t])
     );
   });
 

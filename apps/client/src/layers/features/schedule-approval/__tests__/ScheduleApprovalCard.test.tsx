@@ -268,12 +268,21 @@ describe('ScheduleApprovalCard — what it says', () => {
     // `findByText`: the fallback renders first and a query that returns on its
     // first match would settle on it.
     await waitFor(() =>
-      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as: Accept edits')
+      expect(slot('schedule-permission-mode')).toHaveTextContent(
+        'Runs as no agent, at Accept edits'
+      )
     );
 
     await userEvent.click(screen.getByRole('button', { name: /Show exact instructions/ }));
 
     expect(slot('schedule-prompt')).toHaveTextContent('Sweep the backlog and file anything stale.');
+  });
+
+  it('names the agent the schedule runs as (DOR-3640)', async () => {
+    renderCard(proposal({ agentId: 'agent-b', runsAsName: 'Scout' }));
+    await waitFor(() =>
+      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as Scout, at Accept edits')
+    );
   });
 
   it('says a proposal has no agent identity rather than inventing one', async () => {

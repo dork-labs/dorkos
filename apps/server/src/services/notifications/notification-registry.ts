@@ -27,6 +27,7 @@
  * @module services/notifications/notification-registry
  */
 import { runtimeSigninTitle, runtimeSigninBody } from './runtime-signin-copy.js';
+import type { ScheduleSubject } from './emitters/schedule-subject.js';
 import {
   NOTIFICATION_KINDS,
   signinSubjectId,
@@ -89,10 +90,7 @@ export interface NotificationPayloads extends DeclaredPayloads {
     summary: string;
   };
   /** An agent proposed a schedule that only a person can approve. */
-  'schedule.parked': {
-    taskId: string;
-    taskName: string;
-    agentId?: string;
+  'schedule.parked': ScheduleSubject & {
     /**
      * The session the proposal came from, so the operator can open the
      * conversation that led to it rather than judging a cron line cold.
@@ -108,10 +106,7 @@ export interface NotificationPayloads extends DeclaredPayloads {
    * install is Trusted (ADR 261006-225605). Told so the person knows it exists
    * and can pause it; nothing waits on them.
    */
-  'schedule.armed_by_agent': {
-    taskId: string;
-    taskName: string;
-    agentId?: string;
+  'schedule.armed_by_agent': ScheduleSubject & {
     /** The session the agent made it from, when there was one. */
     proposedBySessionId?: string;
     /** What to call the agent that made it. */
@@ -726,7 +721,10 @@ const ENTRIES: NotificationRegistryMap = {
     subjectType: 'task',
     locate: (p) => ({ subjectId: p.taskId, agentId: p.agentId, sessionId: p.proposedBySessionId }),
     title: (p) => `${p.proposedBy} proposed a scheduled task`,
-    body: (p) => `${p.taskName} will not run until you approve it.`,
+    body: (p) =>
+      p.runsAs
+        ? `${p.taskName} would run as ${p.runsAs}. It won't run until you approve it.`
+        : `${p.taskName} will not run until you approve it.`,
     actions: () => SCHEDULE_ACTIONS,
     dedupeKey: (p) => `schedule:${p.taskId}`,
     relay: 'never',
@@ -741,7 +739,7 @@ const ENTRIES: NotificationRegistryMap = {
     subjectType: 'task',
     locate: (p) => ({ subjectId: p.taskId, agentId: p.agentId, sessionId: p.proposedBySessionId }),
     title: (p) => `${p.armedBy} scheduled ${p.taskName}`,
-    body: (p) => `Runs ${p.cadence}. Pause it any time.`,
+    body: (p) => `Runs ${p.cadence}${p.runsAs ? ` as ${p.runsAs}` : ''}. Pause it any time.`,
     actions: () => ARMED_SCHEDULE_ACTIONS,
     // Not `schedule:` — that is the parked condition's key, and dedupe and the
     // escalation ledger are keyed across kinds, so sharing it would let this
