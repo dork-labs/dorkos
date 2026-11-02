@@ -4,6 +4,7 @@ import type { CommunityAuth } from '../../../auth.js';
 import type { CommunityConfig } from '../../../config.js';
 import { registerBanRoutes } from './bans.js';
 import { registerConductRoutes } from './conduct.js';
+import { registerMemberReportRoutes } from './member-reports.js';
 import { registerReportRoutes } from './reports.js';
 
 /**
@@ -17,4 +18,5 @@ export function registerModerationRoutes(
   registerBanRoutes(app, deps);
   registerConductRoutes(app, deps);
   registerReportRoutes(app, deps);
+  registerMemberReportRoutes(app, deps);
 }

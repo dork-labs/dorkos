@@ -370,6 +370,34 @@ describe('export format 3', { timeout: 180_000 }, () => {
     });
   });
 
+  // Purpose: fails if an owner can learn from their export who flagged them: nothing in it ties
+  // the reporter's id to a report of a person. They are still a member, so `members` names them.
+  it('leaves out who flagged the owner', async () => {
+    await expectStatus(
+      await h.call(`${source.base}/members/${owner.memberId}/reports`, {
+        cookie: mo.cookie,
+        body: { reason: 'other' },
+      }),
+      201,
+      'flag the owner'
+    );
+    const archive = await openArchive(await exportSpace(source, owner.cookie));
+    const created = archive
+      .rows<{ action: string; actor_member_id: unknown }>('auditEvents')
+      .filter((row) => row.action === 'member_report.create');
+    expect(created.length).toBeGreaterThan(0);
+    expect(created.every((row) => row.actor_member_id === null)).toBe(true);
+    for (const [name, bytes] of archive.files)
+      if (!name.startsWith('members/') && !name.startsWith('data/'))
+        expect(
+          bytes
+            .toString('utf8')
+            .split('\n')
+            .filter((line) => line.includes('member_report')),
+          name
+        ).not.toEqual(expect.arrayContaining([expect.stringContaining(mo.memberId)]));
+  });
+
   // Purpose: fails if the owner can learn from an export who reported them or their agent, in the
   // report itself or in the audit row it left. Reports about anyone else keep their reporter.
   it('leaves out who reported the person exporting', async () => {
