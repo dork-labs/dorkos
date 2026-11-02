@@ -9,8 +9,9 @@ name: security-review-initialize
 #
 # Every event that can change the verdict runs it, and the newest run decides: a
 # label then a quick push ends as failure, because the push's run reads a label
-# older than the push. `cancel-in-progress: false` keeps one run going and the
-# newest event queued behind it, so no run is lost and the last one writes last.
+# older than the push. `cancel-in-progress: false` lets the running run finish.
+# At most one more waits behind it: a newer event replaces the waiting run, so
+# some runs are dropped, but the newest event's run always runs, and runs last.
 #
 # On `merge_group` it posts the verdict on the group's own SHA, so a required
 # `security-review` never leaves the queue waiting on "expected" (test.yml's

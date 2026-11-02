@@ -1,4 +1,4 @@
-/* global Buffer, console, fetch, process, URL */
+/* global console, fetch, process, URL */
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { approvalMode, labelAtHead, labelNewerThanHead } from './security-label-at-head.mjs';
@@ -351,14 +351,6 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
       (await request(`${root}/statuses/${sha}`, { context: CONTEXT, state, description })).data,
     timeline: (number) => pages(`/issues/${number}/timeline`),
     commit: async (sha) => (await request(`${root}/commits/${encodeURIComponent(sha)}`)).data,
-    /** A file's text at a commit, read as data. A missing file throws, like any API error. */
-    async content(path, ref) {
-      const encoded = path.split('/').map(encodeURIComponent).join('/');
-      const { data } = await request(`${root}/contents/${encoded}?ref=${encodeURIComponent(ref)}`);
-      if (data?.encoding !== 'base64' || typeof data.content !== 'string')
-        throw new Error(`Cannot read ${path} at ${ref}`);
-      return Buffer.from(data.content, 'base64').toString('utf8');
-    },
     // Not a bare list, so not `pages`. One page of 100; a longer list refuses.
     async checkSuites(sha) {
       const { data } = await request(

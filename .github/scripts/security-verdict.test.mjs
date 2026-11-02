@@ -2,12 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test, { describe } from 'node:test';
-import {
-  grantsVerdictWrite,
-  trustedLists,
-  verdictForMergeGroup,
-  verdictForPullRequest,
-} from './security-verdict.mjs';
+import { trustedLists, verdictForMergeGroup, verdictForPullRequest } from './security-verdict.mjs';
 
 const lists = {
   pattern: '^(apps/server/src/(http|services/tasks)/|\\.github/)',
@@ -35,15 +30,18 @@ const push = (at) => ({ after: SHA, ref: `refs/heads/${REF}`, timestamp: at });
 
 /**
  * A fake GitHub. `heads` is the PR head each successive `pr()` read returns, so
- * a push mid-run is one more entry; `contents` is each file's text at the head.
+ * a push mid-run is one more entry. `failOn` names an API call that throws.
+ * `texts` is each workflow's YAML at the head: the verdict must not need it, so a
+ * grant spelled any way at all still needs the deep label.
  */
 function fakeGitHub({
   files = [SENSITIVE],
   labels = ['security-reviewed'],
   timeline = [labelled(LATE)],
   activity = [push(EARLY)],
-  contents = {},
   heads = [SHA],
+  failOn,
+  texts = {},
   statuses = [],
 } = {}) {
   const written = [];
@@ -66,8 +64,11 @@ function fakeGitHub({
           ? { filename: file, status: 'modified' }
           : { status: 'modified', ...file }
       ),
-    content: async (path) => contents[path],
-    statuses: async () => statuses,
+    content: async (path) => texts[path],
+    statuses: async () => {
+      if (failOn === 'statuses') throw new Error('GitHub API 502 at /statuses');
+      return statuses;
+    },
     setStatus: async (sha, state, description) => {
       const status = {
         context: 'security-review',
@@ -79,7 +80,10 @@ function fakeGitHub({
       statuses.unshift(status);
       return status;
     },
-    timeline: async () => timeline,
+    timeline: async () => {
+      if (failOn === 'timeline') throw new Error('GitHub API 502 at /timeline');
+      return timeline;
+    },
     activity: async () => activity,
     comments: async () => [],
     comment: async () => {},
@@ -176,37 +180,71 @@ describe('the base-copy verdict on a pull request', () => {
   });
 });
 
-describe('a workflow that could post this status itself (interim, until the App)', () => {
-  const forger = `on: pull_request\npermissions:\n  statuses: write\njobs: {}\n`;
+describe('any workflow edit needs security-deep-reviewed (interim, until the App)', () => {
+  const deepLabels = {
+    labels: ['security-reviewed', 'security-deep-reviewed'],
+    timeline: [labelled(LATE), labelled(LATE, 'security-deep-reviewed')],
+  };
 
-  test('a changed workflow granting statuses: write needs security-deep-reviewed', async () => {
-    const files = ['.github/workflows/forge.yml'];
-    const only = fakeGitHub({ files, contents: { [files[0]]: forger } });
-    await verdictForPullRequest(only.api, event, lists);
-    assert.equal(verdictOf(only.written).state, 'failure');
-    assert.match(verdictOf(only.written).description, /forge\.yml can write statuses or checks/);
+  // Every spelling of the grant, and none at all: the file's text is never read.
+  for (const [what, filename, yaml] of [
+    ["quoted 'write'", '.github/workflows/quoted.yml', "permissions:\n  statuses: 'write'\n"],
+    ['"write-all"', '.github/workflows/write-all.yaml', 'permissions: "write-all"\n'],
+    ['a flow map', '.github/workflows/flow.yml', 'permissions: { statuses: write }\n'],
+    ['a quoted key', '.github/workflows/key.yml', 'permissions:\n  "checks": write\n'],
+    [
+      'an anchor',
+      '.github/workflows/anchor.yml',
+      'x: &w write\njobs:\n  a:\n    permissions:\n      statuses: *w\n',
+    ],
+    ['a plain edit with no grant', '.github/workflows/lint.yml', 'on: pull_request\n'],
+  ]) {
+    test(`${what}: failure with only security-reviewed, success with the deep label`, async () => {
+      const texts = { [filename]: yaml };
+      const only = fakeGitHub({ files: [filename], texts });
+      await verdictForPullRequest(only.api, event, lists);
+      assert.equal(verdictOf(only.written).state, 'failure');
+      assert.match(verdictOf(only.written).description, /security-deep-reviewed/);
+      assert.match(verdictOf(only.written).description, /is a workflow/);
 
-    const both = fakeGitHub({
-      files,
-      contents: { [files[0]]: forger },
-      labels: ['security-reviewed', 'security-deep-reviewed'],
-      timeline: [labelled(LATE), labelled(LATE, 'security-deep-reviewed')],
+      const both = fakeGitHub({ files: [filename], texts, ...deepLabels });
+      await verdictForPullRequest(both.api, event, lists);
+      assert.equal(verdictOf(both.written).state, 'success');
     });
-    await verdictForPullRequest(both.api, event, lists);
-    assert.equal(verdictOf(both.written).state, 'success');
+  }
+
+  test('a workflow renamed out of, or removed from, .github/workflows counts too', async () => {
+    for (const file of [
+      { filename: 'ci/old.yml', previous_filename: '.github/workflows/old.yml', status: 'renamed' },
+      { filename: '.github/workflows/gone.yml', status: 'removed' },
+    ]) {
+      const gh = fakeGitHub({ files: [file] });
+      await verdictForPullRequest(gh.api, event, lists);
+      assert.equal(verdictOf(gh.written).state, 'failure', file.filename);
+    }
   });
 
-  test('it reads checks: write and write-all too, and ignores comments and reads', () => {
-    assert.equal(grantsVerdictWrite('permissions:\n  checks: write\n'), true);
-    assert.equal(grantsVerdictWrite('permissions: write-all\n'), true);
-    assert.equal(grantsVerdictWrite('permissions:\n  statuses: read\n'), false);
-    assert.equal(grantsVerdictWrite('# statuses write is not granted here\n'), false);
+  test('a workflow edit is a security head even outside the path list', async () => {
+    const gh = fakeGitHub({
+      files: ['.github/workflows/lint.yml'],
+      labels: [],
+      timeline: [],
+    });
+    await verdictForPullRequest(gh.api, event, { ...lists, pattern: '^apps/server/src/http/' });
+    assert.equal(verdictOf(gh.written).state, 'failure');
   });
+});
 
-  test('a workflow it cannot read refuses rather than reading as safe', async () => {
-    const gh = fakeGitHub({ files: ['.github/workflows/unreadable.yml'], contents: {} });
-    await assert.rejects(verdictForPullRequest(gh.api, event, lists), /Cannot read/);
-  });
+describe('an error is a refusal', () => {
+  for (const failOn of ['statuses', 'timeline']) {
+    test(`a ${failOn} read that throws writes failure on the head, then rethrows`, async () => {
+      const gh = fakeGitHub({ failOn });
+      await assert.rejects(verdictForPullRequest(gh.api, event, lists), /502/);
+      assert.equal(verdictOf(gh.written).sha, SHA);
+      assert.equal(verdictOf(gh.written).state, 'failure');
+      assert.match(verdictOf(gh.written).description, /^verdict errored: GitHub API 502/);
+    });
+  }
 });
 
 describe('a PR that edits the job that judges it (Security, 2026-11-02)', () => {
@@ -217,11 +255,7 @@ describe('a PR that edits the job that judges it (Security, 2026-11-02)', () => 
 
   test('editing security-review-initialize.yml with only security-reviewed is failure', async () => {
     const file = '.github/workflows/security-review-initialize.yml';
-    const yaml = readFileSync(
-      new URL('../workflows/security-review-initialize.yml', import.meta.url),
-      'utf8'
-    );
-    const gh = fakeGitHub({ files: [file], contents: { [file]: yaml } });
+    const gh = fakeGitHub({ files: [file] });
     await verdictForPullRequest(gh.api, event, lists);
     assert.equal(verdictOf(gh.written).state, 'failure');
     assert.match(
@@ -249,7 +283,7 @@ describe('a PR that edits the job that judges it (Security, 2026-11-02)', () => 
         previous_filename: '.github/scripts/security-gate.mjs',
       },
     ]) {
-      const gh = fakeGitHub({ files: [file], contents: { [file.filename]: 'on: pull_request\n' } });
+      const gh = fakeGitHub({ files: [file] });
       await verdictForPullRequest(gh.api, event, lists);
       assert.equal(verdictOf(gh.written).state, 'failure', file.filename);
     }
@@ -280,12 +314,8 @@ describe('the base-copy verdict on the merge queue', () => {
     assert.equal(verdictOf(gh.written).state, 'failure');
   });
 
-  test('a queued PR that adds a status-writing workflow without the deep label fails', async () => {
-    const files = ['.github/workflows/forge.yml'];
-    const gh = fakeGitHub({
-      files,
-      contents: { [files[0]]: 'permissions:\n  statuses: write\n' },
-    });
+  test('a queued PR that edits a workflow without the deep label fails', async () => {
+    const gh = fakeGitHub({ files: ['.github/workflows/forge.yml'] });
     await verdictForMergeGroup(gh.api, group, lists);
     assert.equal(verdictOf(gh.written).state, 'failure');
   });

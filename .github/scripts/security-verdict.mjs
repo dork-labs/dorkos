@@ -17,10 +17,13 @@
  *   from a person, with no `hold`; otherwise `failure`, naming why;
  * - in App mode: the initializer's `pending` only. The App writes the verdict.
  *
- * Until the Security App exists, any workflow file the PR adds or changes that
- * grants `statuses: write`, `checks: write` or `write-all` also needs
- * `security-deep-reviewed`: a workflow with that grant can post this very
- * status itself.
+ * Until the Security App exists, any workflow file the PR adds, changes, renames
+ * or removes also needs `security-deep-reviewed`. A workflow with
+ * `statuses: write` can post this very status itself, and YAML has too many ways
+ * to spell that grant to read it reliably, so every workflow edit counts.
+ *
+ * A PR from a fork cannot pass: its pushes are not in this repository's
+ * activity feed, so the push time is unknown and the label verdict refuses.
  *
  * A PR that edits a file that judges it (this workflow, the gate's workflow or a
  * `.github/scripts/security-*` script) also needs `security-deep-reviewed`: in the
@@ -65,6 +68,19 @@ const JUDGE_FILE =
   /^\.github\/(?:workflows\/(?:security-review-initialize|security-gate)\.ya?ml|scripts\/security-[^/]*)$/i;
 
 /**
+ * The workflow files a PR touches, either side of a rename, removals included.
+ *
+ * @param {{filename: string, previous_filename?: string}[]} files The PR's changed files.
+ */
+export function workflowFiles(files) {
+  return files
+    .filter((file) =>
+      [file.filename, file.previous_filename].some((path) => path && WORKFLOW_FILE.test(path))
+    )
+    .map((file) => file.filename);
+}
+
+/**
  * The judging files a PR touches, either side of a rename.
  *
  * @param {{filename: string, previous_filename?: string}[]} files The PR's changed files.
@@ -75,38 +91,6 @@ export function judgeFiles(files) {
       [file.filename, file.previous_filename].some((path) => path && JUDGE_FILE.test(path))
     )
     .map((file) => file.filename);
-}
-
-/** A permission that lets a workflow post a commit status or a check run. */
-const WRITES_A_VERDICT = /^\s*(?:statuses|checks)\s*:\s*write\b|\bpermissions\s*:\s*write-all\b/im;
-
-/**
- * Whether a workflow's text grants a permission that can post a verdict.
- *
- * @param {string} text The workflow file, as YAML text.
- */
-export function grantsVerdictWrite(text) {
-  return WRITES_A_VERDICT.test(text);
-}
-
-/**
- * The workflow files this PR adds or changes that grant `statuses: write`,
- * `checks: write` or `write-all` at its head. Read through the API at the head
- * SHA, never checked out. A file that cannot be read refuses.
- *
- * @param {object} api The GitHub client.
- * @param {{filename: string, status?: string}[]} files The PR's changed files.
- * @param {string} sha The PR head.
- */
-export async function verdictWriters(api, files, sha) {
-  const writers = [];
-  for (const file of files) {
-    if (file.status === 'removed' || !WORKFLOW_FILE.test(file.filename)) continue;
-    const text = await api.content(file.filename, sha);
-    if (typeof text !== 'string') throw new Error(`Cannot read ${file.filename} at ${sha}`);
-    if (grantsVerdictWrite(text)) writers.push(file.filename);
-  }
-  return writers;
 }
 
 /**
@@ -121,21 +105,22 @@ export async function verdictWriters(api, files, sha) {
 export async function headVerdict(api, pr, files, { pattern, deepPattern, botUserId }) {
   if (!deepPattern) throw new Error('Security deep-review path list missing');
   const sha = pr.head.sha;
-  const writers = await verdictWriters(api, files, sha);
+  const workflows = workflowFiles(files);
   const judges = judgeFiles(files);
-  const sensitive = touchesSecurity(files, pattern) || writers.length > 0 || judges.length > 0;
+  const sensitive = touchesSecurity(files, pattern) || workflows.length > 0 || judges.length > 0;
   if (!sensitive) return { state: 'success', description: 'no security paths' };
   if (approvalMode(botUserId) !== 'label-at-head') return null;
   const timeline = await api.timeline(pr.number);
   const activity = await api.activity(pr.head.ref);
   const input = { sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity };
   let verdict = labelAtHead(input);
-  const deep = touchesSecurity(files, deepPattern) || writers.length > 0 || judges.length > 0;
+  const deep = touchesSecurity(files, deepPattern) || workflows.length > 0 || judges.length > 0;
   if (verdict.passed && deep) verdict = labelNewerThanHead({ ...input, name: DEEP_LABEL });
   if (verdict.passed) return { state: 'success', description: 'Security label covers this SHA' };
   const notes = [];
   if (judges.length) notes.push(`${judges.join(', ')} judges this PR`);
-  if (writers.length) notes.push(`${writers.join(', ')} can write statuses or checks`);
+  const others = workflows.filter((file) => !judges.includes(file));
+  if (others.length) notes.push(`${others.join(', ')} is a workflow`);
   const why = [verdict.reason, ...notes].join('; ');
   // GitHub caps a status description at 140 characters.
   return { state: 'failure', description: why.slice(0, 140) };
@@ -152,6 +137,24 @@ export async function headVerdict(api, pr, files, { pattern, deepPattern, botUse
  * @returns {Promise<string>} What it wrote, for the log.
  */
 export async function verdictForPullRequest(api, event, lists) {
+  const sha = event.pull_request.head.sha;
+  try {
+    return await decidePullRequest(api, event, lists);
+  } catch (error) {
+    // Any error is a refusal, never a stale pending or success left standing.
+    await api.setStatus(sha, 'failure', `verdict errored: ${error.message}`.slice(0, 140));
+    throw error;
+  }
+}
+
+/**
+ * The pull-request verdict proper; `verdictForPullRequest` turns its errors into failure.
+ *
+ * @param {object} api The GitHub client.
+ * @param {object} event The `pull_request_target` event.
+ * @param {{pattern: string, deepPattern: string, botUserId: string}} lists Main's lists.
+ */
+async function decidePullRequest(api, event, lists) {
   const number = event.pull_request.number;
   const sha = event.pull_request.head.sha;
   try {
@@ -179,7 +182,7 @@ export async function verdictForPullRequest(api, event, lists) {
 
 /**
  * The `merge_group` run: every queued PR judged as `security-gate` judges it,
- * plus the workflow-grant check on each, then one status on the group's SHA.
+ * plus the workflow and judge-file checks on each, then one status on the group's SHA.
  *
  * @param {object} api The GitHub client.
  * @param {object} event The `merge_group` event.
