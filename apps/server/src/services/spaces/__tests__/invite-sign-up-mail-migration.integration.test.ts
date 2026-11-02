@@ -105,6 +105,16 @@ it('adds the existing-account notice and the space column, keeping every older r
     expect(left.rowCount).toBe(0);
   } finally {
     await db.end();
+    // Wait for the pools' connections to finish closing: FORCE would terminate one mid-close into
+    // an uncaught 57P01 (see migrate.integration.test.ts).
+    for (let tries = 0; tries < 100; tries++) {
+      const open = await admin.query<{ n: number }>(
+        'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=$1',
+        [name]
+      );
+      if (open.rows[0].n === 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
   }
 });

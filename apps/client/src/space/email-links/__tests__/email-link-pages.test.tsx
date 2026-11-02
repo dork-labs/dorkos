@@ -147,8 +147,10 @@ describe('ResetPassword', () => {
     captureEmailLink();
     mockFetch({ [PEEK]: peek({ clears: [...ACCESS, 'password', 'sign_in_links'] }) });
     render(<ResetPassword />);
-    expect(await screen.findByRole('heading', { name: 'Reset your password' })).toBeTruthy();
-    expect(screen.getByText('Resetting also ends:')).toBeTruthy();
+    // Wait for the peek to land: the heading already reads "Reset your password" while the
+    // link is still being checked, so waiting on the heading alone races the reply.
+    expect(await screen.findByText('Resetting also ends:')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Reset your password' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Reset password' })).toBeTruthy();
   });
 
