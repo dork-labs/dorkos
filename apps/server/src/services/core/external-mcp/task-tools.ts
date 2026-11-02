@@ -57,7 +57,7 @@ export function registerTaskTools(
       deps,
       undefined,
       () => externalCallerMarks(identity),
-      () => identity?.agentPath
+      externalCallerAgent(identity)
     ),
     TASKS_EXTERNAL_CONFIGS
   );
@@ -71,5 +71,20 @@ export function registerTaskTools(
  * @param identity - The calling agent, when the request carried a resolved identity token.
  */
 function externalCallerMarks(identity: AgentIdentity | undefined): TurnMarks {
-  return identity ? marksOf(undefined, identity.agentPath) : { outsider: true };
+  return identity && !identity.inactive
+    ? marksOf(undefined, identity.agentPath)
+    : { outsider: true };
+}
+
+/**
+ * The agent an external caller's token names, for whose schedules it may make
+ * and change (DOR-3640 R1). A revoked or expired token names nobody (DOR-3666):
+ * dropping a credential never reaches further than having none.
+ *
+ * @param identity - The calling agent, when the request carried a resolved token.
+ */
+export function externalCallerAgent(
+  identity: Pick<AgentIdentity, 'agentPath' | 'inactive'> | undefined
+): () => string | undefined {
+  return () => (identity && !identity.inactive ? identity.agentPath : undefined);
 }

@@ -14,6 +14,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../task-store.js';
 import { createScheduledTask } from '../create-task.js';
+import { agentIdOfHome } from '../../approvals/schedule-owner.js';
 
 const state = vi.hoisted(() => ({
   preset: 'trusted' as 'trusted' | 'careful',
@@ -125,6 +126,48 @@ describe('an agent filing a schedule', () => {
 
   it('parks, never arms, when DorkOS cannot say which agent asked', async () => {
     const outcome = await aCreates('agent-a', null);
+    expect(outcome.ok && outcome.parked).toBe(true);
+    expect(state.notified).toEqual([]);
+  });
+});
+
+describe('a caller whose home is a link that matches two agents (DOR-3666)', () => {
+  it('comes back unnamed, and its schedule parks', async () => {
+    // Two registered homes that are one folder by real path, and a caller
+    // that reaches it through a third spelling: nobody can say which agent asked.
+    const shared = path.join(scratch, 'shared');
+    await fs.mkdir(shared, { recursive: true });
+    const linkA = path.join(scratch, 'link-a');
+    const linkB = path.join(scratch, 'link-b');
+    const linkC = path.join(scratch, 'link-c');
+    for (const link of [linkA, linkB, linkC]) await fs.symlink(shared, link);
+    const both = [
+      { id: 'agent-a', projectPath: linkA },
+      { id: 'agent-b', projectPath: linkB },
+    ];
+    const meshCore = {
+      listWithPaths: () => both,
+      getProjectPath: (id: string) => both.find((a) => a.id === id)?.projectPath,
+    } as unknown as MeshCore;
+    expect(agentIdOfHome(meshCore, linkC)).toBeUndefined();
+
+    const outcome = await createScheduledTask(
+      { store, registrar: null, dorkHome: scratch, meshCore },
+      {
+        input: {
+          name: 'linked-sweep',
+          description: 'x',
+          prompt: 'Sweep.',
+          cron: '0 3 * * *',
+          target: 'global',
+          reason: 'The backlog needs sweeping.',
+        },
+        trusted: false,
+        callerIsOurAgent: true,
+        callerAgentPath: linkC,
+        proposal: { sessionId: 'ses-c', agentPath: linkC },
+      }
+    );
     expect(outcome.ok && outcome.parked).toBe(true);
     expect(state.notified).toEqual([]);
   });

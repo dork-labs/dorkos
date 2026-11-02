@@ -298,7 +298,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // agent identity is set only for a caller that presented a live agent
     // token. That is what makes the caller one of our agents, whose schedule a
     // Trusted install arms at once; an unidentified caller's parks.
-    const agentIdentity = caller.agentIdentity;
+    // A revoked or expired token names nobody here (DOR-3666): its schedule parks,
+    // credited to no agent, as on update (`scheduleEditorOf`).
+    const agentIdentity = caller.agentIdentity?.inactive ? undefined : caller.agentIdentity;
     const outcome = await createScheduledTask(
       { store, registrar, dorkHome, ...(meshCore && { meshCore }) },
       {
