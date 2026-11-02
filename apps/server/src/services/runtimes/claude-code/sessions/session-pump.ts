@@ -1,8 +1,8 @@
 import { isInit } from './diagnostics/credential-init-guard.js';
 import {
-  CREDENTIAL_INIT_TIMEOUT_MS,
   CredentialsUnreadableError,
-  credentialsRecentlyReadable,
+  SlowStartError,
+  credentialReadHung,
   noteCredentialsReadable,
   noteCredentialsUnreadable,
 } from '../tooling/credential-read-health.js';
@@ -104,6 +104,8 @@ export class SessionPump {
   private currentState: PumpState = 'cold';
   private query: PumpQuery | undefined;
   private launchedCredentialRoot: string | undefined;
+  /** When the current process was launched, until it initializes (DOR-3670). */
+  private launchedAt: number | undefined;
   private held: HeldUserPrompt | undefined;
   private consumed: Promise<void> | undefined;
   private launchInFlight: Promise<void> | undefined;
@@ -774,19 +776,23 @@ export class SessionPump {
     this.initReady = ready;
     const credentialRoot = this.opts.credentialAccountRoot?.();
     this.launchedCredentialRoot = credentialRoot;
-    const recentlyReadable = credentialsRecentlyReadable(credentialRoot);
-    const initTimeout =
-      this.opts.initTimeoutMs ?? (recentlyReadable ? CREDENTIAL_INIT_TIMEOUT_MS : INIT_TIMEOUT_MS);
+    // Every start, a relaunch or resume included, gets the normal start time
+    // (DOR-3670). Only a sign-in read already known to have hung makes a start
+    // that never initializes an unreadable sign-in; anything else is slow.
+    const initTimeout = this.opts.initTimeoutMs ?? INIT_TIMEOUT_MS;
+    this.launchedAt = Date.now();
     this.initTimer = setTimeout(() => {
       const live = this.query;
-      if (recentlyReadable) noteCredentialsUnreadable(credentialRoot);
-      this.noteProcessGone(
-        recentlyReadable
-          ? new CredentialsUnreadableError()
-          : new Error(
-              `session ${this.sessionId} never reported system/init within ${initTimeout}ms`
-            )
-      );
+      logger.warn('[SessionPump] the process never started', {
+        sessionId: this.sessionId,
+        initTimeoutMs: initTimeout,
+        resuming,
+      });
+      const hung = credentialReadHung(credentialRoot);
+      // A known-hung account keeps its read cooldown fresh, so a relaunch loop
+      // cannot re-read a hung sign-in back to back. A slow start leaves it alone.
+      if (hung) noteCredentialsUnreadable(credentialRoot);
+      this.noteProcessGone(hung ? new CredentialsUnreadableError() : new SlowStartError());
       live?.close();
     }, initTimeout);
     this.initTimer.unref?.();
@@ -852,6 +858,14 @@ export class SessionPump {
   /** `WARMING → WARM`: the CLI is up and its control methods are usable. */
   private noteInit(capabilities: readonly string[]): void {
     noteCredentialsReadable(this.launchedCredentialRoot);
+    // How long this start took, on success too, so the start time can be tuned
+    // from data rather than guessed (DOR-3670).
+    if (this.currentState === 'warming' && this.launchedAt !== undefined)
+      logger.info('[SessionPump] started', {
+        sessionId: this.sessionId,
+        startMs: Date.now() - this.launchedAt,
+      });
+    this.launchedAt = undefined;
     this.cachedCapabilities = [...capabilities];
     this.clearInitTimer();
     // A re-initialize on a live process refreshes the capabilities and nothing

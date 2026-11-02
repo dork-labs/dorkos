@@ -1,6 +1,9 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { PumpCrash } from '../session-pump-contract.js';
-import { CredentialsUnreadableError } from '../../tooling/credential-read-health.js';
+import {
+  CredentialsUnreadableError,
+  SlowStartError,
+} from '../../tooling/credential-read-health.js';
 /**
  * The `result` a dead process never got to send.
  *
@@ -20,7 +23,7 @@ export function crashResult(crash: PumpCrash): SDKMessage {
         : 'error_during_execution',
     is_error: true,
     errors: [
-      crash.error instanceof CredentialsUnreadableError
+      crash.error instanceof CredentialsUnreadableError || crash.error instanceof SlowStartError
         ? crash.error.message
         : detail === undefined
           ? 'The agent stopped before it finished this turn.'
