@@ -117,7 +117,7 @@ describe('UserConfigSchema', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
-      heartbeats: { enabled: true, triageOnCredits: null },
+      heartbeats: { enabled: true, triageOnCredits: null, idleAlertRoomId: null },
       activity: { retentionDays: 365 },
       network: { extraCaCertsPath: null },
       mesh: { scanRoots: [] },
@@ -553,7 +553,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       a2a: { enabled: false },
       scheduler: { enabled: true, maxConcurrentRuns: 4, retentionCount: 100 },
       keepAwake: { whileAgentsWork: true, wakeForScheduledTasks: false },
-      heartbeats: { enabled: true, triageOnCredits: null },
+      heartbeats: { enabled: true, triageOnCredits: null, idleAlertRoomId: null },
       activity: { retentionDays: 365 },
       network: { extraCaCertsPath: null },
       mesh: { scanRoots: [] },
@@ -932,8 +932,16 @@ describe('per-field and section-literal defaults agree', () => {
   });
 
   it('heartbeats are on, and nobody has chosen credits for checks, either way', () => {
-    expect(fromFactory.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
-    expect(fromFields.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
+    expect(fromFactory.heartbeats).toEqual({
+      enabled: true,
+      triageOnCredits: null,
+      idleAlertRoomId: null,
+    });
+    expect(fromFields.heartbeats).toEqual({
+      enabled: true,
+      triageOnCredits: null,
+      idleAlertRoomId: null,
+    });
   });
 
   it('activity keeps a year either way', () => {

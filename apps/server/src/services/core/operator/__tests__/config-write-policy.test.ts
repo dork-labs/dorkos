@@ -126,6 +126,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'harness.repoBaselinesPinned',
       // Whether agents wake on their own at all (spec `heartbeats` §3.6).
       'heartbeats.enabled',
+      // Which room hears "nothing is running": an agent could aim the alert elsewhere (DOR-3675).
+      'heartbeats.idleAlertRoomId',
       // Whether cheap checks spend DorkOS credits: the owner's money (spec `heartbeats` §6.3).
       'heartbeats.triageOnCredits',
       // Whether this computer sleeps while agents work, and whether it may be
@@ -386,6 +388,14 @@ describe('the wipe floor: the write policy is at least as protective as recovery
 describe('findOperatorOnlyPaths', () => {
   it('catches the escalation it exists for', () => {
     expect(findOperatorOnlyPaths({ auth: { enabled: false } })).toEqual(['auth.enabled']);
+  });
+
+  // Security on DOR-3675: an agent may not aim the "nothing is running" notice at a room of its
+  // choosing, so a patch that sets it is a person's alone.
+  it('refuses an agent the room the idle alert posts in', () => {
+    expect(findOperatorOnlyPaths({ heartbeats: { idleAlertRoomId: 'room-elsewhere' } })).toEqual([
+      'heartbeats.idleAlertRoomId',
+    ]);
   });
 
   it('catches a patch that stops SHORT of the guarded leaf', () => {

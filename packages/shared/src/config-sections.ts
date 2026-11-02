@@ -56,8 +56,17 @@ export const HeartbeatsConfigSchema = z
      * migration could seed that the absence does not already say. Operator-only.
      */
     triageOnCredits: z.boolean().nullable().default(null),
+    /**
+     * The room that hears "nothing is running" (DOR-3675): no agent chat on this computer has
+     * run for 30 minutes while work is still open. `null` posts in the team room. An agent
+     * could aim a post its alerts carry at a room of its choosing, so only a person sets it.
+     *
+     * No migration: a stored `heartbeats` section without this leaf reads as `null`, the team
+     * room, which is the default. Operator-only.
+     */
+    idleAlertRoomId: z.string().min(1).nullable().default(null),
   })
-  .default(() => ({ enabled: true, triageOnCredits: null }));
+  .default(() => ({ enabled: true, triageOnCredits: null, idleAlertRoomId: null }));
 /**
  * The Activity feed (spec `audit-trail` §3.5). A whole top-level section on
  * purpose, like `keepAwake`: conf writes a new section into every stored

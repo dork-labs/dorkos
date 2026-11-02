@@ -413,6 +413,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'notifications.sounds.turnEnd',
       'notifications.notifyOnTurnCompleteWhileAway',
       'notifications.browserPermissionPrimerDismissed',
+      // Which room is told nothing is running while work is open (DOR-3675).
+      'heartbeats.idleAlertRoomId',
     ],
   },
 ];
