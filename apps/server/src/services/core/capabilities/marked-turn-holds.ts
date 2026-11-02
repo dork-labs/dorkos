@@ -15,7 +15,7 @@
  *
  * In a chat set to Full the mark holds nothing (DOR-3394) except the acts in an outside account
  * that reach people outside the team or cannot be undone (DOR-3683): a send, a reply, an event
- * with invitees, and every destructive action. A draft or a label at Full runs, with an Activity
+ * change or a new event with invitees, and every destructive action. A draft or a label at Full runs, with an Activity
  * line. The connector preflight says which a call is (`reaches-outside.ts`).
  *
  * @module services/core/capabilities/marked-turn-holds

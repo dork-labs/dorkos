@@ -5,12 +5,13 @@
  * action that reaches people outside the team or cannot be undone. Every destructive action
  * cannot be undone, so it asks by its class alone (`destructive-hold-window.ts`). A write is
  * decided here, by the operation and its arguments: a sent or replied email reaches other
- * people, and so does a calendar event with invitees; a draft, a label or a trashed message
+ * people, and so does a new calendar event with invitees or any changed one; a draft, a label or a trashed message
  * stays in the account.
  *
  * Written as an allowlist: only the writes named below as staying in the account answer no, and
- * an event answers no only when it shows it notifies nobody. Every other write, today's sends and
- * any write a toolkit adds later, answers yes, so a new one asks until someone decides it here.
+ * a new event answers no only when it names nobody. A changed event always answers yes. Every
+ * other write, today's sends and any write a toolkit adds later, answers yes, so a new one asks
+ * until someone decides it here.
  *
  * @module services/connectors/execution/reaches-outside
  */
@@ -40,27 +41,21 @@ const STAYS_IN_ACCOUNT: ReadonlySet<string> = new Set([
   'GOOGLECALENDAR_PATCH_CALENDAR',
 ]);
 
-/** Event writes that reach people only when the event has invitees. */
+/**
+ * New events, which reach people only when they invite someone. Nothing the agent writes can
+ * make one answer no while it names a person: an invitee field or an email address anywhere in
+ * the arguments counts.
+ */
 const NEW_EVENT: ReadonlySet<string> = new Set([
   'GOOGLECALENDAR_CREATE_EVENT',
   'GOOGLECALENDAR_EVENTS_IMPORT',
 ]);
 
-/**
- * Event writes on an event that may already have invitees, which the arguments cannot show.
- * Google emails them unless the call says to send no updates, so only that call answers no.
- */
-const CHANGED_EVENT: ReadonlySet<string> = new Set([
-  'GOOGLECALENDAR_PATCH_EVENT',
-  'GOOGLECALENDAR_QUICK_ADD',
-  'GOOGLECALENDAR_UPDATE_EVENT',
-]);
-
 /** An argument naming who an event invites. */
 const INVITEE_KEY = /attendee|invitee|guest/i;
 
-/** An argument saying whom Google tells about the change. */
-const SEND_UPDATES_KEY = /^send_?updates$/i;
+/** Something shaped like an email address. */
+const EMAIL = /[^\s@<>"'(),;:]+@[^\s@<>"'(),;:]+\.[^\s@<>"'(),;:]+/;
 
 /** Whether a value names anyone: a non-empty string, array or object. */
 function namesSomeone(value: unknown): boolean {
@@ -70,15 +65,18 @@ function namesSomeone(value: unknown): boolean {
   return false;
 }
 
-/** Whether any argument invites someone. */
-function hasInvitees(args: Record<string, unknown>): boolean {
-  return Object.entries(args).some(([key, value]) => INVITEE_KEY.test(key) && namesSomeone(value));
+/** Whether any string in a value, however deep, holds an email address. */
+function mentionsAnEmail(value: unknown, depth = 0): boolean {
+  if (typeof value === 'string') return EMAIL.test(value);
+  if (depth > 8 || value === null || typeof value !== 'object') return false;
+  return Object.values(value).some((inner) => mentionsAnEmail(inner, depth + 1));
 }
 
-/** Whether the call says to tell nobody about the change. */
-function sendsNoUpdates(args: Record<string, unknown>): boolean {
-  return Object.entries(args).some(
-    ([key, value]) => SEND_UPDATES_KEY.test(key) && value === 'none'
+/** Whether a new event invites anyone. */
+function invitesSomeone(args: Record<string, unknown>): boolean {
+  return (
+    Object.entries(args).some(([key, value]) => INVITEE_KEY.test(key) && namesSomeone(value)) ||
+    mentionsAnEmail(args)
   );
 }
 
@@ -92,8 +90,10 @@ function sendsNoUpdates(args: Record<string, unknown>): boolean {
 export function writeReachesOutside(operationSlug: string, args: Record<string, unknown>): boolean {
   const slug = operationSlug.toUpperCase();
   if (STAYS_IN_ACCOUNT.has(slug)) return false;
-  if (NEW_EVENT.has(slug)) return hasInvitees(args);
-  if (CHANGED_EVENT.has(slug)) return hasInvitees(args) || !sendsNoUpdates(args);
+  if (NEW_EVENT.has(slug)) return invitesSomeone(args);
+  // Every other event write counts: a changed event may already have guests the arguments cannot
+  // show, and they see the change on their own calendars whether or not Google emails them, so
+  // no argument the agent writes (`send_updates: 'none'`, say) can answer no.
   return true;
 }
 

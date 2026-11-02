@@ -27,7 +27,7 @@ describe('writeReachesOutside', () => {
     }
   });
 
-  it('a new event reaches people only when it has invitees', () => {
+  it('a new event reaches people only when it names someone', () => {
     expect(writeReachesOutside('GOOGLECALENDAR_CREATE_EVENT', { summary: 'Focus' })).toBe(false);
     expect(writeReachesOutside('GOOGLECALENDAR_CREATE_EVENT', { attendees: [] })).toBe(false);
     expect(
@@ -38,17 +38,31 @@ describe('writeReachesOutside', () => {
     );
   });
 
-  it('a changed event reaches its invitees unless the call sends no updates', () => {
-    expect(writeReachesOutside('GOOGLECALENDAR_UPDATE_EVENT', { summary: 'Moved' })).toBe(true);
-    expect(
-      writeReachesOutside('GOOGLECALENDAR_PATCH_EVENT', { summary: 'Moved', send_updates: 'none' })
-    ).toBe(false);
-    expect(
-      writeReachesOutside('GOOGLECALENDAR_PATCH_EVENT', {
-        attendees: ['a@example.com'],
-        send_updates: 'none',
-      })
-    ).toBe(true);
+  it('an email address anywhere in a new event counts, under any field name', () => {
+    for (const args of [
+      { people: ['a@example.com'] },
+      { extra: { emails: [{ value: 'Ann <a@example.com>' }] } },
+      { description: 'with a@example.com', send_updates: 'none' },
+    ]) {
+      expect(writeReachesOutside('GOOGLECALENDAR_CREATE_EVENT', args), JSON.stringify(args)).toBe(
+        true
+      );
+    }
+  });
+
+  it('a changed event always reaches people: no argument the agent writes can say otherwise', () => {
+    for (const slug of [
+      'GOOGLECALENDAR_UPDATE_EVENT',
+      'GOOGLECALENDAR_PATCH_EVENT',
+      'GOOGLECALENDAR_QUICK_ADD',
+    ]) {
+      expect(writeReachesOutside(slug, { summary: 'Moved' }), slug).toBe(true);
+      // Google then emails nobody, but the guests still see the change on their calendars.
+      expect(writeReachesOutside(slug, { summary: 'Moved', send_updates: 'none' }), slug).toBe(
+        true
+      );
+      expect(writeReachesOutside(slug, { sendUpdates: 'none', attendees: [] }), slug).toBe(true);
+    }
   });
 
   it('a write it has never seen counts as reaching outside', () => {

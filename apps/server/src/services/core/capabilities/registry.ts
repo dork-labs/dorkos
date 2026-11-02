@@ -215,7 +215,7 @@ export interface CapabilityPreflightResult {
   readonly approvalServiceAction?: ApprovalServiceAction;
   /**
    * Whether this connected-app action reaches people outside the team or cannot be undone
-   * (DOR-3683): a send, an event with invitees, any destructive action. Read by the preflight
+   * (DOR-3683): a send, an event change or a new event with invitees, any destructive action. Read by the preflight
    * from the stored operation and the validated arguments. A turn that read an outsider's words
    * asks a person before one even at Full; absent counts as yes.
    */

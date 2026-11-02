@@ -499,7 +499,7 @@ export async function resolveCallPermission(request: {
   if (areas.length === 0) {
     // An action with no area that a marked turn must still ask about (DOR-3390): a card, filed
     // under the area it acts in, every time. At Full the mark still asks before one that reaches
-    // people outside the team or cannot be undone (DOR-3683): a send, an event with invitees.
+    // people outside the team or cannot be undone (DOR-3683): a send, an event change, a new event with invitees.
     const outwardAtFull = marked && full && request.outward !== false;
     const cardArea = strangerTurn || outwardAtFull ? markedTurnCardArea(action.id) : undefined;
     if (cardArea !== undefined) {

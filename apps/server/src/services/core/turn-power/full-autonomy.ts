@@ -4,7 +4,7 @@
  *
  * A chat set to Full autonomy asks nobody anything, with one exception (DOR-3683): a turn that
  * read an outsider's words still asks before a connected-app action that reaches people outside
- * the team or cannot be undone (a send, an event with invitees, a destructive action). The
+ * the team or cannot be undone (a send, an event change, a destructive action). The
  * connector gates read that (`permission-enforcement.ts`, `destructive-hold-window.ts`); this
  * module only says which chats are Full. An outsider's mark, a carried ceiling or a
  * stranger's hold bounds the level a turn is recorded at (`turn-levels.ts`), and the permission

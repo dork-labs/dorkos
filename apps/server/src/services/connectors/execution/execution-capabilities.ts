@@ -164,7 +164,7 @@ const EXECUTION_TITLES = {
 export const OUTSIDE_WORDS_ASK =
   ' After this turn read words from outside the team, a person is asked first, even at Full ' +
   'autonomy, before anything that reaches people outside or cannot be undone: sending, replying, ' +
-  'forwarding, an event with invitees, or a high-risk action. Drafts and labels are not asked about.';
+  'forwarding, a new event with guests, a change to any event, or a high-risk action. Drafts and labels are not asked about.';
 
 function executionCapability(
   id: ConnectorRuntimeExecutionCapabilityId,
