@@ -1,8 +1,6 @@
 /**
  * One of our agents on a Trusted install changing an approved schedule's work
- * keeps it live and re-approves it, as a person's change does, unless the
- * schedule came from a file, a Shape or a package (ADR 261006-225605, spec
- * `trusted-by-default-flip` §5.4). `TaskApprovals.settleApprovedWorkChange`.
+ * parks substituted prompts and runtimes for a person (DOR-3651). `TaskApprovals.settleApprovedWorkChange`.
  *
  * @module services/tasks/approvals/__tests__/settle-trusted-agent
  */
@@ -12,7 +10,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/schemas';
 import { TaskStore } from '../../task-store.js';
-import { CHANGED_REASON, scheduleContentKey, taskWorkOf } from '../../schedule-permission-clamp.js';
+import { CHANGED_REASON, taskWorkOf } from '../../schedule-permission-clamp.js';
 
 let db: Db;
 let store: TaskStore;
@@ -49,13 +47,13 @@ function agentEdits(task: Task, armsAgentWork: boolean) {
 }
 
 describe('an agent changing the work of an approved schedule', () => {
-  it('re-approves a schedule that did not come from a file, and keeps it live', () => {
+  it('parks a prompt substitution even on the agent’s own Trusted schedule', () => {
     const { settled, after } = agentEdits(approvedSchedule(), true);
 
-    expect(settled).toBe('rekeyed');
-    expect(after.status).toBe('active');
+    expect(settled).toBe('parked');
+    expect(after.status).toBe('pending_approval');
     const row = db.select().from(pulseSchedules).where(eq(pulseSchedules.id, after.id)).get()!;
-    expect(row.approvedContentKey).toBe(scheduleContentKey(taskWorkOf(after)));
+    expect(row.approvedContentKey).toBeNull();
   });
 
   it('parks a schedule that came from a file, even for our agent', () => {
@@ -72,7 +70,7 @@ describe('an agent changing the work of an approved schedule', () => {
     expect(after.status).toBe('pending_approval');
   });
 
-  it('undoes a park the file sync made mid-request, and drops its sentence', () => {
+  it('keeps a park the file sync made mid-request', () => {
     const task = approvedSchedule();
     const before = { ...taskWorkOf(task), status: task.status };
     const approvedKey = db
@@ -98,10 +96,10 @@ describe('an agent changing the work of an approved schedule', () => {
       armsAgentWork: true,
     });
 
-    expect(settled).toBe('rekeyed');
+    expect(settled).toBe('parked');
     const after = store.getTask(task.id)!;
-    expect(after.status).toBe('active');
-    expect(after.reason).toBeNull();
+    expect(after.status).toBe('pending_approval');
+    expect(after.reason).not.toBeNull();
   });
 
   it('leaves a schedule nobody approved waiting', () => {

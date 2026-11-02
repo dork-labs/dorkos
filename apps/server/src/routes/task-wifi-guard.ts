@@ -62,6 +62,8 @@ export function wifiScheduleRefusal(
 ): ReturnType<typeof wifiRaiseRefusal> | undefined {
   if (!isFromWifi(caller) || typeof body !== 'object' || body === null) return undefined;
   const fields = body as Record<string, unknown>;
+  // Approval authorizes a later unattended run; a Wi-Fi-held request cannot grant it.
+  if (existing && fields.status === 'active') return wifiRaiseRefusal();
   const named = typeof fields.permissionMode === 'string' ? fields.permissionMode : undefined;
   if (!existing && named === undefined) {
     fields.permissionMode = DEFAULT_MODE_ID;

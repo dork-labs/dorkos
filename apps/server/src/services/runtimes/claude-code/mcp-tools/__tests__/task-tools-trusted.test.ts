@@ -3,8 +3,8 @@
  * spec `trusted-by-default-flip` §5.4).
  *
  * In a session the caller is one of our agents, so its schedule is armed at
- * once, recorded as `schedule.armed_by_agent`, and its own later edit keeps it
- * live. On the sessionless external `/mcp` server the caller cannot be told
+ * once and recorded as `schedule.armed_by_agent`. Later prompt/runtime changes
+ * wait for a person (DOR-3651). On the sessionless external `/mcp` server the caller cannot be told
  * from an outsider, so its schedule parks. The Careful half is
  * `task-tools.test.ts`, which runs on a Careful preset.
  *
@@ -143,20 +143,51 @@ describe('tasks_* on a Trusted install', () => {
     expect(emit).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'tasks.task_created' }));
   });
 
-  it('keeps an agent’s own schedule live through its edit, with no re-approval', async () => {
+  it.each([{ prompt: 'sweep the backlog and the inbox' }, { runtime: 'codex' }])(
+    're-parks an agent’s own schedule after substitution %j',
+    async (patch) => {
+      const tools = inSession();
+      const created = await call(tools.tasks_create!, GOOD_ARGS);
+      const id = (created.payload.schedule as { id: string }).id;
+
+      const { isError, payload } = await call(tools.tasks_update!, {
+        id,
+        ...patch,
+      });
+
+      expect(isError).toBe(false);
+      expect(payload.needsReapproval).toBe(true);
+      expect(store.getTask(id)!.status).toBe('pending_approval');
+    }
+  );
+
+  it('withholds folder-rule previews from both MCP task lists and write replies', async () => {
     const tools = inSession();
     const created = await call(tools.tasks_create!, GOOD_ARGS);
     const id = (created.payload.schedule as { id: string }).id;
-
-    const { isError, payload } = await call(tools.tasks_update!, {
-      id,
-      prompt: 'sweep the backlog and the inbox',
-    });
-
-    expect(isError).toBe(false);
-    expect(payload.needsReapproval).toBeUndefined();
-    expect(store.getTask(id)!.status).toBe('active');
+    const lists = [tools, toolsWith()];
+    for (const toolset of lists) {
+      const { payload } = await call(toolset.tasks_list!, {});
+      for (const schedule of payload.schedules as Record<string, unknown>[]) {
+        expect(schedule).not.toHaveProperty('folderRules');
+      }
+    }
+    const changed = await call(tools.tasks_update!, { id, prompt: 'New instructions.' });
+    expect(changed.payload.schedule).not.toHaveProperty('folderRules');
   });
+
+  it.each([{ permissionMode: 'dontAsk' }, { target: 'someone-else' }])(
+    'refuses an agent’s restricted write %j without changing approval',
+    async (patch) => {
+      const tools = inSession();
+      const created = await call(tools.tasks_create!, GOOD_ARGS);
+      const id = (created.payload.schedule as { id: string }).id;
+      const before = store.getTask(id);
+      const response = await call(tools.tasks_update!, { id, ...patch });
+      expect(response.isError).toBe(true);
+      expect(store.getTask(id)).toEqual(before);
+    }
+  );
 
   it('re-asks when the same edit comes over the external /mcp server as the agent', async () => {
     const created = await call(inSession().tasks_create!, GOOD_ARGS);

@@ -1,3 +1,4 @@
+import { taskRuntimeCapabilitiesFixture } from './fixtures/task-runtime-capabilities.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -32,6 +33,8 @@ import {
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
 beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
+
+taskRuntimeCapabilitiesFixture();
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;

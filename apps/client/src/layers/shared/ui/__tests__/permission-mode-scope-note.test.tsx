@@ -60,7 +60,7 @@ const MODE_PICKERS = [
   'layers/features/settings/ui/runtimes/GlobalTrustRow.tsx',
   'layers/features/permissions/ui/PresetPicker.tsx',
   'layers/features/permissions/ui/FilesAndCommandsRow.tsx',
-  'layers/features/schedule-approval/ui/ScheduleApprovalCard.tsx',
+  'layers/features/schedule-approval/ui/SchedulePermissionChoice.tsx',
 ];
 
 afterEach(cleanup);

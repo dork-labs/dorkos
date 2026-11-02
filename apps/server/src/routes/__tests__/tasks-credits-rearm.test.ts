@@ -9,6 +9,7 @@
  *
  * @module routes/__tests__/tasks-credits-rearm
  */
+import { taskRuntimeCapabilitiesFixture } from './fixtures/task-runtime-capabilities.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -49,6 +50,8 @@ vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
   readOwnerAccount: () => ({ id: 'user_owner', name: 'Owner' }),
 }));
+
+taskRuntimeCapabilitiesFixture();
 
 const target = swappableServer();
 

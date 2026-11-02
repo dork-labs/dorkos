@@ -26,6 +26,7 @@
  * @module routes/tasks
  */
 import { Hono } from 'hono';
+import { createHash } from 'node:crypto';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, PermissionMode, Task } from '@dorkos/shared/schemas';
@@ -62,6 +63,7 @@ import { readQuery } from '../http/request-query.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
+import { withTaskFolderRules } from './task-approval-rules.js';
 import { withProposerNames } from '../services/tasks/task-provenance.js';
 import { projectsOfFolders } from '../services/projects/project-registry.js';
 import {
@@ -76,7 +78,12 @@ import {
   scheduleRunFolder,
 } from '../services/tasks/lifecycle/schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from '../services/tasks/lifecycle/schedule-credits-model.js';
-import { describeTaskPermissionLevel, scheduleEditorOf } from './task-route-answers.js';
+import {
+  describeTaskPermissionLevel,
+  taskModeRefusal,
+  scheduleEditorOf,
+  namesCredits,
+} from './task-route-answers.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -96,7 +103,7 @@ import { marksHold } from '../services/core/turn-power/turn-marks.js';
  *
  * `tasks_create` and `tasks_update` refuse `permissionMode` and `status`
  * unconditionally, because an MCP tool call is by construction the agent surface.
- * This route is not: the cockpit's Approve button writes `status: 'active'`
+ * This route is not: the app's Approve button writes `status: 'active'`
  * through it (`TaskRow.tsx`), and its task form writes `permissionMode`. So the
  * policy is skipped for a caller that clears {@link clearsTheAgentBar} — a person
  * positively established, with no agent identity and no approval token — and
@@ -104,7 +111,7 @@ import { marksHold } from '../services/core/turn-power/turn-marks.js';
  * operator-only settings. Under login-on that trust now requires a session cookie
  * (DOR-1569), so a per-user API key is refused here just as a named agent is.
  * Under the default `local-trust` posture, though, a caller with a shell can omit
- * every header and be indistinguishable from the cockpit, so this stops an agent
+ * every header and be indistinguishable from the app, so this stops an agent
  * that follows the protocol, not an adversary already running as you — the
  * documented DOR-505 residual, closed only by turning login on.
  *
@@ -160,15 +167,6 @@ const TASK_ON_CREDITS = {
   action: 'run a scheduled task on DorkOS credits',
 };
 
-/** Whether a task write body names DorkOS credits as its account. */
-function namesCredits(body: unknown): boolean {
-  return (
-    typeof body === 'object' &&
-    body !== null &&
-    (body as { account?: unknown }).account === CREDITS_ACCOUNT_ID
-  );
-}
-
 /** What the Tasks routes read, handed over by `startup/tasks.ts` when Tasks started. */
 export interface TasksRouterDeps {
   /** TaskStore for data persistence. */
@@ -205,7 +203,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
    * the narrowness is the design (DOR-1394 review). Reading a cron means
    * constructing a throwaway `croner` job and asking it for three occurrences —
    * measured at roughly 1.4ms, synchronously, per task — and this route runs on
-   * every cockpit poll over every task there is. The only surface that reads the
+   * every app poll over every task there is. The only surface that reads the
    * field is the approval card, which only ever shows parked schedules, so
    * computing it for the rest would be milliseconds per poll spent on an answer
    * nothing asks for. Everything else reports `[]`.
@@ -273,7 +271,14 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
   // === Schedule endpoints ===
 
-  router.get('/', async (c) => c.json(await presentAll(store.getTasks())));
+  router.get('/', async (c) => {
+    const tasks = await presentAll(store.getTasks());
+    return c.json(
+      clearsTheAgentBar(honoRequestFacts(c))
+        ? await Promise.all(tasks.map((task) => withTaskFolderRules(task, meshCore)))
+        : tasks
+    );
+  });
 
   router.post('/', async (c) => {
     const caller = honoRequestFacts(c);
@@ -365,7 +370,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // anything it does not recognise WITHOUT saying so. A caller that sent
     // `agentId` was answered 200 with an unchanged task, which is a lie about its
     // own request (DOR-1568). Applied to every caller, operator included: a typo
-    // in a field name should be loud on the cockpit's own edits too, and the
+    // in a field name should be loud on the app's own edits too, and the
     // client only ever sends `UpdateTaskRequest` fields.
     const unknownFields = refuseUnknownTaskUpdateFields(body);
     if (unknownFields) return c.json(unknownFields, 400);
@@ -385,6 +390,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // made: a schedule runs as the agent it is filed under (DOR-3640 R1).
     const edit = scheduleEdit(existing, scheduleEditorOf(caller, trusted), meshCore, data);
     if (edit.refusal) return c.json(edit.refusal, 403);
+    const modeRefusal = await taskModeRefusal(existing, data, meshCore);
+    if (modeRefusal) return c.json(modeRefusal, 400);
 
     // Naming DorkOS credits, or approving a schedule that runs on them, spends
     // the DorkOS account's money: the owner's call alone (DOR-2652).
@@ -492,7 +499,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // longer declares a grant and `keepsApprovedBypass` has no bypass left in the
     // row to keep.
     //
-    // A trusted caller — the person editing their own task in the cockpit — is left
+    // A trusted caller — the person editing their own task in the app — is left
     // untouched: their approval is what the write-order protects, and it still
     // round-trips through disk exactly as before.
     // Handed to the file step rather than set on `data`, which lands it on the
@@ -556,7 +563,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // The status the caller is entitled to end up at: the one they asked for,
     // or — when they only edited fields and the schedule was already live — the
     // one it already had. The second half is the case a first pass missed: the
-    // cockpit's edit form sends a prompt and no `status`, so a lost race
+    // app's edit form sends a prompt and no `status`, so a lost race
     // disarmed a running schedule with nothing anywhere saying why.
     const intendedStatus = rearms
       ? (data.status ?? (changesFile && existing.status === 'active' ? 'active' : undefined))
@@ -568,7 +575,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // **A person editing their own live schedule re-approves it.**
     //
     // The grant is keyed on the schedule's content, so any edit to what it does
-    // or when it runs invalidates it. Without this line the cockpit's ordinary
+    // or when it runs invalidates it. Without this line the app's ordinary
     // edit — change the prompt, save — left a live schedule holding a grant for
     // content that no longer existed, and the next sync within five minutes
     // parked it with "this file changed since it was last approved". The person
@@ -593,8 +600,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // would run approved. A person's change that wrote no file (a package's
     // row-only timing, DOR-2302) re-approves in the same act; a person's
     // file-backed edit was re-approved just above. One of our agents on a
-    // Trusted install re-approves like a person, except on a schedule made
-    // from a file (ADR 261006-225605). The park is then picked up by the
+    // Trusted install can keep other edits live, but prompt/runtime substitutions
+    // always park for a person (DOR-3651). The park is then picked up by the
     // "entered `pending_approval`" edge below like any other.
     if (!rearms || !changesFile) {
       store.approvals.settleApprovedWorkChange(updated.id, before, {
@@ -657,19 +664,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // is no separate endpoint for it, so this transition is where the parked
     // condition ends and its history row is written.
     //
-    // **And it is the one transition that may also GRANT the level** (DOR-2100).
-    // A proposal an agent made is clamped on the way in and cannot name its own
-    // power (`createScheduledTask`, DOR-504/607/823); the person approving it
-    // can, because `permissionMode` is operator-only and
-    // `operatorOnlyTaskRefusal` has already 403'd anyone who did not clear
-    // the agent bar. Nothing extra is needed to let that through — `updateTask`
-    // writes the field and `applyTaskFileUpdate` puts it in the SKILL.md, so the
-    // grant survives the next sync the same way a person's own edit does. What
-    // WAS missing is the record: the approval wrote a standing resolution and no
-    // activity row at all, so a level raised here left nothing a later reader
-    // could find. It writes one now, naming the level, on every approval —
-    // raised or not, because "approved at the level it asked for" is the fact
-    // that makes a raise legible as a raise.
+    // Only the person may name a mode or clear this status. Validate their
+    // picked mode before any write, then record who approved which proposal.
     if (existing.status === 'pending_approval' && updated.status === 'active') {
       const actorPrincipal = readCallerPrincipal(caller);
       const raised = updated.permissionMode !== existing.permissionMode;
@@ -695,6 +691,10 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         metadata: {
           permissionMode: updated.permissionMode,
           previousPermissionMode: existing.permissionMode,
+          reasonHead: createHash('sha256')
+            .update(existing.reason ?? '')
+            .digest('hex'),
+          personId: caller.user?.userId ?? null,
           raised,
         },
         linkPath: '/',
@@ -744,7 +744,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // before the 404 below, so a barred caller cannot even probe which schedules
     // exist. Under the default login-off posture this is a no-op — the accepted
     // DOR-505 residual, where a credential-free loopback request is
-    // indistinguishable from the cockpit — exactly as it is everywhere
+    // indistinguishable from the app — exactly as it is everywhere
     // `requireOperatorCookieUnderLogin` runs.
     const cookieRefusal = requireOperatorCookieUnderLogin(caller, 'delete a scheduled task');
     if (cookieRefusal) {
@@ -785,7 +785,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
       summary: `${declined ? 'Declined' : 'Deleted'} scheduled task ${schedule.displayName ?? schedule.name}`,
     });
 
-    // Rejecting a proposed schedule is deleting it — the cockpit's Reject button
+    // Rejecting a proposed schedule is deleting it — the app's Reject button
     // is this endpoint. Only a schedule that was actually waiting counts: a
     // person tidying up a task they never had to approve is not a rejection.
     if (schedule.status === 'pending_approval') {

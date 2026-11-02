@@ -10430,6 +10430,37 @@
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
+          "folderRules": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "approved",
+                  "waiting",
+                  "none",
+                  "unavailable"
+                ]
+              },
+              "applied": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "pending": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "status",
+              "applied",
+              "pending"
+            ]
+          },
           "runtime": {
             "type": [
               "string",

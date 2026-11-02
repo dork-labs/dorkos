@@ -641,9 +641,8 @@ export function createUpdateScheduleHandler(
     // not, exactly as the REST route does for an agent (DOR-2313). Left to the
     // sync, the agent's new work would run approved until the watcher or the
     // sweep caught up.
-    // One of our agents on a Trusted install keeps an approved schedule live
-    // through its own edit, except on a schedule made from a file (ADR
-    // 261006-225605); only the in-session server knows the caller is ours.
+    // Trusted timing edits can stay live; prompt/runtime substitutions always
+    // park for a person (DOR-3651), through the shared settlement below.
     let settled = deps.taskStore!.approvals.settleApprovedWorkChange(
       updated.id,
       { ...taskWorkOf(existing), status: existing.status },
@@ -783,9 +782,9 @@ export function getTasksTools(
     tool(
       'tasks_update',
       'Update an existing scheduled task. Only the fields you send are changed. Changing the ' +
-        'prompt, the cron or the timezone of an approved task can stop it until the person ' +
-        'approves it again: always for a task that came from a file or a package, and for any ' +
-        'task when DorkOS asks them first. The reply says so with needsReapproval. A task that came with an installed package ' +
+        'prompt or runtime always stops an approved task until the person approves it again. ' +
+        'Timing changes can also need approval. The reply says so with needsReapproval. ' +
+        'A task that came with an installed package ' +
         'can still be switched on or off and given a new cron or timezone — DorkOS keeps those, ' +
         "the package is not edited — and resetTiming puts it back on the package's own timing.",
       {

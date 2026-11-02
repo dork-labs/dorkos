@@ -223,6 +223,7 @@ describe('PATCH /api/tasks/:id from an agent', () => {
         before: promptHashOf('the prompt of a-nightly'),
         after: promptHashOf('A new prompt.'),
       },
+      { field: 'status', before: 'active', after: 'pending_approval' },
     ]);
     expect(JSON.stringify(row)).not.toContain('A new prompt.');
   });

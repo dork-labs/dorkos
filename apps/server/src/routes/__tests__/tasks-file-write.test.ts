@@ -23,6 +23,7 @@
  *
  * @module routes/__tests__/tasks-file-write
  */
+import { taskRuntimeCapabilitiesFixture } from './fixtures/task-runtime-capabilities.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -70,6 +71,8 @@ import { ScheduleIdentityRegistry } from '../../services/tasks/schedule-identity
 import { skillsRoot } from '../../services/tasks/__tests__/task-root-fixtures.js';
 import { TaskStore, type UpdateTaskOptions } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+
+taskRuntimeCapabilitiesFixture();
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;

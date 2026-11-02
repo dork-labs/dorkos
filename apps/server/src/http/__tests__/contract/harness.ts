@@ -154,14 +154,16 @@ const BOOT_ATTEMPTS = 3;
  * other failure is thrown as it is.
  *
  * @param extra - More environment for the server, over the defaults.
+ * @param entrypoint - A contract-specific test bootstrap, otherwise the real server entry.
  * @returns The running server.
  */
 export async function bootComposedServer(
-  extra: Record<string, string> = {}
+  extra: Record<string, string> = {},
+  entrypoint = 'src/index.ts'
 ): Promise<ComposedServer> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await bootOnce(extra);
+      return await bootOnce(extra, entrypoint);
     } catch (error) {
       const lostPort = error instanceof Error && /Port \d+ is already in use/.test(error.message);
       if (!lostPort || attempt >= BOOT_ATTEMPTS) throw error;
@@ -174,14 +176,17 @@ export async function bootComposedServer(
  *
  * @param extra - More environment for the server, over the defaults.
  */
-async function bootOnce(extra: Record<string, string>): Promise<ComposedServer> {
+async function bootOnce(
+  extra: Record<string, string>,
+  entrypoint: string
+): Promise<ComposedServer> {
   const port = await freePort();
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-contract-'));
   // The `r` keeps the tag alphanumeric: eight hex digits that happen to be all
   // numbers with a leading zero are not a valid semver prerelease, and the
   // config store refuses to start on that version.
   const version = `0.0.0-contract.r${randomUUID().slice(0, 8)}`;
-  const child = spawn(process.execPath, [TSX_CLI, 'src/index.ts'], {
+  const child = spawn(process.execPath, [TSX_CLI, entrypoint], {
     cwd: SERVER_DIR,
     env: serverEnv(port, dorkHome, version, extra),
     stdio: ['ignore', 'pipe', 'pipe'],

@@ -9,6 +9,7 @@
  *
  * @module routes/__tests__/tasks-package-timing
  */
+import { taskRuntimeCapabilitiesFixture } from './fixtures/task-runtime-capabilities.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -36,6 +37,8 @@ vi.mock('../../services/notifications/standing-events.js', async (importOriginal
   ...(await importOriginal<typeof import('../../services/notifications/standing-events.js')>()),
   raiseStanding: vi.fn(),
 }));
+
+taskRuntimeCapabilitiesFixture();
 
 const fixtureTarget = swappableServer();
 

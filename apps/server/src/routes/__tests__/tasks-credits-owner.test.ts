@@ -5,6 +5,7 @@
  *
  * @module routes/__tests__/tasks-credits-owner
  */
+import { taskRuntimeCapabilitiesFixture } from './fixtures/task-runtime-capabilities.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -40,6 +41,8 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+
+taskRuntimeCapabilitiesFixture();
 
 const target = swappableServer();
 const server = target.server;

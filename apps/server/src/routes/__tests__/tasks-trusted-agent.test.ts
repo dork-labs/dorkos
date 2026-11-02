@@ -2,7 +2,7 @@
  * `POST` and `PATCH /api/tasks` from one of our agents on a Trusted install
  * (ADR 261006-225605, spec `trusted-by-default-flip` §5.4): the agent's
  * schedule is armed at once and recorded as `schedule.armed_by_agent`, and its
- * own later edit keeps it live. A schedule made from a file still parks on an
+ * prompt or runtime edits wait for a person. A schedule made from a file still parks on an
  * agent's edit, a caller the server cannot identify still parks, and Careful
  * parks everything an agent makes.
  *
@@ -37,6 +37,22 @@ import {
   countWhileRunning,
   resetLiveOutsiderTurns,
 } from '../../services/core/turn-power/live-outsider-turns.js';
+
+import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/runtime-constants.js';
+import { CODEX_CAPABILITIES } from '../../services/runtimes/codex/runtime-constants.js';
+
+vi.mock('../../services/core/runtime-registry.js', () => ({
+  runtimeRegistry: {
+    computerRuntimeForAgentPath: () => undefined,
+    getNativeSessionCwd: () => null,
+    getDefaultType: () => 'claude-code',
+    has: (type: string) => type === 'claude-code' || type === 'codex',
+    getAllCapabilities: () => ({
+      'claude-code': CLAUDE_CODE_CAPABILITIES,
+      codex: CODEX_CAPABILITIES,
+    }),
+  },
+}));
 
 const posture = vi.hoisted(() => ({ preset: 'trusted' as 'trusted' | 'careful' }));
 
@@ -183,20 +199,22 @@ describe('tasks routes, one of our agents on a Trusted install', () => {
     );
   });
 
-  it('keeps the agent’s own schedule live through its edit, and through the next sync', async () => {
-    const created = (await agentCreates()).body as Task;
+  it.each([{ prompt: 'Sweep the backlog and the inbox.' }, { runtime: 'codex' }])(
+    'parks a Trusted agent’s substitution %j through the next sync',
+    async (patch) => {
+      const created = (await agentCreates()).body as Task;
 
-    const res = await request(fixtureTarget.server)
-      .patch(`/api/tasks/${created.id}`)
-      .set(...AGENT)
-      .send({ prompt: 'Sweep the backlog and the inbox.' });
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${created.id}`)
+        .set(...AGENT)
+        .send(patch);
 
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('active');
-    expect(vi.mocked(raiseStanding)).not.toHaveBeenCalled();
-    // The grant moved with the edit, so discovery reading the new file agrees.
-    expect(resync(created.filePath!).status).toBe('active');
-  });
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('pending_approval');
+      expect(vi.mocked(raiseStanding)).toHaveBeenCalled();
+      expect(resync(created.filePath!).status).toBe('pending_approval');
+    }
+  );
 
   it('still parks a schedule made from a file when the agent edits it', async () => {
     const dir = path.join(dorkHome, 'skills', 'drain');

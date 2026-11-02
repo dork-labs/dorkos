@@ -96,6 +96,14 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
           promise: 'Asks before it edits a file or runs a command.',
         },
         {
+          id: 'dontAsk',
+          label: 'Never ask',
+          stop: 'ask',
+          asks: 'always',
+          reach: 'edit',
+          promise: 'Reads in its own folder still run, whatever its rules say.',
+        },
+        {
           id: 'acceptEdits',
           label: 'Accept edits',
           stop: 'act',
