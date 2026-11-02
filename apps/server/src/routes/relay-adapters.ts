@@ -33,9 +33,6 @@ import {
   CreateBindingRequestSchema,
   UpdateBindingRequestSchema,
   MoveBindingRequestSchema,
-  AdapterTestRequestSchema,
-  AdapterCreateRequestSchema,
-  AdapterConfigUpdateSchema,
   bridgeAllowsChatId,
   BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
   type PlatformChatType,
@@ -45,11 +42,8 @@ import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js'
 import { BindingConflictError, type BindingUpdate } from '../services/relay/binding-store.js';
 import { RoomError } from '../services/rooms/room-errors.js';
 import { ADAPTER_EVENTS_KEPT, type TraceStore } from '../services/relay/trace-store.js';
-import {
-  registerConfirmReferencesRoute,
-  sendAdapterError,
-  secretWriter,
-} from './relay-adapter-http.js';
+import { registerConfirmReferencesRoute, sendAdapterError } from './relay-adapter-http.js';
+import { registerSettingRoutes } from './relay-adapter-setting-routes.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 
@@ -202,57 +196,9 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     return c.json(adapter);
   });
 
-  router.post('/adapters/test', async (c) => {
-    const result = AdapterTestRequestSchema.safeParse(readJsonBody(c));
-    if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
-    }
-    try {
-      const testResult = await adapterManager.testConnection(
-        result.data.type,
-        result.data.config,
-        secretWriter(c)
-      );
-      return c.json(testResult);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Test failed';
-      return c.json({ error: message }, 500);
-    }
-  });
-
-  router.post('/adapters', async (c) => {
-    const result = AdapterCreateRequestSchema.safeParse(readJsonBody(c));
-    if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
-    }
-    const { type, id, config, enabled, label: topLabel } = result.data;
-    // The client may embed label inside config (Transport interface doesn't have a separate
-    // label param). Fall back to config.label if the top-level field wasn't provided.
-    const label = topLabel ?? (typeof config.label === 'string' ? config.label : undefined);
-    try {
-      await adapterManager.addAdapter(type, id, config, enabled, label, secretWriter(c));
-
-      if (activity) {
-        const adapterName = adapterManager.resolveAdapterName(id);
-        await activity.emit({
-          ...readActivityActor(honoRequestFacts(c)),
-          category: 'relay',
-          eventType: 'relay.adapter_added',
-          resourceType: 'adapter',
-          resourceId: id,
-          resourceLabel: adapterName,
-          summary: `Added ${adapterName} adapter`,
-          linkPath: '/',
-        });
-      }
-
-      return c.json({ ok: true, id }, 201);
-    } catch (err) {
-      if (err instanceof AdapterError) return sendAdapterError(c, err);
-      const message = err instanceof Error ? err.message : 'Create failed';
-      return c.json({ error: message }, 500);
-    }
-  });
+  // Test, add and save: held for "Confirm it's you" when they hand a
+  // connection a person's setting (DOR-3234).
+  registerSettingRoutes(router, { adapterManager, activity });
 
   router.delete('/adapters/:id', async (c) => {
     try {
@@ -279,21 +225,6 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     } catch (err) {
       if (err instanceof AdapterError) return sendAdapterError(c, err);
       const message = err instanceof Error ? err.message : 'Remove failed';
-      return c.json({ error: message }, 500);
-    }
-  });
-
-  router.patch('/adapters/:id/config', async (c) => {
-    const result = AdapterConfigUpdateSchema.safeParse(readJsonBody(c));
-    if (!result.success) {
-      return c.json(validationFailureBody(result.error), 400);
-    }
-    try {
-      await adapterManager.updateConfig(c.req.param('id'), result.data.config, secretWriter(c));
-      return c.json({ ok: true });
-    } catch (err) {
-      if (err instanceof AdapterError) return sendAdapterError(c, err);
-      const message = err instanceof Error ? err.message : 'Update failed';
       return c.json({ error: message }, 500);
     }
   });

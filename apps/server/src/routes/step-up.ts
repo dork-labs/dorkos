@@ -38,6 +38,7 @@ import {
   StepUpPasswordBodySchema,
   type HeldStepUpView,
   type StepUpConfirmedBody,
+  type StepUpExtensionRisk,
   type StepUpPasswordUnavailable,
   type StepUpRefusalCode,
 } from '@dorkos/shared/step-up';
@@ -49,7 +50,14 @@ import { logger } from '../lib/logger.js';
 import { errorBody } from '../lib/route-utils.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
+import { currentStepUpExtensionRisks } from '../services/extensions/step-up/step-up-extension-risk.js';
+import {
+  stepUpRiskLedger,
+  type StepUpRiskLedger,
+} from '../services/extensions/step-up/step-up-risk-ledger.js';
+import { signInStartedAt } from '../services/core/auth/sessions/signed-in-devices.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { getAuth, readOwnerAccount } from '../services/core/auth/index.js';
 import { isAtThisComputer, isOnEncryptedConnection } from '../services/core/auth/gate-policy.js';
@@ -70,13 +78,8 @@ import {
 /** The longest password Better Auth stores. */
 const MAX_PASSWORD_LENGTH = 128;
 
-/**
- * Headers only a program sends: a bearer, an API key (the gate takes
- * `x-api-key` as one) or a proxy's credential. The app sends none of them.
- * The same list as `requirePersonAtThisComputer`'s (DOR-3213); whichever of
- * the two lands second makes them one export.
- */
-const PROGRAM_CREDENTIAL_HEADERS = ['authorization', 'x-api-key', 'proxy-authorization'] as const;
+/** Why a browser that may still hold a cleared mini app's code is refused. */
+const CLEARED_RISK_ERROR = 'A mini app has run since you signed in. Sign in again to confirm.';
 
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {
@@ -90,6 +93,12 @@ export interface StepUpRouteDeps {
   setOwnerPassword: (ownerId: string, password: string) => Promise<void>;
   /** This server's own browser origins. */
   trustedOrigins: () => readonly string[];
+  /** The loaded extensions that keep step-up off; none when absent. */
+  extensionRisks?: () => readonly StepUpExtensionRisk[];
+  /** Remembers when a risk cleared, so a browser that loaded it stays refused; none when absent. */
+  riskLedger?: Pick<StepUpRiskLedger, 'note' | 'mayHoldRiskyCode'>;
+  /** When a browser session started, in ms, or null when unknown. */
+  sessionStartedAt?: (userId: string, sessionId: string) => Promise<number | null>;
 }
 
 /** The live owner's password, replaced through Better Auth's own hasher. */
@@ -106,6 +115,16 @@ const liveDeps: StepUpRouteDeps = {
   minPasswordLength: ownerPasswordMinLength,
   setOwnerPassword: setLiveOwnerPassword,
   trustedOrigins: () => resolveTrustedOrigins(),
+  extensionRisks: currentStepUpExtensionRisks,
+  // Read through each call: startup swaps in the ledger kept on disk.
+  riskLedger: {
+    note: (riskCount, now) => stepUpRiskLedger().note(riskCount, now),
+    mayHoldRiskyCode: (startedAt) => stepUpRiskLedger().mayHoldRiskyCode(startedAt),
+  },
+  sessionStartedAt: async (userId, sessionId) => {
+    const auth = getAuth();
+    return auth ? signInStartedAt(auth, userId, sessionId) : null;
+  },
 };
 
 /**
@@ -120,7 +139,7 @@ function passwordMayCross(facts: RequestFacts): boolean {
 const REFUSALS: Record<StepUpRefusalCode, { status: 400 | 403 | 404 | 409 | 429; error: string }> =
   {
     expired: { status: 404, error: 'That took too long. Nothing changed.' },
-    'wrong-password': { status: 403, error: 'That’s not your DorkOS password. Try again.' },
+    'wrong-password': { status: 403, error: 'That’s not your DorkOS password.' },
     'too-many-tries': { status: 403, error: 'Too many wrong passwords. Nothing changed.' },
     'too-many-attempts': {
       status: 429,
@@ -133,6 +152,10 @@ const REFUSALS: Record<StepUpRefusalCode, { status: 400 | 403 | 404 | 409 | 429;
     'new-password-invalid': { status: 400, error: 'Choose a longer password.' },
     'no-password': { status: 409, error: 'Set a password for this computer’s owner first.' },
     'insecure-connection': { status: 403, error: 'Confirm this on the computer running DorkOS.' },
+    'extension-risk': {
+      status: 409,
+      error: 'Confirming is off while a mini app can be edited by an agent. Nothing changed.',
+    },
     'not-a-person': { status: 403, error: 'Only you can confirm this, in the DorkOS app.' },
     'not-your-action': { status: 403, error: 'Confirm this in the window that asked.' },
   };
@@ -191,7 +214,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const program =
       presentsAgentIdentity(facts) ||
       facts.headers[APPROVAL_TOKEN_HEADER] !== undefined ||
-      PROGRAM_CREDENTIAL_HEADERS.some((name) => facts.headers[name] !== undefined);
+      presentsProgramCredential(facts);
     const origin = facts.headers.origin;
     const site = facts.headers['sec-fetch-site'];
     const ownPage =
@@ -211,9 +234,50 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
   }
 
   /** Why this caller may not confirm by password, if it may not. */
-  function passwordUnavailable(c: Context<ApiEnv>): StepUpPasswordUnavailable | undefined {
+  async function passwordUnavailable(
+    c: Context<ApiEnv>
+  ): Promise<StepUpPasswordUnavailable | undefined> {
     if (!passwordMayCross(honoRequestFacts(c))) return 'insecure-connection';
-    return deps.ownerId() ? undefined : 'no-password';
+    if (!deps.ownerId()) return 'no-password';
+    // Code an agent can rewrite runs in the app's page: it could draw a
+    // look-alike sheet and read the password (Security, Must 3).
+    if (blockedBy().length > 0) return 'extension-risk';
+    // Its code may still run in a page this browser opened before the risk
+    // cleared, since nothing reloads that page (Security, M1 on #3401).
+    return (await mayHoldRiskyCode(c)) ? 'extension-risk' : undefined;
+  }
+
+  /** The loaded extensions that keep step-up off, read fresh and noted on each request. */
+  function blockedBy(): readonly StepUpExtensionRisk[] {
+    const risks = deps.extensionRisks?.() ?? [];
+    deps.riskLedger?.note(risks.length);
+    return risks;
+  }
+
+  /**
+   * Whether this browser session started before a risky mini app's risk
+   * cleared. Judged by the session's own start, from the server's records,
+   * never by anything the request says.
+   */
+  async function mayHoldRiskyCode(c: Context<ApiEnv>): Promise<boolean> {
+    if (!deps.riskLedger) return false;
+    const user = honoRequestFacts(c).user;
+    const startedAt =
+      user?.sessionId && deps.sessionStartedAt
+        ? await deps.sessionStartedAt(user.userId, user.sessionId).catch(() => null)
+        : null;
+    return deps.riskLedger.mayHoldRiskyCode(startedAt);
+  }
+
+  /** The refusal for `unavailable`, naming the extensions when they are why. */
+  function refuseUnavailable(c: Context<ApiEnv>, unavailable: StepUpPasswordUnavailable): Response {
+    if (unavailable !== 'extension-risk') return refuse(c, unavailable);
+    const risks = blockedBy();
+    if (risks.length > 0) return refuse(c, unavailable, { blockedBy: risks });
+    return c.json(
+      { ...errorBody(CLEARED_RISK_ERROR, 'extension-risk'), blockedBy: [] },
+      REFUSALS['extension-risk'].status
+    );
   }
 
   /**
@@ -249,7 +313,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const taken = takeHeldStepUp(entry.statement.heldActionId);
     if (!taken) return refuse(c, 'expired');
     try {
-      const { status, body } = await taken.commit();
+      const { status, body } = await taken.commit(honoRequestFacts(c));
       audit(taken, 'ok', 'confirmed');
       const answer: StepUpConfirmedBody = { ok: true, status, result: body };
       return c.json(answer);
@@ -268,12 +332,12 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     await next();
   });
 
-  router.get('/:heldActionId', (c) => {
+  router.get('/:heldActionId', async (c) => {
     const callerRefusal = refuseCaller(c, false);
     if (callerRefusal) return callerRefusal;
     const entry = heldOrRefusal(c);
     if (entry instanceof Response) return entry;
-    const unavailable = passwordUnavailable(c);
+    const unavailable = await passwordUnavailable(c);
     const view: HeldStepUpView = {
       heldActionId: entry.statement.heldActionId,
       kind: entry.statement.kind,
@@ -282,6 +346,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
       expiresAt: entry.statement.expiresAt,
       methods: unavailable ? [] : ['password'],
       ...(unavailable ? { passwordUnavailable: unavailable } : {}),
+      ...(unavailable === 'extension-risk' ? { blockedBy: [...blockedBy()] } : {}),
       triesLeft: entry.triesLeft,
     };
     return c.json(view);
@@ -292,8 +357,8 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     if (callerRefusal) return callerRefusal;
     const entry = heldOrRefusal(c);
     if (entry instanceof Response) return entry;
-    const unavailable = passwordUnavailable(c);
-    if (unavailable) return refuse(c, unavailable);
+    const unavailable = await passwordUnavailable(c);
+    if (unavailable) return refuseUnavailable(c, unavailable);
     const parsed = StepUpPasswordBodySchema.safeParse(readJsonBody(c));
     const password = parsed.success ? parsed.data.password : undefined;
     const passwordRefusal = await refusePassword(c, entry, password);
@@ -313,8 +378,8 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     if (callerRefusal) return callerRefusal;
     const entry = heldOrRefusal(c);
     if (entry instanceof Response) return entry;
-    const unavailable = passwordUnavailable(c);
-    if (unavailable) return refuse(c, unavailable);
+    const unavailable = await passwordUnavailable(c);
+    if (unavailable) return refuseUnavailable(c, unavailable);
     const parsed = StepUpChangePasswordBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) {
       return c.json(errorBody('Enter your password.', 'wrong-password'), 400);

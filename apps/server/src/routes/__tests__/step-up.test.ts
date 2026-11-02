@@ -51,6 +51,7 @@ import { markIngress, type IngressKind } from '../../services/core/remote/ingres
 import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 import { holdForStepUp } from '../step-up-guard.js';
 import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
+import { StepUpRiskLedger } from '../../services/extensions/step-up/step-up-risk-ledger.js';
 
 const target = swappableServer();
 const OWN_ORIGIN = 'http://localhost:4242';
@@ -59,6 +60,14 @@ const SHORT_PASSWORD = 'short';
 
 const SESSION_A: RequestUser = { userId: 'user_owner', credential: 'cookie', sessionId: 'sess-a' };
 const SESSION_B: RequestUser = { userId: 'user_owner', credential: 'cookie', sessionId: 'sess-b' };
+const SESSION_NEW: RequestUser = {
+  userId: 'user_owner',
+  credential: 'cookie',
+  sessionId: 'sess-new',
+};
+
+/** When each test session started, as the server's session rows say. */
+const sessionStarts = new Map<string, number>();
 
 let commit: Mock<(name: string) => Promise<{ status: number; body: unknown }>>;
 let deps: StepUpRouteDeps & {
@@ -138,7 +147,13 @@ beforeEach(() => {
     minPasswordLength: async () => 8,
     setOwnerPassword: vi.fn(async () => undefined),
     trustedOrigins: () => [OWN_ORIGIN],
+    riskLedger: new StepUpRiskLedger(),
+    sessionStartedAt: async (_userId: string, sessionId: string) =>
+      sessionStarts.get(sessionId) ?? null,
   } as typeof deps;
+  sessionStarts.clear();
+  sessionStarts.set('sess-a', Date.now() - 60_000);
+  sessionStarts.set('sess-b', Date.now() - 60_000);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -164,6 +179,161 @@ describe('a guarded action', () => {
       triesLeft: STEP_UP_MAX_PASSWORD_TRIES,
     });
     expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  it('answers the Mac app’s own window, which names our origin on its read', async () => {
+    // Measured on Electron 42: a main-process read with `Origin` arrives
+    // `same-origin`; without one it arrives `none`, which is refused.
+    const id = await hold();
+    const shell = await request(app({ user: SESSION_A }))
+      .get(`/api/step-up/${id}`)
+      .set('Origin', OWN_ORIGIN)
+      .set('Sec-Fetch-Site', 'same-origin');
+    expect(shell.status).toBe(200);
+    const bare = await request(app({ user: SESSION_A }))
+      .get(`/api/step-up/${id}`)
+      .set('Sec-Fetch-Site', 'none');
+    expect(bare.status).toBe(403);
+    expect(bare.body.code).toBe('not-a-person');
+  });
+});
+
+// Security's 13:08 Musts (DOR-3234 PR 2): only the secret, checked on the
+// server on that same request, grants a step-up. The Mac app's own headers
+// and `Origin` are a CSRF guard, never a stand-in for it.
+describe('the secret is the only proof', () => {
+  const MAC_APP = {
+    Origin: OWN_ORIGIN,
+    'Sec-Fetch-Site': 'same-origin',
+    'x-dorkos-person': 'proof-1',
+    'User-Agent': 'Mozilla/5.0 (Macintosh) Electron/42.11.16 DorkOS/0.129.0',
+  };
+
+  it.each([
+    ['no password', {}],
+    ['an empty password', { password: '' }],
+    ['a wrong password', { password: 'not-it' }],
+  ])('the Mac app’s exact headers with %s are refused, and nothing runs', async (_label, body) => {
+    const id = await hold();
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${id}/password`)
+      .set(MAC_APP)
+      .send(body);
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.body.ok).toBeUndefined();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('a change-password with the Mac app’s headers but no current password runs nothing', async () => {
+    const id = await hold();
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${id}/change-password`)
+      .set(MAC_APP)
+      .send({ newPassword: 'a much longer one' });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(commit).not.toHaveBeenCalled();
+    expect(deps.setOwnerPassword).not.toHaveBeenCalled();
+  });
+
+  it('checks the secret on every confirm: a passed one is never a pass for the next', async () => {
+    const first = await hold();
+    expect((await confirm(first, PASSWORD)).status).toBe(200);
+    const second = await hold();
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${second}/password`)
+      .set(MAC_APP)
+      .send({});
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves nothing an agent could replay: no answer or Activity line carries the password', async () => {
+    const id = await hold();
+    const view = await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
+    const done = await confirm(id, PASSWORD);
+    for (const body of [view.body, done.body, vi.mocked(recordAudit).mock.calls]) {
+      expect(JSON.stringify(body)).not.toContain(PASSWORD);
+    }
+  });
+});
+
+// Security's Must 3 (DOR-3234 part B): a mini app an agent can rewrite runs
+// in the app's page, so the step-up is off, plainly, until it is fixed.
+describe('while a loaded mini app is in an agent’s folder or changed', () => {
+  const RISK = {
+    id: 'social-queue',
+    name: 'Social queue',
+    reason: 'agent-folder' as const,
+    agentName: 'dorkos-marketing',
+  };
+
+  beforeEach(() => {
+    deps.extensionRisks = () => [RISK];
+  });
+
+  it('shows why, and offers no password', async () => {
+    const id = await hold();
+    const res = await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      methods: [],
+      passwordUnavailable: 'extension-risk',
+      blockedBy: [RISK],
+    });
+  });
+
+  it('the right password runs nothing, and names what to fix', async () => {
+    const id = await hold();
+    const res = await confirm(id, PASSWORD);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [RISK] });
+    expect(commit).not.toHaveBeenCalled();
+    expect(deps.checkPassword).not.toHaveBeenCalled();
+  });
+
+  it('change-password runs nothing and changes no password', async () => {
+    const id = await hold();
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${id}/change-password`)
+      .set('Origin', OWN_ORIGIN)
+      .send({ currentPassword: PASSWORD, newPassword: 'a much longer one' });
+    expect(res.status).toBe(409);
+    expect(commit).not.toHaveBeenCalled();
+    expect(deps.setOwnerPassword).not.toHaveBeenCalled();
+  });
+
+  it('once fixed, a browser signed in before then stays refused: its page may still run the code', async () => {
+    const id = await hold();
+    expect((await confirm(id, PASSWORD)).status).toBe(409);
+    deps.extensionRisks = () => [];
+    const res = await confirm(id, PASSWORD);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [] });
+    expect(res.body.error).toMatch(/Sign in again/);
+    const view = await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
+    expect(view.body).toMatchObject({ passwordUnavailable: 'extension-risk', blockedBy: [] });
+    expect(commit).not.toHaveBeenCalled();
+    expect(deps.checkPassword).not.toHaveBeenCalled();
+  });
+
+  it('once fixed, a browser signed in after it confirms', async () => {
+    const id = await hold();
+    expect((await confirm(id, PASSWORD)).status).toBe(409);
+    deps.extensionRisks = () => [];
+    await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
+    sessionStarts.set('sess-new', Date.now() + 1);
+    const fresh = await hold({ user: SESSION_NEW });
+    expect((await confirm(fresh, PASSWORD, { user: SESSION_NEW })).status).toBe(200);
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('a browser whose sign-in the server cannot date stays refused once a risk was seen', async () => {
+    const id = await hold();
+    expect((await confirm(id, PASSWORD)).status).toBe(409);
+    deps.extensionRisks = () => [];
+    sessionStarts.delete('sess-a');
+    expect((await confirm(id, PASSWORD)).status).toBe(409);
+    expect(commit).not.toHaveBeenCalled();
   });
 });
 

@@ -56,6 +56,7 @@ export {
   type PendingExtensionApprovalsState,
 } from './model/use-pending-extension-approvals';
 export { useExtensionList } from './model/use-extension-list';
+export { useMoveExtensionOut, useStepUpRisks } from './model/use-step-up-risks';
 export { useWithheldExtensions, type WithheldExtension } from './model/use-withheld-extensions';
 export {
   WithheldExtensionsNotice,

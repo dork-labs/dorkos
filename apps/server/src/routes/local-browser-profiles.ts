@@ -9,6 +9,8 @@ import {
 } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
+import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { holdForStepUp } from './step-up-guard.js';
 import type { LocalBrowserProfileStore } from '../services/session/local-browser/profile-store.js';
 
@@ -21,6 +23,10 @@ export interface LocalBrowserProfileRouteDeps {
 
 const NOT_FOUND = { error: 'That browser profile no longer exists.', code: 'profile_not_found' };
 const NO_AGENT = { error: 'That agent no longer exists.', code: 'agent_not_found' };
+const OWNER_ONLY = {
+  error: 'Only this DorkOS owner, on this computer, can change who uses a profile.',
+  code: 'owner_only',
+};
 
 /**
  * Add the profile routes to the owner-only browser router.
@@ -51,7 +57,11 @@ export function mountLocalBrowserProfileRoutes(
       input: { profileId, agentId },
       // An agent picks its own name, so the folder says which agent this really is.
       reason: `Confirm it’s you to let ${agent.name} (${agent.projectPath}) use the sign-ins in ${profile.label}.`,
-      commit: async () => {
+      // The router's own bar, re-run on the request that confirmed it (DOR-3234): an owner
+      // replaced while the sheet was up, or a confirm from off this computer, binds nothing.
+      commit: async (confirming) => {
+        if (!isAtThisComputer(confirming) || refuseUnlessAccountOwner(confirming) !== undefined)
+          return { status: 403, body: OWNER_ONLY };
         if (!profiles.get(profileId)) return { status: 404, body: NOT_FOUND };
         const current = deps.agent(agentId);
         if (!current) return { status: 404, body: NO_AGENT };

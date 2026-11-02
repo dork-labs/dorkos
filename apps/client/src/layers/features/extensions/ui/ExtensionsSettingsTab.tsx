@@ -16,6 +16,7 @@ import {
   approvedSetOf,
   permissionViewFromRecord,
   useSeenBeforeStaleStore,
+  useStepUpRisks,
 } from '@/layers/entities/extension';
 import { ExtensionCard } from './ExtensionCard';
 import { TrustedSourcesSection } from './TrustedSourcesSection';
@@ -23,6 +24,8 @@ import { TrustedSourcesSection } from './TrustedSourcesSection';
 /** Extensions tab in the Settings dialog — manage discovered extensions. */
 export function ExtensionsSettingsTab() {
   const { data: extensions = [], isLoading } = useExtensions();
+  // The mini apps that keep "Confirm it's you" off (DOR-3234).
+  const { data: stepUpRisks } = useStepUpRisks();
   // "Where it shows…" in the right panel opens this tab with the mini app's id
   // as the section: bring its card into view once the list has drawn.
   const { section } = useSettingsDeepLink();
@@ -138,6 +141,7 @@ export function ExtensionsSettingsTab() {
       isSettingApproval={approvingIds.has(ext.id)}
       onReload={handleReload}
       isReloading={reloadMutation.isPending}
+      stepUpRisk={stepUpRisks?.find((risk) => risk.id === ext.id)}
     />
   );
 

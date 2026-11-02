@@ -60,6 +60,11 @@ export const STEP_UP_ACTION_KINDS = [
   'browser-profile.bind',
   /** Confirm a paused connection's setting (DOR-3271). */
   'connection.confirm-setting',
+  /**
+   * Add, save or test a connection with an `env:`/`keychain:` setting a
+   * person gives it (DOR-3234): each approves or resolves that setting.
+   */
+  'connection.use-setting',
 ] as const;
 
 /** One kind of guarded action. */
@@ -117,10 +122,31 @@ export const StepUpPasswordUnavailableSchema = z.enum([
   'insecure-connection',
   /** No owner account, or the owner has no password. */
   'no-password',
+  /**
+   * A loaded extension an agent can rewrite, or whose files changed since a
+   * person approved them, runs in the app's page: it could draw a look-alike
+   * sheet. Named in {@link HeldStepUpView.blockedBy}.
+   */
+  'extension-risk',
 ]);
 
 /** Why a held action cannot be confirmed by password from here. */
 export type StepUpPasswordUnavailable = z.infer<typeof StepUpPasswordUnavailableSchema>;
+
+/** One loaded extension that keeps step-up off, and why. */
+export const StepUpExtensionRiskSchema = z.object({
+  /** The extension's id, for Settings → Extensions. */
+  id: z.string().min(1),
+  /** What the person calls it. */
+  name: z.string().min(1),
+  /** `agent-folder`: an agent can rewrite it. `changed`: its files changed since a person approved them. */
+  reason: z.enum(['agent-folder', 'changed']),
+  /** For `agent-folder`: the agent whose folder it is in. */
+  agentName: z.string().min(1).optional(),
+});
+
+/** One loaded extension that keeps step-up off. */
+export type StepUpExtensionRisk = z.infer<typeof StepUpExtensionRiskSchema>;
 
 /** A held action, as the sheet shows it. Every sentence is the server's. */
 export const HeldStepUpViewSchema = z.object({
@@ -135,6 +161,8 @@ export const HeldStepUpViewSchema = z.object({
   methods: z.array(StepUpMethodSchema),
   /** Why the password is not offered, when it is not. */
   passwordUnavailable: StepUpPasswordUnavailableSchema.optional(),
+  /** For `extension-risk`: the extensions to fix first, in Settings → Extensions. */
+  blockedBy: z.array(StepUpExtensionRiskSchema).optional(),
   /** Wrong passwords left before the held action is dropped. */
   triesLeft: z.number().int().min(0),
 });
@@ -194,6 +222,8 @@ export const STEP_UP_REFUSAL_CODES = [
   'new-password-invalid',
   'no-password',
   'insecure-connection',
+  /** A loaded extension an agent can rewrite, or that changed since it was approved. */
+  'extension-risk',
   /** Not the app's own page, or a program rather than a person. */
   'not-a-person',
   /** Another browser held this action. */

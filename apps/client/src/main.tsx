@@ -40,7 +40,12 @@ import {
   type DialogSearch,
 } from '@/layers/shared/model';
 import { linkChipSlot, openTabAt } from '@/layers/features/app-tabs';
-import { AuthGuard, OwnerSetupHost, PersonStepUpHost } from '@/layers/features/auth';
+import {
+  ActionStepUpHost,
+  AuthGuard,
+  OwnerSetupHost,
+  PersonStepUpHost,
+} from '@/layers/features/auth';
 import { ServerRestartingBar } from './app/ServerRestartingBar';
 import { renderCreditsOffer } from '@/layers/widgets/credits-offer';
 import { initSessionStreamBinding, switchAgentCwd } from '@/layers/entities/session';
@@ -279,6 +284,7 @@ function Root() {
             <OwnerSetupHost />
             {/* The owner's one password step-up at this computer (DOR-3330). */}
             <PersonStepUpHost />
+            <ActionStepUpHost />
             {/* The desktop app's "Restarting DorkOS…" bar (DOR-3229). Outside
                 the router, so it shows over any screen, the "can't reach the
                 server" one included. */}

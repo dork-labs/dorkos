@@ -37,12 +37,14 @@ import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { ExtensionSettingsStore } from '@dorkos/shared/extension-settings';
 import { resolveBlobPath } from '../services/extensions/extension-data-paths.js';
+import { currentStepUpExtensionRisks } from '../services/extensions/step-up/step-up-extension-risk.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { registerExtensionApprovalRoutes } from './extensions-approval.js';
+import { registerExtensionStepUpRoutes } from './extensions-step-up.js';
 import { registerTrustedSourceRoutes } from './extensions-trusted-sources.js';
 import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
@@ -351,6 +353,9 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       if (!SAFE_EXT_ID.test(id)) return c.json(INVALID_ID, 400);
       const bundle = await extensionManager.readBundle(id);
       if (!bundle) return c.json({ error: `Bundle not available for '${id}'` }, 404);
+      // Code is entering a page: note its risk, so a later clear is remembered
+      // against every browser that loaded it (Security, M1 on #3401).
+      currentStepUpExtensionRisks();
       return c.body(bundle, 200, {
         'Content-Type': 'application/javascript; charset=utf-8',
         'Cache-Control': 'no-store',
@@ -636,6 +641,12 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
   });
 
   registerExtensionApprovalRoutes(router, extensionManager, SAFE_EXT_ID, activity);
+  registerExtensionStepUpRoutes(router, {
+    manager: extensionManager,
+    dorkHome,
+    safeId: SAFE_EXT_ID,
+    activity,
+  });
   registerTrustedSourceRoutes(router, extensionManager, activity);
   registerExtensionInboxRoutes(router, extensionManager, dorkHome, SAFE_EXT_ID, activity);
   registerExtensionStartWorkRoute(router, extensionManager, SAFE_EXT_ID);
