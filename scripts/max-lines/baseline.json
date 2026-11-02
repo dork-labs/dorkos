@@ -46,7 +46,7 @@
     "apps/server/src/services/connectors/connection-store.ts": 821,
     "apps/server/src/services/connectors/events/subscription-store.ts": 560,
     "apps/server/src/services/connectors/execution/access-query-service.ts": 707,
-    "apps/server/src/services/connectors/execution/authorization-service.ts": 579,
+    "apps/server/src/services/connectors/execution/authorization-service.ts": 576,
     "apps/server/src/services/connectors/management-review-service.ts": 680,
     "apps/server/src/services/connectors/reconciliation-service.ts": 1575,
     "apps/server/src/services/connectors/resources/authentication-flow-service.ts": 807,

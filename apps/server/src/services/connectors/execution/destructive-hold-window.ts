@@ -30,10 +30,11 @@
  *    keeps its card, which only this computer can answer. HTTPS on that path
  *    (DOR-3173) lifts this.
  *
- * A chat SET to Full autonomy skips 4, 5 and 7 (DOR-3394, and the owner's
- * rule that Full has no limits): it asks nobody anything, so neither a mark,
- * a stranger's hold nor open Wi-Fi sends its call to a card. It still waits
- * out the 60 seconds, which anyone but the agent can cancel.
+ * A chat SET to Full autonomy skips 4 and 7 (DOR-3394, and the owner's rule
+ * that Full has no limits): neither its level nor open Wi-Fi sends its call to
+ * a card. It still waits out the 60 seconds, which anyone but the agent can
+ * cancel. It keeps 5 (DOR-3683): a turn that read an outsider's words asks a
+ * person before anything that cannot be undone, at every level.
  *
  * Anything else falls through to the tier gate, unchanged. So does an
  * eligible call whose waiting row could not be written: nothing runs that
@@ -138,19 +139,21 @@ export async function holdRequesterFor(
   const sessionIds = [...new Set([canonicalSessionId, context.sessionId])].filter(
     (id): id is string => typeof id === 'string' && id !== ''
   );
-  // A chat set to Full autonomy asks nobody anything (DOR-3394): a mark, a stranger's hold or open
-  // Wi-Fi does not send its call to a card, so it waits out the same window as any Full chat's.
+  // A chat set to Full autonomy asks nobody anything (DOR-3394): open Wi-Fi or a low level does
+  // not send its call to a card, so it waits out the same window as any Full chat's. A turn that
+  // read an outsider's words is the one exception (DOR-3683): a destructive action cannot be
+  // undone, so it keeps its card at every level, Full included.
   const chosenFull = sources.chosenFull ?? choseFullAutonomy;
   const full = sessionIds.some((sessionId) => chosenFull(sessionId));
   if (!full && sources.plainWifiOpen()) return undefined;
+  if (sessionIds.some((sessionId) => sources.strangerTurn(sessionId, agentPath))) {
+    return undefined;
+  }
   const identity =
     (fresh ? undefined : context.identity) ?? (await sources.describeAgent(agentPath));
   // An agent DorkOS cannot name counts as switched off.
   if (!identity || identity.inactive) return undefined;
   if (!full) {
-    if (sessionIds.some((sessionId) => sources.strangerTurn(sessionId, agentPath))) {
-      return undefined;
-    }
     // The stricter of the levels known under either id; none known keeps the card.
     const levels = sessionIds
       .map((sessionId) => sources.turnLevel(sessionId))

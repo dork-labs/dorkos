@@ -213,6 +213,13 @@ export interface CapabilityPreflightResult {
    * card's app, account and action are the server's, never the caller's.
    */
   readonly approvalServiceAction?: ApprovalServiceAction;
+  /**
+   * Whether this connected-app action reaches people outside the team or cannot be undone
+   * (DOR-3683): a send, an event change or a new event with invitees, any destructive action. Read by the preflight
+   * from the stored operation and the validated arguments. A turn that read an outsider's words
+   * asks a person before one even at Full; absent counts as yes.
+   */
+  readonly outward?: boolean;
 }
 
 /**
@@ -876,6 +883,7 @@ export function composeRegistry(
               ...(supplied.identity ? { identity: supplied.identity } : {}),
               ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
               ...principalTurnOf(supplied.serverPrincipal),
+              ...(preflight?.outward === false ? { outward: false } : {}),
             });
         // Named here rather than in the gate, which is synchronous (DOR-1929):
         // an action that can raise a card and declares its subject gets a card

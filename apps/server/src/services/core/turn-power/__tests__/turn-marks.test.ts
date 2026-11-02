@@ -284,10 +284,10 @@ describe('the readers', () => {
         permissionCeiling: 'runtime-default',
       });
       await elsewhere.next();
-      // The chat is set to Full (its canonical id's record says so), so the marked sibling no
-      // longer sends the call to a card (DOR-3394): it waits out the window like any Full chat's.
-      // Until then this was `toBeUndefined()`. A chat below Full never reaches the window at all.
-      expect(await holdRequesterFor(context, preflight)).toBeDefined();
+      // The chat is set to Full (its canonical id's record says so), but the marked sibling still
+      // sends the call to a card: a destructive action cannot be undone, and outside words ask
+      // before one at every level (DOR-3683, which narrowed DOR-3394 for this one class).
+      expect(await holdRequesterFor(context, preflight)).toBeUndefined();
       await elsewhere.return(undefined);
     } finally {
       clearTestHomes();

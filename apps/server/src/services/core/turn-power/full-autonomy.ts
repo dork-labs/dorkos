@@ -2,7 +2,11 @@
  * What a person SET each conversation to, apart from any ceiling its turn carries, and whether
  * anybody can be asked in it (DOR-3394, the product owner's rule).
  *
- * A chat set to Full autonomy asks nobody anything. An outsider's mark, a carried ceiling or a
+ * A chat set to Full autonomy asks nobody anything, with one exception (DOR-3683): a turn that
+ * read an outsider's words still asks before a connected-app action that reaches people outside
+ * the team or cannot be undone (a send, an event change, a destructive action). The
+ * connector gates read that (`permission-enforcement.ts`, `destructive-hold-window.ts`); this
+ * module only says which chats are Full. An outsider's mark, a carried ceiling or a
  * stranger's hold bounds the level a turn is recorded at (`turn-levels.ts`), and the permission
  * gate used to read that bounded level as a reason to put a card in front of a person. It now
  * asks here first: the level the chat itself is set to, the person's choice or the agent's level
@@ -10,7 +14,7 @@
  * that a turn nobody is watching is refused at once instead of raising a card nobody can answer.
  *
  * When a marked turn in a Full chat does something a marked turn below Full is asked about (a
- * send, a destructive action, a standing change), one Activity line says so: no card was shown,
+ * draft or a label in a connected app, a standing change), one Activity line says so: no card was shown,
  * so the record is how a person finds it afterwards. The same holds for what a marked turn below
  * Full is refused (DOR-3412): at Full the mark refuses nothing and writes the line instead, except
  * the three refusals every level keeps (an agent changing its own level or standing grants,

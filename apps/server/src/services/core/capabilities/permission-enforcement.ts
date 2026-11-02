@@ -408,6 +408,11 @@ export async function resolveCallPermission(request: {
    * principal but no session or identity (the connector loopback): its turn's marks count too.
    */
   principalTurn?: { sessionId: string; agentPath: string };
+  /**
+   * False when the connector preflight read this call as one that reaches nobody outside the
+   * team and can be undone (a draft, a label). Anything else counts as outward (DOR-3683).
+   */
+  outward?: boolean;
 }): Promise<CallPermission | null> {
   const { action, identity, principalTurn } = request;
   // Read from the turn's own record, never from the model: the session's
@@ -424,7 +429,8 @@ export async function resolveCallPermission(request: {
   const strangerTurn = marked && !full;
   /**
    * One Activity line when a marked turn in a Full chat runs what a marked turn below Full is
-   * asked about (a send or a standing change): no card was shown, so the line is the record.
+   * asked about (a draft, a label or a standing change; a send still asks, DOR-3683): no card was
+   * shown, so the line is the record.
    * Written as the gate lets the call through, since the gate cannot see its outcome; the
    * call's own audit line follows. A destructive call allowed unasked already gets its line
    * from the tier gate (`enforceCapabilityTier`).
@@ -492,8 +498,10 @@ export async function resolveCallPermission(request: {
   }
   if (areas.length === 0) {
     // An action with no area that a marked turn must still ask about (DOR-3390): a card, filed
-    // under the area it acts in, every time.
-    const cardArea = strangerTurn ? markedTurnCardArea(action.id) : undefined;
+    // under the area it acts in, every time. At Full the mark still asks before one that reaches
+    // people outside the team or cannot be undone (DOR-3683): a send, an event change, a new event with invitees.
+    const outwardAtFull = marked && full && request.outward !== false;
+    const cardArea = strangerTurn || outwardAtFull ? markedTurnCardArea(action.id) : undefined;
     if (cardArea !== undefined) {
       return { area: cardArea, state: 'ask', source: 'always-asks', layer: 'floor' };
     }

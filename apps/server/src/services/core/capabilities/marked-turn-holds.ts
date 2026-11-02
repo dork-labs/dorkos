@@ -13,6 +13,11 @@
  *   and creates or moves calendar events. Its destructive sibling already asks in a marked turn
  *   (`destructive-hold-window.ts`); this keeps the write tier from doing the same unasked.
  *
+ * In a chat set to Full the mark holds nothing (DOR-3394) except the acts in an outside account
+ * that reach people outside the team or cannot be undone (DOR-3683): a send, a reply, an event
+ * change or a new event with invitees, and every destructive action. A draft or a label at Full runs, with an Activity
+ * line. The connector preflight says which a call is (`reaches-outside.ts`).
+ *
  * @module services/core/capabilities/marked-turn-holds
  */
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
