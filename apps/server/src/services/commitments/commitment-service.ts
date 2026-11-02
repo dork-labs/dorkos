@@ -43,6 +43,7 @@ import {
   type CommitmentStore,
 } from './commitment-store.js';
 import {
+  agentWordsMarks,
   authorityOf,
   floorAfter,
   lowerAuthority,
@@ -391,7 +392,10 @@ export class CommitmentService {
     const dueAt = input.dueAt ? this.futureDue(input.dueAt) : null;
     const own =
       assigner.kind === 'agent'
-        ? { authority: ownWordsAuthority(input.originLevel), marks: input.originMarks ?? NO_MARKS }
+        ? {
+            authority: ownWordsAuthority(input.originLevel),
+            marks: agentWordsMarks(input.originLevel, input.originMarks ?? NO_MARKS),
+          }
         : authorityOf({ kind: 'person', proven: assigner.proven === true });
     const row: AgentCommitmentRow = {
       id: ulid(),
@@ -509,7 +513,10 @@ export class CommitmentService {
               ) as WritableCommitmentAuthority
             ),
             authorityMarks: writeAuthorityMarks(
-              mergeMarks(readAuthorityMarks(row.authorityMarks), actor.marks ?? NO_MARKS)
+              mergeMarks(
+                readAuthorityMarks(row.authorityMarks),
+                agentWordsMarks(actor.level, actor.marks ?? NO_MARKS)
+              )
             ),
           }
         : floorAfter(

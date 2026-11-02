@@ -195,11 +195,33 @@ describe('commitment authority', () => {
       expect(service.update(agentA, own.id, { state: 'dropped' }).state).toBe('dropped');
     });
 
+    it('marks an own promise from a turn of unknown level as outsider, and a known clean one not', () => {
+      const unknown = service.create('agent-a', { what: 'After a restart' });
+      expect(stored(unknown.id)).toMatchObject({
+        authority: 'self',
+        authorityMarks: '{"outsider":true}',
+      });
+      const known = service.create('agent-a', {
+        what: 'In a recorded turn',
+        originLevel: { asks: 'never', reach: 'everything' },
+      });
+      expect(stored(known.id)).toMatchObject({
+        authority: '{"asks":"never","reach":"everything"}',
+        authorityMarks: '{}',
+      });
+    });
+
     it("leaves an agent's own promise alone when a person, proven or not, closes or reopens it", () => {
-      const own = service.create('agent-a', { what: 'Reply' });
+      const own = service.create('agent-a', {
+        what: 'Reply',
+        originLevel: { asks: 'never', reach: 'everything' },
+      });
       service.update({ kind: 'person' }, own.id, { state: 'kept' });
       service.update({ kind: 'person' }, own.id, { state: 'open' });
-      expect(stored(own.id)).toMatchObject({ authority: 'self', authorityMarks: '{}' });
+      expect(stored(own.id)).toMatchObject({
+        authority: '{"asks":"never","reach":"everything"}',
+        authorityMarks: '{}',
+      });
     });
 
     it("lowers someone else's to-do on any unproven change, a new date included", () => {

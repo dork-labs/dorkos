@@ -29,10 +29,12 @@ import type { CommitmentState } from '@dorkos/shared/commitment-schemas';
 import { recordAudit } from '../audit/audit-trail.js';
 import { mergeMarks, NO_MARKS, type TurnMarks } from '../core/turn-power/turn-marks.js';
 import {
+  agentWordsMarks,
   authorityOf,
   floorAfter,
   lowerAuthority,
   ownWordsAuthority,
+  readAuthority,
   writeAuthority,
   writeAuthorityMarks,
   type TodoActor,
@@ -134,6 +136,12 @@ export interface Todo {
   note: string | null;
   rank: string | null;
   chainDepth: number;
+  /**
+   * True when the to-do runs at the stranger bound (Security, #3454): an outsider touched it, a
+   * person who did not prove it made or changed it, or nobody could vouch for who did. Shown on
+   * the to-do so the drop is never silent.
+   */
+  strangerBound: boolean;
   createdAt: string;
   closedAt: string | null;
 }
@@ -193,6 +201,7 @@ export function toTodo(row: CommitmentRow, now: number): Todo {
     note: row.note,
     rank: row.rank,
     chainDepth: row.chainDepth,
+    strangerBound: readAuthority(row.authority).kind === 'runtime-default',
     createdAt: row.createdAt,
     closedAt: row.closedAt,
   };
@@ -239,7 +248,10 @@ export class TodoService {
       input.assignee.kind === 'agent' &&
       input.assignee.agentId === actor.agentId
         ? // A note to self: the agent's own words, held to its turn's level, as a promise is.
-          { authority: ownWordsAuthority(actor.level), marks: actor.marks }
+          {
+            authority: ownWordsAuthority(actor.level),
+            marks: agentWordsMarks(actor.level, actor.marks),
+          }
         : authorityOf(actor);
     const sourceMarks = input.source?.marks ?? NO_MARKS;
     // An outsider's words in the source hold the whole to-do to the stranger bound (Must 2).

@@ -134,7 +134,24 @@ describe('TodoService', () => {
         what: 'Check the build',
         assignee: { kind: 'agent', agentId: 'agent-b' },
       });
-      expect(stored(made.id).authority).toBe('runtime-default');
+      expect(stored(made.id)).toMatchObject({
+        authority: 'runtime-default',
+        authorityMarks: '{"outsider":true}',
+      });
+    });
+
+    it('shows the stranger bound on the to-do itself, never silently', () => {
+      const unproven = todos.create(UNPROVEN, {
+        what: 'Run the deploy',
+        assignee: { kind: 'agent', agentId: 'agent-a' },
+      });
+      expect(unproven.strangerBound).toBe(true);
+      expect(todos.get(unproven.id)!.strangerBound).toBe(true);
+      const proven = todos.create(PERSON, {
+        what: 'Run the deploy',
+        assignee: { kind: 'agent', agentId: 'agent-a' },
+      });
+      expect(proven.strangerBound).toBe(false);
     });
 
     it("holds an agent's note to itself to the turn it was made in", () => {

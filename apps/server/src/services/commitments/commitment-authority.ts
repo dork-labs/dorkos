@@ -50,6 +50,9 @@ export const UNREADABLE_AUTHORITY: CommitmentAuthority = Object.freeze({ kind: '
 /** The fail-closed reading of marks nobody can read: the outsider mark, as `parseStoredMarks`. */
 const UNREADABLE_MARKS: TurnMarks = Object.freeze({ outsider: true });
 
+/** The outsider mark alone. */
+const OUTSIDER: TurnMarks = Object.freeze({ outsider: true });
+
 const ASKS: readonly PermissionAsks[] = ['always', 'when-risky', 'never'];
 const REACH: readonly PermissionReach[] = ['read', 'edit', 'workspace', 'everything'];
 const NAMED = new Set(['legacy', 'self', 'person', 'runtime-default']);
@@ -172,6 +175,21 @@ export function ownWordsAuthority(
     : own;
 }
 
+/**
+ * The marks an agent's words carry (Security, #3454): its turn's own marks, plus the outsider mark
+ * when that turn's level is unknown. A level DorkOS cannot read vouches for nothing, so the words
+ * keep their standing but say so; a known, clean level adds nothing.
+ *
+ * @param level - The turn's level, when known.
+ * @param marks - The turn's marks.
+ */
+export function agentWordsMarks(
+  level: Pick<TurnPermissionLevel, 'asks' | 'reach' | 'auto'> | undefined,
+  marks: TurnMarks
+): TurnMarks {
+  return level ? marks : mergeMarks(marks, OUTSIDER);
+}
+
 /** Who is acting on a to-do, as the server established it. Never read from a request body. */
 export type TodoActor =
   /**
@@ -192,9 +210,6 @@ export type TodoActor =
   /** Somebody outside the owner's circle: a guest in a shared space, a bridged chat's user. */
   | { readonly kind: 'outsider'; readonly id: string };
 
-/** The outsider mark alone. */
-const OUTSIDER: TurnMarks = Object.freeze({ outsider: true });
-
 /**
  * The authority and marks an actor's own words carry. A guest, a bridged user, and a person who
  * did not prove it get the stranger bound and the outsider mark, on every runtime.
@@ -213,7 +228,10 @@ export function authorityOf(actor: TodoActor): {
     case 'agent':
       return actor.level
         ? { authority: { kind: 'level', level: actor.level }, marks: actor.marks }
-        : { authority: { kind: 'runtime-default' }, marks: actor.marks };
+        : {
+            authority: { kind: 'runtime-default' },
+            marks: agentWordsMarks(undefined, actor.marks),
+          };
     case 'outsider':
       return { authority: { kind: 'runtime-default' }, marks: OUTSIDER };
   }
