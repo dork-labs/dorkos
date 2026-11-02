@@ -60,7 +60,12 @@ function fakeGitHub({
         labels: labels.map((name) => ({ name })),
       };
     },
-    files: async () => files.map((filename) => ({ filename, status: 'modified' })),
+    files: async () =>
+      files.map((file) =>
+        typeof file === 'string'
+          ? { filename: file, status: 'modified' }
+          : { status: 'modified', ...file }
+      ),
     content: async (path) => contents[path],
     statuses: async () => statuses,
     setStatus: async (sha, state, description) => {
@@ -201,6 +206,59 @@ describe('a workflow that could post this status itself (interim, until the App)
   test('a workflow it cannot read refuses rather than reading as safe', async () => {
     const gh = fakeGitHub({ files: ['.github/workflows/unreadable.yml'], contents: {} });
     await assert.rejects(verdictForPullRequest(gh.api, event, lists), /Cannot read/);
+  });
+});
+
+describe('a PR that edits the job that judges it (Security, 2026-11-02)', () => {
+  const deepLabels = {
+    labels: ['security-reviewed', 'security-deep-reviewed'],
+    timeline: [labelled(LATE), labelled(LATE, 'security-deep-reviewed')],
+  };
+
+  test('editing security-review-initialize.yml with only security-reviewed is failure', async () => {
+    const file = '.github/workflows/security-review-initialize.yml';
+    const yaml = readFileSync(
+      new URL('../workflows/security-review-initialize.yml', import.meta.url),
+      'utf8'
+    );
+    const gh = fakeGitHub({ files: [file], contents: { [file]: yaml } });
+    await verdictForPullRequest(gh.api, event, lists);
+    assert.equal(verdictOf(gh.written).state, 'failure');
+    assert.match(
+      verdictOf(gh.written).description,
+      /security-review-initialize\.yml judges this PR/
+    );
+  });
+
+  test('editing a gate script needs the deep label, and passes with it', async () => {
+    const files = ['.github/scripts/security-verdict.mjs'];
+    const only = fakeGitHub({ files });
+    await verdictForPullRequest(only.api, event, lists);
+    assert.equal(verdictOf(only.written).state, 'failure');
+    assert.match(verdictOf(only.written).description, /security-verdict\.mjs judges this PR/);
+    const both = fakeGitHub({ files, ...deepLabels });
+    await verdictForPullRequest(both.api, event, lists);
+    assert.equal(verdictOf(both.written).state, 'success');
+  });
+
+  test('the gate workflow and a rename out of a gate script count too', async () => {
+    for (const file of [
+      { filename: '.github/workflows/security-gate.yml' },
+      {
+        filename: '.github/scripts/old-gate.mjs',
+        previous_filename: '.github/scripts/security-gate.mjs',
+      },
+    ]) {
+      const gh = fakeGitHub({ files: [file], contents: { [file.filename]: 'on: pull_request\n' } });
+      await verdictForPullRequest(gh.api, event, lists);
+      assert.equal(verdictOf(gh.written).state, 'failure', file.filename);
+    }
+  });
+
+  test('a look-alike script is a security path, but not a judge', async () => {
+    const gh = fakeGitHub({ files: ['.github/scripts/run-tests.mjs'] });
+    await verdictForPullRequest(gh.api, event, lists);
+    assert.equal(verdictOf(gh.written).state, 'success');
   });
 });
 

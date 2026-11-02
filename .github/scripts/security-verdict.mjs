@@ -22,6 +22,11 @@
  * `security-deep-reviewed`: a workflow with that grant can post this very
  * status itself.
  *
+ * A PR that edits a file that judges it (this workflow, the gate's workflow or a
+ * `.github/scripts/security-*` script) also needs `security-deep-reviewed`: in the
+ * queue the workflow file comes from the merge commit, so such a PR could rewrite
+ * the job that judges it. It fails on its own head, before anything can queue it.
+ *
  * On `merge_group` it judges every queued PR the way `security-gate` does, with
  * main's lists, and posts the verdict on the merge group's own SHA, so a
  * required `security-review` never leaves the queue waiting on "expected".
@@ -49,6 +54,28 @@ import { approvalMode, labelAtHead, labelNewerThanHead } from './security-label-
 
 /** A workflow file, by path. Reusable workflows live here too. */
 const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/i;
+
+/**
+ * The files that judge a PR: this workflow, the gate's own workflow (its path
+ * lists) and the gate's scripts. In the queue the workflow file comes from the
+ * merge commit, so a PR that edits one of these could rewrite the job that
+ * judges it. Such a PR needs `security-deep-reviewed` on its own head.
+ */
+const JUDGE_FILE =
+  /^\.github\/(?:workflows\/(?:security-review-initialize|security-gate)\.ya?ml|scripts\/security-[^/]*)$/i;
+
+/**
+ * The judging files a PR touches, either side of a rename.
+ *
+ * @param {{filename: string, previous_filename?: string}[]} files The PR's changed files.
+ */
+export function judgeFiles(files) {
+  return files
+    .filter((file) =>
+      [file.filename, file.previous_filename].some((path) => path && JUDGE_FILE.test(path))
+    )
+    .map((file) => file.filename);
+}
 
 /** A permission that lets a workflow post a commit status or a check run. */
 const WRITES_A_VERDICT = /^\s*(?:statuses|checks)\s*:\s*write\b|\bpermissions\s*:\s*write-all\b/im;
@@ -95,19 +122,21 @@ export async function headVerdict(api, pr, files, { pattern, deepPattern, botUse
   if (!deepPattern) throw new Error('Security deep-review path list missing');
   const sha = pr.head.sha;
   const writers = await verdictWriters(api, files, sha);
-  const sensitive = touchesSecurity(files, pattern) || writers.length > 0;
+  const judges = judgeFiles(files);
+  const sensitive = touchesSecurity(files, pattern) || writers.length > 0 || judges.length > 0;
   if (!sensitive) return { state: 'success', description: 'no security paths' };
   if (approvalMode(botUserId) !== 'label-at-head') return null;
   const timeline = await api.timeline(pr.number);
   const activity = await api.activity(pr.head.ref);
   const input = { sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity };
   let verdict = labelAtHead(input);
-  const deep = touchesSecurity(files, deepPattern) || writers.length > 0;
+  const deep = touchesSecurity(files, deepPattern) || writers.length > 0 || judges.length > 0;
   if (verdict.passed && deep) verdict = labelNewerThanHead({ ...input, name: DEEP_LABEL });
   if (verdict.passed) return { state: 'success', description: 'Security label covers this SHA' };
-  const why = writers.length
-    ? `${verdict.reason}; ${writers.join(', ')} can write statuses or checks`
-    : verdict.reason;
+  const notes = [];
+  if (judges.length) notes.push(`${judges.join(', ')} judges this PR`);
+  if (writers.length) notes.push(`${writers.join(', ')} can write statuses or checks`);
+  const why = [verdict.reason, ...notes].join('; ');
   // GitHub caps a status description at 140 characters.
   return { state: 'failure', description: why.slice(0, 140) };
 }
