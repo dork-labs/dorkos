@@ -22,11 +22,13 @@ const initializerWorkflow = readFileSync(
   'utf8'
 );
 const pattern = /^ {2}SECURITY_PATH_PATTERN: '(.*)'$/m.exec(workflow)[1];
+const deepPattern = /^ {2}SECURITY_DEEP_PATH_PATTERN: '(.*)'$/m.exec(workflow)[1];
 const appSlug = 'dorkos-security-review';
 const botUserId = 424242;
 const checkPullRequest = (api, event, pattern, options = {}) =>
-  runPullRequest(api, event, pattern, { botUserId, ...options });
-const checkMergeGroup = (api, event, pattern) => runMergeGroup(api, event, pattern, botUserId);
+  runPullRequest(api, event, pattern, { botUserId, deepPattern, ...options });
+const checkMergeGroup = (api, event, pattern) =>
+  runMergeGroup(api, event, pattern, botUserId, deepPattern);
 const approved = {
   context: 'security-review',
   state: 'success',
@@ -237,6 +239,119 @@ test('workflow path list covers Security’s complete list and both sides of ren
     );
   }
   assert.equal(touchesSecurity([{ filename: 'packages/shared/src/schemas.tsx' }], pattern), false);
+});
+
+test('workflow path list covers who a turn or a schedule runs as (DOR-3640)', () => {
+  for (const filename of [
+    'apps/server/src/services/tasks/approvals/schedule-owner.ts',
+    'apps/server/src/services/tasks/lifecycle/create-task.ts',
+    'apps/server/src/services/session/launch/launch-session.ts',
+    'apps/server/src/services/session/launch/launch-caller.ts',
+    'apps/server/src/services/core/agent-identity/agent-home.ts',
+    'apps/server/src/services/core/external-mcp/task-tools.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/session-tools.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts',
+    // Already covered, and named here so a narrowing cannot drop them unseen.
+    'apps/server/src/routes/session-launcher.ts',
+    'apps/server/src/routes/tasks.ts',
+    'apps/server/src/services/mesh/agent-path-lookup.ts',
+    'apps/server/src/services/extensions/agent-tools/tool-binding.ts',
+    'apps/server/src/services/core/capabilities/extension-contribution.ts',
+  ]) {
+    assert.ok(touchesSecurity([{ filename }], pattern), filename);
+  }
+  for (const filename of [
+    'apps/server/src/services/session/history/history-window.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/mesh-tools.ts',
+    'apps/client/src/layers/features/schedule-approval/ui/ScheduleApprovalCard.tsx',
+    'docs/guides/tasks.mdx',
+  ]) {
+    assert.equal(touchesSecurity([{ filename }], pattern), false, filename);
+  }
+});
+
+test('the P0 deep-review list names the identity paths, and only security paths', () => {
+  const deep = [
+    'apps/server/src/services/tasks/approvals/schedule-owner.ts',
+    'apps/server/src/services/tasks/lifecycle/create-task.ts',
+    'apps/server/src/services/session/launch/launch-session.ts',
+    'apps/server/src/services/core/agent-identity/agent-home.ts',
+    'apps/server/src/services/core/external-mcp/task-tools.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/session-start-permission.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/session-tools.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts',
+    'apps/server/src/services/rooms/repo/room-repo-git.ts',
+    // Who a turn may act as, and with what power (#dorkos, 2026-11-02 13:14).
+    'apps/server/src/services/core/turn-power/agent-level-bound.ts',
+    'apps/server/src/services/core/permissions/agent-level.ts',
+    'apps/server/src/services/core/auth/accounts.ts',
+    // Security's 07:13 Musts, folded in at 13:19: the git runners and where a session runs.
+    'apps/server/src/lib/git-safety.ts',
+    'packages/shared/src/safe-git.ts',
+    'apps/server/src/services/core/runtime-registry.ts',
+    'apps/server/src/services/workspace/room-session-place.ts',
+  ];
+  for (const filename of deep) {
+    assert.ok(touchesSecurity([{ filename }], deepPattern), filename);
+    // A deep path outside the main list would never reach the label check at all.
+    assert.ok(touchesSecurity([{ filename }], pattern), `${filename} (main list)`);
+  }
+  for (const filename of [
+    'apps/server/src/http/gate.ts',
+    'apps/server/src/routes/tasks.ts',
+    'apps/server/src/services/core/approvals/approval-service.ts',
+    'apps/server/src/services/rooms/limits/turn-ceiling.ts',
+    'apps/server/src/services/session/origin/origin.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/session-tools-extra.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/mesh-tools.ts',
+    'apps/server/src/services/tasksx/a.ts',
+    'apps/server/src/services/core/turn-powerx/a.ts',
+    'apps/server/src/services/core/capabilities/registry.ts',
+    'apps/server/src/services/core/authx/a.ts',
+    'packages/shared/src/permissions/levels.ts',
+    // On the main list only: a security path, but not a deep one.
+    'apps/server/src/services/workspace/hooks.ts',
+    'apps/server/src/services/audit/account-ids.ts',
+    'apps/server/src/lib/git-safety.test-helpers.ts',
+    'apps/server/src/services/core/runtime-registry-cache.ts',
+    '.github/workflows/security-gate.yml',
+    'docs/guides/tasks.mdx',
+  ]) {
+    assert.equal(touchesSecurity([{ filename }], deepPattern), false, filename);
+  }
+});
+
+test("Security's 07:13 paths are security paths, and their look-alikes are not", () => {
+  for (const filename of [
+    'packages/db/drizzle/0000_magenta_gladiator.sql',
+    'packages/db/src/schema/a2a.ts',
+    'apps/server/src/lib/git-safety.ts',
+    'packages/shared/src/safe-git.ts',
+    'apps/server/src/services/session/message-dispatcher.ts',
+    'apps/server/src/services/session/message-dispatcher/adopt.ts',
+    'apps/server/src/services/core/runtime-registry.ts',
+    'apps/server/src/services/workspace/hooks.ts',
+    'apps/server/src/services/workspace/room-session-place.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/binding-tools.ts',
+    'apps/server/src/services/audit/account-ids.ts',
+    'apps/server/src/services/heartbeats/beat-chat.ts',
+    'apps/server/src/services/session/fleet/auto-handoff.ts',
+  ]) {
+    assert.ok(touchesSecurity([{ filename }], pattern), filename);
+  }
+  for (const filename of [
+    'packages/db/src/index.ts',
+    'packages/db/drizzle.config.ts',
+    'packages/shared/src/safe-git-helpers.ts',
+    'apps/server/src/services/session/message-dispatcher-notes.md',
+    'apps/server/src/services/core/runtime-registry-cache.ts',
+    'apps/server/src/services/workspaces/a.ts',
+    'apps/server/src/services/auditing/a.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/binding-tools-extra.ts',
+    'apps/server/src/services/session/history/history-window.ts',
+  ]) {
+    assert.equal(touchesSecurity([{ filename }], pattern), false, filename);
+  }
 });
 
 test('group resolution rejects empty, missing, cyclic and ambiguous membership', () => {
@@ -493,6 +608,7 @@ test('pinned-main fixture blocks a branch whose workflow and script both exit 0'
         SECURITY_APPROVAL_BOT_USER_ID: String(botUserId),
         GITHUB_EVENT_PATH: eventPath,
         SECURITY_PATH_PATTERN: pattern,
+        SECURITY_DEEP_PATH_PATTERN: deepPattern,
       },
     });
     let output = '';
