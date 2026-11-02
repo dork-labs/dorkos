@@ -1,6 +1,6 @@
 ---
 id: 261102-172123
-title: core/operator, where agents' permissions are written, is a security path and a P0 path
+title: core/operator and the other unmatched server folders join the security lists, as Security ruled
 kind: hygiene
 status: proposed
 actor: agent
@@ -17,10 +17,12 @@ Security's re-run of the gate patterns (2026-11-02, DOR-3678) found server folde
 
 ## What changes
 
-`core/operator/` joins `SECURITY_PATH_PATTERN` and `SECURITY_DEEP_PATH_PATTERN` in `security-gate.yml`, and the two other copies of the main list (the fixture regex and `tools/security-approve/Policy.swift`). A diff there now needs `security-reviewed` and `security-deep-reviewed` newer than its last push. The other unmatched folders are listed in the PR for Security to rule on.
+`core/operator/` joins `SECURITY_PATH_PATTERN` and `SECURITY_DEEP_PATH_PATTERN` in `security-gate.yml`, and the two other copies of the main list (the fixture regex and `tools/security-approve/Policy.swift`). A diff there now needs `security-reviewed` and `security-deep-reviewed` newer than its last push.
+
+The other unmatched folders join as Security ruled (#dorkos, 2026-11-02 17:25Z). Main and deep: `core/lan-access/`, `core/hub/`, `core/server-role/`, `core/safe-defaults/`, `core/remote/`, `terminal/`, `core/config/` and `core/secret-file-scan/`. Main only: `core/hub-relay/`, `core/cloud/`, `core/sign-in-landing/`, `memory/`, `marketplace/`, `marketplace-mcp/`, `core-extensions/` and `mcp-apps/`.
 
 ## Hypothesis
 
-PRs that change `apps/server/src/services/core/operator/` and merge without `security-deep-reviewed` at their head go from unchecked to 0 over the 14 days after merge. QA counts it by hand from merged PRs' labels; no collector metric covers it yet.
+PRs that change `apps/server/src/services/core/operator/` or another newly listed folder and merge without the labels their list needs at their head go from unchecked to 0 over the 14 days after merge. QA counts it by hand from merged PRs' labels; no collector metric covers it yet.
 
-Revert if a PR outside `core/operator/` starts needing the deep label because of this change.
+Revert if a PR outside the listed folders starts needing a Security label because of this change.

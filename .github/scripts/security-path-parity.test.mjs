@@ -153,6 +153,41 @@ for (const [match, miss] of [
   });
 }
 
+// DOR-3678: the other server folders no pattern matched, as Security ruled them
+// (#dorkos, 2026-11-02 17:25Z). `deep` is whether the folder is also a P0 path. Each
+// match is a real file; its look-alike stays off both lists.
+const S = 'apps/server/src/services';
+for (const [match, miss, deep] of [
+  [`${S}/core/lan-access/lan-trust.ts`, `${S}/core/lan-accessx/lan-trust.ts`, true],
+  [`${S}/core/hub/hub-sign-in.ts`, `${S}/core/hubs/hub-sign-in.ts`, true],
+  [`${S}/core/server-role/role-checks.ts`, `${S}/core/server-roles/role-checks.ts`, true],
+  [`${S}/core/safe-defaults/default-verdicts.ts`, `${S}/safe-defaults/default-verdicts.ts`, true],
+  [`${S}/core/remote/command-dispatcher.ts`, `${S}/core/remote-notes/command-dispatcher.ts`, true],
+  [`${S}/terminal/terminal-manager.ts`, `${S}/terminals/terminal-manager.ts`, true],
+  [`${S}/core/config/backups.ts`, `${S}/core/configs/backups.ts`, true],
+  [`${S}/core/secret-file-scan/scan-folder.ts`, `${S}/core/secret-file-scans/scan-folder.ts`, true],
+  [`${S}/core/hub-relay/link-codes.ts`, `${S}/core/hub-relays/link-codes.ts`, false],
+  [`${S}/core/cloud/credits-inference.ts`, `${S}/core/cloudy/credits-inference.ts`, false],
+  [`${S}/core/sign-in-landing/sign-in-landings.ts`, `${S}/core/sign-in-landings/x.ts`, false],
+  [`${S}/memory/registry.ts`, `${S}/memoryx/registry.ts`, false],
+  [`${S}/marketplace/package-fetcher.ts`, `${S}/marketplaces/package-fetcher.ts`, false],
+  [`${S}/marketplace-mcp/tool-install.ts`, `${S}/marketplace-mcpx/tool-install.ts`, false],
+  [`${S}/core-extensions/ensure-core-extensions.ts`, `${S}/core-extension/x.ts`, false],
+  [`${S}/mcp-apps/mcp-app-resource-service.ts`, `${S}/mcp-app/mcp-app-resource-service.ts`, false],
+]) {
+  test(`${match.slice(S.length + 1)} is on the main list${deep ? ' and the deep list' : ' only'}`, () => {
+    assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);
+    const deepPattern = securityDeepPathPattern();
+    assert.ok(touchesSecurity([{ filename: match }], reference), 'main');
+    assert.ok(
+      touchesSecurity([{ filename: 'docs/moved.md', previous_filename: match }], reference)
+    );
+    assert.equal(touchesSecurity([{ filename: match }], deepPattern), deep, 'deep');
+    assert.equal(touchesSecurity([{ filename: miss }], reference), false, miss);
+    assert.equal(touchesSecurity([{ filename: miss }], deepPattern), false, miss);
+  });
+}
+
 test('both trusted gate workflows pin all actions to full commit SHAs', () => {
   // The initializer has two jobs since the base-copy verdict (pull_request_target and merge_group).
   for (const [name, count] of [
