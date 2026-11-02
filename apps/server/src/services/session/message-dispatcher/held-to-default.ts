@@ -57,3 +57,19 @@ export function heldMessageMayJoin(
     return false;
   }
 }
+
+/**
+ * Whether words that carry a Wi-Fi hold as a mark (`MessageOpts.carriedMarks`, DOR-3561) may
+ * land as asked rather than queue: a steer only into a turn on this session that already carries
+ * the hold, since a running turn cannot be marked; a stage never, since it rides whatever turn
+ * runs next. A mark lowers nothing, so the running turn's level is not compared.
+ *
+ * @param sessionKey - The session's primary id, as its turns are recorded.
+ * @param requested - The disposition asked for.
+ */
+export function carriedHoldMayJoin(
+  sessionKey: string,
+  requested: Exclude<MessageDisposition, 'queue'>
+): boolean {
+  return requested === 'steer' && lastTurnLevelOf(sessionKey)?.outsider === true;
+}

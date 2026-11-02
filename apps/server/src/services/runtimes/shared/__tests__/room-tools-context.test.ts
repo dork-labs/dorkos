@@ -43,6 +43,16 @@ describe('the room tools block', () => {
     expect(block).toContain('An OK names exactly what it covers');
   });
 
+  it('says a post carries no hold to its readers, and a chat_send carries it (DOR-3440)', () => {
+    // The PM's S3 ruling on #3280: a room post marks nothing for the other agents who read it,
+    // since each runs at its own level (Dorian, Oct 30); a chat_send starts one agent's turn, so
+    // the hold travels with it. Security checks the code against this wording.
+    expect(block).toContain('Every agent that reads your post runs at its own level');
+    expect(block).toContain('stays with you');
+    expect(block).toContain(`A ${PREFIX}chat_send is different: it starts one agent's turn`);
+    expect(block).toContain('so the hold goes with it');
+  });
+
   it('hands long work off rather than holding the room (FB-65)', () => {
     // The chat tools block says what a helper and a spin-off are; this is the one line
     // that tells a room turn to use them, so the room is not left waiting on it.

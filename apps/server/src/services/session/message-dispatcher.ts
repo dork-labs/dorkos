@@ -191,7 +191,11 @@ import {
   refusesOpenTurn,
 } from './message-dispatcher/turn-probes.js';
 import { launchDispatch } from './message-dispatcher/launch.js';
-import { ceilingHoldsToDefault, heldMessageMayJoin } from './message-dispatcher/held-to-default.js';
+import {
+  carriedHoldMayJoin,
+  ceilingHoldsToDefault,
+  heldMessageMayJoin,
+} from './message-dispatcher/held-to-default.js';
 import { parkDispatch, unwatchedSettle } from './message-dispatcher/park.js';
 import { adoptAcceptedPrivateMessages, adoptQueuedMessages } from './message-dispatcher/adopt.js';
 import { hasHeldMessage, noteTurnBoundary, schedulePump } from './message-dispatcher/pump.js';
@@ -549,10 +553,11 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const heldToDefault = ceilingHoldsToDefault(opts.permissionCeiling);
   if (
     requested !== 'queue' &&
-    heldToDefault &&
-    !heldMessageMayJoin(runtime, sessionKey, requested)
+    ((heldToDefault && !heldMessageMayJoin(runtime, sessionKey, requested)) ||
+      (opts.carriedMarks?.outsider === true && !carriedHoldMayJoin(sessionKey, requested)))
   ) {
-    // Words held to the runtime's default never join a looser turn (DOR-3037).
+    // Words held to the runtime's default never join a looser turn (DOR-3037), and words that
+    // carry a Wi-Fi hold as a mark never join an unmarked one (DOR-3561).
     degradedBecause = requested === 'steer' ? 'not-steerable' : 'not-stageable';
   } else if (requested !== 'queue') {
     const rung = await deliverByDisposition(opts, requested, caps);
