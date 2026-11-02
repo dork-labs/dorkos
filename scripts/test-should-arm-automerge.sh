@@ -37,6 +37,7 @@ green() {
   "number": 1,
   "state": "OPEN",
   "isDraft": false,
+  "baseRefName": "main",
   "mergeStateStatus": "BEHIND",
   "autoMergeRequest": null,
   "mergeQueueEntry": null,
@@ -47,7 +48,8 @@ green() {
     {"name": "typecheck", "bucket": "pass"},
     {"name": "fragment-present", "bucket": "pass"},
     {"name": "no-fragment-under-skip-label", "bucket": "skipping"},
-    {"name": "review", "bucket": "pass"}
+    {"name": "review", "bucket": "pass"},
+    {"name": "security-gate", "bucket": "pass"}
   ],
   "headSince": "2026-09-21T15:00:00Z",
   "queueRemovals": []
@@ -99,6 +101,29 @@ check "hold label (mixed case)"   "SKIP held-by-label"        '.labels = [{"name
 check "hold among others"         "SKIP held-by-label"        '.labels = [{"name": "bug"}, {"name": "blocked"}]'
 check "unrelated label is fine"   "ARM"                       '.labels = [{"name": "review:light"}]'
 
+# Only main has the merge queue (DOR-3679). A stacked layer targets another
+# PR's branch, where arming merges it there on the spot, past its own review:
+# #3150 merged into #3148's branch that way. Retargeted to main, the same PR arms.
+check "stacked on another branch"  "SKIP base-not-main"        '.baseRefName = "feat/parent-layer"'
+check "retargeted to main"         "ARM"                       '.baseRefName = "main"'
+check "base absent"                "SKIP base-unknown"         'del(.baseRefName)'
+check "base null"                  "SKIP base-not-main"        '.baseRefName = null'
+check "base Main is not main"      "SKIP base-not-main"        '.baseRefName = "Main"'
+check "hold outranks stacked base" "SKIP held-by-label"        '.labels = ["hold"] | .baseRefName = "feat/parent-layer"'
+
+# Security's approval at this head, as the security-gate job decides it: on a
+# security path, `security-reviewed` added after the last push. A label that
+# predates the head fails that job, and its ruleset is not enforced yet, so
+# merge-tail is what stops the queue merging it.
+SG='(.checks[] | select(.name == "security-gate") | .bucket)'
+check "security label predates head" "SKIP security-gate-not-passed" "$SG = \"fail\""
+check "security gate still running"  "SKIP security-gate-not-passed" "$SG = \"pending\""
+check "security gate cancelled"      "SKIP security-gate-not-passed" "$SG = \"cancel\""
+check "security gate skipped"        "SKIP security-gate-not-passed" "$SG = \"skipping\""
+check "security gate not run yet"    "SKIP security-gate-missing"    '.checks |= map(select(.name != "security-gate"))'
+check "a second gate row failing"    "SKIP security-gate-not-passed" '.checks += [{"name": "security-gate", "bucket": "fail"}]'
+check "hold outranks security gate"  "SKIP held-by-label"            "$SG = \"fail\" | .labels = [\"hold\"]"
+
 # A conflicting PR runs no CI at all, so its green checks are stale and
 # meaningless. This is the trap the creating-pull-requests skill documents.
 check "conflicting"               "SKIP conflicting"          '.mergeStateStatus = "DIRTY"'
@@ -119,7 +144,7 @@ check "a failing check"           "SKIP failing-checks"       '.checks[0].bucket
 check "a cancelled check"         "SKIP cancelled-checks"     '.checks[0].bucket = "cancel"'
 check "a check still running"     "SKIP checks-in-flight"     '.checks[0].bucket = "pending"'
 check "no checks at all"          "SKIP no-checks"            '.checks = []'
-check "all checks skipped"        "ARM"                       '.checks = [{"name":"a","bucket":"skipping"}]'
+check "all checks skipped"        "ARM"                       '.checks = [{"name":"a","bucket":"skipping"},{"name":"security-gate","bucket":"pass"}]'
 check "fail outranks pending"     "SKIP failing-checks"       '.checks[0].bucket = "fail" | .checks[1].bucket = "pending"'
 
 # Precedence: a held PR that is also broken still reports the hold, so the

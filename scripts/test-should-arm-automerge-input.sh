@@ -39,18 +39,18 @@ fail=0
 
 HEAD=0123456789abcdef0123456789abcdef01234567
 
-# `gh pr view --json number,state,isDraft,mergeStateStatus,autoMergeRequest,
-# reviewDecision,labels,headRefOid` for a finished pull request.
+# `gh pr view --json number,state,isDraft,baseRefName,mergeStateStatus,
+# autoMergeRequest,reviewDecision,labels,headRefOid` for a finished pull request.
 meta() {
   cat <<JSON
-{"number": 7, "state": "OPEN", "isDraft": false, "mergeStateStatus": "BEHIND",
+{"number": 7, "state": "OPEN", "isDraft": false, "baseRefName": "main", "mergeStateStatus": "BEHIND",
  "autoMergeRequest": null, "reviewDecision": "APPROVED", "labels": [],
  "headRefOid": "$HEAD"}
 JSON
 }
 
 checks() {
-  echo '[{"name": "typecheck", "bucket": "pass"}, {"name": "review", "bucket": "pass"}]'
+  echo '[{"name": "typecheck", "bucket": "pass"}, {"name": "review", "bucket": "pass"}, {"name": "security-gate", "bucket": "pass"}]'
 }
 
 # The GraphQL answer for the same pull request, in the shape merge-tail's query
@@ -104,12 +104,18 @@ builds() {
 builds "clean answer" \
   '.number == 7 and .mergeQueueEntry == null and .unresolvedThreads == 0
    and .headSince == "2026-09-21T15:00:00Z" and .queueRemovals == []
-   and (.checks | length) == 2' \
+   and .baseRefName == "main" and (.checks | length) == 3' \
   "$(meta)" "$(checks)" "$(graphql)"
 
 run "$(meta)" "$(checks)" "$(graphql)"
 verdict=$("$gate" - <<<"$out" 2>/dev/null)
 if [[ "$verdict" == "ARM" ]]; then ok; else bad "clean answer arms end to end" "got ${verdict:-<empty>}"; fi
+
+# The base rides through from `gh pr view` (DOR-3679): a stacked layer, built
+# from the same clean answers, is refused end to end.
+run "$(meta | jq -c '.baseRefName = "feat/parent-layer"')" "$(checks)" "$(graphql)"
+verdict=$("$gate" - <<<"$out" 2>/dev/null)
+if [[ "$verdict" == "SKIP base-not-main" ]]; then ok; else bad "stacked layer refused end to end" "got ${verdict:-<empty>}"; fi
 
 builds "an empty errors array is no error" '.unresolvedThreads == 0' \
   "$(meta)" "$(checks)" "$(graphql | jq -c '. + {errors: []}')"
