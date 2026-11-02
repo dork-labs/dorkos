@@ -51,6 +51,7 @@ import { markIngress, type IngressKind } from '../../services/core/remote/ingres
 import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 import { holdForStepUp } from '../step-up-guard.js';
 import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
+import { StepUpRiskLedger } from '../../services/extensions/step-up/step-up-risk-ledger.js';
 
 const target = swappableServer();
 const OWN_ORIGIN = 'http://localhost:4242';
@@ -59,6 +60,14 @@ const SHORT_PASSWORD = 'short';
 
 const SESSION_A: RequestUser = { userId: 'user_owner', credential: 'cookie', sessionId: 'sess-a' };
 const SESSION_B: RequestUser = { userId: 'user_owner', credential: 'cookie', sessionId: 'sess-b' };
+const SESSION_NEW: RequestUser = {
+  userId: 'user_owner',
+  credential: 'cookie',
+  sessionId: 'sess-new',
+};
+
+/** When each test session started, as the server's session rows say. */
+const sessionStarts = new Map<string, number>();
 
 let commit: Mock<(name: string) => Promise<{ status: number; body: unknown }>>;
 let deps: StepUpRouteDeps & {
@@ -138,7 +147,13 @@ beforeEach(() => {
     minPasswordLength: async () => 8,
     setOwnerPassword: vi.fn(async () => undefined),
     trustedOrigins: () => [OWN_ORIGIN],
+    riskLedger: new StepUpRiskLedger(),
+    sessionStartedAt: async (_userId: string, sessionId: string) =>
+      sessionStarts.get(sessionId) ?? null,
   } as typeof deps;
+  sessionStarts.clear();
+  sessionStarts.set('sess-a', Date.now() - 60_000);
+  sessionStarts.set('sess-b', Date.now() - 60_000);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -287,12 +302,38 @@ describe('while a loaded mini app is in an agent’s folder or changed', () => {
     expect(deps.setOwnerPassword).not.toHaveBeenCalled();
   });
 
-  it('reads it fresh: once fixed, the same held action confirms', async () => {
+  it('once fixed, a browser signed in before then stays refused: its page may still run the code', async () => {
     const id = await hold();
     expect((await confirm(id, PASSWORD)).status).toBe(409);
     deps.extensionRisks = () => [];
-    expect((await confirm(id, PASSWORD)).status).toBe(200);
+    const res = await confirm(id, PASSWORD);
+    expect(res.status).toBe(409);
+    expect(res.body).toMatchObject({ code: 'extension-risk', blockedBy: [] });
+    expect(res.body.error).toMatch(/Sign in again/);
+    const view = await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
+    expect(view.body).toMatchObject({ passwordUnavailable: 'extension-risk', blockedBy: [] });
+    expect(commit).not.toHaveBeenCalled();
+    expect(deps.checkPassword).not.toHaveBeenCalled();
+  });
+
+  it('once fixed, a browser signed in after it confirms', async () => {
+    const id = await hold();
+    expect((await confirm(id, PASSWORD)).status).toBe(409);
+    deps.extensionRisks = () => [];
+    await request(app({ user: SESSION_A })).get(`/api/step-up/${id}`);
+    sessionStarts.set('sess-new', Date.now() + 1);
+    const fresh = await hold({ user: SESSION_NEW });
+    expect((await confirm(fresh, PASSWORD, { user: SESSION_NEW })).status).toBe(200);
     expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('a browser whose sign-in the server cannot date stays refused once a risk was seen', async () => {
+    const id = await hold();
+    expect((await confirm(id, PASSWORD)).status).toBe(409);
+    deps.extensionRisks = () => [];
+    sessionStarts.delete('sess-a');
+    expect((await confirm(id, PASSWORD)).status).toBe(409);
+    expect(commit).not.toHaveBeenCalled();
   });
 });
 

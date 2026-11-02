@@ -8,7 +8,9 @@
  * @module startup/steps/core-routes
  */
 import { configManager } from '../../services/core/config-manager.js';
+import path from 'node:path';
 import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
+import { useStepUpRiskLedgerFile } from '../../services/extensions/step-up/step-up-risk-ledger.js';
 import type { ConnectorRoutesDeps } from '../../routes/connectors.js';
 import { credentialStore } from '../../services/core/credential-provider.js';
 import { ConnectorSessionAccessService } from '../../services/connectors/resources/session-access-service.js';
@@ -669,6 +671,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   mountedRouters.push('agent-pause');
   // "Confirm it's you" stays off while a loaded mini app is in an agent's
   // folder or changed since it was approved (DOR-3234). Read per request.
+  // The ledger remembers a risk that cleared while a tab stayed open, across restarts.
+  useStepUpRiskLedgerFile(path.join(dorkHome, 'step-up', 'risk-ledger.json'));
   setStepUpExtensionRiskInputs(() => ({
     records: refs.extensionManager?.listRecords() ?? [],
     approvals: configManager.get('extensions')?.approvedSources ?? {},

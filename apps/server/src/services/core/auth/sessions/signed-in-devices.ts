@@ -177,6 +177,24 @@ export async function findSignedInDevice(
 }
 
 /**
+ * When one of a person's live sign-ins started, from the server's own session row.
+ *
+ * @param auth - The Better Auth instance.
+ * @param userId - Whose.
+ * @param sessionId - The sign-in.
+ * @returns Its start in ms, or `null` when it is none of theirs.
+ */
+export async function signInStartedAt(
+  auth: Auth,
+  userId: string,
+  sessionId: string
+): Promise<number | null> {
+  const row = (await liveRowsOf(auth, userId)).find((candidate) => candidate.id === sessionId);
+  const startedAt = row ? new Date(row.createdAt).getTime() : NaN;
+  return Number.isNaN(startedAt) ? null : startedAt;
+}
+
+/**
  * Sign out one of a person's sign-ins. Fires the session-delete hook, which
  * audits it and closes what it had open.
  *

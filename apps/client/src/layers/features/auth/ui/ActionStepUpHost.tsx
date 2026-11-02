@@ -375,7 +375,8 @@ function ExtensionRiskBody({
     <div className="space-y-4">
       <div role="status" className="space-y-1 text-sm">
         {risks.length === 0 ? (
-          <p>Confirming is off while a mini app can be edited by an agent.</p>
+          // None loaded now, but one ran in this page since sign-in (M1 on #3401).
+          <p>A mini app ran here since you signed in. Sign in again to confirm.</p>
         ) : (
           risks.map((risk) => <p key={risk.id}>{extensionRiskLine(risk)}</p>)
         )}

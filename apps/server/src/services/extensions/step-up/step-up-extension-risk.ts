@@ -24,6 +24,7 @@ import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import type { StepUpExtensionRisk } from '@dorkos/shared/step-up';
 
 import { isInsideFolder } from '../pin/extension-path-trust.js';
+import { stepUpRiskLedger } from './step-up-risk-ledger.js';
 
 /** The statuses whose code may be in the app's page. */
 const LOADED: ReadonlySet<ExtensionRecord['status']> = new Set([
@@ -118,9 +119,13 @@ export function setStepUpExtensionRiskInputs(read: () => StepUpExtensionRiskInpu
 }
 
 /**
- * The live {@link stepUpExtensionRisks}, read fresh. A read that throws is
- * not caught: the step-up request fails, and nothing runs.
+ * The live {@link stepUpExtensionRisks}, read fresh, and noted in the risk
+ * ledger so a cleared risk is remembered. A read that throws is not caught:
+ * the step-up request fails, and nothing runs.
  */
 export function currentStepUpExtensionRisks(): StepUpExtensionRisk[] {
-  return liveInputs ? stepUpExtensionRisks(liveInputs()) : [];
+  if (!liveInputs) return [];
+  const risks = stepUpExtensionRisks(liveInputs());
+  stepUpRiskLedger().note(risks.length);
+  return risks;
 }

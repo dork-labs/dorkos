@@ -54,10 +54,12 @@ function show(view: StepUpWindowView): void {
     return;
   }
   if (view.unavailable === 'extension-risk') {
-    const lines = view.blockedLines?.length
-      ? view.blockedLines
-      : ['Confirming is off while a mini app can be edited by an agent.'];
-    end(`${lines.join(' ')} Fix it in Settings → Extensions.`);
+    // None named: none is loaded now, but one ran since sign-in (M1 on #3401).
+    end(
+      view.blockedLines?.length
+        ? `${view.blockedLines.join(' ')} Fix it in Settings → Extensions.`
+        : 'A mini app ran here since you signed in. Sign in again to confirm.'
+    );
     return;
   }
   if (view.unavailable === 'no-password') {
