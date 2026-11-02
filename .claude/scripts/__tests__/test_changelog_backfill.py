@@ -592,6 +592,18 @@ class TestSeededFragments(GateTestCase):
         self.assertIn("backticks", result.stderr)
         self.assertIn("- Say cc @ana to copy them", result.stderr)
 
+    def test_an_escaped_mention_passes_validate(self):
+        """Code spans, fenced code, emails and versions are not pings (DOR-3697)."""
+        self.repo.commit(self.SUBJECT, touch="apps/server/src/relay.ts")
+        self.repo.fragment(
+            "260901-000000-escaped.md",
+            f'---\ncovers:\n  - "{self.SUBJECT}"\n---\n\n### Added\n\n'
+            "- Say `cc @ana` to copy them, or email me@example.com about dorkos@latest\n"
+            "\n```text\ncc @ana @bo\n```\n",
+        )
+        result = self.repo.validate()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_a_seeded_fragment_fails_validate(self):
         self.repo.commit(self.SUBJECT, touch="apps/server/src/relay.ts")
         self.seeded_fragment()
