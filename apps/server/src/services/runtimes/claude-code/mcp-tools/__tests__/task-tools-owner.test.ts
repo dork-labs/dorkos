@@ -18,6 +18,7 @@ vi.mock('../../../../audit/audit-trail.js', async (importOriginal) => ({
 
 import { TaskStore } from '../../../../tasks/task-store.js';
 import { getTasksTools } from '../tasks/task-tools.js';
+import { externalCallerAgent as revokedCaller } from '../../../../core/external-mcp/task-tools.js';
 import type { McpToolDeps } from '../types.js';
 import { recordAudit } from '../../../../audit/audit-trail.js';
 
@@ -172,5 +173,31 @@ describe('an in-session chat DorkOS cannot name', () => {
     expect(edit.payload.code).toBe('not_your_schedule');
     const pause = await call(tools, 'tasks_update', { id: theirs.id, enabled: false });
     expect(pause.isError).toBe(false);
+  });
+});
+
+describe('the external server, with a revoked token (DOR-3666)', () => {
+  it("doesn't let it act as its agent: it can't change that agent's schedule", async () => {
+    const mine = store.createTask({
+      name: 'a-nightly',
+      description: 'a',
+      prompt: 'A’s work.',
+      cron: '0 2 * * *',
+      agentId: 'agent-a',
+      filePath: path.join(scratch, 'none', 'SKILL.md'),
+    });
+    const revoked = Object.fromEntries(
+      (
+        getTasksTools(
+          deps,
+          undefined,
+          () => ({ outsider: true }),
+          revokedCaller({ agentPath: homeA, inactive: 'revoked' })
+        ) as unknown as SessionTool[]
+      ).map((t) => [t.name, t] as const)
+    );
+    const edit = await call(revoked, 'tasks_update', { id: mine.id, prompt: 'Run anyway.' });
+    expect(edit.isError).toBe(true);
+    expect(edit.payload.code).toBe('not_your_schedule');
   });
 });

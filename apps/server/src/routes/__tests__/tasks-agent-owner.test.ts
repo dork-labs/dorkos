@@ -159,6 +159,22 @@ describe('POST /api/tasks from an agent', () => {
   });
 });
 
+describe('POST /api/tasks from a revoked agent token (DOR-3666)', () => {
+  it('parks, never arms, and credits nobody', async () => {
+    identity = {
+      agentPath: homeA,
+      displayName: 'Agent A',
+      createdAt: '2026-11-01T00:00:00Z',
+      inactive: 'revoked',
+    };
+    // Its own id: the one target a live token of A's would arm unasked on Trusted.
+    const res = await create({ target: 'agent-a', name: 'revoked-sweep' });
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('pending_approval');
+    expect(res.body.proposedByAgentPath).toBeNull();
+  });
+});
+
 describe('PATCH /api/tasks/:id from an agent', () => {
   it("refuses a change to another agent's schedule, and changes nothing", async () => {
     asA();
