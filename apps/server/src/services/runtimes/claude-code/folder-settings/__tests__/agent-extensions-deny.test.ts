@@ -13,6 +13,12 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+// Which chats carry a mark that holds (a Wi-Fi sign-in's), as `marksOf` would read them; the
+// real `marksHold` decides.
+const held = vi.hoisted(() => new Set<string>());
+vi.mock('../../../../core/turn-power/turn-levels.js', () => ({
+  marksOf: (sessionId: string) => (held.has(sessionId) ? { outsider: true } : {}),
+}));
 
 import {
   applyOtherAgentsExtensionsDeny,
@@ -137,26 +143,44 @@ describe('otherAgentHomesOf', () => {
 
 describe('ownExtensionsWritable', () => {
   it('leaves a turn with no ceiling its own mini apps', () => {
-    expect(ownExtensionsWritable({}, '/x/own')).toBe('/x/own');
+    expect(ownExtensionsWritable({}, 'chat-1', '/x/own')).toBe('/x/own');
   });
 
   it('leaves none to a turn that runs as no agent', () => {
-    expect(ownExtensionsWritable({}, undefined)).toBeUndefined();
+    expect(ownExtensionsWritable({}, 'chat-1', undefined)).toBeUndefined();
   });
 
   it('denies its own mini apps to a turn under a ceiling, or background work under one', () => {
     expect(
-      ownExtensionsWritable({ turnPermissionCeiling: 'runtime-default' as never }, '/x/own')
+      ownExtensionsWritable(
+        { turnPermissionCeiling: 'runtime-default' as never },
+        'chat-1',
+        '/x/own'
+      )
     ).toBeUndefined();
     expect(
-      ownExtensionsWritable({ backgroundPermissionCeiling: 'runtime-default' as never }, '/x/own')
+      ownExtensionsWritable(
+        { backgroundPermissionCeiling: 'runtime-default' as never },
+        'chat-1',
+        '/x/own'
+      )
     ).toBeUndefined();
     // So the launch denies them like every other agent's.
     const rules = otherAgentsExtensionsDenyRules(
-      ownExtensionsWritable({ turnPermissionCeiling: 'runtime-default' as never }, own),
+      ownExtensionsWritable({ turnPermissionCeiling: 'runtime-default' as never }, 'chat-1', own),
       [own, other],
       dorkHome
     );
     expect(rules).toContain(`Edit(/${own}/.dork/extensions/**)`);
+  });
+
+  it('denies its own mini apps to a marked turn with no ceiling (Security S1, #3280)', () => {
+    held.add('chat-marked');
+    try {
+      expect(ownExtensionsWritable({}, 'chat-marked', '/x/own')).toBeUndefined();
+      expect(ownExtensionsWritable({}, 'chat-1', '/x/own')).toBe('/x/own');
+    } finally {
+      held.clear();
+    }
   });
 });

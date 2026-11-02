@@ -129,6 +129,8 @@ export interface RecordedTurn {
   permissionCeiling?: RoomTurnRequest['permissionCeiling'];
   /** Set when a teammate's message started the turn (DOR-2955). */
   teammate?: true;
+  /** Set when the seat turn carries on work whose turn held a Wi-Fi sign-in's mark (DOR-3561). */
+  carriedOutsider?: true;
   /** A moved seat's launch hint (re-seat), when the turn carried one. */
   accountHint?: string;
   /** A moved seat's summary of the session it replaces, when the turn carried one. */
@@ -317,6 +319,7 @@ export function outcomeRunner(
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
         ...(request.teammate ? { teammate: request.teammate } : {}),
+        ...(request.carriedOutsider ? { carriedOutsider: request.carriedOutsider } : {}),
         ...(request.accountHint !== undefined ? { accountHint: request.accountHint } : {}),
         ...(request.seedContext !== undefined ? { seedContext: request.seedContext } : {}),
         roomContext: request.roomContext,
@@ -497,6 +500,7 @@ export function gatedRunner({
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
         ...(request.teammate ? { teammate: request.teammate } : {}),
+        ...(request.carriedOutsider ? { carriedOutsider: request.carriedOutsider } : {}),
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });

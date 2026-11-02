@@ -150,9 +150,10 @@ export function marksOfCeiling(ceiling: TurnPermissionCeiling): TurnMarks {
 }
 
 /**
- * The marks one turn carries from its ceiling. A continuation's hold
- * (`MessageOpts.continuationHold`, DOR-3203) is the one `'runtime-default'` bound that marks
- * nothing: the turn reads no new words, it only picks up a chat whose last turn was held.
+ * The marks one turn carries from its ceiling, and any it carries on from work it continues
+ * (`MessageOpts.carriedMarks`, DOR-3561), which mark it without lowering it. A continuation's
+ * hold (`MessageOpts.continuationHold`, DOR-3203) is the one `'runtime-default'` bound that
+ * marks nothing: the turn reads no new words, it only picks up a chat whose last turn was held.
  *
  * @param opts - The send's options.
  */
@@ -161,7 +162,10 @@ export function marksForTurn(opts: MessageOpts | undefined): TurnMarks {
     opts?.continuationHold === true
       ? withoutContinuationBound(opts.permissionCeiling)
       : opts?.permissionCeiling;
-  return ceiling !== undefined ? marksOfCeiling(ceiling) : NO_MARKS;
+  const fromCeiling = ceiling !== undefined ? marksOfCeiling(ceiling) : NO_MARKS;
+  return opts?.carriedMarks?.outsider === true
+    ? mergeMarks(fromCeiling, { outsider: true })
+    : fromCeiling;
 }
 
 /** A ceiling with the one `'runtime-default'` bound a continuation's hold added taken out. */

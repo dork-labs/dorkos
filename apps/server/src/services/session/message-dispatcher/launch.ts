@@ -144,6 +144,10 @@ export function launchDispatchInner(
       (getMessageQueueStore()?.get(messageId)?.content ?? plan.content) === plan.content
         ? { continuationHold: true as const }
         : {}),
+      // A mark the turn carries on from work it continues: it marks, and lowers nothing (DOR-3561).
+      ...(turn.carriedMarks?.outsider === true
+        ? { carriedMarks: { outsider: true as const } }
+        : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),
       ...(turn.privateDispatchSignal ? { privateDispatchSignal: turn.privateDispatchSignal } : {}),

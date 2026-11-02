@@ -67,6 +67,20 @@ vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
 }));
 
+// Chats that carry a mark that holds (a Wi-Fi sign-in's), as `marksOf` reads them; every other
+// chat reads its real marks.
+const heldChats = vi.hoisted(() => new Set<string>());
+vi.mock('../../../../core/turn-power/turn-levels.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../../core/turn-power/turn-levels.js')>();
+  return {
+    ...real,
+    marksOf: (sessionId: string | null | undefined, agentPath: string | undefined) =>
+      sessionId && heldChats.has(sessionId)
+        ? { outsider: true }
+        : real.marksOf(sessionId, agentPath),
+  };
+});
+
 vi.mock('../../../../core/agent-identity/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../../core/agent-identity/index.js')>()),
   resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
@@ -506,6 +520,25 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
     });
 
     expect(Object.keys(options.env ?? {})).not.toContain(CLAUDE_MD_VAR);
+  });
+
+  it('gives a marked turn none of the folders it was granted, and an unmarked one all (Security S2, #3280)', async () => {
+    const grants = {
+      additionalDirectories: [{ path: '/rooms/r1/worktrees/ana', access: 'write' }],
+    };
+    const granted = (options: Options) =>
+      (options.settings as { permissions?: { additionalDirectories?: string[] } } | undefined)
+        ?.permissions?.additionalDirectories ?? [];
+
+    expect(granted(await captureSdkOptions(grants as MessageOpts))).toContain(
+      '/rooms/r1/worktrees/ana'
+    );
+    heldChats.add('sdk-1');
+    try {
+      expect(granted(await captureSdkOptions(grants as MessageOpts))).toEqual([]);
+    } finally {
+      heldChats.clear();
+    }
   });
 
   it('merges the grants into the settings the launch already carries', async () => {

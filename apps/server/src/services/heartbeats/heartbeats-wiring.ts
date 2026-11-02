@@ -169,9 +169,6 @@ function agentReader(mesh: () => MeshCore | undefined) {
  */
 export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
   const { db } = deps;
-  // A chat this process saw no turn of since it started reads its stored launch
-  // origin, so a bridged chat's turns stay a stranger's across a restart
-  // (`session/origin/outsider-turns.ts`). Set at every boot, heartbeats on or off.
   const store = new HeartbeatStore(db);
   // Never on an agent computer, which beats only when its hub says (DOR-2940).
   const enabled = () => runsSchedules() && configManager.get('heartbeats').enabled;

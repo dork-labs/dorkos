@@ -32,6 +32,11 @@ export interface AsideCarry {
   permissionCeiling?: TurnPermissionCeiling;
   /** Set when a teammate's words reached that chat. */
   teammate?: true;
+  /**
+   * Set when that chat's turn carries a mark that holds (a Wi-Fi sign-in's, `marksHold`): the
+   * seat's turn is marked too, so it is refused a raise, and keeps its level (DOR-3561).
+   */
+  outsider?: true;
 }
 
 /** One aside: the agent, the room, the entry it is about, and what it is asked. */
@@ -258,6 +263,7 @@ export async function runAsideInDispatch(
         ? { permissionCeiling: input.carried.permissionCeiling }
         : {}),
       ...(input.carried?.teammate ? { teammate: true as const } : {}),
+      ...(input.carried?.outsider ? { carriedOutsider: true as const } : {}),
       prompt: input.prompt,
       roomContext: turnContext.context,
       attachmentProjection: turnContext.projection,

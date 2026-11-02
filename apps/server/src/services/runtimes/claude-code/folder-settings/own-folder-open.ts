@@ -76,7 +76,7 @@ export interface OwnFolderTurn {
 export async function resolveOwnFolderOpen(turn: OwnFolderTurn): Promise<boolean> {
   const { home } = turn;
   if (!home || turn.turnMode !== FULL_MODE) return false;
-  if (ownExtensionsWritable(turn.session, home) === undefined) return false;
+  if (ownExtensionsWritable(turn.session, turn.sessionId, home) === undefined) return false;
   if (marksHold(marksOf(turn.sessionId, home))) return false;
   try {
     // The agent's own stop only: a preset's or the global Full is not a person's choice for it.

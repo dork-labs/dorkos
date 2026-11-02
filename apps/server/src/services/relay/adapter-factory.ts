@@ -401,11 +401,8 @@ export async function createAdapter(
             agentDirectory
           );
         },
-        // Every turn over the relay notes, before it runs, whether a stranger
-        // started it (a bridged chat, an outside agent), so a capability the
-        // turn calls knows (`session/origin/outsider-turns.ts`).
-        // Every approval that arrives on the relay bus is checked here too,
-        // before the runtime is touched (spec `ask-entitlement` §5.3).
+        // Every approval that arrives on the relay bus is checked here, before
+        // the runtime is touched (spec `ask-entitlement` §5.3).
         approvalAuthorizer: deps.approvalAuthorizer,
         // An agent that ends its turn while a helper still works reports back in
         // a turn of its own; this is how that report reaches the inbox of the

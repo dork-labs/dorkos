@@ -36,6 +36,8 @@ import { logger } from '../../../../lib/logger.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { configManager } from '../../../core/config-manager.js';
 import { heldToACeiling } from '../turn-permission.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { writeDenyRules } from '../messaging/directory-grants.js';
 
 /** The real path of `target`, or `undefined` when it does not exist. */
@@ -107,18 +109,24 @@ export function otherAgentsExtensionsDenyRules(
 
 /**
  * The home whose own extensions this launch may write: the turn's agent's,
- * unless the turn runs under a ceiling (a Wi-Fi sign-in's hold). Then its own
- * mini apps are denied like every other agent's.
+ * unless the turn runs under a ceiling or carries a mark that holds (a Wi-Fi
+ * sign-in's, `marksHold`). Then its own mini apps are denied like every other
+ * agent's: path trust runs those files without a click, so an edit there is a
+ * raise, which a mark still holds back (Security S1 on #3280). It lowers
+ * nothing else.
  *
  * @param session - The session's ceilings.
+ * @param sessionId - The launching session.
  * @param ownHome - The turn's agent's home, when it runs as one.
  * @returns The home to leave writable, or undefined for none.
  */
 export function ownExtensionsWritable(
   session: Parameters<typeof heldToACeiling>[0],
+  sessionId: string,
   ownHome: string | undefined
 ): string | undefined {
-  return !ownHome || heldToACeiling(session) ? undefined : ownHome;
+  if (!ownHome || heldToACeiling(session)) return undefined;
+  return marksHold(marksOf(sessionId, ownHome)) ? undefined : ownHome;
 }
 
 /**
@@ -198,7 +206,7 @@ export function applyLaunchExtensionsDeny(
 ): void {
   applyOtherAgentsExtensionsDeny(
     sdkOptions,
-    ownExtensionsWritable(turn.session, turn.agentHome),
+    ownExtensionsWritable(turn.session, turn.sessionId, turn.agentHome),
     // Author folders an approval records count even when no longer registered.
     otherAgentHomesOf(turn.registry, configManager.get('extensions')),
     resolveDorkHome()

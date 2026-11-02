@@ -26,7 +26,8 @@ vi.mock('../../../../../lib/dork-home.js', () => ({ resolveDorkHome: () => dork.
 // DOR-3440, but opening the agent's own setup is a raise it still holds back (#3280).
 const marks = vi.hoisted(() => ({ ceiling: false, outsider: false }));
 vi.mock('../agent-extensions-deny.js', () => ({
-  ownExtensionsWritable: (_session: unknown, home: string) => (marks.ceiling ? undefined : home),
+  ownExtensionsWritable: (_session: unknown, _id: string, home: string) =>
+    marks.ceiling ? undefined : home,
 }));
 vi.mock('../../../../core/turn-power/turn-levels.js', () => ({
   marksOf: () => (marks.outsider ? { outsider: true } : {}),

@@ -14,14 +14,15 @@ import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { RoomTurnRequest } from '../room-turn-port.js';
 
 /**
- * The per-turn bounds a room turn sends: its ceiling as the dispatcher derived it, and the folders
- * placement granted it. A room without files grants nothing.
+ * The per-turn bounds a room turn sends: its ceiling as the dispatcher derived it, the folders
+ * placement granted it, and a mark it carries on from the work it continues (DOR-3561). A room
+ * without files grants nothing.
  *
  * @param request - The turn about to start.
  */
 export function turnBoundsOf(
-  request: Pick<RoomTurnRequest, 'permissionCeiling' | 'additionalDirectories'>
-): Pick<MessageOpts, 'permissionCeiling' | 'additionalDirectories'> {
+  request: Pick<RoomTurnRequest, 'permissionCeiling' | 'additionalDirectories' | 'carriedOutsider'>
+): Pick<MessageOpts, 'permissionCeiling' | 'additionalDirectories' | 'carriedMarks'> {
   return {
     ...(request.permissionCeiling !== undefined
       ? { permissionCeiling: request.permissionCeiling }
@@ -29,6 +30,7 @@ export function turnBoundsOf(
     ...(request.additionalDirectories.length > 0
       ? { additionalDirectories: request.additionalDirectories }
       : {}),
+    ...(request.carriedOutsider ? { carriedMarks: { outsider: true as const } } : {}),
   };
 }
 

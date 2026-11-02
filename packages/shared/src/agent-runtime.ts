@@ -1206,6 +1206,15 @@ export interface MessageOpts extends SessionSettings {
    */
   continuationHold?: true;
   /**
+   * A mark this turn carries on from work it continues, apart from any
+   * ceiling: a spin-off's Wi-Fi hold reaching the room seat it reports to
+   * (DOR-3561). Recorded on the turn's level, so every raise gate refuses the
+   * turn on its own, and it lowers nothing: the turn keeps its level for
+   * everything else. Server-derived, never from a client. Runtimes ignore it;
+   * the turn-level record reads it.
+   */
+  carriedMarks?: { readonly outsider?: true };
+  /**
    * The mode THIS turn starts from in place of the session's stored one: its
    * agent's current level, for a chat that follows its agent up (DOR-3175).
    * Set only at the registry's seam (`agent-level-bound.ts`), only for a chat a
