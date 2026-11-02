@@ -118,6 +118,10 @@ describe('room git and a repo config that names a gc hook (DOR-3667 M1)', () => 
     const orphan = path.join(home, 'orphan.txt');
     await writeFile(orphan, 'orphan\n');
     plainGit(repo, 'hash-object', '-w', orphan);
+    // Git 2.56's automatic maintenance repacks without gc by default (measured:
+    // the hook never ran on 2.56 without this, and ran on 2.53 either way).
+    // A room's config may name this key, so pinning it keeps the fixture live.
+    plainGit(repo, 'config', 'maintenance.strategy', 'gc');
     plainGit(repo, 'config', 'gc.autoPackLimit', '1');
     plainGit(repo, 'config', 'gc.pruneExpire', 'now');
     plainGit(repo, 'config', 'gc.recentObjectsHook', `touch "${marker}"`);
