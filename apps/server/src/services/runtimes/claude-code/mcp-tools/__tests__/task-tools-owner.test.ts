@@ -18,7 +18,12 @@ vi.mock('../../../../audit/audit-trail.js', async (importOriginal) => ({
 
 import { TaskStore } from '../../../../tasks/task-store.js';
 import { getTasksTools } from '../tasks/task-tools.js';
-import { externalCallerAgent as revokedCaller } from '../../../../core/external-mcp/task-tools.js';
+import {
+  externalCallerAgent as revokedCaller,
+  registerTaskTools,
+} from '../../../../core/external-mcp/task-tools.js';
+import type { AgentIdentity } from '../../../../core/agent-identity/agent-identity-service.js';
+import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
 import type { McpToolDeps } from '../types.js';
 import { recordAudit } from '../../../../audit/audit-trail.js';
 
@@ -200,4 +205,54 @@ describe('the external server, with a revoked token (DOR-3666)', () => {
     expect(edit.isError).toBe(true);
     expect(edit.payload.code).toBe('not_your_schedule');
   });
+});
+
+describe('the external server, through its real registration (DOR-3666)', () => {
+  /** The tools `registerTaskTools` puts on the external server for one token. */
+  function registered(identity: AgentIdentity | undefined): Record<string, SessionTool> {
+    const tools: Record<string, SessionTool> = {};
+    const registrar = {
+      registerTool: (name: string, _config: unknown, handler: SessionTool['handler']) => {
+        tools[name] = { name, handler };
+      },
+    } as unknown as ToolRegistrar;
+    registerTaskTools(registrar, deps, identity);
+    return tools;
+  }
+
+  const tokenOf = (agentPath: string, inactive?: 'revoked' | 'expired'): AgentIdentity => ({
+    agentPath,
+    displayName: 'A',
+    createdAt: '2026-11-01T00:00:00.000Z',
+    ...(inactive ? { inactive } : {}),
+  });
+
+  it("names a live token's agent: it may file under itself, never under another agent", async () => {
+    const tools = registered(tokenOf(homeA));
+    const theirs = await call(tools, 'tasks_create', { ...ARGS, target: 'agent-b' });
+    expect(theirs.isError).toBe(true);
+    expect(theirs.payload.code).toBe('not_your_agent');
+    expect((await call(tools, 'tasks_create', { ...ARGS, target: 'agent-a' })).isError).toBe(false);
+  });
+
+  it.each(['revoked', 'expired'] as const)(
+    'names nobody for a %s token: it may not change its agent`s schedule',
+    async (inactive) => {
+      const mine = store.createTask({
+        name: 'a-nightly',
+        description: 'a',
+        prompt: 'A’s work.',
+        cron: '0 2 * * *',
+        agentId: 'agent-a',
+        filePath: path.join(scratch, 'none', 'SKILL.md'),
+      });
+      const edit = await call(registered(tokenOf(homeA, inactive)), 'tasks_update', {
+        id: mine.id,
+        prompt: 'Run anyway.',
+      });
+      expect(edit.isError).toBe(true);
+      expect(edit.payload.code).toBe('not_your_schedule');
+      expect(store.getTask(mine.id)!.prompt).toBe('A’s work.');
+    }
+  );
 });
