@@ -1,4 +1,5 @@
 name: docs-openapi-check
+# QA PROOF #3426 (b2): comment-only change, do not merge.
 
 # Guards the committed, generated API-reference artifacts under docs/api/ against
 # drift from the Zod source schemas:
