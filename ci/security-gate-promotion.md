@@ -107,6 +107,15 @@ new head, remove the label and add it again: re-adding a label that is already o
 records nothing. Anyone who can label this repository can pass this mode, so it
 records Security's review, it does not prove it. The job summary names the mode.
 
+On `pull_request`, an open PR that is only waiting for review passes, with "Waiting
+for Security" in its log. It waits when `security-reviewed` was never put on, or
+when a fresh one is on and a P0 path still lacks `security-deep-reviewed`.
+Main's `security-review` verdict still refuses it, and `merge_group` never waits.
+These still fail: a stale label, a label a bot added, a label added after the merge,
+`hold`, and a merged or closed PR with no label. A base that moves mid-run, as a
+stacked layer's does when its parent is pushed, starts the run over on the new base,
+up to three times. A head that moves still refuses.
+
 Before this mode is made required, once it is on main: one real security-path PR
 must pass on a hosted run, and one must refuse. That proves the read-only token can
 read the timeline and the activity feed.

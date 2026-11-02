@@ -731,15 +731,26 @@ test('queue comparison refuses API errors, missing lists, wrong base and the com
   await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /Compare API failed/);
 });
 
-test('computed PR clearance refuses same-head base retarget during files read', async () => {
+test('a same-head base retarget during the files read re-runs on the new base (DOR-3680)', async () => {
   const f = fixture({ files: ['docs/a.md'] });
   const original = f.api.pr;
+  const listed = f.api.files;
   let reads = 0;
+  let fileReads = 0;
+  f.api.files = async (n) => {
+    fileReads += 1;
+    return listed(n);
+  };
   f.api.pr = async (n) => ({
     ...(await original(n)),
     base: { ref: ++reads === 1 ? 'main' : 'other' },
   });
-  await assert.rejects(checkPullRequest(f.api, prEvent, pattern), /base moved/);
+  assert.equal(await checkPullRequest(f.api, prEvent, pattern), 'no security paths (computed)');
+  // The old base's file list is never the one judged.
+  assert.equal(fileReads, 2);
+  // A head that moves is still refused.
+  f.api.pr = async (n) => ({ ...(await original(n)), head: { sha: 'head9' } });
+  await assert.rejects(checkPullRequest(f.api, prEvent, pattern), /head moved/);
 });
 
 test('GitHub compare requests pin both SHA inputs and return page-one files', async (t) => {

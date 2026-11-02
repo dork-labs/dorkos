@@ -1,7 +1,13 @@
 /* global console, fetch, process, URL */
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { approvalMode, labelAtHead, labelNewerThanHead } from './security-label-at-head.mjs';
+import {
+  HOLD_LABEL,
+  REVIEW_LABEL,
+  approvalMode,
+  labelAtHead,
+  labelNewerThanHead,
+} from './security-label-at-head.mjs';
 
 const CONTEXT = 'security-review';
 
@@ -99,21 +105,69 @@ function hasApproval(review, sensitive, botUserId) {
 }
 
 /**
+ * Why an open PR is only waiting for Security, or `null` when it is not: a label
+ * it needs has never been put on, and nothing is wrong (no `hold`, no stale or
+ * bot label). Main's `security-review` still refuses it; this keeps the PR's own
+ * check from going red over a review that simply has not happened yet (Security's
+ * required-checks plan, step 4).
+ *
+ * @param {object} pr The PR, as `GET /pulls/{n}` returns it.
+ * @param {object} input The label-at-head input.
+ * @param {boolean} deep Whether the diff touches a P0 identity path.
+ */
+function awaitingReview(pr, input, deep) {
+  if (pr.merged_at || pr.state === 'closed') return null;
+  const has = (name) => input.labels.some((label) => label.name === name);
+  if (has(HOLD_LABEL)) return null;
+  if (!has(REVIEW_LABEL)) return `no ${REVIEW_LABEL} label yet`;
+  if (deep && !has(DEEP_LABEL) && labelAtHead(input).passed) return `no ${DEEP_LABEL} label yet`;
+  return null;
+}
+
+/** A Security label put on after the PR merged, which reviewed nothing. `null` if none. */
+function labelAfterMerge(pr, timeline) {
+  if (!pr.merged_at) return null;
+  const merged = Date.parse(pr.merged_at);
+  const late = timeline.find(
+    (event) =>
+      event.event === 'labeled' &&
+      [REVIEW_LABEL, DEEP_LABEL].includes(event.label?.name) &&
+      !(Date.parse(event.created_at) <= merged)
+  );
+  return late ? `${late.label.name} was added after the merge` : null;
+}
+
+/**
  * Label-at-head for a sensitive diff while no App is set; App mode everywhere else.
  * A diff on a P0 identity path (`deep`) also needs {@link DEEP_LABEL} at the head.
+ * With `waitForReview`, an open PR that is only waiting for its labels passes as
+ * `{ passed: true, waiting }`; the merge queue never sets it.
  */
-async function verifyApproval(api, number, sha, review, sensitive, botUserId, deep = false) {
+async function verifyApproval(
+  api,
+  number,
+  sha,
+  review,
+  sensitive,
+  botUserId,
+  deep = false,
+  waitForReview = false
+) {
   if (!sensitive || approvalMode(botUserId) !== 'label-at-head') {
     const passed = hasApproval(review, sensitive, botUserId);
     return { passed, reason: 'security-review pending' };
   }
-  // The initializer's pending is every sensitive head's start; a refusal still refuses.
-  if (review && review.state !== 'pending' && review.state !== 'success')
-    return { passed: false, reason: `security-review is ${review.state}` };
   const timeline = await api.timeline(number);
   const pr = await api.pr(number);
   const activity = await api.activity(pr.head.ref);
   const input = { sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity };
+  const late = labelAfterMerge(pr, timeline);
+  if (late) return { passed: false, reason: late };
+  const waiting = waitForReview && awaitingReview(pr, input, deep);
+  if (waiting) return { passed: true, waiting };
+  // The initializer's pending is every sensitive head's start; a refusal still refuses.
+  if (review && review.state !== 'pending' && review.state !== 'success')
+    return { passed: false, reason: `security-review is ${review.state}` };
   const verdict = labelAtHead(input);
   if (!verdict.passed || !deep) return verdict;
   return labelNewerThanHead({ ...input, name: DEEP_LABEL });
@@ -163,11 +217,33 @@ export async function prFiles(api, number, pr, pattern) {
   return files;
 }
 
-export async function checkPullRequest(
+/** How many times a PR run starts over when its base moves under it. */
+const BASE_MOVE_RUNS = 3;
+
+/**
+ * The PR verifier, and the initializer's write. A base that moves mid-run, as a
+ * stacked layer's does whenever its parent is pushed, starts the run over on the
+ * current base (DOR-3680); a head that moves still refuses.
+ *
+ * @param {object} api The GitHub client.
+ * @param {object} event The `pull_request` or `pull_request_target` event.
+ * @param {string} pattern The security path list.
+ * @param {object} [options] `write`, `requireApproval`, `botUserId`, `deepPattern`.
+ */
+export async function checkPullRequest(api, event, pattern, options = {}) {
+  for (let run = 1; ; run += 1) {
+    const result = await checkPullRequestOnce(api, event, pattern, options);
+    if (!result.baseMoved) return result.said;
+    if (run === BASE_MOVE_RUNS)
+      throw new Error(`PR #${event.pull_request.number} base kept moving; rerun security-gate`);
+  }
+}
+
+async function checkPullRequestOnce(
   api,
   event,
   pattern,
-  { write = false, requireApproval = true, botUserId, deepPattern } = {}
+  { write = false, requireApproval = true, botUserId, deepPattern }
 ) {
   const number = event.pull_request.number;
   const sha = event.pull_request.head.sha;
@@ -204,18 +280,24 @@ export async function checkPullRequest(
           review,
           sensitive,
           botUserId,
-          sensitive && touchesDeep(files, deepPattern)
+          sensitive && touchesDeep(files, deepPattern),
+          true
         )
       : { passed: true };
   const current = await api.pr(number);
   if (current.head.sha !== sha) throw new Error(`PR #${number} head moved`);
+  // The files and the verdict were read against the old base: judge the new one.
   if (current.base.ref !== pr.base.ref || current.base.sha !== pr.base.sha)
-    throw new Error(`PR #${number} base moved`);
+    return { baseMoved: true };
   if (!verdict.passed)
     throw new Error(
       `PR #${number}: ${verdict.reason} on ${sha}; Security must approve, then rerun security-gate`
     );
-  return computed ? 'no security paths (computed)' : 'Security status verified';
+  if (verdict.waiting)
+    return {
+      said: `Waiting for Security: ${verdict.waiting} on ${sha}. security-review decides; it is not success yet`,
+    };
+  return { said: computed ? 'no security paths (computed)' : 'Security status verified' };
 }
 
 export async function queuedSensitiveDiff(api, base, sha, pattern) {

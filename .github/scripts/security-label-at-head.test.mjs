@@ -26,21 +26,33 @@ const labelled = (at, type = 'User', name = 'security-reviewed') => ({
 });
 const push = (at, after = SHA, ref = `refs/heads/${REF}`) => ({ after, ref, timestamp: at });
 
+/**
+ * A fake GitHub. `bases` is the PR base each successive `pr()` read returns,
+ * so a parent branch pushed mid-run is one more entry; `pr` adds PR fields.
+ */
 function gate({
   files = [SENSITIVE],
   labels = ['security-reviewed'],
   timeline = [],
   activity = [],
   statuses = [],
+  bases = ['base'],
+  pr = {},
 } = {}) {
-  return {
+  let reads = 0;
+  const api = {
+    fileReads: 0,
     pr: async () => ({
       head: { sha: SHA, ref: REF },
-      base: { ref: 'main', sha: 'base' },
+      base: { ref: 'main', sha: bases[Math.min(reads++, bases.length - 1)] },
       changed_files: files.length,
       labels: labels.map((name) => ({ name })),
+      ...pr,
     }),
-    files: async () => files.map((filename) => ({ filename })),
+    files: async () => {
+      api.fileReads += 1;
+      return files.map((filename) => ({ filename }));
+    },
     statuses: async () => statuses,
     timeline: async () => timeline,
     activity: async () => activity,
@@ -57,6 +69,7 @@ function gate({
       },
     ],
   };
+  return api;
 }
 const check = (api, botUserId = '0') =>
   checkPullRequest(api, event, pattern, { botUserId, deepPattern });
@@ -85,11 +98,13 @@ test('label and hold fails', async () => {
   await assert.rejects(queued(api), /hold label is on/);
 });
 
-test('no label fails', async () => {
-  await assert.rejects(
-    check(gate({ labels: [], activity: [push(EARLY)] })),
-    /no security-reviewed/
-  );
+const WAITING =
+  /^Waiting for Security: no security-reviewed label yet on head1\. security-review decides/;
+
+test('no label waits in the PR run, and fails in the queue', async () => {
+  const api = gate({ labels: [], activity: [push(EARLY)] });
+  assert.match(await check(api), WAITING);
+  await assert.rejects(queued(api), /no security-reviewed/);
 });
 
 test('docs-only passes without a label', async () => {
@@ -210,10 +225,15 @@ test('the verifier reruns when a label changes', () => {
 describe('security-deep-reviewed on a P0 identity path (#dorkos, 2026-11-02)', () => {
   const both = (at) => [labelled(at), labelled(at, 'User', DEEP_LABEL)];
 
-  test('a P0 path with only security-reviewed fails, in the PR run and in the queue', async () => {
+  test('a P0 path with only security-reviewed waits in the PR run, and fails in the queue', async () => {
     const api = gate({ files: [DEEP], timeline: [labelled(LATE)], activity: [push(EARLY)] });
-    await assert.rejects(check(api), /no security-deep-reviewed label/);
+    assert.match(await check(api), /^Waiting for Security: no security-deep-reviewed label yet/);
     await assert.rejects(queued(api), /no security-deep-reviewed label/);
+  });
+
+  test('a stale security-reviewed on a P0 path fails, never waits for the deep label', async () => {
+    const api = gate({ files: [DEEP], timeline: [labelled(EARLY)], activity: [push(LATE)] });
+    await assert.rejects(check(api), /security-reviewed is older than the last push/);
   });
 
   test('a P0 path with both labels after the push passes', async () => {
@@ -257,7 +277,8 @@ describe('security-deep-reviewed on a P0 identity path (#dorkos, 2026-11-02)', (
       timeline: [labelled(LATE, 'User', DEEP_LABEL)],
       activity: [push(EARLY)],
     });
-    await assert.rejects(check(deepOnly), /no security-reviewed label/);
+    assert.match(await check(deepOnly), WAITING);
+    await assert.rejects(queued(deepOnly), /no security-reviewed label/);
     const held = gate({
       files: [DEEP],
       labels: ['security-reviewed', DEEP_LABEL, 'hold'],
@@ -279,7 +300,8 @@ describe('security-deep-reviewed on a P0 identity path (#dorkos, 2026-11-02)', (
       timeline: [labelled(LATE)],
       activity: [push(EARLY)],
     });
-    await assert.rejects(check(api), /no security-deep-reviewed label/);
+    assert.match(await check(api), /^Waiting for Security: no security-deep-reviewed label yet/);
+    await assert.rejects(queued(api), /no security-deep-reviewed label/);
   });
 
   test('a missing P0 list refuses a sensitive diff rather than reading it as none', async () => {
@@ -292,5 +314,129 @@ describe('security-deep-reviewed on a P0 identity path (#dorkos, 2026-11-02)', (
       checkMergeGroup(api, group, pattern, '0'),
       /deep-review path list missing/
     );
+  });
+});
+
+describe('an unlabelled PR waits; anything wrong still fails (Security, step 4)', () => {
+  test("main's failure verdict on a merely unlabelled PR waits too", async () => {
+    const statuses = [{ context: 'security-review', state: 'failure' }];
+    assert.match(await check(gate({ labels: [], statuses, activity: [push(EARLY)] })), WAITING);
+  });
+
+  test('a stale label fails', async () => {
+    const api = gate({ timeline: [labelled(EARLY)], activity: [push(LATE)] });
+    await assert.rejects(check(api), /older than the last push/);
+  });
+
+  test('a label a bot added fails', async () => {
+    const api = gate({ timeline: [labelled(LATE, 'Bot')], activity: [push(EARLY)] });
+    await assert.rejects(check(api), /not from a person/);
+  });
+
+  test('hold fails, with or without the label', async () => {
+    for (const labels of [['hold'], ['security-reviewed', 'hold']]) {
+      const api = gate({ labels, timeline: [labelled(LATE)], activity: [push(EARLY)] });
+      await assert.rejects(check(api), /hold label is on/, labels.join(','));
+    }
+  });
+
+  test('a label added after the merge fails', async () => {
+    for (const name of ['security-reviewed', DEEP_LABEL]) {
+      const api = gate({
+        labels: ['security-reviewed', DEEP_LABEL],
+        timeline: [labelled(EARLY), labelled(LATE, 'User', name)],
+        activity: [push('2026-10-30T09:00:00Z')],
+        pr: { merged_at: '2026-10-30T10:30:00Z', state: 'closed' },
+      });
+      await assert.rejects(check(api), new RegExp(`${name} was added after the merge`));
+    }
+  });
+
+  test('a merged or closed PR with no label never waits', async () => {
+    for (const pr of [{ merged_at: LATE, state: 'closed' }, { state: 'closed' }]) {
+      const api = gate({ labels: [], activity: [push(EARLY)], pr });
+      await assert.rejects(check(api), /no security-reviewed label/);
+    }
+  });
+
+  test('a fresh label with a refusal from main still refuses', async () => {
+    const statuses = [{ context: 'security-review', state: 'failure' }];
+    const api = gate({ statuses, timeline: [labelled(LATE)], activity: [push(EARLY)] });
+    await assert.rejects(check(api), /security-review is failure/);
+  });
+});
+
+describe('a stacked layer whose parent moves mid-run (DOR-3680)', () => {
+  const moving = { bases: ['parent1', 'parent2'] };
+
+  test('it is judged on the new base: a fresh label passes, and the files are read again', async () => {
+    const api = gate({ ...moving, timeline: [labelled(LATE)], activity: [push(EARLY)] });
+    assert.equal(await check(api), 'Security status verified');
+    assert.equal(api.fileReads, 2);
+  });
+
+  test('a stale label still fails, and no label waits, rather than "base moved"', async () => {
+    const stale = gate({ ...moving, timeline: [labelled(EARLY)], activity: [push(LATE)] });
+    await assert.rejects(check(stale), /older than the last push/);
+    assert.match(await check(gate({ ...moving, labels: [], activity: [push(EARLY)] })), WAITING);
+  });
+
+  test('a base that never settles refuses after three runs', async () => {
+    const bases = Array.from({ length: 20 }, (_, i) => `parent${i}`);
+    const api = gate({ bases, timeline: [labelled(LATE)], activity: [push(EARLY)] });
+    await assert.rejects(check(api), /base kept moving/);
+    assert.equal(api.fileReads, 3);
+  });
+
+  test('a head that moves mid-run still refuses', async () => {
+    const api = gate({ timeline: [labelled(LATE)], activity: [push(EARLY)] });
+    const original = api.pr;
+    let reads = 0;
+    api.pr = async () => {
+      const pr = await original();
+      return ++reads > 1 ? { ...pr, head: { ...pr.head, sha: 'head2' } } : pr;
+    };
+    await assert.rejects(check(api), /head moved/);
+  });
+});
+
+describe("main's failure for any reason but a missing label still fails (Security, 16:42Z)", () => {
+  // The gate never reads a status description: anyone with statuses: write can
+  // set one. It decides "only waiting" from the PR's own labels, and consults
+  // main's verdict only once the labels it can see are all there.
+  const withGithub = '^(apps/server/src/http/|\\.github/)';
+  const refused = (description) => [{ context: 'security-review', state: 'failure', description }];
+
+  test('a workflow edit with a fresh security-reviewed and no deep label fails, never waits', async () => {
+    const api = gate({
+      files: ['.github/workflows/lint.yml'],
+      statuses: refused(
+        'no security-deep-reviewed label; .github/workflows/lint.yml is a workflow'
+      ),
+      timeline: [labelled(LATE)],
+      activity: [push(EARLY)],
+    });
+    await assert.rejects(
+      checkPullRequest(api, event, withGithub, { botUserId: '0', deepPattern }),
+      /security-review is failure/
+    );
+  });
+
+  test('a description that claims only a missing label changes nothing', async () => {
+    const api = gate({
+      statuses: refused('no security-reviewed label'),
+      timeline: [labelled(LATE)],
+      activity: [push(EARLY)],
+    });
+    await assert.rejects(check(api), /security-review is failure/);
+  });
+
+  test('an errored verdict on a fully labelled PR fails', async () => {
+    const api = gate({
+      statuses: refused('verdict errored: GitHub API 502 at /timeline'),
+      timeline: [labelled(LATE)],
+      activity: [push(EARLY)],
+    });
+    await assert.rejects(check(api), /security-review is failure/);
   });
 });
