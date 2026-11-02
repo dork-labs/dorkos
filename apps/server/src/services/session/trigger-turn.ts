@@ -103,6 +103,7 @@ import type {
 } from '@dorkos/shared/additional-context';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
+import { SessionCapacityError } from '@dorkos/shared/running-chats';
 import type { SessionStateProjector } from './session-state-projector.js';
 import type { LockActivity } from './session-lock.js';
 import { feedProjector } from './session-event-normalizer.js';
@@ -1206,7 +1207,7 @@ export async function* guardTurnErrors(
       type: 'error',
       data: {
         message: errorMessage,
-        code: 'turn_exception',
+        code: err instanceof SessionCapacityError ? err.code : 'turn_exception',
         // A thrown auth error (revoked/expired sign-in) still classifies so the
         // client offers a re-auth affordance rather than a generic failure.
         category: detectAuthError({ message: errorMessage }) ? 'auth_error' : 'execution_error',

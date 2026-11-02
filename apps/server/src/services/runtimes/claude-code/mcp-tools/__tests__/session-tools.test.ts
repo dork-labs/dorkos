@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { z } from 'zod';
+import { SessionCapacityError } from '@dorkos/shared/running-chats';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { PermissionMode } from '@dorkos/shared/types';
@@ -637,6 +638,18 @@ describe('session_start', () => {
   });
 
   describe('removes the settings row of a launch that did not start', () => {
+    it('returns the plain capacity refusal rather than throwing, and removes the unstarted row', async () => {
+      vi.mocked(dispatchMessage).mockRejectedValueOnce(new SessionCapacityError(50));
+      const result = await asScout()({ ...BASE, model: 'claude-opus' });
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+        code: 'session_capacity_reached',
+        error: 'All 50 chats are busy. Wait for one to finish, then try again.',
+      });
+      const [sessionId] = vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[0]!;
+      expect(runtimeRegistry.discardSessionSettings).toHaveBeenCalledWith(sessionId);
+    });
+
     it('when the launch throws', async () => {
       vi.mocked(dispatchMessage).mockRejectedValueOnce(new Error('spawn failed'));
       await expect(asScout()({ ...BASE, model: 'claude-opus' })).rejects.toThrow('spawn failed');

@@ -25,6 +25,7 @@ import type { AdditionalContext, ContextKind } from './additional-context.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
 import type { InterruptReceipt } from './types.js';
+import type { SessionCapacity } from './running-chats.js';
 
 /**
  * The message-delivery vocabulary of the runtime contract, re-exported here so
@@ -1413,6 +1414,8 @@ export interface AgentRuntime {
 
   /** Create or resume a session. */
   ensureSession(sessionId: string, opts: SessionOpts): void;
+  /** Session-record admission capacity, when this backend has a record cap. */
+  getSessionCapacity?(): SessionCapacity;
 
   /** Return true if the session is currently tracked in memory. */
   hasSession(sessionId: string): boolean;

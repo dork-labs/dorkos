@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { SessionCapacityError } from '@dorkos/shared/running-chats';
 import type { StreamEvent, ErrorEvent } from '@dorkos/shared/types';
 import { guardTurnErrors } from '../trigger-turn.js';
 import { SessionStateProjector } from '../session-state-projector.js';
@@ -24,6 +25,19 @@ function errorData(events: StreamEvent[]): ErrorEvent | undefined {
 }
 
 describe('guardTurnErrors', () => {
+  it('surfaces an all-live refusal in the chat and closes the attempted turn', async () => {
+    const projector = new SessionStateProjector('capacity-refusal');
+    const events = await drain(
+      guardTurnErrors(projector, throwingSource(new SessionCapacityError(50)), vi.fn())
+    );
+    expect(errorData(events)).toMatchObject({
+      code: 'session_capacity_reached',
+      message: 'All 50 chats are busy. Wait for one to finish, then try again.',
+    });
+    expect(projector.getStatus().lifecycle).toBe('error');
+    expect(events.at(-1)?.type).toBe('done');
+  });
+
   it('classifies a thrown auth error as auth_error', async () => {
     const projector = new SessionStateProjector('sess-auth');
     const events = await drain(

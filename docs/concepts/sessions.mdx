@@ -208,6 +208,20 @@ This is for **starting** a chat, never for joining one. If the link points at a 
 already has messages in it, the prompt is ignored: nothing is typed and nothing is sent. It is also
 ignored if you've already started typing, so a link can never overwrite your own words.
 
+## When many chats are open
+
+Old chats do not stop you starting a new one. Claude Code keeps up to 50 chat records in
+memory. When those fill up, DorkOS gives back the least recently used idle record. Your
+chat history and saved settings stay on disk; sending another message resumes the chat.
+
+Capacity reclamation leaves open turns, waiting approvals and background work alone. If all
+50 are busy, the new chat says: “All 50 chats are busy. Wait for one to finish, then try again.”
+You do not need to restart DorkOS.
+
+Agents can call `running_chats` to see which chats are working or waiting. Its `capacity`
+field also reports the limit, live records and available starts, with the same message
+when every record is busy. Idle records count as available starts because DorkOS can reclaim them.
+
 ## Next Steps
 
 <Cards>

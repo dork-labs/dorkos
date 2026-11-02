@@ -7,6 +7,35 @@
  */
 import { z } from 'zod';
 
+/** An unattended start has no reclaimable session record. */
+export const SESSION_CAPACITY_CODE = 'session_capacity_reached';
+
+/** The same actionable refusal in chat, tools and the capacity read. */
+export function sessionCapacityMessage(limit: number): string {
+  return `All ${limit} chats are busy. Wait for one to finish, then try again.`;
+}
+
+/** Refusal only after every record was checked for idle reclamation. */
+export class SessionCapacityError extends Error {
+  readonly code = SESSION_CAPACITY_CODE;
+  constructor(readonly limit: number) {
+    super(sessionCapacityMessage(limit));
+    this.name = 'SessionCapacityError';
+  }
+}
+
+/** Admission capacity, counting only records with work as unavailable. No chat identities. */
+export const SessionCapacitySchema = z.object({
+  runtime: z.string(),
+  limit: z.number().int().positive(),
+  records: z.number().int().nonnegative(),
+  live: z.number().int().nonnegative(),
+  available: z.number().int().nonnegative(),
+  message: z.string().nullable(),
+});
+
+export type SessionCapacity = z.infer<typeof SessionCapacitySchema>;
+
 /** Where a running chat is: working, or holding its turn until someone answers. */
 export const RunningChatStateSchema = z.enum(['running', 'needs-you']);
 
@@ -58,6 +87,8 @@ export type RunningChatsAgent = z.infer<typeof RunningChatsAgentSchema>;
 
 /** The whole read. */
 export const RunningChatsResponseSchema = z.object({
+  /** Capped backends report reclaimable slots and a plain refusal when every record is live. */
+  capacity: z.array(SessionCapacitySchema).optional(),
   /** Every live chat on this server. Always the sum of the groups' counts. */
   total: z.number().int().nonnegative(),
   /** Every registered agent, busiest first. */

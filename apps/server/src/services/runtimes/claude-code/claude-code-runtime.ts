@@ -84,6 +84,8 @@ import {
   endSessionsWhere,
   stopCreditsSessions,
   sweepEvictedSessions,
+  sessionCapacityPolicy,
+  sessionTurnIsOpen,
   type SessionEndingPort,
 } from './end-sessions.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
@@ -116,6 +118,7 @@ import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
 import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
 import { getOrCreateProjector, peekProjector, streamGenerationOf } from '../../session/index.js';
+import type { SessionCapacity } from '@dorkos/shared/running-chats';
 import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
 
@@ -146,7 +149,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   readonly type = 'claude-code' as const;
 
   // Collaborators
-  private readonly sessionStore = new SessionStore();
+  private readonly sessionStore = new SessionStore(sessionCapacityPolicy(() => this.ending));
   private readonly cache: RuntimeCache;
   private readonly transcriptReader: TranscriptReader;
   private readonly lockManager = new SessionLockManager();
@@ -488,6 +491,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
+  getSessionCapacity: () => SessionCapacity = this.sessionStore.getCapacity.bind(this.sessionStore);
+
+  /** @inheritdoc */
   async forkSession(
     projectDir: string,
     sessionId: string,
@@ -511,11 +517,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * dispatched it.
    */
   isTurnOpen(sessionId: string): boolean {
-    return (
-      this.sessionStore.findSession(sessionId)?.activeQuery !== undefined ||
-      this.persistent.bootingQuery(sessionId) !== undefined ||
-      this.persistent.runtimeTurnQuery(sessionId) !== undefined
-    );
+    return sessionTurnIsOpen(this.ending, sessionId);
   }
 
   /** @inheritdoc */

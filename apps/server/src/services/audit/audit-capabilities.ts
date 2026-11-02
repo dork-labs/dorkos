@@ -294,7 +294,9 @@ export const auditDomain: CapabilityDomain = {
         'answer, and who started it. Every registered agent is listed, zero included, so you ' +
         'can see who is free. `total` is the live count for this server. A person’s own chat ' +
         'is counted in `privateCount` and never named. Use the link, never the id, when you ' +
-        'tell a person about a chat.',
+        'tell a person about a chat. `capacity` reports each capped backend’s live records ' +
+        'and available starts, including reclaimable idle records. When every record is busy, ' +
+        'its message says to wait for a chat to finish; restarting is not needed.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',

@@ -19,6 +19,7 @@ import type { SessionLockManager } from '../../session/session-lock.js';
 import { isCreditsClaudeRoot } from './credits-root.js';
 import type { PluginReloadScheduler } from './messaging/plugin-reload-policy.js';
 import type { SessionStore } from './sessions/session-store.js';
+import type { SessionRecordPolicy } from './sessions/records/capacity.js';
 import type { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import type { PersistentDispatch } from './sessions/persistent-dispatch.js';
 
@@ -41,6 +42,38 @@ export interface SessionEndingPort {
   interruptQuery(sessionId: string): Promise<InterruptReceipt>;
   /** The folder the session runs in, when known. */
   getSessionCwd(sessionId: string): string | undefined;
+}
+
+/** The three live-turn witnesses shared with capacity admission. */
+export function sessionTurnIsOpen(port: SessionEndingPort, id: string): boolean {
+  return (
+    port.sessionStore.findSession(id)?.activeQuery !== undefined ||
+    port.persistent.bootingQuery(id) !== undefined ||
+    port.persistent.runtimeTurnQuery(id) !== undefined
+  );
+}
+
+/** Lazy wiring: the store is constructed before the rest of the runtime's fields. */
+export function sessionCapacityPolicy(readPort: () => SessionEndingPort): SessionRecordPolicy {
+  return {
+    isHoldingWork: (id) => {
+      const port = readPort();
+      const projector = peekProjector(id);
+      return (
+        sessionTurnIsOpen(port, id) ||
+        port.lockManager.isLocked(id) ||
+        projector?.peekInProgressTurn() != null ||
+        projector?.hasPendingInteractions() === true ||
+        projector?.hasOpenSigninCards() === true ||
+        port.pumps.peek(id)?.isHoldingWork() === true
+      );
+    },
+    onEvict: (ids) => {
+      const port = readPort();
+      port.lockManager.cleanup(ids);
+      releaseEvictedSessions(port, ids);
+    },
+  };
 }
 
 /**
@@ -144,6 +177,14 @@ export function sweepEvictedSessions(port: SessionEndingPort): void {
     port.lockManager,
     (sessionId) => port.pumps.peek(sessionId)?.isHoldingWork() === true
   );
+  releaseEvictedSessions(port, evictedIds);
+}
+
+/** Release the same resources after idle-time or capacity eviction. */
+export function releaseEvictedSessions(
+  port: SessionEndingPort,
+  evictedIds: readonly string[]
+): void {
   for (const sessionId of evictedIds) {
     // No subprocess may outlive the session record it belongs to. Eviction
     // ALWAYS implies a reap; the idle timer's reap never implies an eviction

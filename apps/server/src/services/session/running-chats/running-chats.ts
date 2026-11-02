@@ -17,6 +17,7 @@ import type {
   RunningChatsAgent,
   RunningChatsResponse,
   RunningChatState,
+  SessionCapacity,
 } from '@dorkos/shared/running-chats';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { MeshCore } from '@dorkos/mesh';
@@ -37,6 +38,8 @@ interface LiveProjector {
 
 /** Where the read gets its facts. Replaced in tests. */
 export interface RunningChatSources {
+  /** Record caps use the admission predicate, independently of visible projector counts. */
+  capacity?: () => SessionCapacity[];
   /** Every session with a live projector. */
   statuses: () => LiveProjector[];
   /** Whether a session has a prompt waiting on someone. */
@@ -50,6 +53,11 @@ export interface RunningChatSources {
 }
 
 const LIVE_SOURCES: RunningChatSources = {
+  capacity: () =>
+    Object.keys(runtimeRegistry.getAllCapabilities()).flatMap((type) => {
+      const capacity = runtimeRegistry.get(type).getSessionCapacity?.();
+      return capacity ? [capacity] : [];
+    }),
   statuses: listProjectorStatuses,
   needsYou: (sessionId) => peekProjector(sessionId)?.hasPendingInteractions() ?? false,
   agentPathOf: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null),
@@ -145,5 +153,11 @@ export async function listRunningChats(
   }));
   grouped.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 
-  return { total: rows.length, agents: grouped, unassigned: groupFor(null) };
+  const capacity = sources.capacity?.() ?? [];
+  return {
+    total: rows.length,
+    agents: grouped,
+    unassigned: groupFor(null),
+    ...(capacity.length > 0 ? { capacity } : {}),
+  };
 }

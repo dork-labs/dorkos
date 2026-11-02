@@ -51,6 +51,13 @@ import {
 } from './bounded-control.js';
 import { endTurnTasks } from '../sdk/turn-work-stop.js';
 
+import {
+  forgetSessionRecord,
+  reclaimSessionRecord,
+  sessionRecordCapacity,
+  type SessionRecordPolicy,
+} from './records/capacity.js';
+
 /**
  * Build one of this store's stop receipts.
  *
@@ -146,6 +153,16 @@ export class SessionStore {
   /** Reverse index: SDK session ID → session map key, for O(1) lookup. */
   private sdkSessionIndex = new Map<string, string>();
   private readonly SESSION_TIMEOUT_MS = SESSIONS.TIMEOUT_MS;
+
+  constructor(private readonly recordPolicy: SessionRecordPolicy = {}) {}
+
+  /** Capacity for a new chat, counting idle records as reclaimable. */
+  getCapacity() {
+    return {
+      runtime: 'claude-code',
+      ...sessionRecordCapacity(this.sessions, this.sdkSessionIndex, this.recordPolicy),
+    };
+  }
 
   /** Core settings store (ADR-0260) — durable hydrate/write-through. Injected once at boot. */
   private settingsPort?: SessionSettingsPort;
@@ -357,12 +374,7 @@ export class SessionStore {
   ensureSession(sessionId: string, opts: SessionOpts): void {
     if (this.resolveMapKey(sessionId)) return;
 
-    if (this.sessions.size >= SESSIONS.MAX_SESSIONS) {
-      throw new Error(
-        `Maximum session limit reached (${SESSIONS.MAX_SESSIONS}). ` +
-          'Wait for existing sessions to expire or restart the server.'
-      );
-    }
+    reclaimSessionRecord(this.sessions, this.sdkSessionIndex, this.recordPolicy);
     logger.debug('[ensureSession] creating new session', {
       session: sessionId,
       cwd: opts.cwd || '(empty)',
@@ -1098,19 +1110,7 @@ export class SessionStore {
       // because the exemption is right for the whole wait, not only its second
       // half (spec `ask-parks-on-timeout` §8).
       if (isWaitingOnPerson(session, now)) continue;
-      for (const interaction of session.pendingInteractions.values()) {
-        clearTimeout(interaction.timeout);
-      }
-      const ids = new Set<string>([id]);
-      for (const [sdkId, mapKey] of this.sdkSessionIndex) {
-        if (mapKey === id) {
-          this.sdkSessionIndex.delete(sdkId);
-          ids.add(sdkId);
-        }
-      }
-      if (session.sdkSessionId) ids.add(session.sdkSessionId);
-      this.sessions.delete(id);
-      expiredIds.push(...ids);
+      expiredIds.push(...forgetSessionRecord(this.sessions, this.sdkSessionIndex, id));
     }
     lockManager.cleanup(expiredIds);
     return expiredIds;

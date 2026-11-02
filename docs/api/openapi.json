@@ -95288,7 +95288,7 @@
           "Audit"
         ],
         "summary": "See every running chat",
-        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. Use the link, never the id, when you tell a person about a chat.",
+        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. Use the link, never the id, when you tell a person about a chat. `capacity` reports each capped backend’s live records and available starts, including reclaimable idle records. When every record is busy, its message says to wait for a chat to finish; restarting is not needed.",
         "responses": {
           "200": {
             "description": "See every running chat result",
@@ -95297,6 +95297,47 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "capacity": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "runtime": {
+                            "type": "string"
+                          },
+                          "limit": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "records": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "live": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "available": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "message": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "runtime",
+                          "limit",
+                          "records",
+                          "live",
+                          "available",
+                          "message"
+                        ]
+                      }
+                    },
                     "total": {
                       "type": "integer",
                       "minimum": 0
