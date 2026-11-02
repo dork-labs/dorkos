@@ -1,4 +1,4 @@
-/* global console, fetch, process, URL */
+/* global Buffer, console, fetch, process, URL */
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { approvalMode, labelAtHead, labelNewerThanHead } from './security-label-at-head.mjs';
@@ -17,6 +17,20 @@ export function securityPathPattern() {
   const pattern = /^ {2}SECURITY_PATH_PATTERN: '(.+)'$/m.exec(text)?.[1];
   if (!pattern) throw new Error('Security path list missing');
   return pattern;
+}
+
+/** The P0 deep-review list, read from the same workflow file as {@link securityPathPattern}. */
+export function securityDeepPathPattern() {
+  const text = readFileSync(new URL('../workflows/security-gate.yml', import.meta.url), 'utf8');
+  const pattern = /^ {2}SECURITY_DEEP_PATH_PATTERN: '(.+)'$/m.exec(text)?.[1];
+  if (!pattern) throw new Error('Security deep-review path list missing');
+  return pattern;
+}
+
+/** The approval mode's bot id, read from the same workflow file, never from the event. */
+export function trustedBotUserId() {
+  const text = readFileSync(new URL('../workflows/security-gate.yml', import.meta.url), 'utf8');
+  return /^ {2}SECURITY_APPROVAL_BOT_USER_ID: '([^']+)'$/m.exec(text)?.[1];
 }
 
 /** GitHub returns statuses newest first. An older success never overrides a refusal. */
@@ -127,7 +141,15 @@ function validateFiles(files) {
   return files;
 }
 
-async function prFiles(api, number, pr, pattern) {
+/**
+ * A PR's whole changed-file list, refusing a truncated or malformed one.
+ *
+ * @param {object} api The GitHub client.
+ * @param {number} number The PR number.
+ * @param {{changed_files: number}} pr The PR, for its file count.
+ * @param {string} pattern The security path list; a missing one refuses.
+ */
+export async function prFiles(api, number, pr, pattern) {
   if (!pattern) throw new Error('Security path list missing');
   const files = await api.files(number);
   // The files endpoint is capped at 3,000; never classify a truncated diff as safe.
@@ -329,6 +351,14 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
       (await request(`${root}/statuses/${sha}`, { context: CONTEXT, state, description })).data,
     timeline: (number) => pages(`/issues/${number}/timeline`),
     commit: async (sha) => (await request(`${root}/commits/${encodeURIComponent(sha)}`)).data,
+    /** A file's text at a commit, read as data. A missing file throws, like any API error. */
+    async content(path, ref) {
+      const encoded = path.split('/').map(encodeURIComponent).join('/');
+      const { data } = await request(`${root}/contents/${encoded}?ref=${encodeURIComponent(ref)}`);
+      if (data?.encoding !== 'base64' || typeof data.content !== 'string')
+        throw new Error(`Cannot read ${path} at ${ref}`);
+      return Buffer.from(data.content, 'base64').toString('utf8');
+    },
     // Not a bare list, so not `pages`. One page of 100; a longer list refuses.
     async checkSuites(sha) {
       const { data } = await request(
@@ -386,22 +416,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         })
       );
     } else if (process.env.GITHUB_EVENT_NAME === 'pull_request_target') {
-      // This event checks out ONLY the trusted base SHA, never PR code.
-      // This writer has its own workflow, never the required verifier's identity.
-      if (process.env.SECURITY_GATE_MODE === 'initialize') {
-        const pattern = securityPathPattern();
-        const trustedWorkflow = readFileSync(
-          new URL('../workflows/security-gate.yml', import.meta.url),
-          'utf8'
-        );
-        await checkPullRequest(api, event, pattern, {
-          write: true,
-          requireApproval: false,
-          botUserId: /^ {2}SECURITY_APPROVAL_BOT_USER_ID: '([^']+)'$/m.exec(trustedWorkflow)?.[1],
-        });
-      } else {
-        throw new Error('Target event requires explicit initializer mode');
-      }
+      // The base-copy writer is security-verdict.mjs, in its own workflow and
+      // identity; this verifier never writes.
+      throw new Error('pull_request_target runs security-verdict.mjs, not the verifier');
     } else if (process.env.GITHUB_EVENT_NAME === 'merge_group') {
       console.log(
         await checkMergeGroup(

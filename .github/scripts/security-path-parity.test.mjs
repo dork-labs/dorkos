@@ -117,10 +117,14 @@ for (const [match, miss] of additions) {
 }
 
 test('both trusted gate workflows pin all actions to full commit SHAs', () => {
-  for (const name of ['security-gate.yml', 'security-review-initialize.yml']) {
+  // The initializer has two jobs since the base-copy verdict (pull_request_target and merge_group).
+  for (const [name, count] of [
+    ['security-gate.yml', 2],
+    ['security-review-initialize.yml', 4],
+  ]) {
     const workflow = readFileSync(new URL(`../workflows/${name}`, import.meta.url), 'utf8');
     const uses = [...workflow.matchAll(/^\s*- uses:\s+([^\s#]+)/gm)].map((match) => match[1]);
-    assert.equal(uses.length, 2);
+    assert.equal(uses.length, count, name);
     for (const action of uses)
       assert.match(action, /^actions\/(checkout|setup-node)@[0-9a-f]{40}$/);
   }

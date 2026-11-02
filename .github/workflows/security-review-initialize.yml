@@ -1,8 +1,26 @@
 name: security-review-initialize
 
+# Writes the `security-review` commit status from MAIN's copy of the gate
+# (Security's required-checks plan, step 1, 2026-11-02). `security-gate` runs a
+# PR's own copy, so a PR that edits the gate is judged by its edit; this runs
+# `pull_request_target` and checks out only the base commit, so the path lists,
+# the label rules and the script are main's. It reads the PR through the API, as
+# data, and never checks out or runs PR code. See .github/scripts/security-verdict.mjs.
+#
+# Every event that can change the verdict runs it, and the newest run decides: a
+# label then a quick push ends as failure, because the push's run reads a label
+# older than the push. `cancel-in-progress: false` keeps one run going and the
+# newest event queued behind it, so no run is lost and the last one writes last.
+#
+# On `merge_group` it posts the verdict on the group's own SHA, so a required
+# `security-review` never leaves the queue waiting on "expected" (test.yml's
+# header). There the workflow file itself comes from the merge commit; only the
+# ruleset can pin it to main, and that is Dorian's step after this lands.
+
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+  merge_group:
 
 permissions:
   contents: read
@@ -12,6 +30,7 @@ env:
 
 jobs:
   initialize:
+    if: github.event_name == 'pull_request_target'
     concurrency:
       group: security-gate-initialize-${{ github.event.pull_request.number }}
       cancel-in-progress: false
@@ -29,8 +48,35 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-      - name: Initialize status from trusted base code
+      - name: Write the verdict from trusted base code
         env:
           GH_TOKEN: ${{ github.token }}
-          SECURITY_GATE_MODE: initialize
-        run: node .github/scripts/security-gate.mjs
+        run: node .github/scripts/security-verdict.mjs
+
+  merge-group:
+    if: github.event_name == 'merge_group'
+    concurrency:
+      group: security-gate-merge-group-${{ github.event.merge_group.head_sha }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      statuses: write
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require an immutable base SHA
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: '[[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.merge_group.base_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Write the queue verdict from trusted base code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/security-verdict.mjs
