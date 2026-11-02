@@ -62,7 +62,7 @@ launched on a person's Mac. Start it from the Actions tab, or with
 have no Docker, so it installs Homebrew Postgres and sets
 `DORKOS_TWO_DESKTOP_PG_URL`. It builds the tag, but runs this folder from the
 workflow's own commit, so an older tag can still be tested. It uses no
-secrets, and uploads only `receipt.json` and `steps.log`.
+secrets, and uploads only `receipt.json`, `steps.log` and the console output.
 
 ## What it proves
 
