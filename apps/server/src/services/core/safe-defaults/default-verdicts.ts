@@ -551,6 +551,9 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'cloud.credits.agents': [],
   // No beat's cheap check runs on credits until a person answers the offer (spec `heartbeats` §6.3).
   'heartbeats.triageOnCredits': null,
+  // No room chosen: the "nothing is running" notice (DOR-3675) goes to the team room, as a
+  // numbers-only DorkOS notice that wakes nothing. Operator-only, so no agent can move it.
+  'heartbeats.idleAlertRoomId': null,
   'cloud.credits.linkedTo': null,
   // Managed remote access starts off, with no consent, link or credential (DOR-2086).
   ...CLOUD_REMOTE_SAFE_DEFAULTS,

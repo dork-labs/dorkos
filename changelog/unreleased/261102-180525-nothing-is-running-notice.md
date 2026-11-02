@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(heartbeats): the team room hears once when nothing has run for 30 min while work is open (DOR-3675)'
+  - "fix(server): the idle alert's room is a safe default, classified for a wipe (DOR-3675)"
 ---
 
 ### Added
