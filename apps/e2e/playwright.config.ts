@@ -1,25 +1,8 @@
-import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { BOOT_CACHE_DISABLED_KEY } from './boot-cache-flag';
 import { unitKey } from './reporters/balanced-shard';
 import { planSiteLeg, SITE_PROJECT, SITE_SHARD, SITE_SPEC_FILES } from './site-leg';
-
-/**
- * The checkout root, which the cockpit leg runs boundary-scoped to.
- *
- * The server refuses any agent path outside `DORKOS_BOUNDARY`, and that
- * defaults to the **home directory** — so the fixtures' own scratch dir under
- * `apps/e2e/.temp` is only in bounds while the checkout happens to live under
- * `$HOME`. Run the suite from `/private/tmp`, or from a worktree parked
- * anywhere else, and every seeded agent answers `Path outside boundary` and
- * fourteen specs fail for a reason no diff explains.
- *
- * Naming the boundary here makes that true by construction instead of by
- * coincidence. The checkout is the right root because the server's own default
- * working directory is already the repo root (`resolve-root.ts`), so nothing
- * the suite legitimately reaches falls outside it.
- */
-const REPO_ROOT = join(import.meta.dirname, '..', '..');
+import { bootServerOnThrowawayHome, makeThrowawayHome } from './throwaway-home';
 
 /**
  * Read a port override, refusing anything that is not digits.
@@ -255,7 +238,7 @@ const SITE_SPECS = SITE_SPEC_FILES.map((file) => `**/${file}`);
  *   by {@link port}.
  */
 function resetThrowawayHome(dorkHome: string): string {
-  return `rm -rf ${dorkHome} && mkdir -m 700 -p ${dorkHome}`;
+  return `rm -rf ${dorkHome} && mkdir -m 700 -p ${dorkHome} && ${makeThrowawayHome(dorkHome)}`;
 }
 
 /**
@@ -277,6 +260,11 @@ function resetThrowawayHome(dorkHome: string): string {
  * used to provide via `^build`. Both legs run it concurrently and turbo
  * deduplicates them, so the second is free.
  *
+ * The server itself runs on a throwaway `HOME` inside the leg's `DORK_HOME`
+ * (DOR-3587, `throwaway-home.ts`); the build before it keeps the real one. That
+ * helper also names the boundary, the checkout, because it would otherwise follow
+ * `HOME` into an empty folder.
+ *
  * @param env - Leg-specific environment, prefixed onto the command.
  * @param preBoot - Shell run before the build, for a leg that must start from a
  *   known-empty state.
@@ -286,7 +274,7 @@ function resetThrowawayHome(dorkHome: string): string {
  *   with no dist there is no shell to serve and no policy to test.
  */
 function apiLegCommand(
-  env: Record<string, string> = {},
+  env: Record<string, string> & { DORK_HOME: string },
   preBoot?: string,
   alsoBuild: string[] = []
 ): string {
@@ -294,7 +282,7 @@ function apiLegCommand(
     .map(([key, value]) => `${key}=${value}`)
     .join(' ');
   const filters = ['@dorkos/server', ...alsoBuild].map((pkg) => `--filter=${pkg}`).join(' ');
-  const boot = `turbo run build ${filters} --output-logs=new-only && pnpm --filter @dorkos/server exec tsx src/index.ts`;
+  const boot = `turbo run build ${filters} --output-logs=new-only && ${bootServerOnThrowawayHome(env.DORK_HOME)}`;
   const script = preBoot ? `${preBoot} && ${boot}` : boot;
   return `${prefix ? `${prefix} ` : ''}dotenv -- sh -c '${script}'`;
 }
@@ -519,9 +507,6 @@ export default defineConfig({
         {
           DORKOS_TASKS_ENABLED: 'true',
           DORKOS_RELAY_ENABLED: 'true',
-          // Keeps the fixtures' scratch dir in bounds wherever the checkout is —
-          // see REPO_ROOT.
-          DORKOS_BOUNDARY: REPO_ROOT,
           // Named explicitly rather than left to the `dotenv` inside the command:
           // dotenv does not clobber an already-set variable, so setting them here
           // is what stops the root `.env`'s dev values (DORKOS_PORT=6242) from
@@ -765,9 +750,6 @@ export default defineConfig({
                 NODE_ENV: 'production',
                 DORKOS_PORT: PROD_PORT,
                 DORK_HOME: PROD_DORK_HOME,
-                // Keeps the fixtures' scratch dir in bounds wherever the
-                // checkout is — see REPO_ROOT.
-                DORKOS_BOUNDARY: REPO_ROOT,
                 // Same lock as the two legs above, for the same reason: without
                 // it the message-search sweep full-text-copies the operator's
                 // real transcripts into the directory below (DOR-1551).

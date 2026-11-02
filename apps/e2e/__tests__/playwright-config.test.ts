@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -153,6 +154,67 @@ describe('every leg that stores data isolates it', () => {
     // on every run of the suite (DOR-1551).
     for (const leg of legs) {
       expect(leg.command).toContain('DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true');
+    }
+  });
+});
+
+/**
+ * A server's home sits inside its data directory (DOR-3587). Deleting these fails
+ * nothing else: a leg on the real home still boots and still goes green, having
+ * read this computer's Claude sign-ins on its way up. The first-run config boots
+ * its own servers, so it is held to the same.
+ */
+describe('every server runs on a throwaway home', () => {
+  let legs: { command: string; dorkHome: string }[];
+
+  beforeAll(async () => {
+    const { default: firstRun } = await import('../playwright.first-run.config.js');
+    const firstRunLegs = Array.isArray(firstRun.webServer) ? firstRun.webServer : [];
+    legs = dataDirectories([...(await allLegs()), ...firstRunLegs].map((leg) => leg.command));
+  });
+
+  it('finds every API leg, so the assertions below have something to check', () => {
+    expect(legs).toHaveLength(5);
+  });
+
+  it('sets HOME and CLAUDE_CONFIG_DIR inside the data directory, on the server only', () => {
+    for (const { command, dorkHome } of legs) {
+      const server = command.slice(command.indexOf('exec env '));
+      expect(server).toContain(`HOME="${dorkHome}/home"`);
+      expect(server).toContain(`CLAUDE_CONFIG_DIR="${dorkHome}/home/.claude"`);
+      // pnpm and turbo read their store and settings from the real home.
+      expect(command.slice(0, command.indexOf('exec env '))).not.toMatch(/[ "]HOME=/);
+    }
+  });
+
+  it('creates that home before the server boots', () => {
+    for (const { command, dorkHome } of legs) {
+      expect(command.indexOf(`mkdir -m 700 -p ${dorkHome}/home/.claude`)).toBeGreaterThan(-1);
+      expect(command.indexOf(`mkdir -m 700 -p ${dorkHome}/home/.claude`)).toBeLessThan(
+        command.indexOf('exec env ')
+      );
+    }
+  });
+
+  it('still tells the server where Playwright keeps its browsers', () => {
+    for (const { command } of legs) expect(command).toMatch(/PLAYWRIGHT_BROWSERS_PATH="[^"]+"/);
+  });
+
+  it('names the boundary on every leg whose home moved', () => {
+    // The boundary defaults to the home folder, so moving HOME moves it too, to
+    // an empty folder that holds none of the fixtures. The leg still boots and
+    // answers its health check; the first spec to seed an agent is then refused
+    // with a 403 about a root nothing changed. Worked out here rather than taken
+    // from `throwaway-home.ts`, so a wrong constant there fails too.
+    const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
+    const moved = legs.filter(({ command }) => /\sHOME="/.test(command));
+    // Without this the loop below passes vacuously if HOME's spelling changes.
+    expect(moved).toHaveLength(legs.length);
+    for (const { command, dorkHome } of moved) {
+      expect({ dorkHome, boundary: /\bDORKOS_BOUNDARY="?([^"\s]+)/.exec(command)?.[1] }).toEqual({
+        dorkHome,
+        boundary: repoRoot,
+      });
     }
   });
 });

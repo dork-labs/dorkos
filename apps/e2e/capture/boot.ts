@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { mkdirSync } from 'fs';
 import path from 'path';
+import { isolatedHomeEnv, playwrightBrowsersPath, throwawayHomeOf } from '../throwaway-home.js';
 import {
   API_URL,
   CAPTURE_HOME,
@@ -281,44 +283,21 @@ export function buildServerDeps(): Promise<void> {
   });
 }
 
+export { isolatedHomeEnv };
+
 /** Handles for a running capture stack. */
 export interface Stack {
   /** Stop every spawned process and resolve once they are all reaped. */
   teardown(): Promise<void>;
 }
 
-/**
- * The environment that gives the server a home of its own, for
- * {@link BootOptions.isolatedHome}.
- *
- * `DORK_HOME` moves what DorkOS owns, but four spots in the server mirror
- * ANOTHER program's folder from the operator's real home (Hard Rule 3's
- * carve-outs: `~/.claude`, `~/.codex`, OpenCode's data dir, `~/.agents/skills`).
- * The search sweep is closed by `DORKOS_SEARCH_NO_EXTERNAL_HISTORY`; this closes
- * the rest by pointing `HOME`, and every variable those spots read first, at an
- * empty folder.
- *
- * @param home - The folder to use as the server's home.
- * @returns The variables to lay over {@link baseEnv}.
- */
-export function isolatedHomeEnv(home: string): NodeJS.ProcessEnv {
-  return {
-    HOME: home,
-    CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
-    CODEX_HOME: path.join(home, '.codex'),
-    XDG_CONFIG_HOME: path.join(home, '.config'),
-    XDG_DATA_HOME: path.join(home, '.local', 'share'),
-    // OpenCode's database path, read before its data dir when it is set.
-    OPENCODE_DB: path.join(home, '.local', 'share', 'opencode', 'opencode.db'),
-  };
-}
-
 /** How {@link bootStack} starts the server. */
 export interface BootOptions {
   /**
-   * Run the server with this folder as its home ({@link isolatedHomeEnv}).
-   * The server is then started with the package's own `tsx` rather than
-   * through `pnpm`, which reads its own settings from the real home.
+   * The folder to run the server with as its home ({@link isolatedHomeEnv}).
+   * Defaults to one inside {@link CAPTURE_HOME}: every capture server has a home
+   * of its own (DOR-3587). The server is started with the package's own `tsx`
+   * rather than through `pnpm`, which reads its own settings from the real home.
    */
   readonly isolatedHome?: string;
 }
@@ -339,13 +318,13 @@ const CLIENT_TIMEOUT_MS = 120_000;
  * @param options - See {@link BootOptions}.
  */
 export async function bootStack(options: BootOptions = {}): Promise<Stack> {
-  const server = options.isolatedHome
-    ? run(
-        'cd apps/server && exec ./node_modules/.bin/tsx src/index.ts',
-        'server',
-        isolatedHomeEnv(options.isolatedHome)
-      )
-    : run('pnpm --filter @dorkos/server exec tsx src/index.ts', 'server');
+  const home = options.isolatedHome ?? throwawayHomeOf(CAPTURE_HOME);
+  const homeEnv = isolatedHomeEnv(home);
+  mkdirSync(homeEnv.CLAUDE_CONFIG_DIR!, { recursive: true, mode: 0o700 });
+  const server = run('cd apps/server && exec ./node_modules/.bin/tsx src/index.ts', 'server', {
+    ...homeEnv,
+    PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath(),
+  });
   const client = run('pnpm --filter @dorkos/client exec vite', 'client');
 
   const stack: Stack = { teardown: teardownAll };

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { bootServerOnThrowawayHome, makeThrowawayHome } from './throwaway-home';
 
 /**
  * The one-minute first run, proven against never-onboarded servers (spec
@@ -70,7 +71,7 @@ function apiCommand(leg: Leg): string {
     `VITE_PORT=${leg.vitePort}`,
     `DORK_HOME=${home}`,
     `DORKOS_SEARCH_NO_EXTERNAL_HISTORY=true`,
-    `dotenv -- sh -c 'rm -rf ${home} && mkdir -m 700 -p ${home} && turbo run build --filter=@dorkos/server --output-logs=new-only && pnpm --filter @dorkos/server exec tsx src/index.ts'`,
+    `dotenv -- sh -c 'rm -rf ${home} && mkdir -m 700 -p ${home} && ${makeThrowawayHome(home)} && turbo run build --filter=@dorkos/server --output-logs=new-only && ${bootServerOnThrowawayHome(home)}'`,
   ].join(' ');
 }
 

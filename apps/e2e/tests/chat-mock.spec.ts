@@ -664,7 +664,13 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
       [dirB, 'Bravo Remount Agent'],
     ] as const) {
       const res = await ctx.post(`${API_URL}/api/mesh/agents`, {
-        data: { path: dir, overrides: { name, runtime: 'claude-code' } },
+        // Named, because the default scan root is the server's home, which on a
+        // throwaway home does not hold these folders: the namespace would climb out.
+        data: {
+          path: dir,
+          scanRoot: path.dirname(dir),
+          overrides: { name, runtime: 'claude-code' },
+        },
       });
       if (!res.ok()) throw new Error(`Failed to register ${name}: ${res.status()}`);
     }

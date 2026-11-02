@@ -16,6 +16,7 @@ import { signinAccounts } from '../../connect/signin-accounts.js';
 import { resolveClaudeRootSet } from '../claude-config-dir.js';
 import { isCreditsClaudeRoot } from '../credits-root.js';
 import { readAccountLoginMetadata } from './account-login-metadata.js';
+import { firstBootSeedsMayRun } from './first-boot-seed-guard.js';
 
 /**
  * Bind every known Claude folder to its current sign-in, once. Never throws:
@@ -26,6 +27,7 @@ import { readAccountLoginMetadata } from './account-login-metadata.js';
 export function seedAccountSigninPolicy(
   deps: { folders?: () => string[]; now?: () => Date } = {}
 ): void {
+  if (!firstBootSeedsMayRun()) return;
   const policy = accountSigninPolicy();
   if (!policy || !policy.canSeed()) return;
   try {

@@ -13,6 +13,7 @@
  * @module services/runtimes/claude-code/repo-settings/pin-repo-baselines
  */
 import { logger } from '../../../../lib/logger.js';
+import { firstBootSeedsMayRun } from '../accounts/first-boot-seed-guard.js';
 import { pinRepoBaseline } from './repo-baseline.js';
 import { markRepoBaselinesPinned, repoBaselinesPinned } from './repo-config-consent.js';
 import { GitMissingError } from './repo-git.js';
@@ -32,7 +33,7 @@ const MAX_FOLDERS = 500;
 export async function pinKnownRepoBaselinesOnce(
   folders: () => Promise<Iterable<string>>
 ): Promise<number> {
-  if (repoBaselinesPinned()) return 0;
+  if (!firstBootSeedsMayRun() || repoBaselinesPinned()) return 0;
   let list: string[];
   try {
     list = [...new Set(await folders())].slice(0, MAX_FOLDERS);
