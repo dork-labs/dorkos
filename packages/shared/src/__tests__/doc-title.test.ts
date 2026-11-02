@@ -60,3 +60,36 @@ describe('docTitleFromBytes and docTitleFromText', () => {
     );
   });
 });
+
+describe('the heading parse is linear (CodeQL 345, DOR-3661)', () => {
+  /** The regex the parse replaced, kept here only to prove the two agree. */
+  const OLD = /^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
+  const oldTitle = (line: string) => {
+    const match = OLD.exec(line);
+    return match && match[1]!.trim() !== '' ? match[1]!.trim() : null;
+  };
+
+  it('agrees with the old regex on every short line made of the characters that matter', () => {
+    const alphabet = ['#', ' ', '\t', 'a', '\r', '\u2028'];
+    const lines: string[] = [''];
+    for (let length = 1; length <= 6; length += 1)
+      for (const prefix of lines.filter((l) => l.length === length - 1))
+        for (const c of alphabet) lines.push(prefix + c);
+    for (const line of lines) {
+      const title = docTitleFromText(`${line}\n`, 'stem.md');
+      // The doc splits on \r?\n, so a CR right before the newline is not in the line.
+      const seen = line.endsWith('\r') ? line.slice(0, -1) : line;
+      expect(title, JSON.stringify(line)).toBe(oldTitle(seen) ?? 'stem');
+    }
+  });
+
+  it('reads a long blank-filled heading inside the read cap in well under a second', () => {
+    // Built in code: a heading line of mixed blanks that fails at its end.
+    const blanks = ' \t'.repeat(1995);
+    const text = `#${blanks}x\ry\n`;
+    expect(new TextEncoder().encode(text).length).toBeLessThan(DOC_TITLE_BYTES);
+    const started = performance.now();
+    expect(docTitleFromText(text, 'stem.md')).toBe('stem');
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+});

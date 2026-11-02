@@ -205,11 +205,10 @@ export async function writeMemory(
     // Strictly greater: a write that lands exactly ON the cap is allowed, so the
     // limit is a limit rather than one character less than one. A file already
     // over the cap — only reachable by editing it on disk — can still be edited
-    // as long as the edit does not make it BIGGER, which is what keeps the fix
-    // available from inside. (Equal length passes too: a correction that swaps
-    // one note for another of the same size is not what the cap is defending
-    // against.)
-    if (after.length > cap && after.length > before.length) {
+    // as long as the edit makes it SMALLER, which is what keeps the fix
+    // available from inside. A same-size edit is refused there: it let a file
+    // kept over the cap be rewritten forever (DOR-3662).
+    if (after.length > cap && after.length >= before.length) {
       throw new MemoryCapExceededError(before.length, after.length, cap);
     }
 
