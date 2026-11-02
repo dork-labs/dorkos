@@ -160,7 +160,9 @@ settings are only read through `room-repo-git.ts`, which audits them first
 (`ROOM_REPO_CONFIG_UNSAFE`). The audit is an allowlist (`SAFE_REPO_CONFIG_KEY` from
 `@dorkos/shared/safe-git`, minus `extensions.worktreeConfig`), and every room git command also runs
 with `GIT_NO_LAZY_FETCH=1` and an empty `GIT_ALLOW_PROTOCOL`, so a read never reaches a remote the
-config names (DOR-3667).
+config names (DOR-3667). The allowlist names `gc.*`, `maintenance.*` and `gtr.*` keys one by one,
+never a whole section (`gc.recentObjectsHook` is a shell command), and room git passes `gc.auto=0`
+and `maintenance.auto=false`, so a commit or merge never starts automatic gc at all.
 
 That refusal is a `RoomRepoConfigUnsafeError` carrying the settings file and the offending keys, the
 operator's sentence (`forOwner`), one shell-quoted `git config --file … --unset-all …` command

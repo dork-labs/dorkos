@@ -57,9 +57,13 @@ export const SAFE_REPO_CONFIG_KEY = new RegExp(
       'blame\\.ignorerevsfile',
       'rerere\\.enabled',
       'lfs\\.repositoryformatversion',
-      'gtr\\.[a-z.]+',
-      'gc\\.[a-z]+',
-      'maintenance\\.[a-z.]+',
+      // Named keys only, never a whole section: `gc.recentObjectsHook` is a
+      // shell command gc runs, and a commit or fetch can start gc by itself
+      // (DOR-3667). `gtr.*` is read by git-worktree-runner, never by git; its
+      // hook and editor keys name programs, so they are left out too.
+      'gtr\\.(?:worktrees\\.(?:dir|prefix)|defaults\\.branch|copy\\.(?:include|exclude|includedirs|excludedirs))',
+      'gc\\.(?:auto|autopacklimit|autodetach|aggressivedepth|aggressivewindow|bigpackthreshold|cruftpacks|maxcruftsize|logexpiry|packrefs|pruneexpire|worktreepruneexpire|reflogexpire|reflogexpireunreachable|rerereresolved|rerereunresolved|writecommitgraph)',
+      'maintenance\\.(?:auto|autodetach|strategy|(?:gc|commit-graph|prefetch|loose-objects|incremental-repack|pack-refs|reflog-expire|worktree-prune|rerere-gc)\\.(?:enabled|schedule|auto)|loose-objects\\.batchsize)',
       'fetch\\.(?:prune|writecommitgraph)',
       'pull\\.rebase',
       'user\\.(?:name|email)',

@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(rooms): the server's git in a room or a local workspace source runs no program the repo's settings name (DOR-3667)"
+  - 'fix(rooms): room git never starts automatic gc, and the allowlist names gc keys one by one (DOR-3667)'
 ---
 
 ### Fixed

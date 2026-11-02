@@ -14,7 +14,8 @@ import { mkdtemp, mkdir, realpath, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { gitEnv, initRepo, runGit } from '../room-repo-git.js';
+import { isSafeRoomRepoConfigKey } from '@dorkos/shared/safe-git';
+import { gitEnv, initRepo, ROOM_GIT_CONFIG_ARGS, runGit } from '../room-repo-git.js';
 import { removeFixtureTree } from './fixture-git.js';
 
 let home: string;
@@ -96,6 +97,82 @@ describe('room git and a repo config that would lazy-fetch (DOR-3667)', () => {
     } catch {
       // A missing object is an error either way; what matters is the marker.
     }
+    expect(existsSync(marker)).toBe(false);
+  });
+});
+
+describe('room git and a repo config that names a gc hook (DOR-3667 M1)', () => {
+  /**
+   * Arm automatic gc on the next commit, with a hook that leaves the marker:
+   * two packs already, against a limit of one, so the commit's own automatic
+   * housekeeping starts gc.
+   */
+  async function armGcHook(): Promise<void> {
+    for (const name of ['pack-a.md', 'pack-b.md']) {
+      await writeFile(path.join(repo, name), `${name}\n`);
+      plainGit(repo, 'add', '-A');
+      plainGit(repo, 'commit', '-q', '-m', name);
+      plainGit(repo, 'repack', '-q');
+    }
+    // gc asks the hook only about objects nothing reaches.
+    const orphan = path.join(home, 'orphan.txt');
+    await writeFile(orphan, 'orphan\n');
+    plainGit(repo, 'hash-object', '-w', orphan);
+    plainGit(repo, 'config', 'gc.autoPackLimit', '1');
+    plainGit(repo, 'config', 'gc.pruneExpire', 'now');
+    plainGit(repo, 'config', 'gc.recentObjectsHook', `touch "${marker}"`);
+  }
+
+  it('refuses to run, and runs nothing, when the config names gc.recentObjectsHook', async () => {
+    await armGcHook();
+    await writeFile(path.join(repo, 'second.md'), 'two\n');
+
+    await expect(runGit(['add', '-A'], repo, home)).rejects.toMatchObject({
+      code: 'ROOM_REPO_CONFIG_UNSAFE',
+    });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('allows only named gc, maintenance and gtr keys', () => {
+    expect(isSafeRoomRepoConfigKey('gc.recentobjectshook')).toBe(false);
+    expect(isSafeRoomRepoConfigKey('gc.auto')).toBe(true);
+    expect(isSafeRoomRepoConfigKey('maintenance.auto')).toBe(true);
+    expect(isSafeRoomRepoConfigKey('maintenance.gc.enabled')).toBe(true);
+    expect(isSafeRoomRepoConfigKey('maintenance.anything.else')).toBe(false);
+    expect(isSafeRoomRepoConfigKey('gtr.worktrees.dir')).toBe(true);
+    expect(isSafeRoomRepoConfigKey('gtr.hook.postcreate')).toBe(false);
+  });
+
+  it('arms a hook plain git really runs (the fixture is live)', async () => {
+    await armGcHook();
+    await writeFile(path.join(repo, 'second.md'), 'two\n');
+    plainGit(repo, 'add', '-A');
+    plainGit(
+      repo,
+      '-c',
+      'maintenance.autoDetach=false',
+      '-c',
+      'gc.autoDetach=false',
+      'commit',
+      '-q',
+      '-m',
+      'second'
+    );
+
+    expect(existsSync(marker)).toBe(true);
+  });
+
+  it('runs no automatic gc even past the audit: the server`s own flags stop it', async () => {
+    // As the server's git would commit in this room, with the audit out of the
+    // way: the flags every room command carries must keep gc from starting.
+    await armGcHook();
+    await writeFile(path.join(repo, 'second.md'), 'two\n');
+    const env = gitEnv(home, repo);
+    const git = (...args: string[]) =>
+      execFileSync('git', [...ROOM_GIT_CONFIG_ARGS, ...args], { cwd: repo, env, stdio: 'pipe' });
+    git('add', '-A');
+    git('-c', 'user.name=T', '-c', 'user.email=t@x', 'commit', '-q', '-m', 'second');
+
     expect(existsSync(marker)).toBe(false);
   });
 });

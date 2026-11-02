@@ -74,10 +74,10 @@
  *   recursed into it and ran that program as the server (measured, with or
  *   without the pin above). Ignoring submodules stops the recursion; merges
  *   refuse submodules anyway.
- * - **No detached housekeeping** (`maintenance.autoDetach=false`,
- *   `gc.autoDetach=false`). Git's automatic maintenance still runs after a
- *   commit or merge, but in the foreground, so nothing keeps writing the room's
- *   `.git` after the server's call returns.
+ * - **No automatic housekeeping** (`gc.auto=0`, `maintenance.auto=false`).
+ *   Automatic gc runs `gc.recentObjectsHook`, a shell command, so the server's
+ *   git never starts it, and nothing keeps writing the room's `.git` after the
+ *   server's call returns.
  * - **Drivers named by committed `.gitattributes` run nothing.** An agent
  *   writes `.gitattributes`, and a `filter`, `diff` or `merge` attribute names a
  *   driver — but a driver is only a program when a config git reads defines it.
@@ -150,7 +150,7 @@ const LARGE_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
  * refuses a bare repository git merely finds. See the module doc for what
  * the hook and fsmonitor settings were measured to stop.
  */
-const SHARED_CONFIG_ARGS = [
+export const ROOM_GIT_CONFIG_ARGS: readonly string[] = [
   ...internalGitArgs(),
   // **Never look inside a submodule.** An agent can commit a gitlink into its
   // copy beside a `sub/` holding its own `.git/config` — a folder the agent
@@ -165,17 +165,16 @@ const SHARED_CONFIG_ARGS = [
   'status.submoduleSummary=false',
   '-c',
   'submodule.recurse=false',
-  // **Housekeeping runs INSIDE the call, never after it.** A commit or merge
-  // ends by running git's automatic maintenance, which by default detaches into
-  // the background and keeps writing `repo/.git` (a `gc`, a `maintenance.lock`)
-  // after the server's pinned, audited command has returned — racing the next
-  // command and the turn-start refresh. Kept rather than turned off, so a
-  // room's objects are still packed; just in the foreground, where it finishes
-  // before the call does.
+  // **No automatic housekeeping at all** (DOR-3667). A commit, merge or fetch
+  // ends by running git's automatic maintenance, and its gc runs
+  // `gc.recentObjectsHook`, a shell command, from config (measured). Off
+  // rather than trusted to the audit alone; it also means nothing detaches and
+  // keeps writing `repo/.git` after the server's call returns. A room's objects
+  // stay loose, which costs disk, not correctness.
   '-c',
-  'maintenance.autoDetach=false',
+  'gc.auto=0',
   '-c',
-  'gc.autoDetach=false',
+  'maintenance.auto=false',
 ];
 
 /**
@@ -521,7 +520,7 @@ export async function runGitRaw(
   // runs while that config names a program (see {@link assertRoomRepoConfigSafe}).
   if (readsRoomRepo(ceilingDir, cwd)) await assertRoomRepoConfigSafe(ceilingDir);
   try {
-    const { stdout } = await execFileAsync('git', [...SHARED_CONFIG_ARGS, ...args], {
+    const { stdout } = await execFileAsync('git', [...ROOM_GIT_CONFIG_ARGS, ...args], {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
       env: gitEnv(ceilingDir, cwd),
