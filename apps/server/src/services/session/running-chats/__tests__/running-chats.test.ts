@@ -60,6 +60,25 @@ describe('listRunningChats', () => {
   });
   afterEach(() => resetSessionVisibility());
 
+  it('reports admission capacity and the all-live refusal without leaking private chat identities', async () => {
+    const capacity = {
+      runtime: 'claude-code',
+      limit: 50,
+      records: 50,
+      live: 50,
+      available: 0,
+      message: 'All 50 chats are busy. Wait for one to finish, then try again.',
+    };
+    const result = await listRunningChats(
+      ROSTER,
+      AGENT_READER,
+      sources({ statuses: () => live('mine'), capacity: () => [capacity] })
+    );
+    expect(result.capacity).toEqual([capacity]);
+    expect(JSON.stringify(result.capacity)).not.toContain('mine');
+    expect(result.agents.flatMap((agent) => agent.chats)).toEqual([]);
+  });
+
   it('counts a working chat and a chat waiting on an answer, nothing else', async () => {
     const result = await listRunningChats(
       ROSTER,

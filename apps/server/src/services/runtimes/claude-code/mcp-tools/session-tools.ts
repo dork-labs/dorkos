@@ -43,6 +43,7 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/session-tools
  */
+import { SessionCapacityError } from '@dorkos/shared/running-chats';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
@@ -594,6 +595,7 @@ export function createSessionStartHandler(
       reservation?.cancel();
       settleStamp(null);
       await discardUnstartedSession(sessionId);
+      if (err instanceof SessionCapacityError) return refuse(err.message, err.code);
       throw err;
     }
     if (isSessionLaunchRefusal(result)) {
@@ -677,7 +679,10 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
         'autonomy is granted only when named in permissionMode. ' +
         'At most 8 sessions started this way run at once. Give it a short `title`. The result ' +
         'has `link`, a ready markdown link to the chat: when you tell a person about it, use ' +
-        'that link, never the id.',
+        'that link, never the id. Idle chat records are reclaimed at the Claude Code record cap. ' +
+        'If all records are busy, the start is refused with session_capacity_reached; ' +
+        'the tool that lists running chats reports capacity and the same wait message. ' +
+        'Do not restart the server.',
       SessionStartInputShape,
       createSessionStartHandler(deps, resolveCaller)
     ),

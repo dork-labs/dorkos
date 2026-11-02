@@ -307,14 +307,14 @@ export const SESSIONS = {
    * would trade a real resource ceiling for a case nobody has reported.
    */
   INTERACTION_PARK_CEILING_MS: 4 * 60 * 60 * 1000,
-  /** Maximum number of concurrent in-memory sessions. */
+  /** Session-record cache size. At capacity, reclaim LRU idle records; refuse only if all are live. */
   MAX_SESSIONS: 50,
   /**
    * How long a WARM session's subprocess may sit with no turn open before it is
    * given back (spec `persistent-session-runtime` §4.3).
    *
    * This is **not** session eviction. `TIMEOUT_MS` retires the session RECORD
-   * after 30 minutes and the person loses their place; this closes a PROCESS
+   * after 30 minutes (or sooner for an idle record at the cap); this closes a PROCESS
    * after 5 minutes and the person cannot tell — the record, the transcript and
    * the conversation are untouched, and the next message resumes. Eviction
    * implies a reap; a reap never implies eviction.
@@ -336,7 +336,7 @@ export const SESSIONS = {
    * {@link SESSIONS.MAX_WARM_SESSIONS_AUTO}. Twelve was the fixed ceiling until
    * DOR-3012, and a machine with 48 GB filled it with 5.5 GB in use.
    *
-   * It is **not** a refusal ceiling in the way `MAX_SESSIONS` is. Warmth is a
+   * Like the session-record cap, it reclaims idle entries first. Warmth is a
    * cache, so a launch past it reclaims the least recently used warm process,
    * and when nothing is reclaimable — every process mid-turn or parked on a
    * person — it waits for one to come free ({@link SESSIONS.WARM_SLOT_WAIT_MS}).
