@@ -130,6 +130,10 @@
     "./ui-provider": {
       "types": "./dist/ui-provider.d.ts",
       "default": "./dist/ui-provider.js"
+    },
+    "./count-pill": {
+      "types": "./dist/count-pill.d.ts",
+      "default": "./dist/count-pill.js"
     }
   },
   "scripts": {
