@@ -3,6 +3,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { approvalMode, labelAtHead, labelNewerThanHead } from './security-label-at-head.mjs';
 
+// QA PROOF #3426 (a): comment-only change, do not merge.
 const CONTEXT = 'security-review';
 
 /**
