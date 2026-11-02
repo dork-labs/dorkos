@@ -125,6 +125,19 @@ describe('the pre-push formatting check is wired beside its sibling checks', () 
     }
   });
 
+  it('compares max-lines with the branch point, not with whatever main is today (DOR-3643)', () => {
+    // A baseline main lowered after the branch was cut read as this branch
+    // RAISING it, so a push touching none of those files was refused (twice on
+    // 2026-11-02). The branch point is what the ledger check beside it uses.
+    const start = prePush.indexOf('\n    max-lines:');
+    const rest = prePush.slice(start + 1);
+    const next = rest.slice(1).search(/\n {4}[A-Za-z0-9_-]+:\s*\n/);
+    const command = next === -1 ? rest : rest.slice(0, next + 1);
+    expect(start, 'pre-push has no max-lines command').toBeGreaterThan(-1);
+    expect(command).toMatch(/\$\(git merge-base origin\/main HEAD\) \|\| exit 1/);
+    expect(command).not.toMatch(/--base origin\/main\b/);
+  });
+
   it('runs the formatting check', () => {
     expect(
       prePush.includes(CHECK_REL),
