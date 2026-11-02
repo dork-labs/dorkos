@@ -237,9 +237,12 @@ pre-push:
         bash scripts/pre-push-fragment-check.sh
       fail_text: 'Changelog fragment check failed — rewrite or delete the fragment named above, commit, and push again.'
     max-lines:
+      # The branch point, as ledger-coverage below uses: a baseline main lowered
+      # after this branch was cut is not this branch raising it (DOR-3643).
       run: |
         [ -r packages/ci-steward/bin/time-wrap.sh ] && . packages/ci-steward/bin/time-wrap.sh && ci_steward_time_wrap pre-push max-lines
-        pnpm check:max-lines -- --base origin/main
+        max_lines_base=$(git merge-base origin/main HEAD) || exit 1
+        pnpm check:max-lines -- --base "$max_lines_base"
       fail_text: File-size ratchet failed — fix the files listed above.
     ledger-coverage:
       # Coverage discovers gate scripts and checks only changed pipeline paths.
