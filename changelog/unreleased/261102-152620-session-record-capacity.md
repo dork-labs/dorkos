@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(sessions): reclaim idle records when starting chats at capacity (DOR-3682)'
+  - 'fix(sessions): session_start describes the running-chats tool instead of naming it (DOR-3682)'
 ---
 
 ### Fixed

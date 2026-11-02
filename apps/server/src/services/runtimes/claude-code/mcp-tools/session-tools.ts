@@ -681,7 +681,8 @@ export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartC
         'has `link`, a ready markdown link to the chat: when you tell a person about it, use ' +
         'that link, never the id. Idle chat records are reclaimed at the Claude Code record cap. ' +
         'If all records are busy, the start is refused with session_capacity_reached; ' +
-        'running_chats reports capacity and the same wait message. Do not restart the server.',
+        'the tool that lists running chats reports capacity and the same wait message. ' +
+        'Do not restart the server.',
       SessionStartInputShape,
       createSessionStartHandler(deps, resolveCaller)
     ),
