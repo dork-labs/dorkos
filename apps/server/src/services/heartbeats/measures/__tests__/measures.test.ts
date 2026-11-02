@@ -437,6 +437,13 @@ describe('supporting measures', () => {
           state: state as 'open',
           createdAt: ago(5 * DAY),
           closedAt: closedMsAgo === null ? null : ago(closedMsAgo),
+          assignedByKind: 'agent',
+          assignedBy: AGENT,
+          authority: 'self',
+          authorityMarks: '{}',
+          chainDepth: 0,
+          chainAgents: '[]',
+          titleFromSource: false,
         })
         .run();
     promise('kept-early', 'kept', DAY, 2 * DAY);

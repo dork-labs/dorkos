@@ -172,7 +172,7 @@ export function createAgentCommitmentsRoutes(deps: CommitmentRouterDeps): Hono<A
       return c.json(errorBody('No agent on the team has that id.', 'UNKNOWN_AGENT'), 404);
     }
     try {
-      return c.json(deps.service.create(agentId, body.data), 201);
+      return c.json(deps.service.create(agentId, body.data, { kind: 'person' }), 201);
     } catch (err) {
       return refusal(c, err);
     }

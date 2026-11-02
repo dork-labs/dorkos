@@ -108,9 +108,10 @@ function configureAndWrap(sqlite: Database.Database) {
   // holds by itself.
   //
   // Safe to turn on for THIS database, and the reason is structural rather than
-  // a headcount. The three triggers in migration 0037 are the only ones in the
-  // migration history, and the operator's production database carries none at
-  // all — but "there are no other triggers" is not the argument, because
+  // a headcount. The three message-search triggers in migration 0037 write; the
+  // only others, the two `commitments` guards from the To-dos rebuild
+  // (DOR-3088), write nothing and only RAISE. But "there are few triggers" is
+  // not the argument, because
   // extensions may declare their own: a manifest migration is the one place
   // third-party `CREATE TRIGGER` is allowed
   // (`packages/extension-api/src/manifest-schema.ts`). Those live in a separate
@@ -118,8 +119,8 @@ function configureAndWrap(sqlite: Database.Database) {
   // deliberately does NOT set this pragma and says so. So no trigger this
   // pragma can reach is one DorkOS did not write.
   //
-  // The rest follows: none of the three writes to a table carrying triggers, so
-  // none can recurse, and SQLite defines foreign key actions as unaffected by
+  // The rest follows: none of the three message-search triggers writes to a
+  // table carrying triggers, and the two guards write nothing, so none can recurse, and SQLite defines foreign key actions as unaffected by
   // this pragma.
   //
   // It is per-connection, so it protects connections opened through here and no

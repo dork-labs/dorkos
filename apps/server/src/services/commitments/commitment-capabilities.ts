@@ -259,15 +259,19 @@ export const commitmentsDomain: CapabilityDomain = {
         const commitmentDeps = requireCommitmentDeps(deps);
         const agentId = callingAgentId(commitmentDeps, context);
         if (typeof agentId !== 'string') return agentId;
-        const commitment = commitmentDeps.service.create(agentId, {
-          what: input.what,
-          ...(input.to ? { to: input.to } : {}),
-          ...(input.dueAt ? { dueAt: input.dueAt } : {}),
-          ...(context.sessionId ? { sourceSessionId: context.sessionId } : {}),
-          ...(input.sourceEntryId ? { sourceRoomEntryId: input.sourceEntryId } : {}),
-          // The marks of the calling turn, from its own record (DOR-3036).
-          originMarks: marks,
-        });
+        const commitment = commitmentDeps.service.create(
+          agentId,
+          {
+            what: input.what,
+            ...(input.to ? { to: input.to } : {}),
+            ...(input.dueAt ? { dueAt: input.dueAt } : {}),
+            ...(context.sessionId ? { sourceSessionId: context.sessionId } : {}),
+            ...(input.sourceEntryId ? { sourceRoomEntryId: input.sourceEntryId } : {}),
+            // The marks of the calling turn, from its own record (DOR-3036).
+            originMarks: marks,
+          },
+          { kind: 'agent', agentId }
+        );
         return { ok: true as const, commitment };
       },
     }),
