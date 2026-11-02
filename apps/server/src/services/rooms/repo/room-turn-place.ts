@@ -30,7 +30,8 @@
  * else in `.git` made read-only, `__tests__/room-turn-place.test.ts`), and no
  * more. The server's own git never reads config an agent can write, for the
  * reasons `room-repo-git.ts` gives — and when a shell that is not sandboxed
- * writes a program into `repo/.git/config` anyway, the server refuses the room
+ * writes into `repo/.git/config` anyway (a program, a promisor remote, any key
+ * outside the allowlist), the server refuses the room
  * (`ROOM_REPO_CONFIG_UNSAFE`) rather than run it. What stays true for every runtime (§5.2): a
  * shell that is not sandboxed can write anywhere its permission mode allows,
  * this folder included.

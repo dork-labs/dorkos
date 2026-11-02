@@ -251,6 +251,22 @@ describe.skipIf(process.platform === 'win32')('a source whose settings name a pr
     expect(existsSync(marker)).toBe(false);
   });
 
+  // However the same folder is spelled, it is the same source and is audited
+  // (DOR-3667): a URL or a relative path used to skip the check entirely.
+  it.each([
+    ['a file:// URL', () => `file://${source}`],
+    ['an upper-case FILE:// URL', () => `FILE://${source}`],
+    ['a trailing slash', () => `${source}/`],
+    ['a path relative to the workspace root', () => path.relative(root, source)],
+  ])('refuses a clone of it named as %s', async (_how, spell) => {
+    plantSmudge();
+    await expect(new CloneProvider(root).create(request(spell(), 'cl'))).rejects.toBeInstanceOf(
+      GitRepoConfigUnsafeError
+    );
+    expect(existsSync(path.join(root, 'cl'))).toBe(false);
+    expect(existsSync(marker)).toBe(false);
+  });
+
   describe('asked for by a chat set to Full autonomy', () => {
     const FULL_CHAT = { sessionId: 'chat-full', agentPath: '/agents/scout' };
     const emit = vi.fn(async () => {});

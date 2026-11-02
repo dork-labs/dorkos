@@ -307,17 +307,17 @@ describe('room turn placement and grants', () => {
     expect(await agentGit(copy, 'status', '--porcelain')).toBe('');
   });
 
-  it('runs git`s automatic housekeeping in the foreground, never detached, in the server`s git', async () => {
-    // A detached `gc`/maintenance keeps writing `repo/.git` after the server's
-    // call has returned, racing the next command and the turn-start refresh.
+  it('runs no automatic housekeeping in the server`s git', async () => {
+    // Automatic gc runs `gc.recentObjectsHook` from config (DOR-3667), and a
+    // detached one keeps writing `repo/.git` after the server's call returns.
     // Asked of the server's own git, so it is the effective setting a commit or
     // merge runs with. Seeded: dropping either setting reddens this.
     await service.enable(ROOM_ID, OPERATOR);
     const repo = store.repoPath(ROOM_ID);
     const home = store.homeDir(ROOM_ID);
 
-    expect(await runGit(['config', '--get', 'maintenance.autoDetach'], repo, home)).toBe('false');
-    expect(await runGit(['config', '--get', 'gc.autoDetach'], repo, home)).toBe('false');
+    expect(await runGit(['config', '--get', 'gc.auto'], repo, home)).toBe('0');
+    expect(await runGit(['config', '--get', 'maintenance.auto'], repo, home)).toBe('false');
   });
 
   it('refuses a sandboxed shell a hook or a config edit in the room`s shared git', async () => {

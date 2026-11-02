@@ -74,10 +74,10 @@
  *   recursed into it and ran that program as the server (measured, with or
  *   without the pin above). Ignoring submodules stops the recursion; merges
  *   refuse submodules anyway.
- * - **No detached housekeeping** (`maintenance.autoDetach=false`,
- *   `gc.autoDetach=false`). Git's automatic maintenance still runs after a
- *   commit or merge, but in the foreground, so nothing keeps writing the room's
- *   `.git` after the server's call returns.
+ * - **No automatic housekeeping** (`gc.auto=0`, `maintenance.auto=false`).
+ *   Automatic gc runs `gc.recentObjectsHook`, a shell command, so the server's
+ *   git never starts it, and nothing keeps writing the room's `.git` after the
+ *   server's call returns.
  * - **Drivers named by committed `.gitattributes` run nothing.** An agent
  *   writes `.gitattributes`, and a `filter`, `diff` or `merge` attribute names a
  *   driver — but a driver is only a program when a config git reads defines it.
@@ -114,6 +114,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { promises as fsp } from 'node:fs';
+import { isSafeRoomRepoConfigKey, NO_REACH_GIT_ENV } from '@dorkos/shared/safe-git';
 import { internalGitArgs } from '../../../lib/git-safety.js';
 import { RoomError, RoomRepoConfigUnsafeError } from '../room-errors.js';
 
@@ -149,7 +150,7 @@ const LARGE_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
  * refuses a bare repository git merely finds. See the module doc for what
  * the hook and fsmonitor settings were measured to stop.
  */
-const SHARED_CONFIG_ARGS = [
+export const ROOM_GIT_CONFIG_ARGS: readonly string[] = [
   ...internalGitArgs(),
   // **Never look inside a submodule.** An agent can commit a gitlink into its
   // copy beside a `sub/` holding its own `.git/config` — a folder the agent
@@ -164,17 +165,16 @@ const SHARED_CONFIG_ARGS = [
   'status.submoduleSummary=false',
   '-c',
   'submodule.recurse=false',
-  // **Housekeeping runs INSIDE the call, never after it.** A commit or merge
-  // ends by running git's automatic maintenance, which by default detaches into
-  // the background and keeps writing `repo/.git` (a `gc`, a `maintenance.lock`)
-  // after the server's pinned, audited command has returned — racing the next
-  // command and the turn-start refresh. Kept rather than turned off, so a
-  // room's objects are still packed; just in the foreground, where it finishes
-  // before the call does.
+  // **No automatic housekeeping at all** (DOR-3667). A commit, merge or fetch
+  // ends by running git's automatic maintenance, and its gc runs
+  // `gc.recentObjectsHook`, a shell command, from config (measured). Off
+  // rather than trusted to the audit alone; it also means nothing detaches and
+  // keeps writing `repo/.git` after the server's call returns. A room's objects
+  // stay loose, which costs disk, not correctness.
   '-c',
-  'maintenance.autoDetach=false',
+  'gc.auto=0',
   '-c',
-  'gc.autoDetach=false',
+  'maintenance.auto=false',
 ];
 
 /**
@@ -324,7 +324,7 @@ export function personGitEmail(authorId: string): string {
  * @param ceilingDir - The directory git's repository search may not climb past.
  * @returns The child environment.
  */
-function gitEnv(ceilingDir: string, cwd: string): NodeJS.ProcessEnv {
+export function gitEnv(ceilingDir: string, cwd: string): NodeJS.ProcessEnv {
   // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME; this REMOVES the redirecting vars and adds the confinement, which is only expressible against the real environment.
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const name of REDIRECTING_GIT_VARS) delete env[name];
@@ -341,6 +341,10 @@ function gitEnv(ceilingDir: string, cwd: string): NodeJS.ProcessEnv {
     GIT_CONFIG_SYSTEM: '/dev/null',
     // Nothing here talks to a remote; a credential prompt would only hang.
     GIT_TERMINAL_PROMPT: '0',
+    // And nothing may reach one (DOR-3667): a read of a missing object never
+    // lazy-fetches, and no transport is allowed at all, so a remote the repo's
+    // config names can never run its `uploadpack` program as the server.
+    ...NO_REACH_GIT_ENV,
   };
 }
 
@@ -368,30 +372,6 @@ function worktreePin(ceilingDir: string, cwd: string): Record<string, string> {
     GIT_WORK_TREE: path.join(path.resolve(ceilingDir), 'worktrees', name),
   };
 }
-
-/**
- * Config keys that make git run a program, or send it somewhere else, when the
- * server's own git reads the room's repository. Matched case-insensitively on
- * the key as `git config --list` prints it.
- *
- * - `filter.*` — clean/smudge/process programs, run on status, add, checkout
- *   and merge for any path a committed `.gitattributes` names;
- * - `diff.external`, `diff.<x>.textconv|command`, `merge.<x>.driver` — the
- *   same for diffs and merges;
- * - `include.*`, `includeIf.*` — pull in a config file from anywhere;
- * - `core.fsmonitor`, `core.hooksPath`, `core.sshCommand`, `core.askPass`,
- *   `core.gitProxy`, `core.alternateRefsCommand`, `sequence.editor`,
- *   `credential.*`, `gpg.*`, `commit.gpgSign`, `tag.gpgSign` — programs git
- *   runs for a read, a commit, a merge or a credential (hooks and fsmonitor are
- *   overridden on every call too; their presence here is still a tamper sign);
- * - `core.worktree` — redirects where a command writes;
- * - `extensions.worktreeConfig` — would make each copy's own, agent-writable
- *   `config.worktree` part of what git reads;
- * - `uploadpack.*`, `receivepack.*`, `protocol.*`, `url.*` — transport
- *   behaviour a room never needs, refused rather than reasoned about.
- */
-const UNSAFE_ROOM_CONFIG_KEY =
-  /^(?:filter\.|include\.|includeif\.|credential\.|gpg\.|uploadpack\.|receivepack\.|protocol\.|url\.|diff\.external$|diff\.[^.]+\.(?:textconv|command)$|merge\.[^.]+\.driver$|core\.(?:fsmonitor|hookspath|sshcommand|askpass|gitproxy|alternaterefscommand|worktree)$|sequence\.editor$|commit\.gpgsign$|tag\.gpgsign$|extensions\.worktreeconfig$)/i;
 
 /** The last config file a check passed, keyed by path, with the stat it passed at. */
 const safeConfigSeen = new Map<string, string>();
@@ -423,7 +403,7 @@ async function unsafeKeysIn(file: string, ceilingDir: string): Promise<string[]>
       listing
         .split('\n')
         .map((key) => key.trim())
-        .filter((key) => key !== '' && UNSAFE_ROOM_CONFIG_KEY.test(key))
+        .filter((key) => key !== '' && !isSafeRoomRepoConfigKey(key))
     ),
   ];
 }
@@ -438,7 +418,7 @@ async function unsafeKeysIn(file: string, ceilingDir: string): Promise<string[]>
  * checkout or status for any path a member's `.gitattributes` names. `-c` can
  * neutralise a key only when its name is known in advance, and a filter or
  * driver name is the author's choice, so the config is audited instead: every
- * key matching {@link UNSAFE_ROOM_CONFIG_KEY} stops every server git command in
+ * key outside {@link isSafeRoomRepoConfigKey} stops every server git command in
  * the room with `ROOM_REPO_CONFIG_UNSAFE`, naming the keys, until a person
  * removes them.
  *
@@ -540,7 +520,7 @@ export async function runGitRaw(
   // runs while that config names a program (see {@link assertRoomRepoConfigSafe}).
   if (readsRoomRepo(ceilingDir, cwd)) await assertRoomRepoConfigSafe(ceilingDir);
   try {
-    const { stdout } = await execFileAsync('git', [...SHARED_CONFIG_ARGS, ...args], {
+    const { stdout } = await execFileAsync('git', [...ROOM_GIT_CONFIG_ARGS, ...args], {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
       env: gitEnv(ceilingDir, cwd),

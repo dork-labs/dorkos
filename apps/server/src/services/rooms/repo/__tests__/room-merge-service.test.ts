@@ -27,6 +27,7 @@
  *   in leaves main exactly as it was": the checkout is left mid-merge with
  *   conflict markers staged.
  */
+import { execFileSync } from 'node:child_process';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -496,7 +497,13 @@ describe('RoomMergeService', () => {
       // As the agent's own shell would, from outside the copy: the server's own
       // git in a room worktree is pinned to the room's storage, which a clone
       // into it would inherit.
-      await runGit(['clone', '--quiet', foreign, path.join(dir, 'vendor')], scratch, scratch);
+      // Plain git, as the agent's shell runs it: the server's room runner allows
+      // no transport at all (DOR-3667), so it could never clone this in.
+      execFileSync('git', ['clone', '--quiet', foreign, path.join(dir, 'vendor')], {
+        cwd: scratch,
+        stdio: 'pipe',
+        env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_COUNT: '0' },
+      });
       await git(['add', 'vendor'], dir);
       await git(
         ['-c', 'user.name=A', '-c', 'user.email=a@dorkos.local', 'commit', '-q', '-m', 'submodule'],

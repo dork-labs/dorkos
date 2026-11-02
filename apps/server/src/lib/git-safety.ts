@@ -44,7 +44,7 @@ const ALLOWED_GIT_PROTOCOLS = 'https:ssh:git';
  * Build a child-process environment that confines `git` to safe transports.
  *
  * Inherits the parent environment (git needs `PATH`, `HOME`, proxy vars, and a
- * credential helper) and layers the protocol allowlist on top.
+ * credential helper) and layers the protocol allowlist, and no lazy fetch, on top.
  *
  * @returns An env object suitable for `spawn`/`execFile` `env` options.
  */
@@ -55,6 +55,9 @@ export function hardenedGitEnv(): NodeJS.ProcessEnv {
       ...process.env,
       GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
       GIT_TERMINAL_PROMPT: '0',
+      // No lazy fetch either (DOR-3667): a fresh clone is ours, but a read of a
+      // missing object must never reach a remote some config named.
+      GIT_NO_LAZY_FETCH: '1',
     },
     internalGitConfig()
   );
