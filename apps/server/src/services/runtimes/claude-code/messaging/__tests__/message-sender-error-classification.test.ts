@@ -1,8 +1,8 @@
 import {
-  noteCredentialsReadable,
+  noteCredentialsUnreadable,
   resetCredentialReadHealth,
-  CREDENTIAL_INIT_TIMEOUT_MS,
 } from '../../tooling/credential-read-health.js';
+import { INIT_TIMEOUT_MS } from '../../sessions/session-pump-contract.js';
 /**
  * Catch-all error classification in `executeSdkQuery`.
  *
@@ -110,10 +110,10 @@ describe('executeSdkQuery — catch-all error classification', () => {
     vi.useRealTimers();
   });
 
-  it('reports an unreadable sign-in when a recently healthy account never emits init', async () => {
+  it('reports an unreadable sign-in only when a sign-in read is known to have hung (DOR-3670)', async () => {
     vi.useFakeTimers();
     const root = '/mock/account';
-    noteCredentialsReadable(root);
+    noteCredentialsUnreadable(root);
     const close = vi.fn();
     vi.mocked(query).mockReturnValue({
       close,
@@ -131,7 +131,7 @@ describe('executeSdkQuery — catch-all error classification', () => {
     })();
     await vi.advanceTimersByTimeAsync(0);
     expect(query).toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(CREDENTIAL_INIT_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(INIT_TIMEOUT_MS);
     await consuming;
     expect(close).toHaveBeenCalledOnce();
     expect(errorData(events)).toMatchObject({

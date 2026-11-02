@@ -627,7 +627,7 @@ describe('SessionPump — launch and teardown', () => {
   it('a launch that never initializes is called dead', async () => {
     const h = harness({ initTimeoutMs: 20 });
 
-    await expect(h.pump.warm()).rejects.toThrow(/system\/init/);
+    await expect(h.pump.warm()).rejects.toThrow('The agent took too long to start.');
     expect(h.pump.state).toBe('crashed');
     expect(h.crashes[0]?.stateAtCrash).toBe('warming');
   });

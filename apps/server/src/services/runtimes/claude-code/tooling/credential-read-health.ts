@@ -4,12 +4,10 @@ import {
   CREDENTIALS_UNREADABLE_MESSAGE,
 } from '@dorkos/shared/runtime-error-classification';
 
-/** How long prior successful reads explain a subsequent missing init. */
-export const RECENT_CREDENTIAL_HEALTH_MS = 5 * 60_000;
 /** Minimum gap before readiness retries a hung credential read. */
 export const CREDENTIAL_READ_RETRY_MS = 60_000;
-/** Short init bound for an account that was readable moments ago. */
-export const CREDENTIAL_INIT_TIMEOUT_MS = 15_000;
+/** What a start that never initializes tells people when no sign-in read hung (DOR-3670). */
+export const SLOW_START_MESSAGE = 'The agent took too long to start. It will try again.';
 
 /** Passive classification exposed to the stall watchdog, keyed by the pinned account root. */
 export interface CredentialReadHealth {
@@ -29,7 +27,11 @@ export function credentialReadHealth(root: string | undefined): CredentialReadHe
 export function noteCredentialsReadable(root: string | undefined, now = Date.now()): void {
   if (root !== undefined) health.set(root, { state: 'healthy', lastHealthyAt: now });
 }
-/** Record a hung read and impose a cooldown instead of a polling loop. */
+/**
+ * Record a hung sign-in read and impose a cooldown instead of a polling loop.
+ * Only a credential read that hung calls this, never a slow start (DOR-3670):
+ * a relaunch that takes long to initialize says nothing about the sign-in.
+ */
 export function noteCredentialsUnreadable(root: string | undefined, now = Date.now()): void {
   if (root !== undefined)
     health.set(root, {
@@ -42,10 +44,9 @@ export function noteCredentialsUnreadable(root: string | undefined, now = Date.n
 export function credentialReadCoolingDown(root: string, now = Date.now()): boolean {
   return (credentialReadHealth(root).retryAt ?? 0) > now;
 }
-/** Whether this same account produced positive evidence within the recent-health window. */
-export function credentialsRecentlyReadable(root: string | undefined, now = Date.now()): boolean {
-  const last = credentialReadHealth(root).lastHealthyAt;
-  return last !== undefined && now >= last && now - last <= RECENT_CREDENTIAL_HEALTH_MS;
+/** Whether a sign-in read for exactly this account is known to have hung, and not since recovered. */
+export function credentialReadHung(root: string | undefined): boolean {
+  return credentialReadHealth(root).state === 'credentials_unreadable';
 }
 /** A hung init/read, deliberately distinct from a signed-out or revoked credential. */
 export class CredentialsUnreadableError extends Error {
@@ -53,6 +54,14 @@ export class CredentialsUnreadableError extends Error {
   constructor() {
     super(CREDENTIALS_UNREADABLE_MESSAGE);
     this.name = 'CredentialsUnreadableError';
+  }
+}
+/** A start that never initialized while no sign-in read had hung: slow, not signed out (DOR-3670). */
+export class SlowStartError extends Error {
+  readonly code = 'slow_start';
+  constructor() {
+    super(SLOW_START_MESSAGE);
+    this.name = 'SlowStartError';
   }
 }
 /** Test isolation for the passive process-wide account registry. */
