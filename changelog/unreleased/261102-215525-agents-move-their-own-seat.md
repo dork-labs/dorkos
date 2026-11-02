@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): an agent can move its own room seat to another account, within four limits (DOR-3145)'
+  - 'fix(rooms): an agent whose calling turn the server cannot read may not move its seat (DOR-3145)'
 ---
 
 ### Added

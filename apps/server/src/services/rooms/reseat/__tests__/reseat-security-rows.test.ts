@@ -6,7 +6,9 @@
  *   projects (how `claude-ab1` is kept out), never one that is out, and nothing
  *   the agent writes in its own folder changes that.
  * - **Tool + audit (Musts 5, 6)**: an agent calling `rooms.reseat` on another agent's seat is
- *   refused (it may move only its own, DOR-3145), and each move writes exactly one Activity entry.
+ *   refused (it may move only its own, DOR-3145), so is one whose calling turn this server cannot
+ *   read (an unknown or absent session counts as marked), and each move writes exactly one
+ *   Activity entry.
  *
  * @vitest-environment node
  */
@@ -33,6 +35,18 @@ vi.mock('../../../core/config-manager.js', async (importOriginal) => ({
     set: () => {},
   },
 }));
+
+/** The one session this process "ran a clean turn" under: the control for the unknown-turn row. */
+const { KNOWN_CLEAN_SESSION } = vi.hoisted(() => ({ KNOWN_CLEAN_SESSION: 'known-clean-session' }));
+
+vi.mock('../../../core/turn-power/turn-levels.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../core/turn-power/turn-levels.js')>();
+  return {
+    ...actual,
+    lastTurnLevelOf: (id: string) =>
+      id === KNOWN_CLEAN_SESSION ? ({} as never) : actual.lastTurnLevelOf(id),
+  };
+});
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes!;
 const SEAT = { roomId: 'room-1', authorId: 'ana', agentPath: '/agents/ana', sessionId: 'old-seat' };
@@ -253,6 +267,61 @@ describe('Musts 5 and 6: the tool and the audit', () => {
         }
       );
       await expect(refused).rejects.toMatchObject({ payload: { code: 'PEOPLE_ONLY' } });
+    } finally {
+      resetPermissionGate();
+    }
+  });
+
+  it('refuses an agent whose calling turn this server cannot read, on the move and the options', async () => {
+    const { composeRegistry, initPermissionGate, resetPermissionGate } = capabilities;
+    const { roomsDomain } = rooms;
+    const { agentLookupFor, createRoomHarness, scriptedRunner } = roomHarness;
+    resetPermissionGate();
+    initPermissionGate({
+      readConfig: () => ({ preset: null, defaults: { areas: { rooms: 'allowed' }, actions: {} } }),
+      readAgentPermissions: async () => ({ areas: { rooms: 'allowed' } }),
+    });
+    try {
+      const harness = createRoomHarness({
+        agents: agentLookupFor({ '/agents/ana': { name: 'ana', displayName: 'Ana' } }),
+        runner: scriptedRunner(() => null),
+      });
+      const room = harness.service.createRoom(
+        { kind: 'channel', title: 'Work', members: [], agentPaths: ['/agents/ana'] },
+        harness.human
+      );
+      const ana = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+      const registry = composeRegistry([roomsDomain], {
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+        roomDeps: { rooms: harness.service },
+      });
+      // Ana, about her own seat, with no turn running: only the session decides.
+      const call = (id: string, sessionId: string | undefined) =>
+        registry.invoke(
+          id,
+          { roomId: room.id, agentId: ana },
+          {
+            identity: {
+              agentPath: '/agents/ana',
+              displayName: 'Ana',
+              createdAt: new Date().toISOString(),
+            },
+            ...(sessionId !== undefined ? { sessionId } : {}),
+            retryChannel: 'mcp-argument',
+          }
+        );
+      const refused = { payload: { code: 'PEOPLE_ONLY' } };
+
+      for (const id of ['rooms.reseat', 'rooms.reseat_options']) {
+        await expect(call(id, 'never-ran-here')).rejects.toMatchObject(refused);
+        await expect(call(id, undefined)).rejects.toMatchObject(refused);
+        // The control: a session this server ran a clean turn under gets past who-may-ask.
+        const known = await call(id, KNOWN_CLEAN_SESSION).then(
+          () => 'answered',
+          (err: { payload?: { code?: string } }) => err.payload?.code
+        );
+        expect(known).not.toBe('PEOPLE_ONLY');
+      }
     } finally {
       resetPermissionGate();
     }

@@ -17,7 +17,7 @@
 import { z } from 'zod';
 import { defineCapability, type CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import { marksHold } from '../../core/turn-power/turn-marks.js';
-import { marksOf } from '../../core/turn-power/turn-levels.js';
+import { lastTurnLevelOf, marksOf } from '../../core/turn-power/turn-levels.js';
 import type { AuthorRecord } from '../author-registry.js';
 import { callerAuthor } from '../service/room-caller-author.js';
 import {
@@ -33,8 +33,14 @@ const agentIdField = z
   .string()
   .describe('The agent member whose seat moves, by its author id from the room’s roster.');
 
-/** Whether the calling turn read words from outside the owner's circle. */
-function callingTurnMarked(context: CapabilityHandlerContext): boolean {
+/**
+ * Whether the calling turn read words from outside the owner's circle, or
+ * `undefined` when this process ran no turn under the calling session (the
+ * external MCP server, an unknown id), which the move counts as marked: an
+ * agent whose turn cannot be read is never taken as clean (Security, DOR-3145).
+ */
+function callingTurnMarked(context: CapabilityHandlerContext): boolean | undefined {
+  if (!context.sessionId || lastTurnLevelOf(context.sessionId) === undefined) return undefined;
   return marksHold(marksOf(context.sessionId, context.identity?.agentPath));
 }
 
