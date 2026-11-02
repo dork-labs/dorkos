@@ -5,6 +5,7 @@ covers:
   - 'fix(server): opening and resuming the Agent browser take a person, like sign-in and Stop task'
   - "fix(server): the Agent browser handoff reads a stranger's chat without the retired origin notes (DOR-3218)"
   - 'fix(server): the Agent browser handoff names the asking agent from its identity, and each refusal has a test (DOR-3218)'
+  - "fix(server): the Agent browser handoff records the asking agent's registry id and folder (DOR-3218)"
 ---
 
 ### Added

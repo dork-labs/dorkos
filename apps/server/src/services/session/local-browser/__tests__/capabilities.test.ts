@@ -231,7 +231,10 @@ describe('local browser scoped tool projection', () => {
       identity: { agentPath: '/agents/ana', displayName: 'Ana', createdAt: '2026-11-02T00:00:00Z' },
     } as unknown as CapabilityHandlerContext;
     await ask.invoke(deps, { reason: 'password' }, identified);
-    expect(service.handover.ask).toHaveBeenCalledExactlyOnceWith('chat-one', 'password', 'Ana');
+    expect(service.handover.ask).toHaveBeenCalledExactlyOnceWith('chat-one', 'password', {
+      name: 'Ana',
+      folder: '/agents/ana',
+    });
     expect(ask.input.safeParse({ reason: 'wall', agentName: 'Your bank' }).success).toBe(false);
   });
   it('after Stop task, the chat can neither read nor see the page the person keeps using', async () => {

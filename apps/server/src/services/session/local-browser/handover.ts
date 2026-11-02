@@ -79,6 +79,8 @@ export class BrowserHandover {
   private stoppedFor: string | null = null;
   // Fails closed until startup says how to read a turn's marks.
   private outsideTurn: OutsideTurnCheck = async () => true;
+  // The registry id of the agent in a folder; none until startup wires the mesh.
+  private agentIdAt: (agentFolder: string) => string | undefined = () => undefined;
 
   constructor(
     private readonly browser: HandoverBrowser,
@@ -91,6 +93,11 @@ export class BrowserHandover {
   /** Set once at startup. */
   useOutsideTurnCheck(check: OutsideTurnCheck): void {
     this.outsideTurn = check;
+  }
+
+  /** Set once at startup: the mesh registry's id for the agent in a folder. */
+  useAgentIdLookup(lookup: (agentFolder: string) => string | undefined): void {
+    this.agentIdAt = lookup;
   }
 
   /** What a person's controls see. */
@@ -119,12 +126,12 @@ export class BrowserHandover {
    *
    * @param sessionId - The calling chat, already checked as the one the browser is shared with.
    * @param reason - Why: a password or sign-in, or another step only a person can finish.
-   * @param agentName - The asking agent's name from its verified identity, for the person's card.
+   * @param asker - The asking agent's name and folder from its verified identity, for the person's card.
    */
   async ask(
     sessionId: string,
     reason: LocalBrowserHandoffReason,
-    agentName: string | null = null
+    asker: { name: string; folder: string } | null = null
   ): Promise<{ handoffId: string; site: string; next: string }> {
     // A stranger's words must not be able to raise a window or ask the person anything.
     if (await this.outsideTurn(sessionId))
@@ -146,7 +153,9 @@ export class BrowserHandover {
     this.record = {
       id: randomUUID(),
       sessionId,
-      agentName,
+      agentName: asker?.name ?? null,
+      agentId: asker ? (this.agentIdAt(asker.folder) ?? null) : null,
+      agentFolder: asker?.folder ?? null,
       reason,
       site,
       askedAt: new Date(this.now()).toISOString(),

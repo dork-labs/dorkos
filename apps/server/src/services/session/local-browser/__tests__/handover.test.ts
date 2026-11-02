@@ -115,7 +115,8 @@ describe('BrowserHandover.ask', () => {
 
   it('pauses, raises the window and names the site from the page’s own URL', async () => {
     const { handover, browser } = setup();
-    const answer = await handover.ask('chat-1', 'password', 'Ana');
+    handover.useAgentIdLookup((folder) => (folder === '/agents/ana' ? 'agent-ana' : undefined));
+    const answer = await handover.ask('chat-1', 'password', { name: 'Ana', folder: '/agents/ana' });
     expect(answer.site).toBe('accounts.example.com');
     expect(answer.next).toMatch(/End your turn/);
     expect(browser.pause).toHaveBeenCalledOnce();
@@ -124,6 +125,8 @@ describe('BrowserHandover.ask', () => {
       id: answer.handoffId,
       sessionId: 'chat-1',
       agentName: 'Ana',
+      agentId: 'agent-ana',
+      agentFolder: '/agents/ana',
       reason: 'password',
       site: 'accounts.example.com',
       outcome: null,

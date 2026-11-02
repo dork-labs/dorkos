@@ -29766,6 +29766,18 @@
                             "null"
                           ]
                         },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -29795,6 +29807,8 @@
                         "id",
                         "sessionId",
                         "agentName",
+                        "agentId",
+                        "agentFolder",
                         "reason",
                         "site",
                         "askedAt",
@@ -30099,6 +30113,18 @@
                             "null"
                           ]
                         },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -30128,6 +30154,8 @@
                         "id",
                         "sessionId",
                         "agentName",
+                        "agentId",
+                        "agentFolder",
                         "reason",
                         "site",
                         "askedAt",
@@ -31091,6 +31119,18 @@
                             "null"
                           ]
                         },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -31120,6 +31160,8 @@
                         "id",
                         "sessionId",
                         "agentName",
+                        "agentId",
+                        "agentFolder",
                         "reason",
                         "site",
                         "askedAt",
@@ -32165,6 +32207,18 @@
                             "null"
                           ]
                         },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32194,6 +32248,8 @@
                         "id",
                         "sessionId",
                         "agentName",
+                        "agentId",
+                        "agentFolder",
                         "reason",
                         "site",
                         "askedAt",
@@ -32504,6 +32560,18 @@
                             "null"
                           ]
                         },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32533,6 +32601,8 @@
                         "id",
                         "sessionId",
                         "agentName",
+                        "agentId",
+                        "agentFolder",
                         "reason",
                         "site",
                         "askedAt",
@@ -32843,6 +32913,18 @@
                             "null"
                           ]
                         },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32872,6 +32954,8 @@
                         "id",
                         "sessionId",
                         "agentName",
+                        "agentId",
+                        "agentFolder",
                         "reason",
                         "site",
                         "askedAt",

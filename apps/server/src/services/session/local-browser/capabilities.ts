@@ -200,7 +200,9 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
               service.handover.ask(
                 context.sessionId!,
                 input.reason,
-                context.identity?.displayName ?? null
+                context.identity
+                  ? { name: context.identity.displayName, folder: context.identity.agentPath }
+                  : null
               ),
             true
           ),

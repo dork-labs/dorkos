@@ -397,6 +397,9 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
     (id) => localBrowserProfiles.get(id) !== undefined
   );
   localBrowserService.handover.useOutsideTurnCheck(liveOutsideTurnCheck());
+  localBrowserService.handover.useAgentIdLookup(
+    (agentFolder) => refs.meshCore?.getByPath(agentFolder)?.id
+  );
   const deps: HonoApiDeps = {
     localBrowser: localBrowserService,
     localBrowserProfiles: {
