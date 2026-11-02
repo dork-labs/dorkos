@@ -51,6 +51,8 @@ import { disclosesAnything } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../../lib/logger.js';
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
 import { describeUpdatesInFull, UPDATE_DETAIL_MAX_LENGTH } from './update-approval-detail.js';
+import type { MarketplaceCardInput } from '../core/approvals/approval-storable.js';
+import { planMarketplaceCard } from './approval-summary-card.js';
 
 /** The kind of mutation a confirmation request is gating. */
 export type ConfirmationOperation =
@@ -146,7 +148,8 @@ export interface ConfirmationRequest {
    * shown. Order does not matter, since two scans may list the same
    * installations differently. So an approval cannot be stretched over one more
    * installation, or over a new version that runs something else. Every field is
-   * listed in full on the card's detail; a list too long for it is refused.
+   * listed in full on the card's detail; a list too long for it gets a summary
+   * card, with the full list behind its link (DOR-3070).
    */
   updates?: readonly ApprovableUpdate[];
   /**
@@ -482,39 +485,42 @@ function canonicalUpdates(
 }
 
 /**
- * Refuse an update whose full list will not fit on one card. The detail is the
- * one place a person reads every command in full, so a cut list would be an
- * approval for commands nobody saw. Fails closed: nothing runs.
+ * What a card shows, or the refusal raised in its place.
  *
- * @param count - How many reinstalls the request carried.
- * @returns A declined result saying how to ask for fewer at a time.
+ * A Marketplace install or update whose full list fits shows it whole in
+ * `detail`, as it always has. One too long for that gets a summary card
+ * instead (DOR-3070, `approval-summary-card.ts`): every row that gives it
+ * more power, with the full list one link away. A template or a workspace too
+ * long to show is still refused; nothing is ever cut.
  */
-function tooManyUpdatesRefusal(count: number): ConfirmationResult {
-  return {
-    status: 'declined',
-    reason:
-      `These ${count} updates, and everything their new versions would run, are too much to show ` +
-      `on one approval card, so DorkOS did not ask. Nothing was changed. Update fewer at a time: ` +
-      `check first, then apply with the installPaths of a few of them.`,
-  };
+type CardContent =
+  { refused: ConfirmationResult } | { detail?: string; marketplace?: MarketplaceCardInput };
+
+/** Everything a request's card is about, written out whole, or nothing for a plain one. */
+function fullDetailOf(req: ConfirmationRequest): string | undefined {
+  if (req.updates) return describeUpdatesInFull(req.updates);
+  if (req.operation === 'create-agent-from-template') return describeTemplateInFull(req);
+  if (req.operation === 'create-workspace') return describeWorkspaceInFull(req);
+  if (req.operation === 'install' && req.preview) return describeInstallInFull(req);
+  return undefined;
 }
 
-/** Whether an install's full list would be cut on the card. */
-function tooLongToShow(req: ConfirmationRequest): boolean {
-  if (req.operation === 'create-agent-from-template') {
-    return describeTemplateInFull(req).length > UPDATE_DETAIL_MAX_LENGTH;
+/** Decide what a request's card shows (see {@link CardContent}). */
+function cardFor(req: ConfirmationRequest): CardContent {
+  const full = fullDetailOf(req);
+  if (full === undefined) return {};
+  if (req.operation === 'create-agent-from-template' || req.operation === 'create-workspace') {
+    return full.length > UPDATE_DETAIL_MAX_LENGTH
+      ? { refused: tooMuchToShowRefusal(req) }
+      : { detail: full };
   }
-  if (req.operation === 'create-workspace') {
-    return describeWorkspaceInFull(req).length > UPDATE_DETAIL_MAX_LENGTH;
-  }
-  return (
-    req.operation === 'install' &&
-    req.preview !== undefined &&
-    describeInstallInFull(req).length > UPDATE_DETAIL_MAX_LENGTH
-  );
+  const plan = planMarketplaceCard(req, full);
+  if (plan.kind === 'refuse') return { refused: { status: 'declined', reason: plan.reason } };
+  if (plan.kind === 'summary') return { detail: plan.detail, marketplace: plan.marketplace };
+  return { detail: full };
 }
 
-/** Refuse a request whose full list will not fit on one card; nothing runs. */
+/** Refuse a template or workspace whose full list will not fit on one card; nothing runs. */
 function tooMuchToShowRefusal(req: ConfirmationRequest): ConfirmationResult {
   if (req.operation === 'create-agent-from-template') {
     return {
@@ -525,19 +531,11 @@ function tooMuchToShowRefusal(req: ConfirmationRequest): ConfirmationResult {
         'with `dorkos agent create --template`.',
     };
   }
-  if (req.operation === 'create-workspace') {
-    return {
-      status: 'declined',
-      reason:
-        'This workspace brings too much to show in full on one approval card, so DorkOS did ' +
-        'not ask. Nothing was made. A person can review it and make the workspace themselves.',
-    };
-  }
   return {
     status: 'declined',
     reason:
-      'This package runs too much to show in full on one approval card, so DorkOS did not ask. ' +
-      'Nothing was changed. A person can review and install it themselves with `dorkos install`.',
+      'This workspace brings too much to show in full on one approval card, so DorkOS did ' +
+      'not ask. Nothing was made. A person can review it and make the workspace themselves.',
   };
 }
 
@@ -821,10 +819,8 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    * @param req - The confirmation request payload.
    */
   async requestInstallConfirmation(req: ConfirmationRequest): Promise<ConfirmationResult> {
-    if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
-      return tooManyUpdatesRefusal(req.updates.length);
-    }
-    if (tooLongToShow(req)) return tooMuchToShowRefusal(req);
+    const card = cardFor(req);
+    if ('refused' in card) return card.refused;
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
@@ -832,7 +828,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       if (err instanceof ApprovalInputNotBindableError) return unbindableRefusal(req, err);
       throw err;
     }
-    return { status: 'pending', token: this.ask(req, binding) };
+    return { status: 'pending', token: this.ask(req, binding, card) };
   }
 
   /**
@@ -843,22 +839,20 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    *
    * @param req - The confirmation request being asked about.
    * @param binding - Its already-computed binding.
+   * @param card - What the card shows, from {@link cardFor}.
    * @returns The one-time token for the retry.
    */
-  private ask(req: ConfirmationRequest, binding: MarketplaceBinding): string {
+  private ask(
+    req: ConfirmationRequest,
+    binding: MarketplaceBinding,
+    card: { detail?: string; marketplace?: MarketplaceCardInput }
+  ): string {
     const ticket = this.approvals.request({
       capabilityId: binding.capabilityId,
       inputHash: binding.inputHash,
       summary: summaryOf(req),
-      ...(req.updates
-        ? { detail: describeUpdatesInFull(req.updates) }
-        : req.operation === 'create-agent-from-template'
-          ? { detail: describeTemplateInFull(req) }
-          : req.operation === 'create-workspace'
-            ? { detail: describeWorkspaceInFull(req) }
-            : req.operation === 'install' && req.preview
-              ? { detail: describeInstallInFull(req) }
-              : {}),
+      ...(card.detail !== undefined && { detail: card.detail }),
+      ...(card.marketplace && { marketplace: card.marketplace }),
       ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),
     });
     return ticket.token;
@@ -901,10 +895,8 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    * @param req - The operation the caller is about to run.
    */
   async resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult> {
-    if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
-      return tooManyUpdatesRefusal(req.updates.length);
-    }
-    if (tooLongToShow(req)) return tooMuchToShowRefusal(req);
+    const card = cardFor(req);
+    if ('refused' in card) return card.refused;
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
@@ -925,7 +917,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       case 'mismatched':
         return {
           status: 'pending',
-          token: this.ask(req, binding),
+          token: this.ask(req, binding, card),
           reason: staleApprovalReason(req, binding),
         };
       case 'consumed':

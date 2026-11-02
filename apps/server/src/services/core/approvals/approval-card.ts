@@ -13,7 +13,7 @@ import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { isAlwaysOffered } from './always-offered.js';
-import { withServiceAction } from './approval-storable.js';
+import { withMarketplaceSummary, withServiceAction } from './approval-storable.js';
 import { extensionSourcePhrase } from './approval-summary.js';
 
 /** A stored approval row, as Drizzle infers it. */
@@ -90,6 +90,7 @@ export function toPendingApproval(
     // without one would be a clause nothing renders.
     ...(row.otherArguments && row.subjectLabel ? { otherArguments: row.otherArguments } : {}),
     ...withServiceAction(row.serviceAction),
+    ...withMarketplaceSummary(row.marketplaceSummary),
     // The raw path stays off the wire (see `requestedByPath`'s own comment); what
     // goes out is the one bit a surface needs, which is whether there is one.
     hasAgentPath: row.requestedByPath !== null,

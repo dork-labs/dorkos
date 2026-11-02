@@ -27,8 +27,12 @@ export const UPDATE_DETAIL_MAX_LENGTH = APPROVAL_DETAIL_MAX_LENGTH;
  */
 const whole = (value: string): string => revealHiddenCharacters(JSON.stringify(value));
 
-/** Where one installation is, in words. */
-function placeOf(update: ApprovableUpdate): string {
+/**
+ * Where one installation is, in words.
+ *
+ * @param update - The reinstall.
+ */
+export function placeOf(update: ApprovableUpdate): string {
   if (update.scope === 'global' || update.projectPath === undefined) return 'installed globally';
   const agent = update.agentName ? ` for ${whole(update.agentName)}` : '';
   return `installed in ${whole(update.projectPath)}${agent}`;
@@ -39,8 +43,10 @@ function placeOf(update: ApprovableUpdate): string {
  * loaded into every session (`plugin-activation.ts`); a project's copy is
  * projected as files, and its MCP and language servers, monitors and `bin/`
  * commands are not among them.
+ *
+ * @param update - The reinstall.
  */
-function whenProgramsStart(update: ApprovableUpdate): string {
+export function whenProgramsStart(update: ApprovableUpdate): string {
   return update.scope === 'global'
     ? 'in every chat'
     : 'declared, but not started for a project install';

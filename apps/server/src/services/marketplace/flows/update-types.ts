@@ -16,6 +16,7 @@ import type {
   ResolveLatestOptions,
 } from '../types.js';
 import type { DisclosedEffects } from '../preview/disclosed-effects.js';
+import type { PreviewExtension } from '../types.js';
 import type { InstallationRecord, PackageScope } from '../installed-scanner.js';
 
 /**
@@ -146,6 +147,12 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
    * it could not be read. Lets a confirm step say what the new version adds.
    */
   installedDisclosed?: DisclosedEffects | null;
+  /**
+   * The new version's extensions and where each runs, planned with
+   * `disclose` (DOR-3070), so a summary card can list an extension with
+   * server code. Shown, not bound: running one needs its own approval.
+   */
+  extensions?: PreviewExtension[];
 }
 
 /** A request to check a set of scanned installations. */
