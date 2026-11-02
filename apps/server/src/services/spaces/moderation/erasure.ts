@@ -7,7 +7,8 @@ import type { PoolClient } from 'pg';
  *   keeps its keyed email, so erasing an account is not a way back in (0033).
  * - Reports keep who reported which message, why and what was done, which is the moderators'
  *   record, but lose every note that is the person's: the notes they wrote, and the notes others
- *   wrote about a message by them or by one of their agents.
+ *   wrote about a message by them or by one of their agents. A report of the person keeps the
+ *   same record and loses its note the same way (0050).
  * - Their slow-mode clocks are rate state about them, and go.
  * - The watch-only checks' records about their messages keep their codes and timings, which say
  *   nothing of the words, and lose the keyed hash of the exact input (0036).
@@ -29,6 +30,11 @@ export async function huskModerationRecords(
          SELECT 1 FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id
          WHERE e.id=r.entry_id AND e.community_id=$1
            AND (e.author_member_id=$2 OR a.owner_member_id=$2)))`,
+    [communityId, memberId]
+  );
+  await client.query(
+    `UPDATE member_reports SET note=NULL WHERE community_id=$1 AND note IS NOT NULL
+       AND (reporter_member_id=$2 OR subject_member_id=$2)`,
     [communityId, memberId]
   );
   await client.query(

@@ -378,6 +378,7 @@ export async function sweepCommunityDeletions(
       'read_cursors',
       'channel_post_clocks',
       'reports',
+      'member_reports',
       'attachments',
       'entries',
       'agent_channel_members',
