@@ -81,9 +81,22 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - name: Install
+        id: install
+        run: pnpm install --frozen-lockfile
+
+      # The journey script imports @dorkos/shared the moment it loads, before its
+      # own --build (which builds only Desktop and the Space server) runs. Run
+      # 41511053420 failed there in 0.2 s: ERR_MODULE_NOT_FOUND on
+      # shared/dist/community-wire.js. Build everything @dorkos/e2e depends on.
+      - name: Build the packages the journey script imports
+        id: deps
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm exec turbo run build --filter='@dorkos/e2e^...'
 
       - name: Start Postgres on the runner (no Docker on macOS)
+        id: postgres
         run: |
           brew install postgresql@17
           echo "$(brew --prefix postgresql@17)/bin" >> "$GITHUB_PATH"
@@ -98,11 +111,17 @@ jobs:
           echo "DORKOS_TWO_DESKTOP_PG_URL=postgres://$(whoami)@127.0.0.1:5432" >> "$GITHUB_ENV"
 
       - name: Make a throwaway home
+        id: home
         run: |
           mkdir -p "$RUNNER_TEMP/dork-home/home" "$RUNNER_TEMP/dork-home/claude" "$RUNNER_TEMP/dork-home/people" "$RUNNER_TEMP/two-desktop-out"
           chmod 700 "$RUNNER_TEMP/dork-home"
 
+      # Its console output is kept too, so a failure before the journey writes
+      # its own run folder still leaves something to read. No secret exists to
+      # print, and the Community servers write to private/, never to the console.
       - name: Run the journey
+        id: journey
+        shell: bash
         env:
           DORKOS_TWO_DESKTOP_ACCEPTANCE: '1'
           DORKOS_TEST_RUNTIME: 'true'
@@ -113,10 +132,30 @@ jobs:
           DORKOS_TWO_DESKTOP_OUT: ${{ runner.temp }}/two-desktop-out
           # The same heap ceiling desktop-release.yml sets for this build.
           NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm --filter @dorkos/e2e community-two-desktop -- --build
+        run: pnpm --filter @dorkos/e2e community-two-desktop -- --build 2>&1 | tee "$RUNNER_TEMP/two-desktop-out/journey-output.log"
 
-      # The receipt and the step log only. `private/` holds the Community
-      # servers' logs and uploads, and screenshots can show test accounts.
+      - name: Say which step failed
+        if: always()
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          DEPS: ${{ steps.deps.outcome }}
+          POSTGRES: ${{ steps.postgres.outcome }}
+          HOME_DIR: ${{ steps.home.outcome }}
+          JOURNEY: ${{ steps.journey.outcome }}
+        run: |
+          {
+            echo ""
+            echo "| Step | Outcome |"
+            echo "|---|---|"
+            echo "| Install | ${INSTALL:-not run} |"
+            echo "| Build the packages the journey imports | ${DEPS:-not run} |"
+            echo "| Start Postgres | ${POSTGRES:-not run} |"
+            echo "| Make a throwaway home | ${HOME_DIR:-not run} |"
+            echo "| Run the journey | ${JOURNEY:-not run} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The receipt, the step log and the console output only. `private/` holds
+      # the Community servers' logs and uploads, and screenshots can show test accounts.
       - name: Upload the receipt
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -125,5 +164,6 @@ jobs:
           path: |
             ${{ runner.temp }}/two-desktop-out/run-*/receipt.json
             ${{ runner.temp }}/two-desktop-out/run-*/steps.log
+            ${{ runner.temp }}/two-desktop-out/journey-output.log
           if-no-files-found: warn
           retention-days: 14
