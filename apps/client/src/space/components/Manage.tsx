@@ -12,7 +12,7 @@ import { RemovedByHost } from '../takedowns/TakedownNotices.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import { ExportPanel } from './ExportPanel.js';
 import { SpaceMembers } from './members/SpaceMembers.js';
-import { ReportQueue } from '../moderation/ReportQueue.js';
+import { OpenReportCount, ReportQueue } from '../moderation/ReportQueue.js';
 import { ConductSettings } from '../moderation/ConductSettings.js';
 import { ChannelPanel } from '../moderation/ChannelPanel.js';
 import { DisplayNamePanel } from '../moderation/DisplayNamePanel.js';
@@ -325,7 +325,7 @@ export function Manage({
                 void refresh();
               }}
             >
-              {SECTION_LABELS[item]}
+              {SECTION_LABELS[item]} {item === 'members' && moderator && <OpenReportCount />}
             </Button>
           ))}
         </nav>
