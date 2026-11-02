@@ -95,6 +95,44 @@ describe('session record admission at the cap (DOR-3682)', () => {
   });
 });
 
+describe('a brand-new record is protected only by its turn lock', () => {
+  /** 49 live records and one idle slot; `locked` stands in for the turn lock. */
+  function oneSlotStore(locked: Set<string>) {
+    const store = new SessionStore({ isHoldingWork: (id) => locked.has(id) });
+    for (let n = 0; n < SESSIONS.MAX_SESSIONS; n++) {
+      store.ensureSession(`chat-${n}`, { permissionMode: 'default' });
+      if (n !== 0) store.findSession(`chat-${n}`)!.activeQuery = {} as Query;
+    }
+    return store;
+  }
+  const reader = {
+    hasTranscript: async () => ({ exists: false }),
+  } as unknown as TranscriptReader;
+
+  it('refuses the second of two locked starts rather than evicting the first', async () => {
+    const locked = new Set(['new-a', 'new-b']);
+    const store = oneSlotStore(locked);
+    const [a, b] = await Promise.allSettled(
+      ['new-a', 'new-b'].map((id) => store.ensureForMessage(id, reader, '/throwaway'))
+    );
+    expect(a.status).toBe('fulfilled');
+    expect(b).toMatchObject({ status: 'rejected', reason: { code: 'session_capacity_reached' } });
+    expect(store.findSession('new-a')).toBeDefined();
+    expect(store.findSession('new-b')).toBeUndefined();
+    expect(store.getCapacity()).toMatchObject({ records: 50, live: 50, available: 0 });
+  });
+
+  it('lets an unlocked start reclaim another start’s fresh record, which is why callers lock first', async () => {
+    const store = oneSlotStore(new Set());
+    await Promise.all(
+      ['new-a', 'new-b'].map((id) => store.ensureForMessage(id, reader, '/throwaway'))
+    );
+    expect(store.findSession('new-a')).toBeUndefined();
+    expect(store.findSession('new-b')).toBeDefined();
+    expect(store.sessionIdsWhere(() => true)).toHaveLength(SESSIONS.MAX_SESSIONS);
+  });
+});
+
 describe('capacity reporting and resource retirement', () => {
   it('reports idle records as available, and uses the refusal message only when all are live', () => {
     const store = fullStore();

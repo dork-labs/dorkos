@@ -53,7 +53,16 @@ export function forgetSessionRecord(
   return ids;
 }
 
-/** No await between selection, eviction and the caller's insert: concurrent starts cannot overfill. */
+/**
+ * No await between selection, eviction and the caller's insert: concurrent starts cannot overfill.
+ *
+ * A brand-new record is idle until its turn opens, so between insert and
+ * `activeQuery` only the caller's turn lock (`isHoldingWork`) keeps it from
+ * being reclaimed by the next start. Every path that creates a record at the
+ * cap must take the session's lock first, as `trigger-turn` and
+ * `session_start` do. Message staging (`deliverIntoTurn`) skips the lock, which
+ * is safe only because it targets a chat that already exists.
+ */
 export function reclaimSessionRecord(
   sessions: Map<string, AgentSession>,
   index: Map<string, string>,
