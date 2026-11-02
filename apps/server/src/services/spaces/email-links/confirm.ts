@@ -17,6 +17,7 @@ import { pendingTokenHash } from '../routes/account/sign-in-link.js';
 import { hashSecret } from '../security.js';
 import { clearAccountAccess } from '../sign-in/account-access.js';
 import { markAccessCleared } from '../sign-in/request-start.js';
+import { firstPasswordAccount } from './invite-mail.js';
 import { clearsFor, emailLinksUnavailable } from './model.js';
 import { auditAccount, checkLink, consumeLink, lockLinkAccount, writePassword } from './tokens.js';
 
@@ -98,6 +99,11 @@ export function registerEmailLinkUseRoutes(app: Hono, deps: EmailLinkUseDeps): v
       // Confirming a never-confirmed email removes every way in but this session, so it always
       // sets a new password: the account is never left with none.
       needsPassword: kind === 'email_confirmation' && !confirmed,
+      // Read from the account behind the token, never from the link's address (Security M1).
+      firstPassword:
+        kind === 'password_reset' &&
+        !confirmed &&
+        (await firstPasswordAccount(pool, check.account.id)),
       signedInAs: await signedInAs(c, auth),
     });
   });

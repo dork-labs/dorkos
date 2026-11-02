@@ -961,9 +961,10 @@ describe('mail off', () => {
 });
 
 describe('confirmation requests', () => {
-  it('queues one for the first owner and for a password sign-up, none for a verified provider sign-up', async () => {
-    // Purpose: fails if a never-confirmed new account gets no confirmation mail, or if one the
-    // issuer already vouched for gets one.
+  it('queues one for the first owner, a finishing link for an invited sign-up, none for a verified provider sign-up', async () => {
+    // Purpose: fails if a never-confirmed new account gets no mail to get in with, or if one the
+    // issuer already vouched for gets one. An invitation's sign-up gets the reset link, which
+    // confirms as it sets the password (DOR-2730).
     const owner = await pool.query(
       `SELECT r.kind FROM email_link_requests r JOIN "user" u ON u.id=r.user_id
        WHERE u.email='owner@example.com'`
@@ -978,7 +979,7 @@ describe('confirmation requests', () => {
       on,
       '/api/auth/sign-up/email',
       'POST',
-      { name: 'New', email: 'signup@example.com', password: PASSWORD },
+      { name: 'New', email: 'signup@example.com' },
       await invite()
     );
     expect(signUp.status).toBe(200);
@@ -988,17 +989,17 @@ describe('confirmation requests', () => {
     const kinds = async (email: string) =>
       (
         await pool.query(
-          `SELECT r.kind FROM email_link_requests r JOIN "user" u ON u.id=r.user_id
-           WHERE u.email=$1`,
-          [email]
+          `SELECT r.kind FROM email_link_requests r
+           WHERE r.email_hash=$1 OR r.user_id=(SELECT id FROM "user" WHERE email=$2)`,
+          [hmacSecret(email, SECRET), email]
         )
       ).rows;
-    expect(await kinds('signup@example.com')).toEqual([{ kind: 'email_confirmation' }]);
+    expect(await kinds('signup@example.com')).toEqual([{ kind: 'password_reset' }]);
     expect(await kinds('provider-signup@example.com')).toEqual([]);
     await deliverAll();
     const mail = lastMailTo('signup@example.com')!;
-    expect(mail.subject).toBe('Confirm your email for localhost:6481');
-    expect(mail.page).toBe('/confirm-email');
+    expect(mail.subject).toBe('Finish joining Email links');
+    expect(mail.page).toBe('/reset-password');
   });
 
   it('refuses a resend once confirmed, and the 4th in an hour', async () => {
@@ -1020,6 +1021,304 @@ describe('confirmation requests', () => {
     expect(
       (await call(on, '/api/v1/account/email-confirmation', 'POST', undefined, '')).status
     ).toBe(401);
+  });
+});
+
+describe("an invitation's sign-up (DOR-2730)", () => {
+  // Purpose: someone holding an invitation must not learn which addresses already have accounts,
+  // from sign-up, from signing in afterwards, or from Resend. Each test fails on Better Auth's own
+  // sign-up (422 for a taken address, a session for a new one).
+  const invite = async () => {
+    const issued = await call(on, '/api/v1/invites', 'POST', { seats: 1 }, ownerCookie);
+    const { token } = (await issued.json()) as { token: string };
+    return cookieOf(await call(on, '/api/v1/invites/preflight', 'POST', { token }));
+  };
+  const signUp = async (email: string, extra: Record<string, unknown> = {}, cookie?: string) =>
+    call(
+      on,
+      '/api/auth/sign-up/email',
+      'POST',
+      { name: 'Probe', email, ...extra },
+      cookie ?? (await invite())
+    );
+  /** Everything a caller sees, with the address it typed and the made-up values masked. */
+  const seen = async (response: Response, email: string) => ({
+    status: response.status,
+    cookies: response.headers
+      .getSetCookie()
+      .map((value) => value.split(';')[0].split('=')[0])
+      .sort(),
+    body: JSON.parse(
+      (await response.text())
+        .replaceAll(email, '<email>')
+        .replace(/"id":"[^"]+"/u, (id) => `"id":"<${id.length}>"`)
+        .replace(/"(createdAt|updatedAt)":"[^"]+"/gu, '"$1":"<time>"')
+    ),
+  });
+  const users = async (email: string) =>
+    (
+      await pool.query<{ id: string; emailVerified: boolean; passwords: number }>(
+        `SELECT u.id,u."emailVerified",
+           (SELECT count(*)::int FROM account a WHERE a."userId"=u.id) AS passwords
+         FROM "user" u WHERE u.email=$1`,
+        [email]
+      )
+    ).rows;
+
+  it('answers a new and a taken address the same, and signs neither in', async () => {
+    const taken = await account('invite-taken@example.com', { confirmed: true });
+    const fresh = await seen(await signUp('invite-fresh@example.com'), 'invite-fresh@example.com');
+    const again = await seen(await signUp('invite-taken@example.com'), 'invite-taken@example.com');
+    expect(fresh).toEqual(again);
+    expect(fresh.status).toBe(200);
+    expect(fresh.body).toMatchObject({
+      token: null,
+      user: { email: '<email>', emailVerified: false },
+    });
+    expect(fresh.cookies.some((name) => name.includes('session'))).toBe(false);
+    // The new address has an account with no password and an unconfirmed email; the taken one
+    // is untouched.
+    expect(await users('invite-fresh@example.com')).toEqual([
+      expect.objectContaining({ emailVerified: false, passwords: 0 }),
+    ]);
+    expect(await users('invite-taken@example.com')).toEqual([
+      expect.objectContaining({ id: taken.userId, emailVerified: true, passwords: 1 }),
+    ]);
+  });
+
+  it('keeps no password a caller sends, so signing in afterwards answers like a wrong password', async () => {
+    await signUp('invite-probe-new@example.com', { password: PASSWORD });
+    await account('invite-probe-taken@example.com', { confirmed: true });
+    await signUp('invite-probe-taken@example.com', { password: PASSWORD });
+    const answers = await Promise.all(
+      [
+        passwordSignIn('invite-probe-new@example.com', PASSWORD),
+        passwordSignIn('invite-probe-taken@example.com', 'not-the-password-1'),
+        passwordSignIn('invite-probe-nobody@example.com', PASSWORD),
+      ].map(async (pending) => {
+        const response = await pending;
+        return { status: response.status, body: await response.text() };
+      })
+    );
+    expect(answers[0]).toEqual({ status: 401, body: answers[1].body });
+    expect(answers[1]).toEqual(answers[2]);
+    expect(await users('invite-probe-new@example.com')).toEqual([
+      expect.objectContaining({ passwords: 0 }),
+    ]);
+  });
+
+  it('mails a new address its finishing link, and a confirmed account a notice with no token', async () => {
+    // Fails if a member who chose sign-up by mistake is sent a reset (following it would end
+    // their sessions, connections and keys), if the notice carries any link token, or if either
+    // mail names something other than the invitation's space.
+    await account('invite-mail-taken@example.com', { confirmed: true });
+    await signUp('invite-mail-new@example.com');
+    await signUp('invite-mail-taken@example.com');
+    await deliverAll();
+    const finish = lastMailTo('invite-mail-new@example.com')!;
+    expect(finish.subject).toBe('Finish joining Email links');
+    expect(finish.page).toBe('/reset-password');
+    expect(finish.text).toContain('Set a password to finish joining “Email links” on localhost.');
+    expect(finish.text).toContain('The link expires in 1 hour.');
+    const notice = lastMailTo('invite-mail-taken@example.com')!;
+    expect(notice.subject).toBe('Sign in to Email links');
+    expect(notice.text).toContain(
+      'Someone tried to join “Email links” on localhost with this address, and you already have an account.'
+    );
+    expect(notice.text).toContain(`Sign in: ${PUBLIC_URL}/`);
+    // No token anywhere: no link page, no fragment, and nothing minted for the account.
+    expect(notice.token).toBeNull();
+    expect(notice.raw).not.toMatch(/#[A-Za-z0-9_-]{43}/u);
+    const minted = await pool.query(
+      `SELECT 1 FROM email_link_tokens t JOIN "user" u ON u.id=t.user_id WHERE u.email=$1`,
+      ['invite-mail-taken@example.com']
+    );
+    expect(minted.rowCount).toBe(0);
+  });
+
+  it('mails one address at most once an hour from sign-ups, link and notice together', async () => {
+    // Fails if signing up again and again with someone's address mails them each time.
+    await account('invite-cap-taken@example.com', { confirmed: true });
+    for (let i = 0; i < 3; i++) {
+      await signUp('invite-cap-new@example.com');
+      await signUp('invite-cap-taken@example.com');
+    }
+    await deliverAll();
+    const mails = (email: string) =>
+      smtp.received.filter((message) => message.recipients.includes(email)).length;
+    expect(mails('invite-cap-new@example.com')).toBe(1);
+    expect(mails('invite-cap-taken@example.com')).toBe(1);
+  });
+
+  it('names and links only the configured host, whatever Host the sign-up sent', async () => {
+    // Fails if a mail's name or link comes from the request's Host or X-Forwarded-Host.
+    await account('invite-host-taken@example.com', { confirmed: true });
+    const forged = { host: 'evil.example', 'x-forwarded-host': 'evil.example' };
+    for (const email of ['invite-host-new@example.com', 'invite-host-taken@example.com'])
+      expect(
+        (
+          await call(
+            on,
+            '/api/auth/sign-up/email',
+            'POST',
+            { name: 'Probe', email },
+            await invite(),
+            forged
+          )
+        ).status
+      ).toBe(200);
+    await deliverAll();
+    for (const email of ['invite-host-new@example.com', 'invite-host-taken@example.com']) {
+      const mail = lastMailTo(email)!;
+      expect(mail.raw).not.toContain('evil.example');
+      expect(mail.text).toContain(PUBLIC_URL);
+    }
+  });
+
+  it('takes about as long to refuse a sign-in with no user, no password or a wrong one', async () => {
+    // Security's Must: an account an invitation's sign-up made has no password yet. If that
+    // sign-in skipped the slow hash, it would answer faster than a wrong password and give the
+    // address away. Better Auth runs a dummy hash when there is no user and when there is no
+    // password, so all three spend one hash. Tolerance (Security): over 21 interleaved rounds,
+    // each median is within 0.8x to 1.25x of the wrong-password median. One hash is tens of
+    // milliseconds; a skipped one answers in about a millisecond, far outside that band.
+    await signUp('invite-timing-new@example.com');
+    await account('invite-timing-taken@example.com', { confirmed: true });
+    const cases = {
+      noUser: 'invite-timing-nobody@example.com',
+      noPassword: 'invite-timing-new@example.com',
+      wrongPassword: 'invite-timing-taken@example.com',
+    };
+    const times: Record<keyof typeof cases, number[]> = {
+      noUser: [],
+      noPassword: [],
+      wrongPassword: [],
+    };
+    for (let round = 0; round < 21; round++)
+      for (const [name, email] of Object.entries(cases) as [keyof typeof cases, string][]) {
+        const started = performance.now();
+        const answer = await passwordSignIn(email, 'not-the-password-1');
+        times[name].push(performance.now() - started);
+        expect(answer.status).toBe(401);
+      }
+    const median = (values: number[]) => [...values].sort((a, b) => a - b)[10];
+    const baseline = median(times.wrongPassword);
+    for (const name of ['noUser', 'noPassword'] as const) {
+      const ratio = median(times[name]) / baseline;
+      expect(ratio, `${name} vs wrong password: ${ratio.toFixed(2)}x`).toBeGreaterThan(0.8);
+      expect(ratio, `${name} vs wrong password: ${ratio.toFixed(2)}x`).toBeLessThan(1.25);
+    }
+  });
+
+  it('answers Resend the same for every address, and re-sends the invitation’s own mail', async () => {
+    // Fails if Resend sends a plain reset (a real reset token to a member), skips the invitation's
+    // per-address cap, loses the space, or answers differently by address (Security S1/S2).
+    await account('invite-resend-taken@example.com', { confirmed: true });
+    const admission = await invite();
+    await signUp('invite-resend-new@example.com', {}, admission);
+    await deliverAll();
+    const resend = async (email: string, cookie = admission) => {
+      const response = await call(on, '/api/v1/account/invite-link', 'POST', { email }, cookie);
+      return { status: response.status, body: await response.text() };
+    };
+    const answers = [
+      await resend('invite-resend-new@example.com'),
+      await resend('invite-resend-taken@example.com'),
+      await resend('invite-resend-nobody@example.com'),
+    ];
+    expect(answers[0]).toEqual({ status: 202, body: answers[1].body });
+    expect(answers[2]).toEqual(answers[0]);
+    // Without the browser's live join attempt there is nothing to resend.
+    expect((await resend('invite-resend-new@example.com', '')).status).toBe(403);
+    await deliverAll();
+    const mails = (email: string) =>
+      smtp.received.filter((message) => message.recipients.includes(email));
+    // The new address already had its one invitation mail this hour; the member gets the notice,
+    // with no token, never a reset.
+    expect(mails('invite-resend-new@example.com')).toHaveLength(1);
+    const notice = lastMailTo('invite-resend-taken@example.com')!;
+    expect(notice.subject).toBe('Sign in to Email links');
+    expect(notice.token).toBeNull();
+    expect(mails('invite-resend-nobody@example.com')).toHaveLength(0);
+  });
+
+  it('sends a never-confirmed account in use the notice, and its reset page keeps the warning', async () => {
+    // Security M1: a first owner who never confirmed has a password, a membership and keys. An
+    // invitation sign-up with that address must not send "Finish joining", and the page a reset
+    // link opens must show what a reset ends, not "Set your password".
+    const owner = await account('invite-live-owner@example.com', { confirmed: false });
+    await derivedAccess(owner.userId, owner.memberId);
+    await signUp('invite-live-owner@example.com');
+    await deliverAll();
+    const notice = lastMailTo('invite-live-owner@example.com')!;
+    expect(notice.subject).toBe('Sign in to Email links');
+    expect(notice.token).toBeNull();
+    // Its own Forgot password link stays a reset, with the full list of what it ends.
+    const token = await resetToken('invite-live-owner@example.com');
+    const peeked = await call(on, '/api/v1/email-links/peek', 'POST', { token });
+    const body = (await peeked.json()) as { firstPassword?: boolean; clears: string[] };
+    expect(body.firstPassword).toBe(false);
+    expect(body.clears).toEqual(expect.arrayContaining(['sessions', 'host_api_keys', 'password']));
+    // An empty account an invitation made is the only first password.
+    await signUp('invite-empty@example.com');
+    await deliverAll();
+    const first = lastMailTo('invite-empty@example.com')!;
+    const peekFirst = await call(on, '/api/v1/email-links/peek', 'POST', { token: first.token });
+    expect(((await peekFirst.json()) as { firstPassword?: boolean }).firstPassword).toBe(true);
+  });
+
+  it('names the invitation’s space, whatever space id the body claims', async () => {
+    // Fails if a sign-up body can choose the space its mail names (Security S2). The claimed id
+    // is made up: a second real space here would change which space this host's routes default to.
+    await signUp('invite-forged@example.com', { communityId: randomUUID() });
+    const rows = await pool.query<{ community_id: string }>(
+      'SELECT community_id FROM email_link_requests WHERE email_hash=$1',
+      [hmacSecret('invite-forged@example.com', SECRET)]
+    );
+    expect(rows.rows).toEqual([{ community_id: communityId }]);
+    await deliverAll();
+    expect(lastMailTo('invite-forged@example.com')?.subject).toBe('Finish joining Email links');
+  });
+
+  it('spends the same per-caller mail budget as Resend, so sign-ups cannot flood the host', async () => {
+    // Fails if sign-up queues links outside the reset route's per-caller limit (5 a minute here).
+    const peer = { [PEER_HEADER]: '192.0.2.91' };
+    const admission = await invite();
+    for (let i = 0; i < 4; i++)
+      expect(
+        (
+          await call(
+            on,
+            '/api/auth/sign-up/email',
+            'POST',
+            { name: 'Flood', email: `invite-flood-${i}@example.com` },
+            admission,
+            peer
+          )
+        ).status
+      ).toBe(200);
+    const resend = () =>
+      call(on, '/api/v1/account/password-reset', 'POST', { email: 'x@example.com' }, '', peer);
+    expect((await resend()).status).toBe(202);
+    expect((await resend()).status).toBe(429);
+  });
+
+  it('lets the new person in through the link, then joins the space', async () => {
+    const admission = await invite();
+    expect((await signUp('invite-joins@example.com', {}, admission)).status).toBe(200);
+    await deliverAll();
+    const { token, page } = lastMailTo('invite-joins@example.com')!;
+    expect(page).toBe('/reset-password');
+    const used = await reset(token!, admission);
+    expect(used.status).toBe(200);
+    const signedIn = cookies(admission, cookieOf(used));
+    expect(await whoIs(signedIn)).toBe('invite-joins@example.com');
+    expect(await users('invite-joins@example.com')).toEqual([
+      expect.objectContaining({ emailVerified: true, passwords: 1 }),
+    ]);
+    expect((await call(on, '/api/v1/invites/bind', 'POST', {}, signedIn)).status).toBe(200);
+    expect((await call(on, '/api/v1/invites/redeem', 'POST', {}, signedIn)).status).toBe(200);
+    expect((await passwordSignIn('invite-joins@example.com', NEW_PASSWORD)).status).toBe(200);
   });
 });
 

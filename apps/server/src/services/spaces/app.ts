@@ -2,7 +2,7 @@ import { Hono, type Context, type Next } from 'hono';
 import { randomUUID } from 'node:crypto';
 import { hashPassword } from 'better-auth/crypto';
 import { getConnInfo } from '@hono/node-server/conninfo';
-import { setCookie } from 'hono/cookie';
+import { getCookie, setCookie } from 'hono/cookie';
 import type { Pool } from 'pg';
 import {
   CommunityWireBootstrapCompleteRequestSchema,
@@ -82,8 +82,8 @@ import {
 } from './routes/account/account-password.js';
 import { registerSignInLinkRoutes } from './routes/account/sign-in-link.js';
 import { withRequestStart } from './sign-in/request-start.js';
-import { callerLimitKey, EmailLinkLimiter } from './email-links/limiter.js';
-import { EMAIL_LINK_CAPS, emailLinksOn } from './email-links/model.js';
+import { emailLinkCallerLimits, EmailLinkLimiter } from './email-links/limiter.js';
+import { emailLinksOn } from './email-links/model.js';
 import { queueEmailConfirmation, registerEmailLinkRequestRoutes } from './email-links/requests.js';
 import { registerEmailLinkUseRoutes } from './email-links/confirm.js';
 import { createApiRequestGuard } from './limits/api-request-guard.js';
@@ -168,6 +168,7 @@ export function createCommunityApp({
   const passwordGuesses = createAttemptLimiter();
   // Mailed links keep their own limits, apart from the shared map above (email-links/limiter.ts).
   const emailLinkLimiter = new EmailLinkLimiter();
+  const linkLimits = emailLinkCallerLimits(emailLinkLimiter, config);
   // The socket peer, or the address a configured trusted proxy names; see `callerAddress`.
   const peer = (c: Parameters<typeof getConnInfo>[0]) =>
     callerAddress(c, config.trustedProxyHeader);
@@ -183,6 +184,8 @@ export function createCommunityApp({
   app.use('/api/*', createApiRequestGuard(config, jsonBodyMs));
   app.use('/api/auth/sign-up/*', async (c, next) => {
     limitAttempts(`signup:${peer(c)}`, config.limits.signupAttemptsPerMinute);
+    // An invitation's sign-up queues a mailed link, so it spends that budget too (DOR-2730).
+    if (linksOn && getCookie(c, 'community_admission')) linkLimits.request(peer(c));
     await next();
   });
   // Every mutating request records the database snapshot it began with, so a session or account
@@ -193,12 +196,8 @@ export function createCommunityApp({
     await withRequestStart(pool, next);
   };
   for (const path of ['/api/v1/*', '/api/auth/*']) app.use(path, recordStart);
-  // Using a mailed link spends from a per-caller budget: tokens are 256-bit, so this caps load,
-  // not guessing.
-  const limitEmailLinkUse = (c: Context) =>
-    emailLinkLimiter.spend(`email-link-use:${callerLimitKey(peer(c))}`, {
-      perMinute: config.limits.emailLinkRequestsPerMinute * EMAIL_LINK_CAPS.useMultiplier,
-    });
+  // Using a mailed link spends from a per-caller budget (see `emailLinkCallerLimits`).
+  const limitEmailLinkUse = (c: Context) => linkLimits.use(peer(c));
   app.use('/api/auth/email-link/*', async (c, next) => {
     limitEmailLinkUse(c);
     await next();

@@ -50,12 +50,36 @@ export const EMAIL_LINK_CAPS = {
   perCallerPerHour: 20,
   /** Uses (peek, reset, sign-in, confirm) one caller may make a minute, per request allowed. */
   useMultiplier: 4,
+  /**
+   * Mails an invitation's sign-up may queue to one address in any hour, the finishing link and
+   * the existing-account notice together (DOR-2730), so a stranger cannot mail one person over
+   * and over by signing up with their address.
+   */
+  invitePerAddressPerHour: 1,
 } as const;
 
 /**
- * Whether this server mails links at all: mail is set up and the worker can compose all three
- * kinds. There is no separate switch; without mail, none of the three exists and the screens
- * keep telling people to ask the person running the space.
+ * What an invitation's sign-up or Resend records for an address whose account is in use, confirmed
+ * or not (migration 0049, DOR-2730): a plain notice that names the space and carries no token.
+ */
+export const EXISTING_ACCOUNT_REQUEST = 'existing_account';
+
+/** Every kind of request the mail worker's resolver decides: the three links and the notice. */
+export type EmailRequestKind = EmailLinkKind | typeof EXISTING_ACCOUNT_REQUEST;
+
+/** The notice each kind of request is mailed as. */
+export const EMAIL_REQUEST_NOTICE_KIND = {
+  ...EMAIL_LINK_NOTICE_KIND,
+  existing_account: 'account.existing_account',
+} as const satisfies Record<EmailRequestKind, NoticeKind>;
+
+/** How long an invitation's finishing link works: longer than a reset, as joining takes a while. */
+export const INVITE_LINK_LIFETIME_MS = HOUR_MS;
+
+/**
+ * Whether this server mails links at all: mail is set up and the worker can compose every kind,
+ * the existing-account notice included. There is no separate switch; without mail, none of them
+ * exists and the screens keep telling people to ask the person running the space.
  */
 export function emailLinksOn(
   config: Pick<CommunityConfig, 'mail'>,
@@ -63,7 +87,7 @@ export function emailLinksOn(
 ): boolean {
   return (
     config.mail !== null &&
-    Object.values(EMAIL_LINK_NOTICE_KIND).every((kind) => composers[kind] !== undefined)
+    Object.values(EMAIL_REQUEST_NOTICE_KIND).every((kind) => composers[kind] !== undefined)
   );
 }
 

@@ -2577,6 +2577,25 @@ const actions: Action<unknown>[] = [
     },
     call: ({ cookie }) => ({ method: 'POST', path: scoped('/invites/redeem'), body: {}, cookie }),
   }),
+  // ── A person's own account mail ────────────────────────────────────────────
+  define<{ cookie: string }>({
+    rule: "Resend an invitation's mail: this browser's join attempt is the authority; no mail here, so refused",
+    route: 'POST /account/invite-link',
+    allowed: ROLES,
+    status: 409,
+    prepare: async () => ({ cookie: await startJoining(await createInvite()) }),
+    call: ({ cookie }) => ({
+      method: 'POST',
+      path: '/api/v1/account/invite-link',
+      body: { email: 'joiner@roles.test' },
+      cookie,
+    }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8'))).toMatchObject({
+        code: 'NOTICE_DELIVERY_UNAVAILABLE',
+      });
+    },
+  }),
 ];
 
 /**

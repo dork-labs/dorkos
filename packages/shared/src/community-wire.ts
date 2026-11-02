@@ -574,9 +574,7 @@ export const CommunityWirePasswordResetRequestSchema = z.strictObject({
  * The one answer every mailed-link request gets once it is recorded. For a reset it is the same
  * whether or not the address has an account, and whatever happens to the request after.
  */
-export const CommunityWireEmailLinkAcceptedSchema = z.strictObject({
-  accepted: z.literal(true),
-});
+export const CommunityWireEmailLinkAcceptedSchema = z.strictObject({ accepted: z.literal(true) });
 /** A mailed link's token, for the page to look at it or use it. */
 export const CommunityWireEmailLinkTokenRequestSchema = z.strictObject({
   token: CommunityWireEmailLinkTokenSchema,
@@ -594,6 +592,12 @@ export const CommunityWireEmailLinkPeekSchema = z.strictObject({
   expiresAt: timestamp,
   clears: z.array(z.string().min(1).max(64)).max(32),
   needsPassword: z.boolean(),
+  /**
+   * A reset link that sets an empty account's first password: never confirmed, and with no
+   * password, no provider sign-in and no membership yet (an invitation's sign-up, DOR-2730). The
+   * server decides it from the token; an account in use is a reset whatever its email state.
+   */
+  firstPassword: z.boolean().optional(),
   signedInAs: z
     .strictObject({ email: z.string().min(1).max(320), method: z.string().max(64).nullable() })
     .nullable(),

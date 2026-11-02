@@ -39,7 +39,7 @@ const CLEAR_LINES: Record<string, string> = {
   invites: 'Invitation links you made',
   host_api_keys: 'Server API keys you made',
   password: 'The old password',
-  sign_in_links: 'Google, GitHub and single sign-on sign-ins',
+  sign_in_links: 'Google, GitHub and single sign-on',
 };
 
 /** The line a page shows for one key of `clears`. */
