@@ -1,7 +1,15 @@
-# Changelog archive: v0.1.0 – v0.125.3
+# Changelog archive: v0.1.0 – v0.125.4
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.125.4] - 2026-10-24
+
+> DorkOS 0.125.4 names a signed-out Claude account, and signs in to that account, not your default.
+
+### Fixed
+
+- When a Claude account is signed out, the banner names it, and **Sign in** signs in to that account, not your default.
 
 ## [0.125.3] - 2026-10-23
 
@@ -7586,6 +7594,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.125.4]: https://github.com/dork-labs/dorkos/compare/v0.125.3...v0.125.4
 [0.125.3]: https://github.com/dork-labs/dorkos/compare/v0.125.2...v0.125.3
 [0.125.2]: https://github.com/dork-labs/dorkos/compare/v0.125.1...v0.125.2
 [0.125.1]: https://github.com/dork-labs/dorkos/compare/v0.125.0...v0.125.1
