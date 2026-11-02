@@ -11,6 +11,7 @@ import { parseConfig } from '../config.js';
 import { FileSystemBlobStore } from '../storage/index.js';
 import { hashSecret } from '../security.js';
 import { MIGRATIONS_DIR } from './space-paths.js';
+import { dropTestDatabase } from './drop-test-database.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for real Postgres tests');
@@ -24,19 +25,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Wait for every session on the database to close before forcing the drop. `Pool.end()`,
-  // including the one inside migrate(), resolves before its connections finish closing, and
-  // FORCE terminates a connection mid-close into an uncaught 57P01 that fails the whole run.
-  // Bounded: a connection this file leaked still gets dropped, loudly, rather than hanging.
-  for (let tries = 0; tries < 100; tries++) {
-    const open = await admin.query<{ n: number }>(
-      'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=$1',
-      [dbName]
-    );
-    if (open.rows[0].n === 0) break;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
+  await dropTestDatabase(admin, dbName);
   await admin.end();
 });
 

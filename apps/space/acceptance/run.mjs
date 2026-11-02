@@ -257,6 +257,7 @@ try {
   control?.closeAllConnections();
   control?.close();
   for (const name of [...children.keys()].reverse()) await stop(name);
+  // force-drop: servers-stopped-first
   for (const name of created) await admin.query(`DROP DATABASE ${name} WITH (FORCE)`);
   await admin.end();
 }

@@ -1,0 +1,6 @@
+{
+  "single-client": "Closes one pg Client, not a Pool. Client.end() resolves only after its socket closes, so no backend is mid-close when FORCE runs.",
+  "self-closing-pool": "The only pool still open is the post checks' own, which closes itself once idle. Waiting for it to drain would hold the drop for nothing, and FORCE cannot hit a socket the test still owns.",
+  "socket-close-awaited": "The pool comes from createBrowserTestPool, whose close() waits for every client's 'end' event before it resolves.",
+  "servers-stopped-first": "Teardown of a throwaway Postgres after every Community server process using it has been stopped. No pool in this process holds a connection to the database being dropped."
+}

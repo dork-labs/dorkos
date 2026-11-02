@@ -17,6 +17,7 @@ const databases: string[] = [];
 afterAll(async () => {
   for (const database of databases)
     // The post checks' pool closes itself once idle; FORCE never waits on it.
+    // force-drop: self-closing-pool
     await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`);
   await admin.end();
 });

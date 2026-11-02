@@ -335,6 +335,7 @@ export class Infrastructure {
       return done;
     }
     for (const database of this.databases) {
+      // force-drop: servers-stopped-first
       this.sql('postgres', `DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
       done.push(`dropped database ${database}`);
     }

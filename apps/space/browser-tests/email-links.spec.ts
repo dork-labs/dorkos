@@ -126,6 +126,7 @@ test.afterAll(async () => {
   }
   await smtp?.close();
   await closePool?.();
+  // force-drop: socket-close-awaited
   await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
   await admin.end();
   if (blobDir) await rm(blobDir, { recursive: true, force: true });
