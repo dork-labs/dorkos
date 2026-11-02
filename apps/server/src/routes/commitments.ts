@@ -21,6 +21,8 @@ import {
   ListCommitmentsQuerySchema,
   UpdateCommitmentRequestSchema,
 } from '@dorkos/shared/commitment-schemas';
+import { callerAgentId } from '../services/commitments/caller.js';
+import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { errorBody, validationFailureBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -58,6 +60,14 @@ export interface CommitmentRouterDeps {
    * @param facts - The request's facts, carrying the resolved caller.
    */
   isOwner(facts: RequestFacts): boolean;
+  /**
+   * Whether this request proves the owner in person: the owner's own session cookie
+   * (`personProof`). Only then does a change carry `person` authority (DOR-3088); the open gate
+   * `isOwner` passes with login off is not proof, since any program here can reach it.
+   *
+   * @param facts - The request's facts, carrying the resolved caller.
+   */
+  personProven(facts: RequestFacts): boolean;
 }
 
 /** The HTTP status for each refusal. */
@@ -93,10 +103,11 @@ function actorOf(
   deps: CommitmentRouterDeps
 ): { actor: CommitmentActor } | { refused: Response } {
   const facts = honoRequestFacts(c);
-  const identity = facts.agentIdentity;
-  if (identity && !identity.inactive) {
-    const agentId = deps.agentIdForPath(identity.agentPath);
-    if (agentId) return { actor: { kind: 'agent', agentId } };
+  const caller = callerAgentId(facts.agentIdentity, deps.agentIdForPath);
+  if (caller.ok) {
+    // Over HTTP there is no session to read a level from, so only the agent's running marks travel.
+    const marks = marksOf(undefined, facts.agentIdentity?.agentPath);
+    return { actor: { kind: 'agent', agentId: caller.agentId, marks } };
   }
   if (presentsAgentIdentity(facts)) {
     return {
@@ -107,7 +118,7 @@ function actorOf(
     };
   }
   if (!deps.isOwner(facts)) return { refused: c.json(errorBody(NOT_YOUR_AGENT, 'NOT_YOURS'), 403) };
-  return { actor: { kind: 'person' } };
+  return { actor: { kind: 'person', proven: deps.personProven(facts) } };
 }
 
 /**
@@ -172,7 +183,8 @@ export function createAgentCommitmentsRoutes(deps: CommitmentRouterDeps): Hono<A
       return c.json(errorBody('No agent on the team has that id.', 'UNKNOWN_AGENT'), 404);
     }
     try {
-      return c.json(deps.service.create(agentId, body.data, { kind: 'person' }), 201);
+      const assigner = { kind: 'person', proven: deps.personProven(facts) } as const;
+      return c.json(deps.service.create(agentId, body.data, assigner), 201);
     } catch (err) {
       return refusal(c, err);
     }

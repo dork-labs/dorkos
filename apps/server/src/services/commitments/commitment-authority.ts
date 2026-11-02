@@ -16,7 +16,14 @@ import type {
   PermissionReach,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
-import { hasMarks, parseStoredMarks, type TurnMarks } from '../core/turn-power/turn-marks.js';
+import { stricterLevel } from '@dorkos/shared/permission-semantics';
+import {
+  hasMarks,
+  mergeMarks,
+  NO_MARKS,
+  parseStoredMarks,
+  type TurnMarks,
+} from '../core/turn-power/turn-marks.js';
 
 /** What a row's `authority` column says. */
 export type CommitmentAuthority =
@@ -111,4 +118,125 @@ export function readAuthorityMarks(stored: string | null | undefined): TurnMarks
  */
 export function writeAuthorityMarks(marks: TurnMarks): string {
   return hasMarks(marks) ? JSON.stringify(marks) : '{}';
+}
+
+/**
+ * How much each kind of authority lets its words do, highest first. `self` and `legacy` are an
+ * agent's own words at its own level; a recorded `level` is a ceiling below that; `runtime-default`
+ * is the stranger's bound.
+ */
+const RANK: Record<CommitmentAuthority['kind'], number> = {
+  person: 3,
+  self: 2,
+  legacy: 2,
+  level: 1,
+  'runtime-default': 0,
+};
+
+/**
+ * The lower of two authorities (Security's Must 3): what a row carries once both actors have
+ * touched it. Two recorded levels meet at the stricter of the two. Never returns `legacy` unless
+ * both sides are `legacy`, so a change to an old row stops it being one.
+ *
+ * @param a - One authority.
+ * @param b - The other.
+ */
+export function lowerAuthority(
+  a: CommitmentAuthority,
+  b: CommitmentAuthority
+): CommitmentAuthority {
+  // `legacy` survives only a meeting of two legacy sides; anything else touching an old row makes
+  // it a new write, which counts as the agent's own words (`self`) at most.
+  if (a.kind === 'legacy' && b.kind === 'legacy') return a;
+  const x: CommitmentAuthority = a.kind === 'legacy' ? { kind: 'self' } : a;
+  const y: CommitmentAuthority = b.kind === 'legacy' ? { kind: 'self' } : b;
+  if (x.kind === 'level' && y.kind === 'level') {
+    const { asks, reach, auto } = stricterLevel(x.level, y.level);
+    return { kind: 'level', level: { asks, reach, ...(auto === true ? { auto } : {}) } };
+  }
+  return RANK[x.kind] <= RANK[y.kind] ? x : y;
+}
+
+/**
+ * The authority of an agent's own words, made in a turn at `level` (Security's Must 1): its own
+ * standing (`self`), held to that turn's level when it ran under one.
+ *
+ * @param level - The turn's level, when known.
+ */
+export function ownWordsAuthority(
+  level: Pick<TurnPermissionLevel, 'asks' | 'reach' | 'auto'> | undefined
+): WritableCommitmentAuthority {
+  const own: WritableCommitmentAuthority = { kind: 'self' };
+  return level
+    ? (lowerAuthority(own, { kind: 'level', level }) as WritableCommitmentAuthority)
+    : own;
+}
+
+/** Who is acting on a to-do, as the server established it. Never read from a request body. */
+export type TodoActor =
+  /**
+   * The person who owns this DorkOS, through the app. `proven` only for a request that carries the
+   * owner's own session cookie (`personProof`); anything less writes no `person` authority.
+   */
+  | { readonly kind: 'person'; readonly proven: boolean }
+  /**
+   * An agent, by the Mesh id `callerAgentId` resolved, with the level and marks of the turn it is
+   * acting from. An unknown level (a restart, a caller with no recorded turn) is the stranger bound.
+   */
+  | {
+      readonly kind: 'agent';
+      readonly agentId: string;
+      readonly level: Pick<TurnPermissionLevel, 'asks' | 'reach' | 'auto'> | undefined;
+      readonly marks: TurnMarks;
+    }
+  /** Somebody outside the owner's circle: a guest in a shared space, a bridged chat's user. */
+  | { readonly kind: 'outsider'; readonly id: string };
+
+/** The outsider mark alone. */
+const OUTSIDER: TurnMarks = Object.freeze({ outsider: true });
+
+/**
+ * The authority and marks an actor's own words carry. A guest, a bridged user, and a person who
+ * did not prove it get the stranger bound and the outsider mark, on every runtime.
+ *
+ * @param actor - Who is acting.
+ */
+export function authorityOf(actor: TodoActor): {
+  authority: WritableCommitmentAuthority;
+  marks: TurnMarks;
+} {
+  switch (actor.kind) {
+    case 'person':
+      return actor.proven
+        ? { authority: { kind: 'person' }, marks: NO_MARKS }
+        : { authority: { kind: 'runtime-default' }, marks: OUTSIDER };
+    case 'agent':
+      return actor.level
+        ? { authority: { kind: 'level', level: actor.level }, marks: actor.marks }
+        : { authority: { kind: 'runtime-default' }, marks: actor.marks };
+    case 'outsider':
+      return { authority: { kind: 'runtime-default' }, marks: OUTSIDER };
+  }
+}
+
+/**
+ * A row's authority and marks after an actor touches it: the lower authority, every mark of both.
+ *
+ * @param stored - The row's `authority` and `authority_marks` columns.
+ * @param actor - Who is changing it.
+ * @returns The two column values to write.
+ */
+export function floorAfter(
+  stored: { authority: string; authorityMarks: string },
+  actor: TodoActor
+): { authority: string; authorityMarks: string } {
+  const own = authorityOf(actor);
+  const lowered = lowerAuthority(readAuthority(stored.authority), own.authority);
+  return {
+    // `lowerAuthority` returns legacy only when both sides are, and an actor's never is.
+    authority: writeAuthority(lowered as WritableCommitmentAuthority),
+    authorityMarks: writeAuthorityMarks(
+      mergeMarks(readAuthorityMarks(stored.authorityMarks), own.marks)
+    ),
+  };
 }

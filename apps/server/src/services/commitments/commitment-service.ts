@@ -28,6 +28,7 @@
  * @module services/commitments/commitment-service
  */
 import { ulid } from 'ulidx';
+import type { CommitmentRow } from '@dorkos/db';
 import type { Commitment, CommitmentState } from '@dorkos/shared/commitment-schemas';
 import type { AuditChange } from '@dorkos/shared/audit-schemas';
 import { recordAudit } from '../audit/audit-trail.js';
@@ -41,7 +42,18 @@ import {
   type CommitmentPatch,
   type CommitmentStore,
 } from './commitment-store.js';
-import { writeAuthority, writeAuthorityMarks } from './commitment-authority.js';
+import {
+  authorityOf,
+  floorAfter,
+  lowerAuthority,
+  ownWordsAuthority,
+  readAuthority,
+  readAuthorityMarks,
+  writeAuthority,
+  writeAuthorityMarks,
+  type WritableCommitmentAuthority,
+} from './commitment-authority.js';
+import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import {
   hasMarks,
   mergeMarks,
@@ -90,7 +102,35 @@ export class CommitmentError extends Error {
 }
 
 /** Who is changing a commitment: the agent by its Mesh id, or a person. */
-export type CommitmentActor = { kind: 'agent'; agentId: string } | { kind: 'person' };
+export type CommitmentActor =
+  | {
+      kind: 'agent';
+      agentId: string;
+      /** The level of the turn it acts from, when known (DOR-3088, Security's Must 3). */
+      level?: Pick<TurnPermissionLevel, 'asks' | 'reach' | 'auto'>;
+      /** The marks of that turn. */
+      marks?: TurnMarks;
+    }
+  | {
+      kind: 'person';
+      /**
+       * True only for a request carrying the owner's own session cookie (`personProof`). A person
+       * who did not prove it writes the stranger bound, never `person` authority.
+       */
+      proven?: boolean;
+    };
+
+/**
+ * Whether a row is an agent's own promise, made by that agent for itself: the only kind DorkOS
+ * marks `missed`. A to-do somebody else gave stays open past its date (DOR-3088).
+ *
+ * @param row - The stored row.
+ */
+export function isOwnPromise(
+  row: Pick<CommitmentRow, 'agentId' | 'assignedByKind' | 'assignedBy'>
+): boolean {
+  return row.agentId !== null && row.assignedByKind === 'agent' && row.assignedBy === row.agentId;
+}
 
 /** What a new commitment carries. */
 export interface NewCommitment {
@@ -109,6 +149,11 @@ export interface NewCommitment {
    * due date wakes reads the promise, so it carries them on.
    */
   originMarks?: TurnMarks;
+  /**
+   * The level of the turn it was made in, when known (DOR-3088, Must 1): the promise is held to
+   * it. Unknown keeps the agent's own standing, as every promise had before to-dos.
+   */
+  originLevel?: Pick<TurnPermissionLevel, 'asks' | 'reach' | 'auto'>;
 }
 
 /** A change to a commitment. */
@@ -250,6 +295,18 @@ export class CommitmentService {
     );
   }
 
+  /**
+   * Arm or clear one row's due timer after something else changed it (the to-dos service). A
+   * to-do a person owns has no agent to wake, so its timer is cleared.
+   *
+   * @param id - The row id.
+   */
+  track(id: string): void {
+    const row = this.store.get(id);
+    if (row) this.arm(row);
+    else this.timers.clear(id);
+  }
+
   /** Disarm every timer. */
   stop(): void {
     this.timers.stop();
@@ -319,7 +376,8 @@ export class CommitmentService {
    *
    * @param agentId - The Mesh id of the agent that promised.
    * @param input - What, to whom, by when, and where it was made.
-   * @param assigner - Who made it: the agent itself (the default), or a person.
+   * @param assigner - Who made it: the agent itself (the default), or a person (`person`
+   *   authority only when `proven`).
    * @throws {CommitmentError} `PAST_DUE` when the due date has passed.
    */
   create(
@@ -331,7 +389,10 @@ export class CommitmentService {
       throw new CommitmentError('NOT_YOURS', 'An agent records only its own promises.');
     }
     const dueAt = input.dueAt ? this.futureDue(input.dueAt) : null;
-    const marks = assigner.kind === 'agent' ? (input.originMarks ?? NO_MARKS) : NO_MARKS;
+    const own =
+      assigner.kind === 'agent'
+        ? { authority: ownWordsAuthority(input.originLevel), marks: input.originMarks ?? NO_MARKS }
+        : authorityOf({ kind: 'person', proven: assigner.proven === true });
     const row: AgentCommitmentRow = {
       id: ulid(),
       agentId,
@@ -350,8 +411,8 @@ export class CommitmentService {
       ownerAccount: null,
       assignedByKind: assigner.kind,
       assignedBy: assigner.kind === 'agent' ? assigner.agentId : PERSON_ASSIGNER,
-      authority: writeAuthority({ kind: assigner.kind === 'agent' ? 'self' : 'person' }),
-      authorityMarks: writeAuthorityMarks(marks),
+      authority: writeAuthority(own.authority),
+      authorityMarks: writeAuthorityMarks(own.marks),
       chainDepth: 0,
       chainAgents: '[]',
       titleFromSource: false,
@@ -393,6 +454,24 @@ export class CommitmentService {
         `That promise is ${row.state} now, not ${change.from}. Nothing changed.`
       );
     }
+    if (change.state === 'missed' && !isOwnPromise(row)) {
+      throw new CommitmentError(
+        'NOTHING_TO_CHANGE',
+        "Only an agent's own promise can be missed. Mark a to-do kept, or dropped with a note."
+      );
+    }
+    if (change.state === 'dropped' && !isOwnPromise(row) && !change.note?.trim()) {
+      throw new CommitmentError('NOTHING_TO_CHANGE', 'Say why in a note when declining a to-do.');
+    }
+    const result = this.dispatch(row, change);
+    // On an agent's own promise only a change of state reaches what the next wake acts on. On a
+    // to-do somebody gave, every change counts: no edit may keep `person` without proof.
+    if (!isOwnPromise(row) || change.state !== row.state) this.lowerFloor(row, actor);
+    return result;
+  }
+
+  /** Apply one change to a row, by the state it asks for. */
+  private dispatch(row: AgentCommitmentRow, change: CommitmentChange): Commitment {
     if (change.state === 'open') {
       return row.state === 'open' ? this.move(row, change) : this.reopen(row, change);
     }
@@ -407,6 +486,49 @@ export class CommitmentService {
       throw new CommitmentError('NOTHING_TO_CHANGE', `That promise is already ${row.state}.`);
     }
     return this.close(row, change.state, change.note);
+  }
+
+  /**
+   * Lower the row's authority to the lowest of everyone who has changed its state (Security's
+   * Must 3), and audit the power applied when it moves.
+   *
+   * An agent's own promise is the agent's own words whoever closes or reopens it: the agent's own
+   * change holds it to its turn's level and marks, and a person's change (proven or not) leaves it
+   * alone, since no words of theirs reach the wake. Any other row counts every actor at their own
+   * authority, and a person counts as `person` only with proof.
+   */
+  private lowerFloor(row: AgentCommitmentRow, actor: CommitmentActor): void {
+    if (isOwnPromise(row) && actor.kind === 'person') return;
+    const floor =
+      actor.kind === 'agent' && isOwnPromise(row)
+        ? {
+            authority: writeAuthority(
+              lowerAuthority(
+                readAuthority(row.authority),
+                ownWordsAuthority(actor.level)
+              ) as WritableCommitmentAuthority
+            ),
+            authorityMarks: writeAuthorityMarks(
+              mergeMarks(readAuthorityMarks(row.authorityMarks), actor.marks ?? NO_MARKS)
+            ),
+          }
+        : floorAfter(
+            row,
+            actor.kind === 'agent'
+              ? {
+                  kind: 'agent',
+                  agentId: actor.agentId,
+                  level: actor.level,
+                  marks: actor.marks ?? NO_MARKS,
+                }
+              : { kind: 'person', proven: actor.proven === true }
+          );
+    if (floor.authority === row.authority && floor.authorityMarks === row.authorityMarks) return;
+    const updated = this.store.update(row.id, floor)!;
+    this.audit(updated, 'commitment.authority_lowered', 'modify', [
+      { field: 'authority', before: row.authority, after: floor.authority },
+      { field: 'authorityMarks', before: row.authorityMarks, after: floor.authorityMarks },
+    ]);
   }
 
   /** A due date the caller set, normalized, or `PAST_DUE` when it has passed. */
@@ -564,6 +686,8 @@ export class CommitmentService {
   private handleMissed(id: string): void {
     const row = this.store.get(id);
     if (!row || row.state !== 'open' || !row.dueAt || !row.dueNotifiedAt) return;
+    // A to-do somebody gave stays open past its date; only an agent's own promise is missed.
+    if (!isOwnPromise(row)) return;
     // A date moved since this timer was armed clears the wake and re-arms; only
     // a promise still open an hour after its wake is missed.
     if (Date.parse(row.dueNotifiedAt) + COMMITMENT_MISSED_AFTER_MS > this.now().getTime()) return;

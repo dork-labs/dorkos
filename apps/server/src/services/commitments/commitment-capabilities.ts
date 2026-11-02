@@ -36,7 +36,9 @@
  * @module services/commitments/commitment-capabilities
  */
 import { z } from 'zod';
-import { marksOf } from '../core/turn-power/turn-levels.js';
+import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import { marksOf, passedOnLevelOf } from '../core/turn-power/turn-levels.js';
+import { callerAgentId } from './caller.js';
 import { marksHold } from '../core/turn-power/turn-marks.js';
 import { markedTurnRunsAtFull } from '../core/turn-power/full-autonomy.js';
 import {
@@ -137,17 +139,28 @@ function callingAgentId(
   deps: NonNullable<CapabilityDeps['commitmentDeps']>,
   context: CapabilityHandlerContext
 ): string | Refusal {
-  const identity = context.identity;
-  if (!identity || identity.inactive) return NO_AGENT;
-  const agentId = deps.agentIdForPath(identity.agentPath);
-  if (!agentId) {
-    return {
-      ok: false,
-      code: 'UNKNOWN_AGENT',
-      error: 'This agent is not registered on the team yet, so its promises cannot be kept here.',
-    };
-  }
-  return agentId;
+  // The one function that names the calling agent (DOR-3640 swaps its source, nothing else).
+  const caller = callerAgentId(context.identity, deps.agentIdForPath);
+  if (caller.ok) return caller.agentId;
+  if (caller.code === 'NO_AGENT') return NO_AGENT;
+  return {
+    ok: false,
+    code: 'UNKNOWN_AGENT',
+    error: 'This agent is not registered on the team yet, so its promises cannot be kept here.',
+  };
+}
+
+/**
+ * The calling turn's level, power axes only, or undefined when this process recorded none.
+ *
+ * @param context - The invocation context.
+ */
+function turnLevelOf(
+  context: CapabilityHandlerContext
+): Pick<TurnPermissionLevel, 'asks' | 'reach' | 'auto'> | undefined {
+  const level = context.sessionId ? passedOnLevelOf(context.sessionId) : undefined;
+  if (!level) return undefined;
+  return { asks: level.asks, reach: level.reach, ...(level.auto ? { auto: level.auto } : {}) };
 }
 
 /**
@@ -166,7 +179,15 @@ function actorOf(
 ): CommitmentActor | Refusal {
   if (context.identity) {
     const agentId = callingAgentId(deps, context);
-    return typeof agentId === 'string' ? { kind: 'agent', agentId } : agentId;
+    if (typeof agentId !== 'string') return agentId;
+    // The calling turn's level and marks count toward the row's floor (DOR-3088, Must 3).
+    const level = turnLevelOf(context);
+    return {
+      kind: 'agent',
+      agentId,
+      ...(level ? { level } : {}),
+      marks: marksOf(context.sessionId, context.identity?.agentPath),
+    };
   }
   if (context.agentIdentityPresented || context.mcpServer === 'in-session') return NO_AGENT;
   return { kind: 'person' };
@@ -259,6 +280,7 @@ export const commitmentsDomain: CapabilityDomain = {
         const commitmentDeps = requireCommitmentDeps(deps);
         const agentId = callingAgentId(commitmentDeps, context);
         if (typeof agentId !== 'string') return agentId;
+        const originLevel = turnLevelOf(context);
         const commitment = commitmentDeps.service.create(
           agentId,
           {
@@ -269,6 +291,8 @@ export const commitmentsDomain: CapabilityDomain = {
             ...(input.sourceEntryId ? { sourceRoomEntryId: input.sourceEntryId } : {}),
             // The marks of the calling turn, from its own record (DOR-3036).
             originMarks: marks,
+            // And its level, which holds the promise (DOR-3088, Must 1).
+            ...(originLevel ? { originLevel } : {}),
           },
           { kind: 'agent', agentId }
         );
