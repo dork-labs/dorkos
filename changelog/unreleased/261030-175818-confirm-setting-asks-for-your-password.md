@@ -10,6 +10,7 @@ covers:
   - 'fix(client): "Sign in again" on the sheet and the Mac window, then the action is asked for afresh (DOR-3234)'
   - 'fix(client): the sheet says "Allow sending", one wrong-password line, and the risk row''s link sits left with a phone-size target (DOR-3234)'
   - 'fix(server): moving a mini app out is in the write census, and a held connection add reads its caller (DOR-3234)'
+  - 'fix(server): adding an agent to a browser profile re-checks the owner when it is confirmed (DOR-3234)'
 ---
 
 ### Security

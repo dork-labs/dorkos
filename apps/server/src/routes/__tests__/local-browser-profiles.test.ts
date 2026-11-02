@@ -7,7 +7,19 @@ import { createLocalBrowserProfileStore } from '../../services/session/local-bro
 import { peekHeldStepUp, takeHeldStepUp } from '../../services/core/auth/step-up/step-up-holds.js';
 import { mountLocalBrowserProfileRoutes } from '../local-browser-profiles.js';
 import type { ApiEnv } from '../../http/api-chain.js';
+import type { RequestFacts } from '../../http/request-facts.js';
 
+/** The request that confirmed the step-up: the same browser session that held it. */
+const CONFIRMING = { user: { sessionId: 'sess-a' } } as unknown as RequestFacts;
+
+/** The router's bar as the confirming request meets it: on this computer, and the owner. */
+const bar = vi.hoisted(() => ({ atThisComputer: true, owner: true }));
+vi.mock('../../services/core/auth/gate-policy.js', () => ({
+  isAtThisComputer: () => bar.atThisComputer,
+}));
+vi.mock('../../lib/caller-authority.js', () => ({
+  refuseUnlessAccountOwner: () => (bar.owner ? undefined : 'not-the-owner'),
+}));
 vi.mock('../../http/request-body.js', () => ({
   readJsonBody: (c: { get(key: string): unknown }) => c.get('body' as never),
 }));
@@ -37,7 +49,26 @@ function setup() {
 describe('browser profile routes', () => {
   let t: ReturnType<typeof setup>;
   beforeEach(() => {
+    bar.atThisComputer = true;
+    bar.owner = true;
     t = setup();
+  });
+
+  it('re-checks the owner on the confirming request, and binds nothing for anyone else', async () => {
+    for (const confirmer of [
+      { atThisComputer: true, owner: false },
+      { atThisComputer: false, owner: true },
+    ]) {
+      const profile = t.profiles.create(`Work ${String(confirmer.owner)}`);
+      const res = await t.post(`/profiles/${profile.id}/agents`, { agentId: 'atlas' });
+      const { heldActionId } = (await res.json()) as { heldActionId: string };
+      // The sheet was up; the request that confirms it no longer clears the router's bar.
+      Object.assign(bar, confirmer);
+      const result = await takeHeldStepUp(heldActionId)!.commit(CONFIRMING);
+      Object.assign(bar, { atThisComputer: true, owner: true });
+      expect(result).toMatchObject({ status: 403, body: { code: 'owner_only' } });
+      expect(t.profiles.isBound(profile.id, 'atlas', '/agents/atlas')).toBe(false);
+    }
   });
 
   it('holds a bind for step-up and writes nothing until it passes', async () => {
@@ -50,7 +81,7 @@ describe('browser profile routes', () => {
     expect(held.statement.kind).toBe('browser-profile.bind');
     // The agent chose its name, so the sentence also names its real folder.
     expect(held.reason).toContain('/agents/atlas');
-    const result = await takeHeldStepUp(heldActionId)!.commit();
+    const result = await takeHeldStepUp(heldActionId)!.commit(CONFIRMING);
     expect(result.status).toBe(200);
     expect(t.profiles.isBound(profile.id, 'atlas', '/agents/atlas')).toBe(true);
   });
@@ -61,7 +92,7 @@ describe('browser profile routes', () => {
     const res = await t.post(`/profiles/${profile.id}/agents`, { agentId: 'moved' });
     const { heldActionId } = (await res.json()) as { heldActionId: string };
     agents.moved = { name: 'Moved', projectPath: '/agents/after' };
-    const result = await takeHeldStepUp(heldActionId)!.commit();
+    const result = await takeHeldStepUp(heldActionId)!.commit(CONFIRMING);
     delete agents.moved;
     expect(result.status).toBe(404);
     expect(t.profiles.isBound(profile.id, 'moved', '/agents/after')).toBe(false);
@@ -73,7 +104,7 @@ describe('browser profile routes', () => {
     const res = await t.post(`/profiles/${profile.id}/agents`, { agentId: 'gone' });
     const { heldActionId } = (await res.json()) as { heldActionId: string };
     delete agents.gone;
-    const result = await takeHeldStepUp(heldActionId)!.commit();
+    const result = await takeHeldStepUp(heldActionId)!.commit(CONFIRMING);
     expect(result.status).toBe(404);
     expect(t.profiles.isBound(profile.id, 'gone', '/agents/gone')).toBe(false);
   });
