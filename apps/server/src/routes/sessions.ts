@@ -740,7 +740,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
 
     const cwd = (readQuery(c).cwd as string) || vaultRoot;
     // A fork runs where it is put, so only where its caller may run one (DOR-3644).
-    const refused = await forkPlaceRefusal(honoRequestFacts(c), deps.meshCore, cwd);
+    const refused = await forkPlaceRefusal(honoRequestFacts(c), deps.meshCore, cwd, sessionId);
     if (refused) return c.json(refused, 403);
 
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
@@ -926,8 +926,8 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
   // rule. The queue is per SESSION: any window may edit or remove any message on
   // it, whichever window typed it. See the handler's module doc.
   router.get('/:id/queue', sessionQueueListHandler);
-  router.patch('/:id/queue/:messageId', sessionQueueUpdateHandler);
-  router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler);
+  router.patch('/:id/queue/:messageId', sessionQueueUpdateHandler(deps.meshCore));
+  router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler(deps.meshCore));
 
   // POST /api/sessions/:id/{approve,deny,batch-approve,batch-deny,submit-answers,
   // submit-elicitation} — answering a prompt (`session-answers.ts`). The answer

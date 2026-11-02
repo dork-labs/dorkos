@@ -168,7 +168,7 @@ interface Caller {
 }
 
 /** The session routes behind a stand-in for the chain's identity steps. */
-function post(pathAndQuery: string, body: unknown, caller: Caller = {}) {
+function post(pathAndQuery: string, body: unknown, caller: Caller = {}, method = 'POST') {
   const router = createSessionRoutes({ meshCore: mesh() });
   const app = new Hono<ApiEnv>()
     .use('*', async (c, next) => {
@@ -189,7 +189,7 @@ function post(pathAndQuery: string, body: unknown, caller: Caller = {}) {
   const incoming = { headers, socket: { remoteAddress: '127.0.0.1' } };
   return app.request(
     `/api/sessions/${SESSION}${pathAndQuery}`,
-    { method: 'POST', headers, body: JSON.stringify(body) },
+    { method, headers, ...(method === 'DELETE' ? {} : { body: JSON.stringify(body) }) },
     { incoming, outgoing: { headersSent: false } } as never
   );
 }
@@ -386,5 +386,28 @@ describe('POST /:id/fork', () => {
   it("lets a person fork into any agent's home", async () => {
     const res = await post(`/fork?cwd=${encodeURIComponent(homeB)}`, {}, PERSON);
     expect(res.status).toBe(201);
+  });
+});
+
+describe('a message waiting in a chat (DOR-3644 S1)', () => {
+  beforeEach(() => {
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(homeB);
+  });
+
+  it("refuses A rewording or moving one in B's chat", async () => {
+    const res = await post('/queue/m-1', { content: 'now as B' }, AS_A, 'PATCH');
+    expect(res.status).toBe(403);
+    expect(await codeOf(res)).toBe('DESK_NOT_OWN');
+  });
+
+  it("refuses A removing one from B's chat", async () => {
+    const res = await post('/queue/m-1', {}, AS_A, 'DELETE');
+    expect(res.status).toBe(403);
+  });
+
+  it('lets a person through to the queue, as before', async () => {
+    const res = await post('/queue/m-1', { content: 'mine' }, PERSON, 'PATCH');
+    // Past the place rule: this queue simply has no such message.
+    expect(res.status).toBe(404);
   });
 });

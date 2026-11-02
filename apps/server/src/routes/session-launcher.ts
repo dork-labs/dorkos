@@ -12,8 +12,12 @@ import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceilin
 import { markedBoundOf } from '../services/core/turn-power/turn-levels.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { boundaryRefusal, errorBody } from '../lib/route-utils.js';
+import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { auditRefusedLaunch } from '../services/session/launch/launch-audit.js';
 import {
+  launchedByOf,
   launchPlaceRefusal,
+  type LaunchPlaceRefusal,
   type SessionLauncher,
 } from '../services/session/launch/launch-caller.js';
 
@@ -82,10 +86,49 @@ export function httpLaunchOf(facts: RequestFacts): {
 export async function forkPlaceRefusal(
   facts: RequestFacts,
   meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
-  cwd: string
+  cwd: string,
+  sessionId: string
 ): Promise<object | undefined> {
   const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
   if (outside) return outside;
-  const place = launchPlaceRefusal(meshCore, sessionLauncherOf(facts), { cwd });
-  return place ? errorBody(place.message, 'DESK_NOT_OWN') : undefined;
+  const launcher = sessionLauncherOf(facts);
+  const place = launchPlaceRefusal(meshCore, launcher, { cwd });
+  if (!place) return undefined;
+  auditRefusedLaunch(sessionId, place, launchedByOf(meshCore, launcher), { cwd }, 'session.fork');
+  return errorBody(place.message, 'DESK_NOT_OWN');
+}
+
+/**
+ * Why this caller may not touch a message waiting in this chat, or `null` when
+ * it may: the same place rule a new message meets, asked of the chat's
+ * recorded agent and, when the runtime knows it, its folder (DOR-3644 S1).
+ *
+ * @param facts - The request's facts.
+ * @param meshCore - Mesh, which lists the registered homes.
+ * @param sessionId - The chat.
+ */
+export async function chatPlaceRefusal(
+  facts: RequestFacts,
+  meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
+  sessionId: string
+): Promise<LaunchPlaceRefusal | null> {
+  const launcher = sessionLauncherOf(facts);
+  if (launcher.kind === 'person') return null;
+  // An unreadable record names an agent nobody can be: refuse, never guess.
+  const chatAgent = await runtimeRegistry
+    .getSessionAgentPath(sessionId)
+    .catch(() => 'unreadable' as const);
+  const cwd = runtimeRegistry.getNativeSessionCwd?.(sessionId) ?? undefined;
+  const place = { chatAgent, ...(cwd ? { cwd } : {}) };
+  const refusal = launchPlaceRefusal(meshCore, launcher, place);
+  if (refusal) {
+    auditRefusedLaunch(
+      sessionId,
+      refusal,
+      launchedByOf(meshCore, launcher),
+      place,
+      'session.queue'
+    );
+  }
+  return refusal;
 }

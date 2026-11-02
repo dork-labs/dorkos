@@ -12,31 +12,43 @@
  */
 import path from 'node:path';
 import { recordAudit } from '../../audit/audit-trail.js';
-import type { LaunchPlaceRefusal } from './launch-caller.js';
+import type { LaunchPlace, LaunchPlaceRefusal } from './launch-caller.js';
 
 /** The action every launch row is recorded under. */
 export const SESSION_LAUNCH_ACTION = 'session.launch';
 
 /**
- * Record a launch the place rule refused.
+ * Record a launch (or a fork, or a queued message's edit) the place rule
+ * refused, with who asked and the place they asked for. Where it came in (the
+ * surface) is the caller's audit scope's to say, as on every row.
  *
  * @param sessionId - The chat it was for.
  * @param refusal - Which rule refused it.
  * @param launchedBy - Who asked, as the binding would have recorded it.
+ * @param place - The folder, the named agent and the chat's agent it asked for.
+ * @param action - What was refused; a launch unless said otherwise.
  */
 export function auditRefusedLaunch(
   sessionId: string,
   refusal: LaunchPlaceRefusal,
-  launchedBy: string | undefined
+  launchedBy: string | undefined,
+  place: LaunchPlace = {},
+  action: string = SESSION_LAUNCH_ACTION
 ): void {
+  const change = [
+    ...(launchedBy ? [{ field: 'launchedBy', after: launchedBy }] : []),
+    ...(place.cwd !== undefined ? [{ field: 'cwd', after: place.cwd }] : []),
+    ...(place.agentPath !== undefined ? [{ field: 'agentPath', after: place.agentPath }] : []),
+    ...(place.chatAgent ? [{ field: 'chatAgent', after: place.chatAgent }] : []),
+  ];
   recordAudit({
-    action: SESSION_LAUNCH_ACTION,
+    action,
     operation: 'execute',
     target: { type: 'session', id: sessionId },
     outcome: 'refused',
     error: refusal.code,
-    ...(launchedBy ? { change: [{ field: 'launchedBy', after: launchedBy }] } : {}),
-    summary: `Refused to start or continue a chat: ${refusal.message}`,
+    ...(change.length > 0 ? { change } : {}),
+    summary: `Refused: ${refusal.message}`,
   });
 }
 

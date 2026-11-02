@@ -28,7 +28,6 @@ import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { configManager } from '../../core/config-manager.js';
 import {
-  chatAgentOf,
   homeOf,
   isInsideRoomsDir,
   readHomeManifest,
@@ -502,10 +501,9 @@ async function launchSessionMessage(
     }
     verifiedAgentPath = agentPath;
   }
-  // An agent's own chat is recorded as its own, as `session_start` records it,
-  // so every later turn is pinned to it: a folder that comes to read as another
-  // agent's (a swapped link, a new worktree) then names nobody, never that
-  // agent (`resolveAgentHome` with `forAgent`).
+  // An agent's own chat is recorded as its own, as `session_start` records it;
+  // every turn of a recorded chat then carries that agent (see `forAgent`
+  // below). A chat with no recorded agent is not pinned (R3, still open).
   if (verifiedAgentPath === undefined && opts.launcher?.kind === 'agent') {
     const own = opts.launcher.agentPath;
     if (meshCore?.listWithPaths().some((agent) => agent.projectPath === own)) {
@@ -617,13 +615,16 @@ async function launchSessionMessage(
     };
   }
 
-  // A chat whose folder belongs to no agent still runs as the agent it was
-  // started for, so its tools act as that agent and never as the person
-  // (DOR-2863). A room's own answer, when there is one, stands.
-  // A bound chat's agent is its record, never a later message's claim: a
-  // per-message `agentPath` names the owner only on the send that binds it.
+  // A chat runs as the agent it was started for, every turn (DOR-2863,
+  // DOR-3644 M1): its tools act as that agent and never as the person, and a
+  // folder that later comes to read as ANOTHER agent's (a forged worktree
+  // pointer, a swapped link) names nobody rather than that agent, because
+  // `resolveAgentHome` refuses a folder that is not the turn's agent's. A
+  // room's own answer, when there is one, stands. A bound chat's agent is its
+  // record, never a later message's claim: a per-message `agentPath` names the
+  // owner only on the send that binds it.
   const recordedAgent = existing?.bound ? await recordedAgentOf(sessionId) : verifiedAgentPath;
-  const forAgent = roomPlace.forAgent ?? chatAgentOf(recordedAgent, effectiveCwd ?? DEFAULT_CWD);
+  const forAgent = roomPlace.forAgent ?? recordedAgent ?? undefined;
 
   // And again where the turn really stands, and as whom: an existing chat
   // keeps its own folder and agent whatever the message names, so another
@@ -867,7 +868,7 @@ function refusedPlace(
   if (!opts.launcher) return null;
   const refusal = launchPlaceRefusal(opts.meshCore, opts.launcher, place);
   if (!refusal) return null;
-  auditRefusedLaunch(opts.sessionId, refusal, launchedByOf(opts.meshCore, opts.launcher));
+  auditRefusedLaunch(opts.sessionId, refusal, launchedByOf(opts.meshCore, opts.launcher), place);
   return { refused: 'DESK_NOT_OWN', message: refusal.message, launcherRefused: refusal.code };
 }
 

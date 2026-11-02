@@ -168,7 +168,10 @@ import type { RoomWorktreeManager } from '../../services/rooms/repo/room-worktre
 import { RoomError } from '../../services/rooms/room-errors.js';
 import { roomSessionPlace } from '../../services/rooms/repo/room-turn-place.js';
 import { workspaceGateFor } from '../../services/workspace/index.js';
-import { setAgentHomeRegistry } from '../../services/core/agent-identity/index.js';
+import {
+  resolveAgentHome,
+  setAgentHomeRegistry,
+} from '../../services/core/agent-identity/index.js';
 
 const admission = new MainRequestAdmission();
 /** What the session routes read; the tests change it between requests. */
@@ -566,7 +569,9 @@ describe('POST /:id/messages — a room-bound session', () => {
 
     expect(opts?.cwd).toBe(AGENT);
     expect(opts).not.toHaveProperty('additionalDirectories');
-    expect(opts).not.toHaveProperty('forAgent');
+    // Every turn carries its recorded agent (DOR-3644 M1); here that is the
+    // folder's own agent, so its identity is exactly as it was.
+    expect(opts?.forAgent).toBe(AGENT);
   });
 });
 
@@ -603,7 +608,10 @@ describe('POST /:id/messages — a chat whose folder belongs to no agent', () =>
 
     const opts = await sendAndCapture({ cwd: '/mock/home/marketing' });
 
-    expect(opts).not.toHaveProperty('forAgent');
+    // The record still pins the turn (DOR-3644 M1), and an agent that is gone
+    // resolves to nobody, never to whatever the folder reads as.
+    expect(opts?.forAgent).toBe('/mock/home/agents/gone');
+    expect(resolveAgentHome(opts?.cwd, opts?.forAgent).kind).toBe('refused');
   });
 
   it('runs a new chat as the agent its first message names (the session_start path)', async () => {
@@ -641,7 +649,11 @@ describe('POST /:id/messages — a chat whose folder belongs to no agent', () =>
 
     const opts = await sendAndCapture({ cwd: AGENT });
 
-    expect(opts).not.toHaveProperty('forAgent');
+    expect(opts?.forAgent).toBe(AGENT);
+    expect(resolveAgentHome(opts?.cwd, opts?.forAgent)).toMatchObject({
+      kind: 'home',
+      home: AGENT,
+    });
   });
 });
 

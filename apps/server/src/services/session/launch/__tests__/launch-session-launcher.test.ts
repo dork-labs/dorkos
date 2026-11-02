@@ -67,6 +67,7 @@ import { dispatchMessage } from '../../message-dispatcher.js';
 import { recordAudit } from '../../../audit/audit-trail.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch-session.js';
 import type { SessionLauncher } from '../launch-caller.js';
+import { resolveAgentHome } from '../../../core/agent-identity/index.js';
 import {
   clearTestHomes,
   registerTestHomes,
@@ -141,7 +142,10 @@ describe('an agent launch into another agent', () => {
         action: 'session.launch',
         outcome: 'refused',
         error: 'OTHER_AGENTS_FOLDER',
-        change: [{ field: 'launchedBy', after: 'id-a' }],
+        change: [
+          { field: 'launchedBy', after: 'id-a' },
+          { field: 'cwd', after: '/agents/b' },
+        ],
       })
     );
   });
@@ -170,6 +174,36 @@ describe('an agent launch into another agent', () => {
       '/agents/a'
     );
     expect(vi.mocked(dispatchMessage).mock.calls[0]![0].forAgent).toBe('/agents/a');
+  });
+
+  it("pins every later turn of A's chat to A, so a folder swapped to read as B names nobody", async () => {
+    // A's chat, bound and recorded as A, in a folder that now reads as B's (a
+    // forged worktree pointer, a swapped link; Security's M1 on #3417). The next
+    // turn arrives the way a person's typing or a chat_send does: no launcher.
+    registerTestHomes(['/agents/a', '/agents/b'], { managed: { '/projects/f': '/agents/b' } });
+    vi.mocked(runtimeRegistry.resolveForSessionWithOwnership).mockResolvedValue({
+      runtime: fakeRuntime as never,
+      bound: true,
+    });
+    fakeRuntime.getSessionCwd.mockReturnValueOnce('/projects/f');
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue('/agents/a');
+
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'later turn' },
+      clientId: 'c',
+      meshCore: twoAgents,
+      roomSessionPlace: undefined,
+      origin: { kind: 'interactive' },
+    });
+    expect(isSessionLaunchRefusal(result)).toBe(false);
+    const sent = vi.mocked(dispatchMessage).mock.calls[0]![0];
+    expect(sent.forAgent).toBe('/agents/a');
+    // What the turn's identity resolves to from there: nobody, never B.
+    expect(resolveAgentHome(sent.cwd, sent.forAgent)).toEqual({
+      kind: 'refused',
+      reason: 'not-the-turns-agent',
+    });
   });
 
   it('asks nothing of a launch the server places itself', async () => {

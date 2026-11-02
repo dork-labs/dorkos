@@ -29,7 +29,9 @@ import {
   editQueuedMessage,
   listQueuedMessages,
 } from '../services/session/index.js';
+import type { MeshCore } from '@dorkos/mesh';
 import { errorBody, parseSessionId } from '../lib/route-utils.js';
+import { chatPlaceRefusal } from './session-launcher.js';
 
 const INVALID_SESSION_ID = errorBody('Invalid session ID', 'INVALID_SESSION_ID');
 const INVALID_MESSAGE_ID = errorBody('Invalid message ID', 'INVALID_MESSAGE_ID');
@@ -60,38 +62,46 @@ export function sessionQueueListHandler(c: Context<ApiEnv>): Response {
  * indices mean different things to two windows editing one queue, which is
  * exactly the situation this surface is for.
  *
- * @param c - The request context; `:messageId` is the queued message
+ * @param meshCore - Mesh, which lists the registered homes.
  */
-export function sessionQueueUpdateHandler(c: Context<ApiEnv>): Response {
-  const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
-  const messageId = parseMessageId(c.req.param('messageId'));
-  if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
-  // An empty body is answered with the same 400 as a malformed one.
-  const parsed = UpdateQueuedMessageRequestSchema.safeParse(readJsonBody(c));
-  if (!parsed.success) return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
-  const { content, move } = parsed.data;
-  const message = editQueuedMessage(sessionId, messageId, {
-    ...(content !== undefined ? { content } : {}),
-    ...(move !== undefined ? { move } : {}),
-    // Words reworded from Wi-Fi run at the runtime's default at most, unless they
-    // are the owner's own (DOR-3037, DOR-3242).
-    ...(content !== undefined && wifiTurnHeld(honoRequestFacts(c)) ? { holdToDefault: true } : {}),
-  });
-  if (message === 'not-yours') {
-    return c.json(
-      errorBody(
-        'Another chat sent this message. It can be moved or removed, not reworded.',
-        'QUEUED_MESSAGE_NOT_YOURS'
-      ),
-      409
-    );
-  }
-  // Covers both "no such message on this queue" and "the move named an anchor
-  // that is not on it" — from the caller's side those are one thing: an id
-  // this queue does not have.
-  if (!message) return c.json(NOT_QUEUED, 404);
-  return c.json({ message, queue: listQueuedMessages(sessionId) });
+export function sessionQueueUpdateHandler(meshCore: MeshCore | undefined) {
+  return async (c: Context<ApiEnv>): Promise<Response> => {
+    const sessionId = parseSessionId(c.req.param('id'));
+    if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+    const messageId = parseMessageId(c.req.param('messageId'));
+    if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
+    // A waiting message runs as its chat's agent, so only a caller who could post
+    // into that chat may reword or move it (DOR-3644 S1).
+    const refused = await chatPlaceRefusal(honoRequestFacts(c), meshCore, sessionId);
+    if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    // An empty body is answered with the same 400 as a malformed one.
+    const parsed = UpdateQueuedMessageRequestSchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
+    const { content, move } = parsed.data;
+    const message = editQueuedMessage(sessionId, messageId, {
+      ...(content !== undefined ? { content } : {}),
+      ...(move !== undefined ? { move } : {}),
+      // Words reworded from Wi-Fi run at the runtime's default at most, unless they
+      // are the owner's own (DOR-3037, DOR-3242).
+      ...(content !== undefined && wifiTurnHeld(honoRequestFacts(c))
+        ? { holdToDefault: true }
+        : {}),
+    });
+    if (message === 'not-yours') {
+      return c.json(
+        errorBody(
+          'Another chat sent this message. It can be moved or removed, not reworded.',
+          'QUEUED_MESSAGE_NOT_YOURS'
+        ),
+        409
+      );
+    }
+    // Covers both "no such message on this queue" and "the move named an anchor
+    // that is not on it" — from the caller's side those are one thing: an id
+    // this queue does not have.
+    if (!message) return c.json(NOT_QUEUED, 404);
+    return c.json({ message, queue: listQueuedMessages(sessionId) });
+  };
 }
 
 /**
@@ -99,13 +109,19 @@ export function sessionQueueUpdateHandler(c: Context<ApiEnv>): Response {
  * queue. Its pending dispatch goes with it, so a removed message does not run
  * later.
  *
- * @param c - The request context; `:messageId` is the queued message
+ * @param meshCore - Mesh, which lists the registered homes.
  */
-export function sessionQueueRemoveHandler(c: Context<ApiEnv>): Response {
-  const sessionId = parseSessionId(c.req.param('id'));
-  if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
-  const messageId = parseMessageId(c.req.param('messageId'));
-  if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
-  if (!cancelQueuedMessage(sessionId, messageId)) return c.json(NOT_QUEUED, 404);
-  return c.json({ queue: listQueuedMessages(sessionId) });
+export function sessionQueueRemoveHandler(meshCore: MeshCore | undefined) {
+  return async (c: Context<ApiEnv>): Promise<Response> => {
+    const sessionId = parseSessionId(c.req.param('id'));
+    if (!sessionId) return c.json(INVALID_SESSION_ID, 400);
+    const messageId = parseMessageId(c.req.param('messageId'));
+    if (!messageId) return c.json(INVALID_MESSAGE_ID, 400);
+    // Removing a person's waiting message from another agent's chat is that chat's
+    // business, not a stranger's (DOR-3644 S1).
+    const refused = await chatPlaceRefusal(honoRequestFacts(c), meshCore, sessionId);
+    if (refused) return c.json(errorBody(refused.message, 'DESK_NOT_OWN'), 403);
+    if (!cancelQueuedMessage(sessionId, messageId)) return c.json(NOT_QUEUED, 404);
+    return c.json({ queue: listQueuedMessages(sessionId) });
+  };
 }
