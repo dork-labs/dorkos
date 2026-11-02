@@ -59,7 +59,8 @@ export function createLocalBrowserRoutes(
   });
   router.get('/capabilities', (c) => c.json(service.capabilities()));
   router.get('/state', async (c) => c.json(await service.handover.state()));
-  router.post('/open', async (c) =>
+  // Opening and resuming end a handoff and lift a Stop task, so they take a person too.
+  router.post('/open', personOnly, async (c) =>
     c.json(await service.handover.open(LocalBrowserOpenSchema.parse(readJsonBody(c))))
   );
   router.post('/tabs/:id/select', async (c) => c.json(await service.selectTab(c.req.param('id'))));
@@ -68,7 +69,7 @@ export function createLocalBrowserRoutes(
     return c.json(await service.navigate(url));
   });
   router.post('/pause', async (c) => c.json(await service.pause()));
-  router.post('/resume', async (c) => c.json(await service.handover.resume()));
+  router.post('/resume', personOnly, async (c) => c.json(await service.handover.resume()));
   // Signing in and answering a handoff take a person: no agent, API key or approval token.
   router.post('/sign-in', personOnly, async (c) =>
     c.json(await service.handover.signIn(LocalBrowserSignInRequestSchema.parse(readJsonBody(c))))

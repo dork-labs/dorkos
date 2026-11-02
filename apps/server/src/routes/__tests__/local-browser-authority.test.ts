@@ -118,16 +118,19 @@ describe.each(endpoints)('%s %s authority', (method, path, body, effect) => {
 });
 
 describe.each([
+  ['/open', { mode: 'new-window' }],
+  ['/resume', undefined],
   ['/sign-in', { url: 'https://example.test/' }],
   ['/handoff/hand-back', { handoffId: 'h1' }],
   ['/handoff/stop', { handoffId: 'h1' }],
 ] as const)('POST %s takes a person', (path, body) => {
   it('refuses an approval token, even from the owner', async () => {
-    const response = await request(server)
+    const call = request(server)
       .post('/api/local-browser' + path)
       .set('Host', 'localhost')
-      .set('X-DorkOS-Approval', 'anything')
-      .send(body);
+      .set('X-DorkOS-Approval', 'anything');
+    if (body) call.send(body);
+    const response = await call;
     expect(response.status).toBe(403);
     for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
   });
