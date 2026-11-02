@@ -8,9 +8,25 @@ export const LocalBrowserOpenSchema = z
     mode: LocalBrowserModeSchema,
     sessionId: z.string().min(1).max(200).optional(),
     url: z.string().url().optional(),
+    /** A named profile to open in a new window. Left out, the default sign-ins are used. */
+    profileId: z.string().uuid().optional(),
   })
   .strict();
 export type LocalBrowserOpen = z.infer<typeof LocalBrowserOpenSchema>;
+/** A named set of browser sign-ins, and the agents a person let use it. */
+export const LocalBrowserProfileSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().min(1).max(80),
+  createdAt: z.string(),
+  agentIds: z.array(z.string()),
+});
+export type LocalBrowserProfile = z.infer<typeof LocalBrowserProfileSchema>;
+/** Name a new profile. It starts with no agents. */
+export const LocalBrowserProfileCreateSchema = z
+  .object({ label: z.string().trim().min(1).max(80) })
+  .strict();
+/** Let one agent use a profile. */
+export const LocalBrowserProfileBindSchema = z.object({ agentId: z.string().min(1) }).strict();
 export const LocalBrowserKeySchema = z.enum([
   'Enter',
   'Tab',

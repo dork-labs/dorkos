@@ -119,6 +119,9 @@ describe('protected paths', () => {
       'config.json*',
       'config-*.json.bak',
       'marketplaces.json*',
+      'browser-profiles/**',
+      'local-browser/saved-logins/**',
+      'dork*.db*',
     ]);
     expect(globs(DATA_GRANT_FILE_PATHS)).toEqual([
       'config.json',

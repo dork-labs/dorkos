@@ -111,6 +111,9 @@ describe('every store that holds a live secret', () => {
     'relay/adapters.json',
     'browser/profile/Default/Cookies',
     'local-browser/saved-logins/state.json',
+    'browser-profiles/default/Default/Cookies',
+    'browser-profiles/00000000-0000-4000-8000-000000000001/Default/Cookies',
+    'browser-profiles/.binding-key',
     'host.key',
     'api-key',
   ])('denies Read on %s', (entry) => {

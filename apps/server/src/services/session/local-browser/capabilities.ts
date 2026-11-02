@@ -52,10 +52,17 @@ function scopedAnswer<T>(
   run: () => Promise<T>
 ): Promise<T> {
   requireSession(service, context);
-  return answer(run).then((result) => {
+  const allowed = async () => {
+    await answer(() => service.requireProfileAccess(context.sessionId!));
     requireSession(service, context);
+  };
+  return (async () => {
+    await allowed();
+    const result = await answer(run);
+    requireSession(service, context);
+    await allowed();
     return result;
-  });
+  })();
 }
 
 /** Register observation and action tools; only human controls can open a browser. */

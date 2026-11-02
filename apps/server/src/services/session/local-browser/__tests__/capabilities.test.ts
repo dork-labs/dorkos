@@ -25,6 +25,7 @@ function setup() {
     tabs: [{ id: 'selected', url: 'http://fixture.test/', title: 'Chosen page' }],
   };
   const service = {
+    requireProfileAccess: vi.fn(async () => undefined),
     requireSharedSession: vi.fn((id: string) => {
       if (id !== 'chat-one')
         throw new LocalBrowserError(
@@ -164,6 +165,36 @@ describe('local browser scoped tool projection', () => {
     });
     release();
     await expect(result).rejects.toThrow();
+  });
+  it('refuses an agent not added to the profile before reading, on every tool', async () => {
+    const { domain, deps, context, service } = setup();
+    service.requireProfileAccess.mockRejectedValue(
+      new LocalBrowserError('profile_not_allowed', 'This agent can’t use this browser profile.')
+    );
+    for (const capability of domain.capabilities) {
+      await expect(
+        capability.invoke(
+          deps,
+          capability.id === 'local_browser.act'
+            ? { action: { kind: 'click', revision: 3, role: 'button', name: 'Save' } }
+            : {},
+          context('chat-one')
+        )
+      ).rejects.toThrow();
+    }
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.action).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
+    expect(service.agentState).not.toHaveBeenCalled();
+  });
+  it('holds back the answer when access ended while the call ran', async () => {
+    const { domain, deps, context, service } = setup();
+    service.requireProfileAccess
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new LocalBrowserError('profile_not_allowed', 'No.'));
+    const read = domain.capabilities.find((item) => item.id === 'local_browser.observe')!;
+    await expect(read.invoke(deps, {}, context('chat-one'))).rejects.toThrow();
+    expect(service.observe).toHaveBeenCalledOnce();
   });
   it('returns selected-only state after an action, never the human tab chooser', async () => {
     const { domain, deps, context } = setup();

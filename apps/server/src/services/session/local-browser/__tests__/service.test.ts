@@ -628,13 +628,13 @@ describe('local browser ownership and observations', () => {
     await service.open({ mode: 'new-window' });
     expect(backend.launch).toHaveBeenNthCalledWith(
       1,
-      path.join(dir, 'local-browser', 'saved-logins'),
+      path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
       expect.any(Function)
     );
     expect(backend.launch).toHaveBeenNthCalledWith(
       2,
-      path.join(dir, 'local-browser', 'saved-logins'),
+      path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
       expect.any(Function)
     );
@@ -984,6 +984,68 @@ describe('bounded browser lifecycle ownership', () => {
     expect(new Set(journal.map((record) => record.operationId)).size).toBe(1);
     expect(click).toHaveBeenCalledTimes(2);
     await service.disconnect();
+  });
+});
+
+describe('named profiles (DOR-3218)', () => {
+  const profileId = '00000000-0000-4000-8000-000000000001';
+
+  it('opens a named profile in its own folder', async () => {
+    const f = await create();
+    f.service.useProfileAccess(
+      async () => undefined,
+      () => true
+    );
+    await f.service.open({ mode: 'new-window', profileId });
+    expect(f.backend.launch).toHaveBeenLastCalledWith(
+      path.join(f.dir, 'browser-profiles', profileId),
+      expect.anything(),
+      expect.anything()
+    );
+    await f.service.disconnect();
+  });
+
+  it.each([
+    ['unknown', true],
+    ['set up yet', false],
+  ])('refuses to open a profile when it is not %s, and makes no folder', async (_name, set) => {
+    const f = await create();
+    if (set)
+      f.service.useProfileAccess(
+        async () => undefined,
+        () => false
+      );
+    await expect(f.service.open({ mode: 'new-window', profileId })).rejects.toMatchObject({
+      code: 'profile_not_found',
+    });
+    expect(f.backend.launch).not.toHaveBeenCalled();
+    await expect(readFile(path.join(f.dir, 'browser-profiles', profileId))).rejects.toThrow();
+  });
+
+  it('asks the access check on each call, and skips it on the default profile', async () => {
+    const f = await create();
+    const access = vi.fn(async () => undefined);
+    f.service.useProfileAccess(access, () => true);
+    await f.service.open({ mode: 'new-window', sessionId: 's' });
+    await f.service.requireProfileAccess('s');
+    expect(access).not.toHaveBeenCalled();
+    await f.service.open({ mode: 'new-window', profileId, sessionId: 's' });
+    await f.service.requireProfileAccess('s');
+    await f.service.requireProfileAccess('s');
+    expect(access).toHaveBeenCalledTimes(2);
+    expect(access).toHaveBeenLastCalledWith(profileId, 's');
+    await f.service.disconnect();
+  });
+
+  it('never opens a named profile in the embedded browser', async () => {
+    const f = await create();
+    f.service.useProfileAccess(
+      async () => undefined,
+      () => true
+    );
+    await expect(f.service.open({ mode: 'embedded', profileId })).rejects.toMatchObject({
+      code: 'unsupported',
+    });
   });
 });
 

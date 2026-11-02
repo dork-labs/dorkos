@@ -128,6 +128,10 @@ describe('Database Migrations', () => {
       // Better Auth identity tables (accounts-and-auth P1, migration 0019).
       'account',
       'activity_events',
+      // Named Agent browser profiles and the agents a person let use them (DOR-3218).
+      // The server signs each binding, because agents can reach this file.
+      'agent_browser_profile_agents',
+      'agent_browser_profiles',
       // Stable provider-neutral connection attachments. Drizzle creates the
       // legacy inputs for old-install upgrades; the application migration
       // retires them only after its verified backfill commits.

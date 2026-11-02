@@ -249,6 +249,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/local-browser/resume',
     'POST /api/local-browser/disconnect',
     'POST /api/local-browser/tabs/:id/select',
+    'POST /api/local-browser/profiles',
+    'POST /api/local-browser/profiles/:id/agents',
+    'DELETE /api/local-browser/profiles/:id/agents/:agentId',
   ],
   'Inbound and signed: a provider’s webhook, never a person on Wi-Fi': [
     'POST /api/connectors/webhooks/:providerInstanceId',

@@ -4,8 +4,12 @@ import { z } from 'zod';
 import {
   LocalBrowserCapabilitiesSchema,
   LocalBrowserOpenSchema,
+  LocalBrowserProfileBindSchema,
+  LocalBrowserProfileCreateSchema,
+  LocalBrowserProfileSchema,
   LocalBrowserStateSchema,
 } from '@dorkos/shared/local-browser';
+import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
 
 const errorSchema = z.object({ error: z.string(), code: z.string() });
 const authority = 'Only the owner on this computer can call this route. ';
@@ -106,6 +110,85 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     summary: 'Resume agent browser actions',
     description: authority + 'The agent must read a fresh observation before its next action.',
     responses: stateResponses,
+  });
+  const profileResponse = {
+    description: 'The browser profile',
+    content: { 'application/json': { schema: LocalBrowserProfileSchema } },
+  };
+  const profileRefusals = {
+    403: stateResponses[403],
+    404: refusal('The browser profile or agent no longer exists'),
+    500: stateResponses[500],
+  };
+  registry.registerPath({
+    method: 'get',
+    path: '/api/local-browser/profiles',
+    tags: ['Local browser'],
+    summary: 'List named browser profiles',
+    description: authority + 'Lists each profile and the agents a person let use it.',
+    responses: {
+      200: {
+        description: 'The named profiles',
+        content: {
+          'application/json': {
+            schema: z.object({ profiles: z.array(LocalBrowserProfileSchema) }),
+          },
+        },
+      },
+      403: stateResponses[403],
+      500: stateResponses[500],
+    },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/profiles',
+    tags: ['Local browser'],
+    summary: 'Create a named browser profile',
+    description: authority + 'A new profile has no agents and no sign-ins.',
+    request: {
+      body: {
+        required: true,
+        content: { 'application/json': { schema: LocalBrowserProfileCreateSchema } },
+      },
+    },
+    responses: {
+      201: profileResponse,
+      400: refusal('The name is invalid'),
+      403: stateResponses[403],
+      500: stateResponses[500],
+    },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/profiles/{id}/agents',
+    tags: ['Local browser'],
+    summary: 'Let an agent use a browser profile',
+    description:
+      authority + 'Nothing changes until the person confirms it’s them through the step-up routes.',
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        required: true,
+        content: { 'application/json': { schema: LocalBrowserProfileBindSchema } },
+      },
+    },
+    responses: {
+      428: {
+        description: 'Held until the person confirms it’s them',
+        content: { 'application/json': { schema: StepUpRequiredBodySchema } },
+      },
+      400: refusal('The request is invalid'),
+      ...profileRefusals,
+    },
+  });
+  registry.registerPath({
+    method: 'delete',
+    path: '/api/local-browser/profiles/{id}/agents/{agentId}',
+    tags: ['Local browser'],
+    summary: 'Stop an agent using a browser profile',
+    description: authority + 'The agent’s next browser call is refused.',
+    request: { params: z.object({ id: z.string(), agentId: z.string() }) },
+    responses: { 200: profileResponse, ...profileRefusals },
   });
   registry.registerPath({
     method: 'post',
