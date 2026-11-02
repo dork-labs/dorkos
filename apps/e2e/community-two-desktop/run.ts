@@ -65,6 +65,9 @@ function log(line: string) {
   appendFileSync(path.join(runRoot, 'steps.log'), text + '\n');
 }
 
+/** What the test build changes from the shipped app's electron-builder config. */
+const TEST_BUILD_OVERRIDES = ['-c.electronFuses.enableNodeCliInspectArguments=true'];
+
 function build() {
   const run = (command: string, args: string[]) => {
     log(`build: ${command} ${args.join(' ')}`);
@@ -78,8 +81,12 @@ function build() {
     '--filter=@dorkos/desktop...',
     '--filter=@dorkos/community...',
   ]);
-  // `run pack`: a bare `pnpm pack` makes an npm tarball instead.
-  run('pnpm', ['--filter', '@dorkos/desktop', 'run', 'pack']);
+  // `run pack`: a bare `pnpm pack` makes an npm tarball instead. The shipped
+  // app turns the `enableNodeCliInspectArguments` fuse off (DOR-3053), and
+  // Playwright's electron.launch drives the app through `--inspect`, so with it
+  // off every launch fails "Process failed to launch!" (run 41521611799). This
+  // test build alone turns it back on; nothing built here is ever shipped.
+  run('pnpm', ['--filter', '@dorkos/desktop', 'run', 'pack', '--', ...TEST_BUILD_OVERRIDES]);
   // Packaging rebuilt the native addons for Electron; put them back for system
   // Node so the rest of the workspace (and this run's tooling) keeps working.
   run('pnpm', ['rebuild', 'better-sqlite3', 'node-pty']);
@@ -108,21 +115,27 @@ async function shot(page: Page, name: string) {
   return path.relative(runRoot, file);
 }
 
+/** The step under way, so a crash outside it can still be pinned on it. */
+let running: { name: string; started: number } | null = null;
+
 async function step<T>(name: string, work: () => Promise<T>): Promise<T> {
   const id = stepIdOf(name);
   if (id && !runsStep(mode, id))
     throw new Error(`Step ${id} is not part of a ${mode} run (see plan.ts)`);
   const started = Date.now();
   log(`STEP ${name} …`);
+  running = { name, started };
   try {
     const evidence = await work();
     steps.push({ name, ok: true, ms: Date.now() - started, evidence: evidence ?? null });
     log(`PASS ${name} (${Date.now() - started}ms)`);
+    running = null;
     return evidence;
   } catch (error) {
     const err = error as Error;
     steps.push({ name, ok: false, ms: Date.now() - started, error: String(err?.stack ?? err) });
     log(`FAIL ${name}: ${err?.message ?? err}`);
+    running = null;
     throw error;
   }
 }
@@ -387,5 +400,28 @@ function ownSignals() {
   }
 }
 ownSignals();
+
+/*
+ * A crash outside the journey's own error handling still ends the run cleanly.
+ * Playwright's failed Electron launch is thrown from its own code, as an
+ * uncaught exception, so before this the run died there with no receipt.
+ */
+function onFatal(error: unknown) {
+  if (cleaning) return;
+  const err = error as Error;
+  log(`FATAL ${err?.message ?? String(error)}`);
+  steps.push({
+    name: running?.name ?? '(uncaught)',
+    ok: false,
+    ms: running ? Date.now() - running.started : null,
+    error: String(err?.stack ?? err),
+  });
+  if (running) log(`FAIL ${running.name}: ${err?.message ?? err}`);
+  receipt.outcome = 'FAIL';
+  receipt.error = String(err?.stack ?? err);
+  void cleanup().finally(() => process.exit(1));
+}
+process.on('uncaughtException', onFatal);
+process.on('unhandledRejection', onFatal);
 
 await main();
