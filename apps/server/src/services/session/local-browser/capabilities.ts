@@ -196,7 +196,12 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
           scopedAnswer(
             service,
             context,
-            () => service.handover.ask(context.sessionId!, input.reason),
+            () =>
+              service.handover.ask(
+                context.sessionId!,
+                input.reason,
+                context.identity?.displayName ?? null
+              ),
             true
           ),
       }),

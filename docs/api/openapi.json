@@ -29760,6 +29760,12 @@
                         "sessionId": {
                           "type": "string"
                         },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -29788,6 +29794,7 @@
                       "required": [
                         "id",
                         "sessionId",
+                        "agentName",
                         "reason",
                         "site",
                         "askedAt",
@@ -30086,6 +30093,12 @@
                         "sessionId": {
                           "type": "string"
                         },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -30114,6 +30127,7 @@
                       "required": [
                         "id",
                         "sessionId",
+                        "agentName",
                         "reason",
                         "site",
                         "askedAt",
@@ -31071,6 +31085,12 @@
                         "sessionId": {
                           "type": "string"
                         },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -31099,6 +31119,7 @@
                       "required": [
                         "id",
                         "sessionId",
+                        "agentName",
                         "reason",
                         "site",
                         "askedAt",
@@ -32138,6 +32159,12 @@
                         "sessionId": {
                           "type": "string"
                         },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32166,6 +32193,7 @@
                       "required": [
                         "id",
                         "sessionId",
+                        "agentName",
                         "reason",
                         "site",
                         "askedAt",
@@ -32470,6 +32498,12 @@
                         "sessionId": {
                           "type": "string"
                         },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32498,6 +32532,7 @@
                       "required": [
                         "id",
                         "sessionId",
+                        "agentName",
                         "reason",
                         "site",
                         "askedAt",
@@ -32802,6 +32837,12 @@
                         "sessionId": {
                           "type": "string"
                         },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32830,6 +32871,7 @@
                       "required": [
                         "id",
                         "sessionId",
+                        "agentName",
                         "reason",
                         "site",
                         "askedAt",

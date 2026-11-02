@@ -220,8 +220,19 @@ describe('local browser scoped tool projection', () => {
       site: 'fixture.test',
       next: 'Wait.',
     });
-    expect(service.handover.ask).toHaveBeenCalledExactlyOnceWith('chat-one', 'password');
+    expect(service.handover.ask).toHaveBeenCalledExactlyOnceWith('chat-one', 'password', null);
     expect(() => ask.invoke(deps, { reason: 'wall' }, context('chat-two'))).toThrow();
+  });
+  it('names the asking agent from its verified identity, never from the call', async () => {
+    const { domain, deps, service } = setup();
+    const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;
+    const identified = {
+      sessionId: 'chat-one',
+      identity: { agentPath: '/agents/ana', displayName: 'Ana', createdAt: '2026-11-02T00:00:00Z' },
+    } as unknown as CapabilityHandlerContext;
+    await ask.invoke(deps, { reason: 'password' }, identified);
+    expect(service.handover.ask).toHaveBeenCalledExactlyOnceWith('chat-one', 'password', 'Ana');
+    expect(ask.input.safeParse({ reason: 'wall', agentName: 'Your bank' }).success).toBe(false);
   });
   it('after Stop task, the chat can neither read nor see the page the person keeps using', async () => {
     const { domain, deps, context, service } = setup();

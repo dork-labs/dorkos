@@ -18,11 +18,15 @@ afterEach(() => {
   rmSync(dataDirectory, { recursive: true, force: true });
 });
 
-/** A check that reads only what the test stores: no agent home, the given launch origin. */
-function check(launchOrigin: string | null): ReturnType<typeof liveOutsideTurnCheck> {
+/** A check that reads only what the test stores: no agent home, the given launch origin and marks. */
+function check(
+  launchOrigin: string | null,
+  marks: ReturnType<OutsideTurnSources['marksOf']> = {}
+): ReturnType<typeof liveOutsideTurnCheck> {
   const sources: OutsideTurnSources = {
     agentPathOf: async () => null,
     launchOriginOf: () => launchOrigin,
+    marksOf: () => marks,
   };
   return liveOutsideTurnCheck(sources);
 }
@@ -71,7 +75,11 @@ describe('liveOutsideTurnCheck', () => {
     await expect(check('room')('chat-1')).resolves.toBe(true);
   });
 
-  it('lets a person’s own chat hand the browser over', async () => {
+  it('refuses a turn a Wi-Fi sign-in’s hold marks, in a chat a person started', async () => {
+    await expect(check('interactive', { outsider: true })('chat-1')).resolves.toBe(true);
+  });
+
+  it('lets a person’s own chat with none of the three hand the browser over', async () => {
     const { subject, browser } = handover('interactive');
     await expect(subject.ask('chat-1', 'wall')).resolves.toMatchObject({
       site: 'accounts.example.com',
@@ -82,6 +90,7 @@ describe('liveOutsideTurnCheck', () => {
   it('treats an unreadable launch origin as unknown, not as a stranger', async () => {
     const throwing = liveOutsideTurnCheck({
       agentPathOf: async () => null,
+      marksOf: () => ({}),
       launchOriginOf: () => {
         throw new Error('no database');
       },

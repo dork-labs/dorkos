@@ -163,6 +163,8 @@ export type LocalBrowserHandoffReason = z.infer<typeof LocalBrowserHandoffReason
 export const LocalBrowserHandoffSchema = z.object({
   id: z.string(),
   sessionId: z.string(),
+  /** The asking agent's name, from its identity token; null when the call carried none. Never text the agent wrote. */
+  agentName: z.string().nullable(),
   reason: LocalBrowserHandoffReasonSchema,
   /** The host of the agent's page when it asked, from its URL. Never a name the agent gave. */
   site: z.string(),

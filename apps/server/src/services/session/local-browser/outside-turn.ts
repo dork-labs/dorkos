@@ -21,11 +21,14 @@ export interface OutsideTurnSources {
   agentPathOf: (sessionId: string) => Promise<string | null>;
   /** The chat's stored launch origin, or null when none is stored. */
   launchOriginOf: (sessionId: string) => string | null;
+  /** The turn's marks; a Wi-Fi sign-in's hold sets `outsider`. */
+  marksOf: typeof marksOf;
 }
 
 const LIVE_SOURCES: OutsideTurnSources = {
   agentPathOf: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
   launchOriginOf: (sessionId) => runtimeRegistry.getSessionLaunchOrigin(sessionId),
+  marksOf,
 };
 
 /**
@@ -36,7 +39,7 @@ const LIVE_SOURCES: OutsideTurnSources = {
  * @param sources - Overrides for tests; the live server's otherwise.
  */
 export function liveOutsideTurnCheck(sources: Partial<OutsideTurnSources> = {}): OutsideTurnCheck {
-  const { agentPathOf, launchOriginOf } = { ...LIVE_SOURCES, ...sources };
+  const { agentPathOf, launchOriginOf, marksOf: turnMarksOf } = { ...LIVE_SOURCES, ...sources };
   return async (sessionId) => {
     let launchOrigin: string | null = null;
     try {
@@ -47,6 +50,6 @@ export function liveOutsideTurnCheck(sources: Partial<OutsideTurnSources> = {}):
     if (launchOrigin !== null && STRANGER_LAUNCH_ORIGINS.has(launchOrigin)) return true;
     if (roomTurnReadOutsideWords(sessionId)) return true;
     const agentPath = await agentPathOf(sessionId).catch(() => null);
-    return marksOf(sessionId, agentPath ?? undefined).outsider === true;
+    return turnMarksOf(sessionId, agentPath ?? undefined).outsider === true;
   };
 }

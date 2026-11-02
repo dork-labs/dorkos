@@ -115,7 +115,7 @@ describe('BrowserHandover.ask', () => {
 
   it('pauses, raises the window and names the site from the page’s own URL', async () => {
     const { handover, browser } = setup();
-    const answer = await handover.ask('chat-1', 'password');
+    const answer = await handover.ask('chat-1', 'password', 'Ana');
     expect(answer.site).toBe('accounts.example.com');
     expect(answer.next).toMatch(/End your turn/);
     expect(browser.pause).toHaveBeenCalledOnce();
@@ -123,6 +123,7 @@ describe('BrowserHandover.ask', () => {
     expect((await handover.state()).handoff).toMatchObject({
       id: answer.handoffId,
       sessionId: 'chat-1',
+      agentName: 'Ana',
       reason: 'password',
       site: 'accounts.example.com',
       outcome: null,

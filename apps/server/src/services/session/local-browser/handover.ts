@@ -119,10 +119,12 @@ export class BrowserHandover {
    *
    * @param sessionId - The calling chat, already checked as the one the browser is shared with.
    * @param reason - Why: a password or sign-in, or another step only a person can finish.
+   * @param agentName - The asking agent's name from its verified identity, for the person's card.
    */
   async ask(
     sessionId: string,
-    reason: LocalBrowserHandoffReason
+    reason: LocalBrowserHandoffReason,
+    agentName: string | null = null
   ): Promise<{ handoffId: string; site: string; next: string }> {
     // A stranger's words must not be able to raise a window or ask the person anything.
     if (await this.outsideTurn(sessionId))
@@ -144,6 +146,7 @@ export class BrowserHandover {
     this.record = {
       id: randomUUID(),
       sessionId,
+      agentName,
       reason,
       site,
       askedAt: new Date(this.now()).toISOString(),
