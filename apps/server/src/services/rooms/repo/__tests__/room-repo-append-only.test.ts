@@ -121,7 +121,7 @@ describe('a room’s repo is append-only', () => {
     expect(found).toEqual([]);
   });
 
-  it('exposes exactly the room verbs, and no repo verb beyond the two', async () => {
+  it('exposes exactly the room verbs, and no repo verb beyond the three', async () => {
     const tools = roomsDomain.capabilities.map((capability) => capability.surfaces.mcp?.toolName);
     // The whole hand, pinned. A new verb here is a new thing an agent can do in
     // somebody else's room, and it should be argued for in a review rather than
@@ -130,6 +130,8 @@ describe('a room’s repo is append-only', () => {
       'post_to_room',
       'react_to_room_entry',
       'merge_to_room_main',
+      // Adds a first commit to a room with none; rewrites nothing (DOR-3468).
+      'set_up_room_files',
       'room_repo_status',
       'read_room_history',
       'search_room_history',
@@ -140,7 +142,7 @@ describe('a room’s repo is append-only', () => {
       // The verbs that ARRANGE rooms (DOR-1611, and `archive_room` from spec
       // `agent-permissions` D12). They are here because the pin is the WHOLE
       // hand, not because they touch a room's files — none of them does, which
-      // is the point: the repo verbs are still exactly the two above. These sit
+      // is the point: the repo verbs are still exactly the three above. These sit
       // in the Rooms permission area, which a person sets.
       'create_room',
       'add_room_members',
@@ -157,10 +159,5 @@ describe('a room’s repo is append-only', () => {
       'reseat_room_agent_options',
       'reseat_room_agent',
     ]);
-    // And nothing in the domain offers to give a room files: enabling a repo is
-    // operator-only over HTTP (spec §3.2), because an agent that could hand
-    // itself a writable working directory is the confused-deputy shape the
-    // membership verbs already refuse.
-    expect(tools.some((tool) => tool?.includes('enable'))).toBe(false);
   });
 });

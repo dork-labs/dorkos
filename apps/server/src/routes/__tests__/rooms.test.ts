@@ -352,7 +352,8 @@ describe('/api/rooms', () => {
       expect(asHuman.body.viewerIsOperator).toBe(true);
       expect(asAgent.body.viewerIsOperator).toBe(false);
       expect(asHuman.body.viewerCan).toEqual({ setUpFiles: true });
-      expect(asAgent.body.viewerCan).toEqual({ setUpFiles: false });
+      // A member agent may set up its room's files too (DOR-3468).
+      expect(asAgent.body.viewerCan).toEqual({ setUpFiles: true });
 
       await request(testServer).patch(`/api/rooms/${room.id}`).send({ archived: true });
       const archived = await request(testServer).get(`/api/rooms/${room.id}`);

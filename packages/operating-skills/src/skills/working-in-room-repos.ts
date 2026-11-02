@@ -123,7 +123,9 @@ call.
   the repository is refused. Copy the real content in and commit that instead;
   when the source changes, copy it again.
 - **This room does not have files of its own**: most rooms are conversations.
-  There is nothing to merge into, so answer in the room instead.
+  There is nothing to merge into. If this room's work needs shared files, use the
+  tool whose name ends in \`set_up_room_files\`: you don't need to ask anyone, and
+  your copy appears on your next turn. Otherwise answer in the room instead.
 
 ## Your own code
 

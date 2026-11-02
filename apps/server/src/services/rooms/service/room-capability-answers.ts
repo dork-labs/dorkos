@@ -8,6 +8,7 @@
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { CapabilityToolError } from '../../core/capabilities/index.js';
 import type { AuthorRecord } from '../author-registry.js';
+import type { RoomMergeService } from '../repo/room-merge-service.js';
 import { RoomError, roomRefusalFor } from '../room-errors.js';
 import { normalizeMemberHandle, type RoomService } from '../room-service.js';
 import type { CapabilityDeps } from '../../core/capabilities/index.js';
@@ -28,6 +29,26 @@ export function requireRoomDeps(deps: CapabilityDeps): RoomService {
     throw new Error('Rooms capability invoked without roomDeps in the registry bag.');
   }
   return deps.roomDeps.rooms;
+}
+
+/**
+ * Narrow the bag to the merge service, throwing if the registry was composed
+ * without it (a wiring bug, caught the first time a repo verb is called).
+ *
+ * A throw rather than a room-shaped refusal, deliberately: "this room has no
+ * files" and "this server was wired without the thing that reads them" are
+ * different facts, and answering the second with the first would send an agent
+ * off to ask an operator to enable something that is already enabled.
+ *
+ * @param deps - The registry's shared dependency bag.
+ * @returns The merge service.
+ */
+export function requireMergeDeps(deps: CapabilityDeps): RoomMergeService {
+  const merges = deps.roomDeps?.merges;
+  if (!merges) {
+    throw new Error('Rooms repo capability invoked without a merge service in the registry bag.');
+  }
+  return merges;
 }
 
 /**

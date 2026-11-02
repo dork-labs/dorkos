@@ -1218,13 +1218,8 @@ describe('contract: the room routes, driven by hand (login off)', () => {
     );
   });
 
-  it('POST /api/rooms/:id/repo gives the room files once; an agent is refused', async () => {
-    expectRefusal(
-      await call(server, 'POST', rooms('/repo'), undefined, member.header),
-      403,
-      'OPERATOR_ONLY'
-    );
-    const enabled = await call(server, 'POST', rooms('/repo'));
+  it('POST /api/rooms/:id/repo gives the room files once; a member agent may ask', async () => {
+    const enabled = await call(server, 'POST', rooms('/repo'), undefined, member.header);
     expectAnswer(enabled, 201);
     expect(enabled.json.repo).toMatchObject({ roomId, mode: 'owned', defaultBranch: 'main' });
     const again = await call(server, 'POST', rooms('/repo'));

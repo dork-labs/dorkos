@@ -28,6 +28,9 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Room } from '@dorkos/shared/room-schemas';
 import { type RoomRepoCaps, type RoomRepoSidecar } from '@dorkos/shared/room-repo';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import { recordAudit } from '../../audit/audit-trail.js';
+import type { AuthorRecord } from '../author-registry.js';
 import { RoomError } from '../room-errors.js';
 import { logger } from '../../../lib/logger.js';
 import type { RoomRepoStore } from './room-repo-store.js';
@@ -35,16 +38,20 @@ import type { RoomRepoMutex } from './room-repo-mutex.js';
 import {
   commitAll,
   commitsAheadOfMain,
+  FALLBACK_OPERATOR_GIT_NAME,
   gitAuthorName,
   GitUnavailableError,
   hasUncommittedChanges,
   initRepo,
   OPERATOR_GIT_EMAIL,
   pathsInHead,
+  personGitEmail,
   restoreFromHead,
   unstagePaths,
+  type GitIdentity,
   type StrayChange,
 } from './room-repo-git.js';
+import { RoomWorktreeManager } from './room-worktree-manager.js';
 import { readMainCheckoutState } from './room-main-checkout.js';
 import { ROOM_MD_FILENAME, ROOM_MD_SEED_COMMIT_MESSAGE, seedRoomMd } from './room-md.js';
 import { RoomConventions } from './room-conventions.js';
@@ -145,6 +152,12 @@ export interface RoomRepoServiceDeps {
   /** Whether an author is the person who owns this install. */
   isOwnerAuthor: (authorId: string) => boolean;
   /**
+   * The author behind an id, so the commit that sets up a room's files carries
+   * the name of whoever asked. Required rather than optional: a wiring that
+   * forgot it would commit an agent's setup as the operator.
+   */
+  getAuthor: (authorId: string) => AuthorRecord | null;
+  /**
    * The name operator commits are authored under, or `null` when this install
    * has no name for them yet.
    */
@@ -231,12 +244,14 @@ export class RoomRepoService {
    *    checked first because it is true regardless of who is asking and of
    *    whether the room exists.
    * 2. **The caller cannot see the room** — `ROOM_NOT_FOUND`, the same answer
-   *    reading it would give. Before the operator gate on purpose (DOR-1429's
-   *    order), so an agent probing room ids cannot tell 403 from 404.
-   * 3. **The caller is not the operator** — `OPERATOR_ONLY`. Never an agent
-   *    capability: a room that could give itself a repo is a room that could
-   *    grant itself a working directory, which is the confused-deputy shape the
-   *    membership verbs already refuse.
+   *    reading it would give, so an agent probing room ids learns nothing.
+   * 3. **The room is archived** — `ROOM_ARCHIVED`.
+   *
+   * **Any member may do it, an agent included** (DOR-3468, Dorian's call). What
+   * was an owner gate here is gone: seeing the room is the whole check, and only
+   * a member or the owner sees one. It grants the room files and nothing else:
+   * merging someone else's copy and repairing the shared copy stay owner-only,
+   * and `rooms.repo.enabled` stays a person's switch.
    *
    * **Order of writes, and what an interruption leaves behind.** The sidecar is
    * written first (it is the truth; see `room-repo-store.ts`), then the git
@@ -268,9 +283,8 @@ export class RoomRepoService {
    * @param roomId - The room to give files to.
    * @param callerAuthorId - Who is asking.
    * @returns The binding, and whether this call is what made it.
-   * @throws {RoomError} `ROOM_REPOS_DISABLED`, `ROOM_NOT_FOUND`,
-   *   `OPERATOR_ONLY`, or `ROOM_REPO_GIT_UNAVAILABLE` when this machine has no
-   *   git.
+   * @throws {RoomError} `ROOM_REPOS_DISABLED`, `ROOM_NOT_FOUND`, `ROOM_ARCHIVED`,
+   *   or `ROOM_REPO_GIT_UNAVAILABLE` when this machine has no git.
    */
   enable(roomId: string, callerAuthorId: string): Promise<EnableRoomRepoResult> {
     return this.deps.mutex.run(
@@ -350,10 +364,6 @@ export class RoomRepoService {
       throw new RoomError('ROOM_ARCHIVED', 'Bring this room back before setting up files.');
     }
 
-    if (!this.deps.isOwnerAuthor(callerAuthorId)) {
-      throw new RoomError('OPERATOR_ONLY', 'Only you can give a room files of its own');
-    }
-
     const existing = await this.deps.store.readSidecar(roomId);
     if (existing) {
       // Write the row back through on the way out: the one case where a caller
@@ -428,6 +438,38 @@ export class RoomRepoService {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    const who =
+      sanitizeIdentity(this.deps.getAuthor(callerAuthorId)?.displayName ?? '') ?? 'Someone';
+    recordAudit({
+      action: 'room.files_set_up',
+      operation: 'create',
+      target: { type: 'room', id: roomId, name: room.title },
+      outcome: 'ok',
+      summary: `${who} set up files for this room`,
+    });
+  }
+
+  /**
+   * Who the commit that sets up a room's files is authored as: the operator for
+   * the owner, and otherwise the caller, under the same name and address their
+   * other commits in this room carry. Never the operator for anyone else.
+   *
+   * @param callerAuthorId - Who asked.
+   */
+  private seedCommitIdentity(callerAuthorId: string): GitIdentity {
+    if (this.deps.isOwnerAuthor(callerAuthorId)) {
+      return { name: gitAuthorName(this.deps.operatorGitName()), email: OPERATOR_GIT_EMAIL };
+    }
+    const author = this.deps.getAuthor(callerAuthorId);
+    // A name git refuses falls back to the operator's label, which must not land
+    // on anybody else's commit.
+    const checked = gitAuthorName(sanitizeIdentity(author?.displayName ?? ''));
+    const usable = checked === FALLBACK_OPERATOR_GIT_NAME ? null : checked;
+    if (author?.kind === 'agent') {
+      const slug = RoomWorktreeManager.slugFor(author.displayName, author.naturalKey);
+      return { name: usable ?? 'an agent', email: `${slug}@dorkos.local` };
+    }
+    return { name: usable ?? 'a room member', email: personGitEmail(callerAuthorId) };
   }
 
   /**
@@ -828,11 +870,11 @@ export class RoomRepoService {
   }
 
   /**
-   * Create the repo and put `ROOM.md` in it, committed as the operator.
+   * Create the repo and put `ROOM.md` in it, committed as whoever asked.
    *
    * @param roomId - The room.
    * @param room - Its title and topic, for the seeded file.
-   * @param callerAuthorId - Who asked, for the commit author fallback.
+   * @param callerAuthorId - Who asked.
    */
   private async seedRepo(roomId: string, room: Room, callerAuthorId: string): Promise<void> {
     const repoDir = this.deps.store.repoPath(roomId);
@@ -847,10 +889,7 @@ export class RoomRepoService {
     await commitAll(
       repoDir,
       ROOM_MD_SEED_COMMIT_MESSAGE,
-      {
-        name: gitAuthorName(this.deps.operatorGitName()),
-        email: OPERATOR_GIT_EMAIL,
-      },
+      this.seedCommitIdentity(callerAuthorId),
       ceiling
     );
     logger.info('[rooms] room repo created', { roomId, createdBy: callerAuthorId });

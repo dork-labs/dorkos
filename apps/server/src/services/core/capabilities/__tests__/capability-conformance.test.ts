@@ -44,7 +44,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { capabilityConformance } from '@dorkos/test-utils';
 
 import { createTestDb } from '@dorkos/test-utils/db';
-import { RoomMergeService, RoomRepoMutex, RoomRepoStore } from '../../../rooms/repo/index.js';
+import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
+import {
+  RoomMergeService,
+  RoomRepoMutex,
+  RoomRepoService,
+  RoomRepoStore,
+} from '../../../rooms/repo/index.js';
 
 // ── Mock the non-hermetic seams the operator handlers reach through ─────────
 // config.get / config.patch read + write the real `configManager` singleton via
@@ -313,7 +319,25 @@ const registry = composeDorkOsCapabilityRegistry({
   marketplaceDeps,
   connectorDeps,
   mcpDeps,
-  roomDeps: { rooms: roomHarness.service, merges: roomMerges },
+  roomDeps: {
+    rooms: roomHarness.service,
+    merges: roomMerges,
+    // Switched off, so the verb reaches the real service and answers the
+    // structured `ROOM_REPOS_DISABLED` without making a repo on disk.
+    repos: new RoomRepoService({
+      store: new RoomRepoStore(roomHarness.db, SANDBOX_CWD),
+      mutex: new RoomRepoMutex(),
+      queueWaitMs: () => 5000,
+      enabled: () => false,
+      getRoom: (roomId, viewerAuthorId) => roomHarness.service.getRoom(roomId, viewerAuthorId),
+      isOwnerAuthor: (authorId) => authorId === roomHarness.human,
+      getAuthor: () => null,
+      operatorGitName: () => null,
+      pinRoomMd: () => {},
+      caps: () => ({ ...ROOM_REPO_CAP_DEFAULTS }),
+      maxRoomMdBytes: () => ROOM_REPO_CAP_DEFAULTS.maxRoomMdBytes,
+    }),
+  },
   // The audit domain serves `GET /api/audit/verify`, so the boot registry must
   // carry it for the docs/boot parity check (spec `audit-trail`).
   auditDeps: {
@@ -662,6 +686,7 @@ capabilityConformance(registry, {
     // could really run would need a git repo on disk, and this suite is asking
     // whether the verb is reachable, not whether git works.
     'rooms.merge': { roomId: CONFORMANCE_ROOM_ID, summary: 'a conformance merge' },
+    'rooms.set_up_files': { roomId: CONFORMANCE_ROOM_ID },
     'rooms.repo_status': { roomId: CONFORMANCE_ROOM_ID },
     'rooms.read_history': { roomId: CONFORMANCE_ROOM_ID, limit: 5 },
     'rooms.search_history': { roomId: CONFORMANCE_ROOM_ID, query: 'conformance' },

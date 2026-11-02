@@ -9,7 +9,7 @@
  *
  * Seeded defects, each run red before the code stood:
  *
- * - Dropping the operator gate turns "refuses an agent" green-to-red.
+ * - Committing an agent's setup as the operator reddens "committed under its name".
  * - Dropping the `-b main` from `initRepo` reddens "the branch is main".
  * - Returning `created: true` unconditionally reddens the idempotence test.
  * - Making `assertHomeRemovable` count only uncommitted changes reddens
@@ -26,6 +26,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { rooms, type Db } from '@dorkos/db';
 import type { Room } from '@dorkos/shared/room-schemas';
 import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
+import { recordAudit } from '../../../audit/audit-trail.js';
+import type { AuthorRecord } from '../../author-registry.js';
 import { RoomError } from '../../room-errors.js';
 import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
@@ -33,6 +35,8 @@ import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { ROOM_MD_FILENAME } from '../room-md.js';
 import { commitAll, commitsAheadOfMain, hasUncommittedChanges, runGit } from '../room-repo-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
+
+vi.mock('../../../audit/audit-trail.js', () => ({ recordAudit: vi.fn() }));
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
 const OPERATOR = 'author-operator';
@@ -68,6 +72,8 @@ describe('RoomRepoService', () => {
   /** The queue enable shares with merges — one instance, so a race is a real race. */
   let mutex: RoomRepoMutex;
   let room: Room;
+  /** The authors `getAuthor` knows, by id. */
+  let authors: Map<string, Pick<AuthorRecord, 'kind' | 'displayName' | 'naturalKey'>>;
 
   /** Run git in `dir` with the room's home as the discovery ceiling. */
   function git(args: string[], dir: string): Promise<string> {
@@ -116,6 +122,7 @@ describe('RoomRepoService', () => {
     operatorName = 'Dorian';
     pinned = [];
     pinRefuses = false;
+    authors = new Map();
     db.insert(rooms)
       .values({
         id: ROOM_ID,
@@ -134,6 +141,7 @@ describe('RoomRepoService', () => {
       getRoom: () => (visible ? room : null),
       isOwnerAuthor: (authorId) => authorId === OPERATOR,
       operatorGitName: () => operatorName,
+      getAuthor: (authorId) => (authors.get(authorId) as AuthorRecord | undefined) ?? null,
       pinRoomMd: (roomId, authorId) => {
         if (pinRefuses) throw new Error('no room on the canvas');
         pinned.push({ roomId, authorId });
@@ -284,15 +292,60 @@ describe('RoomRepoService', () => {
       expect(store.getRow(ROOM_ID)).not.toBeNull();
     });
 
-    it('refuses an agent, and leaves nothing behind', async () => {
-      await expectRoomError(service.enable(ROOM_ID, AGENT), 'OPERATOR_ONLY');
-      expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
-      expect(store.getRow(ROOM_ID)).toBeNull();
+    it('sets up files for a member agent, committed under its name, never the operator’s', async () => {
+      authors.set(AGENT, { kind: 'agent', displayName: 'Ana', naturalKey: '/agents/ana' });
+
+      const result = await service.enable(ROOM_ID, AGENT);
+
+      expect(result.created).toBe(true);
+      expect(result.repo.createdBy).toBe(AGENT);
+      const author = await git(['log', '--format=%an <%ae>'], store.repoPath(ROOM_ID));
+      expect(author).toMatch(/^Ana <.+@dorkos\.local>$/);
+      expect(author).not.toContain('operator@dorkos.local');
     });
 
-    it('refuses a person who does not own the install', async () => {
-      await expectRoomError(service.enable(ROOM_ID, GUEST), 'OPERATOR_ONLY');
-      expect(existsSync(store.homeDir(ROOM_ID))).toBe(false);
+    it('keeps an agent whose name git refuses off the operator’s label', async () => {
+      authors.set(AGENT, { kind: 'agent', displayName: '<"">', naturalKey: '/agents/ana' });
+
+      await service.enable(ROOM_ID, AGENT);
+
+      expect(await git(['log', '--format=%an'], store.repoPath(ROOM_ID))).toBe('an agent');
+    });
+
+    it('commits a member person’s setup under their own name', async () => {
+      authors.set(GUEST, { kind: 'human', displayName: 'Priya', naturalKey: 'priya' });
+
+      await service.enable(ROOM_ID, GUEST);
+
+      const author = await git(['log', '--format=%an <%ae>'], store.repoPath(ROOM_ID));
+      expect(author).toBe(`Priya <person-${GUEST}@dorkos.local>`);
+    });
+
+    it('records the setup in the audit log', async () => {
+      const audit = vi.mocked(recordAudit);
+      audit.mockClear();
+      authors.set(AGENT, { kind: 'agent', displayName: 'Ana', naturalKey: '/agents/ana' });
+
+      await service.enable(ROOM_ID, AGENT);
+      await service.enable(ROOM_ID, AGENT);
+
+      // Once: the repeat changed nothing, so it has nothing to record.
+      expect(audit).toHaveBeenCalledTimes(1);
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'room.files_set_up',
+          target: expect.objectContaining({ type: 'room', id: ROOM_ID }),
+          summary: 'Ana set up files for this room',
+        })
+      );
+    });
+
+    it('does not let the agent that set up files repair them', async () => {
+      await service.enable(ROOM_ID, AGENT);
+      await expectRoomError(
+        service.repairMainCheckout(ROOM_ID, AGENT, { action: 'commit' }),
+        'OPERATOR_ONLY'
+      );
     });
 
     it('refuses an archived room, and leaves nothing behind', async () => {
@@ -307,7 +360,7 @@ describe('RoomRepoService', () => {
       await expectRoomError(service.enable(ROOM_ID, OPERATOR), 'ROOM_NOT_FOUND');
     });
 
-    it('checks visibility before the operator gate, so probing tells nothing apart', async () => {
+    it('answers an agent outside the room the same way, so probing tells nothing apart', async () => {
       visible = false;
       // Same 404 for an agent as for the operator: an agent walking room ids
       // must not be able to separate "exists, not yours" from "no such room".
