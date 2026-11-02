@@ -239,6 +239,35 @@ test('workflow path list covers Security’s complete list and both sides of ren
   assert.equal(touchesSecurity([{ filename: 'packages/shared/src/schemas.tsx' }], pattern), false);
 });
 
+test('workflow path list covers who a turn or a schedule runs as (DOR-3640)', () => {
+  for (const filename of [
+    'apps/server/src/services/tasks/approvals/schedule-owner.ts',
+    'apps/server/src/services/tasks/lifecycle/create-task.ts',
+    'apps/server/src/services/session/launch/launch-session.ts',
+    'apps/server/src/services/session/launch/launch-caller.ts',
+    'apps/server/src/services/core/agent-identity/agent-home.ts',
+    'apps/server/src/services/core/external-mcp/task-tools.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/session-tools.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts',
+    // Already covered, and named here so a narrowing cannot drop them unseen.
+    'apps/server/src/routes/session-launcher.ts',
+    'apps/server/src/routes/tasks.ts',
+    'apps/server/src/services/mesh/agent-path-lookup.ts',
+    'apps/server/src/services/extensions/agent-tools/tool-binding.ts',
+    'apps/server/src/services/core/capabilities/extension-contribution.ts',
+  ]) {
+    assert.ok(touchesSecurity([{ filename }], pattern), filename);
+  }
+  for (const filename of [
+    'apps/server/src/services/session/history/history-window.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/mesh-tools.ts',
+    'apps/client/src/layers/features/schedule-approval/ui/ScheduleApprovalCard.tsx',
+    'docs/guides/tasks.mdx',
+  ]) {
+    assert.equal(touchesSecurity([{ filename }], pattern), false, filename);
+  }
+});
+
 test('group resolution rejects empty, missing, cyclic and ambiguous membership', () => {
   assert.throws(() => groupMembers([], groupEvent.merge_group), /Cannot resolve/);
   assert.throws(() => groupMembers(entries, { base_sha: 'base', head_sha: 'base' }), /Empty/);
