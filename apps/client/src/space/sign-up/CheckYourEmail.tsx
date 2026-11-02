@@ -106,7 +106,7 @@ export function CheckYourEmail({ email, space, onDifferentEmail }: Props) {
         </Button>
       </div>
       <p className="muted mb-0 text-sm">
-        The link works for 1 hour. Check your spam folder if it isn&apos;t there.
+        The link works for 1 hour. Check your spam folder if it isn’t there.
       </p>
     </div>
   );
