@@ -448,7 +448,7 @@ test('privileged fork initializer is confined to the base SHA, never the fork he
   assert.doesNotMatch(initializer, /pull_request.head|npm|pnpm/);
   assert.match(
     initializer,
-    /pull_request_target:\n {4}types: \[opened, synchronize, reopened, edited\]/
+    /pull_request_target:\n {4}types: \[opened, synchronize, reopened, edited, labeled, unlabeled\]/
   );
 });
 

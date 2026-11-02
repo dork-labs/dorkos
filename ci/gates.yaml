@@ -19,7 +19,10 @@ gates:
     purpose: Tests hardened helper policy and disposable Keychain ACL isolation on a CI macOS user.
   - id: wf.security-review-initialize.initialize
     source: .github/workflows/security-review-initialize.yml
-    purpose: Writes PR-head review statuses and audit comments using trusted base code, including for fork contributions.
+    purpose: Writes the security-review verdict and audit comments on each PR head from main's copy of the gate, including for fork contributions.
+  - id: wf.security-review-initialize.merge-group
+    source: .github/workflows/security-review-initialize.yml
+    purpose: Writes the security-review verdict on each merge group's own SHA from main's copy of the gate.
   - id: wf.security-gate.security-gate
     source: .github/workflows/security-gate.yml
     purpose: Requires Security approval on each exact PR head before security-sensitive changes can merge.

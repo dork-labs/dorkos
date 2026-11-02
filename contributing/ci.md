@@ -107,8 +107,10 @@ status; automatic "no security paths" success cannot approve a sensitive diff
 against a different base. Missing or stale membership fails closed.
 
 Both verifier legs check out the event's immutable base commit and have only
-contents/statuses/pull-requests read permission. Only the `pull_request_target`
-initializer in `security-review-initialize.yml` can write, from trusted base code. It comments once per observed
+contents/statuses/pull-requests read permission. Only `security-review-initialize.yml` can write,
+from trusted base code: on `pull_request_target` it writes the `security-review` verdict on every
+label, push and edit (`.github/scripts/security-verdict.mjs`), and on `merge_group` it writes the
+queue's verdict on the group's SHA. It comments once per observed
 SHA/state transition, recording that observation's status author and ID. Replacing
 a status with the same state adds no comment. It never renders `target_url`.
 After Security approves, rerun the PR verifier. A fully classified nonsensitive
