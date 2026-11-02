@@ -134,10 +134,15 @@ jobs:
           app=apps/desktop/release/mac-arm64/DorkOS.app
           exe="$app/Contents/MacOS/DorkOS"
           test -x "$exe"
+          # Read the fuses first, from the file, without running the app.
+          fuse() { (cd apps/desktop && node -e 'const f = require("@electron/fuses"); f.getCurrentFuseWire(process.argv[1]).then((w) => console.log(w[f.FuseV1Options[process.argv[2]]] === 0x31 ? "on" : "off"))' "$PWD/release/mac-arm64/DorkOS.app" "$1"); }
+          # The override must have taken: Playwright cannot launch the app without it.
+          inspect=$(fuse EnableNodeCliInspectArguments)
+          # Only with runAsNode on does ELECTRON_RUN_AS_NODE keep the GUI closed below.
+          run_as_node=$(fuse RunAsNode)
+          test "$run_as_node" = on || { echo "runAsNode is off: --version would open the app"; exit 1; }
           version=$(ELECTRON_RUN_AS_NODE=1 "$exe" --version)
           signature=$(codesign -dv "$app" 2>&1 | grep -E '^(Identifier|Format|Signature|TeamIdentifier)=' || true)
-          # The override must have taken: Playwright cannot launch the app without it.
-          inspect=$(cd apps/desktop && node -e 'const f = require("@electron/fuses"); f.getCurrentFuseWire(process.argv[1]).then((w) => console.log(w[f.FuseV1Options.EnableNodeCliInspectArguments] === 0x31 ? "on" : "off"))' "$PWD/release/mac-arm64/DorkOS.app")
           {
             echo ""
             echo "Packaged app: \`$exe\` runs; Node \`$version\`; inspect fuse \`$inspect\`"

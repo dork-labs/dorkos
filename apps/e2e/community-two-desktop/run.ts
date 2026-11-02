@@ -407,6 +407,8 @@ ownSignals();
  * uncaught exception, so before this the run died there with no receipt.
  */
 function onFatal(error: unknown) {
+  // A crash during cleanup: that cleanup finishes the run, and it must not end green.
+  process.exitCode = 1;
   if (cleaning) return;
   const err = error as Error;
   log(`FATAL ${err?.message ?? String(error)}`);
