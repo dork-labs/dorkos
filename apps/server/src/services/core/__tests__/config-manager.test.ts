@@ -368,7 +368,11 @@ describe('ConfigManager', () => {
     const configManager = initConfigManager(testDir);
 
     const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { heartbeats?: unknown };
-    expect(onDisk.heartbeats).toEqual({ enabled: true, triageOnCredits: null });
+    expect(onDisk.heartbeats).toEqual({
+      enabled: true,
+      triageOnCredits: null,
+      idleAlertRoomId: null,
+    });
     expect(configManager.get('heartbeats').enabled).toBe(true);
   });
 

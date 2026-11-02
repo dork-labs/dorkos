@@ -259,6 +259,9 @@ export const CONFIG_DISCLOSURE = {
   // Whether cheap checks may run on DorkOS credits (spec `heartbeats` §6.3): a
   // plain yes, no or not answered, so an agent can say where its checks run.
   'heartbeats.triageOnCredits': 'expose',
+  // Which room hears "nothing is running" (DOR-3675): a room id, which an agent may read so
+  // it can say where the alert goes. Only a person may change it.
+  'heartbeats.idleAlertRoomId': 'expose',
 
   // How long the Activity feed keeps its rows (spec `audit-trail` §3.5).
   'activity.retentionDays': 'expose',

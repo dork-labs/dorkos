@@ -39,6 +39,7 @@ import { BeatOutbox } from './outbox.js';
 import { BeatRunner, type BeatAgent } from './beat-runner.js';
 import { createBeatTurnLauncher, ownTurnRunning } from './beat-launch.js';
 import { createOpenWorkReader } from './gatherers/open-work-reader.js';
+import { createIdleAlert } from './idle-watch/start-idle-alert.js';
 import type { OpenWorkReader } from './gatherers/open-work.js';
 import { createBeatSeatPort } from './accounts/beat-seat.js';
 import { noteTurnStarted } from './beat-turns.js';
@@ -209,6 +210,15 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     enabled,
   });
   const openWork = createOpenWorkReader(db, { agentIdForCwd: resolveAgentIdForPath });
+  // "Nothing is running" (DOR-3675): one notice in the team room when no chat has run for 30 min
+  // while work is open. It reads the same activity and lanes the beats do.
+  const idleAlert = createIdleAlert({
+    enabled,
+    computerActivity: openWork.computerActivity,
+    recentLaneCount: openWork.recentLaneCount,
+    commitments: deps.commitments,
+    rooms: deps.rooms,
+  });
   const runner = new BeatRunner({
     store,
     agents,
@@ -265,6 +275,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     enabled,
     hub,
     outbox,
+    idleAlert,
     runner,
     refreshAll: () => {
       // Report timers only: a profile write must not push back anyone's timed beat.
@@ -277,6 +288,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     stop: () => {
       stopFollowing();
       openWork.stop();
+      idleAlert.stop();
       triage.stop();
       setRaiseRecipientCheck(undefined);
       setHeartbeatStatusReader(undefined);
@@ -303,6 +315,7 @@ function follow(
     enabled: () => boolean;
     hub: EventWakes;
     outbox: BeatOutbox;
+    idleAlert: { start(): void; stop(): void };
     runner: BeatRunner;
     refreshAll: () => void;
   }
@@ -311,9 +324,11 @@ function follow(
     if (parts.enabled()) {
       parts.hub.install();
       parts.outbox.start();
+      parts.idleAlert.start();
     } else {
       parts.hub.uninstall();
       parts.outbox.stop();
+      parts.idleAlert.stop();
     }
     void parts.runner.refreshEnabled();
   };

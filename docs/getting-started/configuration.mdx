@@ -170,6 +170,12 @@ Whether your agents wake up on their own to check their work. Each agent's own `
       type: 'boolean | null',
       default: 'null',
     },
+    'heartbeats.idleAlertRoomId': {
+      description:
+        'The room that hears when no agent chat has run for 30 minutes while work is still open. Empty means your team room. Only you can change it, not an agent.',
+      type: 'string | null',
+      default: 'null',
+    },
   }}
 />
 

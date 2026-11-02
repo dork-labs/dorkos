@@ -31,8 +31,8 @@ const HANDLE_TOKEN = /(?:^|\s)@([a-z0-9][a-z0-9._-]{0,31})/gi;
 export interface DeliveryDeps {
   /** The database. */
   db: Db;
-  /** Rooms, for `room` raises. */
-  rooms: Pick<RoomService, 'postFromTool'>;
+  /** Rooms, for `room` raises, and the "nothing is running" notice (DOR-3675). */
+  rooms: Pick<RoomService, 'postFromTool' | 'postNotice' | 'findWellKnownRoom'>;
   /** Room authors, to post as the agent. */
   roomAuthors: Pick<AuthorRegistry, 'resolveAgent'>;
   /** The in-app DM seam, when rooms and mesh run. */

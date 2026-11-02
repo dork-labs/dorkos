@@ -429,6 +429,9 @@ export const CONFIG_WRITE_POLICY = {
   // Whether cheap checks spend DorkOS credits (spec `heartbeats` §6.3). Only a
   // person's **Use credits** may say yes: it spends the account owner's money.
   'heartbeats.triageOnCredits': 'operator-only',
+  // Which room hears "nothing is running" (DOR-3675). An agent that could set it could aim
+  // the alert at a room of its choosing, so it is a person's call.
+  'heartbeats.idleAlertRoomId': 'operator-only',
 
   // How long the Activity feed keeps the history people review (spec
   // `audit-trail` §3.5). Shortening it deletes rows a person may not have read

@@ -48,12 +48,18 @@ export interface OpenWorkReaderDeps {
  *
  * @param db - The database.
  * @param deps - How a directory or a chat maps to its agent.
- * @returns The reader, and a stop for its status listener.
+ * @returns The reader; the same activity and lanes read computer-wide, for the idle alert
+ *   (DOR-3675); and a stop for its status listener.
  */
 export function createOpenWorkReader(
   db: Db,
   deps: OpenWorkReaderDeps
-): { reader: OpenWorkReader; stop: () => void } {
+): {
+  reader: OpenWorkReader;
+  computerActivity: () => 'running' | number | undefined;
+  recentLaneCount: (at: Date) => number;
+  stop: () => void;
+} {
   const now = deps.now ?? Date.now;
   const agentPathOf = deps.agentPathOf ?? ((id: string) => runtimeRegistry.getSessionAgentPath(id));
   const startedWatching = now();
@@ -120,5 +126,25 @@ export function createOpenWorkReader(
     },
     watchingSince: () => startedWatching,
   };
-  return { reader, stop };
+  const computerActivity = (): 'running' | number | undefined => {
+    if (listProjectorStatuses().some((entry) => RUNNING.has(entry.status.lifecycle))) {
+      return 'running';
+    }
+    let last: number | undefined;
+    for (const entry of seen.values())
+      last = last === undefined ? entry.at : Math.max(last, entry.at);
+    return last;
+  };
+  const recentLaneCount = (at: Date): number =>
+    db
+      .select({ sessionId: sessionStartedBy.sessionId })
+      .from(sessionStartedBy)
+      .where(
+        and(
+          eq(sessionStartedBy.kind, 'chat'),
+          gte(sessionStartedBy.createdAt, new Date(at.getTime() - LANE_OPEN_MS).toISOString())
+        )
+      )
+      .all().length;
+  return { reader, computerActivity, recentLaneCount, stop };
 }
