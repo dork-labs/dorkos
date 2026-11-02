@@ -142,6 +142,15 @@ describe('addressed', () => {
     expect(await createAddressedGatherer(db)(ctx())).toHaveLength(1);
   });
 
+  // Security on #3280 (DOR-3561): a held turn's own post never comes back to its agent as a beat,
+  // so the beat never reads it unmarked. Not even one that names the agent itself.
+  it('never counts the agent’s own post, held and naming itself', async () => {
+    room('r-general', 'channel', 'general', ['a-juno', 'a-otto']);
+    const own = post('r-general', 'a-juno', '2026-10-12T09:10:00Z', ['a-juno']);
+    noteEntryLevel(own, { asks: 'always', reach: 'read', outsider: true });
+    expect(await createAddressedGatherer(db)(ctx())).toEqual([]);
+  });
+
   // DOR-3036: a beat that reads a marked post carries its marks.
   it('carries the marks another agent’s post was written under, from memory or its row', async () => {
     room('r-general', 'channel', 'general', ['a-juno', 'a-otto']);

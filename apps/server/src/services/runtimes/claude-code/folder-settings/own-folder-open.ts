@@ -12,10 +12,10 @@
  *   does not count (PM, #3319), and neither does a mode a `session_start` caller
  *   or a chat picked for one session;
  * - this turn also runs at Full, its ceiling applied;
- * - it is not a teammate's turn;
- * - it carries no outsider or teammate mark and no ceiling
- *   (`ownExtensionsWritable`, the same answer that keeps a marked turn out of its
- *   own mini apps): a turn that read outside words keeps today's denies.
+ * - it carries no mark that holds (`marksHold`) and no ceiling: a turn that read
+ *   outside words keeps today's denies. A mark no longer lowers a turn's level
+ *   (DOR-3440), but opening the agent's own setup is a raise, which a mark still
+ *   holds back (Security, #3280).
  *
  * What stays denied whatever the answer: the agent's `.dork/agent.json` (its
  * level, account and held MCP servers), other agents' folders, DorkOS's data
@@ -38,6 +38,8 @@ import path from 'node:path';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../../lib/logger.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import {
   readAgentExecutionDefaults,
   resolveUnattendedPermissionMode,
@@ -55,8 +57,6 @@ const FULL_MODE = 'bypassPermissions';
 export interface OwnFolderTurn {
   /** The turn's registered agent home, if any. */
   home: string | undefined;
-  /** Whether this is a teammate's turn. */
-  teammate: boolean;
   /** The mode this turn really launches at, its ceiling applied. */
   turnMode: PermissionMode | string;
   /** The session's ceilings. */
@@ -75,8 +75,9 @@ export interface OwnFolderTurn {
  */
 export async function resolveOwnFolderOpen(turn: OwnFolderTurn): Promise<boolean> {
   const { home } = turn;
-  if (!home || turn.teammate || turn.turnMode !== FULL_MODE) return false;
+  if (!home || turn.turnMode !== FULL_MODE) return false;
   if (ownExtensionsWritable(turn.session, turn.sessionId, home) === undefined) return false;
+  if (marksHold(marksOf(turn.sessionId, home))) return false;
   try {
     // The agent's own stop only: a preset's or the global Full is not a person's choice for it.
     const { filesAndCommands } = await readAgentExecutionDefaults(home);

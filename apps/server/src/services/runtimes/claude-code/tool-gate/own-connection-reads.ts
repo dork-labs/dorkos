@@ -14,15 +14,14 @@
  * own content. The execute tools are NOT here and never join: those act on the accounts, and keep
  * their own gate.
  *
- * Who still cannot run them unasked:
- * - a turn that carries an outsider's words: a stranger's own, one our agents passed those words
- *   on to (`autoAllowedByCall`), or, at Never ask, one marked by a line it read
- *   (`never-ask-hook.ts`). An outsider's question must not read out which accounts the owner
- *   connected;
- * - a teammate's turn: its fence refuses both (`core/turn-power/teammate-tier.ts`).
+ * Who still cannot run them unasked: a turn that carries an outsider's words: a stranger's own,
+ * one our agents passed those words on to (`autoAllowedByCall`), or, at Never ask, one marked by
+ * a line it read (`never-ask-hook.ts`). An outsider's question must not read out which accounts
+ * the owner connected.
  *
  * A turn another of our own agents started, held to its ceiling, does run them: the grants are
- * this agent's, and the colleague asking is on the same DorkOS.
+ * this agent's, and the colleague asking is on the same DorkOS. So does a teammate's turn, which
+ * runs at the agent's set level (DOR-3440).
  *
  * Both spellings are listed, each exactly. The capability id has a dot
  * (`connectors.list_granted_connections`); Claude Code turns characters an MCP tool name may not

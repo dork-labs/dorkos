@@ -14,7 +14,12 @@ import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
 import type { SeatReport } from '../handoff/seat-report.js';
-import { noteChatHeardOutsider, resetOutsiderTurns } from '../../session/origin/outsider-turns.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
+import { resolveOwnFolderOpen } from '../../runtimes/claude-code/folder-settings/own-folder-open.js';
+import { turnBoundsOf } from '../limits/teammate-turn.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -22,6 +27,38 @@ import {
   type RecordedTurn,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
+
+// The spin-off's own marks, as `marksOf` would read them. Since DOR-3440 the only mark that
+// holds is a Wi-Fi sign-in's (`outsider`); reading outside words alone marks nothing.
+const spinOffMarks = vi.hoisted(() => new Map<string, { outsider?: true }>());
+vi.mock('../../core/turn-power/turn-levels.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../core/turn-power/turn-levels.js')>();
+  const { ceilingCarrying } = await import('../../core/turn-power/turn-marks.js');
+  return {
+    ...real,
+    marksOf: (sessionId: string | null | undefined, agentPath: string | undefined) =>
+      (sessionId && spinOffMarks.get(sessionId)) || real.marksOf(sessionId, agentPath),
+    markedBoundOf: (sessionId: string | null | undefined, agentPath: string | undefined) => {
+      const held = sessionId ? spinOffMarks.get(sessionId) : undefined;
+      return held ? ceilingCarrying(held) : real.markedBoundOf(sessionId, agentPath);
+    },
+  };
+});
+
+// Bo's own level, set to Full by a person, so the one thing that can keep the seat's own folder
+// closed in these checks is a mark (`resolveOwnFolderOpen`). Only while a check asks for it.
+const boAtFull = vi.hoisted(() => ({ on: false }));
+vi.mock('../../session/resolution/resolve-session-defaults.js', async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import('../../session/resolution/resolve-session-defaults.js')>();
+  return {
+    ...real,
+    readAgentExecutionDefaults: async (home: string) =>
+      boAtFull.on && home === '/agents/bo'
+        ? { filesAndCommands: 'autonomy' }
+        : real.readAgentExecutionDefaults(home),
+  };
+});
 
 vi.mock('../../core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../core/auth/index.js')>()),
@@ -70,6 +107,7 @@ function asyncRunner(script: Script): ScriptedTurnRunner & { maxLive: () => numb
         ...(request.permissionCeiling !== undefined
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
+        ...(request.carriedOutsider ? { carriedOutsider: request.carriedOutsider } : {}),
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
@@ -250,30 +288,78 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
     expect(head.split('\n')[0]).toContain('DorkOS: the person approved');
   });
 
-  it('a spin-off that read an outsider’s words wakes the seat marked and capped', async () => {
+  /**
+   * Run the woken seat turn's bounds through the real turn record, as the runner sends them
+   * (`turnBoundsOf`), and ask whether that turn may open Bo's own folder setup: a raise.
+   */
+  async function seatMayRaise(turn: RecordedTurn, seatSession: string): Promise<boolean> {
+    const runtime = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage(): AsyncGenerator<StreamEvent> {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'bypassPermissions'
+    );
+    const opts = turnBoundsOf({
+      additionalDirectories: [],
+      ...(turn.permissionCeiling !== undefined
+        ? { permissionCeiling: turn.permissionCeiling }
+        : {}),
+      ...(turn.carriedOutsider ? { carriedOutsider: turn.carriedOutsider } : {}),
+    });
+    for await (const _event of runtime.sendMessage(seatSession, 'the report', opts)) {
+      // drained: the record is what is under test
+    }
+    boAtFull.on = true;
+    try {
+      return await resolveOwnFolderOpen({
+        home: '/agents/bo',
+        turnMode: 'bypassPermissions',
+        session: {},
+        sessionId: seatSession,
+      });
+    } finally {
+      boAtFull.on = false;
+    }
+  }
+
+  // The mark travels with the report (Security on DOR-3561), as a mark and not a ceiling: since
+  // DOR-3440 a mark lowers nothing, but it still keeps a turn from a raise.
+  it('a spin-off whose turn carries an outsider mark wakes the seat marked, refused a raise, uncapped', async () => {
     const seatId = await seat();
-    resetOutsiderTurns();
-    noteChatHeardOutsider('spin-off-1');
+    spinOffMarks.set('spin-off-1', { outsider: true });
     try {
       service.handoffs.reports.deliver(seatId, report('read a web page'));
       await settle();
     } finally {
-      resetOutsiderTurns();
+      spinOffMarks.clear();
     }
 
     const turn = reportTurns()[0]!;
     expect(turn.externalAuthor).toBe(true);
-    expect(turn.permissionCeiling).toBeDefined();
+    expect(turn.carriedOutsider).toBe(true);
+    // No cap: the seat keeps its level for everything else.
+    expect(turn.permissionCeiling).toBeUndefined();
+    // Refused a raise, and only because of the carried mark: the same turn without it may.
+    expect(await seatMayRaise(turn, 'seat-marked')).toBe(false);
+    const { carriedOutsider: _dropped, ...unmarked } = turn;
+    expect(await seatMayRaise(unmarked, 'seat-mark-dropped')).toBe(true);
   });
 
-  it('a clean spin-off wakes the seat unmarked', async () => {
+  it('a clean spin-off wakes the seat unmarked, and it may raise', async () => {
     const seatId = await seat();
-    resetOutsiderTurns();
+    spinOffMarks.clear();
 
     service.handoffs.reports.deliver(seatId, report('clean'));
     await settle();
 
-    expect(reportTurns()[0]!.externalAuthor).toBe(false);
+    const turn = reportTurns()[0]!;
+    expect(turn.externalAuthor).toBe(false);
+    expect(turn.carriedOutsider).toBeUndefined();
+    expect(await seatMayRaise(turn, 'seat-clean')).toBe(true);
   });
 
   it('fences the report as data, so it cannot close its own fence', async () => {

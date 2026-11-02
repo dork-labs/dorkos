@@ -51,7 +51,6 @@ async function decide(
     permissionMode: PermissionModeId;
     turnPermissionCeiling?: TurnPermissionCeiling;
     backgroundPermissionCeiling?: TurnPermissionCeiling;
-    teammateTier?: { roomId: string | null };
   },
   input: HookInput,
   resolveIdentity: () => Promise<unknown> = async () => IDENTITY
@@ -184,13 +183,6 @@ describe('the Never ask hook', () => {
       }
     );
     expect(await broken(call('mcp__dorkos__accounts_usage', {}), 'tool-1', signal)).toEqual({});
-  });
-
-  it('says nothing on a teammate’s turn, whatever the tool', async () => {
-    const session = { ...NEVER_ASK, teammateTier: { roomId: 'r1' } };
-    expect(await decide(session, call('mcp__dorkos__read_room_history', { roomId: 'r1' }))).toEqual(
-      {}
-    );
   });
 
   it('says nothing when a ceiling holds a Never ask chat to a mode that asks', async () => {

@@ -498,7 +498,7 @@ describe('create_extension handler', () => {
     const emit = vi.fn();
     const handler = createCreateExtensionHandler(
       { ...createDeps(manager), activityService: { emit } as unknown as ActivityService },
-      () => ({ agentPath: '/tmp/agents/nb' })
+      () => ({ agentPath: '/tmp/agents/nb', chosenFull: true })
     );
 
     await handler({ name: 'new-ext' });

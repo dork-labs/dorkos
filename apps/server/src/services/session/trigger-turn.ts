@@ -592,6 +592,8 @@ export interface TriggerTurnOpts {
   permissionCeiling?: TurnPermissionCeiling;
   /** The ceiling is a continuation's hold; see `MessageOpts.continuationHold`. */
   continuationHold?: true;
+  /** A mark carried on from work the turn continues or was started by; see `MessageOpts.carriedMarks`. */
+  carriedMarks?: MessageOpts['carriedMarks'];
   /**
    * The dispatcher's id for this message, handed to the runtime so a `result`
    * can be correlated back to the message that caused it.
@@ -998,6 +1000,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
           ? { permissionCeiling: opts.permissionCeiling }
           : {}),
         ...(opts.continuationHold ? { continuationHold: true as const } : {}),
+        ...(opts.carriedMarks?.outsider === true
+          ? { carriedMarks: { outsider: true as const } }
+          : {}),
         ...(dispatchHold !== undefined ? { dispatchHold } : {}),
       });
     let source: AsyncIterable<StreamEvent>;

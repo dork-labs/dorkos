@@ -36,6 +36,15 @@ import type { CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityHandlerContext } from '../core/capabilities/registry.js';
 import { getMemoryProvider } from './index.js';
 import { marksOf } from '../core/turn-power/turn-levels.js';
+import { roomTurnReadOutsideWords } from '../core/turn-power/outside-words.js';
+import { runtimeRegistry } from '../core/runtime-registry.js';
+
+/** The launch origins of a chat somebody from off this machine started. */
+const OUTSIDE_LAUNCH_ORIGINS: ReadonlySet<string> = new Set([
+  'relay-binding',
+  'outside-sender',
+  'connector-event',
+]);
 import { MEMORY_READ_TOOL_NAME, MEMORY_WRITE_TOOL_NAME } from './tool-names.js';
 
 // The tool names live in a leaf module so the tool lists can import them
@@ -133,21 +142,23 @@ function provenanceFor(deps: CapabilityDeps, context: CapabilityHandlerContext):
 }
 
 /**
- * Whether the turn making this call read words from outside the owner's
- * circle (spec `trusted-by-default-flip` §4.7): a stranger's message, one
- * another agent passed on, or one DorkOS could not vouch for.
- *
- * **From the turn's own record, never from the model**, like the rest of the
- * stamp. The calling session's latest turn answers when this process recorded
- * one. A caller with no session (Codex and OpenCode over the external server)
- * or one whose session has no record is read through its agent instead: any
- * turn of that agent running right now that read an outsider's words marks the
- * note, which can over-mark and never under-marks the turn actually calling.
+ * Whether the note's stamp says it came from outside the owner's circle: a chat a stranger
+ * started, a room turn answering one, or a turn held for who was calling. A stamp only: it lowers nothing (DOR-3440). Read
+ * from what the server keeps, never from the model.
  *
  * @param context - The invocation: its verified session and identity.
  */
 function readsOutsiderWords(context: CapabilityHandlerContext): boolean {
-  return marksOf(context.sessionId, context.identity?.agentPath).outsider === true;
+  if (marksOf(context.sessionId, context.identity?.agentPath).outsider === true) return true;
+  if (!context.sessionId) return false;
+  if (roomTurnReadOutsideWords(context.sessionId)) return true;
+  try {
+    return OUTSIDE_LAUNCH_ORIGINS.has(
+      runtimeRegistry.getSessionLaunchOrigin(context.sessionId) ?? ''
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**

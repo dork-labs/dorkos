@@ -142,9 +142,9 @@ export function fullPersonSettingRefusal(settings: readonly string[]): string {
  * What a marked turn in a chat set to Full is told when it tries to loosen a permission, or to
  * change a setting only a person may change (DOR-3417).
  */
-export const MARKED_FULL_PERMISSION_REFUSAL =
-  "This turn read words from outside your team, so it can't loosen a permission or change a " +
-  'setting only a person may change. Nobody was asked. A person can change it in Settings.';
+export const FULL_PERMISSION_REFUSAL =
+  "An agent can't loosen a permission or change a setting only a person may change. Nobody was " +
+  'asked. A person can change it in Settings.';
 
 /** Where the gate reads the two halves of a permission from. */
 export interface PermissionGateSources {
@@ -485,10 +485,10 @@ export async function resolveCallPermission(request: {
       ...(chat ? { sessionId: chat } : {}),
     });
   };
-  // A person's setting (`config_patch` reaching past its own area) is decided below, for marked and
-  // unmarked turns alike, so its refusal names the setting (DOR-3426).
-  if (marked && full && action.alwaysAsksForInput?.(request.input) === true) {
-    return keeperRefused(MARKED_FULL_PERMISSION_REFUSAL);
+  // A person's setting (`config_patch` reaching past its own area) is decided below, so its
+  // refusal names the setting (DOR-3426). Marked or not (DOR-3440): Full asks nobody.
+  if (full && action.alwaysAsksForInput?.(request.input) === true) {
+    return keeperRefused(FULL_PERMISSION_REFUSAL);
   }
   if (areas.length === 0) {
     // An action with no area that a marked turn must still ask about (DOR-3390): a card, filed
@@ -521,6 +521,10 @@ export async function resolveCallPermission(request: {
     };
   }
 
+  // The Full preset asks nobody either (`full` above is a chat set to Full).
+  if (config.preset === 'full' && action.alwaysAsksForInput?.(request.input) === true) {
+    return keeperRefused(FULL_PERMISSION_REFUSAL);
+  }
   // DOR-3426: a setting only a person may change (an area past the action's own, `config_patch`
   // reaching `OPERATOR_ONLY_STAKES`) is refused at Full in EVERY turn, marked or not: the chat set
   // to Full, or the Full preset. Full asks nobody, and a person's setting is a keeper, so a card

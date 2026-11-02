@@ -38,11 +38,10 @@
  *
  * - the send names no mode of its own (a schedule's, a new chat's seed) and is
  *   not unattended: schedules are never raised (DOR-3153);
- * - the turn carries no outsider or teammate mark and is not held to the
- *   runtime's default; a plain level ceiling (another of the owner's agents)
- *   still holds the raised turn down;
+ * - the turn is not held to the runtime's default (a Wi-Fi sign-in's) and is no
+ *   teammate's;
  * - the chat follows its agent (`chat-rise-facts.ts`): a person never set its
- *   mode, nothing outside launched or marked it, and no stranger reached it;
+ *   mode. Where its messages came from does not count (DOR-3440);
  * - its stored mode is not one a person picks on purpose (Plan, Never ask), it
  *   is not on another computer, and its agent is not one kept as it is;
  * - the turn's agent was found by identity, not only by an enclosing folder;
@@ -89,7 +88,6 @@ import {
 } from '../../session/resolution/agent-launch-level.js';
 import { isChosenMode, isKept } from '../permissions/existing-chats-raise.js';
 import { chatRiseFacts } from './chat-rise-facts.js';
-import { marksForTurn } from './turn-marks.js';
 import { logger } from '../../../lib/logger.js';
 
 /** Chats on another computer, which this one cannot vouch for. */
@@ -238,18 +236,10 @@ async function agentOfTurn(
   return resolveLevelAgent(cwd, opts, recorded);
 }
 
-/**
- * Whether the turn is held or reads outside words in a room: a stranger's (the runtime's
- * default), a teammate's chain, or a room line in view. A turn our own agent's marked post or
- * message started still rises (DOR-3390): its mark gates the risky actions, not its level.
- */
+/** Whether the turn is held: only a Wi-Fi sign-in's (the runtime's default) holds one. */
 function turnIsMarked(opts: MessageOpts | undefined): boolean {
   const ceiling = opts?.permissionCeiling;
-  if (ceiling !== undefined && ceilingHoldsForOutsider(ceiling)) return true;
-  if (opts?.teammate === true || opts?.roomTurn?.teammate === true) return true;
-  // A stranger's line in view keeps the chat where it is, as before: it is read first-hand.
-  if (opts?.roomTurn?.outsiderInView === true) return true;
-  return marksForTurn(opts).teammate !== undefined;
+  return ceiling !== undefined && ceilingHoldsForOutsider(ceiling);
 }
 
 /**

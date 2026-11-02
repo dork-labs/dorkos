@@ -7,12 +7,15 @@
  *
  * @module server/services/rooms/room-trigger/run-turn
  */
-import { isOwnCircle, posterCapsFor, type OwnCircle } from '../limits/own-circle.js';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome, type TriggerTarget } from '../room-claims.js';
-import { ceilingForEntries, isEntryAuthorExternal } from '../limits/turn-ceiling.js';
+import {
+  answersUntrustedText,
+  ceilingForEntries,
+  isEntryAuthorExternal,
+} from '../limits/turn-ceiling.js';
 import { teammateOf } from '../limits/space-teammates.js';
 import { turnRefusalOf } from '../turn-guards/paused-turn.js';
 import { buildRoomContext } from '../room-context.js';
@@ -88,19 +91,7 @@ export async function runOneInDispatch(
     });
     // A space's local copy, where every message nobody vouched for is a teammate's (DOR-2955).
     const inSpaceRoom = self.deps.isSpaceRoom?.(room.id) === true;
-    // Marks, not levels, between the owner's own agents (DOR-3107): decided on
-    // every turn, and each poster's own cap read ahead of the ceiling.
     const answered = target.answers ?? [entry];
-    const ownCircle = isOwnCircle(turnContext.context, room.id, {
-      inSpaceRoom,
-      bridged: self.deps.bridgedFraming(room.id) !== null,
-    });
-    const circle: OwnCircle = ownCircle
-      ? {
-          ownCircle,
-          posterCap: await posterCapsFor(self.deps.authors, answered, self.deps.posterLevel),
-        }
-      : { ownCircle };
     // The seat this turn runs on: moved first when its transcript expired or
     // its account is nearly out, and carrying a move's one-shot launch.
     const launch = await prepareSeat(self, room, entry, target);
@@ -117,26 +108,16 @@ export async function runOneInDispatch(
       sessionId: target.sessionId,
       ...launch,
       entry,
-      // **Who wrote it, as a trust boundary** — see `RoomTurnRequest`. Read
-      // off the author's stored key, and read HERE because this is where the
-      // registry is.
-      //
-      // The missing-record case is spelled out rather than folded into a
-      // `?? ''` default, because `authorOrigin('')` answers `'local'` — an
-      // empty string does not start with the external prefix — and that is
-      // the permissive direction. An author this dispatcher cannot resolve is
-      // treated as external: losing the operator's power level for one turn
-      // costs a prompt, while reading an unknown author as local would hand
-      // it out on the strength of a failed lookup.
-      //
       // Over EVERY message the turn answers: a gathered burst that mixes a
       // stranger and a person is external if any author is.
-      externalAuthor: (target.answers ?? [entry]).some((answered) =>
-        isEntryAuthorExternal(self.deps.authors, answered.authorId)
+      externalAuthor: answered.some((one) =>
+        isEntryAuthorExternal(self.deps.authors, one.authorId)
       ),
-      // And the turn itself is held to the strictest of its senders' levels,
-      // new conversation or not — see `RoomTurnRequest.permissionCeiling`.
-      ...ceilingForEntries(self.deps.authors, answered, inSpaceRoom, room.id, circle),
+      // Only a Wi-Fi sign-in's post or a teammate's bounds the turn (`turn-ceiling.ts`).
+      ...ceilingForEntries(self.deps.authors, answered, inSpaceRoom, room.id),
+      ...(answersUntrustedText(self.deps.authors, answered, room.id)
+        ? { untrustedText: true as const }
+        : {}),
       // And whether any of them is a teammate's — a space member who is not
       // the owner — which takes away asking and every room but this one
       // (DOR-2955).

@@ -69,7 +69,6 @@ import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import type { RoomTurnRequest } from '../../services/rooms/room-turn-port.js';
 import { setEntryMarksStore } from '../../services/core/turn-power/turn-levels.js';
 import { createEntryMarksStore } from '../../services/rooms/limits/entry-marks-store.js';
-import { ceilingForEntry, outsiderInViewOf } from '../../services/rooms/limits/turn-ceiling.js';
 
 const target = swappableServer();
 const server = target.server;
@@ -319,24 +318,6 @@ describe('replying as the person', () => {
     );
   });
 
-  it('holds an agent the reply wakes to the runtime default, unlike a post typed in the room', async () => {
-    service.post(roomId, { authorId: personId, text: '@ana typed in the room' });
-    await service.triggersIdle();
-    const typed = turns.find((t) => t.prompt.includes('typed in the room'));
-    expect(typed).toBeDefined();
-    expect(typed!.permissionCeiling).toBeUndefined();
-
-    const res = await request(server)
-      .post(`${base()}/replies`)
-      .set(APP)
-      .send({ text: '@ana sent from the mini app' });
-    expect(res.status).toBe(201);
-    await service.triggersIdle();
-    const woken = turns.find((t) => t.prompt.includes('sent from the mini app'));
-    expect(woken).toBeDefined();
-    expect(woken!.permissionCeiling).toBe('runtime-default');
-  });
-
   it('keeps the outsider mark on the reply’s row, so it outlives a restart', async () => {
     const res = await request(server).post(`${base()}/replies`).set(APP).send({ text: 'kept' });
     expect(res.status).toBe(201);
@@ -372,39 +353,6 @@ describe('replying as the person', () => {
       .send({ text: 'at the computer' });
     expect(here.status).toBe(201);
     expect(heldOf(here.body.id)).toBe(false);
-  });
-
-  it('after a restart, a person post whose row carries the mark still wakes agents capped', () => {
-    // No level kept in this process: only the row says what the post carried.
-    const typed = service.post(roomId, { authorId: personId, text: 'from before a restart' });
-    const unmarked = ceilingForEntry(service.authorRegistry, typed, false, roomId);
-    expect(unmarked).toEqual({});
-    createEntryMarksStore(db).write(roomId, typed.id, { outsider: true });
-    expect(ceilingForEntry(service.authorRegistry, typed, false, roomId)).toEqual({
-      permissionCeiling: 'runtime-default',
-    });
-  });
-
-  it('marks a later turn that has the reply in view, and not one with only typed lines', async () => {
-    const res = await request(server).post(`${base()}/replies`).set(APP).send({ text: 'in view' });
-    const reply = {
-      id: res.body.id as string,
-      kind: 'post',
-      authorIsPerson: true,
-      authorOrigin: 'local',
-    };
-    const typed = service.post(roomId, { authorId: personId, text: 'typed line' });
-    const typedLine = { id: typed.id, kind: 'post', authorIsPerson: true, authorOrigin: 'local' };
-
-    expect(
-      outsiderInViewOf(
-        { pending: [typedLine], gathered: [reply], channelTail: [] } as never,
-        roomId
-      )
-    ).toEqual({ outsiderInView: true });
-    expect(
-      outsiderInViewOf({ pending: [typedLine], gathered: [], channelTail: [] } as never, roomId)
-    ).toEqual({});
   });
 
   it('never lets the body name an author', async () => {

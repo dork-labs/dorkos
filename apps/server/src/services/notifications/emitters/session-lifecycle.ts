@@ -37,7 +37,7 @@
 import { isChatStartedTurn } from '../../session/chat-messages/chat-started-turns.js';
 import { isBeatTurn } from '../../heartbeats/beat-turns.js';
 import { wakeAgent } from '../../heartbeats/event-wakes.js';
-import { hasMarks, startedByOutsider } from '../../core/turn-power/turn-marks.js';
+import { hasMarks } from '../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../core/turn-power/turn-levels.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -325,14 +325,10 @@ export function watchSessionLifecycle(): () => void {
       // A turn of its own failed outside a beat: its beat looks, once a day
       // per chat (spec `heartbeats` §3.3).
       const failedAgentId = resolveAgentIdForPath(cwd);
-      // A stranger's failed turn is not the agent's to chase (§3.3), and nor is
-      // any turn that carried a mark (DOR-3036): a teammate-marked hop refused
-      // at the seam must not come back as an unmarked beat. Fails closed.
-      if (
-        failedAgentId &&
-        !startedByOutsider(sessionId) &&
-        !hasMarks(marksOf(sessionId, undefined))
-      ) {
+      // A turn that carried a mark is not the agent's to chase (DOR-3036): a
+      // teammate-marked hop refused at the seam must not come back as an
+      // unmarked beat. Fails closed.
+      if (failedAgentId && !hasMarks(marksOf(sessionId, undefined))) {
         wakeAgent(failedAgentId, { type: 'turn-failed', eventId: sessionId, source: sessionId });
       }
       // A new episode begins, and this is the only place its identity is

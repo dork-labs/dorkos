@@ -21,7 +21,11 @@ import { noteNonBeatMessage } from '../../heartbeats/beat-turns.js';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
-import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import type {
+  DirectoryGrant,
+  MessageOpts,
+  TurnPermissionCeiling,
+} from '@dorkos/shared/agent-runtime';
 import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
@@ -44,19 +48,7 @@ import {
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logError, logger } from '../../../lib/logger.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
-import {
-  dispatchMessage,
-  onDispatchLifecycle,
-  type MessageDispatchResult,
-} from '../message-dispatcher.js';
-import {
-  forgetMessageOrigin,
-  holdTurnOriginFor,
-  noteHeldMessage,
-  messageDispatched,
-  messageTurnStarted,
-} from '../origin/outsider-turns.js';
-import { ceilingHoldsToDefault } from '../message-dispatcher/held-to-default.js';
+import { dispatchMessage, type MessageDispatchResult } from '../message-dispatcher.js';
 import { getOrCreateProjector } from '../session-state-projector.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
@@ -132,6 +124,8 @@ export interface DispatchSessionMessageOpts {
   permissionCeiling?: TurnPermissionCeiling;
   /** The ceiling is a continuation's hold; see `MessageOpts.continuationHold`. */
   continuationHold?: true;
+  /** A mark carried on from the caller's turn. Passed straight through; see `MessageOpts.carriedMarks`. */
+  carriedMarks?: MessageOpts['carriedMarks'];
   /**
    * Who chose where this chat runs, when a caller did (DOR-3644): the person,
    * an agent, or a caller DorkOS cannot name. Anyone but the person is held to
@@ -430,24 +424,6 @@ async function refusedLaunchAccount(opts: {
   }
 }
 
-/** Whether {@link followTurnStarts} subscribed yet. */
-let followingTurnStarts = false;
-
-/**
- * Apply a message's held turn origin when its turn starts, and forget it when
- * it leaves the queue without running (`session/origin/outsider-turns.ts`).
- * Subscribed on the first launch rather than at import, so this module never
- * reaches the dispatcher while the import graph is still loading.
- */
-function followTurnStarts(): void {
-  if (followingTurnStarts) return;
-  followingTurnStarts = true;
-  onDispatchLifecycle((event) => {
-    if (event.phase === 'started') messageTurnStarted(event.sessionId, event.messageId);
-    else forgetMessageOrigin(event.messageId);
-  });
-}
-
 async function launchSessionMessage(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
@@ -459,8 +435,6 @@ async function launchSessionMessage(
     opts.origin.kind === 'agent-launch' && launchedBy !== undefined
       ? { ...opts.origin, launchedBy }
       : opts.origin;
-  followTurnStarts();
-  // Minted here when the caller did not, so who sent it can wait for its turn.
   const messageId = opts.messageId ?? randomUUID();
   const {
     content,
@@ -700,18 +674,14 @@ async function launchSessionMessage(
   //
   // The caller's `origin` is passed through untouched: which power it unlocks is
   // `permissionSeedForOrigin`'s decision, never this module's (DOR-2105).
-  // Who sent it counts from when its turn starts, not now: it may queue behind
-  // a turn somebody else started (`session/origin/outsider-turns.ts`).
-  const isNewSession = await holdTurnOriginFor(messageId, () =>
-    runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, origin, verifiedAgentPath)
+  const isNewSession = await runtimeRegistry.persistSessionRuntime(
+    sessionId,
+    runtimeType,
+    origin,
+    verifiedAgentPath
   );
   if (isNewSession && launchedBy !== undefined) {
     auditLaunched(sessionId, effectiveCwd ?? DEFAULT_CWD, launchedBy);
-  }
-  // A message held to the default (from Wi-Fi) counts as an outsider's (DOR-3037).
-  // A continuation's hold does not: it carries no new words (DOR-3203).
-  if (ceilingHoldsToDefault(opts.permissionCeiling) && !opts.continuationHold) {
-    noteHeldMessage(messageId);
   }
   // Fire the anonymous `session_created` usage event exactly once, on the write
   // that binds the session (no-op unless usage telemetry is on).
@@ -817,6 +787,9 @@ async function launchSessionMessage(
         ? { permissionCeiling: opts.permissionCeiling }
         : {}),
       ...(opts.continuationHold ? { continuationHold: true as const } : {}),
+      ...(opts.carriedMarks?.outsider === true
+        ? { carriedMarks: { outsider: true as const } }
+        : {}),
       projector,
       runtime,
       onError: (err) => {
@@ -835,10 +808,6 @@ async function launchSessionMessage(
     })
   );
 
-  messageDispatched(sessionId, messageId, {
-    accepted: result.accepted,
-    applied: result.outcome.applied,
-  });
   if (result.queued) {
     logger.info('[POST /messages] queued behind the running turn', {
       sessionId,

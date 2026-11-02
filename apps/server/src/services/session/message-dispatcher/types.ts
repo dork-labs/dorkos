@@ -237,6 +237,8 @@ export interface DispatchMessageOpts {
   permissionCeiling?: TurnPermissionCeiling;
   /** The ceiling is a continuation's hold. Passed straight through; see `MessageOpts.continuationHold`. */
   continuationHold?: true;
+  /** A mark carried on from continued work. Passed straight through; see `MessageOpts.carriedMarks`. */
+  carriedMarks?: MessageOpts['carriedMarks'];
   /** The projector for `sessionId` (keyed by the stable client-facing id). */
   projector: SessionStateProjector;
   /** The runtime this session resolves to. */
@@ -473,6 +475,7 @@ export interface DispatchPlan {
     | 'newSessionPermissionMode'
     | 'permissionCeiling'
     | 'continuationHold'
+    | 'carriedMarks'
     | 'stallTimeoutMs'
     | 'onError'
     | 'onSettled'

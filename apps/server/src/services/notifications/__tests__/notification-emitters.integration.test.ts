@@ -13,7 +13,6 @@ import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
 import { registerBeatTurn, resetBeatTurns } from '../../heartbeats/beat-turns.js';
 import { EventWakes } from '../../heartbeats/event-wakes.js';
 import { systemClock } from '../../heartbeats/beat-scheduler.js';
-import { noteTurnOrigin, resetOutsiderTurns } from '../../session/origin/outsider-turns.js';
 import { createRelayNotifyUserHandler } from '../../runtimes/claude-code/mcp-tools/relay-notify-tools.js';
 import {
   clearTestHomes,
@@ -563,7 +562,7 @@ describe('a session that errors, and clears', () => {
 });
 
 describe('a turn of its own that fails outside a beat', () => {
-  it("wakes the agent's beat, but never for a turn a stranger started", async () => {
+  it("wakes the agent's beat, but never for a marked turn", async () => {
     vi.useFakeTimers();
     const woken: string[] = [];
     const hub = new EventWakes({
@@ -578,17 +577,14 @@ describe('a turn of its own that fails outside a beat', () => {
     hub.install();
     try {
       unsubscribes.push(watchSessionLifecycle());
-      noteTurnOrigin('sess-bridged', { kind: 'relay-binding' });
       const fail = (id: string) => {
         const projector = new SessionStateProjector(id);
         projector.cwd = '/Users/dev/acme';
         projector.ingest({ type: 'status_change', status: { lifecycle: 'error' } } as never);
         vi.advanceTimersByTime(60_000);
       };
-      fail('sess-bridged');
-      expect(woken).toEqual([]);
-      // DOR-3036: a teammate-marked hop refused before it ran (a Codex chat, say) is a marked
-      // turn's failure, never the agent's own to chase.
+      // DOR-3036: a teammate-marked hop's failure is a marked turn's, never the agent's own to
+      // chase.
       const codex = recordTurnLevels(
         {
           type: 'codex',
@@ -607,14 +603,13 @@ describe('a turn of its own that fails outside a beat', () => {
           teammate: [{ roomId: 'space', authorId: 'priya' }],
         },
       });
-      await expect(marked.next()).rejects.toThrow();
+      await marked.next();
       fail('sess-teammate-hop');
       expect(woken).toEqual([]);
       fail('sess-own');
       expect(woken).toEqual([ACME_AGENT_ID]);
     } finally {
       hub.uninstall();
-      resetOutsiderTurns();
       vi.useRealTimers();
     }
   });

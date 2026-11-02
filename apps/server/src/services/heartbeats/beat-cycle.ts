@@ -49,6 +49,7 @@ import { decideBeat, type BeatTriagePort } from './triage/beat-triage.js';
 import type { BeatAgent, BeatOutboxPort, BeatWake, FinishedBeat } from './beat-runner.js';
 import {
   ceilingCarrying,
+  marksHold,
   mergeMarks,
   NO_MARKS,
   type TurnMarks,
@@ -361,12 +362,12 @@ export async function runTurn(
   // (DOR-3036): a stranger's words, or a teammate's, do not come back as the agent's own.
   // So does any gathered change a marked turn wrote (another agent's post a teammate's chain
   // reached): the beat then runs as a marked turn, tier and limit included.
-  const carried = ceilingCarrying(
-    ctx.changes.reduce(
-      (marks, change) => (change.marks ? mergeMarks(marks, change.marks) : marks),
-      deps.commitments.openMarks?.(agent.id) ?? NO_MARKS
-    )
+  // A Wi-Fi hold among them rides as a mark (DOR-3561): the beat keeps its level, refused raises.
+  const read = ctx.changes.reduce(
+    (marks, change) => (change.marks ? mergeMarks(marks, change.marks) : marks),
+    deps.commitments.openMarks?.(agent.id) ?? NO_MARKS
   );
+  const carried = ceilingCarrying(read);
   const launched = await deps.launcher.launch({
     sessionId: chat.sessionId,
     messageId,
@@ -375,6 +376,7 @@ export async function runTurn(
     content,
     ...(seat.kind === 'move' ? { account: seat.accountId } : {}),
     ...(carried !== undefined ? { permissionCeiling: carried } : {}),
+    ...(marksHold(read) ? { carriedMarks: { outsider: true as const } } : {}),
     onSettled: (outcome, refusal) => settle(outcome, refusal),
   });
   if (launched.status !== 'started') return refused(deps, ctx, track, launched);

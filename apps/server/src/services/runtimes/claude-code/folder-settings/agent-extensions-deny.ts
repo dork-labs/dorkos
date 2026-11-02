@@ -35,8 +35,9 @@ import type { ExtensionsConfig } from '../../../extensions/extension-enable-reso
 import { logger } from '../../../../lib/logger.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { configManager } from '../../../core/config-manager.js';
-import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { heldToACeiling } from '../turn-permission.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { writeDenyRules } from '../messaging/directory-grants.js';
 
 /** The real path of `target`, or `undefined` when it does not exist. */
@@ -108,10 +109,11 @@ export function otherAgentsExtensionsDenyRules(
 
 /**
  * The home whose own extensions this launch may write: the turn's agent's,
- * unless the turn read a stranger's words (`markedBoundOf`, which counts a
- * chat a stranger reached) or runs under a ceiling. Then its own mini apps
- * are denied like every other agent's, so a stranger cannot steer an edit
- * that path trust would run without a click.
+ * unless the turn runs under a ceiling or carries a mark that holds (a Wi-Fi
+ * sign-in's, `marksHold`). Then its own mini apps are denied like every other
+ * agent's: path trust runs those files without a click, so an edit there is a
+ * raise, which a mark still holds back (Security S1 on #3280). It lowers
+ * nothing else.
  *
  * @param session - The session's ceilings.
  * @param sessionId - The launching session.
@@ -124,7 +126,7 @@ export function ownExtensionsWritable(
   ownHome: string | undefined
 ): string | undefined {
   if (!ownHome || heldToACeiling(session)) return undefined;
-  return markedBoundOf(sessionId, ownHome) === undefined ? ownHome : undefined;
+  return marksHold(marksOf(sessionId, ownHome)) ? undefined : ownHome;
 }
 
 /**

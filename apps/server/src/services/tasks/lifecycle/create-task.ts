@@ -67,7 +67,7 @@ import {
 } from '../approvals/schedule-owner.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
-import { hasMarks, type TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { marksHold, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 
 /** The collaborators a create needs. Every one of them is required to get a task right. */
 export interface TaskLifecycleDeps {
@@ -293,7 +293,7 @@ export async function createScheduledTask(
   // install (ADR 261006-225605). Read once, so the park and the reply agree.
   // A marked turn's schedule always parks: words from outside the owner's circle must not come
   // back later as a run nobody marked (DOR-3036).
-  const marked = !trusted && options.originMarks !== undefined && hasMarks(options.originMarks);
+  const marked = !trusted && options.originMarks !== undefined && marksHold(options.originMarks);
   // A schedule runs as the agent it is filed under (DOR-3640 R1): an agent files
   // one only under itself or `global`, and only one under itself arms unasked.
   const callerAgentPath = options.callerAgentPath ?? options.proposal?.agentPath ?? undefined;

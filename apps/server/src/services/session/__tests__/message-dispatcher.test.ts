@@ -25,7 +25,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import type { Db } from '@dorkos/db';
 import { isDispatchId } from '@dorkos/shared/dispatch-id';
 
@@ -1246,6 +1248,67 @@ describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
       true,
       true,
     ]);
+
+    first.open();
+    await settle();
+  });
+
+  /** Record the running turn's level on this session, as the registry's wrapper would. */
+  async function recordRunningTurn(opts: Record<string, unknown>): Promise<void> {
+    const seam = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage(): AsyncGenerator<StreamEvent> {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'bypassPermissions'
+    );
+    for await (const _event of seam.sendMessage(session, 'long turn', opts)) {
+      // drained: the record is what the guard reads
+    }
+  }
+
+  // Red when: the carried-mark half of the guard in `dispatchMessage` is removed (Security M1 on
+  // #3280). A held agent's words over the API carry the hold as a mark, with no ceiling, so only
+  // that half keeps them out of an unmarked running turn in another of its chats.
+  it('queues a steer or stage that carries a Wi-Fi hold rather than join an unmarked turn (DOR-3561)', async () => {
+    withCapabilities({ supportsSteer: true, supportsContextStaging: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn(), quickTurn()]);
+    await send('long turn');
+    await settle();
+    await recordRunningTurn({});
+
+    const held = { carriedMarks: { outsider: true as const } };
+    const steer = await send('from a held chat', { disposition: 'steer', ...held });
+    const stage = await send('more from a held chat', { disposition: 'stage', ...held });
+
+    expect(steer.outcome).toMatchObject({ applied: 'queue', degradedBecause: 'not-steerable' });
+    expect(stage.outcome).toMatchObject({ applied: 'queue', degradedBecause: 'not-stageable' });
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+    expect(listQueuedMessages(session)).toHaveLength(2);
+
+    first.open();
+    await settle();
+  });
+
+  it('lets a steer that carries a Wi-Fi hold join a running turn that carries one too', async () => {
+    withCapabilities({ supportsSteer: true, supportsContextStaging: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+    await recordRunningTurn({ carriedMarks: { outsider: true } });
+
+    const steer = await send('from a held chat', {
+      disposition: 'steer',
+      carriedMarks: { outsider: true },
+    });
+
+    expect(steer.outcome).not.toMatchObject({ degradedBecause: 'not-steerable' });
+    expect(runtime.deliverIntoTurn).toHaveBeenCalledTimes(1);
 
     first.open();
     await settle();

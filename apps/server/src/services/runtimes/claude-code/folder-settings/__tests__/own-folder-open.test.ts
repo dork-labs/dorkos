@@ -21,10 +21,16 @@ vi.mock('../../../../session/resolution/resolve-session-defaults.js', () => ({
 }));
 const dork = vi.hoisted(() => ({ home: '' }));
 vi.mock('../../../../../lib/dork-home.js', () => ({ resolveDorkHome: () => dork.home }));
-const marks = vi.hoisted(() => ({ marked: false }));
+// The two ways a turn is kept out: a ceiling (`ownExtensionsWritable`) and a mark that
+// holds (`marksOf`, read through the real `marksHold`). A mark lowers nothing since
+// DOR-3440, but opening the agent's own setup is a raise it still holds back (#3280).
+const marks = vi.hoisted(() => ({ ceiling: false, outsider: false }));
 vi.mock('../agent-extensions-deny.js', () => ({
   ownExtensionsWritable: (_session: unknown, _id: string, home: string) =>
-    marks.marked ? undefined : home,
+    marks.ceiling ? undefined : home,
+}));
+vi.mock('../../../../core/turn-power/turn-levels.js', () => ({
+  marksOf: () => (marks.outsider ? { outsider: true } : {}),
 }));
 
 import fs from 'node:fs';
@@ -40,7 +46,6 @@ import {
 
 const turn = (over: Partial<OwnFolderTurn> = {}): OwnFolderTurn => ({
   home: '/agents/media',
-  teammate: false,
   turnMode: 'bypassPermissions',
   session: {},
   sessionId: 'chat-1',
@@ -51,7 +56,8 @@ const turn = (over: Partial<OwnFolderTurn> = {}): OwnFolderTurn => ({
 beforeEach(() => {
   level.own = 'autonomy';
   level.fail = false;
-  marks.marked = false;
+  marks.ceiling = false;
+  marks.outsider = false;
 });
 
 describe('resolveOwnFolderOpen', () => {
@@ -74,12 +80,16 @@ describe('resolveOwnFolderOpen', () => {
   });
 
   it('stays closed on a turn that read outside words', async () => {
-    marks.marked = true;
+    marks.outsider = true;
     expect(await resolveOwnFolderOpen(turn())).toBe(false);
   });
 
-  it("stays closed on a teammate's turn and with no agent home", async () => {
-    expect(await resolveOwnFolderOpen(turn({ teammate: true }))).toBe(false);
+  it('stays closed on a turn held to a ceiling', async () => {
+    marks.ceiling = true;
+    expect(await resolveOwnFolderOpen(turn())).toBe(false);
+  });
+
+  it('stays closed with no agent home', async () => {
     expect(await resolveOwnFolderOpen(turn({ home: undefined }))).toBe(false);
   });
 
@@ -183,5 +193,14 @@ describe('prepareOwnFolder (Security M1 and M2 on #3319)', () => {
     const { options, result } = await launch();
     expect(result.open).toBe(false);
     expect(denyOf(options)).toEqual([]);
+  });
+
+  it('stays closed and adds nothing on a marked turn at Full (Security, #3280)', async () => {
+    marks.outsider = true;
+    const { options, result } = await launch();
+    expect(result.open).toBe(false);
+    expect(result.chat.ownFolderOpen).toBe(false);
+    expect(denyOf(options)).toEqual([]);
+    expect((options.systemPrompt as { append: string }).append).toBe('base');
   });
 });

@@ -12,7 +12,7 @@ import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
 import type { ToolDocGates } from './tool-doc-gates.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
-import { buildAgentContextAppend, type AgentContextOptions } from '../../shared/agent-context.js';
+import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import type { AgentHome } from '../../../core/agent-identity/index.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import { buildCanvasContentCatalog, buildUiActionCatalog } from '../../shared/ui-tool-contract.js';
@@ -646,14 +646,13 @@ export interface SystemPromptAppend {
  *   is `loadsAgentToAgentTools`'s answer for THIS session — the same function
  *   and the same input `mcp-tools/index.ts` decides exposure with — so the
  *   prompt's "already in your tool list" is true whenever it says so
- *   (DOR-1337 / F8). Callers must not compute it themselves. `memory: false`
- *   leaves the agent's notes out, for a teammate's turn (DOR-2955).
+ *   (DOR-1337 / F8). Callers must not compute it themselves.
  */
 export async function buildSystemPromptAppend(
   home: AgentHome | undefined,
   cwd: string,
   toolConfig?: ToolDocGates,
-  options: { agentSession?: boolean; blockedAreaLines?: string } & AgentContextOptions = {}
+  options: { agentSession?: boolean; blockedAreaLines?: string } = {}
 ): Promise<SystemPromptAppend> {
   const agentSession = options.agentSession ?? false;
 
@@ -686,7 +685,7 @@ export async function buildSystemPromptAppend(
 
   // Runtime-neutral identity + env (async: reads files, but content is stable
   // between agent config changes)
-  const agentContext = await buildAgentContextAppend(home, cwd, options);
+  const agentContext = await buildAgentContextAppend(home, cwd);
 
   // 1. Static tool documentation — fully cacheable, never changes.
   //    The naming rule comes first, because every block after it is written in

@@ -36,9 +36,9 @@
  */
 import { armLateReplyCeiling } from './turn-guards/late-reply-ceiling.js';
 import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
-import { refuseTeammateTurnOn, roomTurnMarksOf, turnBoundsOf } from './limits/teammate-turn.js';
+import { roomTurnMarksOf, turnBoundsOf } from './limits/teammate-turn.js';
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
+import { noteRoomTurnWords } from '../core/turn-power/outside-words.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
@@ -69,7 +69,6 @@ import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // import there would load the dispatcher to raise a refusal it hands back to it.
 import { RoomTurnRuntimeGoneError, seatLaunchOf } from './room-turn-port.js';
 import { resolveTurnRuntimeType } from '../runtimes/shared/resolve-agent-runtime-type.js';
-import { configManager } from '../core/config-manager.js';
 import {
   dispatchMessage,
   getOrCreateProjector,
@@ -466,8 +465,6 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         throw new RoomTurnRuntimeGoneError(runtimeType, boundSessionId);
       }
       const runtime = runtimeRegistry.get(runtimeType);
-      // A teammate's turn runs only where it can be held to every bound (DOR-2955).
-      refuseTeammateTurnOn(request, runtimeType);
       // **The desk guard** (spec `agent-home-desk` §3.4, invariant I3, DOR-2356).
       // A room turn stands in its agent's home and nowhere else — never a room's
       // folder, never another agent's home or a copy of it. Asked before anything
@@ -827,6 +824,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // thrown: a `SQLITE_BUSY` on this one bookkeeping row must never fail a
       // turn or escape `run` (see the late write below for why).
       let mintedRowAtLaunch = false;
+      // A stamp on what this turn saves, not a limit on what it does (`outside-words.ts`).
+      noteRoomTurnWords(sessionId, request.externalAuthor === true);
       const recordSessionOwner = async (ownedId: string): Promise<boolean> => {
         try {
           return await runtimeRegistry.persistSessionRuntime(
@@ -926,8 +925,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           aheadOfMain: request.roomContext.files?.ahead ?? null,
           // A stranger's line it is shown but does not answer bounds no power,
           // and still marks what the turn saves or passes on (§4.7).
-          // And whether a teammate started it, which fences its DorkOS tools
-          // to this room (DOR-2955).
+          // And whether a teammate started it, for the space's monthly limit (DOR-2955).
           ...roomTurnMarksOf(request),
         },
         // Omitted, never passed as an empty string, when this room has no files.
@@ -949,10 +947,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // And the bound on THIS turn, from who wrote the message: applied by the
         // runtime on top of whatever the conversation is set to, and never
         // stored (spec `trusted-by-default-flip` §4).
-        // A teammate's turn also has nobody to ask (DOR-2955). And the folders
-        // placement granted THIS turn (invariant I5): the agent's copy of the
-        // room's files and the room's shared tree; none for a room without
-        // files, nor for a teammate's turn (DOR-2956).
+        // And the folders placement granted THIS turn (invariant I5): the agent's
+        // copy of the room's files and the room's shared tree; none for a room
+        // without files.
         ...turnBoundsOf(request),
         projector,
         runtime,

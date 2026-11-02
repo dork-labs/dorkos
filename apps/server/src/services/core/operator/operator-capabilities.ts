@@ -24,8 +24,11 @@ import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
 import { AgentRuntimeSchema, TraitsSchema } from '@dorkos/shared/mesh-schemas';
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
-import { NOPE_MAX_CHARS } from '@dorkos/shared/convention-files';
-import { AGENT_FILE_INPUTS, refuseOutsiderAgentFiles } from './agent-file-inputs.js';
+import {
+  AGENT_BOUNDARY_INPUTS,
+  AGENT_FILE_INPUTS,
+  refuseOutsiderAgentFiles,
+} from './agent-file-inputs.js';
 import { isSecretInputKey } from '@dorkos/shared/capabilities';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
@@ -589,27 +592,11 @@ export const operatorDomain: CapabilityDomain = {
       area: 'safety',
       input: z.object({
         ...agentSelectorSchema,
-        nopeContent: z
-          .string()
-          .max(NOPE_MAX_CHARS)
-          .optional()
-          .describe('Full NOPE.md content, replacing whatever is there now'),
-        // The mute, on the same gate as the rewrite because it is the STRONGER
-        // of the two: the file survives, and the agent is simply never given it
-        // (`runtimes/shared/agent-context.ts` skips the whole
-        // `<agent_safety_boundaries>` block on `conventions.nope !== true`).
-        // Leaving it on `update_agent` at tier `act` would have left a quieter
-        // door to the same outcome, which is the defect this split exists to
-        // close (DOR-1698).
-        enabled: z
-          .boolean()
-          .optional()
-          .describe(
-            'Whether the agent is given NOPE.md at all. false mutes the boundaries without ' +
-              'deleting them; true puts them back.'
-          ),
+        ...AGENT_BOUNDARY_INPUTS,
       }),
       output: z.unknown(),
+      // A person's limit (DOR-3440): at Full it is refused, since Full asks nobody.
+      alwaysAsksForInput: () => true,
       // The selector and the mute go on the card's SENTENCE; the boundary text
       // itself goes in `approvalDetailField` below, because a card sentence caps
       // every value at 80 characters and the whole point of this approval is

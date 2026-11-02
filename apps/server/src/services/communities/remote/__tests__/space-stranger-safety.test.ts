@@ -6,16 +6,14 @@
  * The other half of the walk — the turn request's `permissionCeiling` to the mode each runtime
  * runs at — is pinned by the runner and runtime tests of spec `trusted-by-default-flip` §4
  * (`rooms/__tests__/room-turn-runner.test.ts`, `runtimes/__tests__/turn-permission-ceiling.test.ts`).
- * Together they are the end-to-end pin: a stranger's mention arrives here carrying the
- * `'runtime-default'` ceiling (with read access beside it, since DOR-2955 holds a space member who
- * is not the owner to the teammate rules) and `externalAuthor: true`, which
+ * Together they are the end-to-end pin: a stranger's mention arrives here carrying their mark, for
+ * the space's monthly limit, which lowers nothing (DOR-3440), and `externalAuthor: true`, which
  * `permissionSeedForOrigin` reads as `'none'` for a new conversation's row.
  *
  * @module services/communities/remote/__tests__/space-stranger-safety
  */
 import type { CommunityEntry, CommunityRef } from '@dorkos/shared/community-adapter';
 import { describe, expect, it } from 'vitest';
-import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { authorOrigin } from '../../../rooms/author-registry.js';
 import {
   agentLookupFor,
@@ -35,17 +33,12 @@ import {
 } from '../remote-room-subscription-bridge.js';
 import type { RemoteWakeGate } from '../wake/wake-policy.js';
 
-/** A teammate's turn: a stranger's ceiling and read access, both at once (DOR-2955). */
-/** A teammate's ceiling: the runtime default and read access, which carries their mark (DOR-3036). */
-const TEAMMATE_CEILING = [
-  'runtime-default',
-  {
-    ...READ_ONLY_LEVEL,
-    teammate: [
-      expect.objectContaining({ roomId: expect.any(String), authorId: expect.any(String) }),
-    ],
-  },
-];
+/** A teammate's ceiling: their mark, for the space's monthly limit, which lowers nothing (DOR-3440). */
+const TEAMMATE_CEILING = {
+  asks: 'never',
+  reach: 'everything',
+  teammate: [expect.objectContaining({ roomId: expect.any(String), authorId: expect.any(String) })],
+};
 
 const REF = 'remote_space' as CommunityRef;
 const OWNER_MEMBER = 'remote-owner-member';
@@ -106,8 +99,6 @@ function space(gate?: RemoteWakeGate, runner?: ScriptedTurnRunner) {
     (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null),
     () => NOW
   );
-  // Every agent here runs where a teammate's turn can be held (DOR-2955).
-  bridge.useTeammateRuntimes(() => true);
   if (gate) bridge.useWakeGate(gate);
   const room = {
     communityRef: REF,

@@ -38,6 +38,24 @@ vi.mock('../../../core/config-manager.js', () => ({
   },
 }));
 
+// The agent that made it is at Full, so its edits run (`path-trust-edits.ts`).
+const agentLevel = vi.hoisted(() => ({ mode: 'bypassPermissions' }));
+vi.mock('../../../session/resolution/agent-launch-level.js', () => ({
+  resolveAgentLaunchLevel: async () => ({ mode: agentLevel.mode }),
+}));
+vi.mock('../../../core/runtime-registry.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../core/runtime-registry.js')>();
+  const { CLAUDE_CODE_CAPABILITIES } =
+    await import('../../../runtimes/claude-code/runtime-constants.js');
+  return {
+    ...original,
+    runtimeRegistry: {
+      getDefaultType: () => 'claude-code',
+      getAllCapabilities: () => ({ 'claude-code': CLAUDE_CODE_CAPABILITIES }),
+    },
+  };
+});
+
 // Login off: the chain's session gate lets every request through.
 vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../core/auth/session-gate.js')>()),
@@ -495,6 +513,42 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       await new Promise((r) => setTimeout(r, 600));
       expect(manager.getServerHandler(ID)).toBeNull();
       expect(sends.stopped).toContain(ID);
+    },
+    TEST_MS
+  );
+
+  // Purpose: a copy follows its agent's level on every load, Security's Must on #3280.
+  it(
+    'a lowered agent’s edit does not run on a reload by id, with no scan since the lowering',
+    async () => {
+      agentLevel.mode = 'bypassPermissions';
+      await install('v1');
+      await boot();
+      agentLevel.mode = 'default';
+      await install('v2');
+      await manager.reloadExtension(ID);
+      expect((await get(`/api/ext/${ID}/ping`)).body.version).not.toBe('v2');
+      agentLevel.mode = 'bypassPermissions';
+    },
+    TEST_MS
+  );
+
+  it(
+    'lowered, scanned, edited, raised, scanned: the edit stays held, and a new edit runs',
+    async () => {
+      agentLevel.mode = 'bypassPermissions';
+      await install('v1');
+      await boot();
+      agentLevel.mode = 'default';
+      await manager.reload();
+      await install('v2');
+      agentLevel.mode = 'bypassPermissions';
+      await manager.reload();
+      expect((await get(`/api/ext/${ID}/ping`)).body.version).not.toBe('v2');
+
+      await install('v3');
+      await manager.reload();
+      expect((await get(`/api/ext/${ID}/ping`)).body.version).toBe('v3');
     },
     TEST_MS
   );

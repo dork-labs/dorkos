@@ -10,9 +10,6 @@
  * The launch service is the edge: it is replaced so a start can be observed
  * without a runtime. Everything else is real, down to the table.
  */
-import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { resolveCeilingLevel } from '@dorkos/shared/permission-semantics';
-import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -177,11 +174,9 @@ describe('a start', () => {
         seedContext: `This chat was started by the Flow extension: ${INPUT.reason}`,
       },
       clientId: 'extension:flow',
-      // An extension's prompt is not the owner's words: it runs at the runtime
-      // default with the outsider mark (DOR-3036).
-      permissionCeiling: 'runtime-default',
       countsTowardLaunchCap: true,
     });
+    expect(launches[0]).not.toHaveProperty('permissionCeiling');
     expect(renamed).toEqual([
       { runtime: 'test-mode', sessionId, title: INPUT.title, cwd: DORKOS.root },
     ]);
@@ -194,16 +189,9 @@ describe('a start', () => {
     });
   });
 
-  it('adds a caller’s bound to the runtime default, so a looser one cannot lift it', async () => {
-    const full = { asks: 'never', reach: 'everything' } as const;
-    await service.start('flow', INPUT, 'ctx', { permissionCeiling: full });
-
-    const ceiling = launches[0]!.permissionCeiling as TurnPermissionCeiling;
-    expect(ceiling).toEqual(['runtime-default', full]);
-    // The runtime resolves a list to the strictest bound: the default still asks.
-    expect(resolveCeilingLevel(CLAUDE_CODE_CAPABILITIES.permissionModes, ceiling).asks).not.toBe(
-      'never'
-    );
+  it('passes a Wi-Fi sign-in’s bound on (DOR-3037)', async () => {
+    await service.start('flow', INPUT, 'ctx', { permissionCeiling: 'runtime-default' });
+    expect(launches[0]!.permissionCeiling).toBe('runtime-default');
   });
 
   it('says who started it on the session list', async () => {

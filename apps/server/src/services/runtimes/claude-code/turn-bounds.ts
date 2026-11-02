@@ -5,6 +5,7 @@
  * @module services/runtimes/claude-code/turn-bounds
  */
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import { ceilingOnlyRecords } from '../../core/turn-power/turn-marks.js';
 import type { AgentSession } from './agent-types.js';
 
 /**
@@ -16,11 +17,7 @@ import type { AgentSession } from './agent-types.js';
 export function assignTurnBounds(
   session: Pick<
     AgentSession,
-    | 'unattendedApprovals'
-    | 'unattendedTurn'
-    | 'turnPermissionCeiling'
-    | 'turnLevelMode'
-    | 'teammateTier'
+    'unattendedApprovals' | 'unattendedTurn' | 'turnPermissionCeiling' | 'turnLevelMode'
   >,
   opts: MessageOpts | undefined
 ): void {
@@ -34,7 +31,8 @@ export function assignTurnBounds(
   // DO: a turn another agent's post or a stranger's message started runs no
   // looser than its sender (spec `trusted-by-default-flip` §4). Cleared when
   // absent, so a person's next turn runs at the level they chose.
-  if (opts?.permissionCeiling !== undefined) {
+  // A ceiling that only carries a teammate's record is no ceiling here (DOR-3440).
+  if (opts?.permissionCeiling !== undefined && !ceilingOnlyRecords(opts.permissionCeiling)) {
     session.turnPermissionCeiling = opts.permissionCeiling;
   } else {
     delete session.turnPermissionCeiling;
@@ -45,15 +43,5 @@ export function assignTurnBounds(
     session.turnLevelMode = opts.levelPermissionMode;
   } else {
     delete session.turnLevelMode;
-  }
-  // And the room a teammate's turn is fenced to (DOR-2955), or no room for a
-  // turn a teammate's mark reached one hop on (DOR-3036). Cleared the same
-  // way, so the owner's next turn in this conversation reaches what it did.
-  if (opts?.roomTurn?.teammate === true) {
-    session.teammateTier = { roomId: opts.roomTurn.roomId };
-  } else if (opts?.teammate === true) {
-    session.teammateTier = { roomId: null };
-  } else {
-    delete session.teammateTier;
   }
 }

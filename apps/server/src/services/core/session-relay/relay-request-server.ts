@@ -11,9 +11,7 @@
  * - it serves only a person's own chats with a registered, non-system agent
  *   (`relay-serves.ts`), and a chat it does not serve is answered exactly as
  *   one that does not exist;
- * - a message starts its turn as `session-relay`, held to
- *   `RELAY_TURN_CEILING` (`relay-send.ts`), so it asks before anything that
- *   needs a person, whatever the chat's own level (spec B2, option 2);
+ * - a message starts its turn as `session-relay`, at the agent's own level;
  * - an approval or a denial is acted on only with a passkey proof that passes
  *   every check (`relay-approvals.ts`, spec B4b), and `interaction.approval`
  *   is advertised only while a passkey is pinned. An answer to a question is
@@ -76,7 +74,7 @@ import {
 import { recordRelayAudit, type RelayAuditEntry } from './relay-audit.js';
 import { relayChatSummaries } from './relay-chat-list.js';
 import { relayClientId } from './relay-client-id.js';
-import { RELAY_TURN_CEILING, relayedMessage } from './relay-send.js';
+import { relayedMessage } from './relay-send.js';
 import { RelayStreamSink } from './relay-stream-sink.js';
 
 /**
@@ -503,7 +501,6 @@ export class SessionRelayRequestServer implements RelayRequestServer {
         clientId: conn.clientId,
         meshCore: this.deps.meshCore(),
         roomSessionPlace: this.deps.roomSessionPlace(),
-        permissionCeiling: RELAY_TURN_CEILING,
         onSettled: () => release(),
       });
     } catch (error) {

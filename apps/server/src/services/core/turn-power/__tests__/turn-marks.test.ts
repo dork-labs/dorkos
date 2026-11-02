@@ -10,13 +10,21 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentRuntime, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
+import {
+  clampModeToCeiling,
+  READ_ONLY_LEVEL,
+  resolveCeilingLevel,
+} from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
+import { assignTurnBounds } from '../../../runtimes/claude-code/turn-bounds.js';
 import {
   agentMarksRunning,
   carriesAllMarks,
+  ceilingCarrying,
+  ceilingOnlyRecords,
   hasMarks,
   marksForTurn,
+  marksHold,
   marksOfCeiling,
   marksOfLevel,
   mergeMarks,
@@ -39,10 +47,6 @@ import type {
   CapabilityInvocationContext,
   CapabilityPreflightResult,
 } from '../../capabilities/registry.js';
-import { noopLogger } from '@dorkos/shared/logger';
-import { composeRegistry } from '../../capabilities/index.js';
-import { commitmentsDomain } from '../../../commitments/commitment-capabilities.js';
-import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { holdRequesterFor } from '../../../connectors/execution/destructive-hold-window.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
 import {
@@ -82,7 +86,6 @@ async function ran(
 
 beforeEach(() => {
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
 });
 afterEach(() => resetPermissionGate());
 
@@ -101,12 +104,10 @@ describe('reading marks', () => {
     expect(marksOfCeiling([LEVEL, READ_ONLY_LEVEL])).toEqual({});
   });
 
-  it('off a send: its ceiling, or a stranger’s line in view', () => {
+  it('off a send: its ceiling', () => {
     expect(marksForTurn(undefined)).toEqual({});
     expect(marksForTurn({ permissionCeiling: LEVEL })).toEqual({});
-    expect(
-      marksForTurn({ roomTurn: { roomId: 'r', authorId: 'a', turnId: 't', outsiderInView: true } })
-    ).toEqual({ outsider: true });
+    expect(marksForTurn({ permissionCeiling: 'runtime-default' })).toEqual({ outsider: true });
   });
 });
 
@@ -182,10 +183,8 @@ describe('the readers', () => {
     expect(marksOf(plain, undefined)).toEqual({});
     expect(markedBoundOf(plain, undefined)).toBeUndefined();
     expect(marksOf(marked, undefined)).toEqual({ outsider: true });
-    expect(markedBoundOf(marked, undefined)).toEqual([
-      expect.objectContaining({ outsider: true }),
-      'runtime-default',
-    ]);
+    // A hold stays on its own turn: it bounds nothing that turn starts.
+    expect(markedBoundOf(marked, undefined)).toBeUndefined();
     expect(marksOf(undefined, '/agents/nobody-running')).toEqual({});
   });
 
@@ -296,53 +295,113 @@ describe('the readers', () => {
     }
   });
 
-  // DOR-3386 (Security's marked-lanes design, point 2): a sender whose level is unknown answers
-  // for its own chat. A sibling room seat of the same agent running a marked turn no longer marks
-  // a message from the agent's direct chat; the marked chat's own message still carries the mark.
-  it('scope an unknown-level sender to its own chat, not a marked sibling', async () => {
+  // A sender whose level is unknown answers for its own chat (DOR-3386), and only a teammate's
+  // chain rides on (DOR-3440). A caller that names no chat is read through its agent.
+  it('scope an unknown-level sender to its own chat, and hand on only a teammate’s chain', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'dorkos-turn-marks-scope-'));
     const home = path.join(root, 'agents', 'lane');
     await mkdir(home, { recursive: true });
     registerTestHomes([home]);
     try {
-      const seat = fresh();
-      const direct = fresh();
-      const running = recorded().sendMessage(seat, 'hi', {
+      const held = recorded().sendMessage(fresh(), 'hi', {
         cwd: home,
         permissionCeiling: 'runtime-default',
       });
-      await running.next();
+      await held.next();
       expect(agentMarksRunning(home)).toEqual({ outsider: true });
-      expect(unknownLevelMarks([direct], home)).toEqual({});
-      noteTurnOrigin(seat, { kind: 'relay-binding' } as never);
-      expect(unknownLevelMarks([seat], home)).toEqual({ outsider: true });
-      // A caller that names no chat is still read through its agent.
-      expect(unknownLevelMarks([], home)).toEqual({ outsider: true });
-      await running.return(undefined);
+      expect(unknownLevelMarks([fresh()], home)).toEqual({});
+      expect(unknownLevelMarks([], home)).toEqual({});
+      await held.return(undefined);
+      const teammate = [{ roomId: 'r', authorId: 'a' }];
+      const chain = recorded('default').sendMessage(fresh(), 'hi', {
+        cwd: home,
+        permissionCeiling: { ...LEVEL, teammate },
+      });
+      await chain.next();
+      expect(unknownLevelMarks([fresh()], home)).toEqual({});
+      expect(unknownLevelMarks([], home)).toEqual({ teammate });
+      await chain.return(undefined);
     } finally {
       clearTestHomes();
       await rm(root, { recursive: true, force: true });
     }
   });
+});
 
-  it('tell a capability its turn was started by a stranger, from the direct reading', async () => {
-    const registry = composeRegistry([commitmentsDomain], {
-      logger: noopLogger,
-      // A list nobody reads, unless a turn gets past the stranger check.
-      commitmentDeps: { service: { list: () => [] } } as never,
+describe('a teammate’s mark is a record that lowers nothing (DOR-3440)', () => {
+  const PRIYA = { roomId: 'space-room', authorId: 'priya' };
+  const record = ceilingCarrying({ teammate: [PRIYA] }) as TurnPermissionLevel;
+  const declared = CLAUDE_CODE_CAPABILITIES.permissionModes;
+
+  it('ceilingOnlyRecords: true only for a ceiling that bounds nothing', () => {
+    expect(ceilingOnlyRecords(record)).toBe(true);
+    expect(ceilingOnlyRecords([record])).toBe(true);
+    expect(ceilingOnlyRecords('runtime-default')).toBe(false);
+    expect(ceilingOnlyRecords(['runtime-default', record])).toBe(false);
+    expect(ceilingOnlyRecords(READ_ONLY_LEVEL)).toBe(false);
+    expect(ceilingOnlyRecords({ asks: 'never', reach: 'everything', outsider: true })).toBe(false);
+    expect(ceilingOnlyRecords([])).toBe(false);
+  });
+
+  it('lowers no mode Claude Code declares, Full included', () => {
+    const modes = declared.values.map((mode) => mode.id);
+    expect(modes).toContain('bypassPermissions');
+    for (const mode of modes) {
+      expect(clampModeToCeiling(declared, mode, record), mode).toBe(mode);
+    }
+  });
+
+  it('resolves to the loosest level, keeping who it came from, so the meter still reads them', () => {
+    expect(resolveCeilingLevel(declared, record)).toMatchObject({
+      asks: 'never',
+      reach: 'everything',
+      teammate: [PRIYA],
     });
-    const list = async (sessionId: string): Promise<{ code?: string }> => {
-      try {
-        return (await registry.invoke('commitments.list', {}, { sessionId })) as { code?: string };
-      } catch (error) {
-        // With no commitments wired, a turn that is let through fails past the stranger check.
-        return { code: error instanceof Error ? 'THREW' : 'UNKNOWN' };
-      }
-    };
-    const stranger = fresh();
-    noteTurnOrigin(stranger, { kind: 'relay-binding' } as never);
-    expect(await list(stranger)).toMatchObject({ code: 'OUTSIDER_TURN' });
-    expect(await list(fresh())).not.toMatchObject({ code: 'OUTSIDER_TURN' });
+    expect(marksForTurn({ permissionCeiling: record })).toEqual({ teammate: [PRIYA] });
+  });
+
+  it('beside a Wi-Fi hold, the hold still bounds the turn and the record still rides', () => {
+    const held = ['runtime-default', record] as const;
+    expect(clampModeToCeiling(declared, 'bypassPermissions', held)).toBe(
+      clampModeToCeiling(declared, 'bypassPermissions', 'runtime-default')
+    );
+    expect(marksForTurn({ permissionCeiling: held })).toEqual({
+      outsider: true,
+      teammate: [PRIYA],
+    });
+  });
+
+  it('marksHold: only the outsider mark holds anything back', () => {
+    expect(marksHold({ teammate: [PRIYA] })).toBe(false);
+    expect(marksHold(NO_MARKS)).toBe(false);
+    expect(marksHold({ outsider: true })).toBe(true);
+    expect(marksHold({ outsider: true, teammate: [PRIYA] })).toBe(true);
+    // Still a mark, for what counts it.
+    expect(hasMarks({ teammate: [PRIYA] })).toBe(true);
+  });
+});
+
+describe('assignTurnBounds (DOR-3440)', () => {
+  const record = ceilingCarrying({
+    teammate: [{ roomId: 'r', authorId: 'a' }],
+  }) as TurnPermissionLevel;
+
+  it('sets no ceiling for a record, and clears an earlier one', () => {
+    const session = { turnPermissionCeiling: 'runtime-default' } as Parameters<
+      typeof assignTurnBounds
+    >[0];
+    assignTurnBounds(session, { permissionCeiling: record });
+    expect(session.turnPermissionCeiling).toBeUndefined();
+    expect(session).not.toHaveProperty('turnPermissionCeiling');
+  });
+
+  it('sets a Wi-Fi hold, alone or beside a record', () => {
+    const session = {} as Parameters<typeof assignTurnBounds>[0];
+    assignTurnBounds(session, { permissionCeiling: 'runtime-default' });
+    expect(session.turnPermissionCeiling).toBe('runtime-default');
+    const both = ['runtime-default', record] as const;
+    assignTurnBounds(session, { permissionCeiling: both });
+    expect(session.turnPermissionCeiling).toBe(both);
   });
 });
 

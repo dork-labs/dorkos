@@ -33,6 +33,8 @@ vi.mock('../../../core/turn-power/turn-levels.js', async (importOriginal) => ({
   markedBoundOf: vi.fn(() =>
     Object.keys(stored.marks).length > 0 ? ('runtime-default' as never) : undefined
   ),
+  // The calling turn's marks, as `create_extension` reads them (DOR-3561).
+  marksOf: vi.fn(() => stored.marks),
 }));
 
 import {
@@ -220,7 +222,12 @@ describe('the author is recorded at create, never inferred', () => {
 });
 
 describe('create_extension from an agent', () => {
-  function handlerFor(creator: { agentPath?: string; sessionId?: string; ceilinged?: boolean }) {
+  function handlerFor(creator: {
+    agentPath?: string;
+    sessionId?: string;
+    ceilinged?: boolean;
+    chosenFull?: boolean;
+  }) {
     const createExtension = vi.fn(async () => ({
       id: 'notes',
       path: COPY_PATH,
@@ -243,16 +250,24 @@ describe('create_extension from an agent', () => {
   });
 
   it('creates it in the agent’s own folder and records the agent as its author', async () => {
-    const { createExtension, handler } = handlerFor({ agentPath: HOME, sessionId: 's1' });
+    const { createExtension, handler } = handlerFor({
+      agentPath: HOME,
+      sessionId: 's1',
+      chosenFull: true,
+    });
     await handler({ name: 'notes', scope: 'global' });
     expect(createExtension).toHaveBeenCalledWith(
       expect.objectContaining({ agentHome: HOME, recordAuthor: true, approveIfTrusted: true })
     );
   });
 
-  it('records no author for a turn that read a stranger’s words', async () => {
+  it('records no author for a turn holding a Wi-Fi mark, even at Full', async () => {
     stored.marks = { outsider: true };
-    const { createExtension, handler } = handlerFor({ agentPath: HOME, sessionId: 's1' });
+    const { createExtension, handler } = handlerFor({
+      agentPath: HOME,
+      sessionId: 's1',
+      chosenFull: true,
+    });
     await handler({ name: 'notes' });
     expect(createExtension).toHaveBeenCalledWith(
       expect.objectContaining({ agentHome: HOME, recordAuthor: false, approveIfTrusted: false })

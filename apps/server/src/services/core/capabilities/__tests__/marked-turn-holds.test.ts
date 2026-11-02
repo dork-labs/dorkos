@@ -14,7 +14,6 @@ import { CARRIED_OUTSIDER_LEVEL } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { recordTurnLevels } from '../../turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
-import { resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import { gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
 import { ApprovalService } from '../../approvals/index.js';
@@ -87,7 +86,6 @@ async function decide(action: GatedAction & PermissionGatedAction, sessionId: st
 
 beforeEach(() => {
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
   initCapabilityTierGate({ approvals: new ApprovalService(createTestDb()) });
   initPermissionGate({
@@ -99,7 +97,6 @@ afterEach(() => {
   resetCapabilityTierGate();
   resetPermissionGate();
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   vi.restoreAllMocks();
 });
 

@@ -102,9 +102,6 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // 409 rather than a 400 — the request is well formed and the room is right,
   // but somebody stopped this turn while it was being written.
   TURN_WAS_STOPPED: 409,
-  // An MCP-only verb too. A 429: the request is well formed and would have
-  // been accepted a moment earlier, and the remedy is to say less.
-  TOO_MANY_POSTS_THIS_TURN: 429,
   // A 401 rather than a 403: the caller presented nothing this surface could
   // resolve, so a credential IS what would change the answer. It belongs to the
   // capability surfaces, where "nobody" is a real answer; the room routes reach

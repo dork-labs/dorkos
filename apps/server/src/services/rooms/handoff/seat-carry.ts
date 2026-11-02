@@ -8,7 +8,7 @@
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { markedBoundOf, marksOf } from '../../core/turn-power/turn-levels.js';
-import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
+import { marksHold } from '../../core/turn-power/turn-marks.js';
 import { teammateOf } from '../limits/space-teammates.js';
 import { ceilingForEntries, isEntryAuthorExternal } from '../limits/turn-ceiling.js';
 import { STALE_POST_SHOWN_MAX } from '../messages/room-freshness.js';
@@ -52,12 +52,15 @@ export function withRoomMarks(
       read.some((entry) => isEntryAuthorExternal(authors, entry.authorId)),
     ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
     ...(teammate ? { teammate: true } : {}),
+    ...(carried.outsider ? { outsider: true } : {}),
   };
 }
 
 /**
- * What a chat's turn carries into a seat's (DOR-3397 scenario E): a stranger's words, and the
- * ceiling every bound work it starts is held to.
+ * What a chat's turn carries into a seat's (DOR-3397 scenario E): a stranger's words, the
+ * ceiling every bound work it starts is held to, and a mark that holds. A Wi-Fi sign-in's hold
+ * marks the seat's turn so every raise gate refuses it, and caps nothing (Security on DOR-3561):
+ * a report must not launder the mark away, nor lower the seat's level.
  *
  * @param sessionId - The chat the turn came from.
  * @param agentPath - Its agent's home.
@@ -66,9 +69,10 @@ export function carryFrom(sessionId: string, agentPath: string): AsideCarry {
   const marks = marksOf(sessionId, agentPath);
   const ceiling = markedBoundOf(sessionId, agentPath);
   return {
-    externalAuthor: marks.outsider === true || chatHeardOutsider(sessionId),
+    externalAuthor: marks.outsider === true,
     ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
     ...(marks.teammate !== undefined && marks.teammate.length > 0 ? { teammate: true } : {}),
+    ...(marksHold(marks) ? { outsider: true } : {}),
   };
 }
 

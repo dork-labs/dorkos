@@ -40,9 +40,9 @@ describe('permissions.change', () => {
   let own: AgentPermissions | undefined;
 
   beforeEach(() => {
-    preset = 'full';
+    preset = 'balanced';
     own = undefined;
-    world = createPermissionWorld({ preset: 'full', agents: TWO_AGENTS });
+    world = createPermissionWorld({ preset: 'balanced', agents: TWO_AGENTS });
     approvals = new ApprovalService(createTestDb());
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     initCapabilityTierGate({ approvals });
@@ -80,6 +80,14 @@ describe('permissions.change', () => {
       throw err;
     }
   }
+
+  it('is refused under the Full preset, with no card, and changes nothing (DOR-3440)', async () => {
+    preset = 'full';
+    const { decision } = await call(OPEN_TEST_BOT_ROOMS);
+    expect(decision?.outcome).toBe('denied');
+    expect(approvals.listPending()).toHaveLength(0);
+    expect(world.agentArea('agent-test', 'rooms')).toBeUndefined();
+  });
 
   it('asks under a preset whose Permissions area asks, and changes nothing until a person answers', async () => {
     const { decision } = await call(OPEN_TEST_BOT_ROOMS);

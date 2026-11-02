@@ -2,7 +2,8 @@
  * A promise made in a marked turn keeps the turn's marks (DOR-3036, `specs/turn-marks`): the beat
  * its due date wakes reads the promise, so it carries the marks on rather than reading a
  * stranger's or a teammate's words as the agent's own. In a chat set to Full
- * autonomy an outsider's mark refuses nothing (DOR-3412); a teammate's still does.
+ * autonomy an outsider's mark refuses nothing (DOR-3412). A teammate's refuses nothing anywhere and
+ * rides to the beat, for the space's limit (DOR-3440).
  *
  * @vitest-environment node
  */
@@ -11,7 +12,6 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { CommitmentStore } from '../commitment-store.js';
 import { CommitmentService } from '../commitment-service.js';
 import { commitmentsDomain } from '../commitment-capabilities.js';
@@ -81,18 +81,29 @@ function add(sessionId: string, what: string) {
 }
 
 describe('a promise made in a marked turn', () => {
-  it('is refused, so no marked promise reaches the agent’s beat (DOR-3037)', async () => {
+  it('is refused when the turn is held, so no held promise reaches the agent’s beat (DOR-3037)', async () => {
     await ran('owner-turn');
-    await ran('teammate-hop', ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [PRIYA] }]);
+    await ran('held-turn', 'runtime-default');
+    noteChosenTurn('held-turn', ASK_FIRST as never, false);
 
     await add('owner-turn', 'Send the owner the report');
     expect(service.openMarks('agent-bo')).toEqual({});
 
-    expect(await add('teammate-hop', 'Send Priya the numbers')).toMatchObject({
+    expect(await add('held-turn', 'Send Priya the numbers')).toMatchObject({
       ok: false,
       code: 'OUTSIDER_TURN',
     });
     expect(service.openMarks('agent-bo')).toEqual({});
+  });
+
+  it('is made in a turn a teammate’s mark reached, whose mark rides to the beat (DOR-3440)', async () => {
+    const emit = vi.fn(async () => undefined);
+    setMarkedFullActivity({ emit } as never);
+    await ran('teammate-hop', { ...ASK_FIRST, teammate: [PRIYA] });
+    expect(await add('teammate-hop', 'Send Priya the numbers')).toMatchObject({ ok: true });
+    expect(service.openMarks('agent-bo')).toEqual({ teammate: [PRIYA] });
+    // Refused nowhere, so no marked-Full line either.
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('keeps the marks a promise was recorded with, and an agent’s open promises carry them to its beat', () => {
@@ -131,17 +142,12 @@ describe('a promise made in a marked turn', () => {
     });
   });
 
-  it('is still refused below Full, and a teammate’s mark is refused even at Full', async () => {
+  it('is still refused below Full', async () => {
     const emit = vi.fn(async () => undefined);
     setMarkedFullActivity({ emit } as never);
     await ran('ask-stranger-turn', 'runtime-default');
     noteChosenTurn('ask-stranger-turn', ASK_FIRST as never, false);
     expect(await add('ask-stranger-turn', 'Send the report')).toMatchObject({
-      code: 'OUTSIDER_TURN',
-    });
-    await ran('full-teammate-hop', ['runtime-default', { ...READ_ONLY_LEVEL, teammate: [PRIYA] }]);
-    noteChosenTurn('full-teammate-hop', FULL as never, false);
-    expect(await add('full-teammate-hop', 'Send Priya the numbers')).toMatchObject({
       code: 'OUTSIDER_TURN',
     });
     expect(service.openMarks('agent-bo')).toEqual({});

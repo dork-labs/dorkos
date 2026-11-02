@@ -14,7 +14,7 @@
  */
 import { z } from 'zod';
 import { defineCapability, type CapabilityHandlerContext } from '../../core/capabilities/index.js';
-import { hasMarks } from '../../core/turn-power/turn-marks.js';
+import { marksHold } from '../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../core/turn-power/turn-levels.js';
 import type { AuthorRecord } from '../author-registry.js';
 import { callerAuthor } from '../service/room-caller-author.js';
@@ -33,7 +33,7 @@ const agentIdField = z
 
 /** Whether the calling turn read words from outside the owner's circle. */
 function callingTurnMarked(context: CapabilityHandlerContext): boolean {
-  return hasMarks(marksOf(context.sessionId, context.identity?.agentPath));
+  return marksHold(marksOf(context.sessionId, context.identity?.agentPath));
 }
 
 /** The by-hand re-seat verbs, appended to the rooms domain. */

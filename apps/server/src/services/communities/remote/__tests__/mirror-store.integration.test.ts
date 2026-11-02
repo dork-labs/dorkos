@@ -150,8 +150,6 @@ describe('RemoteMirrorStore', () => {
       (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null),
       () => Date.parse('2026-09-16T01:00:00.000Z')
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const live = nativeEntry(REF_A, 'general', 1);
     live.entry = { ...live.entry, mentions: ['remote-ana'] };
 
@@ -247,8 +245,6 @@ describe('RemoteMirrorStore', () => {
       (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null),
       () => Date.parse('2026-09-16T01:00:00.000Z')
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    restarted.useTeammateRuntimes(() => true);
     restarted.importLive(
       room,
       {
@@ -313,8 +309,6 @@ describe('RemoteMirrorStore', () => {
       undefined,
       () => spaces
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const live = (seq: number) => {
       const entry = nativeEntry(REF_A, 'general', seq);
       return {
@@ -367,8 +361,6 @@ describe('RemoteMirrorStore', () => {
         return ref === REF_A;
       }
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const opts = { reconnect: false, wasActiveBeforeDisconnect: false, readOnly: false };
     const live = (ref: CommunityRef, seq: number) => {
       const entry = nativeEntry(ref, 'general', seq);
@@ -416,8 +408,6 @@ describe('RemoteMirrorStore', () => {
       enrollments,
       (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     mirrors.markStale(REF_A, harness.human);
     const live = nativeEntry(REF_A, 'stale-general', 1);
     live.entry = { ...live.entry, mentions: ['remote-ana'] };
@@ -459,8 +449,6 @@ describe('RemoteMirrorStore', () => {
       enrollments,
       (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     mirrors.revoke(REF_A, harness.human);
     bridge.importSnapshot(room, [
       {
@@ -507,8 +495,6 @@ describe('RemoteMirrorStore', () => {
       enrollments,
       (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const incoming = nativeEntry(REF_A, 'general', 1);
     incoming.entry = { ...incoming.entry, mentions: ['remote-ana'] };
     bridge.importLive(
@@ -537,8 +523,6 @@ describe('RemoteMirrorStore', () => {
       undefined,
       { abortForRoom: vi.fn(), abortForAgent }
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    restarted.useTeammateRuntimes(() => true);
     await restarted.revokeEnrollment(REF_A, 'local-ana', harness.human);
     await harness.service.triggersIdle();
     expect(enrollments.findRemoteMember(REF_A, 'local-ana', harness.human)).toBeNull();
@@ -573,8 +557,6 @@ describe('RemoteMirrorStore', () => {
       enrollments,
       (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const incoming = nativeEntry(REF_A, 'general', 1);
     incoming.entry = { ...incoming.entry, mentions: ['remote-ana'] };
     bridge.importLive(
@@ -704,8 +686,6 @@ describe('RemoteMirrorStore', () => {
       enrollments,
       (localAgentId) => (localAgentId === 'local-ana' ? agent.id : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const incoming = nativeEntry(REF_A, 'general', 1);
     incoming.entry = { ...incoming.entry, mentions: ['remote-ana'] };
     bridge.importLive(
@@ -740,8 +720,6 @@ describe('RemoteMirrorStore', () => {
       undefined,
       outbox
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     bridge.authorizeRoom(room);
     const item = {
       id: 'delivery-a',

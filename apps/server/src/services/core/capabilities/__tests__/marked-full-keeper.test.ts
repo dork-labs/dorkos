@@ -14,7 +14,6 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-
 import { recordTurnLevels } from '../../turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
 import { resetChosenTurns, setMarkedFullActivity } from '../../turn-power/full-autonomy.js';
-import { resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { composeCapabilityRegistryForDocs } from '../../self-description/dorkos-registry.js';
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
@@ -27,7 +26,7 @@ import {
 } from '../tier-enforcement.js';
 import {
   initPermissionGate,
-  MARKED_FULL_PERMISSION_REFUSAL,
+  FULL_PERMISSION_REFUSAL,
   resetPermissionGate,
   resolveCallPermission,
   type PermissionGatedAction,
@@ -91,7 +90,6 @@ const emit = vi.fn(async () => undefined);
 
 beforeEach(() => {
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   emit.mockClear();
   setMarkedFullActivity({ emit } as never);
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
@@ -105,7 +103,6 @@ afterEach(() => {
   resetCapabilityTierGate();
   resetPermissionGate();
   resetLiveOutsiderTurns();
-  resetOutsiderTurns();
   resetChosenTurns();
   setMarkedFullActivity(undefined);
   vi.restoreAllMocks();
@@ -118,7 +115,7 @@ describe('change_permission in a marked turn (DOR-3417)', () => {
     const decision = await decide(session, LOOSEN);
     expect(decision.outcome).toBe('denied');
     if (decision.outcome !== 'denied') return;
-    expect(decision.payload.message).toBe(MARKED_FULL_PERMISSION_REFUSAL);
+    expect(decision.payload.message).toBe(FULL_PERMISSION_REFUSAL);
     expect(decision.payload.approvable).toBe(false);
     expect(emit).toHaveBeenCalledTimes(1);
     expect((emit.mock.calls[0] as unknown as [Record<string, unknown>])[0]).toMatchObject({
@@ -143,11 +140,15 @@ describe('change_permission in a marked turn (DOR-3417)', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
-  it('at Full in an unmarked turn, nothing changes: loosening still asks', async () => {
+  it('at Full in an unmarked turn, loosening is refused the same way (DOR-3440)', async () => {
     const session = fresh();
     await ran(session, 'bypassPermissions');
-    expect((await decide(session, LOOSEN)).outcome).toBe('approval_required');
-    expect(emit).not.toHaveBeenCalled();
+    const decision = await decide(session, LOOSEN);
+    expect(decision.outcome).toBe('denied');
+    if (decision.outcome !== 'denied') return;
+    expect(decision.payload.message).toBe(FULL_PERMISSION_REFUSAL);
+    expect(decision.payload.approvable).toBe(false);
+    expect(emit).toHaveBeenCalledTimes(1);
   });
 });
 

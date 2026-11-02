@@ -267,6 +267,17 @@ export interface PermissionChangeRecord {
   reach?: LevelReach;
 }
 
+let permissionsChanged: (() => void) | undefined;
+
+/**
+ * Say what to do once a permission has changed: what follows an agent's level looks again.
+ *
+ * @param listener - Called after each recorded change, or `undefined` for none.
+ */
+export function onPermissionsChanged(listener: (() => void) | undefined): void {
+  permissionsChanged = listener;
+}
+
 /**
  * Write one `permission.changed` event for a permission write. Records nothing
  * for a write that changed nothing.
@@ -282,6 +293,7 @@ export async function recordPermissionChange(
   activity: Pick<ActivityService, 'emit'> | undefined,
   record: PermissionChangeRecord
 ): Promise<void> {
+  if (record.changes.length > 0) permissionsChanged?.();
   if (!activity || record.changes.length === 0) return;
   const agentTargets = new Set(
     record.changes.flatMap((c) => (c.target.kind === 'agent' ? [c.target.agentId] : []))
