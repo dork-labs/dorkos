@@ -383,7 +383,12 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     // Outside a room `sayInRoom` is a no-op, so an ordinary session is exactly
     // what it always was: one echoed line on its own stream.
     const said = `Echo: ${content}`;
-    await sayInRoom(opts, said);
+    const posted = await sayInRoom(opts, said);
+    if (opts?.roomTurn && posted !== true) {
+      throw new Error(
+        `Echo could not answer in the room: ${posted === false ? 'post refused' : posted}`
+      );
+    }
     yield { type: 'text_delta', data: { text: said } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
