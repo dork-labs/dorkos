@@ -9,6 +9,7 @@ covers:
   - 'fix(server): a browser that loaded a risky mini app confirms again only after it signs in again (DOR-3234)'
   - 'fix(client): "Sign in again" on the sheet and the Mac window, then the action is asked for afresh (DOR-3234)'
   - 'fix(client): the sheet says "Allow sending", one wrong-password line, and the risk row''s link sits left with a phone-size target (DOR-3234)'
+  - 'fix(server): moving a mini app out is in the write census, and a held connection add reads its caller (DOR-3234)'
 ---
 
 ### Security

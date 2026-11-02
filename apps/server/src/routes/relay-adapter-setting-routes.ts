@@ -169,7 +169,8 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
     // The client may embed label inside config (Transport interface doesn't have a separate
     // label param). Fall back to config.label if the top-level field wasn't provided.
     const label = topLabel ?? (typeof config.label === 'string' ? config.label : undefined);
-    const actor = readActivityActor(honoRequestFacts(c));
+    // Read now: a held add runs later, after the person confirms, from another request.
+    const caller = honoRequestFacts(c);
     const settings = personSettingsIn(config);
     return runOrHold(
       c,
@@ -184,7 +185,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
             if (activity) {
               const adapterName = adapterManager.resolveAdapterName(id);
               await activity.emit({
-                ...actor,
+                ...readActivityActor(caller),
                 category: 'relay',
                 eventType: 'relay.adapter_added',
                 resourceType: 'adapter',
