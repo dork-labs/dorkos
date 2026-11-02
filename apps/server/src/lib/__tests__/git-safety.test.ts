@@ -80,6 +80,10 @@ describe('hardenedGitEnv', () => {
     expect(hardenedGitEnv().GIT_ALLOW_PROTOCOL).toBe('https:ssh:git');
   });
 
+  it('never lazy-fetches, so a config-named remote cannot run a program (DOR-3667)', () => {
+    expect(hardenedGitEnv().GIT_NO_LAZY_FETCH).toBe('1');
+  });
+
   it('disables the interactive credential prompt so a private URL cannot hang', () => {
     expect(hardenedGitEnv().GIT_TERMINAL_PROMPT).toBe('0');
   });

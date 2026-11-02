@@ -157,7 +157,10 @@ home cannot move, so its launch answers `409 ROOM_SESSION_MOVED` and points the 
 room; its transcript stays readable. Independently, `dispatchSessionMessage` refuses any launch whose
 folder is inside the rooms directory, and `getGitStatus` never runs git there — a room's shared git
 settings are only read through `room-repo-git.ts`, which audits them first
-(`ROOM_REPO_CONFIG_UNSAFE`).
+(`ROOM_REPO_CONFIG_UNSAFE`). The audit is an allowlist (`SAFE_REPO_CONFIG_KEY` from
+`@dorkos/shared/safe-git`, minus `extensions.worktreeConfig`), and every room git command also runs
+with `GIT_NO_LAZY_FETCH=1` and an empty `GIT_ALLOW_PROTOCOL`, so a read never reaches a remote the
+config names (DOR-3667).
 
 That refusal is a `RoomRepoConfigUnsafeError` carrying the settings file and the offending keys, the
 operator's sentence (`forOwner`), one shell-quoted `git config --file … --unset-all …` command
@@ -226,21 +229,21 @@ files.
 `RoomMergeService.merge` checks everything server-side and refuses with a specific code. Each code
 implies its own remedy, which is why the operating skill can teach recovery without a person.
 
-| Code                      | Meaning                                                                              | Agent's fix                               |
-| ------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------- |
-| `ROOM_REPOS_DISABLED`     | `rooms.repo.enabled` is off install-wide                                             | Ask the operator                          |
-| `NOT_A_PROJECT_ROOM`      | This room has no repo                                                                | Nothing to do here                        |
-| `UNCOMMITTED_WORK`        | The agent's worktree is dirty                                                        | Commit, then retry                        |
-| `BEHIND_MAIN`             | Branch does not contain main's tip (answer says how far)                             | `git merge main`, resolve, retry          |
-| `NOTHING_TO_MERGE`        | Branch is level with main                                                            | Nothing to do                             |
-| `SYMLINK_ESCAPES_REPO`    | A symlink targets outside the repo                                                   | Publish-on-change: copy and commit        |
-| `SUBMODULE_NOT_ALLOWED`   | The delta adds a submodule                                                           | Vendor the content instead                |
-| `ROOM_REPO_CONFIG_UNSAFE` | The room's shared git settings name a program (a filter, driver, include, hook path) | Ask the operator to remove the named keys |
-| `FILE_TOO_LARGE`          | One file over `maxFileBytes` (named)                                                 | Use an attachment                         |
-| `REPO_CAP_EXCEEDED`       | Repo would pass `maxRepoBytes`                                                       | Prune, or raise the cap (owner-only)      |
-| `MAIN_CHECKOUT_DIRTY`     | Somebody edited `repo/` out of band                                                  | Operator repair, then retry               |
-| `MERGE_IN_FLIGHT`         | Waited out `mergeQueueWaitMs`                                                        | Retry (HTTP answers `429`)                |
-| `MERGE_CONFLICT`          | Unreachable through the ordinary path                                                | Kept for a hand-committed tree            |
+| Code                      | Meaning                                                                                                                 | Agent's fix                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `ROOM_REPOS_DISABLED`     | `rooms.repo.enabled` is off install-wide                                                                                | Ask the operator                          |
+| `NOT_A_PROJECT_ROOM`      | This room has no repo                                                                                                   | Nothing to do here                        |
+| `UNCOMMITTED_WORK`        | The agent's worktree is dirty                                                                                           | Commit, then retry                        |
+| `BEHIND_MAIN`             | Branch does not contain main's tip (answer says how far)                                                                | `git merge main`, resolve, retry          |
+| `NOTHING_TO_MERGE`        | Branch is level with main                                                                                               | Nothing to do                             |
+| `SYMLINK_ESCAPES_REPO`    | A symlink targets outside the repo                                                                                      | Publish-on-change: copy and commit        |
+| `SUBMODULE_NOT_ALLOWED`   | The delta adds a submodule                                                                                              | Vendor the content instead                |
+| `ROOM_REPO_CONFIG_UNSAFE` | The room's shared git settings hold a key outside the allowlist (a filter, driver, include, hook path, promisor remote) | Ask the operator to remove the named keys |
+| `FILE_TOO_LARGE`          | One file over `maxFileBytes` (named)                                                                                    | Use an attachment                         |
+| `REPO_CAP_EXCEEDED`       | Repo would pass `maxRepoBytes`                                                                                          | Prune, or raise the cap (owner-only)      |
+| `MAIN_CHECKOUT_DIRTY`     | Somebody edited `repo/` out of band                                                                                     | Operator repair, then retry               |
+| `MERGE_IN_FLIGHT`         | Waited out `mergeQueueWaitMs`                                                                                           | Retry (HTTP answers `429`)                |
+| `MERGE_CONFLICT`          | Unreachable through the ordinary path                                                                                   | Kept for a hand-committed tree            |
 
 On success: `git merge --no-ff room/<agentSlug>` in `repo/`, under the mutex, with the agent's
 summary as the merge message. A failure mid-merge aborts cleanly (`git merge --abort`), so `main` is

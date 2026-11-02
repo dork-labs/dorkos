@@ -67,6 +67,29 @@ export const SAFE_REPO_CONFIG_KEY = new RegExp(
     ')$'
 );
 
+/**
+ * Whether one config key may stand in a DorkOS room repo's shared config
+ * (DOR-3667): {@link SAFE_REPO_CONFIG_KEY}, minus `extensions.worktreeConfig`,
+ * which would make each copy's own agent-writable `config.worktree` part of
+ * what git reads. Anything else (a filter, a driver, an include, a helper, a
+ * hook path, a promisor remote with its own `uploadpack`,
+ * `extensions.partialClone`) stops the server's git in that room.
+ *
+ * @param key - One key name, as `git config --list` prints it.
+ */
+export function isSafeRoomRepoConfigKey(key: string): boolean {
+  return SAFE_REPO_CONFIG_KEY.test(key) && !/^extensions\.worktreeconfig$/i.test(key);
+}
+
+/**
+ * The environment that keeps a git command from reaching any remote (DOR-3667):
+ * no lazy fetch of a missing object, and no transport at all. For git that
+ * reads repos DorkOS did not make and never needs to fetch.
+ */
+export const NO_REACH_GIT_ENV: Readonly<
+  Record<'GIT_NO_LAZY_FETCH' | 'GIT_ALLOW_PROTOCOL', string>
+> = { GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' };
+
 /** Settings that keep a read from reaching out or recursing, on top of the hardening. */
 const SAFE_GIT_ARGS: readonly string[] = [
   ...gitConfigArgs(internalGitConfig()),

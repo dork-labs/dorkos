@@ -7,6 +7,7 @@
  * @module server/services/workspace/providers/clone
  */
 import { existsSync, promises as fs } from 'node:fs';
+import path from 'node:path';
 import { validateBoundary } from '../../../lib/boundary.js';
 import type {
   Workspace,
@@ -24,6 +25,33 @@ import {
   PERSON_REPO_GIT_CONFIG,
   runGit,
 } from './git.js';
+
+/**
+ * The folder on this machine a clone source names, or `null` for a remote
+ * address (`https://`, `ssh://`, `git@host:path`). A `file://` URL in any case,
+ * a trailing slash and a relative path (resolved against `cwd`, where git runs)
+ * all name the same folder as its plain absolute path (DOR-3667).
+ *
+ * @param source - The source as the request names it.
+ * @param cwd - Where the clone runs.
+ */
+export function localSourcePath(source: string, cwd: string): string | null {
+  const trimmed = source.trim();
+  const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(trimmed)?.[1];
+  if (scheme !== undefined) {
+    if (scheme.toLowerCase() !== 'file') return null;
+    try {
+      return path.resolve(
+        decodeURIComponent(new URL(`file${trimmed.slice(scheme.length)}`).pathname)
+      );
+    } catch {
+      return null;
+    }
+  }
+  // `host:path` with no slash before the colon is git's ssh shorthand.
+  if (/^[^/\\]+:/.test(trimmed) && !/^[A-Za-z]:[\\/]/.test(trimmed)) return null;
+  return path.resolve(cwd, trimmed);
+}
 
 /** Provisions workspaces as fresh clones of a source repo URL or path. */
 export class CloneProvider implements WorkspaceProvider {
@@ -50,8 +78,17 @@ export class CloneProvider implements WorkspaceProvider {
     // Below Full a failed audit refuses; a chat set to Full autonomy has no
     // limits, so it is let through with one Activity line.
     const onUnsafe = fullChatAuditReporter(req, `made the workspace ${req.projectKey}/${req.key}`);
-    if (existsSync(req.source)) await auditRepoConfig(req.source, onUnsafe);
-    await runGit(['clone', '--end-of-options', req.source, req.path], this.root, { config });
+    // Whatever its spelling (a `file://` or `FILE://` URL, a trailing slash, a
+    // path relative to where git runs), a source on this machine is the same
+    // folder and is audited (DOR-3667).
+    const local = localSourcePath(req.source, this.root);
+    if (local !== null && existsSync(local)) await auditRepoConfig(local, onUnsafe);
+    // And the clone never lazy-fetches: a source whose settings name a promisor
+    // remote cannot run that remote's program through it (DOR-3667).
+    await runGit(['clone', '--end-of-options', req.source, req.path], this.root, {
+      config,
+      env: { GIT_NO_LAZY_FETCH: '1' },
+    });
     // The clone's own settings are audited before its first command in it (DOR-3343).
     await runGit(['checkout', '-b', req.branch], req.path, {
       config,
