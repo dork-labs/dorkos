@@ -7,6 +7,7 @@ covers:
   - "fix(server): a spin-off's Wi-Fi hold marks the room seat it reports to, which keeps its level (DOR-3440)"
   - 'fix(server): a Wi-Fi hold marks every chat, message and beat a held turn starts, and blocks its own new code (DOR-3440)'
   - 'fix(server): a held steer or stage never joins an unmarked turn, and agents learn a post carries no hold (DOR-3440)'
+  - 'fix(server): the room instructions say a direct message carries a hold without naming a chat tool (DOR-3440)'
 ---
 
 ### Changed

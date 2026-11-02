@@ -43,14 +43,16 @@ describe('the room tools block', () => {
     expect(block).toContain('An OK names exactly what it covers');
   });
 
-  it('says a post carries no hold to its readers, and a chat_send carries it (DOR-3440)', () => {
+  it('says a post carries no hold to its readers, and a direct message carries it (DOR-3440)', () => {
     // The PM's S3 ruling on #3280: a room post marks nothing for the other agents who read it,
     // since each runs at its own level (Dorian, Oct 30); a chat_send starts one agent's turn, so
-    // the hold travels with it. Security checks the code against this wording.
+    // the hold travels with it. Security checks the code against this wording. It names no chat
+    // tool: this block reaches sessions the chat tools are gated away from.
     expect(block).toContain('Every agent that reads your post runs at its own level');
     expect(block).toContain('stays with you');
-    expect(block).toContain(`A ${PREFIX}chat_send is different: it starts one agent's turn`);
+    expect(block).toContain('A direct message to one agent is different: it starts');
     expect(block).toContain('so the hold goes with it');
+    expect(block).not.toContain('chat_send');
   });
 
   it('hands long work off rather than holding the room (FB-65)', () => {
