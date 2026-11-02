@@ -2,6 +2,9 @@
 covers:
   - 'feat(server): agents hand the Agent browser to you, and sign-ins happen in a window no agent can reach'
   - "fix(server): after Stop task the agent can't read the browser, and sign-in checks its own window"
+  - 'fix(server): opening and resuming the Agent browser take a person, like sign-in and Stop task'
+  - "fix(server): the Agent browser handoff reads a stranger's chat without the retired origin notes (DOR-3218)"
+  - 'fix(server): the Agent browser handoff names the asking agent from its identity, and each refusal has a test (DOR-3218)'
 ---
 
 ### Added
