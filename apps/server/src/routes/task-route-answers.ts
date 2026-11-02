@@ -1,10 +1,10 @@
 /**
- * Two answers the scheduled-task routes give, lifted out of `tasks.ts` so that
- * file stays under its size limit: the words the activity feed uses for the
- * level a schedule runs at, and who is changing a schedule (DOR-3640 R1).
+ * Small scheduled-task route answers: the activity feed’s permission label,
+ * the caller editing a schedule, and whether a request names credits.
  *
  * @module routes/task-route-answers
  */
+import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task } from '@dorkos/shared/types';
 import type { RequestFacts } from '../http/request-facts.js';
@@ -95,4 +95,13 @@ export function scheduleEditorOf(facts: RequestFacts, trusted: boolean): Schedul
   return identity && !identity.inactive
     ? { kind: 'agent', agentPath: identity.agentPath }
     : { kind: 'unidentified' };
+}
+
+/** Whether a task write body names DorkOS credits as its account. */
+export function namesCredits(body: unknown): boolean {
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    (body as { account?: unknown }).account === CREDITS_ACCOUNT_ID
+  );
 }

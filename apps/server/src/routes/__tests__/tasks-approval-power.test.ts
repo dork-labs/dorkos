@@ -39,13 +39,17 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../services/runtimes/claude-code/ru
 import { CODEX_CAPABILITIES } from '../../services/runtimes/codex/runtime-constants.js';
 
 /** Mutable state the mocked config manager and registry report. */
-const state = vi.hoisted(() => ({ runtimes: undefined as unknown }));
+const state = vi.hoisted(() => ({
+  runtimes: undefined as unknown,
+  permissions: {} as Record<string, unknown>,
+}));
 
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => {
       if (key === 'auth') return { enabled: false };
       if (key === 'runtimes') return state.runtimes;
+      if (key === 'permissions') return state.permissions;
       return undefined;
     },
   },
@@ -73,6 +77,7 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 import { writeManifest } from '@dorkos/mesh';
+import { folderAllowEntry } from '../../services/runtimes/claude-code/folder-settings/folder-allow-consent.js';
 import { createTasksRoutes } from '../tasks.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
@@ -138,6 +143,11 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
   beforeEach(() => {
     state.runtimes = autonomyRuntimes();
+    state.permissions = {
+      approvedFolderAllows: [],
+      refusedFolderAllows: [],
+      approvedFolderAllowRules: {},
+    };
     dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-approval-power-'));
     db = createTestDb();
     store = new TaskStore(db);
@@ -261,6 +271,73 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     );
     expect(rewritten.permissionMode).toBe('acceptEdits');
     expect(rewritten.status).toBe('pending_approval');
+  });
+
+  it('withholds folder-rule details from agent task reads', async () => {
+    const task = await proposedByAgent();
+    const person = await request(fixtureServer).get('/api/tasks');
+    expect(person.status).toBe(200);
+    expect(person.body.find((value: { id: string }) => value.id === task.id).folderRules).toEqual({
+      status: 'none',
+      applied: [],
+      pending: [],
+    });
+    const agent = await request(fixtureServer)
+      .get('/api/tasks')
+      .set('x-dorkos-agent', 'agent-token-abc');
+    expect(agent.status).toBe(200);
+    expect(agent.body.find((value: { id: string }) => value.id === task.id)).not.toHaveProperty(
+      'folderRules'
+    );
+  });
+
+  it('approves Don’t ask and records exactly that mode in the row, file and audit event (DOR-3651)', async () => {
+    const task = await proposedByAgent();
+    const rule = 'Bash(pnpm check:watchdog)';
+    meshProjectPath = path.join(dorkHome, 'watchdog-agent');
+    await writeManifest(meshProjectPath, {
+      ...baseManifest(),
+      runtime: 'claude-code',
+      workspace: { mode: 'home' },
+      behavior: { responseMode: 'always' },
+    });
+    fs.mkdirSync(path.join(meshProjectPath, '.claude'), { recursive: true });
+    fs.writeFileSync(
+      path.join(meshProjectPath, '.claude', 'settings.json'),
+      JSON.stringify({ permissions: { allow: [rule] } })
+    );
+    state.permissions = {
+      approvedFolderAllows: [
+        folderAllowEntry({ agentId: AGENT_ID, home: meshProjectPath, rules: [rule] }),
+      ],
+      refusedFolderAllows: [],
+      approvedFolderAllowRules: { [AGENT_ID]: [rule] },
+    };
+    db.update(pulseSchedules)
+      .set({ agentId: AGENT_ID })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+    const preview = await request(fixtureServer).get('/api/tasks');
+    expect(preview.status).toBe(200);
+    expect(preview.body.find((value: { id: string }) => value.id === task.id).folderRules).toEqual({
+      status: 'approved',
+      applied: [rule],
+      pending: [],
+    });
+    const response = await request(fixtureServer)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ status: 'active', permissionMode: 'dontAsk' });
+    expect(response.status).toBe(200);
+    expect(store.getTask(task.id)?.permissionMode).toBe('dontAsk');
+    expect(fs.readFileSync(task.filePath, 'utf8')).toContain('permissions: dontAsk');
+    const event = emit.mock.calls
+      .map(([value]) => value)
+      .find((value) => value.eventType === 'tasks.task_approved');
+    expect(event.metadata).toMatchObject({
+      permissionMode: 'dontAsk',
+      previousPermissionMode: 'acceptEdits',
+    });
+    expect(event.summary).toContain('Never ask');
   });
 
   it('refuses an agent that tries to approve itself at any level', async () => {

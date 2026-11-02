@@ -24,11 +24,16 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { query, type Options, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
 import { resolveBundledClaudeBinary } from '../../sdk/sdk-utils.js';
 import { mergeFolderAllows, selfGrantDenyRules } from '../apply-folder-allows.js';
 
 const BINARY = resolveBundledClaudeBinary();
+/** Throwaway HOME roots on the evidence drive when mounted, never the real account. */
+const TEST_HOMES = fs.existsSync('/Volumes/ext-ssd-1/dork-os')
+  ? '/Volumes/ext-ssd-1/dork-os/test-homes/2026-11-02-dor-3651'
+  : os.tmpdir();
+fs.mkdirSync(TEST_HOMES, { recursive: true });
 const PROBE = 'probe-file';
 const COMMAND = `touch ${PROBE}`;
 
@@ -126,7 +131,8 @@ async function probeRan(settings?: Options['settings']): Promise<boolean> {
 async function runTurn(
   settings?: Options['settings'],
   configDir = path.join(root, 'claude-config')
-): Promise<void> {
+): Promise<SDKResultMessage | undefined> {
+  let result: SDKResultMessage | undefined;
   const abort = new AbortController();
   let childClosed: Promise<void> | undefined;
   fs.mkdirSync(configDir, { recursive: true });
@@ -164,7 +170,10 @@ async function runTurn(
   const deadline = setTimeout(() => abort.abort(), 45_000);
   try {
     for await (const message of stream) {
-      if (message.type === 'result') break;
+      if (message.type === 'result') {
+        result = message;
+        break;
+      }
     }
   } catch {
     // Aborted, or the CLI gave up on the fake server.
@@ -174,6 +183,7 @@ async function runTurn(
     stream.close();
     await childClosed;
   }
+  return result;
 }
 
 /** Write the folder's own `.claude/settings.json`. */
@@ -184,7 +194,7 @@ function folderSettings(body: unknown): void {
 describe.skipIf(BINARY === null)('an agent folder allow list under Never ask', () => {
   beforeEach(async () => {
     model = await fakeModel();
-    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'folder-allows-binary-')));
+    root = fs.realpathSync(fs.mkdtempSync(path.join(TEST_HOMES, 'folder-allows-binary-')));
     folder = path.join(root, 'agent');
     fs.mkdirSync(path.join(folder, '.claude'), { recursive: true });
   });
@@ -205,6 +215,28 @@ describe.skipIf(BINARY === null)('an agent folder allow list under Never ask', (
     mergeFolderAllows(options, [`Bash(${COMMAND})`], []);
     expect(await probeRan(options.settings)).toBe(true);
   }, 60_000);
+
+  it('runs only the command named by the approved rule at a scheduled task’s Don’t ask mode (DOR-3651)', async () => {
+    const options: Options = {};
+    mergeFolderAllows(options, [`Bash(${COMMAND})`], []);
+    expect(await probeRan(options.settings)).toBe(true);
+    fs.rmSync(path.join(folder, PROBE));
+    await model.close();
+    const otherProbe = 'another-probe';
+    model = await fakeModel({ name: 'Bash', input: { command: `touch ${otherProbe}` } });
+    const refused = await runTurn(options.settings);
+    expect(refused?.permission_denials).toEqual([
+      expect.objectContaining({
+        tool_name: 'Bash',
+        tool_input: { command: `touch ${otherProbe}` },
+      }),
+    ]);
+    expect(fs.existsSync(path.join(folder, otherProbe))).toBe(false);
+    expect((options.settings as { permissions: { allow: string[] } }).permissions.allow).toEqual([
+      `Bash(${COMMAND})`,
+    ]);
+    expect(options.allowedTools).toBeUndefined();
+  }, 120_000);
 
   it('still refuses it when the folder denies it, whatever the launch allows', async () => {
     folderSettings({ permissions: { deny: [`Bash(${COMMAND})`] } });
@@ -249,7 +281,7 @@ describe.skipIf(BINARY === null)('the self-grant files under an approved list', 
 
   beforeEach(async () => {
     model = await fakeModel();
-    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'self-grant-binary-')));
+    root = fs.realpathSync(fs.mkdtempSync(path.join(TEST_HOMES, 'self-grant-binary-')));
     dorkHome = path.join(root, '.dork');
     folder = path.join(dorkHome, 'agents', 'marketing');
     account = path.join(root, 'claude-config');

@@ -34,10 +34,6 @@ export {
 } from './model/settling-approvals';
 export { useScheduleTestRun } from './model/use-schedule-test-run';
 export { useScheduleApprovalPower } from './model/use-schedule-approval-power';
-export type {
-  ScheduleApprovalPower,
-  ScheduleApprovalRaise,
-} from './model/use-schedule-approval-power';
 export type { ScheduleTestRunPhase, ScheduleTestRunState } from './model/use-schedule-test-run';
 export { formatCadence, formatFirstRuns, formatRunMoment } from './lib/format-schedule-times';
 export type { FirstRuns } from './lib/format-schedule-times';

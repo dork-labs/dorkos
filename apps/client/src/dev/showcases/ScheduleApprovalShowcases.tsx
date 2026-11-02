@@ -189,6 +189,23 @@ export function ScheduleApprovalShowcases() {
       title="Schedule approval card"
       description="An agent that proposes a scheduled run never arms it — it parks until somebody says yes or no. This is where they say so, and the card's whole job is that the answer is informed: who proposed it, why in their own words, the cadence with its timezone, the first few concrete run times, and the exact instructions one disclosure away. Three answers — Approve, Reject (undoable for a few seconds, because the delete is simply not sent yet), and Run it once, which executes the prompt now as a single supervised run so the decision can be made on evidence rather than on faith. Answerable with A and D while focus is inside the card."
     >
+      <ShowcaseLabel>Choosing Don’t ask with an approved watchdog command</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg">
+          <ScheduleApprovalCard
+            task={proposal({
+              id: 'task-permission-picker',
+              displayName: 'Watchdog check',
+              reason: 'Run at Don’t ask to check the watchdog on a schedule.',
+              folderRules: {
+                status: 'approved',
+                applied: ['Bash(pnpm check:watchdog)'],
+                pending: [],
+              },
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
       <ShowcaseLabel>
         Everything present: a reason, a named proposer, a session to open, three run times
       </ShowcaseLabel>

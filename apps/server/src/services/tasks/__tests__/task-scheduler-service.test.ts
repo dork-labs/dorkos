@@ -3463,30 +3463,33 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
    * memory sees only the send. A grant that reached one and not the other would
    * be a run that is half-approved.
    */
-  it('launches a schedule approved at full autonomy at the mode the row holds', async () => {
-    const task = store.createTask(taskInput({ name: 'Approved high' }));
-    // The clamp an agent's proposal lands on, asserted so the raise below is a
-    // real change rather than the value the row already had.
-    expect(task.permissionMode).toBe('acceptEdits');
+  it.each(['bypassPermissions', 'dontAsk'] as const)(
+    'launches a schedule approved at %s at the mode the row holds',
+    async (permissionMode) => {
+      const task = store.createTask(taskInput({ name: 'Approved high' }));
+      // The clamp an agent's proposal lands on, asserted so the raise below is a
+      // real change rather than the value the row already had.
+      expect(task.permissionMode).toBe('acceptEdits');
 
-    // The approval, exactly as the route performs it: status and mode in one
-    // write, which is what makes it the operator's grant rather than a file's.
-    store.updateTask(task.id, { status: 'active', permissionMode: 'bypassPermissions' });
+      // The approval, exactly as the route performs it: status and mode in one
+      // write, which is what makes it the operator's grant rather than a file's.
+      store.updateTask(task.id, { status: 'active', permissionMode });
 
-    const service = scheduler(['claude-code']);
-    await runToCompletion(service, task.id);
+      const service = scheduler(['claude-code']);
+      await runToCompletion(service, task.id);
 
-    expect(managers['claude-code']!.ensureSession).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ permissionMode: 'bypassPermissions' })
-    );
-    expect(managers['claude-code']!.sendMessage).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.any(String),
-      expect.objectContaining({ permissionMode: 'bypassPermissions' })
-    );
-    await service.stop();
-  });
+      expect(managers['claude-code']!.ensureSession).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ permissionMode })
+      );
+      expect(managers['claude-code']!.sendMessage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({ permissionMode })
+      );
+      await service.stop();
+    }
+  );
 
   it('launches an un-raised schedule at the mode the clamp left it on', async () => {
     // The control. Without it the case above could pass on a scheduler that
