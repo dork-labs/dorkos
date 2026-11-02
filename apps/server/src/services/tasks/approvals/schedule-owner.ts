@@ -17,6 +17,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { AuditChange } from '@dorkos/shared/audit-schemas';
 import type { Task } from '@dorkos/shared/types';
 import { recordAudit } from '../../audit/audit-trail.js';
+import { logError, logger } from '../../../lib/logger.js';
 import { agentSchedulesArmWithoutAsking } from './agent-trust.js';
 
 /** The refusal for a schedule an agent files under another agent. */
@@ -92,7 +93,7 @@ export function ownsSchedule(
   callerPath: string,
   callerId: string | undefined
 ): boolean {
-  if (task.agentId !== null) return callerId !== undefined && task.agentId === callerId;
+  if (task.agentId) return callerId !== undefined && task.agentId === callerId;
   return !task.proposedByAgentPath || realOr(task.proposedByAgentPath) === realOr(callerPath);
 }
 
@@ -101,8 +102,10 @@ export function ownsSchedule(
  *
  * @param prompt - The prompt.
  */
-export function promptHashOf(prompt: string): string {
-  return `sha256:${createHash('sha256').update(prompt, 'utf8').digest('hex')}`;
+export function promptHashOf(prompt: string | null | undefined): string {
+  return `sha256:${createHash('sha256')
+    .update(prompt ?? '', 'utf8')
+    .digest('hex')}`;
 }
 
 /** The fields an update can change that the audit row names. */
@@ -148,6 +151,15 @@ export function scheduleChanges(before: Task, after: Task): AuditChange[] {
  * @param after - The schedule after it.
  */
 export function auditScheduleUpdate(before: Task, after: Task): void {
+  // The edit already happened; a row that cannot be written must not undo it.
+  try {
+    recordScheduleUpdate(before, after);
+  } catch (err) {
+    logger.warn('[tasks] could not record a schedule update', logError(err));
+  }
+}
+
+function recordScheduleUpdate(before: Task, after: Task): void {
   const change = scheduleChanges(before, after);
   if (change.length === 0) return;
   recordAudit({
@@ -204,7 +216,7 @@ export function scheduleEdit(
     (patch as { enabled?: unknown }).enabled === false;
   if (pausesOnly) return { armsAgentWork: false };
   if (editor.kind === 'unidentified') {
-    return task.agentId !== null || task.proposedByAgentPath
+    return task.agentId || task.proposedByAgentPath
       ? {
           refusal: { error: UNIDENTIFIED_EDITOR_MESSAGE, code: 'not_your_schedule' },
           armsAgentWork: false,

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(tasks): an agent can make and change scheduled tasks only for itself (DOR-3640)'
+  - 'fix(tasks): a schedule with no agentId field is a global one, and its audit row never breaks the edit (DOR-3640)'
 ---
 
 ### Fixed
