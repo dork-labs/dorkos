@@ -315,8 +315,13 @@ export function CommunityContextSwitcher({
               </>
             )}
             {/* Inline-sized, a mark beside the name rather than a control of
-                its own (Phase 4 §5). */}
-            <ChevronDown className={cn(SIDEBAR_ICON_INLINE, 'shrink-0 opacity-50')} aria-hidden />
+                its own (Phase 4 §5). The phone bar's compact trigger draws it at
+                10px: a hint, not a target, and the room it saves is the phone
+                title's floor at 375 (`chat-mock.spec.ts`, S12). */}
+            <ChevronDown
+              className={cn(compact ? 'size-2.5' : SIDEBAR_ICON_INLINE, 'shrink-0 opacity-50')}
+              aria-hidden
+            />
             <span className="sr-only">Choose context</span>
           </button>
         </ResponsiveDropdownMenuTrigger>
