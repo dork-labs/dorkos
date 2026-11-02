@@ -304,6 +304,16 @@ describe('writeMemory — the cap', () => {
     await expect(writeMemory(ref(), { action: 'add', text: NOTE })).rejects.toThrow(/Tidy it up/);
   });
 
+  it('refuses a same-size edit to a file already over the cap (DOR-3662)', async () => {
+    // A file kept over the cap must not be rewritten forever by swapping one note
+    // for another of the same size; only a change that shrinks it gets through.
+    await seedMemory(`${'a'.repeat(MEMORY_MAX_CHARS + 100)}\n- note one\n`);
+
+    await expect(
+      writeMemory(ref(), { action: 'replace', oldText: 'note one', text: 'note two' })
+    ).rejects.toBeInstanceOf(MemoryCapExceededError);
+  });
+
   it('still lets an over-sized file be made smaller', async () => {
     // The escape hatch. A file can only get over the cap by being edited on disk,
     // and if every write were refused the only way back would be another hand

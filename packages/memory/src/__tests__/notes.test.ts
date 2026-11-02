@@ -10,7 +10,13 @@ import path from 'node:path';
 import { MEMORY_NOTE_MAX_CHARS } from '@dorkos/shared/convention-files';
 import { MemoryCapExceededError, MemoryMatchError } from '@dorkos/shared/memory-provider';
 
-import { ensureNotesDir, listNotes, readNote, NOTE_READ_MAX_CHARS } from '../notes.js';
+import {
+  ensureNotesDir,
+  listNotes,
+  parseFrontmatter,
+  readNote,
+  NOTE_READ_MAX_CHARS,
+} from '../notes.js';
 import { MemoryPathError, resolveNoteFile } from '../paths.js';
 import { readMemorySnapshot, writeMemory } from '../store.js';
 
@@ -165,5 +171,33 @@ describe('notes files', () => {
     const ref = await agent();
     expect(await listNotes(ref, {})).toMatchObject({ status: 'ok', total: 0, notes: [] });
     expect((await readNote(ref, 'nope')).status).toBe('absent');
+  });
+});
+
+describe('the frontmatter parse is linear (CodeQL 343, DOR-3662)', () => {
+  /** The per-line regex the parse replaced, kept here only to prove the two agree. */
+  const OLD = /^([A-Za-z][\w-]*):\s*(.*)$/;
+
+  it('agrees with the old regex on every short line made of the characters that matter', () => {
+    // No quotes: unquoting is unchanged, so only the line split is compared.
+    const alphabet = ['a', ':', ' ', '\t', '-', '\u2028'];
+    const lines: string[] = [''];
+    for (let length = 1; length <= 6; length += 1)
+      for (const prefix of lines.filter((l) => l.length === length - 1))
+        for (const c of alphabet) lines.push(prefix + c);
+    for (const line of lines) {
+      const old = OLD.exec(`description${line}`);
+      const want = old?.[1] === 'description' ? old[2]!.trim() || undefined : undefined;
+      const parsed = parseFrontmatter(`---\ndescription${line}\n---\nbody\n`);
+      expect(parsed.description, JSON.stringify(line)).toBe(want);
+    }
+  });
+
+  it('parses a long blank-filled frontmatter line in well under a second', () => {
+    // Built in code: a field whose value is a long run of blanks that fails at its end.
+    const content = `---\nkey:${' \t'.repeat(50_000)}x\u2028y\n---\nbody\n`;
+    const started = performance.now();
+    expect(parseFrontmatter(content).body).toBe('body\n');
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });

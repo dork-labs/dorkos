@@ -69,10 +69,36 @@ export function docTitleFromHead(head: string, fileName: string): string {
       continue;
     }
     if (fence !== null) continue;
-    const heading = /^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/.exec(text);
-    if (heading && heading[1]!.trim() !== '') return heading[1]!.trim();
+    const heading = headingText(text);
+    if (heading !== '') return heading;
   }
   return docFileStem(fileName);
+}
+
+/** A line break JavaScript's `.` will not cross, so a line holding one is no heading. */
+const LINE_BREAK = /[\r\u2028\u2029]/;
+
+const isBlank = (c: string) => c === ' ' || c === '\t';
+
+/**
+ * A line's ATX heading text, or `''` when the line is not one. It matches what
+ * `/^ {0,3}#[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/` captured, trimmed, without that
+ * regex: its three adjacent blank-matching parts took about 27 s on a 4 KB line
+ * (CodeQL 345, DOR-3661), inside the read cap.
+ *
+ * @param line - One line of the doc, without its `\n`.
+ */
+function headingText(line: string): string {
+  const open = /^ {0,3}#[ \t]/.exec(line);
+  if (!open || LINE_BREAK.test(line)) return '';
+  let start = open[0].length;
+  while (start < line.length && isBlank(line[start]!)) start += 1;
+  let end = line.length;
+  while (end > start && isBlank(line[end - 1]!)) end -= 1;
+  let hash = end;
+  while (hash > start && line[hash - 1] === '#') hash -= 1;
+  if (hash < end && hash > start && isBlank(line[hash - 1]!)) end = hash;
+  return line.slice(start, end).trim();
 }
 
 /**

@@ -157,3 +157,20 @@ describe('the browser forms of the list', () => {
     expect(playwrightBlockedOrigins(local)).toContain('http://localhost:3000');
   });
 });
+
+describe('trailing dots are trimmed in linear time (CodeQL 351, DOR-3663)', () => {
+  it('reads a host with a long run of inner dots in well under a second', () => {
+    // Built in code: dots that are not at the end, so the old `/\.+$/` kept retrying.
+    const domain = `a${'.'.repeat(100_000)}b`;
+    const started = performance.now();
+    expect(cookieReachesCloud(domain)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it('still drops trailing dots and lower-cases, as before', () => {
+    const [entry] = cloudOriginEntries();
+    expect(entry).toBeDefined();
+    expect(cookieReachesCloud(`${entry!.host.toUpperCase()}...`)).toBe(true);
+    expect(cookieReachesCloud('example.invalid.')).toBe(false);
+  });
+});

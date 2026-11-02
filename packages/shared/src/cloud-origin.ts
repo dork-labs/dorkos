@@ -56,7 +56,12 @@ const LOCAL_HOST = /^(localhost|\[[0-9a-f:.]+\]|\d{1,3}(\.\d{1,3}){3})$/i;
 
 /** A hostname in the one form every comparison here uses: lower case, no trailing dot. */
 function normalizeHost(host: string): string {
-  return host.toLowerCase().replace(/\.+$/, '');
+  // Trim trailing dots by hand: `/\.+$/` backtracks quadratically on a long run
+  // of dots that is not at the end, and an agent's browser URL has no length cap
+  // (CodeQL 351, DOR-3663). agent-browser.ts's normalizeHost does the same.
+  let end = host.length;
+  while (end > 0 && host[end - 1] === '.') end -= 1;
+  return host.slice(0, end).toLowerCase();
 }
 
 function entryFor(url: string): CloudOriginEntry | null {

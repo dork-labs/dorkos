@@ -280,8 +280,15 @@ export function parseFrontmatter(content: string): {
   if (!match) return { body: content };
   const fields: Record<string, string> = {};
   for (const line of match[1]!.split(/\r?\n/)) {
-    const pair = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(line);
-    if (pair) fields[pair[1]!] = unquote(pair[2]!.trim());
+    // Split on the first colon rather than `/^([A-Za-z][\w-]*):\s*(.*)$/`, whose
+    // `\s*` and `.*` fought over a long run of blanks: 12.6 s on a 100 KB line
+    // (CodeQL 343, DOR-3662). Same result: a value holding a line break `.`
+    // would not cross is no field.
+    const colon = line.indexOf(':');
+    if (colon < 1 || !/^[A-Za-z][\w-]*$/.test(line.slice(0, colon))) continue;
+    const value = line.slice(colon + 1);
+    if (/[\r\u2028\u2029]/.test(value.trimStart())) continue;
+    fields[line.slice(0, colon)] = unquote(value.trim());
   }
   return {
     ...(fields.description ? { description: fields.description } : {}),
