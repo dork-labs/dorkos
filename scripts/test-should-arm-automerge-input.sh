@@ -50,7 +50,7 @@ JSON
 }
 
 checks() {
-  echo '[{"name": "typecheck", "bucket": "pass"}, {"name": "review", "bucket": "pass"}, {"name": "security-gate", "bucket": "pass"}]'
+  echo '[{"name": "typecheck", "bucket": "pass"}, {"name": "review", "bucket": "pass"}, {"name": "security-gate", "bucket": "pass"}, {"name": "security-review", "bucket": "pass"}]'
 }
 
 # The GraphQL answer for the same pull request, in the shape merge-tail's query
@@ -104,7 +104,7 @@ builds() {
 builds "clean answer" \
   '.number == 7 and .mergeQueueEntry == null and .unresolvedThreads == 0
    and .headSince == "2026-09-21T15:00:00Z" and .queueRemovals == []
-   and .baseRefName == "main" and (.checks | length) == 3' \
+   and .baseRefName == "main" and (.checks | length) == 4' \
   "$(meta)" "$(checks)" "$(graphql)"
 
 run "$(meta)" "$(checks)" "$(graphql)"

@@ -49,7 +49,8 @@ green() {
     {"name": "fragment-present", "bucket": "pass"},
     {"name": "no-fragment-under-skip-label", "bucket": "skipping"},
     {"name": "review", "bucket": "pass"},
-    {"name": "security-gate", "bucket": "pass"}
+    {"name": "security-gate", "bucket": "pass"},
+    {"name": "security-review", "bucket": "pass"}
   ],
   "headSince": "2026-09-21T15:00:00Z",
   "queueRemovals": []
@@ -124,6 +125,21 @@ check "security gate not run yet"    "SKIP security-gate-missing"    '.checks |=
 check "a second gate row failing"    "SKIP security-gate-not-passed" '.checks += [{"name": "security-gate", "bucket": "fail"}]'
 check "hold outranks security gate"  "SKIP held-by-label"            "$SG = \"fail\" | .labels = [\"hold\"]"
 
+# Main's verdict at this head (DOR-3686): the security-review status main's copy
+# writes. The PR's own security-gate passing is not enough, because a PR that
+# edits the gate is judged by its edit. Pending is a refusal, never in flight.
+SR='(.checks[] | select(.name == "security-review") | .bucket)'
+check "own gate passes, verdict pending"  "SKIP security-review-not-passed" "$SR = \"pending\""
+check "own gate passes, verdict failure"  "SKIP security-review-not-passed" "$SR = \"fail\""
+check "verdict skipped or cancelled"      "SKIP security-review-not-passed" "$SR = \"skipping\""
+check "verdict cancelled"                 "SKIP security-review-not-passed" "$SR = \"cancel\""
+check "no verdict row at all"             "SKIP security-review-not-passed" '.checks |= map(select(.name != "security-review"))'
+check "a second verdict row failing"      "SKIP security-review-not-passed" '.checks += [{"name": "security-review", "bucket": "fail"}]'
+check "verdict name is exact"             "SKIP security-review-not-passed" '.checks |= map(if .name == "security-review" then .name = "security-review-x" else . end)'
+check "verdict success at the head arms"  "ARM"                             "$SR = \"pass\""
+check "pending verdict, not in flight"    "SKIP security-review-not-passed" "$SR = \"pending\" | .checks[0].bucket = \"pass\""
+check "hold outranks the verdict"         "SKIP held-by-label"              "$SR = \"pending\" | .labels = [\"hold\"]"
+
 # A conflicting PR runs no CI at all, so its green checks are stale and
 # meaningless. This is the trap the creating-pull-requests skill documents.
 check "conflicting"               "SKIP conflicting"          '.mergeStateStatus = "DIRTY"'
@@ -144,7 +160,7 @@ check "a failing check"           "SKIP failing-checks"       '.checks[0].bucket
 check "a cancelled check"         "SKIP cancelled-checks"     '.checks[0].bucket = "cancel"'
 check "a check still running"     "SKIP checks-in-flight"     '.checks[0].bucket = "pending"'
 check "no checks at all"          "SKIP no-checks"            '.checks = []'
-check "all checks skipped"        "ARM"                       '.checks = [{"name":"a","bucket":"skipping"},{"name":"security-gate","bucket":"pass"}]'
+check "all checks skipped"        "ARM"                       '.checks = [{"name":"a","bucket":"skipping"},{"name":"security-gate","bucket":"pass"},{"name":"security-review","bucket":"pass"}]'
 check "fail outranks pending"     "SKIP failing-checks"       '.checks[0].bucket = "fail" | .checks[1].bucket = "pending"'
 
 # Precedence: a held PR that is also broken still reports the hold, so the
