@@ -30,8 +30,8 @@ export interface Change {
   /**
    * What kind of fact this is, for the rules rung (§6.1): an unanswered local
    * message, an overdue commitment, a failed or parked run, a lost connection, a
-   * failing check on the agent's own branch, a failure of its own beats, or
-   * something informational.
+   * failing check on the agent's own branch, a failure of its own beats, open
+   * work gone quiet (DOR-3674), or something informational.
    */
   signal:
     | 'unanswered'
@@ -44,6 +44,7 @@ export interface Change {
     | 'self-refused'
     | 'usage-high'
     | 'commits'
+    | 'work-stalled'
     | 'info';
   /**
    * The turn marks the fact was written under, when it was (DOR-3036): another agent's post
