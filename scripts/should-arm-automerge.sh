@@ -43,13 +43,15 @@
 #     "number": 537,
 #     "state": "OPEN",
 #     "isDraft": false,
+#     "baseRefName": "main",
 #     "mergeStateStatus": "BEHIND",
 #     "autoMergeRequest": null,
 #     "mergeQueueEntry": null,
 #     "reviewDecision": "APPROVED",
 #     "labels": [{"name": "hold"}],
 #     "unresolvedThreads": 0,
-#     "checks": [{"name": "typecheck", "bucket": "pass"}],
+#     "checks": [{"name": "typecheck", "bucket": "pass"},
+#                {"name": "security-gate", "bucket": "pass"}],
 #     "headSince": "2026-09-21T15:02:45Z",
 #     "queueRemovals": [{"at": "2026-09-21T14:10:19Z",
 #                        "failedChecks": ["browser-shard (2/6)", "browser-test"]}]
@@ -166,6 +168,15 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   elif ((labels) as $l | any($hold[]; . as $h | $l | index($h)))
                                                     then "SKIP held-by-label"
 
+  # Only `main` has the merge queue and its required checks. A stacked PR
+  # targets the branch of another PR, where `gh pr merge --auto` merges on the spot
+  # once it is green, and the layer then rides into main with its parent, past
+  # its own review and label: #3150 merged into the branch of #3148 on 2026-10-23
+  # (DOR-3679). Absent is not "main": merge-tail reads `baseRefName` with the
+  # rest of the PR, so a payload without it was built some other way.
+  elif (has("baseRefName") | not)                   then "SKIP base-unknown"
+  elif .baseRefName != "main"                       then "SKIP base-not-main"
+
   # A conflicting PR gets no CI at all (GitHub cannot build its test-merge
   # commit), so its checks are stale or absent and mean nothing. Arming here is
   # the trap the creating-pull-requests skill documents.
@@ -187,6 +198,18 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   # No checks at all means the suite has not been created yet, or path filters
   # excluded everything. Either way there is nothing to stand on.
   elif ((buckets) | length) == 0                    then "SKIP no-checks"
+
+  # The approval of Security, as the security-gate job decides it for this head: on
+  # a security path, `security-reviewed` added after the last push and no hold
+  # (`.github/scripts/security-gate.mjs`). Its ruleset is not enforced yet, so
+  # nothing else stops the queue merging a PR whose label predates its head.
+  # The job is the one source of that rule, so it is required here by name,
+  # affirmatively: no row (not created yet, or renamed) arms nothing.
+  elif ([(.checks // [])[] | select(.name == "security-gate")] | length) == 0
+                                                    then "SKIP security-gate-missing"
+  elif ([(.checks // [])[] | select(.name == "security-gate")
+         | (.bucket // "") | ascii_downcase] | any(. != "pass"))
+                                                    then "SKIP security-gate-not-passed"
   elif ((buckets) | any(. == "fail"))               then "SKIP failing-checks"
   elif ((buckets) | any(. == "cancel"))             then "SKIP cancelled-checks"
   elif ((buckets) | any(. == "pending"))            then "SKIP checks-in-flight"

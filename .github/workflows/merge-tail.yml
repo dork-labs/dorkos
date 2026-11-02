@@ -216,7 +216,7 @@ jobs:
           }
           read_meta() {
             gh pr view "$1" --repo "$REPO" \
-              --json number,state,isDraft,mergeStateStatus,autoMergeRequest,reviewDecision,labels,headRefOid \
+              --json number,state,isDraft,baseRefName,mergeStateStatus,autoMergeRequest,reviewDecision,labels,headRefOid \
               > "$work/meta.json" 2>"$work/err.txt"
           }
 

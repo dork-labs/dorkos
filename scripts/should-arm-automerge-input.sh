@@ -16,8 +16,9 @@
 # Usage:
 #   scripts/should-arm-automerge-input.sh <meta.json> <checks.json> <graphql.json>
 #
-#   meta.json     `gh pr view --json number,state,isDraft,mergeStateStatus,
-#                 autoMergeRequest,reviewDecision,labels,headRefOid`
+#   meta.json     `gh pr view --json number,state,isDraft,baseRefName,
+#                 mergeStateStatus,autoMergeRequest,reviewDecision,labels,
+#                 headRefOid`
 #   checks.json   `gh pr checks --json name,bucket`, or `[]` when gh said the
 #                 pull request has no checks; anything else is unreadable, and
 #                 merge-tail writes gh's error text here so the skip names it
