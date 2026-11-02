@@ -1,4 +1,5 @@
 name: security-review-initialize
+# QA PROOF #3426 (e1): comment-only change, do not merge.
 
 # Writes the `security-review` commit status from MAIN's copy of the gate
 # (Security's required-checks plan, step 1, 2026-11-02). `security-gate` runs a
