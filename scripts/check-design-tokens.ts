@@ -245,6 +245,37 @@ export const RULES: Rule[] = [
     only: /^apps\/client\/src\/layers\/features\/entry-actions\/ui\/EntryReactionRow\.tsx$/,
     fix: 'a reaction pill is a tint: bg-foreground/5, or bg-brand/15 for yours',
   },
+  // Phase 4, the sidebar (SIDEBAR-SPEC §9, guard rows). The panel's own feature
+  // only: one tint ramp, text that clears 4.5:1, glyphs from the size tokens,
+  // and orange as ink, never as a fill.
+  {
+    id: 'sidebar-faded-text',
+    kind: 'hard',
+    pattern: /(?<![\w-])text-sidebar-foreground\/[1-5]0\b/g,
+    only: /^apps\/client\/src\/layers\/features\/dashboard-sidebar\//,
+    fix: 'text-sidebar-foreground/70 or stronger; /50 measured 3.25:1 on the light panel',
+  },
+  {
+    id: 'sidebar-off-ramp-fill',
+    kind: 'hard',
+    pattern: /(?<![\w-])bg-(?:accent|muted)(?![\w-])/g,
+    only: /^apps\/client\/src\/layers\/features\/dashboard-sidebar\//,
+    fix: 'use the --sidebar-accent ramp (bg-sidebar-accent, /40, /70); --muted flips between themes',
+  },
+  {
+    id: 'sidebar-icon-literal',
+    kind: 'ratchet',
+    pattern: /(?<![\w-])size-(?:3\.5|3|4)(?![\w.-])/g,
+    only: /^apps\/client\/src\/layers\/features\/dashboard-sidebar\//,
+    fix: 'use SIDEBAR_ICON_CONTROL / SIDEBAR_ICON_INLINE, or size-(--size-icon-*)',
+  },
+  {
+    id: 'sidebar-brand-fill',
+    kind: 'hard',
+    pattern: /(?<![\w-])(?:bg|text)-brand(?![\w-])/g,
+    only: /^apps\/client\/src\/layers\/features\/dashboard-sidebar\//,
+    fix: 'orange is ink here: bg-brand-text or text-brand-text (G2)',
+  },
   // Phase 1 motion. One set of springs and curves, none of which overshoots.
   {
     id: 'spring-literal',

@@ -10,13 +10,14 @@ import {
 } from '@/layers/entities/community';
 
 import type { ReactNode } from 'react';
-import { Hash } from 'lucide-react';
+import { CircleAlert, Hash } from 'lucide-react';
 import {
   Button,
   CountPill,
   SIDEBAR_FACE,
   SIDEBAR_GLYPH_GAP,
   SIDEBAR_GLYPH_SLOT,
+  SIDEBAR_ROW_INSET,
   sidebarRowVariants,
 } from '@/layers/shared/ui';
 import {
@@ -42,8 +43,8 @@ const SPACE_HEADING_CLASS =
  * A link rather than `SidebarRow`'s button, so a remote room keeps its address:
  * it can be opened in a new tab or copied like any other. It wears the row's own
  * variants, so its height, tint, ink and focus ring are the local rows' exactly
- * (Phase 4 S13) — where it used to spell `hover:bg-accent` and `min-h-9` of its
- * own and drew a bare number on every channel.
+ * (Phase 4 S13) — where it used to spell the app-wide accent hover and
+ * `min-h-9` of its own and drew a bare number on every channel.
  */
 function SpaceRowLink({
   link,
@@ -84,39 +85,75 @@ function SpaceRowLink({
   );
 }
 
+/**
+ * One line of a space's state — loading, offline, failed, empty — drawn as one
+ * static row of the list it stands in for (Card §7, Phase 4 S13).
+ *
+ * The row's own height, inset and ink, with the words on the label column, so
+ * a space that cannot show its channels still reads as part of the panel
+ * rather than as a caption under it. A failure carries the error glyph in the
+ * glyph slot and a ghost "Try again" at the end. Nothing here is pressable but
+ * that button, and nothing moves.
+ */
+function SpaceStatusRow({
+  children,
+  failed = false,
+  onRetry,
+  live = true,
+}: {
+  children: ReactNode;
+  /** Draw the error glyph: something broke, rather than is on its way. */
+  failed?: boolean;
+  /** Offer "Try again" at the row's end. */
+  onRetry?: () => void;
+  /** Say it to a screen reader when it changes. A standing fact is not news. */
+  live?: boolean;
+}) {
+  return (
+    <div
+      {...(live ? { role: 'status' } : {})}
+      data-slot="space-status-row"
+      className={cn(
+        'text-sidebar-foreground/70 text-control flex min-h-7 items-center rounded-md py-1 max-md:min-h-11',
+        SIDEBAR_ROW_INSET
+      )}
+    >
+      <span className={cn('flex shrink-0 items-center', SIDEBAR_GLYPH_SLOT)}>
+        {failed && (
+          <CircleAlert aria-hidden className={cn(ROW_GLYPH_CLASS, 'text-status-error-fg')} />
+        )}
+      </span>
+      <span className={cn('min-w-0 flex-1 truncate', SIDEBAR_GLYPH_GAP)}>{children}</span>
+      {onRetry && (
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={onRetry}
+          className="text-sidebar-foreground hover:bg-sidebar-accent/70 ml-2 shrink-0"
+        >
+          Try again
+        </Button>
+      )}
+    </div>
+  );
+}
+
 /** Remote channels are grouped by community on the shared desktop and mobile library surface. */
 export function CommunityChannelGroups() {
   const connections = useCommunityConnections(true);
   const search = useSafeSearch() as { community?: string };
   if (!search.community) return null;
-  if (connections.isPending)
-    return (
-      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
-        Loading space…
-      </p>
-    );
+  if (connections.isPending) return <SpaceStatusRow>Loading space…</SpaceStatusRow>;
   if (connections.isError)
     return (
-      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
-        Spaces could not be loaded.{' '}
-        <Button variant="ghost" size="sm" onClick={() => void connections.refetch()}>
-          Retry
-        </Button>
-      </p>
+      <SpaceStatusRow failed onRetry={() => void connections.refetch()}>
+        Spaces could not be loaded.
+      </SpaceStatusRow>
     );
   const connection = connections.data?.find(({ ref }) => ref === search.community);
-  if (!connection)
-    return (
-      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
-        This space is no longer connected.
-      </p>
-    );
+  if (!connection) return <SpaceStatusRow>This space is no longer connected.</SpaceStatusRow>;
   if (connection.status !== 'connected')
-    return (
-      <p role="status" className="text-muted-foreground px-3 py-2 text-xs">
-        Reconnect this space to open its channels.
-      </p>
-    );
+    return <SpaceStatusRow>Reconnect this space to open its channels.</SpaceStatusRow>;
   return <CommunityChannels connection={connection} />;
 }
 
@@ -133,36 +170,25 @@ function CommunityChannels({ connection }: { connection: CommunityConnectionDesc
   const { ref: rovingRef, onKeyDown: onRovingKeyDown } = useRovingFocus();
   const rovingProps = { ref: rovingRef, onKeyDown: onRovingKeyDown };
   return (
-    <section aria-label={connection.label} className="py-2" {...rovingProps}>
+    // `max-md:py-3`: the same 24px a local section keeps on a phone (P2).
+    <section aria-label={connection.label} className="py-2 max-md:py-3" {...rovingProps}>
       <h3 className={SPACE_HEADING_CLASS}>{connection.label}</h3>
+      {/* At most one of these at a time, each one static row (Card §7). */}
       {!access.cacheReadable && (
-        <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
+        <SpaceStatusRow>
           {connection.status === 'reconnect-required'
             ? 'Reconnect to view channels.'
             : 'Channels aren’t available.'}
-        </p>
+        </SpaceStatusRow>
       )}
-      {access.cacheReadable && !access.verified && (
-        <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
-          Saved channels
-        </p>
-      )}
-      {access.verified && rooms.isPending && (
-        <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
-          Loading channels…
-        </p>
-      )}
+      {access.cacheReadable && !access.verified && <SpaceStatusRow>Saved channels</SpaceStatusRow>}
+      {access.verified && rooms.isPending && <SpaceStatusRow>Loading channels…</SpaceStatusRow>}
       {access.verified && rooms.isError && (
-        <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
-          Space unavailable.{' '}
-          <Button variant="ghost" size="sm" onClick={() => void rooms.refetch()}>
-            Retry
-          </Button>
-        </p>
+        <SpaceStatusRow failed onRetry={() => void rooms.refetch()}>
+          Space unavailable.
+        </SpaceStatusRow>
       )}
-      {rooms.data?.stale && (
-        <p className="text-muted-foreground px-2 text-xs">Saved channels · offline</p>
-      )}
+      {rooms.data?.stale && <SpaceStatusRow live={false}>Saved channels · offline</SpaceStatusRow>}
       {rooms.data?.rooms
         .filter((room) => !room.archived)
         .map((room) => {
@@ -190,7 +216,7 @@ function CommunityChannels({ connection }: { connection: CommunityConnectionDesc
           );
         })}
       {rooms.data?.rooms.length === 0 && (
-        <p className="text-muted-foreground px-2 py-1 text-xs">No channels available.</p>
+        <SpaceStatusRow live={false}>No channels available.</SpaceStatusRow>
       )}
       {access.verified && <CommunityDms connection={connection} />}
     </section>
@@ -252,9 +278,7 @@ function CommunityDms({ connection }: { connection: CommunityConnectionDescripto
         );
       })}
       {dms.data.incomplete && (
-        <p role="status" className="text-muted-foreground px-2 py-1 text-xs">
-          Some direct messages couldn’t load.
-        </p>
+        <SpaceStatusRow failed>Some direct messages couldn’t load.</SpaceStatusRow>
       )}
     </section>
   );

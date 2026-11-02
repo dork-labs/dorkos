@@ -219,7 +219,10 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       // section used to render inside Agents and wore `--sidebar-nested-x` to
       // say so; sections are peers now (D3), so every header in the panel sits
       // on one x and every row on another — the two levels D1 asked for.
-      className="group/section px-0"
+      //
+      // `max-md:py-3`: 24px between sections on a phone rather than 20, the
+      // 11.4 step for a 44px list (Phase 4 P2).
+      className="group/section px-0 max-md:py-3"
       // A stable handle for the page objects — `[data-slot="sidebar-group"]`
       // alone names every section in the panel.
       data-sidebar-section={section.id}

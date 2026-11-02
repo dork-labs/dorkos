@@ -240,7 +240,9 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
     // Counted, not merely present. "The three strings appear somewhere in this
     // file" would be satisfied by a file that grew a SECOND, unguarded menu
     // beside a guarded one — which is the shape the bug took the first time.
-    const contents = count(text, /<DropdownMenuContent/);
+    // A `ResponsiveDropdownMenuContent` (menu under a mouse, sheet under a
+    // thumb) is the same menu and counts the same.
+    const contents = count(text, /<(?:Responsive)?DropdownMenuContent\b/);
     expect(contents).toBeGreaterThan(0);
     expect(count(text, /onCloseAutoFocus=\{guarded\.onCloseAutoFocus\}/)).toBe(contents);
     // …and every one of them renders the GUARDED list, not the raw one.

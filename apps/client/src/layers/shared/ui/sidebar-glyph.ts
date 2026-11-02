@@ -37,5 +37,20 @@ export const SIDEBAR_GLYPH_SLOT = 'size-[18px] max-md:size-6';
  */
 export const SIDEBAR_FACE = 'max-md:size-6';
 
+/**
+ * A group conversation's faces, held to the slot (Phase 4 P3).
+ *
+ * Two full-size faces overlapped to 22px, 4 more than the 18px slot, so the
+ * label after them started 4px from the stack instead of 8. Here each face is
+ * 14px and they overlap by 10, which is 18 exactly; on a phone, 18 overlapping
+ * by 12 fill the 24px slot. The emoji drops to the smallest type step so it
+ * still sits inside a 14px face. Pass `face` to `RoomAvatar`'s `faceClassName`
+ * and `overlap` to its `overlap`.
+ */
+export const SIDEBAR_FACE_STACK = {
+  face: 'size-3.5 text-3xs max-md:size-[18px] max-md:text-2xs',
+  overlap: '-space-x-2.5 max-md:-space-x-3',
+} as const;
+
 /** The gap between a row's glyph slot and its label. See {@link SIDEBAR_GLYPH_SLOT}. */
 export const SIDEBAR_GLYPH_GAP = 'ml-2 max-md:ml-3';

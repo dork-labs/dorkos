@@ -91,7 +91,7 @@ export function UpdatePill({ update }: UpdatePillProps) {
           aria-label="Restart to install the update"
           className={PILL_CLASSES}
         >
-          <RotateCw className="size-3" />
+          <RotateCw className="size-(--size-icon-xs)" />
           Restart to update
         </button>
       </div>
@@ -112,7 +112,7 @@ export function UpdatePill({ update }: UpdatePillProps) {
           aria-label="Download a fresh copy of DorkOS"
           className={cn(PILL_CLASSES, 'self-start')}
         >
-          <Download className="size-3" />
+          <Download className="size-(--size-icon-xs)" />
           Download fresh copy
         </button>
       </div>
@@ -127,16 +127,20 @@ export function UpdatePill({ update }: UpdatePillProps) {
         aria-label={`Copy the update command for v${update.latestVersion}`}
         className={PILL_CLASSES}
       >
-        {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+        {copied ? (
+          <Check className="size-(--size-icon-xs)" />
+        ) : (
+          <Copy className="size-(--size-icon-xs)" />
+        )}
         {copyLabel(update.latestVersion, copied, failed)}
       </button>
       <button
         type="button"
         onClick={update.dismiss}
         aria-label="Dismiss update notification"
-        className="text-sidebar-foreground/50 hover:text-sidebar-foreground focus-ring rounded-md p-0.5 transition-colors duration-150"
+        className="text-sidebar-foreground/70 hover:text-sidebar-foreground focus-ring rounded-md p-0.5 transition-colors duration-150"
       >
-        <X className="size-3" />
+        <X className="size-(--size-icon-xs)" />
       </button>
     </div>
   );
