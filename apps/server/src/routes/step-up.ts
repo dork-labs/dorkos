@@ -139,7 +139,7 @@ function passwordMayCross(facts: RequestFacts): boolean {
 const REFUSALS: Record<StepUpRefusalCode, { status: 400 | 403 | 404 | 409 | 429; error: string }> =
   {
     expired: { status: 404, error: 'That took too long. Nothing changed.' },
-    'wrong-password': { status: 403, error: 'That’s not your DorkOS password. Try again.' },
+    'wrong-password': { status: 403, error: 'That’s not your DorkOS password.' },
     'too-many-tries': { status: 403, error: 'Too many wrong passwords. Nothing changed.' },
     'too-many-attempts': {
       status: 429,

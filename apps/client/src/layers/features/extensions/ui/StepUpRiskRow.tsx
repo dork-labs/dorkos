@@ -38,7 +38,7 @@ export function StepUpRiskRow({ risk, id, name, onTurnOff, isToggling }: StepUpR
           type="button"
           onClick={() => move.mutate({ id, name })}
           disabled={busy}
-          className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-xs underline underline-offset-2 disabled:opacity-50"
+          className="text-muted-foreground hover:text-foreground focus-ring min-h-11 rounded-sm text-left text-xs underline underline-offset-2 disabled:opacity-50 sm:min-h-0"
         >
           Move out of {agent}’s folder
         </button>
@@ -47,7 +47,7 @@ export function StepUpRiskRow({ risk, id, name, onTurnOff, isToggling }: StepUpR
           type="button"
           onClick={onTurnOff}
           disabled={busy}
-          className="text-muted-foreground hover:text-foreground focus-ring rounded-sm text-xs underline underline-offset-2 disabled:opacity-50"
+          className="text-muted-foreground hover:text-foreground focus-ring min-h-11 rounded-sm text-left text-xs underline underline-offset-2 disabled:opacity-50 sm:min-h-0"
         >
           Turn off
         </button>

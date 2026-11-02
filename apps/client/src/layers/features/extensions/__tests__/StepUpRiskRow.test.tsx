@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { extensionQueryKeys } from '@/layers/entities/extension';
 import { StepUpRiskRow } from '../ui/StepUpRiskRow';
 
 afterEach(() => {
@@ -45,6 +46,27 @@ describe('StepUpRiskRow', () => {
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(String(url)).toMatch(/\/extensions\/sq\/move-out$/);
     expect((init as RequestInit).method).toBe('POST');
+  });
+
+  it('after a move, the extension lists and their risks are read again', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    render(
+      <QueryClientProvider client={client}>
+        <StepUpRiskRow
+          risk={{ id: 'sq', name: 'Social queue', reason: 'agent-folder', agentName: 'ana' }}
+          id="sq"
+          name="Social queue"
+          onTurnOff={vi.fn()}
+          isToggling={false}
+        />
+      </QueryClientProvider>
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Move out of ana’s folder' }));
+    await vi.waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: extensionQueryKeys.all })
+    );
   });
 
   it('a changed mini app: says so, and turns it off with the card’s own toggle', async () => {

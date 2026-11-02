@@ -360,10 +360,13 @@ function EndedBody({ message, onClose }: { message: string; onClose: () => void 
 
 /**
  * The sheet's main button, named for the action where the designer named it
- * (DOR-3467: "Confirm setting"); "Confirm" otherwise.
+ * (DOR-3467: "Confirm setting"; a connection using a setting: "Allow sending");
+ * "Confirm" otherwise.
  */
 function primaryLabel(kind: StepUpActionKind | undefined): string {
-  return kind === 'connection.confirm-setting' ? 'Confirm setting' : 'Confirm';
+  if (kind === 'connection.confirm-setting') return 'Confirm setting';
+  if (kind === 'connection.use-setting') return 'Allow sending';
+  return 'Confirm';
 }
 
 /** One line for a mini app that keeps confirming off (PM, DOR-3234 Must 3). */
@@ -479,7 +482,7 @@ function FailureLine({
     failure.reason === 'too-many-attempts'
       ? `Too many tries. Try again in ${Math.max(1, secondsLeft)} sec.`
       : failure.reason === 'wrong-password'
-        ? 'That password isn’t right.'
+        ? 'That’s not your DorkOS password.'
         : failure.message;
   return (
     <p id={id} role="alert" className="text-destructive text-sm">

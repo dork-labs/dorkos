@@ -150,7 +150,7 @@ describe('ActionStepUpHost', () => {
     render(<ActionStepUpHost />);
     void ask();
     await confirmWith('nope');
-    expect(await screen.findByText('That password isn’t right.')).toBeTruthy();
+    expect(await screen.findByText('That’s not your DorkOS password.')).toBeTruthy();
     expect(screen.getByRole('alertdialog')).toBeTruthy();
   });
 
@@ -188,6 +188,16 @@ describe('ActionStepUpHost', () => {
     render(<ActionStepUpHost />);
     void ask();
     expect(await screen.findByRole('button', { name: 'Confirm setting' })).toBeTruthy();
+  });
+
+  it('names the button for a connection that will send your setting', async () => {
+    heldWith({ ...VIEW, kind: 'connection.use-setting', notes: [] }, [
+      200,
+      { ok: true, status: 200, result: {} },
+    ]);
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(await screen.findByRole('button', { name: 'Allow sending' })).toBeTruthy();
   });
 
   it('never offers a password field over plain http from another device', async () => {
