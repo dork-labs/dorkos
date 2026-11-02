@@ -7,7 +7,7 @@
  *
  * @module services/runtimes/claude-code/mcp-tools/session-start-facts
  */
-import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { logError, logger } from '../../../../lib/logger.js';
 import { getAgentIdentityService } from '../../../core/agent-identity/index.js';
 import {
@@ -17,7 +17,7 @@ import {
 import { gatedActionForMcpTool } from '../../../core/mcp-tool-tiers.js';
 import { isKept } from '../../../core/permissions/existing-chats-raise.js';
 import { resolveUnattendedDefaultStop } from '../../../session/resolution/resolve-session-defaults.js';
-import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
+import { carriedHoldOf, markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 import type { CallingChat, StartLevelFacts } from './session-start-permission.js';
 
 /** The calling agent, as `session_start` resolved it. */
@@ -46,13 +46,18 @@ interface StartFactsInput {
  * read an outsider's words, as the spread a launch takes; empty otherwise.
  *
  * It carries a teammate's chain and caps nothing (`ceilingCarrying`), so the
- * spin-off starts at the level asked for, or its own.
+ * spin-off starts at the level asked for, or its own. A Wi-Fi hold rides as a
+ * mark (DOR-3561): the spin-off keeps its level and is refused raises.
  *
  * @param caller - Who is starting it: the calling chat, or only the agent.
  */
-export function outsiderStartCeiling(caller: Pick<StartCaller, 'agentPath' | 'chat'>) {
+export function outsiderStartCeiling(caller: Pick<StartCaller, 'agentPath' | 'chat'>): {
+  permissionCeiling?: TurnPermissionCeiling;
+  carriedMarks?: { outsider: true };
+} {
   const bound = markedBoundOf(caller.chat?.sessionId, caller.agentPath);
-  return bound === undefined ? {} : { permissionCeiling: bound };
+  const carried = carriedHoldOf(caller.chat?.sessionId, caller.agentPath);
+  return bound === undefined ? carried : { permissionCeiling: bound, ...carried };
 }
 
 /**

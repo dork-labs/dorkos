@@ -16,6 +16,7 @@ import {
 import {
   emitLifecycle,
   inFlight,
+  launchCarriesHold,
   launchCeiling,
   launching,
   pending,
@@ -145,7 +146,7 @@ export function launchDispatchInner(
         ? { continuationHold: true as const }
         : {}),
       // A mark the turn carries on from work it continues: it marks, and lowers nothing (DOR-3561).
-      ...(turn.carriedMarks?.outsider === true
+      ...(turn.carriedMarks?.outsider === true || launchCarriesHold(clientId, messageId)
         ? { carriedMarks: { outsider: true as const } }
         : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),

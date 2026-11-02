@@ -28,6 +28,7 @@ import {
   listQueuedMessages,
   resetMessageDispatcher,
   setQueuedChatCeilingResolver,
+  setQueuedChatHoldResolver,
 } from '../message-dispatcher.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { getOrCreateProjector, disposeProjector } from '../session-state-projector.js';
@@ -228,5 +229,51 @@ describe('the level ceiling of a row another chat sent', () => {
     await settle();
     expect(resolver).not.toHaveBeenCalled();
     expect(ceilingOfCall(0)).toEqual({ has: false });
+  });
+});
+
+describe('the Wi-Fi hold a row another chat sent carries on (DOR-3561)', () => {
+  /** The `carriedMarks` the runtime was handed on its nth turn, if any. */
+  const carriedOfCall = (n: number) =>
+    (runtime.sendMessage.mock.calls[n]![2] as Record<string, unknown>).carriedMarks;
+
+  afterEach(() => setQueuedChatHoldResolver(undefined));
+
+  it('launches marked, with no ceiling, when the resolver says a sender held one', async () => {
+    const resolver = vi.fn(() => true);
+    setQueuedChatHoldResolver(resolver);
+    runtime.withScenarios([quickTurn()]);
+
+    const result = await send('from a held chat', CHAT_A);
+    await settle();
+
+    expect(resolver).toHaveBeenCalledWith(result.outcome.messageId);
+    expect(carriedOfCall(0)).toEqual({ outsider: true });
+    expect(ceilingOfCall(0)).toEqual({ has: false });
+  });
+
+  // Red when: `triggerTurn` drops `carriedMarks`. Every carry (a seat's report, `session_start`,
+  // the API, a beat) reaches the runtime through this one launch.
+  it('hands a caller’s own carried mark to the runtime, with no ceiling', async () => {
+    runtime.withScenarios([quickTurn()]);
+    await send('a seat report', PERSON, { carriedMarks: { outsider: true } });
+    await settle();
+    expect(carriedOfCall(0)).toEqual({ outsider: true });
+    expect(ceilingOfCall(0)).toEqual({ has: false });
+  });
+
+  it('launches unmarked when no sender held one, and never asks about a person’s row', async () => {
+    const resolver = vi.fn((id: string) => id === 'never');
+    setQueuedChatHoldResolver(resolver);
+    runtime.withScenarios([quickTurn(), quickTurn()]);
+
+    await send('from a clean chat', CHAT_A);
+    await settle();
+    await send('the person', PERSON);
+    await settle();
+
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(carriedOfCall(0)).toBeUndefined();
+    expect(carriedOfCall(1)).toBeUndefined();
   });
 });

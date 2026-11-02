@@ -299,15 +299,18 @@ describe('POST /:id/messages from an agent', () => {
 
     const res = await post('/messages', { content: 'x', create: true, cwd: homeA }, AS_A);
     expect(res.status).toBe(202);
-    // A caller that names no chat cannot show whose turn it is, so the launch is
-    // held to the runtime default, which carries the outsider mark itself
-    // (`markedBoundOf`), exactly as `session_start` over the external server is.
-    expect(vi.mocked(dispatchMessage).mock.calls[0]![0].permissionCeiling).toBe('runtime-default');
+    // The hold rides as a mark, never a ceiling (DOR-3561): the launched turn
+    // keeps its level and is refused raises, exactly as `session_start`'s is.
+    const sent = vi.mocked(dispatchMessage).mock.calls[0]![0];
+    expect(sent.carriedMarks).toEqual({ outsider: true });
+    expect(sent.permissionCeiling).toBeUndefined();
   });
 
   it('carries nothing when none of its turns is marked', async () => {
     await post('/messages', { content: 'x', create: true, cwd: homeA }, AS_A);
-    expect(vi.mocked(dispatchMessage).mock.calls[0]![0].permissionCeiling).toBeUndefined();
+    const sent = vi.mocked(dispatchMessage).mock.calls[0]![0];
+    expect(sent.permissionCeiling).toBeUndefined();
+    expect(sent.carriedMarks).toBeUndefined();
   });
 });
 

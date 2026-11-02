@@ -9,15 +9,19 @@ import type {
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
-import { ceilingCarrying, marksOfLevel } from '../../core/turn-power/turn-marks.js';
-import { unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
+import { ceilingCarrying, marksHold, marksOfLevel } from '../../core/turn-power/turn-marks.js';
+import { marksOf, unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
 
 /** What a row stores when its sender's turn carried no teammate's chain. */
 const NO_BOUND = 'none';
 
+/** The bound a row stores beside its teammate's chain when its sender's turn held a Wi-Fi hold. */
+const CARRIED_HOLD = { carriedOutsider: true } as const;
+
 /**
- * What a chat message row stores as its sender's bound (`ceilingJson`).
+ * What a chat message row stores as its sender's bound (`ceilingJson`): a teammate's chain, and
+ * the sender's Wi-Fi hold, which the turn it starts carries as a mark (DOR-3561), never a cap.
  *
  * @param deps - Reads the sending chat's level (`passedOnLevelOf`).
  * @param caller - The sending chat and its agent.
@@ -31,7 +35,31 @@ export function senderCeilingJson(
     level !== undefined
       ? marksOfLevel(level)
       : unknownLevelMarks([caller.sessionId], caller.agentPath);
-  return JSON.stringify(ceilingCarrying(marks) ?? NO_BOUND);
+  const carried = ceilingCarrying(marks);
+  if (!marksHold(marksOf(caller.sessionId, caller.agentPath))) {
+    return JSON.stringify(carried ?? NO_BOUND);
+  }
+  return JSON.stringify(carried === undefined ? [CARRIED_HOLD] : [carried, CARRIED_HOLD]);
+}
+
+/**
+ * Whether a stored bound carries its sender's Wi-Fi hold on (DOR-3561). A row from before the
+ * hold was stored carries none.
+ *
+ * @param json - The row's `ceilingJson`.
+ */
+export function parseCarriedHold(json: string): boolean {
+  try {
+    const value = JSON.parse(json) as unknown;
+    return (Array.isArray(value) ? value : [value]).some(
+      (bound) =>
+        typeof bound === 'object' &&
+        bound !== null &&
+        (bound as { carriedOutsider?: unknown }).carriedOutsider === true
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** A ceiling as the list of bounds that all hold. */
@@ -60,6 +88,45 @@ export function parseCeiling(json: string): TurnPermissionCeiling | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The ceiling a queue row launches under, from every sending row behind it: a teammate's chain any
+ * sender carried, or nothing.
+ *
+ * @param rows - The chat message rows batched into the queue row.
+ */
+export function rowsCeiling(
+  rows: readonly { ceilingJson: string }[]
+): TurnPermissionCeiling | undefined {
+  const bounds = rows.flatMap((row) => {
+    const ceiling = parseCeiling(row.ceilingJson);
+    return ceiling === undefined ? [] : boundsOf(ceiling);
+  });
+  return bounds.length === 0 ? undefined : bounds;
+}
+
+/**
+ * Whether any sending row behind a queue row carries its sender's Wi-Fi hold on (DOR-3561).
+ *
+ * @param rows - The chat message rows batched into the queue row.
+ */
+export function rowsCarryHold(rows: readonly { ceilingJson: string }[]): boolean {
+  return rows.some((row) => parseCarriedHold(row.ceilingJson));
+}
+
+/**
+ * Whether a sender's Wi-Fi hold keeps its words out of another chat's running turn: the running
+ * turn holds none, and a running turn cannot be marked (DOR-3561). They wait for the next turn,
+ * which the row marks.
+ *
+ * @param fromSessionId - The sending chat.
+ * @param toSessionId - The chat whose turn is running.
+ */
+export function holdBlocksSteer(fromSessionId: string, toSessionId: string): boolean {
+  return (
+    marksHold(marksOf(fromSessionId, undefined)) && !marksHold(marksOf(toSessionId, undefined))
+  );
 }
 
 /**

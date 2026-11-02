@@ -43,6 +43,7 @@ import {
   applyTurnMarks,
   ceilingCarrying,
   marksForTurn,
+  marksHold,
   marksOfLevel,
   NO_MARKS,
   withMarks,
@@ -210,6 +211,21 @@ export function markedBoundOf(
   agentPath: string | undefined
 ): TurnPermissionCeiling | undefined {
   return ceilingCarrying(marksOf(sessionId, agentPath));
+}
+
+/**
+ * The Wi-Fi hold work a caller starts must carry, as the spread a launch takes, or empty when
+ * the caller's turn holds none (DOR-3561). A mark, never a ceiling: the new turn keeps its level
+ * and is refused raises, the same carry a spin-off's seat gets (`carryFrom`).
+ *
+ * @param sessionId - The calling session, when the surface verified one.
+ * @param agentPath - The calling agent's home, from its verified identity.
+ */
+export function carriedHoldOf(
+  sessionId: string | null | undefined,
+  agentPath: string | undefined
+): { carriedMarks?: { outsider: true } } {
+  return marksHold(marksOf(sessionId, agentPath)) ? { carriedMarks: { outsider: true } } : {};
 }
 
 /**

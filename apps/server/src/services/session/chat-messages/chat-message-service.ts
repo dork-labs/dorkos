@@ -33,9 +33,9 @@
  * @module services/session/chat-messages/chat-message-service
  */
 import {
-  boundsOf,
   CHAT_MESSAGE_ORIGIN,
-  parseCeiling,
+  holdBlocksSteer,
+  rowsCeiling,
   senderCeilingJson,
 } from './chat-message-ceiling.js';
 import crypto from 'node:crypto';
@@ -234,11 +234,7 @@ export class ChatMessageService {
    * @param queueMessageId - The dispatcher's message id.
    */
   ceilingForQueuedMessage(queueMessageId: string): TurnPermissionCeiling | undefined {
-    const bounds = this.deps.store.listByQueueMessage(queueMessageId).flatMap((row) => {
-      const ceiling = parseCeiling(row.ceilingJson);
-      return ceiling === undefined ? [] : boundsOf(ceiling);
-    });
-    return bounds.length === 0 ? undefined : bounds;
+    return rowsCeiling(this.deps.store.listByQueueMessage(queueMessageId));
   }
 
   /**
@@ -503,11 +499,13 @@ export class ChatMessageService {
 
   /**
    * Whether a steer from one chat may join another's running turn, by the two
-   * turns' levels and marks (`mayJoinRunningTurn`). Unknown levels never steer.
+   * turns' levels and marks (`mayJoinRunningTurn`). Unknown levels never steer, and a sender's
+   * Wi-Fi hold joins only a turn that holds one too: a running turn cannot be marked (DOR-3561).
    */
   private maySteer(fromSessionId: string, toSessionId: string): boolean {
     const sender = this.deps.turnLevelOf(fromSessionId);
     const receiver = this.deps.turnLevelOf(toSessionId);
+    if (holdBlocksSteer(fromSessionId, toSessionId)) return false;
     return sender !== undefined && receiver !== undefined && mayJoinRunningTurn(sender, receiver);
   }
 

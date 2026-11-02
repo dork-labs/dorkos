@@ -81,6 +81,31 @@ export function setQueuedChatCeilingResolver(
   queuedChatCeiling = resolver;
 }
 
+/** Whether a chat-sent queue row carries its sender's Wi-Fi hold on (DOR-3561). */
+export type QueuedChatHoldResolver = (messageId: string) => boolean;
+
+let queuedChatHold: QueuedChatHoldResolver | undefined;
+
+/**
+ * Wire (or clear) how a chat-sent queue row's carried hold is read.
+ *
+ * @param resolver - Reads whether a row carries a hold; `undefined` clears it.
+ */
+export function setQueuedChatHoldResolver(resolver: QueuedChatHoldResolver | undefined): void {
+  queuedChatHold = resolver;
+}
+
+/**
+ * Whether a launching message carries a sender's Wi-Fi hold on, as a mark: read like
+ * {@link launchCeiling}, from the chat's own record of the send at launch.
+ *
+ * @param clientId - Who queued the row.
+ * @param messageId - The row's id.
+ */
+export function launchCarriesHold(clientId: string, messageId: string): boolean {
+  return isChatClientId(clientId) && queuedChatHold?.(messageId) === true;
+}
+
 /**
  * The ceiling a launching message runs under: the caller's own, plus a bound
  * read from who queued the row.

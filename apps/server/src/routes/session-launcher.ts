@@ -9,7 +9,7 @@ import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/
 import type { RequestFacts } from '../http/request-facts.js';
 import { isPersonTurn } from '../lib/caller-authority.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
-import { markedBoundOf } from '../services/core/turn-power/turn-levels.js';
+import { carriedHoldOf, markedBoundOf } from '../services/core/turn-power/turn-levels.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { boundaryRefusal, errorBody } from '../lib/route-utils.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
@@ -37,10 +37,11 @@ export function sessionLauncherOf(facts: RequestFacts): SessionLauncher {
 }
 
 /**
- * The ceiling a message's turn carries, as the spread a launch takes: the
- * Wi-Fi hold (DOR-3037), and for an agent the marks its own running turns
- * carry, so a marked turn cannot launder them through the API the way
- * `session_start` already cannot (DOR-3644 control 4). Every bound holds.
+ * The ceiling and marks a message's turn carries, as the spread a launch takes:
+ * the Wi-Fi hold on this request (DOR-3037), and for an agent the marks its own
+ * running turns carry, so a marked turn cannot launder them through the API the
+ * way `session_start` already cannot (DOR-3644 control 4). Every bound holds.
+ * An agent's Wi-Fi hold rides as a mark, never a ceiling (DOR-3561).
  *
  * @param launcher - Who is posting.
  * @param facts - The request's facts.
@@ -48,15 +49,17 @@ export function sessionLauncherOf(facts: RequestFacts): SessionLauncher {
 export function launcherTurnCeiling(
   launcher: SessionLauncher,
   facts: RequestFacts
-): { permissionCeiling?: TurnPermissionCeiling } {
+): { permissionCeiling?: TurnPermissionCeiling; carriedMarks?: { outsider: true } } {
+  const agentPath = launcher.kind === 'agent' ? launcher.agentPath : undefined;
+  const carried = agentPath !== undefined ? carriedHoldOf(undefined, agentPath) : {};
   const bounds = [
     wifiTurnCeiling(facts).permissionCeiling,
-    launcher.kind === 'agent' ? markedBoundOf(undefined, launcher.agentPath) : undefined,
+    agentPath !== undefined ? markedBoundOf(undefined, agentPath) : undefined,
   ].flatMap((ceiling): readonly TurnPermissionBound[] =>
     ceiling === undefined ? [] : Array.isArray(ceiling) ? ceiling : [ceiling as TurnPermissionBound]
   );
-  if (bounds.length === 0) return {};
-  return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
+  if (bounds.length === 0) return carried;
+  return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds, ...carried };
 }
 
 /**
@@ -69,6 +72,7 @@ export function launcherTurnCeiling(
 export function httpLaunchOf(facts: RequestFacts): {
   launcher: SessionLauncher;
   permissionCeiling?: TurnPermissionCeiling;
+  carriedMarks?: { outsider: true };
 } {
   const launcher = sessionLauncherOf(facts);
   return { launcher, ...launcherTurnCeiling(launcher, facts) };

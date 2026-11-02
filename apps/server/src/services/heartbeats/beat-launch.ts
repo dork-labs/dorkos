@@ -47,6 +47,8 @@ export interface BeatLaunchRequest {
   account?: string;
   /** The ceiling the beat carries when it reads words written under a turn mark (DOR-3036). */
   permissionCeiling?: TurnPermissionCeiling;
+  /** A Wi-Fi hold the beat carries on from what it reads, as a mark (DOR-3561). */
+  carriedMarks?: { outsider: true };
   /** Called once when the turn ends; `refusal` when it never reached the agent. */
   onSettled: (outcome: 'ok' | 'failed', refusal?: string) => void;
 }
@@ -95,6 +97,9 @@ export function createBeatTurnLauncher(meshCore: () => MeshCore | undefined): Be
         unattended: true,
         ...(request.permissionCeiling !== undefined
           ? { permissionCeiling: request.permissionCeiling }
+          : {}),
+        ...(request.carriedMarks?.outsider === true
+          ? { carriedMarks: { outsider: true as const } }
           : {}),
         countsTowardLaunchCap: true,
         onSettled: request.onSettled,

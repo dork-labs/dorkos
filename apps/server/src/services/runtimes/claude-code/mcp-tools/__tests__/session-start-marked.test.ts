@@ -118,7 +118,7 @@ describe('the bound a marked start carries (DOR-3394)', () => {
     }
   }
 
-  it('is nothing from a chat a hold bound, at any level: the hold stays on that turn', async () => {
+  it('carries a hold on as a mark, never a ceiling, at any level (DOR-3561)', async () => {
     await chatAt('full-caller', 'runtime-default');
     await chatAt('held-caller', 'runtime-default');
     expect(
@@ -126,10 +126,10 @@ describe('the bound a marked start carries (DOR-3394)', () => {
         agentPath: '/agents/ana',
         chat: { sessionId: 'full-caller', chosenFull: true },
       })
-    ).toEqual({});
+    ).toEqual({ carriedMarks: { outsider: true } });
     expect(
       outsiderStartCeiling({ agentPath: '/agents/ana', chat: { sessionId: 'held-caller' } })
-    ).toEqual({});
+    ).toEqual({ carriedMarks: { outsider: true } });
   });
 
   it('keeps every teammate origin for the space’s limit, and holds nothing', async () => {

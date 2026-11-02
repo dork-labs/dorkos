@@ -50,6 +50,7 @@ let launchResults: Array<BeatLaunchResult['status'] | 'refused-at-start'>;
 let launches: string[];
 let launchRuntimes: string[];
 let launchCeilings: unknown[];
+let launchCarried: unknown[];
 let accepted: Array<{ raises: number }>;
 let failingRaises: number;
 let failingErrors: Array<string | undefined>;
@@ -79,6 +80,7 @@ function launcher(): BeatTurnLauncher {
       launches.push(request.content);
       launchRuntimes.push(request.runtime);
       launchCeilings.push(request.permissionCeiling);
+      launchCarried.push(request.carriedMarks);
       currentSession = request.sessionId;
       const status = launchResults.shift() ?? 'started';
       if (status === 'cap-full') return { status: 'cap-full' };
@@ -207,6 +209,7 @@ beforeEach(() => {
   launches = [];
   launchRuntimes = [];
   launchCeilings = [];
+  launchCarried = [];
   accepted = [];
   failingRaises = 0;
   failingErrors = [];
@@ -247,6 +250,8 @@ describe('a beat that reads a promise made in a marked turn', () => {
     expect(launchCeilings).toEqual([
       { asks: 'never', reach: 'everything', teammate: marks.teammate },
     ]);
+    // The promise's Wi-Fi hold rides as a mark, never a cap (DOR-3561).
+    expect(launchCarried).toEqual([{ outsider: true }]);
   });
 
   it('carries the marks of a gathered post a marked turn wrote', async () => {
@@ -257,6 +262,7 @@ describe('a beat that reads a promise made in a marked turn', () => {
     await settle();
     await done;
     expect(launchCeilings).toEqual([{ asks: 'never', reach: 'everything', teammate }]);
+    expect(launchCarried).toEqual([{ outsider: true }]);
   });
 
   it('runs without a ceiling when no open promise is marked', async () => {
@@ -267,6 +273,7 @@ describe('a beat that reads a promise made in a marked turn', () => {
     await settle();
     await done;
     expect(launchCeilings).toEqual([undefined]);
+    expect(launchCarried).toEqual([undefined]);
   });
 });
 

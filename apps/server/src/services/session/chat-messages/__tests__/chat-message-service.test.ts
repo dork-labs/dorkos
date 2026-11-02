@@ -20,9 +20,23 @@ vi.mock('../../message-dispatcher.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../message-dispatcher.js')>();
   return { ...actual, isQueuedMessageLaunching: vi.fn(() => false) };
 });
+// Which chats' turns hold a Wi-Fi mark, as `marksOf` reads them. In production the levels a chat
+// hands on (`passedOnLevelOf`) never carry the hold, so this is the only place it shows.
+const heldChats = vi.hoisted(() => new Set<string>());
+vi.mock('../../../core/turn-power/turn-levels.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../core/turn-power/turn-levels.js')>();
+  return {
+    ...real,
+    marksOf: (sessionId: string | null | undefined, agentPath: string | undefined) =>
+      sessionId && heldChats.has(sessionId)
+        ? { outsider: true }
+        : real.marksOf(sessionId, agentPath),
+  };
+});
 
 import { recordAudit } from '../../../audit/audit-trail.js';
 import { ceilingOnlyRecords, marksOfCeiling } from '../../../core/turn-power/turn-marks.js';
+import { rowsCarryHold } from '../chat-message-ceiling.js';
 import { isQueuedMessageLaunching, type DispatchLifecycleEvent } from '../../message-dispatcher.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../message-queue-store.js';
 import type {
@@ -186,6 +200,7 @@ beforeEach(() => {
   sessions = new Map();
   busy = new Set();
   levels = new Map();
+  heldChats.clear();
   dispatched = [];
   dispatchImpl = defaultDispatch;
   interruptTurn = vi.fn(async () => true);
@@ -716,6 +731,34 @@ describe('send — steer', () => {
     expect(receipt.status).toBe('queued');
     // The mark rides nowhere (DOR-3440): the row's turn runs at the receiver's own level.
     expect(service.ceilingForQueuedMessage(sentByAna()[0]!.queueMessageId!)).toBeUndefined();
+  });
+
+  // Red when: the hold check in `maySteer` is removed. The levels a chat hands on never carry a
+  // Wi-Fi hold, so only `marksOf` sees it; a held sender's words wait for the next turn, which
+  // its row marks (DOR-3561).
+  it('never steers a held sender’s words into a turn that holds none, and marks its row', async () => {
+    levels.set(ANA.sessionId, MIDDLE);
+    levels.set('chat-b', TIGHT);
+    heldChats.add(ANA.sessionId);
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
+
+    expect(steerInto).not.toHaveBeenCalled();
+    expect(receipt.status).toBe('queued');
+    const row = sentByAna()[0]!.queueMessageId!;
+    expect(rowsCarryHold(store.listByQueueMessage(row))).toBe(true);
+    expect(service.ceilingForQueuedMessage(row)).toBeUndefined();
+  });
+
+  it('steers a held sender’s words into a turn that holds one too', async () => {
+    levels.set(ANA.sessionId, MIDDLE);
+    levels.set('chat-b', TIGHT);
+    heldChats.add(ANA.sessionId);
+    heldChats.add('chat-b');
+
+    const receipt = await service.send(ANA, { to: 'chat-b', message: 'hi', delivery: 'steer' });
+
+    expect(receipt.status).toBe('steered');
   });
 
   it('steers into a turn that has read an outsider’s words already', async () => {

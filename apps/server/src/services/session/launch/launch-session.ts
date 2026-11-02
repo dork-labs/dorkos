@@ -21,7 +21,11 @@ import { noteNonBeatMessage } from '../../heartbeats/beat-turns.js';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
-import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import type {
+  DirectoryGrant,
+  MessageOpts,
+  TurnPermissionCeiling,
+} from '@dorkos/shared/agent-runtime';
 import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
@@ -120,6 +124,8 @@ export interface DispatchSessionMessageOpts {
   permissionCeiling?: TurnPermissionCeiling;
   /** The ceiling is a continuation's hold; see `MessageOpts.continuationHold`. */
   continuationHold?: true;
+  /** A mark carried on from the caller's turn. Passed straight through; see `MessageOpts.carriedMarks`. */
+  carriedMarks?: MessageOpts['carriedMarks'];
   /**
    * Who chose where this chat runs, when a caller did (DOR-3644): the person,
    * an agent, or a caller DorkOS cannot name. Anyone but the person is held to
@@ -781,6 +787,9 @@ async function launchSessionMessage(
         ? { permissionCeiling: opts.permissionCeiling }
         : {}),
       ...(opts.continuationHold ? { continuationHold: true as const } : {}),
+      ...(opts.carriedMarks?.outsider === true
+        ? { carriedMarks: { outsider: true as const } }
+        : {}),
       projector,
       runtime,
       onError: (err) => {
