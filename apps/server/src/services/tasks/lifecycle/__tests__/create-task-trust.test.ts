@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { MeshCore } from '@dorkos/mesh';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../../task-store.js';
@@ -64,12 +65,25 @@ afterEach(async () => {
   await fs.rm(dorkHome, { recursive: true, force: true });
 });
 
+/** The calling agent's home, inside this test's data directory. */
+const agentHome = () => path.join(dorkHome, 'agents', 'nb');
+
+/** Mesh that knows the one calling agent. */
+function agentMesh(): MeshCore {
+  const agents = [{ id: 'agent-nb', name: 'nb', projectPath: agentHome() }];
+  return {
+    listWithPaths: () => agents,
+    getProjectPath: (id: string) => agents.find((a) => a.id === id)?.projectPath,
+  } as unknown as MeshCore;
+}
+
 const AGENT_REQUEST = {
   name: 'Nightly sweep',
   description: 'Sweep the backlog',
   prompt: 'Sweep the backlog.',
   cron: '0 3 * * *',
-  target: 'global',
+  // Filed under the agent itself: only that arms unasked (DOR-3640 R1).
+  target: 'agent-nb',
   reason: 'The overnight backlog needs sweeping before you start.',
 };
 
@@ -80,12 +94,12 @@ const AGENT_REQUEST = {
  */
 async function agentCreates(callerIsOurAgent: boolean) {
   const outcome = await createScheduledTask(
-    { store, registrar: null, dorkHome },
+    { store, registrar: null, dorkHome, meshCore: agentMesh() },
     {
       input: AGENT_REQUEST,
       trusted: false,
       callerIsOurAgent,
-      proposal: { sessionId: 'ses-1', agentPath: '/tmp/agents/nb' },
+      proposal: { sessionId: 'ses-1', agentPath: agentHome() },
     }
   );
   if (!outcome.ok) throw new Error(outcome.error);
@@ -101,7 +115,7 @@ describe('an agent schedule on a Trusted install', () => {
     expect(row.status).toBe('active');
     // The row still says which agent and session made it.
     expect(row.proposedBySessionId).toBe('ses-1');
-    expect(row.proposedByAgentPath).toBe('/tmp/agents/nb');
+    expect(row.proposedByAgentPath).toBe(agentHome());
     expect(row.reason).toBe(AGENT_REQUEST.reason);
 
     expect(state.raised).toEqual([]);
@@ -119,7 +133,7 @@ describe('an agent schedule on a Trusted install', () => {
     const entry = notificationEntry('schedule.armed_by_agent');
     const armed = outcome.armedPayload!;
     expect(entry.title(armed)).toBe('An agent scheduled nightly-sweep');
-    expect(entry.body?.(armed)).toBe('Runs every day at 3:00 AM. Pause it any time.');
+    expect(entry.body?.(armed)).toBe('Runs every day at 3:00 AM as an agent. Pause it any time.');
     expect(entry.actions?.(armed).map((a) => a.id)).toEqual(['pause', 'open']);
   });
 

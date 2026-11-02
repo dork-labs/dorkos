@@ -29,6 +29,8 @@ import { homeOf, resolveAgentHome } from '../core/agent-identity/index.js';
 export interface AgentPathLookup {
   /** The registered agent whose project directory is `projectPath`, if any. */
   getByPath(projectPath: string): { id: string } | undefined;
+  /** The registered agent with this id, for its name. Optional: a fake may leave it out. */
+  get?(agentId: string): { name: string; displayName?: string } | undefined;
 }
 
 /** The wired lookup, or `undefined` before boot wires one in (or in a test). */
@@ -74,6 +76,22 @@ export function resolveAgentIdForPath(cwd: string | undefined): string | undefin
       cwd,
       err: String(err),
     });
+    return undefined;
+  }
+}
+
+/**
+ * What to call the registered agent with this id, or `undefined` when none is
+ * known (no lookup wired, an unknown id, a failed read).
+ *
+ * @param agentId - The agent's Mesh id.
+ */
+export function resolveAgentNameForId(agentId: string): string | undefined {
+  try {
+    const agent = lookup?.get?.(agentId);
+    return agent ? (agent.displayName ?? agent.name) : undefined;
+  } catch (err) {
+    logger.debug('[Mesh] Could not name an agent', { agentId, err: String(err) });
     return undefined;
   }
 }

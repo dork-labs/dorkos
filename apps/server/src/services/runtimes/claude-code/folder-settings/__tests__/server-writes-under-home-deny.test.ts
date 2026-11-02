@@ -45,10 +45,18 @@ beforeEach(async () => {
     taskStore: store,
     defaultCwd: home,
     dorkHome: path.join(root, 'dork'),
-    meshCore: { getProjectPath: (id: string) => (id === 'nightly-bot' ? home : null) },
+    meshCore: {
+      getProjectPath: (id: string) => (id === 'nightly-bot' ? home : null),
+      listWithPaths: () => [{ id: 'nightly-bot', projectPath: home }],
+    },
   } as unknown as McpToolDeps;
+  // Called as the agent whose home it is: only a schedule's own agent may edit
+  // it (DOR-3640 R1), and this test is about what DorkOS writes, not who asks.
   tools = Object.fromEntries(
-    (getTasksTools(deps) as unknown as SessionTool[]).map((t) => [t.name, t])
+    (getTasksTools(deps, undefined, undefined, () => home) as unknown as SessionTool[]).map((t) => [
+      t.name,
+      t,
+    ])
   );
 });
 

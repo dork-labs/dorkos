@@ -174,6 +174,8 @@ export function ScheduleApprovalCard({
 
   const name = task.displayName ?? task.name;
   const proposer = task.proposedByName ?? 'an agent';
+  // Who its runs act as, which is whose turn it would be (DOR-3640 R1).
+  const runsAs = task.agentId ? (task.runsAsName ?? 'an agent') : 'no agent';
   // A schedule DorkOS found on disk, rather than one anybody asked for. Nobody
   // proposed it, so every part of this card that credits a proposer has to say
   // something else — the file it came from (ADR `260823-200726`).
@@ -489,7 +491,7 @@ export function ScheduleApprovalCard({
               bypasses ? 'text-status-warning-fg' : 'text-muted-foreground'
             )}
           >
-            Runs as: {currentLabel}
+            Runs as {runsAs}, at {currentLabel}
             {bypasses && ', runs without asking'}
           </span>
         </div>

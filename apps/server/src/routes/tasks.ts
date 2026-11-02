@@ -69,15 +69,14 @@ import {
   taskWorkOf,
 } from '../services/tasks/schedule-permission-clamp.js';
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
-import { agentSchedulesArmWithoutAsking } from '../services/tasks/approvals/agent-trust.js';
+import { auditScheduleUpdate, scheduleEdit } from '../services/tasks/approvals/schedule-owner.js';
 import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
 import {
   scheduleAccountRefusal,
   scheduleRunFolder,
 } from '../services/tasks/lifecycle/schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from '../services/tasks/lifecycle/schedule-credits-model.js';
-import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
-import { readAgentExecutionDefaults } from '../services/session/resolution/resolve-session-defaults.js';
+import { describeTaskPermissionLevel, scheduleEditorOf } from './task-route-answers.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -138,73 +137,6 @@ function operatorOnlyTaskRefusal(body: unknown, trusted: boolean) {
     fields: operatorOnly,
     message: describeOperatorOnlyTaskRefusal(operatorOnly),
   };
-}
-
-/**
- * What the activity feed says a schedule runs at, when nobody can be told the
- * runtime's own word for it.
- *
- * Deliberately not the mode id. An id is the runtime's internal spelling —
- * `bypassPermissions`, `danger-full-access`, `workspace-write` — and a feed a
- * person reads months later to answer "who gave this thing that much power?"
- * is the last place to print one.
- */
-const UNNAMED_PERMISSION_LEVEL = 'the level saved on it';
-
-/**
- * The human name of the level a schedule runs at, in the vocabulary of the
- * runtime that will run it (DOR-2100).
- *
- * The runtime is resolved on the SAME ladder the create path walks
- * (`resolveCreateRuntime`) and the fire path repeats
- * (`resolve-run-execution.ts`): what the task names, then its AGENT's manifest,
- * then the registry default. The agent rung costs one manifest read, once per
- * approval click, and it is the rung that matters — a task filed under a
- * Codex-pinned agent is the COMMON shape of an agent-proposed schedule, and
- * labelling it through Claude Code's vocabulary would print one runtime's word
- * for a level another runtime is actually running at.
- *
- * **Where a rung that answers nothing lands, and why that is right.** No agent
- * on the task, no mesh to place one, no manifest in the agent's folder, a
- * manifest the reader cannot use, or one naming a runtime this build has no
- * adapter for all fall through to the DEFAULT runtime — and the label is then
- * the default runtime's word, not a shrug. That is not a degradation, it is the same answer the RUN gets:
- * `resolveRuntimeType` falls through to `getDefaultType()` on every one of
- * those, so the run really does execute in the ids being named. The last of
- * the five is why this asks `capabilitiesForTaskRuntime` about the agent's
- * runtime before taking it: the fire path guards the agent rung with
- * `runtimes.has(...)`, and a label that skipped that guard would answer "no
- * idea" about a run heading for a perfectly well-named default.
- *
- * {@link UNNAMED_PERMISSION_LEVEL} is therefore narrow. It is reached when the
- * TASK itself names a runtime this server does not hold — where the fire path
- * refuses the run rather than substituting one, so there is genuinely no
- * vocabulary to name the level in — or when the resolved runtime declares no
- * mode by that id. The id is on the event's `metadata` in every case, so
- * nothing is lost for a machine reader.
- *
- * @param task - The schedule as it now stands.
- * @param meshCore - Resolves the task's agent to its project path; absent when
- *   Mesh is disabled, which is one of the five ways the agent rung answers
- *   nothing and the default runtime's vocabulary is used instead.
- * @returns The runtime's label for its mode, or the neutral phrase.
- */
-async function describeTaskPermissionLevel(task: Task, meshCore?: MeshCore): Promise<string> {
-  const agentPath = task.agentId ? meshCore?.getProjectPath(task.agentId) : undefined;
-  const agentRuntime = agentPath
-    ? ((await readAgentExecutionDefaults(agentPath)).runtime ?? null)
-    : null;
-  // The agent's runtime only when this build can actually run it — the same
-  // `has(...)` guard `resolveRuntimeType` applies, asked through the function
-  // that already answers it. Without this the label and the run disagree for
-  // an agent pinned to a runtime with no adapter here.
-  const runtime =
-    task.runtime ??
-    (agentRuntime && capabilitiesForTaskRuntime(agentRuntime) ? agentRuntime : null);
-  const declared = capabilitiesForTaskRuntime(runtime)?.permissionModes?.values ?? [];
-  return (
-    declared.find((mode) => mode.id === task.permissionMode)?.label ?? UNNAMED_PERMISSION_LEVEL
-  );
 }
 
 /**
@@ -447,6 +379,10 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // From Wi-Fi a schedule runs at Default at most (DOR-3037).
     const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
     if (wifiRefusal) return c.json(wifiRefusal, 403);
+    // An agent changes only its own schedule, or a global one no other agent
+    // made: a schedule runs as the agent it is filed under (DOR-3640 R1).
+    const edit = scheduleEdit(existing, scheduleEditorOf(caller, trusted), meshCore, data);
+    if (edit.refusal) return c.json(edit.refusal, 403);
 
     // Naming DorkOS credits, or approving a schedule that runs on them, spends
     // the DorkOS account's money: the owner's call alone (DOR-2652).
@@ -661,7 +597,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (!rearms || !changesFile) {
       store.approvals.settleApprovedWorkChange(updated.id, before, {
         trusted: rearms,
-        armsAgentWork: !trusted && agentSchedulesArmWithoutAsking(caller.agentIdentity != null),
+        // Only an agent's own schedule stays live through its edit (DOR-3640 R1).
+        armsAgentWork: !trusted && edit.armsAgentWork,
       });
       updated = store.getTask(updated.id) ?? updated;
     }
@@ -792,6 +729,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
     broadcastTasksChanged();
 
+    auditScheduleUpdate(existing, updated);
     return c.json(await present(updated));
   });
 

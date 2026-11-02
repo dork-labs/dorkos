@@ -59,6 +59,12 @@ import {
 } from '../../notifications/emitters/schedule-armed.js';
 import type { NotificationPayload } from '../../notifications/notification-registry.js';
 import { agentSchedulesArmWithoutAsking } from '../approvals/agent-trust.js';
+import {
+  agentIdOfHome,
+  mayTarget,
+  NOT_YOUR_AGENT_MESSAGE,
+  runsAsItsCreator,
+} from '../approvals/schedule-owner.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
 import { hasMarks, type TurnMarks } from '../../core/turn-power/turn-marks.js';
@@ -120,13 +126,21 @@ export interface CreateScheduledTaskOptions {
   originMarks?: TurnMarks;
   /** Who to credit the proposal to. Ignored for a trusted caller — nobody proposed it. */
   proposal?: TaskProposal;
+  /**
+   * The verified home of the agent asking, when the server named one (DOR-3640
+   * R1) and `proposal` does not already carry it: the agent an external `/mcp`
+   * token names. Such a caller may
+   * file a schedule only under itself or `global`, and only one under itself
+   * arms without a person. Never read from the request body.
+   */
+  callerAgentPath?: string;
 }
 
 /** A create that did not happen, and what to tell the caller. */
 export interface CreateScheduledTaskRefusal {
   ok: false;
   /** The HTTP status this maps to. MCP callers only use it to pick their wording. */
-  status: 400 | 409 | 500;
+  status: 400 | 403 | 409 | 500;
   /** One line, written for whoever reads it. */
   error: string;
   /** A machine-readable code, on the refusals that carry one. */
@@ -280,8 +294,19 @@ export async function createScheduledTask(
   // A marked turn's schedule always parks: words from outside the owner's circle must not come
   // back later as a run nobody marked (DOR-3036).
   const marked = !trusted && options.originMarks !== undefined && hasMarks(options.originMarks);
+  // A schedule runs as the agent it is filed under (DOR-3640 R1): an agent files
+  // one only under itself or `global`, and only one under itself arms unasked.
+  const callerAgentPath = options.callerAgentPath ?? options.proposal?.agentPath ?? undefined;
+  const callerId =
+    callerAgentPath !== undefined ? agentIdOfHome(deps.meshCore, callerAgentPath) : undefined;
+  if (!trusted && callerAgentPath !== undefined && !mayTarget(data.target, callerId)) {
+    return { ok: false, status: 403, error: NOT_YOUR_AGENT_MESSAGE, code: 'not_your_agent' };
+  }
   const parks =
-    !trusted && (marked || !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
+    !trusted &&
+    (marked ||
+      !runsAsItsCreator(data.target, callerId) ||
+      !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
 
   // Asked before ANY write, because the file is written first and never
   // withdrawn: a cron or timezone croner cannot read would otherwise leave a
