@@ -1,9 +1,15 @@
 /* global console, fetch, process, URL */
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { approvalMode, labelAtHead } from './security-label-at-head.mjs';
+import { approvalMode, labelAtHead, labelNewerThanHead } from './security-label-at-head.mjs';
 
 const CONTEXT = 'security-review';
+
+/**
+ * The second label a P0 identity path needs at its head (#dorkos, 2026-11-02 02:04):
+ * Security's deep review, on top of `security-reviewed`. A push voids it the same way.
+ */
+export const DEEP_LABEL = 'security-deep-reviewed';
 
 /** The workflow is the sole security-path list, shared by both read-only tools. */
 export function securityPathPattern() {
@@ -78,8 +84,11 @@ function hasApproval(review, sensitive, botUserId) {
   );
 }
 
-/** Label-at-head for a sensitive diff while no App is set; App mode everywhere else. */
-async function verifyApproval(api, number, sha, review, sensitive, botUserId) {
+/**
+ * Label-at-head for a sensitive diff while no App is set; App mode everywhere else.
+ * A diff on a P0 identity path (`deep`) also needs {@link DEEP_LABEL} at the head.
+ */
+async function verifyApproval(api, number, sha, review, sensitive, botUserId, deep = false) {
   if (!sensitive || approvalMode(botUserId) !== 'label-at-head') {
     const passed = hasApproval(review, sensitive, botUserId);
     return { passed, reason: 'security-review pending' };
@@ -90,7 +99,16 @@ async function verifyApproval(api, number, sha, review, sensitive, botUserId) {
   const timeline = await api.timeline(number);
   const pr = await api.pr(number);
   const activity = await api.activity(pr.head.ref);
-  return labelAtHead({ sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity });
+  const input = { sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity };
+  const verdict = labelAtHead(input);
+  if (!verdict.passed || !deep) return verdict;
+  return labelNewerThanHead({ ...input, name: DEEP_LABEL });
+}
+
+/** Whether a diff touches a P0 identity path. No list refuses, never reads as none. */
+function touchesDeep(files, deepPattern) {
+  if (!deepPattern) throw new Error('Security deep-review path list missing');
+  return touchesSecurity(files, deepPattern);
 }
 
 function validateFiles(files) {
@@ -109,7 +127,7 @@ function validateFiles(files) {
   return files;
 }
 
-async function sensitiveDiff(api, number, pr, pattern) {
+async function prFiles(api, number, pr, pattern) {
   if (!pattern) throw new Error('Security path list missing');
   const files = await api.files(number);
   // The files endpoint is capped at 3,000; never classify a truncated diff as safe.
@@ -120,20 +138,21 @@ async function sensitiveDiff(api, number, pr, pattern) {
     validateFiles(files).length !== pr.changed_files
   )
     throw new Error('Incomplete PR file list');
-  return touchesSecurity(files, pattern);
+  return files;
 }
 
 export async function checkPullRequest(
   api,
   event,
   pattern,
-  { write = false, requireApproval = true, botUserId } = {}
+  { write = false, requireApproval = true, botUserId, deepPattern } = {}
 ) {
   const number = event.pull_request.number;
   const sha = event.pull_request.head.sha;
   const pr = await api.pr(number);
   if (pr.head.sha !== sha) throw new Error(`PR #${number} head moved`);
-  const sensitive = await sensitiveDiff(api, number, pr, pattern);
+  const files = await prFiles(api, number, pr, pattern);
+  const sensitive = touchesSecurity(files, pattern);
   let review = latestReview(await api.statuses(sha));
   if (write && (!sensitive || !hasApproval(review, sensitive, botUserId))) {
     const state = sensitive ? 'pending' : 'success';
@@ -156,7 +175,15 @@ export async function checkPullRequest(
   const computed = !write && !review && !sensitive;
   const verdict =
     requireApproval && !computed
-      ? await verifyApproval(api, number, sha, review, sensitive, botUserId)
+      ? await verifyApproval(
+          api,
+          number,
+          sha,
+          review,
+          sensitive,
+          botUserId,
+          sensitive && touchesDeep(files, deepPattern)
+        )
       : { passed: true };
   const current = await api.pr(number);
   if (current.head.sha !== sha) throw new Error(`PR #${number} head moved`);
@@ -170,6 +197,11 @@ export async function checkPullRequest(
 }
 
 export async function queuedSensitiveDiff(api, base, sha, pattern) {
+  return touchesSecurity(await queuedFiles(api, base, sha, pattern), pattern);
+}
+
+/** The files a queued entry changes, compared between its pinned base and head. */
+async function queuedFiles(api, base, sha, pattern) {
   if (!base || !sha || !pattern) throw new Error('Missing immutable comparison input');
   const comparison = await api.compare(base, sha);
   // Compare files appear only on page 1 and are capped at 300, independently
@@ -181,7 +213,7 @@ export async function queuedSensitiveDiff(api, base, sha, pattern) {
     files.length >= 300
   )
     throw new Error('Incomplete queued-head comparison');
-  return touchesSecurity(files, pattern);
+  return files;
 }
 
 async function audit(api, number, sha, review, botUserId) {
@@ -196,7 +228,7 @@ async function audit(api, number, sha, review, botUserId) {
   if (previous?.body.includes(marker)) return;
   const rule =
     approvalMode(botUserId) === 'label-at-head'
-      ? 'No Security App is set: sensitive approvals require a security-reviewed label newer than the last push, with no hold label.'
+      ? `No Security App is set: sensitive approvals require a security-reviewed label newer than the last push, with no hold label. A P0 identity path also needs ${DEEP_LABEL}, newer than the last push.`
       : 'Sensitive approvals require the configured Security App as status creator. The security-reviewed label is a human signal only.';
   await api.comment(
     number,
@@ -204,7 +236,7 @@ async function audit(api, number, sha, review, botUserId) {
   );
 }
 
-export async function checkMergeGroup(api, event, pattern, botUserId) {
+export async function checkMergeGroup(api, event, pattern, botUserId, deepPattern) {
   const group = event.merge_group;
   const members = groupMembers(await api.queue(group.base_ref), group);
   const results = [];
@@ -215,17 +247,21 @@ export async function checkMergeGroup(api, event, pattern, botUserId) {
       throw new Error(`PR #${number} base moved`);
     // Never borrow the current PR's files for the queued commit. Both SHA
     // arguments are pinned by the merge-group event/entry snapshot.
-    const sensitive = await queuedSensitiveDiff(
-      api,
-      entry.baseCommit.oid,
-      entry.headCommit.oid,
-      pattern
-    );
+    const files = await queuedFiles(api, entry.baseCommit.oid, entry.headCommit.oid, pattern);
+    const sensitive = touchesSecurity(files, pattern);
     const review = latestReview(await api.statuses(sha));
     const computed = !review && !sensitive;
     const verdict = computed
       ? { passed: true }
-      : await verifyApproval(api, number, sha, review, sensitive, botUserId);
+      : await verifyApproval(
+          api,
+          number,
+          sha,
+          review,
+          sensitive,
+          botUserId,
+          sensitive && touchesDeep(files, deepPattern)
+        );
     if (!verdict.passed)
       throw new Error(
         `PR #${number}: no security-review success on ${sha}; pending Security approval (${verdict.reason})`
@@ -346,6 +382,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.log(
         await checkPullRequest(api, event, process.env.SECURITY_PATH_PATTERN, {
           botUserId: process.env.SECURITY_APPROVAL_BOT_USER_ID,
+          deepPattern: process.env.SECURITY_DEEP_PATH_PATTERN,
         })
       );
     } else if (process.env.GITHUB_EVENT_NAME === 'pull_request_target') {
@@ -371,7 +408,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           api,
           event,
           process.env.SECURITY_PATH_PATTERN,
-          process.env.SECURITY_APPROVAL_BOT_USER_ID
+          process.env.SECURITY_APPROVAL_BOT_USER_ID,
+          process.env.SECURITY_DEEP_PATH_PATTERN
         )
       );
     } else {

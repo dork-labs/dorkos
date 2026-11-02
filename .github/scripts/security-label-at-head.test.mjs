@@ -1,12 +1,14 @@
 /* global URL, Response */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import test from 'node:test';
-import { checkMergeGroup, checkPullRequest, githubApi } from './security-gate.mjs';
+import test, { describe } from 'node:test';
+import { checkMergeGroup, checkPullRequest, DEEP_LABEL, githubApi } from './security-gate.mjs';
 import { approvalMode, labelAtHead } from './security-label-at-head.mjs';
 
-const pattern = '^apps/server/src/http/';
+const pattern = '^apps/server/src/(http|services/tasks)/';
+const deepPattern = '^apps/server/src/services/tasks/';
 const SENSITIVE = 'apps/server/src/http/gate.ts';
+const DEEP = 'apps/server/src/services/tasks/create-task.ts';
 const SHA = 'head1';
 const REF = 'fix/thing';
 const EARLY = '2026-10-30T10:00:00Z';
@@ -16,9 +18,9 @@ const group = {
   merge_group: { base_ref: 'refs/heads/main', base_sha: 'base', head_sha: 'group1' },
 };
 
-const labelled = (at, type = 'User') => ({
+const labelled = (at, type = 'User', name = 'security-reviewed') => ({
   event: 'labeled',
-  label: { name: 'security-reviewed' },
+  label: { name },
   created_at: at,
   actor: { login: 'someone', type },
 });
@@ -56,8 +58,10 @@ function gate({
     ],
   };
 }
-const check = (api, botUserId = '0') => checkPullRequest(api, event, pattern, { botUserId });
-const queued = (api, botUserId = '0') => checkMergeGroup(api, group, pattern, botUserId);
+const check = (api, botUserId = '0') =>
+  checkPullRequest(api, event, pattern, { botUserId, deepPattern });
+const queued = (api, botUserId = '0') =>
+  checkMergeGroup(api, group, pattern, botUserId, deepPattern);
 
 test('label then push fails: a new push voids the label', async () => {
   const api = gate({ timeline: [labelled(EARLY)], activity: [push(LATE)] });
@@ -113,7 +117,10 @@ test('only the placeholder is label mode; garbage or a missing id never is', asy
   for (const id of ['424242', '', 'abc', '-1', '00', undefined, null]) {
     assert.equal(approvalMode(id), 'app', String(id));
     const api = gate({ timeline: [labelled(LATE)], activity: [push(EARLY)] });
-    await assert.rejects(checkPullRequest(api, event, pattern, { botUserId: id }), /pending/);
+    await assert.rejects(
+      checkPullRequest(api, event, pattern, { botUserId: id, deepPattern }),
+      /pending/
+    );
   }
 });
 
@@ -198,4 +205,92 @@ test('the verifier reruns when a label changes', () => {
   const workflow = readFileSync(new URL('../workflows/security-gate.yml', import.meta.url), 'utf8');
   assert.match(workflow, /types: \[[^\]]*\blabeled, unlabeled\]/);
   assert.match(workflow, /^ {2}SECURITY_APPROVAL_BOT_USER_ID: '0'$/m);
+});
+
+describe('security-deep-reviewed on a P0 identity path (#dorkos, 2026-11-02)', () => {
+  const both = (at) => [labelled(at), labelled(at, 'User', DEEP_LABEL)];
+
+  test('a P0 path with only security-reviewed fails, in the PR run and in the queue', async () => {
+    const api = gate({ files: [DEEP], timeline: [labelled(LATE)], activity: [push(EARLY)] });
+    await assert.rejects(check(api), /no security-deep-reviewed label/);
+    await assert.rejects(queued(api), /no security-deep-reviewed label/);
+  });
+
+  test('a P0 path with both labels after the push passes', async () => {
+    const api = gate({
+      files: [DEEP],
+      labels: ['security-reviewed', DEEP_LABEL],
+      timeline: both(LATE),
+      activity: [push(EARLY)],
+    });
+    assert.equal(await check(api), 'Security status verified');
+    assert.match(await queued(api), /Security status verified/);
+  });
+
+  test('a push voids the deep label too', async () => {
+    const api = gate({
+      files: [DEEP],
+      labels: ['security-reviewed', DEEP_LABEL],
+      timeline: [labelled(LATE), labelled(EARLY, 'User', DEEP_LABEL)],
+      activity: [push('2026-10-30T10:30:00Z')],
+    });
+    await assert.rejects(
+      check(api),
+      /security-deep-reviewed is older than the last push; remove it and add it again/
+    );
+  });
+
+  test('only a person can add it', async () => {
+    const api = gate({
+      files: [DEEP],
+      labels: ['security-reviewed', DEEP_LABEL],
+      timeline: [labelled(LATE), labelled(LATE, 'Bot', DEEP_LABEL)],
+      activity: [push(EARLY)],
+    });
+    await assert.rejects(check(api), /newest security-deep-reviewed event is not from a person/);
+  });
+
+  test('the deep label never stands in for security-reviewed, and hold still wins', async () => {
+    const deepOnly = gate({
+      files: [DEEP],
+      labels: [DEEP_LABEL],
+      timeline: [labelled(LATE, 'User', DEEP_LABEL)],
+      activity: [push(EARLY)],
+    });
+    await assert.rejects(check(deepOnly), /no security-reviewed label/);
+    const held = gate({
+      files: [DEEP],
+      labels: ['security-reviewed', DEEP_LABEL, 'hold'],
+      timeline: both(LATE),
+      activity: [push(EARLY)],
+    });
+    await assert.rejects(check(held), /hold label is on/);
+  });
+
+  test('a sensitive path outside the P0 list needs only security-reviewed', async () => {
+    const api = gate({ files: [SENSITIVE], timeline: [labelled(LATE)], activity: [push(EARLY)] });
+    assert.equal(await check(api), 'Security status verified');
+    assert.match(await queued(api), /Security status verified/);
+  });
+
+  test('a mixed diff takes the stricter rule', async () => {
+    const api = gate({
+      files: [SENSITIVE, DEEP],
+      timeline: [labelled(LATE)],
+      activity: [push(EARLY)],
+    });
+    await assert.rejects(check(api), /no security-deep-reviewed label/);
+  });
+
+  test('a missing P0 list refuses a sensitive diff rather than reading it as none', async () => {
+    const api = gate({ files: [SENSITIVE], timeline: [labelled(LATE)], activity: [push(EARLY)] });
+    await assert.rejects(
+      checkPullRequest(api, event, pattern, { botUserId: '0' }),
+      /deep-review path list missing/
+    );
+    await assert.rejects(
+      checkMergeGroup(api, group, pattern, '0'),
+      /deep-review path list missing/
+    );
+  });
 });
