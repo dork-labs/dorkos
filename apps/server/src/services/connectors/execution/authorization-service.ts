@@ -46,6 +46,7 @@ import {
 import { agentGrantScope, type AgentGrantDenial } from './agent-grant-scope.js';
 import { describeServiceAction } from './approval-service-action.js';
 import { managedAgentAccess } from './managed-agent-access.js';
+import { preflightResultOf } from './reaches-outside.js';
 
 const CLASSIFICATION_BY_CAPABILITY = {
   'connectors.execute_read': 'read',
@@ -239,11 +240,7 @@ export class ConnectorExecutionAuthorizationService {
 
   /** Produce the authenticated preflight result consumed by the registry tier gate. */
   async preflight(input: PrepareConnectorExecutionInput): Promise<CapabilityPreflightResult> {
-    const authorized = await this.prepare(input);
-    return {
-      authorityBinding: authorized.authorityBinding,
-      approvalServiceAction: authorized.serviceAction,
-    };
+    return preflightResultOf(await this.prepare(input));
   }
 
   /** Resolve the immutable capability id for a program target without accepting a caller override. */

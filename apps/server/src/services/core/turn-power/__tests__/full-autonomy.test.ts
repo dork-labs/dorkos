@@ -86,9 +86,15 @@ function actionFor(id: string): GatedAction & PermissionGatedAction {
 }
 
 /** What the gate decides for one call by LifeOS from this chat. */
-async function decide(id: string, sessionId: string) {
+async function decide(id: string, sessionId: string, outward?: boolean) {
   const action = actionFor(id);
-  const permission = await resolveCallPermission({ action, identity: AGENT, sessionId, input: {} });
+  const permission = await resolveCallPermission({
+    action,
+    identity: AGENT,
+    sessionId,
+    input: {},
+    ...(outward === undefined ? {} : { outward }),
+  });
   return enforceCapabilityTier({
     action,
     input: {},
@@ -155,12 +161,13 @@ describe('what a chat is set to', () => {
 });
 
 describe('the permission gate in a chat set to Full', () => {
-  it('raises no card for a marked turn’s send or standing change, and writes one line each', async () => {
+  it('raises no card for a marked turn’s draft or standing change, and writes one line each', async () => {
     const emit = vi.fn(async (_event: unknown) => {});
     setMarkedFullActivity({ emit });
     const chat = fresh();
     await ran(chat, 'bypassPermissions', CARRIED);
-    expect((await decide('connectors.execute_write', chat)).outcome).toBe('allowed');
+    // A draft stays in the account; a send still asks (DOR-3683, below).
+    expect((await decide('connectors.execute_write', chat, false)).outcome).toBe('allowed');
     expect(emit).toHaveBeenCalledTimes(1);
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -172,6 +179,18 @@ describe('the permission gate in a chat set to Full', () => {
     expect((await decide('binding_create', chat)).outcome).toBe('allowed');
     expect(emit).toHaveBeenCalledTimes(2);
     expect(approvals.listPending()).toEqual([]);
+  });
+
+  it('still raises a card for a marked turn’s send, and writes no ran-unasked line (DOR-3683)', async () => {
+    const emit = vi.fn(async (_event: unknown) => {});
+    setMarkedFullActivity({ emit });
+    const chat = fresh();
+    await ran(chat, 'bypassPermissions', CARRIED);
+    expect((await decide('connectors.execute_write', chat, true)).outcome).toBe(
+      'approval_required'
+    );
+    expect(emit).not.toHaveBeenCalled();
+    expect(approvals.listPending()).toHaveLength(1);
   });
 
   it('writes no line for an unmarked Full turn, nor for a marked turn below Full', async () => {

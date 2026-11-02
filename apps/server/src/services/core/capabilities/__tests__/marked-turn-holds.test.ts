@@ -72,9 +72,22 @@ function heldActions(): (GatedAction & PermissionGatedAction)[] {
   );
 }
 
-/** What the gate decides for one call by LifeOS in this session. */
-async function decide(action: GatedAction & PermissionGatedAction, sessionId: string) {
-  const permission = await resolveCallPermission({ action, identity: AGENT, sessionId, input: {} });
+/**
+ * What the gate decides for one call by LifeOS in this session. `outward: false` is what the
+ * connector preflight says for a draft or a label (DOR-3683).
+ */
+async function decide(
+  action: GatedAction & PermissionGatedAction,
+  sessionId: string,
+  outward?: boolean
+) {
+  const permission = await resolveCallPermission({
+    action,
+    identity: AGENT,
+    sessionId,
+    input: {},
+    ...(outward === undefined ? {} : { outward }),
+  });
   return enforceCapabilityTier({
     action,
     input: {},
@@ -160,17 +173,24 @@ describe('a carried turn asks before what outlives it or acts outside', () => {
     expect(principalTurnOf(undefined)).toEqual({});
   });
 
-  it('the mark holds nothing in a chat set to Full: each decides as unmarked (DOR-3394)', async () => {
+  it('the mark holds nothing in a chat set to Full but a send: each decides as unmarked (DOR-3394)', async () => {
     const atFull = fresh();
     const plain = fresh();
     await ran(atFull, { permissionCeiling: CARRIED_OUTSIDER_LEVEL }, 'bypassPermissions');
     await ran(plain, undefined, 'bypassPermissions');
+    // A connector write is passed as a draft here: a send at Full still asks (DOR-3683), pinned in
+    // `full-outsider-connector-card.test.ts`.
     for (const action of heldActions()) {
-      expect(await decide(action, atFull), action.id).toBe(await decide(action, plain));
+      expect(await decide(action, atFull, false), action.id).toBe(
+        await decide(action, plain, false)
+      );
     }
+    const write = heldActions().find((a) => a.id === 'connectors.execute_write')!;
+    expect(await decide(write, atFull)).toBe('approval_required');
+    expect(await decide(write, plain)).toBe('allowed');
     for (const id of ['connectors.execute_write', 'binding_create', 'marketplace.install']) {
       const action = heldActions().find((a) => a.id === id)!;
-      expect(await decide(action, atFull), id).toBe('allowed');
+      expect(await decide(action, atFull, false), id).toBe('allowed');
     }
   });
 

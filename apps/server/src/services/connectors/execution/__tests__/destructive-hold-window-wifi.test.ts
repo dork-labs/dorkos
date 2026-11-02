@@ -91,6 +91,27 @@ describe('the cancel window at Full while Wi-Fi is plain http', () => {
     const careful = { ...sources(true, true), trusted: () => false };
     expect(await holdRequesterFor(context, preflight, careful)).toBeUndefined();
   });
+
+  it('keeps the card after outsider words: it cannot be undone (DOR-3683)', async () => {
+    const holds = {
+      start: vi.fn(async () => ({ holdId: 'h1', ended: new Promise(() => {}) })),
+    } as unknown as DestructiveHoldService;
+    for (const wifiOpen of [false, true]) {
+      const marked = { ...sources(wifiOpen, true), strangerTurn: () => true };
+      expect(await holdRequesterFor(context, preflight, marked)).toBeUndefined();
+      // No window, and no Wi-Fi reason on the card: the words are the reason.
+      expect(await cancelWindowFor(holds, context, preflight, marked)).toBeUndefined();
+    }
+    expect(holds.start).not.toHaveBeenCalled();
+  });
+
+  it('a mark that arrives during the wait stops it at the re-check (DOR-3683)', async () => {
+    let read = false;
+    const live = { ...sources(false, true), strangerTurn: () => read };
+    expect(await holdRequesterFor(context, preflight, live)).toBeDefined();
+    read = true;
+    expect(await holdRequesterFor(context, preflight, live, true)).toBeUndefined();
+  });
 });
 
 describe('the cancel window below Full while Wi-Fi is plain http', () => {
