@@ -56,6 +56,7 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   PEOPLE_ONLY: 403,
   // Re-seat refusals: nothing is wrong with the request, the state is.
   NO_ACCOUNT_LEFT: 409,
+  AGENT_MAY_NOT_MOVE_YET: 409,
   AGENT_WORKING: 409,
   NOTHING_TO_MOVE: 409,
   // `post_to_room` is an MCP verb with no HTTP route, so this code reaches a

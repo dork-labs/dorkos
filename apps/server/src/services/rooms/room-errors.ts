@@ -128,6 +128,11 @@ export type RoomErrorCode =
    */
   | 'NO_ACCOUNT_LEFT'
   /**
+   * An agent asked to move its own seat (`rooms.reseat`, DOR-3145) while a limit a person set
+   * says not now: its account is below the share it must be at, or its usage cannot be read.
+   */
+  | 'AGENT_MAY_NOT_MOVE_YET'
+  /**
    * A person asked to move an agent to another account while it is answering
    * here. Its running turn would bind the seat back to the old session, so the
    * move waits until the turn is done.

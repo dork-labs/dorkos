@@ -33,7 +33,12 @@ import { RoomError } from '../room-errors.js';
 import { buildAgentReseatedNotice } from '../notices/notice-copy.js';
 import { usageLimitNow } from '../notices/usage-limit.js';
 import type { RoomTurnReply } from '../room-turn-port.js';
-import type { PendingLaunch, Seat, SeatMove } from '../reseat/seat-mover.js';
+import {
+  AGENT_RESEAT_MIN_PCT,
+  type PendingLaunch,
+  type Seat,
+  type SeatMove,
+} from '../reseat/seat-mover.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 
 /** What a turn launches with after a move: the account to start on and the summary. */
@@ -310,17 +315,20 @@ export async function reseatAfterLimit(
  * @param agent - The agent whose seat moves.
  * @param byAuthorId - Who asked, named in the line.
  * @param accountId - The account to move to; the best one when absent.
+ * @param byAgent - The seat's own agent asked (DOR-3145): its limits apply.
  * @returns The seat's new session.
  * @throws {RoomError} `AGENT_WORKING` while it answers here; `NOTHING_TO_MOVE`
- *   before it has answered here at all; `NO_ACCOUNT_LEFT` when no account it
- *   may use can take it.
+ *   before it has answered here at all; `AGENT_MAY_NOT_MOVE_YET` when its agent
+ *   asked and a limit says not now; `NO_ACCOUNT_LEFT` when no account it may use
+ *   can take it.
  */
 export async function reseatByHand(
   self: RoomTriggerDispatcher,
   room: Room,
   agent: { authorId: string; agentPath: string; displayName: string },
   byAuthorId: string,
-  accountId: string | undefined
+  accountId: string | undefined,
+  byAgent = false
 ): Promise<{ sessionId: string }> {
   if (self.claimed.has(agentKey(room.id, agent.authorId))) {
     throw new RoomError(
@@ -343,8 +351,17 @@ export async function reseatByHand(
             ...(accountId !== undefined ? { accountId } : {}),
             by: self.notices.nameOf(byAuthorId),
             hideAccounts: hideAccountsIn(self, room.id),
+            ...(byAgent ? { byAgent: true as const } : {}),
           }
         );
+  if (move !== null && typeof move === 'object' && 'refused' in move) {
+    throw new RoomError(
+      'AGENT_MAY_NOT_MOVE_YET',
+      move.refused === 'usage-unknown'
+        ? "Your account's usage can't be read right now, so you can't move yourself. Ask a person."
+        : `You can move yourself only once your account is at ${AGENT_RESEAT_MIN_PCT}% of its usage or more.`
+    );
+  }
   if (move === 'nothing-to-move') {
     throw new RoomError(
       'NOTHING_TO_MOVE',
@@ -361,22 +378,22 @@ export async function reseatByHand(
  *
  * @param room - The room.
  * @param agent - The agent whose seat would move.
+ * @param byAgent - The seat's own agent asks: only accounts it may move to (DOR-3145).
  */
 export async function reseatOptionsFor(
   self: RoomTriggerDispatcher,
   room: Room,
-  agent: { authorId: string; agentPath: string }
+  agent: { authorId: string; agentPath: string },
+  byAgent = false
 ): Promise<ReseatOptions> {
   const sessionId = self.deps.store.getRoomSession(room.id, agent.authorId);
   const seated = sessionId !== null;
   const mover = self.deps.seatMover?.() ?? null;
   if (mover === null) return { current: null, accounts: [], seated };
-  const { current, accounts } = await mover.options({
-    roomId: room.id,
-    authorId: agent.authorId,
-    agentPath: agent.agentPath,
-    sessionId,
-  });
+  const { current, accounts } = await mover.options(
+    { roomId: room.id, authorId: agent.authorId, agentPath: agent.agentPath, sessionId },
+    byAgent ? { byAgent: true } : {}
+  );
   return {
     seated,
     current: current.id === null ? null : { id: current.id, label: current.label },

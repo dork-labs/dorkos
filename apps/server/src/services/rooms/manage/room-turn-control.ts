@@ -202,9 +202,10 @@ export class RoomTurnControl {
 
   /**
    * Move an agent's seat here to another account by hand (`rooms.reseat`).
-   * Only a person may, until agents are allowed (Security Must 5): the one
-   * check is {@link mayReseatByHand}, and the caller says whether its turn is
-   * marked, since only the capability knows the calling session.
+   * A person may move any seat; an agent only its own, never from a marked turn,
+   * and within Dorian's limits (DOR-3145, `RoomSeatMover.byHand`). The one check
+   * is {@link mayReseatByHand}, and the caller says whether its turn is marked,
+   * since only the capability knows the calling session.
    *
    * @param roomId - The room, which the caller must be able to see.
    * @param authorId - The agent whose seat moves.
@@ -219,21 +220,31 @@ export class RoomTurnControl {
     viewerAuthorId: string,
     opts: { accountId?: string; markedTurn?: boolean } = {}
   ): Promise<{ sessionId: string }> {
-    const room = this.visibility.requireVisibleRoom(roomId, viewerAuthorId);
+    // Who may ask is decided before anything about the room or its accounts is read: a marked
+    // turn, or another agent's seat, is refused with nothing looked up (Security, DOR-3145).
+    const callerIsPerson = this.authors.getById(viewerAuthorId)?.kind === 'human';
     const allowed = mayReseatByHand({
-      callerIsPerson: this.authors.getById(viewerAuthorId)?.kind === 'human',
+      callerIsPerson,
       callerId: viewerAuthorId,
       seatAuthorId: authorId,
-      markedTurn: opts.markedTurn === true,
+      // Unknown counts as marked: only the capability can read the calling turn, so an agent
+      // that reaches this any other way (the HTTP route) cannot move a seat (DOR-3145).
+      markedTurn: opts.markedTurn !== false,
     });
     if (!allowed) {
-      throw new RoomError('PEOPLE_ONLY', 'Only a person can move an agent to another account.');
+      throw new RoomError(
+        'PEOPLE_ONLY',
+        'Only a person can move another agent, or move one from a turn that read outside words.'
+      );
     }
+    const room = this.visibility.requireVisibleRoom(roomId, viewerAuthorId);
     return this.triggers.reseatByHand(
       room,
       this.agentMember(roomId, authorId),
       viewerAuthorId,
-      opts.accountId
+      opts.accountId,
+      // Anyone but a person is the seat's own agent here, so its limits apply (DOR-3145).
+      !callerIsPerson
     );
   }
 
@@ -244,25 +255,29 @@ export class RoomTurnControl {
    * @param roomId - The room.
    * @param authorId - The agent.
    * @param viewerAuthorId - Who asks.
+   * @param opts.markedTurn - The calling turn carries a mark; unknown counts as marked.
    */
   async reseatOptions(
     roomId: string,
     authorId: string,
-    viewerAuthorId: string
+    viewerAuthorId: string,
+    opts: { markedTurn?: boolean } = {}
   ): Promise<ReseatOptions> {
-    const room = this.visibility.requireVisibleRoom(roomId, viewerAuthorId);
     // Who may move a seat is who may see where it could go: the accounts and
-    // their usage are the owner's business, not every caller's.
+    // their usage are the owner's business, not every caller's. Decided before
+    // anything about the room is read, like the move itself.
+    const callerIsPerson = this.authors.getById(viewerAuthorId)?.kind === 'human';
     const allowed = mayReseatByHand({
-      callerIsPerson: this.authors.getById(viewerAuthorId)?.kind === 'human',
+      callerIsPerson,
       callerId: viewerAuthorId,
       seatAuthorId: authorId,
-      markedTurn: false,
+      markedTurn: opts.markedTurn !== false,
     });
     if (!allowed) {
-      throw new RoomError('PEOPLE_ONLY', 'Only a person can move an agent to another account.');
+      throw new RoomError('PEOPLE_ONLY', 'Only a person can see where another agent could move.');
     }
-    return this.triggers.reseatOptions(room, this.agentMember(roomId, authorId));
+    const room = this.visibility.requireVisibleRoom(roomId, viewerAuthorId);
+    return this.triggers.reseatOptions(room, this.agentMember(roomId, authorId), !callerIsPerson);
   }
 
   /**

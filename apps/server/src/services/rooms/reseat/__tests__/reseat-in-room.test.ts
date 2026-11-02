@@ -445,19 +445,88 @@ describe('by hand (rooms.reseat)', () => {
     ]);
   });
 
-  it('refuses an agent, even for its own seat, while agents are switched off (Must 5)', async () => {
+  // DOR-3145: Dorian's yes, with four limits. Through the real room service.
+  it('refuses an agent another agent’s seat, and its own below 80% of its account', async () => {
     const w = open({
-      accounts: [{ id: 'claude4' }, { id: 'claude3' }],
+      accounts: [{ id: 'claude4', fiveHour: 79 }, { id: 'claude3' }],
+      bound: true,
+      turn: () => 'answer',
+    });
+    await expect(w.harness.service.reseatAgent(w.room.id, w.ana, w.bo)).rejects.toMatchObject({
+      code: 'PEOPLE_ONLY',
+    });
+    await expect(
+      w.harness.service.reseatAgent(w.room.id, w.ana, w.ana, { markedTurn: false })
+    ).rejects.toMatchObject({ code: 'AGENT_MAY_NOT_MOVE_YET' });
+    expect(w.activity).toEqual([]);
+    expect(w.notices()).toEqual([]);
+  });
+
+  // Red when: the room line stops being written for an agent's own move. Dorian's second limit.
+  it('lets an agent move its own seat at 80%, with the room’s line and one Activity entry', async () => {
+    const w = open({
+      accounts: [{ id: 'claude4', fiveHour: 80 }, { id: 'claude3' }],
+      bound: true,
+      turn: () => 'answer',
+    });
+    const moved = await w.harness.service.reseatAgent(w.room.id, w.ana, w.ana, {
+      markedTurn: false,
+    });
+    expect(moved).toEqual({ sessionId: 'moved-1' });
+    expect(w.harness.store.getRoomSession(w.room.id, w.ana)).toBe('moved-1');
+    const lines = w.notices();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.notice).toBe('agent_reseated');
+    expect(w.activity).toEqual([
+      expect.objectContaining({ trigger: 'person', toAccountId: 'claude3' }),
+    ]);
+  });
+
+  // Red when: an unknown mark is read as unmarked. Only the capability reads the calling turn;
+  // an agent reaching the move any other way (the HTTP route) names none, and is refused.
+  it('refuses an agent that does not say whether its turn is marked, as the HTTP route does not', async () => {
+    const w = open({
+      accounts: [{ id: 'claude4', fiveHour: 99 }, { id: 'claude3' }],
       bound: true,
       turn: () => 'answer',
     });
     await expect(w.harness.service.reseatAgent(w.room.id, w.ana, w.ana)).rejects.toMatchObject({
       code: 'PEOPLE_ONLY',
     });
-    await expect(w.harness.service.reseatAgent(w.room.id, w.ana, w.bo)).rejects.toMatchObject({
+    await expect(w.harness.service.reseatOptions(w.room.id, w.ana, w.ana)).rejects.toMatchObject({
       code: 'PEOPLE_ONLY',
     });
-    expect(w.activity).toEqual([]);
+    expect(w.notices()).toEqual([]);
+    // A person names no mark and is unchanged.
+    expect((await w.harness.service.reseatOptions(w.room.id, w.ana, w.harness.human)).seated).toBe(
+      true
+    );
+  });
+
+  it('shows an agent only the accounts it may move to, and refuses its options from a marked turn', async () => {
+    const w = open({
+      accounts: [{ id: 'claude4', fiveHour: 90 }, { id: 'claude3' }],
+      bound: true,
+      turn: () => 'answer',
+    });
+    const mine = await w.harness.service.reseatOptions(w.room.id, w.ana, w.ana, {
+      markedTurn: false,
+    });
+    expect(mine.accounts.map((a) => a.id)).toEqual(['claude3']);
+    await expect(
+      w.harness.service.reseatOptions(w.room.id, w.ana, w.ana, { markedTurn: true })
+    ).rejects.toMatchObject({ code: 'PEOPLE_ONLY' });
+  });
+
+  it('refuses an agent its own seat from a marked turn, at any usage', async () => {
+    const w = open({
+      accounts: [{ id: 'claude4', fiveHour: 99 }, { id: 'claude3' }],
+      bound: true,
+      turn: () => 'answer',
+    });
+    await expect(
+      w.harness.service.reseatAgent(w.room.id, w.ana, w.ana, { markedTurn: true })
+    ).rejects.toMatchObject({ code: 'PEOPLE_ONLY' });
     expect(w.notices()).toEqual([]);
   });
 

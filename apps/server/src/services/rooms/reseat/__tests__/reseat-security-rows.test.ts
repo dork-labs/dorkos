@@ -5,8 +5,8 @@
  * - **Accounts (Must 4)**: never DorkOS credits, never an account kept to other
  *   projects (how `claude-ab1` is kept out), never one that is out, and nothing
  *   the agent writes in its own folder changes that.
- * - **Tool + audit (Musts 5, 6)**: an agent calling `rooms.reseat` is refused as
- *   people-only, and each move writes exactly one Activity entry.
+ * - **Tool + audit (Musts 5, 6)**: an agent calling `rooms.reseat` on another agent's seat is
+ *   refused (it may move only its own, DOR-3145), and each move writes exactly one Activity entry.
  *
  * @vitest-environment node
  */
@@ -213,7 +213,7 @@ describe('Musts 5 and 6: the tool and the audit', () => {
     roomHarness = await import('../../__tests__/room-test-harness.js');
   }, 60_000);
 
-  it('refuses an agent calling rooms.reseat, even with Rooms allowed, as people-only', async () => {
+  it("refuses an agent calling rooms.reseat on another agent's seat, even with Rooms allowed", async () => {
     const { composeRegistry, initPermissionGate, resetPermissionGate } = capabilities;
     const { roomsDomain } = rooms;
     const { agentLookupFor, createRoomHarness, scriptedRunner } = roomHarness;
@@ -224,21 +224,25 @@ describe('Musts 5 and 6: the tool and the audit', () => {
     });
     try {
       const harness = createRoomHarness({
-        agents: agentLookupFor({ '/agents/ana': { name: 'ana', displayName: 'Ana' } }),
+        agents: agentLookupFor({
+          '/agents/ana': { name: 'ana', displayName: 'Ana' },
+          '/agents/bo': { name: 'bo', displayName: 'Bo' },
+        }),
         runner: scriptedRunner(() => null),
       });
       const room = harness.service.createRoom(
-        { kind: 'channel', title: 'Work', members: [], agentPaths: ['/agents/ana'] },
+        { kind: 'channel', title: 'Work', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
         harness.human
       );
-      const ana = harness.authors.resolveAgent('/agents/ana', 'Ana').id;
+      // An agent may move only its own seat (DOR-3145): Ana asking to move Bo is refused.
+      const bo = harness.authors.resolveAgent('/agents/bo', 'Bo').id;
       const registry = composeRegistry([roomsDomain], {
         logger: { debug() {}, info() {}, warn() {}, error() {} },
         roomDeps: { rooms: harness.service },
       });
       const refused = registry.invoke(
         'rooms.reseat',
-        { roomId: room.id, agentId: ana },
+        { roomId: room.id, agentId: bo },
         {
           identity: {
             agentPath: '/agents/ana',

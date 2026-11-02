@@ -47,6 +47,26 @@ export function nearlyOut(usage: AccountUsage): boolean {
 }
 
 /**
+ * How far through its tightest watched window (5-hour or weekly) an account is, 0 to 100, or
+ * `null` when no such window has a current reading. A window that has expired, or that the usage
+ * store left out as stale, counts as no reading. An account that is out reads 100. Read by the agent's
+ * own move (DOR-3145), where an unknown reading is a reason not to move, never to move.
+ *
+ * @param usage - The account's usage, or `null` when nobody has measured it.
+ */
+export function highestUsedPct(usage: AccountUsage | null): number | null {
+  if (usage === null) return null;
+  if (usage.state === 'limited') return 100;
+  const read = usage.windows
+    .filter(
+      (w) =>
+        (WATCHED_WINDOWS as readonly string[]).includes(w.key) && w.usedPct !== null && !w.expired
+    )
+    .map((w) => w.usedPct as number);
+  return read.length === 0 ? null : Math.max(...read);
+}
+
+/**
  * The accounts a seat on this runtime may move to: the same runtime, never
  * DorkOS credits, never one the project does not allow, and never one a person
  * kept out of automatic moves unless `opts.keptOut` says a person is choosing.

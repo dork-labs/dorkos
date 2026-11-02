@@ -5,10 +5,12 @@
  * person who wants to move an agent before it runs out, or to a particular
  * account.
  *
- * **People only, for now** (Security Must 5). A tool that lets an agent spend
- * another account widens what agents can do, so it waits for Dorian's own yes.
- * The single check is `mayReseatByHand`, asked by `RoomTurnControl.reseatAgent`;
- * this file only tells it whether the calling turn is marked.
+ * **A person, or the seat's own agent within Dorian's limits** (Security Must 5,
+ * DOR-3145): an agent moves only its own seat, never from a marked turn, only
+ * once its account is at 80% or more, and never onto the main account or one
+ * kept out of automatic moves. The single check is `mayReseatByHand`, asked by
+ * `RoomTurnControl.reseatAgent`; this file only tells it whether the calling
+ * turn is marked.
  *
  * @module services/rooms/reseat/reseat-capabilities
  */
@@ -53,8 +55,8 @@ export const reseatCapabilities = [
     surfaces: {
       mcp: {
         toolName: 'reseat_room_agent_options',
-        // External only while moving is people-only: an agent's own tool list
-        // carries no verb it cannot use. In-session joins with the agent switch.
+        // External only: an agent moving its own seat needs no list (left unnamed, the move takes
+        // the best account it may use), and the accounts and their usage stay the owner's view.
         servers: ['external'],
       },
       http: { method: 'get', path: '/api/rooms/{roomId}/members/{agentId}/reseat-options' },
@@ -65,7 +67,9 @@ export const reseatCapabilities = [
       return answeringAsync(
         () => {
           caller = callerAuthor(rooms, context);
-          return rooms.reseatOptions(input.roomId, input.agentId, caller.id);
+          return rooms.reseatOptions(input.roomId, input.agentId, caller.id, {
+            markedTurn: callingTurnMarked(context),
+          });
         },
         () => isOwnerCaller(caller)
       );
@@ -79,7 +83,8 @@ export const reseatCapabilities = [
       'there. Its next turn starts fresh on that account, with a summary of where it was, the ' +
       'same power and the same marks. Name an account from the options, or leave it ' +
       'out for the one with the most usage left. The room gets one line saying so. ' +
-      'Only a person may move an agent for now.',
+      'An agent may move only its own seat, once its account is at 80% of its usage or ' +
+      'more, and never to the main account or one kept out of automatic moves.',
     tier: 'act',
     area: 'rooms',
     // Not the agent's id: a card shows one resolved subject, the room, and an
@@ -98,7 +103,7 @@ export const reseatCapabilities = [
     surfaces: {
       mcp: {
         toolName: 'reseat_room_agent',
-        servers: ['external'],
+        servers: ['in-session', 'external'],
         // Not idempotent: each call starts another fresh session.
         annotations: { idempotentHint: false },
       },

@@ -1507,16 +1507,18 @@ export class RoomTriggerDispatcher {
     room: Room,
     agent: { authorId: string; agentPath: string; displayName: string },
     byAuthorId: string,
-    accountId: string | undefined
+    accountId: string | undefined,
+    byAgent = false
   ): Promise<{ sessionId: string }> {
-    return reseating.reseatByHand(this, room, agent, byAuthorId, accountId);
+    return reseating.reseatByHand(this, room, agent, byAuthorId, accountId, byAgent);
   }
 
   /** The accounts a seat may move to. See {@link reseating.reseatOptionsFor}. */
   reseatOptions(
     room: Room,
-    agent: { authorId: string; agentPath: string }
+    agent: { authorId: string; agentPath: string },
+    byAgent = false
   ): Promise<ReseatOptions> {
-    return reseating.reseatOptionsFor(this, room, agent);
+    return reseating.reseatOptionsFor(this, room, agent, byAgent);
   }
 }

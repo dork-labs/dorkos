@@ -74,6 +74,11 @@ export interface RankedAccount {
    * whose account runs out never moves here on its own (`reseat-accounts.ts`).
    */
   noAutoMove?: true;
+  /**
+   * `true` for the runtime's main account (`<runtime>:default` names it): an agent never moves
+   * its own seat here (DOR-3145), whatever id the account carries.
+   */
+  isDefault?: true;
 }
 
 /** The answer to {@link rankAccounts}. */
@@ -241,6 +246,7 @@ function defaultRanking(
           eligible,
           reason: signinOk ? defaultReason(usage, eligible) : SIGNIN_NEEDS_REVIEW_REASON,
           ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
+          ...(account.isDefault ? { isDefault: true as const } : {}),
         } satisfies RankedAccount,
       };
     });
@@ -321,6 +327,7 @@ async function advisedRanking(
       reason: signinOk ? row.reason : SIGNIN_NEEDS_REVIEW_REASON,
       ...(row.badge ? { badge: row.badge } : {}),
       ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
+      ...(account.isDefault ? { isDefault: true as const } : {}),
     };
   });
   // A recommendation the sign-in check took out of the running is not one.

@@ -575,8 +575,10 @@ describe('in-session tool exposure', () => {
     // 140 -> 141 total, 128 -> 129 deferred: `set_up_room_files` (DOR-3468).
     // 141 -> 142 total, 129 -> 130 deferred: `local_browser_ask_person`
     // (DOR-3218), reached only by an agent already using the shared page.
-    expect(tools).toHaveLength(142);
-    expect(deferred).toHaveLength(130);
+    // 142 -> 143 total, 130 -> 131 deferred: `reseat_room_agent` (DOR-3145), in-session now that
+    // an agent may move its own seat; no prompt block names it. Its options list stays external.
+    expect(tools).toHaveLength(143);
+    expect(deferred).toHaveLength(131);
     for (const name of [
       'local_browser_ask_person',
       'local_browser_state',
