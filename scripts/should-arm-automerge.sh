@@ -51,7 +51,8 @@
 #     "labels": [{"name": "hold"}],
 #     "unresolvedThreads": 0,
 #     "checks": [{"name": "typecheck", "bucket": "pass"},
-#                {"name": "security-gate", "bucket": "pass"}],
+#                {"name": "security-gate", "bucket": "pass"},
+#                {"name": "security-review", "bucket": "pass"}],
 #     "headSince": "2026-09-21T15:02:45Z",
 #     "queueRemovals": [{"at": "2026-09-21T14:10:19Z",
 #                        "failedChecks": ["browser-shard (2/6)", "browser-test"]}]
@@ -210,6 +211,18 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   elif ([(.checks // [])[] | select(.name == "security-gate")
          | (.bucket // "") | ascii_downcase] | any(. != "pass"))
                                                     then "SKIP security-gate-not-passed"
+
+  # The verdict from main at this head (DOR-3686). `security-gate` runs the PR copy
+  # of the gate, so a PR that edits the gate passes its own check, and it passes while a
+  # PR is only waiting for its label. `security-review` is the commit status that
+  # the copy on main writes from `pull_request_target` (#3426): `success` only for a
+  # label at this head, from a person, with no hold. Pending, failure or no row
+  # all refuse here, before the bucket rules below, so a pending verdict is never
+  # read as an ordinary check still in flight. A workflow a PR adds can still
+  # forge this status until the Security App exists; arm.sh stays the arming path.
+  elif ([(.checks // [])[] | select(.name == "security-review")
+         | (.bucket // "") | ascii_downcase] | (length == 0 or any(. != "pass")))
+                                                    then "SKIP security-review-not-passed"
   elif ((buckets) | any(. == "fail"))               then "SKIP failing-checks"
   elif ((buckets) | any(. == "cancel"))             then "SKIP cancelled-checks"
   elif ((buckets) | any(. == "pending"))            then "SKIP checks-in-flight"
