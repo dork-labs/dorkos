@@ -1,0 +1,17 @@
+name: qa-proof-3426
+
+# QA PROOF #3426 (b1): a throwaway workflow that grants statuses: 'write'.
+# Do not merge. Dispatch-only, so it never runs on this PR.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: 'write'
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "QA proof only"
