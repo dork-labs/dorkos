@@ -132,7 +132,14 @@ import {
 import {
   agentLaunchCapMessage,
   AGENT_LAUNCH_MAX_LIVE,
+  dispatchSessionMessage,
+  isSessionLaunchRefusal,
 } from '../../../../session/launch/launch-session.js';
+import {
+  launchPlaceRefusal,
+  NOT_THE_CALLER_MESSAGE,
+  OTHER_AGENTS_HOME_MESSAGE,
+} from '../../../../session/launch/launch-caller.js';
 import {
   clearTestHomes,
   registerTestHomes,
@@ -152,8 +159,6 @@ import { StartWorkService, setStartWorkService } from '../../../../extensions/st
 import { handRegisteredInSessionTools } from '../index.js';
 import { SessionStore } from '../../sessions/session-store.js';
 import {
-  NOT_THE_CALLER_MESSAGE,
-  OTHER_AGENTS_HOME_MESSAGE,
   SESSION_START_CLIENT_ID,
   SessionStartInputShape,
   UNKNOWN_CALLER_MESSAGE,
@@ -323,7 +328,7 @@ describe('session_start', () => {
     expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
       expect.any(String),
       'claude-code',
-      { kind: 'agent-launch' },
+      { kind: 'agent-launch', launchedBy: 'a1' },
       AGENT_HOME
     );
     const sent = vi.mocked(dispatchMessage).mock.calls[0]![0];
@@ -568,7 +573,7 @@ describe('session_start', () => {
       expect(runtimeRegistry.persistSessionRuntime).toHaveBeenCalledWith(
         expect.any(String),
         'claude-code',
-        { kind: 'agent-launch' },
+        { kind: 'agent-launch', launchedBy: 'a1' },
         AGENT_HOME
       );
     });
@@ -1755,5 +1760,51 @@ describe("session_start passes on an outsider's words (DOR-2781)", () => {
     await asScout()(BASE);
     expect(sentCeiling()).toBe('runtime-default');
     await running.return(undefined);
+  });
+});
+
+/**
+ * `session_start` and the launch service the HTTP route calls answer every
+ * place the same way, because both ask one rule (DOR-3644). Each case runs
+ * through the tool, through `dispatchSessionMessage` as the route calls it for
+ * an agent, and through the rule itself.
+ */
+describe('one place rule for session_start and the HTTP launch (DOR-3644)', () => {
+  const cases: [string, { cwd: string; agentPath?: string }, string | null][] = [
+    ['a folder no agent owns', { cwd: '/work/project' }, null],
+    ['its own home', { cwd: AGENT_HOME }, null],
+    ['its own home, named as the agent', { cwd: AGENT_HOME, agentPath: AGENT_HOME }, null],
+    ["another agent's home", { cwd: OTHER_HOME }, 'OTHER_AGENTS_FOLDER'],
+    ["a folder inside another agent's home", { cwd: `${OTHER_HOME}/notes` }, 'OTHER_AGENTS_FOLDER'],
+    [
+      'another agent, named as the agent',
+      { cwd: '/work/project', agentPath: OTHER_HOME },
+      'NOT_THE_CALLER',
+    ],
+  ];
+
+  it.each(cases)('%s', async (_name, place, expected) => {
+    const rule = launchPlaceRefusal(mesh, { kind: 'agent', agentPath: AGENT_HOME }, place);
+    expect(rule?.code ?? null).toBe(expected);
+
+    const tool = payloadOf(await asScout()({ prompt: 'x', ...place }));
+    const toolCode = ['NOT_THE_CALLER', 'OTHER_AGENTS_FOLDER'].includes(tool.code as string)
+      ? tool.code
+      : null;
+    expect(toolCode).toBe(expected);
+
+    vi.clearAllMocks();
+    const http = await dispatchSessionMessage({
+      origin: { kind: 'agent-launch' },
+      launcher: { kind: 'agent', agentPath: AGENT_HOME },
+      sessionId: '00000000-0000-4000-8000-0000000036a5',
+      request: { content: 'x', ...place },
+      clientId: 'http',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+    });
+    const httpCode = isSessionLaunchRefusal(http) ? (http.launcherRefused ?? null) : null;
+    expect(httpCode).toBe(expected);
+    if (expected !== null) expect(dispatchMessage).not.toHaveBeenCalled();
   });
 });

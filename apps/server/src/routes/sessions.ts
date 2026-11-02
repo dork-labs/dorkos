@@ -40,18 +40,17 @@ import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
+import { forkPlaceRefusal, httpLaunchOf } from './session-launcher.js';
+import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
 import { recordAccepted } from './session-message-accepted.js';
 import { launchRefusalReply, notePersonMode, wifiModeRaiseReply } from './session-route-replies.js';
 import { readQuery } from '../http/request-query.js';
 import { boundaryRefusal, errorBody, parseSessionId } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
-import { isPersonTurn } from '../lib/caller-authority.js';
 import { askForPersonBeforeChat, personOnlyModeChange } from '../http/person-session-refusal.js';
 import { workspaceCallerOf } from './session-workspace-caller.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
-import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import type { RoomBindingsPort, SessionOriginResolvers } from '../services/session/index.js';
 import {
@@ -740,8 +739,9 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     }
 
     const cwd = (readQuery(c).cwd as string) || vaultRoot;
-    const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
-    if (outside) return c.json(outside, 403);
+    // A fork runs where it is put, so only where its caller may run one (DOR-3644).
+    const refused = await forkPlaceRefusal(honoRequestFacts(c), deps.meshCore, cwd);
+    if (refused) return c.json(refused, 403);
 
     const runtime = await runtimeRegistry.resolveForSession(sessionId);
     const internalSessionId = runtime.getInternalSessionId(sessionId) ?? sessionId;
@@ -860,8 +860,13 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // a caller with no agent header but no session of the person's, once an
     // owner exists who could prove themselves (DOR-3330): its message runs as
     // agent work, never as the person.
+    // Whoever is not the person may only run a chat where they could start one
+    // themselves (DOR-3644), and an agent's launch carries its own marks on.
+    // From Wi-Fi, the turn runs at the runtime's default at most (DOR-3037).
+    const launch = httpLaunchOf(honoRequestFacts(c));
     const result = await dispatchSessionMessage({
-      origin: httpTurnOrigin(!isPersonTurn(honoRequestFacts(c))),
+      origin: httpTurnOrigin(launch.launcher.kind !== 'person'),
+      ...launch,
       sessionId,
       request: parsed.data,
       clientId,
@@ -869,8 +874,6 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
       roomSessionPlace: deps.roomSessionPlace,
       // Who is asking, for a new workspace a workspaceKey names (DOR-2335).
       workspaceCaller: workspaceCallerOf(honoRequestFacts(c)),
-      // From Wi-Fi, the turn runs at the runtime's default at most (DOR-3037).
-      ...wifiTurnCeiling(honoRequestFacts(c)),
     });
     if (isSessionLaunchRefusal(result)) return launchRefusalReply(c, result);
 

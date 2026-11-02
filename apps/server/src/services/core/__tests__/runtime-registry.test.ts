@@ -651,6 +651,35 @@ describe('RuntimeRegistry', () => {
         expect(registry.getSessionLaunchOrigin('s-bound')).toBe('schedule');
       });
 
+      it('records who launched an agent launch, on insert and on a claim, never overwriting it', async () => {
+        const launchedByOf = (id: string) =>
+          db
+            .select({ by: sessionMetadata.launchedBy })
+            .from(sessionMetadata)
+            .where(eq(sessionMetadata.sessionId, id))
+            .get()?.by;
+        await registry.persistSessionRuntime('s-by', 'claude-code', {
+          kind: 'agent-launch',
+          launchedBy: 'agent-a',
+        });
+        expect(launchedByOf('s-by')).toBe('agent-a');
+        await registry.persistSessionRuntime('s-by', 'claude-code', {
+          kind: 'agent-launch',
+          launchedBy: 'agent-b',
+        });
+        expect(launchedByOf('s-by')).toBe('agent-a');
+
+        await registry.saveSessionSettings('s-by-claim', { model: 'opus' });
+        await registry.persistSessionRuntime('s-by-claim', 'claude-code', {
+          kind: 'agent-launch',
+          launchedBy: 'unidentified',
+        });
+        expect(launchedByOf('s-by-claim')).toBe('unidentified');
+
+        await registry.persistSessionRuntime('s-by-person', 'claude-code', A_PERSON);
+        expect(launchedByOf('s-by-person')).toBeNull();
+      });
+
       it('reads no launch origin for a session with no row', () => {
         expect(registry.getSessionLaunchOrigin('s-none')).toBeNull();
       });

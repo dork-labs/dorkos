@@ -315,7 +315,7 @@ describe('the guard in front of every session route', () => {
     expect(vi.mocked(runtimeRegistry.persistSessionRuntime)).toHaveBeenCalledWith(
       NEW,
       'fake',
-      { kind: 'agent-launch' },
+      { kind: 'agent-launch', launchedBy: 'unidentified' },
       undefined
     );
 

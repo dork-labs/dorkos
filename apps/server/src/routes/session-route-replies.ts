@@ -31,6 +31,8 @@ export function launchRefusalReply(c: Context<ApiEnv>, result: SessionLaunchRefu
   if (result.refused === 'AGENT_PAUSED') {
     return c.json({ error: result.message, code: result.refused, agentId: result.agentId }, 409);
   }
+  // A caller asking for a place that is not theirs to choose (DOR-3644).
+  if (result.launcherRefused) return c.json(errorBody(result.message, result.refused), 403);
   // A request naming something that does not exist is the caller's mistake;
   // a turn refused for WHERE it would stand is a conflict with the session.
   const status =

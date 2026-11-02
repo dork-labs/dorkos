@@ -1102,7 +1102,9 @@ registry.registerPath({
     403: {
       description:
         'The message names DorkOS credits (`account: "dorkos-credits"`) and the caller is not ' +
-        'the owner of this DorkOS (`person_only`, `owner_only`); nothing started',
+        'the owner of this DorkOS (`person_only`, `owner_only`); or a caller other than the ' +
+        "person named another agent's folder, home or chat, or a caller DorkOS cannot name " +
+        "named any agent's (`DESK_NOT_OWN`); nothing started",
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {

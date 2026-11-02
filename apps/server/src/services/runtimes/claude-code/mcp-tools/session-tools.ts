@@ -95,7 +95,7 @@ import {
 } from './session-start-permission.js';
 import { outsiderStartCeiling, startLevelFacts } from './session-start-facts.js';
 import { recordMarkedFullAction } from '../../../core/turn-power/full-autonomy.js';
-import { isOtherAgentsFolder } from './other-agents-folder.js';
+import { launchPlaceRefusal } from '../../../session/launch/launch-caller.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
 import { jsonContent, type McpToolDeps } from './types.js';
 
@@ -105,14 +105,6 @@ export const SESSION_START_CLIENT_ID = 'mcp:session_start';
 /** The refusal for a caller that is not a registered agent. */
 export const UNKNOWN_CALLER_MESSAGE =
   'Only a registered agent can start a session, and DorkOS could not tell which agent is asking.';
-
-/** The refusal for a session that would run as some other agent. */
-export const NOT_THE_CALLER_MESSAGE =
-  'An agent can start a session only as itself. Leave out agentPath, or give your own folder.';
-
-/** The refusal for a folder that belongs to another agent. */
-export const OTHER_AGENTS_HOME_MESSAGE =
-  "That folder belongs to another agent. Start the session in a folder that is not another agent's.";
 
 /**
  * Who is calling, resolved at CALL time: the home of the agent making the call.
@@ -407,13 +399,14 @@ export function createSessionStartHandler(
       );
     }
 
-    if (args.agentPath !== undefined && path.resolve(args.agentPath) !== caller.agentPath) {
-      return refuse(NOT_THE_CALLER_MESSAGE, 'NOT_THE_CALLER');
-    }
+    // The one place rule `POST /api/sessions/:id/messages` asks too (DOR-3644).
+    const launcher = { kind: 'agent', agentPath: caller.agentPath } as const;
+    const place = launchPlaceRefusal(deps.meshCore, launcher, {
+      cwd,
+      ...(args.agentPath !== undefined ? { agentPath: args.agentPath } : {}),
+    });
+    if (place) return refuse(place.message, place.code);
     const agentPath = caller.agentPath;
-    if (isOtherAgentsFolder(deps, cwd, agentPath)) {
-      return refuse(OTHER_AGENTS_HOME_MESSAGE, 'OTHER_AGENTS_FOLDER');
-    }
 
     const runtimeType = await resolveRuntimeTypeForNewSession({
       runtimeHint: args.runtime,
@@ -553,6 +546,7 @@ export function createSessionStartHandler(
     try {
       result = await dispatchSessionMessage({
         origin: { kind: 'agent-launch' },
+        launcher,
         sessionId,
         messageId,
         request: {
