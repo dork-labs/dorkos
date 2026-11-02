@@ -27,6 +27,8 @@ import { endBeatTurn, liveBeatTurn, resetBeatTurns } from '../beat-turns.js';
 import type { HeartbeatFileRead } from '../heartbeat-file.js';
 import { parseHeartbeatText, hashFrontmatter } from '../heartbeat-file.js';
 import type { Change } from '../gatherers/index.js';
+import { createCommitmentsGatherer } from '../gatherers/commitments.js';
+import type { OpenWorkReader } from '../gatherers/open-work.js';
 import { BEAT_INTERVALS } from '../beat-scheduler.js';
 import { GATHER_HOLD_MAX_MS } from '../beat-cycle.js';
 
@@ -1060,5 +1062,96 @@ describe('a beat whose account is out of usage', () => {
     expect(sent).toHaveLength(1);
     expect(beats()[0]).toMatchObject({ outcome: 'skipped' });
     expect(beats()[0]?.summary).toBe('Every account it may use is out of usage; it waits.');
+  });
+});
+
+// DOR-3674: overnight 11-01→11-02 every lane went quiet and the beats said "Nothing needs it"
+// 30 times. Through the real runner and the real commitments gatherer: a stalled lane, or an
+// open promise with no chat running, wakes a real turn that names it; fresh work does not.
+describe('a beat over open work gone quiet', () => {
+  const HOUR = 60 * 60 * 1000;
+  const LANE = {
+    sessionId: 'lane-3280',
+    startedAt: '2026-10-11T00:00:00Z',
+  };
+
+  /** The real commitments gatherer, over these promises and this lane activity. */
+  function openWorkRunner(opts: {
+    lastActive?: number;
+    agent?: 'running' | number;
+    promises?: { id: string; what: string }[];
+    isPaused?: () => boolean;
+  }) {
+    const commitments = { list: () => (opts.promises ?? []) as never[] };
+    const reader: OpenWorkReader = {
+      lanesOf: async () => [LANE],
+      isRunning: () => false,
+      lastActiveAt: () => opts.lastActive,
+      agentActivity: () => opts.agent ?? 'running',
+      watchingSince: () => Date.now() - 48 * HOUR,
+    };
+    return runner({
+      gatherers: { commitments: createCommitmentsGatherer(commitments, reader) },
+      commitments,
+      ...(opts.isPaused ? { isPaused: opts.isPaused } : {}),
+    });
+  }
+
+  it('wakes the agent for a real turn naming the lane that stalled, and since when', async () => {
+    const quietSince = Date.now() - 3 * HOUR;
+    runtime.withScenarios([
+      endsWith({ summary: 'Woke the lane.', raises: [] }, () => currentSession),
+    ]);
+    const done = openWorkRunner({ lastActive: quietSince }).wake(juno.id, { wake: 'event:test' });
+    await settle();
+    await done;
+    expect(launches).toHaveLength(1);
+    expect(launches[0]).toContain(
+      `Lane lane-3280 quiet since ${new Date(quietSince).toISOString()}`
+    );
+  });
+
+  it('wakes it naming an open promise when no chat has run for 30 min', async () => {
+    runtime.withScenarios([endsWith({ summary: 'Sent it.', raises: [] }, () => currentSession)]);
+    const r = openWorkRunner({
+      lastActive: Date.now() - 10 * 60 * 1000,
+      agent: Date.now() - 45 * 60 * 1000,
+      promises: [{ id: 'c1', what: 'Send the release notes' }],
+    });
+    const done = r.wake(juno.id, { wake: 'event:test' });
+    await settle();
+    await done;
+    expect(launches).toHaveLength(1);
+    expect(launches[0]).toContain('Commitment c1 open, no chat running since');
+    // Ids only in what changed: the stall line never carries the promise text. (The prompt's own
+    // "Your open commitments" list, which is older than this, shows what the agent wrote.)
+    const changed = launches[0]!.split('Your open commitments:')[0]!;
+    expect(changed).toContain('Commitment c1 open');
+    expect(changed).not.toContain('Send the release notes');
+  });
+
+  it('runs no turn while the work is fresh', async () => {
+    const r = openWorkRunner({
+      lastActive: Date.now() - 20 * 60 * 1000,
+      agent: 'running',
+      promises: [{ id: 'c1', what: 'Send the release notes' }],
+    });
+    await r.wake(juno.id, { wake: 'event:test' });
+    expect(launches).toHaveLength(0);
+    expect(beats()).toMatchObject([{ outcome: 'quiet' }]);
+  });
+
+  it('never wakes a paused agent, however long its lane has been quiet', async () => {
+    const r = openWorkRunner({ lastActive: Date.now() - 10 * HOUR, isPaused: () => true });
+    await r.wake(juno.id, { wake: 'event:test' });
+    expect(launches).toHaveLength(0);
+    expect(beats()).toHaveLength(0);
+  });
+
+  it('never wakes an agent whose beats a person switched off', async () => {
+    heartbeatFile = file('---\nwake: off\n---\n');
+    const r = openWorkRunner({ lastActive: Date.now() - 10 * HOUR });
+    await r.wake(juno.id, { wake: 'event:test' });
+    expect(launches).toHaveLength(0);
   });
 });

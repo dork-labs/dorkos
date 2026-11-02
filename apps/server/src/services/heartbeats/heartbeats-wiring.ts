@@ -38,6 +38,8 @@ import { queueManagerChange } from './raises/report-beat.js';
 import { BeatOutbox } from './outbox.js';
 import { BeatRunner, type BeatAgent } from './beat-runner.js';
 import { createBeatTurnLauncher, ownTurnRunning } from './beat-launch.js';
+import { createOpenWorkReader } from './gatherers/open-work-reader.js';
+import type { OpenWorkReader } from './gatherers/open-work.js';
 import { createBeatSeatPort } from './accounts/beat-seat.js';
 import { noteTurnStarted } from './beat-turns.js';
 import { EventWakes, wakeAgent } from './event-wakes.js';
@@ -127,11 +129,16 @@ function ownRunReader(db: Db) {
  *
  * @param db - The database.
  * @param commitments - The commitment service.
+ * @param openWork - Lanes and chat activity, for open work gone quiet (DOR-3674).
  */
-function gatherersFor(db: Db, commitments: CommitmentService): GathererRegistry {
+function gatherersFor(
+  db: Db,
+  commitments: CommitmentService,
+  openWork: OpenWorkReader
+): GathererRegistry {
   return {
     addressed: createAddressedGatherer(db),
-    commitments: createCommitmentsGatherer(commitments),
+    commitments: createCommitmentsGatherer(commitments, openWork),
     schedules: createSchedulesGatherer(ownRunReader(db)),
     health: createHealthGatherer(db),
     workspace: createWorkspaceGatherer(),
@@ -201,6 +208,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     agentOf: agents.get,
     enabled,
   });
+  const openWork = createOpenWorkReader(db, { agentIdForCwd: resolveAgentIdForPath });
   const runner = new BeatRunner({
     store,
     agents,
@@ -209,7 +217,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     // An agent a person paused (spec `audit-trail` PR5) never beats.
     isPaused: (agentId) => agentPause()?.pausedAgent(agentId) !== undefined,
     hoursFor: () => hours(),
-    gatherers: gatherersFor(db, deps.commitments),
+    gatherers: gatherersFor(db, deps.commitments, openWork.reader),
     commitments: deps.commitments,
     launcher: createBeatTurnLauncher(deps.meshCore),
     outbox,
@@ -268,6 +276,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     runner,
     stop: () => {
       stopFollowing();
+      openWork.stop();
       triage.stop();
       setRaiseRecipientCheck(undefined);
       setHeartbeatStatusReader(undefined);

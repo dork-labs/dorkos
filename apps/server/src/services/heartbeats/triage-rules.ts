@@ -6,7 +6,7 @@
  *   ones that touch nothing serious.
  * - `work`: the agent should work on it now — a local message to it unanswered,
  *   an overdue commitment, a failed or parked run, a lost connection, a failing
- *   check on its own branch.
+ *   check on its own branch, open work gone quiet (DOR-3674).
  * - `undecided`: anything else, including any change with non-empty
  *   `touches`. In PR 3 `undecided` means a turn: unsure goes up to the runtime,
  *   never down to silence (canon §5.2 step 3).
@@ -31,6 +31,7 @@ const WORK_SIGNALS: ReadonlySet<Change['signal']> = new Set([
   'run-failed',
   'connection-lost',
   'check-failed',
+  'work-stalled',
 ]);
 
 /**
@@ -48,6 +49,7 @@ export const STANDING_SIGNALS: ReadonlySet<Change['signal']> = new Set([
   'check-failed',
   'commitment-due',
   'commitment-overdue',
+  'work-stalled',
 ]);
 
 /**
