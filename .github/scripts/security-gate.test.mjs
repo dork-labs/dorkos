@@ -281,6 +281,15 @@ test('the P0 deep-review list names the identity paths, and only security paths'
     'apps/server/src/services/runtimes/claude-code/mcp-tools/session-tools.ts',
     'apps/server/src/services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts',
     'apps/server/src/services/rooms/repo/room-repo-git.ts',
+    // Who a turn may act as, and with what power (#dorkos, 2026-11-02 13:14).
+    'apps/server/src/services/core/turn-power/agent-level-bound.ts',
+    'apps/server/src/services/core/permissions/agent-level.ts',
+    'apps/server/src/services/core/auth/accounts.ts',
+    // Security's 07:13 Musts, folded in at 13:19: the git runners and where a session runs.
+    'apps/server/src/lib/git-safety.ts',
+    'packages/shared/src/safe-git.ts',
+    'apps/server/src/services/core/runtime-registry.ts',
+    'apps/server/src/services/workspace/room-session-place.ts',
   ];
   for (const filename of deep) {
     assert.ok(touchesSecurity([{ filename }], deepPattern), filename);
@@ -296,10 +305,52 @@ test('the P0 deep-review list names the identity paths, and only security paths'
     'apps/server/src/services/runtimes/claude-code/mcp-tools/session-tools-extra.ts',
     'apps/server/src/services/runtimes/claude-code/mcp-tools/mesh-tools.ts',
     'apps/server/src/services/tasksx/a.ts',
+    'apps/server/src/services/core/turn-powerx/a.ts',
+    'apps/server/src/services/core/capabilities/registry.ts',
+    'apps/server/src/services/core/authx/a.ts',
+    'packages/shared/src/permissions/levels.ts',
+    // On the main list only: a security path, but not a deep one.
+    'apps/server/src/services/workspace/hooks.ts',
+    'apps/server/src/services/audit/account-ids.ts',
+    'apps/server/src/lib/git-safety.test-helpers.ts',
+    'apps/server/src/services/core/runtime-registry-cache.ts',
     '.github/workflows/security-gate.yml',
     'docs/guides/tasks.mdx',
   ]) {
     assert.equal(touchesSecurity([{ filename }], deepPattern), false, filename);
+  }
+});
+
+test("Security's 07:13 paths are security paths, and their look-alikes are not", () => {
+  for (const filename of [
+    'packages/db/drizzle/0000_magenta_gladiator.sql',
+    'packages/db/src/schema/a2a.ts',
+    'apps/server/src/lib/git-safety.ts',
+    'packages/shared/src/safe-git.ts',
+    'apps/server/src/services/session/message-dispatcher.ts',
+    'apps/server/src/services/session/message-dispatcher/adopt.ts',
+    'apps/server/src/services/core/runtime-registry.ts',
+    'apps/server/src/services/workspace/hooks.ts',
+    'apps/server/src/services/workspace/room-session-place.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/binding-tools.ts',
+    'apps/server/src/services/audit/account-ids.ts',
+    'apps/server/src/services/heartbeats/beat-chat.ts',
+    'apps/server/src/services/session/fleet/auto-handoff.ts',
+  ]) {
+    assert.ok(touchesSecurity([{ filename }], pattern), filename);
+  }
+  for (const filename of [
+    'packages/db/src/index.ts',
+    'packages/db/drizzle.config.ts',
+    'packages/shared/src/safe-git-helpers.ts',
+    'apps/server/src/services/session/message-dispatcher-notes.md',
+    'apps/server/src/services/core/runtime-registry-cache.ts',
+    'apps/server/src/services/workspaces/a.ts',
+    'apps/server/src/services/auditing/a.ts',
+    'apps/server/src/services/runtimes/claude-code/mcp-tools/binding-tools-extra.ts',
+    'apps/server/src/services/session/history/history-window.ts',
+  ]) {
+    assert.equal(touchesSecurity([{ filename }], pattern), false, filename);
   }
 });
 
