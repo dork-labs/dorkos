@@ -5,9 +5,11 @@
  *
  * `security-gate` runs the PR's own copy of its workflow and scripts, so a PR
  * that edits the gate is judged by its own edit. This runs from
- * `pull_request_target` and `merge_group` with only the BASE commit checked
- * out: the path lists, the label rules and this file are all main's. It never
- * checks out or runs PR code; it reads the PR through the API, as data.
+ * `pull_request_target` with `refs/heads/main` checked out, and from
+ * `merge_group` with the group's base commit: the path lists, the label rules and
+ * this file are all main's. It never checks out or runs PR code; it reads the PR
+ * through the API, as data. A PR into any branch but main gets `failure`, "base is
+ * not main": that branch's copy of this script must never be the judge.
  *
  * What it writes, as the `security-review` commit status:
  * - a head with no security path: `success`, "no security paths" (as the
@@ -54,6 +56,9 @@ import {
   trustedBotUserId,
 } from './security-gate.mjs';
 import { approvalMode, labelAtHead, labelNewerThanHead } from './security-label-at-head.mjs';
+
+/** The one branch this gate judges PRs into. */
+const MAIN = 'main';
 
 /** A workflow file, by path. Reusable workflows live here too. */
 const WORKFLOW_FILE = /^\.github\/workflows\/[^/]+\.ya?ml$/i;
@@ -157,6 +162,15 @@ export async function verdictForPullRequest(api, event, lists) {
 async function decidePullRequest(api, event, lists) {
   const number = event.pull_request.number;
   const sha = event.pull_request.head.sha;
+  // Only main has this gate's rules and the merge queue. A PR into any other
+  // branch is never judged here, and never left looking judged.
+  const base = event.pull_request.base?.ref;
+  const target = (await api.pr(number)).base?.ref;
+  if (base !== MAIN || target !== MAIN) {
+    const description = `base is not ${MAIN} (${[base, target].find((ref) => ref !== MAIN) ?? 'unknown'}); retarget to ${MAIN} to be judged`;
+    await api.setStatus(sha, 'failure', description.slice(0, 140));
+    return `PR #${number}: security-review failure on ${sha} (${description})`;
+  }
   try {
     await checkPullRequest(api, event, lists.pattern, {
       write: true,

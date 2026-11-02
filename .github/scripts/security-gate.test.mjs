@@ -440,11 +440,11 @@ test('fork verifier passes docs-only status written by trusted initializer', asy
   assert.equal(f.comments.length, 1);
 });
 
-test('privileged fork initializer is confined to the base SHA, never the fork head', () => {
+test('privileged initializer is confined to main, never the fork head or a base branch', () => {
   const initializer = initializerWorkflow;
   assert.match(initializer, /^ {2}pull_request_target:/m);
   assert.doesNotMatch(workflow, /^ {2}pull_request_target:/m);
-  assert.match(initializer, /ref: \$\{\{ github.event.pull_request.base.sha \}\}/);
+  assert.match(initializer, /ref: refs\/heads\/main$/m);
   assert.doesNotMatch(initializer, /pull_request.head|npm|pnpm/);
   assert.match(
     initializer,
