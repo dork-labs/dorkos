@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { securityPathPattern, touchesSecurity } from './security-gate.mjs';
+import { securityDeepPathPattern, securityPathPattern, touchesSecurity } from './security-gate.mjs';
 
 const reference = readFileSync(
   new URL('./fixtures/security-path-pattern.regex', import.meta.url),
@@ -113,6 +113,43 @@ for (const [match, miss] of additions) {
     });
     assert.equal(shell.status, 0, shell.stderr);
     assert.equal(shell.stdout, `${match.normalize('NFKC').toLowerCase()}\n`);
+  });
+}
+
+// DOR-3678: core/operator is where agents' permissions are written (config_patch,
+// update_agent_boundaries, the write policies, guarded paths, operator-only rules), so
+// it is a security path and a P0 one. Each match is a real file; each miss stays out.
+for (const [match, miss] of [
+  [
+    'apps/server/src/services/core/operator/config-patch.ts',
+    'apps/server/src/services/core/operators/config-patch.ts',
+  ],
+  [
+    'apps/server/src/services/core/operator/agent-write-policy.ts',
+    'apps/server/src/services/core/operator-notes/agent-write-policy.ts',
+  ],
+  [
+    'apps/server/src/services/core/operator/guarded-paths.ts',
+    'apps/server/src/services/operator/guarded-paths.ts',
+  ],
+  [
+    'apps/server/src/services/core/operator/operator-only-refusal.ts',
+    'apps/client/src/services/core/operator/operator-only-refusal.ts',
+  ],
+]) {
+  test(`core/operator is on both lists: ${match}`, () => {
+    assert.ok(existsSync(resolve(root, match)), `${match} no longer exists`);
+    const deep = securityDeepPathPattern();
+    for (const pattern of [reference, deep]) {
+      assert.ok(
+        touchesSecurity([{ filename: match }], pattern),
+        pattern === deep ? 'deep' : 'main'
+      );
+      assert.ok(
+        touchesSecurity([{ filename: 'docs/moved.md', previous_filename: match }], pattern)
+      );
+      assert.equal(touchesSecurity([{ filename: miss }], pattern), false, miss);
+    }
   });
 }
 
