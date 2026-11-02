@@ -14,7 +14,6 @@ import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
 import type { SeatReport } from '../handoff/seat-report.js';
-import { noteChatHeardOutsider, resetOutsiderTurns } from '../../session/origin/outsider-turns.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -22,6 +21,23 @@ import {
   type RecordedTurn,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
+
+// The spin-off's own marks, as `marksOf` would read them. Since DOR-3440 the only mark that
+// holds is a Wi-Fi sign-in's (`outsider`); reading outside words alone marks nothing.
+const spinOffMarks = vi.hoisted(() => new Map<string, { outsider?: true }>());
+vi.mock('../../core/turn-power/turn-levels.js', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../core/turn-power/turn-levels.js')>();
+  const { ceilingCarrying } = await import('../../core/turn-power/turn-marks.js');
+  return {
+    ...real,
+    marksOf: (sessionId: string | null | undefined, agentPath: string | undefined) =>
+      (sessionId && spinOffMarks.get(sessionId)) || real.marksOf(sessionId, agentPath),
+    markedBoundOf: (sessionId: string | null | undefined, agentPath: string | undefined) => {
+      const held = sessionId ? spinOffMarks.get(sessionId) : undefined;
+      return held ? ceilingCarrying(held) : real.markedBoundOf(sessionId, agentPath);
+    },
+  };
+});
 
 vi.mock('../../core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../core/auth/index.js')>()),
@@ -250,25 +266,24 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
     expect(head.split('\n')[0]).toContain('DorkOS: the person approved');
   });
 
-  it('a spin-off that read an outsider’s words wakes the seat marked and capped', async () => {
+  // The mark travels with the report (Security on DOR-3561). It caps nothing since DOR-3440:
+  // no mark but a teammate's carries a ceiling to words written under it (`ceilingCarrying`).
+  it('a spin-off whose turn carries an outsider mark wakes the seat marked', async () => {
     const seatId = await seat();
-    resetOutsiderTurns();
-    noteChatHeardOutsider('spin-off-1');
+    spinOffMarks.set('spin-off-1', { outsider: true });
     try {
       service.handoffs.reports.deliver(seatId, report('read a web page'));
       await settle();
     } finally {
-      resetOutsiderTurns();
+      spinOffMarks.clear();
     }
 
-    const turn = reportTurns()[0]!;
-    expect(turn.externalAuthor).toBe(true);
-    expect(turn.permissionCeiling).toBeDefined();
+    expect(reportTurns()[0]!.externalAuthor).toBe(true);
   });
 
   it('a clean spin-off wakes the seat unmarked', async () => {
     const seatId = await seat();
-    resetOutsiderTurns();
+    spinOffMarks.clear();
 
     service.handoffs.reports.deliver(seatId, report('clean'));
     await settle();

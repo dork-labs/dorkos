@@ -35,8 +35,7 @@
  *
  * Skipped for a turn that stands in its agent's registered home itself (not a
  * folder below it, which can hold settings of its own), which the agent-home
- * pin covers (`launch-folder-config.ts`), and for a teammate's turn,
- * which loads no settings source at all. All proven on the real CLI
+ * pin covers (`launch-folder-config.ts`). All proven on the real CLI
  * (`repo-config-switches.binary.test.ts`).
  *
  * @module services/runtimes/claude-code/repo-settings/launch-repo-config
@@ -76,8 +75,6 @@ export interface RepoConfigTurn {
   home: string | undefined;
   /** The folder the turn launches in. */
   cwd: string;
-  /** A teammate's turn, which loads no settings source. */
-  teammate: boolean;
   /** DorkOS's data folder. */
   dorkHome: string;
   /** The launch runs at Full autonomy, which has no limits: nothing is paused. */
@@ -130,7 +127,6 @@ async function isHomeItself(cwd: string, home: string): Promise<boolean> {
  * @param turn - Who the turn is for and where it stands.
  */
 export async function resolveRepoConfigForLaunch(turn: RepoConfigTurn): Promise<RepoConfigLaunch> {
-  if (turn.teammate) return NOTHING_PAUSED;
   if (turn.home && (await isHomeItself(turn.cwd, turn.home))) return NOTHING_PAUSED;
   if (turn.full) return loadAtFull(turn);
   try {

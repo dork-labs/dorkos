@@ -9,7 +9,6 @@
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { resolveProposerName } from '../../../tasks/task-provenance.js';
-import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 
 /**
  * Which session is creating an extension, read at CALL time (the SDK rekeys a
@@ -26,6 +25,8 @@ export type ExtensionCreatorResolver = () => {
   sessionId?: string;
   /** Whether the calling turn, or background work it carries, runs under a ceiling. */
   ceilinged?: boolean;
+  /** Whether the calling chat is set to Full autonomy. */
+  chosenFull?: boolean;
 };
 
 /**
@@ -71,18 +72,17 @@ export function createCreateExtensionHandler(
       // path trust only while it runs separately inside it (DOR-3068).
       const creator = resolveCreator?.();
       const agentPath = creator?.agentPath;
-      // `markedBoundOf` also counts a chat a stranger reached earlier.
-      const marked =
-        creator?.ceilinged === true || markedBoundOf(creator?.sessionId, agentPath) !== undefined;
+      // New code follows the agent's level (DOR-3440): at Full it approves itself with one
+      // Activity line. Below Full or under a ceiling, it waits for a person and is pinned to its
+      // files, so an edit waits again.
+      const approves = creator?.chosenFull === true && creator.ceilinged !== true;
       const result = await manager.createExtension({
         name: args.name,
         description: args.description,
         template,
         scope,
-        // A turn that read a stranger's words, or runs under a ceiling, never
-        // approves its own new code: it waits for a person (DOR-3068).
-        approveIfTrusted: resolveCreator !== undefined && !marked,
-        ...(agentPath ? { agentHome: agentPath, recordAuthor: !marked } : {}),
+        approveIfTrusted: resolveCreator !== undefined && approves,
+        ...(agentPath ? { agentHome: agentPath, recordAuthor: approves } : {}),
       });
       if (result.autoApproved) {
         const name = (await resolveProposerName(agentPath)) ?? 'An agent';

@@ -4,15 +4,10 @@
  * runtime's options with the same functions the production runner calls (`turnBoundsOf`,
  * `roomTurnMarksOf`).
  *
- * The hole: a turn counts as a teammate's only if a message it ANSWERS was written by a teammate.
- * A teammate wakes Ana, whose turn is a teammate turn (fenced, nobody asked, metered). Ana's post
- * mentions Bo. Bo answers Ana, an agent on this machine, so Bo's turn is not a teammate turn: no
- * tool fence, it may raise cards, it gets folder grants and its notes, and it is not counted
- * against the teammate's monthly limit.
- *
- * The fix (the teammate turn mark): Ana's post keeps her turn's level, which now carries the
- * teammate's mark beside the outsider mark, so Bo's turn is a teammate turn too: fenced, nobody
- * asked, no folders, and counted against the space's monthly limit.
+ * A turn counts as a teammate's only if a message it ANSWERS was written by a teammate, or its
+ * post carries the mark. A teammate wakes Ana. Ana's post mentions Bo, and Bo answers Ana, an agent
+ * on this machine. Ana's post keeps her turn's level, which carries the teammate's mark, so Bo's
+ * turn still counts against the space's monthly limit. The mark lowers nothing (DOR-3440).
  *
  * The teammate here is a space member posting into a plain channel: a `community` author is a
  * teammate anywhere (`space-teammates.ts`), so the harness needs no space mirror.
@@ -21,7 +16,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
-import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
 import {
@@ -131,40 +125,26 @@ describe('a teammate wakes Ana, and Ana’s post wakes Bo (DOR-3036)', () => {
 
   afterEach(() => setTeammateTurnCostSink(null));
 
-  it('Ana’s turn is a teammate turn, and Bo carries her read-only level and both marks', async () => {
+  it('Ana’s turn is a teammate turn, and Bo carries the mark, at no lower a level', async () => {
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
     const ana = turnsOf('/agents/ana')[0]!;
     expect(ana.teammate).toBe(true);
     const origin = { roomId: channel.id, authorId: ana.entry.authorId };
-    expect(ana.permissionCeiling).toEqual([
-      'runtime-default',
-      { ...READ_ONLY_LEVEL, teammate: [origin] },
-    ]);
+    const record = { asks: 'never', reach: 'everything', teammate: [origin] };
+    expect(ana.permissionCeiling).toEqual(record);
 
     const bo = turnsOf('/agents/bo')[0]!;
-    // Ana's level first, then the caps her post's marks carry (DOR-3141).
-    const boCeiling = bo.permissionCeiling as unknown[];
-    expect(boCeiling[0]).toMatchObject({
-      reach: 'read',
-      outsider: true,
-      teammate: [origin],
-    });
-    expect(boCeiling).toContain('runtime-default');
-    expect(boCeiling).toContainEqual(
-      expect.objectContaining({ reach: 'read', teammate: [origin] })
-    );
-    expect(lastTurnLevelOf(sessionOf.get('/agents/bo')!)).toMatchObject({
-      outsider: true,
-      teammate: [origin],
-    });
+    expect(bo.permissionCeiling).toEqual(record);
+    const level = lastTurnLevelOf(sessionOf.get('/agents/bo')!);
+    expect(level).toMatchObject(record);
+    expect(level?.outsider).toBeUndefined();
   });
 
-  it('Bo’s turn is capped at the teammate tier: fenced to this room, nobody asked, no folders', async () => {
+  it('Bo’s turn is sent as any other, with its words still read as words only', async () => {
     await settleUntil(() => turnsOf('/agents/bo').length === 1, 'Bo was asked by Ana');
     const opts = optsFor(turnsOf('/agents/bo')[0]!);
-    expect(opts.roomTurn?.teammate).toBe(true);
-    expect(opts.unattended).toBe(true);
-    expect(opts.additionalDirectories).toBeUndefined();
+    expect(opts.roomTurn).toMatchObject({ teammate: true, untrustedText: true });
+    expect(opts.unattended).toBeUndefined();
   });
 
   it('Bo’s turn counts against the teammate’s monthly limit', async () => {

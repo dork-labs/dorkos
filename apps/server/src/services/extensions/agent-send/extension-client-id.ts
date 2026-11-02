@@ -20,12 +20,3 @@ export const EXTENSION_CLIENT_PREFIX = 'extension:';
 export function extensionClientId(extensionId: string): string {
   return `${EXTENSION_CLIENT_PREFIX}${extensionId}`;
 }
-
-/**
- * Whether a lock identity (a queue row's `enqueuedBy`) is an extension's.
- *
- * @param clientId - The identity.
- */
-export function isExtensionClientId(clientId: string): boolean {
-  return clientId.startsWith(EXTENSION_CLIENT_PREFIX);
-}

@@ -193,11 +193,11 @@ describe('the level ceiling of a row another chat sent', () => {
     expect(ceilingOfCall(1)).toEqual({ has: true, value: [MIDDLE, TIGHT] });
   });
 
-  it('launches at the runtime default when no resolver is wired (fails closed)', async () => {
+  it('launches with no ceiling when no resolver is wired, or it answers nothing', async () => {
     runtime.withScenarios([quickTurn()]);
     await send('from another chat', CHAT_A);
     await settle();
-    expect(ceilingOfCall(0)).toEqual({ has: true, value: 'runtime-default' });
+    expect(ceilingOfCall(0)).toEqual({ has: false });
   });
 
   it('holds a row to both its own ceiling and the chat’s', async () => {
@@ -220,21 +220,13 @@ describe('the level ceiling of a row another chat sent', () => {
     expect(ceilingOfCall(0)).toEqual({ has: false });
   });
 
-  it('launches a relayed row with no ceiling of its own at the runtime default', async () => {
-    // As a row adopted after a restart arrives: no in-memory plan, so no own ceiling.
+  it('launches a relayed row with no ceiling, and never asks the resolver about it', async () => {
     const resolver = vi.fn(() => TIGHT);
     setQueuedChatCeilingResolver(resolver);
     runtime.withScenarios([quickTurn()]);
     await send('from the web', RELAY);
     await settle();
     expect(resolver).not.toHaveBeenCalled();
-    expect(ceilingOfCall(0)).toEqual({ has: true, value: 'runtime-default' });
-  });
-
-  it('holds a relayed row to both its own ceiling and the runtime default', async () => {
-    runtime.withScenarios([quickTurn()]);
-    await send('from the web', RELAY, { permissionCeiling: MIDDLE });
-    await settle();
-    expect(ceilingOfCall(0)).toEqual({ has: true, value: [MIDDLE, 'runtime-default'] });
+    expect(ceilingOfCall(0)).toEqual({ has: false });
   });
 });

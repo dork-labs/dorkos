@@ -220,7 +220,12 @@ describe('the author is recorded at create, never inferred', () => {
 });
 
 describe('create_extension from an agent', () => {
-  function handlerFor(creator: { agentPath?: string; sessionId?: string; ceilinged?: boolean }) {
+  function handlerFor(creator: {
+    agentPath?: string;
+    sessionId?: string;
+    ceilinged?: boolean;
+    chosenFull?: boolean;
+  }) {
     const createExtension = vi.fn(async () => ({
       id: 'notes',
       path: COPY_PATH,
@@ -243,7 +248,11 @@ describe('create_extension from an agent', () => {
   });
 
   it('creates it in the agent’s own folder and records the agent as its author', async () => {
-    const { createExtension, handler } = handlerFor({ agentPath: HOME, sessionId: 's1' });
+    const { createExtension, handler } = handlerFor({
+      agentPath: HOME,
+      sessionId: 's1',
+      chosenFull: true,
+    });
     await handler({ name: 'notes', scope: 'global' });
     expect(createExtension).toHaveBeenCalledWith(
       expect.objectContaining({ agentHome: HOME, recordAuthor: true, approveIfTrusted: true })

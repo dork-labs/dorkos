@@ -118,11 +118,12 @@ describe('chatLaunchMarks', () => {
     expect(marked('marked-list', 'chat-message')).toBe(true);
     expect(marked('level', 'chat-message')).toBe(false);
     expect(marked('kept-mark', 'chat-message')).toBe(true);
-    expect(marked('kept-teammate', 'chat-message')).toBe(true);
+    // A teammate's mark is a record for the space's limit, and holds nothing (DOR-3440).
+    expect(marked('kept-teammate', 'chat-message')).toBe(false);
     expect(marked('kept-nothing', 'chat-message')).toBe(false);
     expect(marked('no-opener', 'chat-message')).toBe(false);
     expect(marked('outsider', 'chat-message')).toBe(true);
-    expect(marked('teammate', 'chat-message')).toBe(true);
+    expect(marked('teammate', 'chat-message')).toBe(false);
     expect(marked('from-telegram', 'chat-message')).toBe(true);
   });
 

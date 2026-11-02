@@ -14,17 +14,22 @@ describe('0168 settle turn holds migration', () => {
   let directory: string;
   let db: ReturnType<typeof createDb>;
 
-  beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), 'settle-turn-holds-'));
+  /** Migrate up to and including one journal index, no further. */
+  function migrateThrough(lastIdx: number) {
     const migrations = fileURLToPath(new URL('../../drizzle/', import.meta.url));
-    mkdirSync(join(directory, 'meta'));
     const journal = JSON.parse(readFileSync(join(migrations, 'meta/_journal.json'), 'utf8'));
-    journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= 167);
+    journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx <= lastIdx);
     for (const entry of journal.entries)
       copyFileSync(join(migrations, `${entry.tag}.sql`), join(directory, `${entry.tag}.sql`));
     writeFileSync(join(directory, 'meta/_journal.json'), JSON.stringify(journal));
-    db = createDb(':memory:');
     migrate(db, { migrationsFolder: directory });
+  }
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), 'settle-turn-holds-'));
+    mkdirSync(join(directory, 'meta'));
+    db = createDb(':memory:');
+    migrateThrough(167);
   });
 
   afterEach(() => {
@@ -53,10 +58,18 @@ describe('0168 settle turn holds migration', () => {
     chat('held-by-a-stranger', 1);
     chat('not-held', 0);
 
-    runMigrations(db);
+    migrateThrough(168);
 
     expect(heldOf('before-the-column')).toBe(0);
     expect(heldOf('held-by-a-stranger')).toBe(1);
     expect(heldOf('not-held')).toBe(0);
+  });
+
+  it('a later upgrade clears every hold the old rules wrote (DOR-3440)', () => {
+    chat('held-by-a-stranger', 1);
+
+    runMigrations(db);
+
+    expect(heldOf('held-by-a-stranger')).toBe(0);
   });
 });

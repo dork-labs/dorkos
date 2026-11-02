@@ -2,20 +2,20 @@
 
 > **Canon.** How we decide, for people and agents working on DorkOS. Part of the north-star set with [`VISION.md`](VISION.md), [`VOICE.md`](VOICE.md) and [`ROADMAP.md`](ROADMAP.md). When two good options compete, these break the tie.
 
-## 1. Trusted by default: trust our agents, not strangers
+## 1. Trusted by default: agents run at the level you set
 
 Agents are trusted professionals. People are colleagues, not babysitters. Full power is the norm.
 
 _Status: decided, not built yet. Today the caps exist and the loop guards count turns; see [`ROADMAP.md`](ROADMAP.md)._
 
-- **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets, and no "running at full power" warnings. Full power is assumed. A teammate from a shared space is not the agent's own person: anything past the stranger tier that a teammate asks for goes to the agent's owner as "ask the owner", showing the exact action (ADR `261015-042933`).
+- **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets, and no "running at full power" warnings. Full power is assumed. An agent runs at the level its owner set, whoever or whatever sent the message, including other people in a shared space. In this preview, anyone who can message an agent gets that agent's level, so choose who can message it. Separate protections for other people's messages come later (DOR-3443).
 - **The safety net is a record, not a prompt.** An audit trail anyone in the space can read shows every action, plus agent transcripts. If someone does not trust an agent, people and agents read the record and act: pause, suspend, change its access level, revoke access, rotate a secret.
-- **Strangers do not get that trust.** These protections stay:
-  - Messages from outsiders (Telegram or Slack strangers, incoming email, webhooks, other people's agents) never give an agent full power.
-  - Code from strangers (marketplace hooks, plugins, extensions) still needs a yes.
+- **Some things stay gated at any level.** These protections stay:
+  - Messages from outsiders (Telegram or Slack strangers, incoming email, webhooks, other people's agents) run at the agent's set level, so an agent at Full acts on them at Full. Who can reach an agent is the control: its connections and DM policy.
+  - Code from strangers that DorkOS didn't install (hooks, plugins and packages found in a folder) still needs a yes. Packages you installed through DorkOS follow the agent's level. Extensions an agent makes follow its level: at Full they start with a line in Activity; below Full they wait.
   - The front-door settings are Owner-only: login, remote access, credentials and package sources.
 - **Where you connect from never changes what you can do.** Signed in on a phone over the tunnel, remote access or any other encrypted way in that DorkOS itself serves, a person gets exactly what they get at the desk. Security goes into proving who someone is, never where they are. A weak sign-in is fixed by a stronger sign-in, not by a location rule. Today that weak case is plain `http` Wi-Fi, where anyone on the same network could copy the sign-in, so it keeps its lower level until HTTPS for Wi-Fi replaces it (DOR-3172). Whether a way in is encrypted is decided by the listener a request arrives on, never by a header.
-- **Privacy comes from access levels.** People and agents get different default access levels, and both can be edited. Both can read every agent's chats inside their own DorkOS. A teammate in a shared space reads the space's conversation, never an agent's working chats, and a turn a teammate starts runs at the stranger tier at launch. A person's own private chats stay private. What an agent did still shows in the record.
+- **Privacy comes from access levels.** People and agents get different default access levels, and both can be edited. Both can read every agent's chats inside their own DorkOS. A teammate in a shared space reads the space's conversation, never an agent's working chats, and a turn a teammate starts runs at the agent's set level. A person's own private chats stay private. What an agent did still shows in the record.
 - **Irreversible actions in outside accounts just happen when a person asked or it is the agent's job.** Everyone is told, there is an undo window where the service allows one, and the action is recorded. This is how we read ADR `261006-225605` item 7, not a change to it: item 7 is about the platform's approval cards, and this clause is the agent's own judgment about when to act.
 - **A few things always need a yes, even inside an agent's job.** A promise to an outsider (a date, price, refund or discount), signing up or agreeing to terms, spending past its limit, and giving anyone new access. The yes comes from the Owner or the agent's manager. For anything else, a member's request is enough, except acting in someone else's name, which needs that person. A guest can ask, and the agent passes it to its manager.
 - **Blocked is never a dead end.** When only a person can unblock an agent, it does every step it can, recommends one way through, and finishes once they choose. The core of these rules is the `<working_rules>` block every agent gets, whatever its settings.

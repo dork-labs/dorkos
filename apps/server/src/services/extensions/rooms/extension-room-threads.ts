@@ -33,9 +33,8 @@ import { allowedRoomIds, isRoomAllowed } from './extension-room-access.js';
 
 /**
  * The marks a mini app's reply is kept with (DOR-3017), on its row in the
- * insert's own transaction: the outsider mark. Any agent the reply wakes runs
- * at the runtime's default (`ceilingForEntry`), and a later turn with the reply
- * in view is marked (`outsiderInViewOf`), since the mini app's page can post
+ * insert's own transaction: the outsider mark. An agent it wakes reads it as
+ * untrusted text (`answersUntrustedText`), since the mini app's page can post
  * without a click and may be showing text it read from outside.
  */
 export const MINI_APP_REPLY_MARKS: TurnMarks = { outsider: true };

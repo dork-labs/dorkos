@@ -7,11 +7,9 @@
  *
  * Counted by direction (Security, 2026-10-20):
  *
- * - **Down:** every chat whose next turn now runs lower, marked ones included,
- *   since the cap reaches them too. "14 chats follow it".
+ * - **Down:** every chat whose next turn now runs lower. "14 chats follow it".
  * - **Up:** only chats that really go up, each named (the first ten, then
- *   "+N more"). A marked or held chat's turns stay capped by their marks, so it
- *   is left out; chats a person set by hand keep their own mode and are counted
+ *   "+N more"); chats a person set by hand keep their own mode and are counted
  *   as staying lower. "12 chats rose (Build, #dorkos, …), 2 set by hand stay
  *   lower".
  *
@@ -66,8 +64,6 @@ export interface LevelReachDeps {
   ownStop: (agentPath: string) => Promise<PermissionStop | null>;
   /** The global and per-runtime stops now. */
   defaultStops: () => DefaultStops;
-  /** Whether a chat's turns carry a mark or a hold (launch marks, held, a stranger reached it). */
-  marked: (sessionId: string) => boolean;
   /** Whether a person set the chat's mode by hand. */
   personSet: (sessionId: string) => boolean;
   /** A chat's title as a person reads it (a room seat's room), or `null` when it has none. */
@@ -227,12 +223,10 @@ export function createLevelReachNote(
         if (ids.length === 0) return undefined;
         return ids.reduce((a, b) => (looser(declared, a, b) ? b : a));
       };
-      const marked = deps.marked(chat.sessionId);
       const byHand = deps.personSet(chat.sessionId);
       const follows =
         agent.exact &&
         !agent.alsoBoundBy &&
-        !marked &&
         !byHand &&
         !isKept({ projectPath: agent.agentPath, name: '', displayName: '' }) &&
         runtime !== COMPUTER_LOCAL_RUNTIME &&
@@ -240,12 +234,12 @@ export function createLevelReachNote(
       const before = effectiveMode(declared, stored, modeAt(then), follows);
       const after = effectiveMode(declared, stored, modeAt(now), follows);
       if (looser(declared, before, after)) fell += 1;
-      else if (looser(declared, after, before) && !marked) {
+      else if (looser(declared, after, before)) {
         rose.push({
           sessionId: chat.sessionId,
           title: plainTitle(await deps.titleOf(chat.sessionId)),
         });
-      } else if (byHand && !marked) {
+      } else if (byHand) {
         // Set by hand and left lower by a raise that would have lifted it.
         const lifted = effectiveMode(declared, stored, modeAt(now), true);
         if (looser(declared, lifted, after)) heldByHand += 1;

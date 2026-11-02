@@ -49,9 +49,8 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
-import { chatHeardOutsider, noteChatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import { noteTurnHold } from './continuation-hold.js';
-import { aliasChosenTurn, isFullLevel, noteChosenTurn, ownLevelBounds } from './full-autonomy.js';
+import { aliasChosenTurn, noteChosenTurn, ownLevelBounds } from './full-autonomy.js';
 import {
   ceilingHoldsForOutsider,
   levelOfMode,
@@ -108,35 +107,23 @@ export function lastTurnLevelOf(sessionId: string): TurnPermissionLevel | undefi
 
 /**
  * The level a conversation hands on to what its turn causes: a room post, a
- * chat message, a spin-off. Its latest turn's level, carrying the outsider mark
- * whenever a stranger's words may be in the chat (`chatHeardOutsider`): one
- * started this turn, an earlier one, or the chat itself (DOR-3107). The one
- * read every hand-off makes, so no path passes on a stranger's words unmarked.
- * `undefined` when this process ran no turn on it.
+ * chat message, a spin-off. Its latest turn's own power, without a Wi-Fi hold
+ * or its mark: neither follows the turn's words anywhere else. Only a teammate's
+ * chain rides on. `undefined` when this process ran no turn on it.
  *
  * @param sessionId - The id the turn was sent under.
  */
 export function passedOnLevelOf(sessionId: string): TurnPermissionLevel | undefined {
-  // The turn's own power without a stranger's hold (DOR-3390): what our agent hands on is its
-  // own words, so the turn it starts is gated by the mark, not capped by the stranger's hold.
   const level = handOffLevels.get(sessionId) ?? turnLevels.get(sessionId);
   if (level === undefined) return undefined;
-  return chatHeardOutsider(sessionId) ? { ...level, outsider: true } : level;
+  const { outsider: _kept, ...handed } = level;
+  return handed;
 }
 
 /**
- * The marks a sender carries when its level is NOT known (a restart, a turn
- * this process never recorded): the outsider mark if a stranger reached any of
- * these chats (`chatHeardOutsider`, which also reads a chat's stored launch
- * origin). Under trust first (DOR-3107, Dorian 2026-10-19) an unknown sender of
- * the owner's own is trusted, so this is what still tells a stranger's chat apart.
- *
- * A named chat answers for itself only (DOR-3386, Security's marked-lanes
- * design): a sibling chat of the same agent running a marked turn in parallel
- * proves nothing about this one, and counting it held every lane of an agent
- * whenever any one of its room seats read a post. Words that cross between
- * chats through shared state are stamped where they are kept (memory,
- * commitments). Only a caller that names no chat is read through its agent.
+ * The marks a sender carries when its level is NOT known (a restart, a turn this
+ * process never recorded). A named chat answers for itself, and an unknown one
+ * carries none; only a caller that names no chat is read through its agent.
  *
  * @param sessionIds - The sending chats.
  * @param agentPath - The sending agent, when known.
@@ -146,10 +133,9 @@ export function unknownLevelMarks(
   agentPath?: string
 ): TurnMarks {
   const named = sessionIds.filter((id): id is string => typeof id === 'string' && id !== '');
-  if (named.length === 0) {
-    return agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
-  }
-  return named.some(chatHeardOutsider) ? { outsider: true } : NO_MARKS;
+  if (named.length > 0 || agentPath === undefined) return NO_MARKS;
+  const { teammate } = agentMarksRunning(agentPath);
+  return teammate !== undefined ? { teammate } : NO_MARKS;
 }
 
 /**
@@ -174,11 +160,6 @@ export function turnSerialOf(sessionId: string): number | undefined {
  * an agent with turns in several rooms posts from one into another, and the
  * post must not borrow a looser turn's level. Never a session id a request
  * body supplied; that would let anybody name a Full autonomy conversation.
- *
- * A chat a stranger reached (a connector event, a bridged chat, a stranger's
- * DM, now or in an earlier turn) is marked even when no ceiling said so
- * (DOR-3107, {@link passedOnLevelOf}): its post carries the outsider mark, so
- * the turn it wakes is capped, never trusted as unmarked.
  *
  * @param sessionIds - The sessions that vouch for the post.
  */
@@ -217,18 +198,9 @@ export function marksOf(
 }
 
 /**
- * The bound work a caller starts must carry because the caller's turn is
- * marked, or `undefined` when it is not. Read by `session_start`, which sends
- * it as the new session's ceiling, so the new chat carries the marks on.
- *
- * A ceiling carrying the marks (`ceilingCarrying`): the runtime default, and a
- * read-only level holding every teammate origin; beside the caller's own level
- * when this process recorded its turn, so the new chat runs no looser than
- * either. The marks ride as bounds of their own, as `chat_send` and a room post
- * carry them (DOR-3141): a bare marked level would hold the new chat's power
- * but not read as a stranger's turn where that decides (the held turn's hook
- * and its cards, DOR-3204). A chat a stranger reached is marked here too
- * ({@link passedOnLevelOf}).
+ * The record work a caller starts must carry because a teammate's chain started the caller's turn,
+ * or `undefined` when none did. Read by `session_start`, which sends it as the new session's
+ * ceiling. It lowers nothing (`ceilingCarrying`).
  *
  * @param sessionId - The calling session, when the surface verified one.
  * @param agentPath - The calling agent's home, from its verified identity.
@@ -237,28 +209,7 @@ export function markedBoundOf(
   sessionId: string | null | undefined,
   agentPath: string | undefined
 ): TurnPermissionCeiling | undefined {
-  const heard = sessionId ? chatHeardOutsider(sessionId) : false;
-  const marks = heard
-    ? { ...marksOf(sessionId, agentPath), outsider: true as const }
-    : marksOf(sessionId, agentPath);
-  const carried = ceilingCarrying(marks);
-  if (carried === undefined) return undefined;
-  type BoundList = Extract<TurnPermissionCeiling, readonly unknown[]>;
-  // A spin-off a stranger's own turn starts is held like that turn (DOR-3204 M1): it is the
-  // stranger's act, not our agent's words passed on. Anything else carries the mark at the
-  // caller's own level (DOR-3390).
-  // A caller that names no chat (Codex or OpenCode over the external server), or one this process
-  // recorded no turn for, cannot show whose turn it is: held, the strict answer.
-  const level = sessionId ? passedOnLevelOf(sessionId) : undefined;
-  if (!sessionId || level === undefined || strangerHeld.has(sessionId)) {
-    const held = sessionId ? turnLevels.get(sessionId) : undefined;
-    // The hold carries the outsider mark itself; a teammate's chain already holds one.
-    const withHold = (Array.isArray(carried) ? carried : ['runtime-default']) as BoundList;
-    if (held === undefined) return withHold.length === 1 ? withHold[0]! : withHold;
-    return [held, ...withHold] as BoundList;
-  }
-  const bounds = (Array.isArray(carried) ? carried : [carried]) as BoundList;
-  return [level, ...bounds];
+  return ceilingCarrying(marksOf(sessionId, agentPath));
 }
 
 /**
@@ -311,20 +262,17 @@ export function noteEntryLevel(
 }
 
 /**
- * Mark a conversation's running turn with words it read mid-turn (DOR-3398): a held
- * `post_to_room` hands the turn posts that arrived after it started, and a stranger's or a
- * teammate's among them must mark it as the turn-start context would. Raises the recorded level
- * (and its hand-off copy), which every enforcement point reads through {@link marksOf} on each
- * call, and notes an outsider on the chat so what it hands on stays marked. Only ever adds.
- *
- * A gate fixed when the turn launched (Claude Code's carried-shell hook reads the launch ceiling)
- * sees the mark from the chat's next turn, not this one.
+ * Mark a conversation's running turn with a teammate's words it read mid-turn (DOR-3398): a held
+ * `post_to_room` hands the turn posts that arrived after it started. Raises the recorded level (and
+ * its hand-off copy), which every enforcement point reads through {@link marksOf} on each call.
+ * Only ever adds.
  *
  * @param sessionId - The conversation the turn runs on.
- * @param marks - The marks the words carry.
+ * @param read - The marks the words carry; only a teammate's counts.
  */
-export function markRunningTurn(sessionId: string, marks: TurnMarks): void {
-  if (marks.outsider === true) noteChatHeardOutsider(sessionId);
+export function markRunningTurn(sessionId: string, read: TurnMarks): void {
+  if (read.teammate === undefined) return;
+  const marks: TurnMarks = { teammate: read.teammate };
   const level = turnLevels.get(sessionId);
   if (level !== undefined) remember(turnLevels, sessionId, withMarks(level, marks));
   const handOff = handOffLevels.get(sessionId);
@@ -473,13 +421,8 @@ export function entryLevelOf(entryId: string): TurnPermissionLevel | undefined {
 }
 
 /**
- * The level one turn runs at, marked when the turn reads an outsider's words
- * (spec `trusted-by-default-flip` §4.7): its ceiling carries them (a
- * stranger's message, a sender DorkOS cannot vouch for, another turn that read
- * them), or a room shows it a stranger's message it does not answer. The mark
- * changes no power; it travels with the level to every turn this one's
- * messages start, and onto every note it saves to memory. A continuation's
- * hold bounds the power and marks nothing (`marksForTurn`, DOR-3203).
+ * The level one turn runs at, marked when a Wi-Fi hold or a teammate's chain bound it. A
+ * continuation's hold bounds the power and marks nothing (`marksForTurn`, DOR-3203).
  */
 function levelForTurn(
   runtime: AgentRuntime,
@@ -624,9 +567,7 @@ export function recordTurnLevels(
     (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
     (sessionId, opts) => {
       recordTurn(runtime, sessionId, storedOf(sessionId), opts);
-    },
-    // A chat set to Full is never held for a mark it carries (DOR-3394).
-    (sessionId, opts) => isFullLevel(chosenLevelOf(runtime, storedOf(sessionId), opts))
+    }
   );
 }
 
@@ -664,13 +605,7 @@ function recordLevels(
           // Kept on the chat's row, for the turns that later pick it up on their own. A
           // turn a continuation's hold clamped read no new words, so it leaves the answer
           // the last real turn gave (DOR-3203).
-          if (opts?.continuationHold !== true) {
-            const held = level.outsider === true;
-            // Only carried on, held for no stranger (DOR-3390): a later pick-up stays marked, not held.
-            const ceiling = opts?.permissionCeiling;
-            const carried = held && !(ceiling !== undefined && ceilingHoldsForOutsider(ceiling));
-            noteTurnHold(sessionId, held, carried);
-          }
+          if (opts?.continuationHold !== true) noteTurnHold(sessionId, level.outsider === true);
           // Under the id the turn was sent with AND the conversation's first
           // id, so a turn sent under a renamed id is the newest by either.
           const serial = ++nextTurnSerial;

@@ -7,8 +7,9 @@
  * where the opener stayed NULL and configure failed with `OPENER_REQUIRED`).
  *
  * Two rows. A plain turn: the page's opener is this agent and configure passes.
- * A turn a stranger started in a chat set below Full, held to the runtime default
- * exactly as the launch holds one: the page still binds its opener, and configure
+ * A turn held to the runtime default in a chat set below Full, exactly as the launch
+ * holds a Wi-Fi sign-in's (the one hold left, DOR-3440; every other origin runs at
+ * the agent's set level): the page still binds its opener, and configure
  * is put in front of a person (DorkOS's own `canUseTool` raises the card) rather
  * than run.
  *
@@ -32,7 +33,6 @@ import type { PermissionModeId, StreamEvent } from '@dorkos/shared/types';
 import { composeRegistry } from '../../../../core/capabilities/index.js';
 import { peekCanvasService, setCanvasService } from '../../../../canvas/index.js';
 import { uiDomain } from '../../../../session/browser-seat/ui-capabilities.js';
-import { noteTurnOrigin, resetOutsiderTurns } from '../../../../session/origin/outsider-turns.js';
 import { runtimeDocMcpFixture } from '../../../../canvas/doc-channel/__tests__/runtime-doc-mcp-fixture.js';
 import { resolveBundledClaudeBinary } from '../../sdk/sdk-utils.js';
 import { ClaudeConnectorTurnContext } from '../../connector-turn-context.js';
@@ -162,7 +162,7 @@ function playModel(onConfigureResult: (text: string) => void) {
   });
 }
 
-type Row = 'plain' | 'stranger';
+type Row = 'plain' | 'held';
 
 /** Run one real CLI turn against the real DorkOS MCP server. */
 async function runTurn(row: Row) {
@@ -188,19 +188,15 @@ async function runTurn(row: Row) {
     cwd: f.dir,
   });
   cleanups.push(() => connectorTurn.revoke('turn_terminal'));
-  if (row === 'stranger') {
-    noteTurnOrigin(SESSION_ID, { kind: 'relay-binding' });
-    cleanups.push(() => resetOutsiderTurns());
-  }
   const session = {
     cwd: f.dir,
     sdkSessionId: SESSION_ID,
     connectorTurn,
     // A chat set to Full asks nobody, whoever started the turn (DOR-3394), so the
     // row that must ask is a chat set below it.
-    permissionMode: (row === 'stranger' ? 'default' : 'bypassPermissions') as PermissionModeId,
-    // What the launch sets on a turn a stranger started.
-    ...(row === 'stranger' ? { turnPermissionCeiling: 'runtime-default' as const } : {}),
+    permissionMode: (row === 'held' ? 'default' : 'bypassPermissions') as PermissionModeId,
+    // What the launch sets on a held turn (a Wi-Fi sign-in's).
+    ...(row === 'held' ? { turnPermissionCeiling: 'runtime-default' as const } : {}),
     pendingInteractions: new Map<string, PendingInteraction>(),
     eventQueue: [] as StreamEvent[],
     eventQueueNotify: () => {},
@@ -264,7 +260,7 @@ async function runTurn(row: Row) {
       mcpServers: { dorkos: dorkos as never },
       // The turn's mode, as the launch computes it: a held turn runs at the
       // runtime default, so the CLI asks DorkOS about every tool.
-      permissionMode: row === 'stranger' ? 'default' : 'bypassPermissions',
+      permissionMode: row === 'held' ? 'default' : 'bypassPermissions',
       ...(row === 'plain' ? { allowDangerouslySkipPermissions: true } : {}),
       canUseTool,
       settingSources: [],
@@ -321,8 +317,8 @@ describe.skipIf(BINARY === null)('real Claude Code: control_ui then configure_do
     expect(channel?.declaration).toMatchObject({ routes: [{ id: 'own-route' }] });
   }, 90_000);
 
-  it('a stranger’s turn below Full still binds the opener, and configure asks a person', async () => {
-    const { session, pageDoc, channel, configureResult } = await runTurn('stranger');
+  it('a held turn below Full still binds the opener, and configure asks a person', async () => {
+    const { session, pageDoc, channel, configureResult } = await runTurn('held');
     expect(pageDoc).toBeDefined();
     expect(channel?.openerAgentId).toBe('agent-1');
     // Configure never ran: a card was up for it when the turn stopped, and

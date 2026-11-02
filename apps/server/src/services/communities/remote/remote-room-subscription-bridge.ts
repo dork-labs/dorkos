@@ -16,7 +16,7 @@ import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js'
 import type { CommunityOutboxStore } from './community-outbox-store.js';
 import { RemoteMirrorStore, type MirrorRoomInput, type NativeMirrorEntry } from './mirror-store.js';
 import { vouchOwnerSpaceEntry } from '../../rooms/limits/space-teammates.js';
-import { TeammateWakes, type TeammateRuntimeCheck } from './wake/teammate-wakes.js';
+import { TeammateWakes } from './wake/teammate-wakes.js';
 import { SpaceDispatchAddressing } from './wake/dispatch-addressing.js';
 import type { RemoteWakeGate } from './wake/wake-policy.js';
 import { RECONNECT_FRESH_MS } from './subscription/reconnect-timing.js';
@@ -112,12 +112,7 @@ export class RemoteRoomSubscriptionBridge {
     private readonly dispatchEnabled: (communityRef: CommunityRef) => boolean = () => true
   ) {
     this.teammates = new TeammateWakes(now);
-    this.addressing = new SpaceDispatchAddressing(
-      mirrors,
-      enrollments,
-      resolveLocalAgentAuthor,
-      this.teammates
-    );
+    this.addressing = new SpaceDispatchAddressing(mirrors, enrollments, resolveLocalAgentAuthor);
   }
 
   /**
@@ -129,16 +124,6 @@ export class RemoteRoomSubscriptionBridge {
    */
   useWakeGate(gate: RemoteWakeGate): void {
     this.wakeGate = gate;
-  }
-
-  /**
-   * Say which enrolled agents run where a teammate's turn can be held to its limits (DOR-2955).
-   * Until this is called no agent can, so every teammate's post stays history.
-   *
-   * @param check - Answers for one enrolled agent by its local manifest id.
-   */
-  useTeammateRuntimes(check: TeammateRuntimeCheck): void {
-    this.teammates.useRuntimeCheck(check);
   }
 
   /**
@@ -254,18 +239,18 @@ export class RemoteRoomSubscriptionBridge {
     // Unclaimed on purpose: only a fresh live frame dispatches, so a message
     // that arrived while spaces were off never starts a turn later either.
     if (!this.dispatchEnabled(room.communityRef)) return;
-    let dispatchEntry = this.addressing.dispatchEntry(target.id, room, saved, owner);
+    let dispatchEntry = this.addressing.dispatchEntry(target.id, room, saved);
     // A direct message (DOR-2955) needs no mention: every person's post in it is to its agent,
     // through the same gate, budget and teammate rules as a mention.
     if (room.kind === 'dm')
-      dispatchEntry = this.addressing.answerInEntry(target.id, room, dispatchEntry, owner);
+      dispatchEntry = this.addressing.answerInEntry(target.id, room, dispatchEntry);
     // Past here without a mention the setting allows only in an answer-in channel: every other
     // connection keeps the mention rule exactly as it was. A message removed before it was cached
     // is stored as it stands now, with nothing to answer.
     const answerIn = !wakes || !dispatchEntry.mentions.length;
     if (answerIn) {
       if (!answering || !saved.body.text.trim()) return;
-      dispatchEntry = this.addressing.answerInEntry(target.id, room, dispatchEntry, owner);
+      dispatchEntry = this.addressing.answerInEntry(target.id, room, dispatchEntry);
       if (!dispatchEntry.mentions.length) return;
     }
     if (

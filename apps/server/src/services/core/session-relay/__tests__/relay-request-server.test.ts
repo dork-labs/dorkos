@@ -306,9 +306,8 @@ describe('SessionRelayRequestServer', () => {
       const call = h.dispatchSessionMessage.mock.calls[0]![0];
       expect(call.origin).toEqual({ kind: 'session-relay' });
       expect(call.clientId).toBe('relay:test');
-      // Whatever the chat's own level, a relayed turn asks before anything
-      // that needs a person (option 2).
-      expect(call.permissionCeiling).toBe('runtime-default');
+      // A relayed turn runs at the agent's own level (DOR-3440).
+      expect(call.permissionCeiling).toBeUndefined();
       // The folder is the one this server placed the chat in, never the
       // caller's, and no disposition is passed on: the send path queues it.
       expect(call.request).toEqual({
@@ -399,7 +398,7 @@ describe('SessionRelayRequestServer', () => {
         cwd: PROJECT,
         agentPath: PROJECT,
       });
-      expect(h.dispatchSessionMessage.mock.calls[0]![0].permissionCeiling).toBe('runtime-default');
+      expect(h.dispatchSessionMessage.mock.calls[0]![0].permissionCeiling).toBeUndefined();
       expect(h.audits.at(-1)).toMatchObject({ action: 'relay.session.send', operation: 'create' });
     });
 

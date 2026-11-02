@@ -290,8 +290,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
         deliveryRuntime.outbox,
         deliveryRuntime
       );
-      // Every agent here runs where a teammate's turn can be held (DOR-2955).
-      bridge.useTeammateRuntimes(() => true);
       let streamAborted = false;
       const room = testRoom();
       subscriptions = new RemoteRoomSubscriptionRuntime({
@@ -375,8 +373,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       () => agent.id
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     let releaseDirectory!: () => void;
     const directoryStarted = new Promise<void>((resolve) => {
@@ -506,8 +502,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       () => agent.id
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const adapters = vi.fn();
     const unavailableAccess = [
       null,
@@ -554,8 +548,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       () => agent.id
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     let access: CommunityConnectionAccess = VERIFIED_AGENT_ACCESS;
     let streamAborted = false;
@@ -620,8 +612,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       () => agent.id
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     let closeReason: 'access-revoked' | 'archived' = 'archived';
     let closed = false;
@@ -695,8 +685,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       () => agent.id
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     const expected = [
       { communityRef: REF, remoteRoomId: ROOM_ID, ownerAuthorId: harness.human },
@@ -792,8 +780,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       undefined,
       outbox
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     bridge.authorizeRoom({
       communityRef: REF,
       remoteRoomId: ROOM_ID,
@@ -873,8 +859,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       (localAgentId) => (localAgentId === agent.id ? agent.id : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     let releaseLive: (() => void) | undefined;
     const fresh = new Promise<void>((resolve) => {
       releaseLive = resolve;
@@ -973,8 +957,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       (localAgentId) => (localAgentId === ana.id || localAgentId === bob.id ? localAgentId : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     const streamMembers: string[] = [];
     const adapter: RemoteRoomSubscriptionAdapter = {
@@ -1037,7 +1019,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     const bridge = new RemoteRoomSubscriptionBridge(mirrors, harness.service, enrollments, (id) =>
       id === ana.id ? id : null
     );
-    bridge.useTeammateRuntimes(() => true);
     const dm: CommunityRoom = { ...testRoom(), kind: 'dm', title: 'Direct message with Bo' };
     const adapter: RemoteRoomSubscriptionAdapter = {
       listRooms: async () => [],
@@ -1093,8 +1074,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       (localAgentId) => (localAgentId === 'mesh-manifest-ana' ? agent.id : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     let joined = true;
     let aborted = false;
@@ -1166,8 +1145,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       (localAgentId) => (localAgentId === 'mesh-manifest-ana' ? ana.id : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     bridge.authorizeRoom({
       communityRef: REF,
@@ -1258,8 +1235,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
             ? bob.id
             : null
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     const secondRoom = { ...room, roomId: 'room-b', title: 'Build' };
     const primary = {
@@ -1342,8 +1317,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       () => agent.id
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     let streamClosed = false;
     const adapter: RemoteRoomSubscriptionAdapter = {
@@ -1427,8 +1400,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
             ? bob.id
             : null
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     const room = testRoom();
     let releaseEntry!: () => void;
     const parked = new Promise<void>((resolve) => {
@@ -1552,8 +1523,6 @@ describe('RemoteRoomSubscriptionRuntime', () => {
       enrollments,
       (localAgentId) => (localAgentId === agent.id ? agent.id : null)
     );
-    // Every agent here runs where a teammate's turn can be held (DOR-2955).
-    bridge.useTeammateRuntimes(() => true);
     let releaseFirst: (() => void) | undefined;
     const firstDone = new Promise<void>((resolve) => {
       releaseFirst = resolve;

@@ -1,7 +1,7 @@
 /**
  * DOR-3205: a scheduled run, with nobody there to ask, can list its own connected accounts and
  * what each grant covers, in every mode. The tools that act on those accounts stay refused, and
- * so do a stranger's turn and a teammate's.
+ * so does a stranger's turn. A teammate's turn runs at the agent's set level (DOR-3440).
  *
  * `acceptEdits` and `default` reach DorkOS's `canUseTool`; Never ask never does, so there the
  * Never ask hook decides (QA: under `dontAsk` the CLI calls no `canUseTool`).
@@ -10,12 +10,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { PermissionMode, PermissionModeId } from '@dorkos/shared/schemas';
-import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { NO_APPROVAL_SURFACE } from '@dorkos/shared/run-refusals';
-import {
-  TEAMMATE_TIER_DENIAL,
-  teammateTierRefusal,
-} from '../../../../core/turn-power/teammate-tier.js';
+import { ceilingCarrying, marksHold } from '../../../../core/turn-power/turn-marks.js';
+import { assignTurnBounds } from '../../turn-bounds.js';
+import type { CeilingedMode } from '../../turn-permission.js';
 import { CONNECTOR_RUNTIME_EXECUTION_CAPABILITY_IDS } from '../../../../connectors/runtime-capability-scope.js';
 import { inSessionToolName } from '../../mcp-tools/tool-exposure.js';
 import { createCanUseTool } from '../../messaging/interactive-handlers.js';
@@ -184,11 +183,23 @@ describe('a turn that carries an outsider’s words', () => {
 });
 
 describe('a teammate’s turn', () => {
-  it.each(READS)('refuses %s at the fence, and Never ask says nothing', async (tool) => {
-    const name = tool.slice(inSessionToolName('').length);
-    expect(
-      teammateTierRefusal({ roomId: 'room-1' }, { source: 'dorkos', name, input: INPUT })
-    ).toBe(TEAMMATE_TIER_DENIAL);
-    expect(await neverAsk(tool, { teammateTier: { roomId: 'room-1' } })).toEqual({});
+  // It runs at the agent's set level (Dorian 2026-10-30, DOR-3440): the teammate's mark only
+  // records the turn for the space's monthly limit, so it is no ceiling and holds nothing back.
+  const MARKS = { teammate: [{ roomId: 'room-1', authorId: 'pat' }] };
+
+  it.each(READS)('runs %s unasked, as the agent’s own turn would', async (tool) => {
+    for (const permissionMode of ['acceptEdits', 'default'] as PermissionModeId[]) {
+      const session: CeilingedMode<PermissionModeId> & Parameters<typeof assignTurnBounds>[0] = {
+        permissionMode,
+        unattendedApprovals: false,
+        unattendedTurn: false,
+      };
+      assignTurnBounds(session, { permissionCeiling: ceilingCarrying(MARKS) } as MessageOpts);
+      expect(session.turnPermissionCeiling).toBeUndefined();
+      expect(autoAllowedByCall(session, tool, INPUT, SDK)).toBe(true);
+    }
+    expect(await neverAsk(tool, {}, SDK, () => marksHold(MARKS))).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'allow' },
+    });
   });
 });

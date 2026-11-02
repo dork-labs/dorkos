@@ -245,7 +245,7 @@ describe('a beat that reads a promise made in a marked turn', () => {
     await settle();
     await done;
     expect(launchCeilings).toEqual([
-      ['runtime-default', { asks: 'always', reach: 'read', teammate: marks.teammate }],
+      { asks: 'never', reach: 'everything', teammate: marks.teammate },
     ]);
   });
 
@@ -256,9 +256,7 @@ describe('a beat that reads a promise made in a marked turn', () => {
     const done = runner().wake(juno.id, { wake: 'event:room-mention', causedBy: 'entry-1' });
     await settle();
     await done;
-    expect(launchCeilings).toEqual([
-      ['runtime-default', { asks: 'always', reach: 'read', teammate }],
-    ]);
+    expect(launchCeilings).toEqual([{ asks: 'never', reach: 'everything', teammate }]);
   });
 
   it('runs without a ceiling when no open promise is marked', async () => {

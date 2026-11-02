@@ -31,8 +31,10 @@ import {
   type ExtensionApprovals,
 } from '../extension-load-policy.js';
 import { collectSnapshots, ensureSnapshot, snapshotRootOf } from './extension-snapshots.js';
-import { digestRootOf, liveDigestOf } from './extension-content-pin.js';
+import { configManager } from '../../core/config-manager.js';
+import { digestRootOf, liveDigestOf, pinStillHolds } from './extension-content-pin.js';
 import { isPathTrustApproval } from './extension-path-trust.js';
+import { notePathTrustEdits } from './path-trust-edits.js';
 
 /**
  * Point a copy at the verified snapshot of `digest`, made from its folder
@@ -99,6 +101,31 @@ export async function refreshPathTrustRun(
   // Only this function marks a path-trust copy changed, so a good copy clears it.
   if (await runFromSnapshot(dorkHome, record, live)) record.originProblem = undefined;
   return true;
+}
+
+/**
+ * Read a copy's live files again before a load that skips the scan (a reload by id): apply its
+ * agent's level to them first, then check the copy can still run.
+ *
+ * @param dorkHome - DorkOS's data directory.
+ * @param record - The extension record; updated in place.
+ * @returns Whether it may go on loading.
+ */
+export async function recheckAtItsLevel(
+  dorkHome: string,
+  record: ExtensionRecord
+): Promise<boolean> {
+  const live = await liveDigestOf(record);
+  if (live) {
+    const atLoad = { ...record, currentDigest: live };
+    await notePathTrustEdits([atLoad], configManager.get('extensions'), dorkHome);
+  }
+  const approvals = configManager.get('extensions');
+  // A path-trust copy is rebuilt from a verified copy of its files as they are now.
+  if (await refreshPathTrustRun(dorkHome, record, approvals)) {
+    return record.originProblem !== 'changed';
+  }
+  return pinStillHolds(record, approvals);
 }
 
 /**

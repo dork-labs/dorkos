@@ -602,6 +602,29 @@ export const CARRIED_OUTSIDER_LEVEL: TurnPermissionLevel = Object.freeze({
 });
 
 /**
+ * Whether a ceiling only carries a record and bounds nothing (a teammate's chain, DOR-3440): every
+ * bound is the loosest level, with no outsider's mark. A runtime treats its turn as one with no
+ * ceiling at all.
+ *
+ * @param ceiling - The ceiling a turn is sent with.
+ */
+export function ceilingOnlyRecords(ceiling: TurnPermissionCeiling): boolean {
+  const bounds = Array.isArray(ceiling)
+    ? (ceiling as readonly (TurnPermissionLevel | 'runtime-default')[])
+    : [ceiling as TurnPermissionLevel | 'runtime-default'];
+  return (
+    bounds.length > 0 &&
+    bounds.every(
+      (bound) =>
+        bound !== 'runtime-default' &&
+        bound.asks === 'never' &&
+        bound.reach === 'everything' &&
+        bound.outsider !== true
+    )
+  );
+}
+
+/**
  * Whether a ceiling holds a turn for an outsider DIRECTLY (DOR-3390): it has the runtime-default
  * bound only a stranger, or a sender DorkOS cannot vouch for, sets, or it is an empty list, which
  * vouches for no one. A marked level alone carries the mark on and holds nothing.
@@ -648,6 +671,9 @@ export function clampModeToCeiling(
   modeId: string,
   ceiling: TurnPermissionCeiling
 ): string {
+  // A record bounds nothing, so it answers nothing: on an undeclared id, the search below would
+  // otherwise raise the turn to the loosest mode the runtime has (DOR-3440).
+  if (ceilingOnlyRecords(ceiling)) return modeId;
   const level = resolveCeilingLevel(declared, ceiling);
   const own = declared.values.find((m) => m.id === modeId);
   if (own && admits(level, own)) return modeId;

@@ -107,9 +107,8 @@ import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
-import { hasMarks } from '../../../core/turn-power/turn-marks.js';
+import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
-import { createTeammateTierHook } from '../teammate-tier-hook.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
 import {
   applyFolderConfigToLaunch,
@@ -119,7 +118,6 @@ import { applyRepoConfigStep, applyRepoMcpServers } from '../repo-settings/launc
 import { prepareOwnFolder } from '../folder-settings/own-folder-open.js';
 import { createStopHook } from '../tool-gate/stop-hook.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
-import { TEAMMATE_TURN_CONTEXT } from '../../../core/turn-power/teammate-turn-context.js';
 import { enrichContent } from '../enrich-content.js';
 
 // Split out to keep this file under the line limit (see message-sender-shared.ts).
@@ -192,8 +190,6 @@ export async function resolveLaunch(args: {
       // No manifest found -- the launch inherits the server defaults
     }
   }
-  // A teammate's turn, or one their mark reached on a later hop (DOR-3036).
-  const teammate = messageOpts?.roomTurn?.teammate === true || messageOpts?.teammate === true;
   // The agent's own hooks, MCP servers and account run only as a person last
   // allowed them; a changed part is held back and a card asks (DOR-3068).
   const folderConfig = await resolveFolderConfigForLaunch({
@@ -202,9 +198,8 @@ export async function resolveLaunch(args: {
       : undefined,
     home: turnAgentPath ?? undefined,
     cwd: effectiveCwd,
-    // The mode this turn really runs at, its ceiling applied. A teammate's turn
-    // is never Full here, whatever its session says (DOR-3432).
-    full: !teammate && turnPermissionMode(session) === 'bypassPermissions',
+    // The mode this turn really runs at, its ceiling applied.
+    full: turnPermissionMode(session) === 'bypassPermissions',
   });
   const agentFileHeld = folderConfig.held.includes('manifest');
   // Never a silent switch off the runtime the agent is set to (DOR-3459).
@@ -219,7 +214,7 @@ export async function resolveLaunch(args: {
   // Never for words somebody other than the person here wrote (DOR-2955): a
   // stranger's `/name` would run that command, with the shell its definition
   // allows, before any tool gate sees it. Their text goes out defused below.
-  const untrustedText = teammate || messageOpts?.roomTurn?.untrustedText === true;
+  const untrustedText = messageOpts?.roomTurn?.untrustedText === true;
   const commandName = untrustedText ? null : detectSlashCommandName(content);
   let isCommandDispatch = false;
   if (commandName && opts.getKnownCommands) {
@@ -262,26 +257,18 @@ export async function resolveLaunch(args: {
   // The four switchable tool-doc blocks follow the same resolution: a Blocked
   // area's docs go with its tools.
   const toolConfig = toolDocGates(toolVisibility.blockedAreas);
-  // A teammate's turn (DOR-2955) is shown none of the agent's notes, and is told what it may
-  // do. The block rides BOTH halves below, so it is in the relaunch digest: a warm process
-  // launched with the owner's notes is never reused for a teammate, nor the other way round.
-  // Nor the owner's profile, nor their folder path or machine (DOR-2956).
   const baseAppend = await buildSystemPromptAppend(turnAgentPath, effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
       !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath))
     ),
     blockedAreaLines: renderBlockedAreaLines(toolVisibility.blockedAreas),
-    ...(teammate ? { memory: false, teammate: true } : {}),
   });
   // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the
   // base — onto BOTH halves, so the caller's own per-run instructions are
   // digested by the relaunch pin exactly as they were before agent memory
   // existed. Only the `<agent_memory>` block is out of the digest; nothing else
   // moved, and a caller append that changed used to relaunch and still does.
-  const callerAppend =
-    [teammate ? TEAMMATE_TURN_CONTEXT : '', messageOpts?.systemPromptAppend ?? '']
-      .filter(Boolean)
-      .join('\n\n') || undefined;
+  const callerAppend = messageOpts?.systemPromptAppend || undefined;
   const systemPromptAppend = callerAppend
     ? `${baseAppend.text}\n\n${callerAppend}`
     : baseAppend.text;
@@ -390,11 +377,7 @@ export async function resolveLaunch(args: {
     // can watch what a subagent is doing, not just a progress spinner. Mapped to
     // `subagent_text_delta` events in sdk-event-mapper.ts (SDK 0.2.119+).
     forwardSubagentText: true,
-    // A teammate's turn (DOR-2955) loads no settings layer: each one would add
-    // the owner's CLAUDE.md files (and their @imports) to the prompt. Nothing
-    // that bounds the turn comes from them: the mode, the hooks (the teammate
-    // tier) and the tool gate are all options of this launch.
-    settingSources: teammate ? [] : ['local', 'project', 'user'],
+    settingSources: ['local', 'project', 'user'],
     systemPrompt: {
       type: 'preset',
       preset: 'claude_code',
@@ -444,8 +427,7 @@ export async function resolveLaunch(args: {
         // sending — so this is verified by one live turn per bump.
         CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
         // **One memory per agent: Claude Code's own auto-memory is off for every
-        // turn that runs as an agent** (ADR 261017-153539), and for a teammate's
-        // turn wherever it stands (DOR-2955). An agent's memory is its DorkOS
+        // turn that runs as an agent** (ADR 261017-153539). An agent's memory is its DorkOS
         // memory, `MEMORY.md` plus its notes files, written through
         // `memory_write` with stamps and the outsider rule. Left on, Claude Code
         // keeps a second, unstamped memory per folder and splits the notes in two.
@@ -456,7 +438,7 @@ export async function resolveLaunch(args: {
         // plain-folder session, which has no DorkOS memory to use instead, and an
         // agent whose old Claude Code notes have not been copied over yet, so an
         // upgrade never hides them. In the env, so it is in the relaunch digest.
-        ...(teammate || (turnAgentPath && !hasUnmovedClaudeMemory(accountRoot, turnAgentPath))
+        ...(turnAgentPath && !hasUnmovedClaudeMemory(accountRoot, turnAgentPath)
           ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' }
           : {}),
         // NOTE: an inherited MCP_TOOL_TIMEOUT is deliberately passed through
@@ -731,25 +713,26 @@ export async function resolveLaunch(args: {
   // This turn's folder grants, merged into the same settings object, and the
   // variable that would make a granted folder's CLAUDE.md load stripped from the
   // env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
-  // None for a teammate's turn (DOR-2956), whatever a caller passed: the room runner already
-  // drops them, and this is the last place a grant could reach the CLI.
-  applyDirectoryGrants(
-    sdkOptions,
-    teammate ? undefined : messageOpts?.additionalDirectories,
-    effectiveCwd
-  );
+  const turnGrants = marksHold(
+    marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined)
+  )
+    ? undefined
+    : messageOpts?.additionalDirectories;
+  // None for a marked turn (DOR-2956), whatever a caller passed: a grant widens what the turn
+  // may touch, which a mark still holds back (Security, #3280), and this is the last place a
+  // grant could reach the CLI.
+  applyDirectoryGrants(sdkOptions, turnGrants, effectiveCwd);
   // An agent a person set to Full writes its own folder setup on an unmarked
   // turn (DOR-3483); every change is logged from file hashes, here and at turn end.
   const ownFolder = await prepareOwnFolder(sdkOptions, {
     home: turnAgentPath ?? undefined,
-    teammate,
     turnMode: effectivePermissionMode,
     session,
     sessionId,
     accountRoot,
     agentName: agentDisplayName,
   });
-  // Every turn, a teammate's too: the permission floor and the relay pins are a person's.
+  // Every turn: the permission floor and the relay pins are a person's.
   // Every agent home's self-grant files too, but an open own home's.
   applyPersonOnlyDataDeny(sdkOptions, resolveDorkHome(), ownFolder.chat);
   // And the agent home's self-grant files, plus the switches for held-back parts.
@@ -775,7 +758,6 @@ export async function resolveLaunch(args: {
     agentName: agentDisplayName ?? undefined,
     home: turnAgentPath ?? undefined,
     cwd: effectiveCwd,
-    teammate,
   });
   // A credits turn's endpoint, in the launch's own settings (see above).
   if (creditsSettings) {
@@ -785,7 +767,6 @@ export async function resolveLaunch(args: {
   // The agent's own folder allow list (DOR-3039), which Claude Code drops in a
   // folder it has not been told to trust.
   const folderAllowsNotice = await applyFolderAllowsToLaunch({
-    teammate,
     agent: meshAgent
       ? { id: meshAgent.id, name: agentDisplayName ?? meshAgent.name ?? meshAgent.id }
       : undefined,
@@ -846,19 +827,13 @@ export async function resolveLaunch(args: {
   });
   sdkOptions.hooks = {
     PreToolUse: [
-      // The teammate tier (DOR-2956): every tool, every mode, before the CLI's
-      // own allow rules. It answers nothing unless a teammate's turn is running.
-      { hooks: [createTeammateTierHook(session)] },
       // A held turn (DOR-3204): the folder's allow rules become cards, its deny
       // rules still refuse. Answers nothing on any other turn.
       {
         hooks: [
           createHeldTurnHook(session, resolveIdentity, logger, {
             cwd: effectiveCwd,
-            roots: [
-              effectiveCwd,
-              ...(teammate ? [] : (messageOpts?.additionalDirectories ?? [])).map((g) => g.path),
-            ],
+            roots: [effectiveCwd, ...(turnGrants ?? []).map((g) => g.path)],
           }),
         ],
       },
@@ -869,7 +844,7 @@ export async function resolveLaunch(args: {
         matcher: `^${IN_SESSION_TOOL_PREFIX}`,
         hooks: [
           createNeverAskHook(session, resolveIdentity, logger, () =>
-            hasMarks(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined))
+            marksHold(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined))
           ),
         ],
       },

@@ -13,10 +13,6 @@ import type { Options } from '@anthropic-ai/claude-agent-sdk';
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
-const marked = vi.hoisted(() => ({ value: false }));
-vi.mock('../../../../core/turn-power/turn-levels.js', () => ({
-  markedBoundOf: vi.fn(() => (marked.value ? 'runtime-default' : undefined)),
-}));
 
 import {
   applyOtherAgentsExtensionsDeny,
@@ -140,36 +136,27 @@ describe('otherAgentHomesOf', () => {
 });
 
 describe('ownExtensionsWritable', () => {
-  beforeEach(() => {
-    marked.value = false;
+  it('leaves a turn with no ceiling its own mini apps', () => {
+    expect(ownExtensionsWritable({}, '/x/own')).toBe('/x/own');
   });
 
-  it('leaves an unmarked, unceilinged turn its own mini apps', () => {
-    expect(ownExtensionsWritable({}, 's1', '/x/own')).toBe('/x/own');
-  });
-
-  it('denies its own mini apps to a turn that read a stranger’s words', () => {
-    marked.value = true;
-    expect(ownExtensionsWritable({}, 's1', '/x/own')).toBeUndefined();
-    // So the launch denies them like every other agent's.
-    const rules = otherAgentsExtensionsDenyRules(
-      ownExtensionsWritable({}, 's1', own),
-      [own, other],
-      dorkHome
-    );
-    expect(rules).toContain(`Edit(/${own}/.dork/extensions/**)`);
+  it('leaves none to a turn that runs as no agent', () => {
+    expect(ownExtensionsWritable({}, undefined)).toBeUndefined();
   });
 
   it('denies its own mini apps to a turn under a ceiling, or background work under one', () => {
     expect(
-      ownExtensionsWritable({ turnPermissionCeiling: 'runtime-default' as never }, 's1', '/x/own')
+      ownExtensionsWritable({ turnPermissionCeiling: 'runtime-default' as never }, '/x/own')
     ).toBeUndefined();
     expect(
-      ownExtensionsWritable(
-        { backgroundPermissionCeiling: 'runtime-default' as never },
-        's1',
-        '/x/own'
-      )
+      ownExtensionsWritable({ backgroundPermissionCeiling: 'runtime-default' as never }, '/x/own')
     ).toBeUndefined();
+    // So the launch denies them like every other agent's.
+    const rules = otherAgentsExtensionsDenyRules(
+      ownExtensionsWritable({ turnPermissionCeiling: 'runtime-default' as never }, own),
+      [own, other],
+      dorkHome
+    );
+    expect(rules).toContain(`Edit(/${own}/.dork/extensions/**)`);
   });
 });

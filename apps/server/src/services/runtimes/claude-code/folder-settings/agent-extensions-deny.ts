@@ -35,7 +35,6 @@ import type { ExtensionsConfig } from '../../../extensions/extension-enable-reso
 import { logger } from '../../../../lib/logger.js';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { configManager } from '../../../core/config-manager.js';
-import { markedBoundOf } from '../../../core/turn-power/turn-levels.js';
 import { heldToACeiling } from '../turn-permission.js';
 import { writeDenyRules } from '../messaging/directory-grants.js';
 
@@ -108,23 +107,18 @@ export function otherAgentsExtensionsDenyRules(
 
 /**
  * The home whose own extensions this launch may write: the turn's agent's,
- * unless the turn read a stranger's words (`markedBoundOf`, which counts a
- * chat a stranger reached) or runs under a ceiling. Then its own mini apps
- * are denied like every other agent's, so a stranger cannot steer an edit
- * that path trust would run without a click.
+ * unless the turn runs under a ceiling (a Wi-Fi sign-in's hold). Then its own
+ * mini apps are denied like every other agent's.
  *
  * @param session - The session's ceilings.
- * @param sessionId - The launching session.
  * @param ownHome - The turn's agent's home, when it runs as one.
  * @returns The home to leave writable, or undefined for none.
  */
 export function ownExtensionsWritable(
   session: Parameters<typeof heldToACeiling>[0],
-  sessionId: string,
   ownHome: string | undefined
 ): string | undefined {
-  if (!ownHome || heldToACeiling(session)) return undefined;
-  return markedBoundOf(sessionId, ownHome) === undefined ? ownHome : undefined;
+  return !ownHome || heldToACeiling(session) ? undefined : ownHome;
 }
 
 /**
@@ -204,7 +198,7 @@ export function applyLaunchExtensionsDeny(
 ): void {
   applyOtherAgentsExtensionsDeny(
     sdkOptions,
-    ownExtensionsWritable(turn.session, turn.sessionId, turn.agentHome),
+    ownExtensionsWritable(turn.session, turn.agentHome),
     // Author folders an approval records count even when no longer registered.
     otherAgentHomesOf(turn.registry, configManager.get('extensions')),
     resolveDorkHome()

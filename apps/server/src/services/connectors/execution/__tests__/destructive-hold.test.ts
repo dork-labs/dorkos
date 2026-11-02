@@ -24,7 +24,6 @@ import {
 } from '../../../core/capabilities/index.js';
 import { CapabilityToolError } from '../../../core/capabilities/mcp-envelope.js';
 import type { ApprovalService } from '../../../core/approvals/index.js';
-import { noteTurnOrigin, resetOutsiderTurns } from '../../../session/origin/outsider-turns.js';
 import { createCapabilityAuthorityBinding } from '../../principal/capability-authority-binding.js';
 import { createServerPrincipal } from '../../principal/server-principal.js';
 import { connectorExecutionDomain } from '../execution-capabilities.js';
@@ -132,7 +131,6 @@ let preset: 'careful' | 'trusted' | null;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.mocked(lastTurnLevelOf).mockReturnValue(NEVER_ASKS);
-  resetOutsiderTurns();
   preset = null;
   initPermissionGate({
     readConfig: () => ({ preset, defaults: { areas: {}, actions: {} } }) as never,
@@ -198,7 +196,6 @@ afterEach(() => {
   vi.useRealTimers();
   resetCapabilityTierGate();
   resetPermissionGate();
-  resetOutsiderTurns();
 });
 
 /** Call the destructive action the way an agent's turn does. */
@@ -515,11 +512,6 @@ describe('every call that is not eligible keeps the approval card', () => {
 
   it('in a chat whose level this process never recorded', async () => {
     vi.mocked(lastTurnLevelOf).mockReturnValue(undefined);
-    await expectCard(callDestructive());
-  });
-
-  it('in a turn a stranger started', async () => {
-    noteTurnOrigin(SESSION, { kind: 'relay-binding' } as never);
     await expectCard(callDestructive());
   });
 

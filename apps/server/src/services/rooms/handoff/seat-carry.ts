@@ -8,7 +8,6 @@
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { markedBoundOf, marksOf } from '../../core/turn-power/turn-levels.js';
-import { chatHeardOutsider } from '../../session/origin/outsider-turns.js';
 import { teammateOf } from '../limits/space-teammates.js';
 import { ceilingForEntries, isEntryAuthorExternal } from '../limits/turn-ceiling.js';
 import { STALE_POST_SHOWN_MAX } from '../messages/room-freshness.js';
@@ -66,7 +65,7 @@ export function carryFrom(sessionId: string, agentPath: string): AsideCarry {
   const marks = marksOf(sessionId, agentPath);
   const ceiling = markedBoundOf(sessionId, agentPath);
   return {
-    externalAuthor: marks.outsider === true || chatHeardOutsider(sessionId),
+    externalAuthor: marks.outsider === true,
     ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
     ...(marks.teammate !== undefined && marks.teammate.length > 0 ? { teammate: true } : {}),
   };

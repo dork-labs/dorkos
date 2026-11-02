@@ -7,11 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
-import {
-  CARRIED_SHELL_ASK_REASON,
-  createHeldTurnHook,
-  HELD_TURN_ASK_REASON,
-} from '../held-turn-hook.js';
+import { createHeldTurnHook, HELD_TURN_ASK_REASON } from '../held-turn-hook.js';
 
 /** A `PreToolUse` input for one call, as Claude Code hands it. */
 function call(
@@ -69,38 +65,6 @@ describe('the held turn hook', () => {
         python
       )
     ).toEqual(ASK);
-  });
-
-  it('asks only about the shell in a turn that carries an outsider’s words on (DOR-3390)', async () => {
-    // A marked level without the stranger bound: our own agent passed the words on. Security's
-    // interim until the shell runs sandboxed: Bash asks, everything else runs at the turn's level.
-    const marked = {
-      asks: 'when-risky',
-      reach: 'workspace',
-      outsider: true,
-    } as unknown as TurnPermissionCeiling;
-    const carried = { asks: 'never', reach: 'everything', outsider: true } as const;
-    const CARRIED_ASK = {
-      hookSpecificOutput: {
-        ...ASK.hookSpecificOutput,
-        permissionDecisionReason: CARRIED_SHELL_ASK_REASON,
-      },
-    };
-    const python = call('Bash', { command: 'python3 -c 1' });
-    for (const turnPermissionCeiling of [marked, carried as unknown as TurnPermissionCeiling]) {
-      // A chat set to Full never asks, marked or not (DOR-3394).
-      const full = { permissionMode: 'bypassPermissions' as const, turnPermissionCeiling };
-      expect(await decide(full, python)).toEqual({});
-      for (const permissionMode of ['default', 'acceptEdits'] as const) {
-        const session = { permissionMode, turnPermissionCeiling };
-        expect(await decide(session, python)).toEqual(CARRIED_ASK);
-        expect(await decide(session, call('Edit', { file_path: '/agents/ana/a.ts' }))).toEqual({});
-        expect(await decide(session, call('Write', { file_path: '/agents/ana/b.ts' }))).toEqual({});
-        expect(await decide(session, call('WebFetch', { url: 'https://x.test' }))).toEqual({});
-        // A plain read inside the agent's folders is not a shell command that needs a person.
-        expect(await decide(session, call('Bash', { command: 'ls' }))).toEqual({});
-      }
-    }
   });
 
   it('leaves a turn that is not held to the folder’s rules', async () => {

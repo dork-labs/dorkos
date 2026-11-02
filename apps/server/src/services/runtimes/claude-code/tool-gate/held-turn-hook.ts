@@ -22,15 +22,9 @@
  */
 import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
-import {
-  carriesOutsiderMark,
-  chosenFullAutonomy,
-  heldForOutsider,
-  type CeilingedMode,
-} from '../turn-permission.js';
+import { chosenFullAutonomy, heldForOutsider, type CeilingedMode } from '../turn-permission.js';
 import { dorkosAutoAllows } from './auto-allow.js';
 import { fileReadStaysInside, isPlainReadCommand } from './held-turn-reads.js';
-import { carriedWriteAsks, runsGit } from './carried-turn-writes.js';
 import type { ToolGateLogger } from '../messaging/interactive-handlers.js';
 
 /**
@@ -95,17 +89,8 @@ export function createHeldTurnHook(
       hookInput.tool_input !== null && typeof hookInput.tool_input === 'object'
         ? (hookInput.tool_input as Record<string, unknown>)
         : {};
-    // A turn that only carries an outsider's words on runs at its own level (DOR-3390). Until
-    // its shell runs sandboxed, Bash asks: `canUseTool` puts it to a person at any level below
-    // Full (`asksForCarriedShell`). So does an edit to what git runs programs from or to who the
-    // agent is (`carried-turn-writes.ts`); other edits still meet the folder's deny rules.
-    if (!heldForOutsider(session)) {
-      if (!carriesOutsiderMark(session)) return {};
-      if (asksForCarriedShell(toolName, input, folders)) return CARRIED_ASK;
-      if (carriedWriteAsks(toolName, input, folders.cwd)) return CARRIED_WRITE_ASK;
-      return {};
-    }
-    // A stranger's turn runs at Default or stricter, a mode that asks.
+    if (!heldForOutsider(session)) return {};
+    // A held turn runs at Default or stricter, a mode that asks.
     if (PASS_THROUGH_TOOLS.has(toolName)) return {};
     if (fileReadStaysInside(toolName, input, folders.cwd, folders.roots)) return {};
     if (
@@ -124,44 +109,11 @@ export function createHeldTurnHook(
   };
 }
 
-/** What the model is told when a shell command in a turn that carries outsider words is asked. */
-export const CARRIED_SHELL_ASK_REASON =
-  'This turn read words DorkOS can’t vouch for, so its shell commands need a person’s OK.';
-
-/** What the model is told when an edit to git's files or the agent's own in such a turn is asked. */
-export const CARRIED_WRITE_ASK_REASON =
-  'This turn read words DorkOS can’t vouch for, so edits to git files or the agent’s own files need a person’s OK.';
-
 /** The hook's answer when a person must decide. */
-const ask = (reason: string) => ({
+const ASK = {
   hookSpecificOutput: {
     hookEventName: 'PreToolUse' as const,
     permissionDecision: 'ask' as const,
-    permissionDecisionReason: reason,
+    permissionDecisionReason: HELD_TURN_ASK_REASON,
   },
-});
-const ASK = ask(HELD_TURN_ASK_REASON);
-const CARRIED_ASK = ask(CARRIED_SHELL_ASK_REASON);
-const CARRIED_WRITE_ASK = ask(CARRIED_WRITE_ASK_REASON);
-
-/**
- * Whether a call in a turn that carries an outsider's words on goes to a person (DOR-3390,
- * Security's interim until the shell is sandboxed): a Bash command, unless it only reads inside
- * the agent's folders and is not `git`, which runs programs a repo's own files name.
- *
- * @param toolName - The tool the model called.
- * @param input - Its arguments.
- * @param folders - The agent's folders, for the reads let through.
- */
-export function asksForCarriedShell(
-  toolName: string,
-  input: Record<string, unknown>,
-  folders: HeldTurnFolders
-): boolean {
-  if (toolName !== 'Bash') return false;
-  return !(
-    typeof input.command === 'string' &&
-    !runsGit(input.command) &&
-    isPlainReadCommand(input.command, folders.cwd, folders.roots)
-  );
-}
+};

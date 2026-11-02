@@ -53,14 +53,13 @@ import { logger } from '../../lib/logger.js';
 import {
   collectUnusedSnapshots,
   placeSnapshots,
-  refreshPathTrustRun,
+  recheckAtItsLevel,
   runFromSnapshot,
 } from './pin/extension-snapshot-placement.js';
 import {
   ApprovalRefusedError,
   approvalFor,
   liveDigestOf,
-  pinStillHolds,
   whyUnpinnable,
 } from './pin/extension-content-pin.js';
 import {
@@ -1356,11 +1355,7 @@ export class ExtensionManager {
    * after the last scan never runs.
    */
   private async recheckPin(record: ExtensionRecord): Promise<void> {
-    const approvals = configManager.get('extensions');
-    // A path-trust copy is rebuilt from a verified copy of its files as they are now.
-    if (await refreshPathTrustRun(this.dorkHome, record, approvals)) {
-      if (record.originProblem !== 'changed') return;
-    } else if (await pinStillHolds(record, approvals)) return;
+    if (await recheckAtItsLevel(this.dorkHome, record)) return;
     logger.warn(`[Extensions] ${record.id} changed since a person approved it; it waits for them`);
     await this.serverLifecycle.shutdown(record.id);
     this.emitChanged();
