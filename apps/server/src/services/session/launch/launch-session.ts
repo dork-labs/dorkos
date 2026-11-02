@@ -28,7 +28,6 @@ import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { configManager } from '../../core/config-manager.js';
 import {
-  chatAgentOf,
   homeOf,
   isInsideRoomsDir,
   readHomeManifest,
@@ -64,6 +63,14 @@ import type { TurnOrigin } from '../origin/turn-origin.js';
 import type { AccountNotAllowedError } from '../../core/usage/account-eligibility.js';
 import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
+import {
+  launchedByOf,
+  launchPlaceRefusal,
+  type LaunchPlace,
+  type LaunchPlaceRefusalCode,
+  type SessionLauncher,
+} from './launch-caller.js';
+import { auditLaunched, auditRefusedLaunch } from './launch-audit.js';
 
 /** What {@link dispatchSessionMessage} needs to start or feed one session. */
 export interface DispatchSessionMessageOpts {
@@ -125,6 +132,13 @@ export interface DispatchSessionMessageOpts {
   permissionCeiling?: TurnPermissionCeiling;
   /** The ceiling is a continuation's hold; see `MessageOpts.continuationHold`. */
   continuationHold?: true;
+  /**
+   * Who chose where this chat runs, when a caller did (DOR-3644): the person,
+   * an agent, or a caller DorkOS cannot name. Anyone but the person is held to
+   * {@link launchPlaceRefusal} before anything is written. Absent for a launch
+   * the server places itself (a schedule, a beat, a carry-over).
+   */
+  launcher?: SessionLauncher;
 }
 
 /**
@@ -184,7 +198,8 @@ export function isAgentLaunchCapFull(): boolean {
  * - `ROOM_SESSION_MOVED` — a room conversation its runtime keeps inside the
  *   room's files, from before room turns moved home (`409`).
  * - `DESK_NOT_OWN` — the turn would stand inside a room's files, or a room's
- *   agent would stand in a folder that is not its own (`409`).
+ *   agent would stand in a folder that is not its own (`409`); or, with
+ *   `launcherRefused`, the caller may not run a chat there (`403`, DOR-3644).
  * - `LAUNCH_CAP_FULL` — a capped launch found {@link agentLaunchMaxLive}
  *   turns already live.
  * - `ACCOUNT_NOT_ALLOWED` — the account this new session would run on may not
@@ -210,6 +225,8 @@ export interface SessionLaunchRefusal {
   agentId?: string;
   /** With `ACCOUNT_NOT_ALLOWED`: the refusal, with its project and account. */
   accountError?: AccountNotAllowedError;
+  /** With `DESK_NOT_OWN`: the caller's own place rule refused it, and which part. */
+  launcherRefused?: LaunchPlaceRefusalCode;
 }
 
 /** The dispatcher's result for a message that went through, or why none did. */
@@ -434,7 +451,14 @@ function followTurnStarts(): void {
 async function launchSessionMessage(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
-  const { sessionId, clientId, meshCore, roomSessionPlace, origin, onSettled, unattended } = opts;
+  const { sessionId, clientId, meshCore, roomSessionPlace, onSettled, unattended } = opts;
+  // An agent's launch is bound with who chose its place (DOR-3644); the
+  // caller's origin is otherwise passed on untouched.
+  const launchedBy = opts.launcher ? launchedByOf(meshCore, opts.launcher) : undefined;
+  const origin: TurnOrigin =
+    opts.origin.kind === 'agent-launch' && launchedBy !== undefined
+      ? { ...opts.origin, launchedBy }
+      : opts.origin;
   followTurnStarts();
   // Minted here when the caller did not, so who sent it can wait for its turn.
   const messageId = opts.messageId ?? randomUUID();
@@ -451,6 +475,17 @@ async function launchSessionMessage(
     disposition,
   } = opts.request;
 
+  // **Whoever chose the folder chose who the turn runs as** (DOR-3644), so a
+  // caller other than the person is held to its own place first, on what the
+  // request names, before a workspace is made or a folder resolved from it.
+  // A workspace is made from `cwd`, else the default folder, so that is asked too.
+  const namedCwd = cwd ?? (workspaceKey ? DEFAULT_CWD : undefined);
+  const named = refusedPlace(opts, {
+    ...(namedCwd !== undefined ? { cwd: namedCwd } : {}),
+    ...(agentPath !== undefined ? { agentPath } : {}),
+  });
+  if (named) return named;
+
   // `agentPath` is durable ownership provenance, not an ordinary cwd hint. A
   // caller may name it only when Mesh currently knows that exact registered
   // agent directory. This keeps the first-write session binding authoritative
@@ -465,6 +500,15 @@ async function launchSessionMessage(
       };
     }
     verifiedAgentPath = agentPath;
+  }
+  // An agent's own chat is recorded as its own, as `session_start` records it;
+  // every turn of a recorded chat then carries that agent (see `forAgent`
+  // below). A chat with no recorded agent is not pinned (R3, still open).
+  if (verifiedAgentPath === undefined && opts.launcher?.kind === 'agent') {
+    const own = opts.launcher.agentPath;
+    if (meshCore?.listWithPaths().some((agent) => agent.projectPath === own)) {
+      verifiedAgentPath = own;
+    }
   }
 
   // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
@@ -571,13 +615,25 @@ async function launchSessionMessage(
     };
   }
 
-  // A chat whose folder belongs to no agent still runs as the agent it was
-  // started for, so its tools act as that agent and never as the person
-  // (DOR-2863). A room's own answer, when there is one, stands.
-  // A bound chat's agent is its record, never a later message's claim: a
-  // per-message `agentPath` names the owner only on the send that binds it.
+  // A chat runs as the agent it was started for, every turn (DOR-2863,
+  // DOR-3644 M1): its tools act as that agent and never as the person, and a
+  // folder that later comes to read as ANOTHER agent's (a forged worktree
+  // pointer, a swapped link) names nobody rather than that agent, because
+  // `resolveAgentHome` refuses a folder that is not the turn's agent's. A
+  // room's own answer, when there is one, stands. A bound chat's agent is its
+  // record, never a later message's claim: a per-message `agentPath` names the
+  // owner only on the send that binds it.
   const recordedAgent = existing?.bound ? await recordedAgentOf(sessionId) : verifiedAgentPath;
-  const forAgent = roomPlace.forAgent ?? chatAgentOf(recordedAgent, effectiveCwd ?? DEFAULT_CWD);
+  const forAgent = roomPlace.forAgent ?? recordedAgent ?? undefined;
+
+  // And again where the turn really stands, and as whom: an existing chat
+  // keeps its own folder and agent whatever the message names, so another
+  // agent's chat is refused here rather than run as that agent.
+  const resolvedPlace = refusedPlace(opts, {
+    cwd: effectiveCwd ?? DEFAULT_CWD,
+    chatAgent: roomPlace.forAgent ?? (existing?.bound ? recordedAgent : undefined),
+  });
+  if (resolvedPlace) return resolvedPlace;
 
   // **A paused agent starts no turn** (spec `audit-trail` PR5). Asked of the
   // same folder and agent the turn itself would carry, the way the hold at the
@@ -649,6 +705,9 @@ async function launchSessionMessage(
   const isNewSession = await holdTurnOriginFor(messageId, () =>
     runtimeRegistry.persistSessionRuntime(sessionId, runtimeType, origin, verifiedAgentPath)
   );
+  if (isNewSession && launchedBy !== undefined) {
+    auditLaunched(sessionId, effectiveCwd ?? DEFAULT_CWD, launchedBy);
+  }
   // A message held to the default (from Wi-Fi) counts as an outsider's (DOR-3037).
   // A continuation's hold does not: it carries no new words (DOR-3203).
   if (ceilingHoldsToDefault(opts.permissionCeiling) && !opts.continuationHold) {
@@ -794,6 +853,24 @@ async function launchSessionMessage(
 
 /** @internal Exported for testing only. */
 export { resolveRuntimeTypeForNewSession as _resolveRuntimeTypeForNewSession };
+
+/**
+ * The refusal for a launch whose caller may not run a chat at this place, or
+ * `null` when it may (or no caller chose the place). Recorded in the audit log.
+ *
+ * @param opts - The launch, for its caller, Mesh and session.
+ * @param place - Where it would run.
+ */
+function refusedPlace(
+  opts: DispatchSessionMessageOpts,
+  place: LaunchPlace
+): SessionLaunchRefusal | null {
+  if (!opts.launcher) return null;
+  const refusal = launchPlaceRefusal(opts.meshCore, opts.launcher, place);
+  if (!refusal) return null;
+  auditRefusedLaunch(opts.sessionId, refusal, launchedByOf(opts.meshCore, opts.launcher), place);
+  return { refused: 'DESK_NOT_OWN', message: refusal.message, launcherRefused: refusal.code };
+}
 
 /**
  * The agent recorded for a chat when it was first bound, or null when it has

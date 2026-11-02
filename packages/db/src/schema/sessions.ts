@@ -31,6 +31,12 @@ export const sessionMetadata = sqliteTable(
     // whether a limited session may carry its work to another account (spec
     // `claude-account-fleet` D9). NULL = bound before this column existed.
     launchOrigin: text('launch_origin'),
+    // Who chose where an agent-launched chat runs (DOR-3644): the launching
+    // agent's Mesh id, its home when Mesh could not name it, or `unidentified`.
+    // Written with `launchOrigin`, first-write-wins, never overwritten. NULL = a
+    // person's chat, a chat the server placed itself, or one bound before this
+    // column existed.
+    launchedBy: text('launched_by'),
     // The episode `resetsAt` (else `since`) of the last usage limit core resumed
     // this session from by itself (spec `claude-account-fleet` D9 "Wait, then
     // resume by itself"): at most one automatic resume per window reset. Kept

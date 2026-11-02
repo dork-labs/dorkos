@@ -121,8 +121,11 @@ export type TurnOrigin =
    * person. So the row seeds no operator stop. Its power is the mode the tool
    * grants: the calling chat's own live level or lower, checked against that
    * ceiling and always written to the row (spec `inherited-start-permission`).
+   *
+   * `launchedBy` names who chose where it runs (DOR-3644): the agent's Mesh id,
+   * its home, or `unidentified`. The binding row keeps it.
    */
-  | { readonly kind: 'agent-launch' }
+  | { readonly kind: 'agent-launch'; readonly launchedBy?: string }
   /**
    * An extension started work in a new chat (spec `flow-multiproject` §7.7):
    * a person's click on an outcome button (`api.startWork`), or the
