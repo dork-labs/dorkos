@@ -157,6 +157,16 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
     finishActionStepUp(heldActionId, { kind: 'not-confirmed' });
   }
 
+  /**
+   * Drop this held action and sign in again. The call that asked goes again
+   * afterwards and is held afresh in the new session; this one never moves there.
+   */
+  function signInAgain() {
+    if (pending) return;
+    void cancelHeldAction(heldActionId);
+    finishActionStepUp(heldActionId, { kind: 'sign-in-again' });
+  }
+
   async function submit() {
     if (pending || waitUntil !== null) return;
     if (stage.kind !== 'password' && stage.kind !== 'change') return;
@@ -229,7 +239,11 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
         ) : view?.passwordUnavailable === 'insecure-connection' ? (
           <EndedBody message="Confirm this on the computer running DorkOS." onClose={cancel} />
         ) : view?.passwordUnavailable === 'extension-risk' ? (
-          <ExtensionRiskBody risks={view.blockedBy ?? []} onClose={cancel} />
+          <ExtensionRiskBody
+            risks={view.blockedBy ?? []}
+            onClose={cancel}
+            onSignInAgain={signInAgain}
+          />
         ) : view?.passwordUnavailable === 'no-password' ? (
           <NoPasswordBody onClose={cancel} />
         ) : (
@@ -366,20 +380,47 @@ function extensionRiskLine(risk: StepUpExtensionRisk): string {
 function ExtensionRiskBody({
   risks,
   onClose,
+  onSignInAgain,
 }: {
   risks: readonly StepUpExtensionRisk[];
   onClose: () => void;
+  onSignInAgain: () => void;
 }) {
   const settings = useSettingsDeepLink();
+  // None loaded now, but one ran since this sign-in (M1 on #3401): sign in again.
+  if (risks.length === 0) {
+    return (
+      <div className="space-y-4">
+        <p role="status" className="text-sm">
+          A mini app has run since you signed in. Sign in again to confirm.
+        </p>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-11 w-full sm:h-9 sm:w-auto"
+            onClick={onClose}
+          >
+            Close
+          </Button>
+          <Button
+            type="button"
+            className="h-11 w-full sm:h-9 sm:flex-1"
+            autoFocus
+            onClick={onSignInAgain}
+          >
+            Sign in again
+          </Button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-4">
       <div role="status" className="space-y-1 text-sm">
-        {risks.length === 0 ? (
-          // None loaded now, but one ran in this page since sign-in (M1 on #3401).
-          <p>A mini app ran here since you signed in. Sign in again to confirm.</p>
-        ) : (
-          risks.map((risk) => <p key={risk.id}>{extensionRiskLine(risk)}</p>)
-        )}
+        {risks.map((risk) => (
+          <p key={risk.id}>{extensionRiskLine(risk)}</p>
+        ))}
       </div>
       <div className="flex flex-col-reverse gap-2 sm:flex-row">
         <Button

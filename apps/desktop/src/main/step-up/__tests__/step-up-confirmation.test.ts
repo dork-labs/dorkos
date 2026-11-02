@@ -158,6 +158,13 @@ describe('StepUpConfirmation', () => {
     expect((drop.init.headers as Record<string, string>).Origin).toBe(ORIGIN);
   });
 
+  it('"Sign in again": drops this held action, and the page signs in and asks afresh', async () => {
+    const { confirmation, calls } = server({ 'DELETE /': [204, null] });
+    confirmation.signInAgain();
+    expect(await confirmation.finish()).toEqual({ kind: 'sign-in-again' });
+    expect(calls.some((call) => call.init.method === 'DELETE')).toBe(true);
+  });
+
   it('closed while the password is being checked: waits for the answer, and never cancels an action that ran', async () => {
     let answer!: () => void;
     const answered = new Promise<void>((resolve) => (answer = resolve));

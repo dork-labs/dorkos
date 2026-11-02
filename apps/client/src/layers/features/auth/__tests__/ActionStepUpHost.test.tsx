@@ -229,6 +229,25 @@ describe('ActionStepUpHost', () => {
     await expect(outcome).resolves.toEqual({ kind: 'not-confirmed' });
   });
 
+  it('after a mini app ran since sign-in, drops this hold and asks to sign in again', async () => {
+    const fetchSpy = heldWith(
+      { ...VIEW, methods: [], passwordUnavailable: 'extension-risk', blockedBy: [] },
+      [200, { ok: true, status: 200, result: {} }]
+    );
+    render(<ActionStepUpHost />);
+    const outcome = ask();
+    expect(
+      await screen.findByText('A mini app has run since you signed in. Sign in again to confirm.')
+    ).toBeTruthy();
+    expect(screen.queryByLabelText('DorkOS password')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
+    await expect(outcome).resolves.toEqual({ kind: 'sign-in-again' });
+    const dropped = fetchSpy.mock.calls.find(
+      ([, init]) => (init as RequestInit)?.method === 'DELETE'
+    );
+    expect(String(dropped?.[0])).toMatch(/\/step-up\/held-1$/);
+  });
+
   it('says how to set a password when the owner has none', async () => {
     heldWith({ ...VIEW, methods: [], passwordUnavailable: 'no-password' }, [
       200,

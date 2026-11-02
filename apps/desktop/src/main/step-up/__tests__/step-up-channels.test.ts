@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   STEP_UP_CONFIRM_CHANNEL,
   STEP_UP_WINDOW_CLOSE_CHANNEL,
+  STEP_UP_WINDOW_SIGN_IN_CHANNEL,
   STEP_UP_WINDOW_SUBMIT_CHANNEL,
   STEP_UP_WINDOW_VIEW_CHANNEL,
 } from '../../../shared/step-up-page';
@@ -26,7 +27,7 @@ describe('step-up channel names in the preloads', () => {
     );
   });
 
-  it('the window’s preload names its three channels exactly', () => {
+  it('the window’s preload names its four channels exactly', () => {
     const source = preload('step-up.ts');
     expect(source).toContain(
       `const STEP_UP_WINDOW_VIEW_CHANNEL = '${STEP_UP_WINDOW_VIEW_CHANNEL}'`
@@ -36,6 +37,9 @@ describe('step-up channel names in the preloads', () => {
     );
     expect(source).toContain(
       `const STEP_UP_WINDOW_CLOSE_CHANNEL = '${STEP_UP_WINDOW_CLOSE_CHANNEL}'`
+    );
+    expect(source).toContain(
+      `const STEP_UP_WINDOW_SIGN_IN_CHANNEL = '${STEP_UP_WINDOW_SIGN_IN_CHANNEL}'`
     );
   });
 

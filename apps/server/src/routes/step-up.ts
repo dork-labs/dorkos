@@ -79,7 +79,7 @@ import {
 const MAX_PASSWORD_LENGTH = 128;
 
 /** Why a browser that may still hold a cleared mini app's code is refused. */
-const CLEARED_RISK_ERROR = 'A mini app ran here since you signed in. Sign in again to confirm.';
+const CLEARED_RISK_ERROR = 'A mini app has run since you signed in. Sign in again to confirm.';
 
 /** What the routes read, injectable for tests. */
 export interface StepUpRouteDeps {

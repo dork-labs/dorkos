@@ -21,6 +21,7 @@ import type {
 const STEP_UP_WINDOW_VIEW_CHANNEL = 'step-up-window:view';
 const STEP_UP_WINDOW_SUBMIT_CHANNEL = 'step-up-window:submit';
 const STEP_UP_WINDOW_CLOSE_CHANNEL = 'step-up-window:close';
+const STEP_UP_WINDOW_SIGN_IN_CHANNEL = 'step-up-window:sign-in-again';
 
 const RESET_PASSWORD_COMMAND = 'dorkos auth reset-password';
 
@@ -54,12 +55,15 @@ function show(view: StepUpWindowView): void {
     return;
   }
   if (view.unavailable === 'extension-risk') {
+    if (view.blockedLines?.length) {
+      end(`${view.blockedLines.join(' ')} Fix it in Settings → Extensions.`);
+      return;
+    }
     // None named: none is loaded now, but one ran since sign-in (M1 on #3401).
-    end(
-      view.blockedLines?.length
-        ? `${view.blockedLines.join(' ')} Fix it in Settings → Extensions.`
-        : 'A mini app ran here since you signed in. Sign in again to confirm.'
-    );
+    end('A mini app has run since you signed in. Sign in again to confirm.');
+    byId('close').className = '';
+    byId('sign-in-again').hidden = false;
+    byId<HTMLButtonElement>('sign-in-again').focus();
     return;
   }
   if (view.unavailable === 'no-password') {
@@ -128,6 +132,9 @@ window.addEventListener('DOMContentLoaded', () => {
   });
   byId('cancel').addEventListener('click', close);
   byId('close').addEventListener('click', close);
+  byId('sign-in-again').addEventListener('click', () => {
+    void ipcRenderer.invoke(STEP_UP_WINDOW_SIGN_IN_CHANNEL);
+  });
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') close();
   });

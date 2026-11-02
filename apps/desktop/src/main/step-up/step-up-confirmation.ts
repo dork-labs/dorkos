@@ -219,6 +219,15 @@ export class StepUpConfirmation {
   }
 
   /**
+   * The person chose to sign in again: the app's page does that, then asks for
+   * the action afresh. This held action is dropped when the window closes and
+   * never moves to the new session (M1 on #3401).
+   */
+  signInAgain(): void {
+    if (!this.confirmed) this.outcome = { kind: 'sign-in-again' };
+  }
+
+  /**
    * How it ended, for the app's page, once the window closed. A window closed
    * before confirming tells the server to drop the held action; one closed
    * while a password was being checked waits for that answer first, since the

@@ -23,7 +23,12 @@ export type ActionStepUpOutcome =
   /** Cancelled, refused or failed: nothing ran. */
   | { kind: 'not-confirmed' }
   /** It expired: ask for the action again, which holds it afresh. */
-  | { kind: 'ask-again' };
+  | { kind: 'ask-again' }
+  /**
+   * A mini app ran since this sign-in: sign in again, then ask for the action
+   * again, which holds it afresh in the new session (M1 on #3401).
+   */
+  | { kind: 'sign-in-again' };
 
 interface Ask {
   heldActionId: string;

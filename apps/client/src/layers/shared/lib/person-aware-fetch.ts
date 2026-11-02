@@ -108,12 +108,18 @@ export function personAwareFetch(base: typeof fetch, origin: string): typeof fet
     if (!replayable || target.pathname === PERSON_SESSION_PATH) return res;
     // "Confirm it's you" for one action: the server held it, and runs it only
     // once the person confirms. An expired one is asked for again, a few times.
+    let afterExpiry = false;
     for (let asks = 0; asks < MAX_STEP_UP_ASKS; asks++) {
       const heldActionId = await heldActionOf(res);
       if (heldActionId === null) break;
-      const outcome = await requestActionStepUp(heldActionId, { afterExpiry: asks > 0 });
+      const outcome = await requestActionStepUp(heldActionId, { afterExpiry });
+      afterExpiry = outcome.kind === 'ask-again';
       if (outcome.kind === 'confirmed') return confirmedResponse(outcome.status, outcome.result);
       if (outcome.kind === 'not-confirmed') return res;
+      // A new sign-in first. The old held action was dropped and never moves to
+      // the new session: the call goes again and the server holds it afresh.
+      if (outcome.kind === 'sign-in-again' && !(await requestPersonStepUp({ dismissible: true })))
+        return res;
       res = await base(...build());
     }
     if (!(await asksForPersonSession(res))) return res;
