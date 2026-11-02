@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(spaces): moderators see how many messages are flagged (DOR-3625)'
+  - 'refactor(spaces): the flagged count draws the shared CountPill, not a copy of it (DOR-3625)'
 ---
 
 ### Added

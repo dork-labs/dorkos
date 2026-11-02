@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import { CountPill, formatPillCount } from '@dork-labs/ui';
 import type { CommunityWireReport } from '@dorkos/shared/community-wire';
 import { request } from '../api.js';
 
 /** How often a moderator's page looks for new flags while it stays open. */
 const REFRESH_MS = 60_000;
-
-/** The largest number the chip spells out, as the app's sidebar counts do. */
-const COUNT_CAP = 99;
 
 const CHANGED_EVENT = 'dorkos:space-reports-changed';
 
@@ -53,22 +51,21 @@ export function useOpenReportCount(enabled: boolean): number {
 
 /** What a count reads as: exact up to the cap, then `99+`. */
 export function openReportLabel(count: number): string {
-  return count > COUNT_CAP ? `${COUNT_CAP}+` : String(count);
+  return formatPillCount(count);
 }
 
-// copy of CountPill: see DOR-3635
 /**
- * A count of flagged messages beside what opens them, in the shape and neutral tone of the app's
- * `CountPill`. This page never imports the app's layers, so it draws the chip itself. The fill
- * comes from the text colour, so it reads on a selected button too. Nothing when there are none.
+ * A count of flagged messages beside what opens them: the shared neutral `CountPill`, the same
+ * chip the app draws. Nothing when there are none.
  */
 export function OpenReportBadge({ count }: { count: number }) {
-  if (count === 0) return null;
   return (
-    <span className="ml-1 inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,currentColor_15%,transparent)] px-1.5 text-center text-[11px] leading-4 font-semibold tabular-nums max-md:h-[22px] max-md:min-w-[22px] max-md:text-[13px]">
-      <span aria-hidden="true">{openReportLabel(count)}</span>
-      <span className="sr-only">{openReportLabel(count)} flagged</span>
-    </span>
+    <CountPill
+      count={count}
+      tone="neutral"
+      label={`${openReportLabel(count)} flagged`}
+      className="ml-1"
+    />
   );
 }
 
