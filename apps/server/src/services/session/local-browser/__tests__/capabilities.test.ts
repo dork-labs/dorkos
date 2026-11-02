@@ -10,6 +10,8 @@ import {
 } from '../../../core/capabilities/mcp-projection.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/capabilities/index.js';
 import { createLocalBrowserDomain } from '../capabilities.js';
+import { BrowserHandover } from '../handover.js';
+import type { SignInWindow } from '../sign-in-window.js';
 import { LocalBrowserError, type LocalBrowserService } from '../service.js';
 
 function setup() {
@@ -53,11 +55,22 @@ function setup() {
         { id: 'secret', url: 'https://other-tab.test/private', title: 'Private tab' },
       ],
     })),
+    handover: {
+      requireAgentMayUse: vi.fn(async (_sessionId: string) => undefined),
+      ask: vi.fn(async () => ({ handoffId: 'h1', site: 'fixture.test', next: 'Wait.' })),
+    },
   };
   const domain = createLocalBrowserDomain(service as unknown as LocalBrowserService);
   const deps = {} as CapabilityDeps;
   const context = (sessionId?: string) => ({ sessionId }) as CapabilityHandlerContext;
   return { service, domain, deps, context };
+}
+
+function inputFor(id: string): unknown {
+  if (id === 'local_browser.act')
+    return { action: { kind: 'click', revision: 3, role: 'button', name: 'Save' } };
+  if (id === 'local_browser.ask_person') return { reason: 'wall' };
+  return {};
 }
 
 describe('local browser scoped tool projection', () => {
@@ -68,6 +81,7 @@ describe('local browser scoped tool projection', () => {
       'local_browser.observe',
       'local_browser.screenshot',
       'local_browser.act',
+      'local_browser.ask_person',
     ]);
     for (const item of domain.capabilities)
       expect(item.surfaces.mcp?.servers).toEqual(['in-session']);
@@ -83,7 +97,7 @@ describe('local browser scoped tool projection', () => {
       id: tool.id,
       input: z.object(capabilityInputShape(tool)),
     }));
-    expect(schemas).toHaveLength(4);
+    expect(schemas).toHaveLength(5);
     expect(capabilitiesForMcpServer(registry, 'external')).toEqual([]);
     const projected = schemas.find((tool) => tool.id === 'local_browser.act')!.input;
     const valid = [
@@ -129,10 +143,7 @@ describe('local browser scoped tool projection', () => {
   it('refuses session-less and other-chat access before reading or acting', async () => {
     const { domain, service, deps, context } = setup();
     for (const item of domain.capabilities) {
-      const input =
-        item.id === 'local_browser.act'
-          ? { action: { kind: 'click', revision: 3, role: 'button', name: 'Save' } }
-          : {};
+      const input = inputFor(item.id);
       expect(() => item.invoke(deps, input, context())).toThrow();
       expect(() => item.invoke(deps, input, context('chat-two'))).toThrow();
     }
@@ -173,19 +184,93 @@ describe('local browser scoped tool projection', () => {
     );
     for (const capability of domain.capabilities) {
       await expect(
-        capability.invoke(
-          deps,
-          capability.id === 'local_browser.act'
-            ? { action: { kind: 'click', revision: 3, role: 'button', name: 'Save' } }
-            : {},
-          context('chat-one')
-        )
+        capability.invoke(deps, inputFor(capability.id), context('chat-one'))
       ).rejects.toThrow();
     }
     expect(service.observe).not.toHaveBeenCalled();
     expect(service.action).not.toHaveBeenCalled();
     expect(service.screenshot).not.toHaveBeenCalled();
     expect(service.agentState).not.toHaveBeenCalled();
+    expect(service.handover.ask).not.toHaveBeenCalled();
+  });
+  it('refuses every read and action while a person has the browser', async () => {
+    const { domain, deps, context, service } = setup();
+    service.handover.requireAgentMayUse.mockRejectedValue(
+      new LocalBrowserError('handed_to_person', 'A person has the browser.')
+    );
+    for (const capability of domain.capabilities.filter(
+      (item) => item.id !== 'local_browser.ask_person'
+    ))
+      await expect(
+        capability.invoke(deps, inputFor(capability.id), context('chat-one'))
+      ).rejects.toMatchObject({ payload: { code: 'handed_to_person' } });
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
+    expect(service.action).not.toHaveBeenCalled();
+    expect(service.agentState).not.toHaveBeenCalled();
+  });
+  it('hands over for the shared chat only, and answers again while the person has it', async () => {
+    const { domain, deps, context, service } = setup();
+    service.handover.requireAgentMayUse.mockRejectedValue(
+      new LocalBrowserError('handed_to_person', 'A person has the browser.')
+    );
+    const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;
+    await expect(ask.invoke(deps, { reason: 'password' }, context('chat-one'))).resolves.toEqual({
+      handoffId: 'h1',
+      site: 'fixture.test',
+      next: 'Wait.',
+    });
+    expect(service.handover.ask).toHaveBeenCalledExactlyOnceWith('chat-one', 'password', null);
+    expect(() => ask.invoke(deps, { reason: 'wall' }, context('chat-two'))).toThrow();
+  });
+  it('names the asking agent from its verified identity, never from the call', async () => {
+    const { domain, deps, service } = setup();
+    const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;
+    const identified = {
+      sessionId: 'chat-one',
+      identity: { agentPath: '/agents/ana', displayName: 'Ana', createdAt: '2026-11-02T00:00:00Z' },
+    } as unknown as CapabilityHandlerContext;
+    await ask.invoke(deps, { reason: 'password' }, identified);
+    expect(service.handover.ask).toHaveBeenCalledExactlyOnceWith('chat-one', 'password', {
+      name: 'Ana',
+      folder: '/agents/ana',
+    });
+    expect(ask.input.safeParse({ reason: 'wall', agentName: 'Your bank' }).success).toBe(false);
+  });
+  it('after Stop task, the chat can neither read nor see the page the person keeps using', async () => {
+    const { domain, deps, context, service } = setup();
+    const browser = {
+      state: async () => service.agentState(),
+      currentProfileId: () => null,
+      open: vi.fn(async () => service.agentState()),
+      selectTab: vi.fn(async () => service.agentState()),
+      pause: vi.fn(async () => service.agentState()),
+      resume: vi.fn(async () => service.agentState()),
+      disconnect: vi.fn(async () => service.agentState()),
+    };
+    const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
+    const handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
+    handover.useOutsideTurnCheck(async () => false);
+    (service as { handover: unknown }).handover = handover;
+    const tool = (id: string) => domain.capabilities.find((item) => item.id === id)!;
+    const { handoffId } = (await tool('local_browser.ask_person').invoke(
+      deps,
+      { reason: 'wall' },
+      context('chat-one')
+    )) as { handoffId: string };
+    await handover.stop(handoffId);
+    for (const id of ['local_browser.observe', 'local_browser.screenshot', 'local_browser.state'])
+      await expect(tool(id).invoke(deps, {}, context('chat-one'))).rejects.toMatchObject({
+        payload: { code: 'task_stopped' },
+      });
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
+  });
+  it('lets no agent name the site it hands over', () => {
+    const { domain } = setup();
+    const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;
+    expect(ask.input.safeParse({ reason: 'wall', site: 'bank.example' }).success).toBe(false);
+    expect(ask.input.safeParse({ reason: 'wall' }).success).toBe(true);
   });
   it('holds back the answer when access ended while the call ran', async () => {
     const { domain, deps, context, service } = setup();
