@@ -110,6 +110,49 @@ jobs:
           # trust on localhost. The URL names no database: the journey makes its own.
           echo "DORKOS_TWO_DESKTOP_PG_URL=postgres://$(whoami)@127.0.0.1:5432" >> "$GITHUB_ENV"
 
+      # The same three commands as run.ts's build(), run here so the app can be
+      # checked before the journey starts. The test build turns the
+      # enableNodeCliInspectArguments fuse back on: the shipped app turns it off
+      # (DOR-3053), and Playwright's electron.launch needs --inspect, so with it
+      # off step 5 failed "Process failed to launch!" (run 41521611799). This
+      # build is never shipped.
+      - name: Build and package the test app
+        id: app
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          pnpm exec turbo run build --filter=@dorkos/desktop... --filter=@dorkos/community...
+          pnpm --filter @dorkos/desktop run pack -- -c.electronFuses.enableNodeCliInspectArguments=true
+          pnpm rebuild better-sqlite3 node-pty
+
+      # Proves the binary exists and is allowed to run (signature, Gatekeeper)
+      # without opening the app: runAsNode is on, so this runs Node's --version
+      # in the app binary and exits. codesign -dv only reads the signature.
+      - name: Check the packaged app runs
+        id: check
+        run: |
+          app=apps/desktop/release/mac-arm64/DorkOS.app
+          exe="$app/Contents/MacOS/DorkOS"
+          test -x "$exe"
+          # Read the fuses first, from the file, without running the app.
+          fuse() { (cd apps/desktop && node -e 'const f = require("@electron/fuses"); f.getCurrentFuseWire(process.argv[1]).then((w) => console.log(w[f.FuseV1Options[process.argv[2]]] === 0x31 ? "on" : "off"))' "$PWD/release/mac-arm64/DorkOS.app" "$1"); }
+          # The override must have taken: Playwright cannot launch the app without it.
+          inspect=$(fuse EnableNodeCliInspectArguments)
+          # Only with runAsNode on does ELECTRON_RUN_AS_NODE keep the GUI closed below.
+          run_as_node=$(fuse RunAsNode)
+          test "$run_as_node" = on || { echo "runAsNode is off: --version would open the app"; exit 1; }
+          version=$(ELECTRON_RUN_AS_NODE=1 "$exe" --version)
+          signature=$(codesign -dv "$app" 2>&1 | grep -E '^(Identifier|Format|Signature|TeamIdentifier)=' || true)
+          {
+            echo ""
+            echo "Packaged app: \`$exe\` runs; Node \`$version\`; inspect fuse \`$inspect\`"
+            echo ""
+            echo '```'
+            echo "$signature"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$inspect" = on
+
       - name: Make a throwaway home
         id: home
         run: |
@@ -131,8 +174,10 @@ jobs:
           DORKOS_TWO_DESKTOP_HOME_ROOT: ${{ runner.temp }}/dork-home/people
           DORKOS_TWO_DESKTOP_OUT: ${{ runner.temp }}/two-desktop-out
           # The same heap ceiling desktop-release.yml sets for this build.
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm --filter @dorkos/e2e community-two-desktop -- --build 2>&1 | tee "$RUNNER_TEMP/two-desktop-out/journey-output.log"
+          # Playwright's launch log and the apps' own output, for a launch that
+          # fails again. The jobs hold no secret; see the PR for what the apps print.
+          DEBUG: pw:browser*
+        run: pnpm --filter @dorkos/e2e community-two-desktop 2>&1 | tee "$RUNNER_TEMP/two-desktop-out/journey-output.log"
 
       - name: Say which step failed
         if: always()
@@ -141,6 +186,8 @@ jobs:
           DEPS: ${{ steps.deps.outcome }}
           POSTGRES: ${{ steps.postgres.outcome }}
           HOME_DIR: ${{ steps.home.outcome }}
+          APP: ${{ steps.app.outcome }}
+          CHECK: ${{ steps.check.outcome }}
           JOURNEY: ${{ steps.journey.outcome }}
         run: |
           {
@@ -150,6 +197,8 @@ jobs:
             echo "| Install | ${INSTALL:-not run} |"
             echo "| Build the packages the journey imports | ${DEPS:-not run} |"
             echo "| Start Postgres | ${POSTGRES:-not run} |"
+            echo "| Build and package the test app | ${APP:-not run} |"
+            echo "| Check the packaged app runs | ${CHECK:-not run} |"
             echo "| Make a throwaway home | ${HOME_DIR:-not run} |"
             echo "| Run the journey | ${JOURNEY:-not run} |"
           } >> "$GITHUB_STEP_SUMMARY"
