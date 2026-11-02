@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, XCircle, Puzzle, ChevronDown, ShieldCheck } from 'lucide-react';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import type { StepUpExtensionRisk } from '@dorkos/shared/step-up';
 import {
   extensionRestartingCopy,
   extensionServerErrorCopy,
@@ -21,6 +22,7 @@ import {
 import { PanelTabPlacementSection } from './PanelTabPlacementEditor';
 import { RoomAccessEditor } from './RoomAccessEditor';
 import { ForwardAgentsEditor } from './ForwardAgentsEditor';
+import { StepUpRiskRow } from './StepUpRiskRow';
 
 interface ExtensionCardProps {
   /** The extension record from the server. */
@@ -37,6 +39,8 @@ interface ExtensionCardProps {
   onReload: () => void;
   /** Whether a reload is in progress. */
   isReloading: boolean;
+  /** Why it keeps "Confirm it's you" off, when it does (DOR-3234). */
+  stepUpRisk?: StepUpExtensionRisk;
 }
 
 const TERMINAL_STATUSES = new Set(['disabled', 'discovered', 'incompatible', 'invalid']);
@@ -53,6 +57,7 @@ export function ExtensionCard({
   isSettingApproval,
   onReload,
   isReloading,
+  stepUpRisk,
 }: ExtensionCardProps) {
   const { manifest, status, scope, error, serverError, origin, approvedToRun } = extension;
   const [errorExpanded, setErrorExpanded] = useState(false);
@@ -240,6 +245,17 @@ export function ExtensionCard({
             <p className="text-status-warning-fg text-sm">
               Couldn’t rebuild its server part: {serverError.message}. The last version still runs.
             </p>
+          )}
+
+          {/* Why this keeps "Confirm it's you" off, and the fix (DOR-3234). */}
+          {stepUpRisk && (
+            <StepUpRiskRow
+              risk={stepUpRisk}
+              id={extension.id}
+              name={manifest.name}
+              onTurnOff={() => onToggle(extension.id, false)}
+              isToggling={isToggling}
+            />
           )}
 
           {/* Permission to run code inside DorkOS (DOR-516). Core extensions ship
