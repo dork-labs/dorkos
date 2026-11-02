@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   HANDOFF_VARIABLE,
   OPT_IN_VARIABLE,
+  POSTGRES_URL_VARIABLE,
   readHandoff,
   readRunConfig,
   type HandoffFs,
@@ -52,6 +53,7 @@ describe('two-Desktop acceptance config', () => {
     const config = readRunConfig({ [OPT_IN_VARIABLE]: '1' }, [], mac);
     expect(config.build).toBe(false);
     expect(config.postgresContainer).toBeNull();
+    expect(config.postgresUrl).toBeNull();
     expect(config.executablePath).toMatch(
       /release\/mac-arm64\/DorkOS\.app\/Contents\/MacOS\/DorkOS$/
     );
@@ -210,4 +212,44 @@ describe('two-Desktop remote mode (the live gate handoff)', () => {
       }
     }
   );
+});
+
+describe('two-Desktop Postgres on this machine, without Docker (GitHub macOS runners)', () => {
+  const run = (env: Record<string, string>) =>
+    readRunConfig({ [OPT_IN_VARIABLE]: '1', ...env }, [], mac);
+
+  it('takes a superuser URL on this machine, and Docker stays the default', () => {
+    const url = 'postgres://postgres:pw@127.0.0.1:5432';
+    expect(run({ [POSTGRES_URL_VARIABLE]: url }).postgresUrl).toBe(url);
+    expect(run({ [POSTGRES_URL_VARIABLE]: 'postgresql://runner@localhost/' }).postgresUrl).toBe(
+      'postgresql://runner@localhost/'
+    );
+    expect(run({}).postgresUrl).toBeNull();
+    expect(run({ [POSTGRES_URL_VARIABLE]: '  ' }).postgresUrl).toBeNull();
+  });
+
+  it('refuses a Postgres anywhere but this machine, since it drops databases there', () => {
+    expect(() =>
+      run({ [POSTGRES_URL_VARIABLE]: 'postgres://postgres:pw@db.example.test' })
+    ).toThrow(/must be on this machine/);
+  });
+
+  it('refuses a URL that names a database, a non-Postgres URL, no user, or junk', () => {
+    for (const [value, why] of [
+      ['postgres://postgres:pw@127.0.0.1:5432/prod', /name no database/],
+      ['mysql://root@127.0.0.1', /must start with postgres/],
+      ['postgres://127.0.0.1', /names no user/],
+      ['not a url', /not a URL/],
+    ] as const)
+      expect(() => run({ [POSTGRES_URL_VARIABLE]: value })).toThrow(why);
+  });
+
+  it('refuses a host URL and a borrowed container at once', () => {
+    expect(() =>
+      run({
+        [POSTGRES_URL_VARIABLE]: 'postgres://postgres@127.0.0.1',
+        DORKOS_TWO_DESKTOP_PG_CONTAINER: 'pg',
+      })
+    ).toThrow(/both set/);
+  });
 });

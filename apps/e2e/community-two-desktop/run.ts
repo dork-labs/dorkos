@@ -146,7 +146,12 @@ async function main() {
     }).trim();
     const { target } = await prepareTarget(
       config.remote,
-      () => (infra = new Infrastructure(runRoot, config.postgresContainer, log))
+      () =>
+        (infra = new Infrastructure(
+          runRoot,
+          { container: config.postgresContainer, url: config.postgresUrl },
+          log
+        ))
     );
     browser = await chromium.launch({
       ...(config.browserChannel ? { channel: config.browserChannel } : {}),

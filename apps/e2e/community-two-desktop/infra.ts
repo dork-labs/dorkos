@@ -17,6 +17,9 @@ import { REPO_ROOT } from './config.js';
  * reclaims it if this one is killed. With `DORKOS_TWO_DESKTOP_PG_CONTAINER` it
  * borrows an existing container instead: it starts it if it was stopped (and
  * stops it again afterwards), and creates and drops only its own databases.
+ * With `DORKOS_TWO_DESKTOP_PG_URL` it uses a Postgres already running on this
+ * machine, with no Docker at all (a GitHub macOS runner has none): it talks to it
+ * with the host's `psql`, and creates and drops only its own databases there.
  *
  * @module community-two-desktop/infra
  */
@@ -35,8 +38,9 @@ export interface CommunityServer {
   child: ChildProcess;
 }
 
-/** Postgres, however it was obtained, and how to reach it from the host. */
-interface Postgres {
+/** Postgres in a container, however it was obtained, and how to reach it from the host. */
+interface ContainerPostgres {
+  kind: 'container';
   container: string;
   port: number;
   password: string;
@@ -44,6 +48,36 @@ interface Postgres {
   lifecycle: 'created' | 'started' | 'borrowed-running';
   volume: string | null;
 }
+
+/** A Postgres already running on this machine, reached by a superuser URL. */
+interface HostPostgres {
+  kind: 'host';
+  /** The superuser URL with no database named. */
+  url: string;
+}
+
+type Postgres = ContainerPostgres | HostPostgres;
+
+/** Where Postgres comes from: a container to borrow, a host URL, or neither (a throwaway container). */
+export interface PostgresSource {
+  container: string | null;
+  url: string | null;
+}
+
+/** The host URL pointed at one database. */
+function hostDatabaseUrl(url: string, database: string): string {
+  const next = new URL(url);
+  next.pathname = `/${database}`;
+  return next.toString();
+}
+
+/** Run the host's psql against one database; bounded like every docker call. */
+const hostPsql = (url: string, database: string, sql: string) =>
+  execFileSync('psql', [hostDatabaseUrl(url, database), '-v', 'ON_ERROR_STOP=1', '-tAqc', sql], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 60_000,
+  }).trim();
 
 /** The throwaway Postgres image. */
 const POSTGRES_IMAGE = 'postgres:17-alpine';
@@ -98,22 +132,30 @@ export class Infrastructure {
    * Prepare, without starting anything yet.
    *
    * @param runRoot - The run's evidence folder; server logs are written here.
-   * @param borrowContainer - An existing Postgres container to borrow, or `null` for a throwaway one.
+   * @param source - A container to borrow, a host Postgres URL, or neither for a throwaway container.
    * @param log - Where progress lines go.
    */
   constructor(
     private readonly runRoot: string,
-    private readonly borrowContainer: string | null,
+    private readonly source: PostgresSource,
     private readonly log: (line: string) => void
   ) {}
 
-  /** Bring Postgres up, borrowed or throwaway. */
+  /** Bring Postgres up: on this machine, borrowed, or throwaway. */
   async startPostgres(): Promise<void> {
-    if (this.borrowContainer) {
-      const container = this.borrowContainer;
+    if (this.source.url) {
+      const url = this.source.url;
+      this.postgres = { kind: 'host', url };
+      await waitFor('Postgres', () => hostPsql(url, 'postgres', 'SELECT 1') === '1', 60);
+      this.log('postgres: using the one on this machine (no Docker)');
+      return;
+    }
+    if (this.source.container) {
+      const container = this.source.container;
       const running = docker(['inspect', '-f', '{{.State.Running}}', container]) === 'true';
       if (!running) docker(['start', container]);
       this.postgres = {
+        kind: 'container',
         container,
         port: Number(docker(['port', container, '5432/tcp']).split('\n')[0]!.replace(/.*:/, '')),
         password: docker([
@@ -145,7 +187,15 @@ export class Infrastructure {
       // so the bounded `docker run` below only ever starts a local image.
       docker(['pull', POSTGRES_IMAGE], 600_000);
       docker(['volume', 'create', ...labels, volume]);
-      this.postgres = { container, port: 0, password, lifecycle: 'created', volume };
+      const created: ContainerPostgres = {
+        kind: 'container',
+        container,
+        port: 0,
+        password,
+        lifecycle: 'created',
+        volume,
+      };
+      this.postgres = created;
       docker([
         'run',
         '-d',
@@ -160,10 +210,10 @@ export class Infrastructure {
         '127.0.0.1::5432',
         POSTGRES_IMAGE,
       ]);
-      this.postgres.port = Number(docker(['port', container, '5432/tcp']).replace(/.*:/, ''));
+      created.port = Number(docker(['port', container, '5432/tcp']).replace(/.*:/, ''));
       this.log(`postgres: created throwaway ${container}`);
     }
-    const { container } = this.postgres;
+    const { container } = this.postgres as ContainerPostgres;
     await waitFor(
       'Postgres',
       () => {
@@ -175,13 +225,14 @@ export class Infrastructure {
   }
 
   /**
-   * Run one SQL statement as the Postgres superuser inside the container.
+   * Run one SQL statement as the Postgres superuser, in the container or on this machine.
    *
    * @param database - The database to connect to.
    * @param sql - The statement; callers pass only values this run generated.
    */
   sql(database: string, sql: string): string {
     const pg = this.postgres!;
+    if (pg.kind === 'host') return hostPsql(pg.url, database, sql);
     return docker([
       'exec',
       '-e',
@@ -230,7 +281,10 @@ export class Infrastructure {
         HOME: process.env.HOME,
         TMPDIR: process.env.TMPDIR,
         LANG: 'en_US.UTF-8',
-        COMMUNITY_DATABASE_URL: `postgres://postgres:${pg.password}@127.0.0.1:${pg.port}/${database}`,
+        COMMUNITY_DATABASE_URL:
+          pg.kind === 'host'
+            ? hostDatabaseUrl(pg.url, database)
+            : `postgres://postgres:${pg.password}@127.0.0.1:${pg.port}/${database}`,
         COMMUNITY_AUTH_SECRET: randomBytes(24).toString('hex'),
         COMMUNITY_INVITE_SECRET: randomBytes(24).toString('hex'),
         COMMUNITY_BOOTSTRAP_SECRET: bootstrapSecret,
@@ -274,7 +328,7 @@ export class Infrastructure {
     }
     const pg = this.postgres;
     if (!pg) return done;
-    if (pg.lifecycle === 'created') {
+    if (pg.kind === 'container' && pg.lifecycle === 'created') {
       docker(['rm', '-fv', pg.container]);
       if (pg.volume) docker(['volume', 'rm', '-f', pg.volume]);
       done.push(`removed throwaway ${pg.container} and its volume`);
@@ -284,7 +338,7 @@ export class Infrastructure {
       this.sql('postgres', `DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
       done.push(`dropped database ${database}`);
     }
-    if (pg.lifecycle === 'started') {
+    if (pg.kind === 'container' && pg.lifecycle === 'started') {
       docker(['stop', pg.container]);
       done.push(`stopped ${pg.container} (it was stopped before the run)`);
     }

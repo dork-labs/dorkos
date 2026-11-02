@@ -1,0 +1,129 @@
+name: community-two-desktop
+
+# Runs the two-desktop Community member journey (apps/e2e/community-two-desktop)
+# on a GitHub macOS runner, at a release tag, on demand. Never on a person's Mac:
+# the journey builds and launches two packaged DorkOS apps, and a packaged app on
+# a developer machine can raise Keychain prompts. DOR-2974 step 22 is read from
+# the receipt this uploads.
+#
+# GitHub's macOS arm64 runners have no Docker, and the journey's default
+# Postgres is a container. So the runner installs Homebrew Postgres and the
+# journey uses it through DORKOS_TWO_DESKTOP_PG_URL (Docker stays the default
+# everywhere else).
+#
+# The app under test is the tag. The journey script is this workflow's own
+# commit: a tag released before the Homebrew switch has no way to run here, so
+# the harness folder is copied over the tag's. The receipt's `commit` is the
+# tag's; the job summary names both.
+#
+# No secrets. Every agent reply comes from DorkOS's scripted test runtime, so a
+# run calls no model and costs nothing but runner minutes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to test, e.g. v0.129.0'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: community-two-desktop-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  journey:
+    runs-on: macos-15
+    # The build is ~20 minutes on this runner (desktop-release.yml's measured
+    # p95 is 18), and the journey ~7 more, plus Postgres and the install.
+    timeout-minutes: 60
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Require a release tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: '[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Not a release tag: $TAG"; exit 1; }'
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Use this commit's journey script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .harness
+          sparse-checkout: apps/e2e/community-two-desktop
+          persist-credentials: false
+
+      - name: Copy the journey script over the tag's
+        env:
+          TAG: ${{ inputs.tag }}
+          HARNESS_SHA: ${{ github.sha }}
+        run: |
+          rm -rf apps/e2e/community-two-desktop
+          cp -R .harness/apps/e2e/community-two-desktop apps/e2e/community-two-desktop
+          rm -rf .harness
+          {
+            echo "App under test: \`$TAG\` ($(git rev-parse HEAD))"
+            echo "Journey script: \`$HARNESS_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Start Postgres on the runner (no Docker on macOS)
+        run: |
+          brew install postgresql@17
+          echo "$(brew --prefix postgresql@17)/bin" >> "$GITHUB_PATH"
+          brew services start postgresql@17
+          for _ in $(seq 1 60); do
+            "$(brew --prefix postgresql@17)/bin/pg_isready" -h 127.0.0.1 && break
+            sleep 1
+          done
+          "$(brew --prefix postgresql@17)/bin/pg_isready" -h 127.0.0.1
+          # Homebrew's cluster makes the runner's own user its superuser, with
+          # trust on localhost. The URL names no database: the journey makes its own.
+          echo "DORKOS_TWO_DESKTOP_PG_URL=postgres://$(whoami)@127.0.0.1:5432" >> "$GITHUB_ENV"
+
+      - name: Make a throwaway home
+        run: |
+          mkdir -p "$RUNNER_TEMP/dork-home/home" "$RUNNER_TEMP/dork-home/claude" "$RUNNER_TEMP/dork-home/people" "$RUNNER_TEMP/two-desktop-out"
+          chmod 700 "$RUNNER_TEMP/dork-home"
+
+      - name: Run the journey
+        env:
+          DORKOS_TWO_DESKTOP_ACCEPTANCE: '1'
+          DORKOS_TEST_RUNTIME: 'true'
+          DORK_HOME: ${{ runner.temp }}/dork-home
+          HOME: ${{ runner.temp }}/dork-home/home
+          CLAUDE_CONFIG_DIR: ${{ runner.temp }}/dork-home/claude
+          DORKOS_TWO_DESKTOP_HOME_ROOT: ${{ runner.temp }}/dork-home/people
+          DORKOS_TWO_DESKTOP_OUT: ${{ runner.temp }}/two-desktop-out
+          # The same heap ceiling desktop-release.yml sets for this build.
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm --filter @dorkos/e2e community-two-desktop -- --build
+
+      # The receipt and the step log only. `private/` holds the Community
+      # servers' logs and uploads, and screenshots can show test accounts.
+      - name: Upload the receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: community-two-desktop-${{ inputs.tag }}
+          path: |
+            ${{ runner.temp }}/two-desktop-out/run-*/receipt.json
+            ${{ runner.temp }}/two-desktop-out/run-*/steps.log
+          if-no-files-found: warn
+          retention-days: 14

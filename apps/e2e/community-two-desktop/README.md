@@ -18,7 +18,8 @@ mode, and accounts for every step.
 - A Mac with Apple Silicon. The script launches the unsigned
   `apps/desktop/release/mac-arm64/DorkOS.app`. On another machine, point
   `DORKOS_TWO_DESKTOP_APP` at a packaged DorkOS executable.
-- Docker, running.
+- Docker, running. Or a Postgres already running on this machine, named with
+  `DORKOS_TWO_DESKTOP_PG_URL` (see below).
 - Google Chrome, for the people's browsers. Set
   `DORKOS_TWO_DESKTOP_BROWSER_CHANNEL=` (empty) to use Playwright's own
   Chromium instead.
@@ -39,17 +40,29 @@ DORKOS_TWO_DESKTOP_ACCEPTANCE=1 caffeinate -i \
 (`pnpm rebuild better-sqlite3 node-pty`). Leave it off to reuse a build you
 already have. A full run takes about seven minutes after the build.
 
-| Variable                               | Default                                 | What it does                                                                                                                                               |
-| -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DORKOS_TWO_DESKTOP_ACCEPTANCE`        | unset                                   | Must be `1`, or the script refuses to run                                                                                                                  |
-| `DORKOS_TWO_DESKTOP_BUILD`             | unset                                   | `1` works the same as `--build`                                                                                                                            |
-| `DORKOS_TWO_DESKTOP_APP`               | the macOS arm64 build in `apps/desktop` | Which packaged executable to launch                                                                                                                        |
-| `DORKOS_TWO_DESKTOP_PG_CONTAINER`      | unset: a throwaway Postgres container   | Use an existing Postgres container instead. The script creates and drops only its own databases there, and stops the container again if it had to start it |
-| `DORKOS_TWO_DESKTOP_OUT`               | `.temp/community-two-desktop` (repo)    | Where each run's evidence folder goes                                                                                                                      |
-| `DORKOS_TWO_DESKTOP_HOME_ROOT`         | the system temp folder                  | Where the two people's temporary homes are created (keep it outside the repo)                                                                              |
-| `DORKOS_TWO_DESKTOP_KEEP_HOMES`        | unset                                   | `1` keeps the temporary homes, to look into afterwards                                                                                                     |
-| `DORKOS_TWO_DESKTOP_BROWSER_CHANNEL`   | `chrome`                                | Playwright browser channel. Empty means bundled Chromium                                                                                                   |
-| `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF` | unset                                   | The absolute path of a held live community's `handoff.json`. Runs in remote mode (see below)                                                               |
+| Variable                               | Default                                 | What it does                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DORKOS_TWO_DESKTOP_ACCEPTANCE`        | unset                                   | Must be `1`, or the script refuses to run                                                                                                                                                                                                                                                                                   |
+| `DORKOS_TWO_DESKTOP_BUILD`             | unset                                   | `1` works the same as `--build`                                                                                                                                                                                                                                                                                             |
+| `DORKOS_TWO_DESKTOP_APP`               | the macOS arm64 build in `apps/desktop` | Which packaged executable to launch                                                                                                                                                                                                                                                                                         |
+| `DORKOS_TWO_DESKTOP_PG_CONTAINER`      | unset: a throwaway Postgres container   | Use an existing Postgres container instead. The script creates and drops only its own databases there, and stops the container again if it had to start it                                                                                                                                                                  |
+| `DORKOS_TWO_DESKTOP_PG_URL`            | unset: Docker                           | Use a Postgres already running on this machine, with no Docker: a superuser URL such as `postgres://me@127.0.0.1:5432`, naming no database. The script uses the host's `psql`, and creates and drops only its own databases. It refuses any other machine, and refuses this together with `DORKOS_TWO_DESKTOP_PG_CONTAINER` |
+| `DORKOS_TWO_DESKTOP_OUT`               | `.temp/community-two-desktop` (repo)    | Where each run's evidence folder goes                                                                                                                                                                                                                                                                                       |
+| `DORKOS_TWO_DESKTOP_HOME_ROOT`         | the system temp folder                  | Where the two people's temporary homes are created (keep it outside the repo)                                                                                                                                                                                                                                               |
+| `DORKOS_TWO_DESKTOP_KEEP_HOMES`        | unset                                   | `1` keeps the temporary homes, to look into afterwards                                                                                                                                                                                                                                                                      |
+| `DORKOS_TWO_DESKTOP_BROWSER_CHANNEL`   | `chrome`                                | Playwright browser channel. Empty means bundled Chromium                                                                                                                                                                                                                                                                    |
+| `DORKOS_TWO_DESKTOP_COMMUNITY_HANDOFF` | unset                                   | The absolute path of a held live community's `handoff.json`. Runs in remote mode (see below)                                                                                                                                                                                                                                |
+
+## On a GitHub macOS runner
+
+`.github/workflows/community-two-desktop.yml` runs the journey on demand, at a
+release tag, on GitHub's `macos-15` runner, so a packaged app never has to be
+launched on a person's Mac. Start it from the Actions tab, or with
+`gh workflow run community-two-desktop.yml -f tag=v0.129.0`. Those runners
+have no Docker, so it installs Homebrew Postgres and sets
+`DORKOS_TWO_DESKTOP_PG_URL`. It builds the tag, but runs this folder from the
+workflow's own commit, so an older tag can still be tested. It uses no
+secrets, and uploads only `receipt.json` and `steps.log`.
 
 ## What it proves
 
