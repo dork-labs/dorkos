@@ -15,7 +15,9 @@ const SHA = 'head1';
 const REF = 'fix/thing';
 const EARLY = '2026-11-02T10:00:00Z';
 const LATE = '2026-11-02T11:00:00Z';
-const event = { pull_request: { number: 1, head: { sha: SHA } } };
+const event = {
+  pull_request: { number: 1, head: { sha: SHA }, base: { ref: 'main', sha: 'base' } },
+};
 const group = {
   merge_group: { base_ref: 'refs/heads/main', base_sha: 'base', head_sha: 'group1' },
 };
@@ -40,6 +42,7 @@ function fakeGitHub({
   timeline = [labelled(LATE)],
   activity = [push(EARLY)],
   heads = [SHA],
+  base = 'main',
   failOn,
   texts = {},
   statuses = [],
@@ -53,7 +56,7 @@ function fakeGitHub({
       return {
         number: 1,
         head: { sha, ref: REF },
-        base: { ref: 'main', sha: 'base' },
+        base: { ref: base, sha: 'base' },
         changed_files: files.length,
         labels: labels.map((name) => ({ name })),
       };
@@ -336,7 +339,7 @@ describe('main decides, never the PR', () => {
     );
   });
 
-  test('the workflow checks out only the base commit, on both events, and runs no PR code', () => {
+  test('the workflow checks out main or the group base, never base.sha, and runs no PR code', () => {
     const yaml = readFileSync(
       new URL('../workflows/security-review-initialize.yml', import.meta.url),
       'utf8'
@@ -348,10 +351,13 @@ describe('main decides, never the PR', () => {
     assert.match(yaml, /^ {2}merge_group:$/m);
     assert.doesNotMatch(yaml, /^ {2}pull_request:/m);
     const refs = [...yaml.matchAll(/^\s+ref: (.+)$/gm)].map((m) => m[1]);
-    assert.deepEqual(refs, [
-      '${{ github.event.pull_request.base.sha }}',
-      '${{ github.event.merge_group.base_sha }}',
-    ]);
+    assert.deepEqual(refs, ['refs/heads/main', '${{ github.event.merge_group.base_sha }}']);
+    // Only PRs into main run it; the queue path is unchanged.
+    assert.match(
+      yaml,
+      /^ {2}pull_request_target:\n {4}types: \[[^\]]+\]\n {4}branches: \[main\]$/m
+    );
+    assert.doesNotMatch(yaml, /pull_request\.base\.sha/);
     assert.equal([...yaml.matchAll(/persist-credentials: false/g)].length, 2);
     // No PR head anywhere, and no package install: the job runs only the base checkout's node script.
     assert.doesNotMatch(yaml, /pull_request\.head|\bnpm\b|\bpnpm\b/);
@@ -359,5 +365,51 @@ describe('main decides, never the PR', () => {
       [...yaml.matchAll(/run: node \.github\/scripts\/security-verdict\.mjs/g)].length,
       2
     );
+  });
+});
+
+describe('only a PR into main is judged (Security, 2026-11-02 17:25Z)', () => {
+  const into = (ref, sha = 'base') => ({
+    pull_request: { number: 1, head: { sha: SHA }, base: { ref, sha } },
+  });
+
+  test('a PR aimed at another branch gets failure, "base is not main", and nothing else', async () => {
+    const gh = fakeGitHub({ base: 'feat/parent-layer' });
+    await verdictForPullRequest(gh.api, into('feat/parent-layer'), lists);
+    assert.deepEqual(gh.written, [
+      {
+        sha: SHA,
+        state: 'failure',
+        description: 'base is not main (feat/parent-layer); retarget to main to be judged',
+      },
+    ]);
+  });
+
+  test('a PR retargeted away from main after the event is refused the same way', async () => {
+    const gh = fakeGitHub({ base: 'feat/parent-layer' });
+    await verdictForPullRequest(gh.api, into('main'), lists);
+    assert.deepEqual(
+      gh.written.map((w) => w.state),
+      ['failure']
+    );
+    assert.match(verdictOf(gh.written).description, /^base is not main \(feat\/parent-layer\)/);
+  });
+
+  test('no base at all refuses rather than reading as main', async () => {
+    const gh = fakeGitHub();
+    await verdictForPullRequest(gh.api, { pull_request: { number: 1, head: { sha: SHA } } }, lists);
+    assert.match(verdictOf(gh.written).description, /^base is not main \(unknown\)/);
+  });
+
+  test('an old base (like #3425 at 526b745025) still gets a written verdict from current rules', async () => {
+    for (const [labels, timeline, state] of [
+      [['security-reviewed'], [labelled(LATE)], 'success'],
+      [[], [], 'failure'],
+    ]) {
+      const gh = fakeGitHub({ labels, timeline });
+      await verdictForPullRequest(gh.api, into('main', '526b745025'), lists);
+      assert.equal(verdictOf(gh.written).sha, SHA);
+      assert.equal(verdictOf(gh.written).state, state);
+    }
   });
 });

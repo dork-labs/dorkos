@@ -3,9 +3,19 @@ name: security-review-initialize
 # Writes the `security-review` commit status from MAIN's copy of the gate
 # (Security's required-checks plan, step 1, 2026-11-02). `security-gate` runs a
 # PR's own copy, so a PR that edits the gate is judged by its edit; this runs
-# `pull_request_target` and checks out only the base commit, so the path lists,
-# the label rules and the script are main's. It reads the PR through the API, as
-# data, and never checks out or runs PR code. See .github/scripts/security-verdict.mjs.
+# `pull_request_target` and checks out main itself, so the path lists, the label
+# rules and the script are main's. It reads the PR through the API, as data, and
+# never checks out or runs PR code. See .github/scripts/security-verdict.mjs.
+#
+# Only PRs into main (Security, 2026-11-02 17:25Z). `pull_request_target` runs the
+# BASE branch's copy, and `base.sha` is that branch's commit, so a PR aimed at any
+# other branch ran that branch's verdict script with `statuses: write` and could
+# write `security-review: success` on its own head. An old base was the same hole
+# in time: a PR opened before a rule landed was judged without it. So the job is
+# filtered to main and checks out `refs/heads/main`, never `base.sha`, and the
+# script writes `failure` for any base that is not main. A branch that rewrites
+# this file can still drop the filter for PRs into it: that is the forging residual
+# #3426 names, which only the Security App closes.
 #
 # Every event that can change the verdict runs it, and the newest run decides: a
 # label then a quick push ends as failure, because the push's run reads a label
@@ -21,6 +31,7 @@ name: security-review-initialize
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+    branches: [main]
   merge_group:
 
 permissions:
@@ -44,12 +55,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: refs/heads/main
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
-      - name: Write the verdict from trusted base code
+      - name: Write the verdict from main's code
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/security-verdict.mjs
