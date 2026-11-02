@@ -40,6 +40,12 @@ export interface RunConfig {
   build: boolean;
   /** Borrow this existing Postgres container instead of creating a throwaway one. */
   postgresContainer: string | null;
+  /**
+   * Use the Postgres already running on this machine, as a superuser URL, instead
+   * of Docker: a CI runner with no Docker (GitHub's macOS runners) runs a
+   * Homebrew Postgres. `null` keeps Docker, the default.
+   */
+  postgresUrl: string | null;
   /** Where each run's evidence folder is written. */
   outputRoot: string;
   /** Where each person's temporary home directory is created. */
@@ -200,6 +206,41 @@ export function readHandoff(file: string, fs: HandoffFs = realFs): RemoteHandoff
   return { ...(handoff as RemoteHandoff), origin: origin.origin };
 }
 
+/** The variable that points the run at a Postgres on this machine instead of Docker. */
+export const POSTGRES_URL_VARIABLE = 'DORKOS_TWO_DESKTOP_PG_URL';
+
+/**
+ * Read the host Postgres URL, refusing anything but a superuser URL on this
+ * machine with no database named. The run creates and drops its own databases
+ * there, so it must never be pointed at a server somewhere else.
+ *
+ * @param value - The variable's value.
+ * @param container - The borrowed container, if one is named too.
+ * @throws When the URL is malformed, not on this machine, names a database, or a container is named too.
+ */
+export function readPostgresUrl(
+  value: string | undefined,
+  container: string | null
+): string | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+  const refuse = (why: string) => new Error(`Refusing ${POSTGRES_URL_VARIABLE}: ${why}`);
+  if (container) throw refuse('it and DORKOS_TWO_DESKTOP_PG_CONTAINER are both set; pick one');
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw refuse('it is not a URL');
+  }
+  if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:')
+    throw refuse('it must start with postgres://');
+  if (!LOOPBACK_HOSTS.has(url.hostname)) throw refuse('Postgres must be on this machine');
+  if (url.pathname !== '' && url.pathname !== '/')
+    throw refuse('name no database; the run makes its own');
+  if (!url.username) throw refuse('it names no user');
+  return raw;
+}
+
 /**
  * Refuse unless the run was asked for explicitly.
  *
@@ -246,6 +287,10 @@ export function readRunConfig(
     ),
     build: argv.includes('--build') || env.DORKOS_TWO_DESKTOP_BUILD === '1',
     postgresContainer: env.DORKOS_TWO_DESKTOP_PG_CONTAINER?.trim() || null,
+    postgresUrl: readPostgresUrl(
+      env[POSTGRES_URL_VARIABLE],
+      env.DORKOS_TWO_DESKTOP_PG_CONTAINER?.trim() || null
+    ),
     outputRoot: path.resolve(
       env.DORKOS_TWO_DESKTOP_OUT?.trim() || path.join(REPO_ROOT, '.temp/community-two-desktop')
     ),
