@@ -99,7 +99,22 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
     names.add('OPENCODE_SERVER_PASSWORD');
     names.add('OPENCODE_CONFIG_CONTENT');
   }
+  for (const name of Object.keys(flowIdentityEnv(input.runtime, input.purpose))) names.add(name);
   return names;
+}
+
+/**
+ * Who a turn's agent is, for the /flow plugin: flow's own journal records the
+ * runtime and what hosted it, and only a host can say the host is DorkOS. Empty
+ * for helper processes, which run no agent commands, and for the DorkOS builder,
+ * which runs no flow and is not a runtime flow knows.
+ */
+export function flowIdentityEnv(
+  runtime: EnvironmentRuntime,
+  purpose: EnvironmentPurpose
+): Record<string, string> {
+  if (purpose !== 'turn' || runtime === 'doe') return {};
+  return { FLOW_RUNTIME: runtime, FLOW_HARNESS: 'dorkos' };
 }
 
 /** Project a complete environment, validate internal overrides, and never mutate or log inputs. */
