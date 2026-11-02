@@ -2,7 +2,7 @@ import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 
 /**
  * A reason's one explicit mode name, in this runtime's vocabulary. This is
- * display/defaulting only, never authority: the person's approval grants it.
+ * display/suggestion only, never authority: the person's approval grants it.
  * Multiple named modes are ambiguous and leave the saved mode selected.
  */
 export function requestedPermissionMode(

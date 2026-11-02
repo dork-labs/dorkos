@@ -189,6 +189,18 @@ describe('changing a schedule from Wi-Fi', () => {
   });
 });
 
+it('refuses Wi-Fi approval even at Default (DOR-3651)', async () => {
+  const id = await madeHere('default');
+  store.updateTask(id, { status: 'pending_approval' });
+  const response = await request(server)
+    .patch(`/api/tasks/${id}`)
+    .set('x-test-via', 'wifi')
+    .send({ status: 'active', permissionMode: 'default' });
+  expect(response.status).toBe(403);
+  expect(response.body.code).toBe(NOT_FROM_WIFI);
+  expect(store.getTask(id)?.status).toBe('pending_approval');
+});
+
 describe('running a schedule now from Wi-Fi', () => {
   it('refuses one that runs above Default, and runs one at Default', async () => {
     const full = await madeHere('bypassPermissions');

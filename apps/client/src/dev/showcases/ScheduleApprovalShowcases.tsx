@@ -196,7 +196,7 @@ export function ScheduleApprovalShowcases() {
             task={proposal({
               id: 'task-permission-picker',
               displayName: 'Watchdog check',
-              reason: 'Run at Don’t ask to check the watchdog on a schedule.',
+              reason: 'Run at Never ask to check the watchdog on a schedule.',
               folderRules: {
                 status: 'approved',
                 applied: ['Bash(pnpm check:watchdog)'],

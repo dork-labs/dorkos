@@ -1,10 +1,13 @@
 import type { Task } from '@dorkos/shared/types';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import { useCapabilitiesForRuntime, useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { useConfig } from '@/layers/entities/config';
+import { operatorStopForRuntime, resolveConfiguredStopMode } from '@/layers/shared/lib';
 
 /** Resolve every mode through the same task → registered agent → default ladder as a run. */
 export function useScheduleApprovalPower(task: Task) {
   const { data: map } = useRuntimeCapabilities();
+  const { data: config } = useConfig();
   const {
     data: agents,
     isPending: agentsPending,
@@ -22,5 +25,7 @@ export function useScheduleApprovalPower(task: Task) {
   const agentUnknown =
     task.runtime === null && task.agentId !== null && (agentsPending || agentsError);
   const modes = agentUnknown ? [] : (capabilities?.permissionModes?.values ?? []);
-  return { modes, current: modes.find((mode) => mode.id === task.permissionMode) ?? null };
+  const stop = runtime ? operatorStopForRuntime(config?.executionDefaults, runtime) : null;
+  const ceiling = modes.find((mode) => mode.id === resolveConfiguredStopMode(stop, modes));
+  return { modes, ceiling, current: modes.find((mode) => mode.id === task.permissionMode) ?? null };
 }

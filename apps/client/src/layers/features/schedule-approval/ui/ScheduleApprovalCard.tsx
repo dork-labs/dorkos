@@ -1,4 +1,5 @@
 import { appRoutes } from '@/layers/shared/lib';
+import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
 /**
  * A schedule an agent proposed, and everything you need to decide about it.
  *
@@ -120,8 +121,8 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
  * afterwards backed by evidence. Nothing about a test run arms a timer, changes
  * the status, or resolves the standing proposal.
  *
- * Approval uses the visible runtime mode picker, including a mode named in
- * the proposal's reason. Folder rules remain separately approved grants.
+ * Approval starts at the saved mode. A reason can suggest a mode, but only
+ * the person picks it. Folder rules remain separately approved grants.
  *
  * Neither answer toasts on success. The receipt is the confirmation, where the
  * decision was made; the app's one failure toast (`query-client.ts`) already
@@ -170,7 +171,14 @@ export function ScheduleApprovalCard({
   const power = useScheduleApprovalPower(task);
   const requested =
     task.reasonSource === 'dorkos' ? null : requestedPermissionMode(task.reason, power.modes);
-  const selectedMode = pickedMode ?? requested?.id ?? task.permissionMode;
+  // Agent-written prose is never a grant, including when Approve is a shortcut.
+  const selectedMode = pickedMode ?? task.permissionMode;
+  const canSuggest =
+    !task.originMarks &&
+    requested &&
+    !isBypassPermissionMode(requested.id) &&
+    power.ceiling &&
+    isNoLooserThan(power.ceiling, requested);
   const selected = power.modes.find((mode) => mode.id === selectedMode);
   const currentLabel = selected?.label ?? permissionModeLabel(selectedMode);
   const bypasses = isBypassPermissionMode(selectedMode);
@@ -451,6 +459,7 @@ export function ScheduleApprovalCard({
           value={selectedMode}
           requested={requested}
           onChange={setPickedMode}
+          onUseRequested={canSuggest ? () => setPickedMode(requested.id) : undefined}
         />
       )}
 
@@ -463,13 +472,13 @@ export function ScheduleApprovalCard({
       <TestRunStrip testRun={testRun} onOpenRun={openTestRun()} />
 
       {answered === null ? (
-        <AskCard.Actions>
+        <AskCard.Actions className="flex-col items-stretch sm:flex-row sm:items-center">
           <Button
             size="sm"
             data-slot="schedule-approve"
             aria-label={`Approve ${name}`}
             disabled={!selected}
-            className="h-7 px-2.5 text-xs"
+            className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
             onClick={approveAtSelectedLevel}
           >
             Approve
@@ -482,7 +491,7 @@ export function ScheduleApprovalCard({
               size="sm"
               data-slot="schedule-approve-turn-on"
               aria-label={`Approve ${name} and turn it on`}
-              className="h-7 px-2.5 text-xs"
+              className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
               onClick={() => approve(true)}
               disabled={!selected}
             >
@@ -498,7 +507,7 @@ export function ScheduleApprovalCard({
             size="sm"
             data-slot="schedule-test-run-start"
             aria-label={`Run ${name} once`}
-            className="h-7 px-2.5 text-xs"
+            className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
             disabled={testRun.phase === 'running'}
             onClick={testRun.start}
           >
@@ -510,7 +519,7 @@ export function ScheduleApprovalCard({
             size="sm"
             data-slot="schedule-reject"
             aria-label={`Reject ${name}`}
-            className="h-7 px-2.5 text-xs"
+            className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
             onClick={reject}
           >
             Reject

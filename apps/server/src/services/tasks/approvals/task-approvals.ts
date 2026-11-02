@@ -288,13 +288,10 @@ export class TaskApprovals {
    *   not approved by an edit. Routes only ask this for a change no file carried
    *   (a package's row-only timing, DOR-2302); a person's file-backed edit is
    *   re-approved by the route itself.
-   * - **One of our agents on a Trusted install** (`caller.armsAgentWork`,
-   *   ADR 261006-225605) is treated like a person on any schedule that did not
-   *   come from a file: the grant moves to the new work and an active schedule
-   *   stays active. A sync that parked it mid-request is undone, since the
-   *   schedule was active and approved before this request. A schedule
-   *   discovery made from a file, a Shape or a package (`origin: 'file'`) is
-   *   still somebody else's code, so it parks as below.
+   * - **One of our agents on a Trusted install** (`caller.armsAgentWork`) can
+   *   keep other edits live on its own schedule, but prompt/runtime substitutions
+   *   always park for a person (DOR-3651). Other edits can undo a mid-request
+   *   sync park. Discovery-made schedules (`origin: 'file'`) always park as below.
    * - **Any other agent** gets an `active` schedule parked at once, with DorkOS's own
    *   sentence saying what it changed (`agentChangeReason`: the prompt, how it
    *   runs, or when), and keeps the approval it withdrew for the card
@@ -339,7 +336,9 @@ export class TaskApprovals {
       return 'rekeyed';
     }
 
-    if (caller.armsAgentWork === true && row.origin !== 'file') {
+    // Substituted work always needs a person; target/mode writes are refused at the doors (DOR-3651).
+    const substitutesWork = before.prompt !== row.prompt || before.runtime !== row.runtime;
+    if (caller.armsAgentWork === true && row.origin !== 'file' && !substitutesWork) {
       // The sync parks a row whose key changed and moves its grant aside, so a
       // grant that covered the old work is in one of the two columns.
       const parkedMidRequest =

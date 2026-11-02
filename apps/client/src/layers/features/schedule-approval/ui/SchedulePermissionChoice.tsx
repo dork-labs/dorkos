@@ -1,7 +1,8 @@
 import { useId } from 'react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { Task } from '@dorkos/shared/types';
-import { PermissionModeScopeNote } from '@/layers/shared/ui';
+import { Button, PermissionModeScopeNote } from '@/layers/shared/ui';
+import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
 
 /** The run's mode and the separately approved folder rules, before the person approves. */
 export function SchedulePermissionChoice({
@@ -10,15 +11,19 @@ export function SchedulePermissionChoice({
   value,
   requested,
   onChange,
+  onUseRequested,
 }: {
   task: Task;
   modes: readonly PermissionModeDescriptor[];
   value: string;
   requested: PermissionModeDescriptor | null;
   onChange: (mode: string) => void;
+  onUseRequested?: () => void;
 }) {
   const id = useId();
   const selected = modes.find((mode) => mode.id === value);
+  const mismatch = requested && selected && value !== requested.id;
+  const looser = mismatch && !isNoLooserThan(requested, selected);
   const rules = task.folderRules;
   return (
     <div className="min-w-0 space-y-2 text-xs" data-slot="schedule-mode-choice">
@@ -28,7 +33,7 @@ export function SchedulePermissionChoice({
       <select
         id={id}
         value={value}
-        aria-describedby={selected ? `${id}-promise` : undefined}
+        aria-describedby={selected ? `${id}-${looser ? 'mismatch' : 'promise'}` : undefined}
         onChange={(event) => onChange(event.target.value)}
         disabled={modes.length === 0}
         className="focus-ring border-input bg-background min-h-11 w-full rounded-md border px-2 disabled:opacity-50"
@@ -40,13 +45,28 @@ export function SchedulePermissionChoice({
           </option>
         ))}
       </select>
-      {requested && <p data-slot="schedule-requested-mode">Reason asks for {requested.label}.</p>}
-      {requested && value !== requested.id && (
-        <p role="status" data-slot="schedule-mode-mismatch" className="text-status-warning-fg">
-          Selected permissions differ from the reason’s request.
+      {mismatch && (
+        <p
+          id={`${id}-mismatch`}
+          role="status"
+          data-slot="schedule-mode-mismatch"
+          className="text-status-warning-fg"
+        >
+          {task.proposedByName ?? 'An agent'} asked for {requested.label}. This will run at{' '}
+          {selected.label}.{looser && ` ${selected.promise}`}
         </p>
       )}
-      {selected && (
+      {mismatch && onUseRequested && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-h-11 w-full text-xs sm:w-auto"
+          onClick={onUseRequested}
+        >
+          Use {requested.label}
+        </Button>
+      )}
+      {selected && !looser && (
         <p id={`${id}-promise`} className="text-muted-foreground">
           {selected.promise}
         </p>

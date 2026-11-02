@@ -30,6 +30,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -94,12 +95,13 @@ const fixtureServer = fixtureTarget.server;
 const AGENT_ID = 'codex-agent';
 
 /** A manifest with everything but the one field a case is about. */
-function baseManifest() {
+function baseManifest(): Parameters<typeof writeManifest>[1] {
   return {
     id: AGENT_ID,
     name: AGENT_ID,
     description: '',
     runtime: 'codex',
+    workspace: { mode: 'home' },
     capabilities: [],
     behavior: { responseMode: 'always' },
     registeredAt: new Date().toISOString(),
@@ -157,19 +159,28 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     const scheduler = createMockScheduler();
 
     fixtureTarget.mount(
-      honoGroupListener({
-        path: '/api/tasks',
-        routes: createTasksRoutes({
-          store,
-          scheduler,
-          registrar: new TaskRegistrar({ store, scheduler }),
-          dorkHome,
-          meshCore: {
-            getProjectPath: (id: string) => (id === AGENT_ID ? meshProjectPath : null),
-          } as unknown as MeshCore,
-          activity: { emit } as unknown as ActivityService,
-        }),
-      })
+      honoGroupListener(
+        {
+          path: '/api/tasks',
+          routes: createTasksRoutes({
+            store,
+            scheduler,
+            registrar: new TaskRegistrar({ store, scheduler }),
+            dorkHome,
+            meshCore: {
+              getProjectPath: (id: string) => (id === AGENT_ID ? meshProjectPath : null),
+            } as unknown as MeshCore,
+            activity: { emit } as unknown as ActivityService,
+          }),
+        },
+        {
+          before: async (c, next) => {
+            if (c.req.header('x-test-person'))
+              c.set('user', { userId: 'owner-3651', credential: 'cookie' });
+            await next();
+          },
+        }
+      )
     );
   });
 
@@ -326,6 +337,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     });
     const response = await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
+      .set('x-test-person', 'yes')
       .send({ status: 'active', permissionMode: 'dontAsk' });
     expect(response.status).toBe(200);
     expect(store.getTask(task.id)?.permissionMode).toBe('dontAsk');
@@ -333,7 +345,12 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     const event = emit.mock.calls
       .map(([value]) => value)
       .find((value) => value.eventType === 'tasks.task_approved');
+    expect(event).toMatchObject({ actorType: 'user', actorLabel: 'You' });
     expect(event.metadata).toMatchObject({
+      personId: 'owner-3651',
+      reasonHead: createHash('sha256')
+        .update(task.reason ?? '')
+        .digest('hex'),
       permissionMode: 'dontAsk',
       previousPermissionMode: 'acceptEdits',
     });
@@ -373,6 +390,11 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
   it('leaves a plain approval exactly where the clamp put it', async () => {
     const task = await proposedByAgent();
+
+    db.update(pulseSchedules)
+      .set({ reason: 'Run at Never ask.' })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
@@ -506,32 +528,51 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     }
   });
 
-  it('falls back to a neutral phrase only when the TASK names a runtime this server lacks', async () => {
-    // The one genuinely unnameable case, and the narrowness is the point. A
-    // runtime the TASK names is not substituted at fire time — the resolver
-    // refuses the run rather than picking another — so there is no vocabulary
-    // this level could honestly be named in.
+  it.each(['task', 'agent'] as const)(
+    'refuses a mode absent from the real %s runtime before any write',
+    async (source) => {
+      const task = await proposedByAgent();
+      if (source === 'agent') {
+        meshProjectPath = path.join(dorkHome, 'codex-agent');
+        await writeManifest(meshProjectPath, baseManifest());
+      }
+      db.update(pulseSchedules)
+        .set(source === 'task' ? { runtime: 'codex' } : { agentId: AGENT_ID })
+        .where(eq(pulseSchedules.id, task.id))
+        .run();
+      const original = fs.readFileSync(task.filePath, 'utf8');
+      const response = await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ status: 'active', permissionMode: 'dontAsk' });
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('unsupported_task_mode');
+      expect(store.getTask(task.id)).toMatchObject({
+        status: 'pending_approval',
+        permissionMode: 'acceptEdits',
+      });
+      expect(fs.readFileSync(task.filePath, 'utf8')).toBe(original);
+      expect(emit.mock.calls.some(([event]) => event.eventType === 'tasks.task_approved')).toBe(
+        false
+      );
+    }
+  );
+
+  it('refuses approval when the task names a runtime this server lacks', async () => {
     const task = await proposedByAgent();
     db.update(pulseSchedules)
       .set({ runtime: 'not-installed' })
       .where(eq(pulseSchedules.id, task.id))
       .run();
-
-    await request(fixtureServer)
+    const response = await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
-      .send({ status: 'active', enabled: true });
-
-    const approval = emit.mock.calls
-      .map(([event]) => event as Record<string, unknown>)
-      .find((event) => event.eventType === 'tasks.task_approved');
-    expect(approval!.summary).toContain('running as the level saved on it');
-    // And the id is still recorded, so nothing is lost.
-    expect(approval!.metadata).toMatchObject({ permissionMode: 'acceptEdits' });
+      .send({ status: 'active' });
+    expect(response.status).toBe(400);
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
   });
 
   it('still lets a person change the level on a schedule that is already live', async () => {
     // The regression guard. `permissionMode` is not confined to the approval:
-    // the cockpit's own task edit form writes it on an ordinary save, and a
+    // the app's own task edit form writes it on an ordinary save, and a
     // guard that allowed it only on `pending_approval → active` would break
     // that with nothing saying why.
     const task = await proposedByAgent();

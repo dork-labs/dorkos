@@ -26,6 +26,7 @@
  * @module routes/tasks
  */
 import { Hono } from 'hono';
+import { createHash } from 'node:crypto';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { UpdateTaskRequestSchema, ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
 import type { CreateTaskInput, PermissionMode, Task } from '@dorkos/shared/schemas';
@@ -79,6 +80,7 @@ import {
 import { scheduleCreditsModelRefusal } from '../services/tasks/lifecycle/schedule-credits-model.js';
 import {
   describeTaskPermissionLevel,
+  taskModeRefusal,
   scheduleEditorOf,
   namesCredits,
 } from './task-route-answers.js';
@@ -388,6 +390,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // made: a schedule runs as the agent it is filed under (DOR-3640 R1).
     const edit = scheduleEdit(existing, scheduleEditorOf(caller, trusted), meshCore, data);
     if (edit.refusal) return c.json(edit.refusal, 403);
+    const modeRefusal = await taskModeRefusal(existing, data, meshCore);
+    if (modeRefusal) return c.json(modeRefusal, 400);
 
     // Naming DorkOS credits, or approving a schedule that runs on them, spends
     // the DorkOS account's money: the owner's call alone (DOR-2652).
@@ -596,8 +600,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // would run approved. A person's change that wrote no file (a package's
     // row-only timing, DOR-2302) re-approves in the same act; a person's
     // file-backed edit was re-approved just above. One of our agents on a
-    // Trusted install re-approves like a person, except on a schedule made
-    // from a file (ADR 261006-225605). The park is then picked up by the
+    // Trusted install can keep other edits live, but prompt/runtime substitutions
+    // always park for a person (DOR-3651). The park is then picked up by the
     // "entered `pending_approval`" edge below like any other.
     if (!rearms || !changesFile) {
       store.approvals.settleApprovedWorkChange(updated.id, before, {
@@ -660,19 +664,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // is no separate endpoint for it, so this transition is where the parked
     // condition ends and its history row is written.
     //
-    // **And it is the one transition that may also GRANT the level** (DOR-2100).
-    // A proposal an agent made is clamped on the way in and cannot name its own
-    // power (`createScheduledTask`, DOR-504/607/823); the person approving it
-    // can, because `permissionMode` is operator-only and
-    // `operatorOnlyTaskRefusal` has already 403'd anyone who did not clear
-    // the agent bar. Nothing extra is needed to let that through — `updateTask`
-    // writes the field and `applyTaskFileUpdate` puts it in the SKILL.md, so the
-    // grant survives the next sync the same way a person's own edit does. What
-    // WAS missing is the record: the approval wrote a standing resolution and no
-    // activity row at all, so a level raised here left nothing a later reader
-    // could find. It writes one now, naming the level, on every approval —
-    // raised or not, because "approved at the level it asked for" is the fact
-    // that makes a raise legible as a raise.
+    // Only the person may name a mode or clear this status. Validate their
+    // picked mode before any write, then record who approved which proposal.
     if (existing.status === 'pending_approval' && updated.status === 'active') {
       const actorPrincipal = readCallerPrincipal(caller);
       const raised = updated.permissionMode !== existing.permissionMode;
@@ -698,6 +691,10 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         metadata: {
           permissionMode: updated.permissionMode,
           previousPermissionMode: existing.permissionMode,
+          reasonHead: createHash('sha256')
+            .update(existing.reason ?? '')
+            .digest('hex'),
+          personId: caller.user?.userId ?? null,
           raised,
         },
         linkPath: '/',

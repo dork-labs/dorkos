@@ -6,7 +6,8 @@
  */
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { MeshCore } from '@dorkos/mesh';
-import type { Task } from '@dorkos/shared/types';
+import type { Task, UpdateTaskRequest } from '@dorkos/shared/types';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { RequestFacts } from '../http/request-facts.js';
 import type { ScheduleEditor } from '../services/tasks/approvals/schedule-owner.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
@@ -65,6 +66,17 @@ export async function describeTaskPermissionLevel(
   task: Task,
   meshCore?: MeshCore
 ): Promise<string> {
+  const declared = await taskPermissionModes(task, meshCore);
+  return (
+    declared.find((mode) => mode.id === task.permissionMode)?.label ?? UNNAMED_PERMISSION_LEVEL
+  );
+}
+
+/** Modes declared by the runtime that will actually execute this task. */
+export async function taskPermissionModes(
+  task: Pick<Task, 'runtime' | 'agentId'>,
+  meshCore?: MeshCore
+): Promise<readonly PermissionModeDescriptor[]> {
   const agentPath = task.agentId ? meshCore?.getProjectPath(task.agentId) : undefined;
   const agentRuntime = agentPath
     ? ((await readAgentExecutionDefaults(agentPath)).runtime ?? null)
@@ -76,10 +88,25 @@ export async function describeTaskPermissionLevel(
   const runtime =
     task.runtime ??
     (agentRuntime && capabilitiesForTaskRuntime(agentRuntime) ? agentRuntime : null);
-  const declared = capabilitiesForTaskRuntime(runtime)?.permissionModes?.values ?? [];
-  return (
-    declared.find((mode) => mode.id === task.permissionMode)?.label ?? UNNAMED_PERMISSION_LEVEL
-  );
+  return capabilitiesForTaskRuntime(runtime)?.permissionModes?.values ?? [];
+}
+
+/** Refuse an approval or execution change before either the file or row is written. */
+export async function taskModeRefusal(task: Task, change: UpdateTaskRequest, mesh?: MeshCore) {
+  if (
+    change.permissionMode === undefined &&
+    change.runtime === undefined &&
+    change.status !== 'active'
+  )
+    return null;
+  const candidate = { ...task, ...change };
+  const modes = await taskPermissionModes(candidate, mesh);
+  return modes.some((mode) => mode.id === candidate.permissionMode)
+    ? null
+    : {
+        error: 'Choose a permission mode this task can run.',
+        code: 'unsupported_task_mode',
+      };
 }
 
 /**
