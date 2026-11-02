@@ -67,6 +67,8 @@ afterAll(() => rmSync(PROJECT, { recursive: true, force: true }));
  * Ollama.
  */
 const NO_OLLAMA = { DORKOS_OLLAMA_URL: 'http://127.0.0.1:9' };
+/** Scripted execution with the declared modes the schedule file can hold. */
+const TASK_SERVER = fileURLToPath(new URL('./fixtures/task-runtime-server.ts', import.meta.url));
 
 /**
  * A stand-in for Ollama's pull endpoint: two progress lines, then the error
@@ -743,10 +745,9 @@ describe('contract: tasks, account rules and model setup, driven by hand (login 
   let ollama: Awaited<ReturnType<typeof startOllamaStub>> | undefined;
   beforeAll(async () => {
     ollama = await startOllamaStub();
-    server = await bootComposedServer({ DORKOS_OLLAMA_URL: ollama.url });
-    // The composed server runs on the test-mode runtime, whose never-ask mode
-    // id a SKILL.md `schedule:` block cannot hold, so no stop of its own here:
-    // schedules take the fallback mode, as they did before Trusted.
+    server = await bootComposedServer({ DORKOS_OLLAMA_URL: ollama.url }, TASK_SERVER);
+    // Keep the saved default at Accept edits: approving without an explicit
+    // choice must retain it, rather than taking the agent's requested level.
     await setup(server, 'PATCH', '/api/config', { runtimes: { defaultTrustStop: null } });
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {
@@ -814,13 +815,14 @@ describe('contract: tasks, account rules and model setup, driven by hand (login 
       server,
       'POST',
       '/api/tasks',
-      scheduleBody({ reason: 'The contract asked' }),
+      scheduleBody({ reason: 'The contract asked for Never ask' }),
       AGENT
     );
     const id = proposed.json.id as string;
     expect(proposed.json).toMatchObject({
       status: 'pending_approval',
-      reason: 'The contract asked',
+      reason: 'The contract asked for Never ask',
+      permissionMode: 'acceptEdits',
     });
     expect(proposed.json.nextRuns).toHaveLength(3);
     await check(server, {
@@ -1102,7 +1104,7 @@ describe('contract: the same groups with login on', () => {
   };
 
   beforeAll(async () => {
-    server = await bootComposedServer(NO_OLLAMA);
+    server = await bootComposedServer(NO_OLLAMA, TASK_SERVER);
     const origin = { origin: server.baseUrl };
     await setup(server, 'POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' }, origin);
     const signedIn = await setup(server, 'POST', '/api/auth/sign-in/email', OWNER, origin);
@@ -1113,7 +1115,7 @@ describe('contract: the same groups with login on', () => {
         .join('; '),
     };
     const person = await stepUpAt(server.baseUrl, OWNER.password);
-    // No stop of its own, for the test-mode reason the login-off block gives.
+    // Keep the same safe saved default as the login-off contract.
     await setup(
       server,
       'PATCH',
@@ -1165,7 +1167,10 @@ describe('contract: the same groups with login on', () => {
       scheduleBody({ reason: 'An API key asked' }),
       apiKey
     );
-    expect(proposed.json.status).toBe('pending_approval');
+    expect(proposed.json).toMatchObject({
+      status: 'pending_approval',
+      permissionMode: 'acceptEdits',
+    });
     const id = proposed.json.id as string;
     await check(server, {
       method: 'PATCH',
@@ -1209,7 +1214,13 @@ describe('contract: the same groups with login on', () => {
       path: `/api/tasks/${id}`,
       headers: cookie,
       body: { status: 'active' },
-      expect: { status: 200, schema: TASK.extend({ status: z.literal('active') }) },
+      expect: {
+        status: 200,
+        schema: TASK.extend({
+          status: z.literal('active'),
+          permissionMode: z.literal('acceptEdits'),
+        }),
+      },
     });
     await check(server, {
       method: 'DELETE',
