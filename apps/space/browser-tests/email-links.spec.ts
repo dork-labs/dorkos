@@ -157,7 +157,8 @@ test('forgot password: ask, read the mail, open the link, choose a new password,
   expect(link).toBeTruthy();
 
   await page.goto(link!);
-  await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
+  // The owner's account is in use, so the page reads as a reset and lists what it ends (DOR-2730).
+  await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
   // The token left the address bar before anything else ran.
   expect(new URL(page.url()).hash).toBe('');
   await expect(page.getByText('For owner@email.test.')).toBeVisible();
