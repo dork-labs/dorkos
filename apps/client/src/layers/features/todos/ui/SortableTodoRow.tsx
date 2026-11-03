@@ -7,7 +7,12 @@
  * @module features/todos/ui/SortableTodoRow
  */
 import type { KeyboardEvent, TouchEvent } from 'react';
-import { useSortable } from '@dnd-kit/sortable';
+import {
+  defaultAnimateLayoutChanges,
+  useSortable,
+  type AnimateLayoutChanges,
+} from '@dnd-kit/sortable';
+import { useReducedMotion } from 'motion/react';
 import { ArrowDown, ArrowUp, GripVertical } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { usePrefersLongPress } from '../model/use-prefers-long-press';
@@ -29,6 +34,13 @@ export interface SortableTodoRowProps extends Omit<
   reorder?: { first: boolean; last: boolean };
 }
 
+/**
+ * A row slides to its new place however it moved: after a drag, and after a Reorder button or ⌥↑ /
+ * ⌥↓, which change the order with nothing being dragged. Same slide either way (DOR-3715).
+ */
+const slideOnEveryMove: AnimateLayoutChanges = (args) =>
+  defaultAnimateLayoutChanges({ ...args, wasDragging: true });
+
 /** The `data-todo-move` key of one of a row's Reorder buttons, which the list refocuses. */
 export function todoMoveKey(id: string, by: -1 | 1): string {
   return `${id}:${by === -1 ? 'up' : 'down'}`;
@@ -44,7 +56,13 @@ export function SortableTodoRow({ sortable, onMove, reorder, ...row }: SortableT
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: row.todo.id, disabled: !sortable });
+  } = useSortable({
+    id: row.todo.id,
+    disabled: !sortable,
+    animateLayoutChanges: slideOnEveryMove,
+  });
+  // Under reduced motion a move is instant, a drag's settle included.
+  const reducedMotion = useReducedMotion();
   // By pointer, not width (DOR-3715): a touch tablet has no hover to show a grip, and a narrow
   // desktop window still has a mouse and the keyboard moves.
   const longPress = usePrefersLongPress();
@@ -70,7 +88,7 @@ export function SortableTodoRow({ sortable, onMove, reorder, ...row }: SortableT
       // Up and down only: a list row never leaves its column.
       style={{
         transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
-        transition,
+        transition: reducedMotion ? undefined : transition,
       }}
       {...(longPress && !reorder
         ? {
