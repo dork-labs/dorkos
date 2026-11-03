@@ -467,7 +467,7 @@ describe('RoomFlow — thread reply rows', () => {
 
     const row = screen.getByTestId('room-thread-replies');
     const expected = new Date('2026-07-26T11:30:00.000Z').toLocaleTimeString([], {
-      hour: '2-digit',
+      hour: 'numeric',
       minute: '2-digit',
     });
     expect(row).toHaveTextContent(`last ${expected}`);

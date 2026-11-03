@@ -21,7 +21,8 @@ let shortFormat: Intl.DateTimeFormat | undefined;
 let fullFormat: Intl.DateTimeFormat | undefined;
 
 /**
- * Short time display (HH:MM), or `''` when the string is not a time at all.
+ * Short time display ("2:03 PM", or "14:03" where the reader's locale writes it
+ * that way), or `''` when the string is not a time at all.
  *
  * An unparseable date throws a RangeError from `format`, so the guard is the
  * parse: a row with a bad timestamp draws no time rather than no row.
@@ -31,7 +32,7 @@ let fullFormat: Intl.DateTimeFormat | undefined;
 export function formatTime(timestamp: string): string {
   const ms = Date.parse(timestamp);
   if (Number.isNaN(ms)) return '';
-  shortFormat ??= new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
+  shortFormat ??= new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' });
   return shortFormat.format(ms);
 }
 

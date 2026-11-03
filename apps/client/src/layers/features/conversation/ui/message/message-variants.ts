@@ -20,7 +20,7 @@ export const messageItem = tv({
     /**
      * The hover wash and the radius it is drawn at belong to the `anchor`
      * variant below: a room's row has actions and keeps a quiet hover; a
-     * session's row keeps what it had until the chat pass decides it.
+     * session's row does nothing when pointed at, so it stays still.
      */
     root: 'group relative flex w-full gap-[var(--msg-gap)] px-[var(--msg-padding-x)] transition-colors duration-150',
     /** Identity column — the avatar on a group start, the hover timestamp on a continuation. */
@@ -41,7 +41,8 @@ export const messageItem = tv({
     body: 'flex min-w-0 flex-1 flex-col',
     header: 'flex items-baseline gap-2',
     authorName: 'truncate text-sm font-medium',
-    timestamp: 'text-xs tabular-nums transition-colors duration-150',
+    /** Never gives way: a long name truncates, and the time stays whole beside it. */
+    timestamp: 'shrink-0 text-xs whitespace-nowrap tabular-nums transition-colors duration-150',
     /**
      * Hover action toolbar for a message row (D6). A container, not a single
      * button — how it is anchored is the `anchor` variant below.
@@ -73,7 +74,15 @@ export const messageItem = tv({
     // so this single container re-enables selection for everything a message
     // renders rather than scattering the re-enable across each content type
     // (DOR-253).
-    content: 'min-w-0 max-w-[var(--msg-content-max-width)] text-sm desktop:select-text',
+    //
+    // No width cap here: this slot also holds code, tables and tool cards, which
+    // keep the whole column. The reading measure sits on the text itself
+    // (`.msg-prose` in `index.css`, and a person's own words in
+    // `UserMessageContent`). `leading-*` is what makes the line height apply at
+    // all: `text-sm` otherwise brings its own 20px. It has to follow `text-sm`
+    // here, and `compact`'s `text-xs` below drops it through tailwind-merge, so a
+    // compact row keeps the line height of its smaller type.
+    content: 'min-w-0 text-sm leading-[var(--msg-prose-line-height)] desktop:select-text',
   },
   variants: {
     // Role no longer changes layout — only the weight the two voices read at.
@@ -120,7 +129,7 @@ export const messageItem = tv({
      */
     anchor: {
       corner: {
-        root: 'hover:bg-muted rounded-msg',
+        root: 'rounded-msg',
         actions: 'absolute top-1 right-2 border transition-opacity duration-150',
       },
       rail: {

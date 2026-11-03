@@ -1,5 +1,5 @@
 /**
- * Full-bleed day boundary in the message list.
+ * Day boundary in the message list.
  *
  * @module features/conversation/ui/rows/DayDivider
  */
@@ -10,12 +10,14 @@ interface DayDividerProps {
 }
 
 /**
- * The rule that separates one calendar day from the next.
+ * The label that separates one calendar day from the next.
  *
- * A list-level row, not message decoration: it spans the full column width and
- * carries a centered label chip, so a reader scanning a long transcript can tell
- * at a glance where yesterday ended. The label is phrased upstream by
- * `buildListRows` — this component only renders it.
+ * A list-level row, not message decoration: a centred line of small text, with
+ * no rule and no pill, so a reader scanning a long transcript can tell where
+ * yesterday ended without one more thing competing with the messages. The unread
+ * line is the one that gets a rule, in orange, because it marks "you were here".
+ * The label is phrased upstream by `buildListRows` — this component only renders
+ * it.
  */
 export function DayDivider({ label }: DayDividerProps) {
   return (
@@ -24,13 +26,9 @@ export function DayDivider({ label }: DayDividerProps) {
       data-testid="day-divider"
       role="separator"
       aria-label={label}
-      className="flex items-center gap-3 py-4"
+      className="text-muted-foreground text-2xs py-4 text-center font-medium"
     >
-      <span aria-hidden="true" className="bg-border/70 h-px flex-1" />
-      <span className="border-border/70 bg-background text-muted-foreground text-2xs rounded-full border px-2.5 py-0.5 font-medium">
-        {label}
-      </span>
-      <span aria-hidden="true" className="bg-border/70 h-px flex-1" />
+      {label}
     </div>
   );
 }

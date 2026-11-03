@@ -62,7 +62,7 @@ describe('format-entry-time', () => {
   it('formats exactly as the per-call locale methods did', () => {
     const iso = '2026-07-26T11:30:00.000Z';
     const at = new Date(iso);
-    expect(formatTime(iso)).toBe(at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    expect(formatTime(iso)).toBe(at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
     expect(formatAbsoluteTime(iso)).toBe(
       at.toLocaleString([], { dateStyle: 'full', timeStyle: 'short' })
     );
