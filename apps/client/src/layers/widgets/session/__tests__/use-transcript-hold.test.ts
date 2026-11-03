@@ -15,12 +15,16 @@ interface Props {
   id: string;
   undecided: boolean;
   dm: boolean;
+  ready?: boolean;
 }
 
 function mount(initial: Partial<Props> = {}) {
-  return renderHook(({ id, undecided, dm }: Props) => useTranscriptHold(id, undecided, dm), {
-    initialProps: { id: 'chat-1', undecided: true, dm: false, ...initial },
-  });
+  return renderHook(
+    ({ id, undecided, dm, ready = true }: Props) => useTranscriptHold(id, undecided, dm, ready),
+    {
+      initialProps: { id: 'chat-1', undecided: true, dm: false, ...initial } as Props,
+    }
+  );
 }
 
 describe('useTranscriptHold', () => {
@@ -55,6 +59,23 @@ describe('useTranscriptHold', () => {
     act(() => void vi.advanceTimersByTime(FRAME));
     expect(result.current.hidden).toBe(true);
     act(() => void vi.advanceTimersByTime(FRAME * 3));
+    expect(result.current.hidden).toBe(false);
+  });
+
+  it('stays unseen after the limit until the landing has what it needs', () => {
+    const { result, rerender } = mount({ ready: false });
+    act(() => void vi.advanceTimersByTime(TRANSCRIPT_HOLD_MS + FRAME * 10));
+    expect(result.current).toMatchObject({ held: false, hidden: true });
+
+    rerender({ id: 'chat-1', undecided: true, dm: false, ready: true });
+    expect(result.current.hidden).toBe(true);
+    act(() => void vi.advanceTimersByTime(FRAME * 4));
+    expect(result.current.hidden).toBe(false);
+  });
+
+  it('does not hide a chat that was never held, however long its landing takes', () => {
+    const { result } = mount({ undecided: false, ready: false });
+    act(() => void vi.advanceTimersByTime(FRAME * 10));
     expect(result.current.hidden).toBe(false);
   });
 

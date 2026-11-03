@@ -17,8 +17,9 @@ export const TRANSCRIPT_HOLD_MS = 300;
 /**
  * How many frames the conversation stays unseen after it is let go.
  *
- * The landing runs when the hold ends, and it takes the list a couple of frames
- * to arrive. Shown at once, the oldest message flashes first (QA, frame by frame).
+ * The landing runs when the hold ends, once it has what it needs, and it takes
+ * the list a couple of frames to arrive. Shown any sooner, the oldest message
+ * sits on screen first (QA, frame by frame).
  */
 const REVEAL_FRAMES = 3;
 
@@ -41,11 +42,13 @@ export interface TranscriptHold {
  * @param conversationId - The conversation on screen; each one gets its own wait.
  * @param undecided - Whether the answer is still out.
  * @param isDirectMessage - Whether the answer, once in, drew it as a DM.
+ * @param readyToLand - Whether all the landing is waiting for now is this hold.
  */
 export function useTranscriptHold(
   conversationId: string,
   undecided: boolean,
-  isDirectMessage: boolean
+  isDirectMessage: boolean,
+  readyToLand: boolean
 ): TranscriptHold {
   // Named by conversation, so a wait that ran out for one never excuses the next.
   const [waitedTooLong, setWaitedTooLong] = useState<string | null>(null);
@@ -68,7 +71,7 @@ export function useTranscriptHold(
       setLanding(true);
       return;
     }
-    if (!landing) return;
+    if (!landing || !readyToLand) return;
     let frames = REVEAL_FRAMES;
     let handle = requestAnimationFrame(function next() {
       frames -= 1;
@@ -76,7 +79,7 @@ export function useTranscriptHold(
       else handle = requestAnimationFrame(next);
     });
     return () => cancelAnimationFrame(handle);
-  }, [held, landing]);
+  }, [held, landing, readyToLand]);
 
   return {
     held,

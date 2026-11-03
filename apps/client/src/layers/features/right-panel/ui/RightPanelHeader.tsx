@@ -264,7 +264,9 @@ function TabStrip({
             ref={tablistRef}
             responsive={false}
             aria-label="Right panel tabs"
-            className="bg-accent/60 h-auto justify-start gap-0.5 rounded-lg p-0.5"
+            // The floor is the row with a close button in it, so the strip keeps its
+            // height whichever tab is selected, and while a tab waits to come back.
+            className="bg-accent/60 h-auto min-h-9 justify-start gap-0.5 rounded-lg p-0.5"
           >
             {contributions.map((contribution) => {
               const isActive = contribution.id === activeTab;

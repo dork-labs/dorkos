@@ -329,14 +329,6 @@ export function SessionTranscript({
   // A DM folds each reply's work into one line under it, timed from the words
   // its turn answers (DOR-3075). Nothing is worked out for a session.
   const foldWork = directMessage?.settled === true;
-  // Until the server says which this chat is, a DM's rows and a session's differ
-  // in height (folded work, names), so drawing either would move the conversation
-  // when the answer lands. It waits, laid out but unseen, up to a limit.
-  const { held, hidden, landingKey } = useTranscriptHold(
-    sessionId,
-    directMessage?.settled === false,
-    foldWork
-  );
   const turnStarts = useMemo(
     () => (foldWork ? turnStartsByReply(messages) : null),
     [foldWork, messages]
@@ -379,6 +371,20 @@ export function SessionTranscript({
     sessionId,
     transcript,
     earlier.messagesBefore
+  );
+
+  // Until the server says which this chat is, a DM's rows and a session's differ
+  // in height (folded work, names), so drawing either would move the conversation
+  // when the answer lands. It waits, laid out but unseen, up to a limit.
+  const undecided = directMessage?.settled === false;
+  // The Direct chat log waits on the same answer, so past the hold the landing
+  // cannot wait for it too: it lands without it, and again if the answer is a DM.
+  const readyToLand = isHydrated && !earlier.isSeeking && ((directLog?.ready ?? true) || undecided);
+  const { held, hidden, landingKey } = useTranscriptHold(
+    sessionId,
+    undecided,
+    foldWork,
+    readyToLand
   );
 
   // Rows, not messages, are what the list virtualizes: dividers are real rows so
@@ -622,7 +628,7 @@ export function SessionTranscript({
       // conversation at the end, and being at the end is what marks it read.
       landOn="unread"
       // A link to an old message waits until the pages holding it are read.
-      landingReady={isHydrated && !earlier.isSeeking && (directLog?.ready ?? true) && !held}
+      landingReady={readyToLand && !held}
       {...(landingKey === undefined ? {} : { landingKey })}
       {...(landOnRow === undefined ? {} : { landOnRow })}
       onReachedBottom={markSeen}
