@@ -2,9 +2,9 @@
  * @vitest-environment jsdom
  */
 /**
- * Show sessions in Settings › Advanced (DOR-3074), through the real config
- * read and write path: drawn only while the DM view is on, and written back as
- * `ui.showSessions`.
+ * The DM view and Show sessions in Settings › Advanced (DOR-3074), through the
+ * real config read and write path. The DM view is the way back, so it is always
+ * drawn; Show sessions is drawn only while the DM view is on.
  */
 import { describe, it, expect, vi, afterEach, type Mock } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
@@ -15,13 +15,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { ExperimentsTab } from '../ui/ExperimentsTab';
 
-const DM_VIEW = {
-  key: 'ui.dmView',
-  title: 'Chats with one agent read like a DM',
-  description: 'Talk to an agent like a teammate.',
-  enabled: true,
-  lockedByEnv: false,
-};
+const DM_VIEW_LABEL = 'Chats with one agent read like a DM';
 
 let updateConfig: Mock<(patch: Record<string, unknown>) => Promise<void>>;
 
@@ -31,8 +25,7 @@ function renderTab(dmView: boolean, showSessions = false): void {
   const transport: Transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
-      experiments: [{ ...DM_VIEW, enabled: dmView }],
-      ui: { showSessions },
+      ui: { dmView, showSessions },
     }),
     updateConfig,
   });
@@ -53,7 +46,7 @@ afterEach(() => {
 describe('Show sessions', () => {
   it('is not drawn while the DM view is off, because it would change nothing', async () => {
     renderTab(false);
-    expect(await screen.findByRole('switch', { name: DM_VIEW.title })).toBeInTheDocument();
+    expect(await screen.findByRole('switch', { name: DM_VIEW_LABEL })).toBeInTheDocument();
     expect(screen.queryByRole('switch', { name: 'Show sessions' })).not.toBeInTheDocument();
   });
 
@@ -73,5 +66,28 @@ describe('Show sessions', () => {
   it('shows the saved position', async () => {
     renderTab(true, true);
     expect(await screen.findByRole('switch', { name: 'Show sessions' })).toBeChecked();
+  });
+});
+
+describe('The DM view switch', () => {
+  it('is on when the config says so, and turning it off writes ui.dmView', async () => {
+    const user = userEvent.setup();
+    renderTab(true);
+
+    const toggle = await screen.findByRole('switch', { name: DM_VIEW_LABEL });
+    await waitFor(() => expect(toggle).toBeChecked());
+
+    await user.click(toggle);
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith({ ui: { dmView: false } }));
+  });
+
+  it('can turn it back on after it was turned off', async () => {
+    const user = userEvent.setup();
+    renderTab(false);
+
+    await user.click(await screen.findByRole('switch', { name: DM_VIEW_LABEL }));
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith({ ui: { dmView: true } }));
   });
 });

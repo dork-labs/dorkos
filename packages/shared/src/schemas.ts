@@ -5366,6 +5366,13 @@ export const ServerConfigSchema = z
           description:
             'When this person saw the notice that agents work without asking (ISO 8601), or null when they have not. Gates the notice only; it grants nothing',
         }),
+        // Whether a chat with one agent reads like a direct message (DOR-3074).
+        // On the wire because Settings shows it back as a switch and every door
+        // to an agent reads it. Optional so an older server still parses.
+        dmView: z.boolean().optional().openapi({
+          description:
+            'Whether a chat with one agent reads like a direct message, for everyone using this DorkOS. On by default',
+        }),
         // Whether the working session behind a chat can be opened
         // (DOR-3074). On the wire because Settings shows it back as a switch
         // and the chat header reads it. Optional so an older server still parses.

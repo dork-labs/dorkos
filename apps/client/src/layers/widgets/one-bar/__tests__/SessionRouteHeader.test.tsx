@@ -106,16 +106,7 @@ function mountBar(
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
-      experiments: [
-        {
-          key: 'ui.dmView',
-          title: 'Chats with one agent read like a DM',
-          description: '',
-          enabled: options.dmView ?? true,
-          lockedByEnv: false,
-        },
-      ],
-      ui: { showSessions: options.showSessions ?? false },
+      ui: { dmView: options.dmView ?? true, showSessions: options.showSessions ?? false },
     }),
     findDirectChat: options.lookupPending
       ? vi.fn().mockReturnValue(new Promise(() => {}))
