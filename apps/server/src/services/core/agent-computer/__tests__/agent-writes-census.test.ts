@@ -214,6 +214,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/notifications/read-all',
       'POST /api/workbench/probe',
       'POST /api/workbench/sign',
+      'POST /api/your-browser/scan',
       'PUT /api/read-cursors/:kind/:id',
       'POST /api/sessions/:id/stream-health',
       'POST /api/workbench/bridge',
