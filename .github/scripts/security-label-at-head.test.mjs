@@ -499,7 +499,7 @@ describe("the PR run waits for main's verdict on a label change (DOR-3710)", () 
   });
 
   test('each read is logged, so a job log shows the wait ran', async (t) => {
-    const log = t.mock.method(console, 'log', () => {});
+    const log = t.mock.method(globalThis.console, 'log', () => {});
     const statuses = [review('failure', STALE)];
     const api = gate({ ...covered, statuses });
     const poll = writes(statuses, 1, [review('success')]);
