@@ -281,6 +281,7 @@ describe('local browser scoped tool projection', () => {
     const browser = {
       state: async () => service.agentState(),
       currentProfileId: () => null,
+      capabilities: () => ({ newWindow: true }),
       open: vi.fn(async () => service.agentState()),
       selectTab: vi.fn(async () => service.agentState()),
       pause: vi.fn(async () => service.agentState()),

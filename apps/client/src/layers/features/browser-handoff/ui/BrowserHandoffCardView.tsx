@@ -14,6 +14,10 @@ export interface BrowserHandoffCardViewProps {
   step: HandoffStep;
   /** Whether the agent's own window can be raised. */
   canShowWindow: boolean;
+  /** Signing in closes the Mac app's panel, which would look like a crash unless said. */
+  movesToOwnWindow?: boolean;
+  /** The sign-in lands in the default profile, which every agent shares. */
+  sharedProfile?: boolean;
   /** A button's call is running. */
   busy: boolean;
   error: string | null;
@@ -47,6 +51,8 @@ export function BrowserHandoffCardView({
   agentFolder,
   step,
   canShowWindow,
+  movesToOwnWindow = false,
+  sharedProfile = false,
   busy,
   error,
   onContinue,
@@ -91,12 +97,6 @@ export function BrowserHandoffCardView({
           </p>
         </div>
       )}
-      {step === 'panel-sign-in' && (
-        <div className="space-y-1">
-          <p>This page asks for a password. Don’t type it in this panel.</p>
-          <p className="text-muted-foreground">Signing in isn’t available from the panel yet.</p>
-        </div>
-      )}
       {asksPassword && (
         <div className="bg-muted/50 flex gap-2 rounded-md p-2">
           <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -107,9 +107,11 @@ export function BrowserHandoffCardView({
         </div>
       )}
       {step === 'sign-in' && (
-        <p className="text-muted-foreground">
-          The window opens for you only. Close it when you’re signed in.
-        </p>
+        <div className="text-muted-foreground space-y-1">
+          <p>The window opens for you only. Close it when you’re signed in.</p>
+          {movesToOwnWindow && <p>{name} moves to its own window after you sign in.</p>}
+          {sharedProfile && <p>Every agent that uses the Agent browser can use this sign-in.</p>}
+        </div>
       )}
       {status && (
         <p role="status" aria-live="polite">

@@ -10,8 +10,19 @@ export interface BrowserHandoffCardProps {
 
 /** The live handoff card for a chat. Draws nothing unless that chat's agent is waiting on a person. */
 export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
-  const { handoff, step, canShowWindow, busy, error, continueAgent, signIn, showWindow, stopTask } =
-    useBrowserHandoff(sessionId);
+  const {
+    handoff,
+    step,
+    canShowWindow,
+    movesToOwnWindow,
+    sharedProfile,
+    busy,
+    error,
+    continueAgent,
+    signIn,
+    showWindow,
+    stopTask,
+  } = useBrowserHandoff(sessionId);
   const reducedMotion = useReducedMotion();
   return (
     <AnimatePresence>
@@ -30,6 +41,8 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
             agentFolder={handoff.agentFolder}
             step={step}
             canShowWindow={canShowWindow}
+            movesToOwnWindow={movesToOwnWindow}
+            sharedProfile={sharedProfile}
             busy={busy}
             error={error}
             onContinue={() => void continueAgent()}
