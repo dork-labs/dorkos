@@ -473,7 +473,7 @@ export function ScheduleApprovalCard({
             className={cn(
               'text-foreground/90 overflow-auto rounded-md p-2 font-sans text-sm break-words whitespace-pre-wrap',
               compact ? 'max-h-[25dvh] sm:max-h-40' : 'max-h-[40dvh] sm:max-h-64',
-              'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+              'focus-ring',
               SCROLL_EDGE_SHADOW
             )}
           >

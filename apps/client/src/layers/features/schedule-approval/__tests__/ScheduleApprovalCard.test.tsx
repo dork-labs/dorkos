@@ -294,6 +294,7 @@ describe('ScheduleApprovalCard — what it says', () => {
     const region = screen.getByRole('region', { name: 'Prompt' });
     expect(region).toBe(slot('schedule-prompt'));
     expect(region.getAttribute('tabindex')).toBe('0');
+    expect(region.className).toContain('focus-ring');
     expect(region.className).toContain('text-sm');
     expect(region.className).toContain('whitespace-pre-wrap');
     expect(region.className).toContain('break-words');
