@@ -33,7 +33,7 @@
  * @module services/rooms/reseat/seat-mover
  */
 import { randomUUID } from 'node:crypto';
-import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { IMPLICIT_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { DeclaredPermissionModes } from '@dorkos/shared/permission-semantics';
 import type { SessionSettings } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
@@ -41,7 +41,13 @@ import type { RankedAccount } from '../../core/usage/account-ranking.js';
 import { carrySessionMarks } from '../../core/turn-power/seat-marks.js';
 import { reseatSettings } from '../../session/fleet/carry-over-power.js';
 import type { ReseatNoticeReason } from '../notices/notice-copy.js';
-import { canTakeWork, nearlyOut, pickReseatAccount, reseatCandidates } from './reseat-accounts.js';
+import {
+  canTakeWork,
+  highestUsedPct,
+  nearlyOut,
+  pickReseatAccount,
+  reseatCandidates,
+} from './reseat-accounts.js';
 
 /** The runtime whose accounts can run out and be moved between. */
 export const RESEAT_RUNTIME = 'claude-code';
@@ -49,11 +55,34 @@ export const RESEAT_RUNTIME = 'claude-code';
 /**
  * Whether an AGENT may move its own seat with the `reseat` tool (Security
  * Must 5). A tool that lets an agent spend another account widens what agents
- * can do, so it needs Dorian's own yes; until then only a person may. The one
- * switch: flipping it lets an agent move ITS OWN seat, never another's, and
- * never from a marked turn. The automatic move does not read it.
+ * can do, so it is on only with Dorian's own yes (DOR-3145), and only within his
+ * four limits:
+ *
+ * 1. only when its account is at {@link AGENT_RESEAT_MIN_PCT}% usage or more;
+ * 2. a line in the room every time it moves;
+ * 3. never onto Main or `claude-ab1` (the main account, and any account a person
+ *    kept out of automatic moves, which is how `claude-ab1` is kept out);
+ * 4. a turn that read outside content can't trigger a move, and an agent can
+ *    never move another agent's seat ({@link mayReseatByHand}).
+ *
+ * 1 and 3 are {@link RoomSeatMover.byHand}'s; 2 is the room's line, which every
+ * by-hand move writes. The automatic move does not read the switch.
  */
-export const AGENT_MAY_RESEAT_OWN_SEAT = false;
+export const AGENT_MAY_RESEAT_OWN_SEAT = true;
+
+/**
+ * How far through its 5-hour or weekly window the seat's account must be before
+ * its agent may move it (DOR-3145, Dorian's first limit). Below it, the agent's
+ * own account still has room and a move would only spend another.
+ */
+export const AGENT_RESEAT_MIN_PCT = 80;
+
+/** Why an agent may not move its own seat right now. */
+export type AgentReseatRefusal =
+  /** Its account's usage has no reading: unknown is a reason not to move, never to move. */
+  | 'usage-unknown'
+  /** Its account is below {@link AGENT_RESEAT_MIN_PCT}. */
+  | 'not-low-enough';
 
 /**
  * Whether this caller may move this seat by hand (Security Must 5): always a
@@ -356,8 +385,13 @@ export class RoomSeatMover {
    * account excluded and each marked whether it can take work now.
    *
    * @param seat - The seat.
+   * @param opts.byAgent - The seat's own agent asks (DOR-3145): only accounts it may move to,
+   *   never the main account or one kept out of automatic moves.
    */
-  async options(seat: Seat): Promise<{ current: SeatAccount; accounts: RankedAccount[] }> {
+  async options(
+    seat: Seat,
+    opts: { byAgent?: true } = {}
+  ): Promise<{ current: SeatAccount; accounts: RankedAccount[] }> {
     const runtime = await this.deps.runtimeOf(seat);
     const none = { current: { id: null, label: null, usage: null }, accounts: [] };
     if (seat.sessionId === null || !(await this.mayMoveOn(runtime, seat))) return none;
@@ -365,11 +399,13 @@ export class RoomSeatMover {
     const ranking = await this.deps.ranking(runtime, seat.agentPath);
     return {
       current,
-      // A person may name an account kept out of automatic moves, so it is offered.
-      accounts: reseatCandidates(ranking, runtime, {
-        keptOut: true,
-        signinHealthy: this.deps.signinHealthy,
-      })
+      // A person may name an account kept out of automatic moves, so it is offered; an agent
+      // may not, and never the main account either.
+      accounts: reseatCandidates(
+        opts.byAgent ? ranking.filter((row) => !mainAccount(row)) : ranking,
+        runtime,
+        { keptOut: !opts.byAgent, signinHealthy: this.deps.signinHealthy }
+      )
         .filter((row) => row.id !== current.id)
         .map((row) => {
           const eligible = canTakeWork(row);
@@ -390,25 +426,36 @@ export class RoomSeatMover {
    * @param opts.accountId - The account to move to; the best when absent.
    * @param opts.by - Who asked, as the room names them.
    * @param opts.hideAccounts - The room has outsiders: name no account in the summary.
+   * @param opts.byAgent - The seat's own agent is moving it (DOR-3145): its account must be at
+   *   {@link AGENT_RESEAT_MIN_PCT} or more, and it never goes to the main account or one kept
+   *   out of automatic moves, even when named.
    * @returns The move; `nothing-to-move` for a seat with no session yet (its
    *   first turn starts wherever the agent's usual account is); `null` when no
-   *   account can take it.
+   *   account can take it; a refusal when its agent may not move it now.
    */
   async byHand(
     seat: Seat,
-    opts: { accountId?: string; by: string; hideAccounts: boolean }
-  ): Promise<SeatMove | 'nothing-to-move' | null> {
+    opts: { accountId?: string; by: string; hideAccounts: boolean; byAgent?: true }
+  ): Promise<SeatMove | 'nothing-to-move' | null | { refused: AgentReseatRefusal }> {
     if (seat.sessionId === null) return 'nothing-to-move';
     const runtime = await this.deps.runtimeOf(seat);
     if (!(await this.mayMoveOn(runtime, seat))) return null;
     const current = await this.deps.accountOf(runtime, seat.sessionId, seat.agentPath);
+    if (opts.byAgent) {
+      const used = current.id === null ? null : highestUsedPct(current.usage);
+      if (used === null) return { refused: 'usage-unknown' };
+      if (used < AGENT_RESEAT_MIN_PCT) return { refused: 'not-low-enough' };
+    }
     const ranking = await this.deps.ranking(runtime, seat.agentPath);
     const named = opts.accountId !== undefined;
-    const offered = named ? ranking.filter((row) => row.id === opts.accountId) : ranking;
+    // An agent never moves itself onto the main account, whatever its id (Dorian's third limit).
+    const allowed = opts.byAgent ? ranking.filter((row) => !mainAccount(row)) : ranking;
+    const offered = named ? allowed.filter((row) => row.id === opts.accountId) : allowed;
     const pick = pickReseatAccount(
       offered,
       { runtime, currentAccountId: current.id },
-      { keptOut: named, signinHealthy: this.deps.signinHealthy }
+      // Only a person naming one may use an account kept out of automatic moves.
+      { keptOut: named && !opts.byAgent, signinHealthy: this.deps.signinHealthy }
     );
     if (pick.kind === 'none') return null;
     return this.reseat(seat, {
@@ -555,6 +602,11 @@ function reasonOf(plan: {
     case 'person':
       return { kind: 'by-hand', by: plan.by ?? 'Somebody', to };
   }
+}
+
+/** Whether an account is the runtime's main one, which an agent never moves itself to (DOR-3145). */
+function mainAccount(row: RankedAccount): boolean {
+  return row.isDefault === true || row.id === IMPLICIT_ACCOUNT_ID;
 }
 
 function seatKey(roomId: string, authorId: string): string {

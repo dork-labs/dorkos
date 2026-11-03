@@ -237,17 +237,12 @@ export class RoomService {
     return this.parts.turnControl.haltRoom(roomId, viewerAuthorId);
   }
   /** Move an agent's seat to another account. See {@link RoomTurnControl.reseatAgent}. */
-  reseatAgent(
-    roomId: string,
-    authorId: string,
-    viewerAuthorId: string,
-    opts?: { accountId?: string; markedTurn?: boolean }
-  ): Promise<{ sessionId: string }> {
-    return this.parts.turnControl.reseatAgent(roomId, authorId, viewerAuthorId, opts);
+  reseatAgent(...args: Parameters<RoomTurnControl['reseatAgent']>): Promise<{ sessionId: string }> {
+    return this.parts.turnControl.reseatAgent(...args);
   }
   /** The accounts an agent's seat may move to. See {@link RoomTurnControl.reseatOptions}. */
-  reseatOptions(roomId: string, authorId: string, viewerAuthorId: string): Promise<ReseatOptions> {
-    return this.parts.turnControl.reseatOptions(roomId, authorId, viewerAuthorId);
+  reseatOptions(...args: Parameters<RoomTurnControl['reseatOptions']>): Promise<ReseatOptions> {
+    return this.parts.turnControl.reseatOptions(...args);
   }
   /** Stop one agent in a room. See {@link RoomTurnControl.haltAgent}. */
   haltAgent(roomId: string, authorId: string, viewerAuthorId: string): Promise<number> {

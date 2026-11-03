@@ -305,19 +305,133 @@ describe('mayReseatByHand (Must 5)', () => {
     markedTurn: false,
   };
 
-  it('ships with agents switched off, pending Dorian’s yes', () => {
-    expect(AGENT_MAY_RESEAT_OWN_SEAT).toBe(false);
+  it('ships with agents switched on, after Dorian’s yes (DOR-3145)', () => {
+    expect(AGENT_MAY_RESEAT_OWN_SEAT).toBe(true);
   });
 
-  it('lets a person move any seat, and no agent move any seat, as shipped', () => {
+  // Red when: the own-seat or the marked-turn half of `mayReseatByHand` is removed. Dorian's
+  // fourth limit: no move from a turn that read outside words.
+  it('as shipped: a person moves any seat; an agent only its own, never from a marked turn', () => {
     expect(mayReseatByHand(person)).toBe(true);
     expect(mayReseatByHand({ ...person, markedTurn: true })).toBe(true);
-    expect(mayReseatByHand(agentOwn)).toBe(false);
+    expect(mayReseatByHand(agentOwn)).toBe(true);
+    expect(mayReseatByHand({ ...agentOwn, seatAuthorId: 'bo' })).toBe(false);
+    expect(mayReseatByHand({ ...agentOwn, markedTurn: true })).toBe(false);
+  });
+
+  it('with agents switched off: no agent moves any seat', () => {
+    expect(mayReseatByHand(agentOwn, false)).toBe(false);
+    expect(mayReseatByHand(person, false)).toBe(true);
   });
 
   it('with agents switched on: only an agent’s own seat, and never from a marked turn', () => {
     expect(mayReseatByHand(agentOwn, true)).toBe(true);
     expect(mayReseatByHand({ ...agentOwn, seatAuthorId: 'bo' }, true)).toBe(false);
     expect(mayReseatByHand({ ...agentOwn, markedTurn: true }, true)).toBe(false);
+  });
+});
+
+// DOR-3145: Dorian's limits on an agent moving its own seat. Each is pinned in both directions.
+describe('an agent moving its own seat (byHand, byAgent)', () => {
+  const AGENT = { by: 'Ana', hideAccounts: false, byAgent: true as const };
+
+  /** A mover whose seat runs on `claude4` at `used`% of its 5-hour window. */
+  function at(used: number | null, ranking: RankedAccount[] = [row('claude4'), row('claude3')]) {
+    const own = row('claude4', { fiveHour: used ?? 0 });
+    if (used === null) (own.usage.windows[0] as { usedPct: number | null }).usedPct = null;
+    return mover({
+      ranking: async () => ranking,
+      accountOf: async () => ({ id: 'claude4', label: 'claude4', usage: own.usage }),
+    });
+  }
+
+  // Red when: the 80% check is removed. Dorian's first limit.
+  it('is refused below 80% of its account, and allowed at 80%', async () => {
+    expect(await at(79).m.byHand(SEAT, AGENT)).toEqual({ refused: 'not-low-enough' });
+    const ok = at(80);
+    expect(await ok.m.byHand(SEAT, AGENT)).toMatchObject({
+      reason: { kind: 'by-hand', by: 'Ana' },
+    });
+    expect(ok.m.pendingLaunch('room-1', 'ana', 'new-seat')).toMatchObject({
+      accountHint: 'claude3',
+    });
+  });
+
+  // DOR-3589: a usage reading that is missing is a reason not to move, never to move.
+  it('is refused when its account’s usage cannot be read, at all or in any watched window', async () => {
+    expect(await at(null).m.byHand(SEAT, AGENT)).toEqual({ refused: 'usage-unknown' });
+    const unread = mover({ accountOf: async () => ({ id: 'claude4', label: null, usage: null }) });
+    expect(await unread.m.byHand(SEAT, AGENT)).toEqual({ refused: 'usage-unknown' });
+    const nameless = mover({
+      accountOf: async () => ({
+        id: null,
+        label: null,
+        usage: row('claude4', { fiveHour: 99 }).usage,
+      }),
+    });
+    expect(await nameless.m.byHand(SEAT, AGENT)).toEqual({ refused: 'usage-unknown' });
+  });
+
+  // A reading whose window has reset is not current: it counts as none, so the agent stays.
+  it('is refused when its only reading is from a window that has expired', async () => {
+    const own = row('claude4', { fiveHour: 99 });
+    (own.usage.windows[0] as { expired: boolean }).expired = true;
+    const { m } = mover({
+      accountOf: async () => ({ id: 'claude4', label: 'claude4', usage: own.usage }),
+    });
+    expect(await m.byHand(SEAT, AGENT)).toEqual({ refused: 'usage-unknown' });
+  });
+
+  it('never applies the 80% limit to a person', async () => {
+    expect(await at(10).m.byHand(SEAT, { by: 'Dorian', hideAccounts: false })).toMatchObject({
+      reason: { kind: 'by-hand', by: 'Dorian' },
+    });
+  });
+
+  // Red when: the main-account filter is removed. Dorian's third limit, whatever the id.
+  it('never moves onto the main account, named or as the best pick', async () => {
+    const main = { ...row('claude', { fiveHour: 0 }), isDefault: true as const };
+    const implicit = row('default', { fiveHour: 0 });
+    const onlyMain = at(90, [row('claude4'), main, implicit]);
+    expect(await onlyMain.m.byHand(SEAT, { ...AGENT, accountId: 'claude' })).toBeNull();
+    expect(await onlyMain.m.byHand(SEAT, { ...AGENT, accountId: 'default' })).toBeNull();
+    expect(await onlyMain.m.byHand(SEAT, AGENT)).toBeNull();
+
+    const withOther = at(90, [row('claude4'), main, row('claude3', { fiveHour: 50 })]);
+    await withOther.m.byHand(SEAT, AGENT);
+    expect(withOther.m.pendingLaunch('room-1', 'ana', 'new-seat')).toMatchObject({
+      accountHint: 'claude3',
+    });
+  });
+
+  // Red when: an agent naming a kept-out account is let through. A person still may.
+  it('never moves onto an account kept out of automatic moves, even when it names one', async () => {
+    const ranking = [row('claude4'), row('claude-ab1', { noAutoMove: true, fiveHour: 0 })];
+    expect(await at(90, ranking).m.byHand(SEAT, { ...AGENT, accountId: 'claude-ab1' })).toBeNull();
+    expect(
+      await at(90, ranking).m.byHand(SEAT, {
+        by: 'Dorian',
+        hideAccounts: false,
+        accountId: 'claude-ab1',
+      })
+    ).toMatchObject({ reason: { kind: 'by-hand', to: 'claude-ab1' } });
+  });
+
+  it('offers an agent only the accounts it may move to', async () => {
+    const ranking = [
+      row('claude4'),
+      { ...row('claude', { fiveHour: 0 }), isDefault: true as const },
+      row('claude-ab1', { noAutoMove: true }),
+      row('claude3'),
+    ];
+    const { m } = at(90, ranking);
+    expect((await m.options(SEAT, { byAgent: true })).accounts.map((a) => a.id)).toEqual([
+      'claude3',
+    ]);
+    expect((await m.options(SEAT)).accounts.map((a) => a.id)).toEqual([
+      'claude',
+      'claude-ab1',
+      'claude3',
+    ]);
   });
 });

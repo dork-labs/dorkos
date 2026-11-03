@@ -357,9 +357,8 @@ describe('the rooms capability domain', () => {
           servers: ['in-session', 'external'],
           readOnly: false,
         },
-        // Re-seat (Security Must 5): people only for now, so on the external
-        // server alone. An agent's own tool list carries neither until Dorian
-        // allows agents to move their own seat.
+        // Re-seat (Security Must 5): the move is in-session too, for an agent's own seat within
+        // Dorian's four limits (DOR-3145). The options list stays the owner's, external only.
         {
           id: 'rooms.reseat_options',
           tool: 'reseat_room_agent_options',
@@ -373,7 +372,7 @@ describe('the rooms capability domain', () => {
           tool: 'reseat_room_agent',
           tier: 'act',
           area: 'rooms',
-          servers: ['external'],
+          servers: ['in-session', 'external'],
           readOnly: false,
         },
       ]);
