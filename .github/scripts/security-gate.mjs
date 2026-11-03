@@ -1,4 +1,4 @@
-/* global console, fetch, process, URL */
+/* global console, fetch, process, setTimeout, URL */
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import {
@@ -124,6 +124,78 @@ function awaitingReview(pr, input, deep) {
   return null;
 }
 
+/** The labels whose adding or removal makes main's verdict write a new status. */
+const VERDICT_LABELS = [REVIEW_LABEL, DEEP_LABEL, HOLD_LABEL];
+
+/** The one base main's verdict judges (`security-review-initialize.yml` runs only for it). */
+const VERDICT_BASE = 'main';
+
+/**
+ * How long a PR run waits for main's verdict on its head (DOR-3710). The gate and
+ * `security-review-initialize` start on the same label event, and the gate read
+ * the old status 1-5s before the verdict wrote the new one, so the first run
+ * after a label went red. One 90s deadline covers the whole run, base-move
+ * restarts included, so the script refuses with its own message well inside
+ * the job's 5 minutes.
+ */
+export const VERDICT_POLL = {
+  intervalMs: 5000,
+  timeoutMs: 90_000,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: () => Date.now(),
+};
+
+/**
+ * The time main's verdict for this head must be newer than: the newest change to
+ * a label it reads, a force push or base change on the timeline, the head's
+ * newest push in the activity feed, and `floor`, the triggering event's
+ * `pull_request.updated_at`, in case its own label event is not on the timeline
+ * yet. NaN when any is unreadable or the push is missing, which refuses.
+ */
+export function verdictDue({ sha, ref, timeline, activity }, floor) {
+  const pushes = activity
+    .filter((entry) => entry.after === sha && entry.ref === `refs/heads/${ref}`)
+    .map((entry) => entry.timestamp);
+  if (!pushes.length) return NaN;
+  const changes = timeline
+    .filter(
+      (event) =>
+        (['labeled', 'unlabeled'].includes(event.event) &&
+          VERDICT_LABELS.includes(event.label?.name)) ||
+        ['head_ref_force_pushed', 'base_ref_changed'].includes(event.event)
+    )
+    .map((event) => event.created_at);
+  return Math.max(...[...pushes, ...changes, floor].map((value) => Date.parse(value)));
+}
+
+/**
+ * The PR run's label-at-head verdict: the labels it can see must cover the head,
+ * and then main's `security-review` must say `success` in a status written after
+ * {@link verdictDue}. A stale or pending status is polled, never judged on; when
+ * the bound runs out it refuses. A status is read for this exact SHA only.
+ */
+async function judgeFreshReview(api, sha, input, deep, wait) {
+  let verdict = labelAtHead(input);
+  if (verdict.passed && deep) verdict = labelNewerThanHead({ ...input, name: DEEP_LABEL });
+  if (!verdict.passed) return verdict;
+  const due = verdictDue(input, wait.eventTime);
+  if (Number.isNaN(due))
+    return { passed: false, reason: `cannot read when ${sha}'s labels or push last changed` };
+  for (;;) {
+    const review = latestReview(await api.statuses(sha));
+    if (review && review.state !== 'pending' && Date.parse(review.created_at) > due)
+      return review.state === 'success'
+        ? verdict
+        : { passed: false, reason: `security-review is ${review.state}` };
+    if (!(wait.now() + wait.intervalMs <= wait.deadline))
+      return {
+        passed: false,
+        reason: `security-review verdict not yet written for this head (none newer than ${new Date(due).toISOString()}); rerun security-gate`,
+      };
+    await wait.sleep(wait.intervalMs);
+  }
+}
+
 /** A Security label put on after the PR merged, which reviewed nothing. `null` if none. */
 function labelAfterMerge(pr, timeline) {
   if (!pr.merged_at) return null;
@@ -141,7 +213,9 @@ function labelAfterMerge(pr, timeline) {
  * Label-at-head for a sensitive diff while no App is set; App mode everywhere else.
  * A diff on a P0 identity path (`deep`) also needs {@link DEEP_LABEL} at the head.
  * With `waitForReview`, an open PR that is only waiting for its labels passes as
- * `{ passed: true, waiting }`; the merge queue never sets it.
+ * `{ passed: true, waiting }`, and one into main whose labels cover it waits for
+ * main's fresh verdict (`wait`, see {@link VERDICT_POLL}). A PR into any other base
+ * gets no verdict to wait for and keeps the old lines; the merge queue never sets it.
  */
 async function verifyApproval(
   api,
@@ -151,7 +225,8 @@ async function verifyApproval(
   sensitive,
   botUserId,
   deep = false,
-  waitForReview = false
+  waitForReview = false,
+  wait = undefined
 ) {
   if (!sensitive || approvalMode(botUserId) !== 'label-at-head') {
     const passed = hasApproval(review, sensitive, botUserId);
@@ -165,6 +240,10 @@ async function verifyApproval(
   if (late) return { passed: false, reason: late };
   const waiting = waitForReview && awaitingReview(pr, input, deep);
   if (waiting) return { passed: true, waiting };
+  if (waitForReview && pr.base?.ref === VERDICT_BASE)
+    return judgeFreshReview(api, sha, input, deep, wait);
+  // The merge queue, and a PR into another base, judge the status they read,
+  // unchanged by DOR-3710.
   // The initializer's pending is every sensitive head's start; a refusal still refuses.
   if (review && review.state !== 'pending' && review.state !== 'success')
     return { passed: false, reason: `security-review is ${review.state}` };
@@ -228,11 +307,15 @@ const BASE_MOVE_RUNS = 3;
  * @param {object} api The GitHub client.
  * @param {object} event The `pull_request` or `pull_request_target` event.
  * @param {string} pattern The security path list.
- * @param {object} [options] `write`, `requireApproval`, `botUserId`, `deepPattern`.
+ * @param {object} [options] `write`, `requireApproval`, `botUserId`, `deepPattern`, and
+ *   `poll` to override {@link VERDICT_POLL}.
  */
 export async function checkPullRequest(api, event, pattern, options = {}) {
+  // One deadline for every run below, so restarts never stack their waits.
+  const wait = { ...VERDICT_POLL, ...options.poll, eventTime: event.pull_request.updated_at };
+  wait.deadline = wait.now() + wait.timeoutMs;
   for (let run = 1; ; run += 1) {
-    const result = await checkPullRequestOnce(api, event, pattern, options);
+    const result = await checkPullRequestOnce(api, event, pattern, { ...options, wait });
     if (!result.baseMoved) return result.said;
     if (run === BASE_MOVE_RUNS)
       throw new Error(`PR #${event.pull_request.number} base kept moving; rerun security-gate`);
@@ -243,7 +326,7 @@ async function checkPullRequestOnce(
   api,
   event,
   pattern,
-  { write = false, requireApproval = true, botUserId, deepPattern }
+  { write = false, requireApproval = true, botUserId, deepPattern, wait }
 ) {
   const number = event.pull_request.number;
   const sha = event.pull_request.head.sha;
@@ -281,7 +364,8 @@ async function checkPullRequestOnce(
           sensitive,
           botUserId,
           sensitive && touchesDeep(files, deepPattern),
-          true
+          true,
+          wait
         )
       : { passed: true };
   const current = await api.pr(number);
