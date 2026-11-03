@@ -184,7 +184,9 @@ export class TodoTurns {
    * A → B → (a chat B messaged) → A is refused like A → B → A, while an unrelated message into the
    * same chat adds nobody. Undefined for a chat no to-do turn led to.
    *
-   * At most {@link TODO_CHAIN_HOPS} hops back and {@link TODO_CHAIN_CHATS} chats in all.
+   * At most {@link TODO_CHAIN_HOPS} hops back and {@link TODO_CHAIN_CHATS} chats in all. A walk
+   * cut short by either limit answers the deepest chain, capped, so nothing past the limit can
+   * start a fresh one.
    *
    * @param sessionId - The calling chat.
    * @param readTodo - Read a to-do's current row.
@@ -194,6 +196,16 @@ export class TodoTurns {
     readTodo: (id: string) => CommitmentRow | undefined
   ): TodoParent | undefined {
     const graph = this.ancestry(sessionId, readTodo);
+    if (graph.cut) {
+      // The walk ran out before it saw every chat this one descends from, so a to-do turn may lie
+      // beyond it. Fail closed (Security's #3460 M1): the deepest chain, and capped.
+      const agents = new Set<string>();
+      for (const { row, agentId } of graph.turns.values()) {
+        for (const id of JSON.parse(row.chainAgents) as string[]) agents.add(id);
+        agents.add(agentId);
+      }
+      return { depth: TODO_TURN_MAX_DEPTH, agents: [...agents], capped: true };
+    }
     if (graph.turns.size === 0) return undefined;
     const reaches = new Map<string, boolean>();
     const reachesTurn = (chat: string, path: Set<string>): boolean => {
@@ -232,12 +244,15 @@ export class TodoTurns {
   ): {
     turns: Map<string, { row: CommitmentRow; agentId: string }>;
     parents: Map<string, { from: string; agentId: string | null }[]>;
+    /** True when a limit stopped the walk with chats still unread. */
+    cut: boolean;
   } {
     const db = this.deps.db;
     const turns = new Map<string, { row: CommitmentRow; agentId: string }>();
     const parents = new Map<string, { from: string; agentId: string | null }[]>();
     const seen = new Set<string>([sessionId]);
     let frontier = [sessionId];
+    let cut = false;
     for (let hop = 0; hop < TODO_CHAIN_HOPS && frontier.length > 0; hop++) {
       const next: string[] = [];
       for (const chat of frontier) {
@@ -266,14 +281,18 @@ export class TodoTurns {
         ];
         parents.set(chat, edges);
         for (const edge of edges) {
-          if (seen.has(edge.from) || seen.size >= TODO_CHAIN_CHATS) continue;
+          if (seen.has(edge.from)) continue;
+          if (seen.size >= TODO_CHAIN_CHATS) {
+            cut = true;
+            continue;
+          }
           seen.add(edge.from);
           next.push(edge.from);
         }
       }
       frontier = next;
     }
-    return { turns, parents };
+    return { turns, parents, cut: cut || frontier.length > 0 };
   }
 
   /** How many turns a charge started today. */

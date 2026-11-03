@@ -342,6 +342,42 @@ describe('to-do tools', () => {
       expect(back).toMatchObject({ ok: false, code: 'NOT_YOURS' });
     });
 
+    it('fails closed when the to-do turn is more hops back than the walk reads (#3460 M1)', async () => {
+      await personGivesB();
+      let from = 'todo-chat-1';
+      for (let i = 1; i <= 9; i++) {
+        db.insert(sessionStartedBy)
+          .values({
+            sessionId: `spin-off-${i}`,
+            kind: 'chat',
+            startedBySessionId: from,
+            createdAt: new Date().toISOString(),
+          })
+          .run();
+        from = `spin-off-${i}`;
+      }
+      await ran('spin-off-9');
+      const back = await call(
+        'todos.add',
+        { what: 'Back to B', assignee: 'agent-b' },
+        { identity: identity('/agents/b'), sessionId: 'spin-off-9' }
+      );
+      expect(back).toMatchObject({ ok: false, code: 'CAPPED_TURN' });
+    });
+
+    it('fails closed when more chats lead in than the walk reads (#3460 M1)', async () => {
+      await personGivesB();
+      for (let i = 0; i < 64; i++) sendsTo(`unrelated-${i}`, 'chat-c', 'agent-a');
+      sendsTo('todo-chat-1', 'chat-c');
+      await ran('chat-c');
+      const back = await call(
+        'todos.add',
+        { what: 'Back to B', assignee: 'agent-b' },
+        { identity: identity('/agents/c'), sessionId: 'chat-c' }
+      );
+      expect(back).toMatchObject({ ok: false, code: 'CAPPED_TURN' });
+    });
+
     it('adds nobody from a message that has nothing to do with the chain', async () => {
       await personGivesB();
       // A messaged chat-c from a chat no to-do led to: A is not in the chain.
