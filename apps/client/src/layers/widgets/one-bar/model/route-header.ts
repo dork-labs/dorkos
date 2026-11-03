@@ -16,9 +16,9 @@ interface HeaderRouteMatch {
   staticData?: { header?: RouteHeader };
 }
 
-/** Which bar to render, and the key the cross-fade animates on. */
+/** Which bar to render, and the key that swaps it. */
 export interface ResolvedRouteHeader {
-  /** `AnimatePresence` key — the BAR, not the route (see {@link barKey}). */
+  /** The swap's key: the BAR, not the route (see {@link barKey}). */
   key: string;
   /** The bar itself — never `null`; a chain that declares none resolves to `null` whole. */
   Header: NonNullable<RouteHeader>;
@@ -39,7 +39,7 @@ export interface ResolvedRouteHeader {
  * tabs the way it was always meant to.
  *
  * Routes with DIFFERENT bars still get different keys, so `/channels` → `/team`
- * cross-fades exactly as before.
+ * swaps and fades in, as the shell draws it.
  *
  * Identity, not name: a `WeakMap` keyed on the component itself. Two bars can
  * share a display name (and a production build may mangle both), which would
@@ -50,7 +50,7 @@ const BAR_KEYS = new WeakMap<NonNullable<RouteHeader>, string>();
 let nextBarKey = 0;
 
 /**
- * The cross-fade key for one bar component.
+ * The swap key for one bar component.
  *
  * @param Header - The bar a route declared.
  * @returns A key that is the same for every route declaring that same bar.
