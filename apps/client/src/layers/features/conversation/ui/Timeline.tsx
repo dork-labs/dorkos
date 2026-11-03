@@ -47,6 +47,9 @@ import { ScrollThumb } from './ScrollThumb';
 import { TimelineAffordances } from './TimelineAffordances';
 import { TimelineRow } from './TimelineRow';
 
+/** The keys that scroll a list, which count as the reader moving it. */
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
+
 /**
  * How long the landing mark stays on the row it lands you on, in milliseconds.
  *
@@ -344,7 +347,7 @@ export function ConversationTimeline({
   // measured in Chromium, one `notice` row, skeleton on screen, no scroller.
   // Luck is not the guard, so this is: the landing waits for the list it is
   // supposed to be scrolling.
-  const { landed, landedOn, landedRow, reportTopRow } = useTimelineLanding({
+  const { landed, landedOn, landedRow, reportTopRow, noteReaderScrolled } = useTimelineLanding({
     conversationId,
     rows,
     virtualizer,
@@ -567,6 +570,11 @@ export function ConversationTimeline({
       <div
         ref={setScroller}
         onScroll={handleScroll}
+        onWheel={noteReaderScrolled}
+        onTouchMove={noteReaderScrolled}
+        onKeyDown={(event) => {
+          if (SCROLL_KEYS.has(event.key)) noteReaderScrolled();
+        }}
         data-slot="conversation-scroller"
         data-testid="conversation-scroller"
         className="chat-scroll-area h-full scrollbar-none overflow-y-auto"
