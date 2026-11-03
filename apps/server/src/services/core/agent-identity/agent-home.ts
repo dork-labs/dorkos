@@ -265,6 +265,7 @@ const LINKED_WORKTREE_MEMO_MAX = 512;
  * Refuses (answers `null`) for everything that is not plainly a linked worktree
  * git made: a `.git` directory (a main worktree), a `.git` file whose gitdir
  * has no backlink naming it (hand-written), no `commondir` (a submodule), a
+ * gitdir outside its common dir's `worktrees/` (a forged pointer), a
  * bare common dir, and any repo under `<dorkHome>/rooms` (never a home repo,
  * so not even looked up).
  *
@@ -321,6 +322,13 @@ function mapLinkedWorktree(
   if (insideRoomsDir(commonDir)) return null;
   // A bare repo has no main worktree to be a home.
   if (path.basename(commonDir) !== '.git') return null;
+  // The gitdir must be one of that repo's own worktree records,
+  // `<commonDir>/worktrees/<name>`. The backlink and `commondir` both live in
+  // the gitdir, so whoever made a gitdir anywhere else wrote both: a pointer
+  // into another agent's repo would otherwise resolve as that agent (DOR-3706,
+  // R3 in Security's DOR-3640 write-up). Writing inside that repo's own `.git`
+  // is already the power to change the repo.
+  if (!sameRealPath(path.dirname(gitDir), path.join(commonDir, 'worktrees'))) return null;
   return path.join(path.dirname(commonDir), path.relative(worktreeRoot, dir));
 }
 

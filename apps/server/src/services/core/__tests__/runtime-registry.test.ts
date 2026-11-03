@@ -797,6 +797,34 @@ describe('RuntimeRegistry', () => {
         expect(row?.agentPath).toBe('/first/path');
       });
 
+      it('never changes a recorded agent, not even when it claims an unbound row (DOR-3706)', async () => {
+        // A row with no runtime yet that already names an agent: the claim
+        // binds the runtime but keeps the agent, so a later caller naming a
+        // different agent cannot turn the session into that agent.
+        db.insert(sessionMetadata)
+          .values({
+            sessionId: 'session-recorded',
+            runtime: null,
+            agentPath: '/agents/ana',
+            createdAt: new Date().toISOString(),
+          })
+          .run();
+        const bound = await registry.persistSessionRuntime(
+          'session-recorded',
+          'claude-code',
+          A_PERSON,
+          '/agents/bypass'
+        );
+        const row = db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'session-recorded'))
+          .get();
+        expect(bound).toBe(true);
+        expect(row?.runtime).toBe('claude-code');
+        expect(row?.agentPath).toBe('/agents/ana');
+      });
+
       it.each([
         ['interactive', { kind: 'interactive' } as TurnOrigin, true],
         [
@@ -1973,6 +2001,29 @@ describe('RuntimeRegistry', () => {
         // …and the destination's own value is kept where it has one.
         model: 'sonnet',
       });
+    });
+
+    it('refuses to merge two rows that record different agents, and leaves both as they were (DOR-3706)', async () => {
+      await registry.persistSessionRuntime('ana-chat', 'claude-code', A_PERSON, '/agents/ana');
+      await registry.saveSessionSettings('ana-chat', { permissionMode: 'bypassPermissions' });
+      await registry.persistSessionRuntime('ben-chat', 'claude-code', A_PERSON, '/agents/ben');
+      await registry.saveSessionSettings('ben-chat', { model: 'sonnet' });
+      const before = allRows();
+
+      await registry.rekeySessionSettings('ana-chat', 'ben-chat');
+
+      expect(allRows()).toEqual(before);
+    });
+
+    it('still merges when only one row records an agent (DOR-3706)', async () => {
+      await registry.persistSessionRuntime('old', 'claude-code', A_PERSON, '/agents/ana');
+      await registry.saveSessionSettings('new', { model: 'sonnet' });
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(allRows()).toEqual([
+        expect.objectContaining({ sessionId: 'new', agentPath: '/agents/ana', model: 'sonnet' }),
+      ]);
     });
 
     it('carries the binding onto a destination that has none', async () => {

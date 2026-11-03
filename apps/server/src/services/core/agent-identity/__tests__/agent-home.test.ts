@@ -302,6 +302,40 @@ describe('resolveAgentHome — linked worktrees of a home repo (real git)', () =
     expect(resolveAgentHome(forged)).toEqual({ kind: 'none' });
   });
 
+  it('answers none for a forged gitdir outside the repo, even with its own backlink and commondir (DOR-3706)', () => {
+    // R3: the backlink and `commondir` both live in the gitdir, so a gitdir
+    // made anywhere else carries whatever its maker wrote. This one points at
+    // Ana's repo from a folder nobody gave a worktree.
+    const forged = path.join(scratch, 'forged-outside');
+    const fakeGitDir = path.join(scratch, 'fake-gitdir');
+    fs.mkdirSync(forged);
+    fs.mkdirSync(fakeGitDir);
+    fs.writeFileSync(path.join(forged, '.git'), `gitdir: ${fakeGitDir}\n`);
+    fs.writeFileSync(path.join(fakeGitDir, 'gitdir'), `${path.join(forged, '.git')}\n`);
+    fs.writeFileSync(path.join(fakeGitDir, 'commondir'), `${path.join(home, '.git')}\n`);
+    registerTestHomes([home]);
+
+    expect(resolveAgentHome(forged)).toEqual({ kind: 'none' });
+  });
+
+  it("answers none for a gitdir inside ANOTHER agent's repo whose commondir names this one (DOR-3706)", () => {
+    // Ben may write his own repo's `.git`, so the gitdir sits in a real
+    // `worktrees/` folder, but it is Ben's, not Ana's.
+    const benHome = path.join(scratch, 'ben-forger');
+    initRepo(benHome);
+    const forged = path.join(scratch, 'forged-from-ben');
+    const benGitDir = path.join(benHome, '.git', 'worktrees', 'fake');
+    fs.mkdirSync(forged);
+    fs.mkdirSync(benGitDir, { recursive: true });
+    fs.writeFileSync(path.join(forged, '.git'), `gitdir: ${benGitDir}\n`);
+    fs.writeFileSync(path.join(benGitDir, 'gitdir'), `${path.join(forged, '.git')}\n`);
+    fs.writeFileSync(path.join(benGitDir, 'commondir'), `${path.join(home, '.git')}\n`);
+    registerTestHomes([home, benHome]);
+
+    expect(homeOf(resolveAgentHome(forged))).not.toBe(home);
+    expect(resolveAgentHome(forged)).toEqual({ kind: 'none' });
+  });
+
   it('answers none for a submodule-shaped .git file (a gitdir with no commondir)', () => {
     const sub = path.join(scratch, 'sub');
     const subGitDir = path.join(home, '.git', 'modules', 'sub');
