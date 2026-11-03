@@ -90,6 +90,29 @@ export class SessionStartedByStore {
   }
 
   /**
+   * Record that a room's seat moved to a fresh session, as a carried start, so
+   * a spin-off the old session started reports to the seat where it sits now
+   * (DOR-3720). The new session reports to nobody itself.
+   *
+   * @param fromSessionId - The seat's old session.
+   * @param toSessionId - Its new one.
+   * @returns Whether it was written.
+   */
+  recordSeatMove(fromSessionId: string, toSessionId: string): boolean {
+    return this.insert({
+      sessionId: toSessionId,
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: fromSessionId,
+      originExtensionId: null,
+      reason: 'room seat moved',
+      carried: true,
+      reportBack: false,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  /**
    * Forget a start that never launched, so it neither shows nor counts.
    *
    * @param sessionId - The chat.

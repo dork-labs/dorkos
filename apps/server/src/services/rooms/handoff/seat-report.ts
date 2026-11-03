@@ -22,7 +22,8 @@
  * queued chat message would; the wait is bounded by {@link SEAT_REPORT_WAIT_MAX_MS}. Reports to
  * one seat run one after the other, in the order they came.
  *
- * Reports live in this process; a restart drops one still waiting, as a queued hand-off is.
+ * Reports live in this process; a restart drops one still waiting, as a queued hand-off is. Whoever
+ * hands one in hears how it ended and may try again (`chat-report-back.ts`, DOR-3720).
  *
  * @module server/services/rooms/handoff/seat-report
  */
@@ -96,20 +97,24 @@ export class RoomSeatReports {
    *
    * @param seatSessionId - The seat the spin-off reports to.
    * @param report - The report.
+   * @param onSettled - Told once whether the seat's turn ran. Not called when this returns false.
    */
-  deliver(seatSessionId: string, report: SeatReport): boolean {
+  deliver(seatSessionId: string, report: SeatReport, onSettled?: (ran: boolean) => void): boolean {
     const seat = this.seatOf(seatSessionId);
     if (seat === null) return false;
     // A seat starts spin-offs as its own agent; a report from any other agent is not one.
     if (this.core.authors.getById(seat.authorId)?.naturalKey !== report.fromAgentPath) return false;
     const key = agentKey(seat.roomId, seat.authorId);
-    const settled = (this.chains.get(key) ?? Promise.resolve()).then(() => this.run(seat, report));
+    const settled = (this.chains.get(key) ?? Promise.resolve())
+      .then(() => this.run(seat, report))
+      .catch(() => false);
     const chain = settled.then(() => undefined);
     this.chains.set(key, chain);
     this.pending.add(settled);
-    void settled.finally(() => {
+    void settled.then((ran) => {
       this.pending.delete(settled);
       if (this.chains.get(key) === chain) this.chains.delete(key);
+      onSettled?.(ran);
     });
     return true;
   }

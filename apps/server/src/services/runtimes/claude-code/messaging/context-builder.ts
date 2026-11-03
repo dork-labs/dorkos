@@ -193,7 +193,7 @@ Helpers and spin-off chats — two different things:
 - Brief a spin-off with the goal and what done means. Message it with ${T}chat_send.
 - A spin-off reports back on its own: when one of its turns ends finished, failed,
   needing the person, or paused at a limit, its last message arrives here as a report (in a
-  room, as a turn only you see). It does not report when its turn ends only to wait.
+  room, as a turn only you see). If background work still runs, it waits, 15 minutes at most.
 - When a report wakes you, act on it, and tell the person only what matters.
 
 A message from another chat arrives marked as coming from that agent and chat, not from

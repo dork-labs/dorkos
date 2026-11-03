@@ -2,7 +2,7 @@
  * The seat mover on its own: what one move writes and carries (Security Musts
  * 1, 2 and 4), and the rules that keep it to once per message and one launch.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/schemas';
@@ -85,6 +85,36 @@ const SEAT = { roomId: 'room-1', authorId: 'ana', agentPath: '/agents/ana', sess
 const OPTS = { alreadyPosted: false, hideAccounts: false };
 
 describe('RoomSeatMover', () => {
+  it('links the old session to the new one, so reports follow the seat (DOR-3720)', async () => {
+    const linkSessions = vi.fn();
+    const { m } = mover({ linkSessions });
+
+    await m.afterLimit(SEAT, 'entry-1', OPTS);
+
+    expect(linkSessions).toHaveBeenCalledWith('old-seat', 'new-seat');
+  });
+
+  it('still moves the seat when the link cannot be written', async () => {
+    const { m, bound } = mover({
+      linkSessions: () => {
+        throw new Error('disk full');
+      },
+    });
+
+    await m.afterLimit(SEAT, 'entry-1', OPTS);
+
+    expect(bound.get('room-1/ana')).toBe('new-seat');
+  });
+
+  it('links nothing when the store refuses the move', async () => {
+    const linkSessions = vi.fn();
+    const { m } = mover({ linkSessions, rebind: () => false });
+
+    await m.afterLimit(SEAT, 'entry-1', OPTS).catch(() => undefined);
+
+    expect(linkSessions).not.toHaveBeenCalled();
+  });
+
   it('carries a marked seat’s marks, before its first turn (Must 2)', async () => {
     const runtime = recordTurnLevels(
       {

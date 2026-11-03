@@ -212,6 +212,12 @@ export interface SeatMoverDeps {
   recordActivity(entry: ReseatActivity): void;
   /** A fresh session id; injected so a test can name it. */
   newSessionId?(): string;
+  /**
+   * Remember that the seat's old session continues in the new one, so a spin-off
+   * the old one started reports to the seat where it sits now (DOR-3720). A
+   * failure here costs that report and must not stop the move.
+   */
+  linkSessions?(fromSessionId: string, toSessionId: string): void;
 }
 
 /** What the new session is told when it continues a message the old one had started on. */
@@ -515,6 +521,7 @@ export class RoomSeatMover {
     if (!this.deps.rebind(seat.roomId, seat.authorId, newSessionId)) {
       throw new Error('The room would not move this seat to its new session.');
     }
+    if (old !== null) this.linkSessions(old, newSessionId);
     this.pending.set(seatKey(seat.roomId, seat.authorId), {
       sessionId: newSessionId,
       ...(plan.target ? { accountHint: plan.target.id } : {}),
@@ -542,6 +549,19 @@ export class RoomSeatMover {
       toAccountId: plan.target?.id ?? null,
     });
     return { newSessionId, reason: reasonOf(plan) };
+  }
+
+  /** Link the seat's old session to its new one; a failure is logged, and the move stands. */
+  private linkSessions(fromSessionId: string, toSessionId: string): void {
+    try {
+      this.deps.linkSessions?.(fromSessionId, toSessionId);
+    } catch (err) {
+      logger.warn('[rooms] could not link a moved seat to its old session', {
+        fromSessionId,
+        toSessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /** The summary the new session starts from; none for an expired seat's lost chat. */

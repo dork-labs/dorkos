@@ -208,6 +208,20 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
     expect(bosPosts()).toEqual([]);
   });
 
+  it('tells whoever handed the report in whether the seat’s turn ran (DOR-3720)', async () => {
+    const seatId = await seat();
+    const ran = vi.fn();
+    service.handoffs.reports.deliver(seatId, report('PR #12 is green.'), ran);
+    await settle();
+    expect(ran).toHaveBeenCalledExactlyOnceWith(true);
+
+    service.archiveRoomFromTool(dorkos.id, human);
+    const gone = vi.fn();
+    service.handoffs.reports.deliver(seatId, report('Too late.'), gone);
+    await settle();
+    expect(gone).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
   it('a seat mid-turn in the room takes the report once that turn ends', async () => {
     let delivered = false;
     const order: string[] = [];
