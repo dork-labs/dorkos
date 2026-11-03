@@ -20,12 +20,11 @@ export function handoffStep(
   handoff: LocalBrowserHandoff,
   signIn: LocalBrowserSignIn | null | undefined
 ): HandoffStep {
-  if (handoff.reason === 'wall') return 'wall';
   const ours =
     signIn &&
     signIn.site === handoff.site &&
     Date.parse(signIn.startedAt) >= Date.parse(handoff.askedAt);
-  if (!ours) return 'sign-in';
+  if (!ours) return handoff.reason === 'wall' ? 'wall' : 'sign-in';
   return signIn.status === 'open' ? 'sign-in-open' : signIn.status;
 }
 
