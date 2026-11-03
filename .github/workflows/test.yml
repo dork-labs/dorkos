@@ -955,7 +955,7 @@ jobs:
       # Quarantine here is per TEST, read out of the shard reports — NOT vitest
       # `exclude`, which can only drop a whole file and would empty a package's
       # suite behind the union check's back. The only platform partition is the
-      # Codex binary suites: the required hosted macOS job below runs all three
+      # Codex binary suites: the required scoped Linux probe job runs all three
       # files, rejects skips and checks the readable controls. Quarantine itself
       # excludes no file.
       - name: Refuse any failure the quarantine lane does not cover

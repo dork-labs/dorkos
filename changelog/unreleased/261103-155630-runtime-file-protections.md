@@ -5,6 +5,7 @@ covers:
   - 'fix(runtimes): repair CI fixtures and prefix Codex protected globs (DOR-3595)'
   - 'fix(runtimes): explain blocked Linux isolation and add macOS sandbox proof (DOR-3595)'
   - 'fix(runtimes): scope Linux sandbox prerequisites to the probe job (DOR-3595)'
+  - 'fix(docs): clarify Codex Docker startup limits (DOR-3595)'
 ---
 
 ### Security
@@ -14,3 +15,4 @@ covers:
 
 - Older Codex setups using `exec` now run through app-server and show approval cards (DOR-3595).
 - Codex now explains when Linux blocks program isolation and what needs to change. This also applies at Full access (DOR-3595).
+- Codex may not start in the standard Docker image.

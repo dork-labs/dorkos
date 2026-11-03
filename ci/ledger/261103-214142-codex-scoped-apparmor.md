@@ -54,3 +54,5 @@ If profile loading, executable selection or native controls fail, keep the
 job red and report it to Security; never skip assertions, replace the
 sandbox or fall back to a global AppArmor relaxation. This setup requires
 host administrator access and does not promise default Docker support.
+
+The follow-up corrects the job's stale macOS comment only; execution is unchanged.
