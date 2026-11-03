@@ -48,7 +48,9 @@ export function TodoFilterBar({ filters, onChange }: TodoFilterBarProps) {
         role="group"
         aria-label="Whose to-dos"
         // The padding keeps the chips' focus rings inside the scroller, which clips both ways.
-        className="-my-1 flex min-w-0 scrollbar-none gap-1.5 overflow-x-auto px-0.5 py-1"
+        // On a phone the row fades out at its right edge, so a chip half out of view reads as
+        // "there's more this way" rather than as cut off (DOR-3715).
+        className="-my-1 flex min-w-0 scrollbar-none gap-1.5 overflow-x-auto px-0.5 py-1 max-md:[mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)] max-md:pr-6"
       >
         {TODO_VIEWS.map((view) => (
           <Chip

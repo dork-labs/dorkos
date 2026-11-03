@@ -27,6 +27,7 @@ import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { roomDisplayTitle, useRooms } from '@/layers/entities/room';
 import { useTodos, useUpdateTodo } from '@/layers/entities/todo';
 import { getAgentDisplayName } from '@/layers/shared/lib';
+import { useIsMobile } from '@/layers/shared/model';
 import { Button, EmptyState, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { assignedByLabel } from '../lib/todo-labels';
 import { useLingeringDone, withLingering } from '../model/use-lingering-done';
@@ -90,9 +91,13 @@ export function TodoList({ onNewTodo }: TodoListProps) {
     refocus.current = null;
     document.querySelector<HTMLElement>(`[data-todo-grip="${CSS.escape(id)}"]`)?.focus();
   }, [movable]);
+  const isMobile = useIsMobile();
   const sensors = useSensors(
-    // A few pixels of travel first, so a tap on the grip is not a drag.
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    // A few pixels of travel first, so a tap on the grip is not a drag. On a phone, a long press:
+    // a quick sideways swipe on the same row finishes it instead (DOR-3715).
+    useSensor(PointerSensor, {
+      activationConstraint: isMobile ? { delay: 300, tolerance: 8 } : { distance: 4 },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -196,7 +201,8 @@ export function TodoList({ onNewTodo }: TodoListProps) {
         <Button
           size="sm"
           variant="ghost"
-          className="self-start"
+          // Under the empty state's centred message it sits centred too (DOR-3715).
+          className={list.isSuccess && rows.length === 0 ? 'self-center' : 'self-start'}
           onClick={() => set('showDone', true)}
         >
           Show done ({list.data?.doneCount})

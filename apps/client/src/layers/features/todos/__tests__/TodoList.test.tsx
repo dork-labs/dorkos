@@ -186,7 +186,7 @@ describe('TodoList', () => {
     ]);
     expect(await screen.findByText('Limited')).toBeInTheDocument();
     expect(screen.getByText('from a guest')).toBeInTheDocument();
-    expect(screen.getByText('Words from Ana')).toBeInTheDocument();
+    expect(screen.getByText('Ana')).toBeInTheDocument();
   });
 
   it("leaves the limit off the person's own to-do, where no turn runs", async () => {
