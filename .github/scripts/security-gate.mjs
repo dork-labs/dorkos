@@ -124,7 +124,7 @@ function awaitingReview(pr, input, deep) {
   return null;
 }
 
-/** The labels whose adding or removal makes main's verdict write a new status. */
+/** The labels the verdict judges. Any label change makes it write a new status; these change its answer. */
 const VERDICT_LABELS = [REVIEW_LABEL, DEEP_LABEL, HOLD_LABEL];
 
 /** The one base main's verdict judges (`security-review-initialize.yml` runs only for it). */
@@ -194,7 +194,7 @@ async function judgeFreshReview(api, sha, input, deep, wait) {
     if (!(wait.now() + wait.intervalMs <= wait.deadline))
       return {
         passed: false,
-        reason: `security-review verdict not yet written for this head (none newer than ${new Date(due).toISOString()}); rerun security-gate`,
+        reason: `security-review verdict not yet written for this head (none newer than ${new Date(due).toISOString()}); rerun security-review-initialize, then security-gate`,
       };
     await wait.sleep(wait.intervalMs);
   }
