@@ -51,12 +51,16 @@ export interface TranscriptHold {
  * @param undecided - Whether the answer is still out.
  * @param isDirectMessage - Whether the answer, once in, drew it as a DM.
  * @param readyToLand - Whether all the landing is waiting for now is this hold.
+ * @param identityPending - Whether the agent's name and face are still on their
+ *   way. No limit lets the list go without them, because a reply under the wrong
+ *   name is worse than a wait; past {@link TRANSCRIPT_LOADING_MS} it says it is loading.
  */
 export function useTranscriptHold(
   conversationId: string,
   undecided: boolean,
   isDirectMessage: boolean,
-  readyToLand: boolean
+  readyToLand: boolean,
+  identityPending: boolean
 ): TranscriptHold {
   // Named by conversation, so a wait that ran out for one never excuses the next.
   const [waitedTooLong, setWaitedTooLong] = useState<string | null>(null);
@@ -68,7 +72,7 @@ export function useTranscriptHold(
   }, [undecided, conversationId]);
 
   const drawnEarly = waitedTooLong === conversationId;
-  const held = undecided && !drawnEarly;
+  const held = (undecided && !drawnEarly) || identityPending;
 
   // Stays true for a few frames after the hold ends. A chat that was never held
   // never starts hidden, so it gains nothing here.
@@ -102,7 +106,7 @@ export function useTranscriptHold(
   return {
     held,
     hidden,
-    showLoading: hidden && !readyToLand && blankTooLong === conversationId,
+    showLoading: hidden && (!readyToLand || identityPending) && blankTooLong === conversationId,
     landingKey: drawnEarly && !undecided && isDirectMessage ? 'reflowed-as-dm' : undefined,
   };
 }

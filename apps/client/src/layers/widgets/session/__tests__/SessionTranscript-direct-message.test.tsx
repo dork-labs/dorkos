@@ -165,6 +165,27 @@ describe('SessionTranscript as a direct message', () => {
     await waitFor(() => expect(document.querySelector('.invisible')).toBeNull());
   });
 
+  it('holds a DM’s conversation until it knows whose words these are', async () => {
+    const { rerender } = renderWithTransport(
+      <SessionTranscript
+        sessionId="scout-direct"
+        messages={MESSAGES}
+        directMessage={{ agent: null, humanName: 'Dorian', settled: true, agentPending: true }}
+      />,
+      readState.transport
+    );
+    expect(document.querySelector('.invisible')).not.toBeNull();
+
+    rerender(
+      <SessionTranscript
+        sessionId="scout-direct"
+        messages={MESSAGES}
+        directMessage={{ agent: SCOUT, humanName: 'Dorian', settled: true, agentPending: false }}
+      />
+    );
+    await waitFor(() => expect(document.querySelector('.invisible')).toBeNull());
+  });
+
   it('never invents a time for history: a row without one shows none', () => {
     const untimed = MESSAGES.map((message) => ({ ...message, timestamp: '' }));
     renderWithTransport(

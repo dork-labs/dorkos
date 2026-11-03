@@ -17,6 +17,8 @@ import { agentStatusLine, sharedChannels, type SharedChannel } from '../lib/dire
 export interface DirectMessageAgent {
   /** The agent's own id (its manifest's), or null until its manifest arrives. */
   id: string | null;
+  /** Whether its manifest is still on its way. False once read, even if there is none. */
+  pending: boolean;
   /** The agent's name, or null until its manifest arrives. */
   name: string | null;
   /** The agent's face, or null until its manifest arrives. */
@@ -35,7 +37,7 @@ export interface DirectMessageAgent {
  * @param agentPath - The agent's directory, or null for none (nothing is read).
  */
 export function useDirectMessageAgent(agentPath: string | null): DirectMessageAgent {
-  const { data: manifest } = useCurrentAgent(agentPath);
+  const { data: manifest, isPending } = useCurrentAgent(agentPath);
   const { data: roster } = useTeamRoster({ enabled: agentPath !== null });
   const member = useMemo(
     () =>
@@ -46,6 +48,7 @@ export function useDirectMessageAgent(agentPath: string | null): DirectMessageAg
   );
   const description = manifest?.description?.trim();
   return {
+    pending: agentPath !== null && isPending,
     id: manifest?.id ?? null,
     name: manifest ? getAgentDisplayName(manifest) : null,
     visual: manifest ? resolveAgentVisual(manifest) : null,

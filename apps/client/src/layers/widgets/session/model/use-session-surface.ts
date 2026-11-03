@@ -29,6 +29,8 @@ export interface DirectMessageSurface {
    * keeps its own names, so nothing is renamed on the way to an answer.
    */
   settled: boolean;
+  /** Whether the agent's name and face are still on their way, on a DM. */
+  agentPending?: boolean;
 }
 
 /** The surface a session's conversation is drawn as. */
@@ -95,8 +97,9 @@ export function useSessionSurface(
           : null,
       humanName,
       settled: true,
+      agentPending: dmAgent.pending,
     };
-  }, [pending, isDm, id, name, emoji, color, humanName]);
+  }, [pending, isDm, id, name, emoji, color, humanName, dmAgent.pending]);
 
   if (directMessage === null) {
     return {

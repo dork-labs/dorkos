@@ -20,11 +20,13 @@ interface Props {
   undecided: boolean;
   dm: boolean;
   ready?: boolean;
+  identity?: boolean;
 }
 
 function mount(initial: Partial<Props> = {}) {
   return renderHook(
-    ({ id, undecided, dm, ready = true }: Props) => useTranscriptHold(id, undecided, dm, ready),
+    ({ id, undecided, dm, ready = true, identity = false }: Props) =>
+      useTranscriptHold(id, undecided, dm, ready, identity),
     {
       initialProps: { id: 'chat-1', undecided: true, dm: false, ...initial } as Props,
     }
@@ -103,6 +105,29 @@ describe('useTranscriptHold', () => {
     expect(result.current.showLoading).toBe(true);
     rerender({ id: 'chat-2', undecided: true, dm: false, ready: false });
     expect(result.current.showLoading).toBe(false);
+  });
+
+  describe('while the agent’s name and face are on their way', () => {
+    it('holds a chat with no other reason to wait, and its landing with it', () => {
+      const { result } = mount({ undecided: false, identity: true });
+      expect(result.current).toMatchObject({ held: true, hidden: true });
+    });
+
+    it('does not let go at the first limit, and says it is loading past the second', () => {
+      const { result } = mount({ identity: true });
+      act(() => void vi.advanceTimersByTime(TRANSCRIPT_HOLD_MS + 1));
+      expect(result.current).toMatchObject({ held: true, hidden: true, showLoading: false });
+      act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS));
+      expect(result.current).toMatchObject({ held: true, hidden: true, showLoading: true });
+    });
+
+    it('lets go once they arrive, landing before it shows', () => {
+      const { result, rerender } = mount({ undecided: false, identity: true });
+      rerender({ id: 'chat-1', undecided: false, dm: true, identity: false });
+      expect(result.current).toMatchObject({ held: false, hidden: true, showLoading: false });
+      act(() => void vi.advanceTimersByTime(FRAME * 4));
+      expect(result.current.hidden).toBe(false);
+    });
   });
 
   it('does not hide a chat that was never held, however long its landing takes', () => {

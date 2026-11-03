@@ -295,7 +295,7 @@ export function SessionTranscript({
   // `useSessionRuntime` carries the identical limitation by the same mechanism.
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const runtime = useSessionRuntime(sessionId);
-  const { data: currentAgent } = useCurrentAgent(selectedCwd);
+  const { data: currentAgent, isPending: currentAgentPending } = useCurrentAgent(selectedCwd);
   const dmAgent = directMessage?.agent ?? null;
   // A DM names a message's time the way a room does (DOR-3074), and only a
   // time that is true. History carries the server's own; a row with none shows
@@ -380,11 +380,17 @@ export function SessionTranscript({
   // The Direct chat log waits on the same answer, so past the hold the landing
   // cannot wait for it too: it lands without it, and again if the answer is a DM.
   const readyToLand = isHydrated && !earlier.isSeeking && ((directLog?.ready ?? true) || undecided);
+  // Whose words these are has to be known first: past the hold the list is drawn
+  // from the agent at the folder, and in a DM from the DM's own agent.
+  const identityPending =
+    directMessage?.agentPending === true ||
+    (undecided && selectedCwd !== null && currentAgentPending);
   const { held, hidden, showLoading, landingKey } = useTranscriptHold(
     sessionId,
     undecided,
     foldWork,
-    readyToLand
+    readyToLand,
+    identityPending
   );
 
   // Rows, not messages, are what the list virtualizes: dividers are real rows so
