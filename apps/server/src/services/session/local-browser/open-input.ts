@@ -1,4 +1,5 @@
 /** What a browser open may ask for. */
+import type { LocalBrowserCapabilities } from '@dorkos/shared/local-browser';
 import { LocalBrowserError } from './errors.js';
 
 /**
@@ -6,11 +7,13 @@ import { LocalBrowserError } from './errors.js';
  *
  * @param input - What was asked for.
  * @param hasEmbedded - Whether this is the desktop app, which has the built-in browser.
+ * @param capabilities - What this computer can open.
  * @param profileExists - Whether a named profile exists, once startup has wired that.
  */
 export function assertOpenable(
   input: { mode: string; profileId?: string },
   hasEmbedded: boolean,
+  capabilities: LocalBrowserCapabilities,
   profileExists?: (id: string) => boolean
 ): void {
   if (input.mode === 'embedded' && !hasEmbedded)
@@ -19,4 +22,6 @@ export function assertOpenable(
     throw new LocalBrowserError('unsupported', 'Open a browser profile in a new window.');
   if (input.profileId && !profileExists?.(input.profileId))
     throw new LocalBrowserError('profile_not_found', 'That browser profile no longer exists.');
+  if (input.mode === 'new-window' && !capabilities.newWindow)
+    throw new LocalBrowserError('unsupported', capabilities.unavailableReasons['new-window']!);
 }

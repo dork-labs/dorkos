@@ -28,7 +28,7 @@ function setup() {
   };
   const service = {
     requireProfileAccess: vi.fn(async () => undefined),
-    fullScreen: { requireNone: vi.fn(async () => undefined) },
+    requireNotFullScreen: vi.fn(async () => undefined),
     requireSharedSession: vi.fn((id: string) => {
       if (id !== 'chat-one')
         throw new LocalBrowserError(
@@ -212,7 +212,7 @@ describe('local browser scoped tool projection', () => {
   });
   it('refuses every read and action while a page is in full screen, before reading', async () => {
     const { domain, deps, context, service } = setup();
-    service.fullScreen.requireNone.mockRejectedValue(
+    service.requireNotFullScreen.mockRejectedValue(
       new LocalBrowserError('full_screen', 'A page is in full screen.')
     );
     for (const capability of domain.capabilities.filter(
@@ -228,7 +228,7 @@ describe('local browser scoped tool projection', () => {
   });
   it('still lets an agent hand over from full screen', async () => {
     const { domain, deps, context, service } = setup();
-    service.fullScreen.requireNone.mockRejectedValue(
+    service.requireNotFullScreen.mockRejectedValue(
       new LocalBrowserError('full_screen', 'A page is in full screen.')
     );
     const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;

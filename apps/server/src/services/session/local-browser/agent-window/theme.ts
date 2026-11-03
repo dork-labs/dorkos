@@ -84,7 +84,12 @@ export async function clearAgentWindowTheme(profileFolder: string): Promise<void
     return; // No preferences yet: no theme to take out.
   }
   const pack = prefs?.extensions?.theme?.pack;
-  if (typeof pack !== 'string' || path.basename(pack) !== THEME_FOLDER) return;
+  // A loaded folder saves its own path. Allow for a file inside it as well, so a change
+  // in how Chromium records a theme can't leave a plain window orange.
+  const ours =
+    typeof pack === 'string' &&
+    (path.basename(pack) === THEME_FOLDER || path.basename(path.dirname(pack)) === THEME_FOLDER);
+  if (!ours) return;
   delete prefs.extensions!.theme;
   await writeFile(file, JSON.stringify(prefs), { mode: 0o600 });
 }

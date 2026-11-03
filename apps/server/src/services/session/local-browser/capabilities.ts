@@ -62,7 +62,7 @@ function scopedAnswer<T>(
     await answer(() => service.requireProfileAccess(context.sessionId!));
     if (!handingOver) {
       await answer(() => service.handover.requireAgentMayUse(context.sessionId!));
-      await answer(() => service.fullScreen.requireNone());
+      await answer(() => service.requireNotFullScreen());
     }
     requireSession(service, context);
   };

@@ -79,8 +79,7 @@ export class LocalBrowserService {
   private lifecycle = 0;
   private readonly preparation = new BrowserPreparation();
   private readonly metadata = new LocalBrowserTabMetadata();
-  /** Pages of a window this server launched. Agent calls ask it first. */
-  readonly fullScreen = new FullScreenGuard();
+  private readonly fullScreen = new FullScreenGuard();
   /** Handing the browser to the person and back, and the plain sign-in window. */
   readonly handover = new BrowserHandover(this, new SignInWindow(), () => this.dataDirectory);
 
@@ -129,12 +128,7 @@ export class LocalBrowserService {
       throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
     if (this.opening)
       throw new LocalBrowserError('busy', 'The browser is starting. Wait a moment.');
-    assertOpenable(input, Boolean(this.embedded), this.profileExists);
-    if (input.mode === 'new-window') {
-      const capabilities = this.capabilities();
-      if (!capabilities.newWindow)
-        throw new LocalBrowserError('unsupported', capabilities.unavailableReasons['new-window']!);
-    }
+    assertOpenable(input, Boolean(this.embedded), this.capabilities(), this.profileExists);
     if (input.url) assertLocalBrowserUrl(input.url, 'person');
     this.opening = true;
     const setupAbort = new AbortController();
@@ -231,6 +225,12 @@ export class LocalBrowserService {
     if (!this.profileAccess)
       throw new LocalBrowserError('profile_not_allowed', 'This agent can’t use this profile.');
     await this.profileAccess(this.profileId, sessionId);
+  }
+
+  /** Refuse an agent while any page, including a new popup, is in full screen. */
+  async requireNotFullScreen(): Promise<void> {
+    this.syncTabs();
+    await this.fullScreen.requireNone();
   }
 
   /** A tool describes only the selected tab, excluding DorkOS and Cloud pages. */

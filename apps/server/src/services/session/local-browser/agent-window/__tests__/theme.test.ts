@@ -84,6 +84,19 @@ describe('taking the theme out for a plain window', () => {
     expect(readPrefs()).toEqual({ credentials_enable_service: false, extensions: { other: 1 } });
   });
 
+  it('removes it when the saved path is a file inside our folder', async () => {
+    writeFileSync(
+      prefsFile(),
+      JSON.stringify({
+        extensions: {
+          theme: { pack: '/data/browser-profiles/.agent-window-theme/Cached Theme.pak' },
+        },
+      })
+    );
+    await clearAgentWindowTheme(profile);
+    expect(readPrefs()).toEqual({ extensions: {} });
+  });
+
   it('leaves any other theme alone', async () => {
     const prefs = { extensions: { theme: { id: 'abc', pack: '/somewhere/a-persons-theme' } } };
     writeFileSync(prefsFile(), JSON.stringify(prefs));
