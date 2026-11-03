@@ -218,7 +218,7 @@ export function ConnectionsPage() {
       </header>
 
       <Tabs defaultValue="apps">
-        <TabsList aria-label="Connection types" className="mb-6 h-auto min-h-13 w-full">
+        <TabsList aria-label="Apps and browsers" className="mb-6 h-auto min-h-13 w-full">
           <TabsTrigger value="apps" className="min-h-11 flex-1">
             Apps
           </TabsTrigger>
