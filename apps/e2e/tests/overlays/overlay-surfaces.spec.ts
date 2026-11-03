@@ -124,6 +124,30 @@ test.describe('Overlay surfaces, 390 @smoke', () => {
     await expect(drawer).toHaveCSS('border-top-width', '0px');
   });
 
+  test('a disabled button keeps its reason on touch, and tapping away closes it', async ({
+    page,
+  }) => {
+    await page.goto('/dev/overlays');
+    const archive = page.getByRole('button', { name: 'Archive room' });
+    await archive.scrollIntoViewIfNeeded();
+    // Forced: Playwright won't tap an aria-disabled button, and a thumb will.
+    await archive.tap({ force: true });
+    await expect(page.getByRole('tooltip')).toHaveText('Only the owner can archive this.');
+
+    // Raw coordinates on the section's heading, so nothing scrolls and the button
+    // stays in view: the reason has to close, not leave the screen.
+    const box = await page.getByRole('heading', { name: 'Floating surfaces' }).boundingBox();
+    expect(box, 'the heading was never laid out').not.toBeNull();
+    await page.touchscreen.tap(box!.x + 8, box!.y + box!.height / 2);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await expect(archive).toBeInViewport();
+
+    // Every other tooltip stays closed on touch.
+    await page.getByRole('button', { name: 'Room settings', exact: true }).tap();
+    await page.waitForTimeout(600);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+  });
+
   test('the Inbox is a drawer', async ({ page }) => {
     await openInbox(page, DRAWER);
     await expect(page.locator(POPOVER)).toHaveCount(0);
