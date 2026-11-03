@@ -498,6 +498,20 @@ describe("the PR run waits for main's verdict on a label change (DOR-3710)", () 
     assert.equal(api.statusReads, 4);
   });
 
+  test('each read is logged, so a job log shows the wait ran', async (t) => {
+    const log = t.mock.method(globalThis.console, 'log', () => {});
+    const statuses = [review('failure', STALE)];
+    const api = gate({ ...covered, statuses });
+    const poll = writes(statuses, 1, [review('success')]);
+    assert.equal(await check(api, '0', poll), 'Security status verified');
+    const lines = log.mock.calls
+      .map((call) => String(call.arguments[0]))
+      .filter((line) => line.startsWith('security-review poll'));
+    assert.equal(lines.length, 2);
+    assert.match(lines[0], /^security-review poll 1: failure at /);
+    assert.match(lines[1], /^security-review poll 2: success at /);
+  });
+
   test('a fresh pending is never judged on: it waits for the success', async () => {
     const statuses = [review('pending', VERDICT), review('failure', STALE)];
     const api = gate({ ...covered, statuses });
@@ -558,7 +572,7 @@ describe("the PR run waits for main's verdict on a label change (DOR-3710)", () 
       const api = gate({ ...covered, statuses: [review(state, STALE)] });
       await assert.rejects(
         check(api),
-        /verdict not yet written for this head \(none newer than 2026-10-30T11:00:00\.000Z\); rerun security-gate/,
+        /verdict not yet written for this head \(none newer than 2026-10-30T11:00:00\.000Z\); rerun security-review-initialize, then security-gate/,
         state
       );
       assert.equal(api.statusReads, 1 + 19, state);

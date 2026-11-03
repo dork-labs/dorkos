@@ -124,7 +124,7 @@ function awaitingReview(pr, input, deep) {
   return null;
 }
 
-/** The labels whose adding or removal makes main's verdict write a new status. */
+/** The labels the verdict judges. Any label change makes it write a new status; these change its answer. */
 const VERDICT_LABELS = [REVIEW_LABEL, DEEP_LABEL, HOLD_LABEL];
 
 /** The one base main's verdict judges (`security-review-initialize.yml` runs only for it). */
@@ -181,8 +181,12 @@ async function judgeFreshReview(api, sha, input, deep, wait) {
   const due = verdictDue(input, wait.eventTime);
   if (Number.isNaN(due))
     return { passed: false, reason: `cannot read when ${sha}'s labels or push last changed` };
-  for (;;) {
+  for (let poll = 1; ; poll += 1) {
     const review = latestReview(await api.statuses(sha));
+    // One line per read, so a job log shows whether the wait ran and how long.
+    console.log(
+      `security-review poll ${poll}: ${review ? `${review.state} at ${review.created_at}` : 'no status'}; needs a finished status newer than ${new Date(due).toISOString()}`
+    );
     if (review && review.state !== 'pending' && Date.parse(review.created_at) > due)
       return review.state === 'success'
         ? verdict
@@ -190,7 +194,7 @@ async function judgeFreshReview(api, sha, input, deep, wait) {
     if (!(wait.now() + wait.intervalMs <= wait.deadline))
       return {
         passed: false,
-        reason: `security-review verdict not yet written for this head (none newer than ${new Date(due).toISOString()}); rerun security-gate`,
+        reason: `security-review verdict not yet written for this head (none newer than ${new Date(due).toISOString()}); rerun security-review-initialize, then security-gate`,
       };
     await wait.sleep(wait.intervalMs);
   }
