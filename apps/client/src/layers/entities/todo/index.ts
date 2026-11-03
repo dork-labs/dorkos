@@ -7,4 +7,5 @@
 export { todoKeys } from './model/todo-keys';
 export { useTodos, useTodoBadge } from './model/use-todos';
 export { useCreateTodo, useUpdateTodo, type UpdateTodoInput } from './model/use-todo-mutations';
+export { useMoveTodos, type MoveTodosInput, type TodoRankChange } from './model/use-move-todos';
 export { useTodosEnabled, useTodosEnabledState } from './model/use-todos-config';

@@ -14,6 +14,7 @@ import { useWindowFocusDimming } from './app/use-window-focus-dimming';
 import { useOpenRoom } from './app/use-open-room';
 import { WindowTitle } from './app/WindowTitle';
 import { useCommunityWatchers } from './app/use-community-watchers';
+import { useTodosPalette } from './app/use-todos-palette';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
@@ -264,6 +265,7 @@ export function AppShell() {
   // One set of Community watchers for the whole app (revocation cleanup, list
   // sync, and the approval checks that finish a pairing).
   useCommunityWatchers();
+  useTodosPalette();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,

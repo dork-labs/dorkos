@@ -4,7 +4,7 @@
  * @module features/entry-actions/model/use-entry-actions
  */
 import { useMemo } from 'react';
-import { AtSign, Copy, Reply, User } from 'lucide-react';
+import { AtSign, CircleCheck, Copy, Reply, User } from 'lucide-react';
 import {
   replyRootFor,
   threadDraftKey,
@@ -47,6 +47,11 @@ export interface EntryActionsInput {
    * Must be referentially stable, like every other value this memo closes over.
    */
   onViewProfile?: (() => void) | undefined;
+  /**
+   * Make a to-do from this message, or `undefined` while to-dos are off. Resolved by the row,
+   * which may reach the to-dos slice; this one may not. Must be referentially stable.
+   */
+  onMakeTodo?: (() => void) | undefined;
 }
 
 /**
@@ -98,6 +103,7 @@ export function useEntryActions({
   author,
   viewerAuthorId,
   onViewProfile,
+  onMakeTodo,
 }: EntryActionsInput): EntryAction[] {
   const rootEntryId = replyRootFor(entry);
   const text = entry.body.text;
@@ -146,6 +152,10 @@ export function useEntryActions({
       };
     }
 
+    if (onMakeTodo !== undefined) {
+      available.todo = { id: 'todo', label: 'Make a to-do', icon: CircleCheck, run: onMakeTodo };
+    }
+
     if (handle !== undefined) {
       available.mention = {
         id: 'mention',
@@ -165,5 +175,5 @@ export function useEntryActions({
     return ENTRY_ACTION_ORDER.map((slot) => available[slot]).filter(
       (action): action is EntryAction => action !== undefined
     );
-  }, [roomId, rootEntryId, text, handle, authorName, onViewProfile, copy]);
+  }, [roomId, rootEntryId, text, handle, authorName, onViewProfile, onMakeTodo, copy]);
 }

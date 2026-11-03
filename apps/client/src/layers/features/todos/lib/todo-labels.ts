@@ -15,7 +15,7 @@ const WEEKDAY_WINDOW_DAYS = 6;
 export const TODO_VIEWS: readonly { value: TodoView; label: string }[] = [
   { value: 'mine', label: 'Assigned to me' },
   { value: 'by-me', label: 'Assigned by me' },
-  { value: 'agents', label: 'Agents’' },
+  { value: 'agents', label: 'For agents' },
   { value: 'everyone', label: 'Everyone' },
 ];
 

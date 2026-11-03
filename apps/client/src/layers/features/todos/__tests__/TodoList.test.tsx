@@ -170,7 +170,7 @@ describe('TodoList', () => {
     const user = userEvent.setup();
     renderList([]);
     await screen.findByText('Nothing assigned to you.');
-    await user.click(screen.getByRole('button', { name: 'Agents’' }));
+    await user.click(screen.getByRole('button', { name: 'For agents' }));
     expect(await screen.findByText('No to-dos here.')).toBeInTheDocument();
   });
 
@@ -197,6 +197,38 @@ describe('TodoList', () => {
 
   it('reads a declined to-do as declined, with its reason', async () => {
     renderList([createMockTodo({ state: 'dropped', note: 'No booking access' })]);
-    expect(await screen.findByText('Declined · No booking access')).toBeInTheDocument();
+    expect(await screen.findByText('Declined')).toBeInTheDocument();
+    expect(screen.getByText('No booking access')).toBeInTheDocument();
+  });
+
+  it('moves a to-do down with ⌥↓ in My order, rewriting only its rank', async () => {
+    const user = userEvent.setup();
+    const transport = renderList([
+      createMockTodo({ id: 'a', what: 'First', rank: 'f' }),
+      createMockTodo({ id: 'b', what: 'Second', rank: 'm' }),
+      createMockTodo({ id: 'c', what: 'Third', rank: 't' }),
+    ]);
+    await screen.findByText('First');
+    await user.click(screen.getByRole('button', { name: 'Filter and sort' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'My order' }));
+    await waitFor(() =>
+      expect(transport.listTodos).toHaveBeenCalledWith({ view: 'mine', sort: 'rank' })
+    );
+    const grip = await screen.findByRole('button', { name: 'Move First' });
+    grip.focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+    await waitFor(() => expect(transport.updateTodo).toHaveBeenCalledOnce());
+    const [id, body] = vi.mocked(transport.updateTodo).mock.calls[0]!;
+    expect(id).toBe('a');
+    expect(body.rank! > 'm' && body.rank! < 't').toBe(true);
+  });
+
+  it('offers no grip outside My order', async () => {
+    renderList([
+      createMockTodo({ id: 'a', what: 'First' }),
+      createMockTodo({ id: 'b', what: 'Second' }),
+    ]);
+    await screen.findByText('First');
+    expect(screen.queryByRole('button', { name: 'Move First' })).toBeNull();
   });
 });

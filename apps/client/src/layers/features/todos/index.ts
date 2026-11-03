@@ -7,3 +7,12 @@
 export { TodoList, type TodoListProps } from './ui/TodoList';
 export { TodoRow, type TodoRowProps } from './ui/TodoRow';
 export { NewTodoDialog, type NewTodoDialogProps } from './ui/NewTodoDialog';
+export { titleFromMessage, type TodoMessageSource } from './ui/NewTodoDialog';
+export { MakeTodoDialog, type MakeTodoDialogProps } from './ui/MakeTodoDialog';
+export {
+  makeTodoDialogState,
+  openMakeTodo,
+  openNewTodo,
+  useMakeTodoAction,
+} from './model/make-todo';
+export { NewTodoButton } from './ui/NewTodoButton';

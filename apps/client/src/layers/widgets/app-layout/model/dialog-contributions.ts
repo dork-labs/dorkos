@@ -3,6 +3,7 @@ import { lazyDialog } from '@/layers/shared/ui/lazy/lazy-dialog';
 import { ShapeSwitcherDialog } from '@/layers/features/shapes';
 import { TunnelDialog } from '@/layers/features/settings';
 import { ProfileSheetContainer } from '@/layers/features/profile';
+import { MakeTodoDialog, makeTodoDialogState } from '@/layers/features/todos';
 import { SettingsDialogWrapper } from './wrappers/SettingsDialogWrapper';
 import { DirectoryPickerWrapper } from './wrappers/DirectoryPickerWrapper';
 import { ServerRestartOverlayWrapper } from './wrappers/ServerRestartOverlayWrapper';
@@ -70,5 +71,13 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     component: ShapeSwitcherDialog,
     openStateKey: 'shapeSwitcherOpen',
     priority: 6,
+  },
+  {
+    // "Make a to-do" from any message (DOR-3088). It keeps its own open flag, so the host mounts
+    // it only while open, and only a message's action opens it, which waits on the to-dos flag.
+    id: 'make-todo',
+    component: MakeTodoDialog,
+    openState: makeTodoDialogState,
+    priority: 9,
   },
 ];
