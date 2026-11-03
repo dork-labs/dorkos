@@ -28,6 +28,7 @@ import { IdentityPage } from './pages/IdentityPage';
 import { MarketplacePage } from './pages/MarketplacePage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { OneBarPage } from './pages/OneBarPage';
+import { OverlaysPage } from './pages/OverlaysPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { PromosPage } from './pages/PromosPage';
 import { RoomsPage } from './pages/RoomsPage';
@@ -59,6 +60,7 @@ export const PAGE_COMPONENTS: Record<string, ComponentType<PlaygroundPageProps>>
   overview: OverviewPage as ComponentType<PlaygroundPageProps>,
   tokens: TokensPage,
   forms: FormsPage,
+  overlays: OverlaysPage,
   components: ComponentsPage,
   conversation: ConversationPage,
   'entry-actions': EntryActionsPage,

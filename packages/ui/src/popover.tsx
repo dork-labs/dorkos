@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 
 import { cn } from './cn.js';
+import { ENTER_FAST, EXIT_FAST, FLOATING_SURFACE } from './menu-item.js';
 import { usePortalContainer } from './ui-provider.js';
 
 /** Accessible popover root that manages open state. */
@@ -18,7 +19,8 @@ function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimiti
 function PopoverContent({
   className,
   align = 'center',
-  sideOffset = 4,
+  sideOffset = 6,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   const container = usePortalContainer();
@@ -28,8 +30,12 @@ function PopoverContent({
         data-slot="popover-content"
         align={align}
         sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dui-dark:border dui-dark:border-dui-border z-(--z-overlay) w-72 origin-(--radix-popover-content-transform-origin) rounded-md p-4 shadow-lg outline-hidden motion-reduce:animate-none!',
+          FLOATING_SURFACE,
+          ENTER_FAST,
+          EXIT_FAST,
+          'w-72 max-w-[calc(100vw-1.5rem)] origin-(--radix-popover-content-transform-origin) p-4 outline-hidden',
           className
         )}
         {...props}
@@ -56,7 +62,7 @@ function PopoverHeader({ className, ...props }: React.ComponentProps<'div'>) {
 
 /** Bold title heading within a popover header. */
 function PopoverTitle({ className, ...props }: React.ComponentProps<'h2'>) {
-  return <h2 data-slot="popover-title" className={cn('font-medium', className)} {...props} />;
+  return <h2 data-slot="popover-title" className={cn('font-semibold', className)} {...props} />;
 }
 
 /** Muted description text within a popover header. */

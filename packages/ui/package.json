@@ -115,6 +115,14 @@
       "types": "./dist/tooltip.d.ts",
       "default": "./dist/tooltip.js"
     },
+    "./menu-item": {
+      "types": "./dist/menu-item.d.ts",
+      "default": "./dist/menu-item.js"
+    },
+    "./use-can-hover": {
+      "types": "./dist/use-can-hover.d.ts",
+      "default": "./dist/use-can-hover.js"
+    },
     "./select": {
       "types": "./dist/select.d.ts",
       "default": "./dist/select.js"

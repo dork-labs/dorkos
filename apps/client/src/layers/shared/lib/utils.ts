@@ -10,7 +10,7 @@ import { extendTailwindMerge } from 'tailwind-merge';
  * `text-xs` it should replace.
  */
 const twMerge = extendTailwindMerge({
-  extend: { classGroups: { 'font-size': [{ text: ['control'] }] } },
+  extend: { classGroups: { 'font-size': [{ text: ['control', 'dui-control', 'dui-2xs'] }] } },
 });
 
 /** Merge Tailwind class names with conflict resolution via `clsx` and `twMerge`. */

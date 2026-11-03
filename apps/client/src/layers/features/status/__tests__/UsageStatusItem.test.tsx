@@ -346,9 +346,9 @@ describe('UsageDetail — on the inverted tooltip', () => {
     );
     // The page's muted gray read 2.28:1 (light) and 1.87:1 (dark) on the tooltip.
     for (const label of ['Utilization', 'Window']) {
-      expect(screen.getByText(label)).toHaveClass('text-dui-background/70');
+      expect(screen.getByText(label)).toHaveClass('text-dui-tooltip-foreground/70');
       expect(screen.getByText(label)).not.toHaveClass('text-muted-foreground');
     }
-    expect(screen.getByText(/has no listed price/)).toHaveClass('text-dui-background/70');
+    expect(screen.getByText(/has no listed price/)).toHaveClass('text-dui-tooltip-foreground/70');
   });
 });

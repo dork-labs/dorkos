@@ -54,6 +54,20 @@
   /* A count's figures: 11px inline, 10px in a control's corner. */
   --dui-text-2xs: calc(0.6875rem * var(--user-font-scale, 1));
   --dui-text-3xs: calc(0.625rem * var(--user-font-scale, 1));
+  /* A menu row's label: 13/18, and 16/21 on a phone. */
+  --dui-text-control: calc(0.8125rem * var(--user-font-scale, 1));
+  --dui-text-control-lh: calc(1.125rem * var(--user-font-scale, 1));
+  /* The row under the cursor, in a menu or a list. Foreground alpha rather than a
+     grey, so one step reads the same on any ground. */
+  --dui-row-selected: hsl(var(--dui-foreground) / 0.07);
+  /* The quietest text that still clears 4.5:1 on a highlighted row. */
+  --dui-faint: 0 0% 37%;
+  --dui-tooltip: 0 0% 9%;
+  --dui-tooltip-foreground: 0 0% 98%;
+  /* A scrolling body's edge: the shadow, and what hides it at rest. A host that
+     lifts its modal surface with a wash points the cover at the lifted colour. */
+  --dui-scroll-edge: 0 0% 0% / 0.1;
+  --dui-scroll-cover: hsl(var(--dui-popover));
 }
 
 @media (max-width: 767px) {
@@ -69,6 +83,8 @@
     /* The count figures take the phone's 1.25 text scale, as the app's do. */
     --dui-text-2xs: calc(0.859375rem * var(--user-font-scale, 1));
     --dui-text-3xs: calc(0.78125rem * var(--user-font-scale, 1));
+    --dui-text-control: calc(1rem * var(--user-font-scale, 1));
+    --dui-text-control-lh: calc(1.3125rem * var(--user-font-scale, 1));
   }
 }
 
@@ -107,6 +123,12 @@
     --dui-status-warning-fg: 38 92% 56%;
     --dui-status-error-bg: 0 72% 12%;
     --dui-status-error-fg: 0 72% 68%;
+    --dui-row-selected: hsl(var(--dui-foreground) / 0.09);
+    --dui-faint: 0 0% 58%;
+    --dui-tooltip: 0 0% 22%;
+    --dui-tooltip-foreground: 0 0% 87%;
+    --dui-scroll-edge: 0 0% 0% / 0.45;
+    --dui-scroll-cover: hsl(var(--dui-popover));
   }
 }
 
@@ -144,6 +166,12 @@
   --dui-status-warning-fg: 38 92% 56%;
   --dui-status-error-bg: 0 72% 12%;
   --dui-status-error-fg: 0 72% 68%;
+  --dui-row-selected: hsl(var(--dui-foreground) / 0.09);
+  --dui-faint: 0 0% 58%;
+  --dui-tooltip: 0 0% 22%;
+  --dui-tooltip-foreground: 0 0% 87%;
+  --dui-scroll-edge: 0 0% 0% / 0.45;
+  --dui-scroll-cover: hsl(var(--dui-popover));
 }
 
 /* The stacking ladder. Portaled menus, popovers and selects sit on `overlay`, not
@@ -164,8 +192,11 @@
    own copy of the speeds it uses. */
 :root {
   --dui-dur-press: 80ms;
+  --dui-dur-instant: 100ms;
   --dui-dur-answer: 120ms;
   --dui-dur-fast: 150ms;
+  --dui-dur-normal: 200ms;
   --dui-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --dui-ease-in: cubic-bezier(0.4, 0, 1, 1);
   --dui-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 }

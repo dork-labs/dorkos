@@ -338,7 +338,7 @@ function SheetCheckboxItem({
 
 /** A rule between two runs of rows. */
 function SheetSeparator() {
-  return <div aria-hidden className="bg-sidebar-border/70 mx-4 my-1 h-px" />;
+  return <div aria-hidden className="h-2" />;
 }
 
 /**

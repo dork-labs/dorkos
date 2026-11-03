@@ -49,8 +49,8 @@ describe('a dialog is a card at every width', () => {
 
   it('keeps the plain Dialog’s corners rounded below 640px', () => {
     const panel = openDialog();
-    expect(panel).toHaveClass('rounded-lg');
-    expect(panel.className).not.toContain('sm:rounded-lg');
+    expect(panel).toHaveClass('rounded-xl');
+    expect(panel.className).not.toContain('sm:rounded-xl');
   });
 
   it('never lets its own content decide how wide or how tall it is', () => {
@@ -72,13 +72,13 @@ describe('a dialog is a card at every width', () => {
     const panel = openAlertDialog();
     expect(panel).toHaveClass(
       'w-[calc(100%-2rem)]',
-      'rounded-lg',
+      'rounded-xl',
       'grid-cols-[minmax(0,1fr)]',
       'max-h-[calc(100dvh-2rem)]',
       'overflow-y-auto'
     );
     expect(panel).not.toHaveClass('w-full');
-    expect(panel.className).not.toContain('sm:rounded-lg');
+    expect(panel.className).not.toContain('sm:rounded-xl');
   });
 });
 

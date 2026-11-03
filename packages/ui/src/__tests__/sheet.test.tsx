@@ -41,7 +41,8 @@ describe('Sheet portable behavior', () => {
     trigger.focus();
     fireEvent.click(trigger);
     const panel = await screen.findByRole('dialog');
-    expect(panel).toHaveClass('w-3/4', 'sm:max-w-sm', 'motion-reduce:animate-none!');
+    expect(panel).toHaveClass('w-full', 'sm:w-3/4', 'sm:max-w-sm', 'motion-reduce:animate-none!');
+    expect(panel).toHaveFocus();
     expect(panel).toHaveClass('data-[state=open]:slide-in-from-left');
     expect(document.querySelector('[data-slot="sheet-overlay"]')).toHaveClass(
       'motion-reduce:animate-none!'
