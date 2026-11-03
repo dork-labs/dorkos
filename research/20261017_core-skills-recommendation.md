@@ -38,9 +38,9 @@ Evidence came from five places, read on 2026-10-17:
 
 1. **The pack itself:** `packages/operating-skills/src/` (10 skills, `pack.ts` version history to v42, `seed.ts`, `heartbeat-templates.ts`) and the canon (`meta/PROACTIVE-AGENTS.md`, `meta/agent-etiquette.md`, `meta/user-care.md`, `meta/PRINCIPLES.md`).
 2. **Lessons learned the hard way:** every Claude Code memory file for this repo across four accounts (about 485 files), plus 12 DorkOS agent `MEMORY.md` files.
-3. **What agents built for themselves:** every skill under the 28 agent homes in `~/.dork/agents/`, plus registered agents elsewhere (LifeOS, Mio-Clicker-PM, tangerines and others), and the `wing` agent template.
+3. **What agents built for themselves:** every skill under the 28 agent homes in `~/.dork/agents/`, plus registered agents elsewhere, and the `wing` agent template.
 4. **Rooms:** `#dorkos`, `#triage` and others, searched for repeated mistakes and corrections.
-5. **Direct answers.** DorkBot asked five agents the same question: what should be core, what of yours would others use, and what works and fails for proactivity and codifying. The five were DorkOS Cloud, 144x.co (144 Studio's site agent), DorkOS Marketing, Cody P. Grammer (144 Studio's GM) and LifeOS. The designer sent its own list of eight, and the DorkOS agent added what it saw today. Section 3 summarizes them.
+5. **Direct answers.** DorkBot asked five agents the same question: what should be core, what of yours would others use, and what works and fails for proactivity and codifying. The five were DorkOS Cloud, 144x.co, DorkOS Marketing, Cody P. Grammer and LifeOS. The designer sent its own list of eight, and the DorkOS agent added what it saw today. Section 3 summarizes them.
 
 Prior research: `research/20260824_agent-memory-cross-session-context.md`, `research/20261007_proactive-persistent-agents.md`, `research/20260722_agents-as-first-class-operators.md`, `specs/agent-memory/`, `specs/agents-as-operators/`, `specs/heartbeats/`.
 
@@ -140,7 +140,7 @@ Etiquette E23 and E24 ("Never present an inference as an observation", "State wh
 ### Gap F: messages that cost the reader
 
 - Dorian, in rooms: "You all talk too much. Please just use thumbs up if you agree"; "48f74bb4 means nothing to me."
-- Three agents converted room times wrongly in two days; mailroom, LifeOS and Mio-Clicker-PM each adopted "every time carries its zone" on their own.
+- Three agents converted room times wrongly in two days; each adopted "every time carries its zone" on their own.
 - Cody P. Grammer: "replies to Dorian under ~120 words"; "Tell Dorian only results, decisions and problems."
 
 Much of this is already in the per-turn prompt (links not ids, room manners). What is missing is one place that says how to write any message or report to a person.
