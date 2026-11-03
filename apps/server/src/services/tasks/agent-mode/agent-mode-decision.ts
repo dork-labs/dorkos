@@ -70,6 +70,8 @@ import {
   SELF_APPROVAL_MESSAGE,
   UNKNOWN_EDITOR_MESSAGE,
   UNKNOWN_MODE_MESSAGE,
+  SCHEDULED_RAISE_CODE,
+  SCHEDULED_RAISE_MESSAGE,
   DECLINED_MESSAGE,
   LINEAGE_UNKNOWN_MESSAGE,
   MODE_ALONE_MESSAGE,
@@ -485,6 +487,12 @@ export async function decideAgentModeCall(
   const floor = call.edits?.personFloor;
   if (setsMode && floor && isRaise(declared, mode, floor)) asks.push('person-floor');
   const raise = setsMode && isRaise(declared, mode, previousMode);
+  // A scheduled thing may only change timing or lower (M7). Parking the task at the
+  // asked mode would put that mode one routine Approve from live, and let a run stop
+  // any sibling by asking (MUST-H), so it writes nothing at all.
+  if (raise && caller.scheduledRun === true && call.door === 'update') {
+    return refuse(SCHEDULED_RAISE_CODE, SCHEDULED_RAISE_MESSAGE);
+  }
 
   const actions: AgentModeAction[] = [
     ...(setsMode ? [TASK_SET_MODE_ACTION] : []),

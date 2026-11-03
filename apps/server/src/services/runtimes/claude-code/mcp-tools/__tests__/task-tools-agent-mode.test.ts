@@ -1128,12 +1128,16 @@ describe('tasks_* and an agent’s mode or approval', () => {
         return sessionId;
       }
 
-      it('(Security 1) parks a scheduled run’s raise and its prompt edit, and keeps its timing edit and its lowering', async () => {
+      it('(Security 1, MUST-H) refuses a scheduled run’s raise, parks its prompt edit, and keeps its timing edit and its lowering', async () => {
         const id = await ownTask();
+        const before = store.getTask(id)!;
         const run = toolsOfA({ sessionId: await runChatOf(id) });
         const raised = await call(run.tasks_update!, { id, permissionMode: 'bypassPermissions' });
-        expect(store.getTask(id)?.status).toBe('pending_approval');
-        expect(raised.payload).toMatchObject({ note: PARKED_BECAUSE.scheduledRaise });
+        expect(raised.payload).toMatchObject({ code: 'scheduled_raise' });
+        expect(store.getTask(id)).toMatchObject({
+          status: 'active',
+          permissionMode: before.permissionMode,
+        });
 
         const other = await ownTaskNamed('second-sweep');
         const otherRun = toolsOfA({ sessionId: await runChatOf(other, 'ses-run-2') });
@@ -1150,11 +1154,12 @@ describe('tasks_* and an agent’s mode or approval', () => {
         // A message the run sent to agent A's own chat started that chat's turn.
         await ranTurn('ses-a-own', 'bypassPermissions');
         noteChatTurnStarted('ses-a-own', Date.now(), [{ fromSessionId: 'ses-run' }]);
-        await call(toolsOfA({ sessionId: 'ses-a-own' }).tasks_update!, {
+        const raised = await call(toolsOfA({ sessionId: 'ses-a-own' }).tasks_update!, {
           id,
           permissionMode: 'bypassPermissions',
         });
-        expect(store.getTask(id)?.status).toBe('pending_approval');
+        expect(raised.payload).toMatchObject({ code: 'scheduled_raise' });
+        expect(store.getTask(id)?.status).toBe('active');
         resetChatStartedTurns();
       });
 
@@ -1268,7 +1273,7 @@ describe('tasks_* and an agent’s mode or approval', () => {
         expect(store.getTask(id)?.permissionMode).toBe('default');
       });
 
-      it('(e2e) a scheduled run’s session_start spin-off cannot launder a raise: it parks, from the spin-off’s own chat', async () => {
+      it('(e2e) a scheduled run’s session_start spin-off cannot launder a raise: it is refused, from the spin-off’s own chat', async () => {
         const startedBy = new SessionStartedByStore(createTestDb());
         setSessionStartedByStore(startedBy);
         try {
@@ -1290,8 +1295,8 @@ describe('tasks_* and an agent’s mode or approval', () => {
             id,
             permissionMode: 'bypassPermissions',
           });
-          expect(store.getTask(id)?.status).toBe('pending_approval');
-          expect(payload).toMatchObject({ note: PARKED_BECAUSE.scheduledRaise });
+          expect(store.getTask(id)?.status).toBe('active');
+          expect(payload).toMatchObject({ code: 'scheduled_raise' });
         } finally {
           setSessionStartedByStore(undefined);
         }

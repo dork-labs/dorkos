@@ -476,13 +476,8 @@ describe('InboxBell', () => {
     await userEvent.click(marker);
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    // The yes names the prompt it showed by its hash (DOR-3703, M4).
-    await waitFor(() =>
-      expect(updateTask).toHaveBeenCalledWith('task-1', {
-        status: 'active',
-        approvedPromptHash: expect.stringMatching(/^sha256:/),
-      })
-    );
+    // This card's prompt is folded, so its yes names no prompt by its hash (DOR-3703, SC2).
+    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
     // Still open, and the schedule that was NOT decided is still answerable.
     expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
   });

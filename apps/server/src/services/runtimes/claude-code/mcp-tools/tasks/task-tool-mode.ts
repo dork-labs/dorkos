@@ -25,6 +25,7 @@ import { agentApprovalBindingOf } from '../../../../tasks/agent-mode/agent-mode-
 import {
   announceAgentModeChange,
   announceAgentPromptChange,
+  reportRefusedRaise,
 } from '../../../../tasks/agent-mode/agent-mode-notice.js';
 import {
   modeNeedsAPerson,
@@ -49,6 +50,7 @@ import { logger } from '../../../../../lib/logger.js';
 import {
   AGENT_MODE_REFUSAL_ERROR,
   CONTENT_CHANGED_MESSAGE,
+  SCHEDULED_RAISE_CODE,
 } from '../../../../tasks/agent-mode/agent-mode-copy.js';
 
 /**
@@ -68,6 +70,18 @@ export async function settleToolModeCall(
     { ...call, ...(edits !== undefined ? { edits } : {}) },
     deps.meshCore
   );
+  // Nothing changed, so this is the only trace: the audit log and one Inbox line (MUST-H).
+  if (settled.refusal?.code === SCHEDULED_RAISE_CODE && call.task) {
+    await reportRefusedRaise(
+      {
+        task: call.task,
+        mode: String(call.body.permissionMode),
+        ...(call.caller.agentPath ? { setterPath: call.caller.agentPath } : {}),
+        startedBy: turnStarterOf(call.caller, liveRunOriginSources(deps.taskStore!)),
+      },
+      liveAgentModeSources(deps.meshCore)
+    );
+  }
   // Who started the turn, for the notice and the audit row (M6).
   if (settled.grant) {
     settled.grant.startedBy = turnStarterOf(call.caller, liveRunOriginSources(deps.taskStore!));
@@ -252,8 +266,6 @@ export function createModeOptions(mode: AgentModeSettlement): {
 export const PARKED_BECAUSE = {
   agentApproval:
     'Another agent approved this task as it was, so your change waits for a person to approve it again.',
-  scheduledRaise:
-    'A scheduled run raised how this task runs, so it waits for a person to approve the new mode.',
   unvouched:
     'This task now runs looser than Don’t ask. No person approved it as it is, and this call ' +
     'could not vouch for it (only the task’s own agent can, from its own chat, in a turn that ' +
@@ -385,7 +397,7 @@ export function afterToolAgentEdit(
     return null;
   }
   store.updateTask(updated.id, { status: 'pending_approval' });
-  return grant.decision.scheduledRaise ? PARKED_BECAUSE.scheduledRaise : PARKED_BECAUSE.unvouched;
+  return PARKED_BECAUSE.unvouched;
 }
 
 /** What an agent reads when its approval could not be armed whole. */

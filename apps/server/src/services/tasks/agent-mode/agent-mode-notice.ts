@@ -20,6 +20,9 @@ import {
 import { resolveAgentIdForPath, resolveAgentNameForId } from '../../mesh/agent-path-lookup.js';
 import { UNNAMED_PROPOSER } from '../../notifications/emitters/schedule-park.js';
 import { logError, logger } from '../../../lib/logger.js';
+import { recordAudit } from '../../audit/audit-trail.js';
+import { TASK_SET_MODE_ACTION } from './agent-mode-actions.js';
+import { SCHEDULED_RAISE_CODE } from './agent-mode-copy.js';
 import type { AgentModeSources } from './agent-mode-decision.js';
 
 /**
@@ -53,6 +56,54 @@ export async function announceAgentModeChange(
   } catch (err) {
     logger.warn('[tasks] could not post the notice for an agent’s mode change', logError(err));
     return false;
+  }
+}
+
+/**
+ * A scheduled run's raise was refused, and nothing changed (MUST-H): write it in
+ * the audit log and tell the person who asked. Never throws, because the refusal
+ * stands whether or not anyone could be told.
+ *
+ * @param asked - The task as it stands, the mode asked for, who asked, and who
+ *   started the turn that did.
+ * @param sources - Where the runtime's mode names are read.
+ */
+export async function reportRefusedRaise(
+  asked: { task: Task; mode: string; setterPath?: string; startedBy: string },
+  sources: Pick<AgentModeSources, 'declaredModes'>
+): Promise<void> {
+  const { task, mode, startedBy } = asked;
+  const taskName = task.displayName ?? task.name;
+  try {
+    recordAudit({
+      action: TASK_SET_MODE_ACTION,
+      operation: 'modify',
+      target: { type: 'task', id: task.id, name: taskName },
+      outcome: 'refused',
+      change: [
+        { field: 'permissionMode', before: task.permissionMode, after: task.permissionMode },
+        { field: 'asked', after: mode },
+        { field: 'reason', after: SCHEDULED_RAISE_CODE },
+        { field: 'startedBy', after: startedBy },
+      ],
+      summary: `Refused a raise of ${taskName}: ${startedBy} asked for ${mode}`,
+    });
+    const declared = sources.declaredModes(task.runtime);
+    const label = (id: string) => declared?.values.find((m) => m.id === id)?.label ?? id;
+    const setterId = asked.setterPath ? resolveAgentIdForPath(asked.setterPath) : undefined;
+    const payload = await resolveScheduleArmedPayload(task);
+    await postScheduleArmed({
+      ...payload,
+      armedBy: (setterId ? resolveAgentNameForId(setterId) : undefined) ?? UNNAMED_PROPOSER,
+      refusedRaise: {
+        from: label(task.permissionMode),
+        to: label(mode),
+        startedBy,
+        at: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    logger.warn('[tasks] could not report a refused raise', logError(err));
   }
 }
 

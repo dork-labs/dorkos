@@ -758,7 +758,7 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
       resetActiveRunSessions();
     });
 
-    it('after a normal run end and the chat’s rekey, a spin-off still names the stored run, and its raise waits', async () => {
+    it('after a normal run end and the chat’s rekey, a spin-off still names the stored run, and its raise is refused', async () => {
       const startedBy = new SessionStartedByStore(createTestDb());
       setSessionStartedByStore(startedBy);
       try {
@@ -792,11 +792,15 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
         resetActiveRunSessions();
         expect(startedBy.get('spin')?.startedBySessionId).toBe(store.getRun(run.id)!.sessionId);
         await ranTurn('spin', 'bypassPermissions');
-        await call(toolsOfA({ sessionId: 'spin' }).tasks_update!, {
+        const raised = await call(toolsOfA({ sessionId: 'spin' }).tasks_update!, {
           id: target,
           permissionMode: 'bypassPermissions',
         });
-        expect(store.getTask(target)!.status).toBe('pending_approval');
+        expect(raised.payload).toMatchObject({ code: 'scheduled_raise' });
+        expect(store.getTask(target)).toMatchObject({
+          status: 'active',
+          permissionMode: 'acceptEdits',
+        });
       } finally {
         setSessionStartedByStore(undefined);
       }
@@ -818,11 +822,15 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
           createdAt: new Date().toISOString(),
         });
         await ranTurn('beat-spin', 'bypassPermissions');
-        await call(toolsOfA({ sessionId: 'beat-spin' }).tasks_update!, {
+        const raised = await call(toolsOfA({ sessionId: 'beat-spin' }).tasks_update!, {
           id,
           permissionMode: 'bypassPermissions',
         });
-        expect(store.getTask(id)!.status).toBe('pending_approval');
+        expect(raised.payload).toMatchObject({ code: 'scheduled_raise' });
+        expect(store.getTask(id)).toMatchObject({
+          status: 'active',
+          permissionMode: 'acceptEdits',
+        });
         const caller = withRunOrigin(
           { structural: true, marked: false, sessionId: 'beat-spin' },
           liveRunOriginSources(store)
@@ -833,6 +841,24 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
             modeChange: { from: 'Accept edits', to: 'Default', at: 'x', startedBy: 'a heartbeat' },
           } as never)
         ).toBe('Was Accept edits. Started by a heartbeat.');
+        const refused = {
+          armedBy: 'Atlas',
+          taskName: 'Nightly sweep',
+          refusedRaise: {
+            from: 'Accept edits',
+            to: 'Bypass permissions',
+            at: 'x',
+            startedBy: 'a heartbeat',
+          },
+        } as never;
+        expect(SCHEDULE_ARMED_COPY.title(refused)).toBe(
+          'Atlas asked to set Nightly sweep to Bypass permissions'
+        );
+        expect(SCHEDULE_ARMED_COPY.body(refused)).toBe(
+          'Nothing changed. It still runs at Accept edits. Started by a heartbeat.'
+        );
+        // Nothing to undo, so only a look.
+        expect(SCHEDULE_ARMED_COPY.actions(refused).map((a) => a.id)).toEqual(['open']);
       } finally {
         setSessionStartedByStore(undefined);
       }

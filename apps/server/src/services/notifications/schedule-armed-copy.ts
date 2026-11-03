@@ -35,6 +35,12 @@ export interface ScheduleArmedPayload extends ScheduleSubject {
    */
   promptChange?: { startedBy: string; at: string; fromHash: string; toHash: string };
   /**
+   * Set when a scheduled run, a heartbeat or a chat either started asked for a
+   * looser mode and was refused (DOR-3703, MUST-H): nothing changed, so it offers
+   * only a look. The modes as a person reads them, and who started the turn.
+   */
+  refusedRaise?: { from: string; to: string; startedBy: string; at: string };
+  /**
    * Set when the task's SKILL file changed outside the task tools (DOR-3703,
    * M4): `capped` when its runs went to Don't ask (one notice per pair of
    * hashes), `lifted` when its own agent accepted the file (Undo caps it
@@ -96,24 +102,28 @@ function fileChangeBody(change: NonNullable<ScheduleArmedPayload['fileChange']>)
 /** The kind's wording, actions and dedupe key, spread into its registry entry. */
 export const SCHEDULE_ARMED_COPY = {
   title: (p: ScheduleArmedPayload) =>
-    p.fileChange
-      ? fileChangeTitle(p, p.fileChange)
-      : p.promptChange
-        ? `${p.armedBy} rewrote ${p.taskName}`
-        : p.modeChange
-          ? `${p.armedBy} set ${p.taskName} to ${p.modeChange.to}`
-          : `${p.armedBy} scheduled ${p.taskName}`,
+    p.refusedRaise
+      ? `${p.armedBy} asked to set ${p.taskName} to ${p.refusedRaise.to}`
+      : p.fileChange
+        ? fileChangeTitle(p, p.fileChange)
+        : p.promptChange
+          ? `${p.armedBy} rewrote ${p.taskName}`
+          : p.modeChange
+            ? `${p.armedBy} set ${p.taskName} to ${p.modeChange.to}`
+            : `${p.armedBy} scheduled ${p.taskName}`,
   // A second line that never contradicts a refused Undo (designer, round 7).
   body: (p: ScheduleArmedPayload) =>
-    p.fileChange
-      ? fileChangeBody(p.fileChange)
-      : p.promptChange
-        ? `Prompt changed ${p.promptChange.fromHash} → ${p.promptChange.toHash}. Started by ${p.promptChange.startedBy}.`
-        : p.modeChange
-          ? `Was ${p.modeChange.from}.${p.modeChange.startedBy ? ` Started by ${p.modeChange.startedBy}.` : ''}`
-          : `Runs ${p.cadence}${p.runsAs ? ` as ${p.runsAs}` : ''}. Pause it any time.`,
+    p.refusedRaise
+      ? `Nothing changed. It still runs at ${p.refusedRaise.from}. Started by ${p.refusedRaise.startedBy}.`
+      : p.fileChange
+        ? fileChangeBody(p.fileChange)
+        : p.promptChange
+          ? `Prompt changed ${p.promptChange.fromHash} → ${p.promptChange.toHash}. Started by ${p.promptChange.startedBy}.`
+          : p.modeChange
+            ? `Was ${p.modeChange.from}.${p.modeChange.startedBy ? ` Started by ${p.modeChange.startedBy}.` : ''}`
+            : `Runs ${p.cadence}${p.runsAs ? ` as ${p.runsAs}` : ''}. Pause it any time.`,
   actions: (p: ScheduleArmedPayload) =>
-    p.fileChange?.kind === 'capped'
+    p.fileChange?.kind === 'capped' || p.refusedRaise
       ? FILE_CAPPED_ACTIONS
       : p.modeChange || p.promptChange || p.fileChange
         ? MODE_CHANGE_ACTIONS
@@ -123,14 +133,17 @@ export const SCHEDULE_ARMED_COPY = {
   // row swallow a later park of the same schedule. A mode change is keyed by
   // when it happened, so a second change is never folded into the first.
   // A capped file is told once per pair of hashes (M4); a lift by when it happened.
+  // A refused raise is told once a day per mode asked: a run asking in a loop is one line.
   dedupeKey: (p: ScheduleArmedPayload) =>
-    p.fileChange?.kind === 'capped'
-      ? `schedule-file:${p.taskId}:${p.fileChange.fromHash}:${p.fileChange.toHash}`
-      : p.fileChange
-        ? `schedule-file-lift:${p.taskId}:${p.fileChange.at}`
-        : p.promptChange
-          ? `schedule-prompt:${p.taskId}:${p.promptChange.at}`
-          : p.modeChange
-            ? `schedule-mode:${p.taskId}:${p.modeChange.at}`
-            : `schedule-armed:${p.taskId}`,
+    p.refusedRaise
+      ? `schedule-raise-refused:${p.taskId}:${p.refusedRaise.to}:${p.refusedRaise.at.slice(0, 10)}`
+      : p.fileChange?.kind === 'capped'
+        ? `schedule-file:${p.taskId}:${p.fileChange.fromHash}:${p.fileChange.toHash}`
+        : p.fileChange
+          ? `schedule-file-lift:${p.taskId}:${p.fileChange.at}`
+          : p.promptChange
+            ? `schedule-prompt:${p.taskId}:${p.promptChange.at}`
+            : p.modeChange
+              ? `schedule-mode:${p.taskId}:${p.modeChange.at}`
+              : `schedule-armed:${p.taskId}`,
 };

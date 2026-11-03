@@ -57,6 +57,15 @@ export function aboveCeilingMessage(highest: string): string {
   );
 }
 
+/** The refusal code of a scheduled run's raise, which also tells the person (MUST-H). */
+export const SCHEDULED_RAISE_CODE = 'scheduled_raise';
+
+/** A scheduled run, a heartbeat, or a chat either one started, asked for a looser mode. */
+export const SCHEDULED_RAISE_MESSAGE =
+  'A scheduled run or a heartbeat, or a chat one of them started, cannot raise how a task runs. ' +
+  'The task keeps running as it was, and the person has been told you asked. You can change its ' +
+  'timing or lower its mode. Send any other change without permissionMode.';
+
 /** A call that needs a person's approval and reached DorkOS without one. */
 export const NEEDS_A_PERSON_MESSAGE =
   'This needs a person to approve it first, and no approval came with this call. Send the same ' +

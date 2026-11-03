@@ -948,13 +948,9 @@ describe('PinnedTriageHeader', () => {
 
     // The Tasks page's own mutation, unchanged: arming it is a status AND an
     // enabled flag, and sending only one of them leaves a schedule that is
-    // approved but never fires. The yes names the prompt it showed by its hash (DOR-3703, M4).
-    await waitFor(() =>
-      expect(updateTask).toHaveBeenCalledWith('task-1', {
-        status: 'active',
-        approvedPromptHash: expect.stringMatching(/^sha256:/),
-      })
-    );
+    // approved but never fires. This card's prompt is folded, so its yes names no
+    // prompt by its hash (DOR-3703, SC2).
+    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
   });
 
   it('rejects a parked schedule into a receipt, sending no delete yet', async () => {

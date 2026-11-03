@@ -129,8 +129,8 @@ For a package an older DorkOS installed, it needs **Check files** first.
 ### Two fields that are the user's
 
 On your own task, from your own chat, set \`permissionMode\` up to your level; higher is
-refused. It keeps running, and the user is told with an Undo; a raise from a scheduled run, or
-after the user put a mode back, waits for them. Another agent's task, a linked worktree or
+refused. It keeps running, and the user is told with an Undo; a raise after the user put a mode back
+waits for them, and a raise from a scheduled run or a heartbeat is refused, with the user told. Another agent's task, a linked worktree or
 outside words ask the user (outside words: \`dontAsk\` at most). \`status: "active"\`, sent alone, approves: it asks the user, never your own or
 your chain's work, never from /mcp. Switched off, either field refuses the whole call.
 

@@ -611,9 +611,10 @@ describe('the task’s own agent vouching in place of a person (Nov 3 ruling)', 
     expect(await decide(own(), { ...HOME, resolved: 'worktree' })).toMatchObject({
       vouched: false,
     });
+    // MUST-H: nothing to vouch for, because a scheduled run's raise is refused outright.
     expect(await decide(own(), { ...HOME, scheduledRun: true })).toMatchObject({
-      vouched: false,
-      scheduledRaise: true,
+      kind: 'refuse',
+      body: { code: 'scheduled_raise' },
     });
   });
 });

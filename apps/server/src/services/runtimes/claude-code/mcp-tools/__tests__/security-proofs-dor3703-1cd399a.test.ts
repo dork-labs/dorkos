@@ -344,24 +344,51 @@ describe('tasks_* and an agent’s mode or approval', () => {
     }
 
     /**
-     * A scheduled chat tried to raise this running task to Bypass: the task stops
-     * and waits for a person to approve the new mode, and the agent is told so.
-     * It never runs at that mode first, and it isn't vouched for (SD1).
+     * A scheduled chat tried to raise this running task to Bypass: it is refused,
+     * exactly nothing moved, and the person is told who asked (MUST-H).
      */
     async function raiseIsHeld(id: string, sessionId: string): Promise<void> {
-      expect(store.getTask(id)!.status).toBe('active');
+      const before = store.getTask(id)!;
+      expect(before.status).toBe('active');
+      const told = notices.length;
       await ranTurn(sessionId, 'bypassPermissions');
       const out = await call(toolsOfA({ sessionId }).tasks_update!, {
         id,
         permissionMode: 'bypassPermissions',
       });
-      expect(out.isError).toBe(false);
-      expect(out.payload.needsReapproval).toBe(true);
-      expect(out.payload.note).toMatch(/waits for a person to approve the new mode/);
-      expect(store.getTask(id)!.status).toBe('pending_approval');
-      expect(store.getTask(id)!.permissionMode).toBe('bypassPermissions');
+      expect(out.isError).toBe(true);
+      expect(out.payload.code).toBe('scheduled_raise');
+      const after = store.getTask(id)!;
+      expect(after.status).toBe('active');
+      expect(after.permissionMode).toBe(before.permissionMode);
+      expect(after.agentModeRecord ?? null).toEqual(before.agentModeRecord ?? null);
       expect(store.approvals.agentModeColumnOf(id).attestation).toBeUndefined();
+      expect(notices.slice(told)).toEqual([
+        expect.objectContaining({
+          taskId: id,
+          refusedRaise: expect.objectContaining({ to: 'Bypass permissions' }),
+        }),
+      ]);
+      const audited = auditDb.select().from(auditEvents).all();
+      expect(JSON.stringify(audited)).toContain('scheduled_raise');
     }
+
+    it('[PR, fixed MUST-H] after a steered run’s raise, the row’s Approve and the card’s have nothing to arm, and the sibling keeps running', async () => {
+      const { noteRunSession, resetActiveRunSessions } =
+        await import('../../../../tasks/session/active-run-sessions.js');
+      try {
+        const runTask = await personApproved('room-digest');
+        const target = await personApproved('nightly-sweep');
+        const run = store.createRun(runTask, 'scheduled');
+        store.updateRun(run.id, { status: 'running' });
+        noteRunSession(run.id, 'run-chat', undefined, store);
+        await raiseIsHeld(target, 'run-chat');
+        // No park, so no Approve to click, and the mode it asked for is on no row.
+        expect(store.getTask(target)!.permissionMode).not.toBe('bypassPermissions');
+      } finally {
+        resetActiveRunSessions();
+      }
+    });
 
     /** The start service, as carry-over.ts calls it on a handoff or a person's Continue. */
     async function carriedFrom(source: string, carried: string, startedBy: unknown) {
