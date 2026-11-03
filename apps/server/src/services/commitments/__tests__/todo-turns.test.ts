@@ -154,6 +154,42 @@ describe('to-do turns', () => {
       expect(power.marks).toEqual({ teammate: [{ roomId: 'r1', authorId: 'm1' }] });
     });
 
+    describe("where it runs: the person's Direct chat or its own (Security's Option A)", () => {
+      it("runs a proven person's own to-do in their Direct chat with the agent", async () => {
+        todos.create(PERSON, { what: 'Renew', assignee: { kind: 'agent', agentId: 'agent-a' } });
+        await settled();
+        expect(launches[0]?.inDirectChat).toBe(true);
+      });
+
+      it("keeps an unproven person's, a stranger-bound or an agent's to-do out of it", async () => {
+        todos.create(
+          { kind: 'person', proven: false },
+          { what: 'x', assignee: { kind: 'agent', agentId: 'agent-a' } }
+        );
+        todos.create(agent('agent-a'), {
+          what: 'y',
+          assignee: { kind: 'agent', agentId: 'agent-b' },
+        });
+        await settled();
+        expect(launches.map((launch) => launch.inDirectChat)).toEqual([false, false]);
+      });
+
+      it('decides at each turn start: a person’s to-do an agent edits next runs outside it', async () => {
+        const made = todos.create(PERSON, {
+          what: 'Renew',
+          assignee: { kind: 'agent', agentId: 'agent-a' },
+        });
+        await settled();
+        expect(launches[0]?.inDirectChat).toBe(true);
+        todos.update(agent('agent-a', CAPPED, { outsider: true }), made.id, {
+          notes: 'from a message',
+        });
+        pending.push(turns.request(stored(made.id), 'agent-a'));
+        await settled();
+        expect(launches.at(-1)?.inDirectChat).toBe(false);
+      });
+    });
+
     it('holds the due wake and the beat to every open to-do the agent was given', () => {
       todos.create(agent('agent-a', CAPPED), {
         what: 'Check it',

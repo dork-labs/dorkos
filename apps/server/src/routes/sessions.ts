@@ -863,7 +863,7 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
     // Whoever is not the person may only run a chat where they could start one
     // themselves (DOR-3644), and an agent's launch carries its own marks on.
     // From Wi-Fi, the turn runs at the runtime's default at most (DOR-3037).
-    const launch = httpLaunchOf(honoRequestFacts(c));
+    const launch = httpLaunchOf(honoRequestFacts(c), sessionId);
     const result = await dispatchSessionMessage({
       origin: httpTurnOrigin(launch.launcher.kind !== 'person'),
       ...launch,

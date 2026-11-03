@@ -73,6 +73,11 @@ export interface ChatMessage {
    * another chat, drawn where it landed. The room entry it came from.
    */
   _directNote?: { roomId: string; entryId: string; seq: number };
+  /**
+   * @internal Client-only: this note is a to-do's card DorkOS posted in the Direct chat
+   * (DOR-3088). Drawn from the to-do itself, never from the entry's text.
+   */
+  _todoCard?: { todoId: string };
 }
 
 /** Client-side view of a single hook execution attached to a tool call. */

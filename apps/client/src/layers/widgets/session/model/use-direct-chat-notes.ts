@@ -44,6 +44,12 @@ export interface DirectChatLog {
   sessionIds: readonly string[];
   /** The log's agent members; everyone else is the person. */
   agentAuthorIds: ReadonlySet<string>;
+  /**
+   * Everyone who can have written in the room: its members and its former authors. DorkOS's own
+   * voice is on neither list, so an entry by nobody here is the room's own. Undefined while the
+   * room is loading, when nothing reads as DorkOS's.
+   */
+  rosterAuthorIds?: ReadonlySet<string>;
   /** The person's read cursor as it stood when the chat opened, or null. */
   readSeq: number | null;
   /** False while a Direct chat's log is still loading, so landing can wait. */
@@ -73,13 +79,17 @@ const noteMessages = new WeakMap<RoomEntry, ChatMessage>();
  * @param transcriptWhole - Whether `transcript` is the whole conversation, with
  *   no older page left to read. Until it is, what this session wrote before
  *   the oldest loaded message is taken to be in the part not read yet.
+ * @param rosterAuthorIds - Everyone who can have written in the room
+ *   ({@link DirectChatLog.rosterAuthorIds}); a to-do card is drawn only from an
+ *   entry by nobody on it, which is DorkOS's own voice. Undefined draws none.
  */
 export function directNotesFor(
   entries: readonly RoomEntry[],
   sessionIds: readonly string[],
   transcript: readonly ChatMessage[],
   agentAuthorIds: ReadonlySet<string>,
-  transcriptWhole = true
+  transcriptWhole = true,
+  rosterAuthorIds?: ReadonlySet<string>
 ): ChatMessage[] {
   const own = new Set(sessionIds);
   const answered = new Set(
@@ -105,8 +115,15 @@ export function directNotesFor(
       }
     }
     if (answered.has(entry.id)) continue;
+    // Only the server writes a card, in DorkOS's own voice (DOR-3088), so a `todo` on anyone
+    // else's entry draws nothing but its text.
+    const card =
+      entry.body.todo !== undefined &&
+      rosterAuthorIds !== undefined &&
+      !rosterAuthorIds.has(entry.authorId);
     let note = noteMessages.get(entry);
-    if (!note) {
+    // Rebuilt once the room loads and the card is known, so a note kept from before stays right.
+    if (!note || (note._todoCard !== undefined) !== card) {
       const text = entry.body.text;
       note = {
         id: `direct-note-${entry.id}`,
@@ -116,6 +133,7 @@ export function directNotesFor(
         parts: [{ type: 'text', text }],
         timestamp: entry.createdAt,
         _directNote: { roomId: entry.roomId, entryId: entry.id, seq: entry.seq },
+        ...(card && entry.body.todo ? { _todoCard: { todoId: entry.body.todo.todoId } } : {}),
       };
       noteMessages.set(entry, note);
     }
@@ -223,7 +241,8 @@ export function withDirectNotes(
     log.sessionIds,
     transcript,
     log.agentAuthorIds,
-    transcriptWhole
+    transcriptWhole,
+    log.rosterAuthorIds
   );
   const messages = interleaveDirectNotes(transcript, notes);
   const { readSeq } = log;
@@ -278,6 +297,14 @@ export function useDirectChatLog(sessionId: string | null): DirectChatLog {
           .filter((member) => member.author.kind === 'agent')
           .map((member) => member.author.id)
       ),
+      ...(room
+        ? {
+            rosterAuthorIds: new Set([
+              ...room.members.map((member) => member.author.id),
+              ...(room.formerAuthors ?? []).map((former) => former.author.id),
+            ]),
+          }
+        : {}),
       readSeq,
       ready: sessionId === null || chat.isError || (chat.isFetched && loaded),
     };

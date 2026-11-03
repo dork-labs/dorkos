@@ -139,6 +139,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   const commitments = (refs.commitmentWiring = wireCommitments({
     db,
     meshCore: () => refs.meshCore,
+    roomSessionPlace: () => refs.roomSessionPlacePort,
   }));
   // An agent's next queued item starts on its own when a slot frees (DOR-3462).
   const workQueue = (refs.workQueueWiring = wireWorkQueue({

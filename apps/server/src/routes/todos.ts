@@ -50,13 +50,15 @@ import { titleIsFromSource, type TodoSourceFacts } from '../services/commitments
 /** What the routes are built from. */
 export interface TodoRouterDeps {
   /** Makes, changes and lists to-dos. */
-  todos: Pick<TodoService, 'create' | 'update' | 'list'>;
+  todos: Pick<TodoService, 'create' | 'update' | 'list' | 'get'>;
   /** Whether a request proves the owner in person (`personProof`). */
   personProven(facts: RequestFacts): boolean;
   /** Whether this install has an owner account; when it doesn't, nobody can be proven. */
   ownerExists(): boolean;
   /** Whether an unproven request is an app window to ask for the step-up ({@link todoNeedsStepUp}). */
   needsStepUp(facts: RequestFacts): boolean;
+  /** The chat a to-do's latest turn ran in, or null; none when turns aren't wired. */
+  workSessionOf?(todoId: string): string | null;
   /** A source message's author and marks, read by the server. */
   readSource(entryId: string): TodoSourceFacts | undefined;
 }
@@ -146,6 +148,14 @@ export function createTodosRoutes(deps: TodoRouterDeps): Hono<ApiEnv> {
     const query = ListTodosQuerySchema.safeParse(readQuery(c));
     if (!query.success) return c.json(validationFailureBody(query.error), 400);
     return c.json(deps.todos.list(query.data));
+  });
+
+  // One to-do, for its card: read with the same reach as the list, so a card never shows a to-do
+  // the reader's list wouldn't. An id nobody can read answers 404, and the card says so.
+  router.get('/:id', (c) => {
+    const todo = deps.todos.get(c.req.param('id'));
+    if (!todo) return c.json(errorBody('No to-do has that id.', 'NOT_FOUND'), 404);
+    return c.json({ ...todo, workSessionId: deps.workSessionOf?.(todo.id) ?? null });
   });
 
   router.post('/', (c) => {

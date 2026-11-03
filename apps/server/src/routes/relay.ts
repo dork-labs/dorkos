@@ -191,7 +191,16 @@ export function buildConversations(
 export interface RelayRouteDeps extends RelayPublishDeps {
   /** Delivery traces, behind the trace reads and a connection's events and chats. */
   traceStore?: TraceStore;
+  /**
+   * Whether a session is a room's conversation (a channel's or a Direct chat's), so a message
+   * can't be published straight into it past the room (DOR-3088, Security's G2).
+   */
+  isRoomSession: (sessionId: string) => boolean;
 }
+
+/** Why a message addressed to a room's own conversation is refused. */
+const ROOM_SESSION_REFUSAL =
+  "That conversation belongs to a room. Post in the room instead, so the room's rules apply.";
 
 /**
  * The Relay routes, mounted at `/api/relay`: messages, endpoints, dead letters,
@@ -257,6 +266,14 @@ export function createRelayRoutes(deps: RelayRouteDeps): Hono<ApiEnv> {
         },
         403
       );
+    }
+
+    // DOR-3088 (G2): a room's conversation takes its turns from the room, which holds what an
+    // unproven caller says there. Publishing to its session id straight from here would skip that,
+    // so it is refused, as the session relay and an extension's agent-send refuse it.
+    const sessionId = extractSessionIdFromSubject(result.data.subject);
+    if (sessionId !== null && deps.isRoomSession(sessionId)) {
+      return c.json({ error: ROOM_SESSION_REFUSAL, code: 'ROOM_SESSION' }, 403);
     }
 
     return publishRelayMessage(c, deps, result.data);

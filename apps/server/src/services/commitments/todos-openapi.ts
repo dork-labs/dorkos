@@ -10,6 +10,7 @@ import {
   CreateTodoRequestSchema,
   ListTodosQuerySchema,
   ListTodosResponseSchema,
+  TodoCardSchema,
   TodoSchema,
   UpdateTodoRequestSchema,
 } from '@dorkos/shared/todo-schemas';
@@ -68,6 +69,27 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
       },
       429: {
         description: 'Past a daily cap',
+        content: { 'application/json': { schema: TodoErrorSchema } },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/todos/{id}',
+    tags: ['To-dos'],
+    summary: 'One to-do',
+    description:
+      'One to-do, read with the same reach as the list, and the chat its latest turn ran in. A ' +
+      "to-do's card in a Direct chat draws from this, never from the card entry itself.",
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: {
+        description: 'The to-do',
+        content: { 'application/json': { schema: TodoCardSchema } },
+      },
+      404: {
+        description: 'No such to-do',
         content: { 'application/json': { schema: TodoErrorSchema } },
       },
     },

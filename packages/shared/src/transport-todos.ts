@@ -12,6 +12,7 @@ import type {
   ListTodosQuery,
   ListTodosResponse,
   Todo,
+  TodoCard,
   UpdateTodoRequest,
 } from './todo-schemas.js';
 
@@ -23,6 +24,14 @@ export interface TodoTransport {
    * @param query - Optional view, filters and sort. The server defaults to the person's own.
    */
   listTodos(query?: ListTodosQuery): Promise<ListTodosResponse>;
+
+  /**
+   * One to-do as its card reads it, with the chat its latest turn ran in. Rejects with a 404 for
+   * a to-do the reader can't see.
+   *
+   * @param id - The to-do id.
+   */
+  getTodo(id: string): Promise<TodoCard>;
 
   /**
    * Make a to-do as the person.

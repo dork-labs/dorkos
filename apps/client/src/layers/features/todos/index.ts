@@ -16,3 +16,4 @@ export {
   useMakeTodoAction,
 } from './model/make-todo';
 export { NewTodoButton } from './ui/NewTodoButton';
+export { TodoCard, type TodoCardProps } from './ui/TodoCard';

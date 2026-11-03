@@ -17,8 +17,10 @@ import {
 import { agentPause } from '../mesh/pause/agent-pause.js';
 import { roomTurnBudget } from '../rooms/limits/shared-turn-budget.js';
 import { logger } from '../../lib/logger.js';
+import type { RoomSessionPlacePort } from '../workspace/room-session-place.js';
 import type { TodoTurnsDeps } from './todo-turns.js';
 import { agentInRoom } from './todo-source.js';
+import { todoDirectChatPort, type TodoDirectChatPort } from './todo-direct-chat.js';
 
 /** What the seams are built from. */
 export interface TodoTurnSeamDeps {
@@ -26,6 +28,10 @@ export interface TodoTurnSeamDeps {
   readonly db: Db;
   /** Mesh, read per launch: it starts later in boot. */
   readonly meshCore: () => Pick<MeshCore, 'get' | 'getProjectPath'> | undefined;
+  /** Where a Direct chat's session stands in its room, read per launch (built later in boot). */
+  readonly roomSessionPlace?: () => RoomSessionPlacePort | undefined;
+  /** The person's Direct chats and the card writer; the live rooms unless a test passes its own. */
+  readonly directChats?: TodoDirectChatPort;
 }
 
 /**
@@ -34,15 +40,46 @@ export interface TodoTurnSeamDeps {
  * @param deps - The database and the lazy agent registry.
  */
 export function todoTurnSeams(deps: TodoTurnSeamDeps): Omit<TodoTurnsDeps, 'db' | 'now'> {
+  const chats = deps.directChats ?? todoDirectChatPort(deps.db);
   return {
     async launch(request) {
       const mesh = deps.meshCore();
       const manifest = mesh?.get(request.agentId);
       const agentPath = mesh?.getProjectPath(request.agentId);
       if (!manifest || !agentPath) throw new Error('That agent is not on the team.');
-      // A fresh chat per to-do turn, unattended: nobody is watching it run, so no card holds it.
-      // `chat-message` is the origin whose turns a ceiling read at launch holds, as here.
-      const sessionId = randomUUID();
+      // The person's Direct chat with the agent: where their own to-do runs, and where a to-do the
+      // person gave gets its card, whichever chat runs the turn. A to-do one agent gives another
+      // makes no chat and no card. A chat or card that can't be made never stops the turn.
+      let chat: ReturnType<TodoDirectChatPort['chatFor']>;
+      if (request.inDirectChat || request.cardForPerson) {
+        try {
+          chat = chats.chatFor(agentPath, manifest.name);
+        } catch (err) {
+          logger.warn('[todos] the Direct chat could not be found', {
+            todoId: request.todoId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      if (chat && request.cardForPerson) {
+        try {
+          chats.postCardOnce(chat.roomId, request.todoId);
+        } catch (err) {
+          logger.warn('[todos] the to-do card could not be posted', {
+            todoId: request.todoId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      // Every to-do turn names its ceiling: its stored bound, or its agent's set level, so the
+      // chat it runs in can only hold it lower, never set it (Security's Must 4).
+      const permissionCeiling =
+        request.permissionCeiling ?? (await chats.agentLevel(agentPath, manifest.runtime));
+      // The person's own to-do runs in their Direct chat with the agent; every other to-do in a
+      // fresh chat of its own, so no outside words enter the person's conversation. Unattended
+      // either way, and `chat-message` is the origin whose turns a ceiling read at launch holds.
+      const inChat = request.inDirectChat && chat !== undefined;
+      const sessionId = inChat ? chat!.sessionId : randomUUID();
       const result = await dispatchSessionMessage({
         origin: { kind: 'chat-message' },
         sessionId,
@@ -50,11 +87,9 @@ export function todoTurnSeams(deps: TodoTurnSeamDeps): Omit<TodoTurnsDeps, 'db' 
         request: { content: request.content, agentPath, runtime: manifest.runtime },
         clientId: 'todos',
         meshCore: mesh as MeshCore,
-        roomSessionPlace: undefined,
+        roomSessionPlace: inChat ? deps.roomSessionPlace?.() : undefined,
         unattended: true,
-        ...(request.permissionCeiling !== undefined
-          ? { permissionCeiling: request.permissionCeiling }
-          : {}),
+        permissionCeiling,
         ...(request.carriedMarks ? { carriedMarks: request.carriedMarks } : {}),
         countsTowardLaunchCap: true,
         onSettled: () => undefined,

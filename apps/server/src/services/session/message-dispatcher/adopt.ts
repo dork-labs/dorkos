@@ -136,6 +136,11 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         ...(row.context !== null ? { context: row.context } : {}),
+        // A to-do's turn kept its power only in the process that queued it (DOR-3088, Must 4):
+        // recovered, it runs at the stranger's bound and unattended, never at the chat's own mode.
+        ...(row.enqueuedBy === 'todos'
+          ? { permissionCeiling: 'runtime-default' as const, unattended: true }
+          : {}),
         // Nobody is holding a request open for this one, so the buffer entry
         // would otherwise never be closed out.
         onSettled: (outcome) =>

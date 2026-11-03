@@ -10,14 +10,35 @@
  */
 import { useCallback } from 'react';
 import { useTodosEnabled } from '@/layers/entities/todo';
-import { createDialogOpenState } from '@/layers/shared/model';
+import type { DialogOpenState } from '@/layers/shared/model';
 import type { TodoMessageSource } from '../ui/NewTodoDialog';
 
 /** The message the dialog was last opened for, or null for a blank New to-do. */
 let pending: TodoMessageSource | null = null;
 
-/** Whether the to-do dialog is open; the root dialog host reads it. */
-export const makeTodoDialogState = createDialogOpenState();
+/** Who hears the dialog open and close. */
+const listeners = new Set<() => void>();
+let open = false;
+
+/**
+ * Whether the to-do dialog is open; the root dialog host reads it. Made here rather than with
+ * `createDialogOpenState`, so this module loads nothing at runtime from the shared model: the chat
+ * transcript imports the to-do card, and its tests replace that module wholesale.
+ */
+export const makeTodoDialogState: DialogOpenState = {
+  getSnapshot: () => open,
+  set: (next) => {
+    if (next === open) return;
+    open = next;
+    for (const listener of listeners) listener();
+  },
+  subscribe: (listener) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  },
+};
 
 /**
  * Open the dialog for one message.

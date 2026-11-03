@@ -213,6 +213,10 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
       ...(refs.adapterManager && { adapterManager: refs.adapterManager }),
       ...(refs.traceStore && { traceStore: refs.traceStore }),
       activity: activityService,
+      // Follows a renamed session to its successor, so a room conversation's retired id is
+      // refused too.
+      isRoomSession: (sessionId) =>
+        roomStore.sessionLedger.bindingForSession(sessionId) !== undefined,
     };
     // The claim feed (connection-scoping spec §Part 3) — mounted only when
     // the store was actually wired (relay enabled + binding subsystem up).

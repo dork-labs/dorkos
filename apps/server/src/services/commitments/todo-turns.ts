@@ -33,7 +33,12 @@ import {
 } from '@dorkos/db';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../lib/logger.js';
-import { todoTurnDecision, todoTurnPower, TODO_TURN_MAX_DEPTH } from './todo-turn-power.js';
+import {
+  todoRunsInDirectChat,
+  todoTurnDecision,
+  todoTurnPower,
+  TODO_TURN_MAX_DEPTH,
+} from './todo-turn-power.js';
 import { buildTodoTurnPrompt, type TodoSourceText } from './todo-turn-prompt.js';
 import type { TodoParent } from './todo-service.js';
 
@@ -61,6 +66,16 @@ export interface TodoTurnLaunch {
   readonly permissionCeiling: TurnPermissionCeiling | undefined;
   /** The outsider mark, carried on. */
   readonly carriedMarks: { outsider: true } | undefined;
+  /**
+   * Whether this turn runs in the person's Direct chat with the agent (`todoRunsInDirectChat`),
+   * decided now, at the turn's start, from the stored row.
+   */
+  readonly inDirectChat: boolean;
+  /**
+   * Whether the to-do gets a card in the person's Direct chat with the agent: one the person gave
+   * it. A to-do one agent gives another is agent-to-agent work, behind the scenes.
+   */
+  readonly cardForPerson: boolean;
 }
 
 /** What the turns are built from. */
@@ -295,6 +310,22 @@ export class TodoTurns {
     return { turns, parents, cut: cut || frontier.length > 0 };
   }
 
+  /**
+   * The chat a to-do's latest started turn ran in, for its card's "Show work"; null before one.
+   *
+   * @param todoId - The to-do.
+   */
+  lastSessionOf(todoId: string): string | null {
+    const started = this.deps.db
+      .select({ sessionId: todoTurns.sessionId, startedAt: todoTurns.startedAt })
+      .from(todoTurns)
+      .where(and(eq(todoTurns.todoId, todoId), eq(todoTurns.status, 'started')))
+      .all()
+      .filter((turn) => turn.sessionId !== null)
+      .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''));
+    return started[0]?.sessionId ?? null;
+  }
+
   /** How many turns a charge started today. */
   private startedToday(chargedTo: string): number {
     return this.deps.db
@@ -329,6 +360,8 @@ export class TodoTurns {
         content: buildTodoTurnPrompt(row, source),
         permissionCeiling: power.ceiling,
         carriedMarks: power.carriedMarks,
+        inDirectChat: todoRunsInDirectChat(row),
+        cardForPerson: row.assignedByKind === 'person',
       });
       this.deps.db
         .update(todoTurns)

@@ -7,7 +7,12 @@
  */
 import type { CommitmentRow } from '@dorkos/db';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import { ceilingCarrying, marksHold, type TurnMarks } from '../core/turn-power/turn-marks.js';
+import {
+  ceilingCarrying,
+  hasMarks,
+  marksHold,
+  type TurnMarks,
+} from '../core/turn-power/turn-marks.js';
 import { readAuthority, readAuthorityMarks } from './commitment-authority.js';
 
 /**
@@ -81,4 +86,23 @@ export function todoTurnPower(
     carriedMarks: marksHold(marks) ? { outsider: true } : undefined,
     marks,
   };
+}
+
+/**
+ * Whether a to-do's turn runs in the person's Direct chat with its agent rather than a chat of its
+ * own (DOR-3088, Security's Option A). Read from the stored row at EACH turn start, never fixed
+ * when the to-do is made: only the person's own words, proven by their sign-in (`person`
+ * authority, which an unproven or no-owner request never gets), with no mark of any kind, and not
+ * made from a message, whose words are somebody else's. A to-do an agent, a guest or a stranger
+ * touched, or one made from a message, keeps its own chat, so no words but the person's own ever
+ * enter the person's conversation.
+ *
+ * @param row - The stored row.
+ */
+export function todoRunsInDirectChat(
+  row: Pick<CommitmentRow, 'authority' | 'authorityMarks' | 'sourceRoomEntryId'>
+): boolean {
+  if (row.sourceRoomEntryId !== null) return false;
+  if (readAuthority(row.authority).kind !== 'person') return false;
+  return !hasMarks(readAuthorityMarks(row.authorityMarks));
 }

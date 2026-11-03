@@ -8,9 +8,8 @@
  *
  * @module server/services/rooms/messages/room-posting
  */
-import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
 import { postLevelFor, unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
-import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { directChatHoldApplies } from '../limits/direct-chat-hold.js';
 import type { RoomAttachment, RoomMoment } from '@dorkos/shared/room-schemas';
 import type { ForwardVia } from '@dorkos/shared/chat-messages';
 import { logger } from '../../../lib/logger.js';
@@ -275,12 +274,13 @@ export class RoomPosting {
     // another. Only a teammate's chain still means anything to a turn it starts.
     const vouching = [input.callerSessionId, turn?.sessionId];
     const known = input.callerSessionId !== undefined ? postLevelFor(vouching) : undefined;
-    const authorLevel: TurnPermissionLevel | { marks: TurnMarks } = known ?? {
-      marks: unknownLevelMarks(
-        vouching,
-        this.authors.getMany([input.authorId]).get(input.authorId)?.naturalKey
-      ),
-    };
+    const author = this.authors.getMany([input.authorId]).get(input.authorId);
+    // G2 (DOR-3088): a tool call never proves the person, so a post into a Direct chat from
+    // anyone but an agent is held to the stranger's bound wherever the hold applies.
+    const authorLevel: PostAuthorBound =
+      room.kind === 'dm' && directChatHoldApplies(author?.kind ?? 'unknown')
+        ? 'runtime-default'
+        : (known ?? { marks: unknownLevelMarks(vouching, author?.naturalKey) });
     const { callerSessionId: _caller, callerAgentVerified: _verified, ...rest } = input;
     const replyTo = this.threadForToolPost(roomId, input.replyTo, turn?.entryId);
     const postInput = { ...rest, ...(replyTo !== undefined ? { replyTo } : {}) };

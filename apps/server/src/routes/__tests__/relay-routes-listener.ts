@@ -20,11 +20,12 @@ import { relayWebhookBodyRule } from '../relay-webhooks.js';
  * @returns The listener.
  */
 export function relayRoutesListener(
-  deps: RelayRouteDeps,
+  deps: Omit<RelayRouteDeps, 'isRoomSession'> & Partial<Pick<RelayRouteDeps, 'isRoomSession'>>,
   options: Pick<HonoGroupListenerOptions, 'before'> = {}
 ): RequestListener {
   return honoGroupListener(
-    { path: '/api/relay', routes: createRelayRoutes(deps) },
+    // No room conversations unless the test names some.
+    { path: '/api/relay', routes: createRelayRoutes({ isRoomSession: () => false, ...deps }) },
     { ...options, bodyRules: [relayWebhookBodyRule] }
   );
 }
