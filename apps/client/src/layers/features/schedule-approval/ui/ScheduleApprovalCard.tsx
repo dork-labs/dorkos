@@ -256,7 +256,7 @@ export function ScheduleApprovalCard({
       {
         id: task.id,
         status: 'active',
-        approvedPromptHash,
+        ...(approvedPromptHash && { approvedPromptHash }),
         ...(turnOn && { enabled: true }),
         // Omit an unchanged value for package-owned schedules, which do not
         // allow file writes. A changed or requested mode always travels here.

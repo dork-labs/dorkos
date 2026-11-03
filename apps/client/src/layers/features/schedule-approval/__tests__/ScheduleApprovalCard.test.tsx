@@ -110,10 +110,10 @@ function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
   };
 }
 
-/** Render one card over a mock transport. */
 /** What the card's yes carries beside its fields: the hash of the prompt it showed (M4). */
 const SHOWN = { approvedPromptHash: expect.stringMatching(/^sha256:[A-Za-z0-9_-]{43}$/) };
 
+/** Render one card over a mock transport. */
 function renderCard(
   task: Task = proposal(),
   overrides: Partial<Transport> = {},
@@ -358,6 +358,18 @@ describe('ScheduleApprovalCard — what it says', () => {
         approvedPromptHash: shown,
       })
     );
+  });
+
+  it('still approves on a plain-http page, with no hash, so it attests no file', async () => {
+    vi.stubGlobal('crypto', {});
+    try {
+      const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+      renderCard(proposal(), { updateTask });
+      await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+      await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('names the agent the schedule runs as (DOR-3640)', async () => {

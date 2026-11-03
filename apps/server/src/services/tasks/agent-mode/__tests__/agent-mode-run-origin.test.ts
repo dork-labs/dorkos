@@ -90,6 +90,16 @@ describe('a turn a scheduled run started (M7)', () => {
       expect(startedByScheduledRun(['ses-run'], live())).toBe(false);
     });
 
+    it('still knows a running run’s chat, and lets the run go on, when its row cannot be written', () => {
+      const store = {
+        updateRun: () => {
+          throw new Error('the database is busy');
+        },
+      };
+      expect(() => noteRunSession('run-1', 'ses-run', undefined, store as never)).not.toThrow();
+      expect(startedByScheduledRun(['ses-run'], live())).toBe(true);
+    });
+
     it('counts a chat a running run steered into', () => {
       noteRunSession('run-1', 'ses-run');
       noteSteeredInto('ses-own', ['ses-run']);

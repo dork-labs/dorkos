@@ -17,6 +17,7 @@
 import { eq } from 'drizzle-orm';
 import { pulseRuns, type Db } from '@dorkos/db';
 import type { TaskStore } from '../task-store.js';
+import { logger } from '../../../lib/logger.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 
 /** Run id → the chats it runs in. */
@@ -43,11 +44,20 @@ export function noteRunSession(
   awake?: RunHold,
   store?: Pick<TaskStore, 'updateRun'>
 ): void {
-  store?.updateRun(runId, { sessionId });
   const sessions = byRun.get(runId) ?? new Set<string>();
   sessions.add(primaryOf(sessionId));
   byRun.set(runId, sessions);
   awake?.attachSession(sessionId);
+  // A row that cannot be written costs the record past a restart, never the run.
+  try {
+    store?.updateRun(runId, { sessionId });
+  } catch (err) {
+    logger.warn('[ActiveRunSessions] could not write a run’s chat on its row', {
+      runId,
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /**
