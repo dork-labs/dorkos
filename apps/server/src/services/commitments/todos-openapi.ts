@@ -46,8 +46,8 @@ export function registerTodosOpenApi(registry: OpenAPIRegistry): void {
     tags: ['To-dos'],
     summary: 'Make a to-do',
     description:
-      "A person makes a to-do. Only the owner's own session gives it their authority; an app " +
-      'window without one is asked to step up first. Agents use `todo_add`.',
+      "A person makes a to-do. Only the owner's own sign-in gives it their authority; an app " +
+      'window that is not signed in is asked to step up first. Agents use `todo_add`.',
     request: { body: { content: { 'application/json': { schema: CreateTodoRequestSchema } } } },
     responses: {
       201: {
