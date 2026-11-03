@@ -251,10 +251,16 @@ export function RightPanelContainer({
     }
   }, [shouldShow, defaultPct]);
 
-  const activeContribution = views.available.find(
-    (c) => c.id === activeTab && visibleContributions.some((view) => view.category === c.id)
-  );
-  const terminalContribution = views.available.find((c) => c.id === 'terminal');
+  // While the chat may yet be a DM only the tab strip waits: a tab it holds back
+  // keeps its body on screen, and a running terminal keeps its owner.
+  const heldBack = (id: string | null) =>
+    dmKind === 'pending' ? allContributions.find((c) => c.id === id) : undefined;
+  const activeContribution =
+    views.available.find(
+      (c) => c.id === activeTab && visibleContributions.some((view) => view.category === c.id)
+    ) ?? heldBack(activeTab);
+  const terminalContribution =
+    views.available.find((c) => c.id === 'terminal') ?? heldBack('terminal');
   const TerminalComponent = terminalContribution?.component;
   const terminalRetained = views.terminal !== null || activeTab === 'terminal';
   const ActiveComponent = activeContribution?.component;

@@ -58,7 +58,7 @@ import { withDirectNotes, type DirectChatLog } from '../model/use-direct-chat-no
 import type { DirectMessageSurface } from '../model/use-session-surface';
 import { LoadEarlierRow } from './LoadEarlierRow';
 import { liveReplyId, turnStartsByReply } from '../lib/work-turns';
-import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
+import { cn, useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
 /**
  * What the transcript is called when a screen reader lands in it.
@@ -328,6 +328,10 @@ export function SessionTranscript({
   // A DM folds each reply's work into one line under it, timed from the words
   // its turn answers (DOR-3075). Nothing is worked out for a session.
   const foldWork = directMessage?.settled === true;
+  // Until the server says which this chat is, a DM's rows and a session's differ
+  // in height (folded work, names), so drawing either would move the conversation
+  // when the answer lands. It waits, laid out but unseen, and appears once.
+  const undecided = directMessage?.settled === false;
   const turnStarts = useMemo(
     () => (foldWork ? turnStartsByReply(messages) : null),
     [foldWork, messages]
@@ -613,14 +617,14 @@ export function SessionTranscript({
       // conversation at the end, and being at the end is what marks it read.
       landOn="unread"
       // A link to an old message waits until the pages holding it are read.
-      landingReady={isHydrated && !earlier.isSeeking && (directLog?.ready ?? true)}
+      landingReady={isHydrated && !earlier.isSeeking && (directLog?.ready ?? true) && !undecided}
       {...(landOnRow === undefined ? {} : { landOnRow })}
       onReachedBottom={markSeen}
       transcriptAnnouncement={announcement}
       approvalAnnouncement={approvalAnnouncement}
       // The pad the session's own chrome needs, and the matching start for the
       // scroll thumb's track — one fact, said once (`ScrollThumb`).
-      className="pt-12 [--conversation-thumb-top:3rem]"
+      className={cn('pt-12 [--conversation-thumb-top:3rem]', undecided && 'invisible')}
       loading={
         isLoadingHistory ? (
           // The same feed the loaded conversation renders, saying it is BUSY —
