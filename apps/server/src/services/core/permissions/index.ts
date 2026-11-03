@@ -9,6 +9,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { AgentPermissions } from '@dorkos/shared/permissions';
 
 import { MCP_TOOL_TIERS, type McpToolTier } from '../mcp-tool-tiers.js';
+import { agentModeListedActions } from '../../tasks/agent-mode/agent-mode-actions.js';
 import type { CapabilityRegistry } from '../capabilities/index.js';
 import type { ConfigManager } from '../config-manager.js';
 import type { ActivityService } from '../../activity/activity-service.js';
@@ -96,7 +97,8 @@ export function permissionActions(
     ...(tool.consent ? { consent: tool.consent } : {}),
     toolName: id,
   }));
-  return [...capabilities, ...tools];
+  // A scheduled task's mode and its approval, while that experiment is on (DOR-3703).
+  return [...capabilities, ...tools, ...agentModeListedActions()];
 }
 
 /** The live services the production permission service is built over. */

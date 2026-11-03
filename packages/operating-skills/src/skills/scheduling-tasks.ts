@@ -13,15 +13,9 @@ export const schedulingTasks: OperatingSkill = {
 
 ${TOOL_NAME_NOTE}
 
-A task (also called a schedule) runs an agent on a cron timer, or on demand.
-DorkOS runs tasks in the background; you set them up and read their history.
+A task (also called a schedule) runs an agent on a cron timer, or on demand. DorkOS runs tasks in the background; you set them up and read their history.
 
-The \`tasks_*\` tools are registered straight onto the MCP server, so they do NOT
-appear in \`dorkos capabilities\` and \`dorkos call\` cannot reach them. The CLI
-has \`dorkos task list|create|trigger|runs\` and NO \`update\` or \`delete\`. So a
-session without the \`tasks_*\` tools (Codex, OpenCode) can read, create, and run
-tasks, but not edit, disable, or delete one: say it has to be done from the
-DorkOS Tasks page or a Claude Code session, not from a command that does not exist.
+The \`tasks_*\` tools are registered straight onto the MCP server, so they do NOT appear in \`dorkos capabilities\` and \`dorkos call\` cannot reach them. The CLI has \`dorkos task list|create|trigger|runs\` and NO \`update\` or \`delete\`. So a session without the \`tasks_*\` tools (Codex, OpenCode) can read, create, and run tasks, but not edit, disable, or delete one: say it has to be done from the DorkOS Tasks page or a Claude Code session, not from a command that does not exist.
 
 ## List tasks and their runs
 
@@ -77,10 +71,7 @@ summary is waiting for you."
 
 ### Say where it lives, too
 
-\`target\` is required and there is no default. Give your own agent id to file the
-task under yourself, so it lives in your folder and its runs happen there against
-your files, or \`"global"\` for a task that belongs to no agent. A task
-filed in the wrong place runs against the wrong files, so DorkOS will not guess.
+\`target\` is required and there is no default. Give your own agent id to file the task under yourself, so it lives in your folder and its runs happen there against your files, or \`"global"\` for a task that belongs to no agent. A task filed in the wrong place runs against the wrong files, so DorkOS will not guess.
 An agent it has never heard of is refused and nothing is created. Under an agent
 installed from the marketplace, your task stays through the package's updates; it
 is refused (\`schedule_package_owned\`) if the package uses that name itself, or if
@@ -135,13 +126,16 @@ For a package an older DorkOS installed, it needs **Check files** first.
   are about to delete and that a card is waiting for them, then wait. A refusal is
   the answer, not an obstacle to work around.
 
-### Two fields you cannot set
+### Two fields that are the user's
 
-Do not send \`permissionMode\` or \`status\` to \`tasks_create\` or \`tasks_update\`. A
-task runs later with nobody watching, so how much it may do without asking, and
-whether it may run at all, are the user's choice. Either one makes DorkOS refuse
-the whole call, other fields included; send the rest without it, and tell the
-user to open the task in DorkOS for those.
+On your own task, from your own chat, set \`permissionMode\` up to your level; higher is
+refused. It keeps running, and the user is told with an Undo; a raise after the user put a mode back
+waits for them, and a raise from a scheduled run or a heartbeat is refused, with the user told. Another agent's task, a linked worktree or
+outside words ask the user (outside words: \`dontAsk\` at most). \`status: "active"\`, sent alone, approves: it asks the user, never your own or
+your chain's work, never from /mcp. Switched off, either field refuses the whole call.
+
+**Edited its SKILL file with file tools?** Its runs are then capped at \`dontAsk\` (only the tools already allowed; some steps may fail) until it is accepted. Accept your own edit in the same turn, from your own chat, in two calls: \`tasks_update\` with just the task's \`id\` keeps the cap and replies with what changed (untrusted text) and its \`hash\`; read it, then call again with \`acceptFileHash\` set to that hash.
+Missed it? Those two calls on your next ordinary turn are the fix. A scheduled run, a heartbeat, a chat either messaged or started, or a turn that read outside words cannot accept it; the user can, from the task.
 
 ## Run a task now
 
@@ -149,14 +143,9 @@ user to open the task in DorkOS for those.
 
 ## Cron quick reference
 
-\`minute hour day-of-month month day-of-week\`. Examples: \`0 2 * * *\` every day
-at 02:00, \`0 9 * * 1\` every Monday at 09:00, \`*/15 * * * *\` every 15 minutes.
-Pass the user's timezone when the time of day matters; without one, it runs in the
-server's zone.
+\`minute hour day-of-month month day-of-week\`. Examples: \`0 2 * * *\` every day at 02:00, \`0 9 * * 1\` every Monday at 09:00, \`*/15 * * * *\` every 15 minutes. Pass the user's timezone when the time of day matters; without one, it runs in the server's zone.
 
 ## Reading run results
 
-Each run has a status (e.g. success, failed, running). When the user asks "did my
-nightly job work?", read \`tasks_get_run_history\` / \`dorkos task runs\` and report
-the most recent runs and their statuses in plain terms, newest first.`,
+Each run has a status (e.g. success, failed, running). When the user asks "did my nightly job work?", read \`tasks_get_run_history\` / \`dorkos task runs\` and report the most recent runs and their statuses in plain terms, newest first.`,
 };

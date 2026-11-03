@@ -20,6 +20,7 @@ import { AdapterRegistry } from '@dorkos/relay';
 import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay';
 import { taskDispatchSubject, TASK_DISPATCH_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from '../task-append.js';
+import { agentApprovalBindingOf } from '../agent-mode/agent-mode-binding.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -520,6 +521,67 @@ describe('TaskSchedulerService', () => {
       await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
 
       expect(checked).toEqual([]);
+      expect(store.listRuns().length).toBeGreaterThan(0);
+      await service.stop();
+    });
+  });
+
+  describe('an agent-approved schedule that changed (DOR-3703)', () => {
+    /** A schedule an agent approved as it is now. */
+    function agentApproved(name: string, agentId?: string, cwd: string | null = null) {
+      const task = store.createTask(
+        taskInput({ name, prompt: 'test', cron: '0 * * * *', ...(agentId ? { agentId } : {}) })
+      );
+      store.approvals.recordAgentApproval(task.id, agentApprovalBindingOf(task, cwd), '{}');
+      return task;
+    }
+
+    it('parks it instead of running it when its work changed', async () => {
+      const task = agentApproved('Armed');
+      store.updateTask(task.id, { prompt: 'something nobody approved' });
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: { ...DEFAULT_CONFIG },
+      });
+
+      await (service as unknown as Fireable).dispatch(store.getTask(task.id)!, ON_TIME_HOURLY);
+
+      expect(store.getTask(task.id)!.status).toBe('pending_approval');
+      expect(store.listRuns()).toHaveLength(0);
+      await service.stop();
+    });
+
+    it('parks it when its agent’s folder moved', async () => {
+      const task = agentApproved('Moved', 'agent-1', '/agents/one');
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: { ...DEFAULT_CONFIG },
+        meshCore: { getProjectPath: () => '/agents/elsewhere' } as unknown as MeshCore,
+      });
+
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
+
+      expect(store.getTask(task.id)!.status).toBe('pending_approval');
+      expect(store.listRuns()).toHaveLength(0);
+      await service.stop();
+    });
+
+    it('runs it while it is still what the agent approved', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'ok' } };
+      });
+      const task = agentApproved('Same');
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: { ...DEFAULT_CONFIG },
+      });
+
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
+
+      expect(store.getTask(task.id)!.status).toBe('active');
       expect(store.listRuns().length).toBeGreaterThan(0);
       await service.stop();
     });

@@ -10566,6 +10566,15 @@
           "originMarks": {
             "$ref": "#/components/schemas/ScheduleOriginMarks"
           },
+          "agentModeRecord": {
+            "$ref": "#/components/schemas/TaskAgentModeRecord"
+          },
+          "fileCap": {
+            "$ref": "#/components/schemas/TaskFileCap"
+          },
+          "fileCapNext": {
+            "type": "boolean"
+          },
           "quietHold": {
             "type": "boolean"
           },
@@ -10684,6 +10693,95 @@
             }
           }
         }
+      },
+      "TaskAgentModeRecord": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "set_mode"
+            ]
+          },
+          "agentPath": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "previousMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionMode"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "agentPath",
+          "at",
+          "mode",
+          "previousMode"
+        ]
+      },
+      "TaskFileCap": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "needsPerson": {
+            "type": "boolean"
+          },
+          "hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "previous": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "at",
+          "needsPerson",
+          "hash",
+          "previous",
+          "current"
+        ]
       },
       "TaskHealth": {
         "type": "object",
@@ -10962,6 +11060,10 @@
             "enum": [
               true
             ]
+          },
+          "approvedPromptHash": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },
@@ -11046,6 +11148,16 @@
               "type": "string"
             },
             "default": null
+          },
+          "cappedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "dontAsk",
+              null
+            ]
           },
           "outcome": {
             "$ref": "#/components/schemas/TaskRunOutcome"
@@ -43027,6 +43139,159 @@
           },
           "404": {
             "description": "Schedule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/undo-agent-mode": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Put back the mode an agent set on a schedule without asking",
+        "description": "The Undo on the notice DorkOS posts when one of your agents changes how a running schedule runs, above Don’t ask, without asking you (DOR-3703). Only a person can use it: an agent is refused. Answers 409 once the mode changed again since.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The schedule, back on its old mode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schedule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing to undo: the mode changed again since",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/approve-file": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Approve a schedule’s changed SKILL file",
+        "description": "Lifts the cap a change outside the task tools put on a schedule: its runs go back to its own mode instead of Never ask (DOR-3703). The body names the cap you saw and the file hash its diff showed (`capAt` and `hash`, from `fileCap`). Only a person can use it: an agent is refused. Answers 409 once the file changed since that diff.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "capAt": {
+                    "type": "string"
+                  },
+                  "hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "capAt",
+                  "hash"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The schedule, its cap lifted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body names no cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schedule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The file changed again since the cap you saw",
             "content": {
               "application/json": {
                 "schema": {

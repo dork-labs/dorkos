@@ -41,6 +41,20 @@ export function createTasksMethods(baseUrl: string) {
       });
     },
 
+    undoAgentTaskMode(taskId: string, notificationId: string): Promise<Task> {
+      return fetchJSON<Task>(baseUrl, `/tasks/${taskId}/undo-agent-mode`, {
+        method: 'POST',
+        body: JSON.stringify({ notificationId }),
+      });
+    },
+
+    approveTaskFile(taskId: string, capAt: string, hash: string): Promise<Task> {
+      return fetchJSON<Task>(baseUrl, `/tasks/${taskId}/approve-file`, {
+        method: 'POST',
+        body: JSON.stringify({ capAt, hash }),
+      });
+    },
+
     triggerTask(id: string): Promise<{ runId: string }> {
       return fetchJSON<{ runId: string }>(baseUrl, `/tasks/${id}/trigger`, {
         method: 'POST',

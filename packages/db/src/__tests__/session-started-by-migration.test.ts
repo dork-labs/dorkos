@@ -22,6 +22,7 @@ function row(overrides: Partial<typeof sessionStartedBy.$inferInsert> = {}) {
     starterPermissionMode: null,
     permissionSameAsStarter: null,
     reportBack: true,
+    scheduledOrigin: null,
     createdAt: NOW,
     ...overrides,
   };

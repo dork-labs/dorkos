@@ -594,6 +594,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     reason:
       'No project limits which accounts it may use by default, which is how every project behaved before account rules existed (spec `flow-multiproject` §8). A list a person sets for a project narrows which credentials work there, so it is closed to agent writes (operator-only) and carried across a wipe (PROTECTIVE_CARRYOVERS).',
   },
+  'tasks.agentModeControl': {
+    value: true,
+    reason:
+      "Dorian's rule (DOR-3703, Nov 2): an agent may set its own schedule's mode up to its own level from its own chat. Everything past that still asks or is refused: another agent's task, an approval, a caller outside the chat, a turn that read outside words, a linked worktree. Every change is audited and shown on the task. Off is the kill switch, closed to agent writes (operator-only).",
+  },
   'heartbeats.enabled': {
     value: true,
     reason:

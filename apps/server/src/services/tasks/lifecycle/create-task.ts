@@ -134,6 +134,17 @@ export interface CreateScheduledTaskOptions {
    * arms without a person. Never read from the request body.
    */
   callerAgentPath?: string;
+  /**
+   * The agent's named mode was decided as `tasks.set_mode` and granted
+   * (DOR-3703): by a person's card, or by a setting for that action. It lands
+   * as named, Bypass included, instead of being clamped.
+   */
+  modeGranted?: boolean;
+  /**
+   * The granted mode is looser than Don't ask and no person approved it: the
+   * task waits for one, whatever would otherwise arm it (DOR-3703, M-A).
+   */
+  parkForPerson?: boolean;
 }
 
 /** A create that did not happen, and what to tell the caller. */
@@ -305,6 +316,7 @@ export async function createScheduledTask(
   const parks =
     !trusted &&
     (marked ||
+      options.parkForPerson === true ||
       !runsAsItsCreator(data.target, callerId) ||
       !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
 
@@ -339,7 +351,8 @@ export async function createScheduledTask(
   // Both row paths below are covered by clamping here rather than on one of them:
   // which path runs depends on whether the file we just wrote parses back, and a
   // caller could choose that (DOR-1432).
-  const effectivePermissionMode = trusted
+  const unclamped = trusted || options.modeGranted === true;
+  const effectivePermissionMode = unclamped
     ? permissionMode
     : clampSchedulePermissionMode(permissionMode).mode;
 
@@ -536,7 +549,7 @@ export async function createScheduledTask(
 
   // The ONE un-clamp, after BOTH branches, because both need the same patch and
   // two copies of a security exception are two chances to fix only one of them.
-  if (trusted && permissionMode === 'bypassPermissions') {
+  if (unclamped && permissionMode === 'bypassPermissions') {
     schedule = deps.store.updateTask(schedule.id, { permissionMode: 'bypassPermissions' })!;
   }
 
@@ -563,6 +576,11 @@ export async function createScheduledTask(
         proposedByAgentPath: options.proposal.agentPath,
       }),
     });
+    // Its maker is its first editor, so no agent in its chain approves it (DOR-3703).
+    deps.store.approvals.recordAgentEdit(schedule.id, {
+      agentPath: options.proposal?.agentPath ?? callerAgentPath ?? null,
+      sessionId: options.proposal?.sessionId ?? null,
+    });
     schedule = deps.store.getTask(schedule.id)!;
   }
   if (!trusted && !parks) {
@@ -584,6 +602,9 @@ export async function createScheduledTask(
     parkPayload = await resolveScheduleParkPayload(schedule);
     raiseStanding('schedule.parked', parkPayload);
   }
+
+  // A person's own task is their approval of its content (DOR-3703).
+  if (trusted) deps.store.approvals.recordPersonApproval(schedule.id);
 
   // Through the registrar, not the scheduler directly: the same seam the watcher
   // and the reconciler use, so a task created here and a task created by dropping

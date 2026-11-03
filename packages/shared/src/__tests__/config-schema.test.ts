@@ -66,6 +66,7 @@ describe('UserConfigSchema', () => {
       spaces: { enabled: false, official: { url: '' } },
       sessionRelay: { enabled: false },
       docs: { enabled: false },
+      tasks: { agentModeControl: true },
       tunnel: {
         enabled: false,
         domain: null,
@@ -502,6 +503,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
       spaces: { enabled: false, official: { url: '' } },
       sessionRelay: { enabled: false },
       docs: { enabled: false },
+      tasks: { agentModeControl: true },
       tunnel: {
         enabled: false,
         domain: null,

@@ -30,6 +30,8 @@ import { mapTaskRow } from '../task-row-mappers.js';
 import { resolveFileSwitch } from './file-switch.js';
 import { scheduleContentKey } from '../schedule-permission-clamp.js';
 import { effectiveContentKey } from '../timing/effective-timing.js';
+import { patchAgentModeColumn } from '../agent-mode/agent-mode-record-field.js';
+import { bodyHash } from '../agent-mode/file-cap/file-hash.js';
 import {
   STICKY_ACCOUNT_LOCKED_MESSAGE,
   stickyAccountLocked,
@@ -251,6 +253,15 @@ export class TaskFileSync {
               }
             : {}),
         tags: '[]',
+        // A prompt this sync folds in is marked, so it is never a file's first-read
+        // baseline (DOR-3703, M-B). Not an attestation: the sync never writes one (M8).
+        ...(def.body !== existing.prompt
+          ? {
+              agentModeRecord: patchAgentModeColumn(existing.agentModeRecord, {
+                syncedPrompt: bodyHash(def.body),
+              }),
+            }
+          : {}),
       };
       // A file read again with nothing new in it writes nothing (DOR-2899). The
       // reconciler re-reads every task file every five minutes, and rewriting

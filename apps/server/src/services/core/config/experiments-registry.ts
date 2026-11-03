@@ -124,6 +124,8 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
     costNote: 'Early and still changing. Links find docs in the same folder tree.',
     graduationIssue: 'DOR-2993',
   },
+  // `tasks.agentModeControl` (DOR-3703) is not listed: it ships ON as a kill
+  // switch, not as an experiment, so there is no opt-in to offer here.
   {
     // The DM view (DOR-3074): a chat with one agent reads like a direct
     // message, over the same Direct chat session. Ships with its right panel

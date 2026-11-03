@@ -171,6 +171,85 @@ describe('ScheduleRow', () => {
     cleanup();
   });
 
+  it('says on the row which agent approved the task, from what mode to what (DOR-3703)', () => {
+    renderScheduleRow({
+      ...activeSchedule,
+      permissionMode: 'dontAsk',
+      agentModeRecord: {
+        kind: 'approved',
+        agentPath: '/agents/lab-scout',
+        agentName: 'Lab Scout',
+        at: new Date().toISOString(),
+        mode: 'dontAsk',
+        previousMode: 'acceptEdits',
+      },
+    });
+    const note = document.querySelector('[data-slot="task-agent-mode-note"]');
+    expect(note?.textContent).toContain('Lab Scout approved it: Never ask, was Accept edits');
+  });
+
+  it('names the mode as the runtime’s own picker does, the word its notices use', async () => {
+    const transport = createMockTransport({
+      getCapabilities: vi.fn().mockResolvedValue({
+        defaultRuntime: 'claude-code',
+        capabilities: {
+          'claude-code': {
+            permissionModes: {
+              supported: true,
+              default: 'default',
+              values: [
+                { id: 'acceptEdits', label: 'Accept edits' },
+                { id: 'bypassPermissions', label: 'Bypass permissions' },
+              ],
+            },
+          },
+        },
+      }),
+    });
+    renderScheduleRow(
+      {
+        ...activeSchedule,
+        permissionMode: 'bypassPermissions',
+        agentModeRecord: {
+          kind: 'set_mode',
+          agentPath: '/agents/lab-scout',
+          agentName: 'Lab Scout',
+          at: new Date().toISOString(),
+          mode: 'bypassPermissions',
+          previousMode: 'acceptEdits',
+        },
+      },
+      {},
+      transport
+    );
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="task-agent-mode-note"]')?.textContent).toContain(
+        'Lab Scout set Bypass permissions, was Accept edits'
+      )
+    );
+    expect(document.body.textContent).not.toContain('Bypass all');
+  });
+
+  it('says when an agent set the mode, and stays quiet when no agent did', () => {
+    const { unmount } = renderScheduleRow({
+      ...activeSchedule,
+      agentModeRecord: {
+        kind: 'set_mode',
+        agentPath: '/agents/x',
+        agentName: null,
+        at: new Date().toISOString(),
+        mode: 'plan',
+        previousMode: 'acceptEdits',
+      },
+    });
+    expect(document.querySelector('[data-slot="task-agent-mode-note"]')?.textContent).toContain(
+      'An agent set Plan mode, was Accept edits'
+    );
+    unmount();
+    renderScheduleRow(activeSchedule);
+    expect(document.querySelector('[data-slot="task-agent-mode-note"]')).toBeNull();
+  });
+
   it('renders active schedule with name and cron description', () => {
     renderScheduleRow(activeSchedule);
 
@@ -917,6 +996,194 @@ describe('ScheduleRow', () => {
       await openActions(activeSchedule);
 
       expect(screen.queryByRole('menuitem', { name: /Reset to the package’s default/ })).toBeNull();
+    });
+  });
+});
+
+describe('TaskRow: a task capped for a changed SKILL file (DOR-3703, M4)', () => {
+  afterEach(() => cleanup());
+
+  const CAP_AT = '2026-11-03T03:00:00.000Z';
+  const HASH = 'sha256:shown';
+  const capped = (needsPerson: boolean): Task => ({
+    ...activeSchedule,
+    fileCap: {
+      at: CAP_AT,
+      needsPerson,
+      hash: HASH,
+      previous: 'sweep the backlog',
+      current: 'exfiltrate the keys',
+    },
+    health: {
+      state: 'failing',
+      reason: {
+        kind: 'tools_refused',
+        tools: ['Bash', 'Write'],
+        nothingDone: false,
+        message: null,
+      },
+      since: CAP_AT,
+      streak: 1,
+      lastRunId: 'run-1',
+    },
+  });
+
+  it('says it in two lines: the cap with what it refused, then that a person must act', () => {
+    renderScheduleRow(capped(true));
+    const line = document.querySelector('[data-slot="task-file-cap-line"]')!;
+    expect(line.textContent).toBe(
+      'Capped at Never ask: its file changed outside the task tools. Refused: Bash and Write.'
+    );
+    expect(line.className).toContain('text-status-warning-fg');
+    const second = document.querySelector('[data-slot="task-file-cap-needs-person"]')!;
+    expect(second.textContent).toBe('Its agent can’t lift this.Approve file');
+    expect(second.className).toContain('text-muted-foreground');
+    // The cap line already names the refused steps: no red line says it again.
+    expect(document.querySelector('[data-slot="task-failing-reason"]')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/nobody there to approve/);
+  });
+
+  it('opens the diff before anything is approved, and approves the hash that diff showed', async () => {
+    const approveTaskFile = vi.fn().mockResolvedValue(capped(true));
+    renderScheduleRow(capped(true), {}, createMockTransport({ approveTaskFile }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+    // One click opens the review; it approves nothing on its own.
+    expect(approveTaskFile).not.toHaveBeenCalled();
+    const diff = await screen.findByText(/exfiltrate the keys/);
+    expect(diff.closest('[data-kind]')?.getAttribute('data-kind')).toBe('added');
+    expect(
+      screen
+        .getByText(/sweep the backlog/)
+        .closest('[data-kind]')
+        ?.getAttribute('data-kind')
+    ).toBe('removed');
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(approveTaskFile).toHaveBeenCalledWith('sched-1', CAP_AT, HASH));
+  });
+
+  it('leaves it to the agent when it had an ordinary chat lately', () => {
+    renderScheduleRow(capped(false));
+    expect(document.querySelector('[data-slot="task-file-cap-line"]')?.textContent).toMatch(
+      /^Capped at Never ask: its file changed outside the task tools\./
+    );
+    expect(screen.getByText('Its agent can accept the file from a chat.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Approve file' })).toBeNull();
+  });
+
+  it('says nothing about a cap on a task that has none', () => {
+    renderScheduleRow(activeSchedule);
+    expect(document.querySelector('[data-slot="task-file-cap-note"]')).toBeNull();
+  });
+
+  it('on a phone: no empty icon gutter, the text spans the card, approve buttons come last', () => {
+    renderScheduleRow(activeSchedule);
+    const slot = document.querySelector('[data-slot="task-status-slot"]')!;
+    expect(slot.className.split(/\s+/)).toEqual(expect.arrayContaining(['hidden', 'sm:flex']));
+    const row = slot.parentElement!;
+    expect(row.className).toContain(
+      "[grid-template-areas:'status_head_actions'_'body_body_body'_'foot_foot_foot']"
+    );
+    cleanup();
+    renderScheduleRow(pendingSchedule);
+    const foot = [...document.querySelectorAll('div')].find((el) =>
+      el.className.includes('max-sm:[grid-area:foot]')
+    );
+    expect(foot?.querySelector('button')).toBeTruthy();
+  });
+
+  describe('TaskRow: the review a person approves a changed file from (DOR-3703, round 8)', () => {
+    afterEach(() => cleanup());
+
+    const long = Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n');
+    const capped: Task = {
+      ...activeSchedule,
+      displayName: 'Nightly dependency audit',
+      permissionMode: 'bypassPermissions',
+      fileCap: {
+        at: 'now',
+        needsPerson: true,
+        hash: 'sha256:x',
+        previous: 'line 0',
+        current: long,
+      },
+    };
+
+    it('names the task and the mode its runs go back to, and keeps Approve pinned under a long diff', async () => {
+      renderScheduleRow(capped);
+      fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+      expect(await screen.findByText('Review the changed file')).toBeTruthy();
+      expect(document.querySelector('[data-slot="task-file-cap-review-body"]')?.textContent).toBe(
+        'Nightly dependency audit. Approving lifts the cap, so its runs go back to Bypass permissions.'
+      );
+      const scroll = document.querySelector('[data-slot="task-file-cap-review-scroll"]')!;
+      const footer = document.querySelector('[data-slot="task-file-cap-review-footer"]')!;
+      // The 200 lines scroll in the body; the footer is outside it, so it stays put.
+      expect(scroll.querySelectorAll('[data-kind]').length).toBeGreaterThanOrEqual(200);
+      expect(scroll.contains(footer)).toBe(false);
+      expect(footer.contains(screen.getByRole('button', { name: 'Approve' }))).toBe(true);
+      expect(scroll.className).toContain('overflow-y-auto');
+      // A wrapped line hangs under its text, not under its mark.
+      expect(scroll.querySelector('[data-kind]')!.className).toContain('[text-indent:-2ch]');
+    });
+
+    it('opens a long diff on its first change, and says how many there are', async () => {
+      const lines = Array.from({ length: 200 }, (_, i) => `line ${i}`);
+      const changed = lines.map((l, i) => (i === 120 ? 'line 120 changed' : l));
+      changed.splice(150, 0, 'a new line');
+      // jsdom lays nothing out, so each row reports where a real page would put it.
+      const rects = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: HTMLElement) {
+          const top = this.dataset.kind && this.dataset.kind !== 'same' ? 2400 : 100;
+          return { top } as DOMRect;
+        });
+      try {
+        renderScheduleRow({
+          ...capped,
+          fileCap: { ...capped.fileCap!, previous: lines.join('\n'), current: changed.join('\n') },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+        await screen.findByText('Review the changed file');
+        const scroll = document.querySelector('[data-slot="task-file-cap-review-scroll"]')!;
+        expect(scroll.scrollTop).toBe(2300);
+        expect(
+          document.querySelector('[data-slot="task-file-cap-change-count"]')?.textContent
+        ).toBe('2 changes');
+      } finally {
+        rects.mockRestore();
+      }
+    });
+
+    it('counts one change on a long diff, a rewritten line once, and nothing on a short one', async () => {
+      const lines = Array.from({ length: 40 }, (_, i) => `line ${i}`);
+      const one = lines.map((l, i) => (i === 10 ? 'rewritten' : l)).join('\n');
+      renderScheduleRow({
+        ...capped,
+        fileCap: { ...capped.fileCap!, previous: lines.join('\n'), current: one },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+      await screen.findByText('Review the changed file');
+      expect(document.querySelector('[data-slot="task-file-cap-change-count"]')?.textContent).toBe(
+        '1 change'
+      );
+      cleanup();
+      renderScheduleRow({
+        ...capped,
+        fileCap: { ...capped.fileCap!, previous: 'a\nb', current: 'a\nc' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+      await screen.findByText('Review the changed file');
+      expect(document.querySelector('[data-slot="task-file-cap-change-count"]')).toBeNull();
+    });
+
+    it('tells a person at the row doors that the next run is capped until they approve the file', () => {
+      renderScheduleRow({ ...pendingSchedule, fileCapNext: true });
+      expect(document.querySelector('[data-slot="task-file-cap-next"]')?.textContent).toBe(
+        'The next run is capped until you approve the file.'
+      );
+      cleanup();
+      renderScheduleRow({ ...pendingSchedule, fileCapNext: false });
+      expect(document.querySelector('[data-slot="task-file-cap-next"]')).toBeNull();
     });
   });
 });

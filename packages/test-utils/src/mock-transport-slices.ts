@@ -8,8 +8,9 @@
  * to review, a space's docs, where there are none, signed-in devices, where
  * there are none, an account's automatic moves, where every change succeeds,
  * a framed page's script decision, which is never known, an agent's
- * level, where every agent runs at Full autonomy, and confirming a paused
- * connection's settings, which succeeds.
+ * level, where every agent runs at Full autonomy, confirming a paused
+ * connection's settings, which succeeds, and undoing an agent's task mode,
+ * where there is nothing to undo.
  * Heartbeats and a hub's computers come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
@@ -49,6 +50,8 @@ type SliceMethods =
   | 'setAccountNoAutoMove'
   | 'getFrameBridgeStatus'
   | 'getAgentLevel'
+  | 'undoAgentTaskMode'
+  | 'approveTaskFile'
   | 'sendFeedback'
   | 'listMyFeedback'
   | 'previewRoomTranscript';
@@ -116,5 +119,9 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
       declared: 'autonomy',
       cappedByPerson: false,
     }),
+    // No agent changed a task's mode, so there is nothing to undo.
+    undoAgentTaskMode: vi.fn().mockRejectedValue(new Error('Nothing to undo')),
+    // No task's file is capped, so there is nothing to approve.
+    approveTaskFile: vi.fn().mockRejectedValue(new Error('Nothing to change')),
   };
 }

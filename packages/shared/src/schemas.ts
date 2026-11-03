@@ -5744,6 +5744,47 @@ export const TaskRunTriggerSchema = z
 
 export type TaskRunTrigger = z.infer<typeof TaskRunTriggerSchema>;
 
+/**
+ * An agent setting a schedule's mode, or approving it (DOR-3703), as the task
+ * shows it: which agent (its home, and its name when DorkOS can say), when, and
+ * the mode before and after.
+ */
+export const TaskAgentModeRecordSchema = z
+  .object({
+    kind: z.enum(['approved', 'set_mode']),
+    agentPath: z.string(),
+    agentName: z.string().nullable().optional(),
+    at: z.string(),
+    mode: PermissionModeSchema,
+    previousMode: PermissionModeSchema.nullable(),
+  })
+  .openapi('TaskAgentModeRecord');
+
+/** {@link TaskAgentModeRecordSchema}. */
+export type TaskAgentModeRecord = z.infer<typeof TaskAgentModeRecordSchema>;
+
+/**
+ * A task whose SKILL file changed outside the task tools runs capped at Don't
+ * ask until it is approved again (DOR-3703, M4): when the cap first held for
+ * this file, whether only a person can lift it now (its agent had no ordinary
+ * chat lately to lift it from), and the diff a person approves from.
+ */
+export const TaskFileCapSchema = z
+  .object({
+    at: z.string(),
+    needsPerson: z.boolean(),
+    /** The file's hash when the cap held: approving binds to it, or `null` when unreadable. */
+    hash: z.string().nullable(),
+    /** The file as last approved, for the diff; `null` when it was not kept. */
+    previous: z.string().nullable(),
+    /** The file as it was when the cap held, for the diff; `null` when not kept. */
+    current: z.string().nullable(),
+  })
+  .openapi('TaskFileCap');
+
+/** {@link TaskFileCapSchema}. */
+export type TaskFileCap = z.infer<typeof TaskFileCapSchema>;
+
 export const TaskSchema = z
   .object({
     id: z.string(),
@@ -5974,6 +6015,23 @@ export const TaskSchema = z
      */
     originMarks: ScheduleOriginMarksSchema.nullable().optional(),
     /**
+     * The last time an agent set this schedule's mode or approved it (DOR-3703):
+     * who, when, and old → new mode, so the task itself shows what an agent armed.
+     * `null` or absent when no agent has. Response-only.
+     */
+    agentModeRecord: TaskAgentModeRecordSchema.nullable().optional(),
+    /**
+     * Set while its SKILL file differs from the one last approved, so its runs
+     * are capped at Don't ask (DOR-3703, M4). Absent otherwise. Response-only.
+     */
+    fileCap: TaskFileCapSchema.nullable().optional(),
+    /**
+     * Whether the task's next run would be capped at Never ask until a person
+     * approves its file (DOR-3703, M4): it is capped now, or no approval covers
+     * the prompt it runs. Absent where the cap does not apply. Response-only.
+     */
+    fileCapNext: z.boolean().optional(),
+    /**
      * Held for a person, but nothing is waiting on them (DOR-3425): the file of a
      * schedule whose agent is at Full autonomy asks for more than was approved. It
      * stays a row under Needs you, with no knock and no escalation.
@@ -6079,6 +6137,12 @@ export const TaskRunSchema = z
      * was refused nothing.
      */
     refusedTools: z.array(z.string()).nullable().default(null),
+    /**
+     * Set when this run ran capped at Don't ask because its SKILL file changed
+     * outside the task tools (DOR-3703, M4). Its `refusedTools` are the steps
+     * the cap refused. Absent on an uncapped run.
+     */
+    cappedAt: z.enum(['dontAsk']).nullable().optional(),
     /**
      * How much a `needs_attention` run got done (DOR-3123); `null` on every
      * other status.
@@ -6465,6 +6529,14 @@ export const UpdateTaskRequestSchema = z
      * since the two ask for different timings.
      */
     resetTiming: z.literal(true).optional(),
+    /**
+     * The hash (`sha256:<base64url>`) of the prompt an approval card showed the
+     * person, sent with its yes (DOR-3703, M4). The server attests the SKILL file
+     * as the person's only while the file and the task's prompt both hash to it;
+     * otherwise nothing is attested and the task's runs are capped. Only a
+     * person may send it.
+     */
+    approvedPromptHash: z.string().min(1).optional(),
   })
   .openapi('UpdateTaskRequest');
 

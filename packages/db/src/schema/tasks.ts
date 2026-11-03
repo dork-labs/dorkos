@@ -71,6 +71,39 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    */
   proposedByAgentPath: text('proposed_by_agent_path'),
   /**
+   * The working directory of the agent that last changed this schedule (DOR-3703),
+   * written on every agent edit through either door. Together with
+   * `proposed_by_agent_path` it is who an agent may not approve the schedule
+   * as: no agent approves work it made or changed. NULL means DorkOS cannot
+   * say, and then no agent may approve it. The migration that added it set
+   * every existing row to its proposer.
+   */
+  lastEditedByAgentPath: text('last_edited_by_agent_path'),
+  /** The session that last changed it, read with `last_edited_by_agent_path` (DOR-3703). */
+  lastEditedBySessionId: text('last_edited_by_session_id'),
+  /**
+   * What an agent approved, when an agent approved this schedule (DOR-3703): a
+   * SHA-256 over its prompt or SKILL file, timing, mode, agent, folder,
+   * account and model. Any later agent edit that changes that hash parks the
+   * schedule again. Cleared whenever a person approves it. NULL for a schedule
+   * no agent approved.
+   */
+  agentApprovalKey: text('agent_approval_key'),
+  /**
+   * The last time an agent set this schedule's mode or approved it (DOR-3703),
+   * as JSON `{ kind, agentPath, at, mode, previousMode }`, so the task can show
+   * who did it, when, and old → new mode. NULL when no agent has.
+   */
+  agentModeRecord: text('agent_mode_record'),
+  /**
+   * The content a PERSON last approved (DOR-3703), as a content key
+   * (`scheduleContentKey`: everything but the mode). A schedule runs at a mode
+   * looser than Don't ask that an agent set only while a person approved its
+   * current content. Written when a person approves or edits it, or answers an
+   * agent's card; never by an agent's own Allowed. NULL when no person has.
+   */
+  personApprovedKey: text('person_approved_key'),
+  /**
    * Where this row came from, when that is not a person using DorkOS.
    *
    * `file` means discovery found a `schedule:` block in a SKILL.md and made

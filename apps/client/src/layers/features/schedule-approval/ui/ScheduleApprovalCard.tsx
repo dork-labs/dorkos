@@ -17,14 +17,9 @@ import {
   toSession,
 } from '@/layers/shared/lib';
 import { useNow, useSafeNavigate } from '@/layers/shared/model';
-import {
-  Button,
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-  PermissionModeScopeNote,
-} from '@/layers/shared/ui';
+import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import { useDeleteTask, useUpdateTask } from '@/layers/entities/tasks';
+import { promptHash } from '../lib/prompt-hash';
 import { useSessionDetail } from '@/layers/entities/session';
 import { AskCard } from '@/layers/features/ask';
 import { RequestingAgent } from '@/layers/features/approvals';
@@ -72,6 +67,17 @@ export interface ScheduleApprovalCardProps {
    */
   onNavigate?: () => void;
   className?: string;
+  /**
+   * Pin the actions to the bottom of the host on a phone. Only for a card that
+   * is the content of a full-height sheet: inside any other scroller a pinned
+   * row covers the card it belongs to. Off by default.
+   */
+  pinActions?: boolean;
+  /**
+   * The card sits in a short host (Home's pinned header): the prompt block is
+   * capped lower, so the title, the prompt and Approve fit in it together.
+   */
+  compact?: boolean;
 }
 
 /** One side of a "what changed" line, kept whole when it is a single term. */
@@ -82,6 +88,20 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
     </span>
   );
 }
+
+/**
+ * The tinted prompt block's scroll-edge shadow: a soft shade at whichever edge
+ * has more text past it, drawn by backgrounds that scroll with the text, so it
+ * shows only while there is more to read.
+ */
+const SCROLL_EDGE_SHADOW = [
+  '[background-color:hsl(var(--muted)/0.6)]',
+  '[background-image:linear-gradient(hsl(var(--muted))_30%,transparent),linear-gradient(transparent,hsl(var(--muted))_70%),radial-gradient(farthest-side_at_50%_0,rgb(0_0_0/0.14),transparent),radial-gradient(farthest-side_at_50%_100%,rgb(0_0_0/0.14),transparent)]',
+  '[background-position:top,bottom,top,bottom]',
+  '[background-repeat:no-repeat]',
+  '[background-size:100%_2rem,100%_2rem,100%_0.6rem,100%_0.6rem]',
+  '[background-attachment:local,local,scroll,scroll]',
+].join(' ');
 
 /**
  * One proposed schedule, as an informed decision rather than a shrug.
@@ -135,6 +155,8 @@ export function ScheduleApprovalCard({
   isActive = true,
   onNavigate,
   className,
+  pinActions = false,
+  compact = false,
 }: ScheduleApprovalCardProps) {
   const now = useNow(AGE_TICK_MS);
   const navigate = useSafeNavigate();
@@ -144,7 +166,11 @@ export function ScheduleApprovalCard({
   const [decision, setDecision] = useState<Decision | null>(null);
   const [pickedMode, setPickedMode] = useState<string | null>(null);
   const [grantedLabel, setGrantedLabel] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState(false);
+  // A yes that approves the task's SKILL file shows the prompt it approves,
+  // open from the start (DOR-3703, M4): an agent's proposal, or any task whose
+  // file this approval would vouch for.
+  const attestsFile = task.fileCapNext !== undefined || task.proposedByAgentPath != null;
+  const [revealed, setRevealed] = useState(attestsFile);
   // Whether the approval also turned the schedule on, for the receipt (DOR-3309).
   const [turnedOn, setTurnedOn] = useState(false);
 
@@ -213,18 +239,25 @@ export function ScheduleApprovalCard({
   const reason = task.reason ?? fallbackReason;
   const changeLines = describeApprovalChanges(task.approvalChanges ?? []);
 
-  /** Approve exactly the visible choice. No selection ever grants a folder rule. */
-  const approve = (turnOn = false) => {
+  /**
+   * Approve exactly the visible choice. No selection ever grants a folder rule.
+   * The yes names the prompt this card shows by its hash, so the server approves
+   * the SKILL file only while it still holds exactly that text (DOR-3703, M4).
+   */
+  const approve = async (turnOn = false) => {
     if (answered !== null || !selected) return;
     setDecision('approved');
     setGrantedLabel(currentLabel);
     setTurnedOn(turnOn);
     const approvedTask = { ...task, permissionMode: selectedMode as PermissionMode };
     holdApprovedSchedule(approvedTask);
+    // Only a card that opened on the prompt names it: a folded one showed nothing (SC2).
+    const approvedPromptHash = attestsFile ? await promptHash(task.prompt) : undefined;
     updateTask.mutate(
       {
         id: task.id,
         status: 'active',
+        ...(approvedPromptHash && { approvedPromptHash }),
         ...(turnOn && { enabled: true }),
         // Omit an unchanged value for package-owned schedules, which do not
         // allow file writes. A changed or requested mode always travels here.
@@ -241,7 +274,7 @@ export function ScheduleApprovalCard({
       }
     );
   };
-  const approveAtSelectedLevel = () => approve();
+  const approveAtSelectedLevel = () => void approve();
 
   const reject = () => {
     if (answered !== null) return;
@@ -406,22 +439,11 @@ export function ScheduleApprovalCard({
       {/* Progressive disclosure, collapsed by default: the exact instructions are
           what a careful reader checks and a wall of prompt on every card is what
           stops anybody reading any of them. */}
-      <Collapsible open={revealed} onOpenChange={setRevealed}>
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-          <CollapsibleTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              data-slot="schedule-reveal"
-              className="text-muted-foreground hover:text-foreground -ml-2 h-6 px-2 text-xs"
-            >
-              <ChevronRight
-                className={cn('size-3.5 transition-transform', revealed && 'rotate-90')}
-                aria-hidden
-              />
-              {revealed ? 'Hide exact instructions' : 'Show exact instructions'}
-            </Button>
-          </CollapsibleTrigger>
+      {attestsFile ? (
+        // Its yes approves this task's file, so the whole prompt is in front of
+        // the person, with no toggle, and scrolls inside its block when long
+        // (DOR-3703, M4 and the designer's round 8b look).
+        <div className="flex min-w-0 flex-col gap-1.5">
           {/* Never omitted, and never the smallest thing on the card. How much
               power an unattended run has is the most consequential fact here —
               it is half of what is being approved — so it reads at the
@@ -441,16 +463,71 @@ export function ScheduleApprovalCard({
             Runs as {runsAs}, at {currentLabel}
             {bypasses && ', runs without asking'}
           </span>
-        </div>
-        <CollapsibleContent>
           <pre
             data-slot="schedule-prompt"
-            className="bg-muted/60 text-foreground/90 text-2xs mt-1.5 max-h-48 overflow-auto rounded-md p-2 font-mono break-words whitespace-pre-wrap"
+            role="region"
+            aria-label="Prompt"
+            // A region that scrolls must take focus, or a keyboard can never read
+            // its end (WCAG 2.1.1); it is a landmark, not a control.
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+            tabIndex={0}
+            className={cn(
+              'text-foreground/90 overflow-auto rounded-md p-2 font-sans text-sm break-words whitespace-pre-wrap',
+              compact ? 'max-h-[25dvh] sm:max-h-40' : 'max-h-[40dvh] sm:max-h-64',
+              'focus-ring',
+              SCROLL_EDGE_SHADOW
+            )}
           >
             {task.prompt}
           </pre>
-        </CollapsibleContent>
-      </Collapsible>
+        </div>
+      ) : (
+        <Collapsible open={revealed} onOpenChange={setRevealed}>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-slot="schedule-reveal"
+                className="text-muted-foreground hover:text-foreground -ml-2 h-6 px-2 text-xs"
+              >
+                <ChevronRight
+                  className={cn('size-3.5 transition-transform', revealed && 'rotate-90')}
+                  aria-hidden
+                />
+                {revealed ? 'Hide exact instructions' : 'Show exact instructions'}
+              </Button>
+            </CollapsibleTrigger>
+            {/* Never omitted, and never the smallest thing on the card. How much
+                power an unattended run has is the most consequential fact here —
+                it is half of what is being approved — so it reads at the
+                card's body size, beside the instructions rather than behind them.
+                A mode that acts without asking says so in words: the mode's NAME
+                is not something a person should have to already know the meaning
+                of. `isBypassPermissionMode` answers from the id, which is the
+                fallback for the frames before the runtime's profile lands; it
+                knows every bypass mode the shipped runtimes have. */}
+            <span
+              data-slot="schedule-permission-mode"
+              className={cn(
+                'shrink-0 text-xs',
+                bypasses ? 'text-status-warning-fg' : 'text-muted-foreground'
+              )}
+            >
+              Runs as {runsAs}, at {currentLabel}
+              {bypasses && ', runs without asking'}
+            </span>
+          </div>
+          <CollapsibleContent>
+            <pre
+              data-slot="schedule-prompt"
+              className="bg-muted/60 text-foreground/90 text-2xs mt-1.5 max-h-48 overflow-auto rounded-md p-2 font-mono break-words whitespace-pre-wrap"
+            >
+              {task.prompt}
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
 
       {answered === null && (
         <SchedulePermissionChoice
@@ -472,7 +549,13 @@ export function ScheduleApprovalCard({
       <TestRunStrip testRun={testRun} onOpenRun={openTestRun()} />
 
       {answered === null ? (
-        <AskCard.Actions className="flex-col items-stretch sm:flex-row sm:items-center">
+        // Under the prompt; pinned to the bottom on a phone only as a sheet's content.
+        <AskCard.Actions
+          className={cn(
+            'flex-col items-stretch sm:flex-row sm:items-center',
+            pinActions && 'bg-card max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:py-2'
+          )}
+        >
           <Button
             size="sm"
             data-slot="schedule-approve"
@@ -492,7 +575,7 @@ export function ScheduleApprovalCard({
               data-slot="schedule-approve-turn-on"
               aria-label={`Approve ${name} and turn it on`}
               className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-              onClick={() => approve(true)}
+              onClick={() => void approve(true)}
               disabled={!selected}
             >
               Approve and turn on

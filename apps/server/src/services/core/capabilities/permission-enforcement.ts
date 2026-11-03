@@ -348,6 +348,9 @@ export const POWER_GRANTING_ACTION_IDS: ReadonlySet<string> = new Set([
   'marketplace.install',
   'create_agent',
   'mcp.enable',
+  // Arming a scheduled task, or setting how much it may do (DOR-3703).
+  'tasks.set_mode',
+  'tasks.approve',
 ]);
 
 /**

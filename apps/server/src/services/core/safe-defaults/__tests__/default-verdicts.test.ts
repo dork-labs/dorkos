@@ -174,7 +174,11 @@ describe('config default verdicts cover the whole schema', () => {
     // (DOR-3298). `false` re-arms pinning every agent home or known repo as it
     // stands, which Security asked for once at the upgrade and
     // never again, so each carries a reason and a carryover rule like the two above.
-    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(22);
+    //
+    // Raised 22 -> 23 for `tasks.agentModeControl` (DOR-3703): Dorian's rule
+    // that an agent may set its own schedule's mode up to its own level ships
+    // ON, as a kill switch, with a reason and a carryover rule.
+    expect(Object.keys(PERMISSIVE_DEFAULTS).length).toBeLessThanOrEqual(23);
   });
 });
 

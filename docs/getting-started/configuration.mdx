@@ -1502,6 +1502,20 @@ Click a link while reading to open that doc in the canvas. While editing, Cmd-cl
 
 Links find the `.md` files in the folder your chat works in and every folder inside it, skipping hidden folders and folders such as `node_modules`. In a very large folder, the `[[` list holds only the docs nearest the top: it stops after 2,000 docs, 2,000 folders, or 8 folders deep. A link to a doc past that is still looked for across the whole folder. If even that takes too long, the link says the folder is too big to check, rather than calling the doc missing. When two docs share a name, the one nearest the doc you are writing in wins. Agents can read this setting but cannot change it.
 
+### Agents setting how a scheduled task runs
+
+<TypeTable
+  type={{
+    'tasks.agentModeControl': {
+      description: 'Let agents set how their own scheduled tasks run. On by default.',
+      type: 'boolean',
+      default: 'true',
+    },
+  }}
+/>
+
+On by default. An agent can set how its own scheduled task runs, from its own chat, up to its own level: an agent that runs at Bypass permissions can set a task to Bypass, and one that runs at Default cannot go past Default. Asking for more is refused. A task only runs at a mode looser than Don't ask once you approved it as it is now; a new task, or one an agent changed, waits for you. It asks you first for another agent's task, at any mode, or when it works from a linked git worktree. If its chat read messages from outside your team, it asks you and can set Don't ask at most. Approving a task that is waiting asks you first unless you set **Approve a scheduled task** to Allowed, and an agent never approves a task it made or changed. The task shows which agent changed it. Turn `tasks.agentModeControl` off to stop agents doing either. Agents can read this setting but cannot change it.
+
 ### Chats with one agent
 
 <TypeTable

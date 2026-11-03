@@ -35,6 +35,7 @@ import {
   discardSettlingSchedules,
   useScheduleApprovalCards,
 } from '../index';
+import { promptHash } from '../lib/prompt-hash';
 import { ScheduleApprovalCard } from '../ui/ScheduleApprovalCard';
 
 /** Frozen so a suite that takes a minute cannot age its own fixtures. */
@@ -109,8 +110,15 @@ function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
   };
 }
 
+/** What the card's yes carries beside its fields: the hash of the prompt it showed (M4). */
+const SHOWN = { approvedPromptHash: expect.stringMatching(/^sha256:[A-Za-z0-9_-]{43}$/) };
+
 /** Render one card over a mock transport. */
-function renderCard(task: Task = proposal(), overrides: Partial<Transport> = {}) {
+function renderCard(
+  task: Task = proposal(),
+  overrides: Partial<Transport> = {},
+  props: { pinActions?: boolean; compact?: boolean } = {}
+) {
   const base = createMockTransport();
   const transport = createMockTransport({
     getSession: vi.fn().mockResolvedValue(createMockSession({ title: '' })),
@@ -141,7 +149,10 @@ function renderCard(task: Task = proposal(), overrides: Partial<Transport> = {})
       </QueryClientProvider>
     );
   }
-  return { transport, ...render(<ScheduleApprovalCard task={task} />, { wrapper: Wrapper }) };
+  return {
+    transport,
+    ...render(<ScheduleApprovalCard task={task} {...props} />, { wrapper: Wrapper }),
+  };
 }
 
 /** The card element itself. */
@@ -275,12 +286,20 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(slot('schedule-first-runs')).toBeNull();
   });
 
-  it('keeps the exact instructions behind a disclosure, and says what power they run with', async () => {
+  it('opens an agent’s proposal on the exact instructions, since its yes approves the file (M4), and says what power they run with', async () => {
     renderCard();
-
-    // Collapsed by default: a wall of prompt on every card is what stops anybody
-    // reading any of them.
-    expect(slot('schedule-prompt')).toBeNull();
+    expect(slot('schedule-prompt')).toHaveTextContent('Sweep the backlog and file anything stale.');
+    // No toggle at all: the prompt is a focusable region a keyboard can scroll.
+    expect(screen.queryByRole('button', { name: /exact instructions/ })).toBeNull();
+    const region = screen.getByRole('region', { name: 'Prompt' });
+    expect(region).toBe(slot('schedule-prompt'));
+    expect(region.getAttribute('tabindex')).toBe('0');
+    expect(region.className).toContain('focus-ring');
+    expect(region.className).toContain('text-sm');
+    expect(region.className).toContain('whitespace-pre-wrap');
+    expect(region.className).toContain('break-words');
+    expect(region.className).toContain('max-h-[40dvh]');
+    expect(region.className).toContain('sm:max-h-64');
     // The runtime's OWN word for the level, once its profile lands — the same
     // word the Trust Dial shows, rather than the id-keyed fallback this card
     // used before it resolved a profile of its own (DOR-2100). `waitFor`, not
@@ -291,10 +310,75 @@ describe('ScheduleApprovalCard — what it says', () => {
         'Runs as no agent, at Accept edits'
       )
     );
+  });
 
+  it('shows a long prompt whole, with nothing cut off, faded or behind “show more”', () => {
+    const long = Array.from(
+      { length: 120 },
+      (_, i) => `Step ${i + 1}: do the next careful thing.`
+    ).join('\n');
+    renderCard(proposal({ prompt: long }));
+    const region = screen.getByRole('region', { name: 'Prompt' });
+    expect(region.textContent).toBe(long);
+    expect(screen.queryByText(/show more/i)).toBeNull();
+    expect(region.className).not.toMatch(/line-clamp|truncate/);
+  });
+
+  it('lets its actions flow under the prompt by default, pinning them only for a sheet', async () => {
+    renderCard();
+    const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    expect(approve.parentElement!.className).not.toMatch(/sticky/);
+    expect(screen.getByRole('region', { name: 'Prompt' }).className).toContain('sm:max-h-64');
+    cleanup();
+    renderCard(proposal(), {}, { pinActions: true });
+    const pinned = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    expect(pinned.parentElement!.className).toContain('max-sm:sticky');
+  });
+
+  it('keeps a person’s own schedule behind the disclosure when its yes approves no file', async () => {
+    renderCard(proposal({ proposedByAgentPath: null, proposedByName: null }));
+    // Collapsed by default: a wall of prompt on every card is what stops anybody
+    // reading any of them.
+    expect(slot('schedule-prompt')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: /Show exact instructions/ }));
-
     expect(slot('schedule-prompt')).toHaveTextContent('Sweep the backlog and file anything stale.');
+  });
+
+  it('sends no hash from a folded prompt, so its yes approves no file (SC2)', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(proposal({ proposedByAgentPath: null, proposedByName: null }), { updateTask });
+    expect(slot('schedule-prompt')).toBeNull();
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
+  });
+
+  it('opens on the instructions whenever its yes would approve a file, and its yes sends their hash', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(proposal({ proposedByAgentPath: null, proposedByName: null, fileCapNext: true }), {
+      updateTask,
+    });
+    expect(slot('schedule-prompt')).toHaveTextContent('Sweep the backlog and file anything stale.');
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+    // sha256 of the prompt the card showed, base64url: what the server compares the file to.
+    const shown = await promptHash('Sweep the backlog and file anything stale.');
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        approvedPromptHash: shown,
+      })
+    );
+  });
+
+  it('still approves on a plain-http page, with no hash, so it attests no file', async () => {
+    vi.stubGlobal('crypto', {});
+    try {
+      const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+      renderCard(proposal(), { updateTask });
+      await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+      await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('names the agent the schedule runs as (DOR-3640)', async () => {
@@ -439,7 +523,12 @@ describe('ScheduleApprovalCard — answering it', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
     expect(slot('schedule-approve-turn-on')).toBeNull();
   });
 
@@ -451,7 +540,12 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(stayOff).toHaveTextContent(/^Approve$/);
     await userEvent.click(stayOff);
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
     expect(await findSlot('schedule-receipt')).toHaveTextContent(
       'Approved at Accept edits. Off until you turn it on.'
     );
@@ -482,7 +576,13 @@ describe('ScheduleApprovalCard — answering it', () => {
       await screen.findByRole('button', { name: 'Approve Nightly sweep and turn it on' })
     );
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+        enabled: true,
+      })
+    );
   });
 
   it('says when the first run will be, in the receipt', async () => {
@@ -580,7 +680,12 @@ describe('ScheduleApprovalCard — answering it', () => {
     card().focus();
     await userEvent.keyboard('a');
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
   });
 
   it('denies on D', async () => {
@@ -988,7 +1093,12 @@ describe('ScheduleApprovalCard — running it once', () => {
     await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'running'));
 
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
   });
 });
 
@@ -1020,10 +1130,13 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(slot('schedule-folder-rules')).toHaveTextContent('Bash(pnpm check:watchdog)');
     expect(slot('schedule-mode-mismatch')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
-    expect(updateTask).toHaveBeenCalledWith('task-1', {
-      status: 'active',
-      permissionMode: 'dontAsk',
-    });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+        permissionMode: 'dontAsk',
+      })
+    );
     expect(await findSlot('schedule-receipt')).toHaveTextContent(/Approved at/);
   });
 
@@ -1038,7 +1151,12 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(slot('schedule-mode-mismatch')).toHaveTextContent('Edits files on its own.');
     expect(updateTask).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
   });
 
   it('adds the selected mode’s consequence when the person chooses a looser mode', async () => {
@@ -1072,10 +1190,13 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
       'Approving this schedule doesn’t approve these rules.'
     );
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
-    expect(updateTask).toHaveBeenCalledWith('task-1', {
-      status: 'active',
-      permissionMode: 'dontAsk',
-    });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+        permissionMode: 'dontAsk',
+      })
+    );
   });
 
   it.each([null, { outsider: true }] as const)(
@@ -1091,9 +1212,15 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
       expect(slot('schedule-mode-mismatch')).toHaveTextContent(
         'asked for Bypass permissions. This will run at Accept edits.'
       );
-      screen.getByRole('button', { name: 'Show exact instructions' }).focus();
+      // Open from the start on an agent's proposal, whose yes approves its file (M4).
+      screen.getByRole('region', { name: 'Prompt' }).focus();
       await userEvent.keyboard('a');
-      expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+      await waitFor(() =>
+        expect(updateTask).toHaveBeenCalledWith('task-1', {
+          ...SHOWN,
+          status: 'active',
+        })
+      );
     }
   );
 

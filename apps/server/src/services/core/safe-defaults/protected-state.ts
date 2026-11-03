@@ -206,6 +206,13 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'Heartbeats default ON, and a timed beat can run a turn on its own and spend. Someone who turned them off should not have agents start waking again after a wipe.',
   },
   {
+    path: 'tasks.agentModeControl',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      'Agents setting their own schedules’ modes defaults ON (DOR-3703). Someone who switched it off should not have agents arming schedules again after a wipe.',
+  },
+  {
     path: 'mcp.enabled',
     direction: 'boolean',
     protectiveValue: false,

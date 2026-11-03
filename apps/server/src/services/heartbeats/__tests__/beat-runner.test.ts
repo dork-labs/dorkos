@@ -13,7 +13,7 @@ import { resolveWorkingHours } from '@dorkos/shared/working-hours';
 import { AuditLog } from '../../audit/audit-log.js';
 import { AccountIds } from '../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
-import { HeartbeatStore } from '../heartbeat-store.js';
+import { HeartbeatStore, moveBeatChats } from '../heartbeat-store.js';
 import {
   BeatRunner,
   FILE_SCAN_MS,
@@ -745,6 +745,49 @@ describe('starting and stopping', () => {
     await settle();
     r.stop();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('a beat’s chat on its row (DOR-3703, MD)', () => {
+  it('is there before the turn starts, so a restart mid-beat leaves it a beat', async () => {
+    changes = [LOCAL_MESSAGE];
+    let atLaunch: string | null | undefined;
+    const r = runner({
+      launcher: {
+        ...launcher(),
+        launch: async (request) => {
+          atLaunch = beats()[0]?.turnSessionId;
+          return { status: 'started', sessionId: request.sessionId };
+        },
+      },
+    });
+    void r.wake(juno.id, { wake: 'event:test' });
+    await settle();
+    expect(atLaunch).toEqual(expect.any(String));
+    r.stop();
+  });
+
+  it('is taken back from a beat whose turn never started', async () => {
+    changes = [LOCAL_MESSAGE];
+    launchResults = ['cap-full'];
+    const r = runner();
+    await r.start();
+    await r.wake(juno.id, { wake: 'event:test' });
+    expect(beats()[0]).toMatchObject({ outcome: 'refused', turnSessionId: null });
+    r.stop();
+  });
+
+  it('moves with the chat when the runtime renames it', () => {
+    store.insertBeat({
+      id: 'renamed-beat',
+      agentId: juno.id,
+      startedAt: new Date(MONDAY_10AM).toISOString(),
+      kind: 'pulse',
+      wake: 'timer',
+    });
+    store.setBeatChat('renamed-beat', 'asked-with');
+    moveBeatChats(db, 'asked-with', 'settled-on');
+    expect(store.beatSessionsAmong(['asked-with', 'settled-on'])).toEqual(new Set(['settled-on']));
   });
 });
 

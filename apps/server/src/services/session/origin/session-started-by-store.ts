@@ -50,17 +50,28 @@ export interface StartedByRecord {
    * `spin-off-chats` §5). True unless `session_start` was told not to.
    */
   reportBack: boolean;
+  /**
+   * The scheduled thing behind the starting chat when it started this one
+   * (`run`, `heartbeat`), or null (DOR-3703, ME). Read by
+   * `agent-mode-run-origin.ts`, which takes any other value as a run.
+   */
+  scheduledOrigin: string | null;
   /** When it was started (ISO 8601). */
   createdAt: string;
 }
 
 /** The fields a writer may leave out of a start. */
 type DefaultedField =
-  'carried' | 'permissionMode' | 'starterPermissionMode' | 'permissionSameAsStarter' | 'reportBack';
+  | 'carried'
+  | 'permissionMode'
+  | 'starterPermissionMode'
+  | 'permissionSameAsStarter'
+  | 'reportBack'
+  | 'scheduledOrigin';
 
 /**
  * A start as a writer hands it in: `carried` defaults to false, the
- * permission levels to null, and `reportBack` to true.
+ * permission levels and the scheduled origin to null, and `reportBack` to true.
  */
 export type StartedByInsert = Omit<StartedByRecord, DefaultedField> &
   Partial<Pick<StartedByRecord, DefaultedField>>;

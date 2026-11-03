@@ -199,6 +199,11 @@ export function handRegisteredInSessionToolSet(
             ? { sessionId: session?.sdkSessionId || sessionId }
             : {}),
           ...(identityPath ? { agentPath: identityPath } : {}),
+          // Where the chat really stands, and every id its turn levels may be
+          // kept under, so a task tool can tell a home from a linked worktree
+          // and read the turn's real level (DOR-3703).
+          ...(session?.cwd ? { cwd: session.cwd } : {}),
+          turnSessionIds: [session?.sdkSessionId, sessionId].filter((id): id is string => !!id),
         })
       : undefined;
 

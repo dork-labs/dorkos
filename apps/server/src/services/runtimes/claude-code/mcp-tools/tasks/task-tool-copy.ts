@@ -79,6 +79,12 @@ export const TIMING_REAPPROVAL_NOTE =
  * Agent-writable like `cron`, and approved like `cron`: going back to the
  * package's timing changes when the work runs, so a person approves it again.
  */
+/** What `acceptFileHash` on the update tool means (DOR-3703, SB3). */
+export const ACCEPT_FILE_HASH_DESCRIPTION =
+  "Accept this task's SKILL file after it changed outside the task tools. A call on a capped " +
+  'task returns what changed and its hash, and keeps the cap; send that hash here to accept the ' +
+  'file as it showed. Any other hash, or a file that changed again, keeps the cap.';
+
 export const RESET_TIMING_DESCRIPTION =
   "Send true to put a schedule that came with an installed package back on the package's own " +
   'timing, undoing a cron or timezone set here. Send it on its own, not together with cron or ' +
@@ -213,9 +219,13 @@ export const REASON_DESCRIPTION =
  * is refused, on both tools and both servers.
  */
 export const REFUSED_PERMISSION_MODE_DESCRIPTION =
-  'Not yours to set. A scheduled task runs later with nobody watching, so the person chooses ' +
-  'how much it may do without asking. Send this and DorkOS refuses the whole call and changes ' +
-  'nothing — leave it out, and ask the person to set it on the task in DorkOS.';
+  'Not yours to set if the person turned agent mode control off: then DorkOS refuses the ' +
+  'whole call and changes nothing. Otherwise, from your own chat on your own task, you may ' +
+  "set any mode up to your own level and the task's agent's level; above that is refused, " +
+  'naming the highest you can set. It keeps running, and the person is told with an Undo. ' +
+  'A raise from a scheduled run waits for them, and so does a raise above a mode they put ' +
+  "back. DorkOS asks the person first for another agent's task or from a linked worktree, " +
+  'and after your chat read outside words, dontAsk is the most.';
 
 /**
  * The description both servers give the `status` argument (DOR-504).
@@ -238,7 +248,19 @@ export const REFUSED_PERMISSION_MODE_DESCRIPTION =
  * best moment to say a new task waits for approval.
  */
 export const REFUSED_STATUS_DESCRIPTION =
-  'Not yours to set. Moving a task to `active` IS a person approving it. Send this and DorkOS ' +
-  'refuses the whole call and changes nothing. A task waiting at `pending_approval` waits for ' +
-  'the person: tell them, and let them approve it in DorkOS. To turn a task on or off, use ' +
-  '`enabled` instead.';
+  'Not yours to set: a new scheduled task never approves itself, so DorkOS refuses the whole ' +
+  'call and changes nothing. A task waiting at `pending_approval` waits for the person or ' +
+  'another agent: tell the person. To turn a task on or off, use `enabled` instead.';
+
+/**
+ * The description `tasks_update` gives `status`. True whichever way
+ * `tasks.agentModeControl` is set, because the tools are built once per chat
+ * and the setting can change in between (DOR-3703).
+ */
+export const STATUS_DESCRIPTION =
+  'Not yours to set, except "active" to approve a task waiting at `pending_approval`, sent ' +
+  'alone or with permissionMode. If the person turned agent mode control off, DorkOS refuses ' +
+  'the whole call. DorkOS asks the person first unless they allowed approvals for you, and ' +
+  'you never approve a task you or your chat chain made or last changed. A call with no ' +
+  'chat behind it (the sessionless /mcp server) cannot approve at all. To turn a task on ' +
+  'or off, use `enabled` instead.';

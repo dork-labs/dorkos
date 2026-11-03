@@ -156,6 +156,7 @@ import {
   setSessionStartedByStore,
 } from '../../../../session/origin/session-started-by-store.js';
 import { StartWorkService, setStartWorkService } from '../../../../extensions/start-work.js';
+import { queuedChatCaller } from '../../../../work-queue/work-queue-wiring.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import { SessionStore } from '../../sessions/session-store.js';
 import {
@@ -866,6 +867,100 @@ describe('session_start records who started the new session (spec flow-multiproj
       reason: 'Split off the tests',
     });
     expect(store.get(sessionId.replace(/^canon-/, ''))).toBeNull();
+  });
+
+  describe('the scheduled thing behind the starting chat (DOR-3703, ME)', () => {
+    /** A task store that knows one chat as a run's. */
+    const withRun = () =>
+      ({
+        ...makeDeps(),
+        taskStore: {
+          resolveTaskOrigins: (ids: string[]) =>
+            new Map(ids.filter((id) => id === 'run-chat').map((id) => [id, {}])),
+        },
+      }) as unknown as Deps;
+
+    it('stamps a spin-off started from a run, on its own row', async () => {
+      const handler = createSessionStartHandler(withRun(), () => ({
+        agentPath: AGENT_HOME,
+        sessionId: 'run-chat',
+      }));
+      const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
+      expect(store.get(sessionId)?.scheduledOrigin).toBe('run');
+    });
+
+    it('stamps nothing on a spin-off from an ordinary chat', async () => {
+      const handler = createSessionStartHandler(withRun(), () => ({
+        agentPath: AGENT_HOME,
+        sessionId: 'parent-chat',
+      }));
+      const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
+      expect(store.get(sessionId)?.scheduledOrigin).toBeNull();
+    });
+
+    it('[SEC PR, fixed MUST-G] a chat the work queue starts counts as scheduled, whoever queued it', async () => {
+      const handler = createSessionStartHandler(withRun(), queuedChatCaller(AGENT_HOME));
+      const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
+      expect(store.get(sessionId)).toMatchObject({
+        kind: 'chat',
+        startedBySessionId: null,
+        originExtensionId: null,
+        reportBack: false,
+        scheduledOrigin: 'run',
+      });
+    });
+
+    it('writes no row for a call from outside any chat that is not the queue', async () => {
+      const handler = createSessionStartHandler(withRun(), () => ({ agentPath: AGENT_HOME }));
+      const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
+      expect(store.get(sessionId)).toBeNull();
+    });
+
+    it('asks what a started chat was when its own row holds no stamp, on a carry-over', () => {
+      store.insert({
+        sessionId: 'old-spin',
+        kind: 'chat',
+        extensionId: null,
+        startedBySessionId: 'run-chat',
+        originExtensionId: null,
+        reason: null,
+        createdAt: new Date().toISOString(),
+      });
+      const service = new StartWorkService({
+        store,
+        projects: { rootWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() },
+        extensionName: (id) => id,
+        runningSessionIds: () => [],
+        taskStore: () =>
+          ({
+            resolveTaskOrigins: (ids: string[]) =>
+              new Map(ids.filter((id) => id === 'run-chat').map((id) => [id, {}])),
+          }) as never,
+      });
+      service.reserveFromChat({ sessionId: 'moved-old', parentSessionId: 'old-spin', carry: true });
+      expect(store.get('moved-old')?.scheduledOrigin).toBe('run');
+    });
+
+    it('keeps the stamp when a chat is carried to another account', () => {
+      store.insert({
+        sessionId: 'spin',
+        kind: 'chat',
+        extensionId: null,
+        startedBySessionId: 'run-chat',
+        originExtensionId: null,
+        reason: null,
+        scheduledOrigin: 'heartbeat',
+        createdAt: new Date().toISOString(),
+      });
+      const service = new StartWorkService({
+        store,
+        projects: { rootWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() },
+        extensionName: (id) => id,
+        runningSessionIds: () => [],
+      });
+      service.reserveFromChat({ sessionId: 'moved', parentSessionId: 'spin', carry: true });
+      expect(store.get('moved')?.scheduledOrigin).toBe('heartbeat');
+    });
   });
 
   /** A chat service whose parent chats can, or cannot, take chat messages. */

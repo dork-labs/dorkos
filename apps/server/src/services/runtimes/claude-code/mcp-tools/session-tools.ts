@@ -80,7 +80,7 @@ import {
   resolveRuntimeTypeForNewSession,
   agentLaunchCapMessage,
 } from '../../../session/launch/launch-session.js';
-import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
+import { reserveChatStart } from './session-start-reserve.js';
 import {
   getChatMessageService,
   getRoomSeatReports,
@@ -136,6 +136,8 @@ export type SessionStartCallerResolver = () =>
       runtime?: string;
       neverAsks?: boolean;
       chosenFull?: boolean;
+      /** DorkOS starts this chat with nobody there: the work queue (DOR-3703, MUST-G). */
+      unattended?: boolean;
     }
   | undefined;
 
@@ -277,7 +279,7 @@ interface CallerAgent {
 function callerOf(
   deps: Pick<McpToolDeps, 'meshCore'>,
   resolveCaller: SessionStartCallerResolver | undefined
-): (CallerAgent & { chat: CallingChat | null }) | null {
+): (CallerAgent & { chat: CallingChat | null; unattended: boolean }) | null {
   const resolved = resolveCaller?.();
   const agentPath = resolved?.agentPath;
   if (!agentPath) return null;
@@ -294,6 +296,7 @@ function callerOf(
     label: agent.displayName ?? agent.name,
     name: agent.name,
     ...(agent.displayName ? { displayName: agent.displayName } : {}),
+    unattended: resolved.unattended === true,
     chat: inChat
       ? {
           sessionId: resolved.sessionId ?? null,
@@ -304,36 +307,6 @@ function callerOf(
         }
       : null,
   };
-}
-
-/**
- * Claim a start slot for a chat started from `parentSessionId`, recording who
- * started it. The new chat inherits the parent's origin extension, so it counts
- * against that extension's start limits and is refused past them. Without a
- * calling chat (the external `/mcp` server) or before boot wired the seam,
- * nothing is recorded and nothing is limited here.
- */
-function reserveChatStart(
-  sessionId: string,
-  parentSessionId: string | null,
-  reason: string | undefined,
-  permission: SessionStartPermission,
-  reportBack: boolean
-): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
-  const service = getStartWorkService();
-  if (!parentSessionId || !service) return { ok: true, reservation: null };
-  const claimed = service.reserveFromChat({
-    sessionId,
-    parentSessionId,
-    reason: reason ?? null,
-    permissionMode: permission.mode,
-    starterPermissionMode: permission.callerMode,
-    permissionSameAsStarter: permission.sameAsCaller,
-    reportBack,
-  });
-  return claimed.ok
-    ? { ok: true, reservation: claimed.reservation }
-    : { ok: false, message: claimed.error.message };
 }
 
 /**
@@ -370,7 +343,7 @@ async function discardUnstartedSession(sessionId: string): Promise<void> {
  *   account's project rules either way.
  */
 export function createSessionStartHandler(
-  deps: Pick<McpToolDeps, 'meshCore' | 'activityService'>,
+  deps: Pick<McpToolDeps, 'meshCore' | 'activityService' | 'taskStore'>,
   resolveCaller?: SessionStartCallerResolver,
   checkAccount: typeof checkAccountLaunch = checkAccountLaunch
 ) {
@@ -499,7 +472,15 @@ export function createSessionStartHandler(
       !parentTakesMessages &&
       (getRoomSeatReports()?.seatOf(parentChatId) ?? null) !== null;
     const reportBack = args.reportBack !== 'off' && (parentTakesMessages || parentIsRoomSeat);
-    const claimed = reserveChatStart(sessionId, parentChatId, args.reason, permission, reportBack);
+    const claimed = reserveChatStart({
+      sessionId,
+      parentSessionId: parentChatId,
+      reason: args.reason,
+      permission,
+      reportBack,
+      taskStore: deps.taskStore,
+      unattended: caller.unattended,
+    });
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
     // What the pre-launch picker saves, saved the same way: an unbound settings
