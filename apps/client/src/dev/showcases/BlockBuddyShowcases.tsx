@@ -83,8 +83,14 @@ export function BlockBuddyShowcases() {
             <div key={surface.label} className={`rounded-md p-3 ${surface.className}`}>
               <p className="text-muted-foreground mb-2 text-xs">{surface.label}</p>
               {STATES.map((status) => (
-                <div key={status} className="mb-2 flex items-center gap-3">
-                  <span className="text-muted-foreground w-16 text-xs">{status}</span>
+                // A phone holds the label and four tiles. Past that the row runs off the screen.
+                <div
+                  key={status}
+                  className="mb-2 flex items-center gap-3 max-md:[&>*:nth-child(n+6)]:hidden"
+                >
+                  <span className="text-muted-foreground w-20 shrink-0 text-xs whitespace-nowrap">
+                    {status}
+                  </span>
                   {IDS.slice(0, 8).map((seed) => (
                     <Buddy key={seed} seed={seed} status={status} />
                   ))}
