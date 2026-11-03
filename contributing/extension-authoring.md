@@ -386,7 +386,7 @@ const data = await api.loadData<MyData>();
 await api.saveData({ key: 'value' });
 ```
 
-Storage is JSON-serialized and persisted at `~/.dork/extensions/{id}/data.json`.
+Storage is JSON-serialized and persisted at `{dorkHome}/extension-data/{id}/data.json`, the same file the server half reads as [`ctx.storage`](#ctxstorage). It is never inside your extension's folder. For more than a small JSON object, see [`ctx.filesDir`](#ctxfilesdir).
 
 ### Notifications
 
@@ -654,6 +654,8 @@ One extension dialog is open at a time, across every extension: opening one clos
 
 **TypeScript** (`index.ts`): Compiled automatically by the host using esbuild. JSX is supported in `.ts` files. Type against `@dorkos/extension-api` for full autocompletion.
 
+Every `.ts` file, `server.ts` included, is compiled as TSX. So a generic arrow function, `const first = <T>(items: T[]) => items[0]`, reads as a JSX tag and the build fails. `tsc` and `node --test` read the same file as plain TypeScript and pass it, so the break shows up only in DorkOS. Write a `function` declaration instead (`function first<T>(items: T[]) { return items[0]; }`), or add a comma (`<T,>(items: T[]) => …`).
+
 **Pre-compiled JavaScript** (`index.js`): Served directly with no compilation step. Use `React.createElement` for components since JSX isn't available without a build step.
 
 If both `index.js` and `index.ts` exist, the pre-compiled JS takes priority.
@@ -692,7 +694,7 @@ function MySection() {
 }
 ```
 
-Use CSS custom properties (`var(--border)`, `var(--muted-foreground)`) from the host theme for consistent styling.
+Use CSS custom properties (`var(--border)`, `var(--muted-foreground)`) from the host theme for consistent styling. Your extension draws inside the host page, so these variables follow the person's light or dark theme with no work on your side; the full set is in `packages/ui/tokens.css`. Fixed colours (hex or `rgb()` values) don't follow the theme. The host's React components and Tailwind classes are not available to an extension: build your own pieces on the variables, and bundle any library you use.
 
 ## Debugging
 
@@ -901,7 +903,7 @@ The resolved DorkOS data directory (`~/.dork` in production, `apps/server/.temp/
 
 #### `ctx.filesDir`
 
-A folder only your extension writes to: `{dorkHome}/extension-data/<id>/files`. DorkOS creates it before `register()` runs. Put files you write yourself (downloads, caches, a SQLite file of your own) here rather than next to your code. An extension that runs separately (`serverCapabilities.runtime: "subprocess"`) can write nowhere else. In such an extension, an account advisor's methods are fixed when `registerAdvisor` is called: DorkOS calls only the methods the advisor had then, so add every method before registering it.
+A folder only your extension writes to: `{dorkHome}/extension-data/<id>/files`. DorkOS creates it before `register()` runs. Put files you write yourself (downloads, caches, a SQLite file of your own) here rather than next to your code. Node's built-in `node:sqlite` needs no native addon, so there is nothing extra to bundle. If you keep a database here and change its schema, copy the file before each migration runs (SQLite's `VACUUM INTO '<filesDir>/backups/…'` does it in one statement): a migration that fails rolls back on its own, but one that commits and turns out wrong can only be undone from a copy. An extension that runs separately (`serverCapabilities.runtime: "subprocess"`) can write nowhere else. In such an extension, an account advisor's methods are fixed when `registerAdvisor` is called: DorkOS calls only the methods the advisor had then, so add every method before registering it.
 
 #### `ctx.accounts`
 
@@ -1177,6 +1179,8 @@ export default register;
 - **The schema subset.** `inputSchema` must be closed JSON Schema: `type`, `properties`, `required`, `items`, `enum`, `const`, `description`, `title`, `default`, `minimum`/`maximum`, `minLength`/`maxLength`, `pattern`, `format`, `minItems`/`maxItems`, `anyOf`, and on every object `"additionalProperties": false`. Every node says its `type` (or lists its values with `enum`, `const` or `anyOf`), every array says its `items`, and a `default` must fit its own schema. An open object, `patternProperties`, `propertyNames`, `$ref` and `$defs` are refused, because each becomes an open-ended map, and one open-ended map anywhere on the `dorkos` server hides every DorkOS tool from Claude Code agents. DorkOS checks each tool when it discovers the extension, before any of its code runs, with the same check (`@dorkos/extension-api/tool-check`) the capability registry runs when the tools register and `dorkos marketplace validate` runs on a package, so a tool that passes one passes the others. A refused tool is reported on `GET /api/extensions` (`tools[].status: 'refused'` and a `reason`); your other tools still load. Titles are one line with no quote marks, and the extension's display name must be plain A to Z letters and may not be "DorkOS".
 - **Which problems cost what.** A problem the manifest schema catches makes the whole extension invalid, its client half included: a tool name that breaks the pattern, a name too long for 64 characters, a tool declared twice, an approval display field the input does not have, `timeoutSeconds` out of range, or `tools` with no `serverCapabilities`. A problem with one tool's schema, title or card fields (the subset above, a quoted title, a missing `approvalDisplayFields`) refuses only that tool, and the rest of the extension loads. A display name the registry refuses ("DorkOS", non-ASCII letters, quotes) refuses every tool but loads the extension. `dorkos marketplace validate` reports all of these as errors before you publish.
 - **Binding.** `ctx.tools.handle` throws for a name the manifest does not declare, a tool DorkOS refused, a second handler for one tool, or a call after `register()` finished. A declared tool you never handle is not offered, and its status says why. A `register()` that throws or times out offers no tools.
+- **Maps.** A tool can't take an object with keys you don't know in advance. For key and value pairs, take an array of `{ "key": …, "value": … }` objects. For a value whose shape you can't fix, take a `string` of JSON text and parse it in the handler, checking it there.
+- **Who may write.** When a write must come only from agents, put it behind a tool and check `call.agentId` in the handler against the agents you allow. When it must come only from a person, put it behind a route with `ctx.requirePerson` (or `requirePerson()`), and give agents no tool for it. Never take the writer's name from the input or from a request header: a caller can put anything there.
 - **Calls.** `input` is already parsed against your schema. `call` carries only `signal` and `agentId` (the calling agent's Mesh id, or `null`): no session id, folder or token. Return plain JSON; a string passes through as text. A result over 256 KB serialized, or one that is not JSON, becomes an error. A throw becomes a tool error the agent reads as `<your extension name>: <message>`, capped at 500 characters, with absolute file paths replaced by `<path>` and never a stack.
 - **Time and stops.** A call runs at most `timeoutSeconds` (1 to 300, default 60), counted after any approval. Past that, or when the agent's turn is cancelled, or when your extension stops, `call.signal` aborts and any later result is thrown away. On stop, reload, turn-off, revoke or uninstall, your tools leave the registry first, before your cleanup runs. An uninstall also clears every per-tool permission setting kept for your tools, so nothing carries over to whatever is installed under the same id next.
 - **A handler that never yields.** In-process, the deadline can only abort `call.signal`; a handler stuck in a synchronous loop blocks DorkOS itself. An extension that runs separately (`runtime: "subprocess"`, see [Running separately](#running-separately)) gives agents the same tools with the same checks, and a stuck handler freezes only its own process, which the watchdog stops, removing its tools.
