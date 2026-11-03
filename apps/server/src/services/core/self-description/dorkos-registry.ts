@@ -40,6 +40,8 @@ import { memoryDomain } from '../../memory/memory-capabilities.js';
 import { sessionDomain } from '../../session/agent-compaction/compaction-capabilities.js';
 import { chatDomain } from '../../session/chat-messages/chat-capabilities.js';
 import { commitmentsDomain } from '../../commitments/commitment-capabilities.js';
+import { env } from '../../../env.js';
+import { todosDomain } from '../../commitments/todo-capabilities.js';
 import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
@@ -77,6 +79,8 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
   if (deps.commitmentDeps) domains.push(commitmentsDomain);
+  // Behind the flag here as well as at boot, so the docs composer below can match it (DOR-3088).
+  if (deps.todoDeps && env.DORKOS_TODOS_ENABLED) domains.push(todosDomain);
   if (deps.workQueueDeps) domains.push(workQueueDomain);
   if (deps.auditDeps) domains.push(auditDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
@@ -149,6 +153,9 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     sessionDomain,
     chatDomain,
     commitmentsDomain,
+    // Hidden behind `DORKOS_TODOS_ENABLED` until To-dos ship (DOR-3088), so the generated docs do
+    // not describe tools nobody can call.
+    ...(env.DORKOS_TODOS_ENABLED ? [todosDomain] : []),
     workQueueDomain,
     auditDomain,
     agentPauseDomain,
@@ -170,6 +177,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
     commitmentDeps: {} as CapabilityDeps['commitmentDeps'],
+    todoDeps: {} as CapabilityDeps['todoDeps'],
     workQueueDeps: {} as CapabilityDeps['workQueueDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],

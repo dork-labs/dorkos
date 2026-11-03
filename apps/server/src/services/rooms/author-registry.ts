@@ -1600,7 +1600,7 @@ function requireKeySegment(value: string, what: string): void {
 }
 
 /** Narrow a stored row's stringly-typed `kind` onto the domain union. */
-function toRecord(row: typeof authors.$inferSelect): AuthorRecord {
+export function toRecord(row: typeof authors.$inferSelect): AuthorRecord {
   return {
     id: row.id,
     kind: row.kind as AuthorKind,

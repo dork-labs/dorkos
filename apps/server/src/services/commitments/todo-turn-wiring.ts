@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { ulid } from 'ulidx';
-import { and, authors, eq, roomEntries, roomMembers, type Db } from '@dorkos/db';
+import { authors, eq, roomEntries, type Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
 import {
   dispatchSessionMessage,
@@ -18,6 +18,7 @@ import { agentPause } from '../mesh/pause/agent-pause.js';
 import { roomTurnBudget } from '../rooms/limits/shared-turn-budget.js';
 import { logger } from '../../lib/logger.js';
 import type { TodoTurnsDeps } from './todo-turns.js';
+import { agentInRoom } from './todo-source.js';
 
 /** What the seams are built from. */
 export interface TodoTurnSeamDeps {
@@ -91,19 +92,7 @@ export function todoTurnSeams(deps: TodoTurnSeamDeps): Omit<TodoTurnsDeps, 'db' 
       // room its assignee cannot read. An agent's author is keyed by its home folder.
       const agentPath = deps.meshCore()?.getProjectPath(agentId);
       if (!agentPath) return undefined;
-      const member = deps.db
-        .select({ authorId: roomMembers.authorId })
-        .from(roomMembers)
-        .innerJoin(authors, eq(authors.id, roomMembers.authorId))
-        .where(
-          and(
-            eq(roomMembers.roomId, entry.roomId),
-            eq(authors.kind, 'agent'),
-            eq(authors.naturalKey, agentPath)
-          )
-        )
-        .get();
-      if (!member) return undefined;
+      if (!agentInRoom(deps.db, entry.roomId, agentPath)) return undefined;
       let text: string | undefined;
       try {
         const body = JSON.parse(entry.body) as { text?: unknown };

@@ -321,7 +321,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/sessions/running');
     // 84 -> 86: an agent's work queue, and the stop on every queue (DOR-3462).
     expect(mounts).toContain('/api/work-queues');
-    expect(mounts).toHaveLength(86);
+    // 86 -> 87: to-dos (DOR-3088), mounted only behind `DORKOS_TODOS_ENABLED`.
+    expect(mounts).toContain('/api/todos');
+    expect(mounts).toHaveLength(87);
     const byHand = [
       '/',
       '/x/fixture',
