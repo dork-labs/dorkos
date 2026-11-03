@@ -1,7 +1,7 @@
 /**
- * Find the Google Chrome (or Chromium) the agent browser runs on.
+ * Find the Google Chrome (or Chromium) the signed-in browser runs on.
  *
- * The agent browser is the person's own system Chrome on a dedicated profile,
+ * The signed-in browser is the person's own system Chrome on a dedicated profile,
  * never a bundled or downloaded browser: that is what lets their password
  * manager's extension work normally while they sign in. So there is nothing to
  * install, only something to find, and a clear error when it is not there.
@@ -40,7 +40,7 @@ export class ChromeNotFoundError extends Error {
     super(
       [
         'Could not find Google Chrome on this computer.',
-        'The agent browser is your own Chrome with its own profile, so your password manager works in it.',
+        'The signed-in browser is your own Chrome with its own profile, so your password manager works in it.',
         'Install Chrome from https://www.google.com/chrome/ and run this again,',
         'or point at a Chrome (or Chromium) you already have with --chrome <path>.',
         '',

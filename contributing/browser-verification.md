@@ -15,7 +15,7 @@ behaviour was already correct.
 | prove a known bug stays fixed                         | a spec in `apps/e2e/tests/`, running in CI against the test-mode runtime         |
 | go looking, with real agent turns                     | `pnpm --filter @dorkos/e2e multi-window` (see `apps/e2e/multi-window/README.md`) |
 | regenerate marketing/docs media                       | `apps/e2e/capture/`                                                              |
-| act on a third-party site as the operator (signed in) | the agent browser: [below](#the-live-browser)                                    |
+| act on a third-party site as the operator (signed in) | the Agent browser: [below](#the-live-browser)                                    |
 
 The first spends nothing and is deterministic. The second costs model time and
 is not. Reach for the second when you do not yet know what is wrong. The fourth
@@ -23,6 +23,22 @@ is not about testing DorkOS at all: it is how an agent uses GitHub, Linear or an
 other site as the operator without ever holding a password.
 
 ## The live browser
+
+### Browser names and source locations
+
+| Name                    | Entry point                                                                               | Source                                                                                                   | Sign-ins                                                         |
+| ----------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Agent browser           | **Browser** in a chat; `local_browser_*` tools                                            | `apps/server/src/services/session/local-browser/`                                                        | The live page's own saved sign-ins                               |
+| Older signed-in browser | `dorkos browser login`; a configured Playwright MCP server                                | `packages/cli/src/commands/browser-commands.ts`, `apps/server/src/services/mesh/agent-browser-preset.ts` | A copied storage-state file; separate from the live page         |
+| Managed browser engine  | Private runtime contracts; CLI `browser install` and `status --runtime` inspect its files | `packages/browser/`, `apps/server/src/services/browser/`                                                 | Private engine-owned profiles; not an Agent browser tool surface |
+
+These stacks coexist. Naming them does not retire a command, migrate a profile
+or make the private engine a supported route for live browser tasks. Canvas
+`browser_navigate` tools are another surface: they are not `local_browser_*`.
+
+The older sign-in flow does not explain its orange frame; that flow stays unchanged ahead of its planned retirement after November 17 (DOR-3771).
+
+### Sharing a live page
 
 Open **Browser** from the right panel's **+** menu. The page is shared with the
 agent in the current direct chat. **DorkOS browser** opens a native page in the

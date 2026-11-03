@@ -386,8 +386,14 @@ export interface OperatingSkill {
  *   task tools runs capped at Never ask until the agent accepts it, in two
  *   `tasks_update` calls from an ordinary chat (M4, SB3). 49 rather than 48
  *   because DOR-3720 landed on `main` first and took 48. Re-bump, never keep-mine.
+ * - 50: `using-the-agent-browser` teaches the person handoff, rejects sign-in
+ *   links from untrusted text, and routes outsider-origin sharing requests to
+ *   the operator (DOR-3218). Agents seeded at 49 would miss those rules.
+ *   Browser guidance also distinguishes the live Agent browser, the older
+ *   signed-in Playwright MCP browser and the private managed engine (DOR-3218).
+ *   Existing commands and saved sign-ins remain available.
  */
-export const OPERATING_SKILLS_VERSION = 49;
+export const OPERATING_SKILLS_VERSION = 50;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
