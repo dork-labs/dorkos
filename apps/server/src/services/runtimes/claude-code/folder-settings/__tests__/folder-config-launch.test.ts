@@ -590,6 +590,16 @@ describe('managed-server launches on the other engines', () => {
   const mesh = { getByPath: () => AGENT, listWithPaths: () => [], updateLastSeen: () => {} };
   it('requires a registered home before reading a manifest without a mesh match', async () => {
     try {
+      write('.dork/agent.json', {
+        ...AGENT,
+        runtime: 'claude-code',
+        registeredAt: '2026-01-01T00:00:00.000Z',
+        registeredBy: 'test',
+        mcpServers: [],
+        account: 'work',
+      });
+      store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+      await pinnedAtUpgrade();
       registerTestHomes([home]);
       expect(await managedConfigHeld(home, home, false)).toBe(false);
       registerTestHomes([]);

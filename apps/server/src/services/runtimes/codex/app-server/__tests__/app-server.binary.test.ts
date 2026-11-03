@@ -47,6 +47,7 @@ import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { CodexTurnRequest } from '../../transport/codex-transport.js';
 import type { AppServerTransportOptions } from '../../transport/app-server-transport.js';
 import { spawn as nodeSpawn } from 'node:child_process';
+import { protectedProbe } from './fixtures/protected-probe.js';
 
 const BINARY = resolveCodexVendoredBinary();
 const IDENTITY_SECRET = 'identity-token-never-real';
@@ -604,23 +605,17 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
 
   it.for(['app-server', 'exec'] as const)(
     'protects fake secrets through %s despite a loaded legacy Full setting',
-    async (kind, ctx) => {
-      const secret = path.join(project, 'fixture.key');
+    { timeout: 180_000 },
+    async (kind) => {
       const readable = path.join(project, 'readable.txt');
-      const canary = 'CANARY-private-dor3595';
       const control = 'PUBLIC-control-dor3595';
       const skillControl = 'PUBLIC-skill-control-dor3595';
       const agentHome = path.join(root, 'data', 'agents', 'probe');
-      const dataConfig = path.join(root, 'data', 'config.json');
-      const plugin = path.join(project, '.dork', 'plugins', 'existing', 'plugin.js');
       const skills = path.join(agentHome, '.agents', 'skills', 'probe');
       fs.mkdirSync(skills, { recursive: true });
       fs.writeFileSync(path.join(skills, 'SKILL.md'), skillControl);
-      fs.writeFileSync(secret, canary);
       fs.writeFileSync(readable, control);
-      fs.writeFileSync(dataConfig, canary);
-      fs.mkdirSync(path.dirname(plugin), { recursive: true });
-      fs.writeFileSync(plugin, 'original-plugin');
+      const probe = protectedProbe(root, project);
       const configFile = path.join(codexHome, 'config.toml');
       const previous = fs.readFileSync(configFile, 'utf8');
       fs.writeFileSync(configFile, `sandbox_mode = "danger-full-access"\n${previous}`);
@@ -635,14 +630,15 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       try {
         for (const mode of ['default', 'acceptEdits', 'bypassPermissions']) {
           let result = '';
+          let startMs: number | undefined;
+          const started = performance.now();
+          probe.resetLate();
           scripted.push(
-            (res) =>
-              res.end(
-                sseCall({
-                  cmd: 'cat fixture.key; cat ../data/config.json; echo changed > .dork/plugins/existing/plugin.js; cat readable.txt; cat ../data/agents/probe/.agents/skills/probe/SKILL.md',
-                  login: false,
-                })
-              ),
+            (res) => {
+              // The provider is called only after the thread has started.
+              probe.createLate();
+              res.end(sseCall({ cmd: probe.command, login: false }));
+            },
             (res, body) => {
               result = body;
               res.end(sse('done'));
@@ -654,6 +650,9 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           for await (const event of transport.runTurn(
             request(`protected-${kind}-${mode}`, undefined, {
               settings: { permissionMode: mode, model: 'fake-model' },
+              onThreadBound: () => {
+                startMs = performance.now() - started;
+              },
               writableDirectories: [project],
               tools: {
                 agentTokenEnv: {},
@@ -675,25 +674,33 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             })
           ))
             events.push(event);
-          if (/bwrap: /.test(result)) ctx.skip();
+          console.info('Codex protected probe', {
+            kind,
+            mode,
+            homeFiles: 10_000,
+            startMs,
+            lateSecretReadable: result.includes(probe.lateCanary),
+            latePluginChanged:
+              fs.existsSync(probe.latePlugin) &&
+              fs.readFileSync(probe.latePlugin, 'utf8') !== 'original-late-plugin',
+          });
+          expect(startMs, JSON.stringify(events)).toBeDefined();
           expect(result, JSON.stringify(events)).toContain(control);
           expect(result, JSON.stringify(events)).toContain(skillControl);
-          expect(result).not.toContain(canary);
-          expect(fs.readFileSync(plugin, 'utf8')).toBe('original-plugin');
+          for (const canary of probe.canaries) expect(result).not.toContain(canary);
+          expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
+          expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
           expect(result).toMatch(/denied|not permitted/i);
           await transport.shutdown();
         }
       } finally {
         env.mockRestore();
         fs.writeFileSync(configFile, previous);
-        fs.rmSync(secret, { force: true });
         fs.rmSync(readable, { force: true });
-        fs.rmSync(dataConfig, { force: true });
-        fs.rmSync(path.dirname(plugin), { recursive: true, force: true });
+        probe.cleanup();
         fs.rmSync(agentHome, { recursive: true, force: true });
       }
-    },
-    180_000
+    }
   );
 
   describe('approvals and steer (spec §10, §11)', () => {

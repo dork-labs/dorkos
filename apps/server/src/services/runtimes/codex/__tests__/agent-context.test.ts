@@ -17,9 +17,12 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { Codex } from '@openai/codex-sdk';
+import { ScriptedCodexTransport } from './fixtures/scripted-transport.js';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { initConfigManager } from '../../../core/config-manager.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -136,6 +139,7 @@ describe('what a Codex turn carries', () => {
     sdkMocks.resumedThreads = 0;
     sdkMocks.failNextTurn = false;
     agentDir = await mkdtemp(path.join(tmpdir(), 'codex-agent-context-'));
+    initConfigManager(path.join(agentDir, 'test-config'));
     await mkdir(path.join(agentDir, '.dork'), { recursive: true });
     await writeFile(
       path.join(agentDir, '.dork', 'agent.json'),
@@ -163,7 +167,7 @@ describe('what a Codex turn carries', () => {
   /** A runtime whose mesh knows about `agentDir`, unless `mesh: null`. */
   function makeRuntime(opts: { mesh?: AgentRegistryPort | null } = {}): CodexRuntime {
     const runtime = new CodexRuntime({
-      transport: 'exec',
+      transport: new ScriptedCodexTransport((options) => new Codex(options)),
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/bin/codex',
       defaultCwd: agentDir,
