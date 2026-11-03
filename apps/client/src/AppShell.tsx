@@ -40,7 +40,7 @@ import {
   useSessionDetail,
 } from '@/layers/entities/session';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
-import { useConfig, useConfigSync } from '@/layers/entities/config';
+import { useBlockBuddiesSync, useConfig, useConfigSync } from '@/layers/entities/config';
 import { useSeedProfileTimezone } from '@/layers/entities/user-profile';
 import { useAgentsSync } from '@/layers/entities/mesh';
 import { useConnectorAgentRequestsSync } from '@/layers/entities/connectors';
@@ -266,6 +266,7 @@ export function AppShell() {
   // sync, and the approval checks that finish a pairing).
   useCommunityWatchers();
   useTodosPalette();
+  useBlockBuddiesSync();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,

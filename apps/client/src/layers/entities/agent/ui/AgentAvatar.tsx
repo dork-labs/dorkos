@@ -41,6 +41,10 @@ export interface AgentAvatarProps {
    * convention got skipped — the silhouette was, and that stays sealed.
    */
   badge?: React.ReactNode;
+  /** What this agent's Block Buddy grows from (DOR-3065). From `resolveAgentVisual`. */
+  buddySeed?: string;
+  /** The buddy's side on a phone, for a slot that grows there. */
+  buddyPhoneSize?: number;
   className?: string;
 }
 
@@ -69,6 +73,8 @@ export function AgentAvatar({
   size,
   status,
   badge,
+  buddySeed,
+  buddyPhoneSize,
   className,
 }: AgentAvatarProps) {
   return (
@@ -83,6 +89,8 @@ export function AgentAvatar({
       // `kind="agent"` supply the Bot glyph. Only `null` suppresses it.
       badge={badge}
       status={status}
+      buddySeed={buddySeed}
+      buddyPhoneSize={buddyPhoneSize}
       className={className}
     />
   );

@@ -123,6 +123,8 @@ interface AgentIdentityBaseProps extends VariantProps<typeof agentIdentityVarian
    * `onClick` button) when there is no room to draw it.
    */
   nameHidden?: boolean;
+  /** What this agent's Block Buddy grows from (DOR-3065). From `resolveAgentVisual`. */
+  buddySeed?: string;
   className?: string;
   /**
    * When provided, wraps the identity in a button element.
@@ -150,6 +152,7 @@ export function AgentIdentity({
   size,
   status,
   nameHidden,
+  buddySeed,
   className,
   onClick,
   onAvatarClick,
@@ -177,6 +180,7 @@ export function AgentIdentity({
       imageUrl={imageUrl}
       size={size}
       status={status}
+      buddySeed={buddySeed}
       className={cn(marksIdentity && identityMarkRing.group)}
     />
   );

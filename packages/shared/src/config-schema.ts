@@ -710,6 +710,22 @@ export const UserConfigSchema = z.object({
     })
     .default(() => ({ enabled: false })),
   /**
+   * Agent avatars. `blockBuddies.enabled` draws each agent as its Block Buddy
+   * instead of its emoji (DOR-3065).
+   *
+   * An experiment, OFF by default: while it is off the client never loads the
+   * package and every avatar is drawn exactly as before. Read from the config
+   * cache, so a change takes effect at once. Graduation is DOR-3065, and it
+   * cannot default on until the buddy is seeded from the agent's nickname.
+   */
+  avatars: z
+    .object({
+      blockBuddies: z
+        .object({ enabled: z.boolean().default(false) })
+        .default(() => ({ enabled: false })),
+    })
+    .default(() => ({ blockBuddies: { enabled: false } })),
+  /**
    * Letting agents on other systems talk to the agents on this one.
    *
    * A2A is a shared language for agents built by different people. Turn this on

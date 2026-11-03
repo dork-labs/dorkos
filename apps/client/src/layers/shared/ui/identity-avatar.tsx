@@ -11,7 +11,9 @@ import {
   readableForeground,
 } from '@/layers/shared/lib/readable-foreground';
 import { cn } from '@/layers/shared/lib/utils';
+import { useBlockBuddies } from '@/layers/shared/lib/block-buddy/store';
 import type { IdentityOrigin } from '@/layers/shared/lib/identity-origin';
+import { BlockBuddy } from './block-buddy';
 import { AGENT_GLYPH, platformGlyph } from './identity-glyphs';
 import {
   STATUS_DOT_COLOR,
@@ -106,6 +108,24 @@ const identityMarkRing = {
  * and nothing would report it.
  */
 const IDENTITY_MARK_GROUP = 'group/identity';
+
+/** A buddy's side in pixels at each size. The tile draws its own art per size. */
+const BUDDY_PX = { xs: 18, sm: 28, md: 36, lg: 48 } as const;
+
+/**
+ * What a buddy wears outside its tile. A state never changes the face, so the
+ * words and the ring carry what the pose starts.
+ *
+ * The 1px plate in the page colour is on every buddy: the genome holds each ground
+ * at 3:1 against the page, not against a tinted row, so the plate gives it the
+ * page back. `working` draws no ring, because rows keep their own moving dot.
+ */
+const BUDDY_EDGE: Record<IdentityStatus, string> = {
+  idle: 'shadow-[0_0_0_1px_var(--background)]',
+  working: 'shadow-[0_0_0_1px_var(--background)]',
+  'needs-you': 'shadow-[0_0_0_1px_var(--background),0_0_0_2.5px_var(--status-warning-fg)]',
+  error: 'shadow-[0_0_0_1px_var(--background),0_0_0_2.5px_var(--destructive)]',
+};
 
 const identityAvatarVariants = cva(
   // The disc's own colour change rides the identity grammar's slowest speed and
@@ -307,6 +327,14 @@ export interface IdentityAvatarProps
    * hover.
    */
   status?: IdentityStatus;
+  /**
+   * What this agent's Block Buddy grows from (DOR-3065). Inert until the
+   * experiment is on: then, for an agent with no photo, the buddy replaces the
+   * emoji, the fill, the Bot badge and the corner dot.
+   */
+  buddySeed?: string;
+  /** The buddy's side on a phone, for a slot that grows there. */
+  buddyPhoneSize?: number;
 }
 
 /**
@@ -359,6 +387,8 @@ function IdentityAvatar({
   kind,
   origin,
   status = 'idle',
+  buddySeed,
+  buddyPhoneSize,
   size,
   shape,
   variant,
@@ -392,13 +422,35 @@ function IdentityAvatar({
   const [failedUrl, setFailedUrl] = React.useState<string | null>(null);
   const drawsPhoto = imageUrl !== undefined && imageUrl !== failedUrl;
 
-  // One face, chosen once: photo, then emoji, then the fallback glyph. A
-  // ladder rather than nested ternaries in the markup, so the precedence is
-  // the thing you read — and so "no photo" means no `<img>` in the tree at
+  // The experiment's answer (DOR-3065). A photo is a deliberate choice, so it
+  // still wins. A ground of `null` is a buddy that cannot be drawn: the ladder
+  // below then takes the face this identity would have had without one.
+  const buddies = useBlockBuddies();
+  const wantsBuddy = kind === 'agent' && buddySeed !== undefined && !drawsPhoto;
+  const buddyRenderer = wantsBuddy && typeof buddies === 'object' ? buddies : null;
+  const buddyGround = buddyRenderer && buddySeed ? buddyRenderer.buddyGround(buddySeed) : null;
+  const holdsBuddy = wantsBuddy && buddies === 'loading';
+  const drawsBuddy = buddyGround !== null || holdsBuddy;
+
+  // One face, chosen once: photo, then buddy, then emoji, then the fallback
+  // glyph. A ladder rather than nested ternaries in the markup, so the precedence
+  // is the thing you read — and so "no photo" means no `<img>` in the tree at
   // all, which is the only way an absent photo cannot paint a broken-image
   // icon.
   let face: React.ReactNode;
-  if (drawsPhoto) {
+  if (buddyRenderer && buddySeed && buddyGround !== null) {
+    face = (
+      <BlockBuddy
+        renderer={buddyRenderer}
+        seed={buddySeed}
+        size={BUDDY_PX[size ?? 'sm']}
+        phoneSize={buddyPhoneSize}
+        status={status}
+      />
+    );
+  } else if (holdsBuddy) {
+    face = null;
+  } else if (drawsPhoto) {
     face = (
       <img
         src={imageUrl}
@@ -446,11 +498,18 @@ function IdentityAvatar({
       // `fallback` is a node — usually a letter, sometimes a brand mark — so
       // only the letter case can name itself here; a mark reads as "glyph".
       data-face={
-        drawsPhoto ? 'photo' : (emoji ?? (typeof fallback === 'string' ? fallback : 'glyph'))
+        drawsBuddy
+          ? 'buddy'
+          : drawsPhoto
+            ? 'photo'
+            : (emoji ?? (typeof fallback === 'string' ? fallback : 'glyph'))
       }
       {...props}
       className={cn(
         identityAvatarVariants({ size, shape: drawnShape, variant: drawnVariant }),
+        // 19% of the side at every size, the same corner the tile draws.
+        drawsBuddy && 'rounded-[19%]',
+        holdsBuddy && 'bg-muted',
         className
       )}
       // The background is a per-identity colour — carried on the record or
@@ -463,27 +522,44 @@ function IdentityAvatar({
       // same "don't assume white" call this inline exception already makes
       // for the background.
       style={
-        {
-          // Published so a STYLESHEET can reach this identity's colour. An
-          // inline `background-color` beats every rule in every stylesheet, so
-          // for as long as the colour lived only there, no `:hover` could tint
-          // it, ring it, or lend it to an ancestor's border — which is the
-          // structural reason identity surfaces had no colour response at all.
-          // A custom property inherits, so the disc, its descendants, and any
-          // ancestor that sets the same property can all read it from a class
-          // string. Purely additive: nothing below changes behaviour. Follows
-          // `--runtime-accent` (`RuntimeCardView.tsx`) exactly.
-          '--identity-color': color,
-          backgroundColor: isFill
-            ? color
-            : `color-mix(in oklch, ${color} ${TINT_STRENGTH}, transparent)`,
-          ...(isFill ? { color: readableForeground(color) } : {}),
-          ...style,
-        } as React.CSSProperties
+        drawsBuddy
+          ? ({ '--identity-color': buddyGround ?? color, ...style } as React.CSSProperties)
+          : ({
+              // Published so a STYLESHEET can reach this identity's colour. An
+              // inline `background-color` beats every rule in every stylesheet, so
+              // for as long as the colour lived only there, no `:hover` could tint
+              // it, ring it, or lend it to an ancestor's border — which is the
+              // structural reason identity surfaces had no colour response at all.
+              // A custom property inherits, so the disc, its descendants, and any
+              // ancestor that sets the same property can all read it from a class
+              // string. Purely additive: nothing below changes behaviour. Follows
+              // `--runtime-accent` (`RuntimeCardView.tsx`) exactly.
+              '--identity-color': color,
+              backgroundColor: isFill
+                ? color
+                : `color-mix(in oklch, ${color} ${TINT_STRENGTH}, transparent)`,
+              ...(isFill ? { color: readableForeground(color) } : {}),
+              ...style,
+            } as React.CSSProperties)
       }
     >
       {face}
-      {drawnBadge != null && (
+      {drawsBuddy && (
+        // A child, not the disc's own shadow: an inline `box-shadow` on the disc
+        // would beat the Mark tier's hover ring, which is also a box-shadow.
+        <span
+          aria-hidden
+          data-slot="identity-buddy-edge"
+          className={cn(
+            'pointer-events-none absolute inset-0 rounded-[inherit]',
+            BUDDY_EDGE[status]
+          )}
+        />
+      )}
+      {drawsBuddy && status !== 'idle' && (
+        <span className="sr-only">{STATUS_DOT_LABEL[status]}</span>
+      )}
+      {drawnBadge != null && !(drawsBuddy && badge === undefined) && (
         // Sized off the circle's own font size, exactly as the fallback glyph
         // is, so one rule covers all four diameters instead of a lookup per
         // size. `text-[0.62em]` sets the mark; `size-[1.35em]` is 1.35 of THAT
@@ -525,7 +601,7 @@ function IdentityAvatar({
           {drawnBadge}
         </span>
       )}
-      {status !== 'idle' && (
+      {status !== 'idle' && !drawsBuddy && (
         // Opposite the badge, so an agent can wear both. The ring is the page
         // background rather than a border, for the same reason the badge's
         // plate is: it reads as separate from the disc over any tint, and a

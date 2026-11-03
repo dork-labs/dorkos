@@ -400,7 +400,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
     // `navigation` (no saved place). What the chat on screen shows you about
     // the work behind it, and how a chat with one agent is drawn (DOR-3074).
     description: 'How your chats are drawn, and what they show you about the work behind them',
-    paths: ['ui.dmView', 'ui.showSessions'],
+    paths: ['ui.dmView', 'ui.showSessions', 'avatars.blockBuddies.enabled'],
   },
   {
     stake: 'attention',

@@ -233,6 +233,9 @@ export function AgentListItem({
             color={visual.color}
             emoji={visual.emoji}
             size="xs"
+            buddySeed={visual.buddySeed}
+            // `SIDEBAR_FACE` grows the slot to 24 on a phone: the full buddy, not the mini.
+            buddyPhoneSize={24}
             className={SIDEBAR_FACE}
           />
         }

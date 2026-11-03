@@ -30,6 +30,13 @@ export const DOCS_EXPERIMENT = 'docs.enabled';
 export const DM_VIEW_EXPERIMENT = 'ui.dmView';
 
 /**
+ * The experiment every agent face reads (DOR-3065): each agent drawn as its
+ * Block Buddy. Off by default; while it is off the package never loads and every
+ * avatar is drawn exactly as before.
+ */
+export const BLOCK_BUDDIES_EXPERIMENT = 'avatars.blockBuddies.enabled';
+
+/**
  * Whether one Settings → Experiments switch is on, read from a config answer.
  *
  * The server resolves every registered experiment into `config.experiments`

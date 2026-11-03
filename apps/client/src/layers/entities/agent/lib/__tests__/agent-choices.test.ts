@@ -51,7 +51,7 @@ describe('toAgentPickerCandidates', () => {
       { '/w/ana': { id: '01JAAAAAAAAAAAAAAAAAAAAAAA', color: '#6366f1', icon: '🔍' } }
     );
 
-    expect(candidate.visual).toEqual({ color: '#6366f1', emoji: '🔍' });
+    expect(candidate.visual).toMatchObject({ color: '#6366f1', emoji: '🔍' });
   });
 
   it('carries what an agent says it is for, in the agent’s own words', () => {

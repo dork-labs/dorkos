@@ -1502,6 +1502,20 @@ Click a link while reading to open that doc in the canvas. While editing, Cmd-cl
 
 Links find the `.md` files in the folder your chat works in and every folder inside it, skipping hidden folders and folders such as `node_modules`. In a very large folder, the `[[` list holds only the docs nearest the top: it stops after 2,000 docs, 2,000 folders, or 8 folders deep. A link to a doc past that is still looked for across the whole folder. If even that takes too long, the link says the folder is too big to check, rather than calling the doc missing. When two docs share a name, the one nearest the doc you are writing in wins. Agents can read this setting but cannot change it.
 
+### Block Buddies avatars
+
+<TypeTable
+  type={{
+    'avatars.blockBuddies.enabled': {
+      description: 'Draw each agent as its own Block Buddy. Off by default.',
+      type: 'boolean',
+      default: 'false',
+    },
+  }}
+/>
+
+Settings → Advanced → Experiments lists **Block Buddies avatars**, off by default. Turn it on, and each agent's emoji becomes a small block face that is the same everywhere you see that agent. People keep their round photos and letters. This is early, so an agent's face may change once before the experiment ends. Agents can read this setting but cannot change it.
+
 ### Chats with one agent
 
 <TypeTable

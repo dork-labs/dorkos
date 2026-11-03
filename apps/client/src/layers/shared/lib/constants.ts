@@ -18,6 +18,8 @@ export const STORAGE_KEYS = {
   ROOM_THREAD_WIDTH: 'dorkos-room-thread-width',
   /** Whether Settings' folded Advanced group is open (DOR-2629). */
   SETTINGS_ADVANCED_OPEN: 'dorkos-settings-advanced-open',
+  /** Whether the Block Buddies experiment was on last time, so a reload draws no emoji first. */
+  BLOCK_BUDDIES_ON: 'dorkos-block-buddies-on',
 } as const;
 
 /**

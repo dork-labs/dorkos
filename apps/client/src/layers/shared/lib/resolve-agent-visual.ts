@@ -13,6 +13,27 @@ export interface AgentVisual {
   color: string;
   /** Single emoji character */
   emoji: string;
+  /**
+   * What this agent's Block Buddy grows from, when it has one (DOR-3065). Inert
+   * data: only an avatar decides, from the live experiment, whether to draw it.
+   */
+  buddySeed?: string;
+}
+
+/**
+ * An agent's real id: a ULID assigned at registration. Callers with no manifest
+ * pass a slug, a path or a name here, and those would draw a face the agent never
+ * wears anywhere else, so they get no buddy (DOR-1143).
+ */
+const AGENT_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/**
+ * What an agent's Block Buddy grows from, when this string is a real agent id.
+ *
+ * @param id - Whatever the caller holds as the agent's id.
+ */
+export function agentBuddySeed(id: string): string | undefined {
+  return AGENT_ID.test(id) ? id : undefined;
 }
 
 /**
@@ -40,8 +61,10 @@ export function resolveAgentVisual(agent: AgentVisualSource): AgentVisual {
   // largest disc on screen (DOR-1122). Absent means "nobody has said"; empty
   // means "somebody said none".
   const seeded = seedAgentFace(agent.id);
+  const buddySeed = agent.icon === '' ? undefined : agentBuddySeed(agent.id);
   return {
     color: agent.color ?? seeded.color,
     emoji: agent.icon ?? seeded.icon,
+    ...(buddySeed ? { buddySeed } : {}),
   };
 }

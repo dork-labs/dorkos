@@ -386,6 +386,9 @@ export const CONFIG_WRITE_POLICY = {
   // Whether the Docs experiment is on (DOR-2993). Like every experiment, a
   // person tries it, never an agent.
   'docs.enabled': 'operator-only',
+  // Whether agents are drawn as Block Buddies (DOR-3065). Like every experiment,
+  // a person tries it, never an agent.
+  'avatars.blockBuddies.enabled': 'operator-only',
   // Whether this DorkOS joins and talks to spaces on other servers (DOR-2740).
   // Another "who can this instance reach" door, so a person opens it, never an
   // agent.

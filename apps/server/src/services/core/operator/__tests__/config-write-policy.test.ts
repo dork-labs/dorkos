@@ -71,6 +71,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'activity.retentionDays',
       'agents.defaultDirectory',
       'auth.enabled',
+      // Whether agents are drawn as Block Buddies (DOR-3065).
+      'avatars.blockBuddies.enabled',
       'browser.enabled',
       'cloud.credits.agents',
       'cloud.credits.defaults',

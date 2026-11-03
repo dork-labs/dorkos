@@ -42,6 +42,7 @@ export {
   type SetPanelTabPlacement,
 } from './model/use-panel-tab-placements';
 export { useComposerRichText, useUpdateComposerPrefs } from './model/use-composer-prefs';
+export { useBlockBuddiesSync } from './model/use-block-buddies-sync';
 export {
   useDmViewEnabled,
   useShowSessions,

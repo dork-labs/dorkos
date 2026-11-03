@@ -82,6 +82,7 @@ function ClusterHeader({
         imageUrl={face.imageUrl}
         fallback={face.fallback}
         origin={face.origin}
+        buddySeed={face.buddySeed}
       />
       <span className="truncate text-sm font-medium">{owner.displayName}</span>
       <span className="text-muted-foreground truncate text-xs">{teamMemberLabel(owner)}</span>

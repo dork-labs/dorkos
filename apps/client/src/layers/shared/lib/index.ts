@@ -317,8 +317,10 @@ export {
   BOOT_CACHE_MAX_AGE_MS,
 } from './boot-cache-keys';
 export { classifyContent, type ContentType } from './classify-content';
-export { resolveAgentVisual } from './resolve-agent-visual';
+export { agentBuddySeed, resolveAgentVisual } from './resolve-agent-visual';
 export type { AgentVisual, AgentVisualSource } from './resolve-agent-visual';
+export { setBlockBuddiesEnabled, useBlockBuddies } from './block-buddy/store';
+export type { BlockBuddiesState, BuddyRenderer } from './block-buddy/store';
 export type { IdentityOrigin } from './identity-origin';
 export { resolveIdentityFace } from './identity-face';
 export type {

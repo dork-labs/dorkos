@@ -148,6 +148,8 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // opened (DOR-3074). Views only: nothing is sent, granted or bounded.
   'ui.dmView',
   'ui.showSessions',
+  // Whether agents are drawn as Block Buddies (DOR-3065). A view only.
+  'avatars.blockBuddies.enabled',
   // Bookkeeping for the one-shot permission upgrade sweep: which server version
   // already ran it. It grants nothing and no gate reads it.
   'permissions.upgradeSweptVersion',

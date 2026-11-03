@@ -235,6 +235,8 @@ export const CONFIG_DISCLOSURE = {
   'sessionRelay.enabled': 'expose',
   // Whether the Docs experiment is on (DOR-2993): a plain boolean.
   'docs.enabled': 'expose',
+  // Whether agents are drawn as Block Buddies (DOR-3065): a plain boolean.
+  'avatars.blockBuddies.enabled': 'expose',
   // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
   'spaces.enabled': 'expose',
   // The official space's public link (spec `official-community-space` D4): a

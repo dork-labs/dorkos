@@ -84,7 +84,7 @@ function shortProjectPath(path: string | undefined): string | null {
  * the column set always change together.
  */
 function IdentityCell({ row, onOpen }: { row: AgentTableRow; onOpen: () => void }) {
-  const { color, emoji } = resolveAgentVisual(row);
+  const visual = resolveAgentVisual(row);
   const project = shortProjectPath(row.projectPath);
   const runtime = getRuntimeDescriptor(row.runtime).label;
   return (
@@ -100,7 +100,7 @@ function IdentityCell({ row, onOpen }: { row: AgentTableRow; onOpen: () => void 
           the Activity cell beside this one already says in words ("Unreachable",
           "Stale", "Never active"). The disc used to draw both, sourced from the
           same hour-old heartbeat. */}
-      <AgentAvatar color={color} emoji={emoji} size="xs" />
+      <AgentAvatar {...visual} size="xs" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium hover:underline">
           {getAgentDisplayName(row)}

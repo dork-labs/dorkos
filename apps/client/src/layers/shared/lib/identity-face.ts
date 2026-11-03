@@ -62,6 +62,8 @@ export interface IdentityFaceOverride {
    * photo beside a fresh colour.
    */
   imageUrl?: string;
+  /** What the agent's Block Buddy grows from (DOR-3065). */
+  buddySeed?: string;
 }
 
 /** The fragments a caller happens to hold about one identity. */
@@ -92,6 +94,8 @@ export interface IdentityFace {
   fallback: string;
   /** Where a human is posting from, when the caller knew. */
   origin?: IdentityOrigin;
+  /** What the agent's Block Buddy grows from, when the caller knew (DOR-3065). */
+  buddySeed?: string;
 }
 
 /**
@@ -149,5 +153,6 @@ export function resolveIdentityFace(input: IdentityFaceInput): IdentityFace {
     imageUrl: override?.imageUrl ?? record.imageUrl,
     fallback: initialOf(record.displayName),
     origin,
+    ...(override?.buddySeed ? { buddySeed: override.buddySeed } : {}),
   };
 }

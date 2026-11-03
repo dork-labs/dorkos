@@ -318,6 +318,7 @@ export function TeamMemberCard({
         imageUrl={face.imageUrl}
         fallback={face.fallback}
         origin={face.origin}
+        buddySeed={face.buddySeed}
         // The disc takes no hover ring — the card's own border is already this
         // identity answering, and a second colour response on the same hover
         // would be one fact drawn twice. It carries no wake marker either: the

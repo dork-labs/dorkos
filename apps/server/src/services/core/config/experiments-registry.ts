@@ -134,6 +134,14 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
     costNote: 'Early. Model and context move behind Show sessions.',
     graduationIssue: 'DOR-3074',
   },
+  {
+    // Every agent face reads this one leaf (DOR-3065). It stays off until the
+    // buddy is seeded from the agent's nickname, which changes every face once.
+    path: 'avatars.blockBuddies.enabled',
+    title: 'Block Buddies avatars',
+    description: 'Give each agent its own Block Buddy face.',
+    graduationIssue: 'DOR-3065',
+  },
   // `runtimes.claudeCode.persistentSession` GRADUATED here (DOR-1290, spec
   // `full-power-defaults`): warm agents ship on by default, so the entry went
   // out in the same change that flipped the default, exactly as the contract

@@ -5,7 +5,7 @@
  */
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
-import { resolveIdentityFace, type IdentityFace } from '@/layers/shared/lib';
+import { agentBuddySeed, resolveIdentityFace, type IdentityFace } from '@/layers/shared/lib';
 
 /**
  * Turn a `TeamMember` into the face `IdentityAvatar` draws.
@@ -51,7 +51,7 @@ export function teamMemberFace(member: TeamMember): IdentityFace {
   // exactly why the failure would be silent if that ever changed.
   const emoji =
     member.emoji || (member.kind === 'agent' ? seedAgentFace(member.id).icon : undefined);
-  return resolveIdentityFace({
+  const face = resolveIdentityFace({
     record: {
       id: member.id,
       kind: member.kind,
@@ -62,4 +62,7 @@ export function teamMemberFace(member: TeamMember): IdentityFace {
     },
     origin: member.origin,
   });
+  // The same id the emoji rung above hashes, so the buddy matches the sidebar's.
+  const buddySeed = member.kind === 'agent' ? agentBuddySeed(member.id) : undefined;
+  return buddySeed ? { ...face, buddySeed } : face;
 }
