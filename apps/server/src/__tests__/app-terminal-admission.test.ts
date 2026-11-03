@@ -323,7 +323,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/work-queues');
     // 86 -> 87: to-dos (DOR-3088), mounted only behind `DORKOS_TODOS_ENABLED`.
     expect(mounts).toContain('/api/todos');
-    expect(mounts).toHaveLength(87);
+    // The off-by-default discovery route remains mounted and must meet admission too.
+    expect(mounts).toContain('/api/your-browser');
+    expect(mounts).toHaveLength(88);
     const byHand = [
       '/',
       '/x/fixture',

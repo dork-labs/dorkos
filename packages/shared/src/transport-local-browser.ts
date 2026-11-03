@@ -6,6 +6,8 @@ import type {
 
 /** Human controls for a local, live browser; agent actions use a separate scoped tool surface. */
 export interface LocalBrowserTransport {
+  /** Scan profile metadata only after a person taps Find my browsers. Never cache the response. */
+  scanYourBrowsers(): Promise<import('./your-browser.js').YourBrowserScan>;
   getLocalBrowserState(): Promise<LocalBrowserState>;
   getLocalBrowserCapabilities(): Promise<LocalBrowserCapabilities>;
   openLocalBrowser(input: LocalBrowserOpen): Promise<LocalBrowserState>;

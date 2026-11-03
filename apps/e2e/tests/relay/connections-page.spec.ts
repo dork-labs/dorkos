@@ -16,14 +16,16 @@ test.describe('Connections page @smoke', () => {
     await basePage.waitForAppReady();
   });
 
-  test('is one list of apps, with no tabs and no regions to learn', async ({ connectionsPage }) => {
+  test('keeps apps in one list with browser discovery off by default', async ({
+    connectionsPage,
+  }) => {
     await connectionsPage.goto();
 
     await expect(connectionsPage.heading).toBeAttached();
     await expect(connectionsPage.allApps).toBeVisible();
-    // The global inspector has its own tabs; the Connections page is one list.
+    // The unreleased browser discovery flag is off on the default server.
     await expect(connectionsPage.content).toBeVisible();
-    await expect(connectionsPage.content.getByRole('tablist')).toHaveCount(0);
+    await expect(connectionsPage.content.getByRole('tab')).toHaveCount(0);
     await expect(connectionsPage.content.getByRole('region', { name: 'Messaging' })).toHaveCount(0);
     await expect(
       connectionsPage.content.getByRole('region', { name: 'Accounts', exact: true })
@@ -103,4 +105,67 @@ test.describe('Connections page @smoke', () => {
     await expect(connectionsPage.carrierSection).toBeVisible();
     await expect(connectionsPage.list.getByText(/\bprovider\b/i)).toHaveCount(0);
   });
+});
+
+test('browser discovery reads only on tap and forgets picker email @smoke', async ({
+  connectionsPage,
+}, testInfo) => {
+  const page = connectionsPage.page;
+  // UI proof only: enable the hidden surface in the response, without changing
+  // the real server flag or reading any browser profile on the host.
+  await page.route('**/api/config', async (route) => {
+    const response = await route.fetch();
+    const config = await response.json();
+    await route.fulfill({ response, json: { ...config, yourBrowser: { enabled: true } } });
+  });
+  let scans = 0;
+  await page.route('**/api/your-browser/scan', async (route) => {
+    scans += 1;
+    expect(route.request().method()).toBe('POST');
+    await route.fulfill({
+      json: {
+        supported: true,
+        unreadable: [],
+        profiles: [
+          {
+            browser: 'chrome',
+            directory: 'Default',
+            displayName: 'Demo work',
+            email: 'work@example.test',
+          },
+          {
+            browser: 'edge',
+            directory: 'Profile 1',
+            displayName: 'Demo personal',
+            email: 'personal@example.test',
+          },
+        ],
+      },
+    });
+  });
+  await connectionsPage.goto();
+  await page.getByRole('tab', { name: 'Browsers', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Find my browsers' })).toBeVisible();
+  expect(scans).toBe(0);
+  await page.getByRole('button', { name: 'Find my browsers' }).click();
+  await expect(page.getByText('work@example.test', { exact: true })).toBeVisible();
+  expect(scans).toBe(1);
+  for (const width of [390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(page.getByRole('button', { name: 'Use Chrome · Demo work' })).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+    ).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`browser-picker-${width}.png`) });
+  }
+  await page.getByRole('button', { name: 'Use Chrome · Demo work' }).click();
+  await expect(page.getByText('work@example.test', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('personal@example.test', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Selected · Off', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Chrome · Demo work' })).toBeFocused();
+  await page.getByRole('tab', { name: 'Apps', exact: true }).click();
+  await page.getByRole('tab', { name: 'Browsers', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Find my browsers' })).toBeVisible();
+  await expect(page.getByText('Selected · Off', { exact: true })).toHaveCount(0);
+  expect(scans).toBe(1);
 });

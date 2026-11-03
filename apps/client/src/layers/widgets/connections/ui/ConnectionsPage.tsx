@@ -26,6 +26,7 @@ import {
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import { Button, focusPageHeading, PageContainer, PageHeading } from '@/layers/shared/ui';
 import { AppPanel } from './AppPanel';
+import { ConnectionsBrowserTabs } from './ConnectionsBrowserTabs';
 import { AppUseChoice } from './AppUseChoice';
 import { ChatAppPanel } from './ChatAppPanel';
 import { useChatAppSetup } from './ChatAppSetup';
@@ -40,8 +41,8 @@ type ConnectionsSearch = {
 };
 
 /**
- * The /connections page: one plain list of apps (design record
- * `connections-one-list`, ADR `260927-033250`).
+ * The /connections page: one list of apps (ADR `260927-033250`) and a
+ * separate, person-only browser setup tab (DOR-3215).
  *
  * "Yours" holds every app you connected, one row each, with its state and the
  * one thing to do next; "All apps" holds everything you could connect. A
@@ -204,53 +205,53 @@ export function ConnectionsPage() {
         {/* The bar overhead already says "Connections" (design decision E1);
             the heading stays for the outline and as the place focus lands. */}
         <PageHeading>Connections</PageHeading>
-        <p className="text-muted-foreground text-sm">
-          Apps your agents use, and where you reach them.
-        </p>
+        <p className="text-muted-foreground text-sm">Apps your agents use.</p>
       </header>
 
-      <div className="space-y-8">
-        <NeedsYou
-          services={data.services}
-          onOpenRequest={(requestId) => {
-            decisionOpener.current = document.activeElement as HTMLElement | null;
-            setSearch({ request: requestId });
-          }}
-          onOpenReview={(reviewRequestId) => {
-            decisionOpener.current = document.activeElement as HTMLElement | null;
-            setSearch({ review: reviewRequestId });
-          }}
-        />
+      <ConnectionsBrowserTabs>
+        <div className="space-y-8">
+          <NeedsYou
+            services={data.services}
+            onOpenRequest={(requestId) => {
+              decisionOpener.current = document.activeElement as HTMLElement | null;
+              setSearch({ request: requestId });
+            }}
+            onOpenReview={(reviewRequestId) => {
+              decisionOpener.current = document.activeElement as HTMLElement | null;
+              setSearch({ review: reviewRequestId });
+            }}
+          />
 
-        {rowActionError && (
-          <p
-            role="alert"
-            data-testid="row-action-error"
-            className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm"
-          >
-            {accountChangeError(rowActionError)}
-          </p>
-        )}
+          {rowActionError && (
+            <p
+              role="alert"
+              data-testid="row-action-error"
+              className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm"
+            >
+              {accountChangeError(rowActionError)}
+            </p>
+          )}
 
-        <AppList
-          query={query}
-          onQueryChange={setQuery}
-          data={data}
-          onOpenRow={(row) => {
-            if (row.kind === 'connecting') {
-              setConnectOpen(true);
-              return;
-            }
-            panelOpener.current = document.activeElement as HTMLElement | null;
-            setSearch({ app: row.id, who: undefined });
-          }}
-          onRowAction={onRowAction}
-          pendingRowId={pendingRowId}
-          onConnect={onConnect}
-        />
+          <AppList
+            query={query}
+            onQueryChange={setQuery}
+            data={data}
+            onOpenRow={(row) => {
+              if (row.kind === 'connecting') {
+                setConnectOpen(true);
+                return;
+              }
+              panelOpener.current = document.activeElement as HTMLElement | null;
+              setSearch({ app: row.id, who: undefined });
+            }}
+            onRowAction={onRowAction}
+            pendingRowId={pendingRowId}
+            onConnect={onConnect}
+          />
 
-        <OwnKeyPointer />
-      </div>
+          <OwnKeyPointer />
+        </div>
+      </ConnectionsBrowserTabs>
 
       <AppPanel
         row={panelRow}

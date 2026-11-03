@@ -5034,6 +5034,15 @@ export const ServerConfigSchema = z
         description:
           'To-dos feature state. Absent from an older server, which a client reads as off',
       }),
+    yourBrowser: z
+      .object({
+        enabled: z.boolean().openapi({
+          description:
+            'Whether browser discovery is enabled (`DORKOS_YOUR_BROWSER_ENABLED`). Read once at boot',
+        }),
+      })
+      .optional()
+      .openapi({ description: 'Browser discovery feature state. Absent means off' }),
     scheduler: z
       .object({
         maxConcurrentRuns: z
