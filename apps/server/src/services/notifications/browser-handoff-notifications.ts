@@ -15,9 +15,9 @@ import type { NotificationRegistryEntry } from './notification-registry.js';
 /** The most of an agent's name a row shows. */
 const MAX_AGENT_NAME = 40;
 
-/** The agent's name, cut short with an ellipsis. */
+/** The agent's name, without control or direction characters, cut short with an ellipsis. */
 function shortName(name: string | null): string {
-  const whole = name ?? 'The agent';
+  const whole = name?.replace(/[\p{Cc}\p{Cf}]/gu, '') || 'The agent';
   return whole.length > MAX_AGENT_NAME ? `${whole.slice(0, MAX_AGENT_NAME)}…` : whole;
 }
 

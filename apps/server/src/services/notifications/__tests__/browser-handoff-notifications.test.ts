@@ -29,6 +29,12 @@ describe('browser.handoff', () => {
     );
   });
 
+  it('strips control and direction characters from a name', () => {
+    const body = entry.body as (p: typeof payload) => string;
+    expect(body({ ...payload, agentName: 'At\u202Elas\n' })).toMatch(/^Atlas is paused/);
+    expect(body({ ...payload, agentName: '\u202E' })).toMatch(/^The agent is paused/);
+  });
+
   it('has no buttons, never leaves the app, and is one row per handoff', () => {
     expect(entry.actions).toBeUndefined();
     expect(entry.relay).toBe('never');

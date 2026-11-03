@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { logger } from '../../../../lib/logger.js';
 import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
 import type { SignInWindow } from '../sign-in-window.js';
 
@@ -361,6 +362,22 @@ describe('telling the app something changed', () => {
     await handover.handBack(handoffId);
     expect(handedOver).toHaveBeenCalledTimes(1);
     expect(handedOver.mock.calls[0]![0]).toMatchObject({ id: handoffId, outcome: null });
+  });
+
+  it('logs the handoff, each agent call it refuses, and how it ended, for QA to read', async () => {
+    const info = vi.spyOn(logger, 'info');
+    const { handover } = wired();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toThrow();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toThrow();
+    await handover.handBack(handoffId);
+    expect(info.mock.calls.map(([message]) => message)).toEqual([
+      '[Browser] An agent handed the browser to a person',
+      '[Browser] Refused an agent call during a handoff',
+      '[Browser] Refused an agent call during a handoff',
+      '[Browser] A browser handoff ended',
+    ]);
+    info.mockRestore();
   });
 
   it('says nothing when an outside turn is refused', async () => {

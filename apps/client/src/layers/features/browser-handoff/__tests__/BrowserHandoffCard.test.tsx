@@ -133,6 +133,14 @@ describe('BrowserHandoffCard', () => {
     expect(await screen.findByText('The agent is paused')).toBeTruthy();
   });
 
+  it('strips control and direction characters from an agent’s name', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(
+      person({ handoff: { ...handoff, agentName: 'At\u202Elas\u200F' } })
+    );
+    mount();
+    expect(await screen.findByText('Atlas is paused')).toBeTruthy();
+  });
+
   it('cuts a long agent name short, and never the folder', async () => {
     const folder = `/work/${'deep/'.repeat(30)}atlas`;
     transport.getLocalBrowserState.mockResolvedValue(
