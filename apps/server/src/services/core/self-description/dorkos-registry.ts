@@ -177,6 +177,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
     commitmentDeps: {} as CapabilityDeps['commitmentDeps'],
+    todoDeps: {} as CapabilityDeps['todoDeps'],
     workQueueDeps: {} as CapabilityDeps['workQueueDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],
