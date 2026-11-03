@@ -66,6 +66,7 @@ import { storedEntryHoldReader } from './limits/stored-entry-hold.js';
 import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget, type TurnBudgetLimits } from './limits/turn-budget.js';
+import { rememberTurnBudget } from './limits/shared-turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 import { storedUsageLimit } from './notices/usage-limit.js';
 import { getRoomSeatMover } from './reseat/create-seat-mover.js';
@@ -598,8 +599,9 @@ export function createRoomSubsystem(opts: {
     // The budget reads its own spent hour back out of this database at
     // construction, so the ceilings mean an hour of wall clock rather than an
     // hour of uptime (DOR-1205).
-    budget:
-      opts.budget ?? new RoomTurnBudget({ limits: createTurnBudgetLimits(limitsFor), db: opts.db }),
+    budget: rememberTurnBudget(
+      opts.budget ?? new RoomTurnBudget({ limits: createTurnBudgetLimits(limitsFor), db: opts.db })
+    ),
     // The message index, behind its port. Composed here rather than imported by
     // the service so the rooms domain neither knows the index is FTS5 nor which
     // `sourceId` its own rows carry.

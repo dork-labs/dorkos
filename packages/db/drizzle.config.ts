@@ -52,6 +52,7 @@ export default defineConfig({
     './src/schema/extensions/extension-decisions.ts',
     './src/schema/extensions/extension-agent-sends.ts',
     './src/schema/commitments/commitments.ts',
+    './src/schema/commitments/todo-turns.ts',
     './src/schema/work-queue/work-queue.ts',
     './src/schema/heartbeats/heartbeats.ts',
     './src/schema/remote/remote-commands.ts',

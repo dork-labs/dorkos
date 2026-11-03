@@ -41,9 +41,11 @@ export function createCommitmentsGatherer(
       changes.push({
         gatherer: 'commitments',
         key: `commitment:${promise.id}`,
+        // Its words stay out of the summary: they can be somebody else's (a to-do, DOR-3088), and
+        // the prompt shows them only inside the fenced open-promises list, by this id.
         summary: overdue
-          ? `Overdue since ${promise.dueAt}: ${promise.what}`
-          : `Due ${promise.dueAt}: ${promise.what}`,
+          ? `Overdue since ${promise.dueAt}: promise ${promise.id}`
+          : `Due ${promise.dueAt}: promise ${promise.id}`,
         at: promise.dueAt,
         ref: { kind: 'commitment', id: promise.id },
         signal: overdue ? 'commitment-overdue' : 'commitment-due',
