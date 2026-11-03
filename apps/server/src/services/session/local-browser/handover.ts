@@ -293,18 +293,21 @@ export class BrowserHandover {
   }
 
   /**
-   * A person's open goes through here, so it can't take a profile a sign-in holds.
-   * Opening the browser for another chat ends that chat's handoff.
+   * A person's open goes through here, so it can't take a profile a sign-in holds, or
+   * close a window out from under a person partway through another chat's handoff.
    *
    * @param input - The person's choice.
    */
   async open(input: LocalBrowserOpen): Promise<LocalBrowserPersonState> {
+    if (this.record?.outcome === null && this.record.sessionId !== input.sessionId)
+      throw new LocalBrowserError(
+        'handoff_open',
+        'Another agent is waiting on you in this browser. Answer its card first.'
+      );
     if (input.mode === 'new-window' && this.signIns.holds(this.folderOf(input.profileId ?? null)))
       throw new LocalBrowserError('signing_in', 'Finish signing in first.');
     await this.browser.open(input);
     this.stoppedFor = null;
-    if (this.record?.outcome === null && this.record.sessionId !== input.sessionId)
-      this.end(this.record, 'stopped');
     return this.state();
   }
 

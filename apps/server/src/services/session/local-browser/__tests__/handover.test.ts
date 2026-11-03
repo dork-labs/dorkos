@@ -288,19 +288,29 @@ describe('BrowserHandover answers', () => {
     expect((await handover.resume()).handoff?.outcome).toBe('handed-back');
   });
 
-  it('opening the browser for another chat ends this chat’s handoff', async () => {
-    const { handover } = setup();
-    await handover.ask('chat-1', 'wall');
-    const state = await handover.open({ mode: 'new-window', sessionId: 'chat-2' });
-    expect(state.handoff?.outcome).toBe('stopped');
+  it('refuses to open the browser for another chat, or none, during a handoff', async () => {
+    const { handover, browser } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    browser.open.mockClear();
+    for (const input of [{ sessionId: 'chat-2' }, {}])
+      await expect(handover.open({ mode: 'new-window', ...input })).rejects.toMatchObject({
+        code: 'handoff_open',
+      });
+    await expect(handover.open({ mode: 'embedded', sessionId: 'chat-2' })).rejects.toMatchObject({
+      code: 'handoff_open',
+    });
+    expect(browser.open).not.toHaveBeenCalled();
+    expect(browser.disconnect).not.toHaveBeenCalled();
+    expect((await handover.state()).handoff?.outcome).toBeNull();
+    await expect(handover.handBack(handoffId)).resolves.toBeDefined();
   });
 
-  it('sharing with another chat mid-handoff closes the old card, whose Continue is then refused', async () => {
-    const { handover } = setup();
+  it('lets another chat open the browser once the handoff has ended', async () => {
+    const { handover, browser } = setup();
     const { handoffId } = await handover.ask('chat-1', 'wall');
+    await handover.stop(handoffId);
     await handover.open({ mode: 'new-window', sessionId: 'chat-2' });
-    await expect(handover.handBack(handoffId)).rejects.toMatchObject({ code: 'handoff_ended' });
-    await expect(handover.stop(handoffId)).rejects.toMatchObject({ code: 'handoff_ended' });
+    expect(browser.open).toHaveBeenCalled();
   });
 });
 
@@ -435,33 +445,20 @@ describe('signing in from the Mac app’s built-in browser', () => {
     await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
   });
 
-  it('refuses a share with another chat in a new window while the person signs in', async () => {
+  it('refuses a share with another chat, in any mode, while the person signs in', async () => {
     const { handover, browser } = panel();
     const { handoffId } = await handover.ask('chat-1', 'password');
     await handover.signIn({ handoffId });
     browser.open.mockClear();
-    await expect(handover.open({ mode: 'new-window', sessionId: 'chat-2' })).rejects.toMatchObject({
-      code: 'signing_in',
-    });
+    for (const mode of ['new-window', 'embedded'] as const)
+      await expect(handover.open({ mode, sessionId: 'chat-2' })).rejects.toMatchObject({
+        code: 'handoff_open',
+      });
     expect(browser.open).not.toHaveBeenCalled();
     expect((await handover.state()).handoff?.outcome).toBeNull();
     await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
       code: 'handed_to_person',
     });
-  });
-
-  it('a person sharing the panel with another chat mid-sign-in ends the handoff, and that chat waits for the window', async () => {
-    const { handover, finish } = panel();
-    const { handoffId } = await handover.ask('chat-1', 'password');
-    await handover.signIn({ handoffId });
-    const state = await handover.open({ mode: 'embedded', sessionId: 'chat-2' });
-    expect(state.handoff?.outcome).toBe('stopped');
-    await expect(handover.requireAgentMayUse('chat-2')).rejects.toMatchObject({
-      code: 'signing_in',
-    });
-    await expect(handover.handBack(handoffId)).rejects.toMatchObject({ code: 'handoff_ended' });
-    finish('saved');
-    await expect(handover.requireAgentMayUse('chat-2')).resolves.toBeUndefined();
   });
 
   it('Continue reopens in a new window at the page saved when the handoff began', async () => {
