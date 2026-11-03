@@ -420,6 +420,7 @@ export class TodoService {
         'Only the person, or the agent it is assigned to, can write how it ended.'
       );
       patch.note = change.note.trim() || null;
+      touchesWords = true;
     }
     if (change.what !== undefined && change.what !== row.what) {
       this.require(
@@ -487,7 +488,8 @@ export class TodoService {
     if (Object.keys(patch).length === 0) {
       throw new CommitmentError('NOTHING_TO_CHANGE', 'Nothing to change.');
     }
-    if (touchesWords) {
+    // Anything a request that did not prove the person changes lowers the row, the order included.
+    if (touchesWords || (actor.kind === 'person' && !actor.proven)) {
       const floor = floorAfter(row, actor);
       if (floor.authority !== row.authority) {
         audit.push({ field: 'authority', before: row.authority, after: floor.authority });

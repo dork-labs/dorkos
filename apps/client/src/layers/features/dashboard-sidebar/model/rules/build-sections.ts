@@ -435,18 +435,23 @@ function doorRow(
  *
  * **A top item never shows before its page exists.** Threads holds every thread
  * you are in, the Directory every agent and person; each is here because its
- * page is.
+ * page is. To-dos stands between them only while to-dos are switched on.
+ *
+ * @param todos - The To-dos door's state, or `null` while to-dos are off.
  */
-function topSection(): SidebarSectionModel {
+function topSection(todos: SidebarState['todos']): SidebarSectionModel {
+  const rows = [doorRow('open-threads', 'threads', 'Threads', 'top:threads')];
+  if (todos !== null) {
+    const door = doorRow('open-todos', 'todos', 'To-dos', 'top:todos');
+    rows.push(todos.badge > 0 ? { ...door, count: todos.badge } : door);
+  }
+  rows.push(doorRow('open-directory', 'directory', 'Directory', 'top:directory'));
   return {
     id: 'top',
     label: null,
     collapsible: false,
     collapsed: false,
-    rows: [
-      doorRow('open-threads', 'threads', 'Threads', 'top:threads'),
-      doorRow('open-directory', 'directory', 'Directory', 'top:directory'),
-    ],
+    rows,
     reason: 'section:top',
   };
 }
@@ -616,7 +621,7 @@ export function buildSections(state: SidebarState): SidebarSectionModel[] {
   );
 
   return [
-    topSection(),
+    topSection(state.todos),
     ...groupSections,
     ...SIDEBAR_SECTION_IDS.map((id) =>
       id === 'dms'

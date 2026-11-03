@@ -1,6 +1,6 @@
 /**
  * The work queue slice of the mock Transport (DOR-3462), and the one spread that
- * brings it and the commitments slice into `createMockTransport`, so that file
+ * brings it, the commitments slice and the to-dos slice into `createMockTransport`, so that file
  * stays inside its line limit.
  *
  * @module test-utils/mock-work-queue
@@ -8,6 +8,7 @@
 import { vi } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';
 import { commitmentTransportMocks } from './mock-commitments.js';
+import { todoTransportMocks } from './mock-todos.js';
 
 /** The work queue methods of the Transport port. */
 type WorkQueueMethods = Pick<
@@ -49,7 +50,7 @@ function workQueueTransportMocks(): WorkQueueMethods {
   };
 }
 
-/** The commitments and work queue methods, for `createMockTransport` to spread. */
+/** The commitments, to-dos and work queue methods, for `createMockTransport` to spread. */
 export function agentWorkTransportMocks() {
-  return { ...commitmentTransportMocks(), ...workQueueTransportMocks() };
+  return { ...commitmentTransportMocks(), ...todoTransportMocks(), ...workQueueTransportMocks() };
 }

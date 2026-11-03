@@ -11,6 +11,7 @@ import { refuseUnlessAccountOwner } from '../../lib/caller-authority.js';
 import type { CommitmentRouterDeps } from '../../routes/commitments.js';
 import { todoNeedsStepUp, type TodoRouterDeps } from '../../routes/todos.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
+import { ownerAccountExists } from '../core/auth/gate-policy.js';
 import { personProof } from './caller.js';
 import { CommitmentService } from './commitment-service.js';
 import { CommitmentStore } from './commitment-store.js';
@@ -114,6 +115,8 @@ export function wireCommitments(deps: CommitmentWiringDeps): CommitmentWiring {
     todoRouteDeps: {
       todos,
       personProven: personProof,
+      // A failed lookup reads as an owner, so the no-owner allowance fails closed.
+      ownerExists: ownerAccountExists,
       needsStepUp: todoNeedsStepUp,
       readSource: (entryId) => readTodoSourceFacts(deps.db, entryId),
     },

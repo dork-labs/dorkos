@@ -29,6 +29,7 @@ export const APP_ROUTE_PATHS = [
   '/tasks',
   '/team',
   '/threads',
+  '/todos',
   '/workspaces',
 ] as const;
 

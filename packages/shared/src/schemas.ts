@@ -5022,6 +5022,18 @@ export const ServerConfigSchema = z
       })
       .optional()
       .openapi({ description: 'Relay message bus feature state' }),
+    todos: z
+      .object({
+        enabled: z.boolean().openapi({
+          description:
+            'Whether the to-do routes are mounted (`DORKOS_TODOS_ENABLED`). Read once, at boot',
+        }),
+      })
+      .optional()
+      .openapi({
+        description:
+          'To-dos feature state. Absent from an older server, which a client reads as off',
+      }),
     scheduler: z
       .object({
         maxConcurrentRuns: z

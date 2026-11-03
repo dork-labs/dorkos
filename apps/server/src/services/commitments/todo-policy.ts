@@ -3,8 +3,11 @@
  * Must 6). Enforced from the stored row, on the server, never from what a caller sends.
  *
  * "The person" always means a PROVEN person (`personProof`). A request that only passed this
- * computer's open gate may make a to-do (at the stranger bound) but changes none: any program here
- * could have sent it.
+ * computer's open gate (any program here could have sent it) may make a to-do, at the stranger
+ * bound. On an install with no owner account, where nobody can ever prove the person, it may do
+ * one more thing: finish, reopen, note or reorder a to-do assigned to the person, which never
+ * starts an agent turn (Security, #3460). With an owner account it may not. It never reassigns,
+ * retitles or redates anything, and every change it makes lowers the row to the stranger bound.
  *
  * @module services/commitments/todo-policy
  */
@@ -62,13 +65,17 @@ function madeBy(row: Pick<CommitmentRow, 'assignedByKind' | 'assignedBy'>, agent
 }
 
 /**
- * Whether an actor may change a to-do's state: the person, or the agent it is assigned to.
+ * Whether an actor may change a to-do's state or how it ended: the person, or the agent it is
+ * assigned to. An unproven person may only on an install with no owner account,
+ * and only on a to-do assigned to the person.
  *
  * @param row - The stored row.
  * @param actor - Who is asking.
  */
 export function mayChangeState(row: CommitmentRow, actor: TodoActor): boolean {
-  if (actor.kind === 'person') return actor.proven;
+  if (actor.kind === 'person') {
+    return actor.proven || (actor.ownerless === true && assigneeAgent(row) === null);
+  }
   return actor.kind === 'agent' && assigneeAgent(row) === actor.agentId;
 }
 
@@ -100,7 +107,8 @@ export function mayEdit(row: CommitmentRow, actor: TodoActor): boolean {
 }
 
 /**
- * Whether an actor may move a to-do in its owner's order: the person, or the agent that owns it.
+ * Whether an actor may move a to-do in its owner's order: the person, or the agent that owns it,
+ * with the same reach for an unproven person as {@link mayChangeState}.
  *
  * @param row - The stored row.
  * @param actor - Who is asking.
