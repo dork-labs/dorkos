@@ -368,6 +368,8 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       path.join(codexHome, 'config.toml'),
       [
         'model_provider = "fake"',
+        'cli_auth_credentials_store = "file"',
+        'mcp_oauth_credentials_store = "file"',
         '[model_providers.fake]',
         'name = "fake"',
         `base_url = "${base}/v1"`,
@@ -609,11 +611,16 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       const control = 'PUBLIC-control-dor3595';
       const skillControl = 'PUBLIC-skill-control-dor3595';
       const agentHome = path.join(root, 'data', 'agents', 'probe');
+      const dataConfig = path.join(root, 'data', 'config.json');
+      const plugin = path.join(project, '.dork', 'plugins', 'existing', 'plugin.js');
       const skills = path.join(agentHome, '.agents', 'skills', 'probe');
       fs.mkdirSync(skills, { recursive: true });
       fs.writeFileSync(path.join(skills, 'SKILL.md'), skillControl);
       fs.writeFileSync(secret, canary);
       fs.writeFileSync(readable, control);
+      fs.writeFileSync(dataConfig, canary);
+      fs.mkdirSync(path.dirname(plugin), { recursive: true });
+      fs.writeFileSync(plugin, 'original-plugin');
       const configFile = path.join(codexHome, 'config.toml');
       const previous = fs.readFileSync(configFile, 'utf8');
       fs.writeFileSync(configFile, `sandbox_mode = "danger-full-access"\n${previous}`);
@@ -632,7 +639,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             (res) =>
               res.end(
                 sseCall({
-                  cmd: 'cat fixture.key; cat readable.txt; cat ../data/agents/probe/.agents/skills/probe/SKILL.md',
+                  cmd: 'cat fixture.key; cat ../data/config.json; echo changed > .dork/plugins/existing/plugin.js; cat readable.txt; cat ../data/agents/probe/.agents/skills/probe/SKILL.md',
                   login: false,
                 })
               ),
@@ -672,6 +679,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           expect(result, JSON.stringify(events)).toContain(control);
           expect(result, JSON.stringify(events)).toContain(skillControl);
           expect(result).not.toContain(canary);
+          expect(fs.readFileSync(plugin, 'utf8')).toBe('original-plugin');
           expect(result).toMatch(/denied|not permitted/i);
           await transport.shutdown();
         }
@@ -680,6 +688,8 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         fs.writeFileSync(configFile, previous);
         fs.rmSync(secret, { force: true });
         fs.rmSync(readable, { force: true });
+        fs.rmSync(dataConfig, { force: true });
+        fs.rmSync(path.dirname(plugin), { recursive: true, force: true });
         fs.rmSync(agentHome, { recursive: true, force: true });
       }
     },

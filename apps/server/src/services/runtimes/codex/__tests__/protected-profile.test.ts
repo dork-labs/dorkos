@@ -40,10 +40,16 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
       const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
       const files = profiles[codexPermissionProfile({ permissionMode })]!.filesystem;
       expect(files['/probe/data/host.key']).toBe('deny');
+      expect(files['/probe/data/config.json']).toBe('deny');
+      expect(files['/probe/home/.dork/config.json']).toBe('deny');
+      expect(files['/probe/home/.claude.json']).toBe('deny');
       expect(files['/probe/data/permissions']).toBe('read');
       expect(files['/probe/agent/.dork/agent.json']).toBe('read');
       expect(files['/probe/data/agents/*/.dork/agent.json']).toBe('deny');
       expect(files['/probe/desk/**/.env']).toBe('deny');
+      expect(files['/**/.dork/plugins/**']).toBe('deny');
+      expect(files['/probe/data/agents/*/.agents/**']).toBe('deny');
+      expect(files['/probe/agent/.agents']).toBe('read');
     });
   }
 );

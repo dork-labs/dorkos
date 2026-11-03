@@ -4,7 +4,10 @@ import { realPathOf } from '@dorkos/shared/directory-grants';
 import type { CodexOptions } from '@openai/codex-sdk';
 import type { SessionSettings } from '@dorkos/shared/types';
 import { PROTECTED_PATHS } from '../../shared/policy/protected-paths.js';
-import type { ProtectedPathRoots } from '../../shared/policy/protected-path-check.js';
+import {
+  isProtectedPath,
+  type ProtectedPathRoots,
+} from '../../shared/policy/protected-path-check.js';
 import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 
@@ -48,8 +51,15 @@ function protectedEntries(roots: ProtectedPathRoots): Record<string, 'read' | 'd
         // The pinned binary only supports deny access on wildcard paths.
         // Broader refusal preserves the shared policy where read-only cannot be expressed.
         const access =
-          entry.deny === 'read' || file.includes('*') || entries[file] === 'deny' ? 'deny' : 'read';
+          entry.deny === 'read' ||
+          file.includes('*') ||
+          isProtectedPath(file, 'read', roots) ||
+          entries[file] === 'deny'
+            ? 'deny'
+            : 'read';
         entries[file] = access;
+        // A glob matching the folder itself does not cover files already inside it.
+        if (entry.kind === 'folder' && file.includes('*')) entries[`${file}/**`] = 'deny';
       }
   }
   return entries;

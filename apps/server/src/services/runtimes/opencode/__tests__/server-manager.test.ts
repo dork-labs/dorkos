@@ -190,7 +190,7 @@ describe('OpenCodeServerManager', () => {
       // Conservative ask-ruleset — the safety boundary (NOTES.md §2).
       expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual({
         permission: {
-          read: 'ask',
+          read: { '*': 'ask', '*.env': 'deny', '*.env.*': 'deny', '*.env.example': 'allow' },
           grep: 'ask',
           glob: 'ask',
           edit: 'ask',

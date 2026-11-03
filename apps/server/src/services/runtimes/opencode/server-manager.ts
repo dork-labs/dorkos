@@ -61,7 +61,15 @@ const READY_LINE_PATTERN = /opencode server listening on\s+(https?:\/\/\S+)/;
  * can auto-approve them. Ordinary reads are answered without a card.
  */
 export const OPENCODE_SIDECAR_CONFIG = {
-  permission: { read: 'ask', grep: 'ask', glob: 'ask', edit: 'ask', bash: 'ask', webfetch: 'ask' },
+  permission: {
+    // Keep OpenCode's native secret denies; the host may auto-answer ordinary reads.
+    read: { '*': 'ask', '*.env': 'deny', '*.env.*': 'deny', '*.env.example': 'allow' },
+    grep: 'ask',
+    glob: 'ask',
+    edit: 'ask',
+    bash: 'ask',
+    webfetch: 'ask',
+  },
 } as const;
 
 /** @internal Exported for tests — lifecycle timing and backoff constants. */
