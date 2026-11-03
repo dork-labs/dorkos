@@ -76,6 +76,20 @@ describe('commitment routes', () => {
 
   afterEach(() => service.stop());
 
+  it("marks an agent's own promise when the agent changes it over HTTP, where no turn is readable", async () => {
+    const made = service.create('agent-ana', {
+      what: 'Ship it',
+      originLevel: { asks: 'never', reach: 'everything' },
+    });
+    expect(power(made.id)!.marks).toBe('{}');
+    const res = await request(fixtureServer)
+      .patch(`/api/commitments/${made.id}`)
+      .set(AGENT_IDENTITY_HEADER, '/agents/ana')
+      .send({ state: 'kept' });
+    expect(res.status).toBe(200);
+    expect(power(made.id)!.marks).toBe('{"outsider":true}');
+  });
+
   describe('person authority needs proof (DOR-3088, Security Must for PR 2)', () => {
     it('never mints person authority from the open gate: login off, no agent headers, no cookie', async () => {
       // `isOwner` passes, as it does for any program on this computer with login off.

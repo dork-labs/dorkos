@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { Commitment } from '@dorkos/shared/commitment-schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { commitments, eq, type Db } from '@dorkos/db';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../core/capabilities/index.js';
 import type { AgentIdentity } from '../../core/agent-identity/agent-identity-service.js';
 import { commitmentsDomain } from '../commitment-capabilities.js';
@@ -80,12 +81,40 @@ async function ranHeld(sessionId: string): Promise<void> {
   }
 }
 
+/** Record a clean turn on `sessionId`: a known level, no ceiling, no marks. */
+async function ranClean(sessionId: string): Promise<void> {
+  const seam = recordTurnLevels(
+    {
+      type: 'claude-code',
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      async *sendMessage(): AsyncGenerator<StreamEvent> {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    } as unknown as AgentRuntime,
+    () => 'acceptEdits'
+  );
+  for await (const _event of seam.sendMessage(sessionId, 'hi', {})) {
+    // drain
+  }
+}
+
 describe('commitments domain', () => {
   let service: CommitmentService;
   let deps: CapabilityDeps;
+  let db: Db;
+
+  /** A row's stored authority columns. */
+  function power(id: string) {
+    return db
+      .select({ authority: commitments.authority, marks: commitments.authorityMarks })
+      .from(commitments)
+      .where(eq(commitments.id, id))
+      .get();
+  }
 
   beforeEach(() => {
-    service = new CommitmentService({ store: new CommitmentStore(createTestDb()) });
+    db = createTestDb();
+    service = new CommitmentService({ store: new CommitmentStore(db) });
     deps = {
       logger: noopLogger,
       commitmentDeps: {
@@ -111,6 +140,58 @@ describe('commitments domain', () => {
   it('tells an agent it is woken when a promise comes due: its beat does that (DOR-2788 PR 3)', () => {
     const add = commitmentsDomain.capabilities.find((c) => c.id === 'commitments.add')!;
     expect(add.description).toContain('when it comes due you are woken to deal with it');
+  });
+
+  describe('a turn nobody can read is marked (Security, #3454 Must 1)', () => {
+    it('stores self with the outsider mark for an unknown session and no running turn', async () => {
+      const result = await call(
+        deps,
+        'commitments.add',
+        { what: 'Reply after the restart' },
+        { identity: ana, sessionId: 'never-ran-here' }
+      );
+      expect(power(result.commitment!.id)).toEqual({
+        authority: 'self',
+        marks: '{"outsider":true}',
+      });
+    });
+
+    it('stores self with the outsider mark when the caller names no session at all', async () => {
+      const result = await call(deps, 'commitments.add', { what: 'Over /mcp' }, { identity: ana });
+      expect(power(result.commitment!.id)).toEqual({
+        authority: 'self',
+        marks: '{"outsider":true}',
+      });
+    });
+
+    it('stores no mark for a known clean level', async () => {
+      await ranClean('chat-clean');
+      const result = await call(
+        deps,
+        'commitments.add',
+        { what: 'Reply in a recorded turn' },
+        { identity: ana, sessionId: 'chat-clean' }
+      );
+      expect(power(result.commitment!.id)!.marks).toBe('{}');
+    });
+
+    it("adds the mark when an unreadable turn changes the agent's own promise", async () => {
+      await ranClean('chat-clean');
+      const made = await call(
+        deps,
+        'commitments.add',
+        { what: 'Ship it' },
+        { identity: ana, sessionId: 'chat-clean' }
+      );
+      expect(power(made.commitment!.id)!.marks).toBe('{}');
+      await call(
+        deps,
+        'commitments.update',
+        { id: made.commitment!.id, state: 'kept' },
+        { identity: ana, sessionId: 'never-ran-here' }
+      );
+      expect(power(made.commitment!.id)!.marks).toBe('{"outsider":true}');
+    });
   });
 
   describe('commitment_add', () => {
