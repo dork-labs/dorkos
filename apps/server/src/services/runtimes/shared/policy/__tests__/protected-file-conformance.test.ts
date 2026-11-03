@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { ToolDescriptor, ToolContext } from '@dorkos/doe';
 import { PROTECTED_PATHS } from '../protected-paths.js';
 import {
   isProtectedPath,
@@ -12,6 +11,8 @@ import {
 } from '../protected-path-check.js';
 import { protectedFileVerdict } from '../../../opencode/messaging/protected-files.js';
 import { DoeApprovals } from '../../../doe/approvals.js';
+
+type FileApproval = ReturnType<DoeApprovals['callback']>;
 
 let root: string;
 let roots: ProtectedPathRoots;
@@ -48,13 +49,13 @@ async function refused(
       ) === 'deny'
     );
   const signal = new AbortController().signal;
-  const tool: ToolDescriptor = {
+  const tool: Parameters<FileApproval>[0] = {
     name: operation,
     description: 'Probe',
     schema: {},
     execute: async () => ({ content: [] }),
   };
-  const context: ToolContext = {
+  const context: Parameters<FileApproval>[2] = {
     sessionId: 'probe',
     scope: 'main',
     workingDirectory: roots.cwd,

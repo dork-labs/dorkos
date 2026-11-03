@@ -600,7 +600,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     });
   });
 
-  it.each(['app-server', 'exec'])(
+  it.for(['app-server', 'exec'] as const)(
     'protects fake secrets through %s despite a loaded legacy Full setting',
     async (kind, ctx) => {
       const secret = path.join(project, 'fixture.key');
@@ -641,7 +641,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               res.end(sse('done'));
             }
           );
-          const transport = makeTransport(undefined, kind as CodexTransportKind);
+          const transport = makeTransport(undefined, kind);
           expect(transport.kind).toBe('app-server');
           const events: StreamEvent[] = [];
           for await (const event of transport.runTurn(

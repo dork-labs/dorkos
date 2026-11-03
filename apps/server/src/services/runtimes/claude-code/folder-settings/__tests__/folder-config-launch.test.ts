@@ -582,9 +582,22 @@ describe("Security's conditions on the first-use pin (M4)", () => {
 import { managedConfigHeld } from '../../../shared/policy/managed-config.js';
 import { resolvePinnedCodexMcp } from '../../../codex/mcp-server-config.js';
 import { OpenCodeMcpManager } from '../../../opencode/mcp/mcp-manager.js';
-import type { OpencodeClient } from '@opencode-ai/sdk';
+import {
+  registerTestHomes,
+  clearTestHomes,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 describe('managed-server launches on the other engines', () => {
   const mesh = { getByPath: () => AGENT, listWithPaths: () => [], updateLastSeen: () => {} };
+  it('requires a registered home before reading a manifest without a mesh match', async () => {
+    try {
+      registerTestHomes([home]);
+      expect(await managedConfigHeld(home, home, false)).toBe(false);
+      registerTestHomes([]);
+      expect(await managedConfigHeld(home, home, false)).toBe(true);
+    } finally {
+      clearTestHomes();
+    }
+  });
   it.each(['codex', 'opencode', 'doe'])(
     'holds a changed %s manifest and keeps its runtime held',
     async (runtime) => {
@@ -632,7 +645,7 @@ describe('managed-server launches on the other engines', () => {
     const disconnect = vi.fn(async () => ({ data: true }));
     const client = {
       mcp: { status: async () => ({ data: {} }), add, disconnect },
-    } as unknown as OpencodeClient;
+    } as unknown as Parameters<OpenCodeMcpManager['ensureManaged']>[0];
     const manager = new OpenCodeMcpManager({
       getClient: async () => client,
       peekClient: () => null,

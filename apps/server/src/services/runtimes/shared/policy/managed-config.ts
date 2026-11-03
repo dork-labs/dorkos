@@ -1,5 +1,5 @@
 /** Share Claude Code's content pin with every managed-server launch. */
-import { readHomeManifest } from '../../../core/agent-identity/index.js';
+import { readHomeManifest, resolveAgentHome } from '../../../core/agent-identity/index.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import { resolveFolderConfigForLaunch } from '../../claude-code/folder-settings/launch-folder-config.js';
 
@@ -13,7 +13,9 @@ export async function managedConfigHeld(
   if (!home) return false;
   let agent = mesh?.getByPath(home);
   if (!agent) {
-    const manifest = await readHomeManifest(home);
+    const resolved = resolveAgentHome(home, home);
+    if (resolved.kind !== 'home') return true;
+    const manifest = await readHomeManifest(resolved.home);
     if (!manifest?.id) return true;
     agent = { id: manifest.id, name: manifest.name };
   }
