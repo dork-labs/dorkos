@@ -68,6 +68,27 @@ describe('with the experiment on', () => {
     expect(disc().querySelector('.sr-only')?.textContent).toBeTruthy();
   });
 
+  it('wraps every edge token in hsl(), or the whole shadow draws nothing', async () => {
+    render(<IdentityAvatar data-testid="disc" kind="agent" color="#336699" buddySeed={SEED} />);
+    await on();
+    cleanup();
+    for (const status of ['idle', 'working', 'needs-you', 'error'] as const) {
+      render(
+        <IdentityAvatar
+          data-testid="disc"
+          kind="agent"
+          color="#336699"
+          buddySeed={SEED}
+          status={status}
+        />
+      );
+      const edge = disc().querySelector('[data-slot="identity-buddy-edge"]')!.className;
+      expect(edge).toContain('hsl(var(--background))');
+      expect(edge).not.toMatch(/[_,]var\(--/);
+      cleanup();
+    }
+  });
+
   it('keeps a photo, because a photo is a choice', async () => {
     render(<IdentityAvatar kind="agent" color="#336699" emoji="🦊" buddySeed={SEED} />);
     await on();

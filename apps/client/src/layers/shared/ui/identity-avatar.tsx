@@ -119,12 +119,16 @@ const BUDDY_PX = { xs: 18, sm: 28, md: 36, lg: 48 } as const;
  * The 1px plate in the page colour is on every buddy: the genome holds each ground
  * at 3:1 against the page, not against a tinted row, so the plate gives it the
  * page back. `working` draws no ring, because rows keep their own moving dot.
+ *
+ * These tokens hold bare HSL numbers, so each needs its `hsl()`. Without it the
+ * whole shadow is invalid and draws nothing, with no error anywhere.
  */
 const BUDDY_EDGE: Record<IdentityStatus, string> = {
-  idle: 'shadow-[0_0_0_1px_var(--background)]',
-  working: 'shadow-[0_0_0_1px_var(--background)]',
-  'needs-you': 'shadow-[0_0_0_1px_var(--background),0_0_0_2.5px_var(--status-warning-fg)]',
-  error: 'shadow-[0_0_0_1px_var(--background),0_0_0_2.5px_var(--destructive)]',
+  idle: 'shadow-[0_0_0_1px_hsl(var(--background))]',
+  working: 'shadow-[0_0_0_1px_hsl(var(--background))]',
+  'needs-you':
+    'shadow-[0_0_0_1px_hsl(var(--background)),0_0_0_2.5px_hsl(var(--status-warning-fg))]',
+  error: 'shadow-[0_0_0_1px_hsl(var(--background)),0_0_0_2.5px_hsl(var(--destructive))]',
 };
 
 const identityAvatarVariants = cva(

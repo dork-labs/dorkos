@@ -40,6 +40,14 @@ export const IDENTITY_SECTIONS: PlaygroundSection[] = [
       'roster',
     ],
   },
+  // BlockBuddyShowcases
+  {
+    id: 'block-buddies',
+    title: 'Block Buddies',
+    page: 'identity',
+    category: 'Identity',
+    keywords: ['block buddy', 'buddy', 'avatar', 'face', 'spread', 'ring', 'mini', 'experiment'],
+  },
   // IdentityMotionShowcases
   {
     id: 'motion-and-interaction',
