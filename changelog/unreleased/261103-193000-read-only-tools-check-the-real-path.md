@@ -1,3 +1,8 @@
+---
+covers:
+  - "fix(server): read-only tools check the real path, and the shell can't reach protected files unasked (DOR-3300)"
+---
+
 ### Security
 
 - Ask before an agent reads a file outside its folders below Full. The real path decides, so a link to an outside file asks too (DOR-3300).

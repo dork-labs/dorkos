@@ -83,6 +83,8 @@ const NOT_READING_INSTALLS: Record<string, string> = {
     "lists the developer's own linked folder to notice edits, never an install or skills root",
   'apps/server/src/services/extensions/agent-skills/running-skills-ledger.ts':
     'lists only its own generated plugin roots under {dorkHome}/cache/extensions/skill-plugins, never an install or skills root',
+  'apps/server/src/services/runtimes/claude-code/shell-guard/shell-path-guard.ts':
+    'lists a folder a shell command names only to tell whether a secret would land or be read there; it loads nothing from it',
   'apps/server/src/services/harness/skills-watcher.ts':
     'lists a skills root only to notice change; a sibling appearing triggers a projection, whose scanner skips it',
 };
