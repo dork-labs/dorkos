@@ -197,7 +197,8 @@ describe('TodoList', () => {
 
   it('reads a declined to-do as declined, with its reason', async () => {
     renderList([createMockTodo({ state: 'dropped', note: 'No booking access' })]);
-    expect(await screen.findByText('Declined · No booking access')).toBeInTheDocument();
+    expect(await screen.findByText('Declined')).toBeInTheDocument();
+    expect(screen.getByText('No booking access')).toBeInTheDocument();
   });
 
   it('moves a to-do down with ⌥↓ in My order, rewriting only its rank', async () => {

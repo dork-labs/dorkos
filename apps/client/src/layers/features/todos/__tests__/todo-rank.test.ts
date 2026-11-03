@@ -44,7 +44,7 @@ describe('planMove', () => {
       { id: 'b', rank: 'm' },
       { id: 'c', rank: 't' },
     ];
-    const changes = planMove(rows, 2, 0);
+    const changes = planMove(rows, 2, 0)!;
     expect(changes).toHaveLength(1);
     expect(changes[0]!.id).toBe('c');
     expect(changes[0]!.rank < 'f').toBe(true);
@@ -56,9 +56,31 @@ describe('planMove', () => {
       { id: 'b', rank: null },
       { id: 'c', rank: null },
     ];
-    const changes = planMove(rows, 0, 1);
+    const changes = planMove(rows, 0, 1)!;
     expect(changes.map((change) => change.id)).toEqual(['b', 'a']);
     expect(changes[0]!.rank < changes[1]!.rank).toBe(true);
+  });
+
+  it('never resends a key a to-do already has, which the server refuses', () => {
+    // The last ranked row moving down past one unranked row lands on its own key again.
+    const rows = [
+      { id: 'a', rank: 'u' },
+      { id: 'b', rank: 'w' },
+      { id: 'c', rank: 'y' },
+      { id: 'd', rank: null },
+    ];
+    const changes = planMove(rows, 2, 3)!;
+    expect(changes.map((change) => change.id)).toEqual(['d']);
+    expect(changes[0]!.previous).toBeNull();
+  });
+
+  it('says so when no key fits, rather than saving nothing in silence', () => {
+    const rows = [
+      { id: 'a', rank: '1' },
+      { id: 'b', rank: '2' },
+      { id: 'c', rank: null },
+    ];
+    expect(planMove(rows, 2, 1)).toBeNull();
   });
 
   it('does nothing for a move to the same place', () => {

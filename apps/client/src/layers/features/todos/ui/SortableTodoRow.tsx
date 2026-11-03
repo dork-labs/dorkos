@@ -10,7 +10,10 @@ import { GripVertical } from 'lucide-react';
 import { TodoRow, type TodoRowProps } from './TodoRow';
 
 /** Props for {@link SortableTodoRow}. */
-export interface SortableTodoRowProps extends Omit<TodoRowProps, 'handle' | 'rowRef' | 'style'> {
+export interface SortableTodoRowProps extends Omit<
+  TodoRowProps,
+  'handle' | 'rowRef' | 'style' | 'dragging'
+> {
   /** Whether the list is in "My order", where rows move. */
   sortable: boolean;
   /** Move this row up (-1) or down (+1). */
@@ -19,8 +22,15 @@ export interface SortableTodoRowProps extends Omit<TodoRowProps, 'handle' | 'row
 
 /** One to-do, draggable in "My order". */
 export function SortableTodoRow({ sortable, onMove, ...row }: SortableTodoRowProps) {
-  const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition } =
-    useSortable({ id: row.todo.id, disabled: !sortable });
+  const {
+    setNodeRef,
+    setActivatorNodeRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: row.todo.id, disabled: !sortable });
 
   // ⌥↑ / ⌥↓ move it at once; every other key goes on to the drag's own keyboard handling.
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
@@ -37,6 +47,7 @@ export function SortableTodoRow({ sortable, onMove, ...row }: SortableTodoRowPro
     <TodoRow
       {...row}
       rowRef={setNodeRef}
+      dragging={isDragging}
       // Up and down only: a list row never leaves its column.
       style={{
         transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
@@ -46,6 +57,7 @@ export function SortableTodoRow({ sortable, onMove, ...row }: SortableTodoRowPro
         <button
           type="button"
           ref={setActivatorNodeRef}
+          data-todo-grip={row.todo.id}
           {...attributes}
           {...listeners}
           onKeyDown={onKeyDown}

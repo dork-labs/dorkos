@@ -47,7 +47,8 @@ export function TodoFilterBar({ filters, onChange }: TodoFilterBarProps) {
       <div
         role="group"
         aria-label="Whose to-dos"
-        className="flex min-w-0 scrollbar-none gap-1.5 overflow-x-auto"
+        // The padding keeps the chips' focus rings inside the scroller, which clips both ways.
+        className="-my-1 flex min-w-0 scrollbar-none gap-1.5 overflow-x-auto px-0.5 py-1"
       >
         {TODO_VIEWS.map((view) => (
           <Chip

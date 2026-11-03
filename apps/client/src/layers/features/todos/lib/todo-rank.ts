@@ -68,6 +68,8 @@ export interface RankChange {
   id: string;
   /** Its new key. */
   rank: string;
+  /** The key it had. */
+  previous: string | null;
 }
 
 /**
@@ -78,9 +80,14 @@ export interface RankChange {
  * @param rows - The open to-dos, in the order the list draws them.
  * @param from - The moved to-do's index.
  * @param to - Its new index.
- * @returns The changes, top first, or an empty list when nothing moves or no key fits.
+ * @returns The changes, top first (a to-do whose key already fits is left alone), an empty list
+ *   when nothing moves, or null when no key fits.
  */
-export function planMove(rows: readonly Pick<Todo, 'id' | 'rank'>[], from: number, to: number) {
+export function planMove(
+  rows: readonly Pick<Todo, 'id' | 'rank'>[],
+  from: number,
+  to: number
+): RankChange[] | null {
   if (from === to || from < 0 || to < 0 || from >= rows.length || to >= rows.length) return [];
   const order = [...rows];
   const [moved] = order.splice(from, 1);
@@ -99,8 +106,9 @@ export function planMove(rows: readonly Pick<Todo, 'id' | 'rank'>[], from: numbe
       previous,
       next !== null && (previous === null || next > previous) ? next : null
     );
-    if (rank === null) return [];
-    changes.push({ id: row.id, rank });
+    if (rank === null) return null;
+    // A key equal to the one it has means it already sits right: saving it again is refused.
+    if (rank !== row.rank) changes.push({ id: row.id, rank, previous: row.rank });
     previous = rank;
   }
   return changes;

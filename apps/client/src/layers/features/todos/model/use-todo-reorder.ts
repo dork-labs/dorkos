@@ -1,39 +1,47 @@
 /**
- * Moving a to-do in "My order": the rank changes a move needs, saved top first, one at a time,
- * so each key is stored before the next one is judged against it.
+ * Moving a to-do in "My order": plan the rank changes, show the new order at once, and save it.
+ * One move at a time, each planned from the order the last one left on screen.
  *
  * @module features/todos/model/use-todo-reorder
  */
-import { useCallback, useState } from 'react';
-import type { Todo } from '@dorkos/shared/todo-schemas';
-import { useUpdateTodo } from '@/layers/entities/todo';
+import { useCallback } from 'react';
+import { toast } from 'sonner';
+import type { ListTodosQuery, Todo } from '@dorkos/shared/todo-schemas';
+import { useMoveTodos } from '@/layers/entities/todo';
 import { planMove } from '../lib/todo-rank';
 
 /**
  * Move to-dos within the open ones the list draws.
  *
- * @param rows - The open to-dos, in the order the list draws them.
- * @returns `move(from, to)`, and whether a move is still saving.
+ * @param query - The list's query, whose cached order changes at once.
+ * @param rows - Every to-do the list holds, in order.
+ * @param movable - The ones that move (open and settled), in order.
+ * @returns `move(from, to)` over `movable`'s indices, and whether a move is saving.
  */
-export function useTodoReorder(rows: readonly Todo[]) {
-  const update = useUpdateTodo();
-  const [moving, setMoving] = useState(false);
+export function useTodoReorder(
+  query: ListTodosQuery,
+  rows: readonly Todo[],
+  movable: readonly Todo[]
+) {
+  const mutation = useMoveTodos();
+  const moving = mutation.isPending;
   const move = useCallback(
-    async (from: number, to: number) => {
-      const changes = planMove(rows, from, to);
-      if (changes.length === 0) return;
-      setMoving(true);
-      try {
-        for (const change of changes) {
-          await update.mutateAsync({ id: change.id, body: { rank: change.rank } });
-        }
-      } catch {
-        // The shared mutation handler has already said what went wrong.
-      } finally {
-        setMoving(false);
+    (from: number, to: number): boolean => {
+      // A second move planned before the first is saved would read stale keys.
+      if (moving) return false;
+      const changes = planMove(movable, from, to);
+      if (changes === null) {
+        toast.error('That to-do can’t move there. Try another spot.');
+        return false;
       }
+      const ids = movable.map((todo) => todo.id);
+      const [moved] = ids.splice(from, 1);
+      ids.splice(to, 0, moved!);
+      const rest = rows.map((todo) => todo.id).filter((id) => !ids.includes(id));
+      mutation.mutate({ query, order: [...ids, ...rest], changes });
+      return true;
     },
-    [rows, update]
+    [moving, movable, rows, query, mutation]
   );
   return { move, moving };
 }

@@ -63,8 +63,10 @@ export interface TodoMessageSource {
  * @param text - The message's text.
  */
 export function titleFromMessage(text: string): string {
-  const line = text.split('\n').find((part) => part.trim().length > 0) ?? '';
-  return line.trim().slice(0, COMMITMENT_WHAT_MAX);
+  const line = (text.split('\n').find((part) => part.trim().length > 0) ?? '').trim();
+  const cut = line.slice(0, COMMITMENT_WHAT_MAX);
+  // Never end on half an emoji: drop a lone high surrogate the cut left behind.
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
 }
 
 /** Who the picker's value names. */
@@ -168,9 +170,7 @@ export function NewTodoDialog({ open, onOpenChange, source }: NewTodoDialogProps
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>{source ? 'Make a to-do' : 'New to-do'}</ResponsiveDialogTitle>
           <ResponsiveDialogDescription className={source ? undefined : 'sr-only'}>
-            {source
-              ? 'From a message. It links back to it.'
-              : 'Add something for you or an agent to do.'}
+            {source ? 'Made from a message.' : 'Add something for you or an agent to do.'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
         {open && <NewTodoForm onDone={() => onOpenChange(false)} {...(source ? { source } : {})} />}

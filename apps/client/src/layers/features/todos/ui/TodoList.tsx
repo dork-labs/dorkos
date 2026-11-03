@@ -5,7 +5,7 @@
  *
  * @module features/todos/ui/TodoList
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   closestCenter,
   DndContext,
@@ -78,25 +78,41 @@ export function TodoList({ onNewTodo }: TodoListProps) {
     () => rows.filter((todo) => todo.state === 'open' && !lingering.held[todo.id]),
     [rows, lingering.held]
   );
-  const sortable = filters.sort === 'rank' && movable.length > 1;
-  const reorder = useTodoReorder(movable);
+  // "My order" is the assignee's own order, so only the person's own list moves.
+  const sortable = filters.sort === 'rank' && filters.view === 'mine' && movable.length > 1;
+  const reorder = useTodoReorder(query, rows, movable);
+  const [announcement, setAnnouncement] = useState('');
+  // The grip that moved keeps focus: a row moving down is re-inserted, which would blur it.
+  const refocus = useRef<string | null>(null);
+  useEffect(() => {
+    const id = refocus.current;
+    if (!id) return;
+    refocus.current = null;
+    document.querySelector<HTMLElement>(`[data-todo-grip="${CSS.escape(id)}"]`)?.focus();
+  }, [movable]);
   const sensors = useSensors(
     // A few pixels of travel first, so a tap on the grip is not a drag.
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  function moveTo(id: string, from: number, to: number) {
+    if (!reorder.move(from, to)) return;
+    refocus.current = id;
+    setAnnouncement(`Moved to position ${to + 1} of ${movable.length}.`);
+  }
+
   function moveBy(todo: Todo, by: -1 | 1) {
     const from = movable.findIndex((row) => row.id === todo.id);
-    if (from === -1) return;
-    void reorder.move(from, Math.min(Math.max(from + by, 0), movable.length - 1));
+    const to = Math.min(Math.max(from + by, 0), movable.length - 1);
+    if (from !== -1 && to !== from) moveTo(todo.id, from, to);
   }
 
   function onDragEnd({ active, over }: DragEndEvent) {
     if (!over || active.id === over.id) return;
     const from = movable.findIndex((row) => row.id === active.id);
     const to = movable.findIndex((row) => row.id === over.id);
-    if (from !== -1 && to !== -1) void reorder.move(from, to);
+    if (from !== -1 && to !== -1) moveTo(String(active.id), from, to);
   }
 
   function complete(todo: Todo, index: number) {
@@ -118,6 +134,9 @@ export function TodoList({ onNewTodo }: TodoListProps) {
 
   return (
     <div data-slot="todo-list" className="flex flex-col gap-3">
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
       <TodoFilterBar filters={filters} onChange={set} />
       {list.isPending && <Skeleton className="h-24 w-full" />}
       {list.isError && (
@@ -128,7 +147,11 @@ export function TodoList({ onNewTodo }: TodoListProps) {
         />
       )}
       {list.isSuccess && rows.length === 0 && (
-        <TodoListEmpty mine={filters.view === 'mine'} onNewTodo={onNewTodo} />
+        <TodoListEmpty
+          mine={filters.view === 'mine'}
+          narrowed={filters.due !== 'any'}
+          onNewTodo={onNewTodo}
+        />
       )}
       {list.isSuccess && rows.length > 0 && (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
@@ -193,9 +216,22 @@ export function TodoList({ onNewTodo }: TodoListProps) {
   );
 }
 
-/** Nothing in this view: a way to add one on your own list, a quiet line elsewhere. */
-function TodoListEmpty({ mine, onNewTodo }: { mine: boolean; onNewTodo: () => void }) {
-  if (!mine) return <p className="text-muted-foreground px-2 py-4 text-sm">No to-dos here.</p>;
+/**
+ * Nothing in this view: a way to add one on your own unfiltered list, a quiet line elsewhere, so
+ * a date filter never claims nothing is assigned to you.
+ */
+function TodoListEmpty({
+  mine,
+  narrowed,
+  onNewTodo,
+}: {
+  mine: boolean;
+  narrowed: boolean;
+  onNewTodo: () => void;
+}) {
+  if (!mine || narrowed) {
+    return <p className="text-muted-foreground px-2 py-4 text-sm">No to-dos here.</p>;
+  }
   return (
     <EmptyState
       icon={SquareCheck}

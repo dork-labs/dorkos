@@ -35,6 +35,8 @@ export interface TodoRowProps {
   rowRef?: Ref<HTMLLIElement>;
   /** Where a drag has moved the row to. */
   style?: CSSProperties;
+  /** Whether the row is the one being dragged, so it draws over its neighbours. */
+  dragging?: boolean;
 }
 
 /** How far right a phone swipe travels before it finishes the to-do, in pixels. */
@@ -83,14 +85,16 @@ function AgentAssignee({ agentId: id, agent }: { agentId: string; agent?: AgentP
  * How a closed to-do ended, in a word, with the one line left on it after: what was done, or why
  * it was declined. Plain text, since an agent or a guest may have written it.
  */
-function Outcome({ todo }: Pick<TodoRowProps, 'todo'>) {
-  if (todo.state === 'open') return null;
-  const word = todo.state === 'kept' ? 'Done' : 'Declined';
-  return (
-    <span className="min-w-0 truncate" title={todo.note ?? undefined}>
-      {todo.note ? `${word} · ${todo.note}` : word}
-    </span>
-  );
+function outcomeParts(todo: Todo): ReactNode[] {
+  if (todo.state === 'open') return [];
+  const word = <span key="outcome">{todo.state === 'kept' ? 'Done' : 'Declined'}</span>;
+  if (!todo.note) return [word];
+  return [
+    word,
+    <span key="note" className="min-w-0 truncate" title={todo.note}>
+      {todo.note}
+    </span>,
+  ];
 }
 
 /** The quiet facts under a title, kept apart by a middle dot. */
@@ -117,7 +121,7 @@ function LimitedBadge() {
         </Badge>
       </TooltipTrigger>
       <TooltipContent>
-        Words DorkOS can’t vouch for touched it, so its agent has less power.
+        Made or changed by someone DorkOS couldn’t confirm, so its agent has limited power.
       </TooltipContent>
     </Tooltip>
   );
@@ -134,6 +138,7 @@ export function TodoRow({
   handle,
   rowRef,
   style,
+  dragging = false,
 }: TodoRowProps) {
   const due = todoDueLabel(todo);
   const closed = todo.state !== 'open';
@@ -142,7 +147,7 @@ export function TodoRow({
   // Today's and overdue dates are what the eye looks for, so they read stronger than the rest.
   const urgent = todo.overdue || due === 'Due today';
   const parts: ReactNode[] = [];
-  if (closed) parts.push(<Outcome todo={todo} />);
+  parts.push(...outcomeParts(todo));
   if (todo.assignee.kind === 'agent') {
     parts.push(<AgentAssignee agentId={todo.assignee.agentId} {...(agent ? { agent } : {})} />);
   }
@@ -169,7 +174,10 @@ export function TodoRow({
       data-slot="todo-row"
       data-state={todo.state}
       data-overdue={todo.overdue || undefined}
-      className="bg-background flex items-start gap-1 rounded-md py-1 pr-2"
+      className={cn(
+        'flex items-start gap-1 rounded-md py-1 pr-2',
+        dragging && 'bg-card relative z-10 shadow-sm'
+      )}
     >
       {handle}
       <CheckCircle todo={todo} {...(onComplete ? { onComplete } : {})} />
@@ -199,7 +207,13 @@ export function TodoRow({
             {todo.what}
           </p>
           {onUndo && (
-            <Button size="xs" variant="ghost" className="shrink-0" onClick={onUndo}>
+            <Button
+              size="xs"
+              variant="ghost"
+              // A full finger's reach on a phone: it's the button wanted right after a swipe.
+              className="shrink-0 max-md:h-11 max-md:px-3"
+              onClick={onUndo}
+            >
               Undo
             </Button>
           )}

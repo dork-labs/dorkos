@@ -61,7 +61,7 @@ describe('TodoRow', () => {
       todo: createMockTodo({ state: 'kept', note: 'Sent it to Ana' }),
       from: 'you',
     });
-    expect(row).toHaveTextContent('Done · Sent it to Ana·from you');
+    expect(row).toHaveTextContent('Done·Sent it to Ana·from you');
   });
 
   it('finishes with a swipe right on a phone, and only while it can be finished', () => {
