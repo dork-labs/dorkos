@@ -1,9 +1,9 @@
 /**
  * Injected test double for runtime orchestration and SDK-shaped event fixtures.
- * Both consumers mock the SDK; production never imports this helper. The real
+ * Consumers mock the SDK; production never imports this helper. The real
  * launch/protection/conformance coverage uses the app-server transport.
  */
-import type { Codex, CodexOptions } from '@openai/codex-sdk';
+import { Codex, type CodexOptions } from '@openai/codex-sdk';
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import { buildCodexOptions } from './sdk-options.js';
 import { withCodexCredits } from './sdk-credits.js';
@@ -14,7 +14,9 @@ import type { CodexTransport, CodexTurnRequest } from '../../transport/codex-tra
 /** A scripted stream per turn; no process launcher. */
 export class ScriptedCodexTransport implements CodexTransport {
   readonly kind = 'exec' as const;
-  constructor(private readonly client: (options: CodexOptions) => Codex) {}
+  constructor(
+    private readonly client: (options: CodexOptions) => Codex = (options) => new Codex(options)
+  ) {}
   /** Exec declares nothing beyond the shared Codex base (NOTES.md Verdicts 1–3). */
   readonly capabilities = {};
 

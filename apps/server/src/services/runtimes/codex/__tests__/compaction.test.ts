@@ -101,7 +101,7 @@ describe('which Codex can summarize', () => {
     expect(runtime.getCapabilities().commandIntents.compact).toEqual({ supported: false });
   });
 
-  it('declares compact on app-server, and not on exec, where executeCommandIntent refuses', async () => {
+  it('declares compact on app-server, including the legacy exec setting', () => {
     const { runtime } = appServerRuntime();
     expect(runtime.getCapabilities().commandIntents.compact.supported).toBe(true);
 
@@ -109,8 +109,7 @@ describe('which Codex can summarize', () => {
       threadMap: new CodexThreadMap(createTestDb()),
       transport: 'exec',
     });
-    expect(exec.getCapabilities().commandIntents.compact.supported).toBe(false);
-    await expect(drain(exec.executeCommandIntent('s1', 'compact'))).rejects.toThrow(/exec/);
+    expect(exec.getCapabilities().commandIntents.compact.supported).toBe(true);
   });
 });
 
