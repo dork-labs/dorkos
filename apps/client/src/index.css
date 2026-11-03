@@ -2071,6 +2071,26 @@ body {
   opacity: 1;
 }
 
+/* The drawer's clock. vaul ships 500ms both ways for the sheet and its scrim; a
+   phone menu rises in 300 and leaves in 200, on vaul's own decelerating curve.
+   Under reduced motion it stays an animation, 1ms long rather than `none`: vaul
+   unmounts the sheet on `animationend`, and `none` never fires one. */
+[data-vaul-drawer][data-vaul-snap-points][data-state='open'],
+[data-vaul-overlay][data-vaul-snap-points][data-state='open'] {
+  animation-duration: var(--dur-slow);
+}
+[data-vaul-drawer][data-vaul-snap-points][data-state='closed'],
+[data-vaul-overlay][data-vaul-snap-points][data-state='closed'] {
+  animation-duration: var(--dur-normal);
+  animation-timing-function: var(--ease-in);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-vaul-drawer][data-vaul-snap-points][data-state],
+  [data-vaul-overlay][data-vaul-snap-points][data-state] {
+    animation-duration: 1ms !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2128,26 +2148,6 @@ body {
   /* Chat scroll area -- prevent horizontal swipes */
   .chat-scroll-area {
     touch-action: pan-y;
-  }
-}
-
-/* The drawer's clock. vaul ships 500ms both ways for the sheet and its scrim; a
-   phone menu rises in 300 and leaves in 200, on vaul's own decelerating curve.
-   Under reduced motion it stays an animation, 1ms long rather than `none`: vaul
-   unmounts the sheet on `animationend`, and `none` never fires one. */
-[data-vaul-drawer][data-vaul-snap-points][data-state='open'],
-[data-vaul-overlay][data-vaul-snap-points][data-state='open'] {
-  animation-duration: var(--dur-slow);
-}
-[data-vaul-drawer][data-vaul-snap-points][data-state='closed'],
-[data-vaul-overlay][data-vaul-snap-points][data-state='closed'] {
-  animation-duration: var(--dur-normal);
-  animation-timing-function: var(--ease-in);
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-vaul-drawer][data-vaul-snap-points][data-state],
-  [data-vaul-overlay][data-vaul-snap-points][data-state] {
-    animation-duration: 1ms !important;
   }
 }
 

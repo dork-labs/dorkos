@@ -148,6 +148,20 @@ test.describe('Overlay surfaces, 390 @smoke', () => {
     await expect(page.getByRole('tooltip')).toHaveCount(0);
   });
 
+  test('under reduced motion a drawer still animates for 1ms, and so still unmounts', async ({
+    page,
+  }) => {
+    // vaul unmounts on `animationend`, which `animation: none` never fires.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/dev/overlays');
+    await page.getByRole('button', { name: 'Open drawer', exact: true }).tap();
+    const drawer = page.locator(DRAWER);
+    await expect(drawer).toHaveCSS('animation-duration', '0.001s');
+    await expect(drawer).not.toHaveCSS('animation-name', 'none');
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+  });
+
   test('the Inbox is a drawer', async ({ page }) => {
     await openInbox(page, DRAWER);
     await expect(page.locator(POPOVER)).toHaveCount(0);
