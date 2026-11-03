@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(chat): a chat with one agent reads like a DM by default (DOR-3074)'
+  - "fix(chat): a DM never flashes the session's bar and tabs while the setting loads (DOR-3074)"
 ---
 
 ### Changed
