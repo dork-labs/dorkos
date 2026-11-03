@@ -4,10 +4,10 @@
  *
  * "The person" always means a PROVEN person (`personProof`). A request that only passed this
  * computer's open gate (any program here could have sent it) may make a to-do, at the stranger
- * bound, and may do one more thing: finish, reopen, note or reorder a to-do assigned to the person.
- * An install with no owner account has no way to prove the person, and a to-do assigned to the
- * person never starts an agent turn (Security, #3460). It never reassigns, retitles or redates
- * anything, and every change it makes lowers the row to the stranger bound.
+ * bound. On an install with no owner account, where nobody can ever prove the person, it may do
+ * one more thing: finish, reopen, note or reorder a to-do assigned to the person, which never
+ * starts an agent turn (Security, #3460). With an owner account it may not. It never reassigns,
+ * retitles or redates anything, and every change it makes lowers the row to the stranger bound.
  *
  * @module services/commitments/todo-policy
  */
@@ -66,13 +66,16 @@ function madeBy(row: Pick<CommitmentRow, 'assignedByKind' | 'assignedBy'>, agent
 
 /**
  * Whether an actor may change a to-do's state or how it ended: the person, or the agent it is
- * assigned to. An unproven person may, on a to-do assigned to the person only.
+ * assigned to. An unproven person may only on an install with no owner account,
+ * and only on a to-do assigned to the person.
  *
  * @param row - The stored row.
  * @param actor - Who is asking.
  */
 export function mayChangeState(row: CommitmentRow, actor: TodoActor): boolean {
-  if (actor.kind === 'person') return actor.proven || assigneeAgent(row) === null;
+  if (actor.kind === 'person') {
+    return actor.proven || (actor.ownerless === true && assigneeAgent(row) === null);
+  }
   return actor.kind === 'agent' && assigneeAgent(row) === actor.agentId;
 }
 

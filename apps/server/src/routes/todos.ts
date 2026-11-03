@@ -10,8 +10,9 @@
  *   session cookie (`personProof`). A window of the app with no session yet is asked for the
  *   owner's step-up (`401 person_session_required`) before anything is written, so the person's
  *   own to-dos never drop to the stranger bound by accident. Any other caller (a program on this
- *   computer) writes as an unproven person: the stranger bound, shown on the to-do. It may finish,
- *   reopen, note or reorder a to-do assigned to the person, and change nothing else (`todo-policy`).
+ *   computer) writes as an unproven person: the stranger bound, shown on the to-do. Only on an
+ *   install with no owner account may it finish, reopen, note or reorder a to-do assigned to the
+ *   person; it changes nothing else (`todo-policy`).
  *
  * @module routes/todos
  */
@@ -52,6 +53,8 @@ export interface TodoRouterDeps {
   todos: Pick<TodoService, 'create' | 'update' | 'list'>;
   /** Whether a request proves the owner in person (`personProof`). */
   personProven(facts: RequestFacts): boolean;
+  /** Whether this install has an owner account; when it doesn't, nobody can be proven. */
+  ownerExists(): boolean;
   /** Whether an unproven request is an app window to ask for the step-up ({@link todoNeedsStepUp}). */
   needsStepUp(facts: RequestFacts): boolean;
   /** A source message's author and marks, read by the server. */
@@ -123,7 +126,11 @@ function personActor(
       ),
     };
   }
-  return { actor: { kind: 'person', proven } };
+  return {
+    actor: proven
+      ? { kind: 'person', proven }
+      : { kind: 'person', proven, ownerless: !deps.ownerExists() },
+  };
 }
 
 /**

@@ -25,6 +25,8 @@ const HOUR = 60 * 60 * 1000;
 
 const PERSON: TodoActor = { kind: 'person', proven: true };
 const UNPROVEN: TodoActor = { kind: 'person', proven: false };
+/** An unproven request on an install with no owner account, where nobody can be proven. */
+const OWNERLESS: TodoActor = { kind: 'person', proven: false, ownerless: true };
 const GUEST: TodoActor = { kind: 'outsider', id: 'guest-priya' };
 const FULL = { asks: 'never', reach: 'everything' } as const;
 const CAPPED = { asks: 'when-risky', reach: 'workspace' } as const;
@@ -233,9 +235,9 @@ describe('TodoService', () => {
 
     it("lets an unproven request finish, note and reorder the person's to-do", () => {
       const mine = personsTodo();
-      const closed = todos.update(UNPROVEN, mine.id, { state: 'kept', note: 'Done' });
+      const closed = todos.update(OWNERLESS, mine.id, { state: 'kept', note: 'Done' });
       expect(closed.state).toBe('kept');
-      expect(todos.update(UNPROVEN, mine.id, { rank: 'a' }).rank).toBe('a');
+      expect(todos.update(OWNERLESS, mine.id, { rank: 'a' }).rank).toBe('a');
       // Every change it makes lowers the row to the stranger bound.
       expect(stored(mine.id)).toMatchObject({
         authority: 'runtime-default',
@@ -243,19 +245,30 @@ describe('TodoService', () => {
       });
     });
 
+    it('refuses an unproven request any of it while the install has an owner account', () => {
+      const mine = personsTodo();
+      for (const change of [{ state: 'kept' as const }, { note: 'Done' }, { rank: 'a' }]) {
+        expect(
+          refusal(() => todos.update(UNPROVEN, mine.id, change)),
+          JSON.stringify(change)
+        ).toBe('NOT_YOURS');
+      }
+      expect(stored(mine.id)).toMatchObject({ authority: 'person', state: 'open', rank: null });
+    });
+
     it("refuses it a reassign, a new title or a new date on the person's to-do", () => {
       const mine = personsTodo();
       expect(
         refusal(() =>
-          todos.update(UNPROVEN, mine.id, { assignee: { kind: 'agent', agentId: 'agent-a' } })
+          todos.update(OWNERLESS, mine.id, { assignee: { kind: 'agent', agentId: 'agent-a' } })
         )
       ).toBe('NOT_YOURS');
-      expect(refusal(() => todos.update(UNPROVEN, mine.id, { what: 'Wire the money' }))).toBe(
+      expect(refusal(() => todos.update(OWNERLESS, mine.id, { what: 'Wire the money' }))).toBe(
         'NOT_YOURS'
       );
       expect(
         refusal(() =>
-          todos.update(UNPROVEN, mine.id, {
+          todos.update(OWNERLESS, mine.id, {
             dueAt: new Date(START.getTime() + 24 * HOUR).toISOString(),
           })
         )
@@ -267,13 +280,15 @@ describe('TodoService', () => {
         what: 'Run the deploy',
         assignee: { kind: 'agent', agentId: 'agent-a' },
       });
-      expect(refusal(() => todos.update(UNPROVEN, theirs.id, { state: 'kept' }))).toBe('NOT_YOURS');
-      expect(refusal(() => todos.update(UNPROVEN, theirs.id, { rank: 'a' }))).toBe('NOT_YOURS');
+      expect(refusal(() => todos.update(OWNERLESS, theirs.id, { state: 'kept' }))).toBe(
+        'NOT_YOURS'
+      );
+      expect(refusal(() => todos.update(OWNERLESS, theirs.id, { rank: 'a' }))).toBe('NOT_YOURS');
     });
 
     it('keeps the stranger bound when the person later hands it to an agent', () => {
       const mine = personsTodo();
-      todos.update(UNPROVEN, mine.id, { note: 'Ask for the form' });
+      todos.update(OWNERLESS, mine.id, { note: 'Ask for the form' });
       todos.update(PERSON, mine.id, { assignee: { kind: 'agent', agentId: 'agent-a' } });
       expect(stored(mine.id)).toMatchObject({ agentId: 'agent-a', authority: 'runtime-default' });
     });

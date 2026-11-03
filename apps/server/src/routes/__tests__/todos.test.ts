@@ -67,6 +67,7 @@ describe('to-do routes', () => {
           routes: createTodosRoutes({
             todos,
             personProven: () => proven,
+            ownerExists: () => state.ownerId !== null,
             // The app's marker stands in for a window with no session while an owner exists.
             needsStepUp: (facts) =>
               state.ownerId !== null && facts.headers[PERSON_APP_HEADER] !== undefined,
@@ -137,6 +138,37 @@ describe('to-do routes', () => {
       .send({ state: 'kept' });
     expect(changed.status).toBe(403);
     expect(changed.body.code).toBe('NOT_YOURS');
+  });
+
+  describe("a program finishing the person's own to-do (Security, PR 5a M1)", () => {
+    async function personsTodo(): Promise<string> {
+      proven = true;
+      const made = await request(fixtureServer)
+        .post('/api/todos')
+        .send({ what: 'Call the bank', assignee: { kind: 'person', account: 'owner' } });
+      expect(made.status).toBe(201);
+      proven = false;
+      return made.body.id as string;
+    }
+
+    it('refuses it while the install has an owner account, who could prove themselves', async () => {
+      state.ownerId = 'user_owner';
+      const id = await personsTodo();
+      for (const change of [{ state: 'kept' }, { note: 'Done' }, { rank: 'a' }]) {
+        const res = await request(fixtureServer).patch(`/api/todos/${id}`).send(change);
+        expect(res.status, JSON.stringify(change)).toBe(403);
+        expect(res.body.code).toBe('NOT_YOURS');
+      }
+      expect(power(id)).toEqual({ authority: 'person', marks: '{}' });
+    });
+
+    it('lets it on an install with no owner account, at the stranger bound', async () => {
+      const id = await personsTodo();
+      const res = await request(fixtureServer).patch(`/api/todos/${id}`).send({ state: 'kept' });
+      expect(res.status).toBe(200);
+      expect(res.body.state).toBe('kept');
+      expect(power(id)).toEqual({ authority: 'runtime-default', marks: '{"outsider":true}' });
+    });
   });
 
   it('asks a window of the app with no session to step up before it writes anything', async () => {
