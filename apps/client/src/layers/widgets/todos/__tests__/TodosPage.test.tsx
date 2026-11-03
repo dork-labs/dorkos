@@ -18,7 +18,7 @@ vi.mock('@/layers/entities/todo', () => ({
 
 vi.mock('@/layers/features/todos', () => ({
   TodoList: () => <div data-testid="todo-list" />,
-  NewTodoDialog: () => null,
+  openNewTodo: vi.fn(),
 }));
 
 import { TodosPage } from '../ui/TodosPage';
@@ -43,10 +43,9 @@ describe('TodosPage', () => {
     expect(screen.queryByText('To-do list is off')).toBeNull();
   });
 
-  it('shows the list and a New to-do button when to-dos are on', () => {
+  it('shows the list when to-dos are on; New to-do lives in the bar', () => {
     flag.enabled = true;
     render(<TodosPage />);
     expect(screen.getByTestId('todo-list')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'New to-do' })).toBeInTheDocument();
   });
 });

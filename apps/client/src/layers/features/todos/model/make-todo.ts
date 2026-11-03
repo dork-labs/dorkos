@@ -1,8 +1,10 @@
 /**
- * "Make a to-do" from a message: one dialog for the whole app, opened from any message's actions.
+ * The to-do dialog for the whole app: "New to-do" from the To-dos bar or an empty list, and "Make
+ * a to-do" from any message's actions.
  *
  * The dialog registers with the root dialog host, which mounts it only while it is open. Opening
- * it records the message first, so the form mounts with the message it was asked for.
+ * it records the message first (or that there is none), so the form mounts with what it was
+ * asked for.
  *
  * @module features/todos/model/make-todo
  */
@@ -11,10 +13,10 @@ import { useTodosEnabled } from '@/layers/entities/todo';
 import { createDialogOpenState } from '@/layers/shared/model';
 import type { TodoMessageSource } from '../ui/NewTodoDialog';
 
-/** The message the dialog was last opened for. */
+/** The message the dialog was last opened for, or null for a blank New to-do. */
 let pending: TodoMessageSource | null = null;
 
-/** Whether the Make a to-do dialog is open; the root dialog host reads it. */
+/** Whether the to-do dialog is open; the root dialog host reads it. */
 export const makeTodoDialogState = createDialogOpenState();
 
 /**
@@ -27,7 +29,15 @@ export function openMakeTodo(source: TodoMessageSource): void {
   makeTodoDialogState.set(true);
 }
 
-/** The message the open dialog is for, or null before any was opened. */
+/**
+ * Open a blank New to-do.
+ */
+export function openNewTodo(): void {
+  pending = null;
+  makeTodoDialogState.set(true);
+}
+
+/** The message the open dialog is for, or null for a blank New to-do. */
 export function makeTodoSource(): TodoMessageSource | null {
   return pending;
 }

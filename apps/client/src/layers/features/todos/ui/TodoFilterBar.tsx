@@ -1,6 +1,7 @@
 /**
  * The to-do list's controls: one chip per view, and a small menu for the due filter, the sort
- * and whether done ones show.
+ * and whether done ones show. One row at every width: the chips scroll sideways on a phone, and
+ * the menu stays at the row's end.
  *
  * @module features/todos/ui/TodoFilterBar
  */
@@ -42,11 +43,16 @@ function isOneOf<T extends string>(options: readonly { value: T }[], value: stri
 export function TodoFilterBar({ filters, onChange }: TodoFilterBarProps) {
   const narrowed = filters.due !== 'any' || filters.sort !== 'due' || filters.showDone;
   return (
-    <div data-slot="todo-filter-bar" className="flex flex-wrap items-center gap-1.5">
-      <div role="group" aria-label="Whose to-dos" className="flex flex-wrap gap-1.5">
+    <div data-slot="todo-filter-bar" className="flex min-w-0 items-center gap-1.5">
+      <div
+        role="group"
+        aria-label="Whose to-dos"
+        className="flex min-w-0 scrollbar-none gap-1.5 overflow-x-auto"
+      >
         {TODO_VIEWS.map((view) => (
           <Chip
             key={view.value}
+            className="shrink-0"
             pressed={filters.view === view.value}
             onClick={() => onChange('view', view.value)}
           >
@@ -56,7 +62,12 @@ export function TodoFilterBar({ filters, onChange }: TodoFilterBarProps) {
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Chip pressed={narrowed} aria-label="Filter and sort" icon={ChevronDown} />
+          <Chip
+            pressed={narrowed}
+            aria-label="Filter and sort"
+            icon={ChevronDown}
+            className="shrink-0"
+          />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-48">
           <DropdownMenuLabel>Due</DropdownMenuLabel>

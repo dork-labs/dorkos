@@ -1,7 +1,8 @@
+import { NewTodoButton } from '@/layers/features/todos';
 import { TitleBar } from '@/layers/widgets/one-bar';
 export const ConnectionsBar = () => <TitleBar title="Connections" />;
 export const MarketplaceBar = () => <TitleBar title="Marketplace" />;
 export const MarketplaceSourcesBar = () => <TitleBar title="Marketplace sources" />;
 export const FeedbackRequestsBar = () => <TitleBar title="Your reports" />;
 export const ThreadsBar = () => <TitleBar title="Threads" />;
-export const TodosBar = () => <TitleBar title="To-dos" />;
+export const TodosBar = () => <TitleBar title="To-dos" actions={<NewTodoButton />} />;

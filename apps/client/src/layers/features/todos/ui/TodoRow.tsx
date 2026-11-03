@@ -4,6 +4,7 @@
  *
  * @module features/todos/ui/TodoRow
  */
+import { Fragment, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import type { Todo } from '@dorkos/shared/todo-schemas';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
@@ -56,10 +57,8 @@ function CheckCircle({ todo, onComplete }: Pick<TodoRowProps, 'todo' | 'onComple
   );
 }
 
-/** Who has it: an agent's face and name, or "You". */
-function Assignee({ todo, agent }: Pick<TodoRowProps, 'todo' | 'agent'>) {
-  if (todo.assignee.kind === 'person') return <span>You</span>;
-  const id = todo.assignee.agentId;
+/** Which agent has it: its face and name. The person's own to-dos say nothing here. */
+function AgentAssignee({ agentId: id, agent }: { agentId: string; agent?: AgentPathEntry }) {
   const visual = resolveAgentVisual({ id, color: agent?.color, icon: agent?.icon });
   return (
     <span className="inline-flex min-w-0 items-center gap-1">
@@ -78,10 +77,63 @@ function Outcome({ todo }: Pick<TodoRowProps, 'todo'>) {
   return null;
 }
 
+/** The quiet facts under a title, kept apart by a middle dot. */
+function FactLine({ parts }: { parts: ReactNode[] }) {
+  return (
+    <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+      {parts.map((part, index) => (
+        <Fragment key={index}>
+          {index > 0 && <span aria-hidden>·</span>}
+          {part}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+/** "Limited", with what it means on hover and focus. */
+function LimitedBadge() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge size="xs" tabIndex={0} className="focus-ring">
+          Limited
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent>
+        Words DorkOS can’t vouch for touched it, so its agent has less power.
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 /** One to-do, open or closed. */
 export function TodoRow({ todo, agent, from, roomTitle, onComplete, onUndo }: TodoRowProps) {
   const due = todoDueLabel(todo);
   const closed = todo.state !== 'open';
+  // Today's and overdue dates are what the eye looks for, so they read stronger than the rest.
+  const urgent = todo.overdue || due === 'Due today';
+  const parts: ReactNode[] = [];
+  if (closed) parts.push(<Outcome todo={todo} />);
+  if (todo.assignee.kind === 'agent') {
+    parts.push(<AgentAssignee agentId={todo.assignee.agentId} {...(agent ? { agent } : {})} />);
+  }
+  if (due) {
+    parts.push(
+      <span
+        className={cn(urgent && 'text-foreground font-medium', todo.overdue && 'text-destructive')}
+      >
+        {due}
+      </span>
+    );
+  }
+  parts.push(<span>from {from}</span>);
+  if (roomTitle) parts.push(<span className="min-w-0 truncate">{roomTitle}</span>);
+  // Only an agent's to-do runs a turn, so the limit means nothing on the person's own.
+  if (todo.strangerBound && todo.assignee.kind === 'agent') parts.push(<LimitedBadge />);
+  if (todo.titleFromSource && todo.sourceAuthor) {
+    parts.push(<span>Words from {todo.sourceAuthor}</span>);
+  }
   return (
     <li
       data-slot="todo-row"
@@ -91,41 +143,26 @@ export function TodoRow({ todo, agent, from, roomTitle, onComplete, onUndo }: To
     >
       <CheckCircle todo={todo} {...(onComplete ? { onComplete } : {})} />
       <div className="min-w-0 flex-1 py-2 md:py-1">
-        <p
-          className={cn(
-            'truncate text-sm',
-            closed && 'text-muted-foreground',
-            todo.state === 'dropped' && 'line-through'
+        {/* Undo sits right after the title, beside the check that was just pressed. */}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p
+            className={cn(
+              'min-w-0 truncate text-sm',
+              closed && 'text-muted-foreground',
+              todo.state === 'dropped' && 'line-through'
+            )}
+            title={todo.what}
+          >
+            {todo.what}
+          </p>
+          {onUndo && (
+            <Button size="xs" variant="ghost" className="shrink-0" onClick={onUndo}>
+              Undo
+            </Button>
           )}
-          title={todo.what}
-        >
-          {todo.what}
-        </p>
-        <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          <Outcome todo={todo} />
-          {due && <span className={cn(todo.overdue && 'text-destructive font-medium')}>{due}</span>}
-          <Assignee todo={todo} {...(agent ? { agent } : {})} />
-          <span>from {from}</span>
-          {roomTitle && <span className="min-w-0 truncate">{roomTitle}</span>}
-          {/* Only an agent's to-do runs a turn, so the limit means nothing on the person's own. */}
-          {todo.strangerBound && todo.assignee.kind === 'agent' && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge size="xs" tabIndex={0} className="focus-ring">
-                  Limited
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent>Someone outside touched it, so guest limits apply.</TooltipContent>
-            </Tooltip>
-          )}
-          {todo.titleFromSource && todo.sourceAuthor && <span>Words from {todo.sourceAuthor}</span>}
         </div>
+        <FactLine parts={parts} />
       </div>
-      {onUndo && (
-        <Button size="xs" variant="ghost" className="mt-2 md:mt-1" onClick={onUndo}>
-          Undo
-        </Button>
-      )}
     </li>
   );
 }

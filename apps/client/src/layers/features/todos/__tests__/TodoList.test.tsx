@@ -170,7 +170,7 @@ describe('TodoList', () => {
     const user = userEvent.setup();
     renderList([]);
     await screen.findByText('Nothing assigned to you.');
-    await user.click(screen.getByRole('button', { name: 'Agents’' }));
+    await user.click(screen.getByRole('button', { name: 'For agents' }));
     expect(await screen.findByText('No to-dos here.')).toBeInTheDocument();
   });
 
