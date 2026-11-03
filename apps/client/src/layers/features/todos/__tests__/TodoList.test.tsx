@@ -319,6 +319,25 @@ describe('TodoList', () => {
       );
     });
 
+    it('moves a row without remounting it, so nothing on it replays or loses its place', async () => {
+      const user = userEvent.setup();
+      const transport = renderRanked();
+      await screen.findByText('First');
+      await myOrder(user, transport);
+      await enter(user);
+      const row = screen.getByText('First').closest('li')!;
+      const down = screen.getByRole('button', { name: 'Move First down' });
+      await user.click(down);
+      await waitFor(() => expect(transport.updateTodo).toHaveBeenCalledOnce());
+      await waitFor(() =>
+        expect(screen.getAllByRole('listitem').map((li) => li.textContent)[1]).toContain('First')
+      );
+      // The same nodes, moved: a remount would be new ones.
+      expect(screen.getByText('First').closest('li')).toBe(row);
+      expect(screen.getByRole('button', { name: 'Move First down' })).toBe(down);
+      expect(down).toHaveFocus();
+    });
+
     it('hands focus to ↑ when a row reaches the bottom', async () => {
       const user = userEvent.setup();
       const transport = renderRanked();

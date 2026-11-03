@@ -90,6 +90,12 @@ describe('SortableTodoRow', () => {
     expect(document.querySelector('[data-swipe-to-finish]')).toBeNull();
   });
 
+  it('offers no grip in Reorder mode, which moves by its buttons alone', () => {
+    renderRow({ reorder: { first: false, last: false } });
+    expect(screen.queryByRole('button', { name: 'Move Renew the domain' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Move Renew the domain up' })).toBeInTheDocument();
+  });
+
   it('swipes to finish on a phone outside Reorder mode', () => {
     media.narrow = true;
     renderRow({ onComplete: vi.fn() });

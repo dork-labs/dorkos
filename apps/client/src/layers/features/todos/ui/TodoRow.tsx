@@ -184,6 +184,8 @@ export function TodoRow({
     <li
       ref={rowRef}
       style={style}
+      // How the list finds the row to slide it after a Reorder move (`use-row-slide`).
+      data-todo-row-id={todo.id}
       data-slot="todo-row"
       data-state={todo.state}
       data-overdue={todo.overdue || undefined}
