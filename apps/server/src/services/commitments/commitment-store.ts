@@ -1,6 +1,7 @@
 /**
  * The `commitments` table: what each agent promised, to whom, by when, and how
- * it ended (spec `heartbeats` §12).
+ * it ended (spec `heartbeats` §12). Since To-dos (DOR-3088) it also holds to-dos a person owns,
+ * which this store never returns.
  *
  * Synchronous (better-sqlite3), like the other small stores: a list read is one
  * indexed query, and a write is one row.
@@ -18,6 +19,7 @@ import {
   sql,
   type CommitmentRow,
   type Db,
+  type SQL,
 } from '@dorkos/db';
 import type { CommitmentState } from '@dorkos/shared/commitment-schemas';
 
@@ -33,6 +35,16 @@ export interface CommitmentFilter {
   /** Only commitments made to this account, agent or outsider. */
   to?: string;
 }
+
+/**
+ * A row an agent owns: every commitment before to-dos, and every to-do assigned to an agent.
+ * The promise readers (capabilities, routes, beats, due wakes) see only these; a to-do a person
+ * owns is read through the to-dos surface instead (DOR-3088).
+ */
+export type AgentCommitmentRow = CommitmentRow & { agentId: string };
+
+/** Only rows an agent owns. */
+const AGENT_OWNED: SQL = isNotNull(commitments.agentId);
 
 /** The fields a change may touch. */
 export type CommitmentPatch = Partial<
@@ -53,7 +65,7 @@ export class CommitmentStore {
    *
    * @param row - The full row.
    */
-  insert(row: CommitmentRow): CommitmentRow {
+  insert(row: AgentCommitmentRow): AgentCommitmentRow {
     this.db.insert(commitments).values(row).run();
     return row;
   }
@@ -63,8 +75,12 @@ export class CommitmentStore {
    *
    * @param id - The commitment id.
    */
-  get(id: string): CommitmentRow | undefined {
-    return this.db.select().from(commitments).where(eq(commitments.id, id)).get();
+  get(id: string): AgentCommitmentRow | undefined {
+    return this.db
+      .select()
+      .from(commitments)
+      .where(and(eq(commitments.id, id), AGENT_OWNED))
+      .get() as AgentCommitmentRow | undefined;
   }
 
   /**
@@ -73,8 +89,12 @@ export class CommitmentStore {
    * @param id - The commitment id.
    * @param patch - What changes.
    */
-  update(id: string, patch: CommitmentPatch): CommitmentRow | undefined {
-    this.db.update(commitments).set(patch).where(eq(commitments.id, id)).run();
+  update(id: string, patch: CommitmentPatch): AgentCommitmentRow | undefined {
+    this.db
+      .update(commitments)
+      .set(patch)
+      .where(and(eq(commitments.id, id), AGENT_OWNED))
+      .run();
     return this.get(id);
   }
 
@@ -88,8 +108,9 @@ export class CommitmentStore {
    * @param filter - Which ones.
    * @param limit - How many rows in all, at most; open ones are never cut.
    */
-  list(filter: CommitmentFilter = {}, limit = COMMITMENT_LIST_LIMIT): CommitmentRow[] {
+  list(filter: CommitmentFilter = {}, limit = COMMITMENT_LIST_LIMIT): AgentCommitmentRow[] {
     const shared = [
+      AGENT_OWNED,
       filter.agentId ? eq(commitments.agentId, filter.agentId) : undefined,
       filter.to ? eq(commitments.toAccount, filter.to) : undefined,
     ].filter((c) => c !== undefined);
@@ -106,9 +127,9 @@ export class CommitmentStore {
           )
           .all()
       : [];
-    if (filter.state === 'open') return open;
+    if (filter.state === 'open') return open as AgentCommitmentRow[];
     const room = Math.max(0, limit - open.length);
-    if (room === 0) return open;
+    if (room === 0) return open as AgentCommitmentRow[];
     const closed = this.db
       .select()
       .from(commitments)
@@ -121,15 +142,15 @@ export class CommitmentStore {
       .orderBy(desc(commitments.closedAt), desc(commitments.id))
       .limit(room)
       .all();
-    return [...open, ...closed];
+    return [...open, ...closed] as AgentCommitmentRow[];
   }
 
   /** Every open commitment that has a due date: what the due timers are built from. */
-  openWithDueDate(): CommitmentRow[] {
+  openWithDueDate(): AgentCommitmentRow[] {
     return this.db
       .select()
       .from(commitments)
-      .where(and(eq(commitments.state, 'open'), isNotNull(commitments.dueAt)))
-      .all();
+      .where(and(eq(commitments.state, 'open'), isNotNull(commitments.dueAt), AGENT_OWNED))
+      .all() as AgentCommitmentRow[];
   }
 }

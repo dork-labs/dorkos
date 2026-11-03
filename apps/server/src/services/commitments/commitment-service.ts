@@ -28,7 +28,6 @@
  * @module services/commitments/commitment-service
  */
 import { ulid } from 'ulidx';
-import type { CommitmentRow } from '@dorkos/db';
 import type { Commitment, CommitmentState } from '@dorkos/shared/commitment-schemas';
 import type { AuditChange } from '@dorkos/shared/audit-schemas';
 import { recordAudit } from '../audit/audit-trail.js';
@@ -37,10 +36,12 @@ import { logger } from '../../lib/logger.js';
 import { COMMITMENT_MISSED_AFTER_MS, CommitmentDueTimers } from './commitment-due-timers.js';
 import {
   COMMITMENT_LIST_LIMIT,
+  type AgentCommitmentRow,
   type CommitmentFilter,
   type CommitmentPatch,
   type CommitmentStore,
 } from './commitment-store.js';
+import { writeAuthority, writeAuthorityMarks } from './commitment-authority.js';
 import {
   hasMarks,
   mergeMarks,
@@ -48,6 +49,12 @@ import {
   parseStoredMarks,
   type TurnMarks,
 } from '../core/turn-power/turn-marks.js';
+
+/**
+ * Who a person-made commitment names as its assigner. This DorkOS has one owner, and the
+ * person routes vouch only for them; to-dos from other people name their own account (DOR-3088).
+ */
+export const PERSON_ASSIGNER = 'owner';
 
 /** How far in the past a new due date may be, for clock skew between devices. */
 export const COMMITMENT_DUE_SKEW_MS = 60 * 1000;
@@ -155,7 +162,7 @@ const CLOSE_ACTION: Record<Exclude<CommitmentState, 'open'>, string> = {
  * @param row - The stored row.
  * @param now - The moment to judge it at, in epoch ms.
  */
-export function isOverdue(row: Pick<CommitmentRow, 'state' | 'dueAt'>, now: number): boolean {
+export function isOverdue(row: Pick<AgentCommitmentRow, 'state' | 'dueAt'>, now: number): boolean {
   if (row.state !== 'open' || !row.dueAt) return false;
   const due = Date.parse(row.dueAt);
   return !Number.isNaN(due) && due < now;
@@ -167,7 +174,7 @@ export function isOverdue(row: Pick<CommitmentRow, 'state' | 'dueAt'>, now: numb
  * @param row - The stored row.
  * @param now - The moment to judge overdue at, in epoch ms.
  */
-export function toCommitment(row: CommitmentRow, now: number): Commitment {
+export function toCommitment(row: AgentCommitmentRow, now: number): Commitment {
   return {
     id: row.id,
     agentId: row.agentId,
@@ -306,15 +313,26 @@ export class CommitmentService {
    * Record a promise for an agent.
    *
    * The caller decides whose it is: the capability passes the calling agent's
-   * own id, the route the agent a person picked.
+   * own id, the route the agent a person picked. Who made it decides the power it
+   * carries: an agent's own promise carries `self` and its turn's marks, and only a
+   * caller that names a person gets `person`. Left out, it is the agent's own.
    *
    * @param agentId - The Mesh id of the agent that promised.
    * @param input - What, to whom, by when, and where it was made.
+   * @param assigner - Who made it: the agent itself (the default), or a person.
    * @throws {CommitmentError} `PAST_DUE` when the due date has passed.
    */
-  create(agentId: string, input: NewCommitment): Commitment {
+  create(
+    agentId: string,
+    input: NewCommitment,
+    assigner: CommitmentActor = { kind: 'agent', agentId }
+  ): Commitment {
+    if (assigner.kind === 'agent' && assigner.agentId !== agentId) {
+      throw new CommitmentError('NOT_YOURS', 'An agent records only its own promises.');
+    }
     const dueAt = input.dueAt ? this.futureDue(input.dueAt) : null;
-    const row: CommitmentRow = {
+    const marks = assigner.kind === 'agent' ? (input.originMarks ?? NO_MARKS) : NO_MARKS;
+    const row: AgentCommitmentRow = {
       id: ulid(),
       agentId,
       toAccount: input.to ?? null,
@@ -329,6 +347,18 @@ export class CommitmentService {
       note: null,
       originMarks:
         input.originMarks && hasMarks(input.originMarks) ? JSON.stringify(input.originMarks) : null,
+      ownerAccount: null,
+      assignedByKind: assigner.kind,
+      assignedBy: assigner.kind === 'agent' ? assigner.agentId : PERSON_ASSIGNER,
+      authority: writeAuthority({ kind: assigner.kind === 'agent' ? 'self' : 'person' }),
+      authorityMarks: writeAuthorityMarks(marks),
+      chainDepth: 0,
+      chainAgents: '[]',
+      titleFromSource: false,
+      sourceAuthor: null,
+      roomId: null,
+      notes: null,
+      rank: null,
     };
     this.store.insert(row);
     this.audit(row, 'commitment.created', 'create', [
@@ -389,7 +419,7 @@ export class CommitmentService {
   }
 
   /** Move an open promise's due date. A new date gets a new wake. */
-  private move(row: CommitmentRow, change: CommitmentChange): Commitment {
+  private move(row: AgentCommitmentRow, change: CommitmentChange): Commitment {
     const nextDue =
       change.dueAt === undefined ? row.dueAt : change.dueAt ? this.futureDue(change.dueAt) : null;
     if (nextDue === row.dueAt) {
@@ -421,7 +451,7 @@ export class CommitmentService {
    * was, and either way given a fresh hour rather than a missed mark the moment
    * it reopens.
    */
-  private reopen(row: CommitmentRow, change: CommitmentChange): Commitment {
+  private reopen(row: AgentCommitmentRow, change: CommitmentChange): Commitment {
     const dateMoves = change.dueAt !== undefined;
     const nextDue = dateMoves ? (change.dueAt ? this.futureDue(change.dueAt) : null) : row.dueAt;
     const now = this.now();
@@ -455,7 +485,7 @@ export class CommitmentService {
   }
 
   /** Save a note and nothing else, recorded as a change to the promise. */
-  private saveNote(row: CommitmentRow, note: string): Commitment {
+  private saveNote(row: AgentCommitmentRow, note: string): Commitment {
     const updated = this.store.update(row.id, { note: note || null })!;
     this.audit(
       updated,
@@ -469,7 +499,7 @@ export class CommitmentService {
 
   /** Close a promise as kept, missed or dropped. */
   private close(
-    row: CommitmentRow,
+    row: AgentCommitmentRow,
     state: Exclude<CommitmentState, 'open'>,
     note: string | undefined
   ): Commitment {
@@ -491,7 +521,7 @@ export class CommitmentService {
   }
 
   /** Arm (or clear) the timer for a row as it now stands. */
-  private arm(row: CommitmentRow): void {
+  private arm(row: AgentCommitmentRow): void {
     if (row.state === 'open' && row.dueAt) {
       this.timers.schedule({ id: row.id, dueAt: row.dueAt, dueNotifiedAt: row.dueNotifiedAt });
     } else {
@@ -542,7 +572,7 @@ export class CommitmentService {
 
   /** Write the audit row for one change. The summary is the promise itself, nothing more. */
   private audit(
-    row: CommitmentRow,
+    row: AgentCommitmentRow,
     action: string,
     operation: 'create' | 'modify',
     change: AuditChange[],
