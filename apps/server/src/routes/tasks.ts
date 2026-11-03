@@ -80,71 +80,24 @@ import {
 import { scheduleCreditsModelRefusal } from '../services/tasks/lifecycle/schedule-credits-model.js';
 import {
   describeTaskPermissionLevel,
+  operatorOnlyTaskRefusal,
   taskModeRefusal,
   scheduleEditorOf,
   namesCredits,
 } from './task-route-answers.js';
 import {
-  describeOperatorOnlyTaskRefusal,
-  findOperatorOnlyTaskFields,
   OPERATOR_ONLY_TASK_CODE,
   OPERATOR_ONLY_TASK_ERROR,
   OPERATOR_ONLY_TRIGGER_REFUSAL,
   refuseUnknownTaskUpdateFields,
 } from '../services/tasks/task-write-policy.js';
+import {
+  agentEditMayStayLive,
+  settleHttpTaskEdit,
+} from '../services/tasks/agent-mode/agent-mode-record.js';
 import { marksOf } from '../services/core/turn-power/turn-levels.js';
+import { mountTaskModeUndo } from './task-mode-undo.js';
 import { marksHold } from '../services/core/turn-power/turn-marks.js';
-
-/**
- * Refuse a task write that reaches for a field only a person may set (DOR-504):
- * the 403 body to answer with, or `null` when the write may go on.
- *
- * ## Why this route needs a caller check when the MCP twin does not
- *
- * `tasks_create` and `tasks_update` refuse `permissionMode` and `status`
- * unconditionally, because an MCP tool call is by construction the agent surface.
- * This route is not: the app's Approve button writes `status: 'active'`
- * through it (`TaskRow.tsx`), and its task form writes `permissionMode`. So the
- * policy is skipped for a caller that clears {@link clearsTheAgentBar} — a person
- * positively established, with no agent identity and no approval token — and
- * applied to everyone else. That is exactly the shape `PATCH /api/config` uses for
- * operator-only settings. Under login-on that trust now requires a session cookie
- * (DOR-1569), so a per-user API key is refused here just as a named agent is.
- * Under the default `local-trust` posture, though, a caller with a shell can omit
- * every header and be indistinguishable from the app, so this stops an agent
- * that follows the protocol, not an adversary already running as you — the
- * documented DOR-505 residual, closed only by turning login on.
- *
- * ## Read the RAW body, and refuse it whole
- *
- * The check runs before the schema parse for two reasons. It has to see what the
- * CALLER sent rather than what the route resolved: an omitted `permissionMode`
- * is filled in from the operator's own trust stop a few lines later
- * (`resolveScheduledRunPermissionMode`), and a guard reading the resolved value
- * could not tell a caller that named a level from one that did not. That was
- * true of the Zod default this replaced and it is true of the ladder — the guard
- * did not change, only the thing it must not be moved after. And refusing before
- * anything is parsed or written is what makes the refusal whole: a caller is
- * never told a change landed when only part of it did.
- *
- * @param body - The raw request body, as the caller sent it.
- * @param trusted - Whether the caller cleared {@link clearsTheAgentBar}. Passed in
- *   rather than resolved here because `POST /` needs the same answer a second
- *   time — it decides whether the new task parks at `pending_approval`
- *   (`createScheduledTask`) — and asking twice would let the two uses disagree.
- * @returns The refusal, answered with 403 by the route, or `null`.
- */
-function operatorOnlyTaskRefusal(body: unknown, trusted: boolean) {
-  if (trusted) return null;
-  const operatorOnly = findOperatorOnlyTaskFields(body);
-  if (operatorOnly.length === 0) return null;
-  return {
-    error: OPERATOR_ONLY_TASK_ERROR,
-    code: OPERATOR_ONLY_TASK_CODE,
-    fields: operatorOnly,
-    message: describeOperatorOnlyTaskRefusal(operatorOnly),
-  };
-}
 
 /**
  * How many upcoming runs a parked schedule carries in `nextRuns`.
@@ -606,8 +559,9 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (!rearms || !changesFile) {
       store.approvals.settleApprovedWorkChange(updated.id, before, {
         trusted: rearms,
-        // Only an agent's own schedule stays live through its edit (DOR-3640 R1).
-        armsAgentWork: !trusted && edit.armsAgentWork,
+        // Only an agent's own schedule stays live through its edit (DOR-3640 R1),
+        // and not one an agent approved or a person set looser than Don't ask (DOR-3703).
+        armsAgentWork: !trusted && edit.armsAgentWork && agentEditMayStayLive(existing, store),
       });
       updated = store.getTask(updated.id) ?? updated;
     }
@@ -617,6 +571,13 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     if (!trusted && marksHold(marks) && store.approvals.markOrigin(updated.id, marks)) {
       updated = store.getTask(updated.id) ?? updated;
     }
+    // A person's edit that arms, sets the mode or changes the work approves that
+    // content; an agent's is recorded, and parks what no longer matches (DOR-3703).
+    updated = await settleHttpTaskEdit(store, meshCore, trusted, caller.agentIdentity, {
+      existing,
+      data,
+      updated,
+    });
 
     // Re-register or unregister the cron job to match the new state, through the
     // shared seam — see the note on the create path above.
@@ -926,5 +887,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     return c.json({ success: true, state: 'stopping' });
   });
 
+  // A person putting back a mode an agent set without asking (DOR-3703).
+  mountTaskModeUndo(router, deps);
   return router;
 }

@@ -47,6 +47,7 @@ export const SAFEST_VALUES: ReadonlyMap<string, unknown> = new Map<string, unkno
   ['welcomeBack.enabled', false],
   ['welcomeBack.offersEnabled', false],
   ['docs.enabled', false],
+  ['tasks.agentModeControl', false],
   ['keepAwake.wakeForScheduledTasks', false],
   // Whether the person is asked first: Ask is the strictest stop.
   ['runtimes.defaultTrustStop', 'ask'],

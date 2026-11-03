@@ -24,6 +24,7 @@ import {
   AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON,
   CHANGED_REASON,
   FILE_ASKS_FOR_MORE_REASON,
+  isLooserMode,
   resolveFileArmStatus,
   resolveFilePermissionMode,
   scheduleContentKey,
@@ -59,6 +60,8 @@ const KEPT_PARK_REASONS: ReadonlySet<string> = new Set([
   AGENT_SETTINGS_CHANGE_REASON,
 ]);
 import { logger } from '../../lib/logger.js';
+import { fileEditsRunCapped } from './agent-mode/file-cap/file-cap-rule.js';
+import { readAgentModeColumn } from './agent-mode/agent-mode-record-field.js';
 
 /** Where a file-sourced write came from, and what is wrong with the file. */
 export interface FileSyncSource {
@@ -143,6 +146,43 @@ export function fileSettingsOf(def: TaskDefinition): ScheduleSettings {
 }
 
 /**
+ * Whether a discovered file that would park its row keeps it live instead,
+ * for the cap at dispatch (DOR-3703, M4): the row is running, only the body
+ * changed (the cap is about the body, so new timing or settings park as they
+ * always have), the file has nothing wrong with it and asks for no looser mode
+ * than the row holds, no
+ * outsider's words wrote the row, and the task is one a changed file caps
+ * rather than parks (`fileEditsRunCapped`).
+ *
+ * @param verdict - What the arm gate decided.
+ * @param existing - The row the file is landing on.
+ * @param incoming - What the file would run.
+ * @param schedule - The file's schedule block.
+ * @param options - Where the write came from, and any complaint.
+ */
+function keepsLiveForFileCap(
+  verdict: FileArmVerdict,
+  existing: typeof pulseSchedules.$inferSelect | undefined,
+  incoming: IncomingTaskContent,
+  schedule: TaskDefinition['meta']['schedule'],
+  options?: FileSyncSource
+): boolean {
+  return (
+    verdict.status === 'pending_approval' &&
+    !options?.problem &&
+    existing?.status === 'active' &&
+    // Somebody vouched for a file before (M-B): with no attested hash, a change parks as today.
+    readAgentModeColumn(existing.agentModeRecord).fileAttest !== undefined &&
+    // Only the body changed: a new cron, runtime, model or account parks as before.
+    scheduleContentKey({ ...incoming, prompt: existing.prompt }) ===
+      effectiveContentKey(existing) &&
+    existing.originMarks === null &&
+    !isLooserMode(schedule.permissions, existing.permissionMode) &&
+    fileEditsRunCapped(existing)
+  );
+}
+
+/**
  * Asks the content gates, and remembers what it has already complained about.
  *
  * Stateful for exactly one reason: the refusal log needs to know what it said
@@ -202,7 +242,7 @@ export class FileSyncGates {
       approvedContentKey: existing.approvedContentKey,
     };
 
-    const { mode: permissionMode, clamped } = resolveFilePermissionMode(
+    const { mode: fileMode, clamped } = resolveFilePermissionMode(
       def.meta.schedule.permissions,
       approved,
       incoming,
@@ -217,13 +257,22 @@ export class FileSyncGates {
     const verdict =
       options?.source === 'discovery'
         ? resolveFileArmStatus(approved, incoming, options.problem, {
-            next: permissionMode,
+            next: fileMode,
             asked: def.meta.schedule.permissions,
             agent: options.agentLevel,
           })
         : null;
-    const arm =
-      verdict && options && this.keepsParkReason(verdict, existing, incoming, options)
+    // A task with an agent whose file changed outside the task tools keeps
+    // running, at the file's own mode, and its runs are capped at Don't ask
+    // when they start (M4, `agent-mode/file-cap/`). This sync never says the
+    // new file is approved: it writes no attested hash (M8).
+    const capsAtDispatch =
+      verdict !== null &&
+      keepsLiveForFileCap(verdict, existing, incoming, def.meta.schedule, options);
+    const permissionMode = capsAtDispatch ? def.meta.schedule.permissions : fileMode;
+    const arm = capsAtDispatch
+      ? { status: 'active' as const, reason: null }
+      : verdict && options && this.keepsParkReason(verdict, existing, incoming, options)
         ? { ...verdict, reason: existing!.reason }
         : verdict;
 

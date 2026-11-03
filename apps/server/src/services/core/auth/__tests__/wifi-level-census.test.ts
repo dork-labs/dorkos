@@ -200,6 +200,10 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/tasks',
     'PATCH /api/tasks/:id',
     'POST /api/tasks/:id/trigger',
+    // Putting back the mode an agent set: refused when the old mode is a raise (DOR-3703).
+    'POST /api/tasks/:id/undo-agent-mode',
+    // Approving a changed SKILL file lifts a cap, so it is an approval: refused (DOR-3703, M4).
+    'POST /api/tasks/:id/approve-file',
     'PATCH /api/permissions/defaults',
     'PUT /api/permissions/preset',
     'PATCH /api/agents/:id/permissions',

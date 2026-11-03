@@ -771,7 +771,17 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/tasks/lifecycle/create-task.ts':
         'the shared create sequence, which parks a proposal and lifts the permission clamp for a trusted caller only — reached through a door that already refused operator-only fields (DOR-1568)',
       'services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts':
-        'the tasks_update handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504)',
+        'the tasks_update handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504) unless `tasks.agentModeControl` is on, when the mode and the approval are decided as `tasks.set_mode` / `tasks.approve` by the tool gate and again before the write (DOR-3703)',
+      'services/tasks/agent-mode/agent-mode-record.ts':
+        "two writes (DOR-3703). `armAgentApproval` arms a waiting schedule — status 'active', with the mode the approval names, possibly looser than the current one — only for a grant `settleAgentModeCall` made from the tool gate's own note for `tasks.approve` (Allowed by that action's own setting, or a person's yes on its card; self-, chain- and unreadable-lineage approvals refused before), after the snapshot check finds the task, its SKILL file and its last editor unchanged, the audit row is stored, and inside one transaction that re-checks the snapshot. The parks (`reparkIfAgentApprovalBroken`, and at dispatch a mode an agent set above Don't ask on content no person approved) only ever take running away",
+      'services/tasks/agent-mode/agent-mode-undo.ts':
+        "a person's Undo of a mode an agent set (DOR-3703): reached only through `routes/task-mode-undo.ts`, which refuses any caller that does not clear the agent bar, and it only writes back the mode the agent's own recorded change replaced, while the task still runs at the agent's mode. The same path undoes an agent's change the person could not be told about (condition 4), and parks the task when even that fails: it only takes power away",
+      'services/tasks/agent-mode/file-cap/file-cap-person.ts':
+        "a person's Approve file on a capped SKILL file (DOR-3703, M4): reached only through `routes/task-file-approve.ts`, which refuses any caller that does not clear the agent bar and refuses Wi-Fi, and it writes only `prompt`, set to the exact file body whose hash the person's diff showed: never a mode or a status",
+      'services/runtimes/claude-code/mcp-tools/tasks/task-tool-file-cap.ts':
+        "the task's own agent lifting its file cap (DOR-3703, M4): runs only after `mayAttestFile` passes every same-agent condition (own agent and proposer, a home-vouched chat, an unmarked turn, not a scheduled run), and it writes only `prompt`, set to the body it just attested from the same read its diff came from (M-D): never a mode or a status",
+      'services/runtimes/claude-code/mcp-tools/tasks/task-tool-mode.ts':
+        'parks a schedule at pending_approval after an agent edit when its agent-set mode above Don’t ask has no person approval of the current content (DOR-3703, the run rule): it only ever takes running away, never grants a mode or an approval',
       'services/tasks/task-store.ts': 'the definition itself',
     },
   },

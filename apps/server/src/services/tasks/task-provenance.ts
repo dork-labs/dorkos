@@ -94,7 +94,11 @@ function withRunsAsName(task: Task): Task {
  * @returns The same tasks in the same order, with names filled in where they resolve.
  */
 export async function withProposerNames(tasks: Task[]): Promise<Task[]> {
-  const paths = [...new Set(tasks.map((t) => t.proposedByAgentPath).filter((p) => p !== null))];
+  // The agent that last armed a schedule is named the same way (DOR-3703).
+  const armers = tasks.map((t) => t.agentModeRecord?.agentPath ?? null);
+  const paths = [
+    ...new Set([...tasks.map((t) => t.proposedByAgentPath), ...armers].filter((p) => p !== null)),
+  ];
   if (paths.length === 0) return tasks.map(withRunsAsName);
 
   const resolved = new Map(
@@ -103,6 +107,9 @@ export async function withProposerNames(tasks: Task[]): Promise<Task[]> {
 
   return tasks.map((task) => {
     const name = task.proposedByAgentPath ? resolved.get(task.proposedByAgentPath) : null;
-    return withRunsAsName(name ? { ...task, proposedByName: name } : task);
+    const record = task.agentModeRecord;
+    const armedBy = record ? (resolved.get(record.agentPath) ?? null) : null;
+    const named = record ? { ...task, agentModeRecord: { ...record, agentName: armedBy } } : task;
+    return withRunsAsName(name ? { ...named, proposedByName: name } : named);
   });
 }

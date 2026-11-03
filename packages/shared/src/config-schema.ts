@@ -710,6 +710,20 @@ export const UserConfigSchema = z.object({
     })
     .default(() => ({ enabled: false })),
   /**
+   * Scheduled tasks, as agents may handle them (DOR-3703).
+   *
+   * `agentModeControl` ships ON, as a kill switch. On, both become permission
+   * actions in Tasks & schedules: `tasks.set_mode` (an agent sets its own
+   * schedule's mode up to its own level) and `tasks.approve` (asks a person by
+   * default). Off, an agent can neither set a scheduled task's mode nor approve
+   * a waiting one, exactly as before. Read on every call.
+   */
+  tasks: z
+    .object({
+      agentModeControl: z.boolean().default(true),
+    })
+    .default(() => ({ agentModeControl: true })),
+  /**
    * Letting agents on other systems talk to the agents on this one.
    *
    * A2A is a shared language for agents built by different people. Turn this on

@@ -11,6 +11,7 @@ import { useSafeNavigate } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui/button';
 import { NOTIFICATION_ICONS, notificationRowTone } from '@/layers/entities/notifications';
 import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layers/entities/agent';
+import { UNDO_AGENT_MODE_ACTION_ID, UndoAgentModeAction } from './UndoAgentModeAction';
 
 /** The entrance each row inherits from its list's stagger container. */
 export const staggerItem = {
@@ -137,7 +138,9 @@ function OpenScheduleAction() {
  *
  * Presentational: it holds no query and marks nothing read. Whoever renders it
  * decides what clicking means and who the agent is, which is what lets home's
- * activity group and the bell's list share one row.
+ * activity group and the bell's list share one row. The one write it can make
+ * is a notice's own Undo (an agent's schedule mode, DOR-3703), which its
+ * button owns.
  *
  * @param props - The {@link InboxRowProps.notification}, its resolved
  *   {@link InboxRowProps.agent}, and what opening it does.
@@ -156,9 +159,19 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   const opensSchedule =
     onOpen !== undefined &&
     notification.actions?.some((a) => a.id === OPEN_SCHEDULE_ACTION_ID) === true;
+  // An agent's mode change on a schedule offers Undo (DOR-3703), laid out the same way.
+  const undoesMode =
+    onOpen !== undefined &&
+    notification.subject.type === 'task' &&
+    notification.actions?.some((a) => a.id === UNDO_AGENT_MODE_ACTION_ID) === true;
+  const hasAction = opensSchedule || undoesMode;
   // The secret-files notice's body is what to do about it, so it gets the same
   // two lines below `sm` rather than being cut mid-sentence (DOR-3292).
-  const twoLineBody = opensSchedule || notification.kind === 'agent.secret_files';
+  const twoLineBody = hasAction || notification.kind === 'agent.secret_files';
+  // An agent's change to a schedule is the person's only signal of it, so its
+  // title and body read in full, never cut (DOR-3703, M6: the mode, the hashes
+  // and who started the turn).
+  const readsInFull = notification.kind === 'schedule.armed_by_agent';
   const tone = notificationRowTone(notification);
   const unread = notification.readAt === undefined;
   const visual = tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
@@ -205,9 +218,13 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
         )}
       </span>
       <span className="min-w-0 flex-1">
+        {/* A notice with a fix wraps its title to two lines rather than cut the
+            mode it names (DOR-3703, designer round 7). */}
         <span
+          data-slot="inbox-row-title"
           className={cn(
-            'block truncate text-xs',
+            'block text-xs',
+            readsInFull ? 'break-words' : hasAction ? 'line-clamp-2 break-words' : 'truncate',
             unread ? 'text-foreground font-medium' : 'text-foreground/90'
           )}
         >
@@ -215,9 +232,14 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
         </span>
         {notification.body !== undefined && (
           <span
+            data-slot="inbox-row-body"
             className={cn(
               'text-muted-foreground block text-xs',
-              twoLineBody ? 'line-clamp-2 sm:line-clamp-none sm:truncate' : 'truncate'
+              readsInFull
+                ? 'break-words'
+                : twoLineBody
+                  ? 'line-clamp-2 sm:line-clamp-none sm:truncate'
+                  : 'truncate'
             )}
           >
             {notification.body}
@@ -250,7 +272,13 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
       variants={staggerVariantsFor(index)}
       className={cn(
         'flex min-w-0 gap-1',
-        opensSchedule ? 'flex-col sm:flex-row sm:items-center' : 'items-center'
+        // Undo sits compact beside its notice even on a phone; a refused one's
+        // reason wraps onto its own full-width line.
+        undoesMode
+          ? 'flex-wrap items-start sm:items-center'
+          : hasAction
+            ? 'flex-col sm:flex-row sm:items-center'
+            : 'items-center'
       )}
     >
       {onOpen ? (
@@ -259,7 +287,10 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           data-slot="inbox-row"
           data-unread={unread ? 'true' : 'false'}
           onClick={onOpen}
-          className="hover:bg-accent/50 focus-visible:ring-ring flex min-h-9 w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2"
+          className={cn(
+            'hover:bg-accent/50 focus-visible:ring-ring flex min-h-9 min-w-0 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2',
+            undoesMode ? 'flex-1' : 'w-full'
+          )}
         >
           {body}
         </button>
@@ -275,6 +306,9 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
       {/* A failing schedule's one fix, beside the row rather than inside it (a
           button cannot hold a button). Only on a row a person can act on. */}
       {opensSchedule && <OpenScheduleAction />}
+      {undoesMode && (
+        <UndoAgentModeAction taskId={notification.subject.id} notificationId={notification.id} />
+      )}
     </motion.div>
   );
 }

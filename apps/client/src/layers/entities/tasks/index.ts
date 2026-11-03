@@ -8,6 +8,8 @@ export {
   useTasks,
   useCreateTask,
   useUpdateTask,
+  useUndoAgentTaskMode,
+  useApproveTaskFile,
   useDeleteTask,
   useTriggerTask,
   TASKS_KEY,

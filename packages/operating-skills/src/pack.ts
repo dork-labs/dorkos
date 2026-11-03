@@ -376,8 +376,14 @@ export interface OperatingSkill {
  * - 47: a member agent can set up its room's files (DOR-3468).
  *   `working-in-room-repos` names `set_up_room_files` where a merge finds a room
  *   with no files. An agent seeded at 46 would stop there and answer in the room.
+ * - 48: `scheduling-tasks` says an agent may set its own task's `permissionMode`
+ *   up to its own level, that approving still asks, and that it never approves
+ *   its own work (DOR-3703). An agent seeded at 47 would tell the user both
+ *   fields are always refused. Same release: a SKILL file edited outside the
+ *   task tools runs capped at Don't ask until the agent accepts it with a
+ *   `tasks_update` call from an ordinary chat (M4).
  */
-export const OPERATING_SKILLS_VERSION = 47;
+export const OPERATING_SKILLS_VERSION = 48;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

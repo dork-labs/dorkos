@@ -22,7 +22,7 @@ import type { EffortLevel, PermissionMode, UpdateTaskRequest } from '@dorkos/sha
 import { slugify } from '@dorkos/skills/slug';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { McpToolDeps } from '../types.js';
-import { jsonContent, requireTasks, structuredJsonContent } from '../types.js';
+import { jsonContent, requireTasks } from '../types.js';
 import { createDeleteScheduleHandler } from './task-delete-tool.js';
 import {
   PARKED_SCHEDULE_NOTE,
@@ -42,6 +42,7 @@ import {
   REASON_DESCRIPTION,
   REFUSED_PERMISSION_MODE_DESCRIPTION,
   REFUSED_STATUS_DESCRIPTION,
+  STATUS_DESCRIPTION,
 } from './task-tool-copy.js';
 import {
   clampSchedulePermissionMode,
@@ -49,12 +50,36 @@ import {
 } from '../../../../tasks/schedule-permission-clamp.js';
 import {
   CREDITS_SCHEDULE_AGENT_REFUSAL,
-  describeOperatorOnlyTaskRefusal,
-  findOperatorOnlyTaskFields,
-  OPERATOR_ONLY_TASK_CODE,
-  OPERATOR_ONLY_TASK_ERROR,
   refuseUnknownTaskUpdateFields,
 } from '../../../../tasks/task-write-policy.js';
+import {
+  agentModeCallerOf,
+  emitAgentSwitchedOn,
+  AGENT_ID_ON_CREATE_REFUSAL,
+  callerAgentPathOf,
+  createGetRunHistoryHandler,
+  createListSchedulesHandler,
+  readOutsiderWords,
+  refuseOperatorOnlyTaskFields,
+  type CallerAgentResolver,
+  type CallerMarksResolver,
+  type TaskProvenanceResolver,
+} from './task-tool-parts.js';
+import { grantCoversOthersTask } from '../../../../tasks/agent-mode/agent-mode-door.js';
+import { agentEditMayStayLive } from '../../../../tasks/agent-mode/agent-mode-record.js';
+import {
+  afterToolAgentEdit,
+  armToolApproval,
+  contentEditVouched,
+  auditToolModeChange,
+  createModeOptions,
+  modeOnly,
+  NOT_ARMED_REFUSAL,
+  NOT_RECORDED_REFUSAL,
+  NOT_TOLD_REFUSAL,
+  recordToolModeOutcome,
+  settleToolModeCall,
+} from './task-tool-mode.js';
 import { createScheduledTask } from '../../../../tasks/lifecycle/create-task.js';
 import { agentSchedulesArmWithoutAsking } from '../../../../tasks/approvals/agent-trust.js';
 import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/schedule-owner.js';
@@ -67,63 +92,18 @@ import { broadcastTasksChanged } from '../../../../tasks/task-sse-events.js';
 import { resolveScheduleParkPayload } from '../../../../notifications/emitters/schedule-park.js';
 import { raiseStanding } from '../../../../notifications/standing-events.js';
 import { conflictingTimingRequest } from '../../../../tasks/timing/effective-timing.js';
-import {
-  scheduleAccountRefusal,
-  scheduleRunFolder,
-} from '../../../../tasks/lifecycle/schedule-account-eligibility.js';
-import { scheduleCreditsModelRefusal } from '../../../../tasks/lifecycle/schedule-credits-model.js';
+import { updateRunRefusal } from './task-tool-run-refusals.js';
+import { attestNewTask, attestToolWrite, fileStateBefore } from './task-tool-file-cap.js';
 import { marksOf } from '../../../../core/turn-power/turn-levels.js';
-import { marksHold, type TurnMarks } from '../../../../core/turn-power/turn-marks.js';
+import { marksHold } from '../../../../core/turn-power/turn-marks.js';
 
-/**
- * Who is proposing a schedule, read at CALL time rather than at registration.
- *
- * Both fields are resolved lazily and for the same reason: the SDK rekeys a
- * session to its canonical id mid-first-turn, so an id captured when the tool
- * server was built names a session that no longer exists. The DevTools tools
- * resolve their session id late for exactly this reason — see
- * `mcp-tools/index.ts`.
- *
- * Absent entirely on the sessionless external `/mcp` server, where there is no
- * session to attribute a proposal to and provenance stays null.
- */
-export type TaskProvenanceResolver = () => {
-  /** The invoking session's canonical id. */
-  sessionId?: string;
-  /**
-   * The invoking session's working directory, which is the key agent identity
-   * is stored under (`agent-identity/agent-token-env.ts`) — so this is what
-   * later resolves the proposer's name.
-   */
-  agentPath?: string;
-};
-
-/**
- * The marks of the turn making a task call, for a surface that cannot name the calling session
- * (the external `/mcp` server, DOR-3036). The in-session server reads them from its session.
- */
-export type CallerMarksResolver = () => TurnMarks;
-
-/**
- * The verified home of the calling agent when the provenance names none: the
- * agent an external `/mcp` token names (DOR-3640 R1). Never read from the input.
- */
-export type CallerAgentResolver = () => string | undefined;
-
-/**
- * The calling agent's verified home, as the spread a create takes: the
- * in-session provenance's, else the external token's.
- *
- * @param provenance - The in-session caller, when there is one.
- * @param callerAgent - The external caller, when a token names one.
- */
-function callerAgentPathOf(
-  provenance: ReturnType<TaskProvenanceResolver>,
-  callerAgent: CallerAgentResolver | undefined
-): { callerAgentPath?: string } {
-  const callerAgentPath = provenance.agentPath ?? callerAgent?.();
-  return callerAgentPath ? { callerAgentPath } : {};
-}
+export {
+  createGetRunHistoryHandler,
+  createListSchedulesHandler,
+  type CallerAgentResolver,
+  type CallerMarksResolver,
+  type TaskProvenanceResolver,
+} from './task-tool-parts.js';
 
 /**
  * The `maxRuntime` argument, validated to the shape the SKILL.md frontmatter
@@ -150,68 +130,6 @@ const DURATION_ARG = z
   .max(TASK_DURATION_MAX)
   .regex(TASK_DURATION_PATTERN)
   .optional();
-
-/**
- * Refuse a task write that reaches for a field only a person may set, or return
- * `null` to let the call proceed.
- *
- * Unconditional, and that is the design rather than an omission. The wrong shape
- * here would be "refuse when the caller presented an agent identity", because
- * then omitting a header would be the bypass — the exact inversion
- * `approvals/decision-authority.ts` was rewritten to remove. An MCP tool call IS
- * the agent surface, so the proof is structural: there is no header involved and
- * nothing to strip. `operator-tool-handlers.ts` refuses operator-only config
- * paths the same way, for the same reason.
- *
- * The refusal is WHOLE. Nothing is written, including the fields the caller was
- * allowed to send, so a caller is never told a change landed when part of it did
- * not.
- *
- * @param args - The arguments the SDK parsed for this call.
- * @returns The refusal envelope, or `null` when the call may proceed.
- */
-function refuseOperatorOnlyTaskFields(args: unknown) {
-  const operatorOnly = findOperatorOnlyTaskFields(args);
-  if (operatorOnly.length === 0) return null;
-  return jsonContent(
-    {
-      error: OPERATOR_ONLY_TASK_ERROR,
-      code: OPERATOR_ONLY_TASK_CODE,
-      fields: operatorOnly,
-      message: describeOperatorOnlyTaskRefusal(operatorOnly),
-    },
-    true
-  );
-}
-
-/** List all Tasks scheduled jobs. */
-export function createListSchedulesHandler(deps: McpToolDeps) {
-  return async (args: { enabled_only?: boolean }) => {
-    const err = requireTasks(deps);
-    if (err) return err;
-    let schedules = deps.taskStore!.getTasks();
-    if (args.enabled_only) {
-      schedules = schedules.filter((s) => s.enabled);
-    }
-    // The row never stores `nextRun`; the scheduler is what knows it, as it is
-    // for `GET /api/tasks` (DOR-3125). An ISO instant in UTC, which an agent
-    // reads beside the task's own `timezone`.
-    const next = deps.nextRunOf;
-    if (next)
-      schedules = schedules.map((s) => ({ ...s, nextRun: next(s.id)?.toISOString() ?? null }));
-    return structuredJsonContent({ schedules, count: schedules.length });
-  };
-}
-
-/**
- * Whether the calling turn read words DorkOS cannot vouch for, from the turn's
- * own marks (`marksOf`, DOR-3036): its schedule writes then park for a person.
- *
- * @param provenance - The calling session and agent, as the server resolved them.
- */
-function readOutsiderWords(provenance: { sessionId?: string; agentPath?: string }): boolean {
-  return marksHold(marksOf(provenance.sessionId, provenance.agentPath));
-}
 
 /**
  * Create a new scheduled job — armed at once for one of our agents on a Trusted
@@ -261,9 +179,9 @@ export function createCreateScheduleHandler(
     effort?: EffortLevel;
     /** Which Claude account the runs start on; see {@link ACCOUNT_DESCRIPTION}. */
     account?: string;
-    /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
+    /** Refused, or decided as `tasks.set_mode` (DOR-3703); see {@link REFUSED_PERMISSION_MODE_DESCRIPTION}. */
     permissionMode?: string;
-    /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
+    /** Refused: a new task never approves itself; see {@link REFUSED_STATUS_DESCRIPTION}. */
     status?: string;
     /** Advertised so it can be REFUSED; see {@link REFUSED_AGENT_ID_DESCRIPTION}. */
     agentId?: string;
@@ -278,19 +196,21 @@ export function createCreateScheduleHandler(
     }
     // `agentId` is not a create field — `target` is — and a silent strip is what
     // sent an agent looking for another way to own its own task.
-    if (args.agentId !== undefined) {
-      return jsonContent(
-        {
-          error: 'DorkOS changed nothing — `agentId` is not a field on a scheduled task write.',
-          code: 'unknown_task_field',
-          fields: ['agentId'],
-          message:
-            'Say which agent a scheduled task belongs to with `target` instead: your own agent id ' +
-            'to file it under yourself, or "global" for a scheduled task that belongs to no agent.',
-        },
-        true
-      );
-    }
+    if (args.agentId !== undefined) return jsonContent(AGENT_ID_ON_CREATE_REFUSAL, true);
+
+    // A mode the agent names is decided as `tasks.set_mode` (DOR-3703).
+    const caller = agentModeCallerOf(resolveProvenance, callerMarks, callerAgent, deps.taskStore);
+    const body = args as Record<string, unknown>;
+    const mode = await settleToolModeCall(deps, {
+      door: 'create',
+      body,
+      input: args,
+      target: args.target,
+      caller,
+    });
+    if (mode.refusal) return jsonContent(mode.refusal, true);
+    if (!auditToolModeChange(deps, mode, null, body))
+      return jsonContent(NOT_RECORDED_REFUSAL, true);
 
     // Resolved now, not when this handler was built: the SDK rekeys a session
     // to its canonical id mid-first-turn (see {@link TaskProvenanceResolver}).
@@ -323,10 +243,12 @@ export function createCreateScheduleHandler(
           ...(args.model !== undefined && { model: args.model }),
           ...(args.effort !== undefined && { effort: args.effort }),
           ...(args.account !== undefined && { account: args.account }),
+          ...(mode.grant?.decision.setsMode && { permissionMode: mode.grant.decision.mode }),
         },
         // An MCP tool call IS the agent surface — there is no header to omit and
         // no operator branch to spare.
         trusted: false,
+        ...createModeOptions(mode),
         // Only the in-session server knows its caller is one of our agents. A
         // turn that read words DorkOS cannot vouch for (a stranger's, or a
         // Wi-Fi sign-in's, DOR-3037) runs at the runtime's default at most, so a
@@ -369,6 +291,9 @@ export function createCreateScheduleHandler(
     // agent" there and no `actorId` is attached.
     const task = outcome.task;
     const armed = outcome.armedPayload;
+    await recordToolModeOutcome(deps, mode, null, task, caller);
+    // The file it wrote, attested from the start when its own agent made it (M4).
+    await attestNewTask(deps, task, caller);
     deps.activityService?.emit({
       actorType: 'agent',
       actorLabel: armed?.armedBy ?? outcome.parkPayload?.proposedBy ?? 'An agent',
@@ -439,9 +364,9 @@ export function createUpdateScheduleHandler(
     account?: string | null;
     /** Put a package's schedule back on its own timing; see {@link RESET_TIMING_DESCRIPTION}. */
     resetTiming?: true;
-    /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
+    /** Refused, or decided as `tasks.set_mode` (DOR-3703); see {@link REFUSED_PERMISSION_MODE_DESCRIPTION}. */
     permissionMode?: string;
-    /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
+    /** Refused, or decided as `tasks.approve` (DOR-3703); see {@link STATUS_DESCRIPTION}. */
     status?: string;
     /** Advertised so it can be REFUSED; see {@link REFUSED_UPDATE_TARGET_DESCRIPTION}. */
     target?: string;
@@ -466,8 +391,19 @@ export function createUpdateScheduleHandler(
     // person approved.
     const existing = deps.taskStore!.getTask(args.id);
     if (!existing) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    // A mode or an approval is decided as `tasks.set_mode` / `tasks.approve` (DOR-3703).
+    const caller = agentModeCallerOf(resolveProvenance, callerMarks, callerAgent, deps.taskStore);
+    const mode = await settleToolModeCall(deps, {
+      door: 'update',
+      body: fields,
+      input: args,
+      task: existing,
+      caller,
+    });
+    if (mode.refusal) return jsonContent(mode.refusal, true);
     // An agent changes only its own schedule, or a global one no other agent
-    // made: a schedule runs as the agent it is filed under (DOR-3640 R1).
+    // made: a schedule runs as the agent it is filed under (DOR-3640 R1). A
+    // person's yes on a card for only the mode or the approval covers another's.
     // A tool call is never the person: one DorkOS cannot name is held tightest.
     const { callerAgentPath } = callerAgentPathOf(resolveProvenance?.() ?? {}, callerAgent);
     const edit = scheduleEdit(
@@ -476,7 +412,9 @@ export function createUpdateScheduleHandler(
       deps.meshCore,
       fields
     );
-    if (edit.refusal) return jsonContent(edit.refusal, true);
+    if (edit.refusal && !grantCoversOthersTask(mode.grant, fields)) {
+      return jsonContent(edit.refusal, true);
+    }
 
     // Naming DorkOS credits, or switching a schedule on them back on, starts
     // spending the DorkOS account's money: the owner's call, never an agent's
@@ -500,32 +438,9 @@ export function createUpdateScheduleHandler(
     if (accountLocked) return jsonContent(accountLocked, true);
 
     // An agent may not point a schedule at an account that may not work in the
-    // folder its runs start in (spec `flow-multiproject` §8.4). Same sentence
-    // as the create path.
-    if (typeof args.account === 'string') {
-      const refusal = await scheduleAccountRefusal({
-        account: args.account,
-        runtime: args.runtime ?? existing.runtime,
-        folder: scheduleRunFolder(
-          existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null
-        ),
-      });
-      if (refusal) return jsonContent({ error: refusal.message, code: refusal.code }, true);
-    }
-    // A schedule whose runs go on DorkOS credits names a model credits serve
-    // (DOR-2636). Same rule and sentence as the update route.
-    if (args.model !== undefined || args.account !== undefined || args.runtime !== undefined) {
-      const modelRefusal = await scheduleCreditsModelRefusal({
-        model: args.model !== undefined ? args.model : existing.model,
-        account: args.account !== undefined ? args.account : existing.account,
-        runtime: args.runtime !== undefined ? args.runtime : existing.runtime,
-        folder: scheduleRunFolder(
-          existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null
-        ),
-      });
-      if (modelRefusal)
-        return jsonContent({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' }, true);
-    }
+    // folder its runs start in, nor its credits runs at a model credits do not serve.
+    const runRefusal = await updateRunRefusal(deps, existing, args);
+    if (runRefusal) return runRefusal;
 
     // The MERGED schedule is what gets written and registered, so the merged
     // schedule is what has to read: a new cron runs in the task's existing
@@ -564,6 +479,8 @@ export function createUpdateScheduleHandler(
       ...(args.effort !== undefined && { effort: args.effort }),
       ...(args.account !== undefined && { account: args.account }),
       ...(args.resetTiming === true && { resetTiming: true as const }),
+      // An approval's mode is written when it is armed, not here (S-C).
+      ...(modeOnly(mode) && { permissionMode: mode.grant!.decision.mode }),
     };
 
     // A non-trusted caller cannot KEEP an approved task's `bypassPermissions` by
@@ -593,12 +510,15 @@ export function createUpdateScheduleHandler(
     // grant. The change must be REAL: a field re-sent at its current value is
     // not a new piece of work. One predicate, shared with the REST route.
     const editsApprovedWork = changesApprovedWork(args, existing);
+    // The task's own agent vouching for this write in place of a person (Nov 3 ruling).
+    const vouched =
+      mode.grant?.decision.vouched ?? (await contentEditVouched(deps, existing, caller));
     // Handed to the file step rather than set on the patch, so a package's
     // row-only timing change can leave it out (`clampApplied`, DOR-2302): that
     // change is parked for a person below, and carried into the request the
     // clamp would read as a permission change the package's file refuses.
     let clampTo: PermissionMode | undefined;
-    if (editsApprovedWork) {
+    if (editsApprovedWork && !mode.grant?.decision.setsMode && !vouched) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
       if (clamp.clamped) clampTo = clamp.mode;
     }
@@ -614,6 +534,10 @@ export function createUpdateScheduleHandler(
     // CONTENT, so a live schedule whose prompt, cron or timezone an agent
     // rewrites goes back to a person, parked below in this same call rather than
     // at the next sync of the file this writes (DOR-2313).
+    // Audited before it is written, or not written at all (S-D).
+    if (!auditToolModeChange(deps, mode, existing)) return jsonContent(NOT_RECORDED_REFUSAL, true);
+    // The SKILL file before this write, so a change made outside the tools is told (M4).
+    const fileBefore = await fileStateBefore(existing);
     const fileOutcome = await applyTaskFileUpdate(
       { dorkHome: deps.dorkHome, ...(deps.meshCore && { meshCore: deps.meshCore }) },
       { existing, data: patch, clampTo }
@@ -635,6 +559,10 @@ export function createUpdateScheduleHandler(
       timingLandsOn: fileOutcome.timingLandsOn,
     });
     if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    // An approval is armed here, all at once or not at all (DOR-3703).
+    const armed = await armToolApproval(deps, mode, existing, caller);
+    if (armed === null) return jsonContent(NOT_ARMED_REFUSAL, true);
+    if (armed) updated = armed;
 
     // This is an agent, so a change to approved work stops an approved
     // schedule at once and puts it back in front of a person, file written or
@@ -651,18 +579,28 @@ export function createUpdateScheduleHandler(
         // Only an agent's own schedule stays live through its edit (DOR-3640 R1).
         armsAgentWork:
           edit.armsAgentWork &&
+          agentEditMayStayLive(existing, deps.taskStore!, vouched) &&
           agentSchedulesArmWithoutAsking(
             resolveProvenance !== undefined && !readOutsiderWords(resolveProvenance())
           ),
+        // Its own agent's prompt edit from an ordinary turn stays live (Nov 3 ruling, M7).
+        ownAgentVouches: vouched && caller.scheduledRun !== true,
       }
     );
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
     // for its card (DOR-3036).
-    const caller = resolveProvenance?.() ?? {};
     const marks = callerMarks?.() ?? marksOf(caller.sessionId, caller.agentPath);
-    if (marksHold(marks) && deps.taskStore!.approvals.markOrigin(updated.id, marks)) {
+    if (
+      mode.grant?.via !== 'card' &&
+      marksHold(marks) &&
+      deps.taskStore!.approvals.markOrigin(updated.id, marks)
+    ) {
       if (existing.status !== 'pending_approval') settled = 'parked';
     }
+    // Who changed it; and an approval never covers a later version (DOR-3703).
+    const writesContent = changesApprovedWork({ ...args, permissionMode: undefined }, existing);
+    const why = afterToolAgentEdit(deps, updated, mode, caller, { vouched, writesContent });
+    if (why) settled = 'parked';
     if (settled === 'parked') {
       updated = deps.taskStore!.getTask(updated.id) ?? updated;
       // The standing condition and its escalation clock start here, as they do
@@ -677,6 +615,12 @@ export function createUpdateScheduleHandler(
     broadcastTasksChanged();
     // Which fields changed, and a prompt only by its hashes (DOR-3640).
     auditScheduleUpdate(existing, updated);
+    // A mode change the person could not be told about was put back (condition 4).
+    if (!(await recordToolModeOutcome(deps, mode, existing, updated, caller, vouched))) {
+      return jsonContent(NOT_TOLD_REFUSAL, true);
+    }
+    // Its own agent's write re-attests the file, and lifts a cap left by an outside change (M4).
+    const fileReply = await attestToolWrite(deps, existing, updated, caller, fileBefore);
 
     // An agent switching a schedule back ON is recorded where the person will see
     // it. A schedule that came with an installed package is switched on the row
@@ -684,19 +628,7 @@ export function createUpdateScheduleHandler(
     // it back on. Attributed as `tasks_create` attributes its proposals: by the
     // agent's project path when the session has one, "An agent" otherwise.
     if (args.enabled === true && !existing.enabled && updated.enabled) {
-      const provenance = resolveProvenance?.() ?? {};
-      deps.activityService?.emit({
-        actorType: 'agent',
-        actorLabel: 'An agent',
-        ...(provenance.agentPath ? { actorId: provenance.agentPath } : {}),
-        category: 'tasks',
-        eventType: 'tasks.task_resumed',
-        resourceType: 'schedule',
-        resourceId: updated.id,
-        resourceLabel: updated.displayName ?? updated.name,
-        summary: `Switched on scheduled task ${updated.displayName ?? updated.name}`,
-        linkPath: '/',
-      });
+      emitAgentSwitchedOn(deps, resolveProvenance?.().agentPath, updated);
     }
 
     // Say what the edit cost, so an agent does not report a live schedule that
@@ -705,27 +637,18 @@ export function createUpdateScheduleHandler(
     if (settled === 'parked') {
       return jsonContent({
         schedule: updated,
+        ...fileReply,
         needsReapproval: true,
         // The note follows the sentence the park wrote: timing alone, or the
         // work itself (its prompt or how it runs).
         note:
-          updated.reason === AGENT_TIMING_CHANGE_REASON ? TIMING_REAPPROVAL_NOTE : REAPPROVAL_NOTE,
+          why ??
+          (updated.reason === AGENT_TIMING_CHANGE_REASON
+            ? TIMING_REAPPROVAL_NOTE
+            : REAPPROVAL_NOTE),
       });
     }
-    return jsonContent({ schedule: updated });
-  };
-}
-
-/** Get recent runs for a schedule. */
-export function createGetRunHistoryHandler(deps: McpToolDeps) {
-  return async (args: { schedule_id: string; limit?: number }) => {
-    const err = requireTasks(deps);
-    if (err) return err;
-    const runs = deps.taskStore!.listRuns({
-      taskId: args.schedule_id,
-      limit: args.limit ?? 20,
-    });
-    return jsonContent({ runs, count: runs.length });
+    return jsonContent({ schedule: updated, ...fileReply });
   };
 }
 
@@ -813,7 +736,7 @@ export function getTasksTools(
         account: z.string().min(1).nullable().optional().describe(ACCOUNT_DESCRIPTION),
         resetTiming: z.literal(true).optional().describe(RESET_TIMING_DESCRIPTION),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
-        status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
+        status: z.string().optional().describe(STATUS_DESCRIPTION),
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
       },

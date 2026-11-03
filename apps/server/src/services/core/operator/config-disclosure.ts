@@ -82,6 +82,7 @@
  */
 import { z } from 'zod';
 import { UserConfigSchema } from '@dorkos/shared/config-schema';
+import { EXPERIMENT_SWITCH_DISCLOSURE } from './config-disclosure-experiments.js';
 
 /**
  * What an untrusted caller may learn about one config leaf.
@@ -228,22 +229,8 @@ export const CONFIG_DISCLOSURE = {
   'relay.maxAgentTurnsPerAgentPerHour': 'expose',
   'relay.maxAgentTurnsTotalPerHour': 'expose',
 
-  'browser.enabled': 'expose',
-  'computers.enabled': 'expose',
-  // Whether chatting from the web is on (DOR-2946): a plain boolean. The hub's
-  // address and the relay secret live in the relay's own file, never in config.
-  'sessionRelay.enabled': 'expose',
-  // Whether the Docs experiment is on (DOR-2993): a plain boolean.
-  'docs.enabled': 'expose',
-  // Whether the spaces experiment is on (DOR-2740): a plain boolean, no host.
-  'spaces.enabled': 'expose',
-  // The official space's public link (spec `official-community-space` D4): a
-  // public address, never a credential, and the same for every install.
-  'spaces.official.url': 'expose',
-  // Whether outside agents may reach the ones here over A2A. A plain boolean:
-  // it names no credential and no host, and an agent that learns the gate is
-  // shut is no closer to opening it — the write side is where that is decided.
-  'a2a.enabled': 'expose',
+  // The experiment switches, kept beside each other in their own module.
+  ...EXPERIMENT_SWITCH_DISCLOSURE,
 
   'scheduler.enabled': 'expose',
   'scheduler.maxConcurrentRuns': 'expose',

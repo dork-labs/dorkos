@@ -2104,6 +2104,80 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'post',
+  path: '/api/tasks/{id}/undo-agent-mode',
+  tags: ['Tasks'],
+  summary: 'Put back the mode an agent set on a schedule without asking',
+  description:
+    'The Undo on the notice DorkOS posts when one of your agents changes how a running schedule ' +
+    'runs, above Don’t ask, without asking you (DOR-3703). Only a person can use it: an agent ' +
+    'is refused. Answers 409 once the mode changed again since.',
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    200: {
+      description: 'The schedule, back on its old mode',
+      content: { 'application/json': { schema: TaskSchema } },
+    },
+    403: {
+      description: 'Only a person can do this',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Schedule not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Nothing to undo: the mode changed again since',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/tasks/{id}/approve-file',
+  tags: ['Tasks'],
+  summary: 'Approve a schedule’s changed SKILL file',
+  description:
+    'Lifts the cap a change outside the task tools put on a schedule: its runs go back to its ' +
+    'own mode instead of Never ask (DOR-3703). The body names the cap you saw and the file ' +
+    'hash its diff showed (`capAt` and `hash`, from `fileCap`). Only a person can use it: an ' +
+    'agent is refused. Answers 409 once the file changed since that diff.',
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        'application/json': { schema: z.object({ capAt: z.string(), hash: z.string() }) },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The schedule, its cap lifted',
+      content: { 'application/json': { schema: TaskSchema } },
+    },
+    400: {
+      description: 'The body names no cap',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'Only a person can do this',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Schedule not found',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'The file changed again since the cap you saw',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
   method: 'get',
   path: '/api/tasks/runs',
   tags: ['Tasks'],

@@ -7,6 +7,7 @@
  *
  * @module services/tasks/task-row-mappers
  */
+import { readRefusedToolsColumn } from './history/run-cap-column.js';
 import type { pulseSchedules, pulseRuns } from '@dorkos/db';
 import type {
   Task,
@@ -24,6 +25,7 @@ import {
   type IncomingTaskContent,
 } from './schedule-permission-clamp.js';
 import { parseOriginMarks } from './approvals/marked-schedules.js';
+import { withAgentModeRecord } from './agent-mode/agent-mode-record-field.js';
 
 /** The parts of the approved work, in the order the card lists them. */
 const WORK_FIELDS = [
@@ -148,6 +150,8 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     origin: row.origin ?? null,
     reasonSource: row.reasonSource ?? null,
     originMarks: parseOriginMarks(row.originMarks),
+    // What an agent last armed here, when one did (DOR-3703).
+    ...withAgentModeRecord(row.agentModeRecord),
     quietHold: isQuietHold(row),
     nextRun: null,
     nextRuns: [],
@@ -169,32 +173,12 @@ export function mapRunRow(row: typeof pulseRuns.$inferSelect): TaskRun {
     trigger: row.trigger as TaskRunTrigger,
     resolvedRuntime: row.resolvedRuntime ?? null,
     resolvedModel: row.resolvedModel ?? null,
-    refusedTools: readRefusedTools(row.refusedTools),
+    refusedTools: readRefusedToolsColumn(row.refusedTools).tools,
+    // Ran capped at Don't ask for a changed SKILL file (DOR-3703, M4).
+    ...(readRefusedToolsColumn(row.refusedTools).cappedAt ? { cappedAt: 'dontAsk' as const } : {}),
     outcome: (row.outcome as TaskRunOutcome | null) ?? null,
     scheduledFor: row.scheduledFor ?? null,
     missedTicks: row.missedTicks ?? null,
     createdAt: row.createdAt,
   };
-}
-
-/**
- * Read the stored refused-tool list off a run row.
- *
- * Parsed defensively and never thrown from: this mapper is on the read path of
- * every run-history page, and a row whose JSON somebody corrupted by hand must
- * cost that one field rather than the whole list of runs. A value that is not
- * an array of strings is treated as absent, which reads exactly as a run
- * recorded before the column existed.
- *
- * @param raw - The column as stored: JSON text, or null.
- */
-function readRefusedTools(raw: string | null): string[] | null {
-  if (raw === null) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return parsed.every((name) => typeof name === 'string') ? (parsed as string[]) : null;
-  } catch {
-    return null;
-  }
 }

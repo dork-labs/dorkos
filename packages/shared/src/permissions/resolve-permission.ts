@@ -36,7 +36,8 @@ export interface ResolvedPermission {
   /**
    * True when the third-party-code rule, or the rule for an unidentified caller
    * or a stranger's turn, turned an area-level Allowed on a destructive action
-   * into Ask.
+   * into Ask; or the standing-grant rule turned one on any action into Ask
+   * (DOR-3703). Either way, only a setting for the action itself allows it.
    */
   destructiveAsk?: true;
 }
@@ -76,7 +77,9 @@ export interface ResolvePermissionInput {
   /**
    * What the action's consent is about. `'third-party-code'` marks an action
    * that puts code someone else wrote where DorkOS will run it; an area-level
-   * Allowed on such a destructive action still asks.
+   * Allowed on such a destructive action still asks. `'standing-grant'` marks
+   * one that arms work nobody will be watching (DOR-3703); an area-level
+   * Allowed on it still asks, whatever its tier.
    */
   consent?: ActionConsent;
   /**
@@ -140,7 +143,8 @@ function fromPreset(input: ResolvePermissionInput): {
  * the agent's area entry, the default action entry, the default area entry,
  * then the preset. Then the post-rules: an area-level Allowed on a destructive
  * action that runs third-party code, or that an unidentified caller or a
- * stranger's turn makes, becomes Ask; such a caller's Allowed on the
+ * stranger's turn makes, becomes Ask, and so does one on any standing-grant
+ * action; such a caller's Allowed on the
  * Permissions area becomes Ask; Allowed in a floor area
  * becomes Ask, and Allowed on an action whose card shows a change becomes Ask.
  *
@@ -175,8 +179,8 @@ export function resolvePermission(input: ResolvePermissionInput): ResolvedPermis
   const untrusted = input.unidentified === true || input.strangerTurn === true;
   let destructiveAsk: true | undefined;
   if (
-    input.tier === 'destructive' &&
-    (input.consent === 'third-party-code' || untrusted) &&
+    ((input.tier === 'destructive' && (input.consent === 'third-party-code' || untrusted)) ||
+      input.consent === 'standing-grant') &&
     state === 'allowed' &&
     !actionLevel &&
     AREA_LEVEL_SOURCES.has(source)

@@ -7,6 +7,7 @@
  *
  * @module server/services/rooms/room-trigger/run-turn
  */
+import { noteRoomTurnWakers } from '../../session/chat-messages/chat-started-turns.js';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
@@ -95,6 +96,11 @@ export async function runOneInDispatch(
     // The seat this turn runs on: moved first when its transcript expired or
     // its account is nearly out, and carrying a move's one-shot launch.
     const launch = await prepareSeat(self, room, entry, target);
+    if (target.sessionId)
+      noteRoomTurnWakers(
+        target.sessionId,
+        answered.map((one) => one.sessionId)
+      );
     const result = await self.deps.runner.run({
       room,
       authorId: target.authorId,
@@ -156,7 +162,14 @@ export async function runOneInDispatch(
       // Onto the live claim, where a mid-turn `post_to_room` reads it: the
       // session id stamps the entry with the turn that wrote it (spec
       // `tool-only-room-replies` §D8).
-      onSessionBound: (id) => self.noteSessionBound(room.id, target.authorId, id),
+      onSessionBound: (id) => {
+        self.noteSessionBound(room.id, target.authorId, id);
+        // The chats whose posts woke this turn, so a run's post carries the run (DOR-3703, M7).
+        noteRoomTurnWakers(
+          id,
+          answered.map((one) => one.sessionId)
+        );
+      },
     });
 
     // A REFUSAL IS NOT A READING. The claim moved this agent's cursor to the

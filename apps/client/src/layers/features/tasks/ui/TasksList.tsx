@@ -133,7 +133,8 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
         <FilterBar.ActiveFilters />
       </FilterBar>
       <ScrollArea className="min-h-0 flex-1" data-testid={TOUR_ANCHORS.tasksList}>
-        <div className="space-y-2 pb-4">
+        {/* A gutter, so the scrollbar never sits on the cards' edge. */}
+        <div data-slot="tasks-list-cards" className="space-y-2 pr-3 pb-4">
           {filteredTasks.length === 0 && failingFilterOn && failingCount === 0 ? (
             <NothingFailing onShowAll={() => filterState.clear('health')} />
           ) : filteredTasks.length === 0 && baseTasks.length > 0 ? (

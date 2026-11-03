@@ -37,6 +37,14 @@ import {
 } from '../timing/effective-timing.js';
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { clearOutsiderParks, markScheduleOrigin } from './marked-schedules.js';
+import { patchAgentModeColumnOf, readAgentModeColumnOf } from './agent-mode-column.js';
+import type {
+  AgentAttestation,
+  AgentModeColumn,
+  AgentModeColumnPatch,
+  PromptUndo,
+} from '../agent-mode/agent-mode-record-field.js';
+import type { PermissionMode } from '@dorkos/shared/types';
 
 /**
  * What {@link TaskApprovals.rekeyMigratedFile} did with one migrated row.
@@ -56,6 +64,20 @@ export type RekeyOutcome = 'rekeyed' | 'reparked' | 'moved' | 'no-row';
 const DRIFTED_DURING_MIGRATION_REASON =
   'This schedule’s file changed since it was last approved, so it is waiting for you again. ' +
   'Read what it does now, then approve it or delete it.';
+
+/** Who last changed a schedule, and what an agent approved on it (DOR-3703). */
+export interface ScheduleAgentEdits {
+  /** The home of the agent that last changed it, or `null` when DorkOS cannot say. */
+  lastEditedByAgentPath: string | null;
+  /** The chat it changed it from, or `null`. */
+  lastEditedBySessionId: string | null;
+  /** The hash an agent approved it as, or `null` when no agent did. */
+  agentApprovalKey: string | null;
+  /** The task's own agent vouching for it in place of a person (M1), or `null`. */
+  attestation?: AgentAttestation | null;
+  /** The mode a person last held it to (M2), or `null`. */
+  personFloor?: PermissionMode | null;
+}
 
 /**
  * What {@link TaskApprovals.settleApprovedWorkChange} did about a schedule whose
@@ -125,6 +147,8 @@ export class TaskApprovals {
         originMarks: null,
         // Approving is a person changing their mind about a decline (DOR-2097).
         declinedContentKey: null,
+        // Whoever approved last, a person's approval supersedes an agent's (DOR-3703).
+        agentApprovalKey: null,
       })
       .where(eq(pulseSchedules.id, id))
       .run();
@@ -163,6 +187,8 @@ export class TaskApprovals {
       })
       .where(eq(pulseSchedules.id, id))
       .run();
+    // A person said no at this mode: an agent's raise above it asks them (M2).
+    patchAgentModeColumnOf(this.db, id, { personFloor: row.permissionMode as PermissionMode });
   }
 
   /**
@@ -310,15 +336,16 @@ export class TaskApprovals {
    * @param id - The schedule whose approved work may just have changed.
    * @param before - What would have run before the update, and the status the
    *   schedule had then.
-   * @param caller - Whether the caller cleared the agent bar, and whether it is
+   * @param caller - Whether the caller cleared the agent bar, whether it is
    *   one of our agents whose work arms without asking
-   *   (`agentSchedulesArmWithoutAsking`).
+   *   (`agentSchedulesArmWithoutAsking`), and whether the task's own agent
+   *   vouches for this edit from an ordinary turn (`agent-mode-attest.ts`).
    * @returns What was done, so a caller can tell the agent or raise the park.
    */
   settleApprovedWorkChange(
     id: string,
     before: IncomingTaskContent & { status: string },
-    caller: { trusted: boolean; armsAgentWork?: boolean }
+    caller: { trusted: boolean; armsAgentWork?: boolean; ownAgentVouches?: boolean }
   ): WorkChangeSettlement {
     const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
     if (!row) return 'unchanged';
@@ -338,7 +365,10 @@ export class TaskApprovals {
 
     // Substituted work always needs a person; target/mode writes are refused at the doors (DOR-3651).
     const substitutesWork = before.prompt !== row.prompt || before.runtime !== row.runtime;
-    if (caller.armsAgentWork === true && row.origin !== 'file' && !substitutesWork) {
+    // The task's own agent vouching for its own edit, from an ordinary turn, keeps
+    // even substituted work and a file-born row live (Security ruling of Nov 3).
+    const kept = caller.ownAgentVouches === true || (row.origin !== 'file' && !substitutesWork);
+    if (caller.armsAgentWork === true && kept) {
       // The sync parks a row whose key changed and moves its grant aside, so a
       // grant that covered the old work is in one of the two columns.
       const parkedMidRequest =
@@ -399,6 +429,178 @@ export class TaskApprovals {
       .set({ approvedContentKey: null })
       .where(eq(pulseSchedules.id, id))
       .run();
+  }
+
+  /**
+   * Record which agent last changed this schedule, and from which chat (DOR-3703).
+   * Written on every agent edit through either door, whatever the experiment
+   * says, so the record is right the day a person turns it on. `null` is a
+   * caller DorkOS cannot name, and no agent may approve a schedule it last saw.
+   *
+   * @param id - The schedule an agent just changed.
+   * @param editor - Its verified home and chat, each `null` when unknown.
+   */
+  recordAgentEdit(
+    id: string,
+    editor: { agentPath: string | null; sessionId: string | null }
+  ): void {
+    this.db
+      .update(pulseSchedules)
+      .set({
+        lastEditedByAgentPath: editor.agentPath,
+        lastEditedBySessionId: editor.sessionId,
+      })
+      .where(eq(pulseSchedules.id, id))
+      .run();
+  }
+
+  /**
+   * Record that an agent approved this schedule, as the hash of exactly what it
+   * approved (DOR-3703). Called after the status write, which has already
+   * recorded the content grant through {@link recordApproval}.
+   *
+   * @param id - The schedule an agent just approved.
+   * @param key - Its binding hash (`agentApprovalBindingOf`).
+   * @param record - What the task shows about it (`agentModeRecordText`).
+   */
+  recordAgentApproval(id: string, key: string, record: string): void {
+    patchAgentModeColumnOf(this.db, id, { record: JSON.parse(record) }, { agentApprovalKey: key });
+  }
+
+  /**
+   * Record that an agent set this schedule's mode, so the task shows it (DOR-3703).
+   *
+   * @param id - The schedule.
+   * @param record - Who, when, old → new mode (`agentModeRecordText`), or
+   *   `null` once a person undid it.
+   */
+  recordAgentModeChange(id: string, record: string | null): void {
+    patchAgentModeColumnOf(this.db, id, { record: record === null ? null : JSON.parse(record) });
+  }
+
+  /**
+   * Record the task's own agent vouching for it in place of a person (M1,
+   * Security ruling of Nov 3), or remove it. Never read as a person's approval.
+   *
+   * @param id - The schedule.
+   * @param attestation - Who vouched, from what turn, for what; `null` removes it.
+   */
+  recordAgentAttestation(id: string, attestation: AgentAttestation | null): void {
+    patchAgentModeColumnOf(this.db, id, { attestation });
+  }
+
+  /**
+   * Hold the schedule to a mode a person chose by Undo, a decline or lowering
+   * it (M2): an agent's raise above it asks a person. `null` lifts it.
+   *
+   * @param id - The schedule.
+   * @param mode - The mode the person held it to.
+   */
+  setPersonFloor(id: string, mode: PermissionMode | null): void {
+    patchAgentModeColumnOf(this.db, id, { personFloor: mode });
+  }
+
+  /**
+   * Keep what an own-agent prompt edit replaced, for a person's Undo (M6), or
+   * forget it (`null`). Read back with {@link agentModeColumnOf}.
+   *
+   * @param id - The schedule.
+   * @param undo - The prompt before and after, or `null`.
+   */
+  setPromptUndo(id: string, undo: PromptUndo | null): void {
+    patchAgentModeColumnOf(this.db, id, { promptUndo: undo });
+  }
+
+  /**
+   * Change one part of the agent-mode column and leave the rest (M4's file
+   * attestation and cap, `agent-mode/file-cap/`): a value sets it, `null`
+   * removes it.
+   *
+   * @param id - The schedule.
+   * @param patch - What to set or remove.
+   */
+  patchAgentModeColumn(id: string, patch: AgentModeColumnPatch): void {
+    patchAgentModeColumnOf(this.db, id, patch);
+  }
+
+  /**
+   * The agent-mode column of a schedule, read back (empty when there is none).
+   *
+   * @param id - The schedule.
+   */
+  agentModeColumnOf(id: string): AgentModeColumn {
+    return readAgentModeColumnOf(this.db, id);
+  }
+
+  /**
+   * Record that a PERSON approved this schedule's current content (DOR-3703):
+   * they approved or edited it in DorkOS, or answered an agent's card for it.
+   * Mode is not part of it; what a schedule may RUN at above Don't ask is held
+   * to this ({@link personApprovedCurrent}).
+   *
+   * With `boundKey`, the content a person was SHOWN (an agent's card): recorded
+   * only while the row still holds exactly that content, read and written with
+   * no await between, so an edit that landed meanwhile is never recorded as
+   * approved (M1, round 3). Returns whether it recorded.
+   *
+   * @param id - The schedule.
+   * @param boundKey - The content key the person approved, when it is not simply the row's.
+   */
+  recordPersonApproval(id: string, boundKey?: string): boolean {
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
+    if (!row) return false;
+    const key = effectiveContentKey(row);
+    if (boundKey !== undefined && key !== boundKey) return false;
+    this.db
+      .update(pulseSchedules)
+      .set({ personApprovedKey: key })
+      .where(eq(pulseSchedules.id, id))
+      .run();
+    return true;
+  }
+
+  /**
+   * Whether a person approved this schedule's content as it is now (mode
+   * aside), per {@link recordPersonApproval}.
+   *
+   * @param id - The schedule.
+   */
+  personApprovedCurrent(id: string): boolean {
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
+    return (
+      !!row && row.personApprovedKey !== null && row.personApprovedKey === effectiveContentKey(row)
+    );
+  }
+
+  /**
+   * Run `fn` as one transaction on the store's database: every write in it
+   * lands, or none does (DOR-3703, an agent's approval and its binding).
+   *
+   * @param fn - Synchronous work; a throw rolls it all back.
+   */
+  inTransaction<T>(fn: () => T): T {
+    return this.db.transaction(() => fn());
+  }
+
+  /**
+   * Who last changed this schedule and what an agent approved on it, or `null`
+   * for a schedule that does not exist (DOR-3703).
+   *
+   * @param id - The schedule.
+   */
+  agentEditsOf(id: string): ScheduleAgentEdits | null {
+    const row = this.db
+      .select({
+        lastEditedByAgentPath: pulseSchedules.lastEditedByAgentPath,
+        lastEditedBySessionId: pulseSchedules.lastEditedBySessionId,
+        agentApprovalKey: pulseSchedules.agentApprovalKey,
+      })
+      .from(pulseSchedules)
+      .where(eq(pulseSchedules.id, id))
+      .get();
+    if (!row) return null;
+    const { attestation, personFloor } = readAgentModeColumnOf(this.db, id);
+    return { ...row, attestation: attestation ?? null, personFloor: personFloor ?? null };
   }
 
   /**

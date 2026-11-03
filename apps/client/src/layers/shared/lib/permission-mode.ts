@@ -60,7 +60,7 @@ const PERMISSION_MODE_LABELS: Record<string, string> = {
   acceptEdits: 'Accept edits',
   plan: 'Plan mode',
   dontAsk: 'Never ask',
-  bypassPermissions: 'Bypass all',
+  bypassPermissions: 'Bypass permissions',
   auto: 'Auto',
 };
 
