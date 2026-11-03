@@ -95,3 +95,32 @@ export const roomSessionRetirements = sqliteTable(
     index('idx_room_session_retirements_at').on(table.retiredAt),
   ]
 );
+
+/**
+ * Which seat a session held before the seat moved to a fresh session (DOR-3720).
+ *
+ * A move binds the room to a new session and leaves the old one a real chat, so
+ * a spin-off the old one started has nowhere to report. This says where: the
+ * room and agent, and the room keeps the seat's session as it is now.
+ *
+ * **Its own table, read by one reader** (`RoomSeatReports.seatOf`, through the
+ * ledger). It is not a retirement, because the old id is not dead, and not a
+ * `session_started_by` row, because that table is identity data other rules read:
+ * read rights, the to-do chain, a heartbeat's lanes. This grants nothing.
+ *
+ * **Pruned by age**, on the retirements' horizon.
+ */
+export const roomSeatMoves = sqliteTable(
+  'room_seat_moves',
+  {
+    /** The session that held the seat. */
+    fromSessionId: text('from_session_id').primaryKey(),
+    /** The room. */
+    roomId: text('room_id').notNull(),
+    /** The agent whose seat it is. */
+    authorId: text('author_id').notNull(),
+    /** When the seat moved, epoch ms: what the prune reads. */
+    movedAt: integer('moved_at').notNull(),
+  },
+  (table) => [index('idx_room_seat_moves_at').on(table.movedAt)]
+);

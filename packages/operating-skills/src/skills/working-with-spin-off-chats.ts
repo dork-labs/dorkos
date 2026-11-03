@@ -63,8 +63,9 @@ Write the first message as a brief:
 
 You do not need to ask. When one of its turns ends finished, failed, needing
 the person, or paused at an account limit, its last message arrives in your
-chat as a report. If you are idle, the report starts a turn for you. It does
-not report when a turn ends only to wait.
+chat as a report. If you are idle, the report starts a turn for you. If a turn
+ends with background work still running, the report waits up to 15 minutes for
+that work.
 
 Started from a room, the report comes to your chat in that room as a turn
 only you see. Nobody else in the room reads it. Post there only if the room

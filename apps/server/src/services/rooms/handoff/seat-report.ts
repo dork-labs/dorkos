@@ -22,12 +22,14 @@
  * queued chat message would; the wait is bounded by {@link SEAT_REPORT_WAIT_MAX_MS}. Reports to
  * one seat run one after the other, in the order they came.
  *
- * Reports live in this process; a restart drops one still waiting, as a queued hand-off is.
+ * Reports live in this process; a restart drops one still waiting, as a queued hand-off is. Whoever
+ * hands one in hears how it ended and may try again (`chat-report-back.ts`, DOR-3720).
  *
  * @module server/services/rooms/handoff/seat-report
  */
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
+import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { fenceUntrustedBlock } from '../../runtimes/shared/untrusted-fence.js';
 import { defuseMarkers } from '../../session/chat-messages/chat-message-fence.js';
 import { agentKey } from '../room-claims.js';
@@ -51,6 +53,8 @@ export interface SeatReport {
   fromTitle: string | null;
   /** The report, as `composeReport` wrote it. */
   text: string;
+  /** The marks of the turn it speaks for, read when that turn ended (DOR-3720). */
+  marks?: TurnMarks;
 }
 
 /** The room and agent a seat answers for. */
@@ -77,7 +81,8 @@ export class RoomSeatReports {
 
   /**
    * The room and agent `sessionId` is the seat of, or null when it is no room's seat: the session
-   * the room keeps for that agent, or the one a live turn there runs on.
+   * the room keeps for that agent, the one a live turn there runs on, or one that held the seat
+   * before it moved to another session, so a spin-off it started still reports in (DOR-3720).
    *
    * @param sessionId - The chat.
    */
@@ -85,7 +90,24 @@ export class RoomSeatReports {
     const binding = this.core.store.sessionLedger.bindingForSession(sessionId);
     if (binding) return { roomId: binding.roomId, authorId: binding.authorId };
     const claim = [...this.core.triggers.claimed.values()].find((c) => c.sessionId === sessionId);
-    return claim ? { roomId: claim.roomId, authorId: claim.authorId } : null;
+    if (claim) return { roomId: claim.roomId, authorId: claim.authorId };
+    return this.seatMovedFrom(sessionId);
+  }
+
+  /**
+   * The seat a session held before it moved, while that seat still stands: the room is live and
+   * the agent has been in it since the move. One that left and came back holds a new seat, and
+   * this session never held it. The agent's turn runs on the seat's session as it is now, so
+   * however many moves came after, one row answers and nothing is walked.
+   */
+  private seatMovedFrom(sessionId: string): SeatOf | null {
+    const moved = this.core.store.sessionLedger.seatMovedFrom(sessionId);
+    if (!moved) return null;
+    const { movedAt, ...seat } = moved;
+    const room = this.core.store.getRoom(seat.roomId);
+    if (room === null || room.archived) return null;
+    const member = this.core.store.getMember(seat.roomId, seat.authorId);
+    return member !== null && Date.parse(member.joinedAt) <= movedAt ? seat : null;
   }
 
   /**
@@ -96,20 +118,24 @@ export class RoomSeatReports {
    *
    * @param seatSessionId - The seat the spin-off reports to.
    * @param report - The report.
+   * @param onSettled - Told once whether the seat's turn ran. Not called when this returns false.
    */
-  deliver(seatSessionId: string, report: SeatReport): boolean {
+  deliver(seatSessionId: string, report: SeatReport, onSettled?: (ran: boolean) => void): boolean {
     const seat = this.seatOf(seatSessionId);
     if (seat === null) return false;
     // A seat starts spin-offs as its own agent; a report from any other agent is not one.
     if (this.core.authors.getById(seat.authorId)?.naturalKey !== report.fromAgentPath) return false;
     const key = agentKey(seat.roomId, seat.authorId);
-    const settled = (this.chains.get(key) ?? Promise.resolve()).then(() => this.run(seat, report));
+    const settled = (this.chains.get(key) ?? Promise.resolve())
+      .then(() => this.run(seat, report))
+      .catch(() => false);
     const chain = settled.then(() => undefined);
     this.chains.set(key, chain);
     this.pending.add(settled);
-    void settled.finally(() => {
+    void settled.then((ran) => {
       this.pending.delete(settled);
       if (this.chains.get(key) === chain) this.chains.delete(key);
+      onSettled?.(ran);
     });
     return true;
   }
@@ -122,7 +148,7 @@ export class RoomSeatReports {
   /** Run one report in its seat, waiting out a busy one. True when a turn ran. */
   private async run(seat: SeatOf, report: SeatReport): Promise<boolean> {
     const deadline = Date.now() + SEAT_REPORT_WAIT_MAX_MS;
-    const carried = carryFrom(report.fromSessionId, report.fromAgentPath);
+    const carried = carryFrom(report.fromSessionId, report.fromAgentPath, report.marks);
     let result: AsideResult | null = null;
     try {
       for (;;) {

@@ -7,8 +7,13 @@
  */
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
-import { markedBoundOf, marksOf } from '../../core/turn-power/turn-levels.js';
-import { marksHold } from '../../core/turn-power/turn-marks.js';
+import { marksOf } from '../../core/turn-power/turn-levels.js';
+import {
+  ceilingCarrying,
+  marksHold,
+  mergeMarks,
+  type TurnMarks,
+} from '../../core/turn-power/turn-marks.js';
 import { teammateOf } from '../limits/space-teammates.js';
 import { ceilingForEntries, isEntryAuthorExternal } from '../limits/turn-ceiling.js';
 import { STALE_POST_SHOWN_MAX } from '../messages/room-freshness.js';
@@ -62,12 +67,18 @@ export function withRoomMarks(
  * marks the seat's turn so every raise gate refuses it, and caps nothing (Security on DOR-3561):
  * a report must not launder the mark away, nor lower the seat's level.
  *
+ * A report can run long after the turn it speaks for, and `marksOf` reads the chat's latest turn,
+ * so a later unmarked turn would launder the words of a marked one (DOR-3720). `atTurnEnd` is what
+ * that turn carried; marks only add up, so it joins whatever the chat carries now.
+ *
  * @param sessionId - The chat the turn came from.
  * @param agentPath - Its agent's home.
+ * @param atTurnEnd - The marks of the turn whose words these are, read when it ended.
  */
-export function carryFrom(sessionId: string, agentPath: string): AsideCarry {
-  const marks = marksOf(sessionId, agentPath);
-  const ceiling = markedBoundOf(sessionId, agentPath);
+export function carryFrom(sessionId: string, agentPath: string, atTurnEnd?: TurnMarks): AsideCarry {
+  const live = marksOf(sessionId, agentPath);
+  const marks = atTurnEnd ? mergeMarks(live, atTurnEnd) : live;
+  const ceiling = ceilingCarrying(marks);
   return {
     externalAuthor: marks.outsider === true,
     ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),

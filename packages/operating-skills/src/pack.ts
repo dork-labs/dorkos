@@ -376,8 +376,11 @@ export interface OperatingSkill {
  * - 47: a member agent can set up its room's files (DOR-3468).
  *   `working-in-room-repos` names `set_up_room_files` where a merge finds a room
  *   with no files. An agent seeded at 46 would stop there and answer in the room.
+ * - 48: `working-with-spin-off-chats` says a report waits up to 15 minutes for
+ *   background work, instead of never going for a turn that ended only to wait
+ *   (DOR-3720). An agent seeded at 47 would not expect a report from such a turn.
  */
-export const OPERATING_SKILLS_VERSION = 47;
+export const OPERATING_SKILLS_VERSION = 48;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
