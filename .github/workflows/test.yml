@@ -776,11 +776,14 @@ jobs:
     # Same opt-in queue-only runner as `community-pg` above.
     runs-on: ${{ github.event_name == 'merge_group' && vars.RUNNER_LABEL || 'ubuntu-latest' }}
     # Six file partitions reduce suite work; fixed checkout/install/build
-    # still repeats on every runner. Keep the same 30-minute job budget.
-    # If healthy shards cross ~20 minutes, adjust measured work division,
-    # not the deadline. (DOR-1363 is the run a too-tight ceiling
-    # cancelled with the work already finished — leave headroom.)
-    timeout-minutes: 30
+    # still repeats on every runner. 45 is a stopgap (DOR-3767), not the new
+    # normal: the worst parts seen on 2026-11-03 add up to about 43 minutes
+    # (a 15.6-minute full-history checkout, a 26-minute sweep, 1.5 of the rest).
+    # A healthy shard should finish near 20 minutes; past that, fix the
+    # checkout and the work division (DOR-3769), not this deadline. (DOR-1363 is the run a
+    # too-tight ceiling cancelled with the work already finished; so is
+    # DOR-3767.)
+    timeout-minutes: 45
     # Raise the V8 old-space ceiling for every Node process this job spawns —
     # pnpm, turbo, and each `vitest run` worker inherit NODE_OPTIONS. A single
     # vitest process running many suites exhausted the default ~2GB heap and
