@@ -251,7 +251,8 @@ export function ScheduleApprovalCard({
     setTurnedOn(turnOn);
     const approvedTask = { ...task, permissionMode: selectedMode as PermissionMode };
     holdApprovedSchedule(approvedTask);
-    const approvedPromptHash = await promptHash(task.prompt);
+    // Only a card that opened on the prompt names it: a folded one showed nothing (SC2).
+    const approvedPromptHash = attestsFile ? await promptHash(task.prompt) : undefined;
     updateTask.mutate(
       {
         id: task.id,

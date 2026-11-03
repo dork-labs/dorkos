@@ -6,7 +6,9 @@
  * started (`chat_send`, kept by `chat-started-turns.ts`), at any distance. A
  * heartbeat beat is a scheduled run too (MB2, `agent-mode-beats.ts`). A run is
  * found by its row, which holds its chat from before the first turn and moves
- * with the chat's rekey, so a restart keeps the lineage (MB1).
+ * with the chat's rekey, so a restart keeps the lineage (MB1). A spin-off carries
+ * the answer on its own started-by row, stamped when it starts, because retention
+ * prunes the run rows (ME).
  *
  * The `chat_send` hop is kept in memory, from the turn's start, and a restart
  * mid-turn loses it. That turn also loses its recorded level, which is kept
@@ -37,6 +39,30 @@ export interface RunOriginSources {
   turnSenders: (sessionId: string) => readonly string[];
   /** The heartbeat beats among these chats (MB2); none when absent. */
   beatSessions?: (sessionIds: string[]) => ReadonlySet<string>;
+  /** What a chat's own start stamped as the scheduled thing behind it (ME); none when absent. */
+  stampOf?: (sessionId: string) => ScheduledOrigin | null;
+}
+
+/** The scheduled thing behind a chat: a task's run, or a heartbeat beat. */
+export type ScheduledOrigin = 'run' | 'heartbeat';
+
+/**
+ * What a chat's started-by row stamped as the scheduled thing behind it (ME), by
+ * either id the chat is known by. The stamp outlives the run row it was read
+ * from, which retention prunes. A stamp nothing can read counts as a run.
+ *
+ * @param sessionId - The chat.
+ */
+function stampedOriginOf(sessionId: string): ScheduledOrigin | null {
+  try {
+    const store = getSessionStartedByStore();
+    const stamp =
+      store?.get(sessionId)?.scheduledOrigin ?? store?.get(primaryOf(sessionId))?.scheduledOrigin;
+    if (stamp === null || stamp === undefined) return null;
+    return stamp === 'heartbeat' ? 'heartbeat' : 'run';
+  } catch {
+    return 'run';
+  }
 }
 
 /**
@@ -77,7 +103,27 @@ export function liveRunOriginSources(
     startedBy: (id) => getSessionStartedByStore()?.get(id)?.startedBySessionId ?? null,
     turnSenders: chatTurnSendersOf,
     beatSessions: (ids) => beatChatsAmong(ids),
+    stampOf: stampedOriginOf,
   };
+}
+
+/**
+ * What a new chat started from this one should be stamped with (ME): the walk's
+ * answer now, while the run rows and the live sets behind it still hold. A walk
+ * that throws stamps a run, so a chat nothing can vouch for is never ordinary.
+ *
+ * @param parentSessionId - The chat starting the new one.
+ * @param store - The task store, which knows every run's chat.
+ */
+export function scheduledOriginStamp(
+  parentSessionId: string,
+  store: Pick<TaskStore, 'resolveTaskOrigins'>
+): ScheduledOrigin | null {
+  try {
+    return scheduledOriginOf([parentSessionId], liveRunOriginSources(store));
+  } catch {
+    return 'run';
+  }
 }
 
 /**
@@ -100,7 +146,7 @@ export function startedByScheduledRun(sessionIds: string[], sources: RunOriginSo
 export function scheduledOriginOf(
   sessionIds: string[],
   sources: RunOriginSources
-): 'run' | 'heartbeat' | null {
+): ScheduledOrigin | null {
   const seen = new Set<string>();
   const queue = sessionIds.filter((id) => !!id);
   while (queue.length > 0 && seen.size < MAX_HOPS) {
@@ -110,6 +156,8 @@ export function scheduledOriginOf(
     if (sources.runSessions(batch).size > 0) return 'run';
     if ((sources.beatSessions?.(batch).size ?? 0) > 0) return 'heartbeat';
     for (const id of batch) {
+      const stamp = sources.stampOf?.(id);
+      if (stamp) return stamp;
       const parent = sources.startedBy(id);
       if (parent) queue.push(parent);
       queue.push(...sources.turnSenders(id));

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "29a09f9c-a7b7-4e63-b00d-e4bf517c9245",
+  "id": "3e31edac-4244-4216-bcf2-e553ad3dec1c",
   "prevId": "88459a42-f5f8-49b8-b9e1-428505d216f3",
   "tables": {
     "a2a_tasks": {
@@ -3593,6 +3593,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": true
+        },
+        "scheduled_origin": {
+          "name": "scheduled_origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",

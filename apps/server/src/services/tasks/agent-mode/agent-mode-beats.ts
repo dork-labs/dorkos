@@ -7,10 +7,13 @@
  * an ordinary turn either (`file-cap/ordinary-turns.ts`).
  *
  * The heartbeat store answers both questions; `heartbeats-wiring.ts` wires it.
- * Until it is wired, no chat is a beat.
+ * A beat's row holds its chat from before its turn starts (MD), and the live
+ * registry answers for a turn running now, whatever its row says.
  *
  * @module services/tasks/agent-mode/agent-mode-beats
  */
+import { isBeatTurn } from '../../heartbeats/beat-turns.js';
+import { primaryOf } from '../../session/resolution/session-key-registry.js';
 
 /** The beat chats of one agent. */
 type BeatsOfAgent = (agentId: string) => ReadonlySet<string>;
@@ -56,8 +59,11 @@ export function beatSessionsOf(agentId: string): ReadonlySet<string> {
  * @param sessionIds - The chats.
  */
 export function beatChatsAmong(sessionIds: readonly string[]): ReadonlySet<string> {
+  const live = sessionIds.filter((id) => isBeatTurn(id));
+  // A chat is matched by either id it is known by, as a run's is.
+  const known = [...new Set(sessionIds.flatMap((id) => [id, primaryOf(id)]))];
   try {
-    return among(sessionIds);
+    return new Set([...among(known), ...live]);
   } catch {
     return new Set(sessionIds);
   }

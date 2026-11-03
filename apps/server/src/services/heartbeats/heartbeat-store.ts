@@ -76,6 +76,22 @@ export interface HeldMatch {
   roomId: string | null;
 }
 
+/**
+ * A chat the runtime renamed: every beat row that names it by the old id names
+ * it by the new one, so a beat a restart cut short still reads as one (MD).
+ *
+ * @param db - The database the beat rows are kept in.
+ * @param fromId - The id the chat was known by.
+ * @param toId - Its canonical id.
+ */
+export function moveBeatChats(db: Db, fromId: string, toId: string): void {
+  if (fromId === toId) return;
+  db.update(heartbeatBeats)
+    .set({ turnSessionId: toId })
+    .where(eq(heartbeatBeats.turnSessionId, fromId))
+    .run();
+}
+
 /** The heartbeat tables. */
 export class HeartbeatStore {
   /**
@@ -125,6 +141,22 @@ export class HeartbeatStore {
    */
   finishBeat(id: string, finish: BeatFinish): void {
     this.db.update(heartbeatBeats).set(finish).where(eq(heartbeatBeats.id, id)).run();
+  }
+
+  /**
+   * Write the chat a beat's turn runs in, before the turn starts, so the chat is
+   * known as a beat's while it runs and after a restart cuts it short (DOR-3703,
+   * MD). `null` takes it back from a beat whose turn never started.
+   *
+   * @param id - The beat's id.
+   * @param sessionId - The chat, or null.
+   */
+  setBeatChat(id: string, sessionId: string | null): void {
+    this.db
+      .update(heartbeatBeats)
+      .set({ turnSessionId: sessionId })
+      .where(eq(heartbeatBeats.id, id))
+      .run();
   }
 
   /**

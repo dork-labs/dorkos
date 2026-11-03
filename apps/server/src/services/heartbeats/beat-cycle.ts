@@ -374,6 +374,9 @@ export async function runTurn(
     messageId,
     kind: ctx.kind,
   });
+  // On the row before the turn starts, so a restart mid-beat still leaves it a beat
+  // (DOR-3703, MD); `finish` writes it again if the launch settled on another id.
+  deps.store.setBeatChat(ctx.beatId, chat.sessionId);
   track.chatSessionId = chat.sessionId;
   track.settled = false;
   type Settled = [outcome: 'ok' | 'failed', refusal?: string];
@@ -464,6 +467,8 @@ function refused(
 ): BeatResult {
   settleBeatTurn(track.chatSessionId!);
   track.settled = true;
+  // The agent never saw this beat, so it ran no turn in that chat.
+  deps.store.setBeatChat(ctx.beatId, null);
   const capFull = launched.status === 'cap-full';
   finish(deps, ctx, {
     outcome: 'refused',

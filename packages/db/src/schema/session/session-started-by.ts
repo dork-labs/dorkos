@@ -70,6 +70,14 @@ export const sessionStartedBy = sqliteTable(
      * `reportBack: 'off'`; an extension's start never reports to a chat.
      */
     reportBack: integer('report_back', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * The scheduled thing behind the starting chat at the moment of the start:
+     * `run` (a task's run) or `heartbeat` (a beat), or NULL for neither and for
+     * rows written before this was kept (DOR-3703, ME). Stamped here because the
+     * run rows behind it are pruned; the chat counts as scheduled for good. No
+     * CHECK on purpose: the reader takes any other value as a run.
+     */
+    scheduledOrigin: text('scheduled_origin'),
     /** When it was started (ISO 8601). */
     createdAt: text('created_at').notNull(),
   },

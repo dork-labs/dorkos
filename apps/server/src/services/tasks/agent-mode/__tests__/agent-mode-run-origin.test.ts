@@ -18,8 +18,15 @@ import {
   noteSteeredInto,
   resetChatStartedTurns,
 } from '../../../session/chat-messages/chat-started-turns.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  SessionStartedByStore,
+  setSessionStartedByStore,
+} from '../../../session/origin/session-started-by-store.js';
 import {
   liveRunOriginSources,
+  scheduledOriginOf,
+  scheduledOriginStamp,
   startedByScheduledRun,
   turnStarterOf,
   type RunOriginSources,
@@ -62,6 +69,63 @@ describe('a turn a scheduled run started (M7)', () => {
       }))
     ).toBe('the mini-apps extension');
     expect(turnStarterOf({ ...base, sessionId: 'ses-person' }, sources(), () => null)).toBe('you');
+  });
+
+  describe('a stamp on the chat’s own started-by row (ME)', () => {
+    const live = () => liveRunOriginSources({ resolveTaskOrigins: () => new Map() } as never);
+    /** A chat started by one nothing else knows, carrying this stamp. */
+    function stamped(scheduledOrigin: string | null): void {
+      const store = new SessionStartedByStore(createTestDb());
+      store.insert({
+        sessionId: 'ses-spin',
+        kind: 'chat',
+        extensionId: null,
+        startedBySessionId: 'ses-gone',
+        originExtensionId: null,
+        reason: null,
+        scheduledOrigin,
+        createdAt: new Date().toISOString(),
+      });
+      setSessionStartedByStore(store);
+    }
+    afterEach(() => setSessionStartedByStore(undefined));
+
+    it('answers what it says, with no run row to read', () => {
+      stamped('run');
+      expect(scheduledOriginOf(['ses-spin'], live())).toBe('run');
+      stamped('heartbeat');
+      expect(scheduledOriginOf(['ses-spin'], live())).toBe('heartbeat');
+    });
+
+    it('reads no stamp as no answer, and walks on', () => {
+      stamped(null);
+      expect(scheduledOriginOf(['ses-spin'], live())).toBeNull();
+    });
+
+    it('takes a stamp it cannot read as a run', () => {
+      stamped('garbled');
+      expect(scheduledOriginOf(['ses-spin'], live())).toBe('run');
+    });
+
+    it('takes a store that throws as a run', () => {
+      setSessionStartedByStore({
+        get: () => {
+          throw new Error('the database is closed');
+        },
+      } as never);
+      expect(scheduledOriginOf(['ses-spin'], live())).toBe('run');
+    });
+
+    it('stamps a run when the walk behind the stamp throws', () => {
+      setSessionStartedByStore({
+        get: () => null,
+      } as never);
+      const store = { resolveTaskOrigins: () => new Map() };
+      expect(scheduledOriginStamp('ses-person', store as never)).toBeNull();
+      noteRunSession('run-9', 'ses-run-9');
+      expect(scheduledOriginStamp('ses-run-9', store as never)).toBe('run');
+      endRunSessions('run-9');
+    });
   });
 
   it('fails closed when the store cannot say which chats are scheduled runs', () => {

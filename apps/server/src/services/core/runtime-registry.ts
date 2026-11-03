@@ -1,6 +1,5 @@
 import { ComputerAgentBinding, requireRegisteredRuntime } from '../computers/agent-binding.js';
-import { moveRunSessions } from '../tasks/session/active-run-sessions.js';
-import { moveAlongside } from '../session/origin/rekey-moves.js';
+import { moveAlongside, moveScheduledChats } from '../session/origin/rekey-moves.js';
 import { resolveCodexHome } from '../runtimes/codex/codex-home.js';
 import type { CallerPrincipal } from '../../lib/caller-principal.js';
 import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
@@ -1029,9 +1028,8 @@ export class RuntimeRegistry {
     moveAlongside('when you touched a session', fromId, toId, () =>
       getSessionTouchStore()?.move(fromId, toId)
     );
-    // A task run's row names its chat by the same id its spin-offs' started-by
-    // rows do, so a run's lineage reads the same after a restart (DOR-3703, MB1).
-    moveAlongside('a task run’s chat', fromId, toId, () => moveRunSessions(db, fromId, toId));
+    // A run's and a beat's rows name their chat as started-by rows do (DOR-3703).
+    moveAlongside('a scheduled chat', fromId, toId, () => moveScheduledChats(db, fromId, toId));
     if (!source) return;
     db.transaction((tx) => {
       // Native location and sign-in source belong to the conversation identity,

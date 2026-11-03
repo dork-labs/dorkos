@@ -80,7 +80,7 @@ import {
   resolveRuntimeTypeForNewSession,
   agentLaunchCapMessage,
 } from '../../../session/launch/launch-session.js';
-import { getStartWorkService, type StartReservation } from '../../../extensions/start-work.js';
+import { reserveChatStart } from './session-start-reserve.js';
 import {
   getChatMessageService,
   getRoomSeatReports,
@@ -307,36 +307,6 @@ function callerOf(
 }
 
 /**
- * Claim a start slot for a chat started from `parentSessionId`, recording who
- * started it. The new chat inherits the parent's origin extension, so it counts
- * against that extension's start limits and is refused past them. Without a
- * calling chat (the external `/mcp` server) or before boot wired the seam,
- * nothing is recorded and nothing is limited here.
- */
-function reserveChatStart(
-  sessionId: string,
-  parentSessionId: string | null,
-  reason: string | undefined,
-  permission: SessionStartPermission,
-  reportBack: boolean
-): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
-  const service = getStartWorkService();
-  if (!parentSessionId || !service) return { ok: true, reservation: null };
-  const claimed = service.reserveFromChat({
-    sessionId,
-    parentSessionId,
-    reason: reason ?? null,
-    permissionMode: permission.mode,
-    starterPermissionMode: permission.callerMode,
-    permissionSameAsStarter: permission.sameAsCaller,
-    reportBack,
-  });
-  return claimed.ok
-    ? { ok: true, reservation: claimed.reservation }
-    : { ok: false, message: claimed.error.message };
-}
-
-/**
  * Remove what a launch that never started left under its id. The id was minted
  * by this tool a moment ago, so nothing else can hold it; a failure to delete is
  * logged, never thrown over the refusal the caller is about to get.
@@ -370,7 +340,7 @@ async function discardUnstartedSession(sessionId: string): Promise<void> {
  *   account's project rules either way.
  */
 export function createSessionStartHandler(
-  deps: Pick<McpToolDeps, 'meshCore' | 'activityService'>,
+  deps: Pick<McpToolDeps, 'meshCore' | 'activityService' | 'taskStore'>,
   resolveCaller?: SessionStartCallerResolver,
   checkAccount: typeof checkAccountLaunch = checkAccountLaunch
 ) {
@@ -499,7 +469,14 @@ export function createSessionStartHandler(
       !parentTakesMessages &&
       (getRoomSeatReports()?.seatOf(parentChatId) ?? null) !== null;
     const reportBack = args.reportBack !== 'off' && (parentTakesMessages || parentIsRoomSeat);
-    const claimed = reserveChatStart(sessionId, parentChatId, args.reason, permission, reportBack);
+    const claimed = reserveChatStart({
+      sessionId,
+      parentSessionId: parentChatId,
+      reason: args.reason,
+      permission,
+      reportBack,
+      taskStore: deps.taskStore,
+    });
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
     // What the pre-launch picker saves, saved the same way: an unbound settings

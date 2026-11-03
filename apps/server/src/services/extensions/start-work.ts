@@ -440,6 +440,8 @@ export class StartWorkService {
     permissionSameAsStarter?: boolean | null;
     /** Whether the new chat reports back to its parent (default true). */
     reportBack?: boolean;
+    /** The scheduled thing behind the calling chat, stamped on the new one (DOR-3703, ME). */
+    scheduledOrigin?: 'run' | 'heartbeat' | null;
   }): { ok: true; reservation: StartReservation | null } | { ok: false; error: StartWorkError } {
     const parent = this.deps.store.get(opts.parentSessionId);
     if (opts.carry && !parent) return { ok: true, reservation: null };
@@ -460,6 +462,10 @@ export class StartWorkService {
         : (opts.permissionSameAsStarter ?? null),
       // A carry-over keeps whatever the chat it replaces was told.
       reportBack: opts.carry ? (parent?.reportBack ?? true) : (opts.reportBack ?? true),
+      // A carry-over is the same chat on another account, so it keeps the stamp.
+      scheduledOrigin: opts.carry
+        ? (parent?.scheduledOrigin ?? null)
+        : (opts.scheduledOrigin ?? null),
     });
   }
 }

@@ -868,6 +868,57 @@ describe('session_start records who started the new session (spec flow-multiproj
     expect(store.get(sessionId.replace(/^canon-/, ''))).toBeNull();
   });
 
+  describe('the scheduled thing behind the starting chat (DOR-3703, ME)', () => {
+    /** A task store that knows one chat as a run's. */
+    const withRun = () =>
+      ({
+        ...makeDeps(),
+        taskStore: {
+          resolveTaskOrigins: (ids: string[]) =>
+            new Map(ids.filter((id) => id === 'run-chat').map((id) => [id, {}])),
+        },
+      }) as unknown as Deps;
+
+    it('stamps a spin-off started from a run, on its own row', async () => {
+      const handler = createSessionStartHandler(withRun(), () => ({
+        agentPath: AGENT_HOME,
+        sessionId: 'run-chat',
+      }));
+      const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
+      expect(store.get(sessionId)?.scheduledOrigin).toBe('run');
+    });
+
+    it('stamps nothing on a spin-off from an ordinary chat', async () => {
+      const handler = createSessionStartHandler(withRun(), () => ({
+        agentPath: AGENT_HOME,
+        sessionId: 'parent-chat',
+      }));
+      const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
+      expect(store.get(sessionId)?.scheduledOrigin).toBeNull();
+    });
+
+    it('keeps the stamp when a chat is carried to another account', () => {
+      store.insert({
+        sessionId: 'spin',
+        kind: 'chat',
+        extensionId: null,
+        startedBySessionId: 'run-chat',
+        originExtensionId: null,
+        reason: null,
+        scheduledOrigin: 'heartbeat',
+        createdAt: new Date().toISOString(),
+      });
+      const service = new StartWorkService({
+        store,
+        projects: { rootWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() },
+        extensionName: (id) => id,
+        runningSessionIds: () => [],
+      });
+      service.reserveFromChat({ sessionId: 'moved', parentSessionId: 'spin', carry: true });
+      expect(store.get('moved')?.scheduledOrigin).toBe('heartbeat');
+    });
+  });
+
   /** A chat service whose parent chats can, or cannot, take chat messages. */
   function wireChats(canReceive: boolean): void {
     setChatMessageService({

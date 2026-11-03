@@ -344,6 +344,14 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(slot('schedule-prompt')).toHaveTextContent('Sweep the backlog and file anything stale.');
   });
 
+  it('sends no hash from a folded prompt, so its yes approves no file (SC2)', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(proposal({ proposedByAgentPath: null, proposedByName: null }), { updateTask });
+    expect(slot('schedule-prompt')).toBeNull();
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
+  });
+
   it('opens on the instructions whenever its yes would approve a file, and its yes sends their hash', async () => {
     const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
     renderCard(proposal({ proposedByAgentPath: null, proposedByName: null, fileCapNext: true }), {
