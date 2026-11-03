@@ -33137,6 +33137,109 @@
         }
       }
     },
+    "/api/your-browser/scan": {
+      "post": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Find browser profiles on this computer",
+        "description": "Reads profile names only when the person taps Find my browsers. Only the owner in the app can call it; agents, API keys and approval tokens are refused. The response must not be cached. Email is for the picker only and is discarded on selection or close.",
+        "responses": {
+          "200": {
+            "description": "Browser profile metadata for the picker",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "profiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "browser": {
+                            "type": "string",
+                            "enum": [
+                              "chrome",
+                              "edge",
+                              "brave"
+                            ]
+                          },
+                          "directory": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^(?:Default|Profile [0-9]+)(?![\\s\\S])"
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "email": {
+                            "type": "string",
+                            "maxLength": 254
+                          }
+                        },
+                        "required": [
+                          "browser",
+                          "directory",
+                          "displayName"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 300
+                    },
+                    "unreadable": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "chrome",
+                          "edge",
+                          "brave"
+                        ]
+                      },
+                      "maxItems": 3
+                    }
+                  },
+                  "required": [
+                    "supported",
+                    "profiles",
+                    "unreadable"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner in the app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/hub/computers": {
       "get": {
         "tags": [
