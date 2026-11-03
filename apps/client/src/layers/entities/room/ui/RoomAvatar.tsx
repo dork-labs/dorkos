@@ -105,6 +105,8 @@ export interface RoomAvatarProps {
    * drawn at {@link RoomAvatarProps.size}, as everywhere else.
    */
   faceClassName?: string;
+  /** A single face's Block Buddy side on a phone, for a slot that grows there (DOR-3065). */
+  buddyPhoneSize?: number;
   /**
    * Whether an agent in this direct message is working right now. Draws a soft
    * live dot on the face's top-right corner; ignored for a channel, whose `#`
@@ -165,6 +167,7 @@ export function RoomAvatar({
   maxFaces = FACE_STACK[size].maxFaces,
   overlap = FACE_STACK[size].overlap,
   faceClassName,
+  buddyPhoneSize,
   working = false,
   className,
 }: RoomAvatarProps) {
@@ -197,6 +200,8 @@ export function RoomAvatar({
         size={size}
         color={faces[0]!.color}
         emoji={faces[0]!.emoji}
+        buddySeed={faces[0]!.buddySeed}
+        buddyPhoneSize={buddyPhoneSize}
         className={className}
       >
         {working && <WorkingFaceDot />}
@@ -222,6 +227,7 @@ export function RoomAvatar({
             size={size}
             color={face.color}
             emoji={face.emoji}
+            buddySeed={face.buddySeed}
             className={faceClassName}
           />
         ))}

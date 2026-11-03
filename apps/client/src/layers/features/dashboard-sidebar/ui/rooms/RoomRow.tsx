@@ -396,6 +396,7 @@ export const RoomRow = memo(function RoomRow({
             // A place's `#` is a control-sized glyph in the sidebar (Phase 4 B2);
             // a face fills the slot, 18 with a mouse and 24 on a phone.
             className={isDm ? SIDEBAR_FACE : ROW_GLYPH_CLASS}
+            buddyPhoneSize={24}
             // A group's two faces overlap to fit the same slot, so its label
             // starts on the same column as every other row's (Phase 4 P3).
             overlap={SIDEBAR_FACE_STACK.overlap}
