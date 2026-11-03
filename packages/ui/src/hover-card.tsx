@@ -2,17 +2,29 @@ import * as React from 'react';
 import { HoverCard as HoverCardPrimitive } from 'radix-ui';
 
 import { cn } from './cn.js';
+import { ENTER_FAST, EXIT_FAST, FLOATING_SURFACE } from './menu-item.js';
 import { usePortalContainer } from './ui-provider.js';
 
 /**
  * A card that appears when the pointer rests on something.
  *
  * For extra detail a reader may want and can ignore — never for anything they
- * have to act on, since a hover has no touch equivalent. `opts` on the root set
- * how long the pointer must rest before it opens.
+ * have to act on, since a hover has no touch equivalent. It waits 500ms for the
+ * pointer to rest and 150ms after it leaves; `openDelay` and `closeDelay` change that.
  */
-function HoverCard({ ...props }: React.ComponentProps<typeof HoverCardPrimitive.Root>) {
-  return <HoverCardPrimitive.Root data-slot="hover-card" {...props} />;
+function HoverCard({
+  openDelay = 500,
+  closeDelay = 150,
+  ...props
+}: React.ComponentProps<typeof HoverCardPrimitive.Root>) {
+  return (
+    <HoverCardPrimitive.Root
+      data-slot="hover-card"
+      openDelay={openDelay}
+      closeDelay={closeDelay}
+      {...props}
+    />
+  );
 }
 
 /**
@@ -33,7 +45,8 @@ function HoverCardTrigger({ ...props }: React.ComponentProps<typeof HoverCardPri
 function HoverCardContent({
   className,
   align = 'center',
-  sideOffset = 4,
+  sideOffset = 6,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof HoverCardPrimitive.Content>) {
   const container = usePortalContainer();
@@ -43,8 +56,12 @@ function HoverCardContent({
         data-slot="hover-card-content"
         align={align}
         sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dui-dark:border dui-dark:border-dui-border z-(--z-overlay) w-64 origin-(--radix-hover-card-content-transform-origin) rounded-md p-4 shadow-lg outline-hidden motion-reduce:animate-none!',
+          FLOATING_SURFACE,
+          ENTER_FAST,
+          EXIT_FAST,
+          'w-64 origin-(--radix-hover-card-content-transform-origin) p-3 outline-hidden',
           className
         )}
         {...props}

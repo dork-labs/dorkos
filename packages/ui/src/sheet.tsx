@@ -5,6 +5,8 @@ import { XIcon } from 'lucide-react';
 import { Dialog as SheetPrimitive } from 'radix-ui';
 
 import { cn } from './cn.js';
+import { MODAL_CLOCK } from './menu-item.js';
+import { focusFirstFieldOrPanel } from './overlay-focus.js';
 import { usePortalContainer } from './ui-provider.js';
 import { Button } from './button.js';
 
@@ -39,11 +41,11 @@ function SheetOverlay({
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        // Same durations and curves as SheetContent so the scrim and the panel
-        // land together. Left to itself the overlay takes tw-animate's 150ms
-        // default and the page was fully dimmed while the panel was still
-        // sliding.
-        'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 bg-dui-scrim fixed inset-0 z-(--z-overlay) data-[state=closed]:duration-150 data-[state=closed]:ease-in data-[state=open]:duration-200 data-[state=open]:ease-out motion-reduce:animate-none! motion-reduce:transition-none!',
+        // Same clock as SheetContent so the scrim and the panel land together.
+        // Left to itself the overlay takes tw-animate's 150ms default and the page
+        // was fully dimmed while the panel was still sliding.
+        MODAL_CLOCK,
+        'bg-dui-scrim fixed inset-0 z-(--z-overlay)',
         className
       )}
       {...props}
@@ -57,6 +59,7 @@ function SheetContent({
   children,
   side = 'right',
   showCloseButton = true,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left';
@@ -67,20 +70,28 @@ function SheetContent({
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event);
+          if (!event.defaultPrevented) focusFirstFieldOrPanel(event);
+        }}
         className={cn(
           // 200ms in / 150ms out, ease-out arriving and ease-in leaving — the
           // design system's overlay row and its easing table. shadcn ships this
           // at 500ms in with `ease-in-out`, which made every drawer in the app
           // hesitate and then take longer than any other motion to finish.
-          'bg-dui-background text-dui-foreground data-[state=closed]:animate-out data-[state=open]:animate-in fixed z-(--z-overlay) flex flex-col gap-4 shadow-xl transition data-[state=closed]:duration-150 data-[state=closed]:ease-in data-[state=open]:duration-200 data-[state=open]:ease-out motion-reduce:animate-none! motion-reduce:transition-none!',
+          //
+          // Flush to its edge, with no line or radius: the scrim and the lift carry
+          // it, as they do a dialog.
+          MODAL_CLOCK,
+          'bg-dui-popover text-dui-popover-foreground fixed z-(--z-overlay) flex flex-col gap-4 shadow-xl transition outline-none',
           side === 'right' &&
-            'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right border-dui-border inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm',
+            'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-full sm:w-3/4 sm:max-w-sm',
           side === 'left' &&
-            'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left border-dui-border inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm',
+            'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-full sm:w-3/4 sm:max-w-sm',
           side === 'top' &&
-            'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top border-dui-border inset-x-0 top-0 h-auto border-b',
+            'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto',
           side === 'bottom' &&
-            'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom border-dui-border inset-x-0 bottom-0 h-auto border-t',
+            'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto',
           className
         )}
         {...props}
@@ -91,9 +102,9 @@ function SheetContent({
             <Button
               variant="ghost"
               size="icon-sm"
-              className="absolute top-4 right-4 opacity-70 hover:opacity-100"
+              className="text-dui-muted-foreground hover:text-dui-foreground absolute top-4 right-4"
             >
-              <XIcon className="size-4" />
+              <XIcon className="size-(--dui-size-icon-sm)" />
               <span className="sr-only">Close</span>
             </Button>
           </SheetPrimitive.Close>
@@ -108,7 +119,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="sheet-header"
-      className={cn('flex flex-col gap-1.5 p-4', className)}
+      className={cn('flex flex-col gap-1 px-4 pt-4 pb-3', className)}
       {...props}
     />
   );
@@ -130,7 +141,7 @@ function SheetTitle({ className, ...props }: React.ComponentProps<typeof SheetPr
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn('text-dui-foreground font-semibold', className)}
+      className={cn('text-dui-foreground pr-12 text-base font-semibold', className)}
       {...props}
     />
   );

@@ -51,6 +51,9 @@
   /* And CountPill's figures follow the app's text dial, as text-2xs and text-3xs do. */
   --dui-text-2xs: calc(0.6875rem * var(--_st) * var(--user-font-scale, 1));
   --dui-text-3xs: calc(0.625rem * var(--_st) * var(--user-font-scale, 1));
+  /* And a menu row's label does too, as text-control does. */
+  --dui-text-control: calc(0.8125rem * var(--_st) * var(--user-font-scale, 1));
+  --dui-text-control-lh: calc(1.125rem * var(--_st) * var(--user-font-scale, 1));
 
   /* ============================================
      SIDEBAR GEOMETRY (specs/sidebar-simplification D1)
@@ -273,14 +276,14 @@
   --brand-text: var(--dui-brand-text);
   /* The quietest text that still clears 4.5:1 on a selected row. Use it in place
      of opacity on text. */
-  --faint: 0 0% 37%;
+  --faint: var(--dui-faint);
   --scrim: var(--dui-scrim);
   /* The row ladder: one set of tints for every list on every ground. Foreground
      alpha rather than a grey, so a step reads the same on the page, a card, the
      sidebar and a popover. Selected never changes on hover; it is one step. A
      group is the tint a dialog's rows sit on in place of a card. */
   --row-hover: hsl(var(--foreground) / 0.04);
-  --row-selected: hsl(var(--foreground) / 0.07);
+  --row-selected: var(--dui-row-selected);
   --row-group: hsl(var(--foreground) / 0.03);
 
   /* === Status tokens === */
@@ -577,10 +580,10 @@
   --brand: var(--dui-brand);
   --brand-foreground: var(--dui-brand-foreground);
   --brand-text: var(--dui-brand-text);
-  --faint: 0 0% 58%;
+  --faint: var(--dui-faint);
   --scrim: var(--dui-scrim);
   --row-hover: hsl(var(--foreground) / 0.05);
-  --row-selected: hsl(var(--foreground) / 0.09);
+  --row-selected: var(--dui-row-selected);
   --row-group: hsl(var(--foreground) / 0.04);
 
   --status-success: 152 69% 55%;
@@ -775,6 +778,7 @@
      a 12% popover pushed faint text under 4.5:1. */
   --row-hover: hsl(var(--foreground) / 0.03);
   --row-selected: hsl(var(--foreground) / 0.05);
+  --dui-row-selected: var(--row-selected);
   --row-group: hsl(var(--foreground) / 0.03);
 }
 .dark :where(.shadow-xl, .shadow-modal) {
@@ -784,13 +788,24 @@
   --dui-accent: var(--accent);
   --row-hover: hsl(var(--foreground) / 0.03);
   --row-selected: hsl(var(--foreground) / 0.05);
+  --dui-row-selected: var(--row-selected);
   --row-group: hsl(var(--foreground) / 0.03);
   /* Inks climb with the tints. On a 15% dialog, a group plus a selected row
      composites to about 20%, where faint (58%) and error text measured 3.55
-     and 3.66:1. These clear 4.9 and 5.1. */
+     and 3.66:1. These clear 4.9 and 5.1. A destructive menu item on a highlighted
+     row measured 3.88 in the fill colour; this clears 5.56. */
   --faint: 0 0% 64%;
+  --dui-faint: var(--faint);
   --status-error-fg: 0 72% 74%;
   --dui-status-error-fg: var(--status-error-fg);
+  --dui-destructive-text: 0 72% 74%;
+  /* The surface's lift is a wash painted under its content, so a scrolling body's
+     cover has to be that same composite or it draws a dark band. */
+  --dui-scroll-cover: color-mix(
+    in srgb,
+    rgb(255 255 255) var(--elevation-lift-modal),
+    hsl(var(--dui-popover))
+  );
 }
 
 @utility shadow-elevated {
@@ -2075,6 +2090,26 @@ body {
   opacity: 1;
 }
 
+/* The drawer's clock. vaul ships 500ms both ways for the sheet and its scrim; a
+   phone menu rises in 300 and leaves in 200, on vaul's own decelerating curve.
+   Under reduced motion it stays an animation, 1ms long rather than `none`: vaul
+   unmounts the sheet on `animationend`, and `none` never fires one. */
+[data-vaul-drawer][data-vaul-snap-points][data-state='open'],
+[data-vaul-overlay][data-vaul-snap-points][data-state='open'] {
+  animation-duration: var(--dur-slow);
+}
+[data-vaul-drawer][data-vaul-snap-points][data-state='closed'],
+[data-vaul-overlay][data-vaul-snap-points][data-state='closed'] {
+  animation-duration: var(--dur-normal);
+  animation-timing-function: var(--ease-in);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-vaul-drawer][data-vaul-snap-points][data-state],
+  [data-vaul-overlay][data-vaul-snap-points][data-state] {
+    animation-duration: 1ms !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2133,6 +2168,12 @@ body {
   .chat-scroll-area {
     touch-action: pan-y;
   }
+}
+
+/* The strip vaul hangs below a drawer, so an upward drag never shows the page. It
+   inherits the fill and misses the lift, which is a wash, so it needs the composite. */
+[data-vaul-drawer][data-vaul-snap-points][data-vaul-drawer-direction]::after {
+  background: var(--dui-scroll-cover);
 }
 
 /* Safe area insets for notched devices */

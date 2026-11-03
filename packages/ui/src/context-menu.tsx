@@ -3,6 +3,19 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react';
 import { ContextMenu as ContextMenuPrimitive } from 'radix-ui';
 
 import { cn } from './cn.js';
+import {
+  ENTER_FAST,
+  FLOATING_SURFACE,
+  MENU_ITEM,
+  MENU_ITEM_CHECKABLE,
+  MENU_ITEM_GLYPH,
+  MENU_ITEM_INSET,
+  MENU_LABEL,
+  MENU_SEPARATOR,
+  MENU_SHORTCUT,
+  MENU_SUB_CHEVRON,
+  MENU_SURFACE,
+} from './menu-item.js';
 import { usePortalContainer } from './ui-provider.js';
 
 /**
@@ -86,14 +99,11 @@ function ContextMenuSubTrigger({
     <ContextMenuPrimitive.SubTrigger
       data-slot="context-menu-sub-trigger"
       data-inset={inset}
-      className={cn(
-        "focus:bg-dui-accent focus:text-dui-accent-foreground data-[state=open]:bg-dui-accent data-[state=open]:text-dui-accent-foreground [&_svg:not([class*='text-'])]:text-dui-muted-foreground flex cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
+      className={cn(MENU_ITEM, inset && MENU_ITEM_INSET, className)}
       {...props}
     >
       {children}
-      <ChevronRightIcon className="ml-auto" />
+      <ChevronRightIcon className={MENU_SUB_CHEVRON} />
     </ContextMenuPrimitive.SubTrigger>
   );
 }
@@ -109,7 +119,10 @@ function ContextMenuSubContent({
     <ContextMenuPrimitive.SubContent
       data-slot="context-menu-sub-content"
       className={cn(
-        'bg-dui-popover text-dui-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 dui-dark:border dui-dark:border-dui-border z-(--z-overlay) min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-md p-1 shadow-lg motion-reduce:animate-none!',
+        FLOATING_SURFACE,
+        MENU_SURFACE,
+        ENTER_FAST,
+        'origin-(--radix-context-menu-content-transform-origin) overflow-hidden',
         className
       )}
       {...props}
@@ -125,6 +138,7 @@ function ContextMenuSubContent({
  */
 function ContextMenuContent({
   className,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
   const portalContainer = usePortalContainer();
@@ -132,8 +146,14 @@ function ContextMenuContent({
     <ContextMenuPrimitive.Portal container={portalContainer}>
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
+        collisionPadding={collisionPadding}
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 dui-dark:border dui-dark:border-dui-border z-(--z-overlay) max-h-(--radix-context-menu-content-available-height) min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md p-1 shadow-lg motion-reduce:animate-none!',
+          FLOATING_SURFACE,
+          MENU_SURFACE,
+          // Opens with an animation and closes at once, as the dropdown does: a
+          // closing menu eats the next press (DOR-1834).
+          ENTER_FAST,
+          'max-h-(--radix-context-menu-content-available-height) origin-(--radix-context-menu-content-transform-origin) overflow-x-hidden overflow-y-auto',
           className
         )}
         {...props}
@@ -162,10 +182,7 @@ function ContextMenuItem({
       data-slot="context-menu-item"
       data-inset={inset}
       data-variant={variant}
-      className={cn(
-        "focus:bg-dui-accent focus:text-dui-accent-foreground data-[variant=destructive]:text-dui-destructive data-[variant=destructive]:focus:bg-dui-destructive/10 data-[variant=destructive]:focus:text-dui-destructive dui-dark:data-[variant=destructive]:focus:bg-dui-destructive/20 [&_svg:not([class*='text-'])]:text-dui-muted-foreground data-[variant=destructive]:*:[svg]:text-dui-destructive! relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
+      className={cn(MENU_ITEM, inset && MENU_ITEM_INSET, className)}
       {...props}
     />
   );
@@ -183,16 +200,13 @@ function ContextMenuCheckboxItem({
   return (
     <ContextMenuPrimitive.CheckboxItem
       data-slot="context-menu-checkbox-item"
-      className={cn(
-        "focus:bg-dui-accent focus:text-dui-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
+      className={cn(MENU_ITEM, MENU_ITEM_CHECKABLE, className)}
       checked={checked}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+      <span className={MENU_ITEM_GLYPH}>
         <ContextMenuPrimitive.ItemIndicator>
-          <CheckIcon className="size-4" />
+          <CheckIcon className="size-(--dui-size-icon-sm)" />
         </ContextMenuPrimitive.ItemIndicator>
       </span>
       {children}
@@ -211,13 +225,10 @@ function ContextMenuRadioItem({
   return (
     <ContextMenuPrimitive.RadioItem
       data-slot="context-menu-radio-item"
-      className={cn(
-        "focus:bg-dui-accent focus:text-dui-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
+      className={cn(MENU_ITEM, MENU_ITEM_CHECKABLE, className)}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+      <span className={MENU_ITEM_GLYPH}>
         <ContextMenuPrimitive.ItemIndicator>
           <CircleIcon className="size-2 fill-current" />
         </ContextMenuPrimitive.ItemIndicator>
@@ -241,17 +252,14 @@ function ContextMenuLabel({
     <ContextMenuPrimitive.Label
       data-slot="context-menu-label"
       data-inset={inset}
-      className={cn(
-        'text-dui-foreground px-2 py-1.5 text-sm font-medium data-[inset]:pl-8',
-        className
-      )}
+      className={cn(MENU_LABEL, 'data-[inset]:pl-8', className)}
       {...props}
     />
   );
 }
 
 /**
- * A hairline between two groups of items.
+ * The space between two groups of items.
  */
 function ContextMenuSeparator({
   className,
@@ -260,7 +268,7 @@ function ContextMenuSeparator({
   return (
     <ContextMenuPrimitive.Separator
       data-slot="context-menu-separator"
-      className={cn('bg-dui-border -mx-1 my-1 h-px', className)}
+      className={cn(MENU_SEPARATOR, className)}
       {...props}
     />
   );
@@ -273,11 +281,7 @@ function ContextMenuSeparator({
  */
 function ContextMenuShortcut({ className, ...props }: React.ComponentProps<'span'>) {
   return (
-    <span
-      data-slot="context-menu-shortcut"
-      className={cn('text-dui-muted-foreground ml-auto text-xs tracking-widest', className)}
-      {...props}
-    />
+    <span data-slot="context-menu-shortcut" className={cn(MENU_SHORTCUT, className)} {...props} />
   );
 }
 

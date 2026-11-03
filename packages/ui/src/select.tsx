@@ -15,6 +15,13 @@ import { Check, ChevronDown } from 'lucide-react';
 
 import { cn } from './cn.js';
 import { FIELD_CONTROL } from './field-control.js';
+import {
+  ENTER_FAST,
+  FLOATING_SURFACE,
+  MENU_ITEM,
+  MENU_ITEM_CHECKABLE,
+  MENU_ITEM_GLYPH,
+} from './menu-item.js';
 import { usePortalContainer } from './ui-provider.js';
 import { TOUCH_TARGET_RESPONSIVE_H } from './touch-target.js';
 
@@ -91,6 +98,8 @@ function SelectContent({
   className,
   children,
   position = 'popper',
+  sideOffset = 6,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   const portalContainer = usePortalContainer();
@@ -98,8 +107,11 @@ function SelectContent({
     <SelectPrimitive.Portal container={portalContainer}>
       <SelectPrimitive.Content
         data-slot="select-content"
+        sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dui-dark:border dui-dark:border-dui-border relative z-(--z-overlay) max-h-96 min-w-[8rem] overflow-hidden rounded-md shadow-lg',
+          FLOATING_SURFACE,
+          'relative max-h-[50dvh] max-w-80 min-w-(--radix-select-trigger-width) overflow-hidden md:max-h-96',
           // OPENS WITH AN ANIMATION, CLOSES AT ONCE — the same load-bearing
           // half `dropdown-menu` carries, for the same reason and on the same
           // evidence (DOR-1835, following DOR-1834). Radix keeps this list
@@ -120,9 +132,7 @@ function SelectContent({
           // and the arrow keys reach nothing. Leaving at once is what makes the
           // next press a clean start. Anyone who asked their machine to reduce
           // motion has had this behaviour all along.
-          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 motion-reduce:animate-none!',
-          position === 'popper' &&
-            'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
+          ENTER_FAST,
           className
         )}
         position={position}
@@ -147,30 +157,31 @@ export interface SelectItemProps extends React.ComponentProps<typeof SelectPrimi
   /**
    * Grow to a 44px touch target below `md`, back to the compact row past it.
    *
-   * The same decision {@link SelectTriggerProps.responsive} makes, spent as
-   * padding rather than height because a row's height follows its text. Keep the
-   * two in step: a compact trigger with roomy items reads as a bug.
+   * The same decision {@link SelectTriggerProps.responsive} makes. Keep the two in
+   * step: a compact trigger with roomy items reads as a bug.
    *
    * @default true
    */
   responsive?: boolean;
 }
 
-/** One option in the list, ticked on the right when it is the chosen one. */
+/** One option in the list, ticked on the left when it is the chosen one, like a menu. */
 function SelectItem({ className, children, responsive = true, ...props }: SelectItemProps) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        'focus:bg-dui-accent focus:text-dui-accent-foreground relative flex w-full cursor-default items-center rounded-sm pr-8 pl-2 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-        responsive ? 'py-3 md:py-1.5' : 'py-1.5',
+        MENU_ITEM,
+        MENU_ITEM_CHECKABLE,
+        'w-full',
+        !responsive && 'max-md:min-h-8',
         className
       )}
       {...props}
     >
-      <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+      <span className={MENU_ITEM_GLYPH}>
         <SelectPrimitive.ItemIndicator>
-          <Check className="h-4 w-4" />
+          <Check className="size-(--dui-size-icon-sm)" />
         </SelectPrimitive.ItemIndicator>
       </span>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>

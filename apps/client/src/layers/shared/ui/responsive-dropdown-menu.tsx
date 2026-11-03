@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { MENU_ITEM_DRAWER } from '@dork-labs/ui/menu-item';
 import { Check } from 'lucide-react';
 import { useIsMobile } from '../model';
 import {
@@ -14,21 +15,8 @@ import {
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from './drawer';
 import { cn } from '@/layers/shared/lib/utils';
 
-/**
- * The drawer row's label size, outside the `text-*` tokens on purpose.
- *
- * 17px is Apple's HIG body size, and this markup renders only below 768px —
- * exactly where the app's `--_st` type scale is already multiplying every
- * `text-*` token by 1.25. Spelling it as a token would scale it a second time
- * and land at 21px, which is not what a native sheet row looks like. It still
- * follows the person's own font size (`--user-font-scale`), which a bare
- * `text-[17px]` ignored.
- */
-const MOBILE_ROW_LABEL = 'text-[calc(1.0625rem*var(--user-font-scale,1))] leading-snug';
-
-/** The drawer row's description size — HIG footnote (13px), sized the same way as {@link MOBILE_ROW_LABEL}. */
-const MOBILE_ROW_DESCRIPTION =
-  'text-muted-foreground text-[calc(0.8125rem*var(--user-font-scale,1))] leading-snug';
+/** The second line of a drawer row. */
+const MOBILE_ROW_DESCRIPTION = 'text-muted-foreground text-dui-2xs';
 
 const ResponsiveDropdownMenuContext = React.createContext<{
   isDesktop: boolean;
@@ -155,7 +143,7 @@ function ResponsiveDropdownMenuLabel({
   }
   return (
     <DrawerHeader className="pb-2">
-      <DrawerTitle className={cn('text-muted-foreground text-sm font-semibold', className)}>
+      <DrawerTitle className={cn('text-muted-foreground text-dui-2xs font-medium', className)}>
         {children}
       </DrawerTitle>
     </DrawerHeader>
@@ -301,24 +289,19 @@ function MobileRadioItem({
       role="radio"
       aria-checked={isSelected}
       disabled={disabled}
-      className={cn(
-        'border-border flex w-full items-center gap-3 border-b px-4 py-3 text-left transition-colors',
-        'active:bg-accent/50 min-h-[44px]',
-        'last:border-b-0',
-        className
-      )}
+      className={cn(MENU_ITEM_DRAWER, className)}
       onClick={() => {
         if (disabled) return;
         onValueChange?.(value);
         if (closeOnSelect) close();
       }}
     >
-      {Icon && <Icon className="size-5 shrink-0" />}
+      {Icon && <Icon className="text-muted-foreground size-5 shrink-0" />}
       <div className="min-w-0 flex-1">
-        <div className={MOBILE_ROW_LABEL}>{children}</div>
+        <div>{children}</div>
         {description && <div className={MOBILE_ROW_DESCRIPTION}>{description}</div>}
       </div>
-      {isSelected && <Check className="text-primary size-5 shrink-0" />}
+      {isSelected && <Check className="text-foreground size-5 shrink-0" />}
     </button>
   );
 }
@@ -369,20 +352,15 @@ function ResponsiveDropdownMenuItem({
   return (
     <button
       type="button"
-      className={cn(
-        'border-border flex w-full items-center gap-3 border-b px-4 py-3 text-left transition-colors',
-        'active:bg-accent/50 min-h-[44px]',
-        'last:border-b-0',
-        className
-      )}
+      className={cn(MENU_ITEM_DRAWER, className)}
       onClick={() => {
         onSelect?.();
         close();
       }}
     >
-      {Icon && <Icon className="size-5 shrink-0" />}
+      {Icon && <Icon className="text-muted-foreground size-5 shrink-0" />}
       <div className="min-w-0 flex-1">
-        <div className={MOBILE_ROW_LABEL}>{children}</div>
+        <div>{children}</div>
         {description && <div className={MOBILE_ROW_DESCRIPTION}>{description}</div>}
       </div>
     </button>
@@ -391,7 +369,7 @@ function ResponsiveDropdownMenuItem({
 
 // --- Separator ---
 
-/** Visual divider between item groups. Renders as spacing on mobile (rows already carry borders). */
+/** The space between item groups, on desktop and in the drawer alike. */
 function ResponsiveDropdownMenuSeparator({ className }: { className?: string }) {
   const { isDesktop } = React.useContext(ResponsiveDropdownMenuContext);
   if (isDesktop) return <DropdownMenuSeparator className={className} />;

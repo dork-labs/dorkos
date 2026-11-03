@@ -3,6 +3,7 @@ export type Page =
   | 'overview'
   | 'tokens'
   | 'forms'
+  | 'overlays'
   | 'components'
   | 'conversation'
   | 'entry-actions'
@@ -52,6 +53,7 @@ export interface PlaygroundSection {
 
 export { TOKENS_SECTIONS } from './sections/tokens-sections';
 export { FORMS_SECTIONS } from './sections/forms-sections';
+export { OVERLAYS_SECTIONS } from './sections/surfaces/overlays-sections';
 export { COMPONENTS_SECTIONS } from './sections/components-sections';
 export { CONVERSATION_SECTIONS } from './sections/content/conversation-sections';
 export { ENTRY_ACTIONS_SECTIONS } from './sections/entry-actions-sections';
@@ -82,6 +84,7 @@ import { MARKDOWN_SECTIONS as markdown } from './sections/content/markdown-secti
 // Imported under aliases to compose the full registry without circular re-export issues.
 import { TOKENS_SECTIONS as tokens } from './sections/tokens-sections';
 import { FORMS_SECTIONS as forms } from './sections/forms-sections';
+import { OVERLAYS_SECTIONS as overlays } from './sections/surfaces/overlays-sections';
 import { COMPONENTS_SECTIONS as components } from './sections/components-sections';
 import { CONVERSATION_SECTIONS as conversation } from './sections/content/conversation-sections';
 import { ENTRY_ACTIONS_SECTIONS as entryActions } from './sections/entry-actions-sections';
@@ -114,6 +117,7 @@ import { IMAGE_LIGHTBOX_SECTIONS as imageLightbox } from './sections/content/ima
 export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...tokens,
   ...forms,
+  ...overlays,
   ...components,
   ...conversation,
   ...entryActions,

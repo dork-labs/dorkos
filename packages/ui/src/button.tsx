@@ -270,7 +270,7 @@ function Button({
   return (
     // Its own provider, so a consumer with no app-level one still gets the reason.
     <TooltipProvider delayDuration={400}>
-      <Tooltip>
+      <Tooltip showOnTouch>
         <TooltipTrigger asChild>{button}</TooltipTrigger>
         <TooltipContent>{disabledReason}</TooltipContent>
       </Tooltip>

@@ -79,6 +79,7 @@ export {
   DialogTrigger,
   DialogContent,
   DialogHeader,
+  DialogBody,
   DialogFooter,
   DialogTitle,
   DialogDescription,
@@ -224,6 +225,7 @@ export {
   ContextMenuCheckboxItem,
   ContextMenuLabel,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuGroup,
   ContextMenuSub,
   ContextMenuSubTrigger,
@@ -363,13 +365,7 @@ export { ContributedIcon, isRenderableIcon } from './contributed-icon';
 export type { ContributedIconProps } from './contributed-icon';
 export { Textarea } from './textarea';
 export { Toaster } from './sonner';
-export {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-  TooltipProvider,
-  TOOLTIP_MUTED_TEXT,
-} from './tooltip';
+export * from './tooltip';
 export { AccountDot, type AccountDotProps } from './account-dot';
 export {
   UsageBar,

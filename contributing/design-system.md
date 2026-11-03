@@ -79,7 +79,7 @@ A black shadow can't darken a 4% page, so in dark mode the `--elevation-*` token
 
 Tailwind's `shadow-sm/md/lg/xl` map onto `soft/elevated/floating/modal` through `@theme`, so both scales are theme-aware. Tailwind inlines its default shadow values at build time, so a `.dark` override of `--shadow-*` never reaches them. In light mode the four steps are exactly Tailwind's own values (0.1 alpha), so light mode looks as it did. `shadow-xs`/`2xs` stay Tailwind's: outline buttons use `shadow-xs`, because they should read as recessed, not raised. Fields, checkboxes, radios and switches carry no shadow; their edge is `--dui-control-edge` (see [Form Fields](#form-fields)).
 
-**Use a shadow token for height and never hand-roll a black `box-shadow`**: it'll vanish in dark mode. **Known gap:** `bg-popover` is 4% in dark, so a menu that opens over the 10% sidebar reads as a hole, not a lift. That's a surface-token fix (popover and accent together), tracked separately.
+**Use a shadow token for height and never hand-roll a black `box-shadow`**: it'll vanish in dark mode. A floating surface keeps a dark-only hairline as well, because there is no scrim behind it and a 12% menu over the 10% sidebar measures only 1.06:1; a modal doesn't need one.
 
 **Tints climb with the surface.** Inside anything at `shadow-md` or above in dark mode, `muted` and `accent` step up with it (13/16% → 16/19% → 19/22%), so a menu's hover or selected row is always a step above its lifted surface rather than a hole in it. They are computed from the `--elevation-lift-*` tokens (muted is 8% plus the lift, accent 3% above muted), so changing a lift moves its tints with it.
 
@@ -96,7 +96,7 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 **Where gray stays:**
 
 - `--primary` — primary buttons, switches, badges, selections (the quiet workhorse)
-- `--accent` — hover backgrounds in menus, dropdowns
+- `--row-selected` — the highlighted row in a menu or a list (`--dui-row-selected` in `packages/ui`, one ladder either way)
 - `--secondary` — user message tint
 - Message links and inline code — ink. A link's signal is its underline (muted, full strength on hover and focus); inline code sits on a `foreground / 0.05` tint
 - All structural surfaces — backgrounds, cards, borders, muted
@@ -481,12 +481,11 @@ Retired. The four-tab `SessionSidebar` strip this section used to document (Over
 
 ### Tooltip
 
-Standard shadcn Radix tooltip from `shared/ui/tooltip.tsx`. Used for:
+Radix tooltip from `shared/ui/tooltip.tsx`, for the name of an icon-only button and the reason a control is disabled. `TooltipProvider` is mounted in `AppShell.tsx`. Use `<Tooltip>` + `<TooltipTrigger>` + `<TooltipContent>`.
 
-- Disabled state indicators (e.g., "Pulse is disabled" on HeartPulse icon)
-- Contextual information on icon-only buttons
-
-`TooltipProvider` is mounted in `AppShell.tsx`. Use `<Tooltip>` + `<TooltipTrigger>` + `<TooltipContent>` pattern.
+- **It waits.** 400ms on the first one (`delayDuration`), then 300ms in which the next opens at once (`skipDelayDuration`). A 0ms tooltip flickers across every toolbar a pointer crosses, so the design-token gate refuses `delayDuration={0}`.
+- **It never shows on touch.** A tap would open it and leave it stuck, so under `(hover: none)` it stays closed (`useCanHover`), and a tooltip is never the only name a control has: `aria-label` names it. `Button`'s `disabledReason` is the one exception (`showOnTouch`), because those words have no other home.
+- **Its surface is its own:** `--dui-tooltip` (9% light, 22% dark), no arrow, 6px from what it describes. A white chip was the loudest thing on a dark screen.
 
 ### InfoTip and MoreDetails
 
@@ -498,7 +497,7 @@ Two primitives for rung 3 of the copy overflow ladder (`writing-app-copy` skill)
 | `InfoTip`     | A note about one control or label, up to a few short paragraphs. Opens on click or tap     | `shared/ui/info-tip.tsx`     |
 | `MoreDetails` | Extra paragraphs under a description, read in the page flow. An inline "More details" link | `shared/ui/more-details.tsx` |
 
-Never put a paragraph in a `Tooltip`: it has no touch path and hides as soon as the pointer leaves. `InfoTip` takes a required `label` for its accessible name ("About background agents"), and opens a popover on desktop and a drawer on a phone.
+Never put a paragraph in a `Tooltip`: it never shows on touch and hides as soon as the pointer leaves. `InfoTip` takes a required `label` for its accessible name ("About background agents"), and opens a popover on desktop and a drawer on a phone.
 
 ### Toast Notifications (Sonner)
 
@@ -1263,6 +1262,49 @@ See [`shared/ui/README.md`](../apps/client/src/layers/shared/ui/README.md) for w
 
 Interactive overlays that need different UX on desktop vs mobile use responsive wrappers. These keep the Radix primitive on desktop (keyboard nav, precise positioning) and swap to a Vaul Drawer on mobile (large touch targets, bottom-sheet pattern).
 
+### Surfaces above the page
+
+Everything above the page sits on `--popover` (99.5% light, 4% plus its lift in dark). The recipes live in `packages/ui/src/menu-item.ts`, so the primitives can't drift apart. See every one at `/dev/overlays`.
+
+| Part   | Floating (popover, menu, select, hover card) | Modal (dialog, alert) | Side sheet     | Drawer (phone) | Tooltip       |
+| ------ | -------------------------------------------- | --------------------- | -------------- | -------------- | ------------- |
+| Height | `shadow-lg`                                  | `shadow-xl`           | `shadow-xl`    | `shadow-xl`    | none          |
+| Edge   | dark hairline only                           | none, either theme    | none           | none           | none          |
+| Scrim  | none                                         | `bg-scrim`            | `bg-scrim`     | `bg-scrim`     | none          |
+| Radius | `rounded-lg`                                 | `rounded-xl`          | `rounded-none` | `rounded-t-xl` | `rounded-md`  |
+| Layer  | `--z-overlay`                                | `--z-overlay`         | `--z-overlay`  | `--z-overlay`  | `--z-tooltip` |
+
+Floating and modal surfaces share `--z-overlay` and stack by portal order, so a menu opened from a dialog sits above it. Toasts sit at 60 and tooltips at 70. The offset from a trigger is 6px, with 8px of collision padding. Groups inside any of these are a `FieldCard` tint, never a card.
+
+**Menu rows** (`MENU_ITEM`: dropdown, context menu, select):
+
+| Part      | Desktop                                         | Phone, and every drawer row (`MENU_ITEM_DRAWER`) |
+| --------- | ----------------------------------------------- | ------------------------------------------------ |
+| Height    | 32px                                            | 44px                                             |
+| Type      | `text-dui-control`, 13/18                       | 16/21                                            |
+| Icon      | 16px, muted                                     | 20px, muted                                      |
+| Tick      | left gutter (a select's too)                    | left in a floating list, right in a drawer row   |
+| Highlight | `data-highlighted:bg-dui-row-selected`, instant | `active:bg-dui-row-selected`                     |
+| Radius    | `rounded-sm` inside `p-1`: concentric           | full bleed in a drawer                           |
+| Shortcut  | `MENU_SHORTCUT`, faint                          | hidden                                           |
+
+The highlight is the keyboard cursor and the focus indicator inside a menu, with no outline, no transition and no weight change. A checked row has a tick and no tint. A destructive row takes `text-dui-destructive-text`, because the fill colour measured under 4.5:1 on a highlight. Groups are split by 8px of space, keeping `role="separator"`; a group that needs a name gets a `Label`.
+
+**Focus and keyboard.** Menus and selects keep Radix's arrows and typeahead. A dialog or sheet opens on its first field, or else on the panel (`focusFirstFieldOrPanel`), never on ✕ or a destructive button. An alert dialog opens on Cancel, and has no ✕. A drawer leaves focus where it is unless `autoFocus` asks, so a keyboard doesn't spring up over it. A popover without `modal` doesn't trap Tab.
+
+**Motion** (`ENTER_FAST`, `EXIT_FAST`, `MODAL_CLOCK`):
+
+| Surface                   | Enter                     | Exit                    |
+| ------------------------- | ------------------------- | ----------------------- |
+| Tooltip                   | 150ms: fade, zoom 95, 4px | 100ms: fade             |
+| Dropdown, context, select | 150ms: fade, zoom 95, 4px | **none**                |
+| Popover, hover card       | 150ms: fade, zoom 95, 4px | 100ms: fade, zoom 95    |
+| Dialog, alert, scrim      | 200ms: fade, zoom 95      | 150ms: fade, zoom 95    |
+| Side sheet                | 200ms from its edge       | 150ms back to that edge |
+| Drawer, its scrim         | 300ms on vaul's curve     | 200ms down              |
+
+**Menus and selects close at once, and that's load-bearing** (DOR-1834, DOR-1835): a closing one reads the next press on its trigger as a press outside and closes what just opened. Under reduced motion everything is instant, except that the drawer's animation stays 1ms long rather than `none`, because vaul unmounts on `animationend`.
+
 ### `ResponsiveDropdownMenu`
 
 Use instead of plain `DropdownMenu` when the menu appears in a touch-accessible area (status bars, toolbars, settings). Plain `DropdownMenu` is fine for desktop-only contexts (right-click menus, dense data tables).
@@ -1288,10 +1330,10 @@ Use instead of plain `DropdownMenu` when the menu appears in a touch-accessible 
 
 #### Mobile Sizing (Apple HIG)
 
-- `min-h-[44px]` touch targets
-- 17px labels (iOS body) and 13px descriptions (iOS footnote), scaled by `--user-font-scale` only: a `text-*` token would add the phone's 1.25x a second time
+- 44px touch targets (`MENU_ITEM_DRAWER`)
+- `text-dui-control` labels and `text-dui-2xs` descriptions, on the phone's type ramp
 - Right-aligned `Check` icon for selected item
-- `border-b border-border` separators between items
+- No lines between rows: `ResponsiveDropdownMenuSeparator` is 8px of space
 
 #### Simple Usage (ModelItem)
 

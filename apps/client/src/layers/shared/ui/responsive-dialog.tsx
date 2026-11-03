@@ -192,7 +192,9 @@ function ResponsiveDialogContent({
       <DialogContent
         data-fullscreen={isFullscreen || undefined}
         className={cn(
-          'flex min-h-[50vh] flex-col overflow-hidden transition-[top,right,bottom,left,translate] duration-300 ease-[cubic-bezier(0,0,0.2,1)]',
+          // The fullscreen toggle's own clock, spelled on the transition alone: a
+          // `duration-*` here would also set how long the dialog takes to open.
+          'flex min-h-[50vh] flex-col overflow-hidden transition-[top,right,bottom,left,translate] [transition-duration:var(--dur-slow)] ease-[cubic-bezier(0,0,0.2,1)]',
           'data-[fullscreen]:top-4 data-[fullscreen]:right-4 data-[fullscreen]:bottom-4 data-[fullscreen]:left-4',
           'data-[fullscreen]:translate-x-0 data-[fullscreen]:translate-y-0',
           'data-[fullscreen]:h-auto data-[fullscreen]:max-h-none data-[fullscreen]:w-auto data-[fullscreen]:max-w-none',
@@ -302,7 +304,7 @@ function ResponsiveDialogBody({ className, alignWithHeader, ...props }: Responsi
     <div
       data-slot="responsive-dialog-body"
       className={cn(
-        'flex-1 overflow-y-auto px-4',
+        'dui-scroll-edges flex-1 overflow-y-auto px-4',
         alignWithHeader && isDesktop && '-mx-4',
         className
       )}
@@ -333,10 +335,13 @@ function ResponsiveDialogFullscreenToggle({ className }: { className?: string })
       variant="ghost"
       size="icon-sm"
       onClick={toggleFullscreen}
-      className={cn('absolute top-4 right-12 opacity-70 hover:opacity-100', className)}
+      className={cn(
+        'text-muted-foreground hover:text-foreground absolute top-4 right-12',
+        className
+      )}
       aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
     >
-      <Icon className="size-(--size-icon-md)" />
+      <Icon className="size-(--size-icon-sm)" />
     </Button>
   );
 }

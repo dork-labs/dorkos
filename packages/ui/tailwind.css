@@ -52,6 +52,10 @@
   --color-dui-status-warning-fg: hsl(var(--dui-status-warning-fg));
   --color-dui-status-error-bg: hsl(var(--dui-status-error-bg));
   --color-dui-status-error-fg: hsl(var(--dui-status-error-fg));
+  --color-dui-row-selected: var(--dui-row-selected);
+  --color-dui-faint: hsl(var(--dui-faint));
+  --color-dui-tooltip: hsl(var(--dui-tooltip));
+  --color-dui-tooltip-foreground: hsl(var(--dui-tooltip-foreground));
   --animate-dui-breathe: dui-breathe 1.6s var(--dui-ease-standard) infinite;
   --text-field: var(--dui-text-field);
   --text-field--line-height: var(--dui-text-field-lh);
@@ -59,6 +63,8 @@
   --text-dui-2xs--line-height: 1rem;
   --text-dui-3xs: var(--dui-text-3xs);
   --text-dui-3xs--line-height: 0.875rem;
+  --text-dui-control: var(--dui-text-control);
+  --text-dui-control--line-height: var(--dui-text-control-lh);
 
   @keyframes dui-breathe {
     50% {
@@ -96,4 +102,18 @@
     outline: 2px solid var(--focus-ring-color, hsl(var(--dui-ring)));
     outline-offset: -2px;
   }
+}
+
+/* A scrolling body says content continues under its header and footer, with no
+   listener and no hairline: two covers pinned to the content (`local`) sit over two
+   shadows pinned to the box (`scroll`), so a shadow shows only where its cover has
+   scrolled away. At rest nothing is drawn. */
+@utility dui-scroll-edges {
+  background:
+    linear-gradient(var(--dui-scroll-cover) 40%, transparent) top / 100% 14px local no-repeat,
+    linear-gradient(transparent, var(--dui-scroll-cover) 60%) bottom / 100% 14px local no-repeat,
+    radial-gradient(farthest-side at 50% 0, hsl(var(--dui-scroll-edge)), transparent) top / 100% 7px
+      scroll no-repeat,
+    radial-gradient(farthest-side at 50% 100%, hsl(var(--dui-scroll-edge)), transparent) bottom /
+      100% 7px scroll no-repeat;
 }

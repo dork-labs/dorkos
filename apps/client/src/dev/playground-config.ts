@@ -1,5 +1,6 @@
 import {
   Palette,
+  Layers,
   TextCursorInput,
   Component,
   MessageSquare,
@@ -28,6 +29,7 @@ import {
   PLAYGROUND_REGISTRY,
   TOKENS_SECTIONS,
   FORMS_SECTIONS,
+  OVERLAYS_SECTIONS,
   COMPONENTS_SECTIONS,
   CONVERSATION_SECTIONS,
   IMAGE_LIGHTBOX_SECTIONS,
@@ -168,6 +170,15 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'design-system',
     sections: FORMS_SECTIONS,
     path: 'forms',
+  },
+  {
+    id: 'overlays',
+    label: 'Overlays',
+    description: 'Menus, popovers, tooltips, dialogs, sheets and drawers on one surface.',
+    icon: Layers,
+    group: 'design-system',
+    sections: OVERLAYS_SECTIONS,
+    path: 'overlays',
   },
   {
     id: 'components',

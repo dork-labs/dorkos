@@ -46,6 +46,7 @@ export {
   DialogTrigger,
   DialogContent,
   DialogHeader,
+  DialogBody,
   DialogFooter,
   DialogTitle,
   DialogDescription,
@@ -85,6 +86,25 @@ export {
 } from './popover.js';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card.js';
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './tooltip.js';
+export type { TooltipProps } from './tooltip.js';
+export { useCanHover } from './use-can-hover.js';
+export {
+  ENTER_FAST,
+  EXIT_FAST,
+  FLOATING_SURFACE,
+  MENU_ITEM,
+  MENU_ITEM_CHECKABLE,
+  MENU_ITEM_DRAWER,
+  MENU_ITEM_GLYPH,
+  MENU_ITEM_INSET,
+  MENU_LABEL,
+  MENU_SEPARATOR,
+  MENU_SHORTCUT,
+  MENU_SUB_CHEVRON,
+  MENU_SURFACE,
+  MODAL_CLOCK,
+  MODAL_SURFACE,
+} from './menu-item.js';
 export {
   Select,
   SelectGroup,

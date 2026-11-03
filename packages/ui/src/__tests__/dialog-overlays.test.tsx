@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import * as React from 'react';
 import { createRef } from 'react';
 import { UiProvider } from '../ui-provider.js';
 import {
@@ -74,8 +75,8 @@ describe('Dialog portable behavior', () => {
       'overflow-y-auto'
     );
     expect(panel).toHaveClass('motion-reduce:animate-none!');
-    // duration-200 can still imply a transition even when animation is removed.
-    expect(panel).toHaveClass('duration-200', 'motion-reduce:transition-none!');
+    // A duration can still imply a transition even when animation is removed.
+    expect(panel).toHaveClass('motion-reduce:transition-none!');
     expect(screen.getByRole('button', { name: 'Close' })).toHaveClass(
       'absolute',
       'top-4',
@@ -143,7 +144,84 @@ describe('Dialog portable behavior', () => {
   });
 });
 
+describe('Where a dialog opens', () => {
+  const opened = async (children: React.ReactNode) => {
+    render(
+      <Dialog defaultOpen>
+        <DialogContent>
+          <DialogTitle>Details</DialogTitle>
+          <DialogDescription>Room details.</DialogDescription>
+          {children}
+        </DialogContent>
+      </Dialog>
+    );
+    return screen.findByRole('dialog');
+  };
+
+  it('opens on the panel when it has no field, never on the close button', async () => {
+    const panel = await opened(null);
+    await waitFor(() => expect(panel).toHaveFocus());
+    expect(screen.getByRole('button', { name: 'Close' })).not.toHaveFocus();
+  });
+
+  it('skips a destructive button at the top of the dialog', async () => {
+    const panel = await opened(<button>Delete everything</button>);
+    await waitFor(() => expect(panel).toHaveFocus());
+    expect(screen.getByRole('button', { name: 'Delete everything' })).not.toHaveFocus();
+  });
+
+  it('opens on the first field, past a button and a disabled field', async () => {
+    await opened(
+      <>
+        <button>Reset</button>
+        <input aria-label="Off" disabled />
+        <input aria-label="Name" />
+      </>
+    );
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveFocus());
+  });
+
+  it('leaves the choice to a caller that makes its own', async () => {
+    render(
+      <Dialog defaultOpen>
+        <DialogContent
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            document.getElementById('chosen')?.focus();
+          }}
+        >
+          <DialogTitle>Details</DialogTitle>
+          <DialogDescription>Room details.</DialogDescription>
+          <input aria-label="Name" />
+          <button id="chosen">Chosen</button>
+        </DialogContent>
+      </Dialog>
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Chosen' })).toHaveFocus());
+  });
+
+  it('draws a dialog with no border, on the same surface as a popover', async () => {
+    const panel = await opened(null);
+    expect(panel).toHaveClass('bg-dui-popover', 'rounded-xl', 'shadow-xl');
+    expect(panel.className).not.toMatch(/(?<![\w:-])border(?![\w-])/);
+  });
+});
+
 describe('AlertDialog portable behavior', () => {
+  it('opens on Cancel, not on the action', async () => {
+    render(
+      <AlertDialog defaultOpen>
+        <AlertDialogContent>
+          <AlertDialogTitle>Delete room?</AlertDialogTitle>
+          <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+          <AlertDialogAction variant="destructive">Delete</AlertDialogAction>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+  });
+
   it('requires its explicit actions and retains phone-sized exits', async () => {
     render(
       <AlertDialog>
@@ -160,7 +238,7 @@ describe('AlertDialog portable behavior', () => {
     const panel = await screen.findByRole('alertdialog');
     expect(panel).toHaveClass('w-[calc(100%-2rem)]', 'max-h-[calc(100dvh-2rem)]');
     expect(panel).toHaveClass('motion-reduce:animate-none!');
-    expect(panel).toHaveClass('duration-200', 'motion-reduce:transition-none!');
+    expect(panel).toHaveClass('motion-reduce:transition-none!');
     expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
     for (const name of ['Cancel', 'Delete'])
       expect(screen.getByRole('button', { name })).toHaveClass('h-11', 'md:h-9');

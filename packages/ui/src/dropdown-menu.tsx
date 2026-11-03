@@ -6,9 +6,9 @@
  * should become a bottom sheet on a phone, an application wrapper can choose
  * between this menu and its own sheet.
  *
- * DorkOS's items are `text-xs` rather than upstream's `text-sm`, and every
- * surface here grows out of the control that opened it rather than out of its
- * own middle.
+ * Every row and surface comes from `menu-item.ts`, shared with the context menu
+ * and the select. Each surface grows out of the control that opened it rather than
+ * out of its own middle.
  *
  * @module @dork-labs/ui/dropdown-menu
  */
@@ -17,6 +17,18 @@ import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronRight } from 'lucide-react';
 
 import { cn } from './cn.js';
+import {
+  FLOATING_SURFACE,
+  MENU_ITEM,
+  MENU_ITEM_CHECKABLE,
+  MENU_ITEM_GLYPH,
+  MENU_ITEM_INSET,
+  MENU_LABEL,
+  MENU_SEPARATOR,
+  MENU_SUB_CHEVRON,
+  MENU_SURFACE,
+  ENTER_FAST,
+} from './menu-item.js';
 import { usePortalContainer } from './ui-provider.js';
 
 /** The menu itself — wraps a trigger and its content, and owns open/closed. */
@@ -54,7 +66,8 @@ function DropdownMenuRadioGroup({
 /** The menu panel itself, portalled into the provider host or document body. */
 function DropdownMenuContent({
   className,
-  sideOffset = 4,
+  sideOffset = 6,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   const portalContainer = usePortalContainer();
@@ -63,8 +76,11 @@ function DropdownMenuContent({
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground dui-dark:border dui-dark:border-dui-border z-(--z-overlay) min-w-[8rem] overflow-hidden rounded-md p-1 shadow-lg',
+          FLOATING_SURFACE,
+          MENU_SURFACE,
+          'max-h-(--radix-dropdown-menu-content-available-height) overflow-x-hidden overflow-y-auto',
           // The menu grows out of the control you clicked, not out of its own
           // middle — Radix publishes the trigger-relative origin, and every other
           // overlay in the app already reads it.
@@ -84,11 +100,7 @@ function DropdownMenuContent({
           // rather than a new one, so nothing puts the keyboard back inside it
           // and the arrow keys reach nothing. Leaving at once is what makes the
           // next press a clean start.
-          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 motion-reduce:animate-none!',
-          // All four sides: Radix flips a menu near a viewport edge to `left` or
-          // `right`, and those two used to slide from nowhere.
-          'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
-          'data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2',
+          ENTER_FAST,
           className
         )}
         {...props}
@@ -105,13 +117,13 @@ function DropdownMenuLabel({
   return (
     <DropdownMenuPrimitive.Label
       data-slot="dropdown-menu-label"
-      className={cn('text-dui-muted-foreground px-2 py-1.5 text-xs font-semibold', className)}
+      className={cn(MENU_LABEL, className)}
       {...props}
     />
   );
 }
 
-/** A hairline between two groups of items. */
+/** The space between two groups of items. */
 function DropdownMenuSeparator({
   className,
   ...props
@@ -119,7 +131,7 @@ function DropdownMenuSeparator({
   return (
     <DropdownMenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn('bg-dui-muted -mx-1 my-1 h-px', className)}
+      className={cn(MENU_SEPARATOR, className)}
       {...props}
     />
   );
@@ -144,14 +156,7 @@ function DropdownMenuItem({
     <DropdownMenuPrimitive.Item
       data-slot="dropdown-menu-item"
       data-variant={variant}
-      className={cn(
-        'relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none select-none',
-        'focus:bg-dui-accent focus:text-dui-accent-foreground transition-colors motion-reduce:transition-none!',
-        'data-[variant=destructive]:text-dui-destructive data-[variant=destructive]:focus:bg-dui-destructive/10 data-[variant=destructive]:focus:text-dui-destructive dui-dark:data-[variant=destructive]:focus:bg-dui-destructive/20',
-        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-        inset && 'pl-8',
-        className
-      )}
+      className={cn(MENU_ITEM, inset && MENU_ITEM_INSET, className)}
       {...props}
     />
   );
@@ -168,17 +173,12 @@ function DropdownMenuCheckboxItem({
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
       checked={checked}
-      className={cn(
-        'relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-xs outline-none select-none',
-        'focus:bg-dui-accent focus:text-dui-accent-foreground transition-colors motion-reduce:transition-none!',
-        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-        className
-      )}
+      className={cn(MENU_ITEM, MENU_ITEM_CHECKABLE, className)}
       {...props}
     >
-      <span className="absolute left-2 flex size-(--dui-size-icon-sm) items-center justify-center">
+      <span className={MENU_ITEM_GLYPH}>
         <DropdownMenuPrimitive.ItemIndicator>
-          <Check className="size-(--dui-size-icon-xs)" />
+          <Check className="size-(--dui-size-icon-sm)" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
       {children}
@@ -200,16 +200,11 @@ function DropdownMenuSubTrigger({
   return (
     <DropdownMenuPrimitive.SubTrigger
       data-slot="dropdown-menu-sub-trigger"
-      className={cn(
-        'relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none select-none',
-        'focus:bg-dui-accent focus:text-dui-accent-foreground data-[state=open]:bg-dui-accent data-[state=open]:text-dui-accent-foreground transition-colors motion-reduce:transition-none!',
-        inset && 'pl-8',
-        className
-      )}
+      className={cn(MENU_ITEM, inset && MENU_ITEM_INSET, className)}
       {...props}
     >
       {children}
-      <ChevronRight className="ml-auto size-(--dui-size-icon-xs)" />
+      <ChevronRight className={MENU_SUB_CHEVRON} />
     </DropdownMenuPrimitive.SubTrigger>
   );
 }
@@ -225,7 +220,9 @@ function DropdownMenuSubContent({
       <DropdownMenuPrimitive.SubContent
         data-slot="dropdown-menu-sub-content"
         className={cn(
-          'bg-dui-popover text-dui-popover-foreground dui-dark:border dui-dark:border-dui-border z-(--z-overlay) min-w-[8rem] overflow-hidden rounded-md p-1 shadow-lg',
+          FLOATING_SURFACE,
+          MENU_SURFACE,
+          'overflow-hidden',
           // Same trigger-relative origin as the top-level menu: a submenu grows
           // out of the item that opened it.
           'origin-(--radix-dropdown-menu-content-transform-origin)',
@@ -235,9 +232,7 @@ function DropdownMenuSubContent({
           // pointer events alone), so it never ate anybody's click; it is that a
           // submenu lingering after the menu it belongs to has gone is a ghost,
           // not a fade (DOR-1834).
-          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 motion-reduce:animate-none!',
-          'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
-          'data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2',
+          ENTER_FAST,
           className
         )}
         {...props}
@@ -255,17 +250,12 @@ function DropdownMenuRadioItem({
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
-      className={cn(
-        'relative flex cursor-default items-center rounded-sm py-1.5 pr-2 pl-8 text-xs outline-none select-none',
-        'focus:bg-dui-accent focus:text-dui-accent-foreground transition-colors motion-reduce:transition-none!',
-        'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-        className
-      )}
+      className={cn(MENU_ITEM, MENU_ITEM_CHECKABLE, className)}
       {...props}
     >
-      <span className="absolute left-2 flex size-(--dui-size-icon-sm) items-center justify-center">
+      <span className={MENU_ITEM_GLYPH}>
         <DropdownMenuPrimitive.ItemIndicator>
-          <Check className="size-(--dui-size-icon-xs)" />
+          <Check className="size-(--dui-size-icon-sm)" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
       {children}

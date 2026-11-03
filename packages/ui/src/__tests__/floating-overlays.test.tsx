@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createRef } from 'react';
+import { Button } from '../button.js';
 import { UiProvider } from '../ui-provider.js';
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '../popover.js';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '../hover-card.js';
@@ -136,7 +137,7 @@ describe('floating overlays', () => {
     }
   });
 
-  it('keeps Tooltip delay and arrow while routing its label to the provider host', async () => {
+  it('keeps Tooltip delay while routing its label to the provider host, with no arrow', async () => {
     const provided = host();
     render(
       <UiProvider portalContainer={provided}>
@@ -152,6 +153,64 @@ describe('floating overlays', () => {
     expect(provided).toContainElement(content);
     expect(content).toHaveTextContent('Helpful detail');
     expect(content).toHaveClass('motion-reduce:animate-none!');
-    expect(content.querySelector('svg')).not.toBeNull();
+    expect(content.querySelector('svg')).toBeNull();
+  });
+
+  it('waits 400ms by default, so a passing pointer flickers nothing', () => {
+    vi.useFakeTimers();
+    try {
+      const onOpenChange = vi.fn();
+      render(
+        <TooltipProvider>
+          <Tooltip onOpenChange={onOpenChange}>
+            <TooltipTrigger>Help</TooltipTrigger>
+            <TooltipContent>Helpful detail</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+      fireEvent.pointerMove(screen.getByText('Help'), { pointerType: 'mouse' });
+      act(() => vi.advanceTimersByTime(399));
+      expect(onOpenChange).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1));
+      expect(onOpenChange).toHaveBeenCalledWith(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe('on a device with no hover', () => {
+    beforeEach(() => {
+      vi.stubGlobal(
+        'matchMedia',
+        (query: string) =>
+          ({
+            matches: query === '(hover: none)',
+            addEventListener: () => {},
+            removeEventListener: () => {},
+          }) as unknown as MediaQueryList
+      );
+    });
+    afterEach(() => {
+      vi.stubGlobal('matchMedia', undefined);
+    });
+
+    it('renders nothing, even when asked to open, and leaves no dangling description', () => {
+      render(
+        <TooltipProvider>
+          <Tooltip open>
+            <TooltipTrigger>Help</TooltipTrigger>
+            <TooltipContent>Helpful detail</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+      expect(screen.getByText('Help')).not.toHaveAttribute('aria-describedby');
+    });
+
+    it('keeps a disabled button able to say why', async () => {
+      render(<Button disabledReason="Only the owner can do this">Archive</Button>);
+      fireEvent.focus(screen.getByRole('button', { name: 'Archive' }));
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('Only the owner can do this');
+    });
   });
 });

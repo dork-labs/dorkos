@@ -152,11 +152,11 @@ function ResponsivePopoverContent({
         <DrawerClose asChild>
           <Button
             variant="ghost"
-            size="icon-md"
+            size="icon-sm"
             aria-label="Close"
             className="text-muted-foreground hover:text-foreground absolute top-2 right-2"
           >
-            <XIcon className="size-5" />
+            <XIcon className="size-(--size-icon-sm)" />
           </Button>
         </DrawerClose>
       )}
@@ -203,7 +203,7 @@ function ResponsivePopoverTitle({
         // the one case where 40px of heading is the difference between seeing
         // the matches you are typing to find and seeing none of them. The close
         // button is still there, so the sheet keeps a visible way out.
-        fullHeight && 'shrink-0 px-0 pt-1 pr-14 pb-3 text-left [@media(max-height:450px)]:sr-only'
+        fullHeight && 'shrink-0 px-0 pt-1 pr-14 pb-3 [@media(max-height:450px)]:sr-only'
       )}
     >
       <DrawerTitle className={className} {...props}>

@@ -6,17 +6,18 @@
 
 ## Key Files
 
-| Concept                                       | Location                                                                          |
-| --------------------------------------------- | --------------------------------------------------------------------------------- |
-| Public exports and release metadata           | `packages/ui/package.json`, `packages/ui/src/index.ts`                            |
-| Theme values and Tailwind source registration | `packages/ui/tokens.css`, `packages/ui/tailwind.css`                              |
-| Behavior tests                                | `packages/ui/src/__tests__/`                                                      |
-| Keyboard focus ring and its browser proof     | `packages/ui/tailwind.css`, `apps/design-system/tests/focus-rings.spec.ts`        |
-| The look of a form field                      | `packages/ui/src/field-control.ts`                                                |
-| Client FSD facade                             | `apps/client/src/layers/shared/ui/index.ts`                                       |
-| Standalone examples                           | `apps/design-system/`                                                             |
-| Client feature simulations                    | `apps/client/src/dev/`                                                            |
-| Community adoption and browser proof          | `apps/client/src/space/components/`, `apps/space/browser-tests/shared-ui.spec.ts` |
+| Concept                                            | Location                                                                          |
+| -------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Public exports and release metadata                | `packages/ui/package.json`, `packages/ui/src/index.ts`                            |
+| Theme values and Tailwind source registration      | `packages/ui/tokens.css`, `packages/ui/tailwind.css`                              |
+| Behavior tests                                     | `packages/ui/src/__tests__/`                                                      |
+| Keyboard focus ring and its browser proof          | `packages/ui/tailwind.css`, `apps/design-system/tests/focus-rings.spec.ts`        |
+| The look of a form field                           | `packages/ui/src/field-control.ts`                                                |
+| The look of a surface above the page or a menu row | `packages/ui/src/menu-item.ts`                                                    |
+| Client FSD facade                                  | `apps/client/src/layers/shared/ui/index.ts`                                       |
+| Standalone examples                                | `apps/design-system/`                                                             |
+| Client feature simulations                         | `apps/client/src/dev/`                                                            |
+| Community adoption and browser proof               | `apps/client/src/space/components/`, `apps/space/browser-tests/shared-ui.spec.ts` |
 
 ## When to Use What
 

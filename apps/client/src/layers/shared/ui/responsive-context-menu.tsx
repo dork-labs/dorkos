@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { MENU_ITEM_DRAWER } from '@dork-labs/ui/menu-item';
 import { useIsMobile } from '../model';
 import { useLongPress, type LongPressState } from '../model';
 import {
@@ -286,11 +287,8 @@ function ResponsiveContextMenuItem({
       data-variant={variant}
       disabled={disabled}
       className={cn(
-        'border-border flex w-full items-center gap-2 border-b px-4 py-3 text-left text-sm transition-colors',
-        'active:bg-accent/50 min-h-[44px]',
-        'last:border-b-0',
-        'disabled:pointer-events-none disabled:opacity-50',
-        variant === 'destructive' && 'text-destructive',
+        MENU_ITEM_DRAWER,
+        variant === 'destructive' && 'text-dui-destructive-text',
         className
       )}
       onClick={(e) => {
@@ -305,7 +303,7 @@ function ResponsiveContextMenuItem({
 
 // ── Separator ──
 
-/** Separator between context menu items. No-op on mobile (items use border-b). */
+/** The space between groups of context menu items, on desktop and in the drawer alike. */
 function ResponsiveContextMenuSeparator({
   className,
   ...props
@@ -318,8 +316,7 @@ function ResponsiveContextMenuSeparator({
     );
   }
 
-  // On mobile, items already have border-b — separator is a no-op
-  return null;
+  return <div className={cn('h-2', className)} aria-hidden="true" />;
 }
 
 /**

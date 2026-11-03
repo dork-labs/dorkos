@@ -73,6 +73,14 @@ export const COVERAGE = {
 const PALETTE =
   'red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone';
 
+/** The overlay primitives in the shared UI package and the client (OVERLAY-SPEC §12). */
+const OVERLAY_PRIMITIVES =
+  /^(?:packages\/ui\/src\/(?:dialog|alert-dialog|sheet|popover|hover-card|tooltip|dropdown-menu|context-menu|select)\.tsx|apps\/client\/src\/layers\/shared\/ui\/(?:drawer|responsive-dialog|responsive-popover|responsive-dropdown-menu|responsive-context-menu)\.tsx)$/;
+
+/** The menu family, whose rows share one highlight. */
+const MENU_PRIMITIVES =
+  /^(?:packages\/ui\/src\/(?:dropdown-menu|context-menu|select|menu-item)\.tsx?|apps\/client\/src\/layers\/shared\/ui\/(?:responsive-dropdown-menu|responsive-context-menu)\.tsx)$/;
+
 /** The folders a room's timeline rows are drawn from (ROOMS-SPEC §11, guard rows). */
 const ROOM_ROWS =
   /^apps\/client\/src\/layers\/(?:widgets\/room-view|features\/entry-actions|features\/conversation\/ui\/rows)\//;
@@ -276,6 +284,55 @@ export const RULES: Rule[] = [
     pattern: /(?<![\w-])(?:bg|text)-brand(?![\w-])/g,
     only: /^apps\/client\/src\/layers\/features\/dashboard-sidebar\//,
     fix: 'orange is ink here: bg-brand-text or text-brand-text (G2)',
+  },
+  // Phase 2, overlays (OVERLAY-SPEC §12, rows 1 to 6).
+  {
+    id: 'modal-surface-border',
+    kind: 'hard',
+    pattern: /(?<![\w:-])border(?:-[lrtb])?(?![\w-])/g,
+    only: /^(?:packages\/ui\/src\/(?:dialog|alert-dialog|sheet)\.tsx|apps\/client\/src\/layers\/shared\/ui\/drawer\.tsx)$/,
+    fix: 'a modal surface has no border, in either theme: the scrim and the lift carry it',
+  },
+  {
+    id: 'menu-separator-fill',
+    kind: 'hard',
+    pattern: /\bbg-dui-(?:muted|border)\b[^'"\n]*\bh-px\b/g,
+    only: MENU_PRIMITIVES,
+    fix: 'groups are split by space: use MENU_SEPARATOR',
+  },
+  {
+    id: 'menu-focus-accent',
+    kind: 'hard',
+    pattern: /\bfocus:bg-(?:dui-)?accent\b/g,
+    only: MENU_PRIMITIVES,
+    fix: 'a menu row highlights with data-highlighted:bg-dui-row-selected: use MENU_ITEM',
+  },
+  {
+    id: 'tooltip-no-delay',
+    kind: 'hard',
+    pattern: /\bdelayDuration(?:=\{0\}|\s*=\s*0\b)/g,
+    fix: 'keep the provider default of 400ms, so a tooltip does not flicker on a passing pointer',
+  },
+  {
+    id: 'tooltip-show-on-touch',
+    kind: 'hard',
+    pattern: /\bshowOnTouch\b/g,
+    except: /^packages\/ui\/src\/(?:tooltip|button)\.tsx$/,
+    fix: 'a touch screen gets no tooltips: only Button disabledReason may use showOnTouch',
+  },
+  {
+    id: 'overlay-header-centered',
+    kind: 'hard',
+    pattern: /(?<![\w-])text-center(?![\w-])/g,
+    only: /^(?:packages\/ui\/src\/(?:dialog|alert-dialog)\.tsx|apps\/client\/src\/layers\/shared\/ui\/drawer\.tsx)$/,
+    fix: 'overlay titles sit on the left, clear of the close button',
+  },
+  {
+    id: 'overlay-literal',
+    kind: 'hard',
+    pattern: /\brounded-t-\[|(?<![\w-])w-\[100px\]|(?<![\w-])opacity-70(?![\w-])/g,
+    only: OVERLAY_PRIMITIVES,
+    fix: 'use rounded-t-xl, the 36px grabber, and text-muted-foreground in place of opacity',
   },
   // Phase 1 motion. One set of springs and curves, none of which overshoots.
   {

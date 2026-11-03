@@ -4,6 +4,7 @@ import {
   DialogTrigger,
   DialogContent,
   DialogHeader,
+  DialogBody,
   DialogTitle,
   DialogDescription,
   DialogFooter,
@@ -24,6 +25,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   Sheet,
   SheetTrigger,
@@ -56,7 +59,9 @@ export function OverlayExamples() {
                   Configure a new autonomous agent for your project.
                 </DialogDescription>
               </DialogHeader>
-              <p className="text-dui-muted-foreground text-sm">Dialog body content goes here.</p>
+              <DialogBody>
+                <p className="text-dui-muted-foreground text-sm">Dialog body content goes here.</p>
+              </DialogBody>
               <DialogFooter>
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
@@ -85,7 +90,7 @@ export function OverlayExamples() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction>Delete</AlertDialogAction>
+                <AlertDialogAction variant="destructive">Delete</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -119,11 +124,13 @@ export function OverlayExamples() {
               <Button variant="outline">Open Menu</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
+              <DropdownMenuLabel>This agent</DropdownMenuLabel>
               <DropdownMenuItem>View Details</DropdownMenuItem>
               <DropdownMenuItem>Edit Agent</DropdownMenuItem>
-              <DropdownMenuItem>Duplicate</DropdownMenuItem>
+              <DropdownMenuCheckboxItem checked>Pinned</DropdownMenuCheckboxItem>
+              <DropdownMenuItem disabled>Duplicate</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-dui-destructive">Delete</DropdownMenuItem>
+              <DropdownMenuItem variant="destructive">Delete</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </Demo>

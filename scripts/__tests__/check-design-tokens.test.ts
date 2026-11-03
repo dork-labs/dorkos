@@ -74,6 +74,61 @@ describe('the sidebar rules (Phase 4)', () => {
   });
 });
 
+describe('the overlay rules (Phase 2 Overlay A)', () => {
+  const DIALOG = 'packages/ui/src/dialog.tsx';
+  const DRAWER = 'apps/client/src/layers/shared/ui/drawer.tsx';
+  const DROPDOWN = 'packages/ui/src/dropdown-menu.tsx';
+
+  it('refuses a border on a modal surface, but not a dark hairline elsewhere', () => {
+    expect(countIn(DIALOG, `'rounded-xl border p-6'`)).toEqual({ 'modal-surface-border': 1 });
+    expect(countIn('packages/ui/src/sheet.tsx', `'inset-y-0 border-l'`)).toEqual({
+      'modal-surface-border': 1,
+    });
+    expect(countIn(DROPDOWN, `'dui-dark:border dui-dark:border-dui-border'`)).toEqual({});
+  });
+
+  it('refuses a painted line between menu groups', () => {
+    expect(countIn(DROPDOWN, `'bg-dui-muted -mx-1 my-1 h-px'`)).toEqual({
+      'menu-separator-fill': 1,
+    });
+    expect(countIn(DROPDOWN, `'my-1 h-px'`)).toEqual({});
+  });
+
+  it('refuses the old menu highlight, in the menus only', () => {
+    expect(countIn(DROPDOWN, `'focus:bg-dui-accent'`)).toEqual({ 'menu-focus-accent': 1 });
+    expect(countIn('packages/ui/src/command.tsx', `'focus:bg-dui-accent'`)).toEqual({});
+  });
+
+  it('refuses a tooltip with no delay, as a prop or a default', () => {
+    expect(countIn(CLIENT, `<TooltipProvider delayDuration={0}>`)).toEqual({
+      'tooltip-no-delay': 1,
+    });
+    expect(countIn('packages/ui/src/tooltip.tsx', `delayDuration = 0,`)).toEqual({
+      'tooltip-no-delay': 1,
+    });
+    expect(countIn(CLIENT, `<TooltipProvider delayDuration={400}>`)).toEqual({});
+  });
+
+  it('keeps a tooltip on touch to the disabled button alone', () => {
+    expect(countIn(CLIENT, `<Tooltip showOnTouch>`)).toEqual({ 'tooltip-show-on-touch': 1 });
+    expect(countIn('packages/ui/src/button.tsx', `<Tooltip showOnTouch>`)).toEqual({});
+  });
+
+  it('refuses a centred title in an overlay header', () => {
+    expect(countIn(DRAWER, `'grid gap-1.5 p-4 text-center'`)).toEqual({
+      'overlay-header-centered': 1,
+    });
+    expect(countIn(CLIENT, `'text-center'`)).toEqual({});
+  });
+
+  it('refuses the old radius, grabber and faded close button', () => {
+    expect(countIn(DRAWER, `'rounded-t-[10px]' 'w-[100px]' 'opacity-70'`)).toEqual({
+      'overlay-literal': 3,
+    });
+    expect(countIn(DRAWER, `'rounded-t-xl w-9 text-muted-foreground'`)).toEqual({});
+  });
+});
+
 describe('the count and badge rules (Phase 2 Badge A)', () => {
   const PILL = 'packages/ui/src/count-pill.tsx';
   // The app's re-export holds no pill of its own, so it is not on the allowlist.

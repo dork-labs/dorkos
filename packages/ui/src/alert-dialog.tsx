@@ -13,6 +13,7 @@ import * as React from 'react';
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
 
 import { cn } from './cn.js';
+import { MODAL_CLOCK, MODAL_SURFACE } from './menu-item.js';
 import { usePortalContainer } from './ui-provider.js';
 import { buttonVariants } from './button.js';
 import { TOUCH_TARGET_RESPONSIVE_H } from './touch-target.js';
@@ -62,10 +63,7 @@ function AlertDialogOverlay({
   return (
     <AlertDialogPrimitive.Overlay
       data-slot="alert-dialog-overlay"
-      className={cn(
-        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 bg-dui-scrim fixed inset-0 z-(--z-overlay) motion-reduce:animate-none!',
-        className
-      )}
+      className={cn(MODAL_CLOCK, 'bg-dui-scrim fixed inset-0 z-(--z-overlay)', className)}
       {...props}
     />
   );
@@ -76,6 +74,7 @@ function AlertDialogOverlay({
  *
  * No built-in close button, unlike `DialogContent`. The caller supplies the
  * action and cancel controls; Radix also permits Escape to dismiss the dialog.
+ * Radix opens it on Cancel, so a stray Enter never confirms anything.
  */
 function AlertDialogContent({
   className,
@@ -91,7 +90,9 @@ function AlertDialogContent({
           // the-column track as `DialogContent` — a confirmation is the dialog
           // people meet on a phone most often, and it must not be the one that
           // meets both screen edges.
-          'bg-dui-background text-dui-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 border-dui-border fixed top-[50%] left-[50%] z-(--z-overlay) grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto rounded-lg border p-6 shadow-xl duration-200 motion-reduce:animate-none! motion-reduce:transition-none!',
+          MODAL_SURFACE,
+          MODAL_CLOCK,
+          'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md translate-x-[-50%] translate-y-[-50%] grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto p-6',
           className
         )}
         {...props}
@@ -105,7 +106,7 @@ function AlertDialogHeader({ className, ...props }: React.ComponentProps<'div'>)
   return (
     <div
       data-slot="alert-dialog-header"
-      className={cn('flex flex-col space-y-2 text-center sm:text-left', className)}
+      className={cn('flex flex-col gap-1 text-left', className)}
       {...props}
     />
   );
@@ -121,7 +122,7 @@ function AlertDialogFooter({ className, ...props }: React.ComponentProps<'div'>)
   return (
     <div
       data-slot="alert-dialog-footer"
-      className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)}
+      className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
       {...props}
     />
   );
@@ -139,7 +140,7 @@ function AlertDialogTitle({
   return (
     <AlertDialogPrimitive.Title
       data-slot="alert-dialog-title"
-      className={cn('text-lg font-semibold', className)}
+      className={cn('text-lg leading-7 font-semibold', className)}
       {...props}
     />
   );
@@ -193,12 +194,7 @@ function AlertDialogCancel({
   return (
     <AlertDialogPrimitive.Cancel
       data-slot="alert-dialog-cancel"
-      className={cn(
-        buttonVariants({ variant: 'secondary' }),
-        TOUCH_TARGET_RESPONSIVE_H,
-        'mt-2 sm:mt-0',
-        className
-      )}
+      className={cn(buttonVariants({ variant: 'secondary' }), TOUCH_TARGET_RESPONSIVE_H, className)}
       {...props}
     />
   );

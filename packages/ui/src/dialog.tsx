@@ -17,6 +17,8 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 
 import { cn } from './cn.js';
+import { MODAL_CLOCK, MODAL_SURFACE } from './menu-item.js';
+import { focusFirstFieldOrPanel } from './overlay-focus.js';
 import { usePortalContainer } from './ui-provider.js';
 import { Button } from './button.js';
 
@@ -69,10 +71,7 @@ function DialogOverlay({
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
-      className={cn(
-        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 bg-dui-scrim fixed inset-0 z-(--z-overlay) motion-reduce:animate-none!',
-        className
-      )}
+      className={cn(MODAL_CLOCK, 'bg-dui-scrim fixed inset-0 z-(--z-overlay)', className)}
       {...props}
     />
   );
@@ -83,11 +82,13 @@ function DialogOverlay({
  *
  * It portals and dims on its own, so a caller supplies only the contents. Do not
  * add a close button — one is already drawn in the top-right corner, whatever
- * layout the caller gives the panel.
+ * layout the caller gives the panel. It opens on the first field, or on the panel
+ * itself: never on that button or a destructive one.
  */
 function DialogContent({
   className,
   children,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
   return (
@@ -95,6 +96,10 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        onOpenAutoFocus={(event) => {
+          onOpenAutoFocus?.(event);
+          if (!event.defaultPrevented) focusFirstFieldOrPanel(event);
+        }}
         className={cn(
           // `w-[calc(100%-2rem)]`, not `w-full`: a fixed, viewport-centred box at
           // full width has no side gutter at all, so below 512px the dialog met
@@ -115,7 +120,9 @@ function DialogContent({
           // it hangs off both ends of the screen at once, with no way to reach
           // either, and text that wraps to more lines on a phone is exactly when
           // it happens.
-          'bg-dui-background text-dui-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 border-dui-border fixed top-[50%] left-[50%] z-(--z-overlay) grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto rounded-lg border p-6 shadow-xl duration-200 motion-reduce:animate-none! motion-reduce:transition-none!',
+          MODAL_SURFACE,
+          MODAL_CLOCK,
+          'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto p-6',
           className
         )}
         {...props}
@@ -155,9 +162,9 @@ function DialogContent({
             data-slot="dialog-content-close"
             variant="ghost"
             size="icon-sm"
-            className="absolute top-4 right-4 opacity-70 hover:opacity-100"
+            className="text-dui-muted-foreground hover:text-dui-foreground absolute top-4 right-4"
           >
-            <X className="size-(--dui-size-icon-md)" />
+            <X className="size-(--dui-size-icon-sm)" />
             <span className="sr-only">Close</span>
           </Button>
         </DialogPrimitive.Close>
@@ -166,12 +173,31 @@ function DialogContent({
   );
 }
 
-/** Stacks the title and description at the top of the dialog. */
+/**
+ * Stacks the title and description at the top of the dialog, on the left, clear of
+ * the close button's column.
+ */
 function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn('flex flex-col space-y-1.5 text-center sm:text-left', className)}
+      className={cn('flex flex-col gap-1 pr-12 text-left', className)}
+      {...props}
+    />
+  );
+}
+
+/**
+ * The one part of a dialog that scrolls. It has no rule above or below it: a soft
+ * edge shows only while there is content under the header or footer. It pays 4px
+ * inside and takes them back outside: a scroller clips, and a field's focus ring
+ * needs that room.
+ */
+function DialogBody({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="dialog-body"
+      className={cn('dui-scroll-edges -m-1 min-h-0 flex-1 overflow-y-auto p-1', className)}
       {...props}
     />
   );
@@ -187,7 +213,7 @@ function DialogFooter({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
       data-slot="dialog-footer"
-      className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)}
+      className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
       {...props}
     />
   );
@@ -203,7 +229,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn('text-lg leading-none font-semibold tracking-tight', className)}
+      className={cn('text-lg leading-7 font-semibold', className)}
       {...props}
     />
   );
@@ -231,6 +257,7 @@ export {
   DialogTrigger,
   DialogContent,
   DialogHeader,
+  DialogBody,
   DialogFooter,
   DialogTitle,
   DialogDescription,

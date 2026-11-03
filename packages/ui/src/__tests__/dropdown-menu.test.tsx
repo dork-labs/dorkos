@@ -15,7 +15,10 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
 } from '../dropdown-menu.js';
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '../context-menu.js';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select.js';
 
 beforeAll(() => {
   Element.prototype.scrollIntoView ??= () => {};
@@ -48,6 +51,37 @@ function Menu({ onPick = () => {} }: { onPick?: () => void }) {
   );
 }
 
+/** One of each menu family, already open where a test can force it. */
+function EveryMenuOpen() {
+  return (
+    <>
+      <DropdownMenu open modal={false}>
+        <DropdownMenuTrigger>Menu</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuSub open>
+            <DropdownMenuSubTrigger>More</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem>Nested</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ContextMenu modal={false}>
+        <ContextMenuTrigger data-testid="region">Region</ContextMenuTrigger>
+        <ContextMenuContent>Context</ContextMenuContent>
+      </ContextMenu>
+      <Select open>
+        <SelectTrigger aria-label="Pick">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="a">A</SelectItem>
+        </SelectContent>
+      </Select>
+    </>
+  );
+}
+
 describe('DropdownMenu portable contract', () => {
   it('selects an item once, closes immediately, restores focus and reopens on the next press', async () => {
     const onPick = vi.fn();
@@ -61,6 +95,48 @@ describe('DropdownMenu portable contract', () => {
     await waitFor(() => expect(trigger).toHaveFocus());
     fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse', ctrlKey: false });
     expect(screen.getByRole('menuitem', { name: 'Open' })).toBeInTheDocument();
+  });
+
+  // Radix keeps a menu mounted while it has a closing animation to play, and that
+  // copy reads the next press on the trigger as a press outside. jsdom plays no
+  // animation, so the class is what this level can hold; the browser specs press
+  // for real (`settings/select-reopen`, `overlays/overlay-surfaces`).
+  it.each([
+    ['dropdown-menu-content', 'dropdown-menu-sub-content'],
+    ['context-menu-content', 'context-menu-sub-content'],
+    ['select-content', 'select-content'],
+  ])('%s closes with no exit animation', (root, sub) => {
+    render(<EveryMenuOpen />);
+    fireEvent.contextMenu(screen.getByTestId('region'));
+    for (const slot of [root, sub]) {
+      for (const node of document.querySelectorAll(`[data-slot="${slot}"]`)) {
+        expect(node.className).not.toContain('data-[state=closed]:');
+      }
+    }
+    expect(document.querySelector(`[data-slot="${root}"]`)).not.toBeNull();
+  });
+
+  it('highlights a row with the row tint and never with a weight change', () => {
+    render(<Menu />);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Actions' }), { key: 'ArrowDown' });
+    const item = screen.getByRole('menuitem', { name: 'Open' });
+    expect(item).toHaveClass('data-highlighted:bg-dui-row-selected');
+    expect(item.className).not.toMatch(/focus:bg-|font-(medium|semibold)/);
+  });
+
+  it('splits groups with space, keeping the separator for a screen reader', () => {
+    render(
+      <DropdownMenu open>
+        <DropdownMenuTrigger>Actions</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem>One</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem>Two</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+    const separator = screen.getByRole('separator');
+    expect(separator.className).not.toMatch(/\bbg-/);
   });
 
   it('keeps checked/radio/disabled semantics and keyboard submenu access', () => {
