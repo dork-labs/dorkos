@@ -59,3 +59,15 @@ export function fileDiff(before: string | null, after: string): DiffLine[] {
   while (j < next.length) out.push({ kind: 'added', text: next[j++]! });
   return out;
 }
+
+/**
+ * How many separate changes a diff holds: each unbroken run of removed and
+ * added lines is one, so a rewritten line counts once.
+ *
+ * @param lines - The diff.
+ */
+export function diffChangeCount(lines: readonly DiffLine[]): number {
+  return lines.filter(
+    (line, i) => line.kind !== 'same' && (lines[i - 1]?.kind ?? 'same') === 'same'
+  ).length;
+}

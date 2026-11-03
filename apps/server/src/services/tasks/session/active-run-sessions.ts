@@ -48,15 +48,32 @@ export function noteRunSession(
   sessions.add(primaryOf(sessionId));
   byRun.set(runId, sessions);
   awake?.attachSession(sessionId);
-  // A row that cannot be written costs the record past a restart, never the run.
+  if (store) writeRunChat(store, runId, sessionId);
+}
+
+/**
+ * Write a run's chat on its row, with one retry. A row that still cannot be
+ * written costs the record past a restart, never the run: losing the lineage
+ * takes this failure and a restart during this same run (Security's ruling,
+ * Nov 3), so it is logged as an error and the run goes on.
+ *
+ * @param store - Where the run's row is kept.
+ * @param runId - The run.
+ * @param sessionId - The chat its turn runs in.
+ */
+function writeRunChat(store: Pick<TaskStore, 'updateRun'>, runId: string, sessionId: string): void {
   try {
-    store?.updateRun(runId, { sessionId });
-  } catch (err) {
-    logger.warn('[ActiveRunSessions] could not write a run’s chat on its row', {
-      runId,
-      sessionId,
-      err: err instanceof Error ? err.message : String(err),
-    });
+    store.updateRun(runId, { sessionId });
+  } catch {
+    try {
+      store.updateRun(runId, { sessionId });
+    } catch (err) {
+      logger.error('[ActiveRunSessions] could not write a run’s chat on its row', {
+        runId,
+        sessionId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 

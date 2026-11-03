@@ -1126,6 +1126,56 @@ describe('TaskRow: a task capped for a changed SKILL file (DOR-3703, M4)', () =>
       expect(scroll.querySelector('[data-kind]')!.className).toContain('[text-indent:-2ch]');
     });
 
+    it('opens a long diff on its first change, and says how many there are', async () => {
+      const lines = Array.from({ length: 200 }, (_, i) => `line ${i}`);
+      const changed = lines.map((l, i) => (i === 120 ? 'line 120 changed' : l));
+      changed.splice(150, 0, 'a new line');
+      // jsdom lays nothing out, so each row reports where a real page would put it.
+      const rects = vi
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockImplementation(function (this: HTMLElement) {
+          const top = this.dataset.kind && this.dataset.kind !== 'same' ? 2400 : 100;
+          return { top } as DOMRect;
+        });
+      try {
+        renderScheduleRow({
+          ...capped,
+          fileCap: { ...capped.fileCap!, previous: lines.join('\n'), current: changed.join('\n') },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+        await screen.findByText('Review the changed file');
+        const scroll = document.querySelector('[data-slot="task-file-cap-review-scroll"]')!;
+        expect(scroll.scrollTop).toBe(2300);
+        expect(
+          document.querySelector('[data-slot="task-file-cap-change-count"]')?.textContent
+        ).toBe('2 changes');
+      } finally {
+        rects.mockRestore();
+      }
+    });
+
+    it('counts one change on a long diff, a rewritten line once, and nothing on a short one', async () => {
+      const lines = Array.from({ length: 40 }, (_, i) => `line ${i}`);
+      const one = lines.map((l, i) => (i === 10 ? 'rewritten' : l)).join('\n');
+      renderScheduleRow({
+        ...capped,
+        fileCap: { ...capped.fileCap!, previous: lines.join('\n'), current: one },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+      await screen.findByText('Review the changed file');
+      expect(document.querySelector('[data-slot="task-file-cap-change-count"]')?.textContent).toBe(
+        '1 change'
+      );
+      cleanup();
+      renderScheduleRow({
+        ...capped,
+        fileCap: { ...capped.fileCap!, previous: 'a\nb', current: 'a\nc' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+      await screen.findByText('Review the changed file');
+      expect(document.querySelector('[data-slot="task-file-cap-change-count"]')).toBeNull();
+    });
+
     it('tells a person at the row doors that the next run is capped until they approve the file', () => {
       renderScheduleRow({ ...pendingSchedule, fileCapNext: true });
       expect(document.querySelector('[data-slot="task-file-cap-next"]')?.textContent).toBe(

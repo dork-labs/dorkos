@@ -5,7 +5,8 @@
  *
  * @module services/tasks/agent-mode/__tests__/agent-mode-run-origin
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { logger } from '../../../../lib/logger.js';
 import {
   noteRunSession,
   endRunSessions,
@@ -91,13 +92,32 @@ describe('a turn a scheduled run started (M7)', () => {
     });
 
     it('still knows a running run’s chat, and lets the run go on, when its row cannot be written', () => {
-      const store = {
-        updateRun: () => {
-          throw new Error('the database is busy');
-        },
-      };
-      expect(() => noteRunSession('run-1', 'ses-run', undefined, store as never)).not.toThrow();
+      const logged = vi.spyOn(logger, 'error').mockImplementation(() => {});
+      const updateRun = vi.fn(() => {
+        throw new Error('the database is busy');
+      });
+      expect(() =>
+        noteRunSession('run-1', 'ses-run', undefined, { updateRun } as never)
+      ).not.toThrow();
       expect(startedByScheduledRun(['ses-run'], live())).toBe(true);
+      expect(updateRun).toHaveBeenCalledTimes(2);
+      expect(logged).toHaveBeenCalledOnce();
+      logged.mockRestore();
+    });
+
+    it('tries a run’s row write once more, and logs nothing when the retry lands', () => {
+      const logged = vi.spyOn(logger, 'error').mockImplementation(() => {});
+      const updateRun = vi
+        .fn()
+        .mockImplementationOnce(() => {
+          throw new Error('the database is busy');
+        })
+        .mockReturnValue(null);
+      noteRunSession('run-1', 'ses-run', undefined, { updateRun } as never);
+      expect(updateRun).toHaveBeenCalledTimes(2);
+      expect(updateRun).toHaveBeenLastCalledWith('run-1', { sessionId: 'ses-run' });
+      expect(logged).not.toHaveBeenCalled();
+      logged.mockRestore();
     });
 
     it('counts a chat a running run steered into', () => {

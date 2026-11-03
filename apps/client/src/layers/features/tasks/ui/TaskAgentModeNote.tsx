@@ -15,7 +15,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
-import { fileDiff } from '../lib/file-diff';
+import { diffChangeCount, fileDiff } from '../lib/file-diff';
 
 /** What an agent last armed on a task, as the server sends it (DOR-3703). */
 type AgentModeRecord = NonNullable<Task['agentModeRecord']>;
@@ -86,15 +86,40 @@ interface FileCapReviewProps {
 }
 
 /**
+ * Roughly a screen of the diff's body. Past it, the review says how many changes
+ * there are, since some of them are out of sight. A line count is close enough
+ * for one short label.
+ */
+const ONE_SCREEN_OF_LINES = 20;
+
+/**
+ * Bring a changed line into view in the diff's scrolling body, a third of the
+ * way down. Set on the body directly: `scrollIntoView` can also move what is
+ * behind a dialog. Stable, so it runs when the line mounts and never on a re-render.
+ *
+ * @param line - The first changed line, when it mounts.
+ */
+function openOnFirstChange(line: HTMLDivElement | null): void {
+  const body = line?.closest<HTMLElement>('[data-slot="task-file-cap-review-scroll"]');
+  if (!line || !body) return;
+  const offset = line.getBoundingClientRect().top - body.getBoundingClientRect().top;
+  body.scrollTop += offset - body.clientHeight / 3;
+}
+
+/**
  * The file as it changed, before anything is approved: what it lost and
  * gained since it was last approved, and Approve inside, bound to the file
- * this view shows. A file that changed again is refused by the server.
+ * this view shows. It opens on the first change, because in a long file that
+ * is what a person is deciding on. A file that changed again is refused by the
+ * server.
  */
 function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
   const approve = useApproveTaskFile();
   // The mode its runs go back to, named as the runtime's picker names it.
   const backTo = usePermissionModeLabel(task.runtime)(task.permissionMode);
   const lines = cap.current == null ? [] : fileDiff(cap.previous ?? null, cap.current);
+  const firstChange = lines.findIndex((line) => line.kind !== 'same');
+  const changes = diffChangeCount(lines);
   const hash = cap.hash;
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
@@ -107,7 +132,17 @@ function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
         data-slot="task-file-cap-review"
       >
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>Review the changed file</ResponsiveDialogTitle>
+          <ResponsiveDialogTitle>
+            Review the changed file
+            {lines.length > ONE_SCREEN_OF_LINES && changes > 0 && (
+              <span
+                data-slot="task-file-cap-change-count"
+                className="text-muted-foreground ml-2 text-sm font-normal"
+              >
+                {changes === 1 ? '1 change' : `${changes} changes`}
+              </span>
+            )}
+          </ResponsiveDialogTitle>
           <ResponsiveDialogDescription data-slot="task-file-cap-review-body">
             {task.displayName ?? task.name}. Approving lifts the cap, so its runs go back to{' '}
             {backTo}.
@@ -123,6 +158,7 @@ function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
                 // A hanging indent: a wrapped line continues under its text, not its mark.
                 <div
                   key={i}
+                  ref={i === firstChange ? openOnFirstChange : undefined}
                   data-kind={line.kind}
                   className={cn(
                     'pl-[2ch] [text-indent:-2ch] break-words',
