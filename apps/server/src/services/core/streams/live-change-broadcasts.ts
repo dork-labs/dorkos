@@ -295,6 +295,36 @@ export function connectorAgentRequestsChangedAnnouncer(
   };
 }
 
+/**
+ * What `local_browser_changed` puts on the wire: a stamp, never the site, the
+ * agent or the folder. Each window re-reads the state, which only a person gets.
+ */
+export interface LocalBrowserChangedEvent {
+  /** When the change happened. */
+  changedAt: string;
+}
+
+/**
+ * The announcer the Agent browser's handoff calls when a handoff starts or ends
+ * or a sign-in moves.
+ *
+ * ADDRESSED under `operatorAudience`: a handoff is a person's to answer, and an
+ * agent must not learn from the global stream that another agent handed over.
+ *
+ * @param eventFanOut - Where the event is written.
+ * @param now - The clock, for the `changedAt` stamp. Overridden only by tests.
+ * @returns A function to call once per change.
+ */
+export function localBrowserChangedAnnouncer(
+  eventFanOut: BroadcastSink,
+  now: () => string = () => new Date().toISOString()
+): () => void {
+  return () => {
+    const event: LocalBrowserChangedEvent = { changedAt: now() };
+    eventFanOut.broadcast('local_browser_changed', event, operatorAudience);
+  };
+}
+
 /** The narrow slice of `CapabilityRegistry` the capabilities broadcast needs. */
 export interface CapabilitiesChangeSource {
   /** Subscribe to every extension contribute and remove. Returns an unsubscribe. */

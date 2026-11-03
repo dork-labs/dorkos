@@ -13,6 +13,8 @@ import { render, screen, cleanup, act, fireEvent, waitFor } from '@testing-libra
 const { mockLimitComposer } = vi.hoisted(() => ({
   mockLimitComposer: vi.fn(() => ({ canSubmit: true, placeholder: null as string | null })),
 }));
+// The handoff card reads the browser's state, which these tests don't serve.
+vi.mock('@/layers/features/browser-handoff', () => ({ BrowserHandoffCard: () => null }));
 vi.mock('@/layers/features/continue-on-account', () => ({
   AccountLimitBanner: () => null,
   AccountLimitMarker: () => null,

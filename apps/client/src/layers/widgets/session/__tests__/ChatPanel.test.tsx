@@ -9,6 +9,8 @@ const mockUseIsMobile = vi.fn(() => true);
 // Nothing is waiting on anybody. The lane reads the fleet-wide list now, and a
 // bare render has no global stream behind it.
 // An ordinary chat: the Direct chat log (rule S12) is read for real in its own tests.
+// The handoff card reads the browser's state, which these tests don't serve.
+vi.mock('@/layers/features/browser-handoff', () => ({ BrowserHandoffCard: () => null }));
 vi.mock('../model/use-direct-chat-notes', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../model/use-direct-chat-notes')>()),
   useDirectChatLog: () => undefined,

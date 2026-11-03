@@ -7,6 +7,8 @@ import React, { createRef } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 
+// The handoff card reads the browser's state, which these tests don't serve.
+vi.mock('@/layers/features/browser-handoff', () => ({ BrowserHandoffCard: () => null }));
 vi.mock('@/layers/features/continue-on-account', () => ({
   AccountLimitBanner: () => null,
   AccountLimitMarker: () => null,
