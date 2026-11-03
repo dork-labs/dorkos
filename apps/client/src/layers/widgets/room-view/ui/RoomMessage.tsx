@@ -58,6 +58,7 @@ import {
 } from '@/layers/features/conversation';
 import { ForwardViaLine } from '@/layers/features/chat';
 import { postedReachLine } from '@/layers/features/mentions';
+import { useMakeTodoAction } from '@/layers/features/todos';
 import {
   useEntryActions,
   type EntryActionBarHandle,
@@ -258,12 +259,14 @@ export function RoomMessage({
   const viewAuthorProfile = profileMemberId === undefined ? undefined : openAuthorProfile;
   // The capsule carries the same destination as the face, which is what lets the
   // face stay out of the tab order — see `EntryActionsInput.onViewProfile`.
+  const makeTodo = useMakeTodoAction(entry.id, entry.body.text);
   const actions = useEntryActions({
     roomId,
     entry,
     author: authorRef,
     viewerAuthorId,
     onViewProfile: viewAuthorProfile,
+    onMakeTodo: makeTodo,
   });
   // An agent's card over its face and name while the DM view is on (DOR-3074):
   // a click opens it, and its Message opens the agent's DM. `null` otherwise.

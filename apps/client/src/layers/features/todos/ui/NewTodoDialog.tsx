@@ -1,6 +1,7 @@
 /**
  * "New to-do": a title, who it is for (you or one of your agents), and an optional date. A
- * dialog on a desktop, a bottom sheet on a phone. Enter adds it.
+ * dialog on a desktop, a bottom sheet on a phone. Enter adds it. Made from a message, it starts
+ * from the message's first line and names the message, so the server reads who wrote it.
  *
  * A window without the owner's sign-in is asked for it by the app's own `fetch`, and the add
  * goes again once they sign in; a failure toasts from the shared mutation handler.
@@ -44,6 +45,26 @@ export interface NewTodoDialogProps {
   open: boolean;
   /** Called when the dialog asks to close. */
   onOpenChange: (open: boolean) => void;
+  /** The message this to-do is made from, when it is. */
+  source?: TodoMessageSource;
+}
+
+/** A message a to-do is made from: its id, for the server, and its words, for the title. */
+export interface TodoMessageSource {
+  /** The room entry's id. */
+  entryId: string;
+  /** The message's text. */
+  text: string;
+}
+
+/**
+ * A message's first non-empty line, cut to the longest title a to-do takes.
+ *
+ * @param text - The message's text.
+ */
+export function titleFromMessage(text: string): string {
+  const line = text.split('\n').find((part) => part.trim().length > 0) ?? '';
+  return line.trim().slice(0, COMMITMENT_WHAT_MAX);
 }
 
 /** Who the picker's value names. */
@@ -54,15 +75,25 @@ function assigneeOf(value: string): TodoAssignee {
 }
 
 /** The body a filled form sends. */
-function createTodoBody(what: string, assignee: string, due: string): CreateTodoRequest {
+function createTodoBody(
+  what: string,
+  assignee: string,
+  due: string,
+  source: TodoMessageSource | undefined
+): CreateTodoRequest {
   const dueAt = due ? endOfLocalDayIso(due) : null;
-  return { what: what.trim(), assignee: assigneeOf(assignee), ...(dueAt ? { dueAt } : {}) };
+  return {
+    what: what.trim(),
+    assignee: assigneeOf(assignee),
+    ...(dueAt ? { dueAt } : {}),
+    ...(source ? { sourceEntryId: source.entryId } : {}),
+  };
 }
 
 /** The form itself, mounted fresh each time the dialog opens. */
-function NewTodoForm({ onDone }: { onDone: () => void }) {
+function NewTodoForm({ onDone, source }: { onDone: () => void; source?: TodoMessageSource }) {
   const ids = useId();
-  const [what, setWhat] = useState('');
+  const [what, setWhat] = useState(() => (source ? titleFromMessage(source.text) : ''));
   const [assignee, setAssignee] = useState(YOU);
   const [due, setDue] = useState('');
   const create = useCreateTodo();
@@ -73,7 +104,7 @@ function NewTodoForm({ onDone }: { onDone: () => void }) {
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!canAdd) return;
-    create.mutate(createTodoBody(what, assignee, due), { onSuccess: onDone });
+    create.mutate(createTodoBody(what, assignee, due, source), { onSuccess: onDone });
   }
 
   return (
@@ -130,17 +161,19 @@ function NewTodoForm({ onDone }: { onDone: () => void }) {
 }
 
 /** The New to-do dialog. */
-export function NewTodoDialog({ open, onOpenChange }: NewTodoDialogProps) {
+export function NewTodoDialog({ open, onOpenChange, source }: NewTodoDialogProps) {
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent className="max-w-md">
         <ResponsiveDialogHeader>
-          <ResponsiveDialogTitle>New to-do</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription className="sr-only">
-            Add something for you or an agent to do.
+          <ResponsiveDialogTitle>{source ? 'Make a to-do' : 'New to-do'}</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription className={source ? undefined : 'sr-only'}>
+            {source
+              ? 'From a message. It links back to it.'
+              : 'Add something for you or an agent to do.'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
-        {open && <NewTodoForm onDone={() => onOpenChange(false)} />}
+        {open && <NewTodoForm onDone={() => onOpenChange(false)} {...(source ? { source } : {})} />}
       </ResponsiveDialogContent>
     </ResponsiveDialog>
   );

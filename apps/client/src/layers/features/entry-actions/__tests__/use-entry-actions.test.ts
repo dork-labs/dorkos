@@ -64,6 +64,7 @@ function actionsFor(
     author: AuthorRef | undefined;
     viewerAuthorId?: string;
     onViewProfile?: () => void;
+    onMakeTodo?: () => void;
   } = { author: author() }
 ) {
   const { result } = renderHook(() =>
@@ -73,6 +74,7 @@ function actionsFor(
       author: options.author,
       viewerAuthorId: options.viewerAuthorId ?? VIEWER,
       onViewProfile: options.onViewProfile,
+      onMakeTodo: options.onMakeTodo,
     })
   );
   return result;
@@ -100,6 +102,27 @@ describe('useEntryActions — the action set', () => {
 
     expect(withProfile.current.map((a) => a.id)).toEqual(['reply', 'copy', 'mention', 'profile']);
     expect(withProfile.current.at(-1)?.label).toBe('View profile');
+  });
+
+  it('adds Make a to-do after View profile, and only when the row offers it (DOR-3088)', () => {
+    // Last for the same reason View profile is: every arrow count to an older command holds.
+    const makeTodo = vi.fn();
+    const withTodo = actionsFor(entry(), {
+      author: author(),
+      onViewProfile: () => {},
+      onMakeTodo: makeTodo,
+    });
+
+    expect(withTodo.current.map((a) => a.id)).toEqual([
+      'reply',
+      'copy',
+      'mention',
+      'profile',
+      'todo',
+    ]);
+    withTodo.current.at(-1)!.run();
+    expect(makeTodo).toHaveBeenCalledOnce();
+    expect(actionsFor(entry()).current.map((a) => a.id)).not.toContain('todo');
   });
 
   it('opens the thread panel on the entry itself when that entry heads its own thread', () => {

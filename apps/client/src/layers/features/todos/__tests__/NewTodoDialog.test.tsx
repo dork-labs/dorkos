@@ -12,7 +12,8 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { NewTodoDialog } from '../index';
+import { COMMITMENT_WHAT_MAX } from '@dorkos/shared/commitment-schemas';
+import { NewTodoDialog, titleFromMessage, type TodoMessageSource } from '../index';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -32,7 +33,7 @@ beforeAll(() => {
 
 afterEach(cleanup);
 
-function renderDialog() {
+function renderDialog(source?: TodoMessageSource) {
   const transport = createMockTransport();
   const onOpenChange = vi.fn();
   const queryClient = new QueryClient({
@@ -41,7 +42,7 @@ function renderDialog() {
   render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <NewTodoDialog open onOpenChange={onOpenChange} />
+        <NewTodoDialog open onOpenChange={onOpenChange} {...(source ? { source } : {})} />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -82,5 +83,32 @@ describe('NewTodoDialog', () => {
     expect(screen.getByRole('button', { name: 'Add to-do' })).toBeDisabled();
     await user.type(screen.getByLabelText('To-do'), '   {Enter}');
     expect(transport.createTodo).not.toHaveBeenCalled();
+  });
+
+  it('starts from a message’s first line and names the message, so the server reads its author', async () => {
+    const user = userEvent.setup();
+    const { transport } = renderDialog({
+      entryId: 'entry-7',
+      text: '\n  Renew the domain  \nIt lapses Friday.',
+    });
+    expect(screen.getByRole('heading', { name: 'Make a to-do' })).toBeInTheDocument();
+    expect(screen.getByLabelText('To-do')).toHaveValue('Renew the domain');
+    await user.click(screen.getByRole('button', { name: 'Add to-do' }));
+    await waitFor(() =>
+      expect(transport.createTodo).toHaveBeenCalledWith({
+        what: 'Renew the domain',
+        assignee: { kind: 'person', account: 'owner' },
+        sourceEntryId: 'entry-7',
+      })
+    );
+  });
+});
+
+describe('titleFromMessage', () => {
+  it('cuts a long first line to the longest title a to-do takes', () => {
+    expect(titleFromMessage('x'.repeat(COMMITMENT_WHAT_MAX + 40))).toHaveLength(
+      COMMITMENT_WHAT_MAX
+    );
+    expect(titleFromMessage('   \n\n')).toBe('');
   });
 });
