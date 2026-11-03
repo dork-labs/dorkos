@@ -50,6 +50,36 @@ live enforcement. No admin token is added to Actions; if its token cannot read
 the evidence, the health check reports that blocker. The coordinator runs the
 promotion check with existing read authority.
 
+## If the gate itself is wrong
+
+`security-gate.yml` runs the base's copy of the script, so a gate PR's own run
+uses the code before it, and the PR that fixes a bad gate is judged by the bad
+gate. The `fixtures` job in `scripts-test.yml` runs the PR's own gate tests, so a
+gate has to pass them to merge.
+
+**A gate that passes what it shouldn't** can't block its own fix, so the fix lands
+normally. Nothing looks wrong while it's live, so the record below matters most.
+
+**A gate that refuses every PR, while this rule is Active:** only an organization
+owner can clear it.
+
+1. An organization owner sets the rule to Evaluate. This adds no bypass and is one
+   setting to undo.
+2. The fix merges through the queue, with its labels and a read by Security or the
+   deputy.
+3. The owner sets the rule back to Active, and Security confirms it on one PR.
+
+While the rule isn't Active, a red gate blocks nothing, so the fix just queues.
+
+Don't use `gh pr merge --admin`, and don't add a label, file or setting that turns
+the gate off: any agent could use it. This has to stay an organization rule. The
+shared token holds the repository admin role, so it could change a repository
+ruleset, but it has no `admin:org` scope, so it can't change this one.
+
+**Record every case:** a post in #dorkos naming the bad commit and who did what; a
+`ci/ledger` entry; the list of everything that merged while the gate was bad; and
+Security's re-read of those PRs.
+
 ## Bootstrap and proof
 
 1. Security reviews the build PR's final SHA. Its base lacks the new script and
