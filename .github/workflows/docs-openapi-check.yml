@@ -82,11 +82,13 @@ jobs:
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 10
     steps:
-      # fetch-depth: 0 so `origin/<base>` exists locally for the scope step. At
-      # the default depth 1 the diff below cannot resolve the base at all.
+      # fetch-depth: 2 so the test-merge commit's first parent, the base, exists
+      # for the scope step. At the default depth 1 the diff below cannot resolve
+      # it. Full history took 9m42s of this job's 10 minutes on 2026-11-03
+      # (DOR-3769).
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
       # The only decision in this file: does this run spend the ~4 minutes of
       # install + build + regenerate? A merge-group run always does. A pull
@@ -102,7 +104,7 @@ jobs:
         id: scope
         env:
           EVENT: ${{ github.event_name }}
-          BASE: origin/${{ github.base_ref }}
+          BASE: HEAD^1
         run: |
           set -euo pipefail
           if [ "$EVENT" != 'pull_request' ]; then

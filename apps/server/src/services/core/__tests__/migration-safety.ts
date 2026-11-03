@@ -272,7 +272,7 @@ export function checkMigrationSafety(input: MigrationSafetyInput): MigrationSafe
       ok: false,
       latestReleased: null,
       problems: [
-        'no v* tags visible — fetch tags (fetch-depth: 0 in CI); the migration guard cannot run ' +
+        'no v* tags visible — fetch the newest release tag; the migration guard cannot run ' +
           'without them, and a checkout that cannot see releases cannot tell a new migration key ' +
           'from one that shipped last week',
       ],
