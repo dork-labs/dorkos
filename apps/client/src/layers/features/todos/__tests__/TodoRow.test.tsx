@@ -46,4 +46,12 @@ describe('TodoRow', () => {
     });
     expect(row).toHaveTextContent('DorkBot·from you');
   });
+
+  it('shows the one line an agent left when it finished', () => {
+    const row = renderRow({
+      todo: createMockTodo({ state: 'kept', note: 'Sent it to Ana' }),
+      from: 'you',
+    });
+    expect(row).toHaveTextContent('Done · Sent it to Ana·from you');
+  });
 });

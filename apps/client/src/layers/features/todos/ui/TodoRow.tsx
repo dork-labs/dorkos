@@ -68,13 +68,18 @@ function AgentAssignee({ agentId: id, agent }: { agentId: string; agent?: AgentP
   );
 }
 
-/** How a closed to-do ended, in a word, with a decline's reason after it. */
+/**
+ * How a closed to-do ended, in a word, with the one line left on it after: what was done, or why
+ * it was declined. Plain text, since an agent or a guest may have written it.
+ */
 function Outcome({ todo }: Pick<TodoRowProps, 'todo'>) {
-  if (todo.state === 'kept') return <span>Done</span>;
-  if (todo.state === 'dropped') {
-    return <span>{todo.note ? `Declined · ${todo.note}` : 'Declined'}</span>;
-  }
-  return null;
+  if (todo.state === 'open') return null;
+  const word = todo.state === 'kept' ? 'Done' : 'Declined';
+  return (
+    <span className="min-w-0 truncate" title={todo.note ?? undefined}>
+      {todo.note ? `${word} · ${todo.note}` : word}
+    </span>
+  );
 }
 
 /** The quiet facts under a title, kept apart by a middle dot. */
