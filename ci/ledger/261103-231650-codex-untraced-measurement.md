@@ -37,3 +37,14 @@ This is evidence collection, not a performance claim, so no unmeasured baseline
 or improvement target is invented. Remove the large diagnostic step and restore
 the 20-minute job budget once Security has the numbers and chooses the next
 strategy. Keep the trace upload for future native failures.
+
+Security's final-label gate: before any label at the final head, restore the
+job budget to 20 minutes and review the 20/64-minute step caps again; remove
+run-codex-untraced.mjs, its test and its CI step; remove all
+DORKOS_CODEX_PROBE_* handling, including the selectedMode continue. The normal
+receipt cannot detect that environment-based narrowing of its mode loop.
+The 90 minutes is approved for diagnostics only, not for the final label.
+
+Never add -v to strace: environment values must stay out of the public trace
+artifact. Test diagnostics emit fixtureMs, startMs and each returned shell
+time immediately, before later native failures or test timeouts can hide them.

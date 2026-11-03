@@ -631,6 +631,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       const fixtureStarted = performance.now();
       const probe = protectedProbe(root, project, size);
       const fixtureMs = performance.now() - fixtureStarted;
+      console.info('Codex protected fixture ready', { kind, selectedMode, ...size, fixtureMs });
       const configFile = path.join(codexHome, 'config.toml');
       const previous = fs.readFileSync(configFile, 'utf8');
       fs.writeFileSync(configFile, `sandbox_mode = "danger-full-access"\n${previous}`);
@@ -671,6 +672,14 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               scripted.push((res, body) => {
                 shellRoundTripMs.push(performance.now() - shellStarted);
                 shellControls.push(shellControlReturned(body, `PUBLIC-shell-control-${index}`));
+                console.info('Codex protected shell completed', {
+                  kind,
+                  mode,
+                  ...size,
+                  index,
+                  shellRoundTripMs: shellRoundTripMs[index],
+                  shellControlReturned: shellControls[index],
+                });
                 if (index === 2) res.end(sse('done'));
                 else {
                   shellStarted = performance.now();
@@ -689,6 +698,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               settings: { permissionMode: mode, model: 'fake-model' },
               onThreadBound: () => {
                 startMs = performance.now() - started;
+                console.info('Codex protected thread bound', { kind, mode, ...size, startMs });
               },
               writableDirectories: [project],
               tools: {
