@@ -181,8 +181,12 @@ async function judgeFreshReview(api, sha, input, deep, wait) {
   const due = verdictDue(input, wait.eventTime);
   if (Number.isNaN(due))
     return { passed: false, reason: `cannot read when ${sha}'s labels or push last changed` };
-  for (;;) {
+  for (let poll = 1; ; poll += 1) {
     const review = latestReview(await api.statuses(sha));
+    // One line per read, so a job log shows whether the wait ran and how long.
+    console.log(
+      `security-review poll ${poll}: ${review ? `${review.state} at ${review.created_at}` : 'no status'}; needs a finished status newer than ${new Date(due).toISOString()}`
+    );
     if (review && review.state !== 'pending' && Date.parse(review.created_at) > due)
       return review.state === 'success'
         ? verdict
