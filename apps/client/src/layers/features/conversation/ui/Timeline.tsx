@@ -170,6 +170,8 @@ export interface ConversationTimelineProps {
    * be drawn. Defaults to `true` for surfaces whose cursor is already in hand.
    */
   landingReady?: boolean;
+  /** Changing this lands again in the same conversation: see `useTimelineLanding`. */
+  landingKey?: string;
   /** Messages this reader has sent that the conversation has not echoed back. */
   pending?: readonly PendingPost[];
   /** This reader's own author id here, which a pending row's retry reads. */
@@ -266,6 +268,7 @@ export function ConversationTimeline({
   domIdOf,
   landOn = 'end',
   landingReady = true,
+  landingKey,
   resumeRow,
   landOnRow,
   onTopRow,
@@ -347,6 +350,7 @@ export function ConversationTimeline({
     virtualizer,
     landOn,
     landingReady: landingReady && loading == null,
+    ...(landingKey === undefined ? {} : { landingKey }),
     ...(resumeRow === undefined ? {} : { resumeRow }),
     ...(landOnRow === undefined ? {} : { landOnRow }),
     ...(onTopRow === undefined ? {} : { onTopRow }),

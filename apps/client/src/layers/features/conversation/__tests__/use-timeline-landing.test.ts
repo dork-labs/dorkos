@@ -76,3 +76,45 @@ describe('useTimelineLanding — the first report after arriving', () => {
     expect(onTopRow.mock.calls).toEqual([[undefined]]);
   });
 });
+
+describe('useTimelineLanding, landing again', () => {
+  const base = {
+    conversationId: 'room-1',
+    rows: ROWS,
+    landOn: 'unread' as const,
+    landingReady: true,
+  };
+
+  it('lands again when the key changes, and only then', () => {
+    const virtualizer = fakeVirtualizer();
+    const hook = renderHook((key: string | undefined) =>
+      useTimelineLanding({ ...base, virtualizer, landingKey: key })
+    );
+    hook.rerender(undefined);
+    expect(virtualizer.scrollToEnd).toHaveBeenCalledTimes(1);
+
+    hook.rerender('reflowed-as-dm');
+    expect(virtualizer.scrollToEnd).toHaveBeenCalledTimes(2);
+
+    hook.rerender('reflowed-as-dm');
+    expect(virtualizer.scrollToEnd).toHaveBeenCalledTimes(2);
+  });
+
+  it('lands on the unread rule again, not at the end', () => {
+    const virtualizer = fakeVirtualizer();
+    const rows: ConversationRow[] = [
+      messageRow('e0'),
+      messageRow('e1'),
+      { ...messageRow('rule'), kind: 'unread-divider' } as unknown as ConversationRow,
+      messageRow('e2'),
+    ];
+    const hook = renderHook((key: string | undefined) =>
+      useTimelineLanding({ ...base, rows, virtualizer, landingKey: key })
+    );
+    hook.rerender(undefined);
+    hook.rerender('reflowed-as-dm');
+    expect(virtualizer.scrollToIndex).toHaveBeenCalledTimes(2);
+    expect(virtualizer.scrollToIndex).toHaveBeenLastCalledWith(1, { align: 'start' });
+    expect(virtualizer.scrollToEnd).not.toHaveBeenCalled();
+  });
+});

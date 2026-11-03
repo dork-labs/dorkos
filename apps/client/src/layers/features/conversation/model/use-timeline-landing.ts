@@ -27,6 +27,12 @@ export interface TimelineLandingInput {
   /** Whether the decision can be made yet. A session waits for its read cursor. */
   landingReady: boolean;
   /**
+   * Changing this makes the decision again, in the same conversation. For a host
+   * whose rows changed height under a landing already made, so that landing no
+   * longer holds. A reader who scrolled in between is moved too.
+   */
+  landingKey?: string;
+  /**
    * The row this conversation was left on, asked for at landing time.
    *
    * A GETTER, and the HOST holds the answer — which is what makes it work at
@@ -139,6 +145,7 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     virtualizer,
     landOn,
     landingReady,
+    landingKey,
     resumeRow,
     landOnRow,
     onTopRow,
@@ -174,9 +181,10 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     // navigation leaves `conversationId` alone, so the guard below never lifts
     // on its own.
     const requested = landOnRow?.();
-    const arriving = anchoredRef.current !== conversationId;
+    const armedFor = landingKey === undefined ? conversationId : `${conversationId}:${landingKey}`;
+    const arriving = anchoredRef.current !== armedFor;
     if (!arriving && requested === undefined) return;
-    anchoredRef.current = conversationId;
+    anchoredRef.current = armedFor;
     // A new conversation has its own rows and its own resume memory; forget the
     // last row reported for the previous one so the first genuine report here is
     // never mistaken for a repeat — including a first report of "caught up".
@@ -233,7 +241,17 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     // "here is what you already read" edge that makes it legible.
     virtualizer.scrollToIndex(Math.max(0, unreadIndex - 1), { align: 'start' });
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [measured, landingReady, conversationId, rows, virtualizer, landOn, resumeRow, landOnRow]);
+  }, [
+    measured,
+    landingReady,
+    landingKey,
+    conversationId,
+    rows,
+    virtualizer,
+    landOn,
+    resumeRow,
+    landOnRow,
+  ]);
 
   const reportTopRow = useCallback(
     (scroller: HTMLElement | null, atBottom: boolean) => {
