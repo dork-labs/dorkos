@@ -120,13 +120,13 @@ export function PanelFix({
         </div>
       )}
       {actionHint && (
-        <p id={hintId} className="text-status-warning-fg/80 text-xs">
+        <p id={hintId} className="text-status-warning-fg text-xs">
           {actionHint}
         </p>
       )}
       {technicalDetail && (
         <Collapsible>
-          <CollapsibleTrigger className="group/details text-status-warning-fg/80 hover:text-status-warning-fg focus-ring flex items-center gap-1 rounded text-xs">
+          <CollapsibleTrigger className="group/details text-status-warning-fg hover:text-status-warning-fg focus-ring flex items-center gap-1 rounded text-xs">
             <ChevronDown
               className="size-3 -rotate-90 transition-transform group-data-[state=open]/details:rotate-0"
               aria-hidden

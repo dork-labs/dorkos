@@ -42,13 +42,13 @@ export function PausedConfirm({ kind, name, id, confirmation, confirm }: PausedC
       detail={
         <>
           <span
-            className="text-status-warning-fg/80 block break-words"
+            className="text-status-warning-fg block break-words"
             title={many ? pausedReferenceList(confirmation) : undefined}
           >
             {pausedMeta(kind, confirmation)}
             {many && <span className="sr-only">: {pausedReferenceList(confirmation)}</span>}
           </span>
-          {notSent && <span className="text-status-warning-fg/80 block">{notSent}</span>}
+          {notSent && <span className="text-status-warning-fg block">{notSent}</span>}
         </>
       }
       action={pausedConfirmLabel(confirmation)}
