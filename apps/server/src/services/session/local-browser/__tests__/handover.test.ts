@@ -321,7 +321,9 @@ describe('telling the app something changed', () => {
     handover.useOutsideTurnCheck(async () => false);
     const changed = vi.fn();
     handover.useChangeListener(changed);
-    return { handover, signIns, changed };
+    const handedOver = vi.fn();
+    handover.useHandoffListener(handedOver);
+    return { handover, signIns, changed, handedOver };
   }
 
   it('hands the same listener to the sign-in window', () => {
@@ -350,6 +352,15 @@ describe('telling the app something changed', () => {
       expect(changed).toHaveBeenCalledTimes(1);
       await vi.waitFor(() => expect(outcomeWhenTold).toBeTruthy());
     }
+  });
+
+  it('records each new handoff once, not on a repeat ask or an answer', async () => {
+    const { handover, handedOver } = wired();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await handover.ask('chat-1', 'wall');
+    await handover.handBack(handoffId);
+    expect(handedOver).toHaveBeenCalledTimes(1);
+    expect(handedOver.mock.calls[0]![0]).toMatchObject({ id: handoffId, outcome: null });
   });
 
   it('says nothing when an outside turn is refused', async () => {

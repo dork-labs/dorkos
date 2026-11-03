@@ -129,6 +129,11 @@ export const NOTIFICATION_KINDS = [
    */
   'community.teammate-limits-reset',
   /**
+   * An agent handed the Agent browser to a person and stopped (DOR-3218). One row per
+   * handoff, with no buttons: it's the only word a phone gets, and the live card answers it.
+   */
+  'browser.handoff',
+  /**
    * The one-time offer to run agents' cheap checks on DorkOS credits (spec
    * `heartbeats` §6.3). Raised once per computer, while nobody has answered.
    */

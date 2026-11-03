@@ -82,6 +82,7 @@ export class BrowserHandover {
   // The registry id of the agent in a folder; none until startup wires the mesh.
   private agentIdAt: (agentFolder: string) => string | undefined = () => undefined;
   private changed: () => void = () => undefined;
+  private handedOver: (handoff: LocalBrowserHandoff) => void = () => undefined;
 
   constructor(
     private readonly browser: HandoverBrowser,
@@ -110,6 +111,15 @@ export class BrowserHandover {
   useChangeListener(listener: () => void): void {
     this.changed = listener;
     this.signIns.onChange(listener);
+  }
+
+  /**
+   * Set once at startup: called once for each new handoff, for the Inbox's record.
+   *
+   * @param listener - Given the new handoff.
+   */
+  useHandoffListener(listener: (handoff: LocalBrowserHandoff) => void): void {
+    this.handedOver = listener;
   }
 
   /** What a person's controls see. */
@@ -177,6 +187,7 @@ export class BrowserHandover {
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
     await this.browser.selectTab(tab.id).catch(() => undefined);
     this.changed();
+    this.handedOver(this.record);
     return { handoffId: this.record.id, site, next: HANDED_OVER_NEXT };
   }
 

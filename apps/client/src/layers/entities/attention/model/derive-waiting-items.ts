@@ -89,6 +89,8 @@ export interface WaitingQueueSources {
   extensionDecisions?: readonly ExtensionDecisionDTO[];
   /** Connections paused until their owner confirms them. Optional, like the two above. */
   pausedConnections?: readonly PausedConnectionItem[];
+  /** The id of the handoff an agent is waiting on a person to answer, if any. */
+  browserHandoffId?: string | null;
 }
 
 /**
@@ -127,6 +129,10 @@ export function deriveWaitingItems(sources: WaitingQueueSources): WaitingItem[] 
       id: pausedConnectionSignalId(paused.id, paused.confirmation.fingerprint),
       kind: 'connection-confirmation',
     });
+  }
+
+  if (sources.browserHandoffId) {
+    items.push({ id: `browser-handoff:${sources.browserHandoffId}`, kind: 'browser-handoff' });
   }
 
   return items;
