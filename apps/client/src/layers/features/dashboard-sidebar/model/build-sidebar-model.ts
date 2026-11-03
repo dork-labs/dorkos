@@ -80,8 +80,8 @@ export function persistedSectionId(id: SidebarSectionId): PersistedSectionId | n
 /**
  * A section's id.
  *
- * `top` is the headerless block of doors at the head of the list — Threads and
- * Directory. A hand-made section is `group:<groupId>`, which cannot collide
+ * `top` is the headerless block of doors at the head of the list — Threads,
+ * To-dos (while switched on) and Directory. A hand-made section is `group:<groupId>`, which cannot collide
  * with the fixed ids and needs no schema of its own because its collapse state
  * lives on the group.
  */
@@ -95,6 +95,7 @@ export type SidebarSectionId = 'top' | FixedSectionId | `group:${string}`;
  * that is.
  *
  * - `open-threads` — the Threads page, every thread you are in.
+ * - `open-todos` — the To-dos page, while to-dos are switched on.
  * - `open-directory` — the Directory, every agent and person.
  * - `message-someone` — the Directory again, from the foot of the list, for
  *   starting a conversation with anyone not on it yet.
@@ -102,7 +103,7 @@ export type SidebarSectionId = 'top' | FixedSectionId | `group:${string}`;
  *   messages section's one row.
  */
 export type SidebarCommandId =
-  'open-threads' | 'open-directory' | 'message-someone' | 'message-agent';
+  'open-threads' | 'open-todos' | 'open-directory' | 'message-someone' | 'message-agent';
 
 /**
  * The semantic icons a command row draws.
@@ -111,7 +112,7 @@ export type SidebarCommandId =
  * and a row that said `MessagesSquare` would have decided a rendering rather
  * than a meaning.
  */
-export type SidebarIconId = 'threads' | 'directory' | 'add';
+export type SidebarIconId = 'threads' | 'todos' | 'directory' | 'add';
 
 /** What clicking a row does — and, for `session`, what the router says is open. */
 export type SidebarTarget =
@@ -176,6 +177,11 @@ export interface SidebarRowModel {
   reservesVerbLine: boolean;
   /** The row's unread state. */
   unread: SidebarUnread;
+  /**
+   * A neutral count a door shows: the To-dos door's open to-dos due today or overdue. Never
+   * unread and never orange, because nobody wrote to you; absent at zero.
+   */
+  count?: number;
   /**
    * "N live" chip on an agent row with concurrent sessions.
    *

@@ -211,6 +211,8 @@ const mockTransport = {
   // An agent row's door: its Direct chat (rule S12), opened as a new chat would be.
   openDirectChat: vi.fn(),
   createSessionLocation: vi.fn().mockResolvedValue({ id: 'test-location' }),
+  // Read only while a case switches to-dos on (DOR-3088).
+  listTodos: vi.fn(() => Promise.resolve({ todos: [], doneCount: 0, badge: 2 })),
 };
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -751,6 +753,38 @@ describe('DashboardSidebar', () => {
       expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/threads' });
       fireEvent.click(within(top).getByRole('button', { name: 'Directory' }));
       expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/team' });
+    });
+
+    it('shows no To-dos door while to-dos are off', async () => {
+      renderWithProviders(<DashboardSidebar />);
+      const top = sectionBody('top');
+      await waitFor(() => expect(mockTransport.getConfig).toHaveBeenCalled());
+      expect(within(top).queryByRole('button', { name: /^To-dos/ })).toBeNull();
+      expect(mockTransport.listTodos).not.toHaveBeenCalled();
+    });
+
+    it('shows a To-dos door with a neutral due count while to-dos are on', async () => {
+      mockTransport.getConfig.mockImplementation(() =>
+        Promise.resolve({ agents: { defaultAgent: 'dorkbot' }, todos: { enabled: true } })
+      );
+      try {
+        renderWithProviders(<DashboardSidebar />);
+        const top = sectionBody('top');
+        const door = await within(top).findByRole('button', { name: /^To-dos/ });
+        await waitFor(() =>
+          expect(top.querySelector('[data-slot="count-pill"]')).toHaveTextContent('2')
+        );
+        expect(top.querySelector('[data-slot="count-pill"]')).toHaveAttribute(
+          'data-tone',
+          'neutral'
+        );
+        fireEvent.click(door);
+        expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/todos' });
+      } finally {
+        mockTransport.getConfig.mockImplementation(() =>
+          Promise.resolve({ agents: { defaultAgent: 'dorkbot' } })
+        );
+      }
     });
 
     it('lights the top item whose page is open', async () => {

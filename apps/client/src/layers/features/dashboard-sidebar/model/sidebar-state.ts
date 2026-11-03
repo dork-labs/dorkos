@@ -75,6 +75,16 @@ export interface SidebarAddOnPage {
   title: string;
 }
 
+/**
+ * The To-dos door, present only while to-dos are switched on (DOR-3088).
+ *
+ * `badge` is the person's open to-dos due today or overdue, as the list answer counts it.
+ */
+export interface SidebarTodosDoor {
+  /** How many of the person's open to-dos are due today or overdue. */
+  badge: number;
+}
+
 /** One snapshot of everything the sidebar is a function of. */
 export interface SidebarState {
   /**
@@ -127,6 +137,8 @@ export interface SidebarState {
    * extension added one, and then the section is absent.
    */
   addOns: readonly SidebarAddOnPage[];
+  /** The To-dos door, or `null` while to-dos are off and the door is absent. */
+  todos: SidebarTodosDoor | null;
   /** What the operator has open right now, from the router. `null` off-route. */
   activeTarget: SidebarTarget | null;
 }

@@ -27,6 +27,7 @@ import { HomeStatesShowcases } from '../showcases/HomeStatesShowcases';
 import { ConnectionsShowcases } from '../showcases/ConnectionsShowcases';
 import { PausedConnectionShowcases } from '../showcases/PausedConnectionShowcases';
 import { WorkLeftShowcases } from '../showcases/WorkLeftShowcases';
+import { TodosShowcases } from '../showcases/TodosShowcases';
 import { CommunityHostingShowcases } from '../showcases/CommunityHostingShowcases';
 import { McpServerCardShowcases } from '../showcases/McpServerCardShowcases';
 
@@ -101,6 +102,7 @@ export function HomeInboxPage() {
       <PresenceStripShowcases />
       <HomeStatesShowcases />
       <WorkLeftShowcases />
+      <TodosShowcases />
       <ConnectionsShowcases />
       <PausedConnectionShowcases />
       <CommunityHostingShowcases />

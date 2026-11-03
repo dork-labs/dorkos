@@ -518,6 +518,7 @@ describe('the route map (drift guard)', () => {
       '/team': 'Team',
       // The sidebar's Threads item opens it, and the tab says the same word.
       '/threads': 'Threads',
+      '/todos': 'To-dos',
       '/workspaces': 'Workspaces',
     });
   });

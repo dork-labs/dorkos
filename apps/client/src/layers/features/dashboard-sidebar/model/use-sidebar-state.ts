@@ -33,6 +33,7 @@ import { toSidebarModelPrefs, useSidebarPrefs } from '@/layers/entities/config';
 import { useInteractionTimestamps } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useRooms } from '@/layers/entities/room';
+import { useTodoBadge, useTodosEnabled } from '@/layers/entities/todo';
 import {
   RECENT_SESSIONS_WINDOW,
   useAgentAttentionMap,
@@ -42,7 +43,12 @@ import {
 } from '@/layers/entities/session';
 import type { SidebarTarget } from './build-sidebar-model';
 import { useBootState } from './boot/use-boot-state';
-import type { AgentRosterEntry, SidebarAddOnPage, SidebarState } from './sidebar-state';
+import type {
+  AgentRosterEntry,
+  SidebarAddOnPage,
+  SidebarState,
+  SidebarTodosDoor,
+} from './sidebar-state';
 
 /**
  * How coarse the model's clock is, in milliseconds.
@@ -146,8 +152,8 @@ function useStableList(value: string[]): string[] {
  * own, next to the row that needs it (`SidebarChrome`'s `homeRoomId`), so the
  * scroll anchor does not move on every visit to the dashboard.
  *
- * **A top item's page is open when you are on it** — Threads on `/threads`, the
- * Directory on `/team` — so its door lights like any other row.
+ * **A top item's page is open when you are on it** — Threads on `/threads`,
+ * To-dos on `/todos`, the Directory on `/team` — so its door lights like any other row.
  *
  * **A mini app's page is open when you are on it or anywhere under it**, and it
  * names the one listed page that holds the address ({@link listedPageAt}), so
@@ -182,6 +188,7 @@ function useActiveTarget(
   return useMemo(() => {
     if (sessionId !== null) return { kind: 'session', sessionId, agentPath: cwd ?? '', cwd };
     if (pathname === '/threads') return { kind: 'command', commandId: 'open-threads' };
+    if (pathname === '/todos') return { kind: 'command', commandId: 'open-todos' };
     if (pathname === '/team') return { kind: 'command', commandId: 'open-directory' };
     if (addOnExtensionId !== null && addOnPath !== null) {
       return { kind: 'add-on', extensionId: addOnExtensionId, path: addOnPath };
@@ -350,6 +357,16 @@ export function useSidebarState(): SidebarState {
   );
   const activeTarget = useActiveTarget(roomKindOf, addOns);
 
+  // ── The To-dos door (DOR-3088) ──
+  // Absent while to-dos are off. Its count is the list answer's own badge, a number, so the memo
+  // holds across refetches that leave it where it was.
+  const todosEnabled = useTodosEnabled();
+  const todoBadge = useTodoBadge({ enabled: todosEnabled });
+  const todos = useMemo<SidebarTodosDoor | null>(
+    () => (todosEnabled ? { badge: todoBadge } : null),
+    [todosEnabled, todoBadge]
+  );
+
   return useMemo(
     () => ({
       now,
@@ -363,6 +380,7 @@ export function useSidebarState(): SidebarState {
       prefs,
       mentions,
       addOns,
+      todos,
       activeTarget,
     }),
     [
@@ -377,6 +395,7 @@ export function useSidebarState(): SidebarState {
       prefs,
       mentions,
       addOns,
+      todos,
       activeTarget,
     ]
   );

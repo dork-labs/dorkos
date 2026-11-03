@@ -113,6 +113,28 @@ describe('the top items', () => {
   it('never fold, so the fold-all gesture has nowhere to keep one', () => {
     expect(persistedSectionId('top')).toBeNull();
   });
+
+  it('hold a To-dos door between Threads and Directory only while to-dos are on', () => {
+    const on = section({ ...busyFixture, todos: { badge: 0 } }, 'top');
+    expect(on?.rows.map((row) => [row.primary, row.target])).toEqual([
+      ['Threads', { kind: 'command', commandId: 'open-threads' }],
+      ['To-dos', { kind: 'command', commandId: 'open-todos' }],
+      ['Directory', { kind: 'command', commandId: 'open-directory' }],
+    ]);
+    expect(section(busyFixture, 'top')?.rows.map((row) => row.primary)).not.toContain('To-dos');
+  });
+
+  it('give the To-dos door a neutral count of what is due, never an unread tier', () => {
+    const door = section({ ...busyFixture, todos: { badge: 3 } }, 'top')?.rows.find(
+      (row) => row.primary === 'To-dos'
+    );
+    expect(door?.count).toBe(3);
+    expect(door?.unread).toEqual({ tier: 'none' });
+    const quiet = section({ ...busyFixture, todos: { badge: 0 } }, 'top')?.rows.find(
+      (row) => row.primary === 'To-dos'
+    );
+    expect(quiet?.count).toBeUndefined();
+  });
 });
 
 describe('places, never sessions or threads', () => {
