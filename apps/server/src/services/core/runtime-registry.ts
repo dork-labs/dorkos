@@ -8,7 +8,6 @@ import {
 } from '../session/resolution/session-lookup-error.js';
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { Session, SessionSettings } from '@dorkos/shared/types';
-import { EffortLevelSchema } from '@dorkos/shared/schemas';
 // The module directly rather than the `../session/index.js` barrel. There is no
 // cycle to dodge today — nothing that barrel exports imports this file, and
 // `room-turn-runner.ts` does take the same resolver through it. The reason is
@@ -45,7 +44,6 @@ import {
   isNull,
   sql,
   type Db,
-  type SQL,
 } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
@@ -53,48 +51,14 @@ import { getSessionStartedByStore } from '../session/origin/session-started-by-s
 import { getSessionTouchStore } from '../session/origin/session-touch-store.js';
 import { decorateRuntime } from './runtime-seam/decorate-runtime.js';
 import {
+  keepRecordedAgent,
+  refuseAgentChange,
+  rowToSettings,
   fillNullsWith,
   launchColumns,
   pickSettings,
   type SettingsUpdate,
 } from './runtime-seam/session-metadata-columns.js';
-
-/** Columns read from `session_metadata` for the settings projection. */
-type SettingsRow = {
-  permissionMode: string | null;
-  model: string | null;
-  effort: string | null;
-  fastMode: boolean | null;
-};
-
-/**
- * Map a settings DB row (NULLs) to a `SessionSettings` object (omitted keys).
- *
- * `effort` is the one column parsed rather than cast. It is a free-form TEXT
- * column, so what comes back is whatever was written — including a rung that a
- * later release removed from the ladder, or anything a person put there by hand.
- * A cast made that string travel as an `EffortLevel` all the way into an adapter,
- * where claude-code's own mapper drops it (harmless) and codex's
- * `EFFORT_TO_REASONING` lookup yields `undefined` and sends
- * `modelReasoningEffort: undefined` into the SDK. An unreadable value means "no
- * preference" — the same thing NULL means — so it is dropped here, once, rather
- * than at three adapter edges.
- */
-function rowToSettings(row: SettingsRow): SessionSettings {
-  const settings: SessionSettings = {};
-  if (row.permissionMode != null) settings.permissionMode = row.permissionMode;
-  if (row.model != null) settings.model = row.model;
-  if (row.effort != null) {
-    const effort = EffortLevelSchema.safeParse(row.effort);
-    if (effort.success) settings.effort = effort.data;
-    else
-      logger.warn('[RuntimeRegistry] ignoring an unreadable stored effort level', {
-        stored: row.effort,
-      });
-  }
-  if (row.fastMode != null) settings.fastMode = row.fastMode;
-  return settings;
-}
 
 /**
  * How many session ids one `WHERE session_id IN (...)` may carry. Every id
@@ -344,8 +308,10 @@ export class RuntimeRegistry {
           runtime,
           // The binding write is what establishes identity, so the agent it
           // names is the session's — but only when it names one, so a caller
-          // with no agent never erases a path some other write knew.
-          ...(agentPath !== undefined ? { agentPath } : {}),
+          // with no agent never erases a path some other write knew. And only
+          // into an empty column: a recorded agent never changes once recorded,
+          // not even by the claim (DOR-3706, R3).
+          ...keepRecordedAgent(agentPath),
           ...fillNullsWith(seed),
           // The claim names what started the session only when nothing has yet.
           ...launchColumns(origin, 'claim'),
@@ -1009,12 +975,22 @@ export class RuntimeRegistry {
    * tracked separately (DOR-837); do not read this as a uniqueness guarantee the
    * schema does not enforce.
    *
+   * When both rows record an agent and the two differ, nothing moves at all
+   * and the refusal is logged (DOR-3706): a session's agent never changes, and
+   * a merge would hand one agent's row to the other. Either side empty merges
+   * as above.
+   *
    * @param fromId - The id the row is stored under today
    * @param toId - The canonical id the session is now known by
    */
   async rekeySessionSettings(fromId: string, toId: string): Promise<void> {
     if (fromId === toId) return;
     const db = this.requireDb('rekeySessionSettings');
+    const rowFor = (id: string) =>
+      db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
+    const source = rowFor(fromId);
+    const destination = rowFor(toId);
+    if (refuseAgentChange(fromId, toId, source?.agentPath, destination?.agentPath)) return;
     // A usage limit the session hit under its old id moves with it (spec
     // claude-account-fleet D4), whether or not it has a settings row.
     // `rekeyProjector` moves the same table, and both are needed: the row is
@@ -1063,17 +1039,7 @@ export class RuntimeRegistry {
         err: err instanceof Error ? err.message : String(err),
       });
     }
-    const source = db
-      .select()
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, fromId))
-      .get();
     if (!source) return;
-    const destination = db
-      .select()
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, toId))
-      .get();
     db.transaction((tx) => {
       // Native location and sign-in source belong to the conversation identity,
       // so a canonical rename must move them with its runtime/settings row.
