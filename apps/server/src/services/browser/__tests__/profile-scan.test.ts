@@ -99,6 +99,24 @@ describe('tap-only browser profile scan', () => {
     expect(JSON.stringify(result)).not.toContain(home);
   });
 
+  it('refuses a browser directory symlink before opening metadata outside the fixed path', async () => {
+    const home = await mkdtemp(path.join(tmpdir(), 'dorkos-scan-'));
+    const outside = await mkdtemp(path.join(tmpdir(), 'dorkos-scan-outside-'));
+    directories.push(home, outside);
+    const filename = browserStatePaths(home, 'darwin')[0];
+    await mkdir(path.dirname(path.dirname(filename)), { recursive: true });
+    await writeFile(path.join(outside, 'Local State'), state({ Default: { name: 'Outside' } }));
+    await symlink(outside, path.dirname(filename));
+    const open = vi.spyOn(fs, 'open');
+
+    expect(await scanBrowserProfiles({ home, platform: 'darwin' })).toEqual({
+      supported: true,
+      profiles: [],
+      unreadable: ['chrome'],
+    });
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it('treats missing browsers as empty and never reads on unsupported platforms', async () => {
     const read = vi.fn().mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
     expect(await scanBrowserProfiles({ home: '/fixture', platform: 'darwin', read })).toEqual({

@@ -14,7 +14,17 @@ export function createYourBrowserRoutes(
   router.post('/scan', async (c) => {
     c.header('Cache-Control', 'no-store');
     const facts = honoRequestFacts(c);
-    if (presentsProgramCredential(facts) || requirePersonAtThisComputer(facts) !== undefined)
+    // Run the existing person bar first so the app can ask for the owner's
+    // session even with Require login off. An owner-less open gate proves no
+    // person for this private metadata read, so a cookie is mandatory here.
+    const refusal = requirePersonAtThisComputer(facts);
+    const origin = facts.headers.origin;
+    if (
+      refusal !== undefined ||
+      presentsProgramCredential(facts) ||
+      facts.user?.credential !== 'cookie' ||
+      (origin !== undefined && !/^https?:\/\//i.test(origin))
+    )
       return c.json(
         { error: 'Only you can find your browsers, from DorkOS.', code: 'person_only' },
         403

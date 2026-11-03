@@ -1,6 +1,6 @@
 /** Tap-only browser metadata discovery. No browser profile contents are opened. */
 import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { lstat, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { browserUserHome } from './browser-user-home.js';
 import type {
@@ -71,14 +71,28 @@ export function parseBrowserState(json: string, browser: YourBrowserKind): YourB
 }
 
 /** Bounded regular-file read. Refuse a symlink or device instead of following it. */
-async function readLocalState(filename: string): Promise<string> {
+async function readLocalState(filename: string, home: string): Promise<string> {
+  // Canonicalize the home prefix (e.g. macOS /var -> /private/var), but allow
+  // no redirection below it, including a symlink in an ancestor browser folder.
+  const expectedPath = path.join(await realpath(home), path.relative(home, filename));
+  if ((await realpath(filename)) !== expectedPath) throw new Error('Browser metadata redirected');
+  const expected = await lstat(filename);
+  if (!expected.isFile() || expected.isSymbolicLink() || expected.size > MAX_BYTES)
+    throw new Error('Unreadable browser metadata');
   const file = await open(
     filename,
     constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
   );
   try {
     const stat = await file.stat();
-    if (!stat.isFile() || stat.size > MAX_BYTES) throw new Error('Unreadable browser metadata');
+    // Read the exact file inspected above, even on platforms without O_NOFOLLOW.
+    if (
+      !stat.isFile() ||
+      stat.size > MAX_BYTES ||
+      stat.dev !== expected.dev ||
+      stat.ino !== expected.ino
+    )
+      throw new Error('Browser metadata changed');
     const buffer = Buffer.alloc(MAX_BYTES + 1);
     let used = 0;
     while (used < buffer.length) {
@@ -101,16 +115,17 @@ export async function scanBrowserProfiles(
     read?: (filename: string) => Promise<string>;
   } = {}
 ): Promise<YourBrowserScan> {
-  const paths = browserStatePaths(
-    options.home ?? browserUserHome(),
-    options.platform ?? process.platform
-  );
+  const home = options.home ?? browserUserHome();
+  const paths = browserStatePaths(home, options.platform ?? process.platform);
   const result: YourBrowserScan = { supported: paths.length > 0, profiles: [], unreadable: [] };
   for (const [index, filename] of paths.entries()) {
     const browser = BROWSERS[index];
     try {
       result.profiles.push(
-        ...parseBrowserState(await (options.read ?? readLocalState)(filename), browser)
+        ...parseBrowserState(
+          await (options.read ? options.read(filename) : readLocalState(filename, home)),
+          browser
+        )
       );
     } catch (error) {
       // Missing browsers are ordinary; malformed/inaccessible ones get a safe, path-free notice.
