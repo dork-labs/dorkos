@@ -18,6 +18,7 @@ import type { Db } from '@dorkos/db';
 import { AuditLog } from '../../audit/audit-log.js';
 import { SessionTouchStore } from '../../session/origin/session-touch-store.js';
 import { ConfigManager } from '../config-manager.js';
+import { CONFIG_WRITE_POLICY } from '../operator/config-write-policy.js';
 import { applyDmViewUpgrade, RECENT_OPEN_MS } from '../config/dm-view-upgrade.js';
 
 const NOW = Date.parse('2026-11-05T12:00:00.000Z');
@@ -80,6 +81,15 @@ function run(store: ConfigManager, recordWrite = vi.fn()) {
 }
 
 describe('the DM view upgrade', () => {
+  // Any `config.changed` row counts as a choice, the step's own `system` row
+  // included, so it must not be filtered by actor. That is safe only while an
+  // agent cannot write one: its patch to an operator-only leaf is refused and
+  // records nothing. Loosen either verdict and an agent's write reads as a person's.
+  it('counts every row as a choice only while agents cannot write these settings', () => {
+    expect(CONFIG_WRITE_POLICY['ui.dmView']).toBe('operator-only');
+    expect(CONFIG_WRITE_POLICY['ui.showSessions']).toBe('operator-only');
+  });
+
   it('turns on a stored false nobody chose, and records the change', () => {
     const store = seedConfig();
     const { result, recordWrite } = run(store);
