@@ -236,8 +236,22 @@ function IdentityHoverCard({
   // this card the normal way the moment a press lands outside it — including
   // a press on a different card's trigger.
   const [open, setOpenState] = React.useState(false);
+  // **A timer can outlive the card.** Radix's `handleOpen` overwrites its open
+  // timer without clearing the one before it, so a hover and a focus together
+  // (any click does both) leave one timer it no longer holds, and its unmount
+  // cleanup cannot cancel it. Seven hundred milliseconds later that timer calls
+  // back here on a card that is gone; in a test the page itself may be torn
+  // down by then (DOR-3430, DOR-1116, DOR-2225). Once unmounted, it does nothing.
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const setOpen = React.useCallback(
     (next: boolean) => {
+      if (!mountedRef.current) return;
       setOpenState(next);
       onOpenChange?.(next);
     },
