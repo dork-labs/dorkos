@@ -165,6 +165,9 @@ export const serverEnvSchema = z.object({
   DORKOS_APPROVAL_TTL_MS: z.coerce.number().int().min(1000).optional(),
   // Feature flags (boolean after transform)
   DORKOS_A2A_ENABLED: boolFlag,
+  // To-dos v1 (DOR-3088): the to-do tools and routes, off until v1 is complete. The record, its
+  // caps and its turns are built either way; nothing reaches them while this is off.
+  DORKOS_TODOS_ENABLED: boolFlag,
   // The official DorkOS space's public link (spec `official-community-space`
   // D4). When set, even to '', it overrules `spaces.official.url` in config;
   // '' turns the exception off. Read through

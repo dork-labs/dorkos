@@ -9,6 +9,7 @@ import type { Db } from '@dorkos/db';
 import type { MeshCore } from '@dorkos/mesh';
 import { refuseUnlessAccountOwner } from '../../lib/caller-authority.js';
 import type { CommitmentRouterDeps } from '../../routes/commitments.js';
+import { todoNeedsStepUp, type TodoRouterDeps } from '../../routes/todos.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
 import { personProof } from './caller.js';
 import { CommitmentService } from './commitment-service.js';
@@ -17,6 +18,7 @@ import { TodoService } from './todo-service.js';
 import { TodoStore } from './todo-store.js';
 import { TodoTurns } from './todo-turns.js';
 import { todoTurnSeams } from './todo-turn-wiring.js';
+import { agentInRoom, readTodoSourceFacts } from './todo-source.js';
 import { logger } from '../../lib/logger.js';
 
 /** How often queued to-do turns are checked for a new day. */
@@ -38,6 +40,10 @@ export interface CommitmentWiring {
   todos: TodoService;
   /** Starts, queues and holds the turns to-dos ask for. */
   todoTurns: TodoTurns;
+  /** What `/api/todos` reads, mounted only behind `DORKOS_TODOS_ENABLED`. */
+  todoRouteDeps: TodoRouterDeps;
+  /** The `todos` capability domain's deps, registered only behind `DORKOS_TODOS_ENABLED`. */
+  todoCapabilityDeps: NonNullable<CapabilityDeps['todoDeps']>;
   /** The `commitments` capability domain's deps. */
   capabilityDeps: NonNullable<CapabilityDeps['commitmentDeps']>;
   /**
@@ -105,6 +111,19 @@ export function wireCommitments(deps: CommitmentWiringDeps): CommitmentWiring {
     service,
     todos,
     todoTurns,
+    todoRouteDeps: {
+      todos,
+      personProven: personProof,
+      needsStepUp: todoNeedsStepUp,
+      readSource: (entryId) => readTodoSourceFacts(deps.db, entryId),
+    },
+    todoCapabilityDeps: {
+      todos,
+      agentIdForPath,
+      parentOf: (sessionId) => todoTurns.parentOf(sessionId, (id) => todoStore.get(id)),
+      readSource: (entryId) => readTodoSourceFacts(deps.db, entryId),
+      agentInRoom: (roomId, agentPath) => agentInRoom(deps.db, roomId, agentPath),
+    },
     capabilityDeps: { service, agentIdForPath },
     routeDeps: routerDeps,
     stop: () => {

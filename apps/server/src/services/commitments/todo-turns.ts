@@ -22,8 +22,10 @@
 import { ulid } from 'ulidx';
 import {
   and,
+  chatMessages,
   eq,
   inArray,
+  sessionStartedBy,
   todoTurns,
   type CommitmentRow,
   type Db,
@@ -34,6 +36,15 @@ import { logger } from '../../lib/logger.js';
 import { todoTurnDecision, todoTurnPower, TODO_TURN_MAX_DEPTH } from './todo-turn-power.js';
 import { buildTodoTurnPrompt, type TodoSourceText } from './todo-turn-prompt.js';
 import type { TodoParent } from './todo-service.js';
+
+/**
+ * How many hops back `parentOf` looks for the to-do a chat descends from. A chain longer than this
+ * through spin-offs and messages is deeper than any cap lets a to-do go.
+ */
+const TODO_CHAIN_HOPS = 8;
+
+/** How many chats `parentOf` reads in all, so a chat many others messaged stays cheap to check. */
+const TODO_CHAIN_CHATS = 64;
 
 /** How many to-do turns one charge may start in a UTC day. */
 export const TODO_TURNS_PER_ASSIGNER_PER_DAY = 10;
@@ -163,9 +174,17 @@ export class TodoTurns {
   }
 
   /**
-   * The to-do whose turn runs in a chat, as the chain a to-do made from that chat continues
-   * (Must 5): its depth, and every agent in its chain including the one running it. Undefined for
-   * a chat no to-do started. Read from the server's own ledger, never from the caller.
+   * The chain a to-do made from a chat continues (Must 5, Security's PR 4 G1): the to-do turns that
+   * chat descends from, read from the server's own records, never from the caller. It walks back
+   * through every hop a chain can take to reach another agent: a spin-off (`session_start`, via
+   * `session_started_by`) and a message one chat sent another (`chat_send`, via `chat_messages`).
+   *
+   * Every to-do turn found contributes its depth and chain. An agent that sent a message on the way
+   * joins the chain only when the chat it sent from itself descends from a to-do turn, so
+   * A → B → (a chat B messaged) → A is refused like A → B → A, while an unrelated message into the
+   * same chat adds nobody. Undefined for a chat no to-do turn led to.
+   *
+   * At most {@link TODO_CHAIN_HOPS} hops back and {@link TODO_CHAIN_CHATS} chats in all.
    *
    * @param sessionId - The calling chat.
    * @param readTodo - Read a to-do's current row.
@@ -174,16 +193,87 @@ export class TodoTurns {
     sessionId: string,
     readTodo: (id: string) => CommitmentRow | undefined
   ): TodoParent | undefined {
-    const turn = this.deps.db
-      .select({ todoId: todoTurns.todoId, agentId: todoTurns.agentId })
-      .from(todoTurns)
-      .where(and(eq(todoTurns.sessionId, sessionId), eq(todoTurns.status, 'started')))
-      .get();
-    if (!turn) return undefined;
-    const row = readTodo(turn.todoId);
-    if (!row) return undefined;
-    const chain = JSON.parse(row.chainAgents) as string[];
-    return { depth: row.chainDepth, agents: [...new Set([...chain, turn.agentId])] };
+    const graph = this.ancestry(sessionId, readTodo);
+    if (graph.turns.size === 0) return undefined;
+    const reaches = new Map<string, boolean>();
+    const reachesTurn = (chat: string, path: Set<string>): boolean => {
+      const known = reaches.get(chat);
+      if (known !== undefined) return known;
+      if (graph.turns.has(chat)) return reaches.set(chat, true).get(chat)!;
+      if (path.has(chat)) return false;
+      path.add(chat);
+      const found = (graph.parents.get(chat) ?? []).some((edge) => reachesTurn(edge.from, path));
+      path.delete(chat);
+      reaches.set(chat, found);
+      return found;
+    };
+    let depth = -1;
+    let capped = false;
+    const agents = new Set<string>();
+    for (const { row, agentId } of graph.turns.values()) {
+      depth = Math.max(depth, row.chainDepth);
+      for (const id of JSON.parse(row.chainAgents) as string[]) agents.add(id);
+      agents.add(agentId);
+      const power = todoTurnPower(row);
+      if (power.ceiling !== undefined || power.carriedMarks !== undefined) capped = true;
+    }
+    for (const edges of graph.parents.values()) {
+      for (const edge of edges) {
+        if (edge.agentId && reachesTurn(edge.from, new Set())) agents.add(edge.agentId);
+      }
+    }
+    return { depth, agents: [...agents], capped };
+  }
+
+  /** The chats a chat descends from, with the to-do turns among them, read from the ledger. */
+  private ancestry(
+    sessionId: string,
+    readTodo: (id: string) => CommitmentRow | undefined
+  ): {
+    turns: Map<string, { row: CommitmentRow; agentId: string }>;
+    parents: Map<string, { from: string; agentId: string | null }[]>;
+  } {
+    const db = this.deps.db;
+    const turns = new Map<string, { row: CommitmentRow; agentId: string }>();
+    const parents = new Map<string, { from: string; agentId: string | null }[]>();
+    const seen = new Set<string>([sessionId]);
+    let frontier = [sessionId];
+    for (let hop = 0; hop < TODO_CHAIN_HOPS && frontier.length > 0; hop++) {
+      const next: string[] = [];
+      for (const chat of frontier) {
+        const turn = db
+          .select({ todoId: todoTurns.todoId, agentId: todoTurns.agentId })
+          .from(todoTurns)
+          .where(and(eq(todoTurns.sessionId, chat), eq(todoTurns.status, 'started')))
+          .get();
+        const row = turn ? readTodo(turn.todoId) : undefined;
+        if (turn && row) turns.set(chat, { row, agentId: turn.agentId });
+        const spawner = db
+          .select({ from: sessionStartedBy.startedBySessionId })
+          .from(sessionStartedBy)
+          .where(eq(sessionStartedBy.sessionId, chat))
+          .get();
+        const senders = db
+          .select({ from: chatMessages.fromSessionId, agentId: chatMessages.fromAgentId })
+          .from(chatMessages)
+          .where(eq(chatMessages.toSessionId, chat))
+          .all();
+        const edges = [
+          ...(spawner?.from ? [{ from: spawner.from, agentId: null }] : []),
+          ...senders.flatMap((sender) =>
+            sender.from ? [{ from: sender.from, agentId: sender.agentId ?? null }] : []
+          ),
+        ];
+        parents.set(chat, edges);
+        for (const edge of edges) {
+          if (seen.has(edge.from) || seen.size >= TODO_CHAIN_CHATS) continue;
+          seen.add(edge.from);
+          next.push(edge.from);
+        }
+      }
+      frontier = next;
+    }
+    return { turns, parents };
   }
 
   /** How many turns a charge started today. */
