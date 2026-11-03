@@ -676,6 +676,7 @@
     "POST /api/workspaces",
     "POST /api/workspaces/:id/pin",
     "POST /api/workspaces/ports",
+    "POST /api/your-browser/scan",
     "POST /mcp",
     "PUT /api/agents/:id/work-queue/order",
     "PUT /api/cloud/credits/default",

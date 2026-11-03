@@ -1,3 +1,4 @@
+import { createYourBrowserRoutes } from '../routes/your-browser.js';
 import { createLocalBrowserRoutes } from '../routes/local-browser.js';
 import type { LocalBrowserService } from '../services/session/local-browser/service.js';
 import type { LocalBrowserProfileRouteDeps } from '../routes/local-browser-profiles.js';
@@ -360,6 +361,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     },
   });
   app.route('/api/health', createHealthRoutes(deps));
+  app.route('/api/your-browser', createYourBrowserRoutes());
   // Sessions, their messages and the per-session stream. Its WebSocket twin on
   // `/:id/events` is an upgrade, answered before any route
   // (`routes/session-events-socket.ts`).

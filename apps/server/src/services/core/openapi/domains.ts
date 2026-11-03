@@ -16,6 +16,7 @@ import { registerWorkQueueOpenApi } from '../../work-queue/work-queue-openapi.js
 import { registerHeartbeatsOpenApi } from '../../heartbeats/heartbeats-openapi.js';
 import { registerOnboardingOpenApi } from '../onboarding/onboarding-openapi.js';
 import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
+import { registerBrowserScanOpenApi } from '../../browser/profile-scan-openapi.js';
 import { registerLocalBrowserOpenApi } from '../../session/local-browser/openapi.js';
 import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
 import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.js';
@@ -44,6 +45,7 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerDocRouteControlsOpenApi(registry);
   registerConnectorHoldsOpenApi(registry);
   registerLocalBrowserOpenApi(registry);
+  registerBrowserScanOpenApi(registry);
   registerHubComputersOpenApi(registry);
   registerHubLinkOpenApi(registry);
   registerSessionRelayOpenApi(registry);

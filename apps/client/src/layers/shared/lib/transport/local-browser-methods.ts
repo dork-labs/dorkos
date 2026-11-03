@@ -3,6 +3,7 @@ import {
   LocalBrowserStateSchema,
   LocalBrowserCapabilitiesSchema,
 } from '@dorkos/shared/local-browser';
+import { YourBrowserScanSchema } from '@dorkos/shared/your-browser';
 import { fetchJSON } from './http-client';
 
 /** Local browser human controls, using the same authenticated origin as every app action. */
@@ -13,6 +14,14 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   return {
+    scanYourBrowsers: async () =>
+      YourBrowserScanSchema.parse(
+        await fetchJSON(baseUrl, '/your-browser/scan', {
+          method: 'POST',
+          body: '{}',
+          cache: 'no-store',
+        })
+      ),
     getLocalBrowserState: async () => LocalBrowserStateSchema.parse(await request('/state')),
     getLocalBrowserCapabilities: async () =>
       LocalBrowserCapabilitiesSchema.parse(await request('/capabilities')),
