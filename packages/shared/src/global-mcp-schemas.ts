@@ -57,6 +57,8 @@ export const GlobalMcpServerPatchSchema = z
     enabled: z.boolean().optional(),
     excludedAgents: z.array(z.string().min(1)).max(500).optional(),
   })
+  // Strict: a switch never changes what runs, so anything else is refused, not ignored.
+  .strict()
   .refine((patch) => patch.enabled !== undefined || patch.excludedAgents !== undefined, {
     message: 'Nothing to change',
   });

@@ -89,6 +89,34 @@ describe('holdStepUp', () => {
     expect(parseLocalStepUpStatement(statement)).toEqual(statement);
   });
 
+  it('removes a held action when its time is up, with nothing else asking about it', () => {
+    vi.useFakeTimers();
+    try {
+      const { heldActionId } = holdStepUp(action(), 'session-a', NOW);
+      vi.advanceTimersByTime(STEP_UP_TTL_MS - 1);
+      expect(peekHeldStepUp(heldActionId, NOW)).toBeDefined();
+      vi.advanceTimersByTime(1);
+      // Read at the time it was held: only the timer can have removed it.
+      expect(peekHeldStepUp(heldActionId, NOW)).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves no timer behind once an action is taken or cancelled', () => {
+    vi.useFakeTimers();
+    try {
+      const taken = holdStepUp(action(), 'session-a', NOW);
+      const cancelled = holdStepUp(action({ target: 'gitlab' }), 'session-a', NOW);
+      expect(vi.getTimerCount()).toBe(2);
+      takeHeldStepUp(taken.heldActionId, NOW);
+      cancelHeldStepUp(cancelled.heldActionId);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('hashes a different input, target or kind differently', () => {
     const base = stepUpActionHash(action());
     expect(stepUpActionHash(action({ input: { command: 'npx', args: ['-y', 'other'] } }))).not.toBe(

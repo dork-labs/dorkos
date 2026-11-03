@@ -556,7 +556,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       '/api/local-browser',
       createLocalBrowserRoutes(deps.localBrowser, deps.localBrowserProfiles)
     );
-  if (deps.mcpServers) app.route('/api/mcp-servers', createMcpServerRoutes(deps.mcpServers));
+  if (deps.mcpServers) {
+    app.route(
+      '/api/mcp-servers',
+      createMcpServerRoutes(deps.mcpServers, (id) => deps.mesh?.meshCore.get(id)?.name)
+    );
+  }
   mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.
