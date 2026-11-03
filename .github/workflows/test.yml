@@ -1235,10 +1235,10 @@ jobs:
           overwrite: true
           retention-days: 7
 
-  # Security's primary proof route: a hosted Mac, never this developer Mac.
+  # Distro bubblewrap with its scoped AppArmor profile; never a global sysctl.
   # Every Codex binary suite moves here; Linux still runs mocked refusal tests.
   codex-sandbox:
-    runs-on: macos-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     timeout-minutes: 20
@@ -1271,10 +1271,26 @@ jobs:
         with:
           node-version: 24
       - run: pnpm install --frozen-lockfile
+      - name: Install distro bubblewrap and load its scoped AppArmor profile
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils strace
+          sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(readlink -f /usr/bin/bwrap)" = /usr/bin/bwrap
+          dpkg-query -S /usr/bin/bwrap
+          /usr/bin/bwrap --version
+          /usr/bin/bwrap --unshare-user --unshare-net --ro-bind / / --proc /proc --dev /dev -- /bin/true
       - name: Build the server's workspace dependencies
         run: pnpm exec turbo run build --filter='@dorkos/server^...'
       - name: Run the real Codex binary and protected-file controls
-        run: pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
+        run: |
+          mkdir -p .temp/codex-bwrap-trace
+          strace -ff -e trace=execve,execveat -s 4096 -o .temp/codex-bwrap-trace/exec pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
+      - name: Prove Codex executed the preflighted distro bubblewrap
+        if: ${{ always() }}
+        run: node scripts/assert-codex-bwrap.mjs .temp/codex-bwrap-trace
       - name: Require both protected probes and reject missing binaries or skipped tests
         run: |
           node --input-type=module <<'NODE'
@@ -1316,7 +1332,7 @@ jobs:
           retention-days: 7
 
   # THE ONE PRODUCER of the required `test` context, on both events.
-  # Fan-in of every Linux shard, community proof and the hosted Codex suite.
+  # Fan-in of every unit shard, community proof and the scoped Linux Codex suite.
   # `always()` lets it report a failure rather than skip when a dependency is red.
   test:
     needs: [test-shard, community-pg, community-packaged, codex-sandbox]

@@ -93,7 +93,7 @@ describe('a turn', () => {
           data: {
             code: 'codex_sandbox_unavailable',
             message:
-              'This computer blocks Codex. Ask your administrator to allow Linux to isolate programs.',
+              'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites',
             details: expect.stringContaining(detail),
           },
         });

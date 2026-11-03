@@ -216,7 +216,7 @@ gates:
   # --- test.yml ---
   - id: wf.test.codex-sandbox
     source: .github/workflows/test.yml
-    purpose: Runs all Codex binary suites and protected-file probes on hosted macOS, rejecting skipped tests and requiring readable command controls.
+    purpose: Runs all Codex binary suites with distro bubblewrap and its scoped AppArmor profile, rejecting skips and requiring readable command controls and the preflighted executable.
   - id: wf.test.community-pg
     source: .github/workflows/test.yml
     purpose: Runs the community service's tests against a real Postgres and a real browser.

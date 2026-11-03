@@ -70,6 +70,8 @@ npm i -g @openai/codex && codex login
 
 On Linux, Codex needs permission to isolate programs. If the computer blocks this, Codex stops even at Full access. Ask your administrator to check [Codex’s Linux requirements](https://developers.openai.com/codex/concepts/sandboxing/#prerequisites).
 
+This setup is for a person who administers the Linux host, not an agent. On Ubuntu 24.04, that person installs the distribution’s bubblewrap package and loads its scoped AppArmor profile. Installing packages inside Docker may not resolve restrictions on its host. Ask the host administrator to review the requirements; agents must not install packages or seek extra privileges to repair this refusal.
+
 </Tab>
 </Tabs>
 

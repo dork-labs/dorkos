@@ -60,7 +60,7 @@ function runsOnByJob(text: string): Array<{ job: string; runsOn: string }> {
  */
 function isPullRequestSafe(runsOn: string): boolean {
   const value = normalize(runsOn);
-  return value === 'ubuntu-latest' || value === 'macos-latest' || value === QUEUE_ONLY;
+  return value === 'ubuntu-latest' || value === 'ubuntu-24.04' || value === QUEUE_ONLY;
 }
 
 function read(file: string): string {
@@ -70,7 +70,7 @@ function read(file: string): string {
 describe('merge_group-only runner label', () => {
   it('accepts the hosted runner and the exact queue-only expression', () => {
     expect(isPullRequestSafe('ubuntu-latest')).toBe(true);
-    expect(isPullRequestSafe('macos-latest')).toBe(true);
+    expect(isPullRequestSafe('ubuntu-24.04')).toBe(true);
     expect(isPullRequestSafe(QUEUE_ONLY)).toBe(true);
   });
 

@@ -4,6 +4,7 @@ covers:
   - 'fix(runtimes): close protected-profile and native env deny gaps (DOR-3595)'
   - 'fix(runtimes): repair CI fixtures and prefix Codex protected globs (DOR-3595)'
   - 'fix(runtimes): explain blocked Linux isolation and add macOS sandbox proof (DOR-3595)'
+  - 'fix(runtimes): scope Linux sandbox prerequisites to the probe job (DOR-3595)'
 ---
 
 ### Security

@@ -13,7 +13,7 @@ import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol
 
 /** The machine refused Linux isolation; retrying the reply cannot repair it. */
 const SANDBOX_UNAVAILABLE_COPY =
-  'This computer blocks Codex. Ask your administrator to allow Linux to isolate programs.';
+  'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites';
 
 /**
  * The events a turn that could not be opened ends with: a credits refusal,
