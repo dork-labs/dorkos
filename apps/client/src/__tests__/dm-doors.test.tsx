@@ -203,11 +203,24 @@ async function cardMessage(): Promise<HTMLElement> {
 }
 
 beforeEach(() => {
+  // Fake timers that still follow the real clock, so userEvent and waitFor work
+  // as before, but every timer is one this file can see and drop (DOR-3430).
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.clearAllMocks();
   useInteractionStore.getState().reset();
 });
 
-afterEach(cleanup);
+// Unmounting leaves timers behind (16-17 per test): Radix's hover-card close
+// delay among them, scheduled by the dismiss that runs while the card unmounts.
+// With real timers one could fire after the environment had torn `window` down
+// and surface as an unhandled `ReferenceError: window is not defined` at
+// `identity-hover-card.tsx` (DOR-3430, DOR-3798). Drop them while the tree is
+// gone but `window` is still here.
+afterEach(() => {
+  cleanup();
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
 
 describe('every door to an agent opens its DM, with the DM view on', () => {
   it('the profile’s Message, even from a room where it has a session', async () => {
