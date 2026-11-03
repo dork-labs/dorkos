@@ -27,8 +27,8 @@ const appSlug = 'dorkos-security-review';
 const botUserId = 424242;
 const checkPullRequest = (api, event, pattern, options = {}) =>
   runPullRequest(api, event, pattern, { botUserId, deepPattern, ...options });
-const checkMergeGroup = (api, event, pattern) =>
-  runMergeGroup(api, event, pattern, botUserId, deepPattern);
+const checkMergeGroup = (api, event, pattern, options) =>
+  runMergeGroup(api, event, pattern, botUserId, deepPattern, options);
 const approved = {
   context: 'security-review',
   state: 'success',
@@ -191,6 +191,62 @@ test('rebuilt/dequeued group fails even if the replacement head is approved', as
   let reads = 0;
   f.api.queue = async () => (++reads === 1 ? entries : []);
   await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /Cannot resolve queued commit/);
+});
+
+// DOR-3564: a group stacked on another entry's group starts before GitHub fills
+// in its own entry's headCommit. The first walk finds nothing; a re-read finds it.
+function fakePoll() {
+  let clock = 0;
+  const poll = {
+    intervalMs: 5000,
+    timeoutMs: 60_000,
+    sleeps: 0,
+    sleep: async (ms) => {
+      poll.sleeps += 1;
+      clock += ms;
+    },
+    now: () => clock,
+  };
+  return poll;
+}
+
+test('merge_group re-reads the queue while its own commit is not in it yet', async () => {
+  const f = fixture({ statuses: { head1: [approved], head2: [approved] } });
+  const unfilled = structuredClone(entries);
+  delete unfilled[1].headCommit;
+  let reads = 0;
+  f.api.queue = async () => structuredClone(++reads <= 2 ? unfilled : entries);
+  const poll = fakePoll();
+  await checkMergeGroup(f.api, groupEvent, pattern, { poll });
+  assert.equal(poll.sleeps, 2);
+});
+
+test('merge_group still fails closed when its commit never reaches the queue', async () => {
+  const f = fixture({ statuses: { head1: [approved], head2: [approved] } });
+  let reads = 0;
+  f.api.queue = async () => {
+    reads += 1;
+    return [];
+  };
+  const poll = fakePoll();
+  await assert.rejects(
+    checkMergeGroup(f.api, groupEvent, pattern, { poll }),
+    /Cannot resolve queued commit group2/
+  );
+  assert.equal(reads, 13); // at 0s, then every 5s up to the 60s deadline
+});
+
+test('merge_group never re-reads a queue it can read but not trust', async () => {
+  const f = fixture({ statuses: { head1: [approved], head2: [approved] } });
+  const incomplete = structuredClone(entries);
+  delete incomplete[1].pullRequest.headRefOid;
+  f.api.queue = async () => structuredClone(incomplete);
+  const poll = fakePoll();
+  await assert.rejects(
+    checkMergeGroup(f.api, groupEvent, pattern, { poll }),
+    /Incomplete queue entry/
+  );
+  assert.equal(poll.sleeps, 0);
 });
 
 test('incomplete file listing and stale PR events fail closed', async () => {
