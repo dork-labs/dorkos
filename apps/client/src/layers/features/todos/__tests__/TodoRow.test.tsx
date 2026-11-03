@@ -72,4 +72,13 @@ describe('TodoRow', () => {
     renderRow({ todo: createMockTodo(), from: 'you' });
     expect(screen.getByRole('listitem').querySelector('[data-swipe-to-finish]')).toBeNull();
   });
+
+  it('says whose words and where: "DorkBot in #team" (DOR-3715)', () => {
+    const row = renderRow({
+      todo: createMockTodo({ titleFromSource: true, sourceAuthor: 'DorkBot' }),
+      from: 'you',
+      roomTitle: '#team',
+    });
+    expect(row).toHaveTextContent('from you·DorkBot in #team');
+  });
 });

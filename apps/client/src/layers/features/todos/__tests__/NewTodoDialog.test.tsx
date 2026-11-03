@@ -104,6 +104,22 @@ describe('NewTodoDialog', () => {
   });
 });
 
+describe('the title field (DOR-3715)', () => {
+  it('starts with the caret at the beginning, so a long title shows its start', () => {
+    renderDialog({ entryId: 'entry-7', text: 'Renew the domain before it lapses on Friday' });
+    const field = screen.getByLabelText('To-do') as HTMLTextAreaElement;
+    expect(field.tagName).toBe('TEXTAREA');
+    expect(field.selectionStart).toBe(0);
+  });
+
+  it('turns a pasted line break into a space', () => {
+    renderDialog();
+    const field = screen.getByLabelText('To-do');
+    fireEvent.change(field, { target: { value: 'Send the\ninvoice' } });
+    expect(field).toHaveValue('Send the invoice');
+  });
+});
+
 describe('titleFromMessage', () => {
   it('cuts a long first line to the longest title a to-do takes', () => {
     expect(titleFromMessage('x'.repeat(COMMITMENT_WHAT_MAX + 40))).toHaveLength(

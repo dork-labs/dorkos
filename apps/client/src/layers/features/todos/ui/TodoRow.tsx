@@ -4,7 +4,7 @@
  *
  * @module features/todos/ui/TodoRow
  */
-import { Fragment, type CSSProperties, type ReactNode, type Ref } from 'react';
+import { Fragment, type CSSProperties, type PointerEvent, type ReactNode, type Ref } from 'react';
 import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
 import type { Todo } from '@dorkos/shared/todo-schemas';
@@ -37,6 +37,8 @@ export interface TodoRowProps {
   style?: CSSProperties;
   /** Whether the row is the one being dragged, so it draws over its neighbours. */
   dragging?: boolean;
+  /** On a phone in "My order": a long press on the row's words picks it up to move. */
+  pressToMove?: { onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void };
 }
 
 /** How far right a phone swipe travels before it finishes the to-do, in pixels. */
@@ -139,6 +141,7 @@ export function TodoRow({
   rowRef,
   style,
   dragging = false,
+  pressToMove,
 }: TodoRowProps) {
   const due = todoDueLabel(todo);
   const closed = todo.state !== 'open';
@@ -161,12 +164,18 @@ export function TodoRow({
     );
   }
   parts.push(<span>from {from}</span>);
-  if (roomTitle) parts.push(<span className="min-w-0 truncate">{roomTitle}</span>);
+  // Where its words came from: "DorkBot in #team" when its title is somebody's message, else the
+  // room it was filed under. Plain text either way.
+  const said = todo.titleFromSource && todo.sourceAuthor ? todo.sourceAuthor : null;
+  if (said || roomTitle) {
+    parts.push(
+      <span className="min-w-0 truncate">
+        {said && roomTitle ? `${said} in ${roomTitle}` : (said ?? roomTitle)}
+      </span>
+    );
+  }
   // Only an agent's to-do runs a turn, so the limit means nothing on the person's own.
   if (todo.strangerBound && todo.assignee.kind === 'agent') parts.push(<LimitedBadge />);
-  if (todo.titleFromSource && todo.sourceAuthor) {
-    parts.push(<span>Words from {todo.sourceAuthor}</span>);
-  }
   return (
     <li
       ref={rowRef}
@@ -175,7 +184,7 @@ export function TodoRow({
       data-state={todo.state}
       data-overdue={todo.overdue || undefined}
       className={cn(
-        'flex items-start gap-1 rounded-md py-1 pr-2',
+        'group/row flex items-start gap-1 rounded-md py-1 pr-2',
         dragging && 'bg-card relative z-10 shadow-sm'
       )}
     >
@@ -183,6 +192,7 @@ export function TodoRow({
       <CheckCircle todo={todo} {...(onComplete ? { onComplete } : {})} />
       <motion.div
         className="min-w-0 flex-1 py-2 md:py-1"
+        {...pressToMove}
         data-swipe-to-finish={swipes || undefined}
         drag={swipes ? 'x' : false}
         dragDirectionLock
