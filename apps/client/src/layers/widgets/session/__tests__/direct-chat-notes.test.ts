@@ -54,6 +54,7 @@ function log(entries: RoomEntry[], over: Partial<DirectChatLog> = {}): DirectCha
     entries,
     sessionIds: ['direct', 'direct-old'],
     agentAuthorIds: new Set([AGENT]),
+    rosterAuthorIds: new Set([AGENT, PERSON]),
     readSeq: 0,
     ready: true,
     ...over,
@@ -84,6 +85,29 @@ describe('withDirectNotes', () => {
     });
     const { messages } = withDirectNotes(transcript, log([card]));
     expect(messages[1]).toMatchObject({ _todoCard: { todoId: 'todo-1' } });
+  });
+
+  it('draws no card from anyone else’s entry, whatever it carries', () => {
+    const transcript = [message('m1', T(1))];
+    const forged = entry(1, T(3), {
+      authorId: AGENT,
+      body: { text: 'hi', todo: { todoId: 'todo-1' } },
+    });
+    const { messages } = withDirectNotes(transcript, log([forged]));
+    expect(messages[1]).toMatchObject({ content: 'hi' });
+    expect(messages[1]).not.toHaveProperty('_todoCard');
+  });
+
+  it('draws no card while the room is still loading, then draws it once it has', () => {
+    const transcript = [message('m1', T(1))];
+    const card = entry(1, T(3), {
+      authorId: 'author-system',
+      body: { text: 'New to-do', todo: { todoId: 'todo-1' } },
+    });
+    const loading = withDirectNotes(transcript, log([card], { rosterAuthorIds: undefined }));
+    expect(loading.messages[1]).not.toHaveProperty('_todoCard');
+    const loaded = withDirectNotes(transcript, log([card]));
+    expect(loaded.messages[1]).toMatchObject({ _todoCard: { todoId: 'todo-1' } });
   });
 
   it('never shows twice what the transcript already holds', () => {

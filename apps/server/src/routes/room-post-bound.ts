@@ -17,6 +17,7 @@ import type { RequestFacts } from '../http/request-facts.js';
 import { ownerAccountExists } from '../services/core/auth/gate-policy.js';
 import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { personProof } from '../services/commitments/caller.js';
+import { directChatHoldApplies } from '../services/rooms/limits/direct-chat-hold.js';
 import { env } from '../env.js';
 
 /**
@@ -55,8 +56,9 @@ export function unprovenDirectChatBound(
   ownerExists: () => boolean = ownerAccountExists,
   todosOn: boolean = env.DORKOS_TODOS_ENABLED
 ): 'runtime-default' | undefined {
-  if (!todosOn || callerKind === 'agent') return undefined;
-  return ownerExists() && !personProof(facts) ? 'runtime-default' : undefined;
+  return directChatHoldApplies(callerKind, ownerExists, todosOn) && !personProof(facts)
+    ? 'runtime-default'
+    : undefined;
 }
 
 /**

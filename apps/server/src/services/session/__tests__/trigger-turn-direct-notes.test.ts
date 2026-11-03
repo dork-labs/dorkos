@@ -90,4 +90,14 @@ describe('a turn in a Direct chat', () => {
     expect(source).not.toHaveBeenCalled();
     expect(bag.some((entry) => entry.kind === 'direct_notes')).toBe(false);
   });
+
+  it("never takes notes for a to-do's turn, so a held post waiting there stays unread", async () => {
+    const source = vi.fn(() => NOTES);
+    setDirectNotesSource(source);
+
+    const bag = await bagFor({ clientId: 'todos' });
+
+    expect(source).not.toHaveBeenCalled();
+    expect(bag.some((entry) => entry.kind === 'direct_notes')).toBe(false);
+  });
 });

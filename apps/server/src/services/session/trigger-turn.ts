@@ -868,8 +868,10 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       ...(roomContext ? { roomContext } : {}),
       ...(seedContext ? { seedContext } : {}),
       ...(opts.approvalVerdict ? { approvalVerdict: opts.approvalVerdict } : {}),
-      // A turn on an agent's Direct chat takes what reached it elsewhere (rule S12).
-      directNotesFor: [turnKey, sessionId],
+      // A turn on an agent's Direct chat takes what reached it elsewhere (rule S12). A to-do's
+      // turn takes none: it runs unattended, and a held post still waiting there must not be read
+      // at the agent's level by a turn nobody started (DOR-3088, Security on the DM PR).
+      ...(clientId === 'todos' ? {} : { directNotesFor: [turnKey, sessionId] }),
       nativeContext: deps.getCapabilities().nativeContext,
     });
     // Nothing below may open a turn while this session still has one open

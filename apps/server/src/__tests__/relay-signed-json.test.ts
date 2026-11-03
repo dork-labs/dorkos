@@ -80,7 +80,13 @@ function signed(
 
 /** The Relay routes over the fixture publisher and manager, as the server hands them over. */
 function relayDeps(): HonoApiDeps {
-  return { relay: { relayCore: publisher as unknown as RelayCore, adapterManager: manager } };
+  return {
+    relay: {
+      relayCore: publisher as unknown as RelayCore,
+      adapterManager: manager,
+      isRoomSession: () => false,
+    },
+  };
 }
 
 /** The webhook receiver alone, behind the `/api` chain and its raw-bytes body rule. */

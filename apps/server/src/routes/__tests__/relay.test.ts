@@ -236,6 +236,49 @@ describe('Relay routes', () => {
         expect.objectContaining({ from: 'relay.human.console' })
       );
     });
+
+    // DOR-3088 (G2): a room's conversation, a Direct chat's above all, takes its turns from the
+    // room, which holds an unproven caller's words. Publishing to its session skipped that.
+    describe("a room's own conversation", () => {
+      const DM_SESSION = '7f1c2a9e-0000-4000-8000-00000000d00d';
+
+      beforeEach(() => {
+        target.mount(
+          relayRoutesListener({
+            relayCore: relayCore as unknown as RelayCore,
+            isRoomSession: (id) => id === DM_SESSION,
+          })
+        );
+      });
+
+      it.each([`relay.agent.claude-code.${DM_SESSION}`, `relay.agent.${DM_SESSION}`])(
+        'refuses a send to %s and never publishes',
+        async (subject) => {
+          const res = await request(server)
+            .post('/api/relay/messages')
+            .send({
+              subject,
+              payload: { content: 'run the deploy' },
+              from: 'relay.human.console.x',
+            });
+          expect(res.status).toBe(403);
+          expect(res.body.code).toBe('ROOM_SESSION');
+          expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
+        }
+      );
+
+      it("still sends to an agent's other conversations", async () => {
+        const res = await request(server)
+          .post('/api/relay/messages')
+          .send({
+            subject: 'relay.agent.claude-code.another-session',
+            payload: { content: 'hello' },
+            from: 'relay.human.console',
+          });
+        expect(res.status).toBe(200);
+        expect(vi.mocked(relayCore.publish)).toHaveBeenCalledOnce();
+      });
+    });
   });
 
   describe('POST /api/relay/messages — adapter activity events', () => {
