@@ -1,4 +1,4 @@
-/* global console, fetch, process, URL */
+/* global console, fetch, process, setTimeout, URL */
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import {
@@ -124,6 +124,72 @@ function awaitingReview(pr, input, deep) {
   return null;
 }
 
+/** The labels whose adding or removal makes main's verdict write a new status. */
+const VERDICT_LABELS = [REVIEW_LABEL, DEEP_LABEL, HOLD_LABEL];
+
+/**
+ * How long a PR run waits for main's verdict on its head (DOR-3710). The gate and
+ * `security-review-initialize` start on the same label event, and the gate read
+ * the old status 1-5s before the verdict wrote the new one, so the first run
+ * after a label went red. 18 polls 5s apart is 90s; the job's limit is 5 minutes.
+ */
+export const VERDICT_POLL = {
+  intervalMs: 5000,
+  polls: 18,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+/**
+ * The time main's verdict for this head must be newer than: the newest change to
+ * a label it reads, a force push or base change on the timeline, and the head's
+ * newest push in the activity feed. NaN when any is unreadable or the push is
+ * missing, which refuses.
+ */
+export function verdictDue({ sha, ref, timeline, activity }) {
+  const pushes = activity
+    .filter((entry) => entry.after === sha && entry.ref === `refs/heads/${ref}`)
+    .map((entry) => entry.timestamp);
+  if (!pushes.length) return NaN;
+  const changes = timeline
+    .filter(
+      (event) =>
+        (['labeled', 'unlabeled'].includes(event.event) &&
+          VERDICT_LABELS.includes(event.label?.name)) ||
+        ['head_ref_force_pushed', 'base_ref_changed'].includes(event.event)
+    )
+    .map((event) => event.created_at);
+  return Math.max(...[...pushes, ...changes].map((value) => Date.parse(value)));
+}
+
+/**
+ * The PR run's label-at-head verdict: the labels it can see must cover the head,
+ * and then main's `security-review` must say `success` in a status written after
+ * {@link verdictDue}. A stale or pending status is polled, never judged on; when
+ * the bound runs out it refuses. A status is read for this exact SHA only.
+ */
+async function judgeFreshReview(api, sha, input, deep, poll) {
+  let verdict = labelAtHead(input);
+  if (verdict.passed && deep) verdict = labelNewerThanHead({ ...input, name: DEEP_LABEL });
+  if (!verdict.passed) return verdict;
+  const due = verdictDue(input);
+  if (Number.isNaN(due))
+    return { passed: false, reason: `cannot read when ${sha}'s labels or push last changed` };
+  const { intervalMs, polls, sleep } = { ...VERDICT_POLL, ...poll };
+  for (let attempt = 0; ; attempt += 1) {
+    const review = latestReview(await api.statuses(sha));
+    if (review && review.state !== 'pending' && Date.parse(review.created_at) > due)
+      return review.state === 'success'
+        ? verdict
+        : { passed: false, reason: `security-review is ${review.state}` };
+    if (attempt >= polls)
+      return {
+        passed: false,
+        reason: `security-review verdict not yet written for this head (none newer than ${new Date(due).toISOString()}); rerun security-gate`,
+      };
+    await sleep(intervalMs);
+  }
+}
+
 /** A Security label put on after the PR merged, which reviewed nothing. `null` if none. */
 function labelAfterMerge(pr, timeline) {
   if (!pr.merged_at) return null;
@@ -141,7 +207,8 @@ function labelAfterMerge(pr, timeline) {
  * Label-at-head for a sensitive diff while no App is set; App mode everywhere else.
  * A diff on a P0 identity path (`deep`) also needs {@link DEEP_LABEL} at the head.
  * With `waitForReview`, an open PR that is only waiting for its labels passes as
- * `{ passed: true, waiting }`; the merge queue never sets it.
+ * `{ passed: true, waiting }`, and one whose labels cover it waits for main's
+ * fresh verdict (`poll`, see {@link VERDICT_POLL}); the merge queue never sets it.
  */
 async function verifyApproval(
   api,
@@ -151,7 +218,8 @@ async function verifyApproval(
   sensitive,
   botUserId,
   deep = false,
-  waitForReview = false
+  waitForReview = false,
+  poll = {}
 ) {
   if (!sensitive || approvalMode(botUserId) !== 'label-at-head') {
     const passed = hasApproval(review, sensitive, botUserId);
@@ -165,6 +233,8 @@ async function verifyApproval(
   if (late) return { passed: false, reason: late };
   const waiting = waitForReview && awaitingReview(pr, input, deep);
   if (waiting) return { passed: true, waiting };
+  if (waitForReview) return judgeFreshReview(api, sha, input, deep, poll);
+  // The merge queue judges the status it reads, unchanged by DOR-3710.
   // The initializer's pending is every sensitive head's start; a refusal still refuses.
   if (review && review.state !== 'pending' && review.state !== 'success')
     return { passed: false, reason: `security-review is ${review.state}` };
@@ -228,7 +298,7 @@ const BASE_MOVE_RUNS = 3;
  * @param {object} api The GitHub client.
  * @param {object} event The `pull_request` or `pull_request_target` event.
  * @param {string} pattern The security path list.
- * @param {object} [options] `write`, `requireApproval`, `botUserId`, `deepPattern`.
+ * @param {object} [options] `write`, `requireApproval`, `botUserId`, `deepPattern`, `poll`.
  */
 export async function checkPullRequest(api, event, pattern, options = {}) {
   for (let run = 1; ; run += 1) {
@@ -243,7 +313,7 @@ async function checkPullRequestOnce(
   api,
   event,
   pattern,
-  { write = false, requireApproval = true, botUserId, deepPattern }
+  { write = false, requireApproval = true, botUserId, deepPattern, poll }
 ) {
   const number = event.pull_request.number;
   const sha = event.pull_request.head.sha;
@@ -281,7 +351,8 @@ async function checkPullRequestOnce(
           sensitive,
           botUserId,
           sensitive && touchesDeep(files, deepPattern),
-          true
+          true,
+          poll
         )
       : { passed: true };
   const current = await api.pr(number);
