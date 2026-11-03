@@ -21,7 +21,7 @@ const EARLY = '2026-10-30T10:00:00Z';
 const LATE = '2026-10-30T11:00:00Z';
 /** When main's verdict wrote, after every label and push above unless a test says otherwise. */
 const VERDICT = '2026-10-30T12:00:00Z';
-const event = { pull_request: { number: 1, head: { sha: SHA } } };
+const event = { pull_request: { number: 1, head: { sha: SHA }, updated_at: LATE } };
 const group = {
   merge_group: { base_ref: 'refs/heads/main', base_sha: 'base', head_sha: 'group1' },
 };
@@ -89,12 +89,23 @@ function gate({
   };
   return api;
 }
-/** No real waiting in tests: each poll is a no-op sleep that `onSleep` can act on. */
-const fastPoll = (onSleep = () => {}) => ({
-  intervalMs: 5000,
-  polls: 18,
-  sleep: async () => onSleep(),
-});
+/**
+ * No real waiting in tests: a fake clock that each sleep moves on, and `onSleep`,
+ * which can act on each one. `poll.slept` is the fake time spent waiting.
+ */
+const fastPoll = (onSleep = () => {}) => {
+  const poll = {
+    intervalMs: 5000,
+    timeoutMs: 90_000,
+    slept: 0,
+    now: () => poll.slept,
+    sleep: async (ms) => {
+      poll.slept += ms;
+      onSleep();
+    },
+  };
+  return poll;
+};
 const check = (api, botUserId = '0', poll = fastPoll()) =>
   checkPullRequest(api, event, pattern, { botUserId, deepPattern, poll });
 const queued = (api, botUserId = '0') =>
@@ -603,13 +614,97 @@ describe("the PR run waits for main's verdict on a label change (DOR-3710)", () 
     assert.equal(api.statusReads, 1);
   });
 
-  test('the real bound is about 90s, inside the job limit', () => {
-    assert.equal(VERDICT_POLL.intervalMs * VERDICT_POLL.polls, 90_000);
+  test('the real bound is 90s, well inside the job limit', () => {
+    assert.equal(VERDICT_POLL.timeoutMs, 90_000);
+    assert.equal(VERDICT_POLL.intervalMs, 5000);
     const workflow = readFileSync(
       new URL('../workflows/security-gate.yml', import.meta.url),
       'utf8'
     );
     const minutes = Number(/^ {4}timeout-minutes: (\d+)$/m.exec(workflow)?.[1]);
-    assert.ok(minutes * 60_000 > VERDICT_POLL.intervalMs * VERDICT_POLL.polls * 3, String(minutes));
+    assert.ok(minutes * 60_000 >= 3 * VERDICT_POLL.timeoutMs, String(minutes));
+  });
+});
+
+describe("DOR-3710 second look: other bases, newer pending, the event's time, one deadline", () => {
+  const STALE = '2026-10-30T10:30:00Z';
+  const covered = { timeline: [labelled(LATE)], activity: [push(EARLY)] };
+  const stacked = { pr: { base: { ref: 'feat/parent', sha: 'parent1' } } };
+
+  test('a PR into another base gets no verdict, so it never waits: no status passes', async () => {
+    const api = gate({ ...covered, ...stacked, statuses: [] });
+    assert.equal(await check(api), 'Security status verified');
+    assert.equal(api.statusReads, 1);
+  });
+
+  test('a PR into another base keeps the old lines: a stale failure still refuses at once', async () => {
+    const api = gate({ ...covered, ...stacked, statuses: [review('failure', STALE)] });
+    await assert.rejects(check(api), /security-review is failure/);
+    assert.equal(api.statusReads, 1);
+  });
+
+  test('a newer pending beats an older fresh success: a second verdict run decides', async () => {
+    const statuses = [
+      review('pending', '2026-10-30T12:00:10Z'),
+      review('success', '2026-10-30T12:00:00Z'),
+    ];
+    const api = gate({ ...covered, statuses });
+    let sleeps = 0;
+    const poll = fastPoll(() => {
+      if (++sleeps === 1) statuses.unshift(review('failure', '2026-10-30T12:00:20Z'));
+    });
+    await assert.rejects(check(api, '0', poll), /security-review is failure/);
+  });
+
+  test("the event's own time counts when its label event is not on the timeline yet", async () => {
+    // hold came off at 11:30; the timeline still shows it on. The 11:20 failure
+    // ("hold is on") is older than the event, so it is waited out.
+    const statuses = [review('failure', '2026-10-30T11:20:00Z')];
+    const api = gate({
+      timeline: [labelled(LATE), labelled('2026-10-30T11:10:00Z', 'User', 'hold')],
+      activity: [push(EARLY)],
+      statuses,
+    });
+    let sleeps = 0;
+    const poll = fastPoll(() => {
+      if (++sleeps === 1) statuses.unshift(review('success', '2026-10-30T11:30:20Z'));
+    });
+    const lagging = { pull_request: { ...event.pull_request, updated_at: '2026-10-30T11:30:00Z' } };
+    assert.equal(
+      await checkPullRequest(api, lagging, pattern, { botUserId: '0', deepPattern, poll }),
+      'Security status verified'
+    );
+    assert.equal(api.statusReads, 3);
+  });
+
+  test('a missing or unreadable event time refuses rather than reading as none', async () => {
+    for (const updated_at of [undefined, 'nonsense']) {
+      const api = gate(covered);
+      const bare = { pull_request: { ...event.pull_request, updated_at } };
+      await assert.rejects(
+        checkPullRequest(api, bare, pattern, { botUserId: '0', deepPattern, poll: fastPoll() }),
+        /cannot read when head1's labels or push last changed/
+      );
+    }
+  });
+
+  test('one deadline covers the base-move restarts: they never stack their waits', async () => {
+    const once = fastPoll();
+    const movedOnce = gate({
+      ...covered,
+      bases: ['parent1', 'parent1', 'parent2'],
+      statuses: [review('failure', STALE)],
+    });
+    await assert.rejects(check(movedOnce, '0', once), /verdict not yet written for this head/);
+    assert.equal(movedOnce.fileReads, 2);
+    assert.equal(once.slept, 90_000);
+    const always = fastPoll();
+    const moving = gate({
+      ...covered,
+      bases: Array.from({ length: 20 }, (_, i) => `parent${i}`),
+      statuses: [review('failure', STALE)],
+    });
+    await assert.rejects(check(moving, '0', always), /base kept moving/);
+    assert.equal(always.slept, 90_000);
   });
 });
