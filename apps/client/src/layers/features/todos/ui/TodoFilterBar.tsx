@@ -1,16 +1,19 @@
 /**
  * The to-do list's controls: one chip per view, and a small menu for the due filter, the sort
  * and whether done ones show. One row at every width: the chips scroll sideways on a phone, and
- * the menu stays at the row's end.
+ * the menu stays at the row's end. In Reorder mode the row is the mode's own: its name and Done.
  *
  * @module features/todos/ui/TodoFilterBar
  */
+import { useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import {
+  Button,
   Chip,
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -32,7 +35,15 @@ export interface TodoFilterBarProps {
   filters: TodoFilters;
   /** Change one control. */
   onChange: <K extends keyof TodoFilters>(key: K, value: TodoFilters[K]) => void;
+  /**
+   * The Reorder mode's way in and out. `available` only while the list can move (My order, the
+   * person's own list, two or more open rows).
+   */
+  reorder?: { available: boolean; active: boolean; onStart: () => void; onDone: () => void };
 }
+
+/** The filter menu's trigger, which focus returns to when Reorder mode ends. */
+export const TODO_FILTER_TRIGGER = 'data-todo-filter-trigger';
 
 /** Whether a value is one of a list's own values. */
 function isOneOf<T extends string>(options: readonly { value: T }[], value: string): value is T {
@@ -40,8 +51,30 @@ function isOneOf<T extends string>(options: readonly { value: T }[], value: stri
 }
 
 /** The view chips and the filter menu. */
-export function TodoFilterBar({ filters, onChange }: TodoFilterBarProps) {
+export function TodoFilterBar({ filters, onChange, reorder }: TodoFilterBarProps) {
+  if (reorder?.active) {
+    return (
+      <div data-slot="todo-filter-bar" className="flex min-w-0 items-center gap-1.5">
+        <h2 className="min-w-0 flex-1 text-sm font-medium">Reorder</h2>
+        <Button size="sm" variant="secondary" onClick={reorder.onDone}>
+          Done
+        </Button>
+      </div>
+    );
+  }
   const narrowed = filters.due !== 'any' || filters.sort !== 'due' || filters.showDone;
+  return <FilterRow filters={filters} onChange={onChange} reorder={reorder} narrowed={narrowed} />;
+}
+
+/** The chips and the menu, outside Reorder mode. */
+function FilterRow({
+  filters,
+  onChange,
+  reorder,
+  narrowed,
+}: TodoFilterBarProps & { narrowed: boolean }) {
+  // Choosing Reorder sends focus to the first row's ↓, so the menu mustn't take it back.
+  const startingReorder = useRef(false);
   return (
     <div data-slot="todo-filter-bar" className="flex min-w-0 items-center gap-1.5">
       <div
@@ -66,13 +99,22 @@ export function TodoFilterBar({ filters, onChange }: TodoFilterBarProps) {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Chip
+            {...{ [TODO_FILTER_TRIGGER]: '' }}
             pressed={narrowed}
             aria-label="Filter and sort"
             icon={ChevronDown}
             className="shrink-0"
           />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuContent
+          align="start"
+          className="w-48"
+          onCloseAutoFocus={(event) => {
+            if (!startingReorder.current) return;
+            startingReorder.current = false;
+            event.preventDefault();
+          }}
+        >
           <DropdownMenuLabel>Due</DropdownMenuLabel>
           <DropdownMenuRadioGroup
             value={filters.due}
@@ -107,6 +149,19 @@ export function TodoFilterBar({ filters, onChange }: TodoFilterBarProps) {
           >
             Show done
           </DropdownMenuCheckboxItem>
+          {reorder?.available && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  startingReorder.current = true;
+                  reorder.onStart();
+                }}
+              >
+                Reorder
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

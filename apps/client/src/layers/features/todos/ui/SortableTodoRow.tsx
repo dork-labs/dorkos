@@ -1,28 +1,41 @@
 /**
- * A to-do row the list can move in "My order": a grip to drag it by, which also moves it with
- * ⌥↑ / ⌥↓ (or Space, then the arrows, as any sortable list). Outside "My order" it is the plain row.
+ * A to-do row the list can move in "My order". With a mouse: a grip to drag it by, which also
+ * moves it with ⌥↑ / ⌥↓ (or Space, then the arrows, as any sortable list). On a touch screen: a
+ * long press on the row's words. In Reorder mode: ↑ and ↓ buttons at the row's end, the way in
+ * for anyone who can't drag. Outside "My order" it is the plain row.
  *
  * @module features/todos/ui/SortableTodoRow
  */
-import type { KeyboardEvent, PointerEvent } from 'react';
+import type { KeyboardEvent, TouchEvent } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
-import { GripVertical } from 'lucide-react';
-import { useIsMobile } from '@/layers/shared/model';
+import { ArrowDown, ArrowUp, GripVertical } from 'lucide-react';
+import { Button } from '@/layers/shared/ui';
+import { usePrefersLongPress } from '../model/use-prefers-long-press';
 import { TodoRow, type TodoRowProps } from './TodoRow';
 
 /** Props for {@link SortableTodoRow}. */
 export interface SortableTodoRowProps extends Omit<
   TodoRowProps,
-  'handle' | 'rowRef' | 'style' | 'dragging' | 'pressToMove'
+  'handle' | 'rowRef' | 'style' | 'dragging' | 'pressToMove' | 'trailing'
 > {
   /** Whether the list is in "My order", where rows move. */
   sortable: boolean;
   /** Move this row up (-1) or down (+1). */
   onMove: (by: -1 | 1) => void;
+  /**
+   * The list is in Reorder mode: the row moves by its ↑ and ↓, and a stray gesture can't finish
+   * or lift it. Where it sits decides which button works.
+   */
+  reorder?: { first: boolean; last: boolean };
 }
 
-/** One to-do, draggable in "My order". */
-export function SortableTodoRow({ sortable, onMove, ...row }: SortableTodoRowProps) {
+/** The `data-todo-move` key of one of a row's Reorder buttons, which the list refocuses. */
+export function todoMoveKey(id: string, by: -1 | 1): string {
+  return `${id}:${by === -1 ? 'up' : 'down'}`;
+}
+
+/** One to-do, movable in "My order". */
+export function SortableTodoRow({ sortable, onMove, reorder, ...row }: SortableTodoRowProps) {
   const {
     setNodeRef,
     setActivatorNodeRef,
@@ -32,8 +45,9 @@ export function SortableTodoRow({ sortable, onMove, ...row }: SortableTodoRowPro
     transition,
     isDragging,
   } = useSortable({ id: row.todo.id, disabled: !sortable });
-  // A phone has no grip column: a long press on the row's words picks it up (DOR-3715).
-  const isMobile = useIsMobile();
+  // By pointer, not width (DOR-3715): a touch tablet has no hover to show a grip, and a narrow
+  // desktop window still has a mouse and the keyboard moves.
+  const longPress = usePrefersLongPress();
 
   // ⌥↑ / ⌥↓ move it at once; every other key goes on to the drag's own keyboard handling.
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
@@ -46,9 +60,11 @@ export function SortableTodoRow({ sortable, onMove, ...row }: SortableTodoRowPro
   }
 
   if (!sortable) return <TodoRow {...row} />;
+  // In Reorder mode the check stays, disabled, and with it the swipe to finish.
+  const { onComplete: _complete, ...rest } = row;
   return (
     <TodoRow
-      {...row}
+      {...(reorder ? rest : row)}
       rowRef={setNodeRef}
       dragging={isDragging}
       // Up and down only: a list row never leaves its column.
@@ -56,15 +72,14 @@ export function SortableTodoRow({ sortable, onMove, ...row }: SortableTodoRowPro
         transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
         transition,
       }}
-      {...(isMobile
+      {...(longPress && !reorder
         ? {
             pressToMove: {
-              onPointerDown: (event: PointerEvent<HTMLDivElement>) =>
-                listeners?.onPointerDown?.(event),
+              onTouchStart: (event: TouchEvent<HTMLDivElement>) => listeners?.onTouchStart?.(event),
             },
           }
         : {})}
-      {...(isMobile
+      {...(longPress
         ? {}
         : {
             handle: (
@@ -84,6 +99,59 @@ export function SortableTodoRow({ sortable, onMove, ...row }: SortableTodoRowPro
               </button>
             ),
           })}
+      {...(reorder
+        ? {
+            trailing: (
+              <div className="animate-in fade-in flex shrink-0 items-center duration-150 motion-reduce:animate-none">
+                <MoveButton
+                  todoId={row.todo.id}
+                  title={row.todo.what}
+                  by={-1}
+                  disabled={reorder.first}
+                  onMove={onMove}
+                />
+                <MoveButton
+                  todoId={row.todo.id}
+                  title={row.todo.what}
+                  by={1}
+                  disabled={reorder.last}
+                  onMove={onMove}
+                />
+              </div>
+            ),
+          }
+        : {})}
     />
+  );
+}
+
+/** One of a row's Reorder buttons: a finger's reach on a phone, a quiet square on a desktop. */
+function MoveButton({
+  todoId,
+  title,
+  by,
+  disabled,
+  onMove,
+}: {
+  todoId: string;
+  title: string;
+  by: -1 | 1;
+  disabled: boolean;
+  onMove: (by: -1 | 1) => void;
+}) {
+  const Icon = by === -1 ? ArrowUp : ArrowDown;
+  return (
+    <Button
+      type="button"
+      size="icon-md"
+      variant="ghost"
+      data-todo-move={todoMoveKey(todoId, by)}
+      aria-label={`Move ${title} ${by === -1 ? 'up' : 'down'}`}
+      disabled={disabled}
+      onClick={() => onMove(by)}
+      className="size-11 md:size-7"
+    >
+      <Icon aria-hidden className="size-4" />
+    </Button>
   );
 }

@@ -4,7 +4,7 @@
  *
  * @module features/todos/ui/TodoRow
  */
-import { Fragment, type CSSProperties, type PointerEvent, type ReactNode, type Ref } from 'react';
+import { Fragment, type CSSProperties, type ReactNode, type Ref, type TouchEvent } from 'react';
 import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
 import type { Todo } from '@dorkos/shared/todo-schemas';
@@ -37,8 +37,10 @@ export interface TodoRowProps {
   style?: CSSProperties;
   /** Whether the row is the one being dragged, so it draws over its neighbours. */
   dragging?: boolean;
-  /** On a phone in "My order": a long press on the row's words picks it up to move. */
-  pressToMove?: { onPointerDown?: (event: PointerEvent<HTMLDivElement>) => void };
+  /** On a touch screen in "My order": a long press on the row's words picks it up to move. */
+  pressToMove?: { onTouchStart?: (event: TouchEvent<HTMLDivElement>) => void };
+  /** Drawn at the row's end: the Reorder mode's ↑ and ↓. */
+  trailing?: ReactNode;
 }
 
 /** How far right a phone swipe travels before it finishes the to-do, in pixels. */
@@ -142,6 +144,7 @@ export function TodoRow({
   style,
   dragging = false,
   pressToMove,
+  trailing,
 }: TodoRowProps) {
   const due = todoDueLabel(todo);
   const closed = todo.state !== 'open';
@@ -166,11 +169,12 @@ export function TodoRow({
   parts.push(<span>from {from}</span>);
   // Where its words came from: "DorkBot in #team" when its title is somebody's message, else the
   // room it was filed under. Plain text either way.
+  // A bare name would read as the assignee, so with no room it says who said it.
   const said = todo.titleFromSource && todo.sourceAuthor ? todo.sourceAuthor : null;
   if (said || roomTitle) {
     parts.push(
       <span className="min-w-0 truncate">
-        {said && roomTitle ? `${said} in ${roomTitle}` : (said ?? roomTitle)}
+        {said && roomTitle ? `${said} in ${roomTitle}` : said ? `said by ${said}` : roomTitle}
       </span>
     );
   }
@@ -191,7 +195,11 @@ export function TodoRow({
       {handle}
       <CheckCircle todo={todo} {...(onComplete ? { onComplete } : {})} />
       <motion.div
-        className="min-w-0 flex-1 py-2 md:py-1"
+        className={cn(
+          'min-w-0 flex-1 py-2 md:py-1',
+          // A long press must lift the row, not select its words or open iOS's callout.
+          pressToMove && 'select-none [-webkit-touch-callout:none]'
+        )}
         {...pressToMove}
         data-swipe-to-finish={swipes || undefined}
         drag={swipes ? 'x' : false}
@@ -205,10 +213,11 @@ export function TodoRow({
         }}
       >
         {/* Undo sits right after the title, beside the check that was just pressed. */}
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 items-start gap-1.5">
           <p
             className={cn(
-              'min-w-0 truncate text-sm',
+              // Up to three lines: the row doesn't open, so a cut-off title could never be read.
+              'line-clamp-3 min-w-0 text-sm break-words',
               closed && 'text-muted-foreground',
               todo.state === 'dropped' && 'line-through'
             )}
@@ -230,6 +239,7 @@ export function TodoRow({
         </div>
         <FactLine parts={parts} />
       </motion.div>
+      {trailing}
     </li>
   );
 }
