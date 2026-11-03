@@ -16,6 +16,7 @@ import type { RequestIngress } from '../../remote/ingress-mark.js';
 
 /** One request each refused route must refuse: its method and path. */
 const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
+  ['host', 'POST', '/api/your-browser/scan'],
   ['terminal', 'POST', '/api/terminal'],
   ['terminal', 'DELETE', '/api/terminal/term-1'],
   ['terminal', 'GET', '/api/terminal/term-1/socket'],
