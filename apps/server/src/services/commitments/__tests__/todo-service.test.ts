@@ -223,6 +223,62 @@ describe('TodoService', () => {
     });
   });
 
+  describe('an install with no owner account (Security, #3460)', () => {
+    function personsTodo() {
+      return todos.create(PERSON, {
+        what: 'Call the bank',
+        assignee: { kind: 'person', account: 'owner' },
+      });
+    }
+
+    it("lets an unproven request finish, note and reorder the person's to-do", () => {
+      const mine = personsTodo();
+      const closed = todos.update(UNPROVEN, mine.id, { state: 'kept', note: 'Done' });
+      expect(closed.state).toBe('kept');
+      expect(todos.update(UNPROVEN, mine.id, { rank: 'a' }).rank).toBe('a');
+      // Every change it makes lowers the row to the stranger bound.
+      expect(stored(mine.id)).toMatchObject({
+        authority: 'runtime-default',
+        authorityMarks: '{"outsider":true}',
+      });
+    });
+
+    it("refuses it a reassign, a new title or a new date on the person's to-do", () => {
+      const mine = personsTodo();
+      expect(
+        refusal(() =>
+          todos.update(UNPROVEN, mine.id, { assignee: { kind: 'agent', agentId: 'agent-a' } })
+        )
+      ).toBe('NOT_YOURS');
+      expect(refusal(() => todos.update(UNPROVEN, mine.id, { what: 'Wire the money' }))).toBe(
+        'NOT_YOURS'
+      );
+      expect(
+        refusal(() =>
+          todos.update(UNPROVEN, mine.id, {
+            dueAt: new Date(START.getTime() + 24 * HOUR).toISOString(),
+          })
+        )
+      ).toBe('NOT_YOURS');
+    });
+
+    it("refuses it any change to an agent's to-do", () => {
+      const theirs = todos.create(PERSON, {
+        what: 'Run the deploy',
+        assignee: { kind: 'agent', agentId: 'agent-a' },
+      });
+      expect(refusal(() => todos.update(UNPROVEN, theirs.id, { state: 'kept' }))).toBe('NOT_YOURS');
+      expect(refusal(() => todos.update(UNPROVEN, theirs.id, { rank: 'a' }))).toBe('NOT_YOURS');
+    });
+
+    it('keeps the stranger bound when the person later hands it to an agent', () => {
+      const mine = personsTodo();
+      todos.update(UNPROVEN, mine.id, { note: 'Ask for the form' });
+      todos.update(PERSON, mine.id, { assignee: { kind: 'agent', agentId: 'agent-a' } });
+      expect(stored(mine.id)).toMatchObject({ agentId: 'agent-a', authority: 'runtime-default' });
+    });
+  });
+
   describe('agents change only their own (Must 6, build gate)', () => {
     it('lets an agent change the state only of to-dos assigned to it', () => {
       const made = todos.create(PERSON, {

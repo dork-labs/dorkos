@@ -10,8 +10,8 @@
  *   session cookie (`personProof`). A window of the app with no session yet is asked for the
  *   owner's step-up (`401 person_session_required`) before anything is written, so the person's
  *   own to-dos never drop to the stranger bound by accident. Any other caller (a program on this
- *   computer) writes as an unproven person: the stranger bound, shown on the to-do, and no changes
- *   to existing to-dos at all.
+ *   computer) writes as an unproven person: the stranger bound, shown on the to-do. It may finish,
+ *   reopen, note or reorder a to-do assigned to the person, and change nothing else (`todo-policy`).
  *
  * @module routes/todos
  */
