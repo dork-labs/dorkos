@@ -98,7 +98,7 @@ describe('requests', () => {
       input: [{ type: 'text', text: 'hi', text_elements: [] }],
       cwd: '/p',
       approvalPolicy: 'never',
-      sandboxPolicy: { type: 'dangerFullAccess' },
+      permissions: 'dorkos-files-danger-full-access',
       summary: 'auto',
     });
     const rejection = expect(pending).rejects.toBeInstanceOf(CodexRpcTimeoutError);

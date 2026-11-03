@@ -36,7 +36,9 @@ import { createDb, runMigrations } from '@dorkos/db';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { resolveCodexVendoredBinary } from '../../check-dependencies.js';
 import { CodexAppServerPool, type SpawnAppServer } from '../process-pool.js';
-import { AppServerCodexTransport } from '../../transport/app-server-transport.js';
+import type { AppServerCodexTransport } from '../../transport/app-server-transport.js';
+import { createCodexTransport, type CodexTransportKind } from '../../transport/index.js';
+import * as runtimeEnv from '../../../shared/runtime-environment-config.js';
 import type { BackgroundWake } from '../background-work.js';
 import { createCodexEventContext } from '../../event-mapper.js';
 import { ConnectorThreadKeyRegistry } from '../../../../connectors/principal/thread-keys.js';
@@ -274,7 +276,8 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
 }
 
 function makeTransport(
-  backgroundWork?: AppServerTransportOptions['backgroundWork']
+  backgroundWork?: AppServerTransportOptions['backgroundWork'],
+  setting: CodexTransportKind = 'app-server'
 ): AppServerCodexTransport {
   const spawn: SpawnAppServer = (binary, args, options) => {
     spawned.push({ args, env: options.env });
@@ -297,7 +300,7 @@ function makeTransport(
     agentToolsUrl: `${base}/mcp`,
     isConnectorCapabilityId: () => false,
   } satisfies ConnectorRuntimeTools;
-  return new AppServerCodexTransport({
+  return createCodexTransport(setting, {
     pool,
     ...(backgroundWork ? { backgroundWork } : {}),
     connectorTools: () => tools,
@@ -597,46 +600,91 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     });
   });
 
-  // DOR-3292's standing canary for Codex: what a secret file inside the
-  // agent's folder is worth today. At Ask first, Codex's most careful level
-  // (it offers no Never ask), a folder-wide search is a read-only command its
-  // sandbox runs without asking, so it prints the secret. Expected, and the
-  // point: it documents the limit the warning and the copy describe.
-  it('prints a secret in the folder from a folder-wide search at Ask first (today’s limit)', async (ctx) => {
-    const env = path.join(project, ['', 'env'].join('.'));
-    const canary = 'CANARY-dor3292-codex';
-    fs.writeFileSync(env, `X_API_KEY=${canary}\n`);
-    let result = '';
-    scripted.push(
-      (res) => res.end(sseCall({ cmd: 'grep -r CANARY-dor3292 .', login: false })),
-      (res, body) => {
-        result = body;
-        res.end(sse('done'));
+  it.each(['app-server', 'exec'])(
+    'protects fake secrets through %s despite a loaded legacy Full setting',
+    async (kind, ctx) => {
+      const secret = path.join(project, 'fixture.key');
+      const readable = path.join(project, 'readable.txt');
+      const canary = 'CANARY-private-dor3595';
+      const control = 'PUBLIC-control-dor3595';
+      const skillControl = 'PUBLIC-skill-control-dor3595';
+      const agentHome = path.join(root, 'data', 'agents', 'probe');
+      const skills = path.join(agentHome, '.agents', 'skills', 'probe');
+      fs.mkdirSync(skills, { recursive: true });
+      fs.writeFileSync(path.join(skills, 'SKILL.md'), skillControl);
+      fs.writeFileSync(secret, canary);
+      fs.writeFileSync(readable, control);
+      const configFile = path.join(codexHome, 'config.toml');
+      const previous = fs.readFileSync(configFile, 'utf8');
+      fs.writeFileSync(configFile, `sandbox_mode = "danger-full-access"\n${previous}`);
+      const env = vi.spyOn(runtimeEnv, 'runtimeEnvironment').mockImplementation(() => ({
+        PATH: process.env.PATH ?? '',
+        HOME: path.join(root, 'home'),
+        CODEX_HOME: codexHome,
+        HTTP_PROXY: 'http://127.0.0.1:9',
+        HTTPS_PROXY: 'http://127.0.0.1:9',
+        NO_PROXY: '127.0.0.1,localhost',
+      }));
+      try {
+        for (const mode of ['default', 'acceptEdits', 'bypassPermissions']) {
+          let result = '';
+          scripted.push(
+            (res) =>
+              res.end(
+                sseCall({
+                  cmd: 'cat fixture.key; cat readable.txt; cat ../data/agents/probe/.agents/skills/probe/SKILL.md',
+                  login: false,
+                })
+              ),
+            (res, body) => {
+              result = body;
+              res.end(sse('done'));
+            }
+          );
+          const transport = makeTransport(undefined, kind as CodexTransportKind);
+          expect(transport.kind).toBe('app-server');
+          const events: StreamEvent[] = [];
+          for await (const event of transport.runTurn(
+            request(`protected-${kind}-${mode}`, undefined, {
+              settings: { permissionMode: mode, model: 'fake-model' },
+              writableDirectories: [project],
+              tools: {
+                agentTokenEnv: {},
+                managed: { servers: {}, env: {} },
+                dorkosTools: null,
+                connectorTools: null,
+                filePolicy: {
+                  writable: [project],
+                  roots: {
+                    cwd: project,
+                    data: path.join(root, 'data'),
+                    home: path.join(root, 'home'),
+                    accounts: [codexHome],
+                    agentFolders: [project, agentHome],
+                    agentHomes: [project, agentHome],
+                  },
+                },
+              },
+            })
+          ))
+            events.push(event);
+          if (/bwrap: /.test(result)) ctx.skip();
+          expect(result, JSON.stringify(events)).toContain(control);
+          expect(result, JSON.stringify(events)).toContain(skillControl);
+          expect(result).not.toContain(canary);
+          expect(result).toMatch(/denied|not permitted/i);
+          await transport.shutdown();
+        }
+      } finally {
+        env.mockRestore();
+        fs.writeFileSync(configFile, previous);
+        fs.rmSync(secret, { force: true });
+        fs.rmSync(readable, { force: true });
+        fs.rmSync(agentHome, { recursive: true, force: true });
       }
-    );
-    try {
-      const transport = makeTransport();
-      const events: StreamEvent[] = [];
-      for await (const event of transport.runTurn(
-        request('canary-1', undefined, {
-          settings: { permissionMode: 'default', model: 'fake-model' },
-        })
-      )) {
-        events.push(event);
-      }
-      expect(
-        events.some((e) => e.type === 'approval_required'),
-        'a read-only search asked nobody'
-      ).toBe(false);
-      // A Linux CI runner can't start Codex's sandbox at all (bubblewrap is
-      // refused a network namespace), so no command runs there and this
-      // records nothing either way. Skipped, never passed, in that case.
-      if (/bwrap: /.test(result)) ctx.skip();
-      expect(result).toContain(canary);
-    } finally {
-      fs.rmSync(env, { force: true });
-    }
-  }, 90_000);
+    },
+    180_000
+  );
 
   describe('approvals and steer (spec §10, §11)', () => {
     const made = () => path.join(project, 'approved.txt');

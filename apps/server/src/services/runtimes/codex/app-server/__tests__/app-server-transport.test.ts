@@ -28,7 +28,7 @@ import { APP_SERVER_ARGS } from '../process-pool.js';
 import { CODEX_STOPPED_COPY } from '../notification-mapper.js';
 import { BACKGROUND_WORK_LOST_COPY, type BackgroundWake } from '../background-work.js';
 import { THREAD_STARTS_FRESH_NOTICE } from '../thread-loader.js';
-import { sandboxPolicyFor } from '../turn-parts.js';
+import { codexPermissionProfile } from '../turn-parts.js';
 import type { CreditsRelay } from '../../../../core/cloud/credits-relay.js';
 
 type Harness = ReturnType<typeof makeAppServerHarness>;
@@ -69,6 +69,68 @@ async function rest(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
 }
 
 describe('a turn', () => {
+  it('routes the legacy exec setting through app-server with protected files at Full', async () => {
+    const h = harness({ setting: 'exec' });
+    const events = await h.run(
+      h.request({
+        sessionId: 'legacy-exec',
+        settings: { permissionMode: 'bypassPermissions' },
+        tools: {
+          agentTokenEnv: {},
+          managed: { servers: {}, env: {} },
+          dorkosTools: null,
+          connectorTools: null,
+          filePolicy: {
+            writable: [],
+            roots: {
+              cwd: '/project',
+              data: '/data',
+              home: '/home',
+              accounts: [],
+              agentFolders: ['/project'],
+              agentHomes: [],
+            },
+          },
+        },
+      })
+    );
+    expect(h.transport.kind).toBe('app-server');
+    expect(texts(events)).toBe('pong');
+    expect(h.host.spawns).toHaveLength(1);
+    expect(h.host.spawns[0]!.args).toEqual(APP_SERVER_ARGS);
+    const process = h.host.home(PERSON_HOME).processes[0]!;
+    expect(process.requestsOf('thread/start')[0]).toMatchObject({
+      permissions: 'dorkos-files-danger-full-access',
+      config: {
+        permissions: {
+          'dorkos-files-danger-full-access': {
+            filesystem: { '/data/host.key': 'deny' },
+          },
+        },
+      },
+    });
+    expect(process.requestsOf('turn/start')[0]).toMatchObject({
+      permissions: 'dorkos-files-danger-full-access',
+    });
+  });
+
+  it('refuses a legacy exec session when app-server cannot start, without a fallback', async () => {
+    const h = harness({ setting: 'exec' });
+    const acquire = vi
+      .spyOn(h.pool, 'acquire')
+      .mockRejectedValue(new Error('synthetic startup failure'));
+    const events = await h.run(h.request({ sessionId: 'legacy-exec-unavailable' }));
+    expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+    expect(events[0]).toMatchObject({
+      data: {
+        code: 'codex_unavailable',
+        message: 'Codex could not start this reply. Send your message again to retry.',
+      },
+    });
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(h.host.spawns).toHaveLength(0);
+  });
+
   it('starts a thread, streams, ends with exactly one done, and binds at turn/started', async () => {
     const h = harness();
     const events = await h.run(
@@ -95,7 +157,7 @@ describe('a turn', () => {
       clientUserMessageId: 'm1',
       cwd: '/project',
       approvalPolicy: 'on-request',
-      sandboxPolicy: { type: 'readOnly', networkAccess: false },
+      permissions: 'dorkos-files-read-only',
       model: 'gpt-x',
       effort: 'xhigh',
       summary: 'auto',
@@ -128,27 +190,13 @@ describe('a turn', () => {
     expect(dones(await rest(first))).toHaveLength(1);
   });
 
-  it('maps a workspace-write turn to the tagged sandbox policy with its grants', () => {
-    expect(
-      sandboxPolicyFor({
-        settings: { permissionMode: 'acceptEdits' },
-        writableDirectories: ['/grant'],
-      })
-    ).toEqual({
-      type: 'workspaceWrite',
-      writableRoots: ['/grant'],
-      networkAccess: false,
-      excludeTmpdirEnvVar: false,
-      excludeSlashTmp: false,
-    });
-    expect(
-      sandboxPolicyFor({
-        settings: { permissionMode: 'bypassPermissions' },
-        writableDirectories: [],
-      })
-    ).toEqual({
-      type: 'dangerFullAccess',
-    });
+  it('selects a named policy at every level, including Full', () => {
+    expect(codexPermissionProfile({ permissionMode: 'acceptEdits' })).toBe(
+      'dorkos-files-workspace-write'
+    );
+    expect(codexPermissionProfile({ permissionMode: 'bypassPermissions' })).toBe(
+      'dorkos-files-danger-full-access'
+    );
   });
 
   it('refuses the requests DorkOS takes no part in, at once, inside an open turn', async () => {
@@ -254,7 +302,7 @@ describe('crashes and cold resume', () => {
     const second = h.host.home(PERSON_HOME).processes[1]!;
     expect(second.requestsOf('thread/resume')[0]).toMatchObject({
       threadId,
-      sandbox: 'workspace-write',
+      permissions: 'dorkos-files-workspace-write',
     });
   });
 

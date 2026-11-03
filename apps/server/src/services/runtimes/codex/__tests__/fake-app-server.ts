@@ -603,7 +603,11 @@ export class FakeAppServer extends EventEmitter {
       activeTurn: undefined,
       turnStarts: [],
     });
-    this.reply(id, { thread: { id: threadId }, model: params.model ?? 'fake-model' });
+    this.reply(id, {
+      thread: { id: threadId },
+      model: params.model ?? 'fake-model',
+      activePermissionProfile: { id: params.permissions },
+    });
     this.send({ method: 'thread/started', params: { thread: { id: threadId } } });
   }
 
@@ -624,7 +628,11 @@ export class FakeAppServer extends EventEmitter {
       activeTurn: undefined,
       turnStarts: [],
     });
-    this.reply(id, { thread: { id: threadId }, model: params.model ?? 'fake-model' });
+    this.reply(id, {
+      thread: { id: threadId },
+      model: params.model ?? 'fake-model',
+      activePermissionProfile: { id: params.permissions },
+    });
   }
 
   private threadResume(id: number | string, params: Record<string, unknown>): void {
@@ -644,6 +652,7 @@ export class FakeAppServer extends EventEmitter {
       return this.reply(id, {
         thread: { id: threadId },
         model: loaded.loadParams.model ?? 'fake-model',
+        activePermissionProfile: { id: loaded.loadParams.permissions },
       });
     }
     if (!record.hasRollout) return this.fail(id, `no rollout found for thread id ${threadId}`);
@@ -653,7 +662,11 @@ export class FakeAppServer extends EventEmitter {
       activeTurn: undefined,
       turnStarts: [],
     });
-    this.reply(id, { thread: { id: threadId }, model: params.model ?? 'fake-model' });
+    this.reply(id, {
+      thread: { id: threadId },
+      model: params.model ?? 'fake-model',
+      activePermissionProfile: { id: params.permissions },
+    });
   }
 
   private turnStart(id: number | string, params: Record<string, unknown>): void {

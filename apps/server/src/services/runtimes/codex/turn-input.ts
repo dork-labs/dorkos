@@ -7,15 +7,12 @@ import { formatTurnCutoff } from '../../session/turn-cutoff/turn-cutoff.js';
  * ThreadOptions projection (NOTES.md Verdict 2) and the prompt assembly that
  * delivers the neutral additional-context bag (ADR-0273).
  *
- * Both `sandboxMode` and `approvalPolicy` are passed EXPLICITLY on every
- * `startThread`/`resumeThread` (ADR-0309: no implicit defaults post-0.132.0).
- * `approvalPolicy` is always `'never'`: `codex exec` has no approval channel,
- * so `on-request` would only produce auto-cancelled escalation attempts — the
- * sandbox is the enforcement boundary.
+ * The app-server thread loader selects an explicit protected permission
+ * profile on every load and turn. No SDK exec options are launched here.
  *
  * @module services/runtimes/codex/turn-input
  */
-import type { ModelReasoningEffort, SandboxMode, ThreadOptions } from '@openai/codex-sdk';
+import type { ModelReasoningEffort, SandboxMode } from '@openai/codex-sdk';
 import type { DirectoryGrant, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/directory-grants';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
@@ -67,50 +64,6 @@ export const EFFORT_TO_REASONING: Record<EffortLevel, ModelReasoningEffort> = {
   max: 'xhigh',
   xhigh: 'xhigh',
 };
-
-/**
- * Project resolved session settings into the explicit ThreadOptions for one
- * turn.
- *
- * `skipGitRepoCheck` is always set: the CLI refuses to run outside a git
- * repository by default, but DorkOS sessions legitimately run in non-repo
- * directories (e.g. `~/.dork/agents/*`), and the read-only default sandbox
- * already provides the conservative posture that check exists for.
- *
- * **Folder grants** (spec `agent-home-desk` §4.3). A `write` grant becomes
- * `additionalDirectories`, which the SDK turns into `--add-dir` on every run, so
- * a grant is handed per turn on `startThread` and `resumeThread` alike and a
- * later turn without it does not keep it. A `read` grant hands nothing: the
- * `read-only` and `workspace-write` sandboxes already read outside the
- * workspace. Under `danger-full-access` (bypass) nothing is enforced, as for
- * everything else. Run 2026-09-26 against codex 0.154.0 on the operator's
- * sign-in: with the grant a shell write inside it succeeded under
- * `workspace-write`, without it the same write was refused, and a write into a
- * `read` grant was refused while reading it worked.
- *
- * @param settings - Effective settings (per-send override → tracked → persisted → default)
- * @param cwd - Working directory for the turn, when known
- * @param writable - This turn's writable folders, already validated by
- *   {@link grantedWritableDirectories} (which throws DirectoryGrantError for an
- *   invalid grant set before any thread starts)
- */
-export function projectThreadOptions(
-  settings: SessionSettings,
-  cwd: string | undefined,
-  writable: readonly string[]
-): ThreadOptions {
-  return {
-    sandboxMode: MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only',
-    approvalPolicy: 'never',
-    skipGitRepoCheck: true,
-    ...(cwd !== undefined ? { workingDirectory: cwd } : {}),
-    ...(settings.model !== undefined ? { model: settings.model } : {}),
-    ...(settings.effort !== undefined
-      ? { modelReasoningEffort: EFFORT_TO_REASONING[settings.effort] }
-      : {}),
-    ...(writable.length > 0 ? { additionalDirectories: [...writable] } : {}),
-  };
-}
 
 /**
  * Validate a turn's grants and keep the folders Codex must be told it may

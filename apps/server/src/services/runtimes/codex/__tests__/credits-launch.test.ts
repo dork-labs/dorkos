@@ -1,3 +1,4 @@
+import { codexCreditsProcessEnv, withCodexCredits } from './fixtures/sdk-credits.js';
 /**
  * What a Codex turn on DorkOS credits is handed (ADR 261001-000811): its own
  * home, the credits provider entry, and nothing of the person's that routes a
@@ -15,11 +16,9 @@ const TOKEN_VAR = 'DORKOS_CREDITS_TOKEN_TEST';
 import {
   CODEX_CREDITS_PROVIDER_ID,
   codexCreditsAppServerEnv,
-  codexCreditsProcessEnv,
   codexCreditsThreadConfig,
   codexRoutesOrPays,
   threadRunsOnCredits,
-  withCodexCredits,
 } from '../credits-launch.js';
 import { creditsCodexHome } from '../codex-home.js';
 

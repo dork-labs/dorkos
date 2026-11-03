@@ -6,8 +6,8 @@
  * thread answers success and ignores new config. So everything that varies
  * between loads goes in the load params once, and the load is fingerprinted
  * (secrets excluded) to tell when a loaded thread no longer matches what a
- * turn wants — in which case it is used as is and its process is marked stale,
- * to be recycled when nothing in it is live.
+ * turn wants. Changed config reloads the thread before another turn so revoked
+ * tools or file authority cannot survive until the process happens to recycle.
  *
  * Load config carries, all over stdin and never argv or environment:
  * - `mcp_servers`: the agent's managed servers with literal `http_headers`, and
@@ -39,6 +39,8 @@ import { withLiteralHeaders } from '../mcp-server-config.js';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
+import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
+import { loadWithProtectedProfile } from './profile-load.js';
 import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
 import type { SandboxMode, ThreadLoadOverrides } from './protocol/methods.js';
@@ -78,8 +80,7 @@ export interface ThreadLoadInput {
   readonly creditsRelay?: { baseUrl: string; key: string };
   /**
    * Whether Codex's own sleep inhibitor rides the load config. Part of the
-   * fingerprint, so a toggle marks a process with loaded threads stale and it
-   * recycles once idle, exactly like any other config change.
+   * fingerprint, so a toggle reloads the thread like any other config change.
    */
   readonly preventIdleSleep?: boolean;
 }
@@ -210,15 +211,10 @@ export class CodexThreadLoader {
           input.process.stale = true;
         }
       }
-      if (record.fingerprint !== desired && !input.process.stale) {
-        input.process.stale = true;
-        logger.info(
-          '[CodexAppServer] a loaded thread no longer matches its config; recycling when idle',
-          {
-            sessionId: input.sessionId,
-          }
-        );
-      }
+      // A changed file policy or held MCP server must apply BEFORE the next
+      // turn. A loaded thread ignores new config, so fork it with the new
+      // profile now instead of continuing on the old grants until idle.
+      if (record.fingerprint !== desired) return this.reload(input, existingId);
       return {
         threadId: existingId,
         keyId: record.keyId,
@@ -273,7 +269,10 @@ export class CodexThreadLoader {
     if (threadId === undefined) return 'empty';
     try {
       const overrides = await this.overrides(input, undefined);
-      await input.process.client.request('thread/resume', { threadId, ...overrides });
+      await loadWithProtectedProfile(input.process.client, 'thread/resume', {
+        threadId,
+        ...overrides,
+      });
     } catch (err) {
       if (isCodexRpcError(err, 'no-rollout', 'thread-not-found', 'archived')) return 'gone';
       throw err;
@@ -357,8 +356,12 @@ export class CodexThreadLoader {
     let forked: string;
     try {
       const overrides = await this.overrides(input, key?.key);
-      forked = (await input.process.client.request('thread/fork', { threadId, ...overrides }))
-        .thread.id;
+      forked = (
+        await loadWithProtectedProfile(input.process.client, 'thread/fork', {
+          threadId,
+          ...overrides,
+        })
+      ).thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       if (!isCodexRpcError(err, 'no-rollout')) throw err;
@@ -428,7 +431,10 @@ export class CodexThreadLoader {
     const key = this.mintKey(input);
     try {
       const overrides = await this.overrides(input, key?.key);
-      await input.process.client.request('thread/resume', { threadId, ...overrides });
+      await loadWithProtectedProfile(input.process.client, 'thread/resume', {
+        threadId,
+        ...overrides,
+      });
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       // Deleted (or its rollout removed) in Codex. DorkOS's own history stays visible.
@@ -466,7 +472,8 @@ export class CodexThreadLoader {
     let threadId: string;
     try {
       const overrides = await this.overrides(input, key?.key);
-      threadId = (await input.process.client.request('thread/start', overrides)).thread.id;
+      threadId = (await loadWithProtectedProfile(input.process.client, 'thread/start', overrides))
+        .thread.id;
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
       throw err;
@@ -630,7 +637,7 @@ export class CodexThreadLoader {
    *   stays loaded, and a refresh must not recycle every chat in the home.
    *   Those values have their own digest ({@link credentialsOf}); when only
    *   it changes, just that thread is reloaded ({@link CodexThreadLoader.reload}).
-   *   A changed server, URL, command or header NAME marks the process stale.
+   *   A changed server, URL, command or header NAME reloads the thread.
    * - The trust verdict is derived from the mode, which is already in it.
    */
   private fingerprintOf(input: ThreadLoadInput): string {
@@ -690,7 +697,11 @@ export function buildLoadOverrides(
     realCwd: string;
   }
 ): ThreadLoadOverrides {
-  const config: Record<string, unknown> = {};
+  const config: Record<string, unknown> = codexProtectedConfig(
+    input.cwd,
+    input.tools.filePolicy,
+    input.settings
+  );
   const servers: Record<string, unknown> = { ...withLiteralHeaders(input.tools.managed) };
   if (secrets.threadKey !== undefined) {
     // Written LAST so a managed server can never shadow them.
@@ -726,7 +737,7 @@ export function buildLoadOverrides(
     ...(input.settings.model !== undefined ? { model: input.settings.model } : {}),
     approvalPolicy: approvalPolicyFor(input.settings),
     approvalsReviewer: 'user',
-    sandbox: sandboxFor(input.settings),
+    permissions: codexPermissionProfile(input.settings),
     config,
   };
 }

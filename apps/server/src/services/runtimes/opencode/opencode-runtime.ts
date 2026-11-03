@@ -42,7 +42,6 @@ import type {
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
-  DirectoryGrant,
   RuntimeCapabilities,
   DependencyCheck,
   SessionOpts,
@@ -54,7 +53,6 @@ import type {
   AgentRegistryPort,
   ManagedMcpServerResolver,
   SessionUpdateResult,
-  TurnPermissionCeiling,
   LiveSessionRef,
 } from '@dorkos/shared/agent-runtime';
 import { picksSession } from '@dorkos/shared/agent-runtime';
@@ -99,6 +97,7 @@ import { OpenCodeGlobalEventHub, TurnEventQueue } from './events/global-event-hu
 import { OpenCodeSessionRegistry, type OpenCodeSessionPatch } from './sessions/session-registry.js';
 import {
   enforceApprovals,
+  effectiveApprovalMode,
   PendingApprovalStore,
   respondPermission,
   type ApprovalGateDeps,
@@ -112,9 +111,11 @@ import {
   parseModelSelection,
 } from './messaging/turn-input.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
+import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
 import { validatedGrants } from './messaging/directory-grants.js';
 import { discoverOpenCodeModels } from './model-discovery.js';
 import { OpenCodeContextWindows } from './providers/context-windows.js';
+import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
 import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import { listOpenCodeSubagents } from './subagent-list.js';
@@ -465,6 +466,9 @@ export class OpenCodeRuntime implements AgentRuntime {
       },
       {
         connectorTurn: true,
+        full:
+          effectiveApprovalMode(settings.permissionMode, opts?.permissionCeiling) ===
+          'bypassPermissions',
         ...(forAgent !== undefined ? { forAgent } : {}),
         grants: validatedGrants(opts?.additionalDirectories, cwd),
         // Held per ask, like the grants: a turn another agent's post or a
@@ -591,12 +595,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       connectionsApplied: boolean,
       plan: OpenCodeSidecarPlan
     ) => Promise<void>,
-    opts?: {
-      connectorTurn?: boolean;
-      forAgent?: string;
-      grants?: readonly DirectoryGrant[];
-      permissionCeiling?: TurnPermissionCeiling;
-    }
+    opts?: OpenCodeTurnOptions
   ): AsyncGenerator<StreamEvent> {
     // **Who pays** (ADR 261001-000811), decided before anything is sent: the
     // sidecar is made right for OpenCode's recorded choice, and a credits turn
@@ -710,7 +709,8 @@ export class OpenCodeRuntime implements AgentRuntime {
         client,
         directory,
         connectorInjection,
-        agentPath ?? null
+        agentPath ?? null,
+        opts?.full === true
       );
       if (connectorInjection && !mcpResult.connectorApplied) {
         await this.revokeConnectorTurn(turn, 'setup_failed');
@@ -755,14 +755,12 @@ export class OpenCodeRuntime implements AgentRuntime {
       await trigger(client, ocSessionId, mcpResult.dorkosApplied, mcpResult.connectorApplied, plan);
 
       const routing: ApprovalRouting = {
+        ...opts,
         sessionId,
         ocSessionId,
         cwd,
         permissions: ctx,
-        ...(opts?.grants ? { grants: opts.grants } : {}),
-        ...(opts?.permissionCeiling !== undefined
-          ? { permissionCeiling: opts.permissionCeiling }
-          : {}),
+        protectedRoots: protectedPathRoots(cwd, agentPath, this.meshCore),
       };
       // Says the turn is alive while a slow model is still answering (FB-68).
       for await (const mapped of mapLiveOpenCodeTurn(queue, ctx)) {

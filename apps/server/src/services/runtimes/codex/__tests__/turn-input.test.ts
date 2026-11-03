@@ -1,3 +1,4 @@
+import { projectThreadOptions as fromWritable } from './fixtures/thread-options.js';
 /**
  * Folder grants in Codex's thread options (spec `agent-home-desk` §4.3).
  *
@@ -8,12 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/types';
-import {
-  buildCodexPrompt,
-  buildSteerText,
-  grantedWritableDirectories,
-  projectThreadOptions as fromWritable,
-} from '../turn-input.js';
+import { buildCodexPrompt, buildSteerText, grantedWritableDirectories } from '../turn-input.js';
 
 /** Validate then project, the way the runtime and exec transport do together. */
 function projectThreadOptions(settings: SessionSettings, cwd?: string, grants?: DirectoryGrant[]) {
@@ -31,7 +27,8 @@ describe('projectThreadOptions and folder grants', () => {
 
     // The sandbox already reads outside the workspace; a read grant needs no flag.
     expect(options.additionalDirectories).toEqual(['/rooms/r1/worktrees/ana']);
-    expect(options.sandboxMode).toBe('workspace-write');
+    expect(options.permissionProfile).toBe('dorkos-files-workspace-write');
+    expect(options.sandboxMode).toBeUndefined();
   });
 
   it('leaves the option off entirely when a turn has no write grant', () => {

@@ -3,6 +3,9 @@ import type { ApprovalCallback } from '@dorkos/doe';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { ToolDecisionOptions } from '@dorkos/shared/agent-runtime';
 
+import { isProtectedPath, type ProtectedPathRoots } from '../shared/policy/protected-path-check.js';
+import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
+import { logger } from '../../../lib/logger.js';
 import { SESSIONS } from '../../../config/constants.js';
 const READ_TOOLS = new Set(['read', 'search', 'load_skill', 'tool_search', 'end_beat']);
 const EDIT_TOOLS = new Set(['write', 'edit']);
@@ -20,10 +23,30 @@ export class DoeApprovals {
     emit: (event: StreamEvent) => void,
     signal: AbortSignal,
     unattended = false,
-    hostTools: ReadonlySet<string> = new Set()
+    hostTools: ReadonlySet<string> = new Set(),
+    protectedRoots?: ProtectedPathRoots
   ): ApprovalCallback {
     return async (tool, args, context) => {
       if (signal.aborted || context.signal.aborted) return 'deny';
+      if (
+        ['read', 'search', 'write', 'edit'].includes(tool.name) &&
+        args &&
+        typeof args === 'object' &&
+        !Array.isArray(args) &&
+        typeof args.path === 'string'
+      ) {
+        const roots = protectedRoots ?? protectedPathRoots(context.workingDirectory);
+        const denied =
+          isProtectedPath(args.path, EDIT_TOOLS.has(tool.name) ? 'write' : 'read', roots) ||
+          (tool.name === 'edit' && isProtectedPath(args.path, 'read', roots));
+        if (denied) {
+          logger.warn('[ProtectedFiles] Refused a Doe native file operation', {
+            sessionId: context.sessionId,
+            toolName: tool.name,
+          });
+          return 'deny';
+        }
+      }
       if (
         mode === 'bypassPermissions' ||
         READ_TOOLS.has(tool.name) ||

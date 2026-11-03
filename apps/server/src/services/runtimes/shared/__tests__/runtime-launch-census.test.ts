@@ -15,7 +15,6 @@ const expected: Record<string, number> = {
   'claude-code/sdk/sdk-utils.ts': 1,
   'claude-code/tooling/provision.ts': 1,
   'codex/model-catalog.ts': 1,
-  'codex/transport/exec-transport.ts': 3,
   'codex/app-server/process-pool.ts': 1,
   'codex/app-server/protocol/snapshot.ts': 2,
   'codex/provision.ts': 1,

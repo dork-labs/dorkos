@@ -101,25 +101,26 @@ describe('the load table (§6)', () => {
     expect(loaded).toMatchObject({ threadId: 't-old', needsBinding: false });
     expect(fake.requestsOf('thread/resume')[0]).toMatchObject({
       threadId: 't-old',
-      sandbox: 'read-only',
+      permissions: 'dorkos-files-read-only',
     });
     await loader.ensureLoaded(input({ boundThreadId: 't-old' }));
     expect(fake.requestsOf('thread/resume')).toHaveLength(1);
     expect(process.stale).toBe(false);
   });
 
-  it('uses a loaded thread as is when the turn wants other config, and marks the process stale', async () => {
+  it('reloads a changed permission profile before the next turn', async () => {
     const { host, loader, fake, input, process } = await setup();
     host.home(HOME).threads.set('t1', { id: 't1', hasRollout: true });
     await loader.ensureLoaded(input({ boundThreadId: 't1' }));
     const loaded = await loader.ensureLoaded(
       input({ boundThreadId: 't1', settings: { permissionMode: 'acceptEdits' } })
     );
-    expect(loaded.threadId).toBe('t1');
-    expect(process.stale).toBe(true);
-    // Nothing was sent: a resume would have been silently ignored anyway.
-    expect(fake.requestsOf('thread/resume')).toHaveLength(1);
-    expect(fake.loaded.get('t1')!.loadParams.sandbox).toBe('read-only');
+    expect(loaded.threadId).not.toBe('t1');
+    expect(process.stale).toBe(false);
+    expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+    expect(fake.loaded.get(loaded.threadId)!.loadParams.permissions).toBe(
+      'dorkos-files-workspace-write'
+    );
   });
 
   // A binding is written at the thread's first `turn/started`, so a bound
@@ -184,7 +185,7 @@ describe('load config (§9)', () => {
       model: 'gpt-x',
       approvalPolicy: 'on-request',
       approvalsReviewer: 'user',
-      sandbox: 'workspace-write',
+      permissions: 'dorkos-files-workspace-write',
     });
     const config = params.config as LoadConfig;
     const authorization = config.mcp_servers.dorkos!.http_headers!.Authorization!;
@@ -305,7 +306,7 @@ describe('review fixes: fingerprint and identity', () => {
     );
     expect(process.stale).toBe(false);
     await loader.ensureLoaded(input({ tools: tools(managedWith('X-Other', 'Bearer refreshed')) }));
-    expect(process.stale).toBe(true);
+    expect(process.stale).toBe(false);
     expect(first.needsBinding).toBe(true);
   });
 

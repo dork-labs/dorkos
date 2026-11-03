@@ -88,6 +88,8 @@ export interface ResourceConfig {
   skillRoots: readonly SkillRoot[];
   memory?: string;
   context?: string;
+  /** Host policy checked on canonical targets before reading resource text or metadata. */
+  beforeRead?: (path: string) => void | Promise<void>;
 }
 /** Metadata catalogue excludes skill bodies. */
 export interface SkillMetadata {

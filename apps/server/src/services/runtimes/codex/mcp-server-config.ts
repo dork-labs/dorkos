@@ -28,7 +28,7 @@
  * typed into a static header. So this converter writes no header VALUE at all.
  * It mints one environment variable per header, names it in the entry's
  * `env_http_headers`, and hands the values back in
- * {@link CodexMcpConversion.env} for {@link buildCodexOptions} to put in the
+ * {@link CodexMcpConversion.env} for the thread loader to put in the
  * subprocess environment — the same split `dorkos-header-env.ts` already makes
  * for the `dorkos` server's own turn-binding headers.
  *
@@ -38,7 +38,14 @@ import type { CodexOptions } from '@openai/codex-sdk';
 import type {
   McpAppServerConnection,
   ManagedMcpServerResolver,
+  AgentRegistryPort,
 } from '@dorkos/shared/agent-runtime';
+import { resolveAgentTokenEnv } from '../../core/agent-identity/index.js';
+import type { CodexTurnTools } from './transport/codex-transport.js';
+import { resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
+import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
+import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
+import { managedConfigHeld } from '../shared/policy/managed-config.js';
 import { DORKOS_MCP_SERVER_NAME } from '../shared/dorkos-tool-names.js';
 import { logger } from '../../../lib/logger.js';
 
@@ -358,4 +365,57 @@ export function withLiteralHeaders(managed: CodexManagedMcpServers): CodexMcpSer
     servers[name] = { ...rest, http_headers: headers };
   }
   return servers;
+}
+
+/** Resolve managed servers only after the same content pin used by Claude Code. */
+export async function resolvePinnedCodexMcp(
+  resolver: ManagedMcpServerResolver | undefined,
+  home: string | undefined,
+  cwd: string,
+  full: boolean,
+  reserved: boolean,
+  mesh?: AgentRegistryPort
+): Promise<CodexManagedMcpServers> {
+  if (!home || (await managedConfigHeld(home, cwd, full, mesh))) return { servers: {}, env: {} };
+  return resolveManagedMcpServers(resolver, home, reserved);
+}
+
+/** Resolve host tools and pinned managed servers together, preserving reserved names. */
+export async function resolveCodexLaunchTools(
+  home: string | undefined,
+  cwd: string,
+  full: boolean,
+  resolver: ManagedMcpServerResolver | undefined,
+  mesh: AgentRegistryPort | undefined,
+  connectorTools: ConnectorRuntimeMcpInjection | null,
+  writable: readonly string[],
+  transport: 'exec' | 'app-server'
+): Promise<CodexTurnTools> {
+  const agent = home ? mesh?.getByPath(home) : undefined;
+  // App-server mints only when a thread loads. Tokens use the display name,
+  // never the slug that is only an address.
+  const mintAgentToken = () =>
+    resolveAgentTokenEnv(agent ? home : undefined, agent?.displayName ?? agent?.name);
+  const mintsOnLoad = transport === 'app-server' && agent !== undefined;
+  const agentTokenEnv = mintsOnLoad ? {} : await mintAgentToken();
+  const dorkosTools = await resolveDorkosMcpInjection(
+    home && mesh?.getByPath(home) ? home : undefined,
+    connectorTools
+  );
+  const managedMcpServers = await resolvePinnedCodexMcp(
+    resolver,
+    home,
+    cwd,
+    full,
+    dorkosTools !== null,
+    mesh
+  );
+  return {
+    agentTokenEnv,
+    ...(mintsOnLoad ? { mintAgentToken } : {}),
+    dorkosTools,
+    connectorTools,
+    managed: managedMcpServers,
+    filePolicy: { roots: protectedPathRoots(cwd, home, mesh), writable },
+  };
 }

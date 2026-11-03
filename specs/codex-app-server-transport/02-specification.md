@@ -11,6 +11,8 @@ adr: 261005-113107
 
 Direction: `01-ideation.md`. Decision: ADR `261005-113107` (supersedes ADR-0309, amends ADR `261002-221210`). Protocol reference: `research/20261005_codex-app-server-protocol-0154.md` ("protocol §n" below). Spike evidence: `research/20261005_codex-app-server-spikes.md` ("spike n").
 
+**DOR-3595 amendment (2026-11-03).** ADR [261103-181907](../../decisions/261103-181907-codex-file-protections-have-no-exec-fallback.md) retires the exec fallback described in the original phases below. Every saved setting runs protected app-server; a startup failure refuses, never falls back. Thread loads and turns explicitly select the shared protected profile; load acknowledgement must match. Changed managed tools and file policy reload before the next turn. Earlier phase and exec descriptions remain historical.
+
 ## 1. Goal and non-goals
 
 **Goal.** Codex chats in DorkOS run on a long-lived `codex app-server` process, so that:
@@ -27,7 +29,7 @@ Direction: `01-ideation.md`. Decision: ADR `261005-113107` (supersedes ADR-0309,
 - Listing or importing the person's own Codex Desktop or CLI threads. The session list stays DorkOS-mapped threads only (§13).
 - Fork, compaction (`thread/compact/start`), rollback, `thread/queue/*`, realtime, plugins, review mode. Each is a possible follow-up; none is needed for the done-when.
 - Moving DorkOS context out of the prompt into `developerInstructions` or `turn/start.additionalContext`. Prompt assembly (`buildCodexPrompt`, `CodexContextGate`) is unchanged, so both transports send the model the same words. Follow-up.
-- Removing the exec path. It stays behind the switch until app-server has shipped a release with nobody needing it; removal is its own issue.
+- Original non-goal, retired by DOR-3595: keeping exec behind the switch. The production exec path is now removed.
 - Restart resume of background work across a DorkOS restart (DOR-2689) and the other DOR-2717 items outside item 8.
 
 ## 2. Phases
@@ -357,7 +359,7 @@ P1 sends `approvalPolicy: 'never'` with the same sandbox mapping as exec, so P1 
 ## 15. Config: `runtimes.codex.transport`
 
 - **Schema** (`packages/shared/src/config-schema.ts`, inside `runtimes.codex`): `transport: z.enum(['auto', 'app-server', 'exec']).default('auto')`, and `transport: 'auto'` in both the object's and `runtimes`' `.default(() => …)` literals (config defaults are declared twice).
-- **Meaning.** `auto` = DorkOS's current default: exec in P1 and P2, app-server from P3. Resolved in one function, `resolveCodexTransport(config)` in `codex/transport/index.ts`. P3 flips it by changing that function only: **no migration** and no seeded value, so an explicit `exec` or `app-server` a person set survives the flip.
+- **Meaning after DOR-3595.** All three saved values resolve to protected app-server. `exec` remains valid input for existing configuration files, but no longer selects an SDK subprocess. No startup failure falls back to exec.
 - **Migration** (P1): a nested leaf in a section every stored config has, so the body is load-bearing. One new `CONFIG_MIGRATIONS` key strictly above the newest `v*` tag at merge time (today `v0.97.0`, so `0.98.0` unless a release lands first), writing `transport: 'auto'` when absent, idempotent; pinned in `merged-migration-hashes.ts`; upgrade-path test in `config-manager.test.ts`.
 - **Disclosure:** `'runtimes.codex.transport': 'expose'`. **Write policy:** `'operator-only'` (it changes which process DorkOS spawns and whether approvals can happen, so an agent should not flip it).
 - **Docs:** row in `contributing/configuration.md` and `docs/getting-started/configuration.mdx`: "How DorkOS runs Codex. `auto` follows DorkOS's default; `exec` is the older one-process-per-reply way. Takes effect after a restart."

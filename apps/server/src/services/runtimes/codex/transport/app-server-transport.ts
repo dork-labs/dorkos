@@ -54,7 +54,7 @@ import {
 import { ThreadChannel, turnIdOf, type TurnSink } from '../app-server/thread-channel.js';
 import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
-import { approvalPolicyFor, EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
+import { approvalPolicyFor, EventQueue, codexPermissionProfile } from '../app-server/turn-parts.js';
 import { CODEX_APP_SERVER_CAPABILITIES } from '../runtime-constants.js';
 import {
   BACKGROUND_CEILING_MS,
@@ -1530,7 +1530,7 @@ export class AppServerCodexTransport implements CodexTransport {
       // Sent every turn (they are sticky): a mode or model change between turns lands.
       cwd: request.cwd,
       approvalPolicy: approvalPolicyFor(request.settings),
-      sandboxPolicy: sandboxPolicyFor(request),
+      permissions: codexPermissionProfile(request.settings),
       ...(request.settings.model !== undefined ? { model: request.settings.model } : {}),
       ...(effort !== undefined ? { effort } : {}),
       summary: 'auto',

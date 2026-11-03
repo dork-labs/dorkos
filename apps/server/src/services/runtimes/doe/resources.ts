@@ -1,5 +1,8 @@
 /** Fresh canonical resources for a single turn; no vendor projection or retained grants. */
 import path from 'node:path';
+import { isProtectedPath, type ProtectedPathRoots } from '../shared/policy/protected-path-check.js';
+import { logger } from '../../../lib/logger.js';
+import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
 import { readdir, stat } from 'node:fs/promises';
 import {
   LocalResources,
@@ -24,6 +27,7 @@ export interface DoeResourceOptions {
   context?: string;
   userSkillsDir?: string;
   dorkHome?: string;
+  protectedRoots?: ProtectedPathRoots;
 }
 /** Enumerate ancestry root-first without granting unrestricted ancestor file access. */
 export function doeAncestors(cwd: string): string[] {
@@ -37,6 +41,12 @@ export async function assembleDoeResources(
   options: DoeResourceOptions
 ): Promise<{ resources: Resources; pathPolicy: PathPolicy }> {
   const cwd = await canonicalPath(options.cwd, options.cwd);
+  const protectedRoots = options.protectedRoots ?? protectedPathRoots(cwd, options.agentPath);
+  const assertReadable = (file: string): void => {
+    if (!isProtectedPath(file, 'read', protectedRoots)) return;
+    logger.warn('[ProtectedFiles] Refused a Doe resource read');
+    throw new Error('This file is protected.');
+  };
   const grants = options.additionalDirectories ?? [];
   assertValidDirectoryGrants(grants, cwd);
   const ancestors = doeAncestors(cwd);
@@ -104,14 +114,19 @@ export async function assembleDoeResources(
   };
   // SOUL and MemoryProvider are already rendered once by buildAgentContextAppend.
   const local = new LocalResources(
-    { ancestorDirectories: ancestors, skillRoots, context: options.context },
+    {
+      ancestorDirectories: ancestors,
+      skillRoots,
+      context: options.context,
+      beforeRead: assertReadable,
+    },
     pathPolicy,
     cwd
   );
   const own =
     options.agentPath && options.agentPath !== cwd
       ? new LocalResources(
-          { ancestorDirectories: [options.agentPath], skillRoots: [] },
+          { ancestorDirectories: [options.agentPath], skillRoots: [], beforeRead: assertReadable },
           pathPolicy,
           cwd
         )
@@ -145,11 +160,15 @@ export async function assembleDoeResources(
         .filter(Boolean)
         .join('\n\n');
     },
-    beforeFile: (file, signal) => local.beforeFile(file, signal),
+    beforeFile: (file, signal) => {
+      assertReadable(file);
+      return local.beforeFile(file, signal);
+    },
     loadSkill: async (name, signal) => {
       signal.throwIfAborted();
       const metadata = (await catalogue()).find((skill) => skill.name === name);
       if (!metadata) throw new Error('Unknown skill');
+      if (!metadata.location.startsWith('dorkos-operating:')) assertReadable(metadata.location);
       if (metadata.location.startsWith('dorkos-operating:'))
         return OPERATING_SKILLS_PACK.find((skill) => skill.name === name)!.body;
       const body = await local.loadSkill(name, signal);
