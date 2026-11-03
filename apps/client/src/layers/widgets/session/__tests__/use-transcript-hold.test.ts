@@ -6,7 +6,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { TRANSCRIPT_HOLD_MS, useTranscriptHold } from '../model/use-transcript-hold';
+import {
+  TRANSCRIPT_HOLD_MS,
+  TRANSCRIPT_LOADING_MS,
+  useTranscriptHold,
+} from '../model/use-transcript-hold';
 
 /** One animation frame, as the fake timers run them. */
 const FRAME = 16;
@@ -73,6 +77,34 @@ describe('useTranscriptHold', () => {
     expect(result.current.hidden).toBe(false);
   });
 
+  it('says it is loading past the second limit, and not before, while the landing cannot run', () => {
+    const { result, rerender } = mount({ ready: false });
+    act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS - 1));
+    expect(result.current.showLoading).toBe(false);
+    act(() => void vi.advanceTimersByTime(1));
+    expect(result.current).toMatchObject({ hidden: true, showLoading: true });
+
+    // Ready: the loading state goes, and the list still lands before it shows.
+    rerender({ id: 'chat-1', undecided: true, dm: false, ready: true });
+    expect(result.current).toMatchObject({ held: false, hidden: true, showLoading: false });
+    act(() => void vi.advanceTimersByTime(FRAME * 4));
+    expect(result.current).toMatchObject({ hidden: false, showLoading: false });
+  });
+
+  it('never says it is loading for a chat that was ready in time', () => {
+    const { result } = mount();
+    act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS * 2));
+    expect(result.current.showLoading).toBe(false);
+  });
+
+  it('does not carry the loading state to the next conversation', () => {
+    const { result, rerender } = mount({ ready: false });
+    act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS));
+    expect(result.current.showLoading).toBe(true);
+    rerender({ id: 'chat-2', undecided: true, dm: false, ready: false });
+    expect(result.current.showLoading).toBe(false);
+  });
+
   it('does not hide a chat that was never held, however long its landing takes', () => {
     const { result } = mount({ undecided: false, ready: false });
     act(() => void vi.advanceTimersByTime(FRAME * 10));
@@ -92,7 +124,12 @@ describe('useTranscriptHold', () => {
     act(() => void vi.advanceTimersByTime(TRANSCRIPT_HOLD_MS - 1));
     rerender({ id: 'chat-1', undecided: false, dm: true });
     act(() => void vi.advanceTimersByTime(TRANSCRIPT_HOLD_MS));
-    expect(result.current).toEqual({ held: false, hidden: false, landingKey: undefined });
+    expect(result.current).toEqual({
+      held: false,
+      hidden: false,
+      showLoading: false,
+      landingKey: undefined,
+    });
   });
 
   it('asks the timeline to land again when a late answer reflows it as a DM', () => {
@@ -120,6 +157,11 @@ describe('useTranscriptHold', () => {
 
   it('holds nothing for a chat with no question out', () => {
     const { result } = mount({ undecided: false });
-    expect(result.current).toEqual({ held: false, hidden: false, landingKey: undefined });
+    expect(result.current).toEqual({
+      held: false,
+      hidden: false,
+      showLoading: false,
+      landingKey: undefined,
+    });
   });
 });

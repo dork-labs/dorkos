@@ -380,7 +380,7 @@ export function SessionTranscript({
   // The Direct chat log waits on the same answer, so past the hold the landing
   // cannot wait for it too: it lands without it, and again if the answer is a DM.
   const readyToLand = isHydrated && !earlier.isSeeking && ((directLog?.ready ?? true) || undecided);
-  const { held, hidden, landingKey } = useTranscriptHold(
+  const { held, hidden, showLoading, landingKey } = useTranscriptHold(
     sessionId,
     undecided,
     foldWork,
@@ -638,7 +638,7 @@ export function SessionTranscript({
       // scroll thumb's track — one fact, said once (`ScrollThumb`).
       className={cn('pt-12 [--conversation-thumb-top:3rem]', hidden && 'invisible')}
       loading={
-        isLoadingHistory ? (
+        isLoadingHistory || showLoading ? (
           // The same feed the loaded conversation renders, saying it is BUSY —
           // which is what the pattern asks for, and what turns a silent wait
           // into one a screen reader can report.

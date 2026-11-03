@@ -5,7 +5,10 @@
  * would move the conversation when it lands. A short wait is invisible, so it
  * waits. A long one is a blank page, so past {@link TRANSCRIPT_HOLD_MS} it draws
  * as a session, the layout it uses when no answer ever comes, and accepts one
- * reflow if the answer turns out to be a DM.
+ * reflow if the answer turns out to be a DM. If the landing still lacks what it
+ * needs at {@link TRANSCRIPT_LOADING_MS}, the list says it is loading rather than
+ * stay blank or show the oldest message. Only the list waits: the bar and the
+ * composer never do.
  *
  * @module widgets/session/model/use-transcript-hold
  */
@@ -13,6 +16,9 @@ import { useEffect, useState } from 'react';
 
 /** How long the conversation stays unseen while it waits, in milliseconds. */
 export const TRANSCRIPT_HOLD_MS = 300;
+
+/** How long a held list may stay blank before it says it is loading, in milliseconds. */
+export const TRANSCRIPT_LOADING_MS = 600;
 
 /**
  * How many frames the conversation stays unseen after it is let go.
@@ -29,6 +35,8 @@ export interface TranscriptHold {
   held: boolean;
   /** Whether to keep the conversation unseen: while held, and while it lands. */
   hidden: boolean;
+  /** Whether to show the loading state: unseen too long, with the landing not ready. */
+  showLoading: boolean;
   /**
    * Set once a late answer reflowed a conversation already on screen, so the
    * timeline lands again: the rows it landed on have changed height.
@@ -67,7 +75,6 @@ export function useTranscriptHold(
   const [landing, setLanding] = useState(held);
   useEffect(() => {
     if (held) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- remembers the hold so the frames after it can follow; the render already reads `held` directly
       setLanding(true);
       return;
     }
@@ -81,9 +88,21 @@ export function useTranscriptHold(
     return () => cancelAnimationFrame(handle);
   }, [held, landing, readyToLand]);
 
+  const hidden = held || landing;
+  const [blankTooLong, setBlankTooLong] = useState<string | null>(null);
+  useEffect(() => {
+    if (!hidden) return;
+    const timer = setTimeout(() => setBlankTooLong(conversationId), TRANSCRIPT_LOADING_MS);
+    return () => {
+      clearTimeout(timer);
+      setBlankTooLong(null);
+    };
+  }, [hidden, conversationId]);
+
   return {
     held,
-    hidden: held || landing,
+    hidden,
+    showLoading: hidden && !readyToLand && blankTooLong === conversationId,
     landingKey: drawnEarly && !undecided && isDirectMessage ? 'reflowed-as-dm' : undefined,
   };
 }
