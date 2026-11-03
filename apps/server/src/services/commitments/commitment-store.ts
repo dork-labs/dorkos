@@ -48,7 +48,10 @@ const AGENT_OWNED: SQL = isNotNull(commitments.agentId);
 
 /** The fields a change may touch. */
 export type CommitmentPatch = Partial<
-  Pick<CommitmentRow, 'state' | 'dueAt' | 'dueNotifiedAt' | 'closedAt' | 'note'>
+  Pick<
+    CommitmentRow,
+    'state' | 'dueAt' | 'dueNotifiedAt' | 'closedAt' | 'note' | 'authority' | 'authorityMarks'
+  >
 >;
 
 /** Reads and writes the `commitments` table. */

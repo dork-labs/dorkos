@@ -8,6 +8,8 @@ import { commitments, eq, type Db } from '@dorkos/db';
 import { CommitmentStore } from '../commitment-store.js';
 import { CommitmentError, CommitmentService, PERSON_ASSIGNER } from '../commitment-service.js';
 import {
+  lowerAuthority,
+  ownWordsAuthority,
   readAuthority,
   readAuthorityMarks,
   UNREADABLE_AUTHORITY,
@@ -59,6 +61,42 @@ describe('commitment authority', () => {
       expect(readAuthorityMarks(null)).toEqual({ outsider: true });
       expect(readAuthorityMarks('')).toEqual({ outsider: true });
       expect(readAuthorityMarks('{nope')).toEqual({ outsider: true });
+    });
+  });
+
+  describe('lowering', () => {
+    const level = (
+      asks: 'always' | 'when-risky' | 'never',
+      reach: 'read' | 'edit' | 'workspace' | 'everything'
+    ) => ({ kind: 'level', level: { asks, reach } }) as const;
+
+    it('orders person, own words, a recorded level, then the stranger bound', () => {
+      expect(lowerAuthority({ kind: 'person' }, { kind: 'self' })).toEqual({ kind: 'self' });
+      expect(lowerAuthority({ kind: 'self' }, level('never', 'everything'))).toEqual(
+        level('never', 'everything')
+      );
+      expect(lowerAuthority(level('always', 'read'), { kind: 'runtime-default' })).toEqual({
+        kind: 'runtime-default',
+      });
+      expect(
+        lowerAuthority(level('never', 'workspace'), level('when-risky', 'everything'))
+      ).toEqual(level('when-risky', 'workspace'));
+    });
+
+    it('keeps legacy only when both sides are legacy, and reads it as own words otherwise', () => {
+      expect(lowerAuthority({ kind: 'legacy' }, { kind: 'legacy' })).toEqual({ kind: 'legacy' });
+      expect(lowerAuthority({ kind: 'legacy' }, { kind: 'person' })).toEqual({ kind: 'self' });
+      expect(lowerAuthority({ kind: 'person' }, { kind: 'legacy' })).toEqual({ kind: 'self' });
+      expect(lowerAuthority({ kind: 'legacy' }, level('always', 'read'))).toEqual(
+        level('always', 'read')
+      );
+    });
+
+    it("holds an agent's own words to its turn's level when it ran under one", () => {
+      expect(ownWordsAuthority(undefined)).toEqual({ kind: 'self' });
+      expect(ownWordsAuthority({ asks: 'when-risky', reach: 'edit' })).toEqual(
+        level('when-risky', 'edit')
+      );
     });
   });
 
@@ -115,8 +153,13 @@ describe('commitment authority', () => {
       });
     });
 
-    it("writes a person's as person, with no marks", () => {
-      const made = service.create('agent-a', { what: 'Ship it' }, { kind: 'person' });
+    it("writes a proven person's as person, with no marks, and an unproven one as the stranger bound", () => {
+      const unproven = service.create('agent-a', { what: 'From a script' }, { kind: 'person' });
+      expect(stored(unproven.id)).toMatchObject({
+        authority: 'runtime-default',
+        authorityMarks: '{"outsider":true}',
+      });
+      const made = service.create('agent-a', { what: 'Ship it' }, { kind: 'person', proven: true });
       expect(stored(made.id)).toMatchObject({
         assignedByKind: 'person',
         assignedBy: PERSON_ASSIGNER,
@@ -127,9 +170,74 @@ describe('commitment authority', () => {
 
     it('never writes legacy, whoever makes it', () => {
       service.create('agent-a', { what: 'One' });
-      service.create('agent-a', { what: 'Two' }, { kind: 'person' });
+      service.create('agent-a', { what: 'Two' }, { kind: 'person', proven: true });
       const authorities = db.select({ a: commitments.authority }).from(commitments).all();
       expect(authorities.map((r) => r.a).sort()).toEqual(['person', 'self']);
+    });
+
+    it("holds an agent's promise to the level of the turn it was made in", () => {
+      const made = service.create('agent-a', {
+        what: 'Ship it',
+        originLevel: { asks: 'always', reach: 'read' },
+      });
+      expect(stored(made.id).authority).toBe('{"asks":"always","reach":"read"}');
+    });
+
+    it('needs a note to decline a to-do somebody gave, never an own promise', () => {
+      const given = service.create(
+        'agent-a',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      const agentA = { kind: 'agent', agentId: 'agent-a' } as const;
+      expect(() => service.update(agentA, given.id, { state: 'dropped' })).toThrow(/note/);
+      const own = service.create('agent-a', { what: 'Tidy' });
+      expect(service.update(agentA, own.id, { state: 'dropped' }).state).toBe('dropped');
+    });
+
+    it('marks an own promise from a turn of unknown level as outsider, and a known clean one not', () => {
+      const unknown = service.create('agent-a', { what: 'After a restart' });
+      expect(stored(unknown.id)).toMatchObject({
+        authority: 'self',
+        authorityMarks: '{"outsider":true}',
+      });
+      const known = service.create('agent-a', {
+        what: 'In a recorded turn',
+        originLevel: { asks: 'never', reach: 'everything' },
+      });
+      expect(stored(known.id)).toMatchObject({
+        authority: '{"asks":"never","reach":"everything"}',
+        authorityMarks: '{}',
+      });
+    });
+
+    it("leaves an agent's own promise alone when a person, proven or not, closes or reopens it", () => {
+      const own = service.create('agent-a', {
+        what: 'Reply',
+        originLevel: { asks: 'never', reach: 'everything' },
+      });
+      service.update({ kind: 'person' }, own.id, { state: 'kept' });
+      service.update({ kind: 'person' }, own.id, { state: 'open' });
+      expect(stored(own.id)).toMatchObject({
+        authority: '{"asks":"never","reach":"everything"}',
+        authorityMarks: '{}',
+      });
+    });
+
+    it("lowers someone else's to-do on any unproven change, a new date included", () => {
+      const given = service.create(
+        'agent-a',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      service.update({ kind: 'person' }, given.id, {
+        state: 'open',
+        dueAt: '2099-01-01T00:00:00Z',
+      });
+      expect(stored(given.id)).toMatchObject({
+        authority: 'runtime-default',
+        authorityMarks: '{"outsider":true}',
+      });
     });
 
     it('refuses an agent recording a promise for another agent', () => {

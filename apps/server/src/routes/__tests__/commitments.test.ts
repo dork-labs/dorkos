@@ -10,6 +10,8 @@ import { createAgentCommitmentsRoutes, createCommitmentsRoutes } from '../commit
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { CommitmentService, CommitmentStore } from '../../services/commitments/index.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { personProof } from '../../services/commitments/caller.js';
+import { commitments, eq, type Db } from '@dorkos/db';
 
 vi.mock('../../lib/logger.js', () => ({
   logger: { warn: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
@@ -29,12 +31,25 @@ describe('commitment routes', () => {
   let service: CommitmentService;
   /** Whether the caller counts as the install's owner; flipped per test. */
   let owner: boolean;
+  let db: Db;
+
+  /** A row's stored authority columns. */
+  function power(id: string) {
+    return db
+      .select({ authority: commitments.authority, marks: commitments.authorityMarks })
+      .from(commitments)
+      .where(eq(commitments.id, id))
+      .get();
+  }
 
   beforeEach(() => {
     owner = true;
-    service = new CommitmentService({ store: new CommitmentStore(createTestDb()) });
+    db = createTestDb();
+    service = new CommitmentService({ store: new CommitmentStore(db) });
     const deps = {
       isOwner: () => owner,
+      // The real proof: these requests carry no session cookie, as a local program's would not.
+      personProven: personProof,
       service,
       agentExists: (id: string) => Object.values(AGENTS).includes(id),
       agentIdForPath: (agentPath: string) => AGENTS[agentPath],
@@ -60,6 +75,49 @@ describe('commitment routes', () => {
   });
 
   afterEach(() => service.stop());
+
+  it("marks an agent's own promise when the agent changes it over HTTP, where no turn is readable", async () => {
+    const made = service.create('agent-ana', {
+      what: 'Ship it',
+      originLevel: { asks: 'never', reach: 'everything' },
+    });
+    expect(power(made.id)!.marks).toBe('{}');
+    const res = await request(fixtureServer)
+      .patch(`/api/commitments/${made.id}`)
+      .set(AGENT_IDENTITY_HEADER, '/agents/ana')
+      .send({ state: 'kept' });
+    expect(res.status).toBe(200);
+    expect(power(made.id)!.marks).toBe('{"outsider":true}');
+  });
+
+  describe('person authority needs proof (DOR-3088, Security Must for PR 2)', () => {
+    it('never mints person authority from the open gate: login off, no agent headers, no cookie', async () => {
+      // `isOwner` passes, as it does for any program on this computer with login off.
+      const res = await request(fixtureServer)
+        .post('/api/agents/agent-ana/commitments')
+        .send({ what: 'Delete the staging bucket' });
+      expect(res.status).toBe(201);
+      expect(power(res.body.id)).toEqual({
+        authority: 'runtime-default',
+        marks: '{"outsider":true}',
+      });
+    });
+
+    it('lowers a proven person to-do to the stranger bound when an unproven request edits it', async () => {
+      const made = service.create(
+        'agent-ana',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      expect(power(made.id)).toEqual({ authority: 'person', marks: '{}' });
+
+      const res = await request(fixtureServer)
+        .patch(`/api/commitments/${made.id}`)
+        .send({ state: 'open', dueAt: '2099-10-12T09:00:00Z' });
+      expect(res.status).toBe(200);
+      expect(power(made.id)).toEqual({ authority: 'runtime-default', marks: '{"outsider":true}' });
+    });
+  });
 
   it('lets a person add a promise for an agent, and anyone list it', async () => {
     const created = await request(fixtureServer)
