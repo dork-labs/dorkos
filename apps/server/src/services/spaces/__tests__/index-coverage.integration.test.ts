@@ -87,6 +87,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db?.end();
+  // force-drop: single-client
   await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
   await admin.end();
 });
