@@ -5,14 +5,21 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { presentsProgramCredential, requirePersonAtThisComputer } from '../lib/caller-authority.js';
 import { scanBrowserProfiles } from '../services/browser/profile-scan.js';
+import { env } from '../env.js';
 
 /** No GET handler: loading the page must never inspect browser metadata. */
 export function createYourBrowserRoutes(
-  scan: () => Promise<YourBrowserScan> = scanBrowserProfiles
+  scan: () => Promise<YourBrowserScan> = scanBrowserProfiles,
+  enabled: () => boolean = () => env.DORKOS_YOUR_BROWSER_ENABLED
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
   router.post('/scan', async (c) => {
     c.header('Cache-Control', 'no-store');
+    if (!enabled())
+      return c.json(
+        { error: 'Browser discovery is off.', code: 'browser_discovery_disabled' },
+        404
+      );
     const facts = honoRequestFacts(c);
     // Run the existing person bar first so the app can ask for the owner's
     // session even with Require login off. An owner-less open gate proves no

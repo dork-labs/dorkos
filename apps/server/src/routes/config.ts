@@ -241,6 +241,7 @@ router.get('/', async (c) => {
     // To-dos (DOR-3088) sit behind an environment flag until v1 ships, read once at boot like the
     // routes it mounts, so the client hides the page and the sidebar door when it is off.
     todos: { enabled: env.DORKOS_TODOS_ENABLED },
+    yourBrowser: { enabled: env.DORKOS_YOUR_BROWSER_ENABLED },
     // Read from the schema rather than re-typed here, which is the same idiom
     // `agents`, `rooms` and `welcomeBack` already use above and below. It used to
     // be a hand-written copy, and a hand-written copy of a default is a fourth

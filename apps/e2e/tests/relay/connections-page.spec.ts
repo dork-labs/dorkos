@@ -16,19 +16,16 @@ test.describe('Connections page @smoke', () => {
     await basePage.waitForAppReady();
   });
 
-  test('keeps apps in one list, beside browser setup', async ({ connectionsPage }) => {
+  test('keeps apps in one list with browser discovery off by default', async ({
+    connectionsPage,
+  }) => {
     await connectionsPage.goto();
 
     await expect(connectionsPage.heading).toBeAttached();
     await expect(connectionsPage.allApps).toBeVisible();
-    // Apps stay one list; browser discovery has its own tab.
+    // The unreleased browser discovery flag is off on the default server.
     await expect(connectionsPage.content).toBeVisible();
-    await expect(
-      connectionsPage.content.getByRole('tab', { name: 'Apps', exact: true })
-    ).toBeVisible();
-    await expect(
-      connectionsPage.content.getByRole('tab', { name: 'Browsers', exact: true })
-    ).toBeVisible();
+    await expect(connectionsPage.content.getByRole('tab')).toHaveCount(0);
     await expect(connectionsPage.content.getByRole('region', { name: 'Messaging' })).toHaveCount(0);
     await expect(
       connectionsPage.content.getByRole('region', { name: 'Accounts', exact: true })
@@ -114,6 +111,13 @@ test('browser discovery reads only on tap and forgets picker email @smoke', asyn
   connectionsPage,
 }, testInfo) => {
   const page = connectionsPage.page;
+  // UI proof only: enable the hidden surface in the response, without changing
+  // the real server flag or reading any browser profile on the host.
+  await page.route('**/api/config', async (route) => {
+    const response = await route.fetch();
+    const config = await response.json();
+    await route.fulfill({ response, json: { ...config, yourBrowser: { enabled: true } } });
+  });
   let scans = 0;
   await page.route('**/api/your-browser/scan', async (route) => {
     scans += 1;

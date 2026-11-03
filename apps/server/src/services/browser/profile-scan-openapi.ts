@@ -10,7 +10,7 @@ export function registerBrowserScanOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Local browser'],
     summary: 'Find browser profiles on this computer',
     description:
-      'Reads profile names only when the person taps Find my browsers. Only the owner in the app can call it; agents, API keys and approval tokens are refused. The response must not be cached. Email is for the picker only and is discarded on selection or close.',
+      'Off by default; enable DORKOS_YOUR_BROWSER_ENABLED=true in the server environment and restart. Reads profile names only when the person taps Find my browsers. Only the owner in the app can call it; agents, API keys and approval tokens are refused. The response must not be cached. Email is for the picker only and is discarded on selection or close.',
     responses: {
       200: {
         description: 'Browser profile metadata for the picker',
@@ -22,6 +22,7 @@ export function registerBrowserScanOpenApi(registry: OpenAPIRegistry): void {
           'application/json': { schema: z.object({ error: z.string(), code: z.string() }) },
         },
       },
+      404: { description: 'Browser discovery is disabled' },
     },
   });
 }

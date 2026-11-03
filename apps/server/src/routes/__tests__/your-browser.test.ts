@@ -38,8 +38,9 @@ const scan = vi.fn(async () => ({
 }));
 let user: RequestUser | undefined;
 let ingress: IngressKind | undefined;
+let enabled = true;
 const listener = honoGroupListener(
-  { path: '/api/your-browser', routes: createYourBrowserRoutes(scan) },
+  { path: '/api/your-browser', routes: createYourBrowserRoutes(scan, () => enabled) },
   {
     before: async (c, next) => {
       if (user) c.set('user', user);
@@ -56,10 +57,22 @@ beforeEach(() => {
   gate.login = true;
   gate.owner = true;
   ingress = undefined;
+  enabled = true;
   user = { userId: 'user_owner', credential: 'cookie' };
 });
 
 describe('Your browser metadata route', () => {
+  it('refuses even the owner without reading metadata when the flag is off', async () => {
+    enabled = false;
+    const result = await request(server)
+      .post('/api/your-browser/scan')
+      .set('Host', 'localhost')
+      .send({});
+    expect(result.status).toBe(404);
+    expect(result.body.code).toBe('browser_discovery_disabled');
+    expect(result.headers['cache-control']).toBe('no-store');
+    expect(scan).not.toHaveBeenCalled();
+  });
   it('reads on a person POST only and forbids caching', async () => {
     expect(scan).not.toHaveBeenCalled();
     const result = await request(server)
