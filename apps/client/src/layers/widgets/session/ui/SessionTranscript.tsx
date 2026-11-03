@@ -332,7 +332,7 @@ export function SessionTranscript({
   // Until the server says which this chat is, a DM's rows and a session's differ
   // in height (folded work, names), so drawing either would move the conversation
   // when the answer lands. It waits, laid out but unseen, up to a limit.
-  const { held, landingKey } = useTranscriptHold(
+  const { held, hidden, landingKey } = useTranscriptHold(
     sessionId,
     directMessage?.settled === false,
     foldWork
@@ -630,7 +630,7 @@ export function SessionTranscript({
       approvalAnnouncement={approvalAnnouncement}
       // The pad the session's own chrome needs, and the matching start for the
       // scroll thumb's track — one fact, said once (`ScrollThumb`).
-      className={cn('pt-12 [--conversation-thumb-top:3rem]', held && 'invisible')}
+      className={cn('pt-12 [--conversation-thumb-top:3rem]', hidden && 'invisible')}
       loading={
         isLoadingHistory ? (
           // The same feed the loaded conversation renders, saying it is BUSY —

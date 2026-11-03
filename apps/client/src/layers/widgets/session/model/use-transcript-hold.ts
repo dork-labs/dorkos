@@ -14,10 +14,20 @@ import { useEffect, useState } from 'react';
 /** How long the conversation stays unseen while it waits, in milliseconds. */
 export const TRANSCRIPT_HOLD_MS = 300;
 
+/**
+ * How many frames the conversation stays unseen after it is let go.
+ *
+ * The landing runs when the hold ends, and it takes the list a couple of frames
+ * to arrive. Shown at once, the oldest message flashes first (QA, frame by frame).
+ */
+const REVEAL_FRAMES = 3;
+
 /** What {@link useTranscriptHold} tells the transcript. */
 export interface TranscriptHold {
-  /** Whether to keep the conversation unseen, and hold its landing, for now. */
+  /** Whether the landing still waits for the answer. */
   held: boolean;
+  /** Whether to keep the conversation unseen: while held, and while it lands. */
+  hidden: boolean;
   /**
    * Set once a late answer reflowed a conversation already on screen, so the
    * timeline lands again: the rows it landed on have changed height.
@@ -47,8 +57,30 @@ export function useTranscriptHold(
   }, [undecided, conversationId]);
 
   const drawnEarly = waitedTooLong === conversationId;
+  const held = undecided && !drawnEarly;
+
+  // Stays true for a few frames after the hold ends. A chat that was never held
+  // never starts hidden, so it gains nothing here.
+  const [landing, setLanding] = useState(held);
+  useEffect(() => {
+    if (held) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- remembers the hold so the frames after it can follow; the render already reads `held` directly
+      setLanding(true);
+      return;
+    }
+    if (!landing) return;
+    let frames = REVEAL_FRAMES;
+    let handle = requestAnimationFrame(function next() {
+      frames -= 1;
+      if (frames === 0) setLanding(false);
+      else handle = requestAnimationFrame(next);
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [held, landing]);
+
   return {
-    held: undecided && !drawnEarly,
+    held,
+    hidden: held || landing,
     landingKey: drawnEarly && !undecided && isDirectMessage ? 'reflowed-as-dm' : undefined,
   };
 }

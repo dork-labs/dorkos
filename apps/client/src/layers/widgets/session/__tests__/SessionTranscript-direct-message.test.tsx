@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { screen, cleanup } from '@testing-library/react';
+import { screen, cleanup, waitFor } from '@testing-library/react';
 import type { ChatMessage } from '@/layers/shared/model';
 import { SessionTranscript } from '../ui/SessionTranscript';
 import { createReadCursorHarness, renderWithTransport } from './session-transcript-test-helpers';
@@ -144,7 +144,7 @@ describe('SessionTranscript as a direct message', () => {
     expect(authorNames()[0]).toBe('Dorian');
   });
 
-  it('holds the conversation unseen until it knows, so nothing moves when the answer lands', () => {
+  it('holds the conversation unseen until it knows, so nothing moves when the answer lands', async () => {
     const { rerender } = renderWithTransport(
       <SessionTranscript
         sessionId="scout-direct"
@@ -162,7 +162,7 @@ describe('SessionTranscript as a direct message', () => {
         directMessage={{ agent: SCOUT, humanName: 'Dorian', settled: true }}
       />
     );
-    expect(document.querySelector('.invisible')).toBeNull();
+    await waitFor(() => expect(document.querySelector('.invisible')).toBeNull());
   });
 
   it('never invents a time for history: a row without one shows none', () => {
