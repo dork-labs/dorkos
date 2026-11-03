@@ -5,6 +5,11 @@ import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
+import {
+  agentWindowThemeArgs,
+  assertAgentFrame,
+  writeAgentWindowTheme,
+} from './agent-window/theme.js';
 import { LocalBrowserError } from './errors.js';
 import { BrowserDownloadProgress, type BrowserPreparationListener } from './preparation.js';
 import { disablePasswordSaving } from './plain-chromium.js';
@@ -121,18 +126,34 @@ export const productionBackend: LocalBrowserBackend = {
     // The profile is shared with the plain sign-in window, and with the basic
     // password store a saved password is readable on disk. Neither window saves one.
     await disablePasswordSaving(storagePath);
+    const theme = await writeAgentWindowTheme(storagePath);
     // Playwright launch does not accept AbortSignal. The service retains setup ownership
     // and closes a context that arrives after cancellation; never race this result away.
-    return chromium.launchPersistentContext(storagePath, {
+    const context = await chromium.launchPersistentContext(storagePath, {
       timeout: BROWSER_LAUNCH_TIMEOUT_MS,
       headless: false,
       viewport: null,
       chromiumSandbox: true,
-      args: [`${PINNED_DISABLED_FEATURES_ARG},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`],
+      args: [
+        `${PINNED_DISABLED_FEATURES_ARG},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
+        ...agentWindowThemeArgs(theme),
+      ],
       // Without the automation flag the window looks like the person's Chrome;
-      // password saving is off in the profile itself.
-      ignoreDefaultArgs: ['--enable-automation', PINNED_DISABLED_FEATURES_ARG],
+      // password saving is off in the profile itself. The theme's own flag allows
+      // that one folder and no other extension, in place of Playwright's blanket one.
+      ignoreDefaultArgs: [
+        '--enable-automation',
+        PINNED_DISABLED_FEATURES_ARG,
+        '--disable-extensions',
+      ],
     });
+    try {
+      await assertAgentFrame(context);
+    } catch (error) {
+      await context.close().catch(() => undefined);
+      throw error;
+    }
+    return context;
   },
   connect: (endpoint, headers) => {
     assertLocalPlaywrightVersion();

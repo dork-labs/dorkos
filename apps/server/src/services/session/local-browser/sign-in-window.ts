@@ -1,5 +1,6 @@
 /** One plain sign-in window at a time, and whether its sign-in reached the disk. */
 import type { LocalBrowserSignIn } from '@dorkos/shared/local-browser';
+import { clearAgentWindowTheme } from './agent-window/theme.js';
 import { LocalBrowserError } from './errors.js';
 import { managedChromiumPath } from './playwright-backend.js';
 import {
@@ -19,9 +20,10 @@ const SAVE_POLL_MS = 200;
 /** How long a new window may take to take hold of its profile. */
 export const SIGN_IN_LOCK_TIMEOUT_MS = 5_000;
 
-/** No saved passwords, and none of the tabs an agent left open: only a person is here. */
+/** No saved passwords, no agent window's orange, no tabs an agent left open: only a person is here. */
 async function preparePlainProfile(profileFolder: string): Promise<void> {
   await disablePasswordSaving(profileFolder);
+  await clearAgentWindowTheme(profileFolder);
   await forgetOpenTabs(profileFolder);
 }
 
@@ -39,7 +41,7 @@ export interface SignInWindowDeps {
   held?: (profileFolder: string) => boolean;
   /** Which process holds a profile, read after the window starts. */
   lockOwner?: LockOwner;
-  /** Get the profile ready: password saving off, no tabs to bring back. */
+  /** Get the profile ready: password saving off, the agent window's theme out, no tabs to bring back. */
   prepare?: (profileFolder: string) => Promise<void>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;

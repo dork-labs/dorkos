@@ -28,6 +28,7 @@ function setup() {
   };
   const service = {
     requireProfileAccess: vi.fn(async () => undefined),
+    fullScreen: { requireNone: vi.fn(async () => undefined) },
     requireSharedSession: vi.fn((id: string) => {
       if (id !== 'chat-one')
         throw new LocalBrowserError(
@@ -208,6 +209,32 @@ describe('local browser scoped tool projection', () => {
     expect(service.screenshot).not.toHaveBeenCalled();
     expect(service.action).not.toHaveBeenCalled();
     expect(service.agentState).not.toHaveBeenCalled();
+  });
+  it('refuses every read and action while a page is in full screen, before reading', async () => {
+    const { domain, deps, context, service } = setup();
+    service.fullScreen.requireNone.mockRejectedValue(
+      new LocalBrowserError('full_screen', 'A page is in full screen.')
+    );
+    for (const capability of domain.capabilities.filter(
+      (item) => item.id !== 'local_browser.ask_person'
+    ))
+      await expect(
+        capability.invoke(deps, inputFor(capability.id), context('chat-one'))
+      ).rejects.toMatchObject({ payload: { code: 'full_screen' } });
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
+    expect(service.action).not.toHaveBeenCalled();
+    expect(service.agentState).not.toHaveBeenCalled();
+  });
+  it('still lets an agent hand over from full screen', async () => {
+    const { domain, deps, context, service } = setup();
+    service.fullScreen.requireNone.mockRejectedValue(
+      new LocalBrowserError('full_screen', 'A page is in full screen.')
+    );
+    const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;
+    await expect(
+      ask.invoke(deps, inputFor('local_browser.ask_person'), context('chat-one'))
+    ).resolves.toBeDefined();
   });
   it('refuses every other chat on every tool during a handoff: only one chat is ever shared', async () => {
     const { domain, deps, context, service } = setup();

@@ -60,7 +60,10 @@ function scopedAnswer<T>(
   requireSession(service, context);
   const allowed = async () => {
     await answer(() => service.requireProfileAccess(context.sessionId!));
-    if (!handingOver) await answer(() => service.handover.requireAgentMayUse(context.sessionId!));
+    if (!handingOver) {
+      await answer(() => service.handover.requireAgentMayUse(context.sessionId!));
+      await answer(() => service.fullScreen.requireNone());
+    }
     requireSession(service, context);
   };
   return (async () => {
