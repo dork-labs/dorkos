@@ -113,6 +113,18 @@ export async function actAsPersonInPage(
  * Remove an owner a test registered, with its sessions, sign-in and API keys,
  * so the test-mode server is owner-less again for every test after it.
  *
+ * **It also hands the person's room author back to the `'local'` key.** The
+ * first time anything resolves the operator once an owner exists,
+ * `AuthorRegistry.bindOwner` rebinds the `'local'` human row to `user:<id>`
+ * (`apps/server/src/services/rooms/author-registry.ts`). That is the row #team
+ * seats and the row its lead seat names. Delete only the account and the next
+ * read finds no owner, falls back to `localHuman()`, and mints a NEW `'local'`
+ * author who is in no room: `/` then says "You're not in this channel" and new
+ * agents are never seated in #team. `home-surface/team-room.spec.ts` failed that
+ * way whenever it shared a shard with `connections/owner-management.ts` (queue runs 41713552253,
+ * 41717586882). Done in the same transaction as the delete, so the server never
+ * sees an owner-less install whose person row is still bound.
+ *
  * @param apiUrl - The test-mode API origin, whose port names its data folder.
  * @param email - The owner's email.
  */
@@ -129,6 +141,13 @@ export function removeTestOwner(apiUrl: string, email: string): void {
         db.prepare(`DELETE FROM ${table} WHERE ${column} = ?`).run(owner.id);
       }
       db.prepare('DELETE FROM user WHERE id = ?').run(owner.id);
+      const bound = `user:${owner.id}`;
+      db.prepare(
+        "UPDATE authors SET natural_key = 'local' WHERE kind = 'human' AND natural_key = ? AND retired_at IS NULL"
+      ).run(bound);
+      db.prepare("UPDATE authors SET linked_owner_key = 'local' WHERE linked_owner_key = ?").run(
+        bound
+      );
     })();
   } finally {
     db.close();
