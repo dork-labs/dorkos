@@ -39,7 +39,7 @@ Evidence came from five places, read on 2026-10-17:
 1. **The pack itself:** `packages/operating-skills/src/` (10 skills, `pack.ts` version history to v42, `seed.ts`, `heartbeat-templates.ts`) and the canon (`meta/PROACTIVE-AGENTS.md`, `meta/agent-etiquette.md`, `meta/user-care.md`, `meta/PRINCIPLES.md`).
 2. **Lessons learned the hard way:** every Claude Code memory file for this repo across four accounts (about 485 files), plus 12 DorkOS agent `MEMORY.md` files.
 3. **What agents built for themselves:** every skill under the 28 agent homes in `~/.dork/agents/`, plus registered agents elsewhere (LifeOS, Mio-Clicker-PM, tangerines and others), and the `wing` agent template.
-4. **Rooms:** `#dorkos`, `#triage`, `#marfa-poster` and others, searched for repeated mistakes and corrections.
+4. **Rooms:** `#dorkos`, `#triage` and others, searched for repeated mistakes and corrections.
 5. **Direct answers.** DorkBot asked five agents the same question: what should be core, what of yours would others use, and what works and fails for proactivity and codifying. The five were DorkOS Cloud, 144x.co (144 Studio's site agent), DorkOS Marketing, Cody P. Grammer (144 Studio's GM) and LifeOS. The designer sent its own list of eight, and the DorkOS agent added what it saw today. Section 3 summarizes them.
 
 Prior research: `research/20260824_agent-memory-cross-session-context.md`, `research/20261007_proactive-persistent-agents.md`, `research/20260722_agents-as-first-class-operators.md`, `specs/agent-memory/`, `specs/agents-as-operators/`, `specs/heartbeats/`.
