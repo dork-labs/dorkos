@@ -380,18 +380,20 @@
 
   /* === Typography tokens === */
   --msg-user-font-weight: 400;
-  --msg-user-line-height: 1.6;
-  --msg-prose-font-weight: 300;
-  --msg-prose-line-height: 1.75;
+  --msg-prose-font-weight: 400;
+  /* Both voices, as a ratio so it follows the reader's font-size setting: 22px on
+     the 14px desktop type. A phone's is set below, on its larger type. */
+  --msg-prose-line-height: 1.5714;
   --msg-timestamp-color: hsl(var(--faint));
 
   /* === Spacing tokens (density-aware) === */
   --msg-padding-x: 1.5rem;
   --msg-padding-y-start: 1rem;
   --msg-padding-y-mid: 0.375rem;
-  --msg-padding-y-end: 2rem;
+  --msg-padding-y-end: 1.5rem;
   --msg-gap: 0.75rem;
-  --msg-content-max-width: 100ch;
+  /* Resolves against the type of the element using it, since `ch` is that font's. */
+  --msg-content-max-width: 65ch;
   /* Width of the message list's left identity gutter. Matches the avatar's
      edge length exactly, so a continuation row (which renders an empty gutter,
      or the hover timestamp) stays flush with the group start above it. */
@@ -539,6 +541,17 @@
   --chart-3: 152 60% 36%;
   --chart-4: 280 55% 52%;
   --chart-5: 43 90% 45%;
+}
+
+/* A phone's message row: a 16px inset, and 26px lines on its 17.5px type. Named
+   the same as the block above, because `.light` on the document re-declares the
+   desktop values and a bare `:root` here would lose to it. */
+@media (max-width: 767px) {
+  :root,
+  .light {
+    --msg-padding-x: 1rem;
+    --msg-prose-line-height: 1.4857;
+  }
 }
 
 .dark {
@@ -1941,6 +1954,12 @@ body {
 /* Message body prose: session transcript, onboarding narration, and room posts */
 .msg-prose p + p {
   margin-top: 1em;
+}
+
+/* The reading measure is on words only. Code and tables in the same message keep
+   the whole column, because a wrapped line of code reads worse than a long one. */
+.msg-prose :is(p, ul, ol, blockquote, h1, h2, h3, h4) {
+  max-width: var(--msg-content-max-width);
 }
 
 /* Links and inline code are ink, not orange. Orange in a message means "this is

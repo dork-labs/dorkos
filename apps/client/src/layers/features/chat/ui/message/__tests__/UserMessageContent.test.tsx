@@ -86,6 +86,21 @@ describe('UserMessageContent', () => {
     expect(screen.queryByTestId('output-renderer')).not.toBeInTheDocument();
   });
 
+  it("caps a person's words at the reading measure, but not a command", () => {
+    const { unmount } = render(
+      <UserMessageContent message={makeMessage({ content: 'hello world' })} />
+    );
+    expect(screen.getByText('hello world')).toHaveClass('max-w-[var(--msg-content-max-width)]');
+    unmount();
+
+    render(
+      <UserMessageContent
+        message={makeMessage({ messageType: 'command', content: '/deploy now' })}
+      />
+    );
+    expect(screen.getByText('/deploy now')).not.toHaveClass('max-w-[var(--msg-content-max-width)]');
+  });
+
   it('renders a compaction boundary as a labelled rule carrying its metadata', () => {
     render(
       <UserMessageContent

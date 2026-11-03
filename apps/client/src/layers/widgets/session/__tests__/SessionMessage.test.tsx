@@ -362,12 +362,10 @@ describe('SessionMessage', () => {
     // group start renders the gutter + content layout and nothing above it.
     const root = container.firstElementChild;
     expect(root?.querySelector('.w-\\[var\\(--msg-gutter-width\\)\\]')).not.toBeNull();
-    expect(root?.querySelector('[data-slot="message-content"]')?.className).toContain(
-      'max-w-[var(--msg-content-max-width)]'
-    );
+    expect(root?.querySelector('[data-slot="message-content"]')).not.toBeNull();
   });
 
-  it('uses msg-prose class and max-width on content container', () => {
+  it('puts assistant words in msg-prose, inside an uncapped content container', () => {
     const msg = {
       id: '1',
       role: 'assistant' as const,
@@ -385,9 +383,10 @@ describe('SessionMessage', () => {
     );
     const el = container.querySelector('.msg-prose');
     expect(el).not.toBeNull();
-    // content container uses TV slot class (max-w-[var(--msg-content-max-width)])
+    // Code and tool cards share this container and keep the whole column, so the
+    // measure is on the words (`.msg-prose` in `index.css`), never here.
     const contentContainer = container.querySelector('[data-slot="message-content"]');
-    expect(contentContainer?.className).toContain('max-w-[var(--msg-content-max-width)]');
+    expect(contentContainer?.className).not.toContain('max-w-[var(--msg-content-max-width)]');
     expect(contentContainer?.querySelector('.msg-prose')).not.toBeNull();
   });
 
@@ -520,9 +519,7 @@ describe('SessionMessage', () => {
     expect(el?.className).toContain('w-full');
     // Both roles get the identity gutter and the same content column.
     expect(container.querySelector('.w-\\[var\\(--msg-gutter-width\\)\\]')).not.toBeNull();
-    expect(container.querySelector('[data-slot="message-content"]')?.className).toContain(
-      'max-w-[var(--msg-content-max-width)]'
-    );
+    expect(container.querySelector('[data-slot="message-content"]')).not.toBeNull();
   });
 
   it('leaves the identity gutter empty on a user continuation', () => {

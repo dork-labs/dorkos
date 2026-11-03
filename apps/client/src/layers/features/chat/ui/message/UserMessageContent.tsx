@@ -136,7 +136,9 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
     <div>
       {parsed.files.length > 0 && <FileAttachmentList files={parsed.files} />}
       {parsed.textContent && (
-        <div className="break-words whitespace-pre-wrap">{parsed.textContent}</div>
+        <div className="max-w-[var(--msg-content-max-width)] break-words whitespace-pre-wrap">
+          {parsed.textContent}
+        </div>
       )}
     </div>
   );

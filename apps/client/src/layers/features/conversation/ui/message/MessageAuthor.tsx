@@ -107,7 +107,7 @@ export function MessageAuthor({
         <time
           dateTime={at}
           title={formatAbsoluteTime(at ?? '')}
-          className={cn(slots.timestamp(), 'text-msg-timestamp shrink-0 whitespace-nowrap')}
+          className={cn(slots.timestamp(), 'text-msg-timestamp')}
         >
           {time}
         </time>

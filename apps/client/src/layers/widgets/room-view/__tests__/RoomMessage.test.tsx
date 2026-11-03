@@ -987,9 +987,9 @@ describe('RoomMessage — the layout slot each part is drawn with', () => {
   it('draws the words from the content slot and the toolbar from the actions slot', () => {
     renderRow();
 
-    // The measure a message's prose is read at.
+    // The line height a message is read at. Its measure is on the words, not here.
     expect(document.querySelector('[data-slot="message-content"]')).toHaveClass(
-      'max-w-[var(--msg-content-max-width)]'
+      'leading-[var(--msg-prose-line-height)]'
     );
     // Opaque, because the capsule is drawn ON TOP of the words it acts on.
     expect(screen.getByTestId('entry-actions')).toHaveClass('bg-popover');

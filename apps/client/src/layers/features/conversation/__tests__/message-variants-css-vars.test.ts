@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { messageItem } from '../ui/message/message-variants';
 import variantsSource from '../ui/message/message-variants.ts?raw';
 
 const indexCss = readFileSync(join(__dirname, '../../../../index.css'), 'utf-8');
@@ -27,5 +28,36 @@ describe('message-variants CSS variables', () => {
 
   it('gives assistant prose the prose font weight', () => {
     expect(variantsSource).toContain('font-[var(--msg-prose-font-weight)]');
+  });
+
+  it('applies the line height after text-sm, and lets compact type keep its own', () => {
+    const comfortable = messageItem({ density: 'comfortable' }).content();
+    expect(comfortable).toContain('leading-[var(--msg-prose-line-height)]');
+    // Dropped by tailwind-merge: 22px lines on 12px type would read as double-spaced.
+    expect(messageItem({ density: 'compact' }).content()).not.toContain('leading-');
+  });
+
+  it('caps the words at the reading measure, and leaves the column whole for code', () => {
+    expect(messageItem().content()).not.toContain('max-w-');
+    const rule = indexCss.match(/\.msg-prose :is\(([^)]*)\) \{\s*max-width: ([^;]+);/);
+    expect(rule?.[2]).toBe('var(--msg-content-max-width)');
+    expect(rule?.[1]).toContain('p');
+    expect(rule?.[1]).not.toMatch(/\b(pre|table|code)\b/);
+  });
+
+  it('washes a room row on hover and leaves a session row still', () => {
+    expect(messageItem({ anchor: 'rail' }).root()).toContain('hover:bg-row-hover');
+    expect(messageItem({ anchor: 'corner' }).root()).not.toContain('hover:');
+  });
+
+  it('never lets a long name squeeze the time', () => {
+    const timestamp = messageItem().timestamp();
+    expect(timestamp).toContain('shrink-0');
+    expect(timestamp).toContain('whitespace-nowrap');
+  });
+
+  it("re-declares a phone's values for `.light`, which holds the desktop ones", () => {
+    const phone = indexCss.match(/:root,\s*\.light \{\s*--msg-padding-x: ([^;]+);/);
+    expect(phone?.[1]).toBe('1rem');
   });
 });
