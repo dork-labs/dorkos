@@ -213,11 +213,11 @@ export interface SeatMoverDeps {
   /** A fresh session id; injected so a test can name it. */
   newSessionId?(): string;
   /**
-   * Remember that the seat's old session continues in the new one, so a spin-off
-   * the old one started reports to the seat where it sits now (DOR-3720). A
-   * failure here costs that report and must not stop the move.
+   * Remember which seat a session held, so a spin-off it started reports to that
+   * seat where it sits now (DOR-3720). A failure here costs that report and must
+   * not stop the move.
    */
-  linkSessions?(fromSessionId: string, toSessionId: string): void;
+  recordSeatMove?(fromSessionId: string, roomId: string, authorId: string): void;
 }
 
 /** What the new session is told when it continues a message the old one had started on. */
@@ -521,7 +521,7 @@ export class RoomSeatMover {
     if (!this.deps.rebind(seat.roomId, seat.authorId, newSessionId)) {
       throw new Error('The room would not move this seat to its new session.');
     }
-    if (old !== null) this.linkSessions(old, newSessionId);
+    if (old !== null) this.recordSeatMove(old, seat);
     this.pending.set(seatKey(seat.roomId, seat.authorId), {
       sessionId: newSessionId,
       ...(plan.target ? { accountHint: plan.target.id } : {}),
@@ -551,14 +551,15 @@ export class RoomSeatMover {
     return { newSessionId, reason: reasonOf(plan) };
   }
 
-  /** Link the seat's old session to its new one; a failure is logged, and the move stands. */
-  private linkSessions(fromSessionId: string, toSessionId: string): void {
+  /** Remember the seat a session held; a failure is logged, and the move stands. */
+  private recordSeatMove(fromSessionId: string, seat: Seat): void {
     try {
-      this.deps.linkSessions?.(fromSessionId, toSessionId);
+      this.deps.recordSeatMove?.(fromSessionId, seat.roomId, seat.authorId);
     } catch (err) {
-      logger.warn('[rooms] could not link a moved seat to its old session', {
+      logger.warn('[rooms] could not remember the seat a session held', {
         fromSessionId,
-        toSessionId,
+        roomId: seat.roomId,
+        authorId: seat.authorId,
         error: err instanceof Error ? err.message : String(err),
       });
     }

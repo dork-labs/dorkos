@@ -538,7 +538,7 @@ describe('working-with-spin-off-chats', () => {
     expect(flat).toContain(
       'ends finished, failed, needing the person, or paused at an account limit'
     );
-    expect(flat).toContain('the report waits for that work, for 15 minutes at most');
+    expect(flat).toContain('the report waits up to 15 minutes for that work');
   });
 
   it('checks status first, then what is new', () => {

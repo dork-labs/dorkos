@@ -42,7 +42,7 @@ import crypto from 'node:crypto';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ChatMessageRow } from '@dorkos/db';
 import type { TurnPermissionCeiling, TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
-import { mayJoinRunningTurn } from '../../core/turn-power/turn-marks.js';
+import { mayJoinRunningTurn, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import type {
   ChatDelivery,
   ChatMessageKind,
@@ -110,6 +110,8 @@ export interface ChatCaller {
   sessionId: string;
   /** The calling agent's home. */
   agentPath: string;
+  /** For a report, set by the server alone: the marks of the turn it speaks for, read as it ended. */
+  marksAtTurnEnd?: TurnMarks;
 }
 
 /** What `chat_send` takes. */
@@ -250,10 +252,9 @@ export class ChatMessageService {
     input: ChatSendInput,
     kind: Extract<ChatMessageKind, 'message' | 'report'> = 'message'
   ): Promise<ChatSendReceipt> {
-    const words = input.message;
-    if (words.trim() === '')
+    if (input.message.trim() === '')
       throw new ChatMessageError('INVALID_INPUT', 'Say what the message is.');
-    if (words.length > CHAT_MESSAGE_MAX) {
+    if (input.message.length > CHAT_MESSAGE_MAX) {
       throw new ChatMessageError(
         'INVALID_INPUT',
         `Keep a message under ${CHAT_MESSAGE_MAX.toLocaleString('en-US')} characters.`

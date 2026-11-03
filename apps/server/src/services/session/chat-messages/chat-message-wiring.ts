@@ -13,7 +13,7 @@ import type { Db } from '@dorkos/db';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
+import { marksOf, passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
 import {
   describeSessionFor,
   isSessionBusy,
@@ -417,6 +417,7 @@ export function wireChatReportBack(
     store,
     reportTargetOf: (sessionId) => reportTargetOf(sessionId),
     agentPathOf: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+    marksOfTurn: (sessionId) => marksOf(sessionId, undefined),
     holdsBackgroundWork: async (sessionId) => {
       const runtime = await runtimeRegistry.resolveForSession(sessionId);
       return runtime.holdsBackgroundWork?.(sessionId) === true;

@@ -99,27 +99,6 @@ describe('deliverToRoomSeat (DOR-3488)', () => {
     await expect(deliverToRoomSeat('seat', report)).rejects.toThrow('did not reach');
   });
 
-  it('a report to a seat that moved reaches its new session (DOR-3720)', async () => {
-    // The spin-off started from the old seat, which then moved to a new session.
-    start('child', 'old-seat');
-    store.recordSeatMove('old-seat', 'new-seat');
-    const parent = reportTargetOf('child')!.parentSessionId;
-    expect(parent).toBe('new-seat');
-
-    const deliver = vi.fn((_seat: string, _report: unknown, onSettled?: (ran: boolean) => void) => {
-      onSettled?.(true);
-      return true;
-    });
-    setRoomSeatReports({
-      seatOf: (id) => (id === 'new-seat' ? { roomId: 'r', authorId: 'a' } : null),
-      deliver,
-    });
-    await expect(deliverToRoomSeat(parent, report)).resolves.toBe(true);
-    expect(deliver.mock.calls[0]![0]).toBe('new-seat');
-    // The seat itself reports to nobody: being carried is not being a spin-off.
-    expect(reportTargetOf('new-seat')).toBeNull();
-  });
-
   it('is false for a chat that is no room’s seat, or before the rooms boot', async () => {
     await expect(deliverToRoomSeat('seat', report)).resolves.toBe(false);
     const deliver = vi.fn(() => true);

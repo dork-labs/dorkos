@@ -25,7 +25,7 @@
  *
  * @module server/services/rooms/session-bindings/room-session-ledger
  */
-import { roomSessions, roomSessionRetirements, eq, lt, type Db } from '@dorkos/db';
+import { roomSeatMoves, roomSessions, roomSessionRetirements, eq, lt, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
 
 /** One `(room, agent) → session` binding, as the convergence paths read it. */
@@ -208,6 +208,54 @@ export class RoomSessionLedger {
       .delete(roomSessionRetirements)
       .where(lt(roomSessionRetirements.retiredAt, at - RETIREMENT_HORIZON_MS))
       .run();
+  }
+
+  /**
+   * Remember the seat a session held when the seat moved to a fresh session
+   * (DOR-3720), so a spin-off that session started can still report to it.
+   *
+   * Not a rename, so not {@link retire}: the old session is still a real chat,
+   * and {@link bindingForSession} must keep answering nothing for it. Only
+   * {@link seatMovedFrom} reads this. Pruned on the same horizon as retirements.
+   *
+   * @param fromSessionId - The session that held the seat.
+   * @param roomId - The room.
+   * @param authorId - The agent whose seat it is.
+   */
+  recordSeatMove(fromSessionId: string, roomId: string, authorId: string): void {
+    const at = this.now();
+    this.db
+      .insert(roomSeatMoves)
+      .values({ fromSessionId, roomId, authorId, movedAt: at })
+      .onConflictDoUpdate({
+        target: roomSeatMoves.fromSessionId,
+        set: { roomId, authorId, movedAt: at },
+      })
+      .run();
+    this.db
+      .delete(roomSeatMoves)
+      .where(lt(roomSeatMoves.movedAt, at - RETIREMENT_HORIZON_MS))
+      .run();
+  }
+
+  /**
+   * The seat a session held before it moved, or `undefined` when it held none.
+   *
+   * @param sessionId - The session.
+   * @returns The room, the agent's author id, and when the seat moved (epoch ms).
+   */
+  seatMovedFrom(
+    sessionId: string
+  ): { roomId: string; authorId: string; movedAt: number } | undefined {
+    return this.db
+      .select({
+        roomId: roomSeatMoves.roomId,
+        authorId: roomSeatMoves.authorId,
+        movedAt: roomSeatMoves.movedAt,
+      })
+      .from(roomSeatMoves)
+      .where(eq(roomSeatMoves.fromSessionId, sessionId))
+      .get();
   }
 
   /**

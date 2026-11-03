@@ -85,18 +85,18 @@ const SEAT = { roomId: 'room-1', authorId: 'ana', agentPath: '/agents/ana', sess
 const OPTS = { alreadyPosted: false, hideAccounts: false };
 
 describe('RoomSeatMover', () => {
-  it('links the old session to the new one, so reports follow the seat (DOR-3720)', async () => {
-    const linkSessions = vi.fn();
-    const { m } = mover({ linkSessions });
+  it('remembers the seat the old session held, so reports follow it (DOR-3720)', async () => {
+    const recordSeatMove = vi.fn();
+    const { m } = mover({ recordSeatMove });
 
     await m.afterLimit(SEAT, 'entry-1', OPTS);
 
-    expect(linkSessions).toHaveBeenCalledWith('old-seat', 'new-seat');
+    expect(recordSeatMove).toHaveBeenCalledWith('old-seat', 'room-1', 'ana');
   });
 
-  it('still moves the seat when the link cannot be written', async () => {
+  it('still moves the seat when that cannot be written', async () => {
     const { m, bound } = mover({
-      linkSessions: () => {
+      recordSeatMove: () => {
         throw new Error('disk full');
       },
     });
@@ -106,13 +106,13 @@ describe('RoomSeatMover', () => {
     expect(bound.get('room-1/ana')).toBe('new-seat');
   });
 
-  it('links nothing when the store refuses the move', async () => {
-    const linkSessions = vi.fn();
-    const { m } = mover({ linkSessions, rebind: () => false });
+  it('remembers nothing when the store refuses the move', async () => {
+    const recordSeatMove = vi.fn();
+    const { m } = mover({ recordSeatMove, rebind: () => false });
 
     await m.afterLimit(SEAT, 'entry-1', OPTS).catch(() => undefined);
 
-    expect(linkSessions).not.toHaveBeenCalled();
+    expect(recordSeatMove).not.toHaveBeenCalled();
   });
 
   it('carries a marked seat’s marks, before its first turn (Must 2)', async () => {

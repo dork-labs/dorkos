@@ -18,7 +18,6 @@ import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 import { resolveTurnRuntimeType } from '../../runtimes/shared/resolve-agent-runtime-type.js';
 import { accountUsageForSession } from '../../session/fleet/session-account.js';
-import { getSessionStartedByStore } from '../../session/origin/session-started-by-store.js';
 import {
   readAgentExecutionDefaults,
   resolveUnattendedPermissionMode,
@@ -137,7 +136,7 @@ function capabilitiesOf(runtime: string): RuntimeCapabilities | undefined {
  * @param opts.activity - Reads the Activity feed writer when a move is recorded.
  */
 export function createRoomSeatMover(opts: {
-  store: Pick<RoomStore, 'rebindRoomSession'>;
+  store: Pick<RoomStore, 'rebindRoomSession' | 'sessionLedger'>;
   transcripts: RoomBindingTranscriptDeps | undefined;
   activity: () => ActivityService | undefined;
 }): RoomSeatMover {
@@ -150,11 +149,8 @@ export function createRoomSeatMover(opts: {
     },
     rebind: (roomId, authorId, sessionId) =>
       opts.store.rebindRoomSession(roomId, authorId, sessionId),
-    // The same row an account move of any other chat writes: the new session
-    // carries the old one on, so reports follow (`reportTargetOf`). It reports to
-    // nobody itself, and being a room's session it is still read as the room says.
-    linkSessions: (fromSessionId, toSessionId) =>
-      getSessionStartedByStore()?.recordSeatMove(fromSessionId, toSessionId),
+    recordSeatMove: (fromSessionId, roomId, authorId) =>
+      opts.store.sessionLedger.recordSeatMove(fromSessionId, roomId, authorId),
     runtimeOf: async (seat) =>
       asWorldRuntime(
         await resolveTurnRuntimeType({ sessionId: seat.sessionId, agentPath: seat.agentPath })

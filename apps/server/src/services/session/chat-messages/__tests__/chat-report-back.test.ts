@@ -63,7 +63,7 @@ describe('ChatReportBack.onTurnEnd', () => {
     await expect(end()).resolves.toBe('finished');
     expect(send).toHaveBeenCalledTimes(1);
     const [caller, input, kind] = send.mock.calls[0]!;
-    expect(caller).toEqual({ sessionId: CHILD, agentPath: '/agents/builder' });
+    expect(caller).toEqual({ sessionId: CHILD, agentPath: '/agents/builder', marksAtTurnEnd: {} });
     expect(input.to).toBe(PARENT);
     expect(input.summary).toBe('Finished');
     expect(input.message).toContain('Finished this turn.');
@@ -235,6 +235,29 @@ describe('a turn that ended holding work (DOR-3720)', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it('a turn ending during the last look takes the report, once', async () => {
+    // Security's DOR-3720 proof: the last look at whether work is held is async, and the entry was
+    // deleted after it unchecked, so the waiting turn's words went twice.
+    let calls = 0;
+    let release: (holds: boolean) => void = () => {};
+    const { reportBack, end, send, recheck } = holding({
+      holdsBackgroundWork: () => {
+        calls += 1;
+        if (calls === 1) return Promise.resolve(true);
+        if (calls === 3) return new Promise<boolean>((resolve) => (release = resolve));
+        return Promise.resolve(false);
+      },
+    });
+    await end();
+    await recheck();
+    await vi.waitFor(() => expect(calls).toBe(3));
+    await reportBack.onTurnEnd(CHILD, status(), { from: NOW + 1_000, to: NOW + 2_000 });
+    expect(send).toHaveBeenCalledTimes(1);
+    release(false);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it('a later turn that said nothing falls back to the words of the turn that waited', async () => {
     const { reportBack, end, send, state } = holding({
       history: async () => [
@@ -360,6 +383,101 @@ describe('a turn that ended holding work (DOR-3720)', () => {
     expect(send).not.toHaveBeenCalled();
     expect(toRoomSeat).toHaveBeenCalledTimes(1);
     expect(toRoomSeat.mock.calls[0]![1].text).toContain('Finished this turn.');
+  });
+});
+
+describe('a report keeps the marks of the turn it speaks for (DOR-3720 M1)', () => {
+  const ORIGIN = { roomId: 'r', authorId: 'teammate' };
+  const WIFI = { outsider: true as const, teammate: [ORIGIN] };
+
+  /** A chat whose latest turn carries `marks.now`, which a test clears as its next turn starts. */
+  function marked(over: Partial<ChatReportBackDeps> = {}) {
+    const marks: { now: Record<string, unknown> } = { now: WIFI };
+    return {
+      marks,
+      deps: { marksOfTurn: () => marks.now, ...over } as Partial<ChatReportBackDeps>,
+    };
+  }
+
+  it('sends the marks to a chat parent on every try, whatever the chat runs meanwhile', async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('no'))
+      .mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const { marks, deps } = marked({
+      service: { send },
+      delay: async (ms) => {
+        if (ms !== REPORT_SETTLE_MS) marks.now = {};
+      },
+    });
+    await harness(deps).end();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[0]![0].marksAtTurnEnd).toEqual(WIFI);
+    expect(send.mock.calls[1]![0].marksAtTurnEnd).toEqual(WIFI);
+  });
+
+  it('sends the marks to a room seat on every try', async () => {
+    const toRoomSeat = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('did not reach'))
+      .mockResolvedValue(true);
+    const { marks, deps } = marked({
+      toRoomSeat,
+      delay: async (ms) => {
+        if (ms !== REPORT_SETTLE_MS) marks.now = {};
+      },
+    });
+    await harness(deps).end();
+    expect(toRoomSeat).toHaveBeenCalledTimes(2);
+    expect(toRoomSeat.mock.calls[1]![1].marks).toEqual(WIFI);
+  });
+
+  it('reads them as the turn ends, before the settle lets the next turn start', async () => {
+    const send = vi.fn().mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const { marks, deps } = marked({
+      service: { send },
+      delay: async () => {
+        marks.now = {};
+      },
+    });
+    await harness(deps).end();
+    expect(send.mock.calls[0]![0].marksAtTurnEnd).toEqual(WIFI);
+  });
+
+  it('keeps them on a waiting report, and joins them with a later turn’s', async () => {
+    const send = vi.fn().mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const rechecks: Array<() => void> = [];
+    let holds = true;
+    const { marks, deps } = marked({
+      service: { send },
+      holdsBackgroundWork: async () => holds,
+      later: (_ms, run) => {
+        rechecks.push(run);
+      },
+    });
+    const { reportBack, end } = harness(deps);
+    await end();
+    // The next turn starts unmarked, ends still holding, and then the work is released.
+    marks.now = {};
+    await reportBack.onTurnEnd(CHILD, status(), { from: NOW + 1_000, to: NOW + 2_000 });
+    holds = false;
+    rechecks.at(-1)!();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].marksAtTurnEnd).toEqual(WIFI);
+  });
+
+  it('keeps them on a "needs the person" report too', async () => {
+    const send = vi.fn().mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const { marks, deps } = marked({
+      service: { send },
+      statusOf: () => status({ lifecycle: 'blocked' }),
+      delay: async () => {
+        marks.now = {};
+      },
+    });
+    await harness(deps).reportBack.onWaiting(CHILD, { key: 'w-marks', what: 'It asks.' });
+    expect(send.mock.calls[0]![0].marksAtTurnEnd).toEqual(WIFI);
   });
 });
 

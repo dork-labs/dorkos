@@ -59,7 +59,7 @@
  * ## A report that cannot be delivered
  *
  * It is logged and tried again on {@link DELIVERY_RETRY_MS}, with the parent read
- * afresh each time, since a seat may have moved in between. A report that never
+ * afresh each time. A report that never
  * lands ends in one error line naming the chat and its parent. Reports wait in
  * this process: a restart loses one still waiting, though a chat that was holding
  * work is woken at the next boot (`wake-cut-short-work.ts`) and reports then.
@@ -69,6 +69,7 @@
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { logError, logger } from '../../../lib/logger.js';
+import { mergeMarks, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import type { ChatCaller, ChatMessageService } from './chat-message-service.js';
 import type { ChatMessageStore } from './chat-message-store.js';
 
@@ -127,6 +128,8 @@ export interface RoomSeatReport {
   fromAgentPath: string;
   /** The report. */
   text: string;
+  /** The marks of the turn it speaks for, read when that turn ended. */
+  marks?: TurnMarks;
 }
 
 /** What report-back needs. */
@@ -139,6 +142,8 @@ export interface ChatReportBackDeps {
   reportTargetOf: (sessionId: string) => ReportTarget | null;
   /** The chat's agent home, or null. */
   agentPathOf: (sessionId: string) => Promise<string | null>;
+  /** The marks the chat's latest turn carries. Read as a turn ends, before anything can change it. */
+  marksOfTurn?: (sessionId: string) => TurnMarks;
   /** Whether the chat's agent still holds background work. */
   holdsBackgroundWork: (sessionId: string) => Promise<boolean>;
   /** The chat's live status, or null. */
@@ -178,6 +183,8 @@ interface DeferredReport {
   since: number;
   /** When the oldest turn still unreported started, if an earlier one waited too. */
   earliestFrom?: number;
+  /** The marks of every turn it may speak for, read as each ended. */
+  marks: TurnMarks;
 }
 
 /** Wait, without holding the process open for it. */
@@ -340,13 +347,16 @@ export class ChatReportBack {
     const reason = reasonOf(ended);
     if (reason === null) return null;
     // This turn's ending takes any earlier wait, in this tick: the earlier report
-    // can no longer go on its own.
+    // can no longer go on its own. Its marks stay with the report, and this turn's are
+    // read now, because the chat's next turn replaces them and a report can outlive it.
     const earlier = this.deferred.get(sessionId);
     this.deferred.delete(sessionId);
     const earliestFrom = earlier?.earliestFrom ?? earlier?.window.from;
+    const marks = mergeMarks(this.marksOfTurn(sessionId), earlier?.marks ?? NO_MARKS);
     if (reason === 'finished' && (await this.isHolding(sessionId, ended))) {
       this.defer(sessionId, {
         window,
+        marks,
         since: this.now(),
         ...(earliestFrom !== undefined ? { earliestFrom } : {}),
       });
@@ -366,8 +376,13 @@ export class ChatReportBack {
     // A refused turn says nothing, so its words alone would report only "failed"
     // (DOR-3167). The runtime's reason goes with it.
     const why = reason === 'failed' ? ended?.lastError?.message : undefined;
-    await this.report(sessionId, target, reason, text, why);
+    await this.report(sessionId, target, reason, marks, text, why);
     return reason;
+  }
+
+  /** The marks the chat's latest turn carries. */
+  private marksOfTurn(sessionId: string): TurnMarks {
+    return this.deps.marksOfTurn?.(sessionId) ?? NO_MARKS;
   }
 
   /** Whether the chat still holds a helper or background work. */
@@ -417,6 +432,8 @@ export class ChatReportBack {
     await this.delay(REPORT_SETTLE_MS);
     if (this.deferred.get(sessionId) !== entry) return;
     busy = await this.isBusy(sessionId);
+    // A turn can end during that await too.
+    if (this.deferred.get(sessionId) !== entry) return;
     if (busy && !overdue) return this.recheckLater(sessionId, entry);
     this.deferred.delete(sessionId);
     const target = this.deps.reportTargetOf(sessionId);
@@ -429,7 +446,7 @@ export class ChatReportBack {
         : '');
     const reason: ReportReason = busy ? 'holding' : 'finished';
     if (reason === 'finished' && text === '') return;
-    await this.report(sessionId, target, reason, text);
+    await this.report(sessionId, target, reason, entry.marks, text);
   }
 
   /**
@@ -444,6 +461,7 @@ export class ChatReportBack {
   async onWaiting(sessionId: string, wait: { key: string; what: string }): Promise<boolean> {
     const target = this.deps.reportTargetOf(sessionId);
     if (!target) return false;
+    const marks = this.marksOfTurn(sessionId);
     if (this.reportedAsks.has(wait.key)) return false;
     this.reportedAsks.add(wait.key);
     if (this.reportedAsks.size > 5_000) {
@@ -453,7 +471,7 @@ export class ChatReportBack {
     await this.delay(REPORT_SETTLE_MS);
     if (this.deps.statusOf(sessionId)?.lifecycle !== 'blocked') return false;
     const text = lastTurnText(await this.deps.history(sessionId).catch(() => []));
-    await this.report(sessionId, target, 'needs-you', text, wait.what);
+    await this.report(sessionId, target, 'needs-you', marks, text, wait.what);
     return true;
   }
 
@@ -471,21 +489,23 @@ export class ChatReportBack {
 
   /**
    * Send one report, from the spin-off to its parent, trying again when it
-   * cannot be delivered. Never throws.
+   * cannot be delivered. Never throws. Every try carries the marks read when the
+   * turn ended: the chat's next turn may have none, and these words are still marked.
    */
   private async report(
     sessionId: string,
     target: ReportTarget,
     reason: ReportReason,
+    marks: TurnMarks,
     text: string,
     detail?: string
   ): Promise<void> {
     const message = composeReport(reason, text, detail);
     for (let attempt = 0; ; attempt += 1) {
-      // Read afresh: a seat that moved while this waited reports on to its new session.
+      // Read afresh: a parent carried to another account while this waited gets it there.
       const parent = (this.deps.reportTargetOf(sessionId) ?? target).parentSessionId;
       try {
-        await this.deliver(sessionId, parent, reason, message);
+        await this.deliver(sessionId, parent, reason, marks, message);
         return;
       } catch (err) {
         const wait = DELIVERY_RETRY_MS[attempt];
@@ -508,6 +528,7 @@ export class ChatReportBack {
     sessionId: string,
     parent: string,
     reason: ReportReason,
+    marks: TurnMarks,
     message: string
   ): Promise<void> {
     const agentPath = await this.deps.agentPathOf(sessionId).catch(() => null);
@@ -516,11 +537,16 @@ export class ChatReportBack {
     const toSeat = this.deps.toRoomSeat;
     if (
       toSeat &&
-      (await toSeat(parent, { fromSessionId: sessionId, fromAgentPath: agentPath, text: message }))
+      (await toSeat(parent, {
+        fromSessionId: sessionId,
+        fromAgentPath: agentPath,
+        text: message,
+        marks,
+      }))
     ) {
       return;
     }
-    const caller: ChatCaller = { sessionId, agentPath };
+    const caller: ChatCaller = { sessionId, agentPath, marksAtTurnEnd: marks };
     await this.deps.service.send(
       caller,
       { to: parent, message, summary: SUMMARY[reason] },

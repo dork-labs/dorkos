@@ -9,7 +9,14 @@ import type {
   TurnPermissionCeiling,
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
-import { ceilingCarrying, marksHold, marksOfLevel } from '../../core/turn-power/turn-marks.js';
+import {
+  ceilingCarrying,
+  marksHold,
+  marksOfLevel,
+  mergeMarks,
+  NO_MARKS,
+  type TurnMarks,
+} from '../../core/turn-power/turn-marks.js';
 import { marksOf, unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
 
@@ -23,20 +30,25 @@ const CARRIED_HOLD = { carriedOutsider: true } as const;
  * What a chat message row stores as its sender's bound (`ceilingJson`): a teammate's chain, and
  * the sender's Wi-Fi hold, which the turn it starts carries as a mark (DOR-3561), never a cap.
  *
+ * A report can go long after the turn it speaks for, while the sender's latest turn is unmarked,
+ * so `caller.marksAtTurnEnd` keeps that turn's marks on the row (DOR-3720). Only the server's own
+ * report path sets it; no tool's input reaches a caller.
+ *
  * @param deps - Reads the sending chat's level (`passedOnLevelOf`).
- * @param caller - The sending chat and its agent.
+ * @param caller - The sending chat and its agent, and for a report the marks of its turn.
  */
 export function senderCeilingJson(
   deps: { turnLevelOf: (sessionId: string) => TurnPermissionLevel | undefined },
-  caller: { sessionId: string; agentPath: string }
+  caller: { sessionId: string; agentPath: string; marksAtTurnEnd?: TurnMarks }
 ): string {
+  const atTurnEnd = caller.marksAtTurnEnd ?? NO_MARKS;
   const level = deps.turnLevelOf(caller.sessionId);
   const marks =
     level !== undefined
       ? marksOfLevel(level)
       : unknownLevelMarks([caller.sessionId], caller.agentPath);
-  const carried = ceilingCarrying(marks);
-  if (!marksHold(marksOf(caller.sessionId, caller.agentPath))) {
+  const carried = ceilingCarrying(mergeMarks(marks, atTurnEnd));
+  if (!marksHold(marksOf(caller.sessionId, caller.agentPath)) && !marksHold(atTurnEnd)) {
     return JSON.stringify(carried ?? NO_BOUND);
   }
   return JSON.stringify(carried === undefined ? [CARRIED_HOLD] : [carried, CARRIED_HOLD]);

@@ -29,6 +29,34 @@ function ledgerWith(binding: { roomId: string; authorId: string; sessionId: stri
   return { ledger: new RoomSessionLedger(db), db };
 }
 
+describe('RoomSessionLedger.recordSeatMove (DOR-3720)', () => {
+  const DAY = 24 * 60 * 60_000;
+
+  it('remembers the seat a session held, without making it a binding or a rename', () => {
+    const { ledger } = ledgerWith({ roomId: 'room-1', authorId: 'ana', sessionId: 'new' });
+
+    ledger.recordSeatMove('old', 'room-1', 'ana');
+
+    expect(ledger.seatMovedFrom('old')).toMatchObject({ roomId: 'room-1', authorId: 'ana' });
+    expect(ledger.bindingForSession('old')).toBeUndefined();
+    expect(ledger.successorFor('old')).toBeUndefined();
+    expect(ledger.seatMovedFrom('never-a-seat')).toBeUndefined();
+  });
+
+  it('forgets a move past the horizon', () => {
+    const db = createTestDb();
+    let now = 0;
+    const ledger = new RoomSessionLedger(db, () => now);
+
+    ledger.recordSeatMove('old', 'room-1', 'ana');
+    now = 31 * DAY;
+    ledger.recordSeatMove('newer', 'room-1', 'ana');
+
+    expect(ledger.seatMovedFrom('old')).toBeUndefined();
+    expect(ledger.seatMovedFrom('newer')).toBeDefined();
+  });
+});
+
 describe('RoomSessionLedger.bindingForSession', () => {
   it('answers the room and the author a session works for', () => {
     const { ledger } = ledgerWith({
