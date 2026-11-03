@@ -264,7 +264,7 @@ describe('checkMigrationSafety', () => {
     expect(res.ok).toBe(false);
     expect(res.latestReleased).toBeNull();
     expect(res.problems.join('\n')).toMatch(/no v\* tags visible/);
-    expect(res.problems.join('\n')).toMatch(/fetch-depth: 0/);
+    expect(res.problems.join('\n')).toMatch(/fetch the newest release tag/);
   });
 
   it('blames the RELEASED side, not the working tree, when the tagged file will not parse', () => {
