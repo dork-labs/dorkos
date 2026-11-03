@@ -3,6 +3,7 @@ covers:
   - 'fix(runtimes): enforce shared file protections and managed-server pins (DOR-3595)'
   - 'fix(runtimes): close protected-profile and native env deny gaps (DOR-3595)'
   - 'fix(runtimes): repair CI fixtures and prefix Codex protected globs (DOR-3595)'
+  - 'fix(runtimes): explain blocked Linux isolation and add macOS sandbox proof (DOR-3595)'
 ---
 
 ### Security
@@ -11,3 +12,4 @@ covers:
 - Hold changed agent tools for your approval below Full autonomy (DOR-3595).
 
 - Older Codex setups using `exec` now run through app-server and show approval cards (DOR-3595).
+- Codex now explains when Linux blocks program isolation and what needs to change. This also applies at Full access (DOR-3595).

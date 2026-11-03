@@ -29,6 +29,8 @@ import { CODEX_STOPPED_COPY } from '../notification-mapper.js';
 import { BACKGROUND_WORK_LOST_COPY, type BackgroundWake } from '../background-work.js';
 import { THREAD_STARTS_FRESH_NOTICE } from '../thread-loader.js';
 import { codexPermissionProfile } from '../turn-parts.js';
+import { CodexThreadLoader } from '../thread-loader.js';
+import { CodexRpcError } from '../protocol/errors.js';
 import type { CreditsRelay } from '../../../../core/cloud/credits-relay.js';
 
 type Harness = ReturnType<typeof makeAppServerHarness>;
@@ -69,6 +71,41 @@ async function rest(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
 }
 
 describe('a turn', () => {
+  it.each(['default', 'acceptEdits', 'bypassPermissions'] as const)(
+    'explains a Linux namespace refusal at %s without starting an unprotected turn',
+    async (permissionMode) => {
+      const detail = 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted';
+      const load = vi
+        .spyOn(CodexThreadLoader.prototype, 'ensureLoaded')
+        .mockRejectedValueOnce(
+          new CodexRpcError('thread/start', { code: -32600, message: detail })
+        );
+      try {
+        const h = harness();
+        const events = await h.run(
+          h.request({
+            sessionId: 'linux-refusal',
+            settings: { permissionMode },
+          })
+        );
+        expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+        expect(events[0]).toMatchObject({
+          data: {
+            code: 'codex_sandbox_unavailable',
+            message:
+              'This computer blocks Codex. Ask your administrator to allow Linux to isolate programs.',
+            details: expect.stringContaining(detail),
+          },
+        });
+        expect(h.bindings).toEqual([]);
+        expect(h.host.home(PERSON_HOME).processes[0]!.requestsOf('turn/start')).toEqual([]);
+        expect(h.host.spawns).toHaveLength(1);
+      } finally {
+        load.mockRestore();
+      }
+    }
+  );
+
   it('routes the legacy exec setting through app-server with protected files at Full', async () => {
     const h = harness({ setting: 'exec' });
     const events = await h.run(
