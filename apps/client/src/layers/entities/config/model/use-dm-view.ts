@@ -28,6 +28,28 @@ export function useDmViewEnabled(): boolean {
   return data?.ui?.dmView === true;
 }
 
+/** Public shape of {@link useDmViewState}. */
+export interface DmViewState {
+  /** Whether a chat with one agent reads like a direct message. */
+  enabled: boolean;
+  /** Whether the server has said so. Until then a surface draws neither view. */
+  settled: boolean;
+}
+
+/**
+ * The DM view setting, and whether it is known yet.
+ *
+ * Off is not a safe guess: it draws the session's chrome, and the view is on for
+ * nearly everyone, so a chat would jump from session to DM on every load. A boot
+ * cache from before this setting existed has no answer either, until the read
+ * it sets off lands. A read that failed settles as off, so a chat still draws.
+ */
+export function useDmViewState(): DmViewState {
+  const { data, isPending, isFetching } = useConfig();
+  const dmView = data?.ui?.dmView;
+  return { enabled: dmView === true, settled: dmView !== undefined || !(isPending || isFetching) };
+}
+
 /**
  * Whether the working session behind a chat can be opened, for everyone using
  * this DorkOS (`ui.showSessions`). `false` until the config arrives, the shipped default.

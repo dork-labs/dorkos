@@ -212,9 +212,10 @@ export function RightPanelContainer({
   // Profile (or the persisted tab), while dashboard/activity/tasks/… — where no
   // contextual tab is visible — fall back to Pulse.
   useEffect(() => {
-    // Never re-pick while "here" is resolving: the pick would overwrite the tab
-    // the person was on, and nothing would put it back.
-    if (hereState.status === 'pending') return;
+    // Never re-pick while "here" is resolving, or while the chat may yet be a
+    // DM: the pick would overwrite the tab the person was on, and nothing would
+    // put it back.
+    if (hereState.status === 'pending' || dmKind === 'pending') return;
     if (visibleContributions.length > 0) {
       const activeIsVisible = visibleContributions.some((c) => c.category === activeTab);
       if (!activeIsVisible) {
@@ -222,7 +223,7 @@ export function RightPanelContainer({
         setActiveTabView((firstContextual ?? visibleContributions[0]).category);
       }
     }
-  }, [visibleContributions, activeTab, setActiveTabView, hereState.status]);
+  }, [visibleContributions, activeTab, setActiveTabView, hereState.status, dmKind]);
 
   // The shell is never route-hidden — only its body varies (research:
   // 20260720_context-aware-right-inspector-panels). So "show" tracks the user's

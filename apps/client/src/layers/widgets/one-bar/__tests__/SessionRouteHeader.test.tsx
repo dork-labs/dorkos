@@ -101,13 +101,20 @@ function channel(id: string, member = true): RoomSummary {
 /** Mount the bar on a real `/session` route at `at`. */
 function mountBar(
   at: string,
-  options: { dmView?: boolean; showSessions?: boolean; lookupPending?: boolean } = {}
+  options: {
+    dmView?: boolean;
+    showSessions?: boolean;
+    lookupPending?: boolean;
+    configPending?: boolean;
+  } = {}
 ) {
   const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue({
-      version: '1.0.0',
-      ui: { dmView: options.dmView ?? true, showSessions: options.showSessions ?? false },
-    }),
+    getConfig: options.configPending
+      ? vi.fn().mockReturnValue(new Promise(() => {}))
+      : vi.fn().mockResolvedValue({
+          version: '1.0.0',
+          ui: { dmView: options.dmView ?? true, showSessions: options.showSessions ?? false },
+        }),
     findDirectChat: options.lookupPending
       ? vi.fn().mockReturnValue(new Promise(() => {}))
       : vi.fn().mockResolvedValue({
@@ -203,6 +210,15 @@ describe('SessionRouteHeader', () => {
     expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
     expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
     expect(screen.queryByTestId('dm-header-identity')).not.toBeInTheDocument();
+  });
+
+  it('draws the same neutral bar, not the session bar, until the setting is known', async () => {
+    const { transport } = mountBar(`/session?session=${SESSION}`, { configPending: true });
+
+    expect(await screen.findByTestId('session-bar-pending')).toHaveTextContent('Scout');
+    expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
+    expect(transport.findDirectChat).not.toHaveBeenCalled();
   });
 
   it('draws the agent, its role and the channels you share on its Direct chat', async () => {
