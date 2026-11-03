@@ -457,8 +457,9 @@ export function RoomMessage({
           // changes what it says.
           className="wrap-anywhere [&_pre]:overflow-x-auto [&_pre]:wrap-normal"
         >
-          {entry.body.todo ? (
-            // A to-do's card, drawn from the to-do as this reader may see it (DOR-3088).
+          {entry.body.todo && authorRef?.kind === 'system' ? (
+            // A to-do's card, drawn from the to-do as this reader may see it, and only from
+            // DorkOS's own post: the server is the one writer of a card (DOR-3088).
             <TodoCard todoId={entry.body.todo.todoId} />
           ) : entry.body.fileChange ? (
             // A person's change to the room's files, drawn as plain text from

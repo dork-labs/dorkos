@@ -15,6 +15,16 @@ vi.mock('../../services/core/auth/index.js', () => ({
   readOwnerAccount: () => (state.ownerId ? { id: state.ownerId } : null),
   hasAnyUser: () => state.ownerId !== null,
 }));
+const flag = vi.hoisted(() => ({ todos: true }));
+vi.mock('../../env.js', async (importOriginal) => {
+  const actual = await importOriginal<{ env: Record<string, unknown> }>();
+  return {
+    ...actual,
+    env: new Proxy(actual.env, {
+      get: (target, key) => (key === 'DORKOS_TODOS_ENABLED' ? flag.todos : target[key as string]),
+    }),
+  };
+});
 const chats = vi.hoisted(() => ({ direct: new Set<string>() }));
 vi.mock('../../services/rooms/direct-chat/index.js', () => ({
   getDirectChats: () => ({
@@ -25,7 +35,7 @@ vi.mock('../../services/rooms/direct-chat/index.js', () => ({
 
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { requestFactsFor } from '../../http/__tests__/described-request.js';
-import { roomPostBound } from '../room-post-bound.js';
+import { personTurnBound, roomPostBound } from '../room-post-bound.js';
 import { httpLaunchOf } from '../session-launcher.js';
 
 const OWNER_COOKIE: RequestUser = { userId: 'user_owner', credential: 'cookie' };
@@ -43,6 +53,7 @@ afterEach(() => {
   state.login = false;
   state.ownerId = 'user_owner';
   chats.direct.clear();
+  flag.todos = true;
 });
 
 describe('roomPostBound', () => {
@@ -56,6 +67,13 @@ describe('roomPostBound', () => {
   it('leaves Direct chats as they were on an install with no owner account', async () => {
     state.ownerId = null;
     expect(roomPostBound(await here(), 'dm', 'person', hasOwner)).toBe(undefined);
+  });
+
+  it('changes nothing while to-dos are off, since no to-do runs in a Direct chat then', async () => {
+    flag.todos = false;
+    expect(roomPostBound(await here(), 'dm', 'person', hasOwner)).toBe(undefined);
+    chats.direct.add('session-dm');
+    expect(httpLaunchOf(await here(), 'session-dm').permissionCeiling).toBeUndefined();
   });
 
   it("never binds an agent's own replies, or a post into a channel", async () => {
@@ -74,5 +92,15 @@ describe("a message straight to a Direct chat's session", () => {
     ).toBeUndefined();
     state.ownerId = null;
     expect(httpLaunchOf(await here(), 'session-dm').permissionCeiling).toBeUndefined();
+  });
+});
+
+describe("a mini app's forward and a widget's action (H1 of the review)", () => {
+  it('hold an unproven caller in a Direct chat, and leave the owner and other chats alone', async () => {
+    expect(personTurnBound(await here(), true)).toBe('runtime-default');
+    expect(personTurnBound(await here({ user: OWNER_COOKIE }), true)).toBe(undefined);
+    expect(personTurnBound(await here(), false)).toBe(undefined);
+    flag.todos = false;
+    expect(personTurnBound(await here(), true)).toBe(undefined);
   });
 });

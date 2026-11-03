@@ -3,11 +3,12 @@
  * turns in the Direct chat).
  *
  * - A Wi-Fi sign-in's post is held to the runtime's default, as before (`wifiTurnBound`).
- * - On an install with an owner account, a post into a Direct chat that does not prove the owner
- *   (`personProof`: their own sign-in) is held to the stranger's bound too. A program at this
- *   computer can post as the person without their sign-in, and a Direct chat is where the
- *   person's own to-dos run at the person's power. With no owner account nobody can be proven,
- *   so Direct chats work as they always have.
+ * - While to-dos are on (`DORKOS_TODOS_ENABLED`), on an install with an owner account, a post
+ *   into a Direct chat that does not prove the owner (`personProof`: their own sign-in) is held to
+ *   the stranger's bound too. A program at this computer can post as the person without their
+ *   sign-in, and a Direct chat is where the person's own to-dos run at the person's power. With
+ *   no owner account nobody can be proven, and with to-dos off no to-do runs there, so Direct
+ *   chats work as they always have.
  * - An agent's own posts are never bound here: its turn carries its own power.
  *
  * @module routes/room-post-bound
@@ -16,6 +17,7 @@ import type { RequestFacts } from '../http/request-facts.js';
 import { ownerAccountExists } from '../services/core/auth/gate-policy.js';
 import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { personProof } from '../services/commitments/caller.js';
+import { env } from '../env.js';
 
 /**
  * The bound a post's turn starts at, or undefined for none beyond the poster's own.
@@ -45,12 +47,32 @@ export function roomPostBound(
  * @param facts - The request's facts.
  * @param callerKind - Who is sending: an agent, or anyone else.
  * @param ownerExists - Whether the install has an owner account; fails closed by default.
+ * @param todosOn - Whether to-dos are on; only then does a to-do run in a Direct chat.
  */
 export function unprovenDirectChatBound(
   facts: RequestFacts,
   callerKind: string,
-  ownerExists: () => boolean = ownerAccountExists
+  ownerExists: () => boolean = ownerAccountExists,
+  todosOn: boolean = env.DORKOS_TODOS_ENABLED
 ): 'runtime-default' | undefined {
-  if (callerKind === 'agent') return undefined;
+  if (!todosOn || callerKind === 'agent') return undefined;
   return ownerExists() && !personProof(facts) ? 'runtime-default' : undefined;
+}
+
+/**
+ * The ceiling a person's turn in one session carries, as the spread a dispatch takes: the Wi-Fi
+ * hold, or the stranger's bound for a message into a Direct chat's own session that doesn't prove
+ * the owner ({@link unprovenDirectChatBound}). For the doors that reach a session without a room
+ * post: a widget's action, a mini app's forward.
+ *
+ * @param facts - The request's facts.
+ * @param directChat - Whether the session or room is a Direct chat's.
+ */
+export function personTurnBound(
+  facts: RequestFacts,
+  directChat: boolean
+): 'runtime-default' | undefined {
+  return (
+    wifiTurnBound(facts) ?? (directChat ? unprovenDirectChatBound(facts, 'person') : undefined)
+  );
 }

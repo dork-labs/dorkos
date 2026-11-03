@@ -176,6 +176,17 @@ describe('what a turn in a Direct chat is told', () => {
     ]);
   });
 
+  it("never hands the agent a to-do's card as a note (DOR-3088)", () => {
+    const { harness: h, chats } = open();
+    const chat = chats.ensureForAgent('/agents/ana', 'Ana');
+    h.service.postTodoCard(chat.roomId, { text: 'New to-do', todoId: 'todo-1' });
+    h.service.post(chat.roomId, { authorId: chat.agentAuthorId, text: 'from elsewhere' });
+
+    expect(chats.takeUnseen(chat.sessionId)?.notes.map((note) => note.text)).toEqual([
+      'from elsewhere',
+    ]);
+  });
+
   it('keeps the newest when there are too many, and says how many it left out', () => {
     const { harness: h, chats } = open();
     const chat = chats.ensureForAgent('/agents/ana', 'Ana');

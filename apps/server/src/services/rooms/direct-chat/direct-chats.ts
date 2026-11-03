@@ -176,6 +176,9 @@ export class DirectChats {
         // Top-level posts only, the same set the person sees in this chat.
         entry.kind === 'post' &&
         !entry.threadRootEntryId &&
+        // Never a to-do's card (DOR-3088): it is a pointer the app draws for the person, and the
+        // agent hears about a to-do only through that to-do's own turn, at its own power.
+        entry.body.todo === undefined &&
         (entry.sessionId === null || !ownIds.has(entry.sessionId))
     );
     if (unseen.length === 0) return null;

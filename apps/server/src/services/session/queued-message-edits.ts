@@ -89,7 +89,11 @@ export function editQueuedMessage(
   // answered "saved" and then vanished is the silent loss DOR-480 forbids. It
   // may still be moved or removed.
   const stored = store.get(messageId);
-  if (edit.content !== undefined && stored && isChatClientId(stored.enqueuedBy)) {
+  // A to-do's turn is the same (DOR-3088): its row holds the to-do's fenced prompt, queued in the
+  // person's Direct chat at the to-do's own power, so nobody rewords it into something else.
+  const notAPersons =
+    stored !== undefined && (isChatClientId(stored.enqueuedBy) || stored.enqueuedBy === 'todos');
+  if (edit.content !== undefined && notAPersons) {
     return 'not-yours';
   }
   // The move goes FIRST: it is the only half that can be refused (a bogus or

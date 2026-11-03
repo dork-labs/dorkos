@@ -39,30 +39,51 @@ function launchOf(overrides: Partial<TodoTurnLaunch> = {}): TodoTurnLaunch {
     permissionCeiling: undefined,
     carriedMarks: undefined,
     inDirectChat: true,
+    cardForPerson: true,
     ...overrides,
   };
 }
 
 describe('todoRunsInDirectChat', () => {
   it("is the person's own to-do with no mark, and nothing else", () => {
-    expect(todoRunsInDirectChat({ authority: 'person', authorityMarks: '{}' })).toBe(true);
-    expect(todoRunsInDirectChat({ authority: 'person', authorityMarks: '{"outsider":true}' })).toBe(
-      false
-    );
+    expect(
+      todoRunsInDirectChat({ authority: 'person', authorityMarks: '{}', sourceRoomEntryId: null })
+    ).toBe(true);
+    expect(
+      todoRunsInDirectChat({
+        authority: 'person',
+        authorityMarks: '{"outsider":true}',
+        sourceRoomEntryId: null,
+      })
+    ).toBe(false);
     expect(
       todoRunsInDirectChat({
         authority: 'person',
         authorityMarks: '{"teammate":[{"roomId":"r1","authorId":"m1"}]}',
+        sourceRoomEntryId: null,
       })
     ).toBe(false);
-    expect(todoRunsInDirectChat({ authority: 'runtime-default', authorityMarks: '{}' })).toBe(
-      false
-    );
+    expect(
+      todoRunsInDirectChat({
+        authority: 'runtime-default',
+        authorityMarks: '{}',
+        sourceRoomEntryId: null,
+      })
+    ).toBe(false);
     expect(
       todoRunsInDirectChat({
         authority: '{"asks":"never","reach":"everything"}',
         authorityMarks: '{}',
+        sourceRoomEntryId: null,
       })
+    ).toBe(false);
+  });
+});
+
+describe('todoRunsInDirectChat and a message', () => {
+  it("keeps a to-do made from a message out of it, even the person's own", () => {
+    expect(
+      todoRunsInDirectChat({ authority: 'person', authorityMarks: '{}', sourceRoomEntryId: 'e1' })
     ).toBe(false);
   });
 });
@@ -150,6 +171,23 @@ describe('the to-do launcher', () => {
     const { sessionId } = await seams().launch(launchOf());
     expect(sessionId).not.toBe('session-dm');
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ roomSessionPlace: undefined }));
+  });
+
+  it('makes no chat and no card for a to-do one agent gives another', async () => {
+    const { sessionId } = await seams().launch(
+      launchOf({ inDirectChat: false, cardForPerson: false, permissionCeiling: 'runtime-default' })
+    );
+    expect(port.chatFor).not.toHaveBeenCalled();
+    expect(port.postCardOnce).not.toHaveBeenCalled();
+    expect(sessionId).not.toBe('session-dm');
+  });
+
+  it("still runs the person's own to-do in their Direct chat when its card fails", async () => {
+    port.postCardOnce.mockImplementation(() => {
+      throw new Error('the room is archived');
+    });
+    const { sessionId } = await seams().launch(launchOf());
+    expect(sessionId).toBe('session-dm');
   });
 
   it("posts the card with a fixed line, never the to-do's words (G3)", () => {

@@ -71,6 +71,11 @@ export interface TodoTurnLaunch {
    * decided now, at the turn's start, from the stored row.
    */
   readonly inDirectChat: boolean;
+  /**
+   * Whether the to-do gets a card in the person's Direct chat with the agent: one the person gave
+   * it. A to-do one agent gives another is agent-to-agent work, behind the scenes.
+   */
+  readonly cardForPerson: boolean;
 }
 
 /** What the turns are built from. */
@@ -356,6 +361,7 @@ export class TodoTurns {
         permissionCeiling: power.ceiling,
         carriedMarks: power.carriedMarks,
         inDirectChat: todoRunsInDirectChat(row),
+        cardForPerson: row.assignedByKind === 'person',
       });
       this.deps.db
         .update(todoTurns)

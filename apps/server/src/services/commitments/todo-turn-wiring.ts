@@ -47,18 +47,29 @@ export function todoTurnSeams(deps: TodoTurnSeamDeps): Omit<TodoTurnsDeps, 'db' 
       const manifest = mesh?.get(request.agentId);
       const agentPath = mesh?.getProjectPath(request.agentId);
       if (!manifest || !agentPath) throw new Error('That agent is not on the team.');
-      // The card goes into the person's Direct chat with the agent whichever chat runs the turn.
-      // A chat or card that can't be made never stops the turn itself.
+      // The person's Direct chat with the agent: where their own to-do runs, and where a to-do the
+      // person gave gets its card, whichever chat runs the turn. A to-do one agent gives another
+      // makes no chat and no card. A chat or card that can't be made never stops the turn.
       let chat: ReturnType<TodoDirectChatPort['chatFor']>;
-      try {
-        chat = chats.chatFor(agentPath, manifest.name);
-        if (chat) chats.postCardOnce(chat.roomId, request.todoId);
-      } catch (err) {
-        chat = undefined;
-        logger.warn('[todos] the to-do card could not be posted', {
-          todoId: request.todoId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      if (request.inDirectChat || request.cardForPerson) {
+        try {
+          chat = chats.chatFor(agentPath, manifest.name);
+        } catch (err) {
+          logger.warn('[todos] the Direct chat could not be found', {
+            todoId: request.todoId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      if (chat && request.cardForPerson) {
+        try {
+          chats.postCardOnce(chat.roomId, request.todoId);
+        } catch (err) {
+          logger.warn('[todos] the to-do card could not be posted', {
+            todoId: request.todoId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
       // Every to-do turn names its ceiling: its stored bound, or its agent's set level, so the
       // chat it runs in can only hold it lower, never set it (Security's Must 4).

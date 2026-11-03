@@ -737,6 +737,21 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     );
   });
 
+  // DOR-3088 Must 4: a to-do's turn kept its power only in the process that queued it. Recovered,
+  // it runs at the stranger's bound and unattended, never at the chat's own mode.
+  it('holds a recovered to-do turn to the stranger bound, unattended', async () => {
+    store.enqueue({ sessionId: session, content: 'the to-do', clientId: 'todos' });
+    expect(
+      adoptQueuedMessages({ sessionId: session, projector: getOrCreateProjector(session), runtime })
+    ).toBe(1);
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledWith(
+      session,
+      'the to-do',
+      expect.objectContaining({ permissionCeiling: 'runtime-default', unattended: true })
+    );
+  });
+
   it('reports a dropped refuse-foreign trigger to the caller that registered for it', async () => {
     // The BLOCKER the review caught: `returnToQueue` documents the drop as
     // "terminal and REPORTED", and rooms are the only refuse-foreign caller, so
@@ -870,6 +885,14 @@ describe('editing and removing what is waiting', () => {
     // A move alone still applies.
     editQueuedMessage(session, theirs.id, { move: { after: mine.id } });
     expect(store.list(session).map((r) => r.id)).toEqual([mine.id, theirs.id]);
+  });
+
+  // DOR-3088: a to-do's turn queued in the person's Direct chat holds the to-do's fenced prompt at
+  // the to-do's own power; rewording it would run somebody's words at that power.
+  it('refuses to reword a queued to-do turn', () => {
+    const todo = store.enqueue({ sessionId: session, content: 'the to-do', clientId: 'todos' });
+    expect(editQueuedMessage(session, todo.id, { content: 'something else' })).toBe('not-yours');
+    expect(store.get(todo.id)?.content).toBe('the to-do');
   });
 
   it('will not reach into another session’s queue', async () => {

@@ -70,7 +70,7 @@ import {
 } from '../services/extensions/forward/person-forward.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
+import { personTurnBound } from './room-post-bound.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
 import { logger } from '../lib/logger.js';
@@ -348,7 +348,9 @@ export function registerExtensionForwardRoutes(
         `Send { text, itemId } and an optional itemTitle and agentId. Text is 1 to ${FORWARD_TEXT_MAX_CHARS.toLocaleString('en-US')} characters.`
       );
     }
-    const bound = wifiTurnBound(honoRequestFacts(c));
+    // A forward always lands in the person's Direct chat with the agent (DOR-3325), so an unproven
+    // caller's comment is held there the way any other unproven message is (DOR-3088 G2).
+    const bound = personTurnBound(honoRequestFacts(c), true);
     const request: ForwardRequest = {
       extensionId: app.extensionId,
       appName: app.extensionName,
