@@ -1,10 +1,25 @@
 /**
  * The to-do list a person works from: one view at a time, open ones first in the server's order,
- * each completed in place with a moment to undo it.
+ * each completed in place with a moment to undo it. In "My order" the open ones move: drag one by
+ * its grip, or press ⌥↑ / ⌥↓ inside it.
  *
  * @module features/todos/ui/TodoList
  */
 import { useMemo } from 'react';
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import { SquareCheck } from 'lucide-react';
 import type { Todo } from '@dorkos/shared/todo-schemas';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
@@ -16,8 +31,9 @@ import { Button, EmptyState, QueryErrorState, Skeleton } from '@/layers/shared/u
 import { assignedByLabel } from '../lib/todo-labels';
 import { useLingeringDone, withLingering } from '../model/use-lingering-done';
 import { useTodoFilters } from '../model/use-todo-filters';
+import { useTodoReorder } from '../model/use-todo-reorder';
+import { SortableTodoRow } from './SortableTodoRow';
 import { TodoFilterBar } from './TodoFilterBar';
-import { TodoRow } from './TodoRow';
 
 /** Props for {@link TodoList}. */
 export interface TodoListProps {
@@ -57,6 +73,31 @@ export function TodoList({ onNewTodo }: TodoListProps) {
     () => withLingering(list.data?.todos ?? [], lingering.held),
     [list.data, lingering.held]
   );
+  // Only open, settled rows move, and only in the person's own order.
+  const movable = useMemo(
+    () => rows.filter((todo) => todo.state === 'open' && !lingering.held[todo.id]),
+    [rows, lingering.held]
+  );
+  const sortable = filters.sort === 'rank' && movable.length > 1;
+  const reorder = useTodoReorder(movable);
+  const sensors = useSensors(
+    // A few pixels of travel first, so a tap on the grip is not a drag.
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function moveBy(todo: Todo, by: -1 | 1) {
+    const from = movable.findIndex((row) => row.id === todo.id);
+    if (from === -1) return;
+    void reorder.move(from, Math.min(Math.max(from + by, 0), movable.length - 1));
+  }
+
+  function onDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return;
+    const from = movable.findIndex((row) => row.id === active.id);
+    const to = movable.findIndex((row) => row.id === over.id);
+    if (from !== -1 && to !== -1) void reorder.move(from, to);
+  }
 
   function complete(todo: Todo, index: number) {
     lingering.hold(todo, index);
@@ -90,30 +131,43 @@ export function TodoList({ onNewTodo }: TodoListProps) {
         <TodoListEmpty mine={filters.view === 'mine'} onNewTodo={onNewTodo} />
       )}
       {list.isSuccess && rows.length > 0 && (
-        <ul className="flex flex-col" aria-label="To-dos">
-          {rows.map((todo, index) => {
-            const agent =
-              todo.assignee.kind === 'agent' ? names.agentOf(todo.assignee.agentId) : undefined;
-            const roomTitle = names.roomTitleOf(todo.roomId);
-            const entry = lingering.held[todo.id];
-            const held = entry !== undefined;
-            return (
-              <TodoRow
-                key={todo.id}
-                todo={todo}
-                from={assignedByLabel(todo.assignedBy, names.agentName)}
-                {...(agent ? { agent } : {})}
-                {...(roomTitle ? { roomTitle } : {})}
-                {...(todo.state === 'open' && !held
-                  ? { onComplete: () => complete(todo, index) }
-                  : {})}
-                {...(entry && !entry.saving && todo.state === 'kept'
-                  ? { onUndo: () => undo(todo) }
-                  : {})}
-              />
-            );
-          })}
-        </ul>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <SortableContext
+            items={movable.map((todo) => todo.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <ul
+              className="flex flex-col"
+              aria-label="To-dos"
+              aria-busy={reorder.moving || undefined}
+            >
+              {rows.map((todo, index) => {
+                const agent =
+                  todo.assignee.kind === 'agent' ? names.agentOf(todo.assignee.agentId) : undefined;
+                const roomTitle = names.roomTitleOf(todo.roomId);
+                const entry = lingering.held[todo.id];
+                const held = entry !== undefined;
+                return (
+                  <SortableTodoRow
+                    key={todo.id}
+                    sortable={sortable && todo.state === 'open' && !held}
+                    onMove={(by) => moveBy(todo, by)}
+                    todo={todo}
+                    from={assignedByLabel(todo.assignedBy, names.agentName)}
+                    {...(agent ? { agent } : {})}
+                    {...(roomTitle ? { roomTitle } : {})}
+                    {...(todo.state === 'open' && !held
+                      ? { onComplete: () => complete(todo, index) }
+                      : {})}
+                    {...(entry && !entry.saving && todo.state === 'kept'
+                      ? { onUndo: () => undo(todo) }
+                      : {})}
+                  />
+                );
+              })}
+            </ul>
+          </SortableContext>
+        </DndContext>
       )}
       {!filters.showDone && (list.data?.doneCount ?? 0) > 0 && (
         <Button

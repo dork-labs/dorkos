@@ -4,12 +4,14 @@
  *
  * @module features/todos/ui/TodoRow
  */
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode, type Ref } from 'react';
+import { motion } from 'motion/react';
 import { Check } from 'lucide-react';
 import type { Todo } from '@dorkos/shared/todo-schemas';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import { AgentAvatar, resolveAgentVisual } from '@/layers/entities/agent';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
+import { useIsMobile } from '@/layers/shared/model';
 import { Badge, Button, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import { todoDueLabel } from '../lib/todo-labels';
 
@@ -27,7 +29,16 @@ export interface TodoRowProps {
   onComplete?: () => void;
   /** Put a just-completed row back. Present only for the moment the row is held. */
   onUndo?: () => void;
+  /** The drag handle, drawn first, while the list is in "My order". */
+  handle?: ReactNode;
+  /** The row's node, for a list that drags it. */
+  rowRef?: Ref<HTMLLIElement>;
+  /** Where a drag has moved the row to. */
+  style?: CSSProperties;
 }
+
+/** How far right a phone swipe travels before it finishes the to-do, in pixels. */
+const SWIPE_TO_FINISH_PX = 80;
 
 /** The check circle: open, or done. */
 function CheckCircle({ todo, onComplete }: Pick<TodoRowProps, 'todo' | 'onComplete'>) {
@@ -113,9 +124,21 @@ function LimitedBadge() {
 }
 
 /** One to-do, open or closed. */
-export function TodoRow({ todo, agent, from, roomTitle, onComplete, onUndo }: TodoRowProps) {
+export function TodoRow({
+  todo,
+  agent,
+  from,
+  roomTitle,
+  onComplete,
+  onUndo,
+  handle,
+  rowRef,
+  style,
+}: TodoRowProps) {
   const due = todoDueLabel(todo);
   const closed = todo.state !== 'open';
+  // On a phone an open row also finishes with a swipe to the right; the check stays for everyone.
+  const swipes = useIsMobile() && todo.state === 'open' && onComplete !== undefined;
   // Today's and overdue dates are what the eye looks for, so they read stronger than the rest.
   const urgent = todo.overdue || due === 'Due today';
   const parts: ReactNode[] = [];
@@ -141,13 +164,28 @@ export function TodoRow({ todo, agent, from, roomTitle, onComplete, onUndo }: To
   }
   return (
     <li
+      ref={rowRef}
+      style={style}
       data-slot="todo-row"
       data-state={todo.state}
       data-overdue={todo.overdue || undefined}
-      className="flex items-start gap-1 rounded-md py-1 pr-2"
+      className="bg-background flex items-start gap-1 rounded-md py-1 pr-2"
     >
+      {handle}
       <CheckCircle todo={todo} {...(onComplete ? { onComplete } : {})} />
-      <div className="min-w-0 flex-1 py-2 md:py-1">
+      <motion.div
+        className="min-w-0 flex-1 py-2 md:py-1"
+        data-swipe-to-finish={swipes || undefined}
+        drag={swipes ? 'x' : false}
+        dragDirectionLock
+        dragConstraints={{ left: 0, right: 0 }}
+        // Rightward only, and it springs back: the row stays until the server says it's done.
+        dragElastic={{ left: 0, right: 0.6 }}
+        dragMomentum={false}
+        onDragEnd={(_event, info) => {
+          if (swipes && info.offset.x > SWIPE_TO_FINISH_PX) onComplete?.();
+        }}
+      >
         {/* Undo sits right after the title, beside the check that was just pressed. */}
         <div className="flex min-w-0 items-center gap-1.5">
           <p
@@ -167,7 +205,7 @@ export function TodoRow({ todo, agent, from, roomTitle, onComplete, onUndo }: To
           )}
         </div>
         <FactLine parts={parts} />
-      </div>
+      </motion.div>
     </li>
   );
 }

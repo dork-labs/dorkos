@@ -5,14 +5,23 @@
  * One to-do row's second line (DOR-3088, design review of #3461): the assignee only when it isn't
  * the person, the parts apart by a middle dot, and today's date in stronger ink.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { createMockTodo } from '@dorkos/test-utils';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TodoRow } from '../index';
 
-afterEach(cleanup);
+const phone = vi.hoisted(() => ({ value: false }));
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useIsMobile: () => phone.value,
+}));
+
+afterEach(() => {
+  cleanup();
+  phone.value = false;
+});
 
 function renderRow(props: Parameters<typeof TodoRow>[0]) {
   render(
@@ -53,5 +62,14 @@ describe('TodoRow', () => {
       from: 'you',
     });
     expect(row).toHaveTextContent('Done · Sent it to Ana·from you');
+  });
+
+  it('finishes with a swipe right on a phone, and only while it can be finished', () => {
+    phone.value = true;
+    const row = renderRow({ todo: createMockTodo(), from: 'you', onComplete: () => {} });
+    expect(row.querySelector('[data-swipe-to-finish]')).not.toBeNull();
+    cleanup();
+    renderRow({ todo: createMockTodo(), from: 'you' });
+    expect(screen.getByRole('listitem').querySelector('[data-swipe-to-finish]')).toBeNull();
   });
 });
