@@ -319,6 +319,8 @@ describe('Database Migrations', () => {
       // `room-repo.json` sidecar in each room's home directory; this table is
       // rebuildable from it (migration 0081, DOR-1591).
       'room_repos',
+      // The seat a session held before the seat moved, so a report can follow it (DOR-3720).
+      'room_seat_moves',
       // The two coordination counters a restart used to erase: which session ids
       // a runtime has renamed away from, and the hour of automatic turns already
       // spent (migration 0067, DOR-1205).

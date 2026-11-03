@@ -237,6 +237,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       // What agents promised (spec `heartbeats` §12): an agent records its
       // own, and anyone reads every agent's list.
       commitmentDeps: commitments.capabilityDeps,
+      // To-dos (DOR-3088), behind their flag until v1 is complete.
+      ...(env.DORKOS_TODOS_ENABLED ? { todoDeps: commitments.todoCapabilityDeps } : {}),
       workQueueDeps: workQueue.capabilityDeps,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({

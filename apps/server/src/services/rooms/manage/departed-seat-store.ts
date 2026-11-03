@@ -12,6 +12,7 @@ import {
   authors,
   rooms,
   roomMembers,
+  roomSeatMoves,
   roomSessions,
   roomDepartedSeats,
   eq,
@@ -105,6 +106,9 @@ export class DepartedSeatStore {
             .run();
           tx.delete(roomSessions)
             .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
+            .run();
+          tx.delete(roomSeatMoves)
+            .where(and(eq(roomSeatMoves.roomId, roomId), eq(roomSeatMoves.authorId, authorId)))
             .run();
           if (heldFallbackSeat) {
             tx.update(rooms).set({ leadAuthorId: null }).where(eq(rooms.id, roomId)).run();

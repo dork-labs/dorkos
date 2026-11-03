@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3221aece-4f01-4164-a0ca-9355d3d94d0c",
-  "prevId": "69a2d57e-4ce6-4652-9db7-f7ffe48f5765",
+  "id": "29a09f9c-a7b7-4e63-b00d-e4bf517c9245",
+  "prevId": "88459a42-f5f8-49b8-b9e1-428505d216f3",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -11355,6 +11355,52 @@
           "value": "\"status\" != 'no_op' OR \"before_hash\" = \"after_hash\""
         }
       }
+    },
+    "room_seat_moves": {
+      "name": "room_seat_moves",
+      "columns": {
+        "from_session_id": {
+          "name": "from_session_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "room_id": {
+          "name": "room_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "moved_at": {
+          "name": "moved_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_room_seat_moves_at": {
+          "name": "idx_room_seat_moves_at",
+          "columns": [
+            "moved_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "room_session_retirements": {
       "name": "room_session_retirements",

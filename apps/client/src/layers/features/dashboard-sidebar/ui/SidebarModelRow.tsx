@@ -16,12 +16,12 @@
  */
 import { useCallback, useMemo } from 'react';
 import { useReducedMotion } from 'motion/react';
-import { BookUser, MessageSquareReply, Plus } from 'lucide-react';
+import { BookUser, MessageSquareReply, Plus, SquareCheck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import { useExtensionRegistry } from '@/layers/shared/model';
-import { ContributedIcon, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
+import { ContributedIcon, CountPill, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
 import { useAgentVisual } from '@/layers/entities/agent';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
 import type { UngroupedSectionId } from '../model/use-sidebar-dnd';
@@ -88,6 +88,7 @@ export function isRowActive(
 /** The mark each semantic icon id draws. */
 const ICON: Record<SidebarIconId, LucideIcon> = {
   threads: MessageSquareReply,
+  todos: SquareCheck,
   directory: BookUser,
   add: Plus,
 };
@@ -364,7 +365,7 @@ function AgentRowFromModel({
  * straight from the model's own fields.
  *
  * Never dragged, never unread, and carrying no menu: the page it opens is where
- * all of that lives.
+ * all of that lives. The To-dos door alone carries a neutral count of what is due.
  */
 function DoorRowFromModel({
   row,
@@ -386,6 +387,13 @@ function DoorRowFromModel({
       muted={false}
       onSelect={() => chrome.openTarget(row.target)}
       rowMotion={rowMotion}
+      {...(row.count === undefined
+        ? {}
+        : {
+            trailing: (
+              <CountPill count={row.count} tone="neutral" label={`${row.count} due or overdue`} />
+            ),
+          })}
     />
   );
 }

@@ -57,6 +57,11 @@ export class TodoStore {
     return this.db.select().from(commitments).where(eq(commitments.id, id)).get();
   }
 
+  /** Every row, whoever owns it: what a list view filters. */
+  all(): CommitmentRow[] {
+    return this.db.select().from(commitments).all();
+  }
+
   /**
    * How many to-dos an agent has handed people on a UTC day: what its 5-a-day cap counts. Read
    * from the hand-over ledger, so a to-do moved away afterwards still counts.

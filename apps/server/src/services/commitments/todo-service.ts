@@ -47,6 +47,7 @@ import {
   isOwnPromise,
   PERSON_ASSIGNER,
 } from './commitment-service.js';
+import { listTodoRows } from './todo-list.js';
 import { mayChangeState, mayEdit, mayRank, mayReassign } from './todo-policy.js';
 import type { TodoPatch, TodoStore } from './todo-store.js';
 
@@ -116,6 +117,11 @@ export interface TodoParent {
   readonly depth: number;
   /** The agents already in its chain. */
   readonly agents: readonly string[];
+  /**
+   * True when a to-do turn on the way runs held below the agent's own level, or carries a mark:
+   * a capped turn, where making or handing on to-dos is refused (Security's Must 7).
+   */
+  readonly capped?: boolean;
 }
 
 /** A to-do, as readers see it. Its stored authority stays on the server. */
@@ -144,6 +150,34 @@ export interface Todo {
   strangerBound: boolean;
   createdAt: string;
   closedAt: string | null;
+}
+
+/** Which to-dos a list shows, and how. Every field is optional. */
+export interface TodoListFilter {
+  /** `mine` (assigned to the person, the default), `by-me`, `agents`, or `everyone`. */
+  view?: 'mine' | 'by-me' | 'agents' | 'everyone';
+  /** Only to-dos assigned to this agent. */
+  agentId?: string;
+  /** Only to-dos from this room. */
+  roomId?: string;
+  /** Only those overdue, due today, due within a week, or with no date. */
+  due?: 'overdue' | 'today' | 'week' | 'none';
+  /** Include done and declined ones. */
+  showDone?: boolean;
+  /** `due` (soonest first, the default) or `rank` (the assignee's own order). */
+  sort?: 'due' | 'rank';
+  /** How many to return at most. */
+  limit?: number;
+}
+
+/** A list read. */
+export interface TodoList {
+  /** The to-dos, open first. */
+  todos: Todo[];
+  /** How many done or declined ones the view hides. */
+  doneCount: number;
+  /** The rail badge: the person's open to-dos due today or overdue. */
+  badge: number;
 }
 
 /** What the service is built from. */
@@ -238,6 +272,18 @@ export class TodoService {
   get(id: string): Todo | undefined {
     const row = this.deps.store.get(id);
     return row ? toTodo(row, this.now().getTime()) : undefined;
+  }
+
+  /**
+   * To-dos for a view, open first: soonest due (no date last) or the assignee's own order
+   * (unranked last), then newest. Done ones only when asked, counted either way.
+   *
+   * @param filter - The view and its filters.
+   */
+  list(filter: TodoListFilter = {}): TodoList {
+    const now = this.now();
+    const { rows, doneCount, badge } = listTodoRows(this.deps.store.all(), filter, now);
+    return { todos: rows.map((row) => toTodo(row, now.getTime())), doneCount, badge };
   }
 
   /**
@@ -374,6 +420,7 @@ export class TodoService {
         'Only the person, or the agent it is assigned to, can write how it ended.'
       );
       patch.note = change.note.trim() || null;
+      touchesWords = true;
     }
     if (change.what !== undefined && change.what !== row.what) {
       this.require(
@@ -441,7 +488,8 @@ export class TodoService {
     if (Object.keys(patch).length === 0) {
       throw new CommitmentError('NOTHING_TO_CHANGE', 'Nothing to change.');
     }
-    if (touchesWords) {
+    // Anything a request that did not prove the person changes lowers the row, the order included.
+    if (touchesWords || (actor.kind === 'person' && !actor.proven)) {
       const floor = floorAfter(row, actor);
       if (floor.authority !== row.authority) {
         audit.push({ field: 'authority', before: row.authority, after: floor.authority });

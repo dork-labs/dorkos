@@ -97,6 +97,14 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
   return { ...actual, useSidebarPrefs: () => PREFS };
 });
 
+// The To-dos door's two reads, switchable per test: off by default, like a server without them.
+const todos = { enabled: false, badge: 0 };
+
+vi.mock('@/layers/entities/todo', () => ({
+  useTodosEnabled: () => todos.enabled,
+  useTodoBadge: () => todos.badge,
+}));
+
 import { useSidebarState } from '../use-sidebar-state';
 // Imported after the mocks like the hook itself, so the rules see the same
 // mocked module graph the hook does.
@@ -352,6 +360,34 @@ describe('useSidebarState — what is open (DOR-2845)', () => {
       kind: 'command',
       commandId: 'open-directory',
     });
+    directory.unmount();
+
+    route.pathname = '/todos';
+    const todosPage = renderHook(() => useSidebarState());
+    expect(todosPage.result.current.activeTarget).toEqual({
+      kind: 'command',
+      commandId: 'open-todos',
+    });
+  });
+});
+
+describe('useSidebarState — the To-dos door (DOR-3088)', () => {
+  afterEach(() => {
+    todos.enabled = false;
+    todos.badge = 0;
+  });
+
+  it('carries no door while to-dos are off', () => {
+    todos.badge = 5;
+    const { result } = renderHook(() => useSidebarState());
+    expect(result.current.todos).toBeNull();
+  });
+
+  it('carries the door and its badge while to-dos are on', () => {
+    todos.enabled = true;
+    todos.badge = 2;
+    const { result } = renderHook(() => useSidebarState());
+    expect(result.current.todos).toEqual({ badge: 2 });
   });
 });
 

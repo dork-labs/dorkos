@@ -424,9 +424,11 @@ describe('to-do turns', () => {
       await settled();
       const readTodo = (id: string) =>
         db.select().from(commitments).where(eq(commitments.id, id)).get();
+      // A's to-do holds B's turn to A's level, so that turn is capped (Must 7).
       expect(turns.parentOf('chat-1', readTodo)).toEqual({
         depth: 1,
         agents: ['agent-a', 'agent-b'],
+        capped: true,
       });
       expect(turns.parentOf('some-other-chat', readTodo)).toBeUndefined();
       // B, inside that turn, cannot hand it back to A or to itself's chain.

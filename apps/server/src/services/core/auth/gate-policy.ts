@@ -166,7 +166,7 @@ export function credentialGated(facts: ClassifierFacts): boolean {
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /** Whether an owner account exists; a lookup that fails reads as yes, so a bar fails closed. */
-function ownerAccountExists(): boolean {
+export function ownerAccountExists(): boolean {
   try {
     return readOwnerAccount() !== null;
   } catch {

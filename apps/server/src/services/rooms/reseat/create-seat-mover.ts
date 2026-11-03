@@ -136,7 +136,7 @@ function capabilitiesOf(runtime: string): RuntimeCapabilities | undefined {
  * @param opts.activity - Reads the Activity feed writer when a move is recorded.
  */
 export function createRoomSeatMover(opts: {
-  store: Pick<RoomStore, 'rebindRoomSession'>;
+  store: Pick<RoomStore, 'rebindRoomSession' | 'sessionLedger'>;
   transcripts: RoomBindingTranscriptDeps | undefined;
   activity: () => ActivityService | undefined;
 }): RoomSeatMover {
@@ -149,6 +149,8 @@ export function createRoomSeatMover(opts: {
     },
     rebind: (roomId, authorId, sessionId) =>
       opts.store.rebindRoomSession(roomId, authorId, sessionId),
+    recordSeatMove: (fromSessionId, roomId, authorId) =>
+      opts.store.sessionLedger.recordSeatMove(fromSessionId, roomId, authorId),
     runtimeOf: async (seat) =>
       asWorldRuntime(
         await resolveTurnRuntimeType({ sessionId: seat.sessionId, agentPath: seat.agentPath })

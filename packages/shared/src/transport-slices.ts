@@ -1,6 +1,6 @@
 /**
  * The slices of the {@link Transport} port kept in modules of their own (rooms,
- * community connections, remote communities, commitments, heartbeats, the first
+ * community connections, remote communities, commitments, to-dos, heartbeats, the first
  * run, message history, held connected-app actions, a hub's linked computers,
  * a canvas document's route controls, a space's docs, a person's signed-in
  * devices, an account's automatic moves, a framed page's script decision, an
@@ -15,6 +15,7 @@ import type { RoomTransport } from './transport-rooms.js';
 import type { CommunityConnectionTransport } from './community-connections.js';
 import type { RemoteCommunityTransport } from './community-views.js';
 import type { CommitmentTransport } from './transport-commitments.js';
+import type { TodoTransport } from './transport-todos.js';
 import type { WorkQueueTransport } from './transport-work-queue.js';
 import type { ActivityTransport } from './transport-activity.js';
 import type { AgentPauseTransport } from './transport-agent-pause.js';
@@ -47,6 +48,7 @@ export interface TransportSlices
     CommunityConnectionTransport,
     RemoteCommunityTransport,
     CommitmentTransport,
+    TodoTransport,
     WorkQueueTransport,
     ActivityTransport,
     AgentPauseTransport,

@@ -25,6 +25,7 @@ import {
   MessagesSquare,
   Puzzle,
   Settings,
+  SquareCheck,
   Store,
   Users,
   type LucideIcon,
@@ -282,6 +283,8 @@ export const ROUTE_IDENTITY: Record<string, RouteIdentity> = {
   '/tasks': { primary: 'Schedules', Icon: ListTodo },
   // Matches the sidebar's Threads item, icon and all.
   '/threads': { primary: 'Threads', Icon: MessageSquareReply },
+  // Matches the sidebar's To-dos door, icon and all.
+  '/todos': { primary: 'To-dos', Icon: SquareCheck },
   '/workspaces': { primary: 'Workspaces', Icon: FolderGit2 },
 };
 

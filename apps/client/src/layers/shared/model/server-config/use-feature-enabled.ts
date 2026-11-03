@@ -2,7 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '../TransportContext';
 import { configKeys, CONFIG_STALE_TIME_MS } from './query-keys';
 
-type Subsystem = 'tasks' | 'relay';
+type Subsystem = 'tasks' | 'relay' | 'todos';
+
+/** What the config says about one subsystem; `todos` carries only `enabled`. */
+interface SubsystemState {
+  enabled: boolean;
+  initError?: string;
+  enabledInConfig?: boolean;
+  lockedByEnv?: boolean;
+}
 
 /** Whether a subsystem is on, and whether that answer can be believed yet. */
 export interface FeatureEnabledState {
@@ -52,7 +60,7 @@ export function useFeatureEnabledState(subsystem: Subsystem): FeatureEnabledStat
     staleTime: CONFIG_STALE_TIME_MS,
   });
 
-  const state = data?.[subsystem];
+  const state: SubsystemState | undefined = data?.[subsystem];
   const initError = state?.initError;
   return {
     enabled: state?.enabled ?? false,

@@ -149,14 +149,19 @@ const AMBIENT_RELAY_ENABLED = process.env.DORKOS_RELAY_ENABLED;
 // `experiments` block reports the A2A entry as `lockedByEnv` on presence, so a
 // developer whose shell exports it would otherwise red every unlocked assertion.
 const AMBIENT_A2A_ENABLED = process.env.DORKOS_A2A_ENABLED;
+// `DORKOS_TODOS_ENABLED` too: `todos.enabled` reports it, so a shell that exports it would
+// otherwise turn the off-by-default assertion into a measurement of the machine.
+const AMBIENT_TODOS_ENABLED = process.env.DORKOS_TODOS_ENABLED;
 delete process.env.DORKOS_TASKS_ENABLED;
 delete process.env.DORKOS_RELAY_ENABLED;
 delete process.env.DORKOS_A2A_ENABLED;
+delete process.env.DORKOS_TODOS_ENABLED;
 
 afterAll(() => {
   if (AMBIENT_TASKS_ENABLED !== undefined) process.env.DORKOS_TASKS_ENABLED = AMBIENT_TASKS_ENABLED;
   if (AMBIENT_RELAY_ENABLED !== undefined) process.env.DORKOS_RELAY_ENABLED = AMBIENT_RELAY_ENABLED;
   if (AMBIENT_A2A_ENABLED !== undefined) process.env.DORKOS_A2A_ENABLED = AMBIENT_A2A_ENABLED;
+  if (AMBIENT_TODOS_ENABLED !== undefined) process.env.DORKOS_TODOS_ENABLED = AMBIENT_TODOS_ENABLED;
 });
 
 /**
@@ -868,6 +873,28 @@ describe('PATCH /api/config', () => {
   it('says what the server is, so the app can drop settings that cannot apply', async () => {
     const res = await request(server).get('/api/config').expect(200);
     expect(res.body.serverRole).toBe('computer');
+  });
+
+  describe('the to-dos flag (DOR-3088)', () => {
+    it('reports to-dos as off when the environment does not switch them on', async () => {
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.todos).toEqual({ enabled: false });
+    });
+
+    it('reports to-dos as on when DORKOS_TODOS_ENABLED is set at boot', async () => {
+      process.env.DORKOS_TODOS_ENABLED = 'true';
+      try {
+        vi.resetModules();
+        const { initConfigManager } = await import('../../services/core/config-manager.js');
+        initConfigManager(tmpDir);
+        const configRouter = (await import('../config.js')).default;
+        target.mount(await configApp(configRouter));
+        const res = await request(server).get('/api/config').expect(200);
+        expect(res.body.todos).toEqual({ enabled: true });
+      } finally {
+        delete process.env.DORKOS_TODOS_ENABLED;
+      }
+    });
   });
 
   describe('a default account written with ~ (runtimes.claudeCode.defaultAccount)', () => {

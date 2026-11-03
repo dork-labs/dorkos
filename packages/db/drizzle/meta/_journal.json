@@ -1272,8 +1272,15 @@
     {
       "idx": 181,
       "version": "6",
-      "when": 1793690817512,
-      "tag": "20261103072657_dor3703_schedule_last_editor",
+      "when": 1793702057727,
+      "tag": "20261103103417_dor3720_room_seat_moves",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "6",
+      "when": 1793724301726,
+      "tag": "20261103164501_dor3703_schedule_last_editor",
       "breakpoints": true
     }
   ]

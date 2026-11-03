@@ -7,6 +7,7 @@
  *
  * @module startup/steps/core-routes
  */
+import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
 import path from 'node:path';
 import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
@@ -662,6 +663,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // app: the list at `/api/commitments`, a person's new one per agent at
   // `/api/agents/:id/commitments`.
   deps.commitments = commitments.routeDeps;
+  // To-dos (DOR-3088) at `/api/todos`, behind their flag until v1 is complete.
+  if (env.DORKOS_TODOS_ENABLED) deps.todos = commitments.todoRouteDeps;
   // An agent's work queue, for a person (DOR-3462).
   deps.workQueue = workQueue.routeDeps;
   // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by

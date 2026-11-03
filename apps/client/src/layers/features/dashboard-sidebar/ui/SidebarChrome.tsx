@@ -410,13 +410,16 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   );
 
   // The doors. Each is a meaning, so the address of the page it stands for is
-  // decided here, once: Threads, and the Directory — narrowed to agents for the
+  // decided here, once: Threads, To-dos, and the Directory — narrowed to agents for the
   // empty Direct messages section, whose one row offers exactly that.
   const openCommand = useCallback(
     (commandId: SidebarCommandId) => {
       switch (commandId) {
         case 'open-threads':
           void navigate({ ...appRoutes.threads() });
+          return;
+        case 'open-todos':
+          void navigate({ ...appRoutes.todos() });
           return;
         case 'open-directory':
         case 'message-someone':

@@ -195,8 +195,9 @@ export type TodoActor =
   /**
    * The person who owns this DorkOS, through the app. `proven` only for a request that carries the
    * owner's own session cookie (`personProof`); anything less writes no `person` authority.
+   * `ownerless` when the install has no owner account, so no request can ever be proven.
    */
-  | { readonly kind: 'person'; readonly proven: boolean }
+  | { readonly kind: 'person'; readonly proven: boolean; readonly ownerless?: boolean }
   /**
    * An agent, by the Mesh id `callerAgentId` resolved, with the level and marks of the turn it is
    * acting from. An unknown level (a restart, a caller with no recorded turn) is the stranger bound.

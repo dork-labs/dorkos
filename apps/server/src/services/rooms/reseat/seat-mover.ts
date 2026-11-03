@@ -212,6 +212,12 @@ export interface SeatMoverDeps {
   recordActivity(entry: ReseatActivity): void;
   /** A fresh session id; injected so a test can name it. */
   newSessionId?(): string;
+  /**
+   * Remember which seat a session held, so a spin-off it started reports to that
+   * seat where it sits now (DOR-3720). A failure here costs that report and must
+   * not stop the move.
+   */
+  recordSeatMove?(fromSessionId: string, roomId: string, authorId: string): void;
 }
 
 /** What the new session is told when it continues a message the old one had started on. */
@@ -515,6 +521,7 @@ export class RoomSeatMover {
     if (!this.deps.rebind(seat.roomId, seat.authorId, newSessionId)) {
       throw new Error('The room would not move this seat to its new session.');
     }
+    if (old !== null) this.recordSeatMove(old, seat);
     this.pending.set(seatKey(seat.roomId, seat.authorId), {
       sessionId: newSessionId,
       ...(plan.target ? { accountHint: plan.target.id } : {}),
@@ -542,6 +549,20 @@ export class RoomSeatMover {
       toAccountId: plan.target?.id ?? null,
     });
     return { newSessionId, reason: reasonOf(plan) };
+  }
+
+  /** Remember the seat a session held; a failure is logged, and the move stands. */
+  private recordSeatMove(fromSessionId: string, seat: Seat): void {
+    try {
+      this.deps.recordSeatMove?.(fromSessionId, seat.roomId, seat.authorId);
+    } catch (err) {
+      logger.warn('[rooms] could not remember the seat a session held', {
+        fromSessionId,
+        roomId: seat.roomId,
+        authorId: seat.authorId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /** The summary the new session starts from; none for an expired seat's lost chat. */

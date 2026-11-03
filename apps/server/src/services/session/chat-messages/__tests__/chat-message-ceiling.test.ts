@@ -85,6 +85,16 @@ describe('the Wi-Fi hold a message row carries on (DOR-3561)', () => {
 
   it('stores none for a clean sender, and reads none from an older row', () => {
     expect(parseCarriedHold(senderCeilingJson({ turnLevelOf: () => LEVEL }, CALLER))).toBe(false);
+  });
+
+  it('keeps the marks of the turn a report speaks for, when the sender’s latest turn has none (DOR-3720)', () => {
+    const origin = { roomId: 'r', authorId: 'teammate' };
+    const json = senderCeilingJson(
+      { turnLevelOf: () => LEVEL },
+      { ...CALLER, marksAtTurnEnd: { outsider: true, teammate: [origin] } }
+    );
+    expect(parseCarriedHold(json)).toBe(true);
+    expect(parseCeiling(json)).toMatchObject({ teammate: [origin] });
     expect(parseCarriedHold(JSON.stringify('runtime-default'))).toBe(false);
     expect(parseCarriedHold(JSON.stringify(['runtime-default', CHAIN]))).toBe(false);
     expect(parseCarriedHold('not json')).toBe(false);

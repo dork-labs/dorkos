@@ -613,6 +613,10 @@
       "types": "./src/commitment-schemas.ts",
       "default": "./dist/commitment-schemas.js"
     },
+    "./todo-schemas": {
+      "types": "./src/todo-schemas.ts",
+      "default": "./dist/todo-schemas.js"
+    },
     "./work-queue-schemas": {
       "types": "./src/work-queue-schemas.ts",
       "default": "./dist/work-queue-schemas.js"

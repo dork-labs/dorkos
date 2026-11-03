@@ -14,7 +14,7 @@ import type { Db } from '@dorkos/db';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
+import { marksOf, passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
 import {
   describeSessionFor,
   isSessionBusy,
@@ -382,10 +382,13 @@ export function reportTargetOf(sessionId: string): { parentSessionId: string } |
  * Deliver a spin-off's report to a parent that is a room's seat, as a turn
  * there (DOR-3488). The parent is looked up under the id it was named by and
  * the one it is known by now, since a seat's first turn is renamed mid-turn.
- * False when it is no room's seat.
+ * Settles only once the seat's turn has run or the report has given up, so a
+ * report that never landed can be tried again (DOR-3720).
  *
  * @param parentSessionId - The chat the spin-off reports to.
  * @param report - The report.
+ * @returns True when the seat's turn ran; false when it is no room's seat.
+ * @throws Error when it is a seat and the report did not reach it.
  */
 export async function deliverToRoomSeat(
   parentSessionId: string,
@@ -397,7 +400,13 @@ export async function deliverToRoomSeat(
   const seat = [parentSessionId, canonical].find((id) => seats.seatOf(id) !== null);
   if (seat === undefined) return false;
   const fromTitle = await chatTitleOf(report.fromSessionId);
-  return seats.deliver(seat, { ...report, fromTitle });
+  return new Promise<boolean>((resolve, reject) => {
+    const taken = seats.deliver(seat, { ...report, fromTitle }, (ran) => {
+      if (ran) resolve(true);
+      else reject(new Error('The report did not reach the room seat.'));
+    });
+    if (!taken) resolve(false);
+  });
 }
 
 /**
@@ -417,6 +426,7 @@ export function wireChatReportBack(
     store,
     reportTargetOf: (sessionId) => reportTargetOf(sessionId),
     agentPathOf: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+    marksOfTurn: (sessionId) => marksOf(sessionId, undefined),
     holdsBackgroundWork: async (sessionId) => {
       const runtime = await runtimeRegistry.resolveForSession(sessionId);
       return runtime.holdsBackgroundWork?.(sessionId) === true;

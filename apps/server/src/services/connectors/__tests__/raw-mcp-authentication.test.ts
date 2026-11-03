@@ -60,6 +60,15 @@ app.post('/mcp', async (req, res) => {
 });
 const target = swappableServer();
 target.mount(app);
+/**
+ * The probe's `fetch` keeps the socket from the last test's check in its pool.
+ * The refusal tests between checks make no request, but each one runs every
+ * migration synchronously in `beforeEach`. Once that idle stretch passes Node's
+ * 5 s default, the server closes the socket and the next probe's POST lands on
+ * it: `fetch failed`, and a flow that should connect reads `failed` (DOR-3734).
+ * Outlast any idle stretch in this file.
+ */
+target.server.keepAliveTimeout = 60_000;
 
 function deferred() {
   let resolve!: () => void;

@@ -287,6 +287,10 @@ jobs:
         with:
           node-version: 22
 
+      # security-gate.yml checks out the base and runs the base's copy of these
+      # tests, so a gate PR's own code is tested only here.
+      - name: Security gate's own tests
+        run: node --test .github/scripts/security-*.test.mjs
       - name: Reviewer shell-script fixtures
         run: bash scripts/test-review-classifier.sh
 

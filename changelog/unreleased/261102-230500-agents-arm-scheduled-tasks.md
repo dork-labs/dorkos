@@ -2,6 +2,8 @@
 covers:
   - "feat(tasks): agents set their own schedules' modes up to their own level, and a changed SKILL file runs capped at Never ask (DOR-3703)"
   - "fix(tasks): a run's lineage survives a restart, a heartbeat counts as a scheduled run, and only an approval card that showed the prompt approves its file (DOR-3703)"
+  - "fix(tasks): an approval card still approves on a plain-http page, and a run's row write can't stop the run (DOR-3703)"
+  - "fix(tasks): a long file review opens on its first change, and a run's row write retries once (DOR-3703)"
 ---
 
 ### Added

@@ -1,12 +1,16 @@
 /**
  * Spin-offs report back on their own (spec `spin-off-chats` §5): on finish,
- * fail, stop, limit and needs-you, and never on a turn that ended only to wait.
+ * fail, stop, limit and needs-you, and for a turn that ended holding work, once it is released.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
+import { logger } from '../../../../lib/logger.js';
 import {
   ChatReportBack,
+  DEFER_MAX_MS,
+  DELIVERY_RETRY_MS,
+  REPORT_SETTLE_MS,
   REPORT_TEXT_MAX,
   composeReport,
   lastTurnText,
@@ -14,6 +18,11 @@ import {
   spinOffBriefing,
   type ChatReportBackDeps,
 } from '../chat-report-back.js';
+
+vi.mock('../../../../lib/logger.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../lib/logger.js')>();
+  return { ...actual, logger: { ...actual.logger, warn: vi.fn(), error: vi.fn() } };
+});
 
 const CHILD = 'child-chat';
 const PARENT = 'parent-chat';
@@ -54,7 +63,7 @@ describe('ChatReportBack.onTurnEnd', () => {
     await expect(end()).resolves.toBe('finished');
     expect(send).toHaveBeenCalledTimes(1);
     const [caller, input, kind] = send.mock.calls[0]!;
-    expect(caller).toEqual({ sessionId: CHILD, agentPath: '/agents/builder' });
+    expect(caller).toEqual({ sessionId: CHILD, agentPath: '/agents/builder', marksAtTurnEnd: {} });
     expect(input.to).toBe(PARENT);
     expect(input.summary).toBe('Finished');
     expect(input.message).toContain('Finished this turn.');
@@ -96,8 +105,8 @@ describe('ChatReportBack.onTurnEnd', () => {
     expect(send.mock.calls[0]![1].message).toBe(`This turn failed.\n\n${reason}`);
   });
 
-  it('sends nothing when the turn ended only to wait on background work', async () => {
-    const { send, end } = harness({ holdsBackgroundWork: async () => true });
+  it('sends nothing yet when the turn ended holding background work', async () => {
+    const { send, end } = harness({ holdsBackgroundWork: async () => true, later: () => {} });
     await expect(end()).resolves.toBeNull();
     expect(send).not.toHaveBeenCalled();
   });
@@ -147,6 +156,393 @@ describe('ChatReportBack.onTurnEnd', () => {
       service: { send: vi.fn().mockRejectedValue(new Error('no room')) },
     });
     await expect(end()).resolves.toBe('finished');
+  });
+});
+
+describe('a turn that ended holding work (DOR-3720)', () => {
+  /** A harness whose rechecks run by hand, with a clock and a hold the test moves. */
+  function holding(over: Partial<ChatReportBackDeps> = {}) {
+    const state = { holds: true, lifecycle: 'idle' as SessionStatus['lifecycle'], at: NOW };
+    const rechecks: Array<() => void> = [];
+    const h = harness({
+      holdsBackgroundWork: async () => state.holds,
+      statusOf: () => status({ lifecycle: state.lifecycle }),
+      now: () => state.at,
+      later: (_ms, run) => {
+        rechecks.push(run);
+      },
+      ...over,
+    });
+    /** Run the next pending recheck and let it finish. */
+    const recheck = async () => {
+      rechecks.shift()?.();
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+    return { ...h, state, rechecks, recheck };
+  }
+
+  it('an expired delivery with no later turn still reports', async () => {
+    const { end, send, state, recheck } = holding();
+    await expect(end()).resolves.toBeNull();
+    expect(send).not.toHaveBeenCalled();
+    // Still owed: nothing goes yet.
+    await recheck();
+    expect(send).not.toHaveBeenCalled();
+    // The owed-delivery clock expires. No turn opens.
+    state.holds = false;
+    await recheck();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![1].summary).toBe('Finished');
+    expect(send.mock.calls[0]![1].message).toContain('Done: merged #1.');
+  });
+
+  it('a report cannot arrive twice when a later turn does open', async () => {
+    const { reportBack, end, send, state, recheck, rechecks } = holding();
+    await end();
+    // The debt clears because a delivery segment opened: the turn shows as open.
+    state.holds = false;
+    state.lifecycle = 'streaming';
+    await recheck();
+    expect(send).not.toHaveBeenCalled();
+    // That turn ends and reports.
+    state.lifecycle = 'idle';
+    await reportBack.onTurnEnd(CHILD, status(), { from: NOW - 60_000, to: NOW });
+    expect(send).toHaveBeenCalledTimes(1);
+    // The recheck still pending finds its entry taken.
+    while (rechecks.length > 0) await recheck();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a later turn opening during the settle takes the report, once', async () => {
+    const delays: Array<() => void> = [];
+    const { reportBack, end, send, state, recheck } = holding({
+      delay: (ms) =>
+        ms === 750
+          ? new Promise((resolve) => {
+              delays.push(() => resolve());
+            })
+          : Promise.resolve(),
+    });
+    await end();
+    state.holds = false;
+    await recheck();
+    // Released and quiet: the recheck is in its settle. The later turn opens and ends now.
+    const later = reportBack.onTurnEnd(CHILD, status(), { from: NOW - 60_000, to: NOW });
+    await vi.waitFor(() => expect(delays.length).toBe(2));
+    for (const go of delays) go();
+    await later;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a turn ending during the last look takes the report, once', async () => {
+    // Security's DOR-3720 proof: the last look at whether work is held is async, and the entry was
+    // deleted after it unchecked, so the waiting turn's words went twice.
+    let calls = 0;
+    let release: (holds: boolean) => void = () => {};
+    const { reportBack, end, send, recheck } = holding({
+      holdsBackgroundWork: () => {
+        calls += 1;
+        if (calls === 1) return Promise.resolve(true);
+        if (calls === 3) return new Promise<boolean>((resolve) => (release = resolve));
+        return Promise.resolve(false);
+      },
+    });
+    await end();
+    await recheck();
+    await vi.waitFor(() => expect(calls).toBe(3));
+    await reportBack.onTurnEnd(CHILD, status(), { from: NOW + 1_000, to: NOW + 2_000 });
+    expect(send).toHaveBeenCalledTimes(1);
+    release(false);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a later turn that said nothing falls back to the words of the turn that waited', async () => {
+    const { reportBack, end, send, state } = holding({
+      history: async () => [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'Done, waiting on CI.',
+          timestamp: new Date(NOW - 30_000).toISOString(),
+        },
+      ],
+    });
+    await end();
+    state.holds = false;
+    await reportBack.onTurnEnd(CHILD, status(), { from: NOW + 60_000, to: NOW + 90_000 });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![1].message).toContain('Done, waiting on CI.');
+  });
+
+  it('work that runs past the limit reports once, saying it is still running', async () => {
+    const { end, send, state, recheck, rechecks } = holding();
+    await end();
+    state.at = NOW + DEFER_MAX_MS;
+    await recheck();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![1].summary).toBe('Still working');
+    expect(send.mock.calls[0]![1].message).toContain('background work still running');
+    expect(rechecks).toHaveLength(0);
+  });
+
+  it('a running helper makes it wait too, and it reports once the helper is gone', async () => {
+    let helpers = 1;
+    const { end, send, recheck } = holding({
+      holdsBackgroundWork: async () => false,
+      statusOf: () => status({ runningSubagentCount: helpers } as Partial<SessionStatus>),
+    });
+    await expect(end()).resolves.toBeNull();
+    await recheck();
+    expect(send).not.toHaveBeenCalled();
+    helpers = 0;
+    await recheck();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['failed', status({ lifecycle: 'error' }), 'Failed'],
+    ['stopped', status({ lifecycle: 'interrupted' }), 'Stopped'],
+  ] as const)('a %s turn holding work reports at once', async (_name, ended, summary) => {
+    const { reportBack, send } = holding();
+    await reportBack.onTurnEnd(CHILD, ended, { from: NOW - 60_000, to: NOW });
+    expect(send.mock.calls[0]![1].summary).toBe(summary);
+  });
+
+  it('a turn at a usage limit holding work reports at once', async () => {
+    const { reportBack, send } = holding();
+    const limited = status({
+      limit: {
+        accountId: null,
+        window: 'five_hour',
+        resetsAt: null,
+        since: '2026-10-09T11:00:00.000Z',
+      } as SessionStatus['limit'],
+    });
+    await reportBack.onTurnEnd(CHILD, limited, { from: NOW - 60_000, to: NOW });
+    expect(send.mock.calls[0]![1].summary).toBe('Paused at a usage limit');
+  });
+
+  describe.each([
+    ['a chat', false],
+    ['a room seat', true],
+  ] as const)('every way a turn ends, into %s', (_name, seat) => {
+    /** What landed: the seat's report text, or the chat message. */
+    function deps() {
+      const toRoomSeat = vi.fn().mockResolvedValue(seat);
+      const texts = () =>
+        seat ? toRoomSeat.mock.calls.map(([, r]) => r.text as string) : undefined;
+      return { toRoomSeat, texts };
+    }
+
+    it.each([
+      ['finished', status(), 'Finished this turn.'],
+      ['failed', status({ lifecycle: 'error' }), 'This turn failed.'],
+      ['stopped', status({ lifecycle: 'interrupted' }), 'This turn was stopped.'],
+      [
+        'paused',
+        status({
+          limit: {
+            accountId: null,
+            window: 'five_hour',
+            resetsAt: null,
+            since: '2026-10-09T11:00:00.000Z',
+          } as SessionStatus['limit'],
+        }),
+        'Paused:',
+      ],
+    ] as const)('%s, with nothing held', async (_ending, ended, line) => {
+      const { toRoomSeat, texts } = deps();
+      const { reportBack, send } = harness({ toRoomSeat });
+      await reportBack.onTurnEnd(CHILD, ended, { from: NOW - 60_000, to: NOW });
+      const landed = texts() ?? send.mock.calls.map(([, input]) => input.message as string);
+      expect(landed).toHaveLength(1);
+      expect(landed[0]).toContain(line);
+    });
+
+    it('needs-you', async () => {
+      const { toRoomSeat, texts } = deps();
+      const { reportBack, send } = harness({
+        toRoomSeat,
+        statusOf: () => status({ lifecycle: 'blocked' }),
+      });
+      await reportBack.onWaiting(CHILD, { key: `w-${seat}`, what: 'It asks: ship?' });
+      const landed = texts() ?? send.mock.calls.map(([, input]) => input.message as string);
+      expect(landed).toHaveLength(1);
+      expect(landed[0]).toContain('It asks: ship?');
+    });
+  });
+
+  it('into a room seat: an expired delivery wakes the seat', async () => {
+    const toRoomSeat = vi.fn().mockResolvedValue(true);
+    const { end, send, state, recheck } = holding({ toRoomSeat });
+    await end();
+    state.holds = false;
+    await recheck();
+    expect(send).not.toHaveBeenCalled();
+    expect(toRoomSeat).toHaveBeenCalledTimes(1);
+    expect(toRoomSeat.mock.calls[0]![1].text).toContain('Finished this turn.');
+  });
+});
+
+describe('a report keeps the marks of the turn it speaks for (DOR-3720 M1)', () => {
+  const ORIGIN = { roomId: 'r', authorId: 'teammate' };
+  const WIFI = { outsider: true as const, teammate: [ORIGIN] };
+
+  /** A chat whose latest turn carries `marks.now`, which a test clears as its next turn starts. */
+  function marked(over: Partial<ChatReportBackDeps> = {}) {
+    const marks: { now: Record<string, unknown> } = { now: WIFI };
+    return {
+      marks,
+      deps: { marksOfTurn: () => marks.now, ...over } as Partial<ChatReportBackDeps>,
+    };
+  }
+
+  it('sends the marks to a chat parent on every try, whatever the chat runs meanwhile', async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('no'))
+      .mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const { marks, deps } = marked({
+      service: { send },
+      delay: async (ms) => {
+        if (ms !== REPORT_SETTLE_MS) marks.now = {};
+      },
+    });
+    await harness(deps).end();
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[0]![0].marksAtTurnEnd).toEqual(WIFI);
+    expect(send.mock.calls[1]![0].marksAtTurnEnd).toEqual(WIFI);
+  });
+
+  it('sends the marks to a room seat on every try', async () => {
+    const toRoomSeat = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('did not reach'))
+      .mockResolvedValue(true);
+    const { marks, deps } = marked({
+      toRoomSeat,
+      delay: async (ms) => {
+        if (ms !== REPORT_SETTLE_MS) marks.now = {};
+      },
+    });
+    await harness(deps).end();
+    expect(toRoomSeat).toHaveBeenCalledTimes(2);
+    expect(toRoomSeat.mock.calls[1]![1].marks).toEqual(WIFI);
+  });
+
+  it('reads them as the turn ends, before the settle lets the next turn start', async () => {
+    const send = vi.fn().mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const { marks, deps } = marked({
+      service: { send },
+      delay: async () => {
+        marks.now = {};
+      },
+    });
+    await harness(deps).end();
+    expect(send.mock.calls[0]![0].marksAtTurnEnd).toEqual(WIFI);
+  });
+
+  it('keeps them on a waiting report, and joins them with a later turn’s', async () => {
+    const send = vi.fn().mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const rechecks: Array<() => void> = [];
+    let holds = true;
+    const { marks, deps } = marked({
+      service: { send },
+      holdsBackgroundWork: async () => holds,
+      later: (_ms, run) => {
+        rechecks.push(run);
+      },
+    });
+    const { reportBack, end } = harness(deps);
+    await end();
+    // The next turn starts unmarked, ends still holding, and then the work is released.
+    marks.now = {};
+    await reportBack.onTurnEnd(CHILD, status(), { from: NOW + 1_000, to: NOW + 2_000 });
+    holds = false;
+    rechecks.at(-1)!();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0].marksAtTurnEnd).toEqual(WIFI);
+  });
+
+  it('keeps them on a "needs the person" report too', async () => {
+    const send = vi.fn().mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const { marks, deps } = marked({
+      service: { send },
+      statusOf: () => status({ lifecycle: 'blocked' }),
+      delay: async () => {
+        marks.now = {};
+      },
+    });
+    await harness(deps).reportBack.onWaiting(CHILD, { key: 'w-marks', what: 'It asks.' });
+    expect(send.mock.calls[0]![0].marksAtTurnEnd).toEqual(WIFI);
+  });
+});
+
+describe('a report that cannot be delivered (DOR-3720)', () => {
+  beforeEach(() => {
+    vi.mocked(logger.warn).mockClear();
+    vi.mocked(logger.error).mockClear();
+  });
+
+  it('is logged and tried again until it lands', async () => {
+    const waits: number[] = [];
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('no'))
+      .mockRejectedValueOnce(new Error('still no'))
+      .mockResolvedValue({ messageId: 'r1', chatId: PARENT, status: 'working' });
+    const { end } = harness({
+      service: { send },
+      delay: async (ms) => {
+        waits.push(ms);
+      },
+    });
+    await end();
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(waits).toEqual([REPORT_SETTLE_MS, DELIVERY_RETRY_MS[0], DELIVERY_RETRY_MS[1]]);
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('retries a room seat too, and ends in one error line when it never lands', async () => {
+    const toRoomSeat = vi.fn().mockRejectedValue(new Error('did not reach'));
+    const { end, send } = harness({ toRoomSeat });
+    await end();
+    expect(toRoomSeat).toHaveBeenCalledTimes(DELIVERY_RETRY_MS.length + 1);
+    expect(send).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logger.error).mock.calls[0]![1]).toMatchObject({
+      sessionId: CHILD,
+      parent: PARENT,
+    });
+  });
+
+  it('a chat with no agent home yet is tried again, never dropped without a word', async () => {
+    const agentPathOf = vi.fn().mockResolvedValueOnce(null).mockResolvedValue('/agents/builder');
+    const { end, send } = harness({ agentPathOf });
+    await end();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the parent afresh on each try: a seat that moved meanwhile gets the report', async () => {
+    let parent = PARENT;
+    const send = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        parent = 'moved-seat';
+        throw new Error('That chat belongs to a room');
+      })
+      .mockResolvedValue({ messageId: 'r1', chatId: 'moved-seat', status: 'working' });
+    const { end } = harness({
+      service: { send },
+      reportTargetOf: () => ({ parentSessionId: parent }),
+    });
+    await end();
+    expect(send.mock.calls[1]![1].to).toBe('moved-seat');
   });
 });
 
@@ -206,6 +602,7 @@ describe('the review findings (DOR-2790 PR 2)', () => {
   it('sends nothing while a helper is still running', async () => {
     const { send, end } = harness({
       statusOf: () => status({ runningSubagentCount: 1 } as Partial<SessionStatus>),
+      later: () => {},
     });
     await expect(end()).resolves.toBeNull();
     expect(send).not.toHaveBeenCalled();

@@ -59,6 +59,7 @@ import {
   createCommitmentsRoutes,
   type CommitmentRouterDeps,
 } from '../routes/commitments.js';
+import { createTodosRoutes, type TodoRouterDeps } from '../routes/todos.js';
 import {
   createWorkQueueRoutes,
   createWorkQueuesStopRoutes,
@@ -235,6 +236,8 @@ export interface ComposedGroupDeps {
   mcpOAuth?: AgentMcpOAuthService;
   /** What agents promised (`/api/commitments`, `/api/agents/:id/commitments`). */
   commitments?: CommitmentRouterDeps;
+  /** To-dos (`/api/todos`), present only behind `DORKOS_TODOS_ENABLED` (DOR-3088). */
+  todos?: TodoRouterDeps;
   /** An agent's work queue, for a person (`/api/agents/:id/work-queue`). */
   workQueue?: WorkQueueRouterDeps;
   /**
@@ -498,6 +501,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.mcpOAuth) app.route('/api/agents/mcp-oauth', createMcpOAuthRoutes(deps.mcpOAuth));
   // What the app's `/signed-in` page reads after any sign-in's callback.
   app.route('/api/sign-in-landings', createSignInLandingRoutes());
+  if (deps.todos) app.route('/api/todos', createTodosRoutes(deps.todos));
   if (deps.commitments) {
     app.route('/api/commitments', createCommitmentsRoutes(deps.commitments));
     app.route('/api/agents/:id/commitments', createAgentCommitmentsRoutes(deps.commitments));

@@ -6,7 +6,7 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: PipPanelShowcases, ApprovalsShowcases, ScheduleApprovalShowcases,
  * TriageHeaderShowcases, InboxShowcases, PresenceStripShowcases,
- * HomeStatesShowcases, ConnectionsShowcases, PausedConnectionShowcases,
+ * HomeStatesShowcases, TodosShowcases, ConnectionsShowcases, PausedConnectionShowcases,
  * CommunityHostingShowcases, McpServerCardShowcases.
  *
  * See `features-agent-sections.ts` for why this used to share a page — and a
@@ -225,6 +225,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'Inbox',
     keywords: ['stop', 'still running', 'background', 'command', 'pill'],
+  },
+  // TodosShowcases (DOR-3088)
+  {
+    id: 'to-do-rows',
+    title: 'To-do rows',
+    page: 'home-inbox',
+    category: 'To-dos',
+    keywords: ['to-do', 'todo', 'check', 'due', 'overdue', 'declined', 'limited', 'undo'],
   },
   // ConnectionsShowcases
   {
