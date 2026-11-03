@@ -21,7 +21,7 @@
  * @module fixtures/person-step-up
  */
 import Database from 'better-sqlite3';
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
 import {
   PERSON_PROOF_HEADER,
   PERSON_PROOF_STORAGE_KEY,
@@ -44,13 +44,14 @@ export interface TestOwner {
  * @param request - Any request context; sign-up's own cookie is not used.
  * @param apiUrl - The test-mode API origin.
  * @param owner - The owner to register.
+ * @returns The signup response, so a regression can require a fresh owner.
  */
 export async function ensureTestOwner(
   request: APIRequestContext,
   apiUrl: string,
   owner: TestOwner
-): Promise<void> {
-  await request.post(`${apiUrl}/api/auth/sign-up/email`, {
+): Promise<APIResponse> {
+  return request.post(`${apiUrl}/api/auth/sign-up/email`, {
     headers: { origin: apiUrl },
     data: owner,
   });
@@ -112,6 +113,8 @@ export async function actAsPersonInPage(
 /**
  * Remove an owner a test registered, with its sessions, sign-in and API keys,
  * so the test-mode server is owner-less again for every test after it.
+ * Undo the owner binding on the same author row, preserving its room seats,
+ * read cursors and linked identities for the next owner-less request.
  *
  * @param apiUrl - The test-mode API origin, whose port names its data folder.
  * @param email - The owner's email.
@@ -124,6 +127,16 @@ export function removeTestOwner(apiUrl: string, email: string): void {
       { id: string } | undefined;
     if (!owner) return;
     db.transaction(() => {
+      // A room read adopts the local sentinel as user:<id>. Deleting only the
+      // account makes localHuman mint a new author, outside #team and every
+      // room the original person joined. Reverse bindOwner without changing IDs.
+      const ownerKey = `user:${owner.id}`;
+      db.prepare(
+        "UPDATE authors SET natural_key = 'local' WHERE kind = 'human' AND natural_key = ?"
+      ).run(ownerKey);
+      db.prepare("UPDATE authors SET linked_owner_key = 'local' WHERE linked_owner_key = ?").run(
+        ownerKey
+      );
       for (const table of ['apikey', 'session', 'account']) {
         const column = table === 'apikey' ? 'reference_id' : 'user_id';
         db.prepare(`DELETE FROM ${table} WHERE ${column} = ?`).run(owner.id);
