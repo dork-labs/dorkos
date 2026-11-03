@@ -93,7 +93,7 @@ const VALIDATION_FAILED = z.object({ error: z.literal('Validation failed') }).lo
 /** An agent header this machine never minted: the caller is a machine, unverified. */
 const AGENT = { 'X-DorkOS-Agent': 'not-a-real-token' };
 const SESSION = '3f1c2a64-8d3e-4b5f-9a7c-1e2d3c4b5a69';
-const SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+const SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox, frame-ancestors 'none'";
 const q = encodeURIComponent;
 const at = (rel: string) => `cwd=${q(CWD)}&path=${q(rel)}`;
 
@@ -173,7 +173,7 @@ contractSuite('file, diff, upload and profile groups', [
         'content-type': 'audio/mpeg',
         'content-range': 'bytes 2-5/10',
         'content-length': '4',
-        'content-security-policy': null,
+        'content-security-policy': "frame-ancestors 'none'",
       },
       body: 'cdef',
     },

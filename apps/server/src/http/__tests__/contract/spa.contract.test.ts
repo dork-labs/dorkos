@@ -70,7 +70,7 @@ contractSuite(
         headers: {
           'content-type': /^(text|application)\/javascript\b/,
           'cache-control': 'public, max-age=31536000, immutable',
-          'content-security-policy': null,
+          'content-security-policy': "frame-ancestors 'none'",
         },
         body: BUNDLE,
       },
@@ -129,7 +129,10 @@ contractSuite(
       path: '/favicon.svg',
       expect: {
         status: 200,
-        headers: { 'cache-control': 'public, max-age=0', 'content-security-policy': null },
+        headers: {
+          'cache-control': 'public, max-age=0',
+          'content-security-policy': "frame-ancestors 'none'",
+        },
         body: ICON,
       },
     },

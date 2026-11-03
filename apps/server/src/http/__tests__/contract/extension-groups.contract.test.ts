@@ -641,8 +641,9 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     if (dorkHome) rmSync(dorkHome, { recursive: true, force: true });
   }, 30_000);
 
-  it('serves nothing for an extension nobody approved, even once it is turned on', async () => {
-    for (const id of [ROUTED, PROXIED, ISOLATED]) {
+  it.each([ROUTED, PROXIED, ISOLATED])(
+    'serves nothing for unapproved %s, even once it is turned on',
+    async (id) => {
       const enabled = await call(server, 'POST', `/api/extensions/${id}/enable`, {});
       expect(enabled.status, enabled.text).toBe(200);
       const started = await call(server, 'POST', `/api/extensions/${id}/init-server`, {});
@@ -653,6 +654,9 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
         expect: { status: 404, body: NO_ROUTES(id) },
       });
     }
+  );
+
+  it('lists every unapproved extension as pending', async () => {
     await check(server, {
       path: '/api/extensions/pending-approvals',
       expect: {
@@ -676,16 +680,19 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
     });
   });
 
-  it('approves each extension for a person, and starts it', async () => {
-    for (const id of [ROUTED, PROXIED, ISOLATED]) {
+  // One child per case: the isolated host permits 15 seconds to load.
+  it.each([ROUTED, PROXIED, ISOLATED])(
+    'approves %s for a person, and starts it',
+    async (id) => {
       const approved = await approveAsThePerson(server, id);
       expect(approved.status, approved.text).toBe(200);
       expect(approved.json.extension).toMatchObject({ id, approvedToRun: true });
       const started = await call(server, 'POST', `/api/extensions/${id}/init-server`, {});
       expect(started.status, started.text).toBe(200);
       expect(started.json).toEqual({ ok: true });
-    }
-  });
+    },
+    20_000
+  );
 
   it('lists them as approved', async () => {
     const listed = await setup(server, 'GET', '/api/extensions');
@@ -965,7 +972,7 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
         status: 200,
         headers: {
           ...JSON_TYPE,
-          'content-security-policy': "sandbox; default-src 'none'",
+          'content-security-policy': "sandbox; default-src 'none', frame-ancestors 'none'",
           'x-content-type-options': 'nosniff',
         },
         body: {
@@ -1143,14 +1150,17 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
     }
   });
 
-  it('starts each once a person approves it', async () => {
-    for (const id of [FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED]) {
+  // One child per case, with its real load deadline inside the test budget.
+  it.each([FETCHED, FETCH_DEFAULT, ISOLATED_FETCHED])(
+    'starts %s once a person approves it',
+    async (id) => {
       const approved = await approveAsThePerson(server, id);
       expect(approved.status, approved.text).toBe(200);
       const started = await call(server, 'POST', `/api/extensions/${id}/init-server`, {});
       expect(started.status, started.text).toBe(200);
-    }
-  });
+    },
+    20_000
+  );
 
   it('hands the fetch handler the path below the mount, with the query', async () => {
     await check(server, {
@@ -1220,7 +1230,9 @@ describe('contract: an extension served with a fetch handler (login off)', () =>
       headers: { cookie: 'session=mine' },
       expect: {
         status: 200,
-        headers: { 'content-security-policy': "sandbox; default-src 'none'" },
+        headers: {
+          'content-security-policy': "sandbox; default-src 'none', frame-ancestors 'none'",
+        },
         body: { method: 'GET', path: '/items', search: '?q=1', cookie: null, body: null },
       },
     });
