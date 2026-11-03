@@ -12,6 +12,8 @@ const TODOS_KEY = ['todos'] as const;
 export const todoKeys = {
   /** Everything to-do-shaped. */
   all: TODOS_KEY,
+  /** One to-do, as its card reads it. */
+  one: (id: string) => [...TODOS_KEY, 'one', id] as const,
   /** Every list, whatever its filters. */
   lists: () => [...TODOS_KEY, 'list'] as const,
   /**

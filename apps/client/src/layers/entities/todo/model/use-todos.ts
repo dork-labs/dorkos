@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ListTodosQuery } from '@dorkos/shared/todo-schemas';
+import type { ListTodosQuery, TodoCard } from '@dorkos/shared/todo-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { todoKeys } from './todo-keys';
 
@@ -43,4 +43,29 @@ export function useTodoBadge(options: { enabled?: boolean } = {}): number {
     enabled: options.enabled ?? true,
   });
   return data ?? 0;
+}
+
+/**
+ * One to-do as its card reads it: with the reader's own access, so an id they can't see reads as
+ * `null`, never as somebody else's to-do. Every to-do write refreshes it with the lists.
+ *
+ * @param id - The to-do id.
+ * @param options - `enabled: false` holds the read, for a server with to-dos off.
+ * @returns The TanStack Query result: the to-do, or `null` when it can't be seen.
+ */
+export function useTodo(id: string, options: { enabled?: boolean } = {}) {
+  const transport = useTransport();
+  return useQuery<TodoCard | null>({
+    queryKey: todoKeys.one(id),
+    queryFn: async () => {
+      try {
+        return await transport.getTodo(id);
+      } catch (error) {
+        if ((error as { status?: number }).status === 404) return null;
+        throw error;
+      }
+    },
+    refetchInterval: REFRESH_MS,
+    enabled: options.enabled ?? true,
+  });
 }

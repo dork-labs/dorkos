@@ -40,6 +40,8 @@ describe('to-do routes', () => {
   let todos: TodoService;
   /** Whether the request proves the person; flipped per test. */
   let proven: boolean;
+  /** The to-do whose turn has run, for "Show work". */
+  let workedOn: string | undefined;
 
   function power(id: string) {
     return db
@@ -68,6 +70,7 @@ describe('to-do routes', () => {
             todos,
             personProven: () => proven,
             ownerExists: () => state.ownerId !== null,
+            workSessionOf: (todoId) => (todoId === workedOn ? 'session-work' : null),
             // The app's marker stands in for a window with no session while an owner exists.
             needsStepUp: (facts) =>
               state.ownerId !== null && facts.headers[PERSON_APP_HEADER] !== undefined,
@@ -138,6 +141,20 @@ describe('to-do routes', () => {
       .send({ state: 'kept' });
     expect(changed.status).toBe(403);
     expect(changed.body.code).toBe('NOT_YOURS');
+  });
+
+  it('reads one to-do for its card, with the chat its turn ran in, and 404s an unknown id', async () => {
+    proven = true;
+    const made = await request(fixtureServer)
+      .post('/api/todos')
+      .send({ what: 'Renew the domain', assignee: { kind: 'agent', agentId: 'agent-ana' } });
+    workedOn = made.body.id;
+    const one = await request(fixtureServer).get(`/api/todos/${made.body.id}`);
+    expect(one.status).toBe(200);
+    expect(one.body).toMatchObject({ what: 'Renew the domain', workSessionId: 'session-work' });
+    const missing = await request(fixtureServer).get('/api/todos/nope');
+    expect(missing.status).toBe(404);
+    expect(missing.body.code).toBe('NOT_FOUND');
   });
 
   describe("a program finishing the person's own to-do (Security, PR 5a M1)", () => {

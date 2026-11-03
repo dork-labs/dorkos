@@ -9,7 +9,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { CreateTodoRequest, Todo } from '@dorkos/shared/todo-schemas';
 
 /** The to-do methods of the Transport port. */
-type TodoMethods = Pick<Transport, 'listTodos' | 'createTodo' | 'updateTodo'>;
+type TodoMethods = Pick<Transport, 'listTodos' | 'getTodo' | 'createTodo' | 'updateTodo'>;
 
 /**
  * One open to-do the person made and assigned to themselves, with no date, no room and no
@@ -49,6 +49,7 @@ export function createMockTodo(overrides: Partial<Todo> = {}): Todo {
 export function todoTransportMocks(): TodoMethods {
   return {
     listTodos: vi.fn().mockResolvedValue({ todos: [], doneCount: 0, badge: 0 }),
+    getTodo: vi.fn().mockRejectedValue(new Error('getTodo not mocked')),
     createTodo: vi.fn().mockImplementation((body: CreateTodoRequest): Promise<Todo> =>
       Promise.resolve(
         createMockTodo({

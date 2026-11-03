@@ -426,6 +426,42 @@ export class RoomSystemPosts {
     return entry;
   }
 
+  /**
+   * Post a to-do's card into a Direct chat, in the room's own voice (DOR-3088). It addresses
+   * nobody and dispatches nothing: the to-do's turn is started by the to-dos, at the to-do's own
+   * power, never by this entry. The text is a plain fallback; the app draws the card from the
+   * to-do as the reader may see it.
+   *
+   * @param roomId - The Direct chat's room.
+   * @param input - The fallback text and the to-do's id.
+   * @returns The committed entry.
+   * @throws {RoomError} `ROOM_ARCHIVED` — an archived room gains no entries.
+   */
+  postTodoCard(roomId: string, input: { text: string; todoId: string }): RoomEntry {
+    const room = this.visibility.requireRoom(roomId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'post',
+      body: { text: input.text, todo: { todoId: input.todoId } },
+      // Addresses nobody, so the card can never wake an agent on its own.
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...threadPointers(this.store, roomId, undefined),
+      ...deriveCascade(id, {
+        authorKind: 'system',
+        maxAgentDepth: this.limitsFor(roomId).maxAgentDepth,
+      }),
+      createdAt: new Date().toISOString(),
+    });
+    this.publisher.publishEntry(entry);
+    return entry;
+  }
+
   /** Persist one privately authorized service notice and its source receipt atomically, without waking agents. */
   postServiceNotification(
     roomId: string,

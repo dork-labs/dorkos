@@ -11,6 +11,7 @@ import type {
   ListTodosQuery,
   ListTodosResponse,
   Todo,
+  TodoCard,
   UpdateTodoRequest,
 } from '@dorkos/shared/todo-schemas';
 import { fetchJSON } from './http-client';
@@ -33,6 +34,10 @@ export function createTodoMethods(baseUrl: string) {
       if (query.limit !== undefined) params.set('limit', String(query.limit));
       const qs = params.toString();
       return fetchJSON(baseUrl, `/todos${qs ? `?${qs}` : ''}`);
+    },
+
+    getTodo(id: string): Promise<TodoCard> {
+      return fetchJSON(baseUrl, `/todos/${encodeURIComponent(id)}`);
     },
 
     createTodo(body: CreateTodoRequest): Promise<Todo> {

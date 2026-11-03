@@ -116,6 +116,7 @@ export function directNotesFor(
         parts: [{ type: 'text', text }],
         timestamp: entry.createdAt,
         _directNote: { roomId: entry.roomId, entryId: entry.id, seq: entry.seq },
+        ...(entry.body.todo ? { _todoCard: { todoId: entry.body.todo.todoId } } : {}),
       };
       noteMessages.set(entry, note);
     }

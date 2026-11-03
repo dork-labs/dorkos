@@ -76,6 +76,16 @@ describe('withDirectNotes', () => {
     expect(messages[1]).toMatchObject({ role: 'assistant', content: 'entry 1' });
   });
 
+  it('marks a to-do card DorkOS posted, so the transcript draws the card (DOR-3088)', () => {
+    const transcript = [message('m1', T(1))];
+    const card = entry(1, T(3), {
+      authorId: 'author-system',
+      body: { text: 'New to-do', todo: { todoId: 'todo-1' } },
+    });
+    const { messages } = withDirectNotes(transcript, log([card]));
+    expect(messages[1]).toMatchObject({ _todoCard: { todoId: 'todo-1' } });
+  });
+
   it('never shows twice what the transcript already holds', () => {
     const transcript = [
       message('m1', T(1), { roomMessage: { roomId: 'dm-ana', entryId: 'e1' } }),

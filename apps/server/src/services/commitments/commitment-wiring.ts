@@ -11,6 +11,7 @@ import { refuseUnlessAccountOwner } from '../../lib/caller-authority.js';
 import type { CommitmentRouterDeps } from '../../routes/commitments.js';
 import { todoNeedsStepUp, type TodoRouterDeps } from '../../routes/todos.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
+import type { RoomSessionPlacePort } from '../workspace/room-session-place.js';
 import { ownerAccountExists } from '../core/auth/gate-policy.js';
 import { personProof } from './caller.js';
 import { CommitmentService } from './commitment-service.js';
@@ -31,6 +32,8 @@ export interface CommitmentWiringDeps {
   db: Db;
   /** The agent registry, read lazily: Mesh starts later in boot, or not at all. */
   meshCore: () => Pick<MeshCore, 'get' | 'getByPath' | 'getProjectPath'> | undefined;
+  /** Where a Direct chat's session stands in its room, read lazily: built later in boot. */
+  roomSessionPlace?: () => RoomSessionPlacePort | undefined;
 }
 
 /** The running commitments domain, as boot holds it. */
@@ -118,6 +121,7 @@ export function wireCommitments(deps: CommitmentWiringDeps): CommitmentWiring {
       // A failed lookup reads as an owner, so the no-owner allowance fails closed.
       ownerExists: ownerAccountExists,
       needsStepUp: todoNeedsStepUp,
+      workSessionOf: (todoId) => todoTurns.lastSessionOf(todoId),
       readSource: (entryId) => readTodoSourceFacts(deps.db, entryId),
     },
     todoCapabilityDeps: {

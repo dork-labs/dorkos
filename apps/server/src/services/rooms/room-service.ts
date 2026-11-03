@@ -598,6 +598,10 @@ export class RoomService {
   ): RoomEntry {
     return this.parts.systemPosts.postAgentGreeting(roomId, input);
   }
+  /** Post a to-do's card, waking nobody. See {@link RoomSystemPosts.postTodoCard}. */
+  postTodoCard(roomId: string, input: { text: string; todoId: string }): RoomEntry {
+    return this.parts.systemPosts.postTodoCard(roomId, input);
+  }
   /** Whether one entry is in one room's log. */
   hasEntry(roomId: string, entryId: string): boolean {
     return this.parts.core.store.getEntryById(roomId, entryId) !== null;

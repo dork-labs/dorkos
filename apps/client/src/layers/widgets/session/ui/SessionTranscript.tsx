@@ -26,6 +26,7 @@ import { Feed } from '@/layers/shared/ui';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { useSessionRuntime } from '@/layers/entities/session';
 import { WIDGET_FENCE_MARKER } from '@/layers/features/gen-ui';
+import { TodoCard } from '@/layers/features/todos';
 import {
   Conversation,
   DayDivider,
@@ -476,6 +477,15 @@ export function SessionTranscript({
         return (
           <div className="px-4 py-1">
             <ChatStopLine notice={message._chatStop} />
+          </div>
+        );
+      }
+
+      // A to-do's card, in DorkOS's own voice: the to-do itself, never a bubble (DOR-3088).
+      if (message._todoCard) {
+        return (
+          <div className="px-4 py-1">
+            <TodoCard todoId={message._todoCard.todoId} sessionId={sessionId} />
           </div>
         );
       }

@@ -14,6 +14,8 @@ import type { MeshCore } from '@dorkos/mesh';
 import { boundaryRefusal, errorBody } from '../lib/route-utils.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { auditRefusedLaunch } from '../services/session/launch/launch-audit.js';
+import { getDirectChats } from '../services/rooms/direct-chat/index.js';
+import { unprovenDirectChatBound } from './room-post-bound.js';
 import {
   launchedByOf,
   launchPlaceRefusal,
@@ -65,17 +67,34 @@ export function launcherTurnCeiling(
 /**
  * What `POST /:id/messages` hands the launch service about its caller: who
  * chose the place, and the ceiling the turn carries. The route names the
- * origin itself, at the call.
+ * origin itself, at the call. A message into a Direct chat's own session that
+ * doesn't prove the owner is held to the stranger's bound too, exactly as a room
+ * post into that chat is (DOR-3088, `unprovenDirectChatBound`).
  *
  * @param facts - The request's facts.
+ * @param sessionId - The session the message is for, to tell whether it is a Direct chat's own.
  */
-export function httpLaunchOf(facts: RequestFacts): {
+export function httpLaunchOf(
+  facts: RequestFacts,
+  sessionId?: string
+): {
   launcher: SessionLauncher;
   permissionCeiling?: TurnPermissionCeiling;
   carriedMarks?: { outsider: true };
 } {
   const launcher = sessionLauncherOf(facts);
-  return { launcher, ...launcherTurnCeiling(launcher, facts) };
+  const turn = launcherTurnCeiling(launcher, facts);
+  const directChat = sessionId !== undefined && getDirectChats()?.forSession(sessionId) != null;
+  const unproven = directChat ? unprovenDirectChatBound(facts, launcher.kind) : undefined;
+  if (!unproven) return { launcher, ...turn };
+  const existing = turn.permissionCeiling;
+  const bounds: readonly TurnPermissionBound[] =
+    existing === undefined
+      ? []
+      : Array.isArray(existing)
+        ? existing
+        : [existing as TurnPermissionBound];
+  return { launcher, ...turn, permissionCeiling: bounds.length ? [...bounds, unproven] : unproven };
 }
 
 /**

@@ -58,7 +58,7 @@ import {
 } from '@/layers/features/conversation';
 import { ForwardViaLine } from '@/layers/features/chat';
 import { postedReachLine } from '@/layers/features/mentions';
-import { useMakeTodoAction } from '@/layers/features/todos';
+import { TodoCard, useMakeTodoAction } from '@/layers/features/todos';
 import {
   useEntryActions,
   type EntryActionBarHandle,
@@ -457,7 +457,10 @@ export function RoomMessage({
           // changes what it says.
           className="wrap-anywhere [&_pre]:overflow-x-auto [&_pre]:wrap-normal"
         >
-          {entry.body.fileChange ? (
+          {entry.body.todo ? (
+            // A to-do's card, drawn from the to-do as this reader may see it (DOR-3088).
+            <TodoCard todoId={entry.body.todo.todoId} />
+          ) : entry.body.fileChange ? (
             // A person's change to the room's files, drawn as plain text from
             // its structured half — never the markdown `text` beside it. A file
             // name and a display name are both anybody's text; as a string

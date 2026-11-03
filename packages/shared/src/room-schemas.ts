@@ -1432,6 +1432,12 @@ export const RoomEntryBodySchema = z
     via: ForwardViaSchema.optional().describe(
       "Set on a person's comment a mini app forwarded into their Direct chat with an agent (DOR-3325): the app and the item it was typed on. The text is only what the person typed; this is shown as a muted line above it."
     ),
+    todo: z
+      .object({ todoId: z.string() })
+      .optional()
+      .describe(
+        "Set on the to-do card DorkOS posts in its own voice into the person's Direct chat with the agent a to-do is assigned to (DOR-3088). Only the server writes it, and no request can carry it. The app draws the card from the to-do as the reader is allowed to see it, never from this entry's text."
+      ),
   })
   .openapi('RoomEntryBody');
 

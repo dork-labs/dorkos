@@ -77,6 +77,17 @@ export const TodoSchema = z
 /** One to-do. */
 export type Todo = z.infer<typeof TodoSchema>;
 
+/**
+ * One to-do as its card reads it (`GET /api/todos/:id`): the to-do, and the chat its latest turn
+ * ran in, so the card can offer "Show work". Null before any turn.
+ */
+export const TodoCardSchema = TodoSchema.extend({
+  workSessionId: z.string().nullable(),
+}).openapi('TodoCard');
+
+/** One to-do as its card reads it. */
+export type TodoCard = z.infer<typeof TodoCardSchema>;
+
 /** An ISO 8601 date-time with an offset. */
 const DueAtSchema = z.string().datetime({ offset: true });
 

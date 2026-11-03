@@ -55,7 +55,7 @@ import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
+import { roomPostBound } from './room-post-bound.js';
 import { renameAuthorHandle } from '../services/rooms/handles/rename-author-handle.js';
 import { isFromWifi, NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
 import { logger } from '../lib/logger.js';
@@ -345,6 +345,15 @@ function accepted(entry: PostedEntry): PostToRoomResponse {
   };
 }
 
+/** The bound a post's turn starts at: see {@link roomPostBound}. */
+function postBound(
+  roomId: string,
+  facts: Parameters<typeof roomPostBound>[0],
+  caller: { id: string; kind: string }
+): 'runtime-default' | undefined {
+  return roomPostBound(facts, getRoomService().getRoom(roomId, caller.id)?.kind, caller.kind);
+}
+
 /**
  * POST /:id/entries — post. Trigger-only: 202 with the entry's identity, while
  * the entry itself rides the SSE stream to every reader including this one. The
@@ -363,7 +372,7 @@ router.post('/:id/entries', (c) => {
         attachmentIds: body.attachmentIds,
       },
       caller().kind === 'agent',
-      wifiTurnBound(honoRequestFacts(c))
+      postBound(c.req.param('id'), honoRequestFacts(c), caller())
     );
     return c.json(accepted(entry), 202);
   });
@@ -540,7 +549,7 @@ router.post('/:id/threads', (c) => {
         attachmentIds: body.attachmentIds,
       },
       caller().kind === 'agent',
-      wifiTurnBound(honoRequestFacts(c))
+      postBound(c.req.param('id'), honoRequestFacts(c), caller())
     );
     return c.json(accepted(entry), 202);
   });
