@@ -41,7 +41,7 @@ import { logger } from '../../../lib/logger.js';
  * accounts-and-auth migration deliberately removed the old root `sessionSecret`
  * from it. A dedicated `0600` file keeps the secret off that surface.
  */
-const SECRET_FILE_NAME = 'better-auth-secret';
+export const SECRET_FILE_NAME = 'better-auth-secret';
 
 /** Owner-only file mode for the persisted secret (`rw-------`). */
 const SECRET_FILE_MODE = 0o600;

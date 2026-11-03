@@ -47,6 +47,7 @@ vi.mock('../context-builder.js', () => ({
 vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/project'),
   validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/mock/project'),
+  expandTilde: (userPath: string) => userPath,
 }));
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -122,6 +123,35 @@ async function captureSdkOptions(
 describe('the launch options every Claude Code turn is given', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('skips the card for a read in the working folder, a grant or a loaded plugin, and nowhere else (DOR-3300)', async () => {
+    const captured: { options?: Options } = {};
+    vi.mocked(query).mockImplementation((args) => {
+      captured.options = args.options;
+      return {
+        [Symbol.asyncIterator]: async function* () {},
+      } as unknown as ReturnType<typeof query>;
+    });
+    const session = { ...makeSession(), unattended: true };
+    const sender = makeOpts({ plugins: [{ type: 'local', path: '/mock/plugins/sample' }] });
+    const grants = { additionalDirectories: [{ path: '/mock/grant', access: 'read' as const }] };
+    for await (const _event of executeSdkQuery('s1', 'hello', session, sender, grants)) {
+      // Drained: the launch is what is under test.
+    }
+    const reads = async (file_path: string) => {
+      const result = await captured.options!.canUseTool!(
+        'Read',
+        { file_path },
+        { signal: new AbortController().signal, toolUseID: file_path, requestId: file_path }
+      );
+      return result?.behavior;
+    };
+    expect(await reads('/mock/project/notes.md')).toBe('allow');
+    expect(await reads('/mock/grant/notes.md')).toBe('allow');
+    expect(await reads('/mock/plugins/sample/skills/x/ref.md')).toBe('allow');
+    expect(await reads('/mock/plugins/other/ref.md')).toBe('deny');
+    expect(await reads('/mock/elsewhere/notes.md')).toBe('deny');
   });
 
   it('records a launch as per token when its final environment carries a key, whatever its source (spec claude-account-fleet §6 U)', async () => {

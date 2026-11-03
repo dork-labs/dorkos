@@ -16,6 +16,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import { logger, logError } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { ADAPTER_CONFIG_FILE } from '../services/relay/adapter-secrets.js';
 import { AdapterManager, type AdapterManagerDeps } from '../services/relay/adapter-manager.js';
 import { makeChatNoticeTargetResolver } from '../services/relay/binding-subsystem.js';
 import {
@@ -125,7 +126,7 @@ export async function startRelayAdapters(
   // naming a real runtime enum resolves.
   if (relayEnabled && relayCore && adapterRegistry && traceStore && relayAgentRuntime) {
     try {
-      const adapterConfigPath = path.join(dorkHome, 'relay', 'adapters.json');
+      const adapterConfigPath = path.join(dorkHome, ADAPTER_CONFIG_FILE);
       adapterManager = new AdapterManager(adapterRegistry, adapterConfigPath, {
         agentRuntimes: new Map<string, AgentRuntimeLike>([
           ...runtimeRegistry.listRuntimes().map((r): [string, AgentRuntimeLike] => [r.type, r]),

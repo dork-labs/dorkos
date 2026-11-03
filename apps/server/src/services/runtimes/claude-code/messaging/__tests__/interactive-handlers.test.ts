@@ -273,8 +273,8 @@ describe('createCanUseTool — approval gate', () => {
     ).toEqual({ behavior: 'allow', updatedInput: { file_path: '/agents/ana/.git/config' } });
   });
 
-  it('auto-allows read-only tools even in auto mode', async () => {
-    const session = makeSession('auto');
+  it('auto-allows read-only tools inside its folder even in auto mode', async () => {
+    const session = { ...makeSession('auto'), cwd: '/tmp' };
     const canUseTool = createCanUseTool(session, noopLog);
 
     const result = await canUseTool('Read', { file_path: '/tmp/x' }, makeContext('tool-5'));
@@ -479,7 +479,7 @@ describe('createCanUseTool — approval gate', () => {
     // WHY has to survive the default production log level (DOR-782). The
     // per-call auto-allow chatter must not.
     const log = { debug: vi.fn(), info: vi.fn() };
-    const session = makeSession('default');
+    const session = { ...makeSession('default'), cwd: '/tmp' };
     const canUseTool = createCanUseTool(session, log);
 
     await canUseTool('Read', { file_path: '/tmp/x' }, makeContext('quiet-1'));
@@ -668,7 +668,8 @@ describe('read-only tools under a stranger’s ceiling', () => {
     }
   ): Promise<'allowed' | 'asked'> {
     // Default, not Full: a chat set to Full never asks (DOR-3394), which this used until then.
-    const session = { ...makeSession('default'), ...ceilings };
+    // Standing in the folder it reads, so only the ceiling decides (DOR-3300 has its own tests).
+    const session = { ...makeSession('default'), cwd: '/etc', ...ceilings };
     const canUseTool = createCanUseTool(session, noopLog);
     return Promise.race([
       canUseTool(
@@ -2019,6 +2020,7 @@ describe('an ask nobody can answer is refused the moment it is raised', () => {
     const session = {
       ...makeBareSession({ unattended: true }),
       permissionMode: 'default' as const,
+      cwd: '/tmp',
     };
     const canUseTool = createCanUseTool(session, noopLog);
 

@@ -24,7 +24,7 @@ import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { chosenFullAutonomy, heldForOutsider, type CeilingedMode } from '../turn-permission.js';
 import { dorkosAutoAllows } from './auto-allow.js';
-import { fileReadStaysInside, isPlainReadCommand } from './held-turn-reads.js';
+import { fileReadStaysInside, isPlainReadCommand, type ReadFolders } from './held-turn-reads.js';
 import type { ToolGateLogger } from '../messaging/interactive-handlers.js';
 
 /**
@@ -54,14 +54,6 @@ const PASS_THROUGH_TOOLS: ReadonlySet<string> = new Set([
 export const HELD_TURN_ASK_REASON =
   'This turn came from somewhere DorkOS cannot vouch for, so the folder’s allow rules do not apply.';
 
-/** The agent's folders, as this launch granted them. */
-export interface HeldTurnFolders {
-  /** The working folder, which relative paths resolve against. */
-  cwd: string;
-  /** Every folder a read may stay inside: the working folder and this turn's grants. */
-  roots: readonly string[];
-}
-
 /**
  * The hook. Answers nothing unless the running turn (or background work an earlier one left) is
  * held to the runtime's default and the call is one DorkOS would not run unasked anyway, or a read
@@ -76,7 +68,7 @@ export function createHeldTurnHook(
   session: CeilingedMode<PermissionModeId>,
   resolveIdentity: () => Promise<unknown>,
   log: ToolGateLogger,
-  folders: HeldTurnFolders
+  folders: ReadFolders
 ): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
@@ -101,7 +93,15 @@ export function createHeldTurnHook(
       return {};
     }
     if (
-      await dorkosAutoAllows(session, toolName, input, hookInput.mcp_server, resolveIdentity, log)
+      await dorkosAutoAllows(
+        session,
+        toolName,
+        input,
+        hookInput.mcp_server,
+        resolveIdentity,
+        log,
+        folders
+      )
     ) {
       return {};
     }

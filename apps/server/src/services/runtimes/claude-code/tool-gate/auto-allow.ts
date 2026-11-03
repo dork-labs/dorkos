@@ -14,6 +14,7 @@ import { inSessionToolName, isHostServedOrUnattributed } from '../mcp-tools/tool
 import { carriesOutsiderMark, ceilingOn, type CeilingedMode } from '../turn-permission.js';
 import { ALWAYS_ON_READS, ALWAYS_ON_READS_QUALIFIED } from './always-on-reads.js';
 import { OWN_CONNECTION_READS, OWN_CONNECTION_READS_QUALIFIED } from './own-connection-reads.js';
+import { fileReadStaysInside, isFileReadTool, type ReadFolders } from './held-turn-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 
 // ---------------------------------------------------------------------------
@@ -526,19 +527,29 @@ export async function hasAgentIdentity(
  * the last word, so a multiplexer tool can still be gated per argument
  * (DOR-625). A call this refuses is not denied; it goes to the mode table.
  *
+ * **A file read skips the card only inside the turn's folders, by its real path** (DOR-3300). The
+ * CLI asks about a read outside them and this list used to answer yes, so the model could read
+ * anything on the computer with no card. A read outside now goes to the mode table, which asks. No
+ * folders known means nothing is inside.
+ *
  * @param session - The session's mode and ceilings.
  * @param toolName - The tool the model called.
  * @param input - Its arguments.
  * @param mcpServer - The serving MCP server, when Claude Code sent one.
+ * @param folders - The folders a file read may stay inside.
  */
 export function autoAllowedByCall(
   session: CeilingedMode<PermissionModeId>,
   toolName: string,
   input: Record<string, unknown>,
-  mcpServer: ToolApprovalContext['mcpServer']
+  mcpServer: ToolApprovalContext['mcpServer'],
+  folders?: ReadFolders
 ): boolean {
   return (
     (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) &&
+    (!isFileReadTool(toolName) ||
+      (folders !== undefined &&
+        fileReadStaysInside(toolName, input, folders.cwd, folders.roots))) &&
     // The name says "a DorkOS tool"; only the provenance can say the call is
     // served by the server DorkOS registered. A configured server that named
     // itself `dorkos` presents the same `mcp__dorkos__…` names.
@@ -561,6 +572,7 @@ export function autoAllowedByCall(
  * @param mcpServer - The serving MCP server, when Claude Code sent one.
  * @param resolveIdentity - The memoized session-identity resolver.
  * @param log - Where a failed identity lookup is reported.
+ * @param folders - The folders a file read may stay inside.
  */
 export async function dorkosAutoAllows(
   session: CeilingedMode<PermissionModeId>,
@@ -568,10 +580,11 @@ export async function dorkosAutoAllows(
   input: Record<string, unknown>,
   mcpServer: ToolApprovalContext['mcpServer'],
   resolveIdentity: () => Promise<unknown>,
-  log: ToolGateLogger
+  log: ToolGateLogger,
+  folders?: ReadFolders
 ): Promise<boolean> {
   return (
-    autoAllowedByCall(session, toolName, input, mcpServer) &&
+    autoAllowedByCall(session, toolName, input, mcpServer, folders) &&
     (!IDENTITY_SCOPED_TOOLS.has(toolName) || (await hasAgentIdentity(resolveIdentity, log)))
   );
 }

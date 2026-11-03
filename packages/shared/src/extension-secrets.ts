@@ -21,6 +21,10 @@ const AUTH_TAG_LENGTH = 16;
 const SALT = 'dorkos-ext-secrets';
 /** Owner-only file mode for the host key (`rw-------`). */
 const HOST_KEY_MODE = 0o600;
+/** The master key's file in the data folder. Agents' tools are kept off it by name (DOR-3300). */
+export const HOST_KEY_FILE_NAME = 'host.key';
+/** The folder of per-extension secrets in the data folder, kept off the same way. */
+export const EXTENSION_SECRETS_FOLDER = 'extension-secrets';
 
 /** Per-process cache of the derived encryption key. */
 let cachedDerivedKey: Buffer | null = null;
@@ -62,8 +66,8 @@ export class ExtensionSecretStore {
     private readonly dorkHome: string
   ) {
     assertValidExtensionId(extensionId);
-    this.secretsFilePath = join(dorkHome, 'extension-secrets', `${extensionId}.json`);
-    this.hostKeyPath = join(dorkHome, 'host.key');
+    this.secretsFilePath = join(dorkHome, EXTENSION_SECRETS_FOLDER, `${extensionId}.json`);
+    this.hostKeyPath = join(dorkHome, HOST_KEY_FILE_NAME);
   }
 
   /** Get a secret value by key. Returns null if not set. */

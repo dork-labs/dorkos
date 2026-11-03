@@ -46,6 +46,7 @@ import {
   WITHDRAWN_DENIALS,
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
+import type { ReadFolders } from '../tool-gate/held-turn-reads.js';
 import {
   autoAllowedByCall,
   DORKOS_AGENT_TOOLS,
@@ -471,6 +472,9 @@ export interface ToolApprovalContext {
  *   own `cwd`, for a caller with nothing better.
  *   Injectable so a test can state the identity instead of staging an agent on
  *   disk.
+ * @param readFolders - The folders a file read skips the card inside (DOR-3300). A launch hands in
+ *   the working folder, the agent's home and this turn's grants; the default is the session's own
+ *   folder, and a session with none has no read that skips the card.
  */
 export function createCanUseTool(
   session: InteractiveSession & CeilingedMode<PermissionModeId>,
@@ -478,7 +482,10 @@ export function createCanUseTool(
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
   resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(
     resolveAgentHome(session.cwd)
-  )
+  ),
+  readFolders: ReadFolders | undefined = session.cwd
+    ? { cwd: session.cwd, roots: [session.cwd] }
+    : undefined
 ): (
   toolName: string,
   input: Record<string, unknown>,
@@ -502,7 +509,7 @@ export function createCanUseTool(
       // CLI's read-only tools are still refused: `WebFetch` among them would
       // let an unattended run reach a page nobody chose.
       (!refusing || DORKOS_AGENT_TOOLS.has(toolName)) &&
-      autoAllowedByCall(session, toolName, input, context.mcpServer) &&
+      autoAllowedByCall(session, toolName, input, context.mcpServer, readFolders) &&
       // The owner-facing verbs skip the card only for a session that resolves an
       // agent identity: without one the rooms verbs run as the OWNER (see
       // IDENTITY_SCOPED_TOOLS). The resolver memoizes.
