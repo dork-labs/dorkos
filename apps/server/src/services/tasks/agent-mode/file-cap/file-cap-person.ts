@@ -10,11 +10,11 @@
  *
  * @module services/tasks/agent-mode/file-cap/file-cap-person
  */
-import type { Task } from '@dorkos/shared/types';
+import type { Task, UpdateTaskRequest } from '@dorkos/shared/types';
 import { recordAudit } from '../../../audit/audit-trail.js';
 import type { TaskStore } from '../../task-store.js';
-import { attestationOf } from './file-cap-rule.js';
-import { readFileState } from './file-hash.js';
+import { attestationOf, attestWrittenBody } from './file-cap-rule.js';
+import { bodyHash, readFileState } from './file-hash.js';
 import { FILE_CAP_ACTION } from './run-cap.js';
 
 /** What either act answers. */
@@ -103,4 +103,29 @@ export async function approveCappedFile(
   if (task.prompt !== state.body) store.updateTask(id, { prompt: state.body });
   auditPerson(task, fileAttest?.hash, state.hash, 'Approved a changed file');
   return { ok: true, task: store.getTask(id) ?? task };
+}
+
+/**
+ * A person's edit in DorkOS, and what it approves of the SKILL file (M4, M-C,
+ * the round 8 ruling): a prompt they wrote, as those bytes; or, on an approval
+ * card's yes, the prompt the card showed them (`approvedPromptHash`), while the
+ * task's prompt and the file both hash to it. Any other edit, a row's Approve
+ * or switch included, showed no content and attests nothing: the task's runs
+ * stay capped until a person approves the file. Answers whether it attested.
+ *
+ * @param store - The store.
+ * @param task - The task after the edit.
+ * @param data - What the person sent.
+ */
+export async function attestPersonEdit(
+  store: Pick<TaskStore, 'approvals'>,
+  task: Task,
+  data: UpdateTaskRequest
+): Promise<boolean> {
+  if (data.prompt !== undefined) {
+    return (await attestWrittenBody(store, task, data.prompt, 'person')) !== null;
+  }
+  const shown = data.approvedPromptHash;
+  if (shown === undefined || bodyHash(task.prompt) !== shown) return false;
+  return (await attestWrittenBody(store, task, task.prompt, 'person')) !== null;
 }

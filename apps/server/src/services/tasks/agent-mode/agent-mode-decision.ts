@@ -94,6 +94,8 @@ export interface AgentModeCaller {
   marked: boolean;
   /** The calling chat is a scheduled run of a task (Security ruling of Nov 3, condition 3). */
   scheduledRun?: boolean;
+  /** That scheduled thing is a heartbeat beat, which counts as a scheduled run (MB2). */
+  heartbeat?: boolean;
   /**
    * How DorkOS knows who the caller is (Security ruling C2/C3): its own home
    * folder, a linked git worktree mapped to a home (whose pointer files the

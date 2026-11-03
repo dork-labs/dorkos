@@ -22,7 +22,7 @@
 import type { Task } from '@dorkos/shared/types';
 import type { TaskStore } from '../../task-store.js';
 import { agentModeControlOn } from '../agent-mode-actions.js';
-import type { FileAttestation } from '../agent-mode-record-field.js';
+import { readAgentModeColumn, type FileAttestation } from '../agent-mode-record-field.js';
 import { bodyHash, KEPT_BODY_CHARS, readFileState, type FileState } from './file-hash.js';
 
 /**
@@ -148,4 +148,47 @@ export async function runsCappedForFile(
     return state?.hash !== column.fileAttest.hash || runs !== column.fileAttest.hash;
   }
   return !state || state.hash !== runs || column.syncedPrompt === state.hash;
+}
+
+/**
+ * Whether the task's next run would be capped until a person approves its file
+ * (`Task.fileCapNext`), read off the row alone, with no file read: capped now,
+ * or no attestation covers the prompt it runs (one the sync folded in never
+ * becomes a baseline, M-B). Nothing where the cap does not apply.
+ *
+ * @param row - The schedule row: its agent, file, prompt and agent-mode column.
+ */
+export function fileCapNextOf(
+  row: FileCapSubject & { prompt: string; agentModeRecord: string | null }
+): { fileCapNext?: boolean } {
+  if (!fileEditsRunCapped(row)) return {};
+  const column = readAgentModeColumn(row.agentModeRecord);
+  const runs = bodyHash(row.prompt);
+  const next =
+    column.fileCap !== undefined ||
+    (column.fileAttest ? column.fileAttest.hash !== runs : column.syncedPrompt === runs);
+  return { fileCapNext: next };
+}
+
+/**
+ * With `tasks.agentModeControl` switched off, whether a task's file changed
+ * from what was attested while the switch was on (SB1): a cap stands on its
+ * record, or its file or the prompt it runs no longer hashes to the attested
+ * hash. Such a task parks at dispatch, as a changed file always did, instead of
+ * running uncapped until the next sync parks it. False while the switch is on,
+ * where the cap applies instead.
+ *
+ * @param task - The task, read fresh.
+ * @param store - The store.
+ */
+export async function fileChangedWhileSwitchedOff(
+  task: Pick<Task, 'id' | 'filePath' | 'prompt'>,
+  store: FileCapStore
+): Promise<boolean> {
+  if (agentModeControlOn() || !task.filePath) return false;
+  const column = store.approvals.agentModeColumnOf(task.id);
+  if (column.fileCap) return true;
+  if (!column.fileAttest) return false;
+  const state = await readFileState(task.filePath);
+  return state?.hash !== column.fileAttest.hash || bodyHash(task.prompt) !== column.fileAttest.hash;
 }

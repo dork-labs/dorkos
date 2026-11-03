@@ -92,33 +92,40 @@ interface FileCapReviewProps {
  */
 function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
   const approve = useApproveTaskFile();
+  // The mode its runs go back to, named as the runtime's picker names it.
+  const backTo = usePermissionModeLabel(task.runtime)(task.permissionMode);
   const lines = cap.current == null ? [] : fileDiff(cap.previous ?? null, cap.current);
   const hash = cap.hash;
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       {/* Clicks inside never reach the task row behind the dialog. */}
+      {/* Sized to its content; a long diff scrolls in the body while Cancel and
+          Approve stay pinned at the bottom. */}
       <ResponsiveDialogContent
-        className="sm:max-w-2xl"
+        className="flex max-h-[85vh] flex-col sm:w-fit sm:max-w-2xl"
         onClick={(e) => e.stopPropagation()}
         data-slot="task-file-cap-review"
       >
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>Review the changed file</ResponsiveDialogTitle>
-          <ResponsiveDialogDescription>
-            Approving lifts the cap. Its runs go back to its own mode.
+          <ResponsiveDialogDescription data-slot="task-file-cap-review-body">
+            {task.displayName ?? task.name}. Approving lifts the cap, so its runs go back to{' '}
+            {backTo}.
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
-        <ResponsiveDialogBody>
+        <ResponsiveDialogBody data-slot="task-file-cap-review-scroll" className="min-h-0">
           {lines.length > 0 ? (
             <pre
               data-slot="task-file-cap-diff"
-              className="bg-muted max-h-[50vh] overflow-auto rounded-md p-2 font-mono text-xs whitespace-pre-wrap"
+              className="bg-muted rounded-md p-2 font-mono text-xs whitespace-pre-wrap"
             >
               {lines.map((line, i) => (
+                // A hanging indent: a wrapped line continues under its text, not its mark.
                 <div
                   key={i}
                   data-kind={line.kind}
                   className={cn(
+                    'pl-[2ch] [text-indent:-2ch] break-words',
                     line.kind === 'added' && 'text-status-success-fg',
                     line.kind === 'removed' && 'text-destructive line-through',
                     line.kind === 'same' && 'text-muted-foreground'
@@ -136,7 +143,7 @@ function FileCapReview({ task, cap, open, onOpenChange }: FileCapReviewProps) {
             <p className="text-destructive mt-2 text-sm">{serverSentence(approve.error)}</p>
           )}
         </ResponsiveDialogBody>
-        <ResponsiveDialogFooter>
+        <ResponsiveDialogFooter data-slot="task-file-cap-review-footer" className="shrink-0">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

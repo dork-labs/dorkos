@@ -14,7 +14,7 @@
  *
  * @module services/heartbeats/heartbeats-wiring
  */
-import { setBeatSessionSource } from '../tasks/agent-mode/file-cap/ordinary-turns.js';
+import { setBeatChatLookup, setBeatSessionSource } from '../tasks/agent-mode/agent-mode-beats.js';
 import { randomUUID } from 'node:crypto';
 import { agentPause } from '../mesh/pause/index.js';
 import { and, desc, eq, gt, inArray } from 'drizzle-orm';
@@ -181,6 +181,8 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
   const store = new HeartbeatStore(db);
   // A beat never counts as an agent's ordinary chat for lifting a file cap (DOR-3703).
   setBeatSessionSource((agentId) => store.beatSessionIds(agentId));
+  // And a beat is a scheduled run in a task's run lineage (DOR-3703, MB2).
+  setBeatChatLookup((ids) => store.beatSessionsAmong(ids));
   // Never on an agent computer, which beats only when its hub says (DOR-2940).
   const enabled = () => runsSchedules() && configManager.get('heartbeats').enabled;
   const chain = createReportsToChain({ get: (id) => deps.meshCore()?.get(id) });

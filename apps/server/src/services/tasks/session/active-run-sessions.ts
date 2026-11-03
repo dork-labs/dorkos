@@ -1,14 +1,22 @@
 /**
- * The chats task runs are running in right now (DOR-3703, M-A). A run's chat is
- * known before its turn starts, on either dispatch path, while the run row only
- * learns it at the end for some of them; a tool call from inside the run asks
- * here, so a scheduled run is recognised as one while it runs (M7).
+ * The chats task runs run in (DOR-3703, M-A, MB1), so a tool call from inside a
+ * run, or from a chat a run started, is recognised as the run's (M7).
  *
- * In memory: a restart ends every run it held, so nothing is lost that matters.
- * Matched by either id a chat is known by ({@link primaryOf}).
+ * The run's chat is written to its run row the moment a dispatch path picks
+ * it, before the first turn, for every trigger: the row is the durable record,
+ * and it outlives a restart, as the run's spin-offs and their reports do. When
+ * the runtime settles on its own id for the chat, the row moves with it
+ * ({@link moveRunSessions}, from the runtime registry's rekey), as the
+ * started-by records do, so the two always name the chat the same way.
+ *
+ * The in-memory set is an extra on top: it answers for a run whose row write
+ * failed, and matches either id a chat is known by ({@link primaryOf}).
  *
  * @module services/tasks/session/active-run-sessions
  */
+import { eq } from 'drizzle-orm';
+import { pulseRuns, type Db } from '@dorkos/db';
+import type { TaskStore } from '../task-store.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 
 /** Run id → the chats it runs in. */
@@ -21,17 +29,38 @@ interface RunHold {
 }
 
 /**
- * A run's turn runs in this chat: remember it, and tell the keep-awake hold.
+ * A run's turn runs in this chat: write it on the run's row before the turn
+ * starts, remember it, and tell the keep-awake hold.
  *
  * @param runId - The run.
  * @param sessionId - The chat its turn runs in.
  * @param awake - The run's keep-awake hold, when there is one.
+ * @param store - Where the run's row is kept; absent in a caller with no store.
  */
-export function noteRunSession(runId: string, sessionId: string, awake?: RunHold): void {
+export function noteRunSession(
+  runId: string,
+  sessionId: string,
+  awake?: RunHold,
+  store?: Pick<TaskStore, 'updateRun'>
+): void {
+  store?.updateRun(runId, { sessionId });
   const sessions = byRun.get(runId) ?? new Set<string>();
   sessions.add(primaryOf(sessionId));
   byRun.set(runId, sessions);
   awake?.attachSession(sessionId);
+}
+
+/**
+ * A chat the runtime renamed: every run row that names it by the old id names
+ * it by the new one, so a run's lineage reads the same after a restart.
+ *
+ * @param db - The database the run rows are kept in.
+ * @param fromId - The id the chat was known by.
+ * @param toId - Its canonical id.
+ */
+export function moveRunSessions(db: Db, fromId: string, toId: string): void {
+  if (fromId === toId) return;
+  db.update(pulseRuns).set({ sessionId: toId }).where(eq(pulseRuns.sessionId, fromId)).run();
 }
 
 /**

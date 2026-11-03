@@ -330,7 +330,8 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
 
     const parsed = UpdateTaskRequestSchema.safeParse(body);
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
-    const data = parsed.data;
+    // The hash an approval card showed is not a field of the task: only the settle reads it.
+    const { approvedPromptHash, ...data } = parsed.data;
 
     const existing = store.getTask(id);
     if (!existing) {
@@ -575,7 +576,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // content; an agent's is recorded, and parks what no longer matches (DOR-3703).
     updated = await settleHttpTaskEdit(store, meshCore, trusted, caller.agentIdentity, {
       existing,
-      data,
+      data: { ...data, ...(approvedPromptHash !== undefined && { approvedPromptHash }) },
       updated,
     });
 

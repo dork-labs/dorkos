@@ -196,6 +196,22 @@ export class HeartbeatStore {
   }
 
   /**
+   * Which of these chats a beat turn ran in, any agent's (DOR-3703, MB2): a
+   * beat counts as a scheduled run in a task's run lineage.
+   *
+   * @param sessionIds - The chats asked about.
+   */
+  beatSessionsAmong(sessionIds: readonly string[]): Set<string> {
+    if (sessionIds.length === 0) return new Set();
+    const rows = this.db
+      .selectDistinct({ id: heartbeatBeats.turnSessionId })
+      .from(heartbeatBeats)
+      .where(inArray(heartbeatBeats.turnSessionId, [...sessionIds]))
+      .all();
+    return new Set(rows.map((row) => row.id).filter((id): id is string => id !== null));
+  }
+
+  /**
    * Delete beat rows older than a moment. Their audit rows stay forever.
    *
    * @param beforeIso - Rows that started before this go.

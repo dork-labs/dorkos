@@ -6014,6 +6014,12 @@ export const TaskSchema = z
      */
     fileCap: TaskFileCapSchema.nullable().optional(),
     /**
+     * Whether the task's next run would be capped at Never ask until a person
+     * approves its file (DOR-3703, M4): it is capped now, or no approval covers
+     * the prompt it runs. Absent where the cap does not apply. Response-only.
+     */
+    fileCapNext: z.boolean().optional(),
+    /**
      * Held for a person, but nothing is waiting on them (DOR-3425): the file of a
      * schedule whose agent is at Full autonomy asks for more than was approved. It
      * stays a row under Needs you, with no knock and no escalation.
@@ -6511,6 +6517,14 @@ export const UpdateTaskRequestSchema = z
      * since the two ask for different timings.
      */
     resetTiming: z.literal(true).optional(),
+    /**
+     * The hash (`sha256:<base64url>`) of the prompt an approval card showed the
+     * person, sent with its yes (DOR-3703, M4). The server attests the SKILL file
+     * as the person's only while the file and the task's prompt both hash to it;
+     * otherwise nothing is attested and the task's runs are capped. Only a
+     * person may send it.
+     */
+    approvedPromptHash: z.string().min(1).optional(),
   })
   .openapi('UpdateTaskRequest');
 

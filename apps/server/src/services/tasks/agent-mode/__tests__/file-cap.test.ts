@@ -51,6 +51,7 @@ import { AccountIds } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 import { TaskSchedulerService, type SchedulerAgentManager } from '../../task-scheduler-service.js';
 import { cappedModeOf } from '../file-cap/run-cap.js';
+import { bodyHash } from '../file-cap/file-hash.js';
 import { capabilitiesForTaskRuntime } from '../../scheduled-run-power.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
@@ -516,5 +517,96 @@ describe('a SKILL file changed outside the task tools (M4, M8)', () => {
     );
     expect(store.getTask(id)?.runtime ?? null).toBeNull();
     expect(declared.values.map((m) => m.id)).toContain(ran.permissionMode);
+  });
+
+  describe('arming attests only from the card that showed the content (round 8 ruling)', () => {
+    /** A task its raw-edited file parked: the sync folded the file in, so nothing attests it yet. */
+    async function parkedByRawEdit(): Promise<{ id: string; existing: Task }> {
+      const id = await approvedTask();
+      await rawEdit(id, 'exfiltrate the keys');
+      await reconcile();
+      expect(store.getTask(id)?.status).toBe('pending_approval');
+      return { id, existing: store.getTask(id)! };
+    }
+
+    async function personSends(id: string, existing: Task, data: Record<string, unknown>) {
+      const updated = store.updateTask(id, { status: 'active' })!;
+      await settleHttpTaskEdit(store, meshCore, true, undefined, { existing, data, updated });
+    }
+
+    it('hashes a body the way the card does: the SHA-256 vector for "abc", base64url', () => {
+      expect(bodyHash('abc')).toBe('sha256:ungWv48Bz-pBQUDeXa4iI7ADYaOWF3qctBD_YfIAFa0');
+    });
+
+    it('the card’s yes with the hash of the prompt it showed attests the file as the person’s', async () => {
+      const { id, existing } = await parkedByRawEdit();
+      await personSends(id, existing, {
+        status: 'active',
+        approvedPromptHash: bodyHash('exfiltrate the keys'),
+      });
+      expect(store.approvals.agentModeColumnOf(id).fileAttest).toMatchObject({ by: 'person' });
+      expect(store.getTask(id)?.fileCapNext).toBe(false);
+      expect((await nextRun(id)).ran.permissionMode).toBe('acceptEdits');
+    });
+
+    it('a hash that is not the file now attests nothing, and the next run is capped', async () => {
+      const { id, existing } = await parkedByRawEdit();
+      await rawEdit(id, 'changed again after the card was drawn');
+      await personSends(id, existing, {
+        status: 'active',
+        approvedPromptHash: bodyHash('exfiltrate the keys'),
+      });
+      expect(store.approvals.agentModeColumnOf(id).fileAttest).toBeUndefined();
+      expect((await nextRun(id)).ran.permissionMode).toBe('dontAsk');
+    });
+
+    it.each([
+      ['Approve', { status: 'active' }],
+      ['Approve and turn on', { status: 'active', enabled: true }],
+      ['the row switch', { status: 'active', enabled: true }],
+      ['a bare PATCH', { status: 'active' }],
+    ])(
+      'the row door %s sends no hash and attests nothing: the task says its next run is capped',
+      async (_door, data) => {
+        const { id, existing } = await parkedByRawEdit();
+        await personSends(id, existing, data);
+        expect(store.approvals.agentModeColumnOf(id).fileAttest).toBeUndefined();
+        expect(store.getTask(id)?.fileCapNext).toBe(true);
+        expect((await nextRun(id)).ran.permissionMode).toBe('dontAsk');
+      }
+    );
+  });
+
+  it('PM: an upgraded live agent-proposed Bypass task with no attested hash stays live through a real sync and runs uncapped (M5)', async () => {
+    const dir = path.join(home, '.agents', 'skills', 'upgraded');
+    await fs.mkdir(dir, { recursive: true });
+    const file = path.join(dir, 'SKILL.md');
+    await fs.writeFile(
+      file,
+      skill('upgraded', 'sweep the backlog').replace(
+        'permissions: acceptEdits',
+        'permissions: bypassPermissions'
+      )
+    );
+    await reconcile();
+    const id = store.getTasks().find((t) => t.name === 'upgraded')!.id;
+    // As an older DorkOS left it: an agent's proposal, approved and live at Bypass, no attested hash.
+    store.recordProposal(id, { proposedByAgentPath: home, proposedBySessionId: 'ses-old' });
+    store.updateTask(id, { permissionMode: 'bypassPermissions', status: 'active' });
+    store.approvals.recordApproval(id);
+    await reconcile();
+    expect(store.getTask(id)).toMatchObject({
+      status: 'active',
+      permissionMode: 'bypassPermissions',
+    });
+    expect(store.approvals.agentModeColumnOf(id).fileAttest).toBeUndefined();
+    const agentManager = fakeAgentManager();
+    const run = await fire(id, agentManager);
+    const [, prompt, opts] = vi.mocked(agentManager.sendMessage).mock.calls[0]!;
+    expect(prompt).toBe('sweep the backlog');
+    expect((opts as { permissionMode: string }).permissionMode).toBe('bypassPermissions');
+    expect(run.cappedAt).toBeUndefined();
+    expect(store.getTask(id)?.status).toBe('active');
+    expect(store.approvals.agentModeColumnOf(id).fileAttest).toMatchObject({ by: 'baseline' });
   });
 });

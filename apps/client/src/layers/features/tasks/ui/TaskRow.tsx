@@ -408,6 +408,13 @@ export function TaskRow({
               <TaskAgentModeNote record={task.agentModeRecord} runtime={task.runtime} />
             )}
             {!isMinimal && <TaskFileCapNote task={task} />}
+            {/* The row's Approve and switch show no content, so they approve no
+                file: the person is told before they press (DOR-3703, M4). */}
+            {!isMinimal && task.fileCapNext === true && !task.fileCap && (
+              <div data-slot="task-file-cap-next" className="text-status-warning-fg text-xs">
+                The next run is capped until you approve the file.
+              </div>
+            )}
             {!isMinimal && isQuietlyParkedFromFile && task.filePath && (
               <div
                 data-slot="task-quiet-source"

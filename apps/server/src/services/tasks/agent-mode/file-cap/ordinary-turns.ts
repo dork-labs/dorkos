@@ -16,6 +16,10 @@ import type { TaskStore } from '../../task-store.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { listRecentSessions } from '../../../session/catalog/recent-sessions.js';
 import { liveRunOriginSources, startedByScheduledRun } from '../agent-mode-run-origin.js';
+import { beatSessionsOf } from '../agent-mode-beats.js';
+
+// The heartbeat wiring sets this through here, as it always has.
+export { setBeatSessionSource } from '../agent-mode-beats.js';
 
 /** How far back an ordinary chat counts. */
 export const ORDINARY_TURN_WINDOW_DAYS = 7;
@@ -25,21 +29,6 @@ const CHATS_READ = 50;
 
 /** Answers whether an agent had an ordinary turn lately; injected in tests. */
 export type OrdinaryTurnsSource = (agentPath: string, agentId: string) => Promise<boolean>;
-
-/** The chats an agent's heartbeat beats ran in; the heartbeat store's, once it is wired. */
-type BeatSessions = (agentId: string) => ReadonlySet<string>;
-
-let beatSessions: BeatSessions = () => new Set();
-
-/**
- * Tell this module where an agent's heartbeat beats ran (`heartbeats-wiring.ts`):
- * a beat is never an ordinary turn.
- *
- * @param source - The agent's beat chats; `null` forgets it.
- */
-export function setBeatSessionSource(source: BeatSessions | null): void {
-  beatSessions = source ?? (() => new Set());
-}
 
 /**
  * The live source, over the store that knows every scheduled run's chat.
@@ -53,7 +42,7 @@ export function liveOrdinaryTurns(
 ): OrdinaryTurnsSource {
   return async (agentPath, agentId) => {
     try {
-      const beats = beatSessions(agentId);
+      const beats = beatSessionsOf(agentId);
       const { sessions } = await listRecentSessions({
         runtimes: runtimeRegistry.listRuntimes(),
         agentPaths: [agentPath],

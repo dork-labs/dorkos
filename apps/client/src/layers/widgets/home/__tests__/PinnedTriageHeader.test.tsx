@@ -930,6 +930,16 @@ describe('PinnedTriageHeader', () => {
     expect(screen.queryByText('Needs attention')).not.toBeInTheDocument();
   });
 
+  it('draws an opened card compact, its actions flowing under the prompt, never pinned over it', async () => {
+    renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule({ fileCapNext: true })]) });
+    const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    expect(approve.parentElement!.className).not.toMatch(/sticky/);
+    const region = screen.getByRole('region', { name: 'Prompt' });
+    expect(region.className).toContain('max-h-[25dvh]');
+    expect(region.className).toContain('sm:max-h-40');
+    expect(region.className).not.toContain('sm:max-h-64');
+  });
+
   it('approves a parked schedule in place', async () => {
     const updateTask = vi.fn().mockResolvedValue(parkedSchedule({ status: 'active' }));
     renderHeader({ listTasks: vi.fn().mockResolvedValue([parkedSchedule()]), updateTask });
@@ -938,8 +948,13 @@ describe('PinnedTriageHeader', () => {
 
     // The Tasks page's own mutation, unchanged: arming it is a status AND an
     // enabled flag, and sending only one of them leaves a schedule that is
-    // approved but never fires.
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    // approved but never fires. The yes names the prompt it showed by its hash (DOR-3703, M4).
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        approvedPromptHash: expect.stringMatching(/^sha256:/),
+      })
+    );
   });
 
   it('rejects a parked schedule into a receipt, sending no delete yet', async () => {

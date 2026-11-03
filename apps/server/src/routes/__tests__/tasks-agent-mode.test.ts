@@ -411,6 +411,19 @@ describe('the HTTP door and an agent’s mode or approval', () => {
     });
   });
 
+  it('refuses an agent the hash an approval card sends: approving a file is a person’s (M4)', async () => {
+    agent = { agentPath: '/projects/a', displayName: 'A' };
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${existing.id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ approvedPromptHash: 'sha256:x' });
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({
+      code: 'operator_only_task_field',
+      fields: ['approvedPromptHash'],
+    });
+  });
+
   it('leaves the record alone for a person’s own edit', async () => {
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${existing.id}`)

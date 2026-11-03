@@ -35,10 +35,11 @@ import {
 } from '@dorkos/shared/permission-semantics';
 import { changesApprovedWork } from '../task-file-update.js';
 import {
-  attestWrittenBody,
+  fileChangedWhileSwitchedOff,
   fileEditsRunCapped,
   runsCappedForFile,
 } from './file-cap/file-cap-rule.js';
+import { attestPersonEdit } from './file-cap/file-cap-person.js';
 
 /** Mesh as recording reads it: the folder a task runs in, and the agent a home is. */
 type RecordMesh =
@@ -365,6 +366,22 @@ async function parkIfAgentModeUnvouched(
 }
 
 /**
+ * With the switch off, park a task whose file changed from what was attested
+ * while it was on (SB1, `fileChangedWhileSwitchedOff`). Returns whether it parked.
+ *
+ * @param task - The schedule, read fresh.
+ * @param store - The store.
+ */
+async function parkIfFileChangedSwitchedOff(
+  task: Task,
+  store: Pick<TaskStore, 'approvals' | 'updateTask'>
+): Promise<boolean> {
+  if (task.status !== 'active' || !(await fileChangedWhileSwitchedOff(task, store))) return false;
+  store.updateTask(task.id, { status: 'pending_approval' });
+  return true;
+}
+
+/**
  * Before a scheduled run starts (Security ruling 7, S6, round 3 S4, the Nov 3
  * ruling): an agent-approved schedule whose task no longer hashes to what was
  * approved, its SKILL file changed on disk or its agent's folder moved
@@ -387,7 +404,8 @@ export async function parkIfAgentApprovalStale(
   if (!task) return false;
   const parks =
     reparkIfAgentApprovalBroken(task, store, meshCore ?? undefined) ||
-    (await parkIfAgentModeUnvouched(task, store, sources));
+    (await parkIfAgentModeUnvouched(task, store, sources)) ||
+    (await parkIfFileChangedSwitchedOff(task, store));
   if (!parks) return false;
   const parked = store.getTask(taskId) ?? task;
   void resolveScheduleParkPayload(parked).then((payload) =>
@@ -446,7 +464,9 @@ export function settlePersonMode(
 /**
  * After `PATCH /api/tasks/:id` wrote: a person's edit that armed the task, set
  * its mode or changed its content is their approval of that content (M-A, S3),
- * and a prompt they wrote approves the SKILL file holding exactly it (M4, M-C);
+ * and a prompt they wrote, or the one their approval card showed them, approves
+ * the SKILL file holding exactly it (M4, M-C); a row door that showed nothing
+ * attests nothing;
  * an agent's is recorded as the last edit, and parks a task that no longer
  * matches what an agent approved. Returns the task as it now stands.
  *
@@ -468,10 +488,9 @@ export async function settleHttpTaskEdit(
     if (personEditApproves(edit.existing, edit.data, updated)) {
       store.approvals.recordPersonApproval(updated.id);
     }
-    // Only a prompt the person wrote approves the file, and only those bytes (M4, M-C).
-    if (edit.data.prompt !== undefined && fileEditsRunCapped(updated)) {
-      await attestWrittenBody(store, updated, edit.data.prompt, 'person');
-    }
+    // Only a prompt the person wrote, or the one their approval card showed them,
+    // approves the file, and only those bytes (M4, M-C, round 8 ruling).
+    if (fileEditsRunCapped(updated)) await attestPersonEdit(store, updated, edit.data);
     settlePersonMode(store, edit.existing, updated, liveAgentModeSources(meshCore));
     return updated;
   }

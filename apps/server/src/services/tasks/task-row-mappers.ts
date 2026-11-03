@@ -26,6 +26,7 @@ import {
 } from './schedule-permission-clamp.js';
 import { parseOriginMarks } from './approvals/marked-schedules.js';
 import { withAgentModeRecord } from './agent-mode/agent-mode-record-field.js';
+import { fileCapNextOf } from './agent-mode/file-cap/file-cap-rule.js';
 
 /** The parts of the approved work, in the order the card lists them. */
 const WORK_FIELDS = [
@@ -152,6 +153,8 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     originMarks: parseOriginMarks(row.originMarks),
     // What an agent last armed here, when one did (DOR-3703).
     ...withAgentModeRecord(row.agentModeRecord),
+    // Whether its next run is capped until a person approves its file (DOR-3703, M4).
+    ...fileCapNextOf(row),
     quietHold: isQuietHold(row),
     nextRun: null,
     nextRuns: [],

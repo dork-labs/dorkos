@@ -30,6 +30,7 @@ import {
   REAPPROVAL_NOTE,
   TIMING_REAPPROVAL_NOTE,
   RESET_TIMING_DESCRIPTION,
+  ACCEPT_FILE_HASH_DESCRIPTION,
   PARKED_SCHEDULE_SURFACE_HINT,
   TARGET_DESCRIPTION,
   REFUSED_AGENT_ID_DESCRIPTION,
@@ -364,6 +365,8 @@ export function createUpdateScheduleHandler(
     account?: string | null;
     /** Put a package's schedule back on its own timing; see {@link RESET_TIMING_DESCRIPTION}. */
     resetTiming?: true;
+    /** Accept a SKILL file changed outside the tools; see {@link ACCEPT_FILE_HASH_DESCRIPTION}. */
+    acceptFileHash?: string;
     /** Refused, or decided as `tasks.set_mode` (DOR-3703); see {@link REFUSED_PERMISSION_MODE_DESCRIPTION}. */
     permissionMode?: string;
     /** Refused, or decided as `tasks.approve` (DOR-3703); see {@link STATUS_DESCRIPTION}. */
@@ -382,7 +385,7 @@ export function createUpdateScheduleHandler(
     // the body is judged. Everything else the SDK let through is measured against
     // the update schema, so `target` and `agentId` — declared above precisely so
     // they survive to be seen — are refused loudly instead of vanishing (DOR-1568).
-    const { id: _id, ...fields } = args;
+    const { id: _id, acceptFileHash, ...fields } = args;
     const unknownFields = refuseUnknownTaskUpdateFields(fields);
     if (unknownFields) return jsonContent(unknownFields, true);
 
@@ -620,7 +623,14 @@ export function createUpdateScheduleHandler(
       return jsonContent(NOT_TOLD_REFUSAL, true);
     }
     // Its own agent's write re-attests the file, and lifts a cap left by an outside change (M4).
-    const fileReply = await attestToolWrite(deps, existing, updated, caller, fileBefore);
+    const fileReply = await attestToolWrite(
+      deps,
+      existing,
+      updated,
+      caller,
+      fileBefore,
+      acceptFileHash
+    );
 
     // An agent switching a schedule back ON is recorded where the person will see
     // it. A schedule that came with an installed package is switched on the row
@@ -735,6 +745,7 @@ export function getTasksTools(
         effort: EffortLevelSchema.nullable().optional().describe(EFFORT_DESCRIPTION),
         account: z.string().min(1).nullable().optional().describe(ACCOUNT_DESCRIPTION),
         resetTiming: z.literal(true).optional().describe(RESET_TIMING_DESCRIPTION),
+        acceptFileHash: z.string().optional().describe(ACCEPT_FILE_HASH_DESCRIPTION),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(STATUS_DESCRIPTION),
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),

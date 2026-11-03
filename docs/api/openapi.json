@@ -10572,6 +10572,9 @@
           "fileCap": {
             "$ref": "#/components/schemas/TaskFileCap"
           },
+          "fileCapNext": {
+            "type": "boolean"
+          },
           "quietHold": {
             "type": "boolean"
           },
@@ -11057,6 +11060,10 @@
             "enum": [
               true
             ]
+          },
+          "approvedPromptHash": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },

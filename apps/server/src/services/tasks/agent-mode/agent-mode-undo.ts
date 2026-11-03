@@ -20,6 +20,7 @@ import { recordAudit } from '../../audit/audit-trail.js';
 import { TASK_SET_MODE_ACTION } from './agent-mode-actions.js';
 import { liveAgentModeSources } from './agent-mode-sources.js';
 import { isRaise } from './agent-mode-attest.js';
+import { scheduleContentKey, taskWorkOf } from '../schedule-permission-clamp.js';
 import { undoFileCapLift } from './file-cap/file-cap-person.js';
 import { attestWrittenBody, fileEditsRunCapped } from './file-cap/file-cap-rule.js';
 
@@ -114,7 +115,8 @@ function modeLabelOf(task: Task): string {
  *
  * A person's Undo holds the task to the mode it put back (an agent's raise
  * above it asks them until they raise it themselves, M2), and approves the
- * content it put back as theirs.
+ * prompt it put back as theirs; putting back only a mode approves no content
+ * (SB2).
  *
  * @param deps - The store, the data directory and Mesh.
  * @param id - The schedule.
@@ -161,10 +163,13 @@ export async function undoAgentModeChange(
   if (data.prompt !== undefined) store.approvals.setPromptUndo(id, null);
   if (byPerson) {
     if (data.permissionMode) store.approvals.setPersonFloor(id, data.permissionMode);
-    store.approvals.recordPersonApproval(id);
-    // The prompt a person put back is theirs, file included: no false cap (M4).
-    if (data.prompt !== undefined && fileEditsRunCapped(updated)) {
-      await attestWrittenBody(store, updated, data.prompt, 'person');
+    // Only content the person put back is theirs, and only as it now stands: a
+    // mode-only Undo approves no prompt it never showed them (SB2, M1).
+    if (data.prompt !== undefined) {
+      store.approvals.recordPersonApproval(id, scheduleContentKey(taskWorkOf(updated)));
+      // The prompt a person put back is theirs, file included: no false cap (M4).
+      if (fileEditsRunCapped(updated))
+        await attestWrittenBody(store, updated, data.prompt, 'person');
     }
   }
   auditScheduleUpdate(now, updated);

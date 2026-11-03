@@ -51,7 +51,8 @@ export function UndoAgentModeAction({ taskId, notificationId }: UndoAgentModeAct
       <p
         role="status"
         data-slot="inbox-row-undo-refused"
-        className="text-muted-foreground basis-full px-2 pb-1 text-xs break-words"
+        // Under the notice's text column: past its dot, its glyph and their gaps.
+        className="text-muted-foreground basis-full pr-2 pb-1 pl-[calc(0.5rem+0.375rem+0.625rem+18px+0.625rem)] text-xs break-words"
       >
         {refusalOf(undo.error)}{' '}
         <button
@@ -67,6 +68,17 @@ export function UndoAgentModeAction({ taskId, notificationId }: UndoAgentModeAct
       </p>
     );
   }
+  // Done: plain text, not a button that no longer does anything.
+  if (undo.isSuccess) {
+    return (
+      <span
+        data-slot="inbox-row-undone"
+        className="text-muted-foreground shrink-0 self-start px-2 py-1 text-xs sm:self-center"
+      >
+        Undone
+      </span>
+    );
+  }
   return (
     <Button
       type="button"
@@ -75,10 +87,10 @@ export function UndoAgentModeAction({ taskId, notificationId }: UndoAgentModeAct
       data-slot="inbox-row-undo-mode"
       // A 44px target on a phone, compact beside the notice; its own size from `sm`.
       className="h-11 min-w-11 shrink-0 self-start sm:h-auto sm:min-w-0 sm:self-center"
-      disabled={undo.isPending || undo.isSuccess}
+      disabled={undo.isPending}
       onClick={() => undo.mutate({ taskId, notificationId })}
     >
-      {undo.isSuccess ? 'Undone' : 'Undo'}
+      Undo
     </Button>
   );
 }

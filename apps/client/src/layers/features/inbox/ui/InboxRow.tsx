@@ -3,6 +3,7 @@
  *
  * @module features/inbox/ui/InboxRow
  */
+import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { Lock, XCircle } from 'lucide-react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
@@ -53,6 +54,29 @@ export function staggerVariantsFor(index: number | undefined): typeof staggerIte
  * things that happen to fill it.
  */
 export const GLYPH_SLOT_CLASS = 'flex size-[18px] shrink-0 items-center justify-center';
+
+/** A short hash a notice names, `a1b2c3d4`: eight base64url characters on either side of an arrow. */
+const HASH_PAIR = /\(([A-Za-z0-9_-]{8}) → ([A-Za-z0-9_-]{8})\)/;
+
+/**
+ * A notice body with the two short hashes it names set in mono (DOR-3703), or
+ * the body as it is when it names none.
+ *
+ * @param body - The notice's second line, as the server wrote it.
+ */
+function withMonoHashes(body: string): ReactNode {
+  const match = HASH_PAIR.exec(body);
+  if (!match) return body;
+  const [whole, from, to] = match;
+  const before = body.slice(0, match.index);
+  const after = body.slice(match.index + whole.length);
+  return (
+    <>
+      {before}(<span className="font-mono">{from}</span> → <span className="font-mono">{to}</span>)
+      {after}
+    </>
+  );
+}
 
 export interface InboxRowProps {
   /** The notification this row draws. */
@@ -184,6 +208,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
         aria-hidden
         className={cn(
           'size-1.5 shrink-0 rounded-full',
+          readsInFull && 'mt-1.5 sm:mt-0',
           unread ? 'bg-status-info' : 'bg-transparent'
         )}
       />
@@ -242,7 +267,11 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
                   : 'truncate'
             )}
           >
-            {notification.body}
+            {/* On a phone the time leads the second line; from `sm` it has its column. */}
+            {readsInFull && (
+              <span className="sm:hidden">{formatCompactAge(notification.createdAt)} · </span>
+            )}
+            {readsInFull ? withMonoHashes(notification.body) : notification.body}
           </span>
         )}
         {notification.meta !== undefined && (
@@ -261,7 +290,12 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           facts; and the popover is 30rem wide with a title, a body line and
           this on one row, where four extra characters cost the title its
           last word. `formatCompactAge` is the shared one both now use. */}
-      <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+      <span
+        className={cn(
+          'text-muted-foreground shrink-0 text-xs tabular-nums',
+          readsInFull && notification.body !== undefined && 'hidden sm:inline'
+        )}
+      >
         {formatCompactAge(notification.createdAt)}
       </span>
     </>
@@ -288,7 +322,8 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           data-unread={unread ? 'true' : 'false'}
           onClick={onOpen}
           className={cn(
-            'hover:bg-accent/50 focus-visible:ring-ring flex min-h-9 min-w-0 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2',
+            'hover:bg-accent/50 focus-visible:ring-ring flex min-h-9 min-w-0 gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2',
+            readsInFull ? 'items-start sm:items-center' : 'items-center',
             undoesMode ? 'flex-1' : 'w-full'
           )}
         >

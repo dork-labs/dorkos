@@ -79,6 +79,12 @@ export const TIMING_REAPPROVAL_NOTE =
  * Agent-writable like `cron`, and approved like `cron`: going back to the
  * package's timing changes when the work runs, so a person approves it again.
  */
+/** What `acceptFileHash` on the update tool means (DOR-3703, SB3). */
+export const ACCEPT_FILE_HASH_DESCRIPTION =
+  "Accept this task's SKILL file after it changed outside the task tools. A call on a capped " +
+  'task returns what changed and its hash, and keeps the cap; send that hash here to accept the ' +
+  'file as it showed. Any other hash, or a file that changed again, keeps the cap.';
+
 export const RESET_TIMING_DESCRIPTION =
   "Send true to put a schedule that came with an installed package back on the package's own " +
   'timing, undoing a cron or timezone set here. Send it on its own, not together with cron or ' +

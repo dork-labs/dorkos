@@ -35,6 +35,7 @@ import { lineDiff } from '../../../../tasks/agent-mode/file-cap/line-diff.js';
 import {
   CAP_KEPT_NOTE,
   CAP_LIFTED_NOTE,
+  CAP_REVIEW_NOTE,
   DIFF_FENCE,
 } from '../../../../tasks/agent-mode/file-cap/file-cap-copy.js';
 import { FILE_CAP_ACTION } from '../../../../tasks/agent-mode/file-cap/run-cap.js';
@@ -57,8 +58,11 @@ import { contentEditVouched, recordToolAttestation } from './task-tool-mode.js';
 
 /** What a write's reply carries about the file, when there is something to say. */
 export interface ToolFileCapReply {
-  /** The cap a change outside the tools put on the task, lifted or kept. */
-  fileChangedOutsideTools?: { note: string; diff?: string };
+  /**
+   * The cap a change outside the tools put on the task, lifted or kept: what
+   * changed, and the hash of the file as that diff shows it, to accept it with.
+   */
+  fileChangedOutsideTools?: { note: string; diff?: string; hash?: string };
 }
 
 /**
@@ -153,24 +157,29 @@ async function attestOwnWrite(
  * After a `tasks_update` landed: re-attest the task's file when the caller
  * may (M4), and lift a cap a change outside the tools left, saying so.
  *
- * A lift attests the file exactly as the single read the diff comes from
- * showed it, so a write that lands after that read is never attested unseen:
+ * Two steps, as a person's Approve is (SB3): a call on a capped task keeps
+ * the cap and answers what changed and its hash; only a call that names that
+ * hash (`acceptFileHash`) lifts it. The hash and the diff come from the one
+ * read before the write, so a write after that read is never attested unseen:
  * the task's row is set to that body too, and a file that moved on since runs
- * capped again. A call that also rewrites the body attests only the bytes it
- * wrote. Answers what the reply adds, empty when nothing about the file changed.
+ * capped again. A call that rewrites the body replaces the change outright and
+ * attests only the bytes it wrote. Answers what the reply adds, empty when
+ * nothing about the file changed.
  *
  * @param deps - The tool dependencies.
  * @param existing - The task before the write.
  * @param updated - The task after it.
  * @param caller - Who wrote it.
  * @param before - The file before the write ({@link fileStateBefore}): the one read.
+ * @param acceptFileHash - The hash the agent accepts the changed file by, when it does.
  */
 export async function attestToolWrite(
   deps: McpToolDeps,
   existing: Task,
   updated: Task,
   caller: AgentModeCaller,
-  before: FileState | null
+  before: FileState | null,
+  acceptFileHash?: string
 ): Promise<ToolFileCapReply> {
   if (!fileEditsRunCapped(updated) || !(await mayAttestFile(deps, existing, caller))) return {};
   const store = deps.taskStore!;
@@ -181,6 +190,11 @@ export async function attestToolWrite(
     return {};
   }
   const wroteBody = updated.prompt !== existing.prompt;
+  const diff = fenceUntrustedBlock(lineDiff(attested.body ?? null, before.body), DIFF_FENCE).text;
+  // Shown first, accepted only by its hash (SB3): an incidental call keeps the cap.
+  if (!wroteBody && acceptFileHash !== before.hash) {
+    return { fileChangedOutsideTools: { note: CAP_REVIEW_NOTE, diff, hash: before.hash } };
+  }
   const accepted = wroteBody
     ? await attestWrittenBody(store, updated, updated.prompt, 'agent', caller.agentPath)
     : attestationOf(before, 'agent', caller.agentPath);
@@ -224,6 +238,5 @@ export async function attestToolWrite(
   if (column.attestation || updated.agentModeRecord?.mode === updated.permissionMode) {
     recordToolAttestation(deps, updated, caller, false, startedBy);
   }
-  const diff = fenceUntrustedBlock(lineDiff(attested.body ?? null, before.body), DIFF_FENCE).text;
   return { fileChangedOutsideTools: { note: CAP_LIFTED_NOTE, diff } };
 }

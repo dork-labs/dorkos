@@ -50,7 +50,9 @@ describe('Undo on an agent’s schedule mode notice', () => {
     renderRow(MODE_NOTICE, { undoAgentTaskMode: undo });
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-    expect(await screen.findByRole('button', { name: 'Undone' })).toBeDisabled();
+    // Done reads as plain text, not a disabled button.
+    expect(await screen.findByText('Undone')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
     expect(undo).toHaveBeenCalledWith('task-1', '01JZR0000000000000000009');
   });
 
@@ -99,5 +101,17 @@ describe('Undo on an agent’s schedule mode notice', () => {
   it('is not drawn on a notice that does not offer it', () => {
     renderRow({ ...MODE_NOTICE, actions: [{ id: 'pause', label: 'Pause', style: 'neutral' }] });
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  });
+
+  it('sets the two short hashes a notice names in mono, and on a phone leads its second line with the time', () => {
+    renderRow({
+      ...MODE_NOTICE,
+      title: 'Nightly sweep runs capped at Never ask',
+      body: 'Its file changed outside the task tools (a1b2c3d4 → e5f6g7h8). Some steps may fail.',
+    });
+    const body = document.querySelector('[data-slot="inbox-row-body"]')!;
+    const mono = [...body.querySelectorAll('.font-mono')].map((el) => el.textContent);
+    expect(mono).toEqual(['a1b2c3d4', 'e5f6g7h8']);
+    expect(body.querySelector('.sm\\:hidden')?.textContent).toMatch(/^\S+ · $/);
   });
 });

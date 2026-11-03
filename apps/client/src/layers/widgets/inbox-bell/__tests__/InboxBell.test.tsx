@@ -436,6 +436,16 @@ describe('InboxBell', () => {
     expect(screen.getByRole('button', { name: 'Open chat' })).toBeInTheDocument();
   });
 
+  it('pins a schedule card’s actions to the bottom of the bell’s sheet on a phone', async () => {
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listTasks: vi.fn().mockResolvedValue([parkedSchedule({ fileCapNext: true })]),
+    });
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    expect(approve.parentElement!.className).toContain('max-sm:sticky');
+  });
+
   it('counts a schedule an agent parked, and answers it in the panel without closing it', async () => {
     // The one event with no marker anywhere before this: an agent proposes a
     // scheduled run, it parks because nothing arms itself, and the only way to
@@ -466,7 +476,13 @@ describe('InboxBell', () => {
     await userEvent.click(marker);
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    // The yes names the prompt it showed by its hash (DOR-3703, M4).
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        approvedPromptHash: expect.stringMatching(/^sha256:/),
+      })
+    );
     // Still open, and the schedule that was NOT decided is still answerable.
     expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
   });

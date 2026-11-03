@@ -1090,4 +1090,50 @@ describe('TaskRow: a task capped for a changed SKILL file (DOR-3703, M4)', () =>
     );
     expect(foot?.querySelector('button')).toBeTruthy();
   });
+
+  describe('TaskRow: the review a person approves a changed file from (DOR-3703, round 8)', () => {
+    afterEach(() => cleanup());
+
+    const long = Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n');
+    const capped: Task = {
+      ...activeSchedule,
+      displayName: 'Nightly dependency audit',
+      permissionMode: 'bypassPermissions',
+      fileCap: {
+        at: 'now',
+        needsPerson: true,
+        hash: 'sha256:x',
+        previous: 'line 0',
+        current: long,
+      },
+    };
+
+    it('names the task and the mode its runs go back to, and keeps Approve pinned under a long diff', async () => {
+      renderScheduleRow(capped);
+      fireEvent.click(screen.getByRole('button', { name: 'Approve file' }));
+      expect(await screen.findByText('Review the changed file')).toBeTruthy();
+      expect(document.querySelector('[data-slot="task-file-cap-review-body"]')?.textContent).toBe(
+        'Nightly dependency audit. Approving lifts the cap, so its runs go back to Bypass permissions.'
+      );
+      const scroll = document.querySelector('[data-slot="task-file-cap-review-scroll"]')!;
+      const footer = document.querySelector('[data-slot="task-file-cap-review-footer"]')!;
+      // The 200 lines scroll in the body; the footer is outside it, so it stays put.
+      expect(scroll.querySelectorAll('[data-kind]').length).toBeGreaterThanOrEqual(200);
+      expect(scroll.contains(footer)).toBe(false);
+      expect(footer.contains(screen.getByRole('button', { name: 'Approve' }))).toBe(true);
+      expect(scroll.className).toContain('overflow-y-auto');
+      // A wrapped line hangs under its text, not under its mark.
+      expect(scroll.querySelector('[data-kind]')!.className).toContain('[text-indent:-2ch]');
+    });
+
+    it('tells a person at the row doors that the next run is capped until they approve the file', () => {
+      renderScheduleRow({ ...pendingSchedule, fileCapNext: true });
+      expect(document.querySelector('[data-slot="task-file-cap-next"]')?.textContent).toBe(
+        'The next run is capped until you approve the file.'
+      );
+      cleanup();
+      renderScheduleRow({ ...pendingSchedule, fileCapNext: false });
+      expect(document.querySelector('[data-slot="task-file-cap-next"]')).toBeNull();
+    });
+  });
 });

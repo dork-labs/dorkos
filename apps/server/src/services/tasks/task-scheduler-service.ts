@@ -1083,8 +1083,8 @@ export class TaskSchedulerService {
     checkedAgent: AgentExecutionDefaults | undefined,
     awake: TaskAwakeHold | undefined
   ): Promise<void> {
-    // Known as this run's chat before its turn starts, on either path (DOR-3703, M-A).
-    const onSession = (sessionId: string): void => noteRunSession(run.id, sessionId, awake);
+    // On its row as this run's chat before its turn starts, every trigger, either path (MB1).
+    const onSession = (sessionId: string) => noteRunSession(run.id, sessionId, awake, this.store);
     const dispatchId = newDispatchId();
     recordDispatchStart({ dispatchId, origin: 'task' });
     return runInDispatch({ dispatchId, origin: 'task' }, () =>
