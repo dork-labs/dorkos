@@ -37,7 +37,7 @@ Ran the dev server (worktree ports 4292/4442), provisioned two real workspaces v
 `POST /api/workspaces` (DOR-84 → port 4250, DOR-91 → 4260 — disjoint blocks,
 both `ready` via the real worktree provider), made DOR-84 dirty and pinned DOR-91,
 then drove Chrome through the `/workspaces` view and the dirty-safe remove.
-Recording: `evidence/dor84-workspaces-ui.gif`.
+The recording was removed.
 
 **A real bug was caught and fixed by the browser test:** the DELETE route
 returned `409` on a dirty refusal, but the client's `fetchJSON` throws on non-2xx
@@ -58,7 +58,7 @@ back into the same branch rather than spun out as new work items:
    cleanup"_ / _"Unpin — allow automatic cleanup"_; remove → _"Remove — delete
    this workspace's checkout"_. The `WorkspacesPage` test now wraps the page in a
    `TooltipProvider` (mirrors the real route). Browser-verified all three states;
-   recording: `evidence/dor84-workspace-tooltips.gif`.
+   the recording was removed.
 
 ## Assumption trail (calibration-ladder log for review)
 
