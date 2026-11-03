@@ -13,9 +13,10 @@ import type { McpToolDeps } from './types.js';
 /**
  * Claim a start slot for a chat started from `parentSessionId`, recording who
  * started it. The new chat inherits the parent's origin extension, so it counts
- * against that extension's start limits and is refused past them. Without a
- * calling chat (the external `/mcp` server) or before boot wired the seam,
- * nothing is recorded and nothing is limited here.
+ * against that extension's start limits and is refused past them. A chat the work
+ * queue starts has no parent and is written as scheduled, whoever queued it
+ * (DOR-3703, MUST-G). Without a calling chat (the external `/mcp` server) or before
+ * boot wired the seam, nothing is recorded and nothing is limited here.
  */
 export function reserveChatStart(start: {
   sessionId: string;
@@ -24,9 +25,13 @@ export function reserveChatStart(start: {
   permission: SessionStartPermission;
   reportBack: boolean;
   taskStore: McpToolDeps['taskStore'];
+  unattended?: boolean;
 }): { ok: true; reservation: StartReservation | null } | { ok: false; message: string } {
   const { sessionId, parentSessionId, reason, permission, reportBack, taskStore } = start;
   const service = getStartWorkService();
+  if (service && start.unattended) {
+    return { ok: true, reservation: service.reserveUnattended(sessionId) };
+  }
   if (!parentSessionId || !service) return { ok: true, reservation: null };
   const claimed = service.reserveFromChat({
     sessionId,
@@ -37,7 +42,7 @@ export function reserveChatStart(start: {
     permissionSameAsStarter: permission.sameAsCaller,
     reportBack,
     // On the new chat's own row, because retention prunes the run behind it (DOR-3703, ME).
-    scheduledOrigin: taskStore ? scheduledOriginStamp(parentSessionId, taskStore) : null,
+    scheduledOrigin: scheduledOriginStamp(parentSessionId, taskStore),
   });
   return claimed.ok
     ? { ok: true, reservation: claimed.reservation }

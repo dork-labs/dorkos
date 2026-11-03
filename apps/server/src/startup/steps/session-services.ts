@@ -109,6 +109,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
       projects: projectRegistry,
       extensionName: (id) => refs.extensionManager?.get(id)?.manifest.name ?? id,
       activity: activityService,
+      taskStore: () => refs.taskStore,
     })
   );
   // The seam behind `ctx.agent.send` (DOR-2683): an extension sending one of

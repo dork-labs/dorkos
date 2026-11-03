@@ -113,14 +113,18 @@ export function liveRunOriginSources(
  * that throws stamps a run, so a chat nothing can vouch for is never ordinary.
  *
  * @param parentSessionId - The chat starting the new one.
- * @param store - The task store, which knows every run's chat.
+ * @param store - The task store, which knows finished runs' chats. With the
+ *   scheduler off there is none, and beats, stamps and live runs still answer.
  */
 export function scheduledOriginStamp(
   parentSessionId: string,
-  store: Pick<TaskStore, 'resolveTaskOrigins'>
+  store?: Pick<TaskStore, 'resolveTaskOrigins'>
 ): ScheduledOrigin | null {
   try {
-    return scheduledOriginOf([parentSessionId], liveRunOriginSources(store));
+    return scheduledOriginOf(
+      [parentSessionId],
+      liveRunOriginSources(store ?? { resolveTaskOrigins: () => new Map() })
+    );
   } catch {
     return 'run';
   }

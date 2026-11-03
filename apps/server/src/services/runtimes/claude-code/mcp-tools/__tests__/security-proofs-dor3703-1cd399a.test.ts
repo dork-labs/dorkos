@@ -1,7 +1,8 @@
 /**
  * Security's deep re-read proofs at 1cd399adcf (DOR-3703), kept with its names
  * and with the verdict changed to the fixed behaviour: MD (a live beat is a beat,
- * and a restart leaves it one) and ME (retention can't erase a spin-off's lineage).
+ * and a restart leaves it one) and ME (retention can't erase a spin-off's lineage), and its proofs at
+ * e6c50c0ace: MUST-F (a run or a beat carried to another account stays one).
  *
  * @module services/runtimes/claude-code/mcp-tools/__tests__/security-proofs-dor3703-1cd399a
  */
@@ -342,6 +343,124 @@ describe('tasks_* and an agent’s mode or approval', () => {
       };
     }
 
+    /**
+     * A scheduled chat tried to raise this running task to Bypass: the task stops
+     * and waits for a person to approve the new mode, and the agent is told so.
+     * It never runs at that mode first, and it isn't vouched for (SD1).
+     */
+    async function raiseIsHeld(id: string, sessionId: string): Promise<void> {
+      expect(store.getTask(id)!.status).toBe('active');
+      await ranTurn(sessionId, 'bypassPermissions');
+      const out = await call(toolsOfA({ sessionId }).tasks_update!, {
+        id,
+        permissionMode: 'bypassPermissions',
+      });
+      expect(out.isError).toBe(false);
+      expect(out.payload.needsReapproval).toBe(true);
+      expect(out.payload.note).toMatch(/waits for a person to approve the new mode/);
+      expect(store.getTask(id)!.status).toBe('pending_approval');
+      expect(store.getTask(id)!.permissionMode).toBe('bypassPermissions');
+      expect(store.approvals.agentModeColumnOf(id).attestation).toBeUndefined();
+    }
+
+    /** The start service, as carry-over.ts calls it on a handoff or a person's Continue. */
+    async function carriedFrom(source: string, carried: string, startedBy: unknown) {
+      const { StartWorkService } = await import('../../../../extensions/start-work.js');
+      const service = new StartWorkService({
+        store: startedBy as never,
+        projects: { rootWithin: vi.fn(), listForExtension: vi.fn(), list: vi.fn() } as never,
+        extensionName: (id: string) => id,
+        runningSessionIds: () => [],
+        taskStore: () => store,
+      });
+      return service.reserveFromChat({ sessionId: carried, parentSessionId: source, carry: true });
+    }
+
+    it('[PR, fixed MUST-F] a RUN carried to another account mid-run: the carried chat counts as the run, and its raise waits', async () => {
+      const { createTestDb: mk } = await import('@dorkos/test-utils/db');
+      const { SessionStartedByStore, setSessionStartedByStore } =
+        await import('../../../../session/origin/session-started-by-store.js');
+      const { noteRunSession, endRunSessions, resetActiveRunSessions } =
+        await import('../../../../tasks/session/active-run-sessions.js');
+      const startedBy = new SessionStartedByStore(mk());
+      setSessionStartedByStore(startedBy);
+      try {
+        const runTaskId = await personApproved('room-digest');
+        const target = await personApproved('nightly-sweep');
+        const run = store.createRun(runTaskId, 'scheduled');
+        store.updateRun(run.id, { status: 'running' });
+        noteRunSession(run.id, 'run-chat', undefined, store);
+        const claimed = await carriedFrom('run-chat', 'carried', startedBy);
+        expect(claimed.ok).toBe(true);
+        expect(startedBy.get('carried')).toMatchObject({
+          startedBySessionId: 'run-chat',
+          scheduledOrigin: 'run',
+          carried: true,
+          reportBack: false,
+        });
+        await raiseIsHeld(target, 'carried');
+        // A person's Continue, after the run ended: its row still names it.
+        store.updateRun(run.id, { status: 'failed', finishedAt: new Date().toISOString() });
+        endRunSessions(run.id);
+        await carriedFrom('run-chat', 'continued', startedBy);
+        expect(startedBy.get('continued')?.scheduledOrigin).toBe('run');
+      } finally {
+        setSessionStartedByStore(undefined);
+        resetActiveRunSessions();
+      }
+    });
+
+    it('[PR, fixed MUST-F] a BEAT carried to another account mid-turn counts as a beat, and its raise waits', async () => {
+      const { createTestDb: mk } = await import('@dorkos/test-utils/db');
+      const { SessionStartedByStore, setSessionStartedByStore } =
+        await import('../../../../session/origin/session-started-by-store.js');
+      const { HeartbeatStore } = await import('../../../../heartbeats/heartbeat-store.js');
+      const { registerBeatTurn, resetBeatTurns } =
+        await import('../../../../heartbeats/beat-turns.js');
+      const { setBeatSessionSource, setBeatChatLookup } =
+        await import('../../../../tasks/agent-mode/agent-mode-beats.js');
+      const startedBy = new SessionStartedByStore(mk());
+      setSessionStartedByStore(startedBy);
+      const hb = new HeartbeatStore(mk());
+      setBeatSessionSource((agentId) => hb.beatSessionIds(agentId));
+      setBeatChatLookup((ids) => hb.beatSessionsAmong(ids));
+      try {
+        const id = await personApproved();
+        hb.insertBeat({
+          id: 'b1',
+          agentId: 'agent-a',
+          startedAt: new Date().toISOString(),
+          kind: 'pulse',
+          wake: 'timer',
+        });
+        registerBeatTurn('beat-chat', { agentId: 'agent-a', beatId: 'b1', messageId: 'm1' });
+        hb.setBeatChat('b1', 'beat-chat');
+        await carriedFrom('beat-chat', 'beat-carried', startedBy);
+        expect(startedBy.get('beat-carried')?.scheduledOrigin).toBe('heartbeat');
+        await raiseIsHeld(id, 'beat-carried');
+      } finally {
+        setBeatSessionSource(null);
+        setBeatChatLookup(null);
+        setSessionStartedByStore(undefined);
+        resetBeatTurns();
+      }
+    });
+
+    it('a person’s own chat carried to another account stays theirs: no row, no stamp', async () => {
+      const { createTestDb: mk } = await import('@dorkos/test-utils/db');
+      const { SessionStartedByStore, setSessionStartedByStore } =
+        await import('../../../../session/origin/session-started-by-store.js');
+      const startedBy = new SessionStartedByStore(mk());
+      setSessionStartedByStore(startedBy);
+      try {
+        const claimed = await carriedFrom('person-chat', 'person-carried', startedBy);
+        expect(claimed).toEqual({ ok: true, reservation: null });
+        expect(startedBy.get('person-carried')).toBeNull();
+      } finally {
+        setSessionStartedByStore(undefined);
+      }
+    });
+
     it('[PR, fixed MUST-D] a LIVE heartbeat beat in a fresh beat chat is a beat while it runs, and after a restart cuts it short', async () => {
       const { createTestDb: mk } = await import('@dorkos/test-utils/db');
       const { HeartbeatStore } = await import('../../../../heartbeats/heartbeat-store.js');
@@ -369,32 +488,15 @@ describe('tasks_* and an agent’s mode or approval', () => {
           messageId: 'm1',
         });
         expect(isBeatTurn('beat-live')).toBe(true);
-        await ranTurn('beat-live', 'bypassPermissions');
-        await call(toolsOfA({ sessionId: 'beat-live' }).tasks_update!, {
-          id,
-          permissionMode: 'bypassPermissions',
-        });
         // FIXED: the raise waits for a person, and nothing says "you" started it.
-        expect(
-          store.getTask(id)!.status === 'active' &&
-            store.getTask(id)!.permissionMode === 'bypassPermissions'
-        ).toBe(false);
-        expect(store.approvals.agentModeColumnOf(id).attestation?.startedBy).not.toBe('you');
+        await raiseIsHeld(id, 'beat-live');
 
         // A restart: the registry is gone and the beat never finished. The row,
         // written before the turn started, still says what it was.
         hb.setBeatChat('beat-row-1', 'beat-restarted');
         resetBeatTurns();
         const id2 = await personApproved('second');
-        await ranTurn('beat-restarted', 'bypassPermissions');
-        await call(toolsOfA({ sessionId: 'beat-restarted' }).tasks_update!, {
-          id: id2,
-          permissionMode: 'bypassPermissions',
-        });
-        expect(
-          store.getTask(id2)!.status === 'active' &&
-            store.getTask(id2)!.permissionMode === 'bypassPermissions'
-        ).toBe(false);
+        await raiseIsHeld(id2, 'beat-restarted');
       } finally {
         setBeatSessionSource(null);
         setBeatChatLookup(null);
@@ -441,15 +543,7 @@ describe('tasks_* and an agent’s mode or approval', () => {
         expect(store.pruneRuns(runTaskId, 1)).toBe(1);
         expect(store.getRun(run.id)).toBeFalsy();
         // FIXED: the spin-off's next turn still counts as the run.
-        await ranTurn('spin', 'bypassPermissions');
-        await call(toolsOfA({ sessionId: 'spin' }).tasks_update!, {
-          id: target,
-          permissionMode: 'bypassPermissions',
-        });
-        expect(
-          store.getTask(target)!.status === 'active' &&
-            store.getTask(target)!.permissionMode === 'bypassPermissions'
-        ).toBe(false);
+        await raiseIsHeld(target, 'spin');
       } finally {
         setSessionStartedByStore(undefined);
         resetActiveRunSessions();

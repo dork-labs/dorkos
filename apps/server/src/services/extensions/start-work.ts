@@ -27,6 +27,8 @@
  *
  * @module services/extensions/start-work
  */
+import type { TaskStore } from '../tasks/task-store.js';
+import { scheduledOriginStamp } from '../tasks/agent-mode/agent-mode-run-origin.js';
 import crypto from 'node:crypto';
 import { StartWorkError } from '@dorkos/extension-api/server';
 import type { ProjectInfo, ProjectRef } from '@dorkos/extension-api/server';
@@ -85,6 +87,12 @@ export interface StartWorkDeps {
   now?: () => number;
   /** The sessions whose turn is in flight right now, by id (tests replace it). */
   runningSessionIds?: () => string[];
+  /**
+   * The task store, read at call time: a carry-over asks it whether the chat it
+   * replaces was a finished run's (DOR-3703, MUST-F). With none, beats, stamps and
+   * live runs still answer.
+   */
+  taskStore?: () => Pick<TaskStore, 'resolveTaskOrigins'> | undefined;
   /** The runtime a new chat starts on (tests replace it). */
   defaultRuntime?: () => string;
   /** Set a chat's title through its runtime (tests replace it). */
@@ -444,7 +452,14 @@ export class StartWorkService {
     scheduledOrigin?: 'run' | 'heartbeat' | null;
   }): { ok: true; reservation: StartReservation | null } | { ok: false; error: StartWorkError } {
     const parent = this.deps.store.get(opts.parentSessionId);
-    if (opts.carry && !parent) return { ok: true, reservation: null };
+    // A run's or a beat's own chat has no row of its own, so a carry-over asks what
+    // it was: the new chat is the same work, and counts as it did (DOR-3703, MUST-F).
+    const carriedOrigin = opts.carry
+      ? (parent?.scheduledOrigin ??
+        scheduledOriginStamp(opts.parentSessionId, this.deps.taskStore?.()))
+      : null;
+    // A person's own chat stays as it was: a row would give it a starter it never had.
+    if (opts.carry && !parent && carriedOrigin === null) return { ok: true, reservation: null };
     return this.reserve({
       sessionId: opts.sessionId,
       kind: 'chat',
@@ -461,12 +476,33 @@ export class StartWorkService {
         ? (parent?.permissionSameAsStarter ?? null)
         : (opts.permissionSameAsStarter ?? null),
       // A carry-over keeps whatever the chat it replaces was told.
-      reportBack: opts.carry ? (parent?.reportBack ?? true) : (opts.reportBack ?? true),
-      // A carry-over is the same chat on another account, so it keeps the stamp.
-      scheduledOrigin: opts.carry
-        ? (parent?.scheduledOrigin ?? null)
-        : (opts.scheduledOrigin ?? null),
+      // A run's or a beat's chat takes no chat messages, so nothing reports to it.
+      reportBack: opts.carry ? (parent?.reportBack ?? false) : (opts.reportBack ?? true),
+      scheduledOrigin: opts.carry ? carriedOrigin : (opts.scheduledOrigin ?? null),
     });
+  }
+
+  /**
+   * Write a chat DorkOS starts with nobody there and no chat behind it (the work
+   * queue) as scheduled, whoever queued it (DOR-3703, MUST-G). It counts against
+   * no extension's limits, and it has no starter to report to or show.
+   *
+   * @param sessionId - The new chat.
+   */
+  reserveUnattended(sessionId: string): StartReservation {
+    const claimed = this.reserve({
+      sessionId,
+      kind: 'chat',
+      extensionId: null,
+      startedBySessionId: null,
+      originExtensionId: null,
+      reason: null,
+      reportBack: false,
+      scheduledOrigin: 'run',
+    });
+    // No origin extension, so `reserve` has no limit to refuse by.
+    if (!claimed.ok) throw claimed.error;
+    return claimed.reservation;
   }
 }
 

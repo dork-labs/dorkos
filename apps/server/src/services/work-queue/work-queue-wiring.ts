@@ -79,6 +79,16 @@ export interface WorkQueueWiring {
   stop(): void;
 }
 
+/**
+ * Who a queued chat is started as: its agent, with no calling chat, and written
+ * as unattended, so it counts as scheduled whoever queued it (DOR-3703, MUST-G).
+ *
+ * @param agentPath - The agent's folder.
+ */
+export function queuedChatCaller(agentPath: string) {
+  return () => ({ agentPath, unattended: true });
+}
+
 /** What a finished chat's status says about how its item ended. */
 export function chatStateFromStatus(status: Parameters<typeof reasonOf>[0]): ChatState {
   const reason = reasonOf(status);
@@ -150,7 +160,7 @@ export function wireWorkQueue(deps: WorkQueueWiringDeps): WorkQueueWiring {
     }
     const handler = createSessionStartHandler(
       { meshCore: deps.meshCore(), activityService: deps.activityService },
-      () => ({ agentPath: agent.agentPath }),
+      queuedChatCaller(agent.agentPath),
       async () => ({ allowed: true })
     );
     const answer = await handler({

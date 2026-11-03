@@ -136,6 +136,8 @@ export type SessionStartCallerResolver = () =>
       runtime?: string;
       neverAsks?: boolean;
       chosenFull?: boolean;
+      /** DorkOS starts this chat with nobody there: the work queue (DOR-3703, MUST-G). */
+      unattended?: boolean;
     }
   | undefined;
 
@@ -277,7 +279,7 @@ interface CallerAgent {
 function callerOf(
   deps: Pick<McpToolDeps, 'meshCore'>,
   resolveCaller: SessionStartCallerResolver | undefined
-): (CallerAgent & { chat: CallingChat | null }) | null {
+): (CallerAgent & { chat: CallingChat | null; unattended: boolean }) | null {
   const resolved = resolveCaller?.();
   const agentPath = resolved?.agentPath;
   if (!agentPath) return null;
@@ -294,6 +296,7 @@ function callerOf(
     label: agent.displayName ?? agent.name,
     name: agent.name,
     ...(agent.displayName ? { displayName: agent.displayName } : {}),
+    unattended: resolved.unattended === true,
     chat: inChat
       ? {
           sessionId: resolved.sessionId ?? null,
@@ -476,6 +479,7 @@ export function createSessionStartHandler(
       permission,
       reportBack,
       taskStore: deps.taskStore,
+      unattended: caller.unattended,
     });
     if (!claimed.ok) return refuse(claimed.message, 'START_LIMIT');
     const reservation = claimed.reservation;
