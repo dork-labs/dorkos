@@ -25,6 +25,7 @@
  *
  * @module services/heartbeats/beat-runner
  */
+import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { Commitment } from '@dorkos/shared/commitment-schemas';
 import type { BeatOutcome, EndBeatRaise } from '@dorkos/shared/heartbeat-schemas';
 import type { ResolvedWorkingHours } from '@dorkos/shared/working-hours';
@@ -159,6 +160,8 @@ export interface BeatRunnerDeps {
     list(filter: { agentId: string; state: 'open' }, limit?: number): Commitment[];
     /** The marks the agent's open promises were made under (DOR-3036); absent reads none. */
     openMarks?(agentId: string): TurnMarks;
+    /** Every bound the agent's open promises and to-dos carry (DOR-3088); absent reads none. */
+    openCeiling?(agentId: string): TurnPermissionCeiling | undefined;
   };
   /** How a beat turn starts. */
   launcher: BeatTurnLauncher;

@@ -54,7 +54,12 @@ import {
   writeAuthorityMarks,
   type WritableCommitmentAuthority,
 } from './commitment-authority.js';
-import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import type {
+  TurnPermissionBound,
+  TurnPermissionCeiling,
+  TurnPermissionLevel,
+} from '@dorkos/shared/agent-runtime';
+import { todoTurnPower } from './todo-turn-power.js';
 import {
   hasMarks,
   mergeMarks,
@@ -83,7 +88,8 @@ export type CommitmentErrorCode =
   | 'CONFLICT'
   | 'PAST_DUE'
   | 'NO_AGENT'
-  | 'UNKNOWN_AGENT';
+  | 'UNKNOWN_AGENT'
+  | 'TOO_MANY';
 
 /** A refusal, with a stable code and a plain sentence for whoever asked. */
 export class CommitmentError extends Error {
@@ -353,8 +359,28 @@ export class CommitmentService {
   openMarks(agentId: string): TurnMarks {
     return this.store
       .list({ agentId, state: 'open' }, COMMITMENT_LIST_LIMIT)
-      .map((row) => parseStoredMarks(row.originMarks))
+      .flatMap((row) => [parseStoredMarks(row.originMarks), readAuthorityMarks(row.authorityMarks)])
       .reduce(mergeMarks, NO_MARKS);
+  }
+
+  /**
+   * Every bound the agent's open commitments and to-dos carry (DOR-3088, Security's Must 4): a beat
+   * that reads them, and the due wake that starts one, run no stronger than the lowest of them.
+   * Undefined when every open one is the agent's own or a person's.
+   *
+   * @param agentId - The agent.
+   */
+  openCeiling(agentId: string): TurnPermissionCeiling | undefined {
+    const bounds = this.store
+      .list({ agentId, state: 'open' }, COMMITMENT_LIST_LIMIT)
+      .flatMap((row) => {
+        const { ceiling } = todoTurnPower(row);
+        if (ceiling === undefined) return [];
+        return Array.isArray(ceiling)
+          ? (ceiling as TurnPermissionBound[])
+          : [ceiling as TurnPermissionBound];
+      });
+    return bounds.length === 0 ? undefined : bounds;
   }
 
   /**

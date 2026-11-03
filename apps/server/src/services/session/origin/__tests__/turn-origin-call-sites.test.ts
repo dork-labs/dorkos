@@ -64,6 +64,9 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // An agent's beat found work and starts a turn in its beat chat (spec
   // `heartbeats` §7.2).
   'services/heartbeats/beat-launch.ts': ['heartbeat'],
+  // A to-do assigned to an agent starts its turn in a new chat, held by the ceiling the to-do
+  // stored, read at launch exactly as a chat message's sender's level is (DOR-3088).
+  'services/commitments/todo-turn-wiring.ts': ['chat-message'],
   // The owner sent a message from their own DorkOS on the web, through the
   // session relay this computer dialed out to.
   'services/core/session-relay/relay-request-server.ts': ['session-relay'],

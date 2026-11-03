@@ -159,6 +159,13 @@ export interface TodoServiceDeps {
   mayAssign(fromAgentId: string, toAgentId: string): boolean;
   /** Re-arm (or clear) the due timer for a row after it changed. */
   rearm(id: string): void;
+  /**
+   * A to-do now asks an agent to act: made for it, reassigned to it, or reopened by the person. The
+   * turns layer decides whether a turn starts (`todo-turns.ts`). Called after the row is written,
+   * with whose spend the turn counts against: the acting agent, `outsider:<id>`, or null for the
+   * person.
+   */
+  onTurnable?(row: CommitmentRow, chargedTo: string | null): void;
   /** The clock (tests pin it). */
   now?: () => Date;
 }
@@ -207,6 +214,9 @@ export function toTodo(row: CommitmentRow, now: number): Todo {
   };
 }
 
+/** How many to-dos one agent may give people in a day; past it, a plain refusal (PM, 2026-10-19). */
+export const TODOS_TO_PEOPLE_PER_AGENT_PER_DAY = 5;
+
 /** Makes and changes to-dos. */
 export class TodoService {
   private readonly now: () => Date;
@@ -242,6 +252,9 @@ export class TodoService {
   create(actor: TodoActor, input: NewTodo, parent?: TodoParent): Todo {
     const what = this.title(input.what);
     this.checkAssignee(input.assignee);
+    if (actor.kind === 'agent' && input.assignee.kind === 'person') {
+      this.checkDailyCap(actor.agentId);
+    }
     const chain = this.chainFor(actor, input.assignee, parent);
     const own =
       actor.kind === 'agent' &&
@@ -297,7 +310,11 @@ export class TodoService {
       { field: 'authority', after: row.authority },
       ...(row.sourceRoomEntryId ? [{ field: 'sourceEntryId', after: row.sourceRoomEntryId }] : []),
     ]);
+    if (actor.kind === 'agent' && row.ownerAccount) {
+      this.deps.store.recordPersonAsk(actor.agentId, row.id, row.createdAt);
+    }
     this.deps.rearm(row.id);
+    if (row.agentId) this.deps.onTurnable?.(row, chargeOf(actor));
     return toTodo(row, this.now().getTime());
   }
 
@@ -396,6 +413,9 @@ export class TodoService {
         'Only the person, or the agent that made it, can reassign it.'
       );
       this.checkAssignee(change.assignee);
+      if (actor.kind === 'agent' && change.assignee.kind === 'person') {
+        this.checkDailyCap(actor.agentId);
+      }
       const chain = this.reassignChain(row, actor, change.assignee, parent);
       patch.agentId = change.assignee.kind === 'agent' ? change.assignee.agentId : null;
       patch.ownerAccount = change.assignee.kind === 'person' ? change.assignee.account : null;
@@ -431,7 +451,29 @@ export class TodoService {
     const updated = this.deps.store.update(row.id, patch)!;
     this.audit(updated, actor, action, 'modify', audit, change.note);
     this.deps.rearm(row.id);
+    if (action === 'todo.reassigned' && actor.kind === 'agent' && updated.ownerAccount) {
+      this.deps.store.recordPersonAsk(actor.agentId, updated.id, this.now().toISOString());
+    }
+    // A reassignment asks the new assignee to act. A reopen does only when the person did it: an
+    // agent closing and reopening a to-do assigned to it must not be a way to start turns.
+    const asksAgain =
+      action === 'todo.reassigned' ||
+      (action === 'todo.reopened' && actor.kind === 'person' && actor.proven);
+    if (asksAgain && updated.agentId && updated.state === 'open') {
+      this.deps.onTurnable?.(updated, chargeOf(actor));
+    }
     return toTodo(updated, this.now().getTime());
+  }
+
+  /** Refuse an agent's sixth to-do for people today with `TOO_MANY`. */
+  private checkDailyCap(agentId: string): void {
+    const day = this.now().toISOString().slice(0, 10);
+    if (this.deps.store.countPersonAsks(agentId, day) >= TODOS_TO_PEOPLE_PER_AGENT_PER_DAY) {
+      throw new CommitmentError(
+        'TOO_MANY',
+        `You have given people ${TODOS_TO_PEOPLE_PER_AGENT_PER_DAY} to-dos today, the most in a day. Wait until tomorrow, or tell them in your chat instead.`
+      );
+    }
   }
 
   /** Refuse with `NOT_YOURS` unless the policy allows it. */
@@ -542,6 +584,16 @@ export class TodoService {
       visibility: 'space',
     });
   }
+}
+
+/**
+ * Whose spend a turn an actor asked for counts against. Only a proven person is never charged; a
+ * request that did not prove the person could be any program here, so it shares one capped charge.
+ */
+function chargeOf(actor: TodoActor): string | null {
+  if (actor.kind === 'agent') return actor.agentId;
+  if (actor.kind === 'outsider') return `outsider:${actor.id}`;
+  return actor.proven ? null : 'unproven-person';
 }
 
 /** `agent:<id>` or `person:<account>`, for a row's assignee. */

@@ -370,6 +370,10 @@ describe('Database Migrations', () => {
       // When the person last opened or wrote in each chat, so Today and the
       // agent click agree on every device (spec your-activity-first D1).
       'session_touches',
+      // What the to-do caps count (DOR-3088): each to-do an agent handed a person, and every
+      // agent turn a to-do started, queued, held or will retry.
+      'todo_person_asks',
+      'todo_turns',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,
       // migration 0048).

@@ -1124,8 +1124,8 @@ describe('a beat over open work gone quiet', () => {
     expect(launches).toHaveLength(1);
     expect(launches[0]).toContain('Commitment c1 open, no chat running since');
     // Ids only in what changed: the stall line never carries the promise text. (The prompt's own
-    // "Your open commitments" list, which is older than this, shows what the agent wrote.)
-    const changed = launches[0]!.split('Your open commitments:')[0]!;
+    // "Your open commitments and to-dos" list, which is older than this, shows it, fenced.)
+    const changed = launches[0]!.split('Your open commitments and to-dos:')[0]!;
     expect(changed).toContain('Commitment c1 open');
     expect(changed).not.toContain('Send the release notes');
   });

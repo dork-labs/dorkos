@@ -22,6 +22,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { Commitment } from '@dorkos/shared/commitment-schemas';
+import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import {
   BEAT_PACE_MAX_MS,
   type BeatKind,
@@ -58,6 +59,26 @@ import {
 /** The longest a failing gatherer holds `gathered_through` back. */
 export const GATHER_HOLD_MAX_MS = 24 * 60 * 60_000;
 
+/**
+ * Every bound of two ceilings together, so each still holds. Undefined when neither has any.
+ *
+ * @param a - One ceiling.
+ * @param b - The other.
+ */
+function combineCeilings(
+  a: TurnPermissionCeiling | undefined,
+  b: TurnPermissionCeiling | undefined
+): TurnPermissionCeiling | undefined {
+  const all = [a, b].flatMap((c): TurnPermissionBound[] =>
+    c === undefined
+      ? []
+      : Array.isArray(c)
+        ? [...(c as TurnPermissionBound[])]
+        : [c as TurnPermissionBound]
+  );
+  return all.length === 0 ? undefined : all.length === 1 ? all[0] : all;
+}
+
 /** Outcomes after which what the beat gathered counts as dealt with. */
 const DEALT_WITH: ReadonlySet<BeatOutcome> = new Set(['quiet', 'queued', 'worked', 'no-end-beat']);
 
@@ -74,6 +95,8 @@ export interface BeatCycleDeps {
     list(filter: { agentId: string; state: 'open' }, limit?: number): Commitment[];
     /** The marks the agent's open promises were made under (DOR-3036); absent reads none. */
     openMarks?(agentId: string): TurnMarks;
+    /** Every bound the agent's open promises and to-dos carry (DOR-3088); absent reads none. */
+    openCeiling?(agentId: string): TurnPermissionCeiling | undefined;
   };
   /** How a beat turn starts. */
   launcher: BeatTurnLauncher;
@@ -367,7 +390,10 @@ export async function runTurn(
     (marks, change) => (change.marks ? mergeMarks(marks, change.marks) : marks),
     deps.commitments.openMarks?.(agent.id) ?? NO_MARKS
   );
-  const carried = ceilingCarrying(read);
+  // Open to-dos given by others hold the beat to their stored authority too (DOR-3088, Must 4):
+  // the beat reads their words, so it runs no stronger than the lowest of them.
+  const owed = deps.commitments.openCeiling?.(agent.id);
+  const carried = combineCeilings(ceilingCarrying(read), owed);
   const launched = await deps.launcher.launch({
     sessionId: chat.sessionId,
     messageId,

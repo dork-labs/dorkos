@@ -79,6 +79,7 @@ const STATUS: Record<CommitmentErrorCode, ContentfulStatusCode> = {
   PAST_DUE: 400,
   NO_AGENT: 403,
   UNKNOWN_AGENT: 404,
+  TOO_MANY: 429,
 };
 
 /** Answer a {@link CommitmentError} with its status, or rethrow. */

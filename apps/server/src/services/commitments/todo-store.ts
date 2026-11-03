@@ -4,7 +4,8 @@
  *
  * @module services/commitments/todo-store
  */
-import { commitments, eq, type CommitmentRow, type Db } from '@dorkos/db';
+import { ulid } from 'ulidx';
+import { and, commitments, eq, todoPersonAsks, type CommitmentRow, type Db } from '@dorkos/db';
 
 /** The columns a to-do change may write. Who assigned it and when it was made never change. */
 export type TodoPatch = Partial<
@@ -54,6 +55,35 @@ export class TodoStore {
    */
   get(id: string): CommitmentRow | undefined {
     return this.db.select().from(commitments).where(eq(commitments.id, id)).get();
+  }
+
+  /**
+   * How many to-dos an agent has handed people on a UTC day: what its 5-a-day cap counts. Read
+   * from the hand-over ledger, so a to-do moved away afterwards still counts.
+   *
+   * @param agentId - The agent.
+   * @param day - The UTC day (`YYYY-MM-DD`).
+   */
+  countPersonAsks(agentId: string, day: string): number {
+    return this.db
+      .select({ id: todoPersonAsks.id })
+      .from(todoPersonAsks)
+      .where(and(eq(todoPersonAsks.agentId, agentId), eq(todoPersonAsks.day, day)))
+      .all().length;
+  }
+
+  /**
+   * Record that an agent handed a person a to-do.
+   *
+   * @param agentId - The agent.
+   * @param todoId - The to-do.
+   * @param at - When (ISO 8601).
+   */
+  recordPersonAsk(agentId: string, todoId: string, at: string): void {
+    this.db
+      .insert(todoPersonAsks)
+      .values({ id: ulid(), agentId, todoId, day: at.slice(0, 10), createdAt: at })
+      .run();
   }
 
   /**
