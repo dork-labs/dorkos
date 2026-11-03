@@ -1241,7 +1241,9 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-    timeout-minutes: 20
+    # Diagnostic budget only: nine independent untraced cases can each take
+    # seven minutes. The production RPC and native assertion timeouts stay fixed.
+    timeout-minutes: 90
     env:
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
@@ -1285,9 +1287,30 @@ jobs:
       - name: Build the server's workspace dependencies
         run: pnpm exec turbo run build --filter='@dorkos/server^...'
       - name: Run the real Codex binary and protected-file controls
+        timeout-minutes: 20
         run: |
           mkdir -p .temp/codex-bwrap-trace
           strace -ff -e trace=execve,execveat -s 4096 -o .temp/codex-bwrap-trace/exec pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
+      - name: Preserve native bubblewrap arguments even on failure
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: codex-bwrap-trace
+          path: .temp/codex-bwrap-trace/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Measure protected probes without strace across home and cwd sizes
+        if: ${{ always() }}
+        timeout-minutes: 64
+        run: node scripts/run-codex-untraced.mjs
+      - name: Preserve every untraced measurement and failure
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: codex-untraced-measurements
+          path: .temp/codex-untraced/
+          if-no-files-found: error
+          retention-days: 7
       - name: Prove Codex executed the preflighted distro bubblewrap
         if: ${{ always() }}
         run: node scripts/assert-codex-bwrap.mjs .temp/codex-bwrap-trace

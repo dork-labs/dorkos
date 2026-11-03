@@ -47,7 +47,7 @@ import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { CodexTurnRequest } from '../../transport/codex-transport.js';
 import type { AppServerTransportOptions } from '../../transport/app-server-transport.js';
 import { spawn as nodeSpawn } from 'node:child_process';
-import { protectedProbe } from './fixtures/protected-probe.js';
+import { protectedProbe, shellControlReturned } from './fixtures/protected-probe.js';
 
 const BINARY = resolveCodexVendoredBinary();
 const IDENTITY_SECRET = 'identity-token-never-real';
@@ -615,7 +615,22 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       fs.mkdirSync(skills, { recursive: true });
       fs.writeFileSync(path.join(skills, 'SKILL.md'), skillControl);
       fs.writeFileSync(readable, control);
-      const probe = protectedProbe(root, project);
+      // Diagnostic sizes are armed only by the CI step; normal proof stays 10k.
+      const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
+      const selectedMode = process.env.DORKOS_CODEX_PROBE_MODE;
+      if (scenario || selectedMode) {
+        expect(process.env.CI).toBe('true');
+        expect(process.platform).toBe('linux');
+        expect(['home-10k', 'home-500k', 'cwd-500k']).toContain(scenario);
+        expect(['default', 'acceptEdits', 'bypassPermissions']).toContain(selectedMode);
+      }
+      const size = {
+        homeFiles: scenario === 'home-500k' ? 500_000 : 10_000,
+        cwdFiles: scenario === 'cwd-500k' ? 500_000 : 0,
+      };
+      const fixtureStarted = performance.now();
+      const probe = protectedProbe(root, project, size);
+      const fixtureMs = performance.now() - fixtureStarted;
       const configFile = path.join(codexHome, 'config.toml');
       const previous = fs.readFileSync(configFile, 'utf8');
       fs.writeFileSync(configFile, `sandbox_mode = "danger-full-access"\n${previous}`);
@@ -629,8 +644,12 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       }));
       try {
         for (const mode of ['default', 'acceptEdits', 'bypassPermissions']) {
+          if (selectedMode && mode !== selectedMode) continue;
           let result = '';
           let startMs: number | undefined;
+          const shellRoundTripMs: number[] = [];
+          const shellControls: boolean[] = [];
+          let shellStarted = 0;
           const started = performance.now();
           probe.resetLate();
           scripted.push(
@@ -641,9 +660,27 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             },
             (res, body) => {
               result = body;
-              res.end(sse('done'));
+              if (scenario) {
+                shellStarted = performance.now();
+                res.end(sseCall({ cmd: 'printf PUBLIC-shell-control-0', login: false }));
+              } else res.end(sse('done'));
             }
           );
+          if (scenario) {
+            for (let index = 0; index < 3; index++) {
+              scripted.push((res, body) => {
+                shellRoundTripMs.push(performance.now() - shellStarted);
+                shellControls.push(shellControlReturned(body, `PUBLIC-shell-control-${index}`));
+                if (index === 2) res.end(sse('done'));
+                else {
+                  shellStarted = performance.now();
+                  res.end(
+                    sseCall({ cmd: `printf PUBLIC-shell-control-${index + 1}`, login: false })
+                  );
+                }
+              });
+            }
+          }
           const transport = makeTransport(undefined, kind);
           expect(transport.kind).toBe('app-server');
           const events: StreamEvent[] = [];
@@ -677,14 +714,18 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           console.info('Codex protected probe', {
             kind,
             mode,
-            homeFiles: 10_000,
+            ...size,
+            fixtureMs,
             startMs,
+            shellRoundTripMs,
+            shellControls,
             lateSecretReadable: result.includes(probe.lateCanary),
             latePluginChanged:
               fs.existsSync(probe.latePlugin) &&
               fs.readFileSync(probe.latePlugin, 'utf8') !== 'original-late-plugin',
           });
           expect(startMs, JSON.stringify(events)).toBeDefined();
+          if (scenario) expect(shellControls).toEqual([true, true, true]);
           expect(result, JSON.stringify(events)).toContain(control);
           expect(result, JSON.stringify(events)).toContain(skillControl);
           for (const canary of probe.canaries) expect(result).not.toContain(canary);
@@ -694,6 +735,9 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           await transport.shutdown();
         }
       } finally {
+        // A refused thread never consumes its provider script. Isolate the next
+        // transport's measurement even when the first native test stays red.
+        scripted.length = 0;
         env.mockRestore();
         fs.writeFileSync(configFile, previous);
         fs.rmSync(readable, { force: true });
