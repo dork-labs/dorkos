@@ -371,7 +371,8 @@ describe('a command too big to read (Security, #3487)', () => {
     const defaults = `echo "${'${A:- '.repeat(40_000)}"`;
     const started = Date.now();
     await commandReachesProtectedRead(defaults, roots);
-    expect(Date.now() - started).toBeLessThan(200);
+    // About 100 ms here and 250 ms on a busy CI runner, so this leaves room and still catches 32 s.
+    expect(Date.now() - started).toBeLessThan(2_000);
   });
 
   it('shares one time allowance across every search in a command', async () => {
