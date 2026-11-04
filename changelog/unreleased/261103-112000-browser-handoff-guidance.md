@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(browser): clarify safe handoff and browser names (DOR-3218)'
+  - 'fix(browser): describe handoff tools without runtime-specific names'
 ---
 
 ### Fixed
