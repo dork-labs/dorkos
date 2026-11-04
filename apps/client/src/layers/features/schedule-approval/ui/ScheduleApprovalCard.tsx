@@ -327,7 +327,7 @@ function ScheduleApprovalContent({
   };
 
   const trialNote = misplacedMode ? (
-    <p className="text-status-warning-fg text-xs">
+    <p className="text-status-warning-fg min-w-0 flex-1 text-xs">
       {task.fileCapNext
         ? 'The next run is capped until you approve the file.'
         : MISPLACED_PERMISSIONS_RUN_ONCE}
@@ -529,7 +529,7 @@ function ScheduleApprovalContent({
           </p>
         )}
         {pinActions && answered === null && (
-          <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -586,7 +586,7 @@ function ScheduleApprovalContent({
               run of its own is in flight — two supervised runs from one card is
               two things to read. */}
           {!pinActions && (
-            <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"

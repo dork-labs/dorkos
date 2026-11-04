@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(tasks): keep trial permissions beside the review action (DOR-3840)'
   - 'fix(tasks): close misplaced schedule mode approval gaps (DOR-3840)'
   - 'fix(tasks): park files with misplaced schedule permissions (DOR-3840)'
 ---
