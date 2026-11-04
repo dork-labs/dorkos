@@ -23,8 +23,16 @@ import {
   type PendingSignIn,
   type YourAppRow,
 } from '@/layers/features/connections';
+import { McpServersTab } from '@/layers/features/global-mcp-servers';
 import { useSettingsDeepLink } from '@/layers/shared/model';
-import { Button, focusPageHeading, PageContainer, PageHeading } from '@/layers/shared/ui';
+import {
+  Button,
+  focusPageHeading,
+  PageContainer,
+  PageHeading,
+  SegmentedControl,
+  SegmentedControlItem,
+} from '@/layers/shared/ui';
 import { AppPanel } from './AppPanel';
 import { ConnectionsBrowserTabs } from './ConnectionsBrowserTabs';
 import { AppUseChoice } from './AppUseChoice';
@@ -38,6 +46,7 @@ type ConnectionsSearch = {
   review?: string;
   flow?: string;
   request?: string;
+  tab?: 'mcp';
 };
 
 /**
@@ -205,53 +214,70 @@ export function ConnectionsPage() {
         {/* The bar overhead already says "Connections" (design decision E1);
             the heading stays for the outline and as the place focus lands. */}
         <PageHeading>Connections</PageHeading>
-        <p className="text-muted-foreground text-sm">Apps your agents use.</p>
+        <p className="text-muted-foreground text-sm">Apps and MCP servers your agents use.</p>
+        <SegmentedControl
+          aria-label="What to show"
+          value={search.tab === 'mcp' ? 'mcp' : 'apps'}
+          className="mt-4 sm:w-fit"
+          onValueChange={(next) => setSearch({ tab: next === 'mcp' ? 'mcp' : undefined })}
+        >
+          <SegmentedControlItem value="apps" className="px-3 text-sm max-sm:min-h-11">
+            Apps
+          </SegmentedControlItem>
+          <SegmentedControlItem value="mcp" className="px-3 text-sm max-sm:min-h-11">
+            MCP servers
+          </SegmentedControlItem>
+        </SegmentedControl>
       </header>
 
-      <ConnectionsBrowserTabs>
-        <div className="space-y-8">
-          <NeedsYou
-            services={data.services}
-            onOpenRequest={(requestId) => {
-              decisionOpener.current = document.activeElement as HTMLElement | null;
-              setSearch({ request: requestId });
-            }}
-            onOpenReview={(reviewRequestId) => {
-              decisionOpener.current = document.activeElement as HTMLElement | null;
-              setSearch({ review: reviewRequestId });
-            }}
-          />
+      <div hidden={search.tab === 'mcp'}>
+        <ConnectionsBrowserTabs>
+          <div className="space-y-8">
+            <NeedsYou
+              services={data.services}
+              onOpenRequest={(requestId) => {
+                decisionOpener.current = document.activeElement as HTMLElement | null;
+                setSearch({ request: requestId });
+              }}
+              onOpenReview={(reviewRequestId) => {
+                decisionOpener.current = document.activeElement as HTMLElement | null;
+                setSearch({ review: reviewRequestId });
+              }}
+            />
 
-          {rowActionError && (
-            <p
-              role="alert"
-              data-testid="row-action-error"
-              className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm"
-            >
-              {accountChangeError(rowActionError)}
-            </p>
-          )}
+            {rowActionError && (
+              <p
+                role="alert"
+                data-testid="row-action-error"
+                className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm"
+              >
+                {accountChangeError(rowActionError)}
+              </p>
+            )}
 
-          <AppList
-            query={query}
-            onQueryChange={setQuery}
-            data={data}
-            onOpenRow={(row) => {
-              if (row.kind === 'connecting') {
-                setConnectOpen(true);
-                return;
-              }
-              panelOpener.current = document.activeElement as HTMLElement | null;
-              setSearch({ app: row.id, who: undefined });
-            }}
-            onRowAction={onRowAction}
-            pendingRowId={pendingRowId}
-            onConnect={onConnect}
-          />
+            <AppList
+              query={query}
+              onQueryChange={setQuery}
+              data={data}
+              onOpenRow={(row) => {
+                if (row.kind === 'connecting') {
+                  setConnectOpen(true);
+                  return;
+                }
+                panelOpener.current = document.activeElement as HTMLElement | null;
+                setSearch({ app: row.id, who: undefined });
+              }}
+              onRowAction={onRowAction}
+              pendingRowId={pendingRowId}
+              onConnect={onConnect}
+            />
 
-          <OwnKeyPointer />
-        </div>
-      </ConnectionsBrowserTabs>
+            <OwnKeyPointer />
+          </div>
+        </ConnectionsBrowserTabs>
+      </div>
+
+      {search.tab === 'mcp' && <McpServersTab />}
 
       <AppPanel
         row={panelRow}

@@ -104,6 +104,39 @@ describe('personAwareFetch and a held action', () => {
     expect(res.status).toBe(200);
   });
 
+  it('a cancel still answers readably after the caller’s timeout killed the first response', async () => {
+    const first = held('held-1');
+    const base = vi.fn(async () => first);
+    stops.push(answerWith({ kind: 'not-confirmed' }).stop);
+    const res = await personAwareFetch(base, ORIGIN)('/api/x', { method: 'POST', body: '{}' });
+    // What a fired signal leaves behind: the first response's own body can't be read.
+    await first.body?.cancel();
+    expect(res).not.toBe(first);
+    expect(res.status).toBe(428);
+    expect(await res.json()).toMatchObject({ code: STEP_UP_REQUIRED_CODE });
+  });
+
+  it('asks again on a fresh clock: the caller’s timeout fired while the sheet was open', async () => {
+    const signals: Array<AbortSignal | null | undefined> = [];
+    const base = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return signals.length === 1 ? held('held-1') : held('held-2');
+    });
+    const answer = answerWith(
+      { kind: 'ask-again' },
+      { kind: 'confirmed', status: 201, result: { ok: true } }
+    );
+    stops.push(answer.stop);
+    const res = await personAwareFetch(base as typeof fetch, ORIGIN)('/api/x', {
+      method: 'POST',
+      body: '{}',
+      signal: AbortSignal.abort(),
+    });
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+    expect(res.status).toBe(201);
+  });
+
   it('stops asking again after a few tries', async () => {
     let n = 0;
     const base = vi.fn(async () => held(`held-${++n}`));
