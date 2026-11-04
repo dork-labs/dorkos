@@ -3,6 +3,9 @@
  * `codex-app-server-transport` §6–§9): a real pool, loader, mapper, JSON-RPC
  * client and thread-key registry; only the binary is pretend.
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { StreamEventSchema } from '@dorkos/shared/schemas';
@@ -107,48 +110,60 @@ describe('a turn', () => {
   );
 
   it('routes the legacy exec setting through app-server with protected files at Full', async () => {
-    const h = harness({ setting: 'exec' });
-    const events = await h.run(
-      h.request({
-        sessionId: 'legacy-exec',
-        settings: { permissionMode: 'bypassPermissions' },
-        tools: {
-          agentTokenEnv: {},
-          managed: { servers: {}, env: {} },
-          dorkosTools: null,
-          connectorTools: null,
-          filePolicy: {
-            writable: [],
-            roots: {
-              cwd: '/project',
-              data: '/data',
-              home: '/home',
-              accounts: [],
-              agentFolders: ['/project'],
-              agentHomes: [],
+    // Rendering inspects disk state. These bases must exist independently of
+    // the host's /data, /home and /project layout.
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-legacy-profile-')));
+    const cwd = path.join(root, 'project');
+    const data = path.join(root, 'data');
+    const home = path.join(root, 'home');
+    for (const folder of [cwd, data, home]) fs.mkdirSync(folder);
+    try {
+      const h = harness({ setting: 'exec' });
+      const events = await h.run(
+        h.request({
+          sessionId: 'legacy-exec',
+          cwd,
+          settings: { permissionMode: 'bypassPermissions' },
+          tools: {
+            agentTokenEnv: {},
+            managed: { servers: {}, env: {} },
+            dorkosTools: null,
+            connectorTools: null,
+            filePolicy: {
+              writable: [],
+              roots: {
+                cwd,
+                data,
+                home,
+                accounts: [],
+                agentFolders: [cwd],
+                agentHomes: [],
+              },
+            },
+          },
+        })
+      );
+      expect(h.transport.kind).toBe('app-server');
+      expect(texts(events)).toBe('pong');
+      expect(h.host.spawns).toHaveLength(1);
+      expect(h.host.spawns[0]!.args).toEqual(APP_SERVER_ARGS);
+      const process = h.host.home(PERSON_HOME).processes[0]!;
+      expect(process.requestsOf('thread/start')[0]).toMatchObject({
+        permissions: 'dorkos-files-danger-full-access',
+        config: {
+          permissions: {
+            'dorkos-files-danger-full-access': {
+              filesystem: { ':root': 'write', [path.join(data, 'host.key')]: 'deny' },
             },
           },
         },
-      })
-    );
-    expect(h.transport.kind).toBe('app-server');
-    expect(texts(events)).toBe('pong');
-    expect(h.host.spawns).toHaveLength(1);
-    expect(h.host.spawns[0]!.args).toEqual(APP_SERVER_ARGS);
-    const process = h.host.home(PERSON_HOME).processes[0]!;
-    expect(process.requestsOf('thread/start')[0]).toMatchObject({
-      permissions: 'dorkos-files-danger-full-access',
-      config: {
-        permissions: {
-          'dorkos-files-danger-full-access': {
-            filesystem: { '/data/host.key': 'deny' },
-          },
-        },
-      },
-    });
-    expect(process.requestsOf('turn/start')[0]).toMatchObject({
-      permissions: 'dorkos-files-danger-full-access',
-    });
+      });
+      expect(process.requestsOf('turn/start')[0]).toMatchObject({
+        permissions: 'dorkos-files-danger-full-access',
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('refuses a legacy exec session when app-server cannot start, without a fallback', async () => {
