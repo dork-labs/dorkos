@@ -1,4 +1,5 @@
 /** Codex named filesystem policies. Legacy sandbox flags must never accompany these. */
+import fs from 'node:fs';
 import path from 'node:path';
 import { realPathOf } from '@dorkos/shared/directory-grants';
 import type { CodexOptions } from '@openai/codex-sdk';
@@ -26,6 +27,21 @@ export interface CodexFilePolicy {
 /** Render the shared protected list in Codex's absolute path/glob spelling. */
 function protectedEntries({ roots, writable }: CodexFilePolicy): Record<string, 'read' | 'deny'> {
   const entries: Record<string, 'read' | 'deny'> = {};
+  // Codex's rg and internal walkers disagree on fixed-depth glob suffixes.
+  // Capture existing homes literally; a new home is protected on next render.
+  // Only directory Dirents are included; symlink entries are not followed.
+  let discoveredHomes: string[];
+  try {
+    const agents = path.join(roots.data, 'agents');
+    discoveredHomes = fs
+      .readdirSync(agents, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(agents, entry.name));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    discoveredHomes = [];
+  }
+  const agentHomes = [...new Set([...roots.agentHomes, ...discoveredHomes])];
   // Write carve-outs go first; a secret that also grants power must stay unreadable.
   for (const entry of [...PROTECTED_PATHS].sort((a, b) =>
     a.deny === b.deny ? 0 : a.deny === 'write' ? -1 : 1
@@ -40,7 +56,7 @@ function protectedEntries({ roots, writable }: CodexFilePolicy): Record<string, 
             : entry.root === 'agent-folder'
               ? roots.agentFolders
               : entry.root === 'agent-home'
-                ? [...roots.agentHomes, path.join(roots.data, 'agents', '*')]
+                ? agentHomes
                 : [
                     roots.home,
                     roots.data,
@@ -83,7 +99,7 @@ function protectedEntries({ roots, writable }: CodexFilePolicy): Record<string, 
     roots.cwd,
     ...writable,
     ...roots.agentFolders,
-    ...roots.agentHomes,
+    ...agentHomes,
     ...roots.accounts,
   ]);
 }
