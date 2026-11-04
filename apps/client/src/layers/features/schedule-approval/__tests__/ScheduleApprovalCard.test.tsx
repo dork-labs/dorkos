@@ -1381,6 +1381,26 @@ describe('what changed since the person approved it (DOR-2323)', () => {
 });
 
 describe('stale schedule approval', () => {
+  it.each([false, true])(
+    'disables Run it once while a review is stale (pinned: %s)',
+    async (pinActions) => {
+      const triggerTask = vi.fn();
+      const { rerender } = renderCard(proposal(), { triggerTask }, { pinActions });
+      const run = await screen.findByRole('button', { name: 'Run Nightly sweep once' });
+      expect(run).toBeEnabled();
+      rerender(
+        <ScheduleApprovalCard
+          task={proposal({ prompt: 'Changed work.', approvalRevision: 'b'.repeat(64) })}
+          pinActions={pinActions}
+        />
+      );
+      expect(await screen.findByRole('status')).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeDisabled();
+      await userEvent.click(screen.getByRole('button', { name: 'Run Nightly sweep once' }));
+      expect(triggerTask).not.toHaveBeenCalled();
+    }
+  );
+
   it.each(['prompt', 'permissionMode', 'enabled'] as const)(
     'pins an open review across a background %s change',
     async (field) => {
@@ -1400,7 +1420,12 @@ describe('stale schedule approval', () => {
       await waitFor(() =>
         expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
       );
+      screen.getByRole('button', { name: 'Approve Nightly sweep' }).focus();
       rerender(<ScheduleApprovalCard task={fresh} pinActions />);
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'This schedule changed. Review it again.'
+      );
+      expect(screen.getByRole('button', { name: 'Review again' })).toHaveFocus();
       expect(await screen.findByText('This schedule changed. Review it again.')).toBeVisible();
       expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
       expect(

@@ -5,7 +5,7 @@ import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
  *
  * @module features/schedule-approval/ui/ScheduleApprovalCard
  */
-import { useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { FileCode2 } from 'lucide-react';
 import type { Task, PermissionMode } from '@dorkos/shared/types';
 import {
@@ -70,6 +70,8 @@ export interface ScheduleApprovalCardProps {
   onNavigate?: () => void;
   /** An overlay can close after the server accepts the approval. */
   onApproved?: () => void;
+  /** Restore the review heading after new work is explicitly adopted. */
+  onReviewAgain?: () => void;
   className?: string;
   /**
    * Keep the mode and actions outside the review body scroller. Only for a card that
@@ -79,6 +81,8 @@ export interface ScheduleApprovalCardProps {
   pinActions?: boolean;
   /** The package switch is asking to approve AND enable the schedule. */
   turnOnApproval?: boolean;
+  /** Phone review title, scrolling with the instructions above the sticky mode. */
+  reviewHeader?: ReactNode;
   /**
    * The card sits in a short host (Home's pinned header): the prompt block is
    * capped lower, so the title, the prompt and Approve fit in it together.
@@ -149,6 +153,7 @@ function ScheduleApprovalContent({
   className,
   pinActions = false,
   turnOnApproval = false,
+  reviewHeader,
   compact = false,
   onStale,
   onApproved,
@@ -330,7 +335,7 @@ function ScheduleApprovalContent({
         className
       )}
     >
-      {pinActions && (
+      {pinActions && !reviewHeader && (
         <p
           className={cn(
             'shrink-0 px-1 text-xs',
@@ -344,6 +349,17 @@ function ScheduleApprovalContent({
         className={cn('space-y-2', pinActions && 'min-h-0 flex-1 overflow-y-auto px-1 py-1')}
         data-slot="schedule-review-body"
       >
+        {reviewHeader}
+        {pinActions && reviewHeader && (
+          <p
+            className={cn(
+              'bg-background sticky top-0 z-10 py-1 text-xs',
+              isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
+            )}
+          >
+            Runs as: {currentLabel}
+          </p>
+        )}
         <div className="flex min-w-0 items-center gap-2">
           {/* Who asked, resolved from the path the proposal was stamped with — the
             same disc, badge and unattributed fallback a capability approval
@@ -353,10 +369,17 @@ function ScheduleApprovalContent({
           {dorkosWrote && !foundInFile ? null : foundInFile ? (
             <span
               data-slot="schedule-file-origin"
-              className="text-muted-foreground min-w-0 text-xs break-all"
+              className="text-muted-foreground min-w-0 text-xs break-words"
             >
               <FileCode2 aria-hidden className="mr-1 inline size-3.5 shrink-0 align-text-bottom" />
-              {shortenHomePath(task.filePath)}
+              {shortenHomePath(task.filePath)
+                .split(/(?<=\/)/u)
+                .map((part, index) => (
+                  <Fragment key={`${index}:${part}`}>
+                    {part}
+                    <wbr />
+                  </Fragment>
+                ))}
             </span>
           ) : (
             <RequestingAgent
@@ -494,7 +517,7 @@ function ScheduleApprovalContent({
             data-slot="schedule-test-run-start"
             aria-label={`Run ${name} once`}
             className="min-h-11 px-2.5 text-xs sm:min-h-0"
-            disabled={testRun.phase === 'running'}
+            disabled={testRun.phase === 'running' || refreshing}
             onClick={testRun.start}
           >
             Run it once
@@ -548,7 +571,7 @@ function ScheduleApprovalContent({
               data-slot="schedule-test-run-start"
               aria-label={`Run ${name} once`}
               className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-              disabled={testRun.phase === 'running'}
+              disabled={testRun.phase === 'running' || refreshing}
               onClick={testRun.start}
             >
               Run it once

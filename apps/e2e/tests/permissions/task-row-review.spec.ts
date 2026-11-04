@@ -85,6 +85,14 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
               reach: 'edit',
               promise: 'Edits files without asking.',
             },
+            {
+              id: 'bypassPermissions',
+              label: 'Full autonomy',
+              stop: 'autonomy',
+              asks: 'never',
+              reach: 'everything',
+              promise: 'Runs everything without asking.',
+            },
           ],
         },
       };
@@ -120,6 +128,7 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     const review = page.getByRole('dialog', { name: 'Review schedule', exact: true });
     const title = review.getByRole('heading', { name: 'Review schedule', exact: true });
     await expect(title).toBeFocused();
+    await expect(title).toBeInViewport();
     await page.keyboard.press('ArrowDown');
     await expect(title).toBeFocused();
     await expect(review.locator('select')).toHaveValue('acceptEdits');
@@ -139,6 +148,7 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
       element.scrollTop = element.scrollHeight;
     });
     await expect(review.locator('select')).toBeInViewport();
+    await expect(review.getByText('Runs as: Accept edits', { exact: true })).toBeInViewport();
     await expect(approve).toBeInViewport();
     await expect(review.getByRole('button', { name: 'Reject Sample ledger' })).toBeInViewport();
     await page.screenshot({ path: testInfo.outputPath(`${surface}-review-scrolled.png`) });
@@ -163,6 +173,22 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await expect(
       review.getByRole('button', { name: 'Approve Sample ledger and turn it on' })
     ).toBeInViewport();
+    if (surface === 'phone') {
+      expect(
+        await review.locator('[data-slot="schedule-file-origin"]').evaluate((element) => {
+          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+          let node: Node | null;
+          while ((node = walker.nextNode())) {
+            if (node.textContent === 'SKILL.md') {
+              const range = document.createRange();
+              range.selectNodeContents(node);
+              return range.getClientRects().length;
+            }
+          }
+          return 0;
+        })
+      ).toBe(1);
+    }
     await page.screenshot({ path: testInfo.outputPath(`${surface}-package-review.png`) });
     expect(writes).toEqual([]);
     await page.keyboard.press('Escape');
@@ -183,18 +209,40 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await reviewButton.click();
     staleOnApproval = true;
     await review.getByRole('button', { name: 'Approve Sample ledger', exact: true }).click();
-    await expect(review.getByText('This schedule changed. Review it again.')).toBeVisible();
+    await expect(review.getByRole('status')).toHaveText('This schedule changed. Review it again.');
+    await expect(review.getByRole('button', { name: 'Review again' })).toBeFocused();
+    await expect(review.getByRole('button', { name: 'Run Sample ledger once' })).toBeDisabled();
     await expect(
       review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
     ).toBeDisabled();
     await expect(review.locator('[data-slot="schedule-prompt"]')).toHaveText(instructions);
     await page.keyboard.press('a');
     await page.screenshot({ path: testInfo.outputPath(`${surface}-changed-review.png`) });
+    await body.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(review.getByRole('button', { name: 'Review again' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
     await review.getByRole('button', { name: 'Review again' }).click();
+    await expect(title).toBeFocused();
+    await expect(title).toBeInViewport();
+    expect(await body.evaluate((element) => element.scrollTop)).toBe(0);
     await expect(review.locator('[data-slot="schedule-prompt"]')).toHaveText(task.prompt);
     await expect(
       review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
     ).toBeEnabled();
     await page.keyboard.press('Escape');
+    if (surface === 'dark') {
+      task = { ...sampleTask(false), permissionMode: 'bypassPermissions' };
+      await page.reload();
+      await basePage.waitForAppReady();
+      await reviewButton.click();
+      const full = review.getByText('Runs as: Full autonomy', { exact: true });
+      await expect(full).toHaveClass(/text-status-warning-fg/);
+      await page.screenshot({ path: testInfo.outputPath('dark-full-review.png') });
+      await page.keyboard.press('Escape');
+    }
   });
 }

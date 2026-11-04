@@ -3,6 +3,7 @@ covers:
   - 'fix(tasks): review permissions before row approval (DOR-3758)'
   - 'fix(tasks): make schedule review readable and enable package schedules'
   - 'fix(tasks): pin schedule reviews until explicitly refreshed'
+  - 'fix(tasks): keep stale schedule reviews focused and safe'
 ---
 
 ### Fixed
@@ -12,3 +13,5 @@ covers:
 - Read long schedule instructions in one scrolling column. Reviewing a package switch offers approval that turns it on.
 
 - A changed schedule stays blocked until you choose Review again. Background updates cannot silently replace an open review.
+
+- Keep review controls focused when a schedule changes. Review again returns to the heading.
