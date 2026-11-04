@@ -31,9 +31,15 @@ export const PARKED_SCHEDULE_NOTE =
  * DorkOS has already told the person (`schedule.armed_by_agent`, with Pause),
  * so this asks only for the plain report a co-worker would give.
  */
-export const ARMED_SCHEDULE_NOTE =
-  'This schedule is live and will run on its own. DorkOS has told the person, and they can ' +
-  'pause it any time. Say in your reply what you scheduled and when it runs.';
+export function armedScheduleNote(execution: {
+  modeLabel: string;
+  limitation: string;
+  refusesUnansweredApprovals: boolean;
+}): string {
+  if (execution.refusesUnansweredApprovals)
+    return `Scheduled. It runs as ${execution.modeLabel}, so commands that need approval will be refused. Tell the person.`;
+  return `Scheduled. It runs as ${execution.modeLabel}. ${execution.limitation} Tell the person.`;
+}
 
 /**
  * What `tasks_update` tells an agent whose edit to what an approved schedule

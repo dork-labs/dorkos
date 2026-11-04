@@ -167,7 +167,9 @@ export type ActivitySearch = z.infer<typeof activitySearchSchema>;
  * (`?health=failing`, the failing-schedule notice's Open schedule, DOR-3123).
  */
 export const tasksSearchSchema = mergeDialogSearch(
-  z.object({ sort: z.string().optional() }).merge(taskFilterSchema.searchValidator)
+  z
+    .object({ sort: z.string().optional(), schedule: z.string().optional() })
+    .merge(taskFilterSchema.searchValidator)
 );
 
 /** Search params available on the `/tasks` route. */

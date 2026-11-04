@@ -36,7 +36,7 @@ import { RESERVED_TASK_DIRNAMES } from '../task-templates.js';
 import { agentSkillsRoot, globalSkillsRoot, resolveRootPath } from '../skills-roots.js';
 import { readScheduleFromSkill } from '../skills-root-discovery.js';
 import { describeScheduleProblem } from '../cron-validation.js';
-import { clampSchedulePermissionMode } from '../schedule-permission-clamp.js';
+import { scheduleExecutionCopy } from '../../notifications/schedule-execution-copy.js';
 import {
   capabilitiesForTaskRuntime,
   resolveScheduledRunPermissionMode,
@@ -68,6 +68,26 @@ import {
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
 import { marksHold, type TurnMarks } from '../../core/turn-power/turn-marks.js';
+
+/**
+ * An ungranted agent create may preserve only these known modes. In particular,
+ * Auto can permit commands Accept edits would ask about; a numeric rank that
+ * groups both at the Act stop cannot enforce this cap. New ids fail closed.
+ * Explicit grants keep their existing, separately audited path.
+ */
+export function clampCreatedScheduleMode(
+  mode: string
+): 'plan' | 'default' | 'dontAsk' | 'acceptEdits' {
+  switch (mode) {
+    case 'plan':
+    case 'default':
+    case 'dontAsk':
+    case 'acceptEdits':
+      return mode;
+    default:
+      return 'acceptEdits';
+  }
+}
 
 /** The collaborators a create needs. Every one of them is required to get a task right. */
 export interface TaskLifecycleDeps {
@@ -338,11 +358,12 @@ export async function createScheduledTask(
   // filed under an agent pinned to it — must not have its trust stop mapped
   // through Claude Code's mode ids, because the mode this resolves is the one
   // stored on the row and the one that actually executes.
-  const target = data.permissionMode ? undefined : await resolveCreateRuntime(data, deps);
+  const target = await resolveCreateRuntime(data, deps);
+  const capabilities = capabilitiesForTaskRuntime(target.runtime);
   const permissionMode =
     data.permissionMode ??
     resolveScheduledRunPermissionMode({
-      capabilities: capabilitiesForTaskRuntime(target?.runtime),
+      capabilities,
     });
 
   // …and clamped ONCE, for every caller that did not clear the agent bar. This is
@@ -354,7 +375,7 @@ export async function createScheduledTask(
   const unclamped = trusted || options.modeGranted === true;
   const effectivePermissionMode = unclamped
     ? permissionMode
-    : clampSchedulePermissionMode(permissionMode).mode;
+    : clampCreatedScheduleMode(permissionMode);
 
   // An agent's schedule has to make its own case (DOR-1394), whether it parks
   // or is armed: the person reads the reason on the approval card, or on the
@@ -587,6 +608,9 @@ export async function createScheduledTask(
     // Armed without asking, so the person is told it exists and can pause it.
     // An event, not a standing condition: nothing waits on them.
     armedPayload = await resolveScheduleArmedPayload(schedule);
+    // Read the SAVED mode, after both the create cap and file sync. Neither the
+    // request nor the agent's eventual reply is the person's source of truth.
+    armedPayload.execution = scheduleExecutionCopy(schedule.permissionMode, capabilities);
     announceScheduleArmed(armedPayload);
   }
   if (parks) {

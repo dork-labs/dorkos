@@ -196,6 +196,8 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   // title and body read in full, never cut (DOR-3703, M6: the mode, the hashes
   // and who started the turn).
   const readsInFull = notification.kind === 'schedule.armed_by_agent';
+  const isScheduleCreation =
+    readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const tone = notificationRowTone(notification);
   const unread = notification.readAt === undefined;
   const visual = tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
@@ -249,9 +251,16 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           data-slot="inbox-row-title"
           className={cn(
             'block text-xs',
-            readsInFull ? 'break-words' : hasAction ? 'line-clamp-2 break-words' : 'truncate',
+            isScheduleCreation
+              ? 'truncate'
+              : readsInFull
+                ? 'break-words'
+                : hasAction
+                  ? 'line-clamp-2 break-words'
+                  : 'truncate',
             unread ? 'text-foreground font-medium' : 'text-foreground/90'
           )}
+          title={isScheduleCreation ? notification.title : undefined}
         >
           {notification.title}
         </span>
@@ -261,7 +270,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
             className={cn(
               'text-muted-foreground block text-xs',
               readsInFull
-                ? 'break-words'
+                ? 'break-words whitespace-pre-line'
                 : twoLineBody
                   ? 'line-clamp-2 sm:line-clamp-none sm:truncate'
                   : 'truncate'

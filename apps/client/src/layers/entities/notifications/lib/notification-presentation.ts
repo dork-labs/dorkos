@@ -367,7 +367,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     case 'run':
       return { ...appRoutes.home(), search: { detail: 'failed-run', itemId: subject.id } };
     case 'task':
-      return { ...appRoutes.tasks(), search: {} };
+      return {
+        ...appRoutes.tasks(),
+        search: kind === 'schedule.armed_by_agent' ? { schedule: subject.id } : {},
+      };
     case 'room':
       // `?id=`, which is how every other link to a room is spelled — the route
       // carries a room's identity as a search param, not a path segment.

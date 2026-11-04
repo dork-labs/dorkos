@@ -19,7 +19,6 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../tasks/task-tools.js';
-import { ARMED_SCHEDULE_NOTE } from '../tasks/task-tool-copy.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import {
   clearTestHomes,
@@ -111,7 +110,9 @@ describe('tasks_* on a Trusted install', () => {
 
     expect(isError).toBe(false);
     expect((payload.schedule as { status: string }).status).toBe('active');
-    expect(payload.note).toBe(ARMED_SCHEDULE_NOTE);
+    expect(payload.note).toContain('It runs as Accept edits');
+    expect(payload.note).toContain('Tell the person.');
+    expect(payload.note).not.toContain('will run on its own');
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({
         actorType: 'agent',

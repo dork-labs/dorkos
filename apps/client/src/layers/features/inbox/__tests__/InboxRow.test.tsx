@@ -35,6 +35,32 @@ function build(overrides: Partial<NotificationDTO> = {}): NotificationDTO {
 
 const AGENT: AgentVisualSource = { id: 'alpha', color: '#6366f1', icon: '🐙' };
 
+it('keeps a creation notice’s mode and warning visible beside a long truncated name', () => {
+  const title = 'Scout made a schedule: The very long nightly report for every made-up project';
+  const body =
+    'Runs as: Accept edits\nSome commands run on their own. Others are refused, because nobody’s there to approve them.';
+  render(
+    <InboxRow
+      notification={build({
+        kind: 'schedule.armed_by_agent',
+        subject: { type: 'task', id: 'nightly' },
+        title,
+        body,
+        actions: [
+          { id: 'pause', label: 'Pause', style: 'neutral' },
+          { id: 'open', label: 'Open', style: 'primary' },
+        ],
+      })}
+      onOpen={() => {}}
+    />
+  );
+  expect(screen.getByText(title)).toHaveAttribute('title', title);
+  const content = document.querySelector('[data-slot="inbox-row-body"]');
+  expect(content).toHaveTextContent('Runs as: Accept edits');
+  expect(content).not.toHaveClass('truncate');
+  expect(content).not.toHaveClass('line-clamp-2');
+});
+
 afterEach(() => {
   cleanup();
 });

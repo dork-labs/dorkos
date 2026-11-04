@@ -7,6 +7,19 @@ import { Puzzle, ShieldAlert } from 'lucide-react';
 import { NOTIFICATION_KINDS, type NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { NOTIFICATION_ICONS, notificationLink } from '../lib/notification-presentation';
 
+it('opens the particular schedule named by its creation notice', () => {
+  expect(
+    notificationLink({
+      id: 'notice',
+      kind: 'schedule.armed_by_agent',
+      tier: 'notable',
+      subject: { type: 'task', id: 'nightly' },
+      title: 'Scout made a schedule: Nightly',
+      createdAt: '2026-11-03T12:00:00Z',
+    })
+  ).toEqual({ to: '/tasks', search: { schedule: 'nightly' } });
+});
+
 describe('notification presentation', () => {
   it('draws a mark for every kind', () => {
     for (const kind of NOTIFICATION_KINDS) {
