@@ -190,6 +190,13 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     total: 1,
     fingerprint: 'fp-1',
   },
+  'browser.handoff': {
+    handoffId: 'h-1',
+    sessionId: 'sess-1',
+    site: 'northwind.example',
+    agentName: 'Atlas',
+    agentId: 'agent-1',
+  },
   'account.signin_review': {
     accountRoot: '/home/me/.claude2',
     accountName: 'Work',
@@ -247,6 +254,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'agent.secret_files': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
   'account.signin_review': 'notable',
+  'browser.handoff': 'notable',
 };
 
 /**
@@ -330,6 +338,7 @@ describe('notification registry', () => {
       'agent.unreachable',
       'approval.pending',
       'ask.pending',
+      'browser.handoff',
       'community.owner-replacement',
       'community.teammate-limit',
       'community.teammate-limits-reset',

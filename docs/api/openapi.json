@@ -18880,6 +18880,7 @@
           "community.owner-replacement",
           "community.teammate-limit",
           "community.teammate-limits-reset",
+          "browser.handoff",
           "heartbeat.credits-offer",
           "connector.destructive_pending",
           "connector.destructive_executed",

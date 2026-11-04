@@ -54,7 +54,8 @@ export function BrowserHandoffCardView({
   onShowWindow,
   onStop,
 }: BrowserHandoffCardViewProps) {
-  const whole = agentName ?? 'The agent';
+  // An agent picks its own name, and control or direction characters could reorder the sentence.
+  const whole = agentName?.replace(/[\p{Cc}\p{Cf}]/gu, '') || 'The agent';
   const name = whole.length > MAX_AGENT_NAME ? `${whole.slice(0, MAX_AGENT_NAME)}…` : whole;
   const asksPassword = step === 'sign-in' || step === 'failed';
   const status = signInStatus(step, site);

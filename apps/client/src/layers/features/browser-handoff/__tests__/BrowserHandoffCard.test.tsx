@@ -7,7 +7,7 @@ import type {
   LocalBrowserPersonState,
   LocalBrowserSignIn,
 } from '@dorkos/shared/local-browser';
-import { BrowserHandoffCard, HANDED_BACK_MESSAGE } from '../index';
+import { BrowserHandoffCard, BrowserHandoffInboxItem, HANDED_BACK_MESSAGE } from '../index';
 
 const transport = vi.hoisted(() => ({
   getLocalBrowserState: vi.fn(),
@@ -131,6 +131,14 @@ describe('BrowserHandoffCard', () => {
     );
     mount();
     expect(await screen.findByText('The agent is paused')).toBeTruthy();
+  });
+
+  it('strips control and direction characters from an agent’s name', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(
+      person({ handoff: { ...handoff, agentName: 'At\u202Elas\u200F' } })
+    );
+    mount();
+    expect(await screen.findByText('Atlas is paused')).toBeTruthy();
   });
 
   it('cuts a long agent name short, and never the folder', async () => {
@@ -293,6 +301,46 @@ describe('BrowserHandoffCard', () => {
       transport.getLocalBrowserState.mockResolvedValue(person({ mode: 'embedded' }));
       mount();
       expect(await button('Continue')).toBeTruthy();
+    });
+  });
+
+  describe('in the Inbox', () => {
+    function mountItem() {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      return render(
+        <QueryClientProvider client={client}>
+          <BrowserHandoffInboxItem />
+        </QueryClientProvider>
+      );
+    }
+
+    it('shows whichever handoff is open, and answers it with the chat closed', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(person());
+      transport.handBackLocalBrowser.mockResolvedValue(
+        person({ handoff: { ...handoff, outcome: 'handed-back' } })
+      );
+      mountItem();
+      fireEvent.click(await button('Continue'));
+      await waitFor(() =>
+        expect(transport.postMessage).toHaveBeenCalledWith('chat-one', HANDED_BACK_MESSAGE)
+      );
+    });
+
+    it('carries Stop task', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(person());
+      transport.stopLocalBrowserHandoff.mockResolvedValue(
+        person({ handoff: { ...handoff, outcome: 'stopped' } })
+      );
+      mountItem();
+      fireEvent.click(await button('Stop task'));
+      await waitFor(() => expect(transport.interruptSession).toHaveBeenCalledWith('chat-one'));
+    });
+
+    it('draws nothing when no handoff is open', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(person({ handoff: null }));
+      const { container } = mountItem();
+      await waitFor(() => expect(transport.getLocalBrowserState).toHaveBeenCalled());
+      expect(container.querySelector('[data-slot="browser-handoff-card"]')).toBeNull();
     });
   });
 

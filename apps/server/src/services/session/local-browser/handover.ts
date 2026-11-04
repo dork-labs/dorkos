@@ -17,6 +17,7 @@ import type {
   LocalBrowserSignInRequest,
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
+import { logger } from '../../../lib/logger.js';
 import { LocalBrowserError } from './errors.js';
 import { prepareProfileFolder } from './profile-folders.js';
 import type { SignInWindow } from './sign-in-window.js';
@@ -82,6 +83,7 @@ export class BrowserHandover {
   // The registry id of the agent in a folder; none until startup wires the mesh.
   private agentIdAt: (agentFolder: string) => string | undefined = () => undefined;
   private changed: () => void = () => undefined;
+  private handedOver: (handoff: LocalBrowserHandoff) => void = () => undefined;
 
   constructor(
     private readonly browser: HandoverBrowser,
@@ -112,6 +114,15 @@ export class BrowserHandover {
     this.signIns.onChange(listener);
   }
 
+  /**
+   * Set once at startup: called once for each new handoff, for the Inbox's record.
+   *
+   * @param listener - Given the new handoff.
+   */
+  useHandoffListener(listener: (handoff: LocalBrowserHandoff) => void): void {
+    this.handedOver = listener;
+  }
+
   /** What a person's controls see. */
   async state(): Promise<LocalBrowserPersonState> {
     return { ...(await this.browser.state()), handoff: this.record, signIn: this.signIns.current };
@@ -124,11 +135,17 @@ export class BrowserHandover {
    */
   async requireAgentMayUse(sessionId: string): Promise<void> {
     this.refuseStopped(sessionId);
-    if (this.record && this.record.outcome === null && this.record.sessionId === sessionId)
+    if (this.record && this.record.outcome === null && this.record.sessionId === sessionId) {
+      // QA reads these: every browser call an agent tried while a person had the browser.
+      logger.info('[Browser] Refused an agent call during a handoff', {
+        handoffId: this.record.id,
+        sessionId,
+      });
       throw new LocalBrowserError(
         'handed_to_person',
         'A person has the browser. Wait until they hand it back.'
       );
+    }
     if (this.signIns.active && (await this.signInOnAgentProfile()))
       throw new LocalBrowserError('signing_in', 'A person is signing in. Wait until they finish.');
   }
@@ -177,6 +194,13 @@ export class BrowserHandover {
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
     await this.browser.selectTab(tab.id).catch(() => undefined);
     this.changed();
+    this.handedOver(this.record);
+    logger.info('[Browser] An agent handed the browser to a person', {
+      handoffId: this.record.id,
+      sessionId,
+      site,
+      reason,
+    });
     return { handoffId: this.record.id, site, next: HANDED_OVER_NEXT };
   }
 
@@ -302,6 +326,7 @@ export class BrowserHandover {
 
   private end(handoff: LocalBrowserHandoff, outcome: 'handed-back' | 'stopped'): void {
     if (this.record?.id === handoff.id) this.record = { ...handoff, outcome };
+    logger.info('[Browser] A browser handoff ended', { handoffId: handoff.id, outcome });
     this.reopenAt = undefined;
     this.changed();
   }

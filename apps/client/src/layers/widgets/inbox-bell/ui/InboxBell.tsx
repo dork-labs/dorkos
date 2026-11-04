@@ -17,6 +17,7 @@ import {
   useAskAgentNames,
   useSettlingAsks,
   useWaitingQueue,
+  BROWSER_HANDOFF_WAITING,
 } from '@/layers/entities/attention';
 import { useTrustOfferStore } from '@/layers/entities/extension';
 import {
@@ -30,6 +31,7 @@ import {
 import { useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
 import { useScheduleApprovalCards } from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
+import { BrowserHandoffInboxItem } from '@/layers/features/browser-handoff';
 import { ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
 import { takeOffersShownInBell, useExtensionDecisionActions } from '@/layers/entities/extension';
 import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
@@ -199,6 +201,7 @@ export function InboxBell() {
     extensionApprovals,
     extensionDecisions,
     pausedConnections,
+    browserHandoffId,
     items: waitingItems,
     isError,
     retry,
@@ -337,6 +340,7 @@ export function InboxBell() {
     extensionCount: extensionApprovals.length,
     decisionCount: extensionDecisions.length,
     pausedCount: pausedConnections.length,
+    browserHandoff: !!browserHandoffId,
     settlingCount: settling.length,
     unreadable,
     unreadCount,
@@ -418,6 +422,7 @@ export function InboxBell() {
                           extensionApprovals,
                           extensionDecisions,
                           pausedConnections,
+                          browserHandoffId,
                         })}
                       </p>
                     ))}
@@ -467,6 +472,9 @@ export function InboxBell() {
                   {/* Connections paused until their owner confirms what they
                       send (DOR-3271): after the approvals, only you can answer. */}
                   <PausedConnectionList items={pausedConnections} />
+                  {/* An agent's stopped until a person answers (DOR-3218). The card
+                      carries its buttons, so it works with the chat closed. */}
+                  <BrowserHandoffInboxItem />
                 </div>
               )}
 
@@ -558,6 +566,7 @@ function resolvePill(counts: {
   extensionCount: number;
   decisionCount: number;
   pausedCount: number;
+  browserHandoff?: boolean;
   settlingCount: number;
   unreadable: boolean;
   unreadCount: number;
@@ -568,14 +577,17 @@ function resolvePill(counts: {
       glyph: 'waiting',
       count: counts.waitingCount,
       text: 'waiting on you',
-      label: waitingLabel(
-        counts.approvalCount,
-        counts.scheduleCount,
-        counts.askCount,
-        counts.extensionCount,
-        counts.decisionCount,
-        counts.pausedCount
-      ),
+      label:
+        counts.browserHandoff && counts.waitingCount === 1
+          ? `${BROWSER_HANDOFF_WAITING} Open to answer it.`
+          : `${waitingLabel(
+              counts.approvalCount,
+              counts.scheduleCount,
+              counts.askCount,
+              counts.extensionCount,
+              counts.decisionCount,
+              counts.pausedCount
+            )}${counts.browserHandoff ? ` ${BROWSER_HANDOFF_WAITING}` : ''}`,
     };
   }
   if (counts.settlingCount > 0) {
