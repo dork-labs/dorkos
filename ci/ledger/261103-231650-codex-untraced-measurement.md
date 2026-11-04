@@ -11,7 +11,7 @@ field-changes:
   - gate: wf.test.codex-sandbox
     field: timeout-minutes
     from: 20
-    to: 90
+    to: 110
 ---
 
 Security requested diagnostics after run 41732737007: traced default-mode
@@ -48,3 +48,12 @@ The 90 minutes is approved for diagnostics only, not for the final label.
 Never add -v to strace: environment values must stay out of the public trace
 artifact. Test diagnostics emit fixtureMs, startMs and each returned shell
 time immediately, before later native failures or test timeouts can hide them.
+
+Security revision after 99dd7c6ac0 authorizes a 110-minute diagnostic job:
+native proof 20, small traces 10, main comparison separately 15, untraced 64.
+The caps total 109 minutes; setup/upload overhead can still cancel incomplete
+evidence. Upload small traces before the separate comparison. Every other
+step cap remains unchanged. Main comparison output has its own single-path
+upload outside the witness directory. Restore the job to 20 before any final
+label, remove the diagnostic comparison/rg/narrowing machinery and review
+all step caps. This is evidence collection only, never a startup remedy.

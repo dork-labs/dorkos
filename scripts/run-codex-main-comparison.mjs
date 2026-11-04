@@ -8,7 +8,7 @@ if (process.env.CI !== 'true' || process.platform !== 'linux') {
   throw new Error('Codex main comparison requires Linux CI.');
 }
 const workspace = process.cwd();
-const out = path.resolve('.temp/codex-bwrap-trace/main-comparison');
+const out = path.resolve('.temp/codex-main-comparison');
 mkdirSync(out, { recursive: true });
 const rows = [];
 function run(name, command, args, cwd, timeout = 180_000, env = process.env) {

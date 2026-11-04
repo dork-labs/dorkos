@@ -586,6 +586,7 @@ jobs:
             .temp/community-acceptance/**/playwright-artifacts/**/*.png
             .temp/community-acceptance/**/playwright-artifacts/**/*.webm
             .temp/community-acceptance/**/playwright-artifacts/**/*.yml
+          include-hidden-files: true
           if-no-files-found: ignore
 
   # HOW MANY SHARDS THE TEST JOB GETS (ledger 261031-150702). Six in the queue
@@ -1242,7 +1243,7 @@ jobs:
       contents: read
     # Diagnostic budget only: nine independent untraced cases can each take
     # seven minutes. The production RPC and native assertion timeouts stay fixed.
-    timeout-minutes: 90
+    timeout-minutes: 110
     env:
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
@@ -1289,13 +1290,10 @@ jobs:
         timeout-minutes: 20
         run: |
           mkdir -p .temp/codex-bwrap-trace
-          native_status=0
-          strace -ff -e trace=execve,execveat -s 4096 -o .temp/codex-bwrap-trace/exec pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json || native_status=1
-          node scripts/run-codex-main-comparison.mjs || native_status=1
-          exit "$native_status"
+          strace -ff -e trace=execve,execveat -s 4096 -o .temp/codex-bwrap-trace/exec pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
       - name: Trace owned and unowned missing-parent scenarios
         if: ${{ always() }}
-        timeout-minutes: 4
+        timeout-minutes: 10
         env:
           DORKOS_CODEX_PROBE_SCENARIO: agent-home-10k
           DORKOS_CODEX_PROBE_MODE: acceptEdits
@@ -1313,7 +1311,19 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: codex-bwrap-trace
-          path: ${{ github.workspace }}/.temp/codex-bwrap-trace/
+          path: .temp/codex-bwrap-trace/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Compare isolated branch and main native behavior
+        if: ${{ always() }}
+        timeout-minutes: 15
+        run: node scripts/run-codex-main-comparison.mjs
+      - name: Preserve main comparison independently of the witness
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: codex-main-comparison
+          path: .temp/codex-main-comparison/
           if-no-files-found: error
           retention-days: 7
       - name: Measure protected probes without strace across home and cwd sizes

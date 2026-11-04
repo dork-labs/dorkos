@@ -77,3 +77,14 @@ No security strategy, timeout, deny, profile or production behavior change.
 Before final label, remove the main comparison script and invocation, rg
 scenario/worker diagnostics and the new trace diagnostics together with the
 previous must-go list. No claim that red or missing rows passed.
+
+Security revision after 99dd7c6ac0 supersedes the preceding 88/90 layout.
+Restore the pre-existing community acceptance include-hidden-files flag;
+only the new trace upload omits it. Use the previously working single
+relative .temp/codex-bwrap-trace/ path. Move main output to its own sibling
+.temp/codex-main-comparison/ so the flat-file bwrap witness cannot hit EISDIR.
+Upload that folder separately. Main comparison has its own always-run
+15-minute step; small traces get 10, native stays 20 and untraced stays 64.
+Job budget is 110, recorded in ledger 261103-231650; restore to 20 before
+any final label and remove/review every diagnostic step and cap. Caps total
+109, so overhead can still leave incomplete evidence. No production change.
