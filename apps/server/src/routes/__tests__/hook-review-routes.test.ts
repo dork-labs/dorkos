@@ -15,8 +15,16 @@ import {
 } from '../../services/harness/hook-card.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 
+const harnessConfig = vi.hoisted(() => ({
+  value: { autoSync: true, approvedHooks: [] as string[], refusedHooks: [] as string[] },
+}));
 vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn(() => undefined), set: vi.fn() },
+  configManager: {
+    get: vi.fn((key: string) => (key === 'harness' ? harnessConfig.value : undefined)),
+    set: vi.fn((key: string, value: typeof harnessConfig.value) => {
+      if (key === 'harness') harnessConfig.value = value;
+    }),
+  },
 }));
 vi.mock('../../services/harness/project-with-consent.js', async (original) => ({
   ...(await original<Record<string, unknown>>()),
@@ -47,6 +55,7 @@ const target = swappableServer();
 let db: ReturnType<typeof createTestDb>;
 let service: ApprovalService;
 beforeEach(() => {
+  harnessConfig.value = { autoSync: true, approvedHooks: [], refusedHooks: [] };
   db = createTestDb();
   service = new ApprovalService(db);
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});

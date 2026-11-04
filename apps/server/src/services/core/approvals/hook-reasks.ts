@@ -5,6 +5,7 @@ import type { ApprovalBinding, ApprovalTicket } from './approval-service.js';
 import type { ApprovalRequestInput } from './approval-request-input.js';
 import type { ApprovalRow } from './approval-card.js';
 import { storedHookRequest } from './approval-completeness.js';
+import { recordHookRefusal } from '../../harness/hook-consent.js';
 
 /** Why a declined row cannot start another review. */
 export type HookReaskFailure = 'not_declined' | 'already_reasked' | 'unavailable';
@@ -120,6 +121,9 @@ export function reaskHook(
         );
       });
     if (active) return 'already_reasked' as const;
+    // The old follower may not have polled yet. Persist its real no before
+    // ending that receipt; an unreadable card was never a lasting refusal.
+    if (source.declineKind !== 'incomplete') recordHookRefusal(original);
     db.insert(approvals).values(row).run();
     // End any old follower before it can turn its delayed receipt into a new refusal.
     if (source.consumedAt === null)

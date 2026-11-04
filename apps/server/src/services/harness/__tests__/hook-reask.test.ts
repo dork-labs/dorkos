@@ -14,7 +14,12 @@ import {
 } from '../hook-card.js';
 import { _internal, hookProjectionBinding } from '../hook-approval.js';
 import { raisePassiveHookRows, resumePassiveHookRows } from '../ask-withheld-hooks.js';
-import { hookApprovalEntry, isHookProjectionRefused, recordHookRefusal } from '../hook-consent.js';
+import {
+  hookApprovalEntry,
+  isHookProjectionRefused,
+  recordHookRefusal,
+  recordHookApproval,
+} from '../hook-consent.js';
 import type { HookProjectionRequest } from '../hook-consent.js';
 
 const config = {
@@ -120,6 +125,66 @@ describe('individual hook re-asks', () => {
     });
     service.deny(other.approvalId);
     expect(service.reaskHook(other.approvalId, input())).toBe('not_declined');
+  });
+
+  it('records a readable decline before a quick re-ask can consume its waiting follower', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    _internal.sleep = () => held;
+    const reproject = vi.fn();
+    recordHookApproval({ ...full, scripts: [['loop.mjs', 'b'.repeat(64)]] });
+    try {
+      raisePassiveHookRows([{ reason: 'unasked', request: full, notInstalledByDorkos: true }], {
+        projectPath: full.projectPath,
+        approvals: service,
+        dorkHome: home,
+        reproject,
+      });
+      const source = service.listPending()[0]!;
+      service.deny(source.approvalId);
+      // The real follower is paused before polling the denial: no manual refusal write.
+      expect(config.harness.refusedHooks).toEqual([]);
+      const next = service.reaskHook(source.approvalId, input());
+      expect(typeof next).toBe('object');
+      expect(isHookProjectionRefused(full)).toBe(true);
+      expect(config.harness.approvedHooks).toEqual([]);
+      expect(
+        db.select().from(approvals).where(eq(approvals.id, source.approvalId)).get()
+      ).toMatchObject({ state: 'denied', declineKind: 'refused', consumedAt: expect.any(String) });
+      const restarted = new ApprovalService(db);
+      expect(restarted.isReaskedHook(hookProjectionBinding(full, true))).toBe(true);
+      expect(isHookProjectionRefused(full)).toBe(true);
+      expect(reproject).not.toHaveBeenCalled();
+    } finally {
+      release();
+    }
+  });
+
+  it('keeps a quick re-ask of an incomplete decline from creating a lasting refusal', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    _internal.sleep = () => held;
+    const huge = { ...full, hooks: [{ event: 'Stop', command: 'echo ' + ' x '.repeat(1600) }] };
+    try {
+      raisePassiveHookRows([{ reason: 'unasked', request: huge, notInstalledByDorkos: true }], {
+        projectPath: full.projectPath,
+        approvals: service,
+        dorkHome: home,
+        reproject: vi.fn(),
+      });
+      const source = service.listPending()[0]!;
+      expect(source.cannotAllow).toBe(true);
+      service.deny(source.approvalId);
+      expect(typeof service.reaskHook(source.approvalId, input())).toBe('object');
+      expect(config.harness.refusedHooks).toEqual([]);
+      expect(config.harness.approvedHooks).toEqual([]);
+    } finally {
+      release();
+    }
   });
 
   it('a new yes after restart replaces exactly the old refusal and pins the reviewed files', async () => {
