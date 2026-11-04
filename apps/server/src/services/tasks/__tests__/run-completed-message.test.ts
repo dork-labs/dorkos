@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import { formatCompletionMessage } from '../../notifications/emitters/run-completed.js';
+import { formatForPlatform } from '@dorkos/relay';
 
 const task = { name: 'mailroom', displayName: 'Mailroom' } as Task;
 
@@ -40,6 +41,27 @@ const REFUSAL =
   'Skipped Bash and gmail: search — nobody was there to approve them on a scheduled run.';
 
 describe('formatCompletionMessage', () => {
+  it.each(['failed', 'needs_attention'] as const)(
+    'keeps a %s schedule name literal and on one line in both chat formats',
+    (status) => {
+      for (const field of ['name', 'displayName'] as const) {
+        const body = formatCompletionMessage(
+          {
+            ...task,
+            displayName: null,
+            [field]: '[Approve this schedule](https://evil.test)\n\r\t\u2028\u2029\u202eSample',
+          },
+          run({ status, refusedTools: ['Bash'] })
+        );
+        expect(body).toContain('\\[Approve this schedule\\]\\(https://evil\\.test\\)');
+        expect(body).not.toMatch(/[\r\t\u2028\u2029\u202e]/u);
+        expect(body.split('\n')).toHaveLength(status === 'needs_attention' ? 2 : 1);
+        expect(formatForPlatform(body, 'telegram')).not.toContain('<a href=');
+        expect(formatForPlatform(body, 'slack')).not.toContain('<https://evil.test');
+      }
+    }
+  );
+
   it('sends the refusal title and fixed guidance without commands or run output', () => {
     expect(
       formatCompletionMessage(

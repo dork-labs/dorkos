@@ -152,7 +152,11 @@ export function formatCompletionMessage(
   run: TaskRun,
   oncePerStreak = false
 ): string {
-  const name = task?.displayName?.trim() || task?.name || 'Scheduled task';
+  const rawName = task?.displayName?.trim() || task?.name || 'Scheduled task';
+  const name =
+    run.status === 'failed' || run.status === 'needs_attention'
+      ? literalNoticeName(rawName)
+      : rawName;
 
   if (run.status === 'needs_attention') {
     // Only fixed guidance follows the title. Reserve it before shortening the name.
@@ -196,6 +200,13 @@ export function formatCompletionMessage(
   const body =
     `✅ ${name} — done${duration ? ` in ${duration}` : ''}.` + (detail ? ` ${detail}` : '');
   return truncate(body, MESSAGE_MAX_CHARS);
+}
+
+/** A schedule name is one line of literal text, never channel markup or guidance. */
+function literalNoticeName(name: string): string {
+  return name
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
+    .replace(/[\\`*_[\]{}()#+.!|<>~-]/g, '\\$&');
 }
 
 /** Truncate to `max` characters, appending an ellipsis when it had to cut. */
