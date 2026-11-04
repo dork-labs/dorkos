@@ -129,6 +129,7 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     timingOverridden: false,
     packageOwned: null,
     approvalChanges: [],
+    approvalRevision: 'a'.repeat(64),
     agentId: null,
     // True: this fixture stands in for a schedule an AGENT proposed, which is
     // asking to run by definition (DOR-2059 only quiets a package-shipped
@@ -443,7 +444,13 @@ describe('InboxBell', () => {
     });
     await userEvent.click(await screen.findByTestId('inbox-bell'));
     const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
-    expect(approve.parentElement!.className).toContain('max-sm:sticky');
+    const card = screen.getByTestId('schedule-approval-card');
+    const body = card.querySelector('[data-slot="schedule-review-body"]')!;
+    // The instructions scroll inside the card; its actions stay outside that scroller.
+    expect(body).toHaveClass('overflow-y-auto', 'flex-1');
+    expect(body).not.toContainElement(approve);
+    expect(approve.parentElement).toHaveClass('shrink-0');
+    expect(card).toHaveClass('min-h-0', 'flex-col');
   });
 
   it('counts a schedule an agent parked, and answers it in the panel without closing it', async () => {
@@ -476,8 +483,14 @@ describe('InboxBell', () => {
     await userEvent.click(marker);
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    // This card's prompt is folded, so its yes names no prompt by its hash (DOR-3703, SC2).
-    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
+    // The Inbox's pinned card shows its prompt, so its yes binds both words and revision.
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        expectedApprovalRevision: 'a'.repeat(64),
+        approvedPromptHash: 'sha256:PumzqSIeJOkvMji_z_hHg7UAzmnYW2kSn_2dPHDjyuQ',
+      })
+    );
     // Still open, and the schedule that was NOT decided is still answerable.
     expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
   });

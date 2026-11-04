@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * A schedule on DorkOS credits spends the DorkOS account's money on every run,
  * so naming credits, approving a schedule that names them, and running one now
@@ -142,7 +143,10 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
       signedInUser = { userId: 'user_member', credential: 'cookie' };
       const res = await request(server)
         .patch(`/api/tasks/${onCredits.id}`)
-        .send({ status: 'active' })
+        .send({
+          expectedApprovalRevision: taskReviewRevision(store.getTask(onCredits.id)!),
+          status: 'active',
+        })
         .expect(403);
       expect(res.body).toEqual(NOT_THE_OWNER);
     });
@@ -176,7 +180,10 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
       signedInUser = { userId: OWNER_ID, credential: 'cookie' };
       const res = await request(server)
         .patch(`/api/tasks/${onCredits.id}`)
-        .send({ status: 'active' });
+        .send({
+          expectedApprovalRevision: taskReviewRevision(store.getTask(onCredits.id)!),
+          status: 'active',
+        });
       expect(res.body.code).not.toBe('owner_only');
       expect(res.status).not.toBe(403);
     });

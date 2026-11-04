@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * The operator-only field guard on the TASK REST routes (DOR-504).
  *
@@ -380,7 +381,12 @@ describe('operator-only task fields on the REST routes', () => {
       const parked = store.updateTask(existing.id, { status: 'pending_approval' })!;
       const res = await request(fixtureServer)
         .patch(`/api/tasks/${parked.id}`)
-        .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
+        .send({
+          expectedApprovalRevision: taskReviewRevision(store.getTask(parked.id)!),
+          status: 'active',
+          enabled: true,
+          permissionMode: 'bypassPermissions',
+        });
 
       expect(res.status).toBe(200);
       const after = store.getTask(parked.id)!;

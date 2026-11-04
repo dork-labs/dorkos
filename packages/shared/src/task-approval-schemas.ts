@@ -37,3 +37,11 @@ export const TaskFolderRulesSchema = z.object({
   /** The filtered folder list waiting for a separate person's approval. */
   pending: z.array(z.string()),
 });
+
+/** Read-only facts shown beside the approval; the revision binds the person's answer. */
+export const TaskReviewPresentationSchema = z.object({
+  folderRules: TaskFolderRulesSchema.optional(),
+  runsAsName: z.string().nullable().optional(),
+  fileCapNext: z.boolean().optional(),
+  approvalRevision: z.string().optional(),
+});

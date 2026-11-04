@@ -5,8 +5,8 @@ import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
  *
  * @module features/schedule-approval/ui/ScheduleApprovalCard
  */
-import { useState } from 'react';
-import { ChevronRight, FileCode2 } from 'lucide-react';
+import { Fragment, useState, type ReactNode } from 'react';
+import { FileCode2 } from 'lucide-react';
 import type { Task, PermissionMode } from '@dorkos/shared/types';
 import {
   cn,
@@ -17,7 +17,9 @@ import {
   toSession,
 } from '@/layers/shared/lib';
 import { useNow, useSafeNavigate } from '@/layers/shared/model';
-import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
+import { Button } from '@/layers/shared/ui';
+import { ScheduleInstructions } from './ScheduleInstructions';
+import { ScheduleReviewCard } from './ScheduleReviewCard';
 import { useDeleteTask, useUpdateTask } from '@/layers/entities/tasks';
 import { promptHash } from '../lib/prompt-hash';
 import { useSessionDetail } from '@/layers/entities/session';
@@ -66,13 +68,21 @@ export interface ScheduleApprovalCardProps {
    * same (the rule the row this card replaces already held).
    */
   onNavigate?: () => void;
+  /** An overlay can close after the server accepts the approval. */
+  onApproved?: () => void;
+  /** Restore the review heading after new work is explicitly adopted. */
+  onReviewAgain?: () => void;
   className?: string;
   /**
-   * Pin the actions to the bottom of the host on a phone. Only for a card that
+   * Keep the mode and actions outside the review body scroller. Only for a card that
    * is the content of a full-height sheet: inside any other scroller a pinned
    * row covers the card it belongs to. Off by default.
    */
   pinActions?: boolean;
+  /** The package switch is asking to approve AND enable the schedule. */
+  turnOnApproval?: boolean;
+  /** Phone review title, scrolling with the instructions above the sticky mode. */
+  reviewHeader?: ReactNode;
   /**
    * The card sits in a short host (Home's pinned header): the prompt block is
    * capped lower, so the title, the prompt and Approve fit in it together.
@@ -88,20 +98,6 @@ function ChangeValue({ value, unbroken }: { value: string; unbroken: boolean }) 
     </span>
   );
 }
-
-/**
- * The tinted prompt block's scroll-edge shadow: a soft shade at whichever edge
- * has more text past it, drawn by backgrounds that scroll with the text, so it
- * shows only while there is more to read.
- */
-const SCROLL_EDGE_SHADOW = [
-  '[background-color:hsl(var(--muted)/0.6)]',
-  '[background-image:linear-gradient(hsl(var(--muted))_30%,transparent),linear-gradient(transparent,hsl(var(--muted))_70%),radial-gradient(farthest-side_at_50%_0,rgb(0_0_0/0.14),transparent),radial-gradient(farthest-side_at_50%_100%,rgb(0_0_0/0.14),transparent)]',
-  '[background-position:top,bottom,top,bottom]',
-  '[background-repeat:no-repeat]',
-  '[background-size:100%_2rem,100%_2rem,100%_0.6rem,100%_0.6rem]',
-  '[background-attachment:local,local,scroll,scroll]',
-].join(' ');
 
 /**
  * One proposed schedule, as an informed decision rather than a shrug.
@@ -150,17 +146,24 @@ const SCROLL_EDGE_SHADOW = [
  *
  * @param props - The {@link ScheduleApprovalCardProps.task} to decide.
  */
-export function ScheduleApprovalCard({
+function ScheduleApprovalContent({
   task,
   isActive = true,
   onNavigate,
   className,
   pinActions = false,
+  turnOnApproval = false,
+  reviewHeader,
   compact = false,
-}: ScheduleApprovalCardProps) {
+  onStale,
+  onApproved,
+  refreshing = false,
+}: ScheduleApprovalCardProps & { onStale: () => void; refreshing?: boolean }) {
   const now = useNow(AGE_TICK_MS);
   const navigate = useSafeNavigate();
-  const updateTask = useUpdateTask();
+  const updateTask = useUpdateTask({
+    isShownInline: (error) => 'code' in error && error.code === 'schedule_review_changed',
+  });
   const deleteTask = useDeleteTask();
   const testRun = useScheduleTestRun(task.id);
   const [decision, setDecision] = useState<Decision | null>(null);
@@ -169,7 +172,8 @@ export function ScheduleApprovalCard({
   // A yes that approves the task's SKILL file shows the prompt it approves,
   // open from the start (DOR-3703, M4): an agent's proposal, or any task whose
   // file this approval would vouch for.
-  const attestsFile = task.fileCapNext !== undefined || task.proposedByAgentPath != null;
+  const attestsFile =
+    pinActions || task.fileCapNext !== undefined || task.proposedByAgentPath != null;
   const [revealed, setRevealed] = useState(attestsFile);
   // Whether the approval also turned the schedule on, for the receipt (DOR-3309).
   const [turnedOn, setTurnedOn] = useState(false);
@@ -207,7 +211,6 @@ export function ScheduleApprovalCard({
     isNoLooserThan(power.ceiling, requested);
   const selected = power.modes.find((mode) => mode.id === selectedMode);
   const currentLabel = selected?.label ?? permissionModeLabel(selectedMode);
-  const bypasses = isBypassPermissionMode(selectedMode);
 
   // The conversation this was proposed in, when there is one to name. Read
   // under the PROPOSING session's directory rather than whatever this window
@@ -245,7 +248,7 @@ export function ScheduleApprovalCard({
    * the SKILL file only while it still holds exactly that text (DOR-3703, M4).
    */
   const approve = async (turnOn = false) => {
-    if (answered !== null || !selected) return;
+    if (answered !== null || !selected || refreshing || !task.approvalRevision) return;
     setDecision('approved');
     setGrantedLabel(currentLabel);
     setTurnedOn(turnOn);
@@ -257,6 +260,7 @@ export function ScheduleApprovalCard({
       {
         id: task.id,
         status: 'active',
+        expectedApprovalRevision: task.approvalRevision,
         ...(approvedPromptHash && { approvedPromptHash }),
         ...(turnOn && { enabled: true }),
         // Omit an unchanged value for package-owned schedules, which do not
@@ -266,7 +270,9 @@ export function ScheduleApprovalCard({
         }),
       },
       {
-        onError: () => {
+        onSuccess: () => onApproved?.(),
+        onError: (error) => {
+          if ('code' in error && error.code === 'schedule_review_changed') onStale();
           releaseSettledSchedule(task.id);
           setDecision(null);
           setGrantedLabel(null);
@@ -274,7 +280,7 @@ export function ScheduleApprovalCard({
       }
     );
   };
-  const approveAtSelectedLevel = () => void approve();
+  const approveAtSelectedLevel = () => void approve(turnOnApproval);
 
   const reject = () => {
     if (answered !== null) return;
@@ -323,260 +329,237 @@ export function ScheduleApprovalCard({
       onDeny={answered === null ? reject : undefined}
       data-testid="schedule-approval-card"
       data-task-id={task.id}
-      className={cn('flex min-w-0 flex-col gap-2', className)}
+      className={cn(
+        'flex min-w-0 flex-col gap-2',
+        pinActions && 'bg-background max-h-[76dvh] min-h-0 flex-1 ring-inset',
+        className
+      )}
     >
-      <div className="flex min-w-0 items-center gap-2">
-        {/* Who asked, resolved from the path the proposal was stamped with — the
+      {pinActions && !reviewHeader && (
+        <p
+          className={cn(
+            'shrink-0 px-1 text-xs',
+            isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
+          )}
+        >
+          Runs as: {currentLabel}
+        </p>
+      )}
+      <div
+        className={cn(
+          'space-y-2',
+          pinActions && 'min-h-0 flex-1 overflow-y-auto px-1 py-1',
+          reviewHeader && 'pt-0'
+        )}
+        data-slot="schedule-review-body"
+      >
+        {reviewHeader}
+        {pinActions && reviewHeader && (
+          <p
+            className={cn(
+              'bg-background sticky top-0 z-10 -mt-2! mb-0! pt-2 pb-3 text-xs',
+              isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
+            )}
+          >
+            Runs as: {currentLabel}
+          </p>
+        )}
+        <div className="flex min-w-0 items-center gap-2">
+          {/* Who asked, resolved from the path the proposal was stamped with — the
             same disc, badge and unattributed fallback a capability approval
             draws, so one agent reads as one agent across both cards.
             A schedule DorkOS found in a file had no asker at all, so it names
             the file instead of crediting an agent that does not exist. */}
-        {dorkosWrote && !foundInFile ? null : foundInFile ? (
-          <span
-            data-slot="schedule-file-origin"
-            className="text-muted-foreground min-w-0 text-xs break-all"
-          >
-            <FileCode2 aria-hidden className="mr-1 inline size-3.5 shrink-0 align-text-bottom" />
-            {shortenHomePath(task.filePath)}
-          </span>
-        ) : (
-          <RequestingAgent
-            requestedBy={task.proposedByAgentPath ?? undefined}
-            hasAgentPath={task.proposedByAgentPath !== null}
-            // This branch is only reached once DorkOS itself and a file on disk
-            // are ruled out, so an agent asked even when no path was stamped.
-            attributedToAgent
-            className="shrink-0"
-          />
-        )}
-      </div>
-
-      <AskCard.Headline className="min-w-0 break-words">{name}</AskCard.Headline>
-
-      <AskCard.Detail className="text-xs">
-        <p className="min-w-0 break-words">
-          {foundInFile
-            ? 'Found in a file on this computer'
-            : dorkosWrote
-              ? 'Waiting for you'
-              : `Proposed by ${proposer}`}
-          {!dorkosWrote && task.proposedBySessionId && sessionTitle && (
-            <>
-              {' · from '}
-              <button
-                type="button"
-                data-slot="schedule-proposing-session"
-                onClick={() => goToSession(task.proposedBySessionId as string)}
-                className="text-primary focus-visible:ring-ring rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
-              >
-                “{sessionTitle}”
-              </button>
-            </>
+          {dorkosWrote && !foundInFile ? null : foundInFile ? (
+            <span
+              data-slot="schedule-file-origin"
+              className="text-muted-foreground min-w-0 text-xs break-words"
+            >
+              <FileCode2 aria-hidden className="mr-1 inline size-3.5 shrink-0 align-text-bottom" />
+              {shortenHomePath(task.filePath)
+                .split(/(?<=\/)/u)
+                .map((part, index) => (
+                  <Fragment key={`${index}:${part}`}>
+                    {part}
+                    <wbr />
+                  </Fragment>
+                ))}
+            </span>
+          ) : (
+            <RequestingAgent
+              requestedBy={task.proposedByAgentPath ?? undefined}
+              hasAgentPath={task.proposedByAgentPath !== null}
+              // This branch is only reached once DorkOS itself and a file on disk
+              // are ruled out, so an agent asked even when no path was stamped.
+              attributedToAgent
+              className="shrink-0"
+            />
           )}
-          {` · waiting ${formatCompactAge(task.createdAt)}`}
-        </p>
-      </AskCard.Detail>
+        </div>
 
-      {/* The agent's case, in its own words and in full. Never clamped: this is
+        <AskCard.Headline className="min-w-0 break-words">{name}</AskCard.Headline>
+        <p className="text-muted-foreground text-xs">
+          {task.agentId ? `Agent: ${runsAs}` : 'No agent'}
+        </p>
+
+        <AskCard.Detail className="text-xs">
+          <p className="min-w-0 break-words">
+            {foundInFile
+              ? 'Found in a file on this computer'
+              : dorkosWrote
+                ? 'Waiting for you'
+                : `Proposed by ${proposer}`}
+            {!dorkosWrote && task.proposedBySessionId && sessionTitle && (
+              <>
+                {' · from '}
+                <button
+                  type="button"
+                  data-slot="schedule-proposing-session"
+                  onClick={() => goToSession(task.proposedBySessionId as string)}
+                  className="text-primary focus-visible:ring-ring rounded-sm underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+                >
+                  “{sessionTitle}”
+                </button>
+              </>
+            )}
+            {` · waiting ${formatCompactAge(task.createdAt)}`}
+          </p>
+        </AskCard.Detail>
+
+        {/* The agent's case, in its own words and in full. Never clamped: this is
           the whole of what the operator is being asked to weigh.
 
           For a schedule found in a file the words are DorkOS's own — why it is
           waiting, or what is wrong with the file — so they are not dressed as a
           quotation. Attributing our sentence to a proposer who does not exist
           would be the small dishonesty that makes a person distrust the rest. */}
-      {reason && (
-        <p
-          data-slot="schedule-reason"
-          className={cn(
-            'text-foreground/90 border-border/60 min-w-0 border-l-2 pl-2.5 text-xs break-words',
-            !dorkosWrote && 'italic'
-          )}
-        >
-          {dorkosWrote ? reason : <>“{reason}”</>}
-        </p>
-      )}
-
-      {task.originMarks && <ScheduleOriginMarks marks={task.originMarks} />}
-
-      {/* What the agent (or the file) changed since the person approved it
-          (DOR-2323): the old and the new value, side by side, so approving
-          again is a decision about the change and not a guess at it. */}
-      {changeLines.length > 0 && (
-        <div data-slot="schedule-changes" className="min-w-0 space-y-0.5 text-xs">
-          <p className="text-muted-foreground">Changed since you approved it:</p>
-          <ul className="space-y-0.5">
-            {changeLines.map((line) => (
-              <li key={line.label} className="min-w-0 break-words">
-                <span className="font-medium">{line.label}:</span>{' '}
-                {line.from === null ? (
-                  line.to
-                ) : (
-                  <>
-                    <ChangeValue value={line.from} unbroken={line.unbroken} /> →{' '}
-                    <ChangeValue value={line.to} unbroken={line.unbroken} />
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <AskCard.Detail className="text-xs">
-        {/* Wrapped, never truncated: a cadence cut off mid-sentence is how
-            "every day at 3 AM" and "every 3 minutes" look identical. */}
-        <p data-slot="schedule-cadence" className="min-w-0 break-words">
-          {formatCadence(task.cron, task.timezone)}
-        </p>
-        {firstRuns && (
-          <p data-slot="schedule-first-runs" className="min-w-0 break-words">
-            First run {firstRuns.first}
-            {firstRuns.then.length > 0 && ` · then ${firstRuns.then.join(', ')}`}
+        {reason && (
+          <p
+            data-slot="schedule-reason"
+            className={cn(
+              'text-foreground/90 border-border/60 min-w-0 border-l-2 pl-2.5 text-xs break-words',
+              !dorkosWrote && 'italic'
+            )}
+          >
+            {dorkosWrote ? reason : <>“{reason}”</>}
           </p>
         )}
-      </AskCard.Detail>
 
-      {/* Progressive disclosure, collapsed by default: the exact instructions are
-          what a careful reader checks and a wall of prompt on every card is what
-          stops anybody reading any of them. */}
-      {attestsFile ? (
-        // Its yes approves this task's file, so the whole prompt is in front of
-        // the person, with no toggle, and scrolls inside its block when long
-        // (DOR-3703, M4 and the designer's round 8b look).
-        <div className="flex min-w-0 flex-col gap-1.5">
-          {/* Never omitted, and never the smallest thing on the card. How much
-              power an unattended run has is the most consequential fact here —
-              it is half of what is being approved — so it reads at the
-              card's body size, beside the instructions rather than behind them.
-              A mode that acts without asking says so in words: the mode's NAME
-              is not something a person should have to already know the meaning
-              of. `isBypassPermissionMode` answers from the id, which is the
-              fallback for the frames before the runtime's profile lands; it
-              knows every bypass mode the shipped runtimes have. */}
-          <span
-            data-slot="schedule-permission-mode"
-            className={cn(
-              'shrink-0 text-xs',
-              bypasses ? 'text-status-warning-fg' : 'text-muted-foreground'
-            )}
-          >
-            Runs as {runsAs}, at {currentLabel}
-            {bypasses && ', runs without asking'}
-          </span>
-          <pre
-            data-slot="schedule-prompt"
-            role="region"
-            aria-label="Prompt"
-            // A region that scrolls must take focus, or a keyboard can never read
-            // its end (WCAG 2.1.1); it is a landmark, not a control.
-            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-            tabIndex={0}
-            className={cn(
-              'text-foreground/90 overflow-auto rounded-md p-2 font-sans text-sm break-words whitespace-pre-wrap',
-              compact ? 'max-h-[25dvh] sm:max-h-40' : 'max-h-[40dvh] sm:max-h-64',
-              'focus-ring',
-              SCROLL_EDGE_SHADOW
-            )}
-          >
-            {task.prompt}
-          </pre>
-        </div>
-      ) : (
-        <Collapsible open={revealed} onOpenChange={setRevealed}>
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                data-slot="schedule-reveal"
-                className="text-muted-foreground hover:text-foreground -ml-2 h-6 px-2 text-xs"
-              >
-                <ChevronRight
-                  className={cn('size-3.5 transition-transform', revealed && 'rotate-90')}
-                  aria-hidden
-                />
-                {revealed ? 'Hide exact instructions' : 'Show exact instructions'}
-              </Button>
-            </CollapsibleTrigger>
-            {/* Never omitted, and never the smallest thing on the card. How much
-                power an unattended run has is the most consequential fact here —
-                it is half of what is being approved — so it reads at the
-                card's body size, beside the instructions rather than behind them.
-                A mode that acts without asking says so in words: the mode's NAME
-                is not something a person should have to already know the meaning
-                of. `isBypassPermissionMode` answers from the id, which is the
-                fallback for the frames before the runtime's profile lands; it
-                knows every bypass mode the shipped runtimes have. */}
-            <span
-              data-slot="schedule-permission-mode"
-              className={cn(
-                'shrink-0 text-xs',
-                bypasses ? 'text-status-warning-fg' : 'text-muted-foreground'
-              )}
-            >
-              Runs as {runsAs}, at {currentLabel}
-              {bypasses && ', runs without asking'}
-            </span>
+        {task.originMarks && <ScheduleOriginMarks marks={task.originMarks} />}
+
+        {/* What the agent (or the file) changed since the person approved it
+          (DOR-2323): the old and the new value, side by side, so approving
+          again is a decision about the change and not a guess at it. */}
+        {changeLines.length > 0 && (
+          <div data-slot="schedule-changes" className="min-w-0 space-y-0.5 text-xs">
+            <p className="text-muted-foreground">Changed since you approved it:</p>
+            <ul className="space-y-0.5">
+              {changeLines.map((line) => (
+                <li key={line.label} className="min-w-0 break-words">
+                  <span className="font-medium">{line.label}:</span>{' '}
+                  {line.from === null ? (
+                    line.to
+                  ) : (
+                    <>
+                      <ChangeValue value={line.from} unbroken={line.unbroken} /> →{' '}
+                      <ChangeValue value={line.to} unbroken={line.unbroken} />
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
-          <CollapsibleContent>
-            <pre
-              data-slot="schedule-prompt"
-              className="bg-muted/60 text-foreground/90 text-2xs mt-1.5 max-h-48 overflow-auto rounded-md p-2 font-mono break-words whitespace-pre-wrap"
-            >
-              {task.prompt}
-            </pre>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
+        )}
 
-      {answered === null && (
-        <SchedulePermissionChoice
+        <AskCard.Detail className="text-xs">
+          {/* Wrapped, never truncated: a cadence cut off mid-sentence is how
+            "every day at 3 AM" and "every 3 minutes" look identical. */}
+          <p data-slot="schedule-cadence" className="min-w-0 break-words">
+            {formatCadence(task.cron, task.timezone)}
+          </p>
+          {firstRuns && (
+            <p data-slot="schedule-first-runs" className="min-w-0 break-words">
+              First run {firstRuns.first}
+              {firstRuns.then.length > 0 && ` · then ${firstRuns.then.join(', ')}`}
+            </p>
+          )}
+        </AskCard.Detail>
+
+        <ScheduleInstructions
           task={task}
-          modes={power.modes}
-          value={selectedMode}
-          requested={requested}
-          onChange={setPickedMode}
-          onUseRequested={canSuggest ? () => setPickedMode(requested.id) : undefined}
+          attestsFile={attestsFile || pinActions}
+          revealed={revealed}
+          setRevealed={setRevealed}
+          compact={compact}
+          flowing={pinActions}
+          selectedMode={selectedMode}
+          currentLabel={currentLabel}
+          runtime={power.runtime}
         />
-      )}
 
-      {answered === null && selectedMode !== task.permissionMode && (
-        <p className="text-muted-foreground text-xs">
-          Test runs use {power.current?.label ?? permissionModeLabel(task.permissionMode)} until you
-          approve.
-        </p>
-      )}
-      <TestRunStrip testRun={testRun} onOpenRun={openTestRun()} />
+        {answered === null && (
+          <SchedulePermissionChoice
+            task={task}
+            modes={power.modes}
+            value={selectedMode}
+            requested={requested}
+            onChange={setPickedMode}
+            onUseRequested={canSuggest ? () => setPickedMode(requested.id) : undefined}
+          />
+        )}
 
+        {answered === null && selectedMode !== task.permissionMode && (
+          <p className="text-muted-foreground text-xs">
+            Test runs use {power.current?.label ?? permissionModeLabel(task.permissionMode)} until
+            you approve.
+          </p>
+        )}
+        {pinActions && answered === null && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-slot="schedule-test-run-start"
+            aria-label={`Run ${name} once`}
+            className="min-h-11 px-2.5 text-xs sm:min-h-0"
+            disabled={testRun.phase === 'running' || refreshing}
+            onClick={testRun.start}
+          >
+            Run it once
+          </Button>
+        )}
+        <TestRunStrip testRun={testRun} onOpenRun={openTestRun()} />
+      </div>
       {answered === null ? (
-        // Under the prompt; pinned to the bottom on a phone only as a sheet's content.
+        // The review body scrolls; its decisions keep their space below it.
         <AskCard.Actions
           className={cn(
             'flex-col items-stretch sm:flex-row sm:items-center',
-            pinActions && 'bg-card max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:py-2'
+            pinActions && 'shrink-0 pt-2'
           )}
         >
-          <Button
-            size="sm"
-            data-slot="schedule-approve"
-            aria-label={`Approve ${name}`}
-            disabled={!selected}
-            className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-            onClick={approveAtSelectedLevel}
-          >
-            Approve
-          </Button>
-          {/* An off schedule stays off when approved (DOR-3309); turning it on
-              is the second, deliberate choice. */}
+          {!turnOnApproval && (
+            <Button
+              size="sm"
+              data-slot="schedule-approve"
+              aria-label={`Approve ${name}`}
+              disabled={!selected || refreshing || !task.approvalRevision}
+              className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
+              onClick={approveAtSelectedLevel}
+            >
+              Approve
+            </Button>
+          )}
+          {/* A plain review can approve without enabling. The switch path explicitly
+              asks to turn it on, so that is its only approval action. */}
           {!task.enabled && (
             <Button
-              variant="outline"
+              variant={turnOnApproval ? 'default' : 'outline'}
               size="sm"
               data-slot="schedule-approve-turn-on"
               aria-label={`Approve ${name} and turn it on`}
               className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
+              disabled={!selected || refreshing || !task.approvalRevision}
               onClick={() => void approve(true)}
-              disabled={!selected}
             >
               Approve and turn on
             </Button>
@@ -585,17 +568,19 @@ export function ScheduleApprovalCard({
               evidence-gathering move, not the decision. Disabled only while a
               run of its own is in flight — two supervised runs from one card is
               two things to read. */}
-          <Button
-            variant="outline"
-            size="sm"
-            data-slot="schedule-test-run-start"
-            aria-label={`Run ${name} once`}
-            className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-            disabled={testRun.phase === 'running'}
-            onClick={testRun.start}
-          >
-            Run it once
-          </Button>
+          {!pinActions && (
+            <Button
+              variant="outline"
+              size="sm"
+              data-slot="schedule-test-run-start"
+              aria-label={`Run ${name} once`}
+              className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
+              disabled={testRun.phase === 'running' || refreshing}
+              onClick={testRun.start}
+            >
+              Run it once
+            </Button>
+          )}
           {/* Last, so the answers that keep the schedule read first. */}
           <Button
             variant="ghost"
@@ -639,4 +624,9 @@ export function ScheduleApprovalCard({
       )}
     </AskCard.Root>
   );
+}
+
+/** A review that refreshes in place when the server refuses a stale answer. */
+export function ScheduleApprovalCard(props: ScheduleApprovalCardProps) {
+  return <ScheduleReviewCard {...props} Content={ScheduleApprovalContent} />;
 }

@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * Approving an agent's proposal can also grant it the operator's own trust stop
  * (DOR-2100) — and only the operator, and only there.
@@ -212,12 +213,42 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     return task;
   }
 
+  it('refuses instructions replaced while the chosen mode was being written', async () => {
+    const task = await proposedByAgent();
+    const revision = taskReviewRevision(task);
+    const writer = await import('@dorkos/skills/writer');
+    const realWrite = writer.writeSkillFile;
+    const spy = vi.spyOn(writer, 'writeSkillFile').mockImplementation(async (...args) => {
+      const file = await realWrite(...args);
+      fs.appendFileSync(file, '\nInstructions nobody reviewed.\n');
+      return file;
+    });
+    try {
+      const response = await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ status: 'active', permissionMode: 'dontAsk', expectedApprovalRevision: revision });
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('schedule_review_changed');
+      expect(store.getTask(task.id)).toMatchObject({
+        status: 'pending_approval',
+        permissionMode: 'acceptEdits',
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('writes the granted mode un-clamped, to the row AND the file', async () => {
     const task = await proposedByAgent();
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
-      .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        enabled: true,
+        permissionMode: 'bypassPermissions',
+      });
 
     expect(res.status).toBe(200);
     const approved = store.getTask(task.id)!;
@@ -232,7 +263,12 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     const task = await proposedByAgent();
     await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
-      .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        enabled: true,
+        permissionMode: 'bypassPermissions',
+      });
 
     // The arm grant is what `resolveFileArmStatus` and `keepsApprovedBypass`
     // both read. Without it the schedule re-parks — and loses its bypass — on
@@ -338,7 +374,11 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     const response = await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
       .set('x-test-person', 'yes')
-      .send({ status: 'active', permissionMode: 'dontAsk' });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        permissionMode: 'dontAsk',
+      });
     expect(response.status).toBe(200);
     expect(store.getTask(task.id)?.permissionMode).toBe('dontAsk');
     expect(fs.readFileSync(task.filePath, 'utf8')).toContain('permissions: dontAsk');
@@ -398,7 +438,11 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
-      .send({ status: 'active', enabled: true });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        enabled: true,
+      });
 
     expect(res.status).toBe(200);
     // The default answer is still the safe one: an approval that names no level
@@ -410,7 +454,12 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     const task = await proposedByAgent();
     await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
-      .send({ status: 'active', enabled: true, permissionMode: 'bypassPermissions' });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        enabled: true,
+        permissionMode: 'bypassPermissions',
+      });
 
     const approval = emit.mock.calls
       .map(([event]) => event as Record<string, unknown>)
@@ -433,7 +482,11 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     const task = await proposedByAgent();
     await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
-      .send({ status: 'active', enabled: true });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        enabled: true,
+      });
 
     const approval = emit.mock.calls
       .map(([event]) => event as Record<string, unknown>)
@@ -459,7 +512,11 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
     await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
-      .send({ status: 'active', enabled: true });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        enabled: true,
+      });
 
     const approval = emit.mock.calls
       .map(([event]) => event as Record<string, unknown>)
@@ -514,7 +571,11 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
 
       await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
-        .send({ status: 'active', enabled: true });
+        .send({
+          expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+          status: 'active',
+          enabled: true,
+        });
 
       const approval = emit.mock.calls
         .map(([event]) => event as Record<string, unknown>)
@@ -543,7 +604,11 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       const original = fs.readFileSync(task.filePath, 'utf8');
       const response = await request(fixtureServer)
         .patch(`/api/tasks/${task.id}`)
-        .send({ status: 'active', permissionMode: 'dontAsk' });
+        .send({
+          expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+          status: 'active',
+          permissionMode: 'dontAsk',
+        });
       expect(response.status).toBe(400);
       expect(response.body.code).toBe('unsupported_task_mode');
       expect(store.getTask(task.id)).toMatchObject({
@@ -565,7 +630,10 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
       .run();
     const response = await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
-      .send({ status: 'active' });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+      });
     expect(response.status).toBe(400);
     expect(store.getTask(task.id)?.status).toBe('pending_approval');
   });
@@ -578,7 +646,11 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     const task = await proposedByAgent();
     await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)
-      .send({ status: 'active', enabled: true });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(task.id)!),
+        status: 'active',
+        enabled: true,
+      });
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${task.id}`)

@@ -203,6 +203,7 @@ export const TASK_WRITE_POLICY = {
   // The hash of the prompt an approval card showed the person (DOR-3703, M4):
   // a person's approval of the SKILL file, so it is never an agent's to send.
   approvedPromptHash: 'operator-only',
+  expectedApprovalRevision: 'operator-only',
 } as const satisfies Record<string, TaskFieldWriteAccess>;
 
 /** The `operator-only` fields, derived from the table so the two cannot drift. */
