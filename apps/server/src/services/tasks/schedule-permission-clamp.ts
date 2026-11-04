@@ -24,6 +24,7 @@
  *
  * @module services/tasks/schedule-permission-clamp
  */
+import { hasMisplacedSchedulePermissions } from '@dorkos/shared/schedule-file-problems';
 import { EffortLevelSchema, type PermissionMode } from '@dorkos/shared/schemas';
 
 /**
@@ -48,7 +49,7 @@ const CLAMPED_PERMISSION_MODE = 'acceptEdits' as const;
  * schema: a package may legitimately DECLARE what it would like, and telling the
  * operator "this asked for more than it got" is more legible than a validation
  * error at install time that names no consequence. Raising it back is a person's
- * call, in the cockpit, on a task they can see.
+ * call, on the schedule page.
  *
  * Exported because the install permission preview
  * (`services/marketplace/preview/permission-preview.ts`) has to disclose the mode a
@@ -628,7 +629,7 @@ export function resolveFileArmStatus(
  *
  * The one exception is a bypass a person already granted on THIS task, which
  * only a caller that cleared the agent bar can have put in the row
- * (`task-write-policy.ts`). The cockpit writes that decision straight back into
+ * (`task-write-policy.ts`). The schedule page writes that decision straight back into
  * the file, and the watcher and the five-minute reconciler re-read it within
  * seconds; clamping on the way back in would undo a person's choice moments
  * after they made it. {@link keepsApprovedBypass} is what keeps that exception
@@ -678,17 +679,8 @@ export function resolveFilePermissionMode(
  * (DOR-2059) — the third question this module answers, alongside what mode a
  * schedule gets and whether it may arm itself.
  *
- * A package can ship a schedule switched off (`schedule.enabled: false`),
- * documented as opt-in. {@link resolveFileArmStatus} still parks it at
- * `pending_approval` on first sighting — the arm gate applies to every file
- * discovery, because a package can change its mind about what the schedule
- * does before anyone approves it — but a schedule that is not even asking to
- * run has nothing for a person to decide about *right now*. So the row stays
- * `pending_approval`, every write-time invariant that status protects is
- * untouched (`status` stays operator-only, an agent flipping `enabled` still
- * leaves the scheduler ineligible), and this is the one place that decides
- * whether the condition should reach the operator at all — read by the
- * boot-time re-arm in `index.ts`.
+ * Switched-off file schedules normally stay quiet; a misplaced mode still
+ * needs attention because it must be fixed before the schedule can run.
  *
  * **Keyed on `origin`, not on `enabled`, and that is load-bearing.** `enabled`
  * is agent-writable (`task-write-policy.ts`) by design — flipping it on an
@@ -720,10 +712,11 @@ export function needsScheduleApprovalAttention(task: {
   enabled: boolean;
   origin: string | null;
   declined?: boolean;
+  reason?: string | null;
 }): boolean {
   return (
     task.status === 'pending_approval' &&
     task.declined !== true &&
-    (task.origin !== 'file' || task.enabled)
+    (task.origin !== 'file' || task.enabled || hasMisplacedSchedulePermissions(task))
   );
 }

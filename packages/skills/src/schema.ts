@@ -233,6 +233,9 @@ export const SkillFrontmatterSchema = z.object({
    */
   schedule: z.unknown().transform(readScheduleField).optional(),
 
+  /** Retained only to diagnose a misplaced mode; never applied to execution. */
+  permissions: z.unknown().optional(),
+
   /**
    * Optional discriminator declaring whether this file is a skill, task, or
    * command. Marketplace packages SHOULD set this explicitly; user-authored

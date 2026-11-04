@@ -23,6 +23,7 @@ export function ScheduleInstructions({
   currentLabel,
   runtime,
   flowing = false,
+  hidePermissions = false,
 }: {
   task: Task;
   attestsFile: boolean;
@@ -33,6 +34,7 @@ export function ScheduleInstructions({
   currentLabel: string;
   runtime: string | null;
   flowing?: boolean;
+  hidePermissions?: boolean;
 }) {
   return (
     <>
@@ -53,12 +55,14 @@ export function ScheduleInstructions({
               of. `isBypassPermissionMode` answers from the id, which is the
               fallback for the frames before the runtime's profile lands; it
               knows every bypass mode the shipped runtimes have. */}
-          <ScheduleRunPermissions
-            mode={selectedMode}
-            label={currentLabel}
-            runtime={runtime}
-            showLabel={!flowing}
-          />
+          {!hidePermissions && (
+            <ScheduleRunPermissions
+              mode={selectedMode}
+              label={currentLabel}
+              runtime={runtime}
+              showLabel={!flowing}
+            />
+          )}
           <pre
             data-slot="schedule-prompt"
             role="region"
@@ -105,12 +109,14 @@ export function ScheduleInstructions({
                 of. `isBypassPermissionMode` answers from the id, which is the
                 fallback for the frames before the runtime's profile lands; it
                 knows every bypass mode the shipped runtimes have. */}
-            <ScheduleRunPermissions
-              mode={selectedMode}
-              label={currentLabel}
-              runtime={runtime}
-              showLabel={!flowing}
-            />
+            {!hidePermissions && (
+              <ScheduleRunPermissions
+                mode={selectedMode}
+                label={currentLabel}
+                runtime={runtime}
+                showLabel={!flowing}
+              />
+            )}
           </div>
           <CollapsibleContent>
             <pre

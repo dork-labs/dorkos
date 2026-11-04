@@ -183,7 +183,16 @@ export function readScheduleFromSkill(
 ): DiscoveredSchedule | null {
   const blockProblem = scheduleProblem(skill.meta);
   if (blockProblem !== null) {
-    return { def: definitionFromUnreadableBlock(skill, location), problem: blockProblem };
+    return {
+      def: hasSchedule(skill.meta)
+        ? definitionFromBlock(
+            skill,
+            { ...skill.meta.schedule, permissions: FALLBACK_PERMISSIONS },
+            location
+          )
+        : definitionFromUnreadableBlock(skill, location),
+      problem: blockProblem,
+    };
   }
 
   // No block and no complaint: a plain skill, and none of this subsystem's

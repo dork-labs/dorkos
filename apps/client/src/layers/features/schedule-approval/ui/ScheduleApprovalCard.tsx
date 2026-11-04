@@ -1,3 +1,7 @@
+import {
+  hasMisplacedSchedulePermissions,
+  MISPLACED_PERMISSIONS_RUN_ONCE,
+} from '@dorkos/shared/schedule-file-problems';
 import { appRoutes } from '@/layers/shared/lib';
 import { isNoLooserThan } from '@dorkos/shared/permission-semantics';
 /**
@@ -20,7 +24,7 @@ import { useNow, useSafeNavigate } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { ScheduleInstructions } from './ScheduleInstructions';
 import { ScheduleReviewCard } from './ScheduleReviewCard';
-import { useDeleteTask, useUpdateTask } from '@/layers/entities/tasks';
+import { useDeleteTask, useUpdateTask, ScheduleFileProblem } from '@/layers/entities/tasks';
 import { promptHash } from '../lib/prompt-hash';
 import { useSessionDetail } from '@/layers/entities/session';
 import { AskCard } from '@/layers/features/ask';
@@ -190,6 +194,7 @@ function ScheduleApprovalContent({
   // A schedule DorkOS found on disk, rather than one anybody asked for. Nobody
   // proposed it, so every part of this card that credits a proposer has to say
   // something else — the file it came from (ADR `260823-200726`).
+  const misplacedMode = hasMisplacedSchedulePermissions(task);
   const foundInFile = task.origin === 'file';
   // Whether the words in `reason` are DorkOS's own. True for a discovered
   // schedule, and ALSO for a schedule a person made themselves whose file has
@@ -321,11 +326,19 @@ function ScheduleApprovalContent({
     };
   };
 
+  const trialNote = misplacedMode ? (
+    <p className="text-status-warning-fg text-xs">
+      {task.fileCapNext
+        ? 'The next run is capped until you approve the file.'
+        : MISPLACED_PERMISSIONS_RUN_ONCE}
+    </p>
+  ) : null;
+
   return (
     <AskCard.Root
       isActive={isActive}
       isResolved={answered !== null}
-      onAllow={answered === null ? approveAtSelectedLevel : undefined}
+      onAllow={answered === null && !misplacedMode ? approveAtSelectedLevel : undefined}
       onDeny={answered === null ? reject : undefined}
       data-testid="schedule-approval-card"
       data-task-id={task.id}
@@ -342,7 +355,7 @@ function ScheduleApprovalContent({
             isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
           )}
         >
-          Runs as: {currentLabel}
+          {misplacedMode ? <ScheduleFileProblem /> : <>Runs as: {currentLabel}</>}
         </p>
       )}
       <div
@@ -361,7 +374,7 @@ function ScheduleApprovalContent({
               isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
             )}
           >
-            Runs as: {currentLabel}
+            {misplacedMode ? <ScheduleFileProblem /> : <>Runs as: {currentLabel}</>}
           </p>
         )}
         <div className="flex min-w-0 items-center gap-2">
@@ -433,7 +446,7 @@ function ScheduleApprovalContent({
           waiting, or what is wrong with the file — so they are not dressed as a
           quotation. Attributing our sentence to a proposer who does not exist
           would be the small dishonesty that makes a person distrust the rest. */}
-        {reason && (
+        {reason && (!misplacedMode || !pinActions) && (
           <p
             data-slot="schedule-reason"
             className={cn(
@@ -441,7 +454,7 @@ function ScheduleApprovalContent({
               !dorkosWrote && 'italic'
             )}
           >
-            {dorkosWrote ? reason : <>“{reason}”</>}
+            {misplacedMode ? <ScheduleFileProblem /> : dorkosWrote ? reason : <>“{reason}”</>}
           </p>
         )}
 
@@ -487,6 +500,7 @@ function ScheduleApprovalContent({
 
         <ScheduleInstructions
           task={task}
+          hidePermissions={misplacedMode}
           attestsFile={attestsFile || pinActions}
           revealed={revealed}
           setRevealed={setRevealed}
@@ -497,7 +511,7 @@ function ScheduleApprovalContent({
           runtime={power.runtime}
         />
 
-        {answered === null && (
+        {answered === null && !misplacedMode && (
           <SchedulePermissionChoice
             task={task}
             modes={power.modes}
@@ -515,17 +529,20 @@ function ScheduleApprovalContent({
           </p>
         )}
         {pinActions && answered === null && (
-          <Button
-            variant="outline"
-            size="sm"
-            data-slot="schedule-test-run-start"
-            aria-label={`Run ${name} once`}
-            className="min-h-11 px-2.5 text-xs sm:min-h-0"
-            disabled={testRun.phase === 'running' || refreshing}
-            onClick={testRun.start}
-          >
-            Run it once
-          </Button>
+          <div className="space-y-1">
+            <Button
+              variant="outline"
+              size="sm"
+              data-slot="schedule-test-run-start"
+              aria-label={`Run ${name} once`}
+              className="min-h-11 px-2.5 text-xs sm:min-h-0"
+              disabled={testRun.phase === 'running' || refreshing}
+              onClick={testRun.start}
+            >
+              Run it once
+            </Button>
+            {trialNote}
+          </div>
         )}
         <TestRunStrip testRun={testRun} onOpenRun={openTestRun()} />
       </div>
@@ -542,7 +559,7 @@ function ScheduleApprovalContent({
               size="sm"
               data-slot="schedule-approve"
               aria-label={`Approve ${name}`}
-              disabled={!selected || refreshing || !task.approvalRevision}
+              disabled={!selected || misplacedMode || refreshing || !task.approvalRevision}
               className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
               onClick={approveAtSelectedLevel}
             >
@@ -558,7 +575,7 @@ function ScheduleApprovalContent({
               data-slot="schedule-approve-turn-on"
               aria-label={`Approve ${name} and turn it on`}
               className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-              disabled={!selected || refreshing || !task.approvalRevision}
+              disabled={!selected || misplacedMode || refreshing || !task.approvalRevision}
               onClick={() => void approve(true)}
             >
               Approve and turn on
@@ -569,17 +586,20 @@ function ScheduleApprovalContent({
               run of its own is in flight — two supervised runs from one card is
               two things to read. */}
           {!pinActions && (
-            <Button
-              variant="outline"
-              size="sm"
-              data-slot="schedule-test-run-start"
-              aria-label={`Run ${name} once`}
-              className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-              disabled={testRun.phase === 'running' || refreshing}
-              onClick={testRun.start}
-            >
-              Run it once
-            </Button>
+            <div className="space-y-1">
+              <Button
+                variant="outline"
+                size="sm"
+                data-slot="schedule-test-run-start"
+                aria-label={`Run ${name} once`}
+                className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
+                disabled={testRun.phase === 'running' || refreshing}
+                onClick={testRun.start}
+              >
+                Run it once
+              </Button>
+              {trialNote}
+            </div>
           )}
           {/* Last, so the answers that keep the schedule read first. */}
           <Button
