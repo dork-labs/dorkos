@@ -308,6 +308,46 @@ describe('local browser scoped tool projection', () => {
     expect(service.observe).not.toHaveBeenCalled();
     expect(service.screenshot).not.toHaveBeenCalled();
   });
+  it('while a closed window reopens during a handoff, every tool stays refused', async () => {
+    const { domain, deps, context, service } = setup();
+    const seen: unknown[] = [];
+    // The real browser unpauses as open finishes, so the refusal can't lean on the pause.
+    const browser = {
+      state: async () => service.agentState(),
+      currentProfileId: () => null,
+      capabilities: () => ({ newWindow: true }),
+      open: vi.fn(async () => {
+        for (const capability of domain.capabilities.filter(
+          (item) => item.id !== 'local_browser.ask_person'
+        ))
+          await (async () =>
+            capability.invoke(deps, inputFor(capability.id), context('chat-one')))()
+            .then(() => seen.push(`${capability.id} answered`))
+            .catch((error: { payload?: { code?: string } }) => seen.push(error.payload?.code));
+        return service.agentState();
+      }),
+      selectTab: vi.fn(async () => service.agentState()),
+      navigate: vi.fn(async () => service.agentState()),
+      pause: vi.fn(async () => service.agentState()),
+      resume: vi.fn(async () => service.agentState()),
+      disconnect: vi.fn(async () => service.agentState()),
+    };
+    const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
+    const handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
+    handover.useOutsideTurnCheck(async () => false);
+    (service as { handover: unknown }).handover = handover;
+    await handover.ask('chat-one', 'wall');
+    service.observe.mockClear();
+    service.action.mockClear();
+    service.screenshot.mockClear();
+    await handover.open({ mode: 'new-window', sessionId: 'chat-one' });
+    expect(seen.length).toBe(domain.capabilities.length - 1);
+    expect(new Set(seen)).toEqual(new Set(['handed_to_person']));
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.action).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
+    expect(browser.pause).toHaveBeenCalledTimes(2);
+  });
   it('after Disconnect during a handoff, the chat hears task_stopped, not not_shared', async () => {
     const { domain, deps, context, service } = setup();
     const browser = {
