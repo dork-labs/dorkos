@@ -551,11 +551,6 @@ export class CodexAppServerPool {
     if (!proc.isLive) await this.close(proc);
   }
 
-  /** Let idle children exit before checking whether crash leftovers can be removed. */
-  async closeIdleForReconcile(): Promise<void> {
-    await Promise.all(this.list().map((proc) => this.closeIfIdle(proc)));
-  }
-
   /**
    * One reaper pass: close stale processes with no hold, and any with no hold
    * for the idle window. Never touches a held (live) process, nor one whose

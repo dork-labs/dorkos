@@ -109,8 +109,8 @@ export function recordMountTargets(data: string, targets: readonly string[]): vo
   readMountTargets(data);
 }
 
-/** No link following: only the exact listed, empty, owned regular file qualifies. */
-export function removableMountTarget(file: string): fs.Stats | undefined {
+/** Empty regular-file shape for protection rendering; this is NOT ownership proof for deletion. */
+export function emptyOwnedMountTarget(file: string): fs.Stats | undefined {
   try {
     const stat = fs.lstatSync(file);
     return stat.isFile() && stat.size === 0 && stat.uid === process.getuid?.() && stat.nlink === 1

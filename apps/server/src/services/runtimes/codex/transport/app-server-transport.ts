@@ -348,7 +348,7 @@ export class AppServerCodexTransport implements CodexTransport {
         writable: [],
       };
       if (globalThis.process.platform === 'linux' && this.options.mountTargets !== false)
-        await reconcileMountTargets(filePolicy.roots.data, this.pool);
+        await reconcileMountTargets(filePolicy.roots.data);
       process = await this.acquire(request.binary, onCredits);
       release = process.hold();
       relay = onCredits ? this.relayFor(process) : undefined;

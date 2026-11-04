@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(codex): preserve mount targets without inode provenance (DOR-3595)'
   - 'fix(codex): guard cleanup parents and shorten authority shutdown (DOR-3595)'
   - 'fix(codex): repair recovery proof and explain blocking files (DOR-3595)'
   - 'fix(codex): reconcile recorded Linux mount leftovers safely (DOR-3595)'

@@ -12,7 +12,7 @@ import {
 } from '../../shared/policy/protected-path-check.js';
 import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
-import { readMountTargets, removableMountTarget } from './mount-target-ledger.js';
+import { readMountTargets, emptyOwnedMountTarget } from './mount-target-ledger.js';
 import { collapseProtectedPaths } from './collapse-protected-paths.js';
 
 /** Stable reserved names; the profile selection is explicit on every thread load and turn. */
@@ -127,7 +127,7 @@ function protectedEntries(
     (target) => missing.add(target),
     (target) =>
       (listed ??= new Set(readMountTargets(roots.data))).has(target) &&
-      removableMountTarget(target) !== undefined
+      emptyOwnedMountTarget(target) !== undefined
   );
   onMissingTargets?.([...missing]);
   return collapsed;

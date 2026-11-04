@@ -8,10 +8,7 @@ import {
   readMountTargets,
   recordMountTargets,
 } from '../policy/mount-target-ledger.js';
-import {
-  reconcileMountTargets,
-  type MountReconcileGuard,
-} from '../policy/reconcile-mount-targets.js';
+import { reconcileMountTargets } from '../policy/reconcile-mount-targets.js';
 import {
   assertNoLiveCodex,
   codexMountRegistry,
@@ -29,11 +26,6 @@ afterEach(() => {
   vi.restoreAllMocks();
   fs.rmSync(root, { recursive: true, force: true });
 });
-const pool = { list: () => [], closeIdleForReconcile: async () => {} };
-const guard: MountReconcileGuard = {
-  lock: async (action) => action('/synthetic-registry'),
-  assertGone: () => {},
-};
 
 it('captures only missing literal targets from the actual renderer, never existing paths or globs', () => {
   const home = path.join(root, 'home');
@@ -73,7 +65,7 @@ it('preserves the previous private ledger if atomic replacement fails', () => {
   ]);
 });
 
-it('removes a listed empty owned file, preserving every unlisted, nonempty, linked or directory target', async () => {
+it('preserves every ambiguous listed file as well as unlisted, nonempty, linked or directory targets', async () => {
   const files = ['empty', 'personal', 'link', 'directory', 'unlisted', 'hardlink'].map((name) =>
     path.join(root, name)
   );
@@ -92,7 +84,8 @@ it('removes a listed empty owned file, preserving every unlisted, nonempty, link
   fs.symlinkSync(unlisted, link);
   fs.mkdirSync(directory);
   fs.linkSync(unlisted, hardlink);
-  expect(await reconcileMountTargets(data, pool, guard)).toEqual([empty]);
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  expect(fs.lstatSync(empty).isFile()).toBe(true);
   expect(fs.readFileSync(personal, 'utf8')).toBe('keep this');
   expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
   expect(fs.statSync(directory).isDirectory()).toBe(true);
@@ -100,51 +93,10 @@ it('removes a listed empty owned file, preserving every unlisted, nonempty, link
   expect(fs.existsSync(hardlink)).toBe(true);
 });
 
-it('refuses removal while an observed child remains, even when the OS guard would pass', async () => {
-  const file = path.join(root, 'empty');
-  recordMountTargets(data, [file]);
-  fs.writeFileSync(file, '');
-  const busy = { ...pool, list: () => [{}] };
-  const assertGone = vi.fn();
-  await expect(
-    reconcileMountTargets(data, busy as unknown as typeof pool, { ...guard, assertGone })
-  ).resolves.toEqual([]);
-  expect(assertGone).not.toHaveBeenCalled();
-  expect(fs.existsSync(file)).toBe(true);
-});
-
-it('fails closed on the marker/process guard and does not remove a listed file', async () => {
-  const file = path.join(root, 'empty');
-  recordMountTargets(data, [file]);
-  fs.writeFileSync(file, '');
-  await expect(
-    reconcileMountTargets(data, pool, {
-      ...guard,
-      assertGone: () => {
-        throw new Error('marker still live');
-      },
-    })
-  ).resolves.toEqual([]);
-  expect(fs.existsSync(file)).toBe(true);
-});
-
-it('rechecks size under the lock and leaves a person’s intervening content intact', async () => {
-  const file = path.join(root, 'empty');
-  recordMountTargets(data, [file]);
-  fs.writeFileSync(file, '');
-  expect(
-    await reconcileMountTargets(data, pool, {
-      ...guard,
-      assertGone: () => fs.writeFileSync(file, 'person wrote this'),
-    })
-  ).toEqual([]);
-  expect(fs.readFileSync(file, 'utf8')).toBe('person wrote this');
-});
-
 it('does not forget absent targets that a live helper could still create', async () => {
   const file = path.join(root, 'not-created-yet');
   recordMountTargets(data, [file]);
-  expect(await reconcileMountTargets(data, pool, guard)).toEqual([]);
+  expect(await reconcileMountTargets(data)).toEqual([]);
   expect(readMountTargets(data)).toEqual([file]);
 });
 
@@ -191,7 +143,7 @@ it('refuses a foreign-owned empty target even when every process guard passes', 
       Object.defineProperty(stat, 'uid', { value: (process.getuid?.() ?? 0) + 1 });
     return stat;
   }) as typeof fs.lstatSync);
-  expect(await reconcileMountTargets(data, pool, guard)).toEqual([]);
+  expect(await reconcileMountTargets(data)).toEqual([]);
   expect(fs.existsSync(file)).toBe(true);
 });
 
@@ -211,13 +163,13 @@ it.skipIf(process.platform !== 'linux')(
   }
 );
 
-it('heals a listed parent file when an older record names its now-unreachable child', async () => {
+it('preserves an ambiguous parent and its observations when a child is unreachable', async () => {
   const parent = path.join(root, '.claude');
   recordMountTargets(data, [parent, path.join(parent, 'backups')]);
   fs.writeFileSync(parent, '');
-  expect(await reconcileMountTargets(data, pool, guard)).toEqual([parent]);
-  expect(fs.existsSync(parent)).toBe(false);
-  expect(readMountTargets(data)).toEqual([]);
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  expect(fs.existsSync(parent)).toBe(true);
+  expect(readMountTargets(data)).toEqual([parent, path.join(parent, 'backups')]);
 });
 
 it('rejects a nonnormalized ledger path before it can escape the permissions exclusion', () => {
@@ -253,7 +205,7 @@ it('preserves an outside file when a real rendered agent parent is replaced by a
   fs.mkdirSync(outside);
   fs.writeFileSync(path.join(outside, 'agent.json'), '');
   fs.symlinkSync(outside, path.join(agent, '.dork'));
-  expect(await reconcileMountTargets(data, pool, guard)).toEqual([]);
+  expect(await reconcileMountTargets(data)).toEqual([]);
   expect(fs.lstatSync(path.join(outside, 'agent.json')).isFile()).toBe(true);
 });
 
@@ -264,8 +216,7 @@ it('renders a busy listed ancestor as protected without unlinking or recording i
   recordMountTargets(data, [target]);
   fs.writeFileSync(target, '');
   const before = fs.lstatSync(target);
-  const busy = { ...pool, list: () => [{}] };
-  expect(await reconcileMountTargets(data, busy as unknown as typeof pool, guard)).toEqual([]);
+  expect(await reconcileMountTargets(data)).toEqual([]);
   const missing = vi.fn();
   const config = codexProtectedConfig(
     home,
@@ -280,4 +231,43 @@ it('renders a busy listed ancestor as protected without unlinking or recording i
   expect(Object.values(profiles)[0]!.filesystem[target]).toBe('deny');
   expect(missing.mock.calls.flat(2)).not.toContain(target);
   expect(fs.lstatSync(target).ino).toBe(before.ino);
+});
+
+it('preserves a person-created empty .netrc even when its path was recorded before creation', async () => {
+  const file = path.join(root, '.netrc');
+  recordMountTargets(data, [file]);
+  fs.writeFileSync(file, '', { mode: 0o600, flag: 'wx' });
+  const before = fs.lstatSync(file);
+  const unlink = vi.spyOn(fs, 'unlinkSync');
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  const after = fs.lstatSync(file);
+  expect(after.ino).toBe(before.ino);
+  expect(after.mode).toBe(before.mode);
+  expect(after.ctimeMs).toBe(before.ctimeMs);
+  expect(unlink).not.toHaveBeenCalled();
+});
+
+it('preserves a person’s replacement empty file despite a stale synthetic marker and no live owner', async () => {
+  const file = path.join(root, '.netrc');
+  recordMountTargets(data, [file]);
+  const registry = path.join(root, 'registry');
+  const marker = path.join(registry, '0123456789abcdef');
+  const proc = path.join(root, 'proc');
+  fs.mkdirSync(marker, { recursive: true });
+  fs.mkdirSync(proc);
+  fs.writeFileSync(path.join(marker, '99999999'), 'synthetic\n');
+  // The old owner and old file are gone. The marker cannot identify this
+  // person's new inode, even when every process liveness check passes.
+  fs.writeFileSync(file, 'old synthetic fixture');
+  fs.unlinkSync(file);
+  fs.writeFileSync(file, '', { mode: 0o600, flag: 'wx' });
+  const before = fs.lstatSync(file);
+  expect(() => assertNoLiveCodex(registry, proc)).not.toThrow();
+  const unlink = vi.spyOn(fs, 'unlinkSync');
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  const after = fs.lstatSync(file);
+  expect(after.ino).toBe(before.ino);
+  expect(after.mode).toBe(before.mode);
+  expect(after.ctimeMs).toBe(before.ctimeMs);
+  expect(unlink).not.toHaveBeenCalled();
 });

@@ -906,12 +906,9 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                     } else {
                       const before = fs.lstatSync(target);
                       expect(before.isFile()).toBe(true);
-                      await expect(
-                        reconcileMountTargets(path.join(root, 'data'), {
-                          list: () => pools.flatMap((pool) => pool.list()),
-                          closeIdleForReconcile: async () => {},
-                        })
-                      ).resolves.toEqual([]);
+                      await expect(reconcileMountTargets(path.join(root, 'data'))).resolves.toEqual(
+                        []
+                      );
                       expect(fs.lstatSync(target).ino).toBe(before.ino);
                       console.info('Codex live sandbox blocked target removal', { target });
                       // Use another real production transport while the first
@@ -995,10 +992,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
               }
               if (scenario === 'reconcile-leak-10k') {
                 expect(fs.lstatSync(target).isFile()).toBe(true);
-                const removed = await reconcileMountTargets(path.join(root, 'data'), {
-                  list: () => pools.flatMap((pool) => pool.list()),
-                  closeIdleForReconcile: async () => {},
-                });
+                const removed = await reconcileMountTargets(path.join(root, 'data'));
                 expect(removed).toContain(target);
                 expect(fs.existsSync(target)).toBe(false);
                 console.info('Codex real crash leftover removed before relaunch', {
@@ -1371,10 +1365,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
               parents: probeParentKinds(checkedHomes),
             });
             await Promise.all(pools.map((pool) => pool.shutdown()));
-            const removed = await reconcileMountTargets(path.join(root, 'data'), {
-              list: () => pools.flatMap((pool) => pool.list()),
-              closeIdleForReconcile: async () => {},
-            });
+            const removed = await reconcileMountTargets(path.join(root, 'data'));
             console.info('Codex host recovery removed recorded targets', {
               kind,
               mode,
