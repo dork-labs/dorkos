@@ -21,7 +21,10 @@
 import { activeTurnStarterOf } from '../../session/origin/active-turn-starter.js';
 import type { TaskStore } from '../task-store.js';
 import { getSessionStartedByStore } from '../../session/origin/session-started-by-store.js';
-import { chatTurnSendersOf } from '../../session/chat-messages/chat-started-turns.js';
+import {
+  chatTurnSendersOf,
+  steeredTurnSendersOf,
+} from '../../session/chat-messages/chat-started-turns.js';
 import { activeRunSessionsOf } from '../session/active-run-sessions.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { beatChatsAmong } from './agent-mode-beats.js';
@@ -34,6 +37,8 @@ const MAX_HOPS = 64;
 export interface RunOriginSources {
   /** Display provenance of this running send; never used by the scheduled-run walk. */
   turnStarter?: (sessionId: string) => string | undefined;
+  /** Only chat messages steered into this active send, excluding room wakers. */
+  steeredSenders?: (sessionId: string) => readonly string[];
   /** The scheduled runs among these chats, as `resolveTaskOrigins` answers. */
   runSessions: (sessionIds: string[]) => ReadonlySet<string>;
   /** The chat that started a chat with `session_start`, or `null`. */
@@ -106,6 +111,7 @@ export function liveRunOriginSources(
     startedBy: (id) => getSessionStartedByStore()?.get(id)?.startedBySessionId ?? null,
     turnSenders: chatTurnSendersOf,
     turnStarter: activeTurnStarterOf,
+    steeredSenders: steeredTurnSendersOf,
     beatSessions: (ids) => beatChatsAmong(ids),
     stampOf: stampedOriginOf,
   };
@@ -199,9 +205,16 @@ export function withRunOrigin(caller: AgentModeCaller, sources: RunOriginSources
 export function turnStarterOf(caller: AgentModeCaller, sources: RunOriginSources): string {
   if (caller.heartbeat) return 'a heartbeat';
   if (caller.scheduledRun) return 'a scheduled run';
+  const ids = [caller.sessionId, ...(caller.turnSessionIds ?? [])].filter(
+    (id): id is string => !!id
+  );
+  if (
+    ids.some((id) => sources.turnStarter?.(id) !== undefined && sources.steeredSenders?.(id).length)
+  ) {
+    return 'a message from another agent';
+  }
   const starters = new Set(
-    [caller.sessionId, ...(caller.turnSessionIds ?? [])]
-      .filter((id): id is string => !!id)
+    ids
       .map((id) => sources.turnStarter?.(id))
       .filter((starter): starter is string => starter !== undefined)
   );

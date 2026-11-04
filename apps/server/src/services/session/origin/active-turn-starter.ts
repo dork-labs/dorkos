@@ -1,5 +1,6 @@
 /** Display-only provenance while one runtime send is in flight. */
 import type { TurnStarter, AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
+import { clearTurnSteering } from '../chat-messages/chat-started-turns.js';
 import { primaryOf } from '../resolution/session-key-registry.js';
 
 const LABELS: Record<TurnStarter, string> = {
@@ -18,13 +19,17 @@ const active = new Map<string, Set<{ starter: TurnStarter | undefined }>>();
 /** Record a send only while it runs; a stale settle cannot erase a newer send. */
 export function beginTurnStarter(sessionId: string, starter: TurnStarter | undefined): () => void {
   const key = primaryOf(sessionId);
+  if (!active.has(key)) clearTurnSteering(key);
   const entry = { starter };
   const entries = active.get(key) ?? new Set();
   entries.add(entry);
   active.set(key, entries);
   return () => {
     entries.delete(entry);
-    if (entries.size === 0 && active.get(key) === entries) active.delete(key);
+    if (entries.size === 0 && active.get(key) === entries) {
+      active.delete(key);
+      clearTurnSteering(key);
+    }
   };
 }
 

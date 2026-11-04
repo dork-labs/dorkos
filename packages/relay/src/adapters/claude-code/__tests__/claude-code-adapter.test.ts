@@ -873,7 +873,7 @@ describe('ClaudeCodeAdapter', () => {
     expect(sendCall[2]).toEqual({
       permissionMode: 'default',
       unattendedApprovals: true,
-      turnStarter: 'outside-message',
+      turnStarter: 'unknown',
     });
     expect(sendCall[2]).not.toHaveProperty('cwd');
   });
