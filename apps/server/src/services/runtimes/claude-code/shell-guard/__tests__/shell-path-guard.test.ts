@@ -13,16 +13,30 @@ import {
   commandReachesProtectedRead,
   commandWritesAgentSetup,
   createShellPathGuardHook,
+  namesSetup,
   SHELL_READ_ASK_REASON,
+  SHELL_UNREADABLE_DENY_REASON,
   SHELL_WRITE_DENY_REASON,
+  shellWriteVerdict,
   type ShellGuardRoots,
 } from '../shell-path-guard.js';
+import { AGENT_HOME_SELF_GRANT_PATHS } from '../../../shared/policy/protected-paths.js';
 import { parseShell } from '../shell-words.js';
 
 let root: string;
 let roots: ShellGuardRoots;
 let agent: string;
 let other: string;
+
+/** `lists` `for` loops of `values` values each, the shape of Security's M1. */
+function nestedFor(lists: number, values: number): string {
+  const list = Array.from({ length: values }, (_, i) => `x${i}`).join(' ');
+  return Array.from({ length: lists }, (_, i) => `for v${i} in ${list}; do :; done`).join('; ');
+}
+
+/** The word that uses every list {@link nestedFor} made. */
+const LOOP_WORD = (lists: number): string =>
+  Array.from({ length: lists }, (_, i) => `$v${i}`).join('');
 
 /** Make an empty file, and the folders above it. */
 function touch(file: string): void {
@@ -50,6 +64,8 @@ beforeAll(() => {
   touch(path.join(other, '.claude', 'settings.json'));
   symlinkSync(path.join(home, '.ssh', 'id_ed25519'), path.join(cwd, 'key-link'));
   symlinkSync(path.join(home, '.ssh'), path.join(cwd, 'dir-link'));
+  mkdirSync(path.join(root, 'many'));
+  for (let i = 0; i < 510; i++) writeFileSync(path.join(root, 'many', `f${i}.txt`), '');
   touch(path.join(root, 'evil', '.mcp.json'));
   touch(path.join(root, 'evil', '.claude', 'settings.json'));
   touch(path.join(other, '.mcp.json'));
@@ -226,6 +242,13 @@ describe('commandReachesProtectedRead', () => {
     expect(await commandReachesProtectedRead(built, roots)).toBe(false);
   });
 
+  it('asks about a read too big to check, with the same limits a write refuses at', async () => {
+    const lists = nestedFor(6, 30);
+    const started = Date.now();
+    expect(await commandReachesProtectedRead(`${lists}; cat ${LOOP_WORD(6)}`, roots)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it('never stalls on a huge command, and asks about one too long to read', async () => {
     const started = Date.now();
     const braces = `echo '{${'a,'.repeat(20_000)}'`;
@@ -240,10 +263,120 @@ describe('commandReachesProtectedRead', () => {
   });
 
   it('treats a glob that opens into too much as protected', async () => {
-    const many = path.join(root, 'many');
-    mkdirSync(many);
-    for (let i = 0; i < 510; i++) writeFileSync(path.join(many, `f${i}.txt`), '');
-    expect(await commandReachesProtectedRead(`cat ${many}/*`, roots)).toBe(true);
+    expect(await commandReachesProtectedRead(`cat ${root}/many/*`, roots)).toBe(true);
+  });
+});
+
+describe('a command too big to read (Security, #3487)', () => {
+  // M1: about 700 bytes of nested `for` loops used to build millions of strings in the server, and
+  // five levels ran it out of memory, before any card, at every level.
+  it.each([
+    [4, 30],
+    [5, 20],
+    [6, 30],
+  ])('refuses %i nested lists of %i, quickly and without building them', (lists, values) => {
+    const command = `${nestedFor(lists, values)}; echo hi > ${LOOP_WORD(lists)}`;
+    const started = Date.now();
+    expect(shellWriteVerdict(command, roots)).toBe('unreadable');
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it('refuses a `for` list hiding a setup write past the limit', () => {
+    const values = [...Array.from({ length: 5_001 }, (_, i) => `/tmp/n${i}`), `${other}/.claude`];
+    const command = `for d in ${values.join(' ')}; do echo x > $d/settings.json; done`;
+    expect(shellWriteVerdict(command, roots)).toBe('unreadable');
+  });
+
+  it('refuses braces that open past the limit', () => {
+    const many = ['', ...Array.from({ length: 300 }, (_, i) => `a${i}`)].join(',');
+    expect(shellWriteVerdict(`echo x | tee ${other}/{${many}}{x,.mcp.json}`, roots)).toBe(
+      'unreadable'
+    );
+    // Security's own case fits the limit now, so it is read and found.
+    const fits = ['', ...Array.from({ length: 63 }, (_, i) => `a${i}`)].join(',');
+    expect(shellWriteVerdict(`echo x | tee ${other}/{${fits}}{x,.mcp.json}`, roots)).toBe('writes');
+  });
+
+  it('refuses a write padded past the length limit', () => {
+    const padded = `${' '.repeat(256 * 1024)}\necho x > ${other}/.mcp.json`;
+    expect(shellWriteVerdict(padded, roots)).toBe('unreadable');
+  });
+
+  it('runs out of budget across a whole command, not only one word', () => {
+    const word = Array.from({ length: 4_000 }, (_, i) => `/tmp/n${i}`).join(' ');
+    const lists = `for a in ${word}; do :; done`;
+    const command = `${lists}; ${Array.from({ length: 5 }, () => 'echo x > $a').join('; ')}`;
+    expect(shellWriteVerdict(command, roots)).toBe('unreadable');
+  });
+
+  it('reads every word of a `for` list, not every other one', () => {
+    const command = `for f in /tmp/a /tmp/b; do :; done; rm $f/x $f/${''}y ${other}/.mcp.json`;
+    expect(shellWriteVerdict(command, roots)).toBe('writes');
+    const third = `for f in /tmp/a ${other}/.mcp.json; do rm $f; rm $f; rm $f; done`;
+    expect(shellWriteVerdict(third, roots)).toBe('writes');
+  });
+
+  it('tells the model plainly why, and records it', async () => {
+    const recordRefusal = vi.fn();
+    const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+      roots: () => roots,
+      recordRefusal,
+      log: { info: () => {} },
+    });
+    const command = `${nestedFor(6, 30)}; echo hi > ${LOOP_WORD(6)}`;
+    const result = await hook(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+        tool_input: { command },
+        tool_use_id: 'toolu_big',
+      } as unknown as HookInput,
+      undefined,
+      { signal: new AbortController().signal }
+    );
+    expect(JSON.stringify(result)).toContain(SHELL_UNREADABLE_DENY_REASON);
+    expect(recordRefusal).toHaveBeenCalledOnce();
+  });
+
+  // The other side of the limits: everyday work must not reach them.
+  it.each([
+    [
+      'a long script that writes data',
+      () => `python3 - <<'EOF'\nopen('o','w')\n${'x = 1\n'.repeat(9_000)}EOF`,
+    ],
+    [
+      'a script padded with junk paths',
+      () =>
+        `python3 -c "open('o','w')\n${Array.from({ length: 6_000 }, (_, i) => `/tmp/n${i}`).join('\n')}"`,
+    ],
+    [
+      'a dict in a writing script',
+      () => `node -e "fs.writeFileSync('o', JSON.stringify(${'{a:1,b:2}'.repeat(400)}))"`,
+    ],
+    ['a long note in a heredoc', () => `cat > /tmp/n <<'EOF'\n${'word '.repeat(40_000)}\nEOF`],
+    ['a glob over a big folder', () => `rm ${root}/many/*`],
+    ['a chmod over a big folder', () => `chmod 644 ${root}/many/*.txt`],
+    ['one `for` list of ordinary size', () => `for f in a b c; do rm /tmp/$f; done`],
+    ['small braces', () => `mkdir -p /tmp/{a,b,c}/{d,e,f}`],
+  ])('leaves %s alone', (_label, command) => {
+    expect(shellWriteVerdict(command(), roots)).toBe('none');
+  });
+
+  it('still finds a setup file in a glob over a big folder', () => {
+    const big = path.join(root, 'many');
+    touch(path.join(big, '.mcp.json'));
+    expect(
+      commandWritesAgentSetup(`chmod 644 ${big}/*`, { ...roots, agentHomes: () => [big] })
+    ).toBe(false);
+    expect(
+      commandWritesAgentSetup(`chmod 644 ${big}/.*`, { ...roots, agentHomes: () => [big] })
+    ).toBe(true);
+  });
+
+  it('counts every name in the shared setup list as a setup name', () => {
+    for (const entry of AGENT_HOME_SELF_GRANT_PATHS) expect(namesSetup(entry.path)).toBe(true);
+    expect(namesSetup('.claude/settings.json')).toBe(true);
+    expect(namesSetup('notes.md')).toBe(false);
   });
 });
 
@@ -409,7 +542,11 @@ describe('createShellPathGuardHook', () => {
       const result = await hook(call(command), undefined, signal);
       expect(decisionOf(result)).toBe('deny');
       expect(JSON.stringify(result)).toContain(SHELL_WRITE_DENY_REASON);
-      expect(recordRefusal).toHaveBeenCalledWith({ toolUseId: 'toolu_1', command });
+      expect(recordRefusal).toHaveBeenCalledWith({
+        toolName: 'Bash',
+        toolUseId: 'toolu_1',
+        command,
+      });
     }
   );
 
@@ -424,7 +561,7 @@ describe('createShellPathGuardHook', () => {
       });
       const input = { ...call(`rm ${other}/.mcp.json`), tool_name: tool } as HookInput;
       expect(decisionOf(await hook(input, undefined, signal))).toBe('deny');
-      expect(recordRefusal).toHaveBeenCalled();
+      expect(recordRefusal).toHaveBeenCalledWith(expect.objectContaining({ toolName: tool }));
     }
   );
 

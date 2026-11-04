@@ -14,6 +14,9 @@
  *   agent a person opened its own folder to (`own-folder-open.ts`) may still write its own, except
  *   its `.dork/agent.json`. A script that only mentions such a file is not refused: a false refusal
  *   at Full has no way past it.
+ * - **Too much to read is refused too.** This runs in the server, before any card, on text an agent
+ *   chose. So every expansion is capped before it is built, and a write that passes a cap is refused
+ *   at every level (a read asks), so padding can't hide one. Only a command nobody types gets there.
  *
  * **A mitigation, not a boundary.** This reads command text. A path built while the command runs
  * (`$(printf …)`, base64, a script file) gets through; `shell-path-guard.test.ts` records such
@@ -51,8 +54,14 @@ export const SHELL_READ_ASK_REASON =
 export const SHELL_WRITE_DENY_REASON =
   'An agent’s shell can’t change an agent’s setup files. Post the change for a person to apply.';
 
-/** A command this long is not read at all: reads ask, and the write check is skipped. */
+/** What the model is told when a command is too much to check. */
+export const SHELL_UNREADABLE_DENY_REASON =
+  'This command is too long or opens into too many paths for DorkOS to check. Split it into smaller commands.';
+
+/** A command this long is not read at all, and is refused. */
 const MAX_COMMAND = 256 * 1024;
+/** Past this much script, a script counts as writing without a slow search for how. */
+const MAX_SCRIPT_SCAN = 16 * 1024;
 /** The most paths one command may name before it counts as unreadable. */
 const MAX_CHECKED = 5_000;
 /** A tree search looks at this many entries, for this long, before it counts as protected. */
@@ -344,6 +353,10 @@ const SETUP = new RegExp(
     .join('|')})$`,
   'i'
 );
+/** Whether a name could be a setup path at all: a quick cut before any path is worked out. */
+export function namesSetup(name: string): boolean {
+  return /\.claude|\.agents|\.mcp\.json|agent\.json/i.test(name);
+}
 /** What stays a person's even in a home opened to its own agent (`own-folder-open.ts`). */
 const OPEN_HOME_KEEPS = /^\.dork\/agent\.json$/i;
 
@@ -415,7 +428,9 @@ function writtenWords(segment: ShellSegment, previous?: ShellSegment): WrittenWo
   // A shell's script was already read as commands of its own, so only other programs' scripts.
   if (!SHELLS.has(verb)) {
     for (const script of scriptTexts(segment)) {
-      if (SCRIPT_WRITES.test(script)) written.push({ word: script, whole: false, pieces: true });
+      if (script.length > MAX_SCRIPT_SCAN || SCRIPT_WRITES.test(script)) {
+        written.push({ word: script, whole: false, pieces: true });
+      }
     }
   }
   return written;
@@ -432,14 +447,22 @@ function namesLanding(source: string, word: string): string[] {
 }
 
 /**
- * Whether a command plainly writes an agent's setup files. Reads and mentions don't count: `cat` of
- * one, a commit message naming one, or a script that only opens one to read it, is fine.
+ * What a command does to agents' setup files: `writes` when it plainly writes one, `unreadable`
+ * when it is too long, or opens into too much, to tell, and `none` otherwise. Reads and mentions
+ * don't count: `cat` of one, a commit message naming one, or a script that only opens one to read
+ * it, is fine.
  *
- * @param line - The command line. Past the length a read check gives up at, the rest goes unread.
+ * `unreadable` is refused like `writes` (Security, #3487): a limit that read as "writes nothing"
+ * would let padding hide a write, and only a command nobody types reaches one.
+ *
+ * @param command - The command line.
  * @param roots - This launch's folders.
  */
-export function commandWritesAgentSetup(line: string, roots: ShellGuardRoots): boolean {
-  const command = line.slice(0, MAX_COMMAND);
+export function shellWriteVerdict(
+  command: string,
+  roots: ShellGuardRoots
+): 'writes' | 'unreadable' | 'none' {
+  if (command.length > MAX_COMMAND) return 'unreadable';
   const open = roots.openHome ? spellings(roots.openHome) : [];
   const homes = roots.agentHomes().flatMap(spellings);
   const agentsFolders = spellings(path.join(roots.dorkHome, 'agents'));
@@ -460,23 +483,46 @@ export function commandWritesAgentSetup(line: string, roots: ShellGuardRoots): b
     });
   };
   const { segments, resolve } = readCommand(command, roots);
-  return segments.some(({ segment, cwd }, index) =>
-    writtenWords(segment, segments[index - 1]?.segment).some(({ word, whole, pieces, sources }) =>
-      (resolve(word, { pieces, writingFrom: cwd }) ?? []).some((target) => {
-        if (reaches(target, whole) || reaches(realLocation(target), whole)) return true;
-        if (!sources || !isFolder(target)) return false;
-        return sources.some((source) =>
-          (resolve(source, { pieces: false, writingFrom: cwd }) ?? []).some((from) =>
-            namesLanding(from, source).some((name) => reaches(path.join(target, name), false))
-          )
-        );
-      })
-    )
-  );
+  for (const [index, { segment, cwd }] of segments.entries()) {
+    for (const { word, whole, pieces, sources } of writtenWords(
+      segment,
+      segments[index - 1]?.segment
+    )) {
+      // Removing a whole folder can reach a home by any name, so nothing narrows that one.
+      const options = { pieces, writingFrom: cwd, ...(whole ? {} : { keep: namesSetup }) };
+      const targets = resolve(word, options);
+      if (targets === null) return 'unreadable';
+      for (const target of targets) {
+        if (reaches(target, whole) || reaches(realLocation(target), whole)) return 'writes';
+        if (!sources || !isFolder(target)) continue;
+        for (const source of sources) {
+          const from = resolve(source, { pieces: false, writingFrom: cwd });
+          if (from === null) return 'unreadable';
+          for (const one of from) {
+            for (const name of namesLanding(one, source)) {
+              if (reaches(path.join(target, name), false)) return 'writes';
+            }
+          }
+        }
+      }
+    }
+  }
+  return 'none';
+}
+
+/**
+ * Whether a command writes an agent's setup files, or is too much to tell.
+ *
+ * @param command - The command line.
+ * @param roots - This launch's folders.
+ */
+export function commandWritesAgentSetup(command: string, roots: ShellGuardRoots): boolean {
+  return shellWriteVerdict(command, roots) !== 'none';
 }
 
 /** Called with the call a shell write to setup files was refused for. */
 export type ShellRefusalRecorder = (call: {
+  toolName: string;
   toolUseId: string;
   command: string;
   agentId?: string;
@@ -509,22 +555,26 @@ export function createShellPathGuardHook(
     const input = hookInput.tool_input as { command?: unknown } | null;
     const command = input?.command;
     if (typeof command !== 'string') return {};
-    let writes: boolean;
+    let verdict: ReturnType<typeof shellWriteVerdict>;
     try {
-      writes = commandWritesAgentSetup(command, roots());
+      verdict = shellWriteVerdict(command, roots());
     } catch {
       // Refusing on a bug here would stop every shell command; the read check below still asks.
-      writes = false;
+      verdict = 'none';
     }
-    if (writes) {
+    if (verdict !== 'none') {
       // Never the command in the log: it may hold a token. The audit writer sweeps its own copy.
-      log.info('[ShellGuard] refused a shell write to agent setup files', {});
+      log.info('[ShellGuard] refused a shell command', { verdict });
       recordRefusal({
+        toolName: hookInput.tool_name,
         toolUseId: hookInput.tool_use_id,
         command,
         ...(hookInput.agent_id ? { agentId: hookInput.agent_id } : {}),
       });
-      return decision('deny', SHELL_WRITE_DENY_REASON);
+      return decision(
+        'deny',
+        verdict === 'writes' ? SHELL_WRITE_DENY_REASON : SHELL_UNREADABLE_DENY_REASON
+      );
     }
     // At Full the shell reads what it names: the stated limit of that level.
     if (chosenFullAutonomy(session) || gatePermissionMode(session) === 'bypassPermissions') {

@@ -19,9 +19,9 @@ export interface ShellSegment {
   scripts: string[];
 }
 
-/** The most brace alternatives one word opens into before the rest stay unopened. */
-const MAX_BRACE_RESULTS = 64;
-/** A word this long is a script or a message, never one path with braces in it. */
+/** The most brace alternatives one word opens into before it counts as too much to check. */
+const MAX_BRACE_RESULTS = 256;
+/** A word this long, with no spaces, opening braces, counts as too much to check. */
 const MAX_BRACE_WORD = 4_096;
 /** The longest path any platform here opens, so nothing longer is worth testing. */
 const MAX_PATH_PIECE = 1_024;
@@ -142,21 +142,25 @@ export function parseShell(command: string): ShellSegment[] {
 }
 
 /**
- * Open `{a,b}` alternatives, keeping `${…}` for the variable step.
+ * Open `{a,b}` alternatives, keeping `${…}` for the variable step. A word with a space in it was
+ * quoted, so a shell opens none of its braces, and a script's `{a, b}` is the script's.
  *
  * @param word - A word.
+ * @returns What it opens into, or `null` when that is too much to check.
  */
-export function expandBraces(word: string): string[] {
-  if (word.length > MAX_BRACE_WORD) return [word];
+export function expandBraces(word: string): string[] | null {
+  if (/\s/.test(word) || !word.includes('{')) return [word];
+  if (word.length > MAX_BRACE_WORD) return null;
   const results: string[] = [];
   const pending = [word];
   while (pending.length > 0) {
     const next = pending.pop()!;
     const match = /(^|[^$])\{([^{}]*,[^{}]*)\}/.exec(next);
-    if (!match || results.length + pending.length >= MAX_BRACE_RESULTS) {
+    if (!match) {
       results.push(next);
       continue;
     }
+    if (results.length + pending.length >= MAX_BRACE_RESULTS) return null;
     const start = match.index + match[1]!.length;
     const end = match.index + match[0].length;
     for (const part of match[2]!.split(',')) {

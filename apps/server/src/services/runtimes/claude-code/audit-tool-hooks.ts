@@ -89,7 +89,7 @@ export function createAuditToolHook(options: AuditToolHookOptions): HookCallback
  * @param options - The session and the launching turn.
  */
 export function createShellRefusalRecorder(options: AuditToolHookOptions): ShellRefusalRecorder {
-  return ({ toolUseId, command, agentId }) => {
+  return ({ toolName, toolUseId, command, agentId }) => {
     try {
       const actor = toolActorOf('claude-code', options.turn);
       if (!actor) return;
@@ -98,7 +98,7 @@ export function createShellRefusalRecorder(options: AuditToolHookOptions): Shell
           runtime: 'claude-code',
           sessionId: options.sessionId,
           toolCallId: toolUseId,
-          name: 'Bash',
+          name: toolName,
           input: inputText({ command }),
           actor,
           ...(agentId ? { helperId: agentId } : {}),

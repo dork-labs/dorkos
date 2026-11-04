@@ -17,6 +17,10 @@ import {
 
 /** The most pieces one word may name before it counts as unreadable. */
 const MAX_PIECES = 5_000;
+/** The most paths one whole command may name before the rest count as unreadable. */
+const MAX_COMMAND_PATHS = 10_000;
+/** The most `for` lists a command may hold before a word using a variable counts as unreadable. */
+const MAX_FOR_LISTS = 64;
 /** The most paths one glob opens into before it counts as protected. */
 const MAX_GLOB_RESULTS = 500;
 /** The most folders a `**` looks through before it counts as protected. */
@@ -177,11 +181,18 @@ function foldersBelow(base: string, seen: Set<string>, budget: { folders: number
 }
 
 /** Open a path's wildcards against the disk. `null` when it opens into too much to check. */
-function openGlob(target: string, dotFiles: boolean, budget: { folders: number }): string[] | null {
+function openGlob(
+  target: string,
+  options: { dotFiles: boolean; keep?: (found: string) => boolean },
+  budget: { folders: number }
+): string[] | null {
   if (!/[*?[]/.test(target)) return [target];
+  const { dotFiles, keep } = options;
   const { root } = path.parse(target);
   let found = [root];
-  for (const segment of target.slice(root.length).split(path.sep).filter(Boolean)) {
+  const segments = target.slice(root.length).split(path.sep).filter(Boolean);
+  for (const [index, segment] of segments.entries()) {
+    const last = index === segments.length - 1;
     if (segment === '**') {
       const folders = new Set<string>();
       for (const base of found) if (!foldersBelow(base, folders, budget)) return null;
@@ -203,9 +214,11 @@ function openGlob(target: string, dotFiles: boolean, budget: { folders: number }
       } catch {
         // Not a folder, or not readable: no match here.
       }
-      if (next.length > MAX_GLOB_RESULTS) return null;
+      if (next.length > MAX_GLOB_RESULTS && !(last && keep)) return null;
     }
-    found = next;
+    // `rm build/*` in a big folder: only the names that could matter have to fit.
+    found = last && keep && next.length > MAX_GLOB_RESULTS ? next.filter(keep) : next;
+    if (found.length > MAX_GLOB_RESULTS) return null;
   }
   return found;
 }
@@ -234,6 +247,12 @@ export interface ResolveOptions {
    * every file, because matching more only asks.
    */
   writingFrom?: string;
+  /**
+   * For a write: the only names worth keeping when there are too many to check them all. A script's
+   * words are always cut to these, so padding one with junk paths can neither hide a write nor
+   * refuse it.
+   */
+  keep?: (found: string) => boolean;
 }
 
 /** What a word could name, and where to look. */
@@ -278,21 +297,38 @@ export function readCommand(
       if (assigned) vars[assigned[1]!] = expandVariables(assigned[2]!, where.home, vars);
     }
   }
-  const open = (word: string): string[] => {
+  // This runs in the server, before any card, on text an agent chose. Nested `for` lists multiply,
+  // so the product is checked BEFORE it is built: 700 bytes once ran the server out of memory.
+  const open = (word: string): string[] | null => {
     let opened = [word];
-    for (const [name, values] of lists) {
-      if (!word.includes(name)) continue;
-      const pattern = new RegExp(`\\$\\{?${name}\\}?(?!\\w)`, 'g');
-      opened = opened.flatMap((one) =>
-        pattern.test(one) ? values.map((value) => one.replace(pattern, value)) : [one]
-      );
+    if (word.includes('$')) {
+      if (lists.size > MAX_FOR_LISTS) return null;
+      for (const [name, values] of lists) {
+        if (!word.includes(name)) continue;
+        const pattern = new RegExp(`\\$\\{?${name}\\}?(?!\\w)`, 'g');
+        const named = opened.filter((one) => one.search(pattern) !== -1).length;
+        if (opened.length - named + named * values.length > MAX_PIECES) return null;
+        opened = opened.flatMap((one) =>
+          one.search(pattern) === -1
+            ? [one]
+            : values.map((value) => one.replace(pattern, () => value))
+        );
+      }
     }
-    return opened.flatMap(expandBraces).map((piece) =>
-      // Where the command stands is a relative path, so it follows the `cd`s below.
-      expandVariables(piece.replace(/(\$\(pwd\)|\$PWD|\$\{PWD\})\/?/g, './'), where.home, vars)
-    );
+    const results: string[] = [];
+    for (const one of opened) {
+      const braces = expandBraces(one);
+      if (braces === null) return null;
+      for (const piece of braces) {
+        // Where the command stands is a relative path, so it follows the `cd`s below.
+        results.push(
+          expandVariables(piece.replace(/(\$\(pwd\)|\$PWD|\$\{PWD\})\/?/g, './'), where.home, vars)
+        );
+      }
+    }
+    return results;
   };
-  const budget = { folders: MAX_GLOB_FOLDERS };
+  const budget = { folders: MAX_GLOB_FOLDERS, paths: MAX_COMMAND_PATHS };
   // Every folder a `cd` reaches counts for every named word: a subshell's `cd` ends early, and
   // asking about a path it didn't reach costs less than missing one it did.
   const cwds = new Set([where.cwd]);
@@ -301,22 +337,25 @@ export function readCommand(
     const { verb, args } = commandOf(segment);
     if (verb === 'cd' || verb === 'pushd') {
       const target = args.find((arg) => !arg.startsWith('-'));
-      current = target === undefined ? where.home : path.resolve(current, open(target)[0] ?? '');
+      current = target === undefined ? where.home : path.resolve(current, open(target)?.[0] ?? '');
       cwds.add(current);
     }
     // `git -C <folder>` stands there for this one command.
     const gitFolder = verb === 'git' && args[0] === '-C' ? args[1] : undefined;
     if (gitFolder === undefined) return { segment, cwd: current };
-    const cwd = path.resolve(current, open(gitFolder)[0] ?? '');
+    const cwd = path.resolve(current, open(gitFolder)?.[0] ?? '');
     cwds.add(cwd);
     return { segment, cwd };
   });
   return {
     segments,
-    resolve: (word, { pieces, writingFrom }) => {
+    resolve: (word, { pieces, writingFrom, keep }) => {
+      const words = open(word);
+      if (words === null) return null;
       const results = new Set<string>();
-      for (const opened of open(word)) {
+      for (const opened of words) {
         for (const piece of pieces ? pathPieces(opened) : [opened]) {
+          if (writingFrom && pieces && keep && !keep(piece)) continue;
           // Again per piece: `--file=~/x` and a script's `'~/x'` start with `~` only here.
           const named = expandVariables(piece, where.home, vars);
           for (const cwd of writingFrom ? [writingFrom] : cwds) {
@@ -324,14 +363,19 @@ export function readCommand(
           }
         }
       }
-      if (results.size > MAX_PIECES) return null;
+      budget.paths -= results.size;
+      if (results.size > MAX_PIECES || budget.paths < 0) return null;
       const all: string[] = [];
       for (const result of results) {
         if (writingFrom && pieces) {
           all.push(result);
           continue;
         }
-        const globbed = openGlob(result, !writingFrom, budget);
+        const globbed = openGlob(
+          result,
+          { dotFiles: !writingFrom, ...(keep ? { keep } : {}) },
+          budget
+        );
         if (globbed === null) return null;
         all.push(...globbed);
       }
