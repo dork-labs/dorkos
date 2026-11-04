@@ -16,9 +16,9 @@ import { InspectionOwner, type InspectionPort, type Root } from './owner.js';
 import { scanJSON } from './scanner.js';
 
 const PINNED = Object.freeze({
-  pinnedPackageVersion: '1.63.0' as const,
-  chromiumRevision: '1243',
-  observedVersion: '153.0.8010.12',
+  pinnedPackageVersion: '1.64.1' as const,
+  chromiumRevision: '1248',
+  observedVersion: '156.0.8078.4',
 });
 type Snapshot = Readonly<{ path: string; identity: Identity }>;
 /** Project only a closed own data field; thrown objects carry no diagnostic authority. */
@@ -37,7 +37,7 @@ function failureState(error: unknown): 'invalid' | 'unverified' {
 export function distributionDigest(
   files: readonly Readonly<{ path: string; sha256: string }>[]
 ): string {
-  if (files.length !== 114 || new Set(files.map((f) => f.path)).size !== 114)
+  if (files.length !== 115 || new Set(files.map((f) => f.path)).size !== 115)
     throw new InspectionFailure('invalid');
   const digest = createHash('sha256');
   for (const file of [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {

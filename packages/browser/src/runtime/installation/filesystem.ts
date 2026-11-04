@@ -647,7 +647,7 @@ class NodeInstallationFilesystem implements InstallationFilesystem {
     return this.operation(async () => {
       this.supported();
       const tree = await this.tree(this.configuration.libraryRoot, true);
-      requireFact(tree.files.length === 114, 'LIBRARY_MISMATCH');
+      requireFact(tree.files.length === 115, 'LIBRARY_MISMATCH');
       const distribution = createHash('sha256');
       for (const file of [...tree.files].sort((a, b) =>
         a.path < b.path ? -1 : a.path > b.path ? 1 : 0

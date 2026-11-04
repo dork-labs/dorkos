@@ -63,7 +63,7 @@ const runtimeSchema = z
   .object({
     executablePath: z.string(),
     executableSHA256: z.string().regex(/^[a-f0-9]{64}$/),
-    observedVersion: z.literal('153.0.8010.12'),
+    observedVersion: z.literal('156.0.8078.4'),
   })
   .strict();
 export async function verifiedFixtureRuntime(input: string) {

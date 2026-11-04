@@ -21,7 +21,7 @@ export function createMockLocalBrowserTransport(): LocalBrowserTransport {
       embedded: false,
       newWindow: false,
       platform: 'darwin',
-      managedChromiumVersion: '153.0.8010.12',
+      managedChromiumVersion: '156.0.8078.4',
       unavailableReasons: {},
       playwrightVersion: '',
       defaultMode: 'new-window',

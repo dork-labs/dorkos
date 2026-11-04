@@ -19,7 +19,7 @@ const library = new Map(
     return [f.path, bytes] as const;
   })
 );
-if (library.size !== 114 || [...library.values()].reduce((n, b) => n + b.length, 0) !== 13453369)
+if (library.size !== 115 || [...library.values()].reduce((n, b) => n + b.length, 0) !== 13656167)
   throw Error('SOURCE_CENSUS_CHANGED');
 export { corpus };
 export function fixture() {
@@ -28,10 +28,10 @@ export function fixture() {
     schemaVersion: 1,
     installationId: 'fixture_installation',
     packageName: 'playwright-core',
-    packageVersion: '1.63.0',
+    packageVersion: '1.64.1',
     libraryDistributionSHA256: DISTRIBUTION,
-    chromiumRevision: '1243',
-    observedVersion: '153.0.8010.12',
+    chromiumRevision: '1248',
+    observedVersion: '156.0.8078.4',
     platform: 'darwin',
     arch: 'arm64',
     executablePath: 'bin/chromium',

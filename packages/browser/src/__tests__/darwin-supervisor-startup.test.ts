@@ -32,15 +32,15 @@ it('bounds a blocked original seed send even when ready arrives, retaining refus
     runtime: {
       library: {
         package: 'playwright-core',
-        version: '1.63.0',
+        version: '1.64.1',
         rootDir: '/private/library',
         assets: { manifest: 'browsers.json', cli: 'cli.js' },
       },
       executable: {
         path: '/private/chromium',
         sha256: 'b'.repeat(64),
-        revision: '1243',
-        version: '153.0.8010.12',
+        revision: '1248',
+        version: '156.0.8078.4',
         platform: 'darwin',
         arch: 'arm64',
       },

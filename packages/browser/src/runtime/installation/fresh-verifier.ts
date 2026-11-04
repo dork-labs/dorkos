@@ -82,7 +82,7 @@ export function parsePinnedVersionOutput(
   } catch {
     throw new InstallationFailure('VERSION_MISMATCH');
   }
-  requireFact(text === 'Google Chrome for Testing 153.0.8010.12 \n', 'VERSION_MISMATCH');
+  requireFact(text === 'Google Chrome for Testing 156.0.8078.4 \n', 'VERSION_MISMATCH');
   return INSTALLATION_TARGET.observedVersion;
 }
 

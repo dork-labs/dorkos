@@ -142,7 +142,7 @@ describe('private browser package boundaries', () => {
     const metadataPath = require.resolve('playwright-core/package.json');
     const library = JSON.parse(readFileSync(metadataPath, 'utf8'));
     expect(library.name).toBe('playwright-core');
-    expect(library.version).toBe('1.63.0');
+    expect(library.version).toBe('1.64.1');
     const libraryRoot = path.dirname(metadataPath);
     const assets = ['browsers.json', 'cli.js'];
     expect(assets).toHaveLength(2);
@@ -152,14 +152,14 @@ describe('private browser package boundaries', () => {
       (browser: { name: string }) => browser.name === 'chromium'
     );
     expect(chromium).toHaveLength(1);
-    expect(chromium[0].revision).toBe('1243');
+    expect(chromium[0].revision).toBe('1248');
   });
   it('exports implemented validation and the complete narrow lifecycle slice through the real package entry', () => {
     const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
     expect(manifest.private).toBe(true);
     // Any zod 4 range: Dependabot moves the floor on every patch.
     expect(manifest.dependencies).toEqual({
-      'playwright-core': '1.63.0',
+      'playwright-core': '1.64.1',
       zod: expect.stringMatching(/^\^4\.\d+\.\d+$/),
     });
     const exports = Object.entries(manifest.exports) as [

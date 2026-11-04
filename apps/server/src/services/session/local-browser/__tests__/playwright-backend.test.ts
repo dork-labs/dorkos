@@ -62,7 +62,7 @@ describe('pinned managed browser preparation', () => {
       const done = args.at(-1) as (error: unknown, stdout?: string, stderr?: string) => void;
       queueMicrotask(() => {
         mocks.stdout!.write(
-          'Downloading Chrome for Testing 153 from https://private/token\n|■■|  40% of 100 MiB\n'
+          'Downloading Chrome for Testing 156 from https://private/token\n|■■|  40% of 100 MiB\n'
         );
         done(undefined, '', '');
       });

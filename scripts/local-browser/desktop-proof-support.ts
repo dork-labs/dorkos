@@ -234,7 +234,7 @@ export async function preparePackagedPreflight(options: {
   const shipped = JSON.parse(await readFile(path.join(shippedLibrary, 'package.json'), 'utf8')) as {
     version: string;
   };
-  assert.equal(shipped.version, '1.63.0');
+  assert.equal(shipped.version, '1.64.1');
   const descriptor = JSON.parse(
     await readFile(path.join(shippedLibrary, 'browsers.json'), 'utf8')
   ) as { browsers: { name: string; revision: string; browserVersion: string }[] };

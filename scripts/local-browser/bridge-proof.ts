@@ -53,7 +53,7 @@ async function run(): Promise<void> {
     const playwrightVersion = JSON.parse(
       await readFile(path.join(playwright, 'package.json'), 'utf8')
     ).version;
-    assert.equal(playwrightVersion, '1.63.0');
+    assert.equal(playwrightVersion, '1.64.1');
     const electron = desktopRequire('electron') as string;
     assert.equal(typeof electron, 'string');
     const source = path.join(root, 'apps/desktop/src/main/local-browser/index.ts');

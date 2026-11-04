@@ -48,7 +48,7 @@
     "@dorkos/db": "workspace:*",
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/test-utils": "workspace:*",
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24",
     "@types/pg": "^8.23.1",

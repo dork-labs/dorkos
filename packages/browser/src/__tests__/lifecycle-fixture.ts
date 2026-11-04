@@ -71,7 +71,7 @@ export async function configuration(
     runtime: {
       library: {
         package: 'playwright-core',
-        version: '1.63.0',
+        version: '1.64.1',
         rootDir: libraryRoot,
         assets: { manifest: 'browsers.json', cli: 'cli.js' },
       },
@@ -82,8 +82,8 @@ export async function configuration(
               .update(await readFile(path))
               .digest('hex')
           : '0'.repeat(64),
-        revision: '1243',
-        version: '153.0.8010.12',
+        revision: '1248',
+        version: '156.0.8078.4',
         platform: process.platform as 'darwin',
         arch: process.arch as 'arm64',
       },

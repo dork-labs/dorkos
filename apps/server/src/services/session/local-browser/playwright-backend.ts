@@ -10,8 +10,8 @@ import { BrowserDownloadProgress, type BrowserPreparationListener } from './prep
 import { disablePasswordSaving } from './plain-chromium.js';
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
-export const LOCAL_PLAYWRIGHT_VERSION = '1.63.0';
-export const LOCAL_MANAGED_CHROMIUM_VERSION = '153.0.8010.12';
+export const LOCAL_PLAYWRIGHT_VERSION = '1.64.1';
+export const LOCAL_MANAGED_CHROMIUM_VERSION = '156.0.8078.4';
 const BROWSER_LAUNCH_TIMEOUT_MS = 15_000;
 /** Refuse drift between the shipped library and its supported browser revision. */
 export function assertLocalPlaywrightVersion(): void {

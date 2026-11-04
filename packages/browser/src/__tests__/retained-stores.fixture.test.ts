@@ -52,15 +52,15 @@ async function setup() {
       runtime: {
         library: {
           package: 'playwright-core',
-          version: '1.63.0',
+          version: '1.64.1',
           rootDir: await realpath(dirname(require.resolve('playwright-core/package.json'))),
           assets: { manifest: 'browsers.json', cli: 'cli.js' },
         },
         executable: {
           path: input.executable,
           sha256: input.executableSHA256,
-          revision: '1243',
-          version: '153.0.8010.12',
+          revision: '1248',
+          version: '156.0.8078.4',
           platform: 'darwin',
           arch: 'arm64',
         },

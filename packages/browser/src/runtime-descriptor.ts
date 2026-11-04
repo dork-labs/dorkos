@@ -21,7 +21,7 @@ const RuntimeSchema = z
     library: z
       .object({
         package: z.literal('playwright-core'),
-        version: z.literal('1.63.0'),
+        version: z.literal('1.64.1'),
         rootDir: AbsolutePathSchema,
         assets: z
           .object({ manifest: z.literal('browsers.json'), cli: z.literal('cli.js') })

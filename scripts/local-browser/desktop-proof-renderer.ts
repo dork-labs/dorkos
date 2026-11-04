@@ -130,7 +130,7 @@ export async function launchCandidate(
   }>('/api/local-browser/capabilities');
   assert.equal(capabilities.embedded, true);
   assert.equal(capabilities.defaultMode, 'embedded');
-  assert.equal(capabilities.playwrightVersion, '1.63.0');
+  assert.equal(capabilities.playwrightVersion, '1.64.1');
   const runtimeLibrary = await application.evaluate(({ app }) => {
     const candidateRequire = process
       .getBuiltinModule('module')
@@ -140,7 +140,7 @@ export async function launchCandidate(
       packagePath: candidateRequire.resolve('playwright-core/package.json'),
     };
   });
-  assert.equal(runtimeLibrary.version, '1.63.0');
+  assert.equal(runtimeLibrary.version, '1.64.1');
   assert(
     inside(runtimeLibrary.packagePath, resources),
     'Candidate resolved Playwright outside its own package'

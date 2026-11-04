@@ -94,15 +94,15 @@ it.skipIf(!fixtureJSON || process.platform !== 'darwin')(
     const runtime = {
       library: {
         package: 'playwright-core' as const,
-        version: '1.63.0' as const,
+        version: '1.64.1' as const,
         rootDir: await realpath(dirname(require.resolve('playwright-core/package.json'))),
         assets: { manifest: 'browsers.json' as const, cli: 'cli.js' as const },
       },
       executable: {
         path: fixture.executable,
         sha256: fixture.executableSHA256,
-        revision: '1243',
-        version: '153.0.8010.12',
+        revision: '1248',
+        version: '156.0.8078.4',
         platform: 'darwin' as const,
         arch: 'arm64' as const,
       },
