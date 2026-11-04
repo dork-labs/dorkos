@@ -239,10 +239,10 @@ function isFolder(target: string): boolean {
 async function treeReachesRead(
   folder: string,
   rules: readonly RootRule[],
-  hidden: boolean
+  hidden: boolean,
+  deadline: number
 ): Promise<boolean> {
   const inTree = rules.filter((rule) => within(folder, rule.fixed) || within(rule.fixed, folder));
-  const deadline = Date.now() + MAX_TREE_MS;
   const pending = [folder];
   const seen = new Set<string>();
   let entries = 0;
@@ -304,6 +304,8 @@ export async function commandReachesProtectedRead(
   roots: ShellGuardRoots
 ): Promise<boolean> {
   if (command.length > MAX_COMMAND) return true;
+  // One allowance for the whole command, however many searches it chains.
+  const deadline = Date.now() + MAX_TREE_MS;
   const rules = fixedReadRules(roots);
   const { segments, resolve } = readCommand(command, roots);
   const checked = new Set<string>();
@@ -340,7 +342,7 @@ export async function commandReachesProtectedRead(
     const here =
       (SEARCHERS.has(verb) && !named.some(pathExists)) || (verb === 'git' && folders.length === 0);
     for (const folder of here ? [cwd] : folders) {
-      if (await treeReachesRead(realLocation(folder), rules, hidden)) return true;
+      if (await treeReachesRead(realLocation(folder), rules, hidden, deadline)) return true;
     }
   }
   return false;
@@ -535,7 +537,10 @@ export interface ShellGuardOptions {
   /** Writes the refused call to the audit log. */
   recordRefusal: ShellRefusalRecorder;
   /** Reports what the hook decided. */
-  log: { info(message: string, data: Record<string, unknown>): void };
+  log: {
+    info(message: string, data: Record<string, unknown>): void;
+    warn(message: string, data: Record<string, unknown>): void;
+  };
 }
 
 /**
@@ -561,7 +566,7 @@ export function createShellPathGuardHook(
     } catch (err) {
       // This is the only stop at Full, so a check that can't answer refuses (Security, #3487). Only
       // the error's name in the log: its message could carry a path from the command.
-      log.info('[ShellGuard] the write check failed; refusing', {
+      log.warn('[ShellGuard] the write check failed; refusing', {
         error: err instanceof Error ? err.name : 'unknown',
       });
       verdict = 'unreadable';

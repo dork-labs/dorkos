@@ -17,14 +17,26 @@ import {
 
 /** The most pieces one word may name before it counts as unreadable. */
 const MAX_PIECES = 5_000;
-/** The most paths one whole command may name before the rest count as unreadable. */
-const MAX_COMMAND_PATHS = 10_000;
+/**
+ * The work one check may do before the command counts as unreadable, across everything it does:
+ * this runs in the server, before any card, on text an agent chose, so no one shape of command gets
+ * its own limit to find a way around. Roughly a character handled; the costs below weigh the rest.
+ */
+const MAX_WORK = 4_000_000;
+/** What one named path costs: it gets resolved, and then checked against every rule. */
+const PATH_COST = 256;
+/** What listing one folder costs. */
+const LISTING_COST = 1_024;
+/** What one entry of a listing costs, before matching its name. */
+const ENTRY_COST = 64;
+/** A wildcard match's cost is its name times its pattern, over this. */
+const MATCH_COST_DIVISOR = 8;
 /** The most `for` lists a command may hold before a word using a variable counts as unreadable. */
 const MAX_FOR_LISTS = 64;
+/** The most folders a command's `cd`s may reach: every named word is resolved against each. */
+const MAX_CWDS = 64;
 /** The most paths one glob opens into before it counts as protected. */
 const MAX_GLOB_RESULTS = 500;
-/** The most folders a `**` looks through before it counts as protected. */
-const MAX_GLOB_FOLDERS = 2_000;
 /** How deep `sh -c "sh -c …"` is followed. */
 const MAX_NESTING = 3;
 
@@ -146,29 +158,100 @@ function withNested(segments: ShellSegment[], depth = 0): ShellSegment[] {
   return out;
 }
 
-/** A path's wildcards as a regex for one name. A `[` with no close is a plain `[`, as in a shell. */
-function namePattern(segment: string): RegExp {
-  const body = segment
-    .replace(/[.+$(){}|\\]/g, '\\$&')
-    .replace(/(?<!\[)\^/g, '\\^')
-    .replace(/\[!/g, '[^')
-    .replace(/\*+/g, '.*')
-    .replace(/\?/g, '.');
-  try {
-    return new RegExp(`^${body}$`, 'i');
-  } catch {
-    return new RegExp(`^${segment.replace(/[.+$(){}|\\^[\]*?]/g, '\\$&')}$`, 'i');
+/** One step of a wildcard pattern: `*`, or a test of one character. */
+type WildcardStep = '*' | ((char: string) => boolean);
+
+/** A `[…]` as a test of one lowercased character, and where it ends. No close means no set. */
+function characterSet(
+  segment: string,
+  open: number
+): { test: (char: string) => boolean; end: number } | undefined {
+  let at = open + 1;
+  const negate = segment[at] === '!' || segment[at] === '^';
+  if (negate) at += 1;
+  const first = at;
+  const singles = new Set<string>();
+  const ranges: [string, string][] = [];
+  while (at < segment.length && (segment[at] !== ']' || at === first)) {
+    if (segment[at + 1] === '-' && at + 2 < segment.length && segment[at + 2] !== ']') {
+      ranges.push([segment[at]!, segment[at + 2]!]);
+      at += 3;
+    } else {
+      singles.add(segment[at]!);
+      at += 1;
+    }
   }
+  if (at >= segment.length) return undefined;
+  const test = (char: string): boolean =>
+    negate !== (singles.has(char) || ranges.some(([from, to]) => char >= from && char <= to));
+  return { test, end: at };
+}
+
+/** A path's wildcards as steps for one name, lowercased as this file's names are matched. */
+function wildcardSteps(segment: string): WildcardStep[] {
+  const lower = segment.toLowerCase();
+  const steps: WildcardStep[] = [];
+  for (let i = 0; i < lower.length; i++) {
+    const char = lower[i]!;
+    if (char === '*') {
+      if (steps.at(-1) !== '*') steps.push('*');
+    } else if (char === '?') {
+      steps.push(() => true);
+    } else {
+      // A `[` with no close is a plain `[`, as in a shell.
+      const set = char === '[' ? characterSet(lower, i) : undefined;
+      if (set) i = set.end;
+      steps.push(set ? set.test : (other) => other === char);
+    }
+  }
+  return steps;
+}
+
+/**
+ * Whether a name fits a pattern. A regex here backtracked: four stars on a long file name an agent
+ * made itself took 24 s in the server. This only ever goes back to the last star, so it does at most
+ * name × pattern steps, which the caller charges for.
+ */
+function matchesWildcard(name: string, steps: readonly WildcardStep[]): boolean {
+  const lower = name.toLowerCase();
+  let at = 0;
+  let step = 0;
+  let star = -1;
+  let mark = 0;
+  while (at < lower.length) {
+    const current = steps[step];
+    if (current === '*') {
+      star = step;
+      step += 1;
+      mark = at;
+    } else if (current !== undefined && current(lower[at]!)) {
+      at += 1;
+      step += 1;
+    } else if (star !== -1) {
+      step = star + 1;
+      mark += 1;
+      at = mark;
+    } else {
+      return false;
+    }
+  }
+  while (steps[step] === '*') step += 1;
+  return step === steps.length;
+}
+
+/** The check's shared work allowance. `false` once it is spent. */
+interface WorkBudget {
+  spend: (cost: number) => boolean;
 }
 
 /** Every folder at or below `base`, for a `**`. `false` when the command's budget runs out. */
-function foldersBelow(base: string, seen: Set<string>, budget: { folders: number }): boolean {
+function foldersBelow(base: string, seen: Set<string>, budget: WorkBudget): boolean {
   const pending = [base];
   while (pending.length > 0) {
     const current = pending.pop()!;
     if (seen.has(current)) continue;
     seen.add(current);
-    if (--budget.folders < 0) return false;
+    if (!budget.spend(LISTING_COST)) return false;
     try {
       for (const entry of readdirSync(current, { withFileTypes: true })) {
         if (entry.isDirectory()) pending.push(path.join(current, entry.name));
@@ -184,7 +267,7 @@ function foldersBelow(base: string, seen: Set<string>, budget: { folders: number
 function openGlob(
   target: string,
   options: { dotFiles: boolean; keep?: (found: string) => boolean },
-  budget: { folders: number }
+  budget: WorkBudget
 ): string[] | null {
   if (!/[*?[]/.test(target)) return [target];
   const { dotFiles, keep } = options;
@@ -203,13 +286,16 @@ function openGlob(
       found = found.map((base) => path.join(base, segment));
       continue;
     }
-    const pattern = namePattern(segment);
+    const steps = wildcardSteps(segment);
     const next: string[] = [];
     for (const base of found) {
+      if (!budget.spend(LISTING_COST)) return null;
       try {
         for (const name of readdirSync(base)) {
+          const cost = ENTRY_COST + (name.length * steps.length) / MATCH_COST_DIVISOR;
+          if (!budget.spend(cost)) return null;
           if (!dotFiles && name.startsWith('.') && !segment.startsWith('.')) continue;
-          if (pattern.test(name)) next.push(path.join(base, name));
+          if (matchesWildcard(name, steps)) next.push(path.join(base, name));
         }
       } catch {
         // Not a folder, or not readable: no match here.
@@ -297,8 +383,15 @@ export function readCommand(
       if (assigned) vars[assigned[1]!] = expandVariables(assigned[2]!, where.home, vars);
     }
   }
-  // This runs in the server, before any card, on text an agent chose. Nested `for` lists multiply,
-  // so the product is checked BEFORE it is built: 700 bytes once ran the server out of memory.
+  let work = MAX_WORK;
+  const budget: WorkBudget = {
+    spend: (cost) => {
+      work -= cost;
+      return work >= 0;
+    },
+  };
+  // Nested `for` lists multiply, so what they would build is paid for BEFORE it is built, in bytes
+  // as well as strings: 700 bytes once ran the server out of memory.
   const open = (word: string): string[] | null => {
     let opened = [word];
     if (word.includes('$')) {
@@ -306,8 +399,15 @@ export function readCommand(
       for (const [name, values] of lists) {
         if (!word.includes(name)) continue;
         const pattern = new RegExp(`\\$\\{?${name}\\}?(?!\\w)`, 'g');
-        const named = opened.filter((one) => one.search(pattern) !== -1).length;
-        if (opened.length - named + named * values.length > MAX_PIECES) return null;
+        const valueBytes = values.reduce((sum, value) => sum + value.length, 0);
+        let built = 0;
+        let cost = 0;
+        for (const one of opened) {
+          const uses = one.match(pattern)?.length ?? 0;
+          built += uses === 0 ? 1 : values.length;
+          if (uses > 0) cost += one.length * values.length + valueBytes * uses;
+        }
+        if (built > MAX_PIECES || !budget.spend(cost)) return null;
         opened = opened.flatMap((one) =>
           one.search(pattern) === -1
             ? [one]
@@ -320,6 +420,7 @@ export function readCommand(
       const braces = expandBraces(one);
       if (braces === null) return null;
       for (const piece of braces) {
+        if (!budget.spend(piece.length)) return null;
         // Where the command stands is a relative path, so it follows the `cd`s below.
         results.push(
           expandVariables(piece.replace(/(\$\(pwd\)|\$PWD|\$\{PWD\})\/?/g, './'), where.home, vars)
@@ -328,13 +429,14 @@ export function readCommand(
     }
     return results;
   };
-  const budget = { folders: MAX_GLOB_FOLDERS, paths: MAX_COMMAND_PATHS };
   // Every folder a `cd` reaches counts for every named word: a subshell's `cd` ends early, and
   // asking about a path it didn't reach costs less than missing one it did.
   const cwds = new Set([where.cwd]);
   let current = where.cwd;
   const segments = parsed.map((segment) => {
     const { verb, args } = commandOf(segment);
+    // Past the cap the command is unreadable anyway, and each `cd` here makes a longer path.
+    if (cwds.size > MAX_CWDS) return { segment, cwd: current };
     if (verb === 'cd' || verb === 'pushd') {
       const target = args.find((arg) => !arg.startsWith('-'));
       current = target === undefined ? where.home : path.resolve(current, open(target)?.[0] ?? '');
@@ -350,6 +452,7 @@ export function readCommand(
   return {
     segments,
     resolve: (word, { pieces, writingFrom, keep }) => {
+      if (cwds.size > MAX_CWDS) return null;
       const words = open(word);
       if (words === null) return null;
       const results = new Set<string>();
@@ -359,12 +462,12 @@ export function readCommand(
           // Again per piece: `--file=~/x` and a script's `'~/x'` start with `~` only here.
           const named = expandVariables(piece, where.home, vars);
           for (const cwd of writingFrom ? [writingFrom] : cwds) {
+            if (!budget.spend(PATH_COST + named.length)) return null;
             results.add(path.resolve(cwd, named));
           }
         }
       }
-      budget.paths -= results.size;
-      if (results.size > MAX_PIECES || budget.paths < 0) return null;
+      if (results.size > MAX_PIECES) return null;
       const all: string[] = [];
       for (const result of results) {
         if (writingFrom && pieces) {

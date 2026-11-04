@@ -132,7 +132,7 @@ async function outcomeOf(
     eventQueue,
     eventQueueNotify: () => {},
   };
-  const noopLog = { debug: () => {}, info: () => {} };
+  const noopLog = { debug: () => {}, info: () => {}, warn: () => {} };
   const env = {
     PATH: process.env.PATH ?? '',
     HOME: home,

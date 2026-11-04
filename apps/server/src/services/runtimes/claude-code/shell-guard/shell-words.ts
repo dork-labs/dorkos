@@ -22,7 +22,9 @@ export interface ShellSegment {
 /** The most brace alternatives one word opens into before it counts as too much to check. */
 const MAX_BRACE_RESULTS = 256;
 /** A word this long, with no spaces, opening braces, counts as too much to check. */
-const MAX_BRACE_WORD = 4_096;
+const MAX_BRACE_WORD = 1_024;
+/** The longest `${NAME:-default}` default read. A bound keeps an unclosed run of them linear. */
+const MAX_DEFAULT_VALUE = 256;
 /** The longest path any platform here opens, so nothing longer is worth testing. */
 const MAX_PATH_PIECE = 1_024;
 
@@ -155,20 +157,45 @@ export function expandBraces(word: string): string[] | null {
   const pending = [word];
   while (pending.length > 0) {
     const next = pending.pop()!;
-    const match = /(^|[^$])\{([^{}]*,[^{}]*)\}/.exec(next);
-    if (!match) {
+    const group = firstBraceGroup(next);
+    if (!group) {
       results.push(next);
       continue;
     }
-    if (results.length + pending.length >= MAX_BRACE_RESULTS) return null;
-    const start = match.index + match[1]!.length;
-    const end = match.index + match[0].length;
-    for (const part of match[2]!.split(',')) {
-      pending.push(`${next.slice(0, start)}${part}${next.slice(end)}`);
+    const parts = next.slice(group.start + 1, group.end).split(',');
+    // Counted before any is built: a single group can name thousands.
+    if (results.length + pending.length + parts.length > MAX_BRACE_RESULTS) return null;
+    for (const part of parts) {
+      pending.push(`${next.slice(0, group.start)}${part}${next.slice(group.end + 1)}`);
     }
   }
   return results;
 }
+
+/** The first `{a,b}` with no brace inside, skipping `${…}`. A scan, so a run of commas stays linear. */
+function firstBraceGroup(word: string): { start: number; end: number } | undefined {
+  let open = -1;
+  let comma = false;
+  for (let i = 0; i < word.length; i++) {
+    const char = word[i];
+    if (char === '{') {
+      open = word[i - 1] === '$' ? -1 : i;
+      comma = false;
+    } else if (char === ',') {
+      comma = true;
+    } else if (char === '}') {
+      if (open !== -1 && comma) return { start: open, end: i };
+      open = -1;
+    }
+  }
+  return undefined;
+}
+
+/** `${NAME}`, `${NAME:-default}` with its default bounded, or `$NAME`. */
+const VARIABLE = new RegExp(
+  `\\$\\{([A-Za-z_]\\w*)(?::?[-=+?]([^}]{0,${MAX_DEFAULT_VALUE}}))?\\}|\\$([A-Za-z_]\\w*)`,
+  'g'
+);
 
 /**
  * Put in `~` at a word's start and any `$NAME`, `${NAME}` or `${NAME:-default}` it knows. An
@@ -184,7 +211,7 @@ export function expandVariables(
   vars: Readonly<Record<string, string | undefined>>
 ): string {
   const named = word.replace(
-    /\$\{([A-Za-z_]\w*)(?::?[-=+?]([^}]*))?\}|\$([A-Za-z_]\w*)/g,
+    VARIABLE,
     (whole, braced?: string, fallback?: string, bare?: string) =>
       vars[braced ?? bare ?? ''] ?? fallback ?? whole
   );

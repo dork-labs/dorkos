@@ -281,6 +281,104 @@ describe('a command too big to read (Security, #3487)', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
+  // Security's three on `1fcc57dfaa`, then the same family: shapes the first caps didn't count. Each
+  // froze the server, at every level, before any card.
+  it('refuses a loop list times braces without building them', () => {
+    const list = Array.from({ length: 5_000 }, (_, i) => `x${i}`).join(' ');
+    const alternatives = Array.from({ length: 2_000 }, () => 'a').join(',');
+    const command = `for d in ${list}; do :; done; echo x > $d{${alternatives}}`;
+    const started = Date.now();
+    expect(shellWriteVerdict(command, roots)).toBe('unreadable');
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  it('refuses short loop values opening into many braces each', () => {
+    const list = Array.from({ length: 5_000 }, (_, i) => `x${i}`).join(' ');
+    const alternatives = Array.from({ length: 200 }, (_, i) => `a${i}`).join(',');
+    const command = `for d in ${list}; do :; done; echo x > $d{${alternatives}}`;
+    const started = Date.now();
+    expect(shellWriteVerdict(command, roots)).toBe('unreadable');
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  it('pays for a loop in bytes: a few long values can’t build gigabytes', () => {
+    const long = 'x'.repeat(10_000);
+    const lists = Array.from({ length: 11 }, (_, i) => `for v${i} in ${long} y; do :; done`);
+    const command = `${lists.join('; ')}; echo x > ${LOOP_WORD(11)}`;
+    const started = Date.now();
+    expect(shellWriteVerdict(command, roots)).toBe('unreadable');
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  it.each([
+    ['one star', '*a'],
+    ['four stars', '*a*a*a*ab'],
+    ['five stars', '*a*a*a*a*ab'],
+    ['twenty stars', `${'*a'.repeat(20)}b`],
+  ])('matches %s on a long name without backtracking', async (_label, pattern) => {
+    const folder = path.join(root, 'long-name');
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(path.join(folder, 'a'.repeat(250)), '');
+    const started = Date.now();
+    expect(shellWriteVerdict(`rm ${folder}/${pattern}`, roots)).toBe('none');
+    await commandReachesProtectedRead(`cat ${folder}/${pattern}`, roots);
+    expect(Date.now() - started).toBeLessThan(50);
+  });
+
+  it.each([
+    ['*.json', 'a.json', true],
+    ['*.json', 'a.txt', false],
+    ['a?c', 'abc', true],
+    ['a?c', 'ac', false],
+    ['*', 'anything', true],
+    ['a*b*c', 'a1b2c', true],
+    ['a*b*c', 'a1c2b', false],
+    ['[ab]x', 'bx', true],
+    ['[!ab]x', 'bx', false],
+    ['[^ab]x', 'cx', true],
+    ['[a-c]x', 'bx', true],
+    ['[a-c]x', 'dx', false],
+    ['[]]x', ']x', true],
+    ['[x', '[x', true],
+    ['[x', 'x', false],
+    ['A*', 'abc', true],
+  ])('opens %s against %s as a shell would: %s', async (pattern, name, fits) => {
+    // Anything below a home's `.claude` is a setup file, so whether the glob found it shows in the
+    // verdict.
+    const home = mkdtempSync(path.join(root, 'glob-'));
+    const setup = path.join(home, '.claude');
+    mkdirSync(setup);
+    writeFileSync(path.join(setup, name), '');
+    const withHome = { ...roots, agentHomes: () => [home] };
+    expect(shellWriteVerdict(`rm ${setup}/${pattern}`, withHome)).toBe(fits ? 'writes' : 'none');
+  });
+
+  it('asks about a long `cd` chain, and refuses a write after one, quickly', async () => {
+    const chain = Array.from({ length: 4_000 }, (_, i) => `cd d${i}`).join(' && ');
+    const started = Date.now();
+    expect(await commandReachesProtectedRead(`${chain} && cat notes.md`, roots)).toBe(true);
+    expect(shellWriteVerdict(`${chain} && echo x > y`, roots)).toBe('unreadable');
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  it('leaves a few `cd`s alone', async () => {
+    const chain = 'cd /tmp && cd /tmp/a && cd /tmp/b && cd /tmp/c';
+    expect(await commandReachesProtectedRead(`${chain} && cat notes.md`, roots)).toBe(false);
+    expect(shellWriteVerdict(`${chain} && echo x > y`, roots)).toBe('none');
+  });
+
+  it('stays linear on an unclosed run of defaults, 32 s before the bound', async () => {
+    const defaults = `echo "${'${A:- '.repeat(40_000)}"`;
+    const started = Date.now();
+    await commandReachesProtectedRead(defaults, roots);
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  it('shares one time allowance across every search in a command', async () => {
+    const searches = Array.from({ length: 50 }, () => `grep -r x ${root}/work/src`).join(' && ');
+    expect(await commandReachesProtectedRead(searches, roots)).toBe(false);
+  });
+
   it('refuses a `for` list hiding a setup write past the limit', () => {
     const values = [...Array.from({ length: 5_001 }, (_, i) => `/tmp/n${i}`), `${other}/.claude`];
     const command = `for d in ${values.join(' ')}; do echo x > $d/settings.json; done`;
@@ -320,7 +418,7 @@ describe('a command too big to read (Security, #3487)', () => {
     'refuses and records at %s when the write check itself throws',
     async (permissionMode) => {
       const recordRefusal = vi.fn();
-      const log = { info: vi.fn() };
+      const log = { info: vi.fn(), warn: vi.fn() };
       const hook = createShellPathGuardHook({ permissionMode } as never, {
         roots: () => ({
           ...roots,
@@ -345,7 +443,8 @@ describe('a command too big to read (Security, #3487)', () => {
       expect(JSON.stringify(result)).toContain('"permissionDecision":"deny"');
       expect(recordRefusal).toHaveBeenCalledOnce();
       // Neither the command nor a path from the error reaches the log.
-      expect(JSON.stringify(log.info.mock.calls)).not.toContain(other);
+      expect(log.warn).toHaveBeenCalledOnce();
+      expect(JSON.stringify(log.warn.mock.calls)).not.toContain(other);
     }
   );
 
@@ -354,7 +453,7 @@ describe('a command too big to read (Security, #3487)', () => {
     const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
       roots: () => roots,
       recordRefusal,
-      log: { info: () => {} },
+      log: { info: () => {}, warn: () => {} },
     });
     const command = `${nestedFor(6, 30)}; echo hi > ${LOOP_WORD(6)}`;
     const result = await hook(
@@ -526,7 +625,7 @@ describe('commandWritesAgentSetup', () => {
 });
 
 describe('createShellPathGuardHook', () => {
-  const log = { info: () => {} };
+  const log = { info: () => {}, warn: () => {} };
   const signal = { signal: new AbortController().signal };
   const call = (command: unknown) =>
     ({
