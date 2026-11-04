@@ -176,3 +176,26 @@ used alone as proof of no live Codex. Safe persistent ledger/reconciliation,
 registry/process coordination, server-start integration and concurrent native
 proof are sized above one engineering day. Per lead instruction, report that
 size for the PM decision before implementation. No per-test isolation yet.
+
+PM scope decision: build the stub-leak fix, with green native evidence and
+Security's label due Thu Nov 13 at 17:00 CT. First identify the SIGKILL sender
+from the logging round. If the pool's own six-second escalation caused the
+leak, report that before continuing so the PM can re-size. Reconciliation
+remains required for crashes regardless of sender. Its no-live-Codex guard
+must combine marker directories with processes proven exited, failing closed;
+a pool list alone is insufficient, including while children are closing.
+
+Final-head must-go addition: remove the new signal log lines or reduce them
+to debug before the final head. Diagnostic information must not remain at
+normal log level. This applies to the process-pool EOF/signal/exit logging.
+
+Add one default-stub-10k/default native diagnostic after the kill row. Plant
+empty regular files at person-home .claude and .config, require a real turn,
+all existing public controls and canary checks, and compare both files' type,
+size, owner, mode, device/inode, modification/change times and content before
+and after. Only those two intentional files are exempt from the ordinary host
+parent-kind check; any other stray still fails. Record this row separately.
+Fourteen rows share the existing 870-second deadline with no new time cap,
+retry, isolation or production behavior. A refusal remains red, not proof of
+the proposed default-only fallback. The fallback refusal is not implemented.
+Per-test roots and FIFO isolation wait for the reconcile proof round.

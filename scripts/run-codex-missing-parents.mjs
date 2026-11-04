@@ -8,6 +8,7 @@ export const protectionRows = [
   ['agent-home-10k', 'acceptEdits'],
   ['agent-home-10k', 'bypassPermissions'],
   ['kill-midturn-10k', 'acceptEdits'],
+  ['default-stub-10k', 'default'],
   ['agent-symlink-10k', 'acceptEdits'],
   ['other-home-10k', 'acceptEdits'],
   ['other-home-10k', 'bypassPermissions'],

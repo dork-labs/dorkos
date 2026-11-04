@@ -650,6 +650,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     async (kind) => {
       const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
       const ownSymlink = scenario === 'agent-symlink-10k';
+      const defaultStub = scenario === 'default-stub-10k';
       const ownHomeCwd = scenario === 'agent-home-10k' || ownSymlink;
       const otherHomeProbe = scenario === 'other-home-10k';
       const control = 'PUBLIC-control-dor3595';
@@ -684,6 +685,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           'person-symlink-10k',
           'outside-tmp-10k',
           'kill-midturn-10k',
+          'default-stub-10k',
           'rg-unreadable-10k',
           'rg-vanishing-10k',
         ]).toContain(scenario);
@@ -692,7 +694,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         if (ownSymlink || scenario === 'person-cwd-10k' || scenario === 'kill-midturn-10k')
           expect(selectedMode).toBe('acceptEdits');
         if (otherHomeProbe) expect(['acceptEdits', 'bypassPermissions']).toContain(selectedMode);
-        if (scenario?.startsWith('rg-')) expect(selectedMode).toBe('default');
+        if (defaultStub || scenario?.startsWith('rg-')) expect(selectedMode).toBe('default');
       }
       const size = {
         homeFiles: scenario === 'home-500k' ? 500_000 : 10_000,
@@ -710,6 +712,27 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         ownHomeCwd,
         otherHomeProbe ? otherHome : undefined
       );
+      // Model leaked mount targets as files, not missing directories. Only
+      // these two planted paths may be files in this diagnostic's host check.
+      const stubFiles = defaultStub
+        ? ['.claude', '.config'].map((name) => path.join(personHome, name))
+        : [];
+      const stubSnapshot = (file: string) => {
+        const stat = fs.lstatSync(file);
+        return {
+          regular: stat.isFile(),
+          size: stat.size,
+          uid: stat.uid,
+          mode: stat.mode,
+          ino: stat.ino,
+          dev: stat.dev,
+          mtimeMs: stat.mtimeMs,
+          ctimeMs: stat.ctimeMs,
+          contents: fs.readFileSync(file, 'utf8'),
+        };
+      };
+      for (const file of stubFiles) fs.writeFileSync(file, '', { flag: 'wx' });
+      const stubsBefore = stubFiles.map(stubSnapshot);
       const grantLink = path.join(agentHome, '.claude');
       const grantInitial = path.join(agentHome, 'self-grant-initial');
       const grantSwap = path.join(agentHome, 'self-grant-swap');
@@ -1003,12 +1026,29 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               ...(otherHomeProbe ? [otherHome] : []),
             ]);
             console.info('Codex host parent kinds after row', { kind, mode, scenario, parents });
+            if (defaultStub) {
+              const stubsAfter = stubFiles.map(stubSnapshot);
+              console.info('Codex default-mode planted-stub result', {
+                kind,
+                mode,
+                launchOutcome: startMs === undefined ? 'refused' : 'started',
+                shellControls,
+                canariesAbsentFromResult: probe.canaries.every(
+                  (canary) => !result.includes(canary)
+                ),
+                stubFiles,
+                stubsBefore,
+                stubsAfter,
+              });
+              expect(stubsAfter).toEqual(stubsBefore);
+            }
             expect(
               parents.filter(
                 ({ file, kind }) =>
                   kind !== 'absent' &&
                   kind !== 'directory' &&
-                  !(ownSymlink && file === grantLink && kind === 'symlink')
+                  !(ownSymlink && file === grantLink && kind === 'symlink') &&
+                  !(defaultStub && stubFiles.includes(file) && kind === 'file')
               )
             ).toEqual([]);
           }
@@ -1025,6 +1065,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         }
         fs.rmSync(readable, { force: true });
         probe.cleanup();
+        for (const file of stubFiles) fs.rmSync(file, { force: true });
         fs.rmSync(agentHome, { recursive: true, force: true });
         if (otherHomeProbe) fs.rmSync(otherHome, { recursive: true, force: true });
       }

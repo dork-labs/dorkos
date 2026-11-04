@@ -29,6 +29,7 @@ it.each(['passed', 'failed', 'missing'])(
         process.kill = (pid, signal) => { sentSignals.push([pid, signal]); return true; };
         console.info = (...items) => signalLogs.push(items);
         assert.equal(protectionRows[2][0], 'kill-midturn-10k');
+        assert.deepEqual(protectionRows[3], ['default-stub-10k', 'default']);
         assert(protectionRows.some(([scenario]) => scenario === 'agent-symlink-10k'));
         const code = traceMissingParents((command, args, options) => {
           count++;
