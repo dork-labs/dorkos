@@ -4,6 +4,7 @@ covers:
   - 'fix(server): a shell command too big to read is refused, never built in the server (DOR-3300)'
   - 'fix(server): a shell write check that throws refuses the command (DOR-3300)'
   - "fix(server): the shell guard's whole check runs on one work budget, and its wildcards can't backtrack (DOR-3300)"
+  - "fix(server): the shell guard's wildcards read as a real shell does, and a part it can't read refuses the command (DOR-3300)"
 ---
 
 ### Security

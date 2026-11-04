@@ -21,7 +21,7 @@ import {
   type ShellGuardRoots,
 } from '../shell-path-guard.js';
 import { AGENT_HOME_SELF_GRANT_PATHS } from '../../../shared/policy/protected-paths.js';
-import { parseShell } from '../shell-words.js';
+import { expandVariables, parseShell } from '../shell-words.js';
 
 let root: string;
 let roots: ShellGuardRoots;
@@ -378,6 +378,92 @@ describe('a command too big to read (Security, #3487)', () => {
   it('shares one time allowance across every search in a command', async () => {
     const searches = Array.from({ length: 50 }, () => `grep -r x ${root}/work/src`).join(' && ');
     expect(await commandReachesProtectedRead(searches, roots)).toBe(false);
+  });
+
+  // Security's round 3: each of these really wrote the file under bash or zsh, with no refusal.
+  it.each([
+    ['a mixed-case range', () => `echo x > ${other}/.[Z-d]laude/settings.json`],
+    ['another mixed-case range', () => `echo x > ${other}/.m[Y-z]p.json`],
+    ['zsh reading `[!]` as any character', () => `echo x > ${other}/.[!]cp.json`],
+    ['zsh reading `[^]` as any character', () => `echo x > ${other}/.[^]cp.json`],
+    ['a default over 256 characters', () => `echo x > \${NOPE:-${other}/.mcp.json}`],
+    ['a long default', () => `echo x > \${NOPE:-${other}/${'./'.repeat(200)}.mcp.json}`],
+  ])('refuses a write through %s', (_label, command) => {
+    expect(shellWriteVerdict(command(), roots)).toBe('writes');
+  });
+
+  it.each([
+    [
+      'a `cd` whose braces are too much to open',
+      () => `cd ${other}/.claude/{.,${'x'.repeat(1_100)}} && echo x > settings.json`,
+    ],
+    [
+      '`git -C` whose braces are too much to open',
+      () => `git -C ${other}/{.,${'x'.repeat(1_100)}} checkout -- .mcp.json`,
+    ],
+    [
+      'a `cd` from a `for` list past the limit',
+      () => {
+        const values = Array.from({ length: 5_001 }, (_, i) => `/tmp/n${i}`).join(' ');
+        return `for d in ${values} ${other}/.claude; do cd "$d" && echo x > settings.json; done`;
+      },
+    ],
+  ])('refuses %s, rather than treating it as staying put', (_label, command) => {
+    expect(shellWriteVerdict(command(), roots)).toBe('unreadable');
+  });
+
+  it('refuses 344 bytes of assignments that multiply, before building them', () => {
+    const lines = ['a0=xxxxxxxxxxxx'];
+    for (let i = 1; i <= 8; i++) lines.push(`a${i}=${`$a${i - 1}`.repeat(8)}`);
+    for (let i = 0; i < 8; i++) lines.push(`c${i}=$a8$a8`);
+    const started = Date.now();
+    expect(shellWriteVerdict(`${lines.join('; ')}; echo hi > y`, roots)).toBe('unreadable');
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  it('stays linear on 42,000 heredocs that all close', () => {
+    const command = `cat ${'<<A '.repeat(42_000)}\n${'A\n'.repeat(42_000)}`;
+    const started = Date.now();
+    shellWriteVerdict(command, roots);
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it('charges a set by its length, not as one step', () => {
+    const big = path.join(root, 'many');
+    const started = Date.now();
+    shellWriteVerdict(`rm ${big}/*${'[a-aa-a]'.repeat(10_000)}`, roots);
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it('asks about a read whose wildcard is too long to check, and a search past the budget', async () => {
+    const secret = `cat ${roots.dorkHome}/secrets/moved[${'t'.repeat(5_000)}].txt`;
+    expect(await commandReachesProtectedRead(secret, roots)).toBe(true);
+    const padded = `grep -r x ${roots.dorkHome}/secrets ${Array.from({ length: 16_000 }, (_, i) => `w${i}`).join(' ')}`;
+    expect(await commandReachesProtectedRead(padded, roots)).toBe(true);
+  });
+
+  it.each([
+    ['${A}', { A: 'x' }, 'x'],
+    ['$A/b', { A: 'x' }, 'x/b'],
+    ['${A:-d}', {}, 'd'],
+    ['${A-d}', {}, 'd'],
+    ['${A:-d}', { A: 'x' }, 'x'],
+    ['$NOPE', {}, '$NOPE'],
+    ['${NOPE}', {}, '${NOPE}'],
+    ['${A x}', { A: 'y' }, '${A x}'],
+    ['${A:-unclosed', {}, '${A:-unclosed'],
+    ['a$', {}, 'a$'],
+    ['$1', {}, '$1'],
+    ['$A$A', { A: 'x' }, 'xx'],
+    ['~/x', {}, '/h/x'],
+    ['~', {}, '/h'],
+  ])('expands %s', (word, vars, expected) => {
+    expect(expandVariables(word, '/h', vars)).toBe(expected);
+  });
+
+  it('refuses a word that variables would grow too far', () => {
+    expect(expandVariables('$A$A', '/h', { A: 'x'.repeat(40_000) })).toBeNull();
+    expect(expandVariables('$A', '/h', { A: 'x'.repeat(40_000) })).toHaveLength(40_000);
   });
 
   it('refuses a `for` list hiding a setup write past the limit', () => {

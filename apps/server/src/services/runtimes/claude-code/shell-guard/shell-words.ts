@@ -23,10 +23,10 @@ export interface ShellSegment {
 const MAX_BRACE_RESULTS = 256;
 /** A word this long, with no spaces, opening braces, counts as too much to check. */
 const MAX_BRACE_WORD = 1_024;
-/** The longest `${NAME:-default}` default read. A bound keeps an unclosed run of them linear. */
-const MAX_DEFAULT_VALUE = 256;
-/** The longest path any platform here opens, so nothing longer is worth testing. */
-const MAX_PATH_PIECE = 1_024;
+/** The most variables may add to one word or one assigned value before it counts as too much. */
+const MAX_VARIABLE_GROWTH = 64 * 1_024;
+/** The longest path any platform here opens (Linux); a longer piece names nothing that exists. */
+export const MAX_PATH_PIECE = 4_096;
 
 /**
  * Split a command line into its commands. Never throws: an unclosed quote just ends the word.
@@ -100,11 +100,24 @@ export function parseShell(command: string): ShellSegment[] {
       if (heredocs.length > 0) {
         let at = i + 1;
         for (const delimiter of heredocs.splice(0)) {
-          const lines = command.slice(at).split('\n');
-          const last = lines.findIndex((line) => line.trim() === delimiter);
-          const body = (last === -1 ? lines : lines.slice(0, last)).join('\n');
-          current.scripts.push(body);
-          at += body.length + (last === -1 ? 0 : delimiter.length + 2);
+          // Line by line from here, never the whole rest per delimiter: 42,000 heredocs that all
+          // close took 7 s when each one split what was left.
+          let line = at;
+          let bodyEnd = command.length;
+          let next = command.length;
+          while (line <= command.length) {
+            const newline = command.indexOf('\n', line);
+            const end = newline === -1 ? command.length : newline;
+            if (command.slice(line, end).trim() === delimiter) {
+              bodyEnd = Math.max(at, line - 1);
+              next = newline === -1 ? command.length : newline + 1;
+              break;
+            }
+            if (newline === -1) break;
+            line = newline + 1;
+          }
+          current.scripts.push(command.slice(at, bodyEnd));
+          at = next;
         }
         i = at;
       } else {
@@ -191,30 +204,70 @@ function firstBraceGroup(word: string): { start: number; end: number } | undefin
   return undefined;
 }
 
-/** `${NAME}`, `${NAME:-default}` with its default bounded, or `$NAME`. */
-const VARIABLE = new RegExp(
-  `\\$\\{([A-Za-z_]\\w*)(?::?[-=+?]([^}]{0,${MAX_DEFAULT_VALUE}}))?\\}|\\$([A-Za-z_]\\w*)`,
-  'g'
-);
+/** A variable's name, read at a set place. */
+const VARIABLE_NAME = /[A-Za-z_]\w*/y;
 
 /**
  * Put in `~` at a word's start and any `$NAME`, `${NAME}` or `${NAME:-default}` it knows. An
  * unknown name stays as text, which names no real path: the known limit, stated above.
  *
+ * A scan rather than a regex, so an unclosed run of `${A:- ` stays linear with no limit on a
+ * default's length, and what variables add is counted before it is built: `a1=$a0$a0…` lines
+ * multiply, and 344 bytes of them ran the server out of memory.
+ *
  * @param word - A word.
  * @param home - The home folder.
  * @param vars - The variables known here.
+ * @returns The word, or `null` when variables would add too much to it.
  */
 export function expandVariables(
   word: string,
   home: string,
   vars: Readonly<Record<string, string | undefined>>
-): string {
-  const named = word.replace(
-    VARIABLE,
-    (whole, braced?: string, fallback?: string, bare?: string) =>
-      vars[braced ?? bare ?? ''] ?? fallback ?? whole
-  );
+): string | null {
+  let named = '';
+  let at = 0;
+  let added = 0;
+  while (at < word.length) {
+    const dollar = word.indexOf('$', at);
+    if (dollar === -1) break;
+    named += word.slice(at, dollar);
+    at = dollar + 1;
+    const braced = word[at] === '{';
+    VARIABLE_NAME.lastIndex = braced ? at + 1 : at;
+    const name = VARIABLE_NAME.exec(word)?.[0];
+    let value: string | undefined;
+    let end = at;
+    if (name !== undefined) {
+      const after = dollar + (braced ? 2 : 1) + name.length;
+      if (!braced) {
+        value = vars[name] ?? word.slice(dollar, after);
+        end = after;
+      } else if (word[after] === '}') {
+        value = vars[name] ?? word.slice(dollar, after + 1);
+        end = after + 1;
+      } else if ('-=+?'.includes(word[word[after] === ':' ? after + 1 : after] ?? ' ')) {
+        const close = word.indexOf('}', after);
+        // No close here means none later either: the rest is text, in one step.
+        if (close === -1) {
+          named += '$';
+          break;
+        }
+        const start = word[after] === ':' ? after + 2 : after + 1;
+        value = vars[name] ?? word.slice(start, close);
+        end = close + 1;
+      }
+    }
+    if (value === undefined) {
+      named += '$';
+      continue;
+    }
+    added += value.length;
+    if (added > MAX_VARIABLE_GROWTH) return null;
+    named += value;
+    at = end;
+  }
+  named += word.slice(at);
   return named === '~' || named.startsWith('~/') ? `${home}${named.slice(1)}` : named;
 }
 
@@ -230,5 +283,5 @@ export function pathPieces(word: string): string[] {
     .map((piece) => piece.replace(/^-[A-Za-z]+(?=[/~.])/, ''))
     .filter((piece) => piece.length > 0 && !piece.startsWith('-'));
   const whole = !word.startsWith('-') && !/[\s'"`(),;:<>|&={}]/.test(word);
-  return (whole ? [word, ...pieces] : pieces).filter((piece) => piece.length <= MAX_PATH_PIECE);
+  return whole ? [word, ...pieces] : pieces;
 }

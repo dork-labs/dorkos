@@ -17,6 +17,8 @@
  * - **Too much to read is refused too.** This runs in the server, before any card, on text an agent
  *   chose. So every expansion is capped before it is built, and a write that passes a cap is refused
  *   at every level (a read asks), so padding can't hide one. Only a command nobody types gets there.
+ *   What this doesn't bound yet is time spent after expanding: deep missing paths and repeated copy
+ *   sources can still hold the server for seconds. Those need the check out of the server's thread.
  *
  * **A mitigation, not a boundary.** This reads command text. A path built while the command runs
  * (`$(printf …)`, base64, a script file) gets through; `shell-path-guard.test.ts` records such
@@ -333,9 +335,13 @@ export async function commandReachesProtectedRead(
     if (!isRecursive(verb, args, command)) continue;
     const skipsHidden = verb === 'rg' || verb === 'ag' || verb === 'ack';
     const hidden = !skipsHidden || args.some((arg) => SEES_HIDDEN.test(arg));
-    const named = searchedWords(verb, args).flatMap(
-      (word) => resolve(word, { pieces: false }) ?? []
-    );
+    const named: string[] = [];
+    for (const word of searchedWords(verb, args)) {
+      // A word too much to open used to vanish, sending the search to the wrong folder.
+      const paths = resolve(word, { pieces: false });
+      if (paths === null) return true;
+      named.push(...paths);
+    }
     const folders = named.filter(isFolder);
     // A searcher naming nothing that exists searches where it stands (`grep -r -A 1 x` has `1` for
     // a pattern as far as this can tell). Naming a real file means no tree.

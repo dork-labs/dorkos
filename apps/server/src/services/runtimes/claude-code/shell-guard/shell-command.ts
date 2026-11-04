@@ -11,6 +11,7 @@ import {
   expandBraces,
   expandVariables,
   parseShell,
+  MAX_PATH_PIECE,
   pathPieces,
   type ShellSegment,
 } from './shell-words.js';
@@ -173,6 +174,15 @@ function characterSet(
   const singles = new Set<string>();
   const ranges: [string, string][] = [];
   while (at < segment.length && (segment[at] !== ']' || at === first)) {
+    if (segment.startsWith('[:', at)) {
+      // `[[:alpha:]]` and friends aren't read, so this set may hold anything. Matching more only
+      // refuses, and it makes the whole set one test that always fits.
+      const close = segment.indexOf(':]', at + 2);
+      if (close !== -1) {
+        const end = segment.indexOf(']', close + 2);
+        if (end !== -1) return { test: () => true, end };
+      }
+    }
     if (segment[at + 1] === '-' && at + 2 < segment.length && segment[at + 2] !== ']') {
       ranges.push([segment[at]!, segment[at + 2]!]);
       at += 3;
@@ -181,27 +191,38 @@ function characterSet(
       at += 1;
     }
   }
-  if (at >= segment.length) return undefined;
+  if (at >= segment.length) {
+    // Zsh reads `[!]` as any one character, and the Mac's shell is zsh. Matching more only refuses.
+    if (!negate) return undefined;
+    return { test: () => true, end: segment[first] === ']' ? first : first - 1 };
+  }
+  const member = (char: string): boolean =>
+    singles.has(char) || ranges.some(([from, to]) => char >= from && char <= to);
+  // Read against the pattern as written, so `Z-d` keeps its meaning. A shell tests the real
+  // character, which is all a negated set needs; a plain set also tries both cases, because the
+  // Mac's disk ignores case and matching more only refuses.
   const test = (char: string): boolean =>
-    negate !== (singles.has(char) || ranges.some(([from, to]) => char >= from && char <= to));
+    negate
+      ? !member(char)
+      : member(char) || member(char.toLowerCase()) || member(char.toUpperCase());
   return { test, end: at };
 }
 
-/** A path's wildcards as steps for one name, lowercased as this file's names are matched. */
+/** A path's wildcards as steps for one name. Plain letters match in either case. */
 function wildcardSteps(segment: string): WildcardStep[] {
-  const lower = segment.toLowerCase();
   const steps: WildcardStep[] = [];
-  for (let i = 0; i < lower.length; i++) {
-    const char = lower[i]!;
+  for (let i = 0; i < segment.length; i++) {
+    const char = segment[i]!;
     if (char === '*') {
       if (steps.at(-1) !== '*') steps.push('*');
     } else if (char === '?') {
       steps.push(() => true);
     } else {
-      // A `[` with no close is a plain `[`, as in a shell.
-      const set = char === '[' ? characterSet(lower, i) : undefined;
+      // Otherwise a `[` with no close is a plain `[`, as in a shell.
+      const set = char === '[' ? characterSet(segment, i) : undefined;
       if (set) i = set.end;
-      steps.push(set ? set.test : (other) => other === char);
+      const lower = char.toLowerCase();
+      steps.push(set ? set.test : (other) => other.toLowerCase() === lower);
     }
   }
   return steps;
@@ -213,18 +234,17 @@ function wildcardSteps(segment: string): WildcardStep[] {
  * name × pattern steps, which the caller charges for.
  */
 function matchesWildcard(name: string, steps: readonly WildcardStep[]): boolean {
-  const lower = name.toLowerCase();
   let at = 0;
   let step = 0;
   let star = -1;
   let mark = 0;
-  while (at < lower.length) {
+  while (at < name.length) {
     const current = steps[step];
     if (current === '*') {
       star = step;
       step += 1;
       mark = at;
-    } else if (current !== undefined && current(lower[at]!)) {
+    } else if (current !== undefined && current(name[at]!)) {
       at += 1;
       step += 1;
     } else if (star !== -1) {
@@ -292,7 +312,8 @@ function openGlob(
       if (!budget.spend(LISTING_COST)) return null;
       try {
         for (const name of readdirSync(base)) {
-          const cost = ENTRY_COST + (name.length * steps.length) / MATCH_COST_DIVISOR;
+          // The pattern's length, not its steps: one `[…]` is one step however many ranges it holds.
+          const cost = ENTRY_COST + (name.length * segment.length) / MATCH_COST_DIVISOR;
           if (!budget.spend(cost)) return null;
           if (!dotFiles && name.startsWith('.') && !segment.startsWith('.')) continue;
           if (matchesWildcard(name, steps)) next.push(path.join(base, name));
@@ -374,13 +395,19 @@ export function readCommand(
     PWD: where.cwd,
   };
   const lists = new Map<string, string[]>();
+  // Sticky: once part of the command couldn't be read, nothing about the rest can be trusted. A
+  // `cd` that couldn't be opened used to mean "stayed put", which hid a write to a setup file.
+  let unreadable = false;
   for (const { words } of parsed) {
     if (words[0] === 'for' && words[2] === 'in' && /^[A-Za-z_]\w*$/.test(words[1] ?? '')) {
       lists.set(words[1]!, words.slice(3));
     }
     for (const word of words) {
       const assigned = /^([A-Za-z_]\w*)=(.*)$/s.exec(word);
-      if (assigned) vars[assigned[1]!] = expandVariables(assigned[2]!, where.home, vars);
+      if (!assigned) continue;
+      const value = expandVariables(assigned[2]!, where.home, vars);
+      if (value === null) unreadable = true;
+      else vars[assigned[1]!] = value;
     }
   }
   let work = MAX_WORK;
@@ -422,9 +449,13 @@ export function readCommand(
       for (const piece of braces) {
         if (!budget.spend(piece.length)) return null;
         // Where the command stands is a relative path, so it follows the `cd`s below.
-        results.push(
-          expandVariables(piece.replace(/(\$\(pwd\)|\$PWD|\$\{PWD\})\/?/g, './'), where.home, vars)
+        const named = expandVariables(
+          piece.replace(/(\$\(pwd\)|\$PWD|\$\{PWD\})\/?/g, './'),
+          where.home,
+          vars
         );
+        if (named === null) return null;
+        results.push(named);
       }
     }
     return results;
@@ -439,28 +470,39 @@ export function readCommand(
     if (cwds.size > MAX_CWDS) return { segment, cwd: current };
     if (verb === 'cd' || verb === 'pushd') {
       const target = args.find((arg) => !arg.startsWith('-'));
-      current = target === undefined ? where.home : path.resolve(current, open(target)?.[0] ?? '');
+      const opened = target === undefined ? [where.home] : open(target);
+      if (opened === null) unreadable = true;
+      else current = path.resolve(current, opened[0] ?? '');
       cwds.add(current);
     }
     // `git -C <folder>` stands there for this one command.
     const gitFolder = verb === 'git' && args[0] === '-C' ? args[1] : undefined;
     if (gitFolder === undefined) return { segment, cwd: current };
-    const cwd = path.resolve(current, open(gitFolder)?.[0] ?? '');
+    const opened = open(gitFolder);
+    if (opened === null) unreadable = true;
+    const cwd = path.resolve(current, opened?.[0] ?? '');
     cwds.add(cwd);
     return { segment, cwd };
   });
   return {
     segments,
     resolve: (word, { pieces, writingFrom, keep }) => {
-      if (cwds.size > MAX_CWDS) return null;
+      if (unreadable || cwds.size > MAX_CWDS) return null;
       const words = open(word);
       if (words === null) return null;
       const results = new Set<string>();
       for (const opened of words) {
         for (const piece of pieces ? pathPieces(opened) : [opened]) {
           if (writingFrom && pieces && keep && !keep(piece)) continue;
+          if (piece.length > MAX_PATH_PIECE) {
+            // Too long to open as written, but a wildcard can open it into a real name:
+            // `hos[ttt…1,100…].key` printed the file. Only plain text this long names nothing.
+            if (/[*?[]/.test(piece)) return null;
+            continue;
+          }
           // Again per piece: `--file=~/x` and a script's `'~/x'` start with `~` only here.
           const named = expandVariables(piece, where.home, vars);
+          if (named === null) return null;
           for (const cwd of writingFrom ? [writingFrom] : cwds) {
             if (!budget.spend(PATH_COST + named.length)) return null;
             results.add(path.resolve(cwd, named));
