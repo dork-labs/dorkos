@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { chromium, type BrowserContext } from 'playwright-core';
+import { lexWithoutComments } from '../../../../../../../scripts/lib/code-only.mjs';
 const mocks = vi.hoisted(() => ({
   access: vi.fn(),
   mkdir: vi.fn(async () => undefined),
@@ -102,7 +103,9 @@ describe('pinned managed browser preparation', () => {
       );
       const array = bundle.match(/disabledFeatures = (\[[\s\S]*?\])\.filter\(Boolean\);/)?.[1];
       expect(array).toBeDefined();
-      const features = JSON.parse(array!.replace(/^\s*\/\/.*$/gm, '').replace(/,\s*\]/, ']'));
+      const lexed = lexWithoutComments(array!, 'pinned-disabled-features.js');
+      expect(lexed.parseErrors).toBe(0);
+      const features = JSON.parse(lexed.code.replace(/,\s*\]/, ']'));
       const defaultFeatures = `--disable-features=${features.join(',')}`;
       expect(launch).toHaveBeenCalledExactlyOnceWith('test-only-storage', {
         timeout: 15_000,
