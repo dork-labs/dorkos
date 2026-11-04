@@ -45,8 +45,11 @@ export interface SessionSurface {
    * (FB-38/55). `null` when they have not given a name, and the row says "You".
    */
   humanName: string | null;
-  /** The two above, as the transcript takes them: `<SessionTranscript {...transcriptNames} />`. */
-  transcriptNames: Pick<SessionSurface, 'directMessage' | 'humanName'>;
+  /**
+   * The two above, as the transcript takes them: `<SessionTranscript {...transcriptNames} />`,
+   * and `lookupFailed` when the server could not say whether this is a DM.
+   */
+  transcriptNames: Pick<SessionSurface, 'directMessage' | 'humanName'> & { lookupFailed?: true };
   /** What the empty composer says. */
   placeholder: string;
   /**
@@ -111,7 +114,11 @@ export function useSessionSurface(
     return {
       directMessage: null,
       humanName,
-      transcriptNames: { directMessage: null, humanName },
+      transcriptNames: {
+        directMessage: null,
+        humanName,
+        ...(view.lookupFailed ? { lookupFailed: true as const } : {}),
+      },
       placeholder: composerName ? `Message ${composerName}…` : 'Send a message…',
       quietTurnNumbers: false,
     };

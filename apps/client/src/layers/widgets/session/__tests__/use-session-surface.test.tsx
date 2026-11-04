@@ -15,10 +15,12 @@ const state = vi.hoisted(() => ({
   displayName: null as string | null,
   noManifest: false,
   unknown: false,
+  lookupFailed: false,
 }));
 
 vi.mock('@/layers/features/direct-message', () => ({
   useDirectMessageView: () => ({
+    lookupFailed: state.lookupFailed,
     mode: state.mode,
     chat:
       state.mode === 'off' || state.mode === 'pending'
@@ -50,6 +52,7 @@ afterEach(() => {
   state.showSessions = false;
   state.noManifest = false;
   state.unknown = false;
+  state.lookupFailed = false;
 });
 
 const AT_FOLDER = { id: 'm', name: 'scout', displayName: 'Scout' } as unknown as AgentManifest;
@@ -130,6 +133,17 @@ describe('useSessionSurface', () => {
     const { result } = renderHook(() => useSessionSurface('s', AT_FOLDER));
     expect(result.current.directMessage?.agent?.displayName).toBe('Unknown agent');
     expect(result.current.placeholder).toBe('Send a message…');
+  });
+
+  it('tells the transcript when the lookup failed, and only then', () => {
+    expect(renderHook(() => useSessionSurface('s', null)).result.current.transcriptNames).toEqual({
+      directMessage: null,
+      humanName: null,
+    });
+    state.lookupFailed = true;
+    const { result } = renderHook(() => useSessionSurface('s', null));
+    expect(result.current.directMessage).toBeNull();
+    expect(result.current.transcriptNames).toMatchObject({ lookupFailed: true });
   });
 
   it('shows the turn’s time and tokens in a DM only with Show sessions on', () => {

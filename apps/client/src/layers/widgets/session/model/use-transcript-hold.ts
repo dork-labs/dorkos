@@ -6,7 +6,7 @@
  * waits. A long one is a blank page, so past {@link TRANSCRIPT_HOLD_MS} it draws
  * as a session, the layout it uses when no answer ever comes, and accepts one
  * reflow if the answer turns out to be a DM. That needs a name to draw it under:
- * with none, the identity hold keeps it back. If the landing still lacks what it
+ * with none, the identity hold keeps it back, up to its own, longer limit. If the landing still lacks what it
  * needs at {@link TRANSCRIPT_LOADING_MS}, the list says it is loading rather than
  * stay blank or show the oldest message. Only the list waits: the bar and the
  * composer never do.
@@ -14,6 +14,7 @@
  * @module widgets/session/model/use-transcript-hold
  */
 import { useEffect, useState } from 'react';
+import { AGENT_IDENTITY_LIMIT_MS, useWaitedPast } from '@/layers/shared/lib';
 
 /** How long the conversation stays unseen while it waits, in milliseconds. */
 export const TRANSCRIPT_HOLD_MS = 300;
@@ -53,8 +54,10 @@ export interface TranscriptHold {
  * @param isDirectMessage - Whether the answer, once in, drew it as a DM.
  * @param readyToLand - Whether all the landing is waiting for now is this hold.
  * @param identityPending - Whether the agent's name and face are still on their
- *   way. No limit lets the list go without them, because a reply under the wrong
- *   name is worse than a wait; past {@link TRANSCRIPT_LOADING_MS} it says it is loading.
+ *   way. The first limit doesn't let the list go without them, because a reply
+ *   under the wrong name is worse than a wait: past {@link TRANSCRIPT_LOADING_MS} it
+ *   says it is loading, and at {@link AGENT_IDENTITY_LIMIT_MS} it shows anyway,
+ *   for the caller to draw under a name that claims nothing.
  */
 export function useTranscriptHold(
   conversationId: string,
@@ -73,7 +76,8 @@ export function useTranscriptHold(
   }, [undecided, conversationId]);
 
   const drawnEarly = waitedTooLong === conversationId;
-  const held = (undecided && !drawnEarly) || identityPending;
+  const gaveUpOnIdentity = useWaitedPast(identityPending, conversationId, AGENT_IDENTITY_LIMIT_MS);
+  const held = (undecided && !drawnEarly) || (identityPending && !gaveUpOnIdentity);
 
   // Stays true for a few frames after the hold ends. A chat that was never held
   // never starts hidden, so it gains nothing here.
@@ -112,14 +116,5 @@ export function useTranscriptHold(
  * @param conversationId - The conversation on screen; each one gets its own wait.
  */
 export function useLoadingTooLong(waiting: boolean, conversationId: string): boolean {
-  const [tooLong, setTooLong] = useState<string | null>(null);
-  useEffect(() => {
-    if (!waiting) return;
-    const timer = setTimeout(() => setTooLong(conversationId), TRANSCRIPT_LOADING_MS);
-    return () => {
-      clearTimeout(timer);
-      setTooLong(null);
-    };
-  }, [waiting, conversationId]);
-  return waiting && tooLong === conversationId;
+  return useWaitedPast(waiting, conversationId, TRANSCRIPT_LOADING_MS);
 }

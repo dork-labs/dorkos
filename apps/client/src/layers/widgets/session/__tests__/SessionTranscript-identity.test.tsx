@@ -5,8 +5,9 @@
  */
 import type React from 'react';
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { screen, cleanup, waitFor } from '@testing-library/react';
+import { act, screen, cleanup, waitFor } from '@testing-library/react';
 import type { ChatMessage } from '@/layers/shared/model';
+import { AGENT_IDENTITY_LIMIT_MS } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { createReadCursorHarness, renderWithTransport } from './session-transcript-test-helpers';
 
@@ -122,6 +123,85 @@ describe('SessionTranscript — whose words these are', () => {
       );
       expect(screen.getByText('Tern')).toBeTruthy();
     });
+  });
+
+  describe('when an answer never comes', () => {
+    const UNDECIDED = { agent: null, humanName: null, settled: false };
+
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Move the clock on, letting what it wakes finish. */
+    const wait = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
+
+    it('shows the chat under "Unknown agent" at the limit, never the runtime', async () => {
+      manifest.current = { data: null, isPending: false, isError: false };
+      render(<SessionTranscript {...props()} directMessage={UNDECIDED} />);
+
+      await wait(AGENT_IDENTITY_LIMIT_MS - 200);
+      expect(screen.getByText('Loading chat…')).toBeTruthy();
+
+      await wait(400);
+      await waitFor(() => expect(screen.getByText('Unknown agent')).toBeTruthy());
+      expect(screen.queryByText('Loading chat…')).toBeNull();
+      expect(screen.queryByText('Claude Code')).toBeNull();
+      await waitFor(() =>
+        expect(screen.getByTestId('message-list').className).not.toContain('invisible')
+      );
+    });
+
+    it('does the same for a manifest that hangs', async () => {
+      manifest.current = { data: undefined, isPending: true, isError: false };
+      render(<SessionTranscript {...props()} />);
+
+      await wait(AGENT_IDENTITY_LIMIT_MS + 200);
+      await waitFor(() => expect(screen.getByText('Unknown agent')).toBeTruthy());
+      expect(screen.queryByText('Claude Code')).toBeNull();
+    });
+
+    it('never falls back to the folder’s agent in a DM whose own name hangs', async () => {
+      manifest.current = {
+        data: { id: 'other', name: 'other', displayName: 'Someone else' },
+        isPending: false,
+        isError: false,
+      };
+      const directMessage = { agent: null, humanName: null, settled: true, agentPending: true };
+      render(<SessionTranscript {...props()} directMessage={directMessage} />);
+
+      await wait(AGENT_IDENTITY_LIMIT_MS + 200);
+      await waitFor(() => expect(screen.getByText('Unknown agent')).toBeTruthy());
+      expect(screen.queryByText('Someone else')).toBeNull();
+    });
+
+    it('swaps the name in place when a late answer comes', async () => {
+      manifest.current = { data: null, isPending: false, isError: false };
+      const view = render(<SessionTranscript {...props()} directMessage={UNDECIDED} />);
+      await wait(AGENT_IDENTITY_LIMIT_MS + 200);
+      await waitFor(() => expect(screen.getByText('Unknown agent')).toBeTruthy());
+
+      manifest.current = {
+        data: { id: 'tern', name: 'tern', displayName: 'Tern' },
+        isPending: false,
+        isError: false,
+      };
+      view.rerender(<SessionTranscript {...props()} directMessage={UNDECIDED} />);
+      await wait(100);
+      expect(screen.getByText('Tern')).toBeTruthy();
+      expect(screen.queryByText('Unknown agent')).toBeNull();
+      expect(screen.getByTestId('message-list').className).not.toContain('invisible');
+    });
+  });
+
+  it('goes straight to "Unknown agent" when the lookup fails', async () => {
+    manifest.current = { data: null, isPending: false, isError: false };
+    render(<SessionTranscript {...props()} lookupFailed />);
+    expect(await screen.findByText('Unknown agent')).toBeTruthy();
+    expect(screen.queryByText('Claude Code')).toBeNull();
+    expect(screen.queryByText('Loading chat…')).toBeNull();
   });
 
   it('keeps the runtime’s name for a folder that has no agent', async () => {

@@ -7,7 +7,13 @@
  */
 import { useCallback, useMemo } from 'react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { getAgentDisplayName, resolveAgentVisual, type AgentVisual } from '@/layers/shared/lib';
+import {
+  AGENT_IDENTITY_LIMIT_MS,
+  getAgentDisplayName,
+  resolveAgentVisual,
+  useWaitedPast,
+  type AgentVisual,
+} from '@/layers/shared/lib';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { dmCounterpart, roomDisplayTitle, useRooms } from '@/layers/entities/room';
 import { useMemberRooms, useTeamRoster } from '@/layers/entities/team';
@@ -52,13 +58,17 @@ export function useDirectMessageAgent(
 ): DirectMessageAgent {
   const { data: manifest, isPending } = useCurrentAgent(agentPath);
   const { data: roster } = useTeamRoster({ enabled: agentPath !== null });
-  // A DM keeps its agent after the agent's file is gone, so the room is asked
-  // only then. Until it answers the name is still on its way, never a guess.
-  const asksRoom = roomId !== null && agentPath !== null && !isPending && !manifest;
+  // A DM keeps its agent after the agent's file is gone, so without a manifest its
+  // room says who it is. Until both have answered the name is still on its way,
+  // never a guess, up to the limit: then whatever is known, and a late answer
+  // still corrects it.
+  const asksRoom = roomId !== null && agentPath !== null && !manifest;
   const { data: rooms, isPending: roomPending } = useRooms({ enabled: asksRoom });
   const room = asksRoom ? rooms?.find((candidate) => candidate.id === roomId) : undefined;
   const lastKnownName = dmCounterpart(room?.participants)?.displayName.trim();
-  const fallbackReady = asksRoom && !roomPending;
+  const stillOut = asksRoom && (isPending || roomPending);
+  const gaveUp = useWaitedPast(stillOut, agentPath ?? '', AGENT_IDENTITY_LIMIT_MS);
+  const fallbackReady = asksRoom && (!stillOut || gaveUp);
   const member = useMemo(
     () =>
       agentPath === null

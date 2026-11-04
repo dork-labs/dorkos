@@ -18,6 +18,11 @@ export interface DirectMessageView {
   mode: DirectMessageMode;
   /** The Direct chat this session is, or `null` when it is an ordinary chat. */
   chat: DirectChat | null;
+  /**
+   * Whether the server could not say. The chat is drawn as a session, but it may
+   * still belong to an agent, so nothing should name it after its runtime.
+   */
+  lookupFailed: boolean;
 }
 
 /**
@@ -34,7 +39,7 @@ export interface DirectMessageView {
  */
 export function useDirectMessageView(sessionId: string | null): DirectMessageView {
   const { enabled, settled } = useDmViewState();
-  const { data, isPending } = useDirectChat(sessionId, { enabled });
+  const { data, isPending, isError } = useDirectChat(sessionId, { enabled });
   const { view } = useSessionSearch();
   const chat = enabled ? (data ?? null) : null;
   return {
@@ -48,6 +53,7 @@ export function useDirectMessageView(sessionId: string | null): DirectMessageVie
             pending: sessionId !== null && isPending,
           }),
     chat,
+    lookupFailed: enabled && isError && chat === null,
   };
 }
 

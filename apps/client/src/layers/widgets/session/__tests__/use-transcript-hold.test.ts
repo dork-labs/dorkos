@@ -6,6 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import { AGENT_IDENTITY_LIMIT_MS } from '@/layers/shared/lib';
 import {
   TRANSCRIPT_HOLD_MS,
   TRANSCRIPT_LOADING_MS,
@@ -120,6 +121,24 @@ describe('useTranscriptHold', () => {
       expect(result.current).toMatchObject({ held: true, hidden: true, showLoading: false });
       act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS));
       expect(result.current).toMatchObject({ held: true, hidden: true, showLoading: true });
+    });
+
+    it('lets go at the last limit, so nobody waits for good', () => {
+      const { result } = mount({ identity: true });
+      act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS - 1));
+      expect(result.current).toMatchObject({ held: true, hidden: true, showLoading: true });
+      act(() => void vi.advanceTimersByTime(1));
+      expect(result.current.held).toBe(false);
+      act(() => void vi.advanceTimersByTime(FRAME * 4));
+      expect(result.current).toMatchObject({ hidden: false, showLoading: false });
+    });
+
+    it('gives each conversation its own last limit', () => {
+      const { result, rerender } = mount({ identity: true });
+      act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS));
+      expect(result.current.held).toBe(false);
+      rerender({ id: 'chat-2', undecided: true, dm: false, identity: true });
+      expect(result.current.held).toBe(true);
     });
 
     it('lets go once they arrive, landing before it shows', () => {
