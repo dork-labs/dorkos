@@ -140,7 +140,20 @@ export default defineConfig({
     // (v0.63.0, DOR-1448). `scripts/check-renderer-defines.ts` fails the build
     // if that ever recurs.
     define: clientDefines(),
-    plugins: [tanstackRouter(clientRouterOptions()), react(), tailwindcss()],
+    plugins: [
+      tanstackRouter(clientRouterOptions()),
+      react(),
+      tailwindcss(),
+      {
+        name: 'dorkos:http-renderer-base',
+        // electron-vite's production preset forces './' for file:// renderers,
+        // overwriting a top-level `base`. Ours is served over HTTP: relative
+        // bundles resolve under /x/assets when a restored tab opens /x/mkt-site.
+        // Run after that preset so every page loads assets from the server root.
+        enforce: 'post',
+        config: () => ({ base: '/' }),
+      },
+    ],
     resolve: {
       alias: {
         '@': path.resolve(clientRoot, 'src'),
