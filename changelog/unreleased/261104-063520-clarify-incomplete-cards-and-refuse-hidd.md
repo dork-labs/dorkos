@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(approvals): clarify incomplete cards and refuse hidden text'
+  - 'fix(approvals): reject hidden characters in global package cards'
 ---
 
 ### Fixed

@@ -228,6 +228,19 @@ describe('package approvals require a whole card', () => {
     expect(service.grant(ticket.approvalId)).toBe(length === 4000 ? undefined : 'incomplete');
   });
 
+  it('refuses global activation when full detail contains a bidi override', () => {
+    const detail = 'echo safe\u202Ehidden';
+    const ticket = service.request({
+      capabilityId: 'marketplace.activate_global_plugin',
+      inputHash: 'global-bidi',
+      summary: 'Allow package',
+      detail,
+      packageRequest: { kind: 'global', name: 'acme-hooks', summary: 'Allow package', detail },
+    });
+    expect(service.getPending(ticket.approvalId)?.cannotAllow).toBe(true);
+    expect(service.grant(ticket.approvalId)).toBe('incomplete');
+  });
+
   it('global activation refuses redaction and a detail one over its cap', () => {
     for (const detail of ['ghp_' + 'a'.repeat(36), 'x'.repeat(4001)]) {
       const ticket = service.request({
