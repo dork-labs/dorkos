@@ -78,6 +78,14 @@ function withMonoHashes(body: string): ReactNode {
   );
 }
 
+/** Keep the refusal visible while only its schedule name shortens. */
+function refusalTitleParts(title: string): { name: string; result: string } | null {
+  const bash = ' had a command refused';
+  if (title.endsWith(bash)) return { name: title.slice(0, -bash.length), result: bash.trim() };
+  const at = title.lastIndexOf(' was refused ');
+  return at < 0 ? null : { name: title.slice(0, at), result: title.slice(at + 1) };
+}
+
 export interface InboxRowProps {
   /** The notification this row draws. */
   notification: NotificationDTO;
@@ -202,6 +210,8 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     notification.mark === 'refused' || notification.kind === 'schedule.armed_by_agent';
   const isScheduleCreation =
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
+  const refusalTitle =
+    notification.mark === 'refused' ? refusalTitleParts(notification.title) : null;
   const tone = notificationRowTone(notification);
   const unread = notification.readAt === undefined;
   const visual = tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
@@ -255,18 +265,35 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           data-slot="inbox-row-title"
           className={cn(
             'block text-xs',
-            isScheduleCreation
-              ? 'truncate'
-              : readsInFull
-                ? 'break-words'
-                : hasAction
-                  ? 'line-clamp-2 break-words'
-                  : 'truncate',
+            refusalTitle
+              ? 'flex min-w-0 items-baseline gap-1'
+              : isScheduleCreation
+                ? 'truncate'
+                : readsInFull
+                  ? 'break-words'
+                  : hasAction
+                    ? 'line-clamp-2 break-words'
+                    : 'truncate',
             unread ? 'text-foreground font-medium' : 'text-foreground/90'
           )}
           title={isScheduleCreation ? notification.title : undefined}
         >
-          {notification.title}
+          {refusalTitle ? (
+            <>
+              <span
+                data-slot="refusal-schedule-name"
+                className="min-w-0 truncate"
+                title={refusalTitle.name}
+              >
+                {refusalTitle.name}
+              </span>
+              <span data-slot="refusal-result" className="max-w-[75%] shrink-0 break-words">
+                {refusalTitle.result}
+              </span>
+            </>
+          ) : (
+            notification.title
+          )}
         </span>
         {notification.body !== undefined && (
           <span

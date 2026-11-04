@@ -260,6 +260,36 @@ describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
     );
   });
 
+  it.each(['had a command refused', 'was refused sample: search'])(
+    'keeps %s visible while only a long schedule name truncates',
+    (result) => {
+      const name = 'Nightly sample report for every imaginary project on the sample team';
+      const { container } = render(
+        <InboxRow
+          notification={{
+            ...failing,
+            mark: 'refused',
+            title: `${name} ${result}`,
+            body: 'The reason wasn’t recorded. Open the schedule to check its mode.',
+          }}
+          onOpen={() => {}}
+        />
+      );
+      expect(container.querySelector('[data-slot="refusal-schedule-name"]')).toHaveClass(
+        'truncate'
+      );
+      expect(container.querySelector('[data-slot="refusal-result"]')).toHaveTextContent(result);
+      expect(container.querySelector('[data-slot="refusal-result"]')).not.toHaveClass('truncate');
+      expect(container.querySelector('[data-slot="inbox-row-body"]')).toHaveClass(
+        'whitespace-pre-line'
+      );
+      expect(container.querySelector('[data-slot="inbox-row-body"]')).not.toHaveClass(
+        'line-clamp-2',
+        'sm:truncate'
+      );
+    }
+  );
+
   it('draws the Schedules row’s marks, never a red tick', () => {
     const { container } = render(
       <InboxRow notification={{ ...failing, mark: 'refused' }} onOpen={() => {}} />

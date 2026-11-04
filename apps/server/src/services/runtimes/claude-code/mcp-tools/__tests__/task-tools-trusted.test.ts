@@ -18,6 +18,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
+import { armedScheduleNote } from '../tasks/task-tool-copy.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import {
@@ -226,4 +227,12 @@ describe('tasks_* on a Trusted install', () => {
     expect(payload.code).toBe('not_your_schedule');
     expect(store.getTask(id)!.status).toBe('active');
   });
+});
+
+it('keeps an armed schedule armed in the reply when its execution description is missing', () => {
+  const note = armedScheduleNote(undefined);
+  expect(note).toBe(
+    'Scheduled. The saved mode wasn’t reported. Tell the person to check the schedule.'
+  );
+  expect(note).not.toMatch(/until.*approv|will run on its own/i);
 });

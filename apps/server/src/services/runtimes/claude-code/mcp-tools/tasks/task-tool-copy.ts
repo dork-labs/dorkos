@@ -31,11 +31,13 @@ export const PARKED_SCHEDULE_NOTE =
  * DorkOS has already told the person (`schedule.armed_by_agent`, with Pause),
  * so this asks only for the plain report a co-worker would give.
  */
-export function armedScheduleNote(execution: {
+export function armedScheduleNote(execution?: {
   modeLabel: string;
   limitation: string;
   refusesUnansweredApprovals: boolean;
 }): string {
+  if (!execution)
+    return 'Scheduled. The saved mode wasn’t reported. Tell the person to check the schedule.';
   if (execution.refusesUnansweredApprovals)
     return `Scheduled. It runs as ${execution.modeLabel}, so commands that need approval will be refused. Tell the person.`;
   return `Scheduled. It runs as ${execution.modeLabel}. ${execution.limitation} Tell the person.`;

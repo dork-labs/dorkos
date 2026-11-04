@@ -313,8 +313,7 @@ export function createCreateScheduleHandler(
       metadata: { status: task.status },
     });
 
-    if (armed?.execution)
-      return jsonContent({ schedule: task, note: armedScheduleNote(armed.execution) });
+    if (armed) return jsonContent({ schedule: task, note: armedScheduleNote(armed.execution) });
 
     return jsonContent({
       schedule: task,
