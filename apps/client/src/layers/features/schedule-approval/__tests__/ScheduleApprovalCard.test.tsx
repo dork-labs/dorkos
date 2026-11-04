@@ -1514,9 +1514,14 @@ describe('stale schedule approval', () => {
     );
   });
 });
-it.each([false, true])(
-  'blocks misplaced-mode approval and labels its trial (file capped: %s)',
-  (fileCapNext) => {
+it.each([
+  [false, false],
+  [false, true],
+  [true, false],
+  [true, true],
+])(
+  'blocks misplaced-mode approval and labels its trial (file capped: %s, pinned: %s)',
+  (fileCapNext, pinActions) => {
     renderCard(
       proposal({
         origin: 'file',
@@ -1524,8 +1529,11 @@ it.each([false, true])(
         reason: MISPLACED_SCHEDULE_PERMISSIONS,
         fileCapNext,
         enabled: false,
-      })
+      }),
+      {},
+      { pinActions }
     );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.getByRole('alert')).toHaveTextContent('permissions is in the wrong place');
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     expect(
