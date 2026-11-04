@@ -179,6 +179,7 @@ import {
 import { extensionSkillPluginsDir } from '@dorkos/harness';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { createPumpLaunchOptions, waitingOnFor, type PumpLaunchPlan } from './pump-launch.js';
+import { noteServersStarting } from '../sdk/launch-query.js';
 import { carryCeiling, ceilingMissed, decideCeilingedReuse } from '../warm-ceiling.js';
 import {
   conversationTokens,
@@ -809,6 +810,7 @@ export class PersistentDispatch {
       sessionId,
       ...(contextTokens !== undefined ? { contextTokens } : {}),
       onPluginReloadHeld: (impact) => this.onPluginReloadHeld?.(sessionId, impact, contextTokens),
+      onMcpServersNotTaken: () => noteServersStarting(session),
     });
     if (reuse.action === 'replace') {
       // Only a caller that can wait pays for the settle interval.
@@ -1334,10 +1336,7 @@ export class PersistentDispatch {
           }
           return plan;
         },
-        (live, fingerprint) => {
-          bundle.live = live;
-          bundle.fingerprint = fingerprint;
-        }
+        bundle
       ),
       onMessage: (message) => {
         noteTaskTypes(key, bundle.seenTaskTypes, message);

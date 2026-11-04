@@ -12,6 +12,7 @@ const expected: Record<string, number> = {
   'claude-code/sessions/pump-launch.ts': 1,
   'claude-code/sessions/tracked-spawn.ts': 1,
   'claude-code/sessions/warm-process-ledger.ts': 1,
+  'claude-code/sdk/launch-query.ts': 2,
   'claude-code/sdk/sdk-utils.ts': 1,
   'claude-code/tooling/provision.ts': 1,
   'codex/model-catalog.ts': 1,
@@ -40,6 +41,7 @@ const childCalls = new Set([
   'execFileSync',
   'execFileAsync',
   'query',
+  'launchQuery',
 ]);
 
 /** Parse executable calls; comments and illustrative snippets cannot satisfy the census. */
@@ -61,13 +63,15 @@ function census(text: string, name: string): { count: number; unprojected: strin
     if (ts.isCallExpression(node) && childCalls.has(node.expression.getText(source))) {
       count++;
       const kind = node.expression.getText(source);
-      const arg = node.arguments[kind === 'query' ? 0 : 2];
+      const arg = node.arguments[kind === 'query' || kind === 'launchQuery' ? 0 : 2];
       const call = arg?.getText(source) ?? '';
       // Two query sites consume the single reviewed launch resolver. The SDK
       // spawn hook forwards that SDK's complete env, covered by the SDK test.
       const forwarded =
         (name === 'claude-code/messaging/message-sender.ts' &&
-          call === '{ prompt: heldPrompt.prompt, options: sdkOptions }') ||
+          call.includes('options: sdkOptions,')) ||
+        // The launch helper passes on what those two gave it, servers aside.
+        (name === 'claude-code/sdk/launch-query.ts' && kind === 'query') ||
         (name === 'claude-code/sessions/pump-launch.ts' && call.includes('...plan.sdkOptions')) ||
         (name === 'claude-code/sessions/tracked-spawn.ts' && /\benv,/.test(call)) ||
         (name === 'codex/model-catalog.ts' && call === "{ stdio: 'pipe', env: environment }") ||
