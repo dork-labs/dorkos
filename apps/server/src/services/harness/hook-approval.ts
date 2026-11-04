@@ -339,7 +339,7 @@ export function hookProjectionBinding(
   request: HookProjectionRequest,
   passive = false
 ): ApprovalBinding {
-  const { projectPath, packageName, hooks } = canonical(request);
+  const { projectPath, packageName } = canonical(request);
   const inputHash = hookRequestInputHash(request);
   return {
     capabilityId: HOOK_PROJECTION_CAPABILITY_ID,
