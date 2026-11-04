@@ -7,12 +7,8 @@
  * @module features/todos/ui/SortableTodoRow
  */
 import type { KeyboardEvent, TouchEvent } from 'react';
-import {
-  defaultAnimateLayoutChanges,
-  useSortable,
-  type AnimateLayoutChanges,
-} from '@dnd-kit/sortable';
-import { useReducedMotion } from 'motion/react';
+import { useSortable } from '@dnd-kit/sortable';
+import { motion, useReducedMotion } from 'motion/react';
 import { ArrowDown, ArrowUp, GripVertical } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { usePrefersLongPress } from '../model/use-prefers-long-press';
@@ -34,13 +30,6 @@ export interface SortableTodoRowProps extends Omit<
   reorder?: { first: boolean; last: boolean };
 }
 
-/**
- * A row slides to its new place however it moved: after a drag, and after a Reorder button or ⌥↑ /
- * ⌥↓, which change the order with nothing being dragged. Same slide either way (DOR-3715).
- */
-const slideOnEveryMove: AnimateLayoutChanges = (args) =>
-  defaultAnimateLayoutChanges({ ...args, wasDragging: true });
-
 /** The `data-todo-move` key of one of a row's Reorder buttons, which the list refocuses. */
 export function todoMoveKey(id: string, by: -1 | 1): string {
   return `${id}:${by === -1 ? 'up' : 'down'}`;
@@ -58,11 +47,11 @@ export function SortableTodoRow({ sortable, onMove, reorder, ...row }: SortableT
     isDragging,
   } = useSortable({
     id: row.todo.id,
-    disabled: !sortable,
-    animateLayoutChanges: slideOnEveryMove,
+    // Reorder mode moves rows by its buttons alone, so nothing can drag one mid-slide.
+    disabled: !sortable || reorder !== undefined,
   });
   // Under reduced motion a move is instant, a drag's settle included.
-  const reducedMotion = useReducedMotion();
+  const reducedMotion = useReducedMotion() === true;
   // By pointer, not width (DOR-3715): a touch tablet has no hover to show a grip, and a narrow
   // desktop window still has a mouse and the keyboard moves.
   const longPress = usePrefersLongPress();
@@ -86,10 +75,15 @@ export function SortableTodoRow({ sortable, onMove, reorder, ...row }: SortableT
       rowRef={setNodeRef}
       dragging={isDragging}
       // Up and down only: a list row never leaves its column.
-      style={{
-        transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
-        transition: reducedMotion ? undefined : transition,
-      }}
+      // In Reorder mode nothing drags, and the list's own slide owns the row's transform.
+      {...(reorder
+        ? {}
+        : {
+            style: {
+              transform: transform ? `translate3d(0, ${Math.round(transform.y)}px, 0)` : undefined,
+              transition: reducedMotion ? undefined : transition,
+            },
+          })}
       {...(longPress && !reorder
         ? {
             pressToMove: {
@@ -99,28 +93,38 @@ export function SortableTodoRow({ sortable, onMove, reorder, ...row }: SortableT
         : {})}
       {...(longPress
         ? {}
-        : {
-            handle: (
-              <button
-                type="button"
-                ref={setActivatorNodeRef}
-                data-todo-grip={row.todo.id}
-                {...attributes}
-                {...listeners}
-                onKeyDown={onKeyDown}
-                aria-label={`Move ${row.todo.what}`}
-                aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                // Out of the way until wanted: it shows when the row is hovered or the grip has focus.
-                className="focus-ring text-muted-foreground hover:text-foreground flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
-              >
-                <GripVertical aria-hidden className="size-4" />
-              </button>
-            ),
-          })}
+        : reorder
+          ? // Reorder mode can't drag, so no grip offers to; its place stays, so nothing shifts.
+            { handle: <span aria-hidden className="size-7 shrink-0" /> }
+          : {
+              handle: (
+                <button
+                  type="button"
+                  ref={setActivatorNodeRef}
+                  data-todo-grip={row.todo.id}
+                  {...attributes}
+                  {...listeners}
+                  onKeyDown={onKeyDown}
+                  aria-label={`Move ${row.todo.what}`}
+                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                  // Out of the way until wanted: it shows when the row is hovered or the grip has focus.
+                  className="focus-ring text-muted-foreground hover:text-foreground flex size-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md opacity-0 transition-opacity group-hover/row:opacity-100 focus-visible:opacity-100"
+                >
+                  <GripVertical aria-hidden className="size-4" />
+                </button>
+              ),
+            })}
       {...(reorder
         ? {
             trailing: (
-              <div className="animate-in fade-in flex shrink-0 items-center duration-150 motion-reduce:animate-none">
+              // Fades in once, when the mode opens: a Motion animation, not a CSS one, so a
+              // row moving in the list doesn't replay it (DOR-3715).
+              <motion.div
+                initial={reducedMotion ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.15 }}
+                className="flex shrink-0 items-center"
+              >
                 <MoveButton
                   todoId={row.todo.id}
                   title={row.todo.what}
@@ -135,7 +139,7 @@ export function SortableTodoRow({ sortable, onMove, reorder, ...row }: SortableT
                   disabled={reorder.last}
                   onMove={onMove}
                 />
-              </div>
+              </motion.div>
             ),
           }
         : {})}
