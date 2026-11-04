@@ -19,7 +19,7 @@
  *   is not live for 10 minutes is closed; one marked stale is closed as soon as
  *   it is not live. A replaced process is kept in a draining set until then,
  *   so the reaper and shutdown always see it.
- * - **Shutdown.** End stdin, wait 3 s, SIGTERM, wait 3 s, SIGKILL — only ever
+ * - **Shutdown.** End stdin, wait 30 s, SIGTERM, wait 30 s, SIGKILL — only ever
  *   the PID this pool spawned (Hard Rule 7).
  *
  * @module services/runtimes/codex/app-server/process-pool
@@ -99,7 +99,7 @@ export const CODEX_POOL_TIMING: CodexPoolTiming = {
   crashWindowMs: 60_000,
   crashLimit: 3,
   crashCooldownMs: 30_000,
-  shutdownStepMs: 3_000,
+  shutdownStepMs: 30_000,
   initializeMs: 15_000,
 };
 
@@ -198,6 +198,16 @@ export class CodexAppServerProcess {
   /** The PID this pool spawned. */
   get pid(): number | undefined {
     return this.child.pid;
+  }
+
+  /** Physical child exit, separate from a closed RPC connection. */
+  get hasExited(): boolean {
+    return this.exited;
+  }
+
+  /** Resolves only on the OS child's exit event, never an RPC close or deadline. */
+  whenExited(): Promise<void> {
+    return this.exitedPromise;
   }
 
   /** Whether the connection is still usable. */
@@ -373,6 +383,10 @@ export class CodexAppServerPool {
   private readonly now: () => number;
   private readonly timing: CodexPoolTiming;
   private readonly processes = new Map<string, CodexAppServerProcess>();
+  // Connection close and a stop deadline do not prove that the OS child died.
+  // Keep every spawned child, including failed boots, until physical exit.
+  private readonly observed = new Set<CodexAppServerProcess>();
+  private readonly closing = new Map<CodexAppServerProcess, Promise<void>>();
   /**
    * Processes replaced by a newer one for their key or home, kept until
    * nothing in them is live and then closed. Never forgotten: the reaper,
@@ -433,6 +447,8 @@ export class CodexAppServerPool {
     const cwd = fs.existsSync(spec.codexHome) ? spec.codexHome : undefined;
     const child = this.spawn(spec.binary, APP_SERVER_ARGS, { env, cwd });
     const proc = new CodexAppServerProcess(key, spec, child, this.now);
+    this.observed.add(proc);
+    void proc.whenExited().then(() => this.observed.delete(proc));
     proc.onExit((close) => this.onProcessExit(proc, close));
     try {
       proc.version = await initializeCodexClient(proc.client, {
@@ -489,9 +505,9 @@ export class CodexAppServerPool {
     }
   }
 
-  /** Every process this pool holds, current or draining (diagnostics and tests). */
+  /** Every spawned child not yet confirmed exited, including booting/closing children. */
   list(): CodexAppServerProcess[] {
-    return [...this.processes.values(), ...this.draining];
+    return [...this.observed].filter((proc) => !proc.hasExited);
   }
 
   private async closeIfIdle(proc: CodexAppServerProcess): Promise<void> {
@@ -526,10 +542,14 @@ export class CodexAppServerPool {
     );
   }
 
-  private async close(proc: CodexAppServerProcess): Promise<void> {
+  private close(proc: CodexAppServerProcess): Promise<void> {
+    const pending = this.closing.get(proc);
+    if (pending) return pending;
     if (this.processes.get(proc.key) === proc) this.processes.delete(proc.key);
     this.draining.delete(proc);
-    await proc.stop(this.timing.shutdownStepMs);
+    const stop = proc.stop(this.timing.shutdownStepMs).finally(() => this.closing.delete(proc));
+    this.closing.set(proc, stop);
+    return stop;
   }
 
   /** Stop every process (server shutdown and admin restart). */

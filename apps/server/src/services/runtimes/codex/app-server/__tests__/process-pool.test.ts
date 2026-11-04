@@ -180,6 +180,9 @@ describe('crashes', () => {
     pools.push(pool);
     await expect(pool.acquire(PERSON)).rejects.toThrow(/Already initialized/);
     expect(host.processes[0]!.killSignals).toEqual(['SIGTERM']);
+    // A failed handshake closes RPC before the fake emits its OS exit event.
+    expect(pool.list()).toHaveLength(1);
+    await tick();
     expect(pool.list()).toEqual([]);
   });
 });
@@ -213,6 +216,52 @@ describe('idle reaping', () => {
 });
 
 describe('shutdown', () => {
+  it('keeps a closing child visible after every stop deadline until its actual exit', async () => {
+    const host = new FakeAppServerHost();
+    const spawn: typeof host.spawn = (binary, args, options) => {
+      const server = host.spawn(binary, args, options);
+      server.stdin.removeAllListeners('finish');
+      server.kill = (signal: NodeJS.Signals | number = 'SIGTERM') => {
+        server.killSignals.push(String(signal));
+        return false;
+      };
+      return server;
+    };
+    const pool = new CodexAppServerPool({ spawn, timing: { shutdownStepMs: 5 } });
+    pools.push(pool);
+    const proc = await pool.acquire(PERSON);
+    const stop = pool.shutdown();
+    const repeated = pool.closeWhere(() => true);
+    expect(pool.list()).toContain(proc);
+    await Promise.all([stop, repeated]);
+    expect(host.processes[0]!.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+    expect(host.processes[0]!.hasExited).toBe(false);
+    expect(pool.list()).toContain(proc);
+    host.processes[0]!.exit(0);
+    await tick();
+    expect(pool.list()).toEqual([]);
+  });
+
+  it('keeps a protocol-closed child visible while its OS process ignores SIGTERM', async () => {
+    const host = new FakeAppServerHost();
+    const spawn: typeof host.spawn = (binary, args, options) => {
+      const server = host.spawn(binary, args, options);
+      server.kill = () => false;
+      return server;
+    };
+    const pool = new CodexAppServerPool({ spawn, timing: { shutdownStepMs: 5 } });
+    pools.push(pool);
+    const proc = await pool.acquire(PERSON);
+    host.processes[0]!.stdout.write('broken json\n');
+    await tick();
+    expect(proc.client.isClosed).toBe(true);
+    expect(host.processes[0]!.hasExited).toBe(false);
+    expect(pool.list()).toContain(proc);
+    host.processes[0]!.exit(1);
+    await tick();
+    expect(pool.list()).toEqual([]);
+  });
+
   it('ends stdin first, and a process that exits on EOF is never signalled', async () => {
     const { pool, host } = makePool();
     await pool.acquire(PERSON);

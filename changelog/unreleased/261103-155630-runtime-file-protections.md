@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(codex): retain closing children and allow sandbox cleanup grace (DOR-3595)'
   - 'fix(codex): render existing agent homes as literal protections'
   - 'fix(codex): preserve protected paths through internal symlinks (DOR-3595)'
   - 'docs(codex): explain Linux home scan refusals (DOR-3595)'
