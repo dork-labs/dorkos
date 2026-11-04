@@ -103,7 +103,8 @@ function hideSecretValues(args: readonly string[], hideUrls: (arg: string) => st
   for (const arg of args) {
     if (hideNext) {
       out.push(MASK);
-      hideNext = false;
+      // `Authorization: Bearer x`, typed: the scheme or a lone `:` isn't the value yet.
+      hideNext = /^(bearer|basic|token|digest|[:=])$/i.test(arg);
       continue;
     }
     // The value can follow in this argument (`--token=x`, `--token:x`, a quoted `--token x`).
