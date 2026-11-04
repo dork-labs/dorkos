@@ -10,6 +10,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { auditEvents, type Db } from '@dorkos/db';
+import { createServerRefs } from '../../server-refs.js';
+
+const refs = {
+  ...createServerRefs(),
+  stopDocDelivery: undefined,
+  testComposioFixture: undefined,
+  docNotificationCleanup: undefined,
+};
 
 describe('applyDmViewUpgradeOnBoot', () => {
   let home: string;
@@ -44,7 +52,7 @@ describe('applyDmViewUpgradeOnBoot', () => {
       log: new AuditLog(db),
       accounts: new AccountIds({ db, installId: 'inst-1', readOwnerAccount: () => null }),
     });
-    boot = () => applyDmViewUpgradeOnBoot({ dorkHome: home, db });
+    boot = () => applyDmViewUpgradeOnBoot(refs, { dorkHome: home, db });
   });
 
   afterEach(() => {
@@ -132,7 +140,7 @@ describe('applyDmViewUpgradeOnBoot', () => {
   it('never throws, and stays not done, when a record cannot be read', () => {
     const brokenBoot = async () => {
       const { applyDmViewUpgradeOnBoot } = await import('../apply-dm-view-upgrade.js');
-      applyDmViewUpgradeOnBoot({ dorkHome: home, db: {} as Db });
+      applyDmViewUpgradeOnBoot(refs, { dorkHome: home, db: {} as Db });
     };
     return expect(brokenBoot())
       .resolves.toBeUndefined()

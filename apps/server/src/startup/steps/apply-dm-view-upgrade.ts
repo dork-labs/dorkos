@@ -8,6 +8,7 @@
 import path from 'node:path';
 
 import type { Db } from '@dorkos/db';
+import type { ServerRefs } from '../server-refs.js';
 import { logger } from '../../lib/logger.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { applyDmViewUpgrade } from '../../services/core/config/dm-view-upgrade.js';
@@ -18,10 +19,14 @@ import { getDirectChats } from '../../services/rooms/direct-chat/index.js';
  * Run the upgrade. Never throws: a failure is logged, the server starts as it
  * would have, and the next boot tries again.
  *
+ * @param _refs - The server's live references, taken like every startup step's.
  * @param input.dorkHome - DorkOS's data directory, for the done file.
  * @param input.db - The migrated database.
  */
-export function applyDmViewUpgradeOnBoot(input: { dorkHome: string; db: Db }): void {
+export function applyDmViewUpgradeOnBoot(
+  _refs: ServerRefs,
+  input: { dorkHome: string; db: Db }
+): void {
   try {
     applyDmViewUpgrade({
       doneFile: path.join(input.dorkHome, 'upgrades', 'dm-view-on.json'),
