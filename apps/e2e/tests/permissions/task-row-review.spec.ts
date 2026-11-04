@@ -102,16 +102,30 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await page.screenshot({ path: testInfo.outputPath(`${surface}-row.png`) });
     await reviewButton.click();
     const review = page.getByRole('dialog', { name: 'Review schedule', exact: true });
+    const title = review.getByRole('heading', { name: 'Review schedule', exact: true });
+    await expect(title).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(title).toBeFocused();
+    await expect(review.locator('select')).toHaveValue('acceptEdits');
     await expect(review.getByText('Runs as: Accept edits', { exact: true })).toBeVisible();
+    await expect(review.getByText('No agent', { exact: true })).toBeVisible();
+    const body = review.locator('[data-slot="schedule-review-body"]');
+    expect(await body.evaluate((element) => element.scrollTop)).toBe(0);
     const approve = review.getByRole('button', { name: 'Approve Sample ledger', exact: true });
     await expect(approve).toBeEnabled();
     await expect(approve).toBeInViewport();
-    await review.locator('[data-slot="schedule-prompt"]').evaluate((element) => {
+    await page.screenshot({ path: testInfo.outputPath(`${surface}-review.png`) });
+    const prompt = review.locator('[data-slot="schedule-prompt"]');
+    expect(
+      await prompt.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)
+    ).toBe(true);
+    await body.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
+    await expect(review.locator('select')).toBeInViewport();
     await expect(approve).toBeInViewport();
     await expect(review.getByRole('button', { name: 'Reject Sample ledger' })).toBeInViewport();
-    await page.screenshot({ path: testInfo.outputPath(`${surface}-review.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`${surface}-review-scrolled.png`) });
     await page.keyboard.press('Escape');
     await expect(review).toBeHidden();
     await expect(reviewButton).toBeFocused();
@@ -126,6 +140,10 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await expect(toggle).not.toBeChecked();
     await toggle.click();
     await expect(review).toBeVisible();
+    await expect(title).toBeFocused();
+    await expect(
+      review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
+    ).toHaveCount(0);
     await expect(
       review.getByRole('button', { name: 'Approve Sample ledger and turn it on' })
     ).toBeInViewport();
@@ -134,5 +152,13 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await page.keyboard.press('Escape');
     await expect(toggle).not.toBeChecked();
     await expect(toggle).toBeFocused();
+    await toggle.click();
+    await review.getByRole('button', { name: 'Approve Sample ledger and turn it on' }).click();
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0]).toMatchObject({
+      status: 'active',
+      enabled: true,
+      expectedApprovalRevision: task.approvalRevision,
+    });
   });
 }

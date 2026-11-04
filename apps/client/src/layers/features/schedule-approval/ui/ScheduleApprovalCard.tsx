@@ -70,11 +70,13 @@ export interface ScheduleApprovalCardProps {
   onNavigate?: () => void;
   className?: string;
   /**
-   * Pin the actions to the bottom of the host on a phone. Only for a card that
+   * Keep the mode and actions outside the review body scroller. Only for a card that
    * is the content of a full-height sheet: inside any other scroller a pinned
    * row covers the card it belongs to. Off by default.
    */
   pinActions?: boolean;
+  /** The package switch is asking to approve AND enable the schedule. */
+  turnOnApproval?: boolean;
   /**
    * The card sits in a short host (Home's pinned header): the prompt block is
    * capped lower, so the title, the prompt and Approve fit in it together.
@@ -144,6 +146,7 @@ function ScheduleApprovalContent({
   onNavigate,
   className,
   pinActions = false,
+  turnOnApproval = false,
   compact = false,
   onStale,
   refreshing = false,
@@ -268,7 +271,7 @@ function ScheduleApprovalContent({
       }
     );
   };
-  const approveAtSelectedLevel = () => void approve();
+  const approveAtSelectedLevel = () => void approve(turnOnApproval);
 
   const reject = () => {
     if (answered !== null) return;
@@ -319,12 +322,13 @@ function ScheduleApprovalContent({
       data-task-id={task.id}
       className={cn(
         'flex min-w-0 flex-col gap-2',
-        pinActions && 'max-h-[70dvh] min-h-0',
+        pinActions && 'bg-background max-h-[76dvh] min-h-0 flex-1 ring-inset',
         className
       )}
     >
+      {pinActions && <p className="shrink-0 px-1 text-xs">Runs as: {currentLabel}</p>}
       <div
-        className={cn('space-y-2', pinActions && 'min-h-0 overflow-y-auto')}
+        className={cn('space-y-2', pinActions && 'min-h-0 flex-1 overflow-y-auto px-1 py-1')}
         data-slot="schedule-review-body"
       >
         <div className="flex min-w-0 items-center gap-2">
@@ -354,7 +358,9 @@ function ScheduleApprovalContent({
         </div>
 
         <AskCard.Headline className="min-w-0 break-words">{name}</AskCard.Headline>
-        <p className="text-muted-foreground text-xs">Agent: {runsAs}</p>
+        <p className="text-muted-foreground text-xs">
+          {task.agentId ? `Agent: ${runsAs}` : 'No agent'}
+        </p>
 
         <AskCard.Detail className="text-xs">
           <p className="min-w-0 break-words">
@@ -445,6 +451,7 @@ function ScheduleApprovalContent({
           revealed={revealed}
           setRevealed={setRevealed}
           compact={compact}
+          flowing={pinActions}
           selectedMode={selectedMode}
           currentLabel={currentLabel}
           runtime={power.runtime}
@@ -467,31 +474,46 @@ function ScheduleApprovalContent({
             you approve.
           </p>
         )}
+        {pinActions && answered === null && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-slot="schedule-test-run-start"
+            aria-label={`Run ${name} once`}
+            className="min-h-11 px-2.5 text-xs sm:min-h-0"
+            disabled={testRun.phase === 'running'}
+            onClick={testRun.start}
+          >
+            Run it once
+          </Button>
+        )}
         <TestRunStrip testRun={testRun} onOpenRun={openTestRun()} />
       </div>
       {answered === null ? (
-        // Under the prompt; pinned to the bottom on a phone only as a sheet's content.
+        // The review body scrolls; its decisions keep their space below it.
         <AskCard.Actions
           className={cn(
             'flex-col items-stretch sm:flex-row sm:items-center',
-            pinActions && 'bg-card sticky bottom-0 z-10 py-2'
+            pinActions && 'shrink-0 pt-2'
           )}
         >
-          <Button
-            size="sm"
-            data-slot="schedule-approve"
-            aria-label={`Approve ${name}`}
-            disabled={!selected || refreshing || !task.approvalRevision}
-            className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-            onClick={approveAtSelectedLevel}
-          >
-            Approve
-          </Button>
-          {/* An off schedule stays off when approved (DOR-3309); turning it on
-              is the second, deliberate choice. */}
+          {!turnOnApproval && (
+            <Button
+              size="sm"
+              data-slot="schedule-approve"
+              aria-label={`Approve ${name}`}
+              disabled={!selected || refreshing || !task.approvalRevision}
+              className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
+              onClick={approveAtSelectedLevel}
+            >
+              Approve
+            </Button>
+          )}
+          {/* A plain review can approve without enabling. The switch path explicitly
+              asks to turn it on, so that is its only approval action. */}
           {!task.enabled && (
             <Button
-              variant="outline"
+              variant={turnOnApproval ? 'default' : 'outline'}
               size="sm"
               data-slot="schedule-approve-turn-on"
               aria-label={`Approve ${name} and turn it on`}
@@ -506,17 +528,19 @@ function ScheduleApprovalContent({
               evidence-gathering move, not the decision. Disabled only while a
               run of its own is in flight — two supervised runs from one card is
               two things to read. */}
-          <Button
-            variant="outline"
-            size="sm"
-            data-slot="schedule-test-run-start"
-            aria-label={`Run ${name} once`}
-            className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
-            disabled={testRun.phase === 'running'}
-            onClick={testRun.start}
-          >
-            Run it once
-          </Button>
+          {!pinActions && (
+            <Button
+              variant="outline"
+              size="sm"
+              data-slot="schedule-test-run-start"
+              aria-label={`Run ${name} once`}
+              className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
+              disabled={testRun.phase === 'running'}
+              onClick={testRun.start}
+            >
+              Run it once
+            </Button>
+          )}
           {/* Last, so the answers that keep the schedule read first. */}
           <Button
             variant="ghost"

@@ -197,9 +197,11 @@ export function TaskRow({
   const triggerTask = useTriggerTask();
   const deleteTask = useDeleteTask();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewTurnsOn, setReviewTurnsOn] = useState(false);
   const reviewTrigger = useRef<HTMLElement | null>(null);
   const openReview = (element: HTMLElement) => {
     reviewTrigger.current = element;
+    setReviewTurnsOn(false);
     setReviewOpen(true);
   };
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -265,6 +267,7 @@ export function TaskRow({
       <TaskScheduleReview
         task={task}
         open={reviewOpen}
+        turnOnApproval={reviewTurnsOn}
         onOpenChange={setReviewOpen}
         returnFocus={() => reviewTrigger.current?.focus()}
       />
@@ -487,6 +490,7 @@ export function TaskRow({
                       // back on needs none of that — `enabled` alone is
                       // agent-writable and reversible.
                       if (checked && task.status === 'pending_approval') {
+                        setReviewTurnsOn(true);
                         setReviewOpen(true);
                         return;
                       }

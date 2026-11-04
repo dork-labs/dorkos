@@ -5,14 +5,16 @@ export function ScheduleRunPermissions({
   mode,
   label,
   runtime,
+  showLabel = true,
 }: {
   mode: string;
   label: string;
   runtime: string | null;
+  showLabel?: boolean;
 }) {
   return (
     <div data-slot="schedule-permission-mode" className="space-y-1 text-xs">
-      <p>Runs as: {label}</p>
+      {showLabel && <p>Runs as: {label}</p>}
       {isBypassPermissionMode(mode) && <p>Runs without asking.</p>}
       {runtime === 'claude-code' && mode === 'acceptEdits' && (
         <>

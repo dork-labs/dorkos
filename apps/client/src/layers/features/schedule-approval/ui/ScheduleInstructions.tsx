@@ -22,6 +22,7 @@ export function ScheduleInstructions({
   selectedMode,
   currentLabel,
   runtime,
+  flowing = false,
 }: {
   task: Task;
   attestsFile: boolean;
@@ -31,6 +32,7 @@ export function ScheduleInstructions({
   selectedMode: string;
   currentLabel: string;
   runtime: string | null;
+  flowing?: boolean;
 }) {
   return (
     <>
@@ -51,7 +53,12 @@ export function ScheduleInstructions({
               of. `isBypassPermissionMode` answers from the id, which is the
               fallback for the frames before the runtime's profile lands; it
               knows every bypass mode the shipped runtimes have. */}
-          <ScheduleRunPermissions mode={selectedMode} label={currentLabel} runtime={runtime} />
+          <ScheduleRunPermissions
+            mode={selectedMode}
+            label={currentLabel}
+            runtime={runtime}
+            showLabel={!flowing}
+          />
           <pre
             data-slot="schedule-prompt"
             role="region"
@@ -59,12 +66,14 @@ export function ScheduleInstructions({
             // A region that scrolls must take focus, or a keyboard can never read
             // its end (WCAG 2.1.1); it is a landmark, not a control.
             // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-            tabIndex={0}
+            tabIndex={flowing ? undefined : 0}
             className={cn(
-              'text-foreground/90 overflow-auto rounded-md p-2 font-sans text-sm break-words whitespace-pre-wrap',
-              compact ? 'max-h-[25dvh] sm:max-h-40' : 'max-h-[40dvh] sm:max-h-64',
-              'focus-ring',
-              SCROLL_EDGE_SHADOW
+              'text-foreground/90 rounded-md p-2 font-sans text-sm break-words whitespace-pre-wrap',
+              !flowing && [
+                'focus-ring overflow-auto',
+                compact ? 'max-h-[25dvh] sm:max-h-40' : 'max-h-[40dvh] sm:max-h-64',
+                SCROLL_EDGE_SHADOW,
+              ]
             )}
           >
             {task.prompt}
@@ -96,7 +105,12 @@ export function ScheduleInstructions({
                 of. `isBypassPermissionMode` answers from the id, which is the
                 fallback for the frames before the runtime's profile lands; it
                 knows every bypass mode the shipped runtimes have. */}
-            <ScheduleRunPermissions mode={selectedMode} label={currentLabel} runtime={runtime} />
+            <ScheduleRunPermissions
+              mode={selectedMode}
+              label={currentLabel}
+              runtime={runtime}
+              showLabel={!flowing}
+            />
           </div>
           <CollapsibleContent>
             <pre

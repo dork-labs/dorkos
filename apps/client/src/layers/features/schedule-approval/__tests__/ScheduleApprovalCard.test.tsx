@@ -121,7 +121,7 @@ const SHOWN = {
 function renderCard(
   task: Task = proposal(),
   overrides: Partial<Transport> = {},
-  props: { pinActions?: boolean; compact?: boolean } = {}
+  props: { pinActions?: boolean; compact?: boolean; turnOnApproval?: boolean } = {}
 ) {
   const base = createMockTransport();
   const transport = createMockTransport({
@@ -334,7 +334,10 @@ describe('ScheduleApprovalCard — what it says', () => {
     cleanup();
     renderCard(proposal(), {}, { pinActions: true });
     const pinned = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
-    expect(pinned.parentElement!.className).toContain('sticky');
+    expect(pinned.parentElement!.className).toContain('shrink-0');
+    expect(screen.getByRole('region', { name: 'Prompt' }).className).not.toMatch(
+      /max-h|overflow-auto/
+    );
   });
 
   it('keeps a person’s own schedule behind the disclosure when its yes approves no file', async () => {
@@ -561,6 +564,26 @@ describe('ScheduleApprovalCard — answering it', () => {
     );
     expect(await findSlot('schedule-receipt')).toHaveTextContent(
       'Approved at Accept edits. Off until you turn it on.'
+    );
+  });
+
+  it('makes approval turn on the task when opened from its switch', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active', enabled: true }));
+    renderCard(
+      proposal({ enabled: false }),
+      { updateTask },
+      { pinActions: true, turnOnApproval: true }
+    );
+    expect(screen.queryByRole('button', { name: 'Approve Nightly sweep' })).toBeNull();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Approve Nightly sweep and turn it on' })
+    );
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+        enabled: true,
+      })
     );
   });
 
