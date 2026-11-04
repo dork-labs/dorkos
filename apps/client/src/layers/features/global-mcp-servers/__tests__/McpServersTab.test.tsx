@@ -383,13 +383,13 @@ describe('what a typed secret leaves behind', () => {
   });
 });
 
-describe('the Only you lock', () => {
+describe('the Hide this value lock', () => {
   /** Open the form with one row named `name`. */
   async function oneRow(user: ReturnType<typeof userEvent.setup>, name: string) {
     await fillServer(user);
     await user.click(screen.getByRole('button', { name: 'Add a variable' }));
     await user.type(screen.getByLabelText('Name of variable 1'), name);
-    return screen.getByRole('button', { name: 'Only you' });
+    return screen.getByRole('button', { name: 'Hide this value' });
   }
 
   it('a name matching the secret rule is on and can’t be turned off', async () => {
@@ -531,6 +531,43 @@ describe('the server sheet', () => {
   });
 });
 
+describe('what a person is told about a saved value', () => {
+  const HINT = 'It won’t show here again. Agents that get this server can use it.';
+
+  it('the server sheet says it for a server with a hidden value, and not otherwise', async () => {
+    const user = userEvent.setup();
+    renderTab(
+      transportWith([createMockGlobalMcpServer({ env: [{ name: 'A_KEY', secret: true }] })])
+    );
+    await user.click(await screen.findByRole('button', { name: /made-up-server/ }));
+    expect(await screen.findByText(HINT)).toBeInTheDocument();
+    cleanup();
+    renderTab(transportWith([createMockGlobalMcpServer()]));
+    await user.click(await screen.findByRole('button', { name: /made-up-server/ }));
+    await screen.findByRole('dialog');
+    expect(screen.queryByText(HINT)).toBeNull();
+  });
+
+  it('Add says it once a row is hidden', async () => {
+    const user = userEvent.setup();
+    renderTab(transportWith([]));
+    await user.click(await screen.findByRole('button', { name: 'Add server' }));
+    expect(screen.queryByText(HINT)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Add a variable' }));
+    await user.type(screen.getByLabelText('Name of variable 1'), 'MADE_UP_TOKEN');
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+  });
+
+  it('the page says a change reaches new chats, whatever is listed', async () => {
+    renderTab(transportWith([]));
+    expect(
+      await screen.findByText(
+        'Changes reach new chats. Open ones may keep a server until they stop.'
+      )
+    ).toBeInTheDocument();
+  });
+});
+
 describe('removing a server', () => {
   /** Get to the Remove question. */
   async function askToRemove(user: ReturnType<typeof userEvent.setup>) {
@@ -545,7 +582,7 @@ describe('removing a server', () => {
     const ask = await askToRemove(user);
     expect(ask.getByRole('heading')).toHaveTextContent('Remove made-up-server?');
     expect(
-      ask.getByText('New chats won’t get its tools. Open ones may keep them for a while.')
+      ask.getByText('New chats won’t get its tools. Open ones may keep them until they stop.')
     ).toBeInTheDocument();
     expect(ask.queryByText(/Its key/)).toBeNull();
     expect(ask.getByRole('button', { name: 'Cancel' })).toHaveFocus();
@@ -558,7 +595,7 @@ describe('removing a server', () => {
     );
     const one = await askToRemove(user);
     expect(
-      one.getByText('Its key is deleted from this computer. If in doubt, revoke it at the service.')
+      one.getByText('Its key is deleted here. If it may have leaked, revoke it at the service.')
     ).toBeInTheDocument();
     cleanup();
     renderTab(
@@ -574,7 +611,7 @@ describe('removing a server', () => {
     const several = await askToRemove(user);
     expect(
       several.getByText(
-        'Its keys are deleted from this computer. If in doubt, revoke them at the service.'
+        'Its keys are deleted here. If they may have leaked, revoke them at the service.'
       )
     ).toBeInTheDocument();
   });

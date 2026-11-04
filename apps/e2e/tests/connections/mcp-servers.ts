@@ -36,7 +36,7 @@ export function registerMcpServerTests({ apiUrl }: { apiUrl: string }) {
       await dialog.getByLabel('Arguments').fill('-y made-up-mcp@1.2.3');
       await dialog.getByRole('button', { name: 'Add a variable' }).click();
       await dialog.getByLabel('Name of variable 1').fill('MADE_UP_TOKEN');
-      const lock = dialog.getByRole('button', { name: 'Only you' });
+      const lock = dialog.getByRole('button', { name: 'Hide this value' });
       await expect(lock).toHaveAttribute('aria-pressed', 'true');
       await expect(lock).toHaveAttribute('aria-disabled', 'true');
       await dialog.getByLabel('Value of MADE_UP_TOKEN').fill('made-up-value');

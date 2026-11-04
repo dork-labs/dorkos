@@ -62,13 +62,13 @@ export function RemoveServerDialog({
           <AlertDialogTitle>Remove {server.name}?</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2">
-              <p>New chats won’t get its tools. Open ones may keep them for a while.</p>
+              <p>New chats won’t get its tools. Open ones may keep them until they stop.</p>
               {secrets === 1 && (
-                <p>Its key is deleted from this computer. If in doubt, revoke it at the service.</p>
+                <p>Its key is deleted here. If it may have leaked, revoke it at the service.</p>
               )}
               {secrets > 1 && (
                 <p>
-                  Its keys are deleted from this computer. If in doubt, revoke them at the service.
+                  Its keys are deleted here. If they may have leaked, revoke them at the service.
                 </p>
               )}
             </div>

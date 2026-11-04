@@ -122,9 +122,10 @@ export function McpServersTab() {
           </>
         ))}
 
-      <p className="text-muted-foreground text-xs">
-        A server added for one agent lives in that agent’s Toolkit.
-      </p>
+      <div className="text-muted-foreground space-y-1 text-xs">
+        <p>Changes reach new chats. Open ones may keep a server until they stop.</p>
+        <p>A server added for one agent lives in that agent’s Toolkit.</p>
+      </div>
 
       {adding && <AddServerDialog onClose={() => setAdding(false)} />}
 

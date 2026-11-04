@@ -19,6 +19,7 @@ import {
 import {
   changeError,
   fieldLine,
+  savedSecretCount,
   unencryptedSecretHeaders,
   wasNotConfirmed,
 } from '../lib/server-lines';
@@ -99,6 +100,11 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
             )}
           </dl>
 
+          {savedSecretCount(server) > 0 && (
+            <p className="text-muted-foreground text-xs">
+              It won’t show here again. Agents that get this server can use it.
+            </p>
+          )}
           {unpinned && (
             <p className="text-muted-foreground text-sm">
               Not pinned to a version. What runs can change later.

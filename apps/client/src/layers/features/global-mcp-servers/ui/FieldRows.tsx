@@ -83,7 +83,7 @@ export function FieldRows({ noun, rows, onChange, disabled, describedBy }: Field
                 />
               )}
             </div>
-            <OnlyYouToggle
+            <HideValueToggle
               pressed={secret}
               locked={SECRET_NAME_PATTERN.test(row.name.trim())}
               disabled={disabled}
@@ -104,7 +104,9 @@ export function FieldRows({ noun, rows, onChange, disabled, describedBy }: Field
         );
       })}
       {rows.some(rowIsSecret) && (
-        <p className="text-muted-foreground text-xs">It stays hidden after this.</p>
+        <p className="text-muted-foreground text-xs">
+          It won’t show here again. Agents that get this server can use it.
+        </p>
       )}
       <Button
         type="button"
@@ -124,11 +126,11 @@ export function FieldRows({ noun, rows, onChange, disabled, describedBy }: Field
 }
 
 /**
- * The lock on a row, named "Only you" on hover and focus. A name matching the secret rule is on
+ * The lock on a row, named "Hide this value" on hover and focus. A name matching the secret rule is on
  * and stays on: unlocking it would put the value in a file and back in the list. It keeps its
  * focus when locked, so the name can still be read.
  */
-function OnlyYouToggle({
+function HideValueToggle({
   pressed,
   locked,
   disabled,
@@ -147,7 +149,7 @@ function OnlyYouToggle({
           type="button"
           variant="ghost"
           size="icon-md"
-          aria-label="Only you"
+          aria-label="Hide this value"
           aria-pressed={pressed}
           aria-disabled={locked || undefined}
           disabled={disabled}
@@ -162,7 +164,7 @@ function OnlyYouToggle({
           />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>Only you</TooltipContent>
+      <TooltipContent>Hide this value</TooltipContent>
     </Tooltip>
   );
 }
