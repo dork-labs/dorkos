@@ -56,7 +56,7 @@ export const SHELL_WRITE_DENY_REASON =
 
 /** What the model is told when a command is too much to check. */
 export const SHELL_UNREADABLE_DENY_REASON =
-  'This command is too long or opens into too many paths for DorkOS to check. Split it into smaller commands.';
+  'DorkOS could not check this command, so it did not run. If it is long or opens into many paths, split it into smaller commands.';
 
 /** A command this long is not read at all, and is refused. */
 const MAX_COMMAND = 256 * 1024;
@@ -558,9 +558,13 @@ export function createShellPathGuardHook(
     let verdict: ReturnType<typeof shellWriteVerdict>;
     try {
       verdict = shellWriteVerdict(command, roots());
-    } catch {
-      // Refusing on a bug here would stop every shell command; the read check below still asks.
-      verdict = 'none';
+    } catch (err) {
+      // This is the only stop at Full, so a check that can't answer refuses (Security, #3487). Only
+      // the error's name in the log: its message could carry a path from the command.
+      log.info('[ShellGuard] the write check failed; refusing', {
+        error: err instanceof Error ? err.name : 'unknown',
+      });
+      verdict = 'unreadable';
     }
     if (verdict !== 'none') {
       // Never the command in the log: it may hold a token. The audit writer sweeps its own copy.

@@ -2,6 +2,7 @@
 covers:
   - "fix(server): read-only tools check the real path, and the shell can't reach protected files unasked (DOR-3300)"
   - 'fix(server): a shell command too big to read is refused, never built in the server (DOR-3300)'
+  - 'fix(server): a shell write check that throws refuses the command (DOR-3300)'
 ---
 
 ### Security

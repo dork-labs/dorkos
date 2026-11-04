@@ -316,6 +316,39 @@ describe('a command too big to read (Security, #3487)', () => {
     expect(shellWriteVerdict(third, roots)).toBe('writes');
   });
 
+  it.each(['bypassPermissions', 'default'])(
+    'refuses and records at %s when the write check itself throws',
+    async (permissionMode) => {
+      const recordRefusal = vi.fn();
+      const log = { info: vi.fn() };
+      const hook = createShellPathGuardHook({ permissionMode } as never, {
+        roots: () => ({
+          ...roots,
+          agentHomes: () => {
+            throw new Error(`could not read ${other}`);
+          },
+        }),
+        recordRefusal,
+        log,
+      });
+      const result = await hook(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: 'ls' },
+          tool_use_id: 'toolu_throw',
+        } as unknown as HookInput,
+        undefined,
+        { signal: new AbortController().signal }
+      );
+      expect(JSON.stringify(result)).toContain(SHELL_UNREADABLE_DENY_REASON);
+      expect(JSON.stringify(result)).toContain('"permissionDecision":"deny"');
+      expect(recordRefusal).toHaveBeenCalledOnce();
+      // Neither the command nor a path from the error reaches the log.
+      expect(JSON.stringify(log.info.mock.calls)).not.toContain(other);
+    }
+  );
+
   it('tells the model plainly why, and records it', async () => {
     const recordRefusal = vi.fn();
     const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
