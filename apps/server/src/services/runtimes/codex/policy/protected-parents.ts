@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { SessionSettings } from '@dorkos/shared/types';
 import { PROTECTED_PATHS } from '../../shared/policy/protected-paths.js';
+import { MODE_TO_SANDBOX } from '../turn-input.js';
 import { codexPermissionProfile, type CodexFilePolicy } from './protected-profile.js';
 
 /** Prepare only an explicitly captured launch policy, never config fingerprints. */
@@ -11,6 +12,8 @@ export function prepareCodexLoadParents(
   config: Readonly<Record<string, unknown>> | undefined,
   settings: Pick<SessionSettings, 'permissionMode'>
 ): void {
+  const mode = MODE_TO_SANDBOX[settings.permissionMode ?? 'default'];
+  if (mode !== 'workspace-write' && mode !== 'danger-full-access') return;
   const permissions = config?.permissions as
     Record<string, { filesystem: Record<string, unknown> }> | undefined;
   const filesystem = permissions?.[codexPermissionProfile(settings)]?.filesystem;
@@ -29,11 +32,9 @@ export function prepareCodexProtectedParents(
     const homes =
       entry.root === 'data'
         ? [policy.roots.data]
-        : entry.root === 'home'
-          ? [policy.roots.home]
-          : entry.root === 'agent-home'
-            ? ownAgentHomes
-            : [];
+        : entry.root === 'agent-home'
+          ? ownAgentHomes
+          : [];
     for (const home of homes) {
       // Only lexical spellings are eligible: never resolve an alias to create
       // directories at its destination. Other agents' literal rules stay intact.
@@ -41,7 +42,7 @@ export function prepareCodexProtectedParents(
       if (Object.hasOwn(filesystem, file)) ownRules[file] = filesystem[file];
     }
   }
-  prepareProtectedParents(ownRules, [policy.roots.home, policy.roots.data, ...ownAgentHomes]);
+  prepareProtectedParents(ownRules, [policy.roots.data, ...ownAgentHomes]);
 }
 
 /** Missing or obstructed paths retain their rules; Codex decides whether it can launch. */
@@ -81,7 +82,7 @@ export function prepareProtectedParents(
         )
           break;
         try {
-          fs.mkdirSync(current);
+          fs.mkdirSync(current, { mode: 0o700 });
           const made = fs.lstatSync(current);
           if (!made.isDirectory() || made.isSymbolicLink()) break;
         } catch {

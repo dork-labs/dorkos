@@ -40,3 +40,14 @@ Walk with lstat and non-recursive mkdir; leave files, links and
 failures alone without changing any rule. The native row attempts all five
 .claude self-grants and requires their absence plus returned public controls.
 This is a candidate until CI proves it; if ENOENT survives, stop with argv.
+
+Security revision after 9e7b98e93c: remove the person home from preparation,
+restrict it to writable modes and create new directories with mode 0700.
+The same four-minute traced step also runs Full and acceptEdits with a
+second unowned home inside writable scope. All three commands run even if
+an earlier row fails; their aggregate status stays failed. Preserve separate
+JSON/argv for each row. Do not prepare the unowned home or the fixture
+person home (missing .config and .docker). If either fails, return its argv
+without another workaround. This adds no step or job time allowance.
+The final-label removal list includes this trace step and agent-home-10k
+and other-home-10k selection along with all other diagnostic narrowing.

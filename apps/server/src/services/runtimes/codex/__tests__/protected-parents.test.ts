@@ -51,7 +51,10 @@ it('prepares general literal parents, never protected targets, other homes or wi
   prepareCodexProtectedParents(policy, filesystem);
   expect(fs.existsSync(path.join(own, '.claude'))).toBe(true);
   expect(fs.lstatSync(path.join(own, '.claude')).isDirectory()).toBe(true);
-  expect(fs.lstatSync(path.join(policy.roots.home, '.config', 'gh')).isDirectory()).toBe(true);
+  for (const name of ['.config', '.docker', '.claude'])
+    expect(fs.existsSync(path.join(policy.roots.home, name))).toBe(false);
+  expect(fs.lstatSync(path.join(own, '.claude')).mode & 0o777).toBe(0o700);
+  expect(fs.lstatSync(path.join(policy.roots.data, 'local-browser')).mode & 0o777).toBe(0o700);
   expect(fs.lstatSync(path.join(own, '.dork')).isDirectory()).toBe(true);
   for (const name of ['settings.json', 'settings.local.json', 'skills', 'commands', 'agents'])
     expect(fs.existsSync(path.join(own, '.claude', name))).toBe(false);
@@ -59,6 +62,18 @@ it('prepares general literal parents, never protected targets, other homes or wi
   expect(fs.existsSync(path.join(policy.roots.data, 'agents', '*'))).toBe(false);
   expect(codexProtectedConfig(own, policy, { permissionMode: 'acceptEdits' })).toEqual(before);
 });
+
+it.each(['default', 'acceptEdits', 'bypassPermissions'] as const)(
+  'prepares only writable launches: %s',
+  (permissionMode) => {
+    const { own, policy } = fixture();
+    const config = codexProtectedConfig(own, policy, { permissionMode });
+    const mkdir = vi.spyOn(fs, 'mkdirSync');
+    prepareCodexLoadParents(policy, config, { permissionMode });
+    if (permissionMode === 'default') expect(mkdir).not.toHaveBeenCalled();
+    else expect(fs.lstatSync(path.join(own, '.claude')).isDirectory()).toBe(true);
+  }
+);
 
 it.each(['symlink', 'file'] as const)(
   'leaves an obstructing %s and its target untouched',

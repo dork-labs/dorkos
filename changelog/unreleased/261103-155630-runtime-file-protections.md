@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(codex): confine parent preparation and trace unowned homes (DOR-3595)'
   - 'fix(codex): prepare protected parents in captured launch homes (DOR-3595)'
   - 'fix(codex): avoid synthetic root metadata masks at Full (DOR-3595)'
   - 'fix(runtimes): enforce shared file protections and managed-server pins (DOR-3595)'

@@ -621,10 +621,13 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     async (kind) => {
       const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
       const ownHomeCwd = scenario === 'agent-home-10k';
+      const otherHomeProbe = scenario === 'other-home-10k';
       const control = 'PUBLIC-control-dor3595';
       const skillControl = 'PUBLIC-skill-control-dor3595';
       const agentHome = path.join(root, 'data', 'agents', 'probe');
       const probeCwd = ownHomeCwd ? agentHome : project;
+      const otherHome = path.join(probeCwd, 'unowned-agent-home');
+      if (otherHomeProbe) fs.mkdirSync(otherHome);
       const readable = path.join(probeCwd, 'readable.txt');
       const skills = path.join(agentHome, '.agents', 'skills', 'probe');
       fs.mkdirSync(skills, { recursive: true });
@@ -635,9 +638,12 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       if (scenario || selectedMode) {
         expect(process.env.CI).toBe('true');
         expect(process.platform).toBe('linux');
-        expect(['home-10k', 'home-500k', 'cwd-500k', 'agent-home-10k']).toContain(scenario);
+        expect(['home-10k', 'home-500k', 'cwd-500k', 'agent-home-10k', 'other-home-10k']).toContain(
+          scenario
+        );
         expect(['default', 'acceptEdits', 'bypassPermissions']).toContain(selectedMode);
         if (ownHomeCwd) expect(selectedMode).toBe('acceptEdits');
+        if (otherHomeProbe) expect(['acceptEdits', 'bypassPermissions']).toContain(selectedMode);
       }
       const size = {
         homeFiles: scenario === 'home-500k' ? 500_000 : 10_000,
@@ -645,6 +651,9 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       };
       const fixtureStarted = performance.now();
       if (ownHomeCwd) expect(fs.existsSync(path.join(agentHome, '.claude'))).toBe(false);
+      if (otherHomeProbe) expect(fs.existsSync(path.join(otherHome, '.claude'))).toBe(false);
+      for (const name of ['.config', '.docker'])
+        expect(fs.existsSync(path.join(root, 'home', name))).toBe(false);
       const probe = protectedProbe(root, probeCwd, size, ownHomeCwd);
       const fixtureMs = performance.now() - fixtureStarted;
       console.info('Codex protected fixture ready', { kind, selectedMode, ...size, fixtureMs });
@@ -732,7 +741,9 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                     home: path.join(root, 'home'),
                     accounts: [codexHome],
                     agentFolders: [probeCwd, agentHome],
-                    agentHomes: [probeCwd, agentHome],
+                    agentHomes: [
+                      ...new Set([probeCwd, agentHome, ...(otherHomeProbe ? [otherHome] : [])]),
+                    ],
                   },
                 },
               },
@@ -749,6 +760,9 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             shellControls,
             projectGitWritable: fs.readFileSync(probe.gitWrite, 'utf8') === 'changed-by-full-probe',
             ownHomeCwd,
+            otherHomeProbe,
+            otherHomeClaudePresent:
+              otherHomeProbe && fs.existsSync(path.join(otherHome, '.claude')),
             selfGrantTargetsPresent: ownHomeCwd
               ? probe.selfGrantTargets.map((file) => fs.existsSync(file))
               : [],
@@ -776,6 +790,8 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           // metadata overrides. CI must prove this, not infer it from :root.
           if (mode === 'bypassPermissions')
             expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('changed-by-full-probe');
+          else expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('original-git-control');
+          if (otherHomeProbe) expect(fs.readdirSync(otherHome)).toEqual([]);
           await transport.shutdown();
         }
       } finally {
@@ -787,6 +803,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         fs.rmSync(readable, { force: true });
         probe.cleanup();
         fs.rmSync(agentHome, { recursive: true, force: true });
+        if (otherHomeProbe) fs.rmSync(otherHome, { recursive: true, force: true });
       }
     }
   );
