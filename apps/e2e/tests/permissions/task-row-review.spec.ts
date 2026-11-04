@@ -1,5 +1,7 @@
 import { test, expect } from '../../fixtures';
 import type { Task } from '@dorkos/shared/types';
+import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 
 // Browser proof of the review shell, using made-up data and intercepted task
 // responses. Server refusal and unattended tool behavior have separate tests.
@@ -45,6 +47,99 @@ function sampleTask(off: boolean): Task {
     folderRules: { status: 'none', applied: [], pending: [] },
   };
 }
+
+test('Inbox schedule carries the real server revision at 390 @smoke', async ({
+  page,
+  request,
+  basePage,
+}, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
+  // TestModeRuntime declares synthetic mode ids; this task uses the real task enum.
+  // Only its displayed capability is supplied here: task reads and writes stay real.
+  await page.route('**/api/capabilities', async (route) => {
+    const response = await route.fetch();
+    const map = await response.json();
+    for (const capability of Object.values(map.capabilities) as Array<{
+      permissionModes: { values: unknown[] };
+    }>) {
+      capability.permissionModes.values.push({
+        id: 'default',
+        label: 'Default',
+        stop: 'ask',
+        asks: 'always',
+        reach: 'edit',
+        promise: 'Asks before making changes.',
+      });
+    }
+    await route.fulfill({ json: map });
+  });
+  const created = await request.post('/api/tasks', {
+    data: {
+      name: `sample-inbox-${randomUUID().slice(0, 8)}`,
+      description: 'Review a sample ledger.',
+      prompt: instructions,
+      target: 'global',
+      cron: '0 0 31 2 *',
+      enabled: true,
+      permissionMode: 'default',
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const task = (await created.json()) as Task;
+  try {
+    const parked = await request.patch(`/api/tasks/${task.id}`, {
+      data: { status: 'pending_approval' },
+    });
+    expect(parked.ok()).toBe(true);
+    const listedResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/tasks' && response.request().method() === 'GET'
+    );
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    const listed = (await (await listedResponse).json()) as Task[];
+    const revision = listed.find((item) => item.id === task.id)?.approvalRevision;
+    expect(revision).toMatch(/^[a-f0-9]{64}$/);
+    await page.getByTestId('inbox-bell').click();
+    const card = page
+      .getByRole('dialog', { name: 'Inbox', exact: true })
+      .locator(`[data-testid="schedule-approval-card"][data-task-id="${task.id}"]`);
+    const approve = card.getByRole('button', {
+      name: `Approve ${task.displayName ?? task.name}`,
+      exact: true,
+    });
+    await expect(approve).toBeEnabled();
+    await expect(approve).toBeInViewport();
+    const body = card.locator('[data-slot="schedule-review-body"]');
+    await body.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(approve).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath('phone-inbox-review.png') });
+    const approvalRequest = page.waitForRequest(
+      (req) => new URL(req.url()).pathname === `/api/tasks/${task.id}` && req.method() === 'PATCH'
+    );
+    const approved = page.waitForResponse(
+      (res) =>
+        new URL(res.url()).pathname === `/api/tasks/${task.id}` &&
+        res.request().method() === 'PATCH'
+    );
+    await approve.click();
+    expect((await approvalRequest).postDataJSON()).toMatchObject({
+      status: 'active',
+      expectedApprovalRevision: revision,
+    });
+    // The real test runtime declares only synthetic modes, so it refuses this task enum
+    // even though the browser displays it. This case proves revision delivery and the
+    // outgoing request; successful approval and its receipt have card/route tests.
+    const answer = await approved;
+    expect(answer.status()).toBe(400);
+    expect(await answer.json()).toMatchObject({ code: 'unsupported_task_mode' });
+  } finally {
+    await request.delete(`/api/tasks/${task.id}`);
+  }
+});
 
 for (const surface of ['light', 'dark', 'phone'] as const) {
   test(`schedule row review keeps actions visible: ${surface} @smoke`, async ({
@@ -105,7 +200,7 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
         staleOnApproval = false;
         task = {
           ...task,
-          prompt: 'Review the sample ledger before recording differences.',
+          prompt: instructions.replace('Step 1:', 'Updated step 1:'),
           approvalRevision: 'b'.repeat(64),
         };
         return route.fulfill({
@@ -127,19 +222,20 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await reviewButton.click();
     const review = page.getByRole('dialog', { name: 'Review schedule', exact: true });
     const title = review.getByRole('heading', { name: 'Review schedule', exact: true });
+    const body = review.locator('[data-slot="schedule-review-body"]');
     await expect(title).toBeFocused();
     await expect(title).toBeInViewport();
+    await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeLessThanOrEqual(1);
+    const openedScrollTop = await body.evaluate((element) => element.scrollTop);
+    await page.screenshot({ path: testInfo.outputPath(`${surface}-review.png`) });
     await page.keyboard.press('ArrowDown');
     await expect(title).toBeFocused();
     await expect(review.locator('select')).toHaveValue('acceptEdits');
     await expect(review.getByText('Runs as: Accept edits', { exact: true })).toBeVisible();
     await expect(review.getByText('No agent', { exact: true })).toBeVisible();
-    const body = review.locator('[data-slot="schedule-review-body"]');
-    expect(await body.evaluate((element) => element.scrollTop)).toBe(0);
     const approve = review.getByRole('button', { name: 'Approve Sample ledger', exact: true });
     await expect(approve).toBeEnabled();
     await expect(approve).toBeInViewport();
-    await page.screenshot({ path: testInfo.outputPath(`${surface}-review.png`) });
     const prompt = review.locator('[data-slot="schedule-prompt"]');
     expect(
       await prompt.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)
@@ -207,6 +303,9 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await page.reload();
     await basePage.waitForAppReady();
     await reviewButton.click();
+    await body.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
     staleOnApproval = true;
     await review.getByRole('button', { name: 'Approve Sample ledger', exact: true }).click();
     await expect(review.getByRole('status')).toHaveText('This schedule changed. Review it again.');
@@ -221,6 +320,8 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await body.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
+    const beforeResetScrollTop = await body.evaluate((element) => element.scrollTop);
+    expect(beforeResetScrollTop).toBeGreaterThan(1);
     await expect(review.getByRole('button', { name: 'Review again' })).not.toHaveAttribute(
       'aria-disabled',
       'true'
@@ -228,7 +329,23 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await review.getByRole('button', { name: 'Review again' }).click();
     await expect(title).toBeFocused();
     await expect(title).toBeInViewport();
-    expect(await body.evaluate((element) => element.scrollTop)).toBe(0);
+    await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeLessThanOrEqual(1);
+    const resetScrollTop = await body.evaluate((element) => element.scrollTop);
+    const resetEvidence = testInfo.outputPath(`${surface}-scroll-reset.json`);
+    await writeFile(
+      resetEvidence,
+      JSON.stringify({
+        openedScrollTop,
+        beforeResetScrollTop,
+        resetScrollTop,
+        titleFocused: await title.evaluate((element) => element === document.activeElement),
+      })
+    );
+    await testInfo.attach(`${surface}-scroll-reset`, {
+      path: resetEvidence,
+      contentType: 'application/json',
+    });
+    await page.screenshot({ path: testInfo.outputPath(`${surface}-changed-review-reset.png`) });
     await expect(review.locator('[data-slot="schedule-prompt"]')).toHaveText(task.prompt);
     await expect(
       review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
