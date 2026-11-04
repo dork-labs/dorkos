@@ -28,7 +28,7 @@ function envelope(from: string): RelayEnvelope {
       callBudgetRemaining: 9,
     },
     createdAt: new Date(EPOCH).toISOString(),
-    payload: { content: 'hello' },
+    payload: { content: 'hello', turnStarter: 'agent' },
   };
 }
 
@@ -71,7 +71,7 @@ async function runTurn(from: string) {
     },
     relay
   );
-  return { order, notes };
+  return { order, notes, sent: vi.mocked(agentManager.sendMessage).mock.calls[0]?.[2] };
 }
 
 describe('noteTurnStart', () => {
@@ -85,4 +85,18 @@ describe('noteTurnStart', () => {
       expect(notes[0]!.sessionId).toBeTruthy();
     }
   );
+});
+
+describe('the send’s display provenance (DOR-3848)', () => {
+  it.each([
+    ['relay.human.telegram.sample.sender', 'telegram'],
+    ['relay.human.slack.sample.sender', 'slack'],
+    ['relay.webhook.sample', 'webhook'],
+    ['relay.agent.default.sample', 'agent-message'],
+    ['a2a-sample', 'outside-message'],
+    ['relay.human.unknown.sample', 'outside-message'],
+  ])('stamps %s from its envelope', async (from, expected) => {
+    const { sent } = await runTurn(from);
+    expect(sent).toMatchObject({ turnStarter: expected, unattendedApprovals: true });
+  });
 });

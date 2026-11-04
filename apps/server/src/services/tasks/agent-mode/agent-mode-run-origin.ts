@@ -18,6 +18,7 @@
  *
  * @module services/tasks/agent-mode/agent-mode-run-origin
  */
+import { activeTurnStarterOf } from '../../session/origin/active-turn-starter.js';
 import type { TaskStore } from '../task-store.js';
 import { getSessionStartedByStore } from '../../session/origin/session-started-by-store.js';
 import { chatTurnSendersOf } from '../../session/chat-messages/chat-started-turns.js';
@@ -31,6 +32,8 @@ const MAX_HOPS = 64;
 
 /** Where the walk reads who started a chat and its turn. Injected so a test can fake each. */
 export interface RunOriginSources {
+  /** Display provenance of this running send; never used by the scheduled-run walk. */
+  turnStarter?: (sessionId: string) => string | undefined;
   /** The scheduled runs among these chats, as `resolveTaskOrigins` answers. */
   runSessions: (sessionIds: string[]) => ReadonlySet<string>;
   /** The chat that started a chat with `session_start`, or `null`. */
@@ -102,6 +105,7 @@ export function liveRunOriginSources(
     runSessions: (ids) => runSessionsOf(store, ids),
     startedBy: (id) => getSessionStartedByStore()?.get(id)?.startedBySessionId ?? null,
     turnSenders: chatTurnSendersOf,
+    turnStarter: activeTurnStarterOf,
     beatSessions: (ids) => beatChatsAmong(ids),
     stampOf: stampedOriginOf,
   };
@@ -207,6 +211,8 @@ export function turnStarterOf(
   if (caller.scheduledRun) return 'a scheduled run';
   const sessionId = caller.sessionId;
   if (!sessionId) return 'an agent DorkOS cannot name';
+  const starter = sources.turnStarter?.(sessionId);
+  if (starter !== undefined) return starter;
   if (sources.turnSenders(sessionId).length > 0) return 'a message from another chat';
   const record = recordOf(sessionId);
   if (record?.kind === 'extension') return `the ${record.extensionId ?? 'unnamed'} extension`;
