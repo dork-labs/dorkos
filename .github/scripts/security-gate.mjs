@@ -428,9 +428,40 @@ async function audit(api, number, sha, review, botUserId) {
   );
 }
 
-export async function checkMergeGroup(api, event, pattern, botUserId, deepPattern) {
+/**
+ * How long a merge-group run re-reads the queue for its own commit (DOR-3564).
+ * A group stacked on another entry's group starts its run before GitHub fills
+ * in its entry's `headCommit`: 20-30s after creation the walk found nothing and
+ * the gate refused a group that had done nothing wrong. Only that one miss is
+ * re-read; every other refusal stands, and when the time runs out it still fails
+ * closed with the same message. 60s keeps the run well inside the job's limit.
+ */
+export const QUEUE_POLL = {
+  intervalMs: 5000,
+  timeoutMs: 60_000,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: () => Date.now(),
+};
+
+/** Resolve the group's entries, re-reading the queue only while its commit is not in it yet. */
+async function resolveGroup(api, group, poll) {
+  const deadline = poll.now() + poll.timeoutMs;
+  for (;;) {
+    try {
+      return groupMembers(await api.queue(group.base_ref), group);
+    } catch (error) {
+      const notYet = /^Cannot resolve queued commit /.test(error.message);
+      if (!notYet || !(poll.now() + poll.intervalMs <= deadline)) throw error;
+      // One line per read, so a job log shows whether the re-read ran and how long.
+      console.log(`${error.message}; reading the merge queue again in ${poll.intervalMs / 1000}s`);
+      await poll.sleep(poll.intervalMs);
+    }
+  }
+}
+
+export async function checkMergeGroup(api, event, pattern, botUserId, deepPattern, options = {}) {
   const group = event.merge_group;
-  const members = groupMembers(await api.queue(group.base_ref), group);
+  const members = await resolveGroup(api, group, { ...QUEUE_POLL, ...options.poll });
   const results = [];
   for (const entry of members) {
     const { number, headRefOid: sha } = entry.pullRequest;
