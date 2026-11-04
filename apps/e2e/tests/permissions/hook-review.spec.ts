@@ -62,8 +62,8 @@ test('whole hook review and one-at-a-time recovery @permissions', async ({ reque
   await expect(card.getByRole('button', { name: 'Allow these 2 hooks' })).toBeVisible();
   await expect(card.getByRole('img', { name: '40 spaces' })).toHaveCount(1);
   await expect(card.getByText(/--label/)).toContainText('40 spaces');
-  await expect(card.getByText(`"${project}"`, { exact: true })).toHaveCount(2);
-  await expect(card.getByRole('region', { name: 'Hook details' })).toContainText(/"[a-f0-9]{64}"/u);
+  await expect(card.getByText(project, { exact: true })).toHaveCount(2);
+  await expect(card.getByRole('region', { name: 'Hook details' })).toContainText(/[a-f0-9]{64}/u);
   await basePage.page.setViewportSize({ width: 390, height: 844 });
   await expect
     .poll(
@@ -108,7 +108,9 @@ test('whole hook review and one-at-a-time recovery @permissions', async ({ reque
   await expect(row.getByRole('button', { name: 'Ask again' })).toBeVisible();
   await setHooks(' ');
   await row.getByRole('button', { name: 'Ask again' }).click();
-  await expect(row.getByRole('status')).toContainText('Hooks stay off until you allow them.');
+  await expect(row.getByRole('status')).toContainText(
+    'A new request is waiting. Hooks stay off until you allow them.'
+  );
   const pending = basePage.page
     .locator('[data-approval-id]')
     .filter({ has: basePage.page.getByRole('button', { name: 'Allow these 2 hooks' }) })
@@ -117,7 +119,7 @@ test('whole hook review and one-at-a-time recovery @permissions', async ({ reque
   const pendingId = await pending.getAttribute('data-approval-id');
   await pending.getByRole('button', { name: 'Allow these 2 hooks' }).click();
   await expect(
-    basePage.page.locator(`[data-approval-id="${pendingId}"]`).last().getByText('Allowed once')
+    basePage.page.locator(`[data-approval-id="${pendingId}"]`).last().getByText('Hooks allowed')
   ).toBeVisible();
   await expect(row).toHaveCount(0);
 });

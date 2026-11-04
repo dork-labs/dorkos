@@ -33,9 +33,27 @@ export function readHookDisclosure(detail?: string) {
       files.push({ file: lines[0].slice(6), hash: lines[1].slice(13) });
     } else return undefined;
   }
-  return hooks.length
-    ? { package: head[0].slice(9), directory: head[1].slice(19), hooks, files }
-    : undefined;
+  try {
+    const value = (encoded: string): string => {
+      const decoded: unknown = JSON.parse(encoded);
+      if (typeof decoded !== 'string') throw new Error('Expected quoted hook text');
+      return decoded;
+    };
+    return hooks.length
+      ? {
+          package: value(head[0].slice(9)),
+          directory: value(head[1].slice(19)),
+          hooks: hooks.map((hook) => ({
+            event: value(hook.event),
+            command: value(hook.command),
+            matcher: hook.matcher === 'null' ? null : value(hook.matcher),
+          })),
+          files: files.map((file) => ({ file: value(file.file), hash: value(file.hash) })),
+        }
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 const WHEN: Record<string, string> = {
@@ -53,14 +71,7 @@ const WHEN: Record<string, string> = {
   PermissionRequest: 'When a tool asks permission',
 };
 
-/** A known event gets plain words; its exact quoted name remains on the card. */
+/** Known events get plain headings; other names stay data, with controls rendered visibly. */
 export function hookWhen(event: string): string {
-  try {
-    const name: unknown = JSON.parse(event);
-    return typeof name === 'string' && Object.hasOwn(WHEN, name)
-      ? WHEN[name]
-      : 'When this event happens';
-  } catch {
-    return 'When this event happens';
-  }
+  return Object.hasOwn(WHEN, event) ? WHEN[event] : event;
 }

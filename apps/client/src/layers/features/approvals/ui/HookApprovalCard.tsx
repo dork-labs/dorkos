@@ -113,7 +113,7 @@ export function HookApprovalCard({ approval, onDecided, focusOnOpen = true }: Ap
               data-slot="approval-resolved"
               tone={decision === 'denied' ? 'denied' : 'allowed'}
             >
-              {decision === 'denied' ? 'Not allowed' : 'Allowed once'}
+              {decision === 'denied' ? 'Not allowed' : 'Hooks allowed'}
             </AskCard.Receipt>
           ) : (
             <div className="@container/hook-actions">

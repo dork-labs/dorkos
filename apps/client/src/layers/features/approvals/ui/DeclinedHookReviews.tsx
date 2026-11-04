@@ -32,7 +32,7 @@ export function DeclinedHookReviews({ enabled }: { enabled: boolean }) {
             </p>
             {reviewPending ? (
               <p role="status" className="text-foreground mt-2 text-xs">
-                A new review is waiting. Hooks stay off until you allow them.
+                A new request is waiting. Hooks stay off until you allow them.
               </p>
             ) : askedAgain ? (
               <p className="text-muted-foreground mt-2 text-xs">

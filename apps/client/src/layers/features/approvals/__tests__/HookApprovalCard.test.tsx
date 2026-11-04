@@ -80,10 +80,74 @@ describe('complete hook review', () => {
     expect(screen.getAllByRole('img')).toHaveLength(3);
     expect(screen.getByText(/echo 40 spaces/)).not.toHaveAttribute('data-slot', 'hook-space-token');
   });
-  it('keeps unknown prototype-like event names as quoted data', () => {
+  it('uses unknown prototype-like event names as plain headings', () => {
     mount({ ...approval, detail: detail.replace('"PostToolUse"', '"__proto__"') });
-    expect(screen.getByText('When this event happens')).toBeVisible();
-    expect(screen.getByText('"__proto__"')).toBeVisible();
+    expect(screen.getByRole('heading', { name: '__proto__' })).toBeVisible();
+    expect(screen.queryByText('Event')).toBeNull();
+  });
+
+  it('shows literal quotes and backslashes while marking actual controls visibly', () => {
+    const raw = 'node "C:\\cedar\\guard.mjs"\n--label "quoted"\u202E\u0000 literal \\n';
+    const encoded = JSON.stringify(raw);
+    mount({ ...approval, detail: detail.replace(`Command: "${command}"`, `Command: ${encoded}`) });
+    const row = screen.getByRole('region', { name: 'Hook details' });
+    expect(row).toHaveTextContent('node "C:\\cedar\\guard.mjs"');
+    expect(screen.getByRole('img', { name: 'line break' })).toHaveTextContent('line break');
+    expect(screen.getByRole('img', { name: 'right-to-left override' })).toHaveTextContent(
+      'right-to-left override'
+    );
+    expect(screen.getByRole('img', { name: 'null character' })).toHaveTextContent('null character');
+    expect(row).not.toHaveTextContent('\\"');
+    expect(row.textContent).not.toContain('\u202E');
+    expect(row.textContent).not.toContain('\u0000');
+    expect(row.textContent).toContain('literal \\n');
+    expect(screen.getAllByRole('img', { name: 'line break' })).toHaveLength(1);
+  });
+  it('distinguishes real line breaks, typed backslash-n, raw quotes and typed backslash-quotes', () => {
+    const raw = 'echo "quoted" literal \\n and \\"typed\\"\nnext\t\r';
+    mount({
+      ...approval,
+      detail: detail.replace(`Command: "${command}"`, `Command: ${JSON.stringify(raw)}`),
+    });
+    const newline = screen.getByRole('img', { name: 'line break' });
+    expect(newline.nextElementSibling?.tagName).toBe('BR');
+    const value = newline.closest('dd')!;
+    expect(value.textContent).toContain('echo "quoted" literal \\n and \\"typed\\"');
+    expect(value.querySelectorAll('br')).toHaveLength(1);
+    expect(screen.getByRole('img', { name: 'tab' })).toBeVisible();
+    expect(screen.getByRole('img', { name: 'carriage return' })).toBeVisible();
+    expect(value.textContent).not.toContain('\t');
+    expect(value.textContent).not.toContain('\r');
+  });
+
+  it('keeps a newline followed by a fake Runs in clause inside its one command', () => {
+    const raw = 'echo safe\nRuns in: /somewhere';
+    const { container } = mount({
+      ...approval,
+      detail: detail.replace(`Command: "${command}"`, `Command: ${JSON.stringify(raw)}`),
+    });
+    const chip = screen.getByRole('img', { name: 'line break' });
+    expect(chip.nextElementSibling?.tagName).toBe('BR');
+    expect(chip.closest('dd')).toHaveTextContent('Runs in: /somewhere');
+    expect(container.querySelectorAll('[data-slot="hook-block"]')).toHaveLength(2);
+    expect(screen.getAllByText('Runs in', { exact: true })).toHaveLength(2);
+    expect(screen.getByText('2 hooks', { exact: true })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Allow these 2 hooks' })).toBeVisible();
+  });
+
+  it('shows decoded paths and fingerprints, keeps matchers quoted, and omits absent matches', () => {
+    mount();
+    expect(screen.getAllByText(directory, { exact: true })).toHaveLength(2);
+    expect(screen.getByText('hooks/end.mjs', { exact: true })).toBeVisible();
+    expect(screen.getByText(hash, { exact: true })).toBeVisible();
+    expect(screen.getByText('"Bash|Write"', { exact: true })).toBeVisible();
+    expect(screen.getAllByText('Matches', { exact: true })).toHaveLength(1);
+    expect(screen.queryByText('null', { exact: true })).toBeNull();
+  });
+  it('refuses to display a yes when an encoded value is not a JSON string', () => {
+    mount({ ...approval, detail: detail.replace(`Command: "${command}"`, 'Command: 42') });
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Decline' })).toBeVisible();
   });
 
   it('has a singular button and sends a one-time yes', async () => {
@@ -94,6 +158,7 @@ describe('complete hook review', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Allow this hook' }));
     expect(transport.grantApproval).toHaveBeenCalledWith('hook-review', undefined);
     expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.getByText('Hooks allowed')).toBeVisible();
   });
   it('declines incomplete cards without revealing a command fragment', async () => {
     const { transport } = mount({ ...approval, cannotAllow: true });

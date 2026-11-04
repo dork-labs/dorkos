@@ -1,25 +1,31 @@
+import { Fragment } from 'react';
+import { hookControlName } from '../lib/hook-control-name';
 import type { readHookDisclosure } from '../lib/hook-disclosure';
 import { hookWhen } from '../lib/hook-disclosure';
 
-/** Spaces are display tokens only; words supplied by a package never become chips. */
-export function HookCommand({ value }: { value: string }) {
+/** Actual hidden characters become named chips; typed escape sequences stay plain text. */
+export function HookText({ value, command = false }: { value: string; command?: boolean }) {
   return (
     <>
-      {value.split(/( {3,})/u).map((part, index) =>
-        /^ {3,}$/u.test(part) ? (
-          <span
-            key={index}
-            role="img"
-            aria-label={`${part.length} spaces`}
-            data-slot="hook-space-token"
-            className="border-status-warning-border bg-status-warning-bg text-status-warning-fg mx-0.5 inline-flex rounded border px-1 font-sans text-xs"
-          >
-            {part.length} spaces
-          </span>
-        ) : (
-          part
-        )
-      )}
+      {value.split(/( {3,}|[\p{Cc}\p{Cf}\u2028\u2029])/gu).map((part, index) => {
+        const spaces = command && /^ {3,}$/u.test(part);
+        const control = /^[\p{Cc}\p{Cf}\u2028\u2029]$/u.test(part);
+        if (!spaces && !control) return part;
+        const label = spaces ? `${part.length} spaces` : hookControlName(part);
+        return (
+          <Fragment key={index}>
+            <span
+              role="img"
+              aria-label={label}
+              data-slot={spaces ? 'hook-space-token' : 'hook-control-token'}
+              className="border-status-warning-border bg-status-warning-bg text-status-warning-fg mx-0.5 inline-flex rounded border px-1 font-sans text-xs"
+            >
+              {label}
+            </span>
+            {part === '\n' && <br />}
+          </Fragment>
+        );
+      })}
     </>
   );
 }
@@ -37,7 +43,7 @@ function Value({
     <div className="min-w-0 @[30rem]/hook-card:grid @[30rem]/hook-card:grid-cols-[5rem_minmax(0,1fr)] @[30rem]/hook-card:gap-3">
       <dt className="text-muted-foreground mb-0.5 text-xs">{label}</dt>
       <dd className="text-foreground min-w-0 font-mono text-xs [overflow-wrap:anywhere] whitespace-pre-wrap">
-        {command ? <HookCommand value={value} /> : value}
+        <HookText value={value} command={command} />
       </dd>
     </div>
   );
@@ -53,12 +59,13 @@ export function HookDisclosure({
     <div data-slot="approval-detail" className="space-y-3">
       {disclosure.hooks.map((hook, index) => (
         <section key={index} data-slot="hook-block" className="bg-muted/60 min-w-0 rounded-lg p-3">
-          <h4 className="text-foreground mb-3 text-sm font-medium">{hookWhen(hook.event)}</h4>
+          <h4 className="text-foreground mb-3 text-sm font-medium">
+            <HookText value={hookWhen(hook.event)} />
+          </h4>
           <dl className="space-y-3">
-            <Value label="Event" value={hook.event} />
             <Value label="Runs in" value={disclosure.directory} />
             <Value label="Command" value={hook.command} command />
-            <Value label="Matches" value={hook.matcher} />
+            {hook.matcher !== null && <Value label="Matches" value={`"${hook.matcher}"`} />}
           </dl>
         </section>
       ))}

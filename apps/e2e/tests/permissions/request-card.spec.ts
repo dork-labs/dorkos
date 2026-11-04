@@ -77,7 +77,7 @@ async function roomExists(request: APIRequestContext, title: string): Promise<bo
  */
 async function openCard(page: Page, approvalId: string) {
   await page.getByTestId('inbox-bell').click();
-  const card = page.locator(`[data-approval-id="${approvalId}"]`);
+  const card = page.locator(`[data-approval-id="${approvalId}"]`).last();
   await expect(card).toBeVisible();
   return card;
 }
@@ -392,13 +392,13 @@ test.describe('The request card @permissions', () => {
       expect(granted.status()).toBe(409);
       expect((await granted.json()).code).toBe('APPROVAL_INCOMPLETE');
     }
+    await basePage.page.setViewportSize({ width: 390, height: 844 });
     await gotoActivity(basePage);
     const card = (await openCard(basePage.page, approvalId)).last();
     await expect(card.getByRole('button')).toHaveText(['Decline']);
     await expect(card.getByText('This package wants to run code on this computer')).toBeVisible();
     await expect(card.getByText('Cannot be undone')).toHaveCount(0);
     await expect(card.getByText(/echo safe/)).toHaveCount(0);
-    await basePage.page.setViewportSize({ width: 390, height: 844 });
     const buttonBox = await card.getByRole('button', { name: 'Decline' }).boundingBox();
     const cardBox = await card.locator('[data-slot="approval-card"]').boundingBox();
     expect(buttonBox).not.toBeNull();
