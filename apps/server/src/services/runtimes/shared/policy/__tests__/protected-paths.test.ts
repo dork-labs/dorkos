@@ -58,25 +58,48 @@ describe('protected paths', () => {
     ).toBe('config.json*');
   });
 
+  // `writeFileAtomic` and `secret-file.ts` write `.<name>.<pid>.<uuid>.tmp` beside the file, with
+  // the same secrets in it, and a glob for the file itself doesn't match that name.
+  it.each([
+    'host.key',
+    'mcp-local-token',
+    'better-auth-secret',
+    'relay/adapters.json',
+    'mcp/global-servers.json',
+    'browser/storage-state.json',
+  ])('covers the temp file of %s', (file) => {
+    const slash = file.lastIndexOf('/');
+    const temp = `${file.slice(0, slash + 1)}.${file.slice(slash + 1)}.123.made-up-uuid.tmp`;
+    const matches = globs(DATA_FOLDER_SECRET_PATHS).some((glob) =>
+      new RegExp(`^${glob.replace(/\./g, '\\.').replace(/\*/g, '[^/]*')}$`).test(temp)
+    );
+    expect(matches).toBe(true);
+  });
+
   // The list is security policy for every runtime: a change here is a change in
   // what every agent can read or write, so it has to be made on purpose.
   it('pins the secret-read lists', () => {
     expect(globs(DATA_FOLDER_SECRET_PATHS)).toEqual([
       'host.key',
+      '.host.key.*.tmp',
       'config.json*',
       'config-*.json.bak',
       'backups/**',
       'mcp-local-token',
+      '.mcp-local-token.*.tmp',
       'better-auth-secret',
+      '.better-auth-secret.*.tmp',
       'api-key',
       'dork*.db*',
       'relay/adapters.json',
+      'relay/.adapters.json.*.tmp',
       'mcp/global-servers.json*',
-      'mcp/.global-servers.json*',
+      'mcp/.global-servers.json.*.tmp',
       'push/**',
       'extension-secrets/**',
       'secrets/**',
       'browser/storage-state.json',
+      'browser/.storage-state.json.*.tmp',
       'browser/profile/**',
       'browser-profiles/**',
       'local-browser/saved-logins/**',
