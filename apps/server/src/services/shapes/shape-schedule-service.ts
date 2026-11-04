@@ -237,6 +237,9 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
           filePath,
         });
 
+    // The raw fallback writer starts active. A parser failure cannot approve a Shape's work;
+    // park it before registration, exactly like the discovery path (DOR-3861).
+    if (!discovered) this.deps.taskStore.updateTask(schedule.id, { status: 'pending_approval' });
     this.deps.registrar.syncTask(schedule.id);
     return { created: true };
   }

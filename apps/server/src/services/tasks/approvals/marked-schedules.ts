@@ -97,15 +97,13 @@ function mergeStored(
 }
 
 /**
- * Clear the schedules parked only for an outsider's words (DOR-3440): a turn runs at its agent's
- * set level now, so these wait on nobody. They come out switched OFF, as normal schedules a person
- * can turn on, and nothing starts by itself. The file says so too, since the next sync copies a
- * file's switch onto its row (a package's file excepted, whose switch lives on the row). A file that
- * cannot be written leaves its row parked, to try again next boot. A teammate's mark clears the same
- * way. Run before any watcher or sync, and matches nothing once done.
+ * Remove obsolete origin marks while keeping these schedules awaiting a person's review.
+ * Switch their files off before discovery starts; an unwritable file leaves its row unchanged
+ * for the next boot. Never infer a missing review from an ordinary switched-off row: builds
+ * that already cleared its marks cannot be distinguished from a person's own decision.
  *
  * @param db - The database the store writes.
- * @returns How many schedules were cleared.
+ * @returns How many schedules had their marks cleared.
  */
 export async function clearOutsiderParks(db: Db): Promise<number> {
   const parked = db
@@ -132,7 +130,8 @@ export async function clearOutsiderParks(db: Db): Promise<number> {
     db.update(pulseSchedules)
       .set({
         enabled: false,
-        status: 'active',
+        status: 'pending_approval',
+        approvedContentKey: null,
         originMarks: null,
         previousApprovalKey: null,
         updatedAt: new Date().toISOString(),
