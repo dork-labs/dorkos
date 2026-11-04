@@ -88,6 +88,8 @@ export const DATA_FOLDER_SECRET_PATHS = group('data', 'read', [
   ['relay/adapters.json', 'file'],
   // MCP servers for every agent: arguments stay in plain text, and can hold a secret.
   ['mcp/global-servers.json*', 'file'],
+  // Its temp file while being written (`writeFileAtomic`).
+  ['mcp/.global-servers.json*', 'file'],
   // The web-push private key.
   ['push', 'folder'],
   ['extension-secrets', 'folder'],

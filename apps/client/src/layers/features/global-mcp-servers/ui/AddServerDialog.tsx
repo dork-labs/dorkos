@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent } from 'react';
+import { splitArgs } from '@dorkos/shared/global-mcp-schemas';
 import { useAddGlobalMcpServer, useCheckGlobalMcpArgs } from '@/layers/entities/global-mcp';
 import {
   Button,
@@ -17,7 +18,6 @@ import {
   EMPTY_SERVER_FORM,
   serverFormProblem,
   serverInputFrom,
-  splitArgs,
   type FormProblem,
   type ServerForm,
   type ServerKind,

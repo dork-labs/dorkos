@@ -3,7 +3,7 @@
  * credential, key, path or query from a URL, and nothing after a secret-named flag.
  */
 import { describe, expect, it } from 'vitest';
-import { isSecretName } from '@dorkos/shared/global-mcp-schemas';
+import { isSecretName, splitArgs } from '@dorkos/shared/global-mcp-schemas';
 
 import { argsLookSecret, holdsMask, maskedArgs, maskUrls } from '../global-mcp-mask.js';
 
@@ -117,6 +117,42 @@ describe('a secret in JSON', () => {
 
   it('says nothing about JSON with no secret name', () => {
     expect(argsLookSecret(['{"region":"eu"}'])).toBe(false);
+  });
+});
+
+describe('what a person types in Arguments, split as the form sends it', () => {
+  it.each([
+    ['{"apiKey": "CANARY"}', ['{apiKey:•••', '•••']],
+    ['{"token": "CANARY"}', ['{token:•••', '•••']],
+    ['--config {"token": "CANARY"}', ['--config', '{token:•••', '•••']],
+    ['Authorization: CANARY', ['Authorization:•••', '•••']],
+    ['--token: CANARY', ['--token:•••', '•••']],
+    ['--token= CANARY', ['--token=•••', '•••']],
+    ['API_KEY= CANARY', ['API_KEY=•••', '•••']],
+    ['token: CANARY', ['token:•••', '•••']],
+    ['\'{"token": "CANARY"}\'', ['{"token": •••']],
+    ['-c "npx server --api-key CANARY"', ['-c', 'npx server --api-key •••']],
+    [
+      '-c "npx server --port 3000 --api-key CANARY"',
+      ['-c', 'npx server --port 3000 --api-key •••'],
+    ],
+  ])('%s', (typed, shown) => {
+    const args = splitArgs(typed);
+    expect(maskedArgs(args)).toEqual(shown);
+    expect(JSON.stringify(maskedArgs(args))).not.toContain('CANARY');
+    expect(argsLookSecret(args)).toBe(true);
+  });
+
+  it('leaves what only looks close, and the argument after it', () => {
+    for (const typed of [
+      '-y made-up@1.0.0 --port 3000',
+      '{"region": "eu"}',
+      '-c "npx server --port 3000"',
+    ]) {
+      const args = splitArgs(typed);
+      expect(maskedArgs(args)).toEqual(args);
+      expect(argsLookSecret(args)).toBe(false);
+    }
   });
 });
 

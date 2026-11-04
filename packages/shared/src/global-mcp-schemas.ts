@@ -81,11 +81,38 @@ export const GlobalMcpServerNameSchema = z
  */
 export const GLOBAL_MCP_URL_PATTERN = /^https?:\/\/\S+$/i;
 
+/**
+ * Split an arguments line the way a shell would for plain words and quotes: `-y "a b"` is two
+ * arguments. A quote with no end stays part of its word.
+ *
+ * @param text - What the person typed.
+ */
+export function splitArgs(text: string): string[] {
+  const args: string[] = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S)/g;
+  let current: string | null = null;
+  let end = 0;
+  for (const match of text.matchAll(pattern)) {
+    // A gap since the last piece ends the argument.
+    if (current !== null && match.index > end) {
+      args.push(current);
+      current = null;
+    }
+    current = (current ?? '') + (match[1] ?? match[2] ?? match[3] ?? '');
+    end = match.index + match[0].length;
+  }
+  if (current !== null) args.push(current);
+  return args;
+}
+
 /** The longest argument the secret check reads, so a big paste can't hold up the server. */
 export const MAX_GLOBAL_MCP_ARG_LENGTH = 4096;
 
 /** The most arguments a global server can have. */
 export const MAX_GLOBAL_MCP_ARGS = 100;
+
+/** The most characters a global server's arguments can hold in all. */
+export const MAX_GLOBAL_MCP_ARGS_TOTAL = 16_384;
 
 /**
  * Whether arguments are short enough to read on every list and every check.
@@ -95,7 +122,8 @@ export const MAX_GLOBAL_MCP_ARGS = 100;
 export function globalMcpArgsFit(args: readonly string[]): boolean {
   return (
     args.length <= MAX_GLOBAL_MCP_ARGS &&
-    args.every((arg) => arg.length <= MAX_GLOBAL_MCP_ARG_LENGTH)
+    args.every((arg) => arg.length <= MAX_GLOBAL_MCP_ARG_LENGTH) &&
+    args.reduce((total, arg) => total + arg.length, 0) <= MAX_GLOBAL_MCP_ARGS_TOTAL
   );
 }
 
@@ -182,7 +210,7 @@ export type GlobalMcpServerView = z.infer<typeof GlobalMcpServerViewSchema>;
 
 /** `POST /api/mcp-servers/check-args`: the arguments as a person typed them. */
 export const GlobalMcpArgsCheckSchema = z.object({
-  args: z.array(z.string().max(MAX_GLOBAL_MCP_ARG_LENGTH)).max(MAX_GLOBAL_MCP_ARGS),
+  args: z.array(z.string()).refine(globalMcpArgsFit),
 });
 
 /** What the check answers. It warns and never refuses. */

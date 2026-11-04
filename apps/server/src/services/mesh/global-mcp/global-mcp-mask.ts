@@ -73,10 +73,16 @@ export function holdsMask(values: readonly string[]): boolean {
 
 /**
  * One argument with the value after a secret name hidden, whichever flag came
- * before it: `Authorization: Bearer x`, `--header=X-Api-Key: x`, `API_KEY=x`, `{"token":"x"}`.
+ * before it: `Authorization: Bearer x`, `--header=X-Api-Key: x`, `API_KEY=x`, `{"token":"x"}`, or
+ * a flag inside a longer argument, as `sh -c "npx server --api-key x"` has it.
  * The rest of the argument goes, since a value can hold spaces.
  */
 function maskSecretShapes(arg: string): string {
+  for (const match of arg.matchAll(/(?:^|\s)(--?[^=:\s]+)\s+(?=\S)/g)) {
+    if (SECRET_NAME_PATTERN.test(match[1]!)) {
+      return `${arg.slice(0, match.index + match[0].length)}${MASK}`;
+    }
+  }
   for (const match of arg.matchAll(/([A-Za-z0-9_.-]+)["']?\s*[:=]\s*/g)) {
     if (SECRET_NAME_PATTERN.test(match[1]!)) {
       return `${arg.slice(0, match.index + match[0].length)}${MASK}`;
@@ -103,15 +109,22 @@ function hideSecretValues(args: readonly string[], hideUrls: (arg: string) => st
     // The value can follow in this argument (`--token=x`, `--token:x`, a quoted `--token x`).
     const flag = /^(--?[^=:\s]+)([=:\s]?)/.exec(arg);
     if (flag && SECRET_NAME_PATTERN.test(flag[1]!)) {
-      if (flag[2]) out.push(`${flag[1]}${flag[2]}${MASK}`);
-      else {
+      if (flag[2]) {
+        out.push(`${flag[1]}${flag[2]}${MASK}`);
+        // `--token= x` typed with a space: its value is the next argument.
+        hideNext = flag[0].length === arg.length;
+      } else {
         out.push(arg);
         hideNext = true;
       }
       continue;
     }
-    // `Bearer` alone hands its value to the next argument, like a flag.
-    if (/^bearer$/i.test(arg)) hideNext = true;
+    // `Bearer` alone hands its value to the next argument, like a flag. So does a secret name with
+    // nothing after it: the form splits `{"apiKey": "x"}` at the space.
+    const trailing = /([A-Za-z0-9_.-]+)["']?\s*[:=]\s*$/.exec(arg);
+    if (/^bearer$/i.test(arg) || (trailing && SECRET_NAME_PATTERN.test(trailing[1]!))) {
+      hideNext = true;
+    }
     out.push(hideUrls(maskSecretShapes(arg)));
   }
   return out;

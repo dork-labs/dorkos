@@ -1,10 +1,10 @@
+import { splitArgs } from '@dorkos/shared/global-mcp-schemas';
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SERVER_FORM,
   rowIsSecret,
   serverFormProblem,
   serverInputFrom,
-  splitArgs,
   type FieldRow,
   type ServerForm,
 } from '../lib/server-form';

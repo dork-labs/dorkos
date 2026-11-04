@@ -55,6 +55,9 @@ describe('GlobalMcpServerInputSchema', () => {
     expect(command(Array(MAX_GLOBAL_MCP_ARGS + 1).fill('a'))).toBe(false);
     expect(GlobalMcpArgsCheckSchema.safeParse({ args: [long] }).success).toBe(true);
     expect(GlobalMcpArgsCheckSchema.safeParse({ args: [`${long}a`] }).success).toBe(false);
+    // Each one fits, and together they're too much to read on every list.
+    expect(command(Array(5).fill(long))).toBe(false);
+    expect(GlobalMcpArgsCheckSchema.safeParse({ args: Array(5).fill(long) }).success).toBe(false);
   });
 
   it('leaves a command alone', () => {
