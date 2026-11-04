@@ -817,6 +817,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
           contents: fs.readFileSync(file, 'utf8'),
         };
       };
+      const preservedAfterCrash = new Map<string, ReturnType<typeof stubSnapshot>>();
       if (nonemptyLedger) {
         const capture = request('capture-nonempty', undefined);
         codexProtectedConfig(capture.cwd, capture.tools.filePolicy, capture.settings, (targets) =>
@@ -957,7 +958,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                     request('recovery-victim', undefined, {
                       settings: {
                         // Produce the host placeholders under Full, then
-                        // prove that the next default turn safely recovers.
+                        // prove that default can run with ambiguous files preserved.
                         permissionMode: defaultRecovery ? 'bypassPermissions' : mode,
                         model: 'fake-model',
                       },
@@ -986,20 +987,38 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                   expect(leftover.size).toBe(0);
                 }
                 console.info(
-                  'Codex listed crash targets awaiting default recovery',
+                  'Codex listed crash targets awaiting default preservation',
                   recoveryTargets
                 );
               }
               if (scenario === 'reconcile-leak-10k') {
                 expect(fs.lstatSync(target).isFile()).toBe(true);
                 const removed = await reconcileMountTargets(path.join(root, 'data'));
-                expect(removed).toContain(target);
-                expect(fs.existsSync(target)).toBe(false);
-                console.info('Codex real crash leftover removed before relaunch', {
+                expect(removed).toEqual([]);
+                expect(fs.lstatSync(target).isFile()).toBe(true);
+                console.info('Codex real crash leftover preserved without creation identity', {
                   target,
                   removed,
                 });
               }
+            }
+            if (defaultRecovery || scenario === 'reconcile-leak-10k') {
+              const listed = new Set(readMountTargets(path.join(root, 'data')));
+              for (const { file, kind } of probeParentKinds([
+                personHome,
+                path.join(root, 'data'),
+                agentHome,
+                probeCwd,
+              ])) {
+                if (kind !== 'file') continue;
+                expect(listed.has(file)).toBe(true);
+                const snapshot = stubSnapshot(file);
+                expect(snapshot.regular).toBe(true);
+                expect(snapshot.size).toBe(0);
+                expect(snapshot.uid).toBe(process.getuid?.());
+                preservedAfterCrash.set(file, snapshot);
+              }
+              expect(preservedAfterCrash.size).toBeGreaterThan(0);
             }
             if (scenario === 'new-agent-fork-10k') {
               const historyTransport = makeTransport(undefined, kind);
@@ -1189,7 +1208,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                 settings: { permissionMode: mode, model: 'fake-model' },
                 onThreadBound: () => {
                   if (defaultRecovery)
-                    for (const file of recoveryTargets) expect(fs.existsSync(file)).toBe(false);
+                    for (const file of recoveryTargets)
+                      expect(fs.lstatSync(file).isFile()).toBe(true);
                   startMs = performance.now() - started;
                   console.info('Codex protected thread bound', { kind, mode, ...size, startMs });
                 },
@@ -1239,11 +1259,23 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                 fs.existsSync(probe.latePlugin) &&
                 fs.readFileSync(probe.latePlugin, 'utf8') !== 'original-late-plugin',
             });
-            if (nonemptyLedger) {
+            if (nonemptyLedger || defaultStub) {
               expect(startMs).toBeUndefined();
-              expect(JSON.stringify(events)).toMatch(/ENOTDIR|not a directory/i);
+              const refusal = events.find((event) => event.type === 'error');
+              expect(refusal).toMatchObject({
+                data: { code: 'codex_protected_path_not_directory' },
+              });
+              const message =
+                refusal && 'message' in refusal.data ? refusal.data.message : undefined;
+              expect(
+                stubFiles.some(
+                  (file) =>
+                    message === `Codex needs ${file} to be a folder. Rename the file, then retry.`
+                )
+              ).toBe(true);
+              expect(shellControls).toEqual([]);
               expect(stubFiles.map(stubSnapshot)).toEqual(stubsBefore);
-              console.info('Codex nonempty listed target preserved and launch refused', {
+              console.info('Codex unproven target preserved and launch refused', {
                 mode,
                 file: stubFiles[0],
               });
@@ -1291,9 +1323,10 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
             }
             expect(startMs, JSON.stringify(events)).toBeDefined();
             if (defaultRecovery) {
-              for (const file of recoveryTargets) expect(fs.existsSync(file)).toBe(false);
+              for (const file of recoveryTargets)
+                expect(stubSnapshot(file)).toEqual(preservedAfterCrash.get(file));
               console.info(
-                'Codex default turn recovered real listed targets through before-load reconciliation',
+                'Codex default turn ran with real listed targets preserved through before-load reconciliation',
                 recoveryTargets
               );
             }
@@ -1332,6 +1365,85 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
               expect(fs.existsSync(otherWrite)).toBe(false);
               expect(shellControlReturned(result, 'PUBLIC-other-agents-write-attempt')).toBe(true);
               expect(shellControlReturned(result, otherSkillMarker)).toBe(true);
+              const blocked = ['.claude', '.dork'].map((name) => path.join(otherHome, name));
+              for (const file of blocked)
+                fs.writeFileSync(file, 'PERSON-file-must-survive', { flag: 'wx', mode: 0o600 });
+              const snapshots = blocked.map(stubSnapshot);
+              const own = makeTransport(undefined, kind);
+              const peer = makeTransport(undefined, kind);
+              try {
+                const ownBound = vi.fn();
+                const ownEvents: StreamEvent[] = [];
+                const policy = request('isolation-base', undefined).tools.filePolicy!;
+                for await (const event of own.runTurn(
+                  request('isolation-owner-a', undefined, {
+                    settings: { permissionMode: mode, model: 'fake-model' },
+                    onThreadBound: ownBound,
+                    tools: {
+                      ...request('isolation-tools', undefined).tools,
+                      filePolicy: {
+                        ...policy,
+                        roots: {
+                          ...policy.roots,
+                          agentFolders: [project, otherHome],
+                          agentHomes: [otherHome],
+                        },
+                      },
+                    },
+                  })
+                ))
+                  ownEvents.push(event);
+                expect(ownBound).not.toHaveBeenCalled();
+                expect(ownEvents.find((event) => event.type === 'error')).toMatchObject({
+                  data: {
+                    code: 'codex_protected_path_not_directory',
+                    message: `Codex needs ${blocked[0]} to be a folder. Rename the file, then retry.`,
+                  },
+                });
+                const attempts = ['write', 'unlink', 'rename', 'replace', 'chmod', 'hardlink'];
+                const markers = blocked.flatMap((_, index) =>
+                  attempts.map((op) => `PUBLIC-isolation-${index}-${op}-refused`)
+                );
+                const replacement = path.join(project, 'isolation-replacement');
+                const alias = path.join(otherHome, 'isolation-alias');
+                const script = `python3 - <<'PYISOLATION'\nimport os\nfiles = ${JSON.stringify(blocked)}\nreplacement = ${JSON.stringify(replacement)}\nalias = ${JSON.stringify(alias)}\nopen(replacement, 'w').write('PUBLIC-replacement')\ncontrol = os.path.join(os.path.dirname(files[0]), 'isolation-public-control')\nopen(control, 'w').write('PUBLIC-control')\nos.rename(control, control + '-moved')\nos.replace(control + '-moved', control)\nos.chmod(control, 0o600)\nos.link(control, alias)\nos.unlink(alias)\nos.unlink(control)\nfor index, file in enumerate(files):\n    for op in ${JSON.stringify(attempts)}:\n        try:\n            if op == 'write': open(file, 'w').write('UNSAFE-write')\n            elif op == 'unlink': os.unlink(file)\n            elif op == 'rename': os.rename(file, file + '-moved')\n            elif op == 'replace': os.replace(replacement, file)\n            elif op == 'chmod': os.chmod(file, 0o777)\n            elif op == 'hardlink': os.link(file, alias)\n        except OSError:\n            print('PUBLIC-isolation-%s-%s-refused' % (index, op))\n        else:\n            raise AssertionError('protected file changed: ' + op)\nos.unlink(replacement)\nprint('PUBLIC-isolation-control')\nPYISOLATION`;
+                let controls = false;
+                scripted.push(
+                  (res) => res.end(sseCall({ cmd: script, login: false })),
+                  (res, body) => {
+                    controls = ['PUBLIC-isolation-control', ...markers].every((marker) =>
+                      shellControlReturned(body, marker)
+                    );
+                    res.end(sse('isolation peer finished'));
+                  }
+                );
+                const peerEvents: StreamEvent[] = [];
+                for await (const event of peer.runTurn(
+                  request('isolation-peer-b', undefined, {
+                    settings: { permissionMode: mode, model: 'fake-model' },
+                    writableDirectories: [project, otherHome],
+                    tools: {
+                      ...request('isolation-peer-tools', undefined).tools,
+                      filePolicy: { ...policy, writable: [project, otherHome] },
+                    },
+                  })
+                ))
+                  peerEvents.push(event);
+                expect(controls, JSON.stringify(peerEvents)).toBe(true);
+                expect(peerEvents.some((event) => event.type === 'error')).toBe(false);
+                expect(blocked.map(stubSnapshot)).toEqual(snapshots);
+                console.info('Codex foreign-file isolation proved', {
+                  mode,
+                  blocked,
+                  markers,
+                  controls,
+                });
+              } finally {
+                await own.shutdown();
+                await peer.shutdown();
+                // Only fixture-owned planted files; never production cleanup.
+                for (const file of blocked) fs.rmSync(file, { force: true });
+              }
             }
             if (skillDiscovery || otherHomeProbe)
               expect(shellControlReturned(result, skillControl)).toBe(true);
@@ -1366,12 +1478,15 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
             });
             await Promise.all(pools.map((pool) => pool.shutdown()));
             const removed = await reconcileMountTargets(path.join(root, 'data'));
-            console.info('Codex host recovery removed recorded targets', {
+            expect(removed).toEqual([]);
+            console.info('Codex host preservation did not remove recorded targets', {
               kind,
               mode,
               scenario,
               removed,
             });
+            for (const [file, snapshot] of preservedAfterCrash)
+              expect(stubSnapshot(file)).toEqual(snapshot);
             const parents = probeParentKinds(checkedHomes);
             console.info('Codex host parent kinds after row', { kind, mode, scenario, parents });
             if (defaultStub || nonemptyLedger) {
@@ -1396,6 +1511,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                   kind !== 'absent' &&
                   kind !== 'directory' &&
                   !(ownSymlink && file === grantLink && kind === 'symlink') &&
+                  !(preservedAfterCrash.has(file) && kind === 'file') &&
                   !((defaultStub || nonemptyLedger) && stubFiles.includes(file) && kind === 'file')
               )
             ).toEqual([]);

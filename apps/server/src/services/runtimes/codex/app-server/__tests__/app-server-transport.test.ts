@@ -1065,3 +1065,85 @@ describe('background work (spec §12)', () => {
     expect(seen).toHaveLength(1);
   });
 });
+
+describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
+  'foreign file refusal isolation at %s',
+  (permissionMode) => {
+    it('starts B with exact read-only files while A receives the named-file refusal', async () => {
+      const root = fs.realpathSync(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'codex-transport-isolation-'))
+      );
+      const data = path.join(root, 'data');
+      const home = path.join(root, 'home');
+      const project = path.join(root, 'project');
+      const a = path.join(data, 'agents', 'a');
+      const b = path.join(data, 'agents', 'b');
+      for (const dir of [home, project, a, b]) fs.mkdirSync(dir, { recursive: true });
+      const files = ['.claude', '.dork'].map((name) => path.join(a, name));
+      for (const file of files) fs.writeFileSync(file, 'PERSON-file-to-preserve', { mode: 0o600 });
+      const before = files.map((file) => fs.lstatSync(file));
+      const h = harness();
+      const base = h.request({ sessionId: 'isolation-base' });
+      const policy = {
+        writable: [project, a],
+        roots: {
+          cwd: project,
+          data,
+          home,
+          accounts: [],
+          agentHomes: [b],
+          agentFolders: [project, b],
+        },
+      };
+      try {
+        const events = await h.run(
+          h.request({
+            sessionId: 'b',
+            cwd: project,
+            settings: { permissionMode },
+            tools: { ...base.tools, filePolicy: policy },
+          })
+        );
+        expect(events.some((event) => event.type === 'error')).toBe(false);
+        expect(h.bindings).toHaveLength(1);
+        const load = h.host.home(PERSON_HOME).processes[0]!.requestsOf('thread/start')[0]!;
+        expect(load.config).toMatchObject({
+          permissions: {
+            [codexPermissionProfile({ permissionMode })]: {
+              filesystem: Object.fromEntries(files.map((file) => [file, 'read'])),
+            },
+          },
+        });
+        const owner = await h.run(
+          h.request({
+            sessionId: 'a',
+            cwd: project,
+            settings: { permissionMode },
+            tools: {
+              ...base.tools,
+              filePolicy: {
+                ...policy,
+                roots: { ...policy.roots, agentHomes: [a], agentFolders: [project, a] },
+              },
+            },
+          })
+        );
+        expect(owner.find((event) => event.type === 'error')).toMatchObject({
+          data: {
+            code: 'codex_protected_path_not_directory',
+            message: `Codex needs ${files[0]} to be a folder. Rename the file, then retry.`,
+          },
+        });
+        expect(h.bindings).toHaveLength(1);
+        for (const [index, file] of files.entries()) {
+          expect(fs.readFileSync(file, 'utf8')).toBe('PERSON-file-to-preserve');
+          expect(fs.lstatSync(file).ino).toBe(before[index]!.ino);
+          expect(fs.lstatSync(file).ctimeMs).toBe(before[index]!.ctimeMs);
+        }
+      } finally {
+        await h.pool.shutdown();
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+);

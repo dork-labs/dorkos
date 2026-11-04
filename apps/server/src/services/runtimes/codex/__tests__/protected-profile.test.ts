@@ -209,3 +209,74 @@ describe('capturing agent homes', () => {
     expect(() => codexProtectedConfig(roots.cwd, filePolicy)).toThrow(error);
   });
 });
+
+describe('an obstructing file in another agent home', () => {
+  it.each(
+    ['default', 'acceptEdits', 'bypassPermissions'].flatMap((permissionMode) =>
+      ['.claude', '.dork'].map((name) => ({ permissionMode, name }))
+    )
+  )(
+    'keeps A’s $name read-only for B, but refuses A, at $permissionMode',
+    ({ permissionMode, name }) => {
+      vi.restoreAllMocks();
+      const root = fs.realpathSync(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'codex-isolated-refusal-'))
+      );
+      try {
+        const data = path.join(root, 'data');
+        const home = path.join(root, 'home');
+        const a = path.join(data, 'agents', 'a');
+        const b = path.join(data, 'agents', 'b');
+        const project = path.join(root, 'project');
+        for (const dir of [a, b, home, project]) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(a, name), 'PERSON-empty-looking-file');
+        const policy = {
+          roots: {
+            cwd: project,
+            home,
+            data,
+            accounts: [],
+            agentFolders: [b, project],
+            agentHomes: [b],
+          },
+          writable: [project, a],
+        };
+        const config = codexProtectedConfig(project, policy, { permissionMode });
+        const profiles = config.permissions as Record<
+          string,
+          { filesystem: Record<string, string> }
+        >;
+        const files = profiles[codexPermissionProfile({ permissionMode })]!.filesystem;
+        const blocked = path.join(a, name);
+        expect(files[blocked]).toBe('read');
+        expect(Object.keys(files).some((file) => file.startsWith(blocked + '/'))).toBe(false);
+        expect(fs.readFileSync(blocked, 'utf8')).toBe('PERSON-empty-looking-file');
+        // A's own home remains in agentFolders even when its cwd is elsewhere.
+        expect(() =>
+          codexProtectedConfig(
+            project,
+            {
+              ...policy,
+              roots: { ...policy.roots, agentFolders: [a, project], agentHomes: [a] },
+            },
+            { permissionMode }
+          )
+        ).toThrow(expect.objectContaining({ blockingPath: path.join(a, name) }));
+        const alias = path.join(root, 'alias-a');
+        fs.symlinkSync(a, alias);
+        expect(() =>
+          codexProtectedConfig(
+            alias,
+            {
+              ...policy,
+              roots: { ...policy.roots, cwd: alias, agentFolders: [alias], agentHomes: [a] },
+            },
+            { permissionMode }
+          )
+        ).toThrow(expect.objectContaining({ blockingPath: path.join(a, name) }));
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
+});

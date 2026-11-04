@@ -56,6 +56,45 @@ function protectedEntries(
     discoveredHomes = [];
   }
   const agentHomes = [...new Set([...roots.agentHomes, ...discoveredHomes])];
+  const spellings = (dir: string) => [...new Set([path.resolve(dir), realPathOf(dir)])];
+  const activeFolders = [roots.cwd, ...roots.agentFolders].flatMap(spellings);
+  const otherHomes = agentHomes
+    .filter((home) =>
+      spellings(home).every((base) =>
+        activeFolders.every((active) => active !== base && !active.startsWith(base + path.sep))
+      )
+    )
+    .flatMap(spellings);
+
+  const collapseBases = [
+    roots.home,
+    roots.data,
+    roots.cwd,
+    ...writable,
+    ...roots.agentFolders,
+    ...agentHomes,
+    ...savedCopies,
+    ...roots.accounts,
+  ];
+  let listed: Set<string> | undefined;
+  const canProtectBlocking = (target: string) =>
+    otherHomes.some((home) => target.startsWith(home + path.sep)) ||
+    ((listed ??= new Set(readMountTargets(roots.data))).has(target) &&
+      emptyOwnedMountTarget(target) !== undefined);
+  const protectedRead = (file: string): boolean => {
+    try {
+      return isProtectedPath(file, 'read', roots);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOTDIR') throw error;
+      // The shared check cannot walk through a regular file. Resolve only a
+      // provable blocking literal here, preserving the stronger rule on the
+      // file itself. Active-home failures become the same typed refusal.
+      const [target] = Object.keys(
+        collapseProtectedPaths({ [file]: 'read' }, collapseBases, undefined, canProtectBlocking)
+      );
+      return isProtectedPath(target!, 'read', roots);
+    }
+  };
   // Write carve-outs go first; a secret that also grants power must stay unreadable.
   for (const entry of [...PROTECTED_PATHS].sort((a, b) =>
     a.deny === b.deny ? 0 : a.deny === 'write' ? -1 : 1
@@ -98,7 +137,7 @@ function protectedEntries(
         const access =
           entry.deny === 'read' ||
           file.includes('*') ||
-          isProtectedPath(file, 'read', roots) ||
+          protectedRead(file) ||
           entries[file] === 'deny'
             ? 'deny'
             : 'read';
@@ -111,23 +150,13 @@ function protectedEntries(
   for (const saved of savedCopies.sort())
     entries[saved] =
       entries[saved] === 'deny' || isProtectedPath(saved, 'read', roots) ? 'deny' : 'read';
-  let listed: Set<string> | undefined;
   const collapsed = collapseProtectedPaths(
     entries,
-    [
-      roots.home,
-      roots.data,
-      roots.cwd,
-      ...writable,
-      ...roots.agentFolders,
-      ...agentHomes,
-      ...savedCopies,
-      ...roots.accounts,
-    ],
+    collapseBases,
     (target) => missing.add(target),
-    (target) =>
-      (listed ??= new Set(readMountTargets(roots.data))).has(target) &&
-      emptyOwnedMountTarget(target) !== undefined
+    // No rule is dropped: foreign or live listed blockers become exact
+    // protected files. The current home/cwd keeps the folder refusal.
+    canProtectBlocking
   );
   onMissingTargets?.([...missing]);
   return collapsed;
