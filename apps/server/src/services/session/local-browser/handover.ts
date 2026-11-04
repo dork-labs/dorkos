@@ -303,9 +303,21 @@ export class BrowserHandover {
     if (this.record?.sessionId !== input.sessionId) this.refuseDuringHandoff();
     if (input.mode === 'new-window' && this.signIns.holds(this.folderOf(input.profileId ?? null)))
       throw new LocalBrowserError('signing_in', 'Finish signing in first.');
-    await this.browser.open(input);
+    if (this.record?.outcome === null) {
+      // The window closed under an open handoff. It reopens at the page saved when the
+      // agent asked, and the agent stays paused until the person answers the card.
+      await this.browser.open({ ...input, url: this.askedUrl ?? input.url });
+      await this.browser.pause();
+    } else {
+      await this.browser.open(input);
+    }
     this.stoppedFor = null;
     return this.state();
+  }
+
+  /** The window closed on its own, so a card saying "finish it in the window" re-reads the state. */
+  windowClosed(): void {
+    this.changed();
   }
 
   /**

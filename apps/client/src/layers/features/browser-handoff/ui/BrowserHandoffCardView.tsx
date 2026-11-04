@@ -23,6 +23,7 @@ export interface BrowserHandoffCardViewProps {
   error: string | null;
   onContinue: () => void;
   onSignIn: () => void;
+  onOpenWindow: () => void;
   onShowWindow: () => void;
   onStop: () => void;
 }
@@ -57,6 +58,7 @@ export function BrowserHandoffCardView({
   error,
   onContinue,
   onSignIn,
+  onOpenWindow,
   onShowWindow,
   onStop,
 }: BrowserHandoffCardViewProps) {
@@ -140,6 +142,9 @@ export function BrowserHandoffCardView({
           {sharedProfile && <p>Every agent that uses the Agent browser can use this sign-in.</p>}
         </div>
       )}
+      {step === 'window-closed' && (
+        <p>The window closed. Open it again to finish, or stop the task.</p>
+      )}
       {status && (
         <p role="status" aria-live="polite">
           {status}
@@ -152,6 +157,12 @@ export function BrowserHandoffCardView({
       )}
       {error && <p role="alert">{error}</p>}
       <div className="flex flex-wrap items-center gap-2">
+        {step === 'window-closed' && (
+          <Button disabled={busy} onClick={onOpenWindow} className="min-h-11 md:min-h-9">
+            <Monitor className="size-4" aria-hidden />
+            Open window
+          </Button>
+        )}
         {asksPassword && (
           <Button disabled={busy} onClick={onSignIn} className="min-h-11 md:min-h-9">
             <LogIn className="size-4" aria-hidden />

@@ -6,8 +6,10 @@ import type { LocalBrowserHandoff, LocalBrowserSignIn } from '@dorkos/shared/loc
  * - `wall`: finish the check in the agent's window, then Continue.
  * - `sign-in`: the page asks for a password, so offer the plain window.
  * - `sign-in-open`, `saving`, `saved`, `failed`: where that plain window has got to.
+ * - `window-closed`: the agent's window is gone, so there's nowhere to finish.
  */
-export type HandoffStep = 'wall' | 'sign-in' | 'sign-in-open' | 'saving' | 'saved' | 'failed';
+export type HandoffStep =
+  'wall' | 'sign-in' | 'sign-in-open' | 'saving' | 'saved' | 'failed' | 'window-closed';
 
 /**
  * Work out the card's step. A sign-in counts only if it's for this handoff's site
@@ -15,17 +17,23 @@ export type HandoffStep = 'wall' | 'sign-in' | 'sign-in-open' | 'saving' | 'save
  *
  * @param handoff - The open handoff.
  * @param signIn - The latest sign-in window, if any.
+ * @param hasWindow - Whether the agent's window is open. Signing in can close it on
+ *   purpose: Continue brings it back once the sign-in is saved.
  */
 export function handoffStep(
   handoff: LocalBrowserHandoff,
-  signIn: LocalBrowserSignIn | null | undefined
+  signIn: LocalBrowserSignIn | null | undefined,
+  hasWindow = true
 ): HandoffStep {
   const ours =
     signIn &&
     signIn.site === handoff.site &&
     Date.parse(signIn.startedAt) >= Date.parse(handoff.askedAt);
-  if (!ours) return handoff.reason === 'wall' ? 'wall' : 'sign-in';
-  return signIn.status === 'open' ? 'sign-in-open' : signIn.status;
+  if (ours && signIn.status !== 'failed')
+    return signIn.status === 'open' ? 'sign-in-open' : signIn.status;
+  if (!hasWindow) return 'window-closed';
+  if (ours) return 'failed';
+  return handoff.reason === 'wall' ? 'wall' : 'sign-in';
 }
 
 /** Server refusals written for a person. Anything else gets the card's plain message. */
@@ -37,6 +45,7 @@ const PERSON_READABLE_REFUSALS: ReadonlySet<string> = new Set([
   'sign_in_failed',
   'no_tab',
   'unsupported',
+  'handoff_open',
   'window_unlabelled',
 ]);
 

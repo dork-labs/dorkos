@@ -13,6 +13,7 @@ import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { BrowserPreparation } from './BrowserPreparation';
+import { WaitingElsewhere } from './WaitingElsewhere';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -61,6 +62,11 @@ export function LocalBrowserPanel({
   const surface = useRef<HTMLDivElement>(null);
   const connected = state?.status === 'connected';
   const sharedElsewhere = !!state?.sessionId && state.sessionId !== sessionId;
+  // Another chat's agent is waiting on a person. Nothing here may answer for that chat.
+  const waitingElsewhere =
+    state?.handoff?.outcome === null && state.handoff.sessionId !== sessionId
+      ? state.handoff
+      : null;
   const mode =
     connected && state.mode
       ? state.mode
@@ -234,7 +240,8 @@ export function LocalBrowserPanel({
             Reconnect
           </Button>
         )}
-      {!connected && (
+      {waitingElsewhere && <WaitingElsewhere sessionId={waitingElsewhere.sessionId} />}
+      {!connected && !waitingElsewhere && (
         <div className="min-h-0 space-y-3 overflow-y-auto">
           {choiceIssue && (
             <p className="text-muted-foreground text-xs">
@@ -265,7 +272,7 @@ export function LocalBrowserPanel({
           </Button>
         </div>
       )}
-      {connected && (
+      {connected && !waitingElsewhere && (
         <>
           {sharedElsewhere && (
             <p className="text-muted-foreground text-xs">

@@ -314,6 +314,35 @@ describe('BrowserHandover answers', () => {
     expect(browser.open).toHaveBeenCalled();
   });
 
+  it('a closed window reopens at the saved page, with the agent still out', async () => {
+    const { handover, browser, set } = setup();
+    await handover.ask('chat-1', 'wall');
+    set({ ...connected(), status: 'closed', tabs: [], selectedTabId: null });
+    browser.pause.mockClear();
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1', url: 'https://other.test/' });
+    expect(browser.open).toHaveBeenCalledExactlyOnceWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      url: 'https://accounts.example.com/login?next=%2Fhome',
+    });
+    expect(browser.pause).toHaveBeenCalledOnce();
+    expect((await handover.state()).handoff?.outcome).toBeNull();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+  });
+
+  it('with no handoff open, takes the address a person chose', async () => {
+    const { handover, browser } = setup();
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1', url: 'https://other.test/' });
+    expect(browser.open).toHaveBeenCalledExactlyOnceWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      url: 'https://other.test/',
+    });
+    expect(browser.pause).not.toHaveBeenCalled();
+  });
+
   it('a person can clear a handoff whose chat and window have gone', async () => {
     const { handover, browser, set } = setup();
     const { handoffId } = await handover.ask('chat-1', 'wall');
@@ -378,6 +407,16 @@ describe('a person’s own browser controls during a handoff', () => {
     await handover.selectTab('t2');
     await handover.navigate('https://other.example/');
     expect(browser.navigate).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a window that closes on its own', () => {
+  it('tells the app, so the card stops saying to finish in it', () => {
+    const { handover } = setup();
+    const listener = vi.fn();
+    handover.useChangeListener(listener);
+    handover.windowClosed();
+    expect(listener).toHaveBeenCalledOnce();
   });
 });
 

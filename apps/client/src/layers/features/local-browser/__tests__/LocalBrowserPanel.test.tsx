@@ -19,6 +19,11 @@ const transport = vi.hoisted(() => ({
   navigateLocalBrowser: vi.fn(),
   interruptSession: vi.fn(),
 }));
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigate,
+}));
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
   useTransport: () => transport,
@@ -94,6 +99,67 @@ describe('LocalBrowserPanel', () => {
     mount();
     expect(await screen.findByLabelText('Shared with another chat')).toBeInTheDocument();
     expect(screen.queryByLabelText('Shared with Kai')).not.toBeInTheDocument();
+  });
+  describe('while another chat’s agent waits on a person', () => {
+    const elsewhere = {
+      id: 'h1',
+      sessionId: 'chat-two',
+      agentName: 'Atlas',
+      agentId: null,
+      agentFolder: null,
+      profileId: null,
+      reason: 'wall',
+      site: 'example.com',
+      askedAt: '2026-11-03T00:00:00.000Z',
+      outcome: null,
+    };
+    it.each([
+      ['with its window open', { ...connected, sessionId: 'chat-two', paused: true }],
+      ['with its window closed', { ...disconnected, sessionId: 'chat-two' }],
+    ])('%s, offers only that chat', async (_case, browser) => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...browser,
+        handoff: elsewhere,
+        signIn: null,
+      });
+      mount();
+      expect(
+        await screen.findByText('Another agent is waiting for a person in this window.')
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Open that chat' }));
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ search: expect.objectContaining({ session: 'chat-two' }) })
+      );
+      for (const name of ['Resume agent', 'Pause agent', 'Disconnect', 'Open browser', 'Reconnect'])
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(screen.queryByLabelText('Web address')).toBeNull();
+    });
+    it('keeps the ordinary controls when that handoff has ended', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...connected,
+        sessionId: 'chat-two',
+        handoff: { ...elsewhere, outcome: 'stopped' },
+        signIn: null,
+      });
+      mount();
+      expect(
+        await screen.findByText('Shared with another chat. Disconnect to use it here.')
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
+    });
+    it('keeps the controls in the waiting chat’s own panel', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...connected,
+        handoff: { ...elsewhere, sessionId: 'chat-one' },
+        signIn: null,
+      });
+      mount();
+      expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
+      expect(
+        screen.queryByText('Another agent is waiting for a person in this window.')
+      ).toBeNull();
+    });
   });
   describe('Disconnect during a handoff', () => {
     const handoff = {
