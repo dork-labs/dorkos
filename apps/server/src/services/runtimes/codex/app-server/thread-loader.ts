@@ -40,6 +40,7 @@ import { MODE_TO_SANDBOX } from '../turn-input.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
+import { prepareCodexLoadParents } from '../policy/protected-parents.js';
 import { loadWithProtectedProfile } from './profile-load.js';
 import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
@@ -603,7 +604,7 @@ export class CodexThreadLoader {
       Object.keys(input.tools.agentTokenEnv).length === 0 && input.tools.mintAgentToken
         ? await input.tools.mintAgentToken()
         : input.tools.agentTokenEnv;
-    return buildLoadOverrides(
+    const overrides = buildLoadOverrides(
       { ...input, tools: { ...input.tools, agentTokenEnv } },
       {
         threadKey,
@@ -611,6 +612,10 @@ export class CodexThreadLoader {
         realCwd: this.realpath(input.cwd),
       }
     );
+    // The captured launch policy establishes ownership. Pure config/fingerprint
+    // construction and uncaptured fallback policies never create directories.
+    prepareCodexLoadParents(input.tools.filePolicy, overrides.config, input.settings);
+    return overrides;
   }
 
   private async recordedTrust(input: ThreadLoadInput): Promise<string | undefined> {

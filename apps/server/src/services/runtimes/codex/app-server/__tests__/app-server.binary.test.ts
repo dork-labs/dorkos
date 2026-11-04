@@ -340,6 +340,18 @@ function request(
       dorkosTools: { url: `${base}/mcp`, headers: {} },
       connectorTools: null,
       ...(bindingId ? { connectorBindingId: bindingId } : {}),
+      filePolicy: {
+        roots: {
+          cwd: project,
+          data: path.join(root, 'data'),
+          home: path.join(root, 'home'),
+          accounts: [codexHome],
+          agentFolders: [project],
+          agentHomes: [],
+        },
+        writable: [project],
+        ownAgentHomes: [],
+      },
     },
     signal: new AbortController().signal,
     events: createCodexEventContext(sessionId),
@@ -607,29 +619,33 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     'protects fake secrets through %s despite a loaded legacy Full setting',
     { timeout: 180_000 },
     async (kind) => {
-      const readable = path.join(project, 'readable.txt');
+      const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
+      const ownHomeCwd = scenario === 'agent-home-10k';
       const control = 'PUBLIC-control-dor3595';
       const skillControl = 'PUBLIC-skill-control-dor3595';
       const agentHome = path.join(root, 'data', 'agents', 'probe');
+      const probeCwd = ownHomeCwd ? agentHome : project;
+      const readable = path.join(probeCwd, 'readable.txt');
       const skills = path.join(agentHome, '.agents', 'skills', 'probe');
       fs.mkdirSync(skills, { recursive: true });
       fs.writeFileSync(path.join(skills, 'SKILL.md'), skillControl);
       fs.writeFileSync(readable, control);
       // Diagnostic sizes are armed only by the CI step; normal proof stays 10k.
-      const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
       const selectedMode = process.env.DORKOS_CODEX_PROBE_MODE;
       if (scenario || selectedMode) {
         expect(process.env.CI).toBe('true');
         expect(process.platform).toBe('linux');
-        expect(['home-10k', 'home-500k', 'cwd-500k']).toContain(scenario);
+        expect(['home-10k', 'home-500k', 'cwd-500k', 'agent-home-10k']).toContain(scenario);
         expect(['default', 'acceptEdits', 'bypassPermissions']).toContain(selectedMode);
+        if (ownHomeCwd) expect(selectedMode).toBe('acceptEdits');
       }
       const size = {
         homeFiles: scenario === 'home-500k' ? 500_000 : 10_000,
         cwdFiles: scenario === 'cwd-500k' ? 500_000 : 0,
       };
       const fixtureStarted = performance.now();
-      const probe = protectedProbe(root, project, size);
+      if (ownHomeCwd) expect(fs.existsSync(path.join(agentHome, '.claude'))).toBe(false);
+      const probe = protectedProbe(root, probeCwd, size, ownHomeCwd);
       const fixtureMs = performance.now() - fixtureStarted;
       console.info('Codex protected fixture ready', { kind, selectedMode, ...size, fixtureMs });
       const configFile = path.join(codexHome, 'config.toml');
@@ -695,26 +711,28 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           const events: StreamEvent[] = [];
           for await (const event of transport.runTurn(
             request(`protected-${kind}-${mode}`, undefined, {
+              cwd: probeCwd,
               settings: { permissionMode: mode, model: 'fake-model' },
               onThreadBound: () => {
                 startMs = performance.now() - started;
                 console.info('Codex protected thread bound', { kind, mode, ...size, startMs });
               },
-              writableDirectories: [project],
+              writableDirectories: [probeCwd],
               tools: {
                 agentTokenEnv: {},
                 managed: { servers: {}, env: {} },
                 dorkosTools: null,
                 connectorTools: null,
                 filePolicy: {
-                  writable: [project],
+                  writable: [probeCwd],
+                  ownAgentHomes: [...new Set([probeCwd, agentHome])],
                   roots: {
-                    cwd: project,
+                    cwd: probeCwd,
                     data: path.join(root, 'data'),
                     home: path.join(root, 'home'),
                     accounts: [codexHome],
-                    agentFolders: [project, agentHome],
-                    agentHomes: [project, agentHome],
+                    agentFolders: [probeCwd, agentHome],
+                    agentHomes: [probeCwd, agentHome],
                   },
                 },
               },
@@ -730,6 +748,10 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             shellRoundTripMs,
             shellControls,
             projectGitWritable: fs.readFileSync(probe.gitWrite, 'utf8') === 'changed-by-full-probe',
+            ownHomeCwd,
+            selfGrantTargetsPresent: ownHomeCwd
+              ? probe.selfGrantTargets.map((file) => fs.existsSync(file))
+              : [],
             lateSecretReadable: result.includes(probe.lateCanary),
             latePluginChanged:
               fs.existsSync(probe.latePlugin) &&
@@ -743,6 +765,13 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
           expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
           expect(result).toMatch(/denied|not permitted/i);
+          if (ownHomeCwd) {
+            expect(fs.lstatSync(path.join(agentHome, '.claude')).isDirectory()).toBe(true);
+            for (const target of probe.selfGrantTargets)
+              expect(() => fs.lstatSync(target)).toThrow(
+                expect.objectContaining({ code: 'ENOENT' })
+              );
+          }
           // Pin Full's project Git authority separately from the exact root
           // metadata overrides. CI must prove this, not infer it from :root.
           if (mode === 'bypassPermissions')

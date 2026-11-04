@@ -416,6 +416,10 @@ export async function resolveCodexLaunchTools(
     dorkosTools,
     connectorTools,
     managed: managedMcpServers,
-    filePolicy: { roots: protectedPathRoots(cwd, home, mesh), writable },
+    filePolicy: {
+      roots: protectedPathRoots(cwd, home, mesh),
+      writable,
+      ownAgentHomes: home ? [home] : [],
+    },
   };
 }

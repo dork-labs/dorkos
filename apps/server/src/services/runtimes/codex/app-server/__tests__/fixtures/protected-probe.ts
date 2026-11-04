@@ -20,7 +20,8 @@ export function shellControlReturned(body: string, marker: string): boolean {
 export function protectedProbe(
   root: string,
   project: string,
-  size = { homeFiles: 10_000, cwdFiles: 0 }
+  size = { homeFiles: 10_000, cwdFiles: 0 },
+  selfGrantProbe = false
 ) {
   const home = path.join(root, 'home');
   const sibling = path.join(home, 'sibling-project');
@@ -60,18 +61,31 @@ export function protectedProbe(
   populate(cwdLarge, size.cwdFiles / 10);
   populate(modules, (size.cwdFiles * 9) / 10);
   const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const selfGrantTargets = [
+    'settings.json',
+    'settings.local.json',
+    'skills',
+    'commands',
+    'agents',
+  ].map((name) => path.join(project, '.claude', name));
   return {
     canaries: [...canaries, lateCanary],
     lateCanary,
     plugin,
     latePlugin,
     gitWrite,
+    selfGrantTargets,
     command: [
       `printf changed-by-full-probe > ${quote(gitWrite)}`,
+      ...(selfGrantProbe
+        ? selfGrantTargets.map((file, index) =>
+            index < 2 ? `printf changed > ${quote(file)}` : `mkdir ${quote(file)}`
+          )
+        : []),
       ...[...secrets, lateSecret].map((file) => `cat ${quote(file)}`),
       ...[plugin, latePlugin].map((file) => `echo changed > ${quote(file)}`),
       'cat readable.txt',
-      'cat ../data/agents/probe/.agents/skills/probe/SKILL.md',
+      `cat ${quote(path.join(root, 'data', 'agents', 'probe', '.agents', 'skills', 'probe', 'SKILL.md'))}`,
     ].join('; '),
     resetLate() {
       fs.writeFileSync(gitWrite, 'original-git-control');

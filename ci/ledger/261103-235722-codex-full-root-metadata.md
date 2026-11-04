@@ -15,6 +15,7 @@ Security's round-three ruling retains the unbounded globs and the diagnostic
 depth cap, scanner, production timeout or missing-path-deny change.
 
 Add one always-run traced app-server/acceptEdits row at 10000 home files,
+with the agent home itself as writable cwd and .claude initially absent,
 before the trace upload. strace -s 1048576 retains the complete serialized
 permission profile for this bounded fixture; no -v, so environment values
 remain abbreviated. Its JSON report joins the argv artifact on failure.
@@ -31,3 +32,11 @@ No new gate, trigger, permission, secret or retry. This records evidence
 collection, not an invented improvement metric. Remove this environment-armed
 trace row before the final label along with the other DORKOS_CODEX_PROBE_*
 diagnostics, and restore/review the existing ledger's final-label deadlines.
+
+Security subsequently authorized the missing-parent candidate for this run.
+Before launch, derive parents from rendered literal rules in captured own
+homes only; discovered Claude account homes are not preparation targets.
+Walk with lstat and non-recursive mkdir; leave files, links and
+failures alone without changing any rule. The native row attempts all five
+.claude self-grants and requires their absence plus returned public controls.
+This is a candidate until CI proves it; if ENOENT survives, stop with argv.
