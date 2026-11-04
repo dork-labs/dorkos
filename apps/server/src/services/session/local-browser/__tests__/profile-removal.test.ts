@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -155,6 +155,64 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     await pending;
     expect(() => service.profileRemoval.assertAvailable()).not.toThrow();
   });
+
+  it('refuses a parent symlink introduced while embedded sign-ins are being cleared', async () => {
+    const folder = await prepareProfileFolder(home, null);
+    await seed(folder);
+    const outside = path.join(home, 'unrelated');
+    await seed(path.join(outside, 'default'));
+    const forgotten = vi.fn();
+    const clearing = new BrowserProfileRemoval({
+      dataDirectory: () => home,
+      busy: () => false,
+      forgotten,
+      embedded: () => ({
+        forgetSignIns: async () => {
+          await rename(path.join(home, 'browser-profiles'), path.join(home, 'original-profiles'));
+          await symlink(
+            outside,
+            path.join(home, 'browser-profiles'),
+            process.platform === 'win32' ? 'junction' : 'dir'
+          );
+        },
+      }),
+    });
+    await expect(clearing.forget(null)).rejects.toMatchObject({ code: 'profile_busy' });
+    expect(await readFile(path.join(outside, 'default/storage-state.json'), 'utf8')).toBe(
+      'made-up-site-session'
+    );
+    expect(
+      await readFile(path.join(home, 'original-profiles/default/storage-state.json'), 'utf8')
+    ).toBe('made-up-site-session');
+    expect(forgotten).not.toHaveBeenCalled();
+    expect(() => clearing.assertAvailable()).not.toThrow();
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses a live lock acquired while embedded sign-ins are being cleared',
+    async () => {
+      const folder = await prepareProfileFolder(home, null);
+      await seed(folder);
+      await mkdir(path.join(home, 'browser'), { recursive: true });
+      await writeFile(path.join(home, 'browser/storage-state.json'), 'made-up-cli-session');
+      const clearing = new BrowserProfileRemoval({
+        dataDirectory: () => home,
+        busy: () => false,
+        embedded: () => ({
+          forgetSignIns: async () => {
+            await symlink(`fixture-${process.pid}`, path.join(folder, 'SingletonLock'));
+          },
+        }),
+      });
+      await expect(clearing.forget(null)).rejects.toMatchObject({ code: 'profile_busy' });
+      expect(await readFile(path.join(folder, 'storage-state.json'), 'utf8')).toBe(
+        'made-up-site-session'
+      );
+      expect(await readFile(path.join(home, 'browser/storage-state.json'), 'utf8')).toBe(
+        'made-up-cli-session'
+      );
+    }
+  );
 
   it('refuses while sign-in preparation or saving owns the profile', async () => {
     const service = new LocalBrowserService(home);

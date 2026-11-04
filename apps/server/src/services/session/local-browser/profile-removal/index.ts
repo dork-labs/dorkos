@@ -59,13 +59,11 @@ export class BrowserProfileRemoval {
     });
   }
 
-  private async clear(profileId: string | null): Promise<void> {
-    const home = this.deps.dataDirectory();
-    const targets = [path.join(home, 'browser-profiles', profileId ?? 'default')];
-    if (profileId === null) {
-      // Both older sources can otherwise recreate the forgotten sign-ins later.
-      targets.push(path.join(home, 'local-browser', 'saved-logins'), path.join(home, 'browser'));
-    }
+  private async assertPathsAndLocks(
+    home: string,
+    targets: string[],
+    profileId: string | null
+  ): Promise<void> {
     // Refuse a redirected parent before reading a lock or deleting any data.
     for (const target of targets) {
       const relative = path.relative(home, target).split(path.sep);
@@ -111,6 +109,16 @@ export class BrowserProfileRemoval {
         'profile_busy',
         'Close the browser using this profile, then try again.'
       );
+  }
+
+  private async clear(profileId: string | null): Promise<void> {
+    const home = this.deps.dataDirectory();
+    const targets = [path.join(home, 'browser-profiles', profileId ?? 'default')];
+    if (profileId === null) {
+      // Both older sources can otherwise recreate the forgotten sign-ins later.
+      targets.push(path.join(home, 'local-browser', 'saved-logins'), path.join(home, 'browser'));
+    }
+    await this.assertPathsAndLocks(home, targets, profileId);
     try {
       if (profileId === null) {
         const embedded = this.deps.embedded?.();
@@ -121,12 +129,15 @@ export class BrowserProfileRemoval {
           );
         await embedded?.forgetSignIns?.();
       }
+      // Embedded cleanup can yield to an independent writer or a redirected parent.
+      await this.assertPathsAndLocks(home, targets, profileId);
       // Remove the agents' exported state before its source profile, including unknown storage types.
       for (const target of targets.reverse()) {
         if (this.deps.remove) await this.deps.remove(target);
         else await rm(target, { recursive: true, force: true });
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof LocalBrowserError && error.code === 'profile_busy') throw error;
       throw new LocalBrowserError(
         'sign_ins_partial',
         "Some sign-ins couldn't be cleared. Try again."
