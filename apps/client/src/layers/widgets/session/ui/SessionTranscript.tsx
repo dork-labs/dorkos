@@ -58,7 +58,7 @@ import { withDirectNotes, type DirectChatLog } from '../model/use-direct-chat-no
 import type { DirectMessageSurface } from '../model/use-session-surface';
 import { LoadEarlierRow } from './LoadEarlierRow';
 import { liveReplyId, turnStartsByReply } from '../lib/work-turns';
-import { useTranscriptHold } from '../model/use-transcript-hold';
+import { useLoadingTooLong, useTranscriptHold } from '../model/use-transcript-hold';
 import { cn, useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
 /**
@@ -392,6 +392,9 @@ export function SessionTranscript({
     readyToLand,
     identityPending
   );
+  // The feed says it is busy from the start. The words wait, so a quick load
+  // doesn't flicker them.
+  const historyLoadingTooLong = useLoadingTooLong(isLoadingHistory, sessionId);
 
   // Rows, not messages, are what the list virtualizes: dividers are real rows so
   // their heights participate in measurement. Memoized on the messages array,
@@ -654,10 +657,12 @@ export function SessionTranscript({
             className="flex h-full items-center justify-center"
             data-testid="transcript-feed-loading"
           >
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
-              <TypingDots />
-              Loading chat…
-            </div>
+            {(historyLoadingTooLong || showLoading) && (
+              <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                <TypingDots />
+                Loading chat…
+              </div>
+            )}
           </Feed>
         ) : undefined
       }

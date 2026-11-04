@@ -93,20 +93,32 @@ export function useTranscriptHold(
   }, [held, landing, readyToLand]);
 
   const hidden = held || landing;
-  const [blankTooLong, setBlankTooLong] = useState<string | null>(null);
-  useEffect(() => {
-    if (!hidden) return;
-    const timer = setTimeout(() => setBlankTooLong(conversationId), TRANSCRIPT_LOADING_MS);
-    return () => {
-      clearTimeout(timer);
-      setBlankTooLong(null);
-    };
-  }, [hidden, conversationId]);
+  const blankTooLong = useLoadingTooLong(hidden, conversationId);
 
   return {
     held,
     hidden,
-    showLoading: hidden && (!readyToLand || identityPending) && blankTooLong === conversationId,
+    showLoading: hidden && (!readyToLand || identityPending) && blankTooLong,
     landingKey: drawnEarly && !undecided && isDirectMessage ? 'reflowed-as-dm' : undefined,
   };
+}
+
+/**
+ * Whether a wait has gone on long enough to say so. A shorter wait stays quiet,
+ * because a loading line that shows for a few frames reads as a flicker.
+ *
+ * @param waiting - Whether the conversation is waiting now.
+ * @param conversationId - The conversation on screen; each one gets its own wait.
+ */
+export function useLoadingTooLong(waiting: boolean, conversationId: string): boolean {
+  const [tooLong, setTooLong] = useState<string | null>(null);
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setTimeout(() => setTooLong(conversationId), TRANSCRIPT_LOADING_MS);
+    return () => {
+      clearTimeout(timer);
+      setTooLong(null);
+    };
+  }, [waiting, conversationId]);
+  return waiting && tooLong === conversationId;
 }

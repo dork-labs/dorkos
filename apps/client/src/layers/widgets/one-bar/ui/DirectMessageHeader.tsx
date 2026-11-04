@@ -44,7 +44,9 @@ export function DirectMessageHeader({ sessionId, chat }: DirectMessageHeaderProp
   const { working } = useSessionStatusSignals(sessionId);
   const channels = useSharedChannels(agent.member?.id ?? null, chat.roomId);
   const showSessions = useShowSessions();
-  const name = agent.name ?? 'Agent';
+  // No name while it is on its way: a stand-in that then changes reads as the
+  // wrong chat. "Agent" is only for an agent with no manifest to read.
+  const name = agent.pending ? '' : (agent.name ?? 'Agent');
 
   return (
     <OneBar

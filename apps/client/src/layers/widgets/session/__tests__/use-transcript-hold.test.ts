@@ -9,6 +9,7 @@ import { act, renderHook } from '@testing-library/react';
 import {
   TRANSCRIPT_HOLD_MS,
   TRANSCRIPT_LOADING_MS,
+  useLoadingTooLong,
   useTranscriptHold,
 } from '../model/use-transcript-hold';
 
@@ -127,6 +128,40 @@ describe('useTranscriptHold', () => {
       expect(result.current).toMatchObject({ held: false, hidden: true, showLoading: false });
       act(() => void vi.advanceTimersByTime(FRAME * 4));
       expect(result.current.hidden).toBe(false);
+    });
+  });
+
+  describe('useLoadingTooLong', () => {
+    it('stays quiet up to the limit, then says so', () => {
+      const { result } = renderHook(() => useLoadingTooLong(true, 'chat-1'));
+      act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS - 1));
+      expect(result.current).toBe(false);
+      act(() => void vi.advanceTimersByTime(1));
+      expect(result.current).toBe(true);
+    });
+
+    it('never says so for a wait that ended in time', () => {
+      const { result, rerender } = renderHook(
+        ({ waiting }: { waiting: boolean }) => useLoadingTooLong(waiting, 'chat-1'),
+        { initialProps: { waiting: true } }
+      );
+      act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS - 1));
+      rerender({ waiting: false });
+      act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS));
+      expect(result.current).toBe(false);
+    });
+
+    it('stops saying so the moment the wait ends, and starts over for the next one', () => {
+      const { result, rerender } = renderHook(
+        ({ waiting, id }: { waiting: boolean; id: string }) => useLoadingTooLong(waiting, id),
+        { initialProps: { waiting: true, id: 'chat-1' } }
+      );
+      act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS));
+      expect(result.current).toBe(true);
+      rerender({ waiting: false, id: 'chat-1' });
+      expect(result.current).toBe(false);
+      rerender({ waiting: true, id: 'chat-2' });
+      expect(result.current).toBe(false);
     });
   });
 

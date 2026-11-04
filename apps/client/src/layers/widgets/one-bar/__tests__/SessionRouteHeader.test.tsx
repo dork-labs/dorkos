@@ -106,6 +106,8 @@ function mountBar(
     showSessions?: boolean;
     lookupPending?: boolean;
     configPending?: boolean;
+    agentPending?: boolean;
+    noManifest?: boolean;
   } = {}
 ) {
   const transport = createMockTransport({
@@ -123,12 +125,18 @@ function mountBar(
           roomId: 'dm-scout',
           agentPath: SCOUT_PATH,
         }),
-    getAgentByPath: vi.fn().mockResolvedValue({
-      id: 'scout-manifest',
-      name: 'scout',
-      displayName: 'Scout',
-      description: 'Reviews pull requests',
-    }),
+    getAgentByPath: options.agentPending
+      ? vi.fn().mockReturnValue(new Promise(() => {}))
+      : vi.fn().mockResolvedValue(
+          options.noManifest
+            ? null
+            : {
+                id: 'scout-manifest',
+                name: 'scout',
+                displayName: 'Scout',
+                description: 'Reviews pull requests',
+              }
+        ),
     getTeamRoster: vi.fn().mockResolvedValue({ members: [SCOUT_MEMBER] }),
     listMemberRooms: vi.fn().mockResolvedValue({
       rooms: ['launch', 'design', 'ops', 'growth', 'private'].map((id) => ({
@@ -235,6 +243,20 @@ describe('SessionRouteHeader', () => {
     // The machinery stays behind Show sessions.
     expect(screen.queryByTestId('dm-session-chip')).not.toBeInTheDocument();
     expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
+  });
+
+  it('names nobody while the agent’s name is on its way', async () => {
+    mountBar(`/session?session=${SESSION}`, { agentPending: true });
+
+    const identity = await screen.findByTestId('dm-header-identity');
+    expect(identity).toHaveTextContent(/^$/);
+  });
+
+  it('says "Agent" only for an agent with no manifest to read', async () => {
+    mountBar(`/session?session=${SESSION}`, { noManifest: true });
+
+    const identity = await screen.findByTestId('dm-header-identity');
+    await waitFor(() => expect(identity).toHaveTextContent('Agent'));
   });
 
   it('says the agent is working while it works', async () => {
