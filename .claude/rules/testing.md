@@ -329,7 +329,7 @@ Failures that blame the wrong thing, each measured on this machine:
   `VITEST_RETRY=2` on the pre-push hook triples whatever you write.
 - **Exit 143 with no test summary is starvation, not a red.** The run was
   SIGTERM'd, usually by memory/CPU pressure from orphaned runners. Check
-  `pgrep -fl vitest` for strays from earlier runs before concluding the gate is
+  `pgrep -f vitest` for stray PIDs from earlier runs before concluding the gate is
   broken — killing them and re-running has turned "broken gate" into 880/880.
 - **Stopping a backgrounded test task kills the wrapper, not the workers.** After
   stopping any heavy run, verify with `pgrep`/`ps` filtered by worktree path that

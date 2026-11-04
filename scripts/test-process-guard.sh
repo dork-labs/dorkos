@@ -157,9 +157,9 @@ allow lsof -ti :4358 | xargs kill
 allow kill -l
 allow kill -L
 # --- allowed: read-only discovery, and words that merely contain "kill". ---
-allow pgrep -lf "tsx src/index.ts"
+allow pgrep -f "tsx src/index.ts"
 allow pgrep -f vite | head
-allow ps aux | grep tsx
+allow ps -o pid=,comm= -p 12345
 allow echo "do not pkill anything"
 allow git log --grep=pkill
 allow grep -rn "pkill" scripts/
@@ -264,6 +264,25 @@ case_check 'quoted delimiter with an apostrophe inside a substitution' block-nam
   $'echo $(cat <<"it\'s"\nhi\nit\'s\n); cat <<\'X\'\n\'); echo $(pkill -f x)\nX'
 case_check 'backslash-quoted delimiter with an apostrophe inside a substitution' block-name \
   $'echo $(cat <<\\it\\\'s\nhi\nit\'s\n) \'\n); echo $(pkill -f x)\n\''
+
+# Exercise both refusal messages without executing the command in the payload.
+GUARD_ADVICE_PATH="$guard" node --input-type=module <<'ADVICE'
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+
+for (const command of ['pkill node', 'kill 0']) {
+  const result = spawnSync(process.execPath, [process.env.GUARD_ADVICE_PATH], {
+    input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }),
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 2);
+  assert.ok(result.stderr.includes('pgrep -f <pattern>'));
+  assert.ok(result.stderr.includes('ps -o pid=,comm= -p <pid>'));
+  assert.ok(result.stderr.includes('Never kill a process you did not start.'));
+  assert.doesNotMatch(result.stderr, /pgrep\s+-[a-z]*[la]|ps\s+(?:aux|-ef|-ww)/i);
+}
+ADVICE
+check 'both refusal messages recommend discovery without arguments' 0 "$?"
 
 echo "process-guard fixtures: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
