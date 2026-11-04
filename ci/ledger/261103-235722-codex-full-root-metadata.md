@@ -51,3 +51,29 @@ person home (missing .config and .docker). If either fails, return its argv
 without another workaround. This adds no step or job time allowance.
 The final-label removal list includes this trace step and agent-home-10k
 and other-home-10k selection along with all other diagnostic narrowing.
+
+Evidence collection repair after 58a376be60: return to one bounded trace
+folder upload, with the three JSON reports inside it. Do not enable hidden
+files. This supersedes the uncommitted multi-path/hidden-file proposal.
+
+Security diagnostic additions: after each probe row, even on failure, log
+host .claude/.dork/.config/.docker types under person, data and agent roots
+and require absent or directory. The small traced rows add -ttt plus mount,
+umount2, unlink and unlinkat; never -v. Add default-mode native scenarios
+with a chmod-000 home subtree and a subtree repeatedly removed during scan.
+Keep all refusal, public-control and canary assertions; a reproduced scan
+refusal remains red, with the user-visible error in its report.
+
+Within the existing 20-minute traced-suite step, collect an isolated branch
+control and main source comparison (main suite traced and untraced). Main
+gets its own worktree, frozen offline install and workspace dependency build;
+record its SHA and any setup failure as unproven. Main has no new protected
+control row, so compare its existing native/background rows, not an invented
+equivalence. All output stays inside the bounded trace upload. The existing
+four-minute small-row cap and 64-minute measurements stay: total caps still
+88/90, with more work within them and a real risk of partial evidence.
+
+No security strategy, timeout, deny, profile or production behavior change.
+Before final label, remove the main comparison script and invocation, rg
+scenario/worker diagnostics and the new trace diagnostics together with the
+previous must-go list. No claim that red or missing rows passed.

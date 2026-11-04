@@ -2,7 +2,27 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { expect, it } from 'vitest';
-import { protectedProbe, shellControlReturned } from './fixtures/protected-probe.js';
+import {
+  protectedProbe,
+  shellControlReturned,
+  probeParentKinds,
+} from './fixtures/protected-probe.js';
+
+it('reports a stray host file instead of accepting it as an absent parent', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'protected-parent-kind-'));
+  try {
+    fs.writeFileSync(path.join(root, '.dork'), '');
+    fs.mkdirSync(path.join(root, '.claude'));
+    expect(probeParentKinds([root]).map(({ kind }) => kind)).toEqual([
+      'directory',
+      'file',
+      'absent',
+      'absent',
+    ]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 it('counts only returned shell output as a successful timing control', () => {
   const call = { type: 'function_call', arguments: 'printf PUBLIC-control' };

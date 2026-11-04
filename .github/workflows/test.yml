@@ -586,7 +586,6 @@ jobs:
             .temp/community-acceptance/**/playwright-artifacts/**/*.png
             .temp/community-acceptance/**/playwright-artifacts/**/*.webm
             .temp/community-acceptance/**/playwright-artifacts/**/*.yml
-          include-hidden-files: true
           if-no-files-found: ignore
 
   # HOW MANY SHARDS THE TEST JOB GETS (ledger 261031-150702). Six in the queue
@@ -1290,7 +1289,10 @@ jobs:
         timeout-minutes: 20
         run: |
           mkdir -p .temp/codex-bwrap-trace
-          strace -ff -e trace=execve,execveat -s 4096 -o .temp/codex-bwrap-trace/exec pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
+          native_status=0
+          strace -ff -e trace=execve,execveat -s 4096 -o .temp/codex-bwrap-trace/exec pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json || native_status=1
+          node scripts/run-codex-main-comparison.mjs || native_status=1
+          exit "$native_status"
       - name: Trace owned and unowned missing-parent scenarios
         if: ${{ always() }}
         timeout-minutes: 4
@@ -1300,18 +1302,18 @@ jobs:
         run: |
           mkdir -p .temp/codex-bwrap-trace
           trace_failed=0
-          strace -ff -e trace=execve,execveat -s 1048576 -o .temp/codex-bwrap-trace/acceptEdits pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-acceptEdits-trace-report.json || trace_failed=1
-          DORKOS_CODEX_PROBE_SCENARIO=other-home-10k DORKOS_CODEX_PROBE_MODE=acceptEdits strace -ff -e trace=execve,execveat -s 1048576 -o .temp/codex-bwrap-trace/other-acceptEdits pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-other-acceptEdits-trace-report.json || trace_failed=1
-          DORKOS_CODEX_PROBE_SCENARIO=other-home-10k DORKOS_CODEX_PROBE_MODE=bypassPermissions strace -ff -e trace=execve,execveat -s 1048576 -o .temp/codex-bwrap-trace/other-Full pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-other-Full-trace-report.json || trace_failed=1
+          strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/acceptEdits pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-acceptEdits.json || trace_failed=1
+          DORKOS_CODEX_PROBE_SCENARIO=other-home-10k DORKOS_CODEX_PROBE_MODE=acceptEdits strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/other-acceptEdits pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-other-acceptEdits.json || trace_failed=1
+          DORKOS_CODEX_PROBE_SCENARIO=other-home-10k DORKOS_CODEX_PROBE_MODE=bypassPermissions strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/other-Full pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-other-Full.json || trace_failed=1
+          DORKOS_CODEX_PROBE_SCENARIO=rg-unreadable-10k DORKOS_CODEX_PROBE_MODE=default strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/rg-unreadable-10k pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-rg-unreadable-10k.json || trace_failed=1
+          DORKOS_CODEX_PROBE_SCENARIO=rg-vanishing-10k DORKOS_CODEX_PROBE_MODE=default strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/rg-vanishing-10k pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-rg-vanishing-10k.json || trace_failed=1
           exit "$trace_failed"
       - name: Preserve native bubblewrap arguments even on failure
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: codex-bwrap-trace
-          path: |
-            .temp/codex-bwrap-trace/
-            .temp/codex-*-trace-report.json
+          path: ${{ github.workspace }}/.temp/codex-bwrap-trace/
           if-no-files-found: error
           retention-days: 7
       - name: Measure protected probes without strace across home and cwd sizes

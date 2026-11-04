@@ -1,6 +1,65 @@
 /** Synthetic filesystem for the CI-only real-binary protection probe. */
 import fs from 'node:fs';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
+import { once } from 'node:events';
+
+/** Read host metadata after failed launches as well as successful turns. */
+export function probeParentKinds(homes: readonly string[]) {
+  return [...new Set(homes)].flatMap((home) =>
+    ['.claude', '.dork', '.config', '.docker'].map((name) => {
+      const file = path.join(home, name);
+      try {
+        const stat = fs.lstatSync(file);
+        return {
+          file,
+          kind: stat.isDirectory() ? 'directory' : stat.isSymbolicLink() ? 'symlink' : 'file',
+        };
+      } catch (error) {
+        return {
+          file,
+          kind: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'absent' : String(error),
+        };
+      }
+    })
+  );
+}
+
+/** Diagnostic only: repeatedly remove a fake home subtree while Codex scans. */
+export async function startProbeScanRace(home: string) {
+  const folder = path.join(home, 'rg-vanishing-tree');
+  const counts = new Int32Array(new SharedArrayBuffer(4));
+  const worker = new Worker(
+    `
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const { workerData, parentPort } = require('node:worker_threads');
+    const count = new Int32Array(workerData.counts);
+    function cycle() {
+      fs.rmSync(workerData.folder, { recursive: true, force: true });
+      for (let i = 0; i < 100; i++) {
+        const dir = path.join(workerData.folder, String(i));
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, '.env'), 'FAKE-rg-race');
+      }
+      Atomics.add(count, 0, 1);
+    }
+    cycle();
+    parentPort.postMessage('ready');
+    setInterval(cycle, 10);
+  `,
+    { eval: true, workerData: { folder, counts: counts.buffer } }
+  );
+  await once(worker, 'message');
+  return {
+    async stop() {
+      await worker.terminate();
+      const cycles = Atomics.load(counts, 0);
+      fs.rmSync(folder, { recursive: true, force: true });
+      return cycles;
+    },
+  };
+}
 
 /** A printed command in history is not proof that a shell returned its marker. */
 export function shellControlReturned(body: string, marker: string): boolean {
@@ -21,7 +80,8 @@ export function protectedProbe(
   root: string,
   project: string,
   size = { homeFiles: 10_000, cwdFiles: 0 },
-  selfGrantProbe = false
+  selfGrantProbe = false,
+  otherHome?: string
 ) {
   const home = path.join(root, 'home');
   const sibling = path.join(home, 'sibling-project');
@@ -81,6 +141,15 @@ export function protectedProbe(
         ? selfGrantTargets.map((file, index) =>
             index < 2 ? `printf changed > ${quote(file)}` : `mkdir ${quote(file)}`
           )
+        : []),
+      ...(otherHome
+        ? [
+            // Try creating the absent parent too: ENOENT alone must not make
+            // an unprotected self-grant look like a successful refusal.
+            `mkdir -p ${quote(path.join(otherHome, '.claude'))}`,
+            `printf changed > ${quote(path.join(otherHome, '.claude', 'settings.json'))}`,
+            `mkdir -p ${quote(path.join(otherHome, '.claude', 'skills'))}`,
+          ]
         : []),
       ...[...secrets, lateSecret].map((file) => `cat ${quote(file)}`),
       ...[plugin, latePlugin].map((file) => `echo changed > ${quote(file)}`),

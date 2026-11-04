@@ -47,7 +47,12 @@ import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { CodexTurnRequest } from '../../transport/codex-transport.js';
 import type { AppServerTransportOptions } from '../../transport/app-server-transport.js';
 import { spawn as nodeSpawn } from 'node:child_process';
-import { protectedProbe, shellControlReturned } from './fixtures/protected-probe.js';
+import {
+  protectedProbe,
+  shellControlReturned,
+  probeParentKinds,
+  startProbeScanRace,
+} from './fixtures/protected-probe.js';
 
 const BINARY = resolveCodexVendoredBinary();
 const IDENTITY_SECRET = 'identity-token-never-real';
@@ -638,12 +643,19 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       if (scenario || selectedMode) {
         expect(process.env.CI).toBe('true');
         expect(process.platform).toBe('linux');
-        expect(['home-10k', 'home-500k', 'cwd-500k', 'agent-home-10k', 'other-home-10k']).toContain(
-          scenario
-        );
+        expect([
+          'home-10k',
+          'home-500k',
+          'cwd-500k',
+          'agent-home-10k',
+          'other-home-10k',
+          'rg-unreadable-10k',
+          'rg-vanishing-10k',
+        ]).toContain(scenario);
         expect(['default', 'acceptEdits', 'bypassPermissions']).toContain(selectedMode);
         if (ownHomeCwd) expect(selectedMode).toBe('acceptEdits');
         if (otherHomeProbe) expect(['acceptEdits', 'bypassPermissions']).toContain(selectedMode);
+        if (scenario?.startsWith('rg-')) expect(selectedMode).toBe('default');
       }
       const size = {
         homeFiles: scenario === 'home-500k' ? 500_000 : 10_000,
@@ -654,8 +666,21 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       if (otherHomeProbe) expect(fs.existsSync(path.join(otherHome, '.claude'))).toBe(false);
       for (const name of ['.config', '.docker'])
         expect(fs.existsSync(path.join(root, 'home', name))).toBe(false);
-      const probe = protectedProbe(root, probeCwd, size, ownHomeCwd);
+      const probe = protectedProbe(
+        root,
+        probeCwd,
+        size,
+        ownHomeCwd,
+        otherHomeProbe ? otherHome : undefined
+      );
       const fixtureMs = performance.now() - fixtureStarted;
+      const unreadable = path.join(root, 'home', 'rg-unreadable');
+      if (scenario === 'rg-unreadable-10k') {
+        expect(process.getuid?.()).not.toBe(0);
+        fs.mkdirSync(unreadable);
+        fs.writeFileSync(path.join(unreadable, '.env'), 'FAKE-unreadable-canary');
+        fs.chmodSync(unreadable, 0o000);
+      }
       console.info('Codex protected fixture ready', { kind, selectedMode, ...size, fixtureMs });
       const configFile = path.join(codexHome, 'config.toml');
       const previous = fs.readFileSync(configFile, 'utf8');
@@ -678,121 +703,142 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           let shellStarted = 0;
           const started = performance.now();
           probe.resetLate();
-          scripted.push(
-            (res) => {
-              // The provider is called only after the thread has started.
-              probe.createLate();
-              res.end(sseCall({ cmd: probe.command, login: false }));
-            },
-            (res, body) => {
-              result = body;
-              if (scenario) {
-                shellStarted = performance.now();
-                res.end(sseCall({ cmd: 'printf PUBLIC-shell-control-0', login: false }));
-              } else res.end(sse('done'));
-            }
-          );
-          if (scenario) {
-            for (let index = 0; index < 3; index++) {
-              scripted.push((res, body) => {
-                shellRoundTripMs.push(performance.now() - shellStarted);
-                shellControls.push(shellControlReturned(body, `PUBLIC-shell-control-${index}`));
-                console.info('Codex protected shell completed', {
-                  kind,
-                  mode,
-                  ...size,
-                  index,
-                  shellRoundTripMs: shellRoundTripMs[index],
-                  shellControlReturned: shellControls[index],
-                });
-                if (index === 2) res.end(sse('done'));
-                else {
-                  shellStarted = performance.now();
-                  res.end(
-                    sseCall({ cmd: `printf PUBLIC-shell-control-${index + 1}`, login: false })
-                  );
-                }
-              });
-            }
-          }
-          const transport = makeTransport(undefined, kind);
-          expect(transport.kind).toBe('app-server');
-          const events: StreamEvent[] = [];
-          for await (const event of transport.runTurn(
-            request(`protected-${kind}-${mode}`, undefined, {
-              cwd: probeCwd,
-              settings: { permissionMode: mode, model: 'fake-model' },
-              onThreadBound: () => {
-                startMs = performance.now() - started;
-                console.info('Codex protected thread bound', { kind, mode, ...size, startMs });
+          const race =
+            scenario === 'rg-vanishing-10k'
+              ? await startProbeScanRace(path.join(root, 'home'))
+              : undefined;
+          try {
+            scripted.push(
+              (res) => {
+                // The provider is called only after the thread has started.
+                probe.createLate();
+                res.end(sseCall({ cmd: probe.command, login: false }));
               },
-              writableDirectories: [probeCwd],
-              tools: {
-                agentTokenEnv: {},
-                managed: { servers: {}, env: {} },
-                dorkosTools: null,
-                connectorTools: null,
-                filePolicy: {
-                  writable: [probeCwd],
-                  ownAgentHomes: [...new Set([probeCwd, agentHome])],
-                  roots: {
-                    cwd: probeCwd,
-                    data: path.join(root, 'data'),
-                    home: path.join(root, 'home'),
-                    accounts: [codexHome],
-                    agentFolders: [probeCwd, agentHome],
-                    agentHomes: [
-                      ...new Set([probeCwd, agentHome, ...(otherHomeProbe ? [otherHome] : [])]),
-                    ],
+              (res, body) => {
+                result = body;
+                if (scenario) {
+                  shellStarted = performance.now();
+                  res.end(sseCall({ cmd: 'printf PUBLIC-shell-control-0', login: false }));
+                } else res.end(sse('done'));
+              }
+            );
+            if (scenario) {
+              for (let index = 0; index < 3; index++) {
+                scripted.push((res, body) => {
+                  shellRoundTripMs.push(performance.now() - shellStarted);
+                  shellControls.push(shellControlReturned(body, `PUBLIC-shell-control-${index}`));
+                  console.info('Codex protected shell completed', {
+                    kind,
+                    mode,
+                    ...size,
+                    index,
+                    shellRoundTripMs: shellRoundTripMs[index],
+                    shellControlReturned: shellControls[index],
+                  });
+                  if (index === 2) res.end(sse('done'));
+                  else {
+                    shellStarted = performance.now();
+                    res.end(
+                      sseCall({ cmd: `printf PUBLIC-shell-control-${index + 1}`, login: false })
+                    );
+                  }
+                });
+              }
+            }
+            const transport = makeTransport(undefined, kind);
+            expect(transport.kind).toBe('app-server');
+            const events: StreamEvent[] = [];
+            for await (const event of transport.runTurn(
+              request(`protected-${kind}-${mode}`, undefined, {
+                cwd: probeCwd,
+                settings: { permissionMode: mode, model: 'fake-model' },
+                onThreadBound: () => {
+                  startMs = performance.now() - started;
+                  console.info('Codex protected thread bound', { kind, mode, ...size, startMs });
+                },
+                writableDirectories: [probeCwd],
+                tools: {
+                  agentTokenEnv: {},
+                  managed: { servers: {}, env: {} },
+                  dorkosTools: null,
+                  connectorTools: null,
+                  filePolicy: {
+                    writable: [probeCwd],
+                    ownAgentHomes: [...new Set([probeCwd, agentHome])],
+                    roots: {
+                      cwd: probeCwd,
+                      data: path.join(root, 'data'),
+                      home: path.join(root, 'home'),
+                      accounts: [codexHome],
+                      agentFolders: [probeCwd, agentHome],
+                      agentHomes: [
+                        ...new Set([probeCwd, agentHome, ...(otherHomeProbe ? [otherHome] : [])]),
+                      ],
+                    },
                   },
                 },
-              },
-            })
-          ))
-            events.push(event);
-          console.info('Codex protected probe', {
-            kind,
-            mode,
-            ...size,
-            fixtureMs,
-            startMs,
-            shellRoundTripMs,
-            shellControls,
-            projectGitWritable: fs.readFileSync(probe.gitWrite, 'utf8') === 'changed-by-full-probe',
-            ownHomeCwd,
-            otherHomeProbe,
-            otherHomeClaudePresent:
-              otherHomeProbe && fs.existsSync(path.join(otherHome, '.claude')),
-            selfGrantTargetsPresent: ownHomeCwd
-              ? probe.selfGrantTargets.map((file) => fs.existsSync(file))
-              : [],
-            lateSecretReadable: result.includes(probe.lateCanary),
-            latePluginChanged:
-              fs.existsSync(probe.latePlugin) &&
-              fs.readFileSync(probe.latePlugin, 'utf8') !== 'original-late-plugin',
-          });
-          expect(startMs, JSON.stringify(events)).toBeDefined();
-          if (scenario) expect(shellControls).toEqual([true, true, true]);
-          expect(result, JSON.stringify(events)).toContain(control);
-          expect(result, JSON.stringify(events)).toContain(skillControl);
-          for (const canary of probe.canaries) expect(result).not.toContain(canary);
-          expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
-          expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
-          expect(result).toMatch(/denied|not permitted/i);
-          if (ownHomeCwd) {
-            expect(fs.lstatSync(path.join(agentHome, '.claude')).isDirectory()).toBe(true);
-            for (const target of probe.selfGrantTargets)
-              expect(() => fs.lstatSync(target)).toThrow(
-                expect.objectContaining({ code: 'ENOENT' })
-              );
+              })
+            ))
+              events.push(event);
+            console.info('Codex protected probe', {
+              kind,
+              mode,
+              ...size,
+              fixtureMs,
+              startMs,
+              shellRoundTripMs,
+              shellControls,
+              projectGitWritable:
+                fs.readFileSync(probe.gitWrite, 'utf8') === 'changed-by-full-probe',
+              ownHomeCwd,
+              otherHomeProbe,
+              otherHomeClaudePresent:
+                otherHomeProbe && fs.existsSync(path.join(otherHome, '.claude')),
+              selfGrantTargetsPresent: ownHomeCwd
+                ? probe.selfGrantTargets.map((file) => fs.existsSync(file))
+                : [],
+              lateSecretReadable: result.includes(probe.lateCanary),
+              latePluginChanged:
+                fs.existsSync(probe.latePlugin) &&
+                fs.readFileSync(probe.latePlugin, 'utf8') !== 'original-late-plugin',
+            });
+            expect(startMs, JSON.stringify(events)).toBeDefined();
+            if (scenario) expect(shellControls).toEqual([true, true, true]);
+            expect(result, JSON.stringify(events)).toContain(control);
+            expect(result, JSON.stringify(events)).toContain(skillControl);
+            for (const canary of probe.canaries) expect(result).not.toContain(canary);
+            expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
+            expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
+            expect(result).toMatch(/denied|not permitted/i);
+            if (ownHomeCwd) {
+              expect(fs.lstatSync(path.join(agentHome, '.claude')).isDirectory()).toBe(true);
+              for (const target of probe.selfGrantTargets)
+                expect(() => fs.lstatSync(target)).toThrow(
+                  expect.objectContaining({ code: 'ENOENT' })
+                );
+            }
+            // Pin Full's project Git authority separately from the exact root
+            // metadata overrides. CI must prove this, not infer it from :root.
+            if (mode === 'bypassPermissions')
+              expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('changed-by-full-probe');
+            else expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('original-git-control');
+            if (otherHomeProbe) expect(fs.readdirSync(otherHome)).toEqual([]);
+            await transport.shutdown();
+          } finally {
+            if (race)
+              console.info('Codex scan race cycles', { kind, mode, cycles: await race.stop() });
+            const parents = probeParentKinds([
+              path.join(root, 'home'),
+              path.join(root, 'data'),
+              agentHome,
+              probeCwd,
+              ...(otherHomeProbe ? [otherHome] : []),
+            ]);
+            console.info('Codex host parent kinds after row', { kind, mode, scenario, parents });
+            expect(parents.filter(({ kind }) => kind !== 'absent' && kind !== 'directory')).toEqual(
+              []
+            );
           }
-          // Pin Full's project Git authority separately from the exact root
-          // metadata overrides. CI must prove this, not infer it from :root.
-          if (mode === 'bypassPermissions')
-            expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('changed-by-full-probe');
-          else expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('original-git-control');
-          if (otherHomeProbe) expect(fs.readdirSync(otherHome)).toEqual([]);
-          await transport.shutdown();
         }
       } finally {
         // A refused thread never consumes its provider script. Isolate the next
@@ -800,6 +846,10 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         scripted.length = 0;
         env.mockRestore();
         fs.writeFileSync(configFile, previous);
+        if (scenario === 'rg-unreadable-10k') {
+          fs.chmodSync(unreadable, 0o700);
+          fs.rmSync(unreadable, { recursive: true, force: true });
+        }
         fs.rmSync(readable, { force: true });
         probe.cleanup();
         fs.rmSync(agentHome, { recursive: true, force: true });
