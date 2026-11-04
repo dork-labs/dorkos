@@ -41,7 +41,7 @@ export class AuthPage {
 
   /** The "Sign out" control shown in Settings → Login & security when signed in. */
   get signOutButton() {
-    return this.settingsDialog.getByRole('button', { name: /sign out/i });
+    return this.settingsDialog.getByRole('button', { name: /^sign out$/i });
   }
 
   // ---------- API keys (Settings → Login & security) ----------

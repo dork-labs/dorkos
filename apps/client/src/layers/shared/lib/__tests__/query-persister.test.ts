@@ -59,10 +59,8 @@ const BUSTER = '1.2.3';
 /**
  * Long enough for the persister's one-second write throttle to have fired.
  *
- * Real timers rather than fake ones: the throttle lives inside
- * `createSyncStoragePersister`, which captured `setTimeout` at module load, so
- * `vi.useFakeTimers()` here would swap a clock the code under test is not
- * holding and prove nothing (see the fake-timer entry in `.claude/rules/testing.md`).
+ * This suite also exercises the library's restore path, so it keeps the real
+ * clock. The sign-out race tests advance the persister's timer directly.
  */
 const SAVE_THROTTLE_WAIT_MS = 1_500;
 

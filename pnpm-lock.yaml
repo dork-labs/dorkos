@@ -184,9 +184,6 @@ importers:
       '@reactour/tour':
         specifier: ^3.8.0
         version: 3.8.0(react@19.3.0)
-      '@tanstack/query-sync-storage-persister':
-        specifier: ^5.104.0
-        version: 5.104.0
       '@tanstack/react-form':
         specifier: ^1.33.5
         version: 1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -6014,9 +6011,6 @@ packages:
 
   '@tanstack/query-persist-client-core@5.104.0':
     resolution: {integrity: sha512-7XEoH8+gaARK06Uw6e97WqOfus7dtcrYxA6RUf1+OZArz1Ax7Stlcfas6XRz7V2YiOTAkGKUYsk2y43QUmpiTw==}
-
-  '@tanstack/query-sync-storage-persister@5.104.0':
-    resolution: {integrity: sha512-ZwwxQfbG7tcD3VqcaxGZblH0Ahqwxkfkveiy2TC3BSCcsJX8YiEC3c8J8dQQs+3qVJtD8jUaXcZ86XvlINn09A==}
 
   '@tanstack/react-form@1.33.5':
     resolution: {integrity: sha512-LlRB28qJwO/QCGaHvWnbdh4haBgTFiZVmzA2uzxSBS3YA7/IqrQ6HOBK70CkFQ+DbflZ7NawsmSln13h5iIdTA==}
@@ -16794,11 +16788,6 @@ snapshots:
   '@tanstack/query-persist-client-core@5.104.0':
     dependencies:
       '@tanstack/query-core': 5.104.0
-
-  '@tanstack/query-sync-storage-persister@5.104.0':
-    dependencies:
-      '@tanstack/query-core': 5.104.0
-      '@tanstack/query-persist-client-core': 5.104.0
 
   '@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
