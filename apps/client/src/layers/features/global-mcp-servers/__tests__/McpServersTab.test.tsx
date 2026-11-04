@@ -533,6 +533,8 @@ describe('the server sheet', () => {
 
 describe('what a person is told about a saved value', () => {
   const HINT = 'It won’t show here again. Agents that get this server can use it.';
+  const SHEET_HINT =
+    'Hidden values won’t show here again. Agents that get this server can use them.';
 
   it('the server sheet says it for a server with a hidden value, and not otherwise', async () => {
     const user = userEvent.setup();
@@ -540,12 +542,12 @@ describe('what a person is told about a saved value', () => {
       transportWith([createMockGlobalMcpServer({ env: [{ name: 'A_KEY', secret: true }] })])
     );
     await user.click(await screen.findByRole('button', { name: /made-up-server/ }));
-    expect(await screen.findByText(HINT)).toBeInTheDocument();
+    expect(await screen.findByText(SHEET_HINT)).toBeInTheDocument();
     cleanup();
     renderTab(transportWith([createMockGlobalMcpServer()]));
     await user.click(await screen.findByRole('button', { name: /made-up-server/ }));
     await screen.findByRole('dialog');
-    expect(screen.queryByText(HINT)).toBeNull();
+    expect(screen.queryByText(SHEET_HINT)).toBeNull();
   });
 
   it('Add says it once a row is hidden', async () => {

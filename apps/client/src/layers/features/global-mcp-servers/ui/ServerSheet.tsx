@@ -102,7 +102,7 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
 
           {savedSecretCount(server) > 0 && (
             <p className="text-muted-foreground text-xs">
-              It won’t show here again. Agents that get this server can use it.
+              Hidden values won’t show here again. Agents that get this server can use them.
             </p>
           )}
           {unpinned && (
