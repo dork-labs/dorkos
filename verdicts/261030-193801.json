@@ -3,7 +3,7 @@
  "id": "261030-193801",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-11-07T08:22:09Z; the verdict is computed on 2026-11-08.",
- "computed_at": "2026-11-03T12:43:29.283Z",
+ "computed_at": "2026-11-04T12:52:57.680Z",
  "hypothesis_hash": "890f1e51f3bc252e",
  "metric": "tracked.job-minutes-per-merged-pr",
  "anchor": "2026-10-31T08:22:09Z",
@@ -25,15 +25,15 @@
  "after": {
   "from": "2026-10-31T08:22:09Z",
   "to": "2026-11-07T08:22:09Z",
-  "n": 110,
-  "value": 941.6
+  "n": 139,
+  "value": 1044.2
  },
  "confounders": [],
  "slo": {
   "id": "pr-feedback",
   "stat": "p50",
   "before": 25.9,
-  "after": 26,
-  "movement": "worse"
+  "after": 25.9,
+  "movement": "flat"
  }
 }
