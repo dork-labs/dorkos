@@ -10,9 +10,10 @@ const BOOT_CACHE_SAVE_MS = 1_500;
 const DESCRIPTION = 'Runs the release checks and writes up what changed for the team.';
 
 /** A wordy agent's DM, opened the way a person opens it: its row in the sidebar. */
-const test = base.extend<{ dmName: string }>({
-  dmName: async ({ page, request, roomsApi, basePage, dashboardSidebar }, use) => {
-    const name = `Tern ${roomsApi.runId}`;
+const test = base.extend<{ dmName: string; shortName: boolean }>({
+  shortName: [false, { option: true }],
+  dmName: async ({ page, request, roomsApi, basePage, dashboardSidebar, shortName }, use) => {
+    const name = shortName ? `M${roomsApi.runId.slice(0, 2)}` : `Tern ${roomsApi.runId}`;
     const agent = await roomsApi.registerAgent(name, '🐦', '#2563eb');
     const described = await request.patch(`/api/mesh/agents/${agent.id}`, {
       data: { description: DESCRIPTION },
@@ -47,6 +48,26 @@ test.describe('the bar over a DM (DOR-3074)', () => {
     await expect(identity).toContainText(dmName);
     await expect(identity.getByText(DESCRIPTION)).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('dm-bar-1440.png') });
+  });
+
+  test.describe('with a short name', () => {
+    test.use({ shortName: true });
+
+    test('follows the name at the normal space, with no slot around it', async ({
+      page,
+      dmName,
+    }, testInfo) => {
+      const name = page.getByTestId('dm-header-identity').getByText(dmName, { exact: true });
+      await expect(name).toBeVisible();
+      // The box the name sits in, against the width of its own letters.
+      const slack = await name.evaluate((element) => {
+        const letters = document.createRange();
+        letters.selectNodeContents(element);
+        return element.getBoundingClientRect().width - letters.getBoundingClientRect().width;
+      });
+      expect(slack).toBeLessThan(1);
+      await page.screenshot({ path: testInfo.outputPath('dm-bar-short-name.png') });
+    });
   });
 
   test.describe('on a reload', () => {

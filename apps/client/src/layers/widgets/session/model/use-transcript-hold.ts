@@ -5,7 +5,8 @@
  * would move the conversation when it lands. A short wait is invisible, so it
  * waits. A long one is a blank page, so past {@link TRANSCRIPT_HOLD_MS} it draws
  * as a session, the layout it uses when no answer ever comes, and accepts one
- * reflow if the answer turns out to be a DM. If the landing still lacks what it
+ * reflow if the answer turns out to be a DM. That needs a name to draw it under:
+ * with none, the identity hold keeps it back. If the landing still lacks what it
  * needs at {@link TRANSCRIPT_LOADING_MS}, the list says it is loading rather than
  * stay blank or show the oldest message. Only the list waits: the bar and the
  * composer never do.

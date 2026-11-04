@@ -65,7 +65,7 @@ export function DirectMessageHeader({ sessionId, chat }: DirectMessageHeaderProp
           ) : (
             agent.name && <Bot className="text-muted-foreground size-4 shrink-0" aria-hidden />
           )}
-          <span className="min-w-[3.5rem] shrink truncate font-medium" title={name}>
+          <span className="min-w-0 shrink truncate font-medium" title={name}>
             {name}
           </span>
           {working ? (

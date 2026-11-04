@@ -82,6 +82,48 @@ describe('SessionTranscript — whose words these are', () => {
     expect(screen.queryByText('Claude Code')).toBeNull();
   });
 
+  describe('while the server has not said whether this is a DM', () => {
+    const UNDECIDED = { agent: null, humanName: null, settled: false };
+
+    /** Past both limits, it says it is loading and has named nobody. */
+    async function expectLoadingWithNoName() {
+      render(<SessionTranscript {...props()} directMessage={UNDECIDED} />);
+      expect(await screen.findByText('Loading chat…', {}, { timeout: 2_000 })).toBeTruthy();
+      expect(screen.queryByText('Claude Code')).toBeNull();
+      expect(screen.queryByText('Unknown agent')).toBeNull();
+    }
+
+    it('does not take a folder with no agent to mean the runtime wrote this', async () => {
+      manifest.current = { data: null, isPending: false, isError: false };
+      await expectLoadingWithNoName();
+    });
+
+    it('waits the same with no folder selected', async () => {
+      useAppStore.setState({ selectedCwd: null });
+      manifest.current = { data: undefined, isPending: true, isError: false };
+      await expectLoadingWithNoName();
+    });
+
+    it('waits the same when the folder’s agent could not be read', async () => {
+      manifest.current = { data: undefined, isPending: false, isError: true };
+      await expectLoadingWithNoName();
+    });
+
+    it('still lets go at the limit once it has an agent to name', async () => {
+      manifest.current = {
+        data: { id: 'tern', name: 'tern', displayName: 'Tern' },
+        isPending: false,
+        isError: false,
+      };
+      render(<SessionTranscript {...props()} directMessage={UNDECIDED} />);
+      await waitFor(
+        () => expect(screen.getByTestId('message-list').className).not.toContain('invisible'),
+        { timeout: 2_000 }
+      );
+      expect(screen.getByText('Tern')).toBeTruthy();
+    });
+  });
+
   it('keeps the runtime’s name for a folder that has no agent', async () => {
     manifest.current = { data: null, isPending: false, isError: false };
     render(<SessionTranscript {...props()} />);

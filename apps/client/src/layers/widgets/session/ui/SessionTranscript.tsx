@@ -389,11 +389,15 @@ export function SessionTranscript({
   // cannot wait for it too: it lands without it, and again if the answer is a DM.
   const readyToLand = isHydrated && !earlier.isSeeking && ((directLog?.ready ?? true) || undecided);
   // Whose words these are has to be known first: in a DM from the DM's own agent,
-  // and in any other chat, or one that may yet be a DM, from the agent at the folder.
+  // and in any other chat from the agent at the folder. While it may yet be a DM,
+  // only an agent at the folder will do: no agent there says nothing about who
+  // this chat belongs to, so the runtime can't stand in until the server answers.
   const identityPending =
     directMessage?.settled === true
       ? directMessage.agentPending === true
-      : selectedCwd !== null && currentAgentPending;
+      : undecided
+        ? !currentAgent
+        : selectedCwd !== null && currentAgentPending;
   const { held, hidden, showLoading, landingKey } = useTranscriptHold(
     sessionId,
     undecided,
