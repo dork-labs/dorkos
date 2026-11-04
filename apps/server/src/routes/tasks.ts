@@ -286,9 +286,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const { approvedPromptHash, expectedApprovalRevision, ...data } = parsed.data;
 
     const existing = store.getTask(id);
-    if (!existing) {
-      return c.json({ error: 'Scheduled task not found' }, 404);
-    }
+    if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
     // From Wi-Fi a schedule runs at Default at most (DOR-3037).
     const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
     if (wifiRefusal) return c.json(wifiRefusal, 403);
@@ -458,9 +456,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const rowData =
       fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
     let updated = store.updateTask(id, rowData, { timingLandsOn });
-    if (!updated) {
-      return c.json({ error: 'Scheduled task not found' }, 404);
-    }
+    if (!updated) return c.json({ error: 'Scheduled task not found' }, 404);
 
     // **Re-assert the status the caller asked for.** The file is written before
     // the row, and a watcher event landing in that gap syncs the NEW file
