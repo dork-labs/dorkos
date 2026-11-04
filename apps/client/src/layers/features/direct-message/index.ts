@@ -19,6 +19,7 @@ export {
   type SessionViewLinks,
 } from './model/use-direct-message-view';
 export {
+  UNKNOWN_AGENT_NAME,
   useDirectMessageAgent,
   useSharedChannels,
   useAgentStatusLine,

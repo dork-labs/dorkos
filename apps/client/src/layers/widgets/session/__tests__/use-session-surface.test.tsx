@@ -13,6 +13,8 @@ const state = vi.hoisted(() => ({
   showSessions: false,
   name: null as string | null,
   displayName: null as string | null,
+  noManifest: false,
+  unknown: false,
 }));
 
 vi.mock('@/layers/features/direct-message', () => ({
@@ -27,9 +29,10 @@ vi.mock('@/layers/features/direct-message', () => ({
     agentPath === null || state.name === null
       ? { id: null, name: null, visual: null, role: null, member: undefined }
       : {
-          id: 'scout-manifest',
+          id: state.noManifest ? null : 'scout-manifest',
           name: state.name,
-          visual: { emoji: '🦊', color: 'hsl(20 80% 50%)' },
+          unknown: state.unknown,
+          visual: state.noManifest ? null : { emoji: '🦊', color: 'hsl(20 80% 50%)' },
           role: null,
           member: undefined,
         },
@@ -45,6 +48,8 @@ afterEach(() => {
   state.name = null;
   state.displayName = null;
   state.showSessions = false;
+  state.noManifest = false;
+  state.unknown = false;
 });
 
 const AT_FOLDER = { id: 'm', name: 'scout', displayName: 'Scout' } as unknown as AgentManifest;
@@ -103,6 +108,28 @@ describe('useSessionSurface', () => {
       placeholder: 'Message Scout',
       quietTurnNumbers: true,
     });
+  });
+
+  it('faces a DM whose manifest is gone by name alone, and leaves the runtime out', () => {
+    state.mode = 'dm';
+    state.name = 'Tern';
+    state.noManifest = true;
+    const { result } = renderHook(() => useSessionSurface('s', null));
+    expect(result.current.directMessage?.agent).toEqual({
+      id: 'unknown-agent:/agents/scout',
+      displayName: 'Tern',
+    });
+    expect(result.current.placeholder).toBe('Message Tern');
+  });
+
+  it('does not ask you to message "Unknown agent", or the agent at the folder', () => {
+    state.mode = 'dm';
+    state.name = 'Unknown agent';
+    state.noManifest = true;
+    state.unknown = true;
+    const { result } = renderHook(() => useSessionSurface('s', AT_FOLDER));
+    expect(result.current.directMessage?.agent?.displayName).toBe('Unknown agent');
+    expect(result.current.placeholder).toBe('Send a message…');
   });
 
   it('shows the turn’s time and tokens in a DM only with Show sessions on', () => {

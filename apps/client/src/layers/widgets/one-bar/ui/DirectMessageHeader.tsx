@@ -6,7 +6,7 @@
  * @module widgets/one-bar/ui/DirectMessageHeader
  */
 import { useNavigate } from '@tanstack/react-router';
-import { Terminal } from 'lucide-react';
+import { Bot, Terminal } from 'lucide-react';
 import type { DirectChat } from '@dorkos/shared/room-schemas';
 import { appRoutes, cn } from '@/layers/shared/lib';
 import { statusDotClass } from '@/layers/shared/ui';
@@ -40,13 +40,13 @@ export interface DirectMessageHeaderProps {
  * permissions and context belong to the session view, which the chip opens.
  */
 export function DirectMessageHeader({ sessionId, chat }: DirectMessageHeaderProps) {
-  const agent = useDirectMessageAgent(chat.agentPath);
+  const agent = useDirectMessageAgent(chat.agentPath, chat.roomId);
   const { working } = useSessionStatusSignals(sessionId);
   const channels = useSharedChannels(agent.member?.id ?? null, chat.roomId);
   const showSessions = useShowSessions();
   // No name while it is on its way: a stand-in that then changes reads as the
-  // wrong chat. "Agent" is only for an agent with no manifest to read.
-  const name = agent.pending ? '' : (agent.name ?? 'Agent');
+  // wrong chat.
+  const name = agent.name ?? '';
 
   return (
     <OneBar
@@ -55,13 +55,15 @@ export function DirectMessageHeader({ sessionId, chat }: DirectMessageHeaderProp
           className="flex min-w-0 shrink items-center gap-1.5 text-sm"
           data-testid="dm-header-identity"
         >
-          {agent.visual && (
+          {agent.visual ? (
             <AgentAvatar
               color={agent.visual.color}
               emoji={agent.visual.emoji}
               size="xs"
               badge={null}
             />
+          ) : (
+            agent.name && <Bot className="text-muted-foreground size-4 shrink-0" aria-hidden />
           )}
           <span className="min-w-[3.5rem] shrink truncate font-medium" title={name}>
             {name}

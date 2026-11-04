@@ -9,19 +9,28 @@ import { useCallback, useMemo } from 'react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { getAgentDisplayName, resolveAgentVisual, type AgentVisual } from '@/layers/shared/lib';
 import { useCurrentAgent } from '@/layers/entities/agent';
-import { roomDisplayTitle, useRooms } from '@/layers/entities/room';
+import { dmCounterpart, roomDisplayTitle, useRooms } from '@/layers/entities/room';
 import { useMemberRooms, useTeamRoster } from '@/layers/entities/team';
 import { agentStatusLine, sharedChannels, type SharedChannel } from '../lib/direct-message-rules';
 
+/** What to call an agent whose manifest is gone and whose name no record keeps. */
+export const UNKNOWN_AGENT_NAME = 'Unknown agent';
+
 /** What the DM view knows about the agent it is with. */
 export interface DirectMessageAgent {
-  /** The agent's own id (its manifest's), or null until its manifest arrives. */
+  /** The agent's own id (its manifest's), or null without a manifest. */
   id: string | null;
-  /** Whether its manifest is still on its way. False once read, even if there is none. */
+  /** Whether its name is still on its way. False once read, even if there is none. */
   pending: boolean;
-  /** The agent's name, or null until its manifest arrives. */
+  /**
+   * The agent's name, or null until it arrives. With a `roomId`, a manifest that
+   * is gone or unreadable falls back to the name the DM's roster keeps, then to
+   * {@link UNKNOWN_AGENT_NAME}. Without one, it stays null.
+   */
   name: string | null;
-  /** The agent's face, or null until its manifest arrives. */
+  /** Whether {@link name} is only the stand-in, so nothing should address it. */
+  unknown: boolean;
+  /** The agent's face, or null without a manifest. */
   visual: AgentVisual | null;
   /** What the agent does, from its own description, or null when it has none. */
   role: string | null;
@@ -35,10 +44,21 @@ export interface DirectMessageAgent {
  * on a screen that has them.
  *
  * @param agentPath - The agent's directory, or null for none (nothing is read).
+ * @param roomId - The DM under the chat, whose roster outlives the agent's manifest.
  */
-export function useDirectMessageAgent(agentPath: string | null): DirectMessageAgent {
+export function useDirectMessageAgent(
+  agentPath: string | null,
+  roomId: string | null = null
+): DirectMessageAgent {
   const { data: manifest, isPending } = useCurrentAgent(agentPath);
   const { data: roster } = useTeamRoster({ enabled: agentPath !== null });
+  // A DM keeps its agent after the agent's file is gone, so the room is asked
+  // only then. Until it answers the name is still on its way, never a guess.
+  const asksRoom = roomId !== null && agentPath !== null && !isPending && !manifest;
+  const { data: rooms, isPending: roomPending } = useRooms({ enabled: asksRoom });
+  const room = asksRoom ? rooms?.find((candidate) => candidate.id === roomId) : undefined;
+  const lastKnownName = dmCounterpart(room?.participants)?.displayName.trim();
+  const fallbackReady = asksRoom && !roomPending;
   const member = useMemo(
     () =>
       agentPath === null
@@ -48,9 +68,14 @@ export function useDirectMessageAgent(agentPath: string | null): DirectMessageAg
   );
   const description = manifest?.description?.trim();
   return {
-    pending: agentPath !== null && isPending,
+    pending: agentPath !== null && (isPending || (asksRoom && roomPending)),
     id: manifest?.id ?? null,
-    name: manifest ? getAgentDisplayName(manifest) : null,
+    name: manifest
+      ? getAgentDisplayName(manifest)
+      : fallbackReady
+        ? lastKnownName || UNKNOWN_AGENT_NAME
+        : null,
+    unknown: !manifest && fallbackReady && !lastKnownName,
     visual: manifest ? resolveAgentVisual(manifest) : null,
     role: description ? description : null,
     member,

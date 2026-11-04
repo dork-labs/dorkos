@@ -2,6 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, act, fireEvent, waitFor } from '@testing-library/react';
+import { TRANSCRIPT_LOADING_MS } from '../model/use-transcript-hold';
 // Mock child components to isolate SessionComposer behavior
 // The composer barrel is mocked as one object: `Composer.Input` and
 // `Composer.Attachments` are stand-ins so this file tests the container's
@@ -533,7 +534,19 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
 
     const props = lastChatInputProps();
     expect(props.canSubmit).toBe(false);
-    expect(props.canSubmitReason).toBe('Checking this folder…');
+    // A quick lookup says nothing, so a chat that is set up doesn't flicker.
+    expect(props).not.toHaveProperty('canSubmitReason');
+  });
+
+  it('says it is checking the folder once the lookup has taken too long', () => {
+    vi.useFakeTimers();
+    try {
+      render(<SessionComposerBench {...baseProps} input="hello?" agentLookupPending />);
+      act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS));
+      expect(lastChatInputProps().canSubmitReason).toBe('Checking this folder…');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('waits with the banner words while the account is out (spec claude-account-ui §6.7)', () => {

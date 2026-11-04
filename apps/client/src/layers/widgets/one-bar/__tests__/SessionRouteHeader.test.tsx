@@ -108,6 +108,8 @@ function mountBar(
     configPending?: boolean;
     agentPending?: boolean;
     noManifest?: boolean;
+    manifestFails?: boolean;
+    lastKnown?: string;
   } = {}
 ) {
   const transport = createMockTransport({
@@ -127,16 +129,18 @@ function mountBar(
         }),
     getAgentByPath: options.agentPending
       ? vi.fn().mockReturnValue(new Promise(() => {}))
-      : vi.fn().mockResolvedValue(
-          options.noManifest
-            ? null
-            : {
-                id: 'scout-manifest',
-                name: 'scout',
-                displayName: 'Scout',
-                description: 'Reviews pull requests',
-              }
-        ),
+      : options.manifestFails
+        ? vi.fn().mockRejectedValue(new Error('500'))
+        : vi.fn().mockResolvedValue(
+            options.noManifest
+              ? null
+              : {
+                  id: 'scout-manifest',
+                  name: 'scout',
+                  displayName: 'Scout',
+                  description: 'Reviews pull requests',
+                }
+          ),
     getTeamRoster: vi.fn().mockResolvedValue({ members: [SCOUT_MEMBER] }),
     listMemberRooms: vi.fn().mockResolvedValue({
       rooms: ['launch', 'design', 'ops', 'growth', 'private'].map((id) => ({
@@ -147,15 +151,20 @@ function mountBar(
         memberCount: 3,
       })),
     }),
-    listRooms: vi
-      .fn()
-      .mockResolvedValue([
-        channel('launch'),
-        channel('design'),
-        channel('ops'),
-        channel('growth'),
-        channel('private', false),
-      ]),
+    listRooms: vi.fn().mockResolvedValue([
+      channel('launch'),
+      channel('design'),
+      channel('ops'),
+      channel('growth'),
+      channel('private', false),
+      {
+        ...channel('dm-scout'),
+        kind: 'dm',
+        participants: options.lastKnown
+          ? [{ id: 'author-scout', kind: 'agent', displayName: options.lastKnown }]
+          : [],
+      } as RoomSummary,
+    ]),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -252,11 +261,26 @@ describe('SessionRouteHeader', () => {
     expect(identity).toHaveTextContent(/^$/);
   });
 
-  it('says "Agent" only for an agent with no manifest to read', async () => {
+  it('keeps the DM’s last known name when the manifest is gone', async () => {
+    mountBar(`/session?session=${SESSION}`, { noManifest: true, lastKnown: 'Scout' });
+
+    const identity = await screen.findByTestId('dm-header-identity');
+    await waitFor(() => expect(identity).toHaveTextContent('Scout'));
+    expect(identity).not.toHaveTextContent('Unknown agent');
+  });
+
+  it('says "Unknown agent" when no record keeps a name, never "Agent"', async () => {
     mountBar(`/session?session=${SESSION}`, { noManifest: true });
 
     const identity = await screen.findByTestId('dm-header-identity');
-    await waitFor(() => expect(identity).toHaveTextContent('Agent'));
+    await waitFor(() => expect(identity).toHaveTextContent('Unknown agent'));
+  });
+
+  it('says the same when the manifest cannot be read', async () => {
+    mountBar(`/session?session=${SESSION}`, { manifestFails: true });
+
+    const identity = await screen.findByTestId('dm-header-identity');
+    await waitFor(() => expect(identity).toHaveTextContent('Unknown agent'));
   });
 
   it('says the agent is working while it works', async () => {

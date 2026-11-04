@@ -52,6 +52,7 @@ import {
   registerComposerInsert,
 } from '@/layers/shared/lib';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
+import { useLoadingTooLong } from '../model/use-transcript-hold';
 import {
   useDirectoryState,
   useSessionAwaitingDecision,
@@ -198,6 +199,8 @@ export function SessionComposer({
   const { target } = useConversation();
   const defaultPlaceholder = target?.placeholder ?? 'Send a message…';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
+  // A quick lookup says nothing, so a chat that is set up doesn't flicker.
+  const lookupTooLong = useLoadingTooLong(agentLookupPending, sessionId);
   // While the account is out the box waits with the banner's words, and after
   // a move it stays shut until "Continue here anyway" (spec §6.7). The banner
   // above says why, so the box adds no reason line of its own.
@@ -729,9 +732,11 @@ export function SessionComposer({
         ...(agentLookupPending || agentLookupError
           ? {
               canSubmit: false,
-              canSubmitReason: agentLookupError
-                ? 'Check this folder again before you start.'
-                : 'Checking this folder…',
+              ...(agentLookupError
+                ? { canSubmitReason: 'Check this folder again before you start.' }
+                : lookupTooLong
+                  ? { canSubmitReason: 'Checking this folder…' }
+                  : {}),
             }
           : {}),
         ...(limitComposer.canSubmit ? {} : { canSubmit: false }),

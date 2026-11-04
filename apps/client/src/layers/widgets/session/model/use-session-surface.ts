@@ -73,7 +73,8 @@ export function useSessionSurface(
   const view = useDirectMessageView(sessionId);
   const isDm = view.mode === 'dm' && view.chat !== null;
   const pending = view.mode === 'pending';
-  const dmAgent = useDirectMessageAgent(isDm ? view.chat!.agentPath : null);
+  const agentPath = isDm ? view.chat!.agentPath : null;
+  const dmAgent = useDirectMessageAgent(agentPath, isDm ? view.chat!.roomId : null);
   const { data: config } = useConfig();
   const showSessions = useShowSessions();
   const humanName = config?.profile?.displayName?.trim() || null;
@@ -91,15 +92,20 @@ export function useSessionSurface(
     return {
       // Keyed by the manifest id and faced from the manifest, exactly as the
       // transcript resolves the agent at the folder, so the two cannot differ.
+      // With no manifest it is the name alone, so the runtime never stands in.
       agent:
-        id !== null && name !== null && emoji !== null && color !== null
-          ? { id, displayName: name, emoji, color }
-          : null,
+        name === null
+          ? null
+          : {
+              id: id ?? `unknown-agent:${agentPath}`,
+              displayName: name,
+              ...(emoji !== null && color !== null ? { emoji, color } : {}),
+            },
       humanName,
       settled: true,
       agentPending: dmAgent.pending,
     };
-  }, [pending, isDm, id, name, emoji, color, humanName, dmAgent.pending]);
+  }, [pending, isDm, agentPath, id, name, emoji, color, humanName, dmAgent.pending]);
 
   if (directMessage === null) {
     return {
@@ -110,13 +116,14 @@ export function useSessionSurface(
       quietTurnNumbers: false,
     };
   }
-  const dmName = name ?? composerName;
+  // Once it is a DM, only its own agent: the agent at the folder may be another.
+  const dmName = pending ? composerName : dmAgent.unknown ? null : name;
   return {
     directMessage,
     humanName,
     transcriptNames: { directMessage, humanName },
     // A room's box names who it reaches, with no trailing ellipsis.
-    placeholder: dmName ? `Message ${dmName}` : 'Send a message',
+    placeholder: dmName ? `Message ${dmName}` : 'Send a message…',
     quietTurnNumbers: !showSessions,
   };
 }
