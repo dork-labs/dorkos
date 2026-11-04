@@ -53,7 +53,8 @@
     "TUNNEL_ENABLED",
     "TUNNEL_PORT",
     "VITE_PORT",
-    "ELECTRON_VERSION"
+    "ELECTRON_VERSION",
+    "VITEST_SHARD_EPOCH"
   ],
   "tasks": {
     "//#heavy-slot": {
@@ -78,7 +79,9 @@
     },
     "test": {
       "dependsOn": ["^build", "//#heavy-slot"],
-      "cache": true
+      "cache": true,
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/scripts/sharding/**"],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/harness#test": {
       "dependsOn": ["^build", "//#heavy-slot"],
@@ -100,8 +103,10 @@
         "$TURBO_ROOT$/meta/harness-smoke/**",
         "$TURBO_ROOT$/scripts/lib/space-server.mjs",
         "$TURBO_ROOT$/ci/space-server.env",
-        "$TURBO_ROOT$/turbo.json"
-      ]
+        "$TURBO_ROOT$/turbo.json",
+        "$TURBO_ROOT$/scripts/sharding/**"
+      ],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/server#test": {
       "dependsOn": ["^build", "//#heavy-slot"],
@@ -149,8 +154,10 @@
         "$TURBO_ROOT$/packages/*/package.json",
         "$TURBO_ROOT$/packages/*/*.md",
         "$TURBO_ROOT$/packages/*/*.{ts,mts,mjs,cjs,js}",
-        "$TURBO_ROOT$/packages/db/drizzle/**"
-      ]
+        "$TURBO_ROOT$/packages/db/drizzle/**",
+        "$TURBO_ROOT$/scripts/sharding/**"
+      ],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/server#typecheck": {
       "dependsOn": ["^build", "//#heavy-slot"],
@@ -194,8 +201,10 @@
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/apps/server/src/services/spaces/**",
         "$TURBO_ROOT$/apps/client/src/space/**",
-        "$TURBO_ROOT$/apps/client/vite.space.config.ts"
-      ]
+        "$TURBO_ROOT$/apps/client/vite.space.config.ts",
+        "$TURBO_ROOT$/scripts/sharding/**"
+      ],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/test-utils#test": {
       "dependsOn": ["^build", "//#heavy-slot"],
@@ -210,8 +219,10 @@
         "$TURBO_ROOT$/apps/e2e/tests/**",
         "$TURBO_ROOT$/packages/*/src/**/*.test.ts",
         "$TURBO_ROOT$/packages/*/src/**/*.test.tsx",
-        "$TURBO_ROOT$/turbo.json"
-      ]
+        "$TURBO_ROOT$/turbo.json",
+        "$TURBO_ROOT$/scripts/sharding/**"
+      ],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/ci-steward#test": {
       "dependsOn": ["^build", "//#heavy-slot"],
@@ -227,26 +238,36 @@
         "$TURBO_ROOT$/scripts/**",
         "!$TURBO_ROOT$/scripts/node_modules/**",
         "$TURBO_ROOT$/apps/e2e/playwright.config.ts",
-        "$TURBO_ROOT$/turbo.json"
-      ]
+        "$TURBO_ROOT$/turbo.json",
+        "$TURBO_ROOT$/scripts/sharding/**"
+      ],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "dorkos#test": {
       "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/e2e/community-two-desktop/**"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/e2e/community-two-desktop/**",
+        "$TURBO_ROOT$/scripts/sharding/**"
+      ],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/marketplace#test": {
       "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
       "inputs": [
         "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/apps/server/src/services/marketplace/fixtures/valid-shape/**"
-      ]
+        "$TURBO_ROOT$/apps/server/src/services/marketplace/fixtures/valid-shape/**",
+        "$TURBO_ROOT$/scripts/sharding/**"
+      ],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/evals#test": {
       "dependsOn": ["^build", "//#heavy-slot"],
       "cache": true,
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/turbo.json"]
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/turbo.json", "$TURBO_ROOT$/scripts/sharding/**"],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/client#test": {
       "dependsOn": ["^build", "//#heavy-slot"],
@@ -258,8 +279,10 @@
         "$TURBO_ROOT$/apps/site/package.json",
         "$TURBO_ROOT$/apps/site/eslint.config.mjs",
         "$TURBO_ROOT$/apps/site/src/lib/rate-limit/fixed-window.ts",
-        "$TURBO_ROOT$/packages/eslint-config/*.{js,mjs,cjs,json}"
-      ]
+        "$TURBO_ROOT$/packages/eslint-config/*.{js,mjs,cjs,json}",
+        "$TURBO_ROOT$/scripts/sharding/**"
+      ],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "@dorkos/site#test": {
       "dependsOn": [
@@ -275,8 +298,10 @@
         "$TURBO_ROOT$/docs/**",
         "$TURBO_ROOT$/blog/**",
         "$TURBO_ROOT$/scripts/lib/code-only.mjs",
-        "$TURBO_ROOT$/apps/server/src/**"
-      ]
+        "$TURBO_ROOT$/apps/server/src/**",
+        "$TURBO_ROOT$/scripts/sharding/**"
+      ],
+      "env": ["VITEST_SHARD_MODE"]
     },
     "test:watch": {
       "cache": false,
