@@ -1,3 +1,4 @@
+import { formatNewSince } from '../shared/prose/new-since-block.js';
 import { renderDocEvents } from '../../canvas/doc-channel/prompt.js';
 import { formatAccountsAccess } from '../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../session/agent-compaction/context-warning-block.js';
@@ -169,6 +170,8 @@ function renderContextBody(entry: AdditionalContextEntry): string {
       return formatAccountsAccess(entry.data, 'codex');
     case 'context_warning':
       return formatContextWarning(entry.data, 'codex');
+    case 'new_since_last_run':
+      return formatNewSince(entry.data);
     case 'turn_cutoff':
       return formatTurnCutoff(entry.data);
     case 'approval_verdict':

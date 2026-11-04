@@ -14,11 +14,25 @@ import { formatDirectNotes } from './direct-notes-block.js';
 import { formatSeedContext } from '../seed-context-block.js';
 import { formatStagedContext } from '../staged-context-block.js';
 import { formatTurnCutoff } from '../../../session/turn-cutoff/turn-cutoff.js';
+import { formatNewSince } from './new-since-block.js';
+
+/** Wrap one body in the context tag used by transcript stripping. */
+export function wrapContextTag(tag: string, inner: string): string {
+  return `<${tag}>\n${inner}\n</${tag}>`;
+}
 
 /** An entry whose body one of the shared prose writers renders. */
 export type ProseContextEntry = Extract<
   AdditionalContextEntry,
-  { kind: 'staged_context' | 'seed_context' | 'approval_verdict' | 'direct_notes' | 'turn_cutoff' }
+  {
+    kind:
+      | 'staged_context'
+      | 'seed_context'
+      | 'approval_verdict'
+      | 'direct_notes'
+      | 'turn_cutoff'
+      | 'new_since_last_run';
+  }
 >;
 
 /**
@@ -39,5 +53,7 @@ export function formatProseContext(entry: ProseContextEntry): string {
       return formatDirectNotes(entry.data);
     case 'turn_cutoff':
       return formatTurnCutoff(entry.data);
+    case 'new_since_last_run':
+      return formatNewSince(entry.data);
   }
 }
