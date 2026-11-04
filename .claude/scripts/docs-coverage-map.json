@@ -241,7 +241,7 @@
     },
     {
       "guide": "browser-verification.md",
-      "description": "Real-browser verification, isolated instances, live local page tools, artifact proof runners and evidence limits",
+      "description": "Real-browser verification, browser stack names, isolated instances, live local page tools and artifact proof limits",
       "patterns": [
         "apps/e2e/multi-window/",
         "browser-verification",
