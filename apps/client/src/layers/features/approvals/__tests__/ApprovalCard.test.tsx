@@ -719,11 +719,20 @@ describe('on Wi-Fi (DOR-2969)', () => {
 
 it('shows only Decline when the full request cannot be shown', async () => {
   const { transport } = renderCard(
-    buildApproval({ cannotAllow: true, alwaysOffered: true, suggestAlways: true })
+    buildApproval({
+      cannotAllow: true,
+      packageLabel: 'acme-hooks',
+      alwaysOffered: true,
+      suggestAlways: true,
+    })
   );
   expect(
-    screen.getByText("This request can't be shown in full. Ask for it again after updating.")
+    screen.getByText("This request can't be shown in full, so it can't be allowed yet.")
   ).toBeVisible();
+  expect(screen.getByText('acme-hooks wants to run commands')).toBeVisible();
+  expect(screen.queryByText('Cannot be undone')).not.toBeInTheDocument();
+  expect(screen.queryByText('Uninstall "sentry-monitor"')).not.toBeInTheDocument();
+  expect(screen.queryByText('Uninstall a marketplace package')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Allow', exact: true })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Decline' }));

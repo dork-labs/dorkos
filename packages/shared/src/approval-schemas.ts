@@ -400,6 +400,8 @@ export const PendingApprovalSchema = z
     capabilityId: z.string(),
     /** The full request cannot be shown, so only a decline is permitted. */
     cannotAllow: z.literal(true).optional(),
+    /** Whole swept package name for a decline-only heading, or a neutral fallback. */
+    packageLabel: z.string().max(80).optional(),
     /** Human-facing capability title. */
     capabilityTitle: z.string(),
     /** Permission tier of the capability being requested. */

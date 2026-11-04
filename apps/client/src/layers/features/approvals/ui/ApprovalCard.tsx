@@ -213,10 +213,14 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   };
 
   const agentLabel = approval.requestedBy ? agentLabelFrom(approval.requestedBy) : 'this agent';
-  const heading = approval.serviceAction?.actionName ?? approval.capabilityTitle;
+  const heading = approval.cannotAllow
+    ? `${approval.packageLabel ?? 'This package'} wants to run commands`
+    : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
   // A heading that is the action, or the question a consequence badge answers,
   // wraps instead of truncating (see the heading row below).
-  const wrapsHeading = Boolean(approval.serviceAction || approval.consequence);
+  const wrapsHeading = Boolean(
+    approval.cannotAllow || approval.serviceAction || approval.consequence
+  );
   const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
@@ -275,7 +279,8 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             <span
               className={cn(
                 'text-foreground text-sm font-medium',
-                wrapsHeading ? 'min-w-0 break-words' : 'truncate'
+                wrapsHeading ? 'min-w-0 break-words' : 'truncate',
+                approval.cannotAllow && 'break-all'
               )}
             >
               {heading}
@@ -283,59 +288,62 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             {/* A connected-app action the service marks high risk says so once, in a
                 sentence naming the app (`ApprovalServiceAction`), so the badge
                 would only repeat it. */}
-            {!(approval.serviceAction && approval.tier === 'destructive') && (
-              <Badge
-                size="xs"
-                variant="outline"
-                className={cn(
-                  'shrink-0',
-                  approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
-                )}
-              >
-                {approval.consequence ?? TIER_LABEL[approval.tier]}
-              </Badge>
-            )}
+            {!approval.cannotAllow &&
+              !(approval.serviceAction && approval.tier === 'destructive') && (
+                <Badge
+                  size="xs"
+                  variant="outline"
+                  className={cn(
+                    'shrink-0',
+                    approval.tier === 'destructive' && 'border-destructive/30 text-destructive'
+                  )}
+                >
+                  {approval.consequence ?? TIER_LABEL[approval.tier]}
+                </Badge>
+              )}
           </div>
-          {/* An extension's tool says which extension it is from (DOR-2685),
+          {!approval.cannotAllow && (
+            <>
+              {/* An extension's tool says which extension it is from (DOR-2685),
               right under its title. The name was checked to one plain line
               when the extension started, and is drawn as text. */}
-          {approval.source && (
-            <p
-              data-slot="approval-source"
-              className="text-muted-foreground mt-0.5 text-xs break-words"
-            >
-              From {approval.source.name}
-            </p>
-          )}
-          {/* WHAT this would act on, named, directly under the title — the first
+              {approval.source && (
+                <p
+                  data-slot="approval-source"
+                  className="text-muted-foreground mt-0.5 text-xs break-words"
+                >
+                  From {approval.source.name}
+                </p>
+              )}
+              {/* WHAT this would act on, named, directly under the title — the first
               thing the eye lands on after "cannot be undone". Above the summary
               and never instead of it: the summary is still the whole sentence,
               and on a destructive card it is still never clamped. Absent when
               the server could not name the target, in which case the card reads
               exactly as it did before this existed. */}
-          {/* A request past Blocked says so first, and quotes the agent. */}
-          {approval.blockedRequest && (
-            <p data-slot="approval-blocked-request" className="text-foreground mt-0.5 text-xs">
-              {areaLabel
-                ? `${agentLabel} is blocked from ${areaLabel} and is asking to be allowed.`
-                : `${agentLabel} is asking to be allowed.`}
-              {approval.requestReason && (
-                <>
-                  {' '}
-                  It says:{' '}
-                  <q className="text-muted-foreground break-words">{approval.requestReason}</q>
-                </>
+              {/* A request past Blocked says so first, and quotes the agent. */}
+              {approval.blockedRequest && (
+                <p data-slot="approval-blocked-request" className="text-foreground mt-0.5 text-xs">
+                  {areaLabel
+                    ? `${agentLabel} is blocked from ${areaLabel} and is asking to be allowed.`
+                    : `${agentLabel} is asking to be allowed.`}
+                  {approval.requestReason && (
+                    <>
+                      {' '}
+                      It says:{' '}
+                      <q className="text-muted-foreground break-words">{approval.requestReason}</q>
+                    </>
+                  )}
+                </p>
               )}
-            </p>
-          )}
-          {approval.subject && <ApprovalSubject subject={approval.subject} />}
-          {approval.serviceAction && (
-            <ApprovalServiceAction
-              action={approval.serviceAction}
-              destructive={approval.tier === 'destructive'}
-            />
-          )}
-          {/* Never clamped for an action that cannot be undone: truncating the
+              {approval.subject && <ApprovalSubject subject={approval.subject} />}
+              {approval.serviceAction && (
+                <ApprovalServiceAction
+                  action={approval.serviceAction}
+                  destructive={approval.tier === 'destructive'}
+                />
+              )}
+              {/* Never clamped for an action that cannot be undone: truncating the
             consequence is how a padded argument used to push the real one out of
             view. The server caps each value and the whole sentence, so showing it
             in full is bounded. Lower tiers stay clamped — they are routine.
@@ -348,18 +356,18 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             card says nothing rather than repeating itself. Without a subject this
             is the whole summary, unchanged. A connected-app action draws none of
             it: its own block above already says everything the sentence would. */}
-          {!approval.serviceAction &&
-            (approval.subject ? approval.otherArguments : approval.summary) !== undefined && (
-              <p
-                className={cn(
-                  'text-muted-foreground mt-0.5 text-xs break-words',
-                  approval.tier !== 'destructive' && 'line-clamp-2'
+              {!approval.serviceAction &&
+                (approval.subject ? approval.otherArguments : approval.summary) !== undefined && (
+                  <p
+                    className={cn(
+                      'text-muted-foreground mt-0.5 text-xs break-words',
+                      approval.tier !== 'destructive' && 'line-clamp-2'
+                    )}
+                  >
+                    {approval.subject ? approval.otherArguments : approval.summary}
+                  </p>
                 )}
-              >
-                {approval.subject ? approval.otherArguments : approval.summary}
-              </p>
-            )}
-          {/* The one argument that IS the decision, shown whole (DOR-1698).
+              {/* The one argument that IS the decision, shown whole (DOR-1698).
               The summary above caps every value at 80 characters so no argument
               can crowd out another — right for a package name, wrong when the
               value is the new text of a file. It is rendered preformatted and
@@ -370,23 +378,25 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               phone it gets up to half the screen: the card is full width there,
               and a settings file or a script is otherwise read a few lines at a
               time (DOR-2325). */}
-          {/* A Marketplace list too long for the detail comes as a summary
+              {/* A Marketplace list too long for the detail comes as a summary
               instead (DOR-3070): every row that adds power, then a link to
               the whole list. It replaces the detail, which only restates it. */}
-          {approval.marketplaceSummary ? (
-            <ApprovalMarketplaceSummary
-              approvalId={approval.approvalId}
-              summary={approval.marketplaceSummary}
-            />
-          ) : (
-            approval.detail !== undefined && (
-              <pre
-                data-slot="approval-detail"
-                className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-[50dvh] overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56"
-              >
-                {approval.detail}
-              </pre>
-            )
+              {approval.marketplaceSummary ? (
+                <ApprovalMarketplaceSummary
+                  approvalId={approval.approvalId}
+                  summary={approval.marketplaceSummary}
+                />
+              ) : (
+                approval.detail !== undefined && (
+                  <pre
+                    data-slot="approval-detail"
+                    className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-[50dvh] overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56"
+                  >
+                    {approval.detail}
+                  </pre>
+                )
+              )}
+            </>
           )}
           <div className="mt-1.5 flex min-w-0 items-center gap-2">
             <RequestingAgent
@@ -416,7 +426,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             <>
               {approval.cannotAllow && (
                 <p className="text-muted-foreground max-w-xs text-xs">
-                  {"This request can't be shown in full. Ask for it again after updating."}
+                  {"This request can't be shown in full, so it can't be allowed yet."}
                 </p>
               )}
               {suggest && (

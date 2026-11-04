@@ -5,11 +5,15 @@ import type { ApprovalRow } from './approval-card.js';
 import type { ApprovalRequestInput } from './approval-request-input.js';
 import { storableSummary, storableDetail } from './approval-storable.js';
 import { redactSecretsInText, quoteSummaryValue } from './approval-summary.js';
-import { hookCardIsComplete, summariseHookProjection } from '../../harness/hook-card.js';
+import {
+  hasHiddenCardCharacters,
+  hookCardIsComplete,
+  summariseHookProjection,
+} from '../../harness/hook-card.js';
 
 /** The exact explanation shown on a decline-only card. */
 export const INCOMPLETE_APPROVAL_MESSAGE =
-  "This request can't be shown in full. Ask for it again after updating.";
+  "This request can't be shown in full, so it can't be allowed yet.";
 
 const hookRequest = z.object({
   kind: z.literal('hooks'),
@@ -96,5 +100,20 @@ export function cannotAllowCard(
     );
   } catch {
     return true;
+  }
+}
+
+/** A whole swept package name for a decline-only title, with a neutral fallback. */
+export function incompletePackageLabel(stored: string | null): string {
+  try {
+    const full = packageRequest.parse(JSON.parse(stored ?? 'null'));
+    const name = full.kind === 'hooks' ? full.request.packageName : full.name;
+    const swept = quoteSummaryValue(name);
+    // Never present a partial package identity as if it were the whole name.
+    return name.trim() && !hasHiddenCardCharacters(name) && swept === JSON.stringify(name)
+      ? JSON.parse(swept)
+      : 'This package';
+  } catch {
+    return 'This package';
   }
 }

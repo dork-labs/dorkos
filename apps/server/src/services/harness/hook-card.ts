@@ -14,8 +14,8 @@ import { describeHookScriptPins } from './hook-script-pins.js';
  * to hide the interesting half of `node ./hooks/setup.mjs && curl … | sh`.
  * Recognition is not the bar when what is being recognized is a command line.
  *
- * A command shortened here cannot be allowed. The producer records whether
- * every value survived, and the approval service checks the final stored text.
+ * A command shortened here cannot be allowed. The full request is kept so
+ * the approval service can rebuild and check the card again before a grant.
  */
 const COMMAND_DISPLAY_MAX_LENGTH = 200;
 
@@ -47,7 +47,8 @@ function renderCommandForCard(command: string): string {
  * to appear on the card.
  */
 function describeHookTrigger(hook: ProjectedHook): string {
-  const scope = hook.matcher && hook.matcher !== '*' ? ` matching ${hook.matcher}` : '';
+  const scope =
+    hook.matcher && hook.matcher !== '*' ? ` matching ${JSON.stringify(hook.matcher)}` : '';
   switch (hook.event) {
     case 'PreToolUse':
       return `before every tool call${scope}`;
@@ -68,7 +69,7 @@ function describeHookTrigger(hook: ProjectedHook): string {
     case 'PreCompact':
       return 'before the chat is compacted';
     default:
-      return `on ${hook.event}${scope}`;
+      return `on ${JSON.stringify(hook.event)}${scope}`;
   }
 }
 
@@ -113,8 +114,20 @@ export function summariseHookProjection(
   return `Let the installed package ${name} run ${commands} automatically in ${where}${running}: ${hooks}`;
 }
 
+/** Whether invisible formatting or control characters can change how text reads. */
+export function hasHiddenCardCharacters(value: string): boolean {
+  return /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(value);
+}
+
 /** Whether every value survives the card's per-value rendering without a cut. */
 export function hookCardIsComplete(request: HookProjectionRequest): boolean {
+  const rawValues = [
+    request.packageName,
+    request.projectPath,
+    ...(request.scripts ?? []).flatMap(([file, pin]) => [file, pin]),
+    ...request.hooks.flatMap((hook) => [hook.command, hook.event, hook.matcher ?? '']),
+  ];
+  if (rawValues.some(hasHiddenCardCharacters)) return false;
   const values = [
     request.packageName,
     request.projectPath,

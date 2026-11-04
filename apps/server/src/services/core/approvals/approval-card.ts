@@ -12,7 +12,7 @@ import {
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
-import { cannotAllowCard } from './approval-completeness.js';
+import { cannotAllowCard, incompletePackageLabel } from './approval-completeness.js';
 import { isAlwaysOffered } from './always-offered.js';
 import { withMarketplaceSummary, withServiceAction } from './approval-storable.js';
 import { extensionSourcePhrase } from './approval-summary.js';
@@ -78,7 +78,9 @@ export function toPendingApproval(
     tier: row.tier,
     ...(consequence ? { consequence } : {}),
     summary: row.summary,
-    ...(cannotAllowCard(row) ? { cannotAllow: true as const } : {}),
+    ...(cannotAllowCard(row)
+      ? { cannotAllow: true as const, packageLabel: incompletePackageLabel(row.packageRequest) }
+      : {}),
     ...(row.detail === null ? {} : { detail: row.detail }),
     ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
     // Both halves or neither: a label with no id behind it is the shape this

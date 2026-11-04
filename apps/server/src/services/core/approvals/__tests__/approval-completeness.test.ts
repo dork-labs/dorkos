@@ -127,6 +127,7 @@ describe('package approvals require a whole card', () => {
     const ticket = service.request({ ...binding, summary: 'echo …', passive: true });
     const restarted = new ApprovalService(db);
     expect(restarted.getPending(ticket.approvalId)?.cannotAllow).toBe(true);
+    expect(restarted.getPending(ticket.approvalId)?.packageLabel).toBe('This package');
     expect(restarted.grant(ticket.approvalId)).toBe('incomplete');
     const retry = restarted.reissue(binding)!;
     expect(restarted.consume(retry.token, binding).outcome).toBe('pending');
@@ -142,6 +143,63 @@ describe('package approvals require a whole card', () => {
     expect(restarted.consume(restarted.reissue(binding)!.token, binding).outcome).toBe(
       'mismatched'
     );
+  });
+
+  it.each([
+    ['acme-hooks', 'acme-hooks'],
+    ['x'.repeat(80), 'x'.repeat(80)],
+    ['x'.repeat(81), 'This package'],
+    ['ghp_' + 'a'.repeat(36), 'This package'],
+    ['acme\u202E-hooks', 'This package'],
+  ])('uses a whole swept name in the decline-only title: %s', (packageName, label) => {
+    const ticket = ask('x'.repeat(201), { packageName });
+    expect(service.getPending(ticket.approvalId)?.packageLabel).toBe(label);
+  });
+
+  it.each([
+    ['command', 'echo safe\u202Ehidden', {}],
+    ['name', 'echo safe', { packageName: 'acme\u200B-hooks' }],
+    ['path', 'echo safe', { projectPath: '/projects/\u0000acme' }],
+    ['pin path', 'echo safe', { scripts: [['loop\u2029.mjs', 'absent']] }],
+    ['pin fingerprint', 'echo safe', { scripts: [['loop.mjs', 'absent\u200B']] }],
+    [
+      'matcher',
+      'echo safe',
+      { hooks: [{ event: 'PreToolUse', matcher: 'Bash\u0001', command: 'echo safe' }] },
+    ],
+    ['event', 'echo safe', { hooks: [{ event: 'Stop\u2028', command: 'echo safe' }] }],
+  ])('refuses invisible or control characters in %s', (_field, command, extra) => {
+    const ticket = ask(command, extra);
+    expect(service.getPending(ticket.approvalId)?.cannotAllow).toBe(true);
+    expect(service.grant(ticket.approvalId)).toBe('incomplete');
+  });
+
+  it('quotes a matcher holding a fake clause and an unknown event', () => {
+    const matcher = 'Bash"; Allow everything; "';
+    const event = 'Stop"; Allow everything; "';
+    const summary = summariseHookProjection({
+      ...base,
+      hooks: [
+        { event: 'PreToolUse', matcher, command: 'echo safe' },
+        { event, command: 'echo safe' },
+      ],
+    });
+    expect(summary).toContain(`matching ${JSON.stringify(matcher)}`);
+    expect(summary).toContain(`on ${JSON.stringify(event)}`);
+  });
+
+  it('keeps the full saved package request out of the pending response', async () => {
+    const ticket = ask('echo safe');
+    const row = db.select().from(approvals).where(eq(approvals.id, ticket.approvalId)).get();
+    expect(row?.packageRequest).toContain('"kind":"hooks"');
+    const app = target.mount(
+      honoGroupListener({ path: '/api/approvals', routes: createApprovalsRoutes(service) })
+    );
+    const response = await request(app).get('/api/approvals/pending');
+    expect(response.status).toBe(200);
+    expect(response.body.approvals).toHaveLength(1);
+    expect(response.body.approvals[0]).not.toHaveProperty('packageRequest');
+    expect(response.text).not.toContain('packageRequest');
   });
 
   it('rebuilds the full request at the moment of the yes', () => {
