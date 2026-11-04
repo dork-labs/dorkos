@@ -9,12 +9,12 @@ import {
 } from './verdict.mjs';
 
 const stock = ['LensOverlay', 'MediaRouter'];
+const KEYCHAIN = '--use-mock-keychain --password-store=basic';
 const all = () => EXPECTED_ROWS.map((id) => ({ id, pass: true }));
 
 describe('agent window flags', () => {
   test('one flag with the whole list and both features passes', () => {
-    const args =
-      '/x/chrome --a --disable-features=LensOverlay,MediaRouter,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable --b';
+    const args = `/x/chrome ${KEYCHAIN} --a --disable-features=LensOverlay,MediaRouter,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable --b`;
     assert.equal(checkAgentFlags(args, stock).pass, true);
   });
 
@@ -63,7 +63,7 @@ describe('plain window flags', () => {
   test('one flag with both features passes, with no Playwright list', () => {
     assert.equal(
       checkPlainFlags(
-        '/x/chrome --a --disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable --b'
+        `/x/chrome ${KEYCHAIN} --a --disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable --b`
       ).pass,
       true
     );
@@ -89,9 +89,33 @@ describe('plain window flags', () => {
   });
 
   test("the same line would fail for the agent window, which must keep Playwright's list", () => {
-    const line = '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable';
+    const line = `${KEYCHAIN} --disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`;
     assert.equal(checkPlainFlags(line).pass, true);
     assert.equal(checkAgentFlags(line, ['LensOverlay']).pass, false);
+  });
+});
+
+describe('keychain switches', () => {
+  const features =
+    '--disable-features=LensOverlay,MediaRouter,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable';
+
+  test('dropping --use-mock-keychain fails both windows and names it', () => {
+    const line = `--password-store=basic ${features}`;
+    assert.deepEqual(checkAgentFlags(line, stock).missingSwitches, ['--use-mock-keychain']);
+    assert.equal(checkPlainFlags(line).pass, false);
+  });
+
+  test('dropping --password-store=basic fails both windows and names it', () => {
+    const line = `--use-mock-keychain ${features}`;
+    assert.deepEqual(checkPlainFlags(line).missingSwitches, ['--password-store=basic']);
+    assert.equal(checkAgentFlags(line, stock).pass, false);
+  });
+
+  test('another password store fails', () => {
+    assert.equal(
+      checkPlainFlags(`--use-mock-keychain --password-store=keychain ${features}`).pass,
+      false
+    );
   });
 });
 

@@ -5,8 +5,8 @@ name: Mac Browser Reading
 # http:// pages (DOR-3884); this reads whether the Mac does the same, without
 # launching a browser on anyone's Mac login.
 #
-# It runs CI's own cli-tarball for the exact commit named, on the test runtime,
-# with no account and no secrets. Made-up hosts only, in this runner's /etc/hosts.
+# It runs CI's own cli-tarball for the exact commit named, plus one test-only
+# scenario line (results.json says so), on the test runtime, with no account and no secrets. Made-up hosts only, in this runner's /etc/hosts.
 # It never checks out or builds the named commit: the scripts come from the ref
 # this workflow runs on, and the commit's code runs only as its built tarball.
 #
@@ -91,7 +91,7 @@ jobs:
             echo "PLAYWRIGHT_BROWSERS_PATH=$home/browsers"
           } >> "$GITHUB_ENV"
           PLAYWRIGHT_BROWSERS_PATH="$home/browsers" node "$cli/node_modules/playwright-core/cli.js" install chromium
-          node "$SCRIPTS/patch-bundle.mjs" "$cli/dist/server/index.js" "$PWD/$SCRIPTS/scenario.mjs"
+          node "$SCRIPTS/patch-bundle.mjs" "$cli/dist/server/index.js" "$PWD/$SCRIPTS/scenario.mjs" "$RUNNER_TEMP/out/bundle-patch.json"
 
       - name: Serve the made-up hosts on 80 and 443
         shell: bash

@@ -45,7 +45,14 @@ const SETTLE_MS = 12_000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const log = (...parts) => console.log(new Date().toISOString().slice(11, 19), ...parts);
 const rows = [];
-const result = { sha: SHA, platform: process.platform, arch: process.arch, rows };
+const result = {
+  sha: SHA,
+  platform: process.platform,
+  arch: process.arch,
+  // CI's tarball plus one test-only scenario line. Fails here if that record is missing.
+  bundlePatch: JSON.parse(readFileSync(path.join(OUT, 'bundle-patch.json'), 'utf8')),
+  rows,
+};
 const save = () =>
   writeFileSync(path.join(OUT, 'results.json'), `${JSON.stringify(result, null, 2)}\n`);
 const row = (id, pass, detail) => {

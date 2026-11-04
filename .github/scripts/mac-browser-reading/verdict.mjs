@@ -7,6 +7,9 @@
 /** The features that must be off in both windows. The agent's window also keeps Playwright's own list. */
 export const REQUIRED_DISABLED = ['HttpsUpgrades', 'HttpsFirstBalancedModeAutoEnable'];
 
+/** Switches both windows must keep, so neither touches the macOS Keychain. */
+export const REQUIRED_SWITCHES = ['--use-mock-keychain', '--password-store=basic'];
+
 /** Every row a run must report. A row that isn't here can't pass by being skipped. */
 export const EXPECTED_ROWS = [
   'both: person opens',
@@ -34,10 +37,13 @@ function checkOneFlag(args, wanted) {
   const flags = disabledFeatureFlags(args);
   const held = new Set(flags[0] ?? []);
   const missing = [...new Set(wanted)].filter((name) => !held.has(name));
+  const tokens = new Set(args.split(/\s+/));
+  const missingSwitches = REQUIRED_SWITCHES.filter((name) => !tokens.has(name));
   const problems = [];
   if (flags.length !== 1) problems.push(`expected one --disable-features, found ${flags.length}`);
   if (missing.length > 0) problems.push(`missing: ${missing.join(', ')}`);
-  return { pass: problems.length === 0, count: flags.length, missing, problems };
+  if (missingSwitches.length > 0) problems.push(`missing switches: ${missingSwitches.join(', ')}`);
+  return { pass: problems.length === 0, count: flags.length, missing, missingSwitches, problems };
 }
 
 /**

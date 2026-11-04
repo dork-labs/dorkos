@@ -5,7 +5,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const [, , bundle, scenario] = process.argv;
+const [, , bundle, scenario, record] = process.argv;
 const source = readFileSync(bundle, 'utf8');
 const anchor = /^( *)"local-browser-driving": localBrowserDrivingScenario,$/gm;
 const found = source.match(anchor) ?? [];
@@ -14,5 +14,10 @@ const added = `"mac-reading": async function* (c, x, o) { yield* (await import($
 writeFileSync(
   bundle,
   source.replace(anchor, (line, indent) => `${line}\n${indent}${added}`)
+);
+// A run must say it wasn't the untouched build.
+writeFileSync(
+  record,
+  JSON.stringify({ patched: true, linesAdded: 1, scenario: 'mac-reading', line: added })
 );
 console.log(`Added one line to ${bundle}`);
