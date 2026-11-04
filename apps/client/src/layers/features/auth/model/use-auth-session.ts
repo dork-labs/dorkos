@@ -64,7 +64,7 @@ export function useAuthSession() {
     queryFn: async () => {
       const confirmSignIn = bootCacheSignInCheck(queryClient);
       const { data } = await client.getSession();
-      if (data) confirmSignIn();
+      if (data) confirmSignIn(data.session.publicComputer === true);
       return data ?? null;
     },
     staleTime: 30_000,

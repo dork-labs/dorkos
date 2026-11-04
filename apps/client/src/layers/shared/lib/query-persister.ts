@@ -268,10 +268,14 @@ export function createBootCache(options: {
 
   return {
     connect(queryClient) {
-      const stop = observeBootCacheSession(queryClient, () => {
-        discardPending();
-        generation = bootCacheSession(storage);
-      });
+      const stop = observeBootCacheSession(
+        queryClient,
+        () => {
+          discardPending();
+          generation = bootCacheSession(storage);
+        },
+        storage
+      );
       const onPageHide = () => {
         discardPending();
         this.flush(queryClient);
