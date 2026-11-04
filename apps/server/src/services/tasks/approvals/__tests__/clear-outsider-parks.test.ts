@@ -1,6 +1,6 @@
 /**
  * A marked schedule stays off and pending review across boot and discovery (DOR-3860).
- * Clearing obsolete marks never creates approval; already-cleared rows remain untouched.
+ * Switching off never removes the marks or creates approval; cleared rows remain untouched.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -15,6 +15,11 @@ import { writeSkillFile } from '@dorkos/skills/writer';
 import { planTaskFileUpdate } from '../../task-file-update.js';
 import { TaskStore } from '../../task-store.js';
 import type { TaskFileSync } from '../../sync/task-file-sync.js';
+import {
+  decideAgentModeCall,
+  type AgentModeSources,
+} from '../../agent-mode/agent-mode-decision.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 
 let root: string;
 let db: Db;
@@ -183,7 +188,7 @@ describe('a real sync after the clear', () => {
     expect(rowOf(clearedId)).toMatchObject({
       enabled: false,
       status: 'pending_approval',
-      originMarks: null,
+      originMarks: JSON.stringify({ outsider: true }),
       approvedContentKey: null,
     });
     const raw = readRawFrontmatter(await fs.readFile(filePath, 'utf8'));
@@ -258,7 +263,7 @@ describe('clearOutsiderParks', () => {
     expect(row).toMatchObject({
       enabled: false,
       status: 'pending_approval',
-      originMarks: null,
+      originMarks: JSON.stringify({ outsider: true }),
       approvedContentKey: null,
     });
     const raw = readRawFrontmatter(await fs.readFile(row.filePath, 'utf8'));
@@ -272,7 +277,7 @@ describe('clearOutsiderParks', () => {
     expect(rowOf(id)).toMatchObject({
       status: 'pending_approval',
       enabled: false,
-      originMarks: null,
+      originMarks: JSON.stringify({ teammate: [{ roomId: 'r', authorId: 'a' }] }),
       approvedContentKey: null,
     });
   });
@@ -293,6 +298,79 @@ describe('clearOutsiderParks', () => {
 
     expect(rowOf(id)).toEqual(before);
     expect(await fs.readFile(before.filePath, 'utf8')).toBe(fileBefore);
+  });
+
+  it('preserves the row’s outside-word marks after switching it off', async () => {
+    const marks = {
+      outsider: true,
+      teammate: [{ roomId: 'sample-room', authorId: 'sample-agent' }],
+    };
+    const id = await parked('marked-words', marks);
+
+    expect(await store.approvals.clearOutsiderParks()).toBe(1);
+    expect(store.getTask(id)?.originMarks).toMatchObject(marks);
+    expect(rowOf(id).originMarks).toBe(JSON.stringify(marks));
+  });
+
+  it('still asks with marked-task when its owning agent approves after restart cleanup', async () => {
+    const owner = path.join(root, 'sample-owner');
+    const editor = path.join(root, 'sample-editor');
+    const sources: AgentModeSources = {
+      declaredModes: () => CLAUDE_CODE_CAPABILITIES.permissionModes,
+      agentLevelMode: async () => 'bypassPermissions',
+      agentPathOf: (id) => (id === 'sample-owner' ? owner : editor),
+      readConfig: () => ({
+        preset: 'trusted',
+        defaults: {
+          areas: {},
+          actions: { 'tasks.approve': 'allowed', 'tasks.set_mode': 'allowed' },
+        },
+      }),
+      readAgentPermissions: async () => undefined,
+      startedBy: () => null,
+      turnLevelOf: () => ({ asks: 'never', reach: 'everything' }),
+    };
+    const caller = {
+      structural: true,
+      agentPath: owner,
+      sessionId: 'sample-owner-chat',
+      marked: false,
+      resolved: 'home' as const,
+    };
+    for (const mode of ['dontAsk', 'default'] as const) {
+      const id = await parked(`marked-${mode.toLowerCase()}`, { outsider: true });
+      db.update(pulseSchedules)
+        .set({
+          agentId: 'sample-owner',
+          permissionMode: mode,
+          proposedByAgentPath: editor,
+          proposedBySessionId: 'sample-editor-chat',
+        })
+        .where(eq(pulseSchedules.id, id))
+        .run();
+      await store.approvals.clearOutsiderParks();
+      store.approvals.backfillApprovalGrants();
+      const task = store.getTask(id)!;
+      const call = {
+        door: 'update' as const,
+        body: { status: 'active' },
+        task,
+        edits: {
+          lastEditedByAgentPath: editor,
+          lastEditedBySessionId: 'sample-editor-chat',
+          agentApprovalKey: null,
+        },
+      };
+      const decision = await decideAgentModeCall(call, caller, sources);
+      expect(decision).toMatchObject({ kind: 'decided', state: 'ask', asks: ['marked-task'] });
+      expect(
+        await decideAgentModeCall(
+          { ...call, task: { ...task, originMarks: null } },
+          caller,
+          sources
+        )
+      ).toMatchObject({ kind: 'decided', state: 'allowed' });
+    }
   });
 
   it('matches nothing the second time', async () => {

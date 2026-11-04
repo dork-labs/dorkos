@@ -792,7 +792,7 @@ export class TaskApprovals {
   }
 
   /**
-   * Clear obsolete origin marks, keeping each schedule off and awaiting a person's review.
+   * Switch marked schedules off, preserving their marks until a person approves.
    *
    * @returns How many schedules were cleared.
    */

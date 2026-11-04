@@ -280,7 +280,7 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       );
     }
 
-    // Clear obsolete marks before discovery, keeping these rows pending and off (DOR-3860).
+    // Switch marked schedules off before discovery, keeping their marks and review (DOR-3860).
     // The backfill below must not grant them approval merely because the server restarted.
     await taskStore.approvals.clearOutsiderParks();
 

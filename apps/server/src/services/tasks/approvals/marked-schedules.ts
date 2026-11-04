@@ -97,20 +97,24 @@ function mergeStored(
 }
 
 /**
- * Remove obsolete origin marks while keeping these schedules awaiting a person's review.
+ * Switch marked schedules off while keeping their origin and pending review.
  * Switch their files off before discovery starts; an unwritable file leaves its row unchanged
  * for the next boot. Never infer a missing review from an ordinary switched-off row: builds
  * that already cleared its marks cannot be distinguished from a person's own decision.
  *
  * @param db - The database the store writes.
- * @returns How many schedules had their marks cleared.
+ * @returns How many marked schedules were switched off.
  */
 export async function clearOutsiderParks(db: Db): Promise<number> {
   const parked = db
     .select()
     .from(pulseSchedules)
     .where(
-      and(eq(pulseSchedules.status, 'pending_approval'), isNotNull(pulseSchedules.originMarks))
+      and(
+        eq(pulseSchedules.status, 'pending_approval'),
+        eq(pulseSchedules.enabled, true),
+        isNotNull(pulseSchedules.originMarks)
+      )
     )
     .all();
   let cleared = 0;
@@ -132,7 +136,6 @@ export async function clearOutsiderParks(db: Db): Promise<number> {
         enabled: false,
         status: 'pending_approval',
         approvedContentKey: null,
-        originMarks: null,
         previousApprovalKey: null,
         updatedAt: new Date().toISOString(),
       })
