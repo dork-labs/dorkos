@@ -351,15 +351,50 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
       review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
     ).toBeEnabled();
     await page.keyboard.press('Escape');
-    if (surface === 'dark') {
-      task = { ...sampleTask(false), permissionMode: 'bypassPermissions' };
-      await page.reload();
-      await basePage.waitForAppReady();
-      await reviewButton.click();
-      const full = review.getByText('Runs as: Full autonomy', { exact: true });
-      await expect(full).toHaveClass(/text-status-warning-fg/);
-      await page.screenshot({ path: testInfo.outputPath('dark-full-review.png') });
-      await page.keyboard.press('Escape');
-    }
   });
 }
+
+// Keep this independent of the multi-state review flow: CI's 30-second budget
+// belongs to one behavior, rather than a fifth reload at the end of that flow.
+test('dark schedule review shows the Full autonomy warning @smoke', async ({
+  page,
+  basePage,
+  tasksPage,
+}, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  await page.addInitScript(() => localStorage.setItem('dorkos-theme', 'dark'));
+  const task = { ...sampleTask(false), permissionMode: 'bypassPermissions' };
+  await page.route('**/api/tasks', (route) => route.fulfill({ json: [task] }));
+  await page.route('**/api/capabilities', async (route) => {
+    const response = await route.fetch();
+    const map = await response.json();
+    const base = Object.values(map.capabilities)[0] as Record<string, unknown>;
+    map.capabilities['claude-code'] = {
+      ...base,
+      type: 'claude-code',
+      permissionModes: {
+        supported: true,
+        default: 'acceptEdits',
+        values: [
+          {
+            id: 'bypassPermissions',
+            label: 'Full autonomy',
+            stop: 'autonomy',
+            asks: 'never',
+            reach: 'everything',
+            promise: 'Runs everything without asking.',
+          },
+        ],
+      },
+    };
+    await route.fulfill({ json: map });
+  });
+  await basePage.goto();
+  await basePage.waitForAppReady();
+  await tasksPage.open();
+  await tasksPage.dialog.getByRole('button', { name: 'Review Sample ledger', exact: true }).click();
+  const review = page.getByRole('dialog', { name: 'Review schedule', exact: true });
+  const full = review.getByText('Runs as: Full autonomy', { exact: true });
+  await expect(full).toHaveClass(/text-status-warning-fg/);
+  await page.screenshot({ path: testInfo.outputPath('dark-full-review.png') });
+});
