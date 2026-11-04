@@ -37,6 +37,38 @@ describe('maskedArgs', () => {
   );
 });
 
+describe('a secret that is not in a secret-named flag', () => {
+  it.each([
+    [
+      ['--header', 'Authorization: Bearer abc'],
+      ['--header', 'Authorization: •••'],
+    ],
+    [['--header=Authorization: Bearer abc'], ['--header=Authorization: •••']],
+    [
+      ['-H', 'X-Api-Key: abc'],
+      ['-H', 'X-Api-Key: •••'],
+    ],
+    [['API_KEY=abc'], ['API_KEY=•••']],
+    [
+      ['--env', 'TOKEN=abc'],
+      ['--env', 'TOKEN=•••'],
+    ],
+    [['Bearer abc'], ['Bearer •••']],
+    [['--x=Bearer abc'], ['--x=Bearer •••']],
+    [
+      ['Bearer', 'abc', 'next'],
+      ['Bearer', '•••', 'next'],
+    ],
+  ])('%j', (args, shown) => {
+    expect(maskedArgs(args)).toEqual(shown);
+  });
+
+  it('leaves arguments that only look close', () => {
+    const plain = ['-y', '@made-up/server', '--port=3000', 'LOG_LEVEL=info', 'host:5432'];
+    expect(maskedArgs(plain)).toEqual(plain);
+  });
+});
+
 describe('secret names', () => {
   it.each(['DB_PASS', 'DATABASE_URL', 'PGPASSWORD', 'MY_PWD', 'BEARER', 'SENTRY_DSN'])(
     '%s is secret',

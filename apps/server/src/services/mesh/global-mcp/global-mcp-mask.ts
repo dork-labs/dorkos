@@ -3,7 +3,8 @@
  * everything a person is shown (DOR-3802). The store keeps the real values,
  * because the server needs them to run; this is only ever for display.
  *
- * It reads flag names and URL shapes, so it misses a bare value (`-p value`).
+ * It reads flag names, `name: value` shapes and URLs, so it misses a bare value
+ * (`-p value`).
  * That is why the audited sentence leaves arguments out altogether.
  *
  * @module services/mesh/global-mcp/global-mcp-mask
@@ -45,6 +46,20 @@ export function holdsMask(values: readonly string[]): boolean {
 }
 
 /**
+ * One argument with the value after a secret name hidden, whichever flag came
+ * before it: `Authorization: Bearer x`, `--header=X-Api-Key: x`, `API_KEY=x`.
+ * The rest of the argument goes, since a value can hold spaces.
+ */
+function maskSecretShapes(arg: string): string {
+  for (const match of arg.matchAll(/([A-Za-z0-9_.-]+)\s*[:=]\s*/g)) {
+    if (SECRET_NAME_PATTERN.test(match[1]!)) {
+      return `${arg.slice(0, match.index + match[0].length)}${MASK}`;
+    }
+  }
+  return arg.replace(/\bbearer\s+\S+/gi, (found) => `${found.split(/\s+/)[0]} ${MASK}`);
+}
+
+/**
  * Arguments with secret-named flags' values and URL credentials masked.
  *
  * @param args - The server's arguments.
@@ -67,7 +82,9 @@ export function maskedArgs(args: readonly string[]): string[] {
       }
       continue;
     }
-    out.push(maskUrls(arg));
+    // `Bearer` alone hands its value to the next argument, like a flag.
+    if (/^bearer$/i.test(arg)) hideNext = true;
+    out.push(maskUrls(maskSecretShapes(arg)));
   }
   return out;
 }

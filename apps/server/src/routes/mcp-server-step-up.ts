@@ -99,7 +99,7 @@ function subject(server: ServerForStepUp): string {
     connection.transport === 'stdio'
       ? (runnerPackageSpec(connection.command, connection.args) ?? connection.command)
       : new URL(connection.url).origin;
-  return `${shown(server.name)} (${shown(maskUrls(what))})`;
+  return `${shown(server.name)} (${shown(maskedArgs([what])[0]!)})`;
 }
 
 /** Who gets the server, as the sentence ends. */
