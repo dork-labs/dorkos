@@ -9,6 +9,11 @@ export const MISPLACED_PERMISSIONS_RUN_ONCE = 'Runs as Accept edits, not the val
 export function hasMisplacedSchedulePermissions(task: {
   reason?: string | null;
   status?: string;
+  reasonSource?: string | null;
 }): boolean {
-  return task.status !== 'active' && task.reason === MISPLACED_SCHEDULE_PERMISSIONS;
+  return (
+    task.status !== 'active' &&
+    task.reasonSource === 'dorkos' &&
+    task.reason === MISPLACED_SCHEDULE_PERMISSIONS
+  );
 }

@@ -1,5 +1,9 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { AuditLog } from '../../audit/audit-log.js';
+import { AccountIds } from '../../audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -34,8 +38,14 @@ beforeEach(async () => {
   await fs.mkdir(path.join(folder, 'sample'));
   file = path.join(folder, 'sample', 'SKILL.md');
   store = new TaskStore(createTestDb());
+  const auditDb = createTestDb();
+  initAuditTrail({
+    log: new AuditLog(auditDb),
+    accounts: new AccountIds({ db: auditDb, installId: 'sample', readOwnerAccount: () => null }),
+  });
 });
 afterEach(async () => {
+  resetAuditTrail();
   store.close();
   await fs.rm(folder, { recursive: true, force: true });
 });
@@ -61,8 +71,54 @@ describe('a misplaced schedule mode', () => {
       expect(result).toBeNull();
       expect(store.getTask(first.id)?.status).toBe(status);
       expect(await fs.readFile(file, 'utf8')).toBe(content('permissions: plan\n'));
+      await fs.writeFile(file, valid);
+      const controlSnapshot = agentModeSnapshotOf(before, store.approvals.agentEditsOf(before.id), {
+        setsMode: false,
+      });
+      const control = await armToolApproval(
+        { dorkHome: folder, taskStore: store } as McpToolDeps,
+        { grant: grantOf({ approves: true, aboveDontAsk: false, snapshot: controlSnapshot }) },
+        before,
+        { structural: true, resolved: 'home', marked: false }
+      );
+      expect(control).not.toBeNull();
+      expect(store.getTask(first.id)?.status).toBe('active');
     }
   );
+  it('reports a misplaced key even when the skill name differs from its folder', () => {
+    expect(
+      describeArmBlocker(
+        file,
+        content('permissions: plan\n').replace('name: sample', 'name: other-sample')
+      )
+    ).toBe(MISPLACED_SCHEDULE_PERMISSIONS);
+  });
+
+  it.each([
+    'oversized',
+    'directory',
+    'duplicate',
+    ...(process.platform === 'win32' ? [] : ['fifo']),
+  ])('refuses a tick before the watcher sees an unreadable %s file', async (kind) => {
+    const valid = content('');
+    await fs.writeFile(file, valid);
+    const task = store.fileSync.upsertFromFile(discover(valid).def);
+    await fs.unlink(file);
+    if (kind === 'directory') await fs.mkdir(file);
+    else if (kind === 'fifo') execFileSync('mkfifo', [file]);
+    else
+      await fs.writeFile(
+        file,
+        kind === 'oversized'
+          ? 'x'.repeat(1024 * 1024 + 1)
+          : content('permissions: plan\npermissions: plan\n')
+      );
+    const run = store.createRun(task.id, 'scheduled');
+    await expect(checkMisplacedMode(task, run, store)).rejects.toThrow(
+      'The schedule file could not be read.'
+    );
+  });
+
   it.each(['plan', 'auto', 'bypassPermissions', 'imaginary', 'null', '42', '{}'])(
     'parks %s even on the operator sync path',
     async (value) => {

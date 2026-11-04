@@ -22,12 +22,12 @@ export async function checkMisplacedMode(
   let content: string;
   try {
     content = await readTextFileWithin(task.filePath, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
-  } catch {
-    return task;
+  } catch (cause) {
+    throw new Error('The schedule file could not be read. Open it to check.', { cause });
   }
   const raw = readRawFrontmatter(content);
-  if (!raw || raw.data.schedule === undefined || !Object.hasOwn(raw.data, 'permissions'))
-    return task;
+  if (!raw) throw new Error('The schedule file could not be read. Open it to check.');
+  if (raw.data.schedule === undefined || !Object.hasOwn(raw.data, 'permissions')) return task;
   const parsed = parseSkillFile(task.filePath, content, SkillFrontmatterSchema, {
     requireNameMatch: false,
   });
