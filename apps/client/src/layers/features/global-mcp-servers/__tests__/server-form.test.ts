@@ -42,8 +42,8 @@ describe('rowIsSecret', () => {
   });
 
   it('any other name is secret only when marked', () => {
-    expect(rowIsSecret(row('DATABASE_URL'))).toBe(false);
-    expect(rowIsSecret(row('DATABASE_URL', 'x', true))).toBe(true);
+    expect(rowIsSecret(row('MADE_UP_SETTING'))).toBe(false);
+    expect(rowIsSecret(row('MADE_UP_SETTING', 'x', true))).toBe(true);
   });
 });
 
@@ -83,7 +83,11 @@ describe('serverInputFrom', () => {
       serverInputFrom(
         commandForm({
           args: '-y made-up@1.2.3',
-          env: [row('MADE_UP_TOKEN', 'typed'), row('DATABASE_URL', 'typed-2', true), row('', '')],
+          env: [
+            row('MADE_UP_TOKEN', 'typed'),
+            row('MADE_UP_SETTING', 'typed-2', true),
+            row('', ''),
+          ],
           excludedAgents: ['agent-a'],
         })
       )
@@ -91,12 +95,12 @@ describe('serverInputFrom', () => {
       name: 'made-up',
       enabled: true,
       excludedAgents: ['agent-a'],
-      secretNames: ['DATABASE_URL'],
+      secretNames: ['MADE_UP_SETTING'],
       connection: {
         transport: 'stdio',
         command: 'npx',
         args: ['-y', 'made-up@1.2.3'],
-        env: { MADE_UP_TOKEN: 'typed', DATABASE_URL: 'typed-2' },
+        env: { MADE_UP_TOKEN: 'typed', MADE_UP_SETTING: 'typed-2' },
       },
     });
   });

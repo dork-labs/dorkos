@@ -1,6 +1,5 @@
 /**
- * The words the list and the server sheet read off a server. A secret has a name and no value,
- * so it can only ever show as a mask.
+ * The words the list and the server sheet read off a server. Nothing here has a value to show.
  *
  * @module features/global-mcp-servers/lib/server-lines
  */
@@ -35,12 +34,13 @@ export function scopeLine(
 }
 
 /**
- * One env var or header as the mono block shows it.
+ * One env var or header as the mono block shows it. The list carries names and no values, so a
+ * secret shows as a mask and anything else as its name.
  *
  * @param field - The field.
  */
 export function fieldLine(field: GlobalMcpServerField): string {
-  return `${field.name}=${field.secret ? MASK : (field.value ?? '')}`;
+  return field.secret ? `${field.name}=${MASK}` : field.name;
 }
 
 /**

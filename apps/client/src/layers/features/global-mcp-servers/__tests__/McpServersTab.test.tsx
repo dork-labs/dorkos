@@ -249,18 +249,21 @@ describe('the Only you lock', () => {
     const user = userEvent.setup();
     const addGlobalMcpServer = vi.fn().mockResolvedValue(createMockGlobalMcpServer());
     renderTab(transportWith([], { addGlobalMcpServer }));
-    const lock = await oneRow(user, 'DATABASE_URL');
+    const lock = await oneRow(user, 'MADE_UP_SETTING');
     expect(lock).toHaveAttribute('aria-pressed', 'false');
     expect(lock).not.toHaveAttribute('aria-disabled');
-    expect(screen.getByLabelText('Value of DATABASE_URL')).not.toHaveAttribute('type', 'password');
+    expect(screen.getByLabelText('Value of MADE_UP_SETTING')).not.toHaveAttribute(
+      'type',
+      'password'
+    );
     await user.click(lock);
     expect(lock).toHaveAttribute('aria-pressed', 'true');
-    const field = screen.getByLabelText('Value of DATABASE_URL');
+    const field = screen.getByLabelText('Value of MADE_UP_SETTING');
     expect(field).toHaveAttribute('type', 'password');
     await user.type(field, 'typed-value');
     await user.click(screen.getByRole('button', { name: 'Add' }));
     await waitFor(() => expect(addGlobalMcpServer).toHaveBeenCalled());
-    expect(addGlobalMcpServer.mock.calls[0]![0].secretNames).toEqual(['DATABASE_URL']);
+    expect(addGlobalMcpServer.mock.calls[0]![0].secretNames).toEqual(['MADE_UP_SETTING']);
   });
 });
 
@@ -278,7 +281,7 @@ describe('the server sheet', () => {
         createMockGlobalMcpServer({
           env: [
             { name: 'MADE_UP_KEY', secret: true },
-            { name: 'REGION', secret: false, value: 'eu' },
+            { name: 'REGION', secret: false },
           ],
         }),
       ])
@@ -287,7 +290,7 @@ describe('the server sheet', () => {
     expect(sheet.getByText('npx')).toBeInTheDocument();
     expect(sheet.getByText('-y made-up-mcp@1.2.3')).toBeInTheDocument();
     expect(sheet.getByText('MADE_UP_KEY=••••••••')).toBeInTheDocument();
-    expect(sheet.getByText('REGION=eu')).toBeInTheDocument();
+    expect(sheet.getByText('REGION')).toBeInTheDocument();
     expect(sheet.queryByRole('button', { name: /edit/i })).toBeNull();
   });
 

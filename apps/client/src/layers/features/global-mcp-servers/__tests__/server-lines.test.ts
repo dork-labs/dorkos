@@ -27,7 +27,7 @@ describe('scopeLine', () => {
 describe('fieldLine', () => {
   it('masks a secret, which has no value to show', () => {
     expect(fieldLine({ name: 'MADE_UP_KEY', secret: true })).toBe('MADE_UP_KEY=••••••••');
-    expect(fieldLine({ name: 'REGION', secret: false, value: 'eu' })).toBe('REGION=eu');
+    expect(fieldLine({ name: 'REGION', secret: false })).toBe('REGION');
   });
 });
 
@@ -39,7 +39,7 @@ describe('savedSecretCount', () => {
         createMockGlobalMcpServer({
           env: [
             { name: 'A_KEY', secret: true },
-            { name: 'REGION', secret: false, value: 'eu' },
+            { name: 'REGION', secret: false },
           ],
           headers: [{ name: 'Authorization', secret: true }],
         })
@@ -53,7 +53,7 @@ describe('unencryptedSecretHeaders', () => {
     createMockGlobalMcpServer({
       transport: 'http',
       url,
-      headers: [{ name: 'Authorization', secret, ...(secret ? {} : { value: 'x' }) }],
+      headers: [{ name: 'Authorization', secret }],
     });
 
   it('names a secret header going to a plain address off this computer', () => {

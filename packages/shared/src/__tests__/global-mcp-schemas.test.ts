@@ -7,11 +7,12 @@ describe('isSecretName', () => {
     expect(isSecretName('GITHUB_TOKEN', [])).toBe(true);
     expect(isSecretName('GITHUB_TOKEN', ['OTHER'])).toBe(true);
     expect(isSecretName('Authorization')).toBe(true);
+    expect(isSecretName('DATABASE_URL')).toBe(true);
   });
 
   it('marking can only add a secret', () => {
-    expect(isSecretName('DATABASE_URL')).toBe(false);
-    expect(isSecretName('DATABASE_URL', ['DATABASE_URL'])).toBe(true);
+    expect(isSecretName('MADE_UP_SETTING')).toBe(false);
+    expect(isSecretName('MADE_UP_SETTING', ['MADE_UP_SETTING'])).toBe(true);
   });
 });
 
