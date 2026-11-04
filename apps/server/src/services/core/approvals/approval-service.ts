@@ -60,9 +60,10 @@ import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import { type ApprovalOutcome, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
+import { cannotAllowCard, storablePackageRequest } from './approval-completeness.js';
 import { isAlwaysOffered } from './always-offered.js';
 import {
-  recordedArea,
+  toAnswerScope,
   toPendingApproval,
   type ApprovalRow,
   type CapabilityDescriptorLookup,
@@ -497,6 +498,7 @@ export class ApprovalService {
       connectorConnectionId: input.connectorAuthority?.connectionId ?? null,
       connectorOperationRevisionId: input.connectorAuthority?.operationRevisionId ?? null,
       summary: storableSummary(input.summary),
+      packageRequest: storablePackageRequest(input),
       // Absent for every capability that declares no detail field, which is all
       // but one — `null` rather than `undefined` so the column is written.
       detail: input.detail === undefined ? null : storableDetail(input.detail),
@@ -654,6 +656,9 @@ export class ApprovalService {
     ) {
       return { outcome: 'mismatched', approvalId: row.id };
     }
+
+    if (row.state === 'granted' && cannotAllowCard(row))
+      return { outcome: 'mismatched', approvalId: row.id };
 
     if (row.state === 'pending') {
       return { outcome: 'pending', approvalId: row.id, expiresAt: row.expiresAt };
@@ -1080,17 +1085,7 @@ export class ApprovalService {
   answerScope(approvalId: string): ApprovalAnswerScope | undefined {
     const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
     if (!row) return undefined;
-    return {
-      capabilityId: row.capabilityId,
-      agentPath: row.requestedByPath,
-      area: recordedArea(row.area),
-      alwaysOffered: isAlwaysOffered(row),
-      blockedRequest: row.blockedRequest,
-      raisesPermissions: row.raisesPermissions,
-      state: row.state,
-      closed: row.consumedAt !== null || this.isExpired(row),
-      tier: row.tier,
-    };
+    return toAnswerScope(row, this.isExpired(row));
   }
 
   /**
@@ -1316,6 +1311,8 @@ export class ApprovalService {
       return 'expired';
     }
 
+    if (decision === 'granted' && cannotAllowCard(row)) return 'incomplete';
+
     const result = this.db
       .update(approvals)
       .set({
@@ -1347,5 +1344,6 @@ export class ApprovalService {
  * - `unknown` — no such approval.
  * - `not_pending` — already decided or already spent.
  * - `expired` — the decision window closed; the approval is written off.
+ * - `incomplete` — the full package request cannot be reconstructed and shown.
  */
-export type ApprovalDecisionFailure = 'unknown' | 'not_pending' | 'expired';
+export type ApprovalDecisionFailure = 'unknown' | 'not_pending' | 'expired' | 'incomplete';

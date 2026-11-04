@@ -72,6 +72,9 @@ export const approvals = sqliteTable(
     /** One plain sentence describing what the operator is about to allow. */
     summary: text('summary').notNull(),
 
+    /** Full package request rebuilt at Allow; null on legacy or unsafe-to-store rows. */
+    packageRequest: text('package_request'),
+
     /**
      * The one argument a person has to read IN FULL before answering, verbatim,
      * or null when the capability declares none (DOR-1698).

@@ -4613,6 +4613,16 @@
           "capabilityId": {
             "type": "string"
           },
+          "cannotAllow": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "packageLabel": {
+            "type": "string",
+            "maxLength": 80
+          },
           "capabilityTitle": {
             "type": "string"
           },
