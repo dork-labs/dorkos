@@ -137,6 +137,38 @@ describe('personAwareFetch and a held action', () => {
     expect(res.status).toBe(201);
   });
 
+  it('an expired relay confirm re-asks the same route with the same body, and is held afresh', async () => {
+    const path = '/api/relay/adapters/made-up/confirm-references';
+    const body = '{"fingerprint":"made-up"}';
+    const sent: Array<{ url: string; method?: string; body: unknown; aborted?: boolean }> = [];
+    const base = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push({
+        url: String(input),
+        method: init?.method,
+        body: init?.body,
+        aborted: init?.signal?.aborted,
+      });
+      return sent.length === 1 ? held('held-1') : held('held-2');
+    });
+    const answer = answerWith(
+      { kind: 'ask-again' },
+      { kind: 'confirmed', status: 200, result: { ok: true } }
+    );
+    stops.push(answer.stop);
+    const res = await personAwareFetch(base as typeof fetch, ORIGIN)(path, {
+      method: 'POST',
+      body,
+      signal: AbortSignal.abort(),
+    });
+    // Two sheets, one per hold: a person confirms the new one, never the expired one.
+    expect(answer.asked).toEqual(['held-1', 'held-2']);
+    expect(sent).toEqual([
+      { url: path, method: 'POST', body, aborted: true },
+      { url: path, method: 'POST', body, aborted: false },
+    ]);
+    expect(res.status).toBe(200);
+  });
+
   it('stops asking again after a few tries', async () => {
     let n = 0;
     const base = vi.fn(async () => held(`held-${++n}`));

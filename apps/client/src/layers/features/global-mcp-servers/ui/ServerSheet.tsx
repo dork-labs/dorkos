@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react';
-import { TriangleAlert } from 'lucide-react';
-import { isUnpinnedPackage, type GlobalMcpServerView } from '@dorkos/shared/global-mcp-schemas';
+import { Lock, TriangleAlert } from 'lucide-react';
+import {
+  isUnpinnedPackage,
+  type GlobalMcpServerField,
+  type GlobalMcpServerView,
+} from '@dorkos/shared/global-mcp-schemas';
 import { usePatchGlobalMcpServer } from '@/layers/entities/global-mcp';
 import {
   Button,
@@ -82,18 +86,14 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
             {server.env.length > 0 && (
               <Line term="Environment">
                 {server.env.map((field) => (
-                  <span key={field.name} className="block">
-                    {fieldLine(field)}
-                  </span>
+                  <FieldLine key={field.name} field={field} />
                 ))}
               </Line>
             )}
             {server.headers.length > 0 && (
               <Line term="Headers">
                 {server.headers.map((field) => (
-                  <span key={field.name} className="block">
-                    {fieldLine(field)}
-                  </span>
+                  <FieldLine key={field.name} field={field} />
                 ))}
               </Line>
             )}
@@ -161,6 +161,16 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
         </ResponsiveDialogFooter>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+}
+
+/** One env var or header: a secret wears the lock, and anything else is just its name. */
+function FieldLine({ field }: { field: GlobalMcpServerField }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="min-w-0 break-all">{fieldLine(field)}</span>
+      {field.secret && <Lock className="size-(--size-icon-xs) shrink-0" aria-hidden />}
+    </span>
   );
 }
 

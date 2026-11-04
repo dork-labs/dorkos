@@ -84,6 +84,9 @@ export function wasNotConfirmed(error: unknown): boolean {
  * @param error - What the change rejected with.
  */
 export function changeError(error: unknown): string {
+  if ((error as { noResponse?: unknown } | null)?.noResponse === true) {
+    return 'Can’t reach DorkOS. Check that it’s running.';
+  }
   return error instanceof Error && error.message !== ''
     ? error.message
     : 'That didn’t work. Try again.';

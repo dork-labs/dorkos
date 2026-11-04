@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type { GlobalMcpServerView } from '@dorkos/shared/global-mcp-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockGlobalMcpServer, createMockTransport } from '@dorkos/test-utils';
+import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { McpServersTab } from '../ui/McpServersTab';
@@ -31,7 +33,9 @@ function transportWith(servers: GlobalMcpServerView[], over: Partial<Transport> 
 }
 
 function renderTab(transport: Transport) {
+  // The app's real caches, so what a refusal does and what the cache keeps are the app's own.
   const client = new QueryClient({
+    ...createQueryClientConfig(),
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
@@ -43,6 +47,7 @@ function renderTab(transport: Transport) {
       </TransportProvider>
     </QueryClientProvider>
   );
+  return client;
 }
 
 beforeEach(() => {
@@ -219,6 +224,89 @@ describe('adding a server', () => {
   });
 });
 
+describe('what a typed secret leaves behind', () => {
+  /** Everything the mutation cache holds, as text. */
+  const cached = (client: QueryClient) =>
+    JSON.stringify(
+      client
+        .getMutationCache()
+        .getAll()
+        .map((mutation) => mutation.state.variables)
+    );
+
+  /** Fill the form with one secret, ready for Add. */
+  async function fillSecret(user: ReturnType<typeof userEvent.setup>) {
+    await fillServer(user);
+    await user.click(screen.getByRole('button', { name: 'Add a variable' }));
+    await user.type(screen.getByLabelText('Name of variable 1'), 'MADE_UP_TOKEN');
+    await user.type(screen.getByLabelText('Value of MADE_UP_TOKEN'), 'canary-typed');
+  }
+
+  afterEach(() => onlineManager.setOnline(true));
+
+  it('a browser that says offline still sends, so nothing waits in the cache to be saved', async () => {
+    const user = userEvent.setup();
+    const addGlobalMcpServer = vi.fn().mockResolvedValue(createMockGlobalMcpServer());
+    const client = renderTab(transportWith([], { addGlobalMcpServer }));
+    await fillSecret(user);
+    onlineManager.setOnline(false);
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    await waitFor(() => expect(addGlobalMcpServer).toHaveBeenCalled());
+    expect(
+      client
+        .getMutationCache()
+        .getAll()
+        .some((m) => m.state.isPaused)
+    ).toBe(false);
+  });
+
+  it('every press and the cache let go of it once the form closes', async () => {
+    const user = userEvent.setup();
+    const client = renderTab(
+      transportWith([], {
+        addGlobalMcpServer: vi.fn().mockRejectedValue(refusal('step_up_required')),
+      })
+    );
+    await fillSecret(user);
+    const add = screen.getByRole('button', { name: 'Add' });
+    await user.click(add);
+    await screen.findByText('Not confirmed. Nothing changed.');
+    await user.click(add);
+    await waitFor(() => expect(add).toBeEnabled());
+    // Only the press still showing its outcome, never one copy per press.
+    await waitFor(() => expect(client.getMutationCache().getAll().length).toBeLessThanOrEqual(1));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText('Add a server')).toBeNull());
+    await waitFor(() => expect(cached(client)).not.toContain('canary-typed'));
+    expect(client.getMutationCache().getAll()).toEqual([]);
+  });
+
+  it('asks the browser not to save it as a password', async () => {
+    const user = userEvent.setup();
+    renderTab(transportWith([]));
+    await fillSecret(user);
+    expect(screen.getByLabelText('Value of MADE_UP_TOKEN')).toHaveAttribute(
+      'autocomplete',
+      'new-password'
+    );
+  });
+
+  it('a refusal shows in the form, with no toast carrying its words', async () => {
+    const user = userEvent.setup();
+    const error = vi.spyOn(toast, 'error');
+    renderTab(
+      transportWith([], {
+        addGlobalMcpServer: vi.fn().mockRejectedValue(refusal('unsafe_command', 'Not allowed.')),
+      })
+    );
+    await fillSecret(user);
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not allowed.');
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+});
+
 describe('the Only you lock', () => {
   /** Open the form with one row named `name`. */
   async function oneRow(user: ReturnType<typeof userEvent.setup>, name: string) {
@@ -290,7 +378,11 @@ describe('the server sheet', () => {
     expect(sheet.getByText('npx')).toBeInTheDocument();
     expect(sheet.getByText('-y made-up-mcp@1.2.3')).toBeInTheDocument();
     expect(sheet.getByText('MADE_UP_KEY=••••••••')).toBeInTheDocument();
-    expect(sheet.getByText('REGION')).toBeInTheDocument();
+    // Dots only mean a held-back secret, and only a secret wears the lock.
+    const region = sheet.getByText('REGION');
+    expect(region.parentElement!.querySelector('svg')).toBeNull();
+    const key = sheet.getByText('MADE_UP_KEY=••••••••');
+    expect(key.parentElement!.querySelector('svg')).not.toBeNull();
     expect(sheet.queryByRole('button', { name: /edit/i })).toBeNull();
   });
 

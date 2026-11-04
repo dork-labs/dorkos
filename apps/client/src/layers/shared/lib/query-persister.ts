@@ -76,6 +76,16 @@ function shouldPersist(query: { queryKey: readonly unknown[] }): boolean {
 }
 
 /**
+ * What the throttled save and the `pagehide` flush both write. No mutations, ever: TanStack's
+ * default keeps a paused one, and its variables are whatever a person just sent, a typed key
+ * among them. This memory is for answers, and nothing here runs a saved mutation again.
+ */
+const DEHYDRATE_OPTIONS = {
+  shouldDehydrateQuery: shouldPersist,
+  shouldDehydrateMutation: () => false,
+};
+
+/**
  * Whether a blob read back out of storage is shaped like something to hydrate.
  *
  * **Valid JSON is not a valid cache**, and the difference is the whole reason
@@ -161,6 +171,7 @@ export interface BootCache {
     buster: string;
     dehydrateOptions: {
       shouldDehydrateQuery: (query: { queryKey: readonly unknown[] }) => boolean;
+      shouldDehydrateMutation: () => boolean;
     };
   };
 }
@@ -288,13 +299,13 @@ export function createBootCache(options: {
       };
     },
     flush(queryClient) {
-      const clientState = dehydrate(queryClient, { shouldDehydrateQuery: shouldPersist });
+      const clientState = dehydrate(queryClient, DEHYDRATE_OPTIONS);
       save({ buster, timestamp: Date.now(), clientState }, generation);
     },
     persistOptions: {
       maxAge: BOOT_CACHE_MAX_AGE_MS,
       buster,
-      dehydrateOptions: { shouldDehydrateQuery: shouldPersist },
+      dehydrateOptions: DEHYDRATE_OPTIONS,
       persister: {
         persistClient: (client) => persister.persistClient(client),
         removeClient: () => persister.removeClient(),

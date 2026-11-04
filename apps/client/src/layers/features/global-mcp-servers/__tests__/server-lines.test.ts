@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createMockGlobalMcpServer } from '@dorkos/test-utils';
 import {
+  changeError,
   fieldLine,
   savedSecretCount,
   scopeLine,
@@ -74,6 +75,15 @@ describe('unencryptedSecretHeaders', () => {
     expect(unencryptedSecretHeaders(server('http://localhost.example.test'))).toEqual([
       'Authorization',
     ]);
+  });
+});
+
+describe('changeError', () => {
+  it('says the server’s words, and plain words when nothing answered', () => {
+    expect(changeError(new Error('Name taken.'))).toBe('Name taken.');
+    expect(changeError(Object.assign(new TypeError('Failed to fetch'), { noResponse: true }))).toBe(
+      'Can’t reach DorkOS. Check that it’s running.'
+    );
   });
 });
 

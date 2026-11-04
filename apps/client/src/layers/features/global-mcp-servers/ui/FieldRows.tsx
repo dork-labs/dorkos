@@ -64,7 +64,8 @@ export function FieldRows({ noun, rows, onChange, disabled, describedBy }: Field
                   value={row.value}
                   onChange={(event) => update(row.id, { value: event.target.value })}
                   aria-label={`Value of ${label}`}
-                  autoComplete="off"
+                  // A browser ignores "off" on a password field and offers to save it.
+                  autoComplete="new-password"
                   spellCheck={false}
                   disabled={disabled}
                   className="font-mono"
