@@ -1,3 +1,4 @@
+/* global process */
 /**
  * Made-up hosts for the reading, on ports 80 and 443 of this runner only.
  * `both.example.com` answers on both. `only-http.example.com` has its own loopback

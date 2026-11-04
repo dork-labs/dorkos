@@ -1,3 +1,4 @@
+/* global process, console */
 /**
  * Add one scripted turn to the installed test runtime's scenario list. The tarball
  * has no scenario that navigates, and this reading needs an agent to navigate.

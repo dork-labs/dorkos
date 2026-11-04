@@ -1,3 +1,4 @@
+/* global process */
 /**
  * A scripted agent for the reading. It calls the production browser tools and
  * nothing else, and only ever moves to one of the made-up hosts.

@@ -1,3 +1,4 @@
+/* global process, console, setTimeout, fetch */
 /**
  * The Mac reading of the Agent browser's managed Chromium, against an installed
  * CLI on the test runtime: does an http:// page stay http, and what do both windows
