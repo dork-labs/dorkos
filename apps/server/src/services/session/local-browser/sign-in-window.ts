@@ -4,6 +4,7 @@ import { LocalBrowserError } from './errors.js';
 import { managedChromiumPath } from './playwright-backend.js';
 import {
   disablePasswordSaving,
+  forgetOpenTabs,
   plainChromiumArgs,
   profileHeld,
   profileLockPid,
@@ -17,6 +18,12 @@ export const SIGN_IN_SAVE_TIMEOUT_MS = 20_000;
 const SAVE_POLL_MS = 200;
 /** How long a new window may take to take hold of its profile. */
 export const SIGN_IN_LOCK_TIMEOUT_MS = 5_000;
+
+/** No saved passwords, and none of the tabs an agent left open: only a person is here. */
+async function preparePlainProfile(profileFolder: string): Promise<void> {
+  await disablePasswordSaving(profileFolder);
+  await forgetOpenTabs(profileFolder);
+}
 
 /** The pid holding a profile, or `unchecked` where the lock names none (Windows). */
 type LockOwner = (profileFolder: string) => number | undefined | 'unchecked';
@@ -32,7 +39,7 @@ export interface SignInWindowDeps {
   held?: (profileFolder: string) => boolean;
   /** Which process holds a profile, read after the window starts. */
   lockOwner?: LockOwner;
-  /** Get the profile ready: password saving off. */
+  /** Get the profile ready: password saving off, no tabs to bring back. */
   prepare?: (profileFolder: string) => Promise<void>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -96,7 +103,7 @@ export class SignInWindow {
       startedAt: new Date(this.now()).toISOString(),
     };
     try {
-      await (this.deps.prepare ?? disablePasswordSaving)(profileFolder);
+      await (this.deps.prepare ?? preparePlainProfile)(profileFolder);
       const executable = await (this.deps.executable ?? managedChromiumPath)();
       const spawner = this.deps.spawner ?? spawnPlainChromium;
       this.window = spawner(executable, plainChromiumArgs(profileFolder, url, site));

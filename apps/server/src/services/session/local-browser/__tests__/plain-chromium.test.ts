@@ -1,11 +1,20 @@
 /** The sign-in window's command line and profile, checked without ever launching Chrome. */
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   FORBIDDEN_PLAIN_FLAGS,
   disablePasswordSaving,
+  forgetOpenTabs,
   plainChromiumArgs,
   profileHeld,
 } from '../plain-chromium.js';
@@ -76,6 +85,58 @@ describe('disablePasswordSaving', () => {
     writeFileSync(prefsFile(), '{not json');
     await disablePasswordSaving(folder);
     expect(prefs().credentials_enable_service).toBe(false);
+  });
+});
+
+describe('forgetOpenTabs', () => {
+  const defaults = () => path.join(folder, 'Default');
+  const prefs = () => JSON.parse(readFileSync(path.join(defaults(), 'Preferences'), 'utf8'));
+
+  it('removes the saved tabs and leaves the sign-ins alone', async () => {
+    mkdirSync(path.join(defaults(), 'Sessions'), { recursive: true });
+    writeFileSync(path.join(defaults(), 'Sessions', 'Session_1'), 'an agent tab');
+    writeFileSync(path.join(defaults(), 'Sessions', 'Tabs_1'), 'an agent tab');
+    mkdirSync(path.join(defaults(), 'Network'));
+    writeFileSync(path.join(defaults(), 'Network', 'Cookies'), 'a sign-in');
+    await forgetOpenTabs(folder);
+    expect(existsSync(path.join(defaults(), 'Sessions'))).toBe(false);
+    expect(readFileSync(path.join(defaults(), 'Network', 'Cookies'), 'utf8')).toBe('a sign-in');
+  });
+
+  it('tells Chromium not to restore, keeping the other preferences', async () => {
+    mkdirSync(defaults(), { recursive: true });
+    writeFileSync(
+      path.join(defaults(), 'Preferences'),
+      JSON.stringify({ session: { startup_urls: ['https://a.test/'] }, keep: 1 })
+    );
+    await forgetOpenTabs(folder);
+    expect(prefs()).toMatchObject({
+      keep: 1,
+      session: { startup_urls: ['https://a.test/'], restore_on_startup: 5 },
+    });
+  });
+
+  it('works on a profile that has never opened', async () => {
+    await forgetOpenTabs(folder);
+    expect(prefs().session.restore_on_startup).toBe(5);
+  });
+
+  it('removes a link in place of the folder, and not what it points to', async () => {
+    const elsewhere = path.join(folder, 'elsewhere');
+    mkdirSync(elsewhere);
+    writeFileSync(path.join(elsewhere, 'keep'), 'x');
+    mkdirSync(defaults());
+    symlinkSync(elsewhere, path.join(defaults(), 'Sessions'));
+    await forgetOpenTabs(folder);
+    expect(existsSync(path.join(defaults(), 'Sessions'))).toBe(false);
+    expect(readFileSync(path.join(elsewhere, 'keep'), 'utf8')).toBe('x');
+  });
+
+  it('keeps password saving off when both run', async () => {
+    await disablePasswordSaving(folder);
+    await forgetOpenTabs(folder);
+    expect(prefs().credentials_enable_service).toBe(false);
+    expect(prefs().profile.password_manager_enabled).toBe(false);
   });
 });
 
