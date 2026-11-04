@@ -40,7 +40,7 @@ const REFUSAL =
   'Skipped Bash and gmail: search — nobody was there to approve them on a scheduled run.';
 
 describe('formatCompletionMessage', () => {
-  it('sends only the refusal title to a chat channel, even on a streak notice', () => {
+  it('sends the refusal title and fixed guidance without commands or run output', () => {
     expect(
       formatCompletionMessage(
         task,
@@ -63,14 +63,41 @@ describe('formatCompletionMessage', () => {
         }),
         true
       )
-    ).toBe('Mailroom had a command refused');
+    ).toBe(
+      "Mailroom had a command refused\nOpen the schedule to fix it.\nYou won't get another notice about it until it runs cleanly and fails again."
+    );
     expect(
       formatCompletionMessage(
         task,
         run({ status: 'needs_attention', refusedTools: ['mcp__sample__search'] })
       )
-    ).toBe('Mailroom was refused sample: search');
+    ).toBe('Mailroom was refused sample: search\nOpen the schedule to fix it.');
   });
+
+  it.each([false, true])(
+    'reserves the complete guidance within 280 characters (streak: %s)',
+    (streak) => {
+      const tail = `Open the schedule to fix it.${streak ? "\nYou won't get another notice about it until it runs cleanly and fails again." : ''}`;
+      for (const refusedTools of [['Bash'], [`mcp__sample__${'long'.repeat(200)}`]]) {
+        const body = formatCompletionMessage(
+          { ...task, displayName: 'Nightly sample report '.repeat(100) },
+          run({
+            status: 'needs_attention',
+            refusedTools,
+            error: 'sample-secret-command',
+            outputSummary: 'sample-private-output',
+          }),
+          streak
+        );
+        expect(body.length).toBeLessThanOrEqual(280);
+        expect(body).toContain(
+          refusedTools[0] === 'Bash' ? ' had a command refused' : ' was refused '
+        );
+        expect(body.endsWith(tail)).toBe(true);
+        expect(body).not.toMatch(/sample-secret-command|sample-private-output/);
+      }
+    }
+  );
 
   it('still says done for a success, and a run that did not finish gets the cross', () => {
     expect(formatCompletionMessage(task, run({ outputSummary: 'All clear' }))).toBe(

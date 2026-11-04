@@ -155,15 +155,20 @@ export function formatCompletionMessage(
   const name = task?.displayName?.trim() || task?.name || 'Scheduled task';
 
   if (run.status === 'needs_attention') {
-    // Chat channels get the title only: no run output or command text.
-    return runCompletedTitle({
+    // Only fixed guidance follows the title. Reserve it before shortening the name.
+    const tail = `\n${OPEN_TO_FIX_LINE}${oncePerStreak ? "\nYou won't get another notice about it until it runs cleanly and fails again." : ''}`;
+    const suffix = runCompletedTitle({
       runId: run.id,
       taskId: run.scheduleId,
-      taskName: name,
+      taskName: '',
       status: run.status,
-      refusedTools: [...new Set((run.refusedTools ?? []).map(readableToolName))],
+      refusedTools: [...new Set((run.refusedTools ?? []).map(readableToolName))].map((tool) =>
+        truncate(tool, 64)
+      ),
       channelMessage: '',
     });
+    const nameRoom = FAILING_MESSAGE_MAX_CHARS - tail.length - suffix.length;
+    return `${truncate(name, nameRoom)}${suffix}${tail}`;
   }
   if (run.status === 'failed') {
     // The same parts as the inbox notice, in the same order (DOR-3123): what
