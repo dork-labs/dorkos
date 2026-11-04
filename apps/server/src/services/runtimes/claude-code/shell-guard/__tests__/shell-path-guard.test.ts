@@ -756,6 +756,22 @@ describe('ranges whose order depends on the shell’s locale (Security, #3487)',
       expect(shellWriteVerdict(write(set), roots)).toBe('writes');
     }
   });
+
+  it.runIf(process.platform === 'darwin')(
+    'refuses an uppercase range opening into CLAUDE.md',
+    () => {
+      // The home-level CLAUDE.md is intentionally writable; everything inside .claude is protected.
+      touch(path.join(other, '.claude', 'CLAUDE.md'));
+      const opened = spawnSync('/bin/bash', ['-c', 'printf "%s" CLAUDE.m[A-Z]'], {
+        cwd: path.join(other, '.claude'),
+        encoding: 'utf8',
+        env: { LC_ALL: 'en_US.UTF-8' },
+      });
+      expect(opened.status).toBe(0);
+      expect(opened.stdout).toBe('CLAUDE.md');
+      expect(shellWriteVerdict(`echo x > ${other}/.claude/CLAUDE.m[A-Z]`, roots)).toBe('writes');
+    }
+  );
 });
 
 describe('quoting and redirects that hid a write (Security, #3487)', () => {

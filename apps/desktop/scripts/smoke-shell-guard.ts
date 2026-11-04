@@ -11,9 +11,10 @@ import { helperBinary } from './helper-binary';
  * In the packaged app the server forks `shell-guard-child.cjs`, unpacked beside `app.asar`, on the
  * app's own helper binary with `ELECTRON_RUN_AS_NODE=1`. A child that won't start stops the shell at
  * Full, so this forks the packaged child on the packaged helper, through the real host, and requires
- * it to get ready (its own check that it can change nothing) and to refuse a plain setup write. It
- * also reports what the child costs on the packaged binary, which can be measured nowhere else: no
- * packaged build is launched on a developer's Mac for this.
+ * it to get ready (its own check that it can change nothing) and to refuse a plain setup write.
+ * Heap and stall shapes must be refused at production limits, with the next command still checked.
+ * It also reports what the child costs on the packaged binary, which can be measured nowhere else:
+ * no packaged build is launched on a developer's Mac for this.
  *
  * What it does not reproduce: the `utilityProcess` parent. The host here is plain Node; the child's
  * binary, flags, environment and file are the ones the packaged server uses.
@@ -56,6 +57,13 @@ export async function assertShellGuard(appPath: string): Promise<string> {
     // A hosted Mac can be slow to start a process.
     tuning: { startMs: 30_000, answerMs: 30_000 },
   });
+  // Adversarial rows must use production limits, including the five-second answer timer.
+  const limited = new GuardHost({
+    childFile: async () => child,
+    execPath: helperBinary(appPath),
+    electronRunAsNode: true,
+    log: { warn: (message) => console.warn(message) },
+  });
   try {
     const startedAt = performance.now();
     const first = await host.check('echo hello', roots, true);
@@ -74,7 +82,10 @@ export async function assertShellGuard(appPath: string): Promise<string> {
     const warm: number[] = [];
     for (let i = 0; i < 200; i++) {
       const at = performance.now();
-      await host.check('git status && ls -la src | head -5', roots, i % 2 === 0);
+      const answer = await host.check('git status && ls -la src | head -5', roots, i % 2 === 0);
+      if (answer.outcome !== 'checked' || answer.write !== 'none' || answer.reaches) {
+        throw new Error(`The packaged child failed a warm check: ${JSON.stringify(answer)}`);
+      }
       warm.push(performance.now() - at);
     }
     warm.sort((a, b) => a - b);
@@ -84,12 +95,54 @@ export async function assertShellGuard(appPath: string): Promise<string> {
     const rssMb = pid
       ? Number(execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], { encoding: 'utf8' })) / 1024
       : NaN;
+    const rest = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const names = Array.from(
+      { length: 31_000 },
+      (_, i) => rest[Math.floor(i / 1296)]! + rest[Math.floor(i / 36) % 36]! + rest[i % 36]!
+    );
+    // The same heap and stall shapes as guard-host.test.ts, on the packaged child and helper.
+    const heap = [
+      `xa0=${'x'.repeat(12)}`,
+      ...[1, 2, 3, 4].map((n) => `xa${n}=${`$xa${n - 1}`.repeat(8)}`),
+      'V=$xa4$xa3$xa3$xa2$xa2$xa2$xa2$xa2$xa1$xa1',
+      ...names.map((name) => `${name}=x$V`),
+      'echo hi',
+    ].join(';');
+    const stall = `V=${root}/nomatch/${'[a'.repeat(1900)}; rm ${'$V '.repeat(400)}`;
+    const refusals: string[] = [];
+    for (const [name, command] of [
+      ['heap', heap],
+      ['stall', stall],
+    ] as const) {
+      // Prove startup separately: an unavailable helper is not evidence of resource containment.
+      const before = await limited.check('echo before', roots, false);
+      if (before.outcome !== 'checked') {
+        throw new Error(
+          `The packaged child could not start before ${name}: ${JSON.stringify(before)}`
+        );
+      }
+      const at = performance.now();
+      const refused = await limited.check(command, roots, false);
+      const elapsed = performance.now() - at;
+      if (refused.outcome !== 'failed') {
+        throw new Error(`The packaged child did not refuse ${name}: ${JSON.stringify(refused)}`);
+      }
+      const after = await limited.check('echo after', roots, false);
+      if (after.outcome !== 'checked' || after.write !== 'none' || after.reaches) {
+        throw new Error(
+          `The packaged child did not recover after ${name}: ${JSON.stringify(after)}`
+        );
+      }
+      refusals.push(`${name} refused ${elapsed.toFixed(0)} ms, next command checked`);
+    }
     return (
       `ready and refusing setup writes; first ${firstMs.toFixed(0)} ms, warm p50 ` +
-      `${p50.toFixed(2)} ms, p99 ${p99.toFixed(2)} ms, ${rssMb.toFixed(0)} MB`
+      `${p50.toFixed(2)} ms, p99 ${p99.toFixed(2)} ms, ${rssMb.toFixed(0)} MB; ` +
+      refusals.join('; ')
     );
   } finally {
     host.stop();
+    limited.stop();
     rmSync(root, { recursive: true, force: true });
   }
 }
