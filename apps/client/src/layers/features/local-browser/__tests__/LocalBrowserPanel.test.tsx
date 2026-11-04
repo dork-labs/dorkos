@@ -125,6 +125,26 @@ describe('LocalBrowserPanel', () => {
         handoff: { outcome: 'stopped' },
       });
     });
+    it.each([
+      ['handed back before the answer', { ...handoff, outcome: 'handed-back' }],
+      ['replaced by another handoff', { ...handoff, id: 'h2', outcome: 'stopped' }],
+    ])('leaves the turn alone when the handoff was %s', async (_case, answered) => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
+      transport.disconnectLocalBrowser.mockResolvedValue({
+        ...disconnected,
+        handoff: answered,
+        signIn: null,
+      });
+      const view = mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await waitFor(() =>
+        expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+          handoff: answered,
+        })
+      );
+      await act(async () => {});
+      expect(transport.interruptSession).not.toHaveBeenCalled();
+    });
     it('leaves the turn alone when the browser wouldn’t close', async () => {
       transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
       transport.disconnectLocalBrowser.mockRejectedValue(

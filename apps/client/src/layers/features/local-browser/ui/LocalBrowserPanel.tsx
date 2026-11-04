@@ -296,11 +296,17 @@ export function LocalBrowserPanel({
               disabled={busy}
               onClick={(event) => {
                 rememberFocus(event.currentTarget);
-                const waiting = state.handoff?.outcome === null ? state.handoff.sessionId : null;
-                void action(() => transport.disconnectLocalBrowser()).then((closed) => {
-                  // Disconnect ends a handoff as Stop task does, and that ends the agent's turn.
-                  if (closed && waiting) void transport.interruptSession(waiting).catch(() => {});
-                });
+                const asked = state.handoff?.outcome === null ? state.handoff.id : null;
+                let answer: LocalBrowserPersonState | undefined;
+                void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
+                  (closed) => {
+                    // Disconnect ends a handoff as Stop task does, and that ends the agent's turn.
+                    // Only this one: a handoff that ended first must not cost that chat its next turn.
+                    const ended = answer?.handoff;
+                    if (closed && ended?.id === asked && ended?.outcome === 'stopped')
+                      void transport.interruptSession(ended.sessionId).catch(() => {});
+                  }
+                );
               }}
             >
               Disconnect
