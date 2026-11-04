@@ -81,8 +81,10 @@ function DetailLine({
   outcome: ReactNode;
 }) {
   const [first, ...rest] = server.warnings;
+  // Only a line with nothing to warn about may cut off: a notice or a warning always reads whole.
+  const mayClamp = !outcome && !first && server.skippedOn.length === 0;
   return (
-    <span className="text-muted-foreground line-clamp-2 block text-xs">
+    <span className={cn('text-muted-foreground text-xs', mayClamp ? 'line-clamp-2' : 'block')}>
       {outcome}
       {!server.enabled && <span className="opacity-55">Off · </span>}
       {first && (

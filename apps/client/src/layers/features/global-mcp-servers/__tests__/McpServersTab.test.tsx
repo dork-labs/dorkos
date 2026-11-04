@@ -148,6 +148,40 @@ describe('the list', () => {
     }
   });
 
+  it('only a line with nothing to warn about may cut off', async () => {
+    renderTab(
+      transportWith([
+        createMockGlobalMcpServer({ name: 'plain' }),
+        createMockGlobalMcpServer({
+          name: 'warned',
+          warnings: [{ name: 'NODE_OPTIONS', note: 'Made-up warning.' }],
+        }),
+        createMockGlobalMcpServer({ name: 'skipped', skippedOn: ['codex'] }),
+      ])
+    );
+    const line = (name: string, words: RegExp) =>
+      within(screen.getByTestId(`mcp-server-row-${name}`)).getByText(words);
+    await screen.findByTestId('mcp-server-row-plain');
+    expect(line('plain', /^All agents$/)).toHaveClass('line-clamp-2');
+    expect(line('warned', /Made-up warning/).parentElement).not.toHaveClass('line-clamp-2');
+    expect(line('skipped', /Not available/).parentElement).not.toHaveClass('line-clamp-2');
+  });
+
+  it('a cancel lifts the cut-off, and clearing the notice puts it back', async () => {
+    const user = userEvent.setup();
+    renderTab(
+      transportWith([createMockGlobalMcpServer({ enabled: false })], {
+        patchGlobalMcpServer: vi.fn().mockRejectedValue(refusal('step_up_required')),
+      })
+    );
+    const row = await screen.findByTestId('mcp-server-row-made-up-server');
+    await user.click(within(row).getByRole('switch'));
+    const notice = await within(row).findByText(/Not confirmed\. Nothing changed\./);
+    expect(notice.parentElement).not.toHaveClass('line-clamp-2');
+    await user.click(within(row).getByRole('button', { name: /made-up-server/ }));
+    await waitFor(() => expect(within(row).getByText(/All agents/)).toHaveClass('line-clamp-2'));
+  });
+
   it('a cancel goes in front of the row’s line, and opening the sheet clears it', async () => {
     const user = userEvent.setup();
     renderTab(
