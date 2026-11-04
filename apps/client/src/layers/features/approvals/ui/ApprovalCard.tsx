@@ -1,3 +1,4 @@
+import { HookApprovalCard } from './HookApprovalCard';
 import { motion, useReducedMotion } from 'motion/react';
 import { Lock } from 'lucide-react';
 import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
@@ -101,6 +102,8 @@ export interface ApprovalCardProps {
    * dropped on the body by their own decision.
    */
   onDecided?: (approvalId: string) => void;
+  /** Focus the first hook title when a list opens. */
+  focusOnOpen?: boolean;
 }
 
 /**
@@ -175,7 +178,15 @@ export interface ApprovalCardProps {
  * summary's place: the summary says the same thing in one sentence for the
  * surfaces that have no card.
  */
-export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
+export function ApprovalCard(props: ApprovalCardProps) {
+  return props.approval.capabilityId === 'harness.project_hooks' ? (
+    <HookApprovalCard {...props} />
+  ) : (
+    <CapabilityApprovalCard {...props} />
+  );
+}
+
+function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   const now = useNow(30_000);
   const grant = useGrantApproval();
   const deny = useDenyApproval();

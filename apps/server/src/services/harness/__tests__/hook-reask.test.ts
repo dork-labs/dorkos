@@ -144,6 +144,7 @@ describe('individual hook re-asks', () => {
     expect(config.harness.refusedHooks).toEqual([]);
     expect(config.harness.approvedHooks).toEqual([hookApprovalEntry(changed)]);
     expect(restarted.grant(source.approvalId)).toBe('not_pending');
+    expect(restarted.declinedHooks()).toEqual([]);
     expect(restarted.consume(next.token, hookProjectionBinding(changed, true)).outcome).toBe(
       'unknown'
     );

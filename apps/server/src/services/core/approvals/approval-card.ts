@@ -76,11 +76,14 @@ export function toPendingApproval(
     capabilityId: row.capabilityId,
     capabilityTitle:
       row.capabilityId === 'harness.project_hooks'
-        ? `${incompletePackageLabel(row.packageRequest)} wants to run code on this computer.`
+        ? `${incompletePackageLabel(row.packageRequest)} wants to run code on this computer`
         : row.capabilityTitle,
     tier: row.tier,
     ...(consequence ? { consequence } : {}),
     summary: row.summary,
+    ...(row.capabilityId === 'harness.project_hooks'
+      ? { packageLabel: incompletePackageLabel(row.packageRequest) }
+      : {}),
     ...(cannotAllowCard(row)
       ? { cannotAllow: true as const, packageLabel: incompletePackageLabel(row.packageRequest) }
       : {}),

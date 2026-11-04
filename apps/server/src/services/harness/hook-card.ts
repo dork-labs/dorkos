@@ -17,6 +17,7 @@ export function hasHiddenCardCharacters(value: string): boolean {
 /** Quote a value reversibly, making every whitespace and control character visible. */
 export function visibleHookValue(value: string): string {
   return JSON.stringify(value).replace(/[\p{White_Space}\p{Cc}\p{Cf}]/gu, (character) => {
+    if (character === ' ') return character;
     let escaped = '';
     for (let i = 0; i < character.length; i++) {
       escaped += `\\u${character.charCodeAt(i).toString(16).padStart(4, '0')}`;

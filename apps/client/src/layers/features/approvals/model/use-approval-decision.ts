@@ -40,6 +40,7 @@ export function useGrantApproval() {
       toast.error(describeDecisionRefusal(error, variables.answer === 'always').message);
     },
     onSettled: (_data, _error, variables) => {
+      void queryClient.invalidateQueries({ queryKey: DECLINED_HOOKS_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: PENDING_APPROVALS_QUERY_KEY });
       // An Always allow changed the agent's permissions, which the permissions
       // pages read.

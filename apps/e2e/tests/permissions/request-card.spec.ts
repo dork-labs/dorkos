@@ -395,7 +395,7 @@ test.describe('The request card @permissions', () => {
     await gotoActivity(basePage);
     const card = (await openCard(basePage.page, approvalId)).last();
     await expect(card.getByRole('button')).toHaveText(['Decline']);
-    await expect(card.getByText('This package wants to run commands')).toBeVisible();
+    await expect(card.getByText('This package wants to run code on this computer')).toBeVisible();
     await expect(card.getByText('Cannot be undone')).toHaveCount(0);
     await expect(card.getByText(/echo safe/)).toHaveCount(0);
     await basePage.page.setViewportSize({ width: 390, height: 844 });
@@ -403,7 +403,11 @@ test.describe('The request card @permissions', () => {
     const cardBox = await card.locator('[data-slot="approval-card"]').boundingBox();
     expect(buttonBox).not.toBeNull();
     expect(cardBox).not.toBeNull();
-    expect(buttonBox!.width).toBeGreaterThan(cardBox!.width - 30);
+    const contentWidth = await card.locator('footer').evaluate((node) => {
+      const style = getComputedStyle(node);
+      return node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    });
+    expect(buttonBox!.width).toBeCloseTo(contentWidth, 0);
     await expect(
       card.getByText("This request can't be shown in full, so it can't be allowed yet.")
     ).toBeVisible();

@@ -26,6 +26,22 @@ export function declinedHookCards(db: Db, toCard: (row: ApprovalRow) => PendingA
     .orderBy(desc(approvals.decidedAt))
     .limit(100)
     .all();
+  // A granted follow-up is no longer an off-hooks recovery row. Its denial
+  // remains in SQLite for audit; a new refusal has its own newer history row.
+  const granted = new Set(
+    db
+      .select({ source: approvals.retryOf })
+      .from(approvals)
+      .where(
+        and(
+          eq(approvals.capabilityId, 'harness.project_hooks'),
+          eq(approvals.state, 'granted'),
+          isNotNull(approvals.retryOf)
+        )
+      )
+      .all()
+      .map((row) => row.source)
+  );
   const active = db
     .select()
     .from(approvals)
@@ -36,23 +52,32 @@ export function declinedHookCards(db: Db, toCard: (row: ApprovalRow) => PendingA
       const request = storedHookRequest(row.packageRequest);
       return request ? [`${request.projectPath}\0${request.packageName}`] : [];
     });
-  return rows.map((row) => {
-    const request = storedHookRequest(row.packageRequest);
-    const reviewPending =
-      !!request && active.includes(`${request.projectPath}\0${request.packageName}`);
-    const retried = db
-      .select({ id: approvals.id })
-      .from(approvals)
-      .where(eq(approvals.retryOf, row.id))
-      .get();
-    return {
-      approval: toCard(row),
-      declineKind: row.declineKind ?? ('refused' as const),
-      canAskAgain: !retried && !reviewPending && request !== undefined,
-      reviewPending,
-      askedAgain: retried !== undefined,
-    };
-  });
+  const seen = new Set<string>();
+  return rows
+    .filter((row) => {
+      const request = storedHookRequest(row.packageRequest);
+      const key = request ? `${request.projectPath}\0${request.packageName}` : row.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return !granted.has(row.id);
+    })
+    .map((row) => {
+      const request = storedHookRequest(row.packageRequest);
+      const reviewPending =
+        !!request && active.includes(`${request.projectPath}\0${request.packageName}`);
+      const retried = db
+        .select({ id: approvals.id })
+        .from(approvals)
+        .where(eq(approvals.retryOf, row.id))
+        .get();
+      return {
+        approval: toCard(row),
+        declineKind: row.declineKind ?? ('refused' as const),
+        canAskAgain: !retried && !reviewPending && request !== undefined,
+        reviewPending,
+        askedAgain: retried !== undefined,
+      };
+    });
 }
 
 /** Create a fresh pending row exactly once for this denial; no consent is cleared or granted. */
