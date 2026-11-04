@@ -9,19 +9,31 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
+import type { ShellChecker } from '../guard-host.js';
 import {
+  checkShellCommand,
   commandReachesProtectedRead,
   commandWritesAgentSetup,
-  createShellPathGuardHook,
   namesSetup,
+  shellWriteVerdict,
+  type ShellGuardRoots,
+} from '../shell-check.js';
+import {
+  createShellPathGuardHook,
+  SHELL_NO_CHECK_ASK_REASON,
+  SHELL_NO_CHECK_REASON,
   SHELL_READ_ASK_REASON,
   SHELL_UNREADABLE_DENY_REASON,
   SHELL_WRITE_DENY_REASON,
-  shellWriteVerdict,
-  type ShellGuardRoots,
 } from '../shell-path-guard.js';
 import { AGENT_HOME_SELF_GRANT_PATHS } from '../../../shared/policy/protected-paths.js';
 import { expandVariables, parseShell } from '../shell-words.js';
+
+/** The check in this process, reading the agent list first as the host does. */
+const check: ShellChecker = async (command, where, reads) => {
+  where.agentHomes();
+  return { outcome: 'checked', ...(await checkShellCommand(command, where, reads)) };
+};
 
 let root: string;
 let roots: ShellGuardRoots;
@@ -507,6 +519,7 @@ describe('a command too big to read (Security, #3487)', () => {
       const recordRefusal = vi.fn();
       const log = { info: vi.fn(), warn: vi.fn() };
       const hook = createShellPathGuardHook({ permissionMode } as never, {
+        check,
         roots: () => ({
           ...roots,
           agentHomes: () => {
@@ -538,6 +551,7 @@ describe('a command too big to read (Security, #3487)', () => {
   it('tells the model plainly why, and records it', async () => {
     const recordRefusal = vi.fn();
     const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+      check,
       roots: () => roots,
       recordRefusal,
       log: { info: () => {}, warn: () => {} },
@@ -729,6 +743,7 @@ describe('createShellPathGuardHook', () => {
     'asks at %s for a protected read',
     async (permissionMode) => {
       const hook = createShellPathGuardHook({ permissionMode } as never, {
+        check,
         roots: () => roots,
         recordRefusal: vi.fn(),
         log,
@@ -741,6 +756,7 @@ describe('createShellPathGuardHook', () => {
 
   it('answers nothing at Full for a read', async () => {
     const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+      check,
       roots: () => roots,
       recordRefusal: vi.fn(),
       log,
@@ -753,6 +769,7 @@ describe('createShellPathGuardHook', () => {
     async (permissionMode) => {
       const recordRefusal = vi.fn();
       const hook = createShellPathGuardHook({ permissionMode } as never, {
+        check,
         roots: () => roots,
         recordRefusal,
         log,
@@ -774,6 +791,7 @@ describe('createShellPathGuardHook', () => {
     async (tool) => {
       const recordRefusal = vi.fn();
       const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+        check,
         roots: () => roots,
         recordRefusal,
         log,
@@ -786,6 +804,7 @@ describe('createShellPathGuardHook', () => {
 
   it('answers nothing for a plain command, another tool, or no command', async () => {
     const hook = createShellPathGuardHook({ permissionMode: 'default' } as never, {
+      check,
       roots: () => roots,
       recordRefusal: vi.fn(),
       log,
@@ -794,5 +813,65 @@ describe('createShellPathGuardHook', () => {
     expect(await hook(call(undefined), undefined, signal)).toEqual({});
     const read = { ...call('x'), tool_name: 'Read' } as HookInput;
     expect(await hook(read, undefined, signal)).toEqual({});
+  });
+
+  describe('when the check gives no answer', () => {
+    /** A hook whose check always says `outcome`. */
+    const hookFor = (
+      permissionMode: string,
+      outcome: 'failed' | 'unavailable',
+      goingOnWithoutCheck?: () => boolean
+    ) => {
+      const recordRefusal = vi.fn();
+      const hook = createShellPathGuardHook({ permissionMode } as never, {
+        check: async () => ({ outcome }),
+        ...(goingOnWithoutCheck ? { goingOnWithoutCheck } : {}),
+        roots: () => roots,
+        recordRefusal,
+        log,
+      });
+      return { hook, recordRefusal };
+    };
+
+    it.each(['default', 'dontAsk', 'bypassPermissions'])(
+      'refuses and records a failed command at %s, with or without a person going on',
+      async (permissionMode) => {
+        const { hook, recordRefusal } = hookFor(permissionMode, 'failed', () => true);
+        const result = await hook(call('ls'), undefined, signal);
+        expect(decisionOf(result)).toBe('deny');
+        expect(JSON.stringify(result)).toContain(SHELL_UNREADABLE_DENY_REASON);
+        expect(recordRefusal).toHaveBeenCalledOnce();
+      }
+    );
+
+    it('stops the shell at Full when there is no check', async () => {
+      const { hook, recordRefusal } = hookFor('bypassPermissions', 'unavailable');
+      const result = await hook(call('ls'), undefined, signal);
+      expect(decisionOf(result)).toBe('deny');
+      expect(JSON.stringify(result)).toContain(SHELL_NO_CHECK_REASON);
+      expect(recordRefusal).toHaveBeenCalledOnce();
+    });
+
+    it('goes on at Full only once a person chose to', async () => {
+      const { hook, recordRefusal } = hookFor('bypassPermissions', 'unavailable', () => true);
+      expect(await hook(call('ls'), undefined, signal)).toEqual({});
+      expect(recordRefusal).not.toHaveBeenCalled();
+    });
+
+    it('ignores a person going on below Full', async () => {
+      const { hook } = hookFor('default', 'unavailable', () => true);
+      expect(decisionOf(await hook(call('ls'), undefined, signal))).toBe('ask');
+    });
+
+    it('asks below Full, and refuses a command naming a setup file', async () => {
+      const { hook, recordRefusal } = hookFor('default', 'unavailable');
+      const asked = await hook(call('ls'), undefined, signal);
+      expect(decisionOf(asked)).toBe('ask');
+      expect(JSON.stringify(asked)).toContain(SHELL_NO_CHECK_ASK_REASON);
+      expect(recordRefusal).not.toHaveBeenCalled();
+      const named = await hook(call('echo x > .claude/settings.json'), undefined, signal);
+      expect(decisionOf(named)).toBe('deny');
+      expect(recordRefusal).toHaveBeenCalledOnce();
+    });
   });
 });

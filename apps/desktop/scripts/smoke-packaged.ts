@@ -1017,10 +1017,11 @@ async function main(): Promise<void> {
   console.log(`      Debugging switches: ${await assertLaunchSwitchesRefused(appPath)}`);
 
   // DOR-2686: the packaged helper binary runs the packaged extension child with
-  // Node's permission model on. Imported here, not at the top, so the unit
-  // tests of this file never load server source.
-  const { assertExtensionIsolation } = await import('./smoke-isolation');
-  console.log(`      Isolated extensions: ${await assertExtensionIsolation(appPath)}`);
+  // Node's permission model on, and so does the shell guard's child (DOR-3300), which stops the
+  // shell if it can't start. Imported here, not at the top, so the unit tests of this file never
+  // load server source.
+  const { assertForkedChildren } = await import('./smoke-isolation');
+  console.log(await assertForkedChildren(appPath));
   // DOR-3053: the fuses electron-builder.yml sets, read back and tried.
   const { assertFuses } = await import('./smoke-fuses');
   console.log(`      Fuses: ${await assertFuses(appPath)}`);

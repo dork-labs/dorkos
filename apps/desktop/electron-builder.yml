@@ -185,7 +185,9 @@ files:
 # binary with ELECTRON_RUN_AS_NODE=1 under Node's permission model, and
 # Electron's utilityProcess ignores `--permission` (measured on 42.11.16), so
 # moving them would drop their sandbox. Playwright's browser download forks a
-# run-as-node child too. Turning it off is DOR-3358, before the Keychain lands.
+# run-as-node child too, and so does the shell guard's child (DOR-3300), which
+# stops the shell if it can't start. Turning it off is DOR-3358, before the
+# Keychain lands.
 #
 # resetAdHocDarwinSignature: flipping a fuse breaks the ad-hoc signature an
 # unsigned arm64 build carries, and an arm64 Mac refuses to run that. A signed
@@ -306,6 +308,8 @@ asarUnpack:
   # app.asar is an archive entry, not a file the model can grant, so it must be
   # a real file on disk. `isolation/child-entry.ts` prefers this unpacked twin.
   - 'dist/server/extension-child.cjs'
+  # The shell guard's child (DOR-3300) is forked the same way, on the same binary.
+  - 'dist/server/shell-guard-child.cjs'
   # ensureCoreExtensions's fs.cp() (staging bundled extensions into
   # DORK_HOME) can't read this source tree from inside app.asar either —
   # same class of read limitation as dist/renderer above.

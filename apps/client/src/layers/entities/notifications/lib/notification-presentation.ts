@@ -117,6 +117,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'web.new_device': MonitorSmartphone,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
   'agent.secret_files': ShieldAlert,
+  'shell.check_down': ShieldAlert,
   // A Claude folder's sign-in is new or changed (DOR-3245).
   'account.signin_review': UserRoundCheck,
 };

@@ -12,6 +12,7 @@ import { logger } from '../../../../lib/logger.js';
 import { createShellRefusalRecorder, type AuditToolHookOptions } from '../audit-tool-hooks.js';
 import { resolveClaudeRootSet } from '../claude-config-dir.js';
 import type { CeilingedMode } from '../turn-permission.js';
+import { goingOnWithoutCheck, guardHost } from './guard-service.js';
 import { createShellPathGuardHook } from './shell-path-guard.js';
 
 /** What a launch knows that the guard needs. */
@@ -55,6 +56,8 @@ export function shellGuardMatcher(
           agentHomes: () => registry?.listWithPaths?.().map((agent) => agent.projectPath) ?? [],
           ...(openHome ? { openHome } : {}),
         }),
+        check: (command, roots, reads) => guardHost().check(command, roots, reads),
+        goingOnWithoutCheck,
         recordRefusal: createShellRefusalRecorder(audit),
         log: logger,
       }),

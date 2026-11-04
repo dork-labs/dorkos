@@ -1,10 +1,13 @@
 import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useMemoryProviderStatus } from '@/layers/entities/memory-provider-status';
+import { useTransport } from '@/layers/shared/model';
 import { useNotifications, type NotificationLens } from '@/layers/entities/notifications';
 
 import { deadSigninRuntimes } from '../lib/dead-runtime-signins';
 import { MemoryProviderBenchedBanner } from '../ui/MemoryProviderBenchedBanner';
 import { RuntimeSigninBanner } from '../ui/RuntimeSigninBanner';
+import { SHELL_CHECK_STATUS_KEY, ShellCheckBanner } from '../ui/ShellCheckBanner';
 import { BANNER_PRIORITY, type BannerDescriptor } from './banner-descriptor';
 
 /**
@@ -82,6 +85,27 @@ function useRuntimeSigninDescriptor(): BannerDescriptor | null {
 }
 
 /**
+ * The shell check descriptor (DOR-3300). Critical while DorkOS can't check agents' shell commands
+ * for protected files, and warning while a person has chosen to go on without it. Polled, gently:
+ * the choice has to stay on screen in every window, and nothing else says when it starts or ends.
+ */
+function useShellCheckDescriptor(): BannerDescriptor | null {
+  const transport = useTransport();
+  const { data: status } = useQuery({
+    queryKey: [...SHELL_CHECK_STATUS_KEY],
+    queryFn: () => transport.getShellCheckStatus(),
+    refetchInterval: 30_000,
+  });
+  if (!status || (!status.down && !status.continuing)) return null;
+  return {
+    id: 'shell-check',
+    variant: status.continuing ? 'warning' : 'critical',
+    priority: status.continuing ? BANNER_PRIORITY.warning : BANNER_PRIORITY.critical,
+    render: () => <ShellCheckBanner status={status} />,
+  };
+}
+
+/**
  * Collects every eligible app banner for the current app state. The slot ranks
  * the result and shows the highest-priority one. Add a banner by writing a
  * descriptor hook and appending its result here — no other wiring is required.
@@ -116,5 +140,8 @@ function useRuntimeSigninDescriptor(): BannerDescriptor | null {
 export function useAppBanners(_sessionId: string | null): BannerDescriptor[] {
   const memoryProviderBenched = useMemoryProviderBenchedDescriptor();
   const runtimeSignin = useRuntimeSigninDescriptor();
-  return [memoryProviderBenched, runtimeSignin].filter((d): d is BannerDescriptor => d !== null);
+  const shellCheck = useShellCheckDescriptor();
+  return [memoryProviderBenched, runtimeSignin, shellCheck].filter(
+    (d): d is BannerDescriptor => d !== null
+  );
 }

@@ -29,10 +29,14 @@ import { createCanUseTool } from '../../messaging/interactive-handlers.js';
 import { resolveBundledClaudeBinary } from '../../sdk/sdk-utils.js';
 import { applySecretReadDeny } from '../../secret-files/secret-read-deny.js';
 import { turnReadRoots } from '../../tool-gate/held-turn-reads.js';
+import { resolveGuardChild } from '../guard-child-file.js';
+import { GuardHost } from '../guard-host.js';
 import { createShellPathGuardHook } from '../shell-path-guard.js';
 
 const BINARY = resolveBundledClaudeBinary();
 const CANARY = 'CANARY-dor3300';
+/** The real child process, as a launch has it. */
+const guardHost = new GuardHost({ childFile: resolveGuardChild, log: { warn: () => {} } });
 
 /** One server-sent event. */
 function sse(event: string, data: unknown): string {
@@ -176,6 +180,7 @@ async function outcomeOf(
                 matcher: 'Bash',
                 hooks: [
                   createShellPathGuardHook(session as never, {
+                    check: guardHost.check,
                     roots: () => ({
                       cwd,
                       dorkHome,

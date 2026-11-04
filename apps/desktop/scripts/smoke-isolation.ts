@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { IsolatedExtensionHost } from '../../server/src/services/extensions/isolation/isolated-host';
 import { helperBinary } from './helper-binary';
+import { assertShellGuard } from './smoke-shell-guard';
 
 /**
  * The packaged-desktop proof for isolated extensions (DOR-2686 task 3.6).
@@ -152,4 +153,17 @@ export async function assertExtensionIsolation(appPath: string): Promise<string>
     await new Promise((resolve) => server.close(resolve));
     rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+/**
+ * Prove every child the packaged server forks on its helper binary.
+ *
+ * @param appPath - The packaged `.app` bundle.
+ * @returns Lines for the smoke log.
+ */
+export async function assertForkedChildren(appPath: string): Promise<string> {
+  return [
+    `      Isolated extensions: ${await assertExtensionIsolation(appPath)}`,
+    `      Shell guard: ${await assertShellGuard(appPath)}`,
+  ].join('\n');
 }
