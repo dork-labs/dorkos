@@ -5,6 +5,58 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.131.0] - 2026-11-03
+
+> DorkOS 0.131.0 fixes the bar at the top that stayed in place after you left a page, lets agents set how their own scheduled tasks run, and makes messages easier to read. This upgrade only goes one way, so read Going back first.
+
+### Going back
+
+This upgrade only goes one way. DorkOS saves a backup first, in `~/.dork/backups/`. If you came from 0.130.0, it's named `dork-<date>-<time>-pre-20261102213849_dor3088_todos.db`.
+
+To go back to 0.130.0, always restore that backup. Quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.130.0. You lose anything written since the upgrade. Going back without the restore looks fine until an agent's promise fails.
+
+Going back can undo things you changed since the upgrade. If you removed access or revoked a connection, do it again.
+
+### Fixed
+
+- The bar at the top now changes when you leave the page you first loaded. Before, clicking through to a chat left the old page's bar in place until you reloaded.
+- A chat started from another chat now reports back when it finishes, even if it ran background commands along the way. If that work is still going after 15 minutes, it says so. A report that can't get through tries again for about 40 minutes, and follows an agent that moved to another account. A restart can still lose a report that's waiting.
+- DorkOS checks that a linked copy of a project (a git worktree) really belongs to an agent's project before a chat there runs as that agent, and a chat's agent stays the same once it's set.
+
+### Added
+
+**Agents can now set how their own scheduled tasks run, up to their own level, and you can undo it.**
+
+- On Claude Code on Trusted, when an agent raises its own task's mode or rewrites its prompt from its own chat, the task usually keeps running. A raise, or a rewrite above Never ask, gets a notice with **Undo**. On other runtimes or on Careful, it asks you first.
+- It waits for you if another agent asks. It doesn't check who messaged the chat, so someone else on Telegram or Slack, or a page the agent read, can lead it to make this change, and the change lasts after that chat ends. If other people can message your agents, turn this off. Scheduled runs and heartbeats can't raise a mode.
+- To turn this off: `dorkos config set tasks.agentModeControl false`. Agents then can't change a task's mode, and if one rewrites its task's prompt, the task stops and waits for you. Modes already set stay as they are.
+- If a task's SKILL instructions change outside DorkOS, the task usually keeps running at no looser than Never ask, so some steps may fail. You get a notice.
+
+Also added:
+
+- On Claude Code, an agent can move its own seat in a room or DM to another Claude account, from another chat, not while it's answering there. Its account must be at 80% of its usage or more. It can't pick your main account or one you keep out of automatic moves, and it can't move when its usage can't be read. The room gets a line each time.
+- A correction to the 0.126.4 note: adding an MCP server for every agent is by API, because there's no page for it yet. As the owner, send `POST /api/mcp-servers` with `enabled: true`, or the server stays off.
+
+### Changed
+
+- An agent's text is a little heavier, messages have more space between lines outside compact density, and long paragraphs stop at a comfortable width while code and tables use the full width.
+- On a phone, messages have more room, because the side margins are smaller.
+- Pointing at a message in a chat no longer tints it grey. Rooms keep their tint.
+- Day labels are plain centred text, times lose their leading zero on a 12-hour clock ("2:03 PM"), and there's a little less space between turns.
+- Menus, pop-ups, tooltips, dialogs and phone sheets now share one look.
+- Menus have even rows with no lines between groups, and they're easier to tap on a phone.
+- Tooltips wait a moment before showing, so they no longer flicker as you move past buttons. They don't show on touch screens, except the reason a button is greyed out, and they're no longer a bright white chip in dark mode.
+- Phone sheets stand out from a dark page, with a real grabber on sheets you can drag away, and left-aligned titles.
+- On a computer, dialogs open on their first field if they have one, and never on a Delete or Close button.
+
+### Known issues
+
+- With login off, a promise you add to an agent through the app can limit what that agent's heartbeats may do, and nothing says why. It also can't be dropped from its row. **Mark kept** closes it and lifts the limit.
+- Approving a task from its row doesn't show its mode. Use its approval card, which does. Turning on a package's schedule that shipped off doesn't show its mode either.
+- A task an agent makes can start at a mode where commands that need approval get refused, with no card. It looks ready, then its runs show **Needs attention**. If you expected those commands to run, you can change its mode under **Edit**, then **Advanced settings**.
+- New schedules start at Full autonomy unless you've changed your default. The mode is under Advanced, so check it before you save.
+- The notice can say you started a change that someone else's Telegram or Slack message led to. If you don't recognise it, check the chat.
+
 ## [0.130.0] - 2026-11-02
 
 > DorkOS 0.130.0 lets you choose a scheduled task's permissions when you approve it, gives agents a work queue, lets an agent hand the Agent browser to you when a page needs you, and keeps each agent to its own chats and schedules.
@@ -363,41 +415,4 @@ This release adds five tables and three columns to DorkOS's own database, and a 
 - A Claude Code chat set to **Never ask** can now read and post in its own rooms, and use DorkOS's other safe built-in tools. Before this, Claude Code refused them in Never ask, because no one was there to say yes. Claude Code agents can also check how much of each account is used without asking. In a turn started by a stranger's message, or one that saw a stranger's message in a room, the account tools don't run. A Never ask chat also can't send that turn's words to another chat.
 - An agent's heartbeat keeps working when its Claude account runs out or is nearly out. It moves to another of your accounts with usage left. If none has any, it skips its beats until an account resets, instead of failing again and again.
 
-## [0.126.0] - 2026-10-27
-
-> DorkOS 0.126.0 applies an agent folder's own allow list once you approve it, keeps Claude Code agents out of secret files, says plainly when a schedule is failing, makes Stop end the commands a turn started, and lets you answer an agent from inside a mini app.
-
-### Added
-
-- Answer an agent from inside a mini app. The first time a mini app sends your comment to an agent, DorkOS asks you once. The comment then lands in your direct chat with that agent as your own message, and the agent treats it just as if you had typed it there. You can change which agents it reaches in Settings → Extensions. A muted line above the message says which mini app and item it came from, and the agent's answer can show up back in the mini app under the agent's name. A mini app can check with DorkOS whether you really wrote a comment. This works only when you sign in to DorkOS with a password. On the computer DorkOS runs on, also turn on "Ask for a password on this computer too" in Settings. Each comment sent this way is in the audit trail. (DOR-3325)
-
-### Changed
-
-- The desktop app now refuses to start with debugging switches.
-
-### Fixed
-
-- An agent's own allow list (`permissions.allow` in its folder's `.claude/settings.json` or `.claude/settings.local.json`) now applies under DorkOS. Before this, Claude Code ignored it in agent folders, so a chat set to **Never ask** refused even the commands the agent's folder allows, and said nothing about why. DorkOS now asks you with an approval card that lists the agent's rules. After you allow it, the rules apply from the agent's next turn. If the agent adds rules, the list stops applying until you approve the change; the card shows what was added and removed. A list that only loses rules keeps applying without asking. Some rules are never applied: rules naming DorkOS's own tools, rules with a wildcard tool name, rules that allow a whole tool (like a bare `Bash`, which runs any command, or `Edit(./**)`), file rules that reach outside the agent's folder, and a few other rules that match almost anything. While a list applies, the agent's file tools also can't change its own settings, the settings of other agents kept in DorkOS's agents folder, DorkOS's own data, or Claude Code's account files. A list the card can't show in full isn't asked about or applied, so you never approve a rule you couldn't see. The rules apply only when the agent works in its own folder (not a subfolder or a worktree), and never on a teammate's turn. While a list is waiting, a Never ask chat shows a line once saying why it's refusing.
-- A Claude Code agent's file-reading tools can no longer open these files, at every permission level, Full autonomy included: DorkOS's own keys, settings and their backups, database, chat bot tokens, stored secrets and browser logins; the Claude Code, Codex and OpenCode sign-ins; and your SSH keys, AWS and Google Cloud keys, GitHub token and npm token. Before this, at Ask first and Act an agent could read them without asking. Tools like `git` and `gh` still read their own files as usual. Commands an agent runs in a shell are not covered yet, and neither are Codex and OpenCode agents. (DOR-3299)
-- In a Claude Code chat, Stop now also ends the commands the agent started in that turn, even ones that moved to the background after running a long time. Before, a long command could keep running after you pressed Stop and finish its work anyway. If a command won't stop, a line under the stopped reply names it with its own Stop button, and a pill at the top says how many are still running. The line stays after a reload and says when everything has ended. (DOR-3285)
-- Scheduled runs that take longer than two minutes now finish and show their real result. Before, they were marked failed with "the run never started", even though the work went on and often finished.
-- When a scheduled run really can't start, it says why, for example: every agent slot was busy, the hourly limit on agent turns was reached, or nothing was there to run it. If nothing was there, it tries once more 30 seconds later.
-- A run stopped at its time limit now says how long the limit was.
-- A scheduled run that was refused a tool now says "Needs attention", not "Completed". Its history shows how many tools were refused and names them.
-- Runs set to Never ask now record the tools they refused.
-- The Schedules list shows how many schedules are failing, with a Failing filter, and puts them first unless you pick another sort. Each failing schedule says why.
-- When a schedule is set to a level that asks, like Accept edits, its warning now says how to fix it: use Never ask with an allow list.
-- A schedule that starts failing sends one notice. It says why and has an Open schedule button that shows your failing schedules. No more arrive until it runs cleanly and fails again.
-- A message another agent queues in a busy chat now shows its own words in the queue, instead of the block of instructions DorkOS wraps it in for the agent. The agent still gets the full wrapper, which keeps it from mistaking another agent's words for yours.
-- Message search shows those words too, for messages indexed from now on. To clean up older results, delete the search index and let DorkOS rebuild it.
-- Another agent's queued message can be moved or removed but not edited, and Stop no longer puts it back in your message box as if you had written it. The Stop question now says which messages come back and which are cancelled, and the arrow keys skip over other agents' messages.
-- A queued message from another agent now says who sent it and which chat it came from, with a link to that chat when it can be opened. The queue's count shows how many are yours and how many came from other agents.
-- DorkOS no longer runs git in folders an agent can change: every agent's home folder (including a project folder you set up as an agent), workspaces, worktrees and rooms, and projects that have a worktree in one of those. For now, chats in those folders don't show the git branch, the diff view can't compare with the last commit there, the file list there doesn't skip ignored files, the Workspaces page shows those checkouts as unreadable, and heartbeats skip new commits and failing checks. (DOR-3343)
-- When Claude Code can't read its sign-in, the app now says so instead of saying you're signed out, and tells you to check your Mac for a password prompt.
-- Long schedule names, empty rooms and long pasted paths in room messages now stay within the phone screen (DOR-3188, DOR-3189, DOR-3193).
-
-### Security
-
-- DorkOS's tool server now refuses very large tool inputs (over 10,000 items) and requests over 1 MB before reading them further.
-
-Older releases (v0.1.0 – v0.125.4) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.126.0) live in the [Changelog archive](/changelog-archive).
