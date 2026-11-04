@@ -459,7 +459,7 @@ describe('secrets', () => {
     expect(JSON.stringify(view)).not.toContain(SECRET);
     expect(JSON.stringify(view)).not.toContain(ARG_SECRET);
     expect(view.reason).toBe('Add remote (https://mcp.example.test) for all your agents.');
-    expect(view.notes).toContain('Kept secret: Authorization');
+    expect(view.notes).toContain('Hidden values: Authorization');
     expect(view.notes.join()).not.toContain('Headers:');
   });
 
@@ -490,7 +490,7 @@ describe('what the sheet says', () => {
     expect(view.notes).toEqual([
       'Runs: npx -y @modelcontextprotocol/server-github',
       'Settings: LOG_LEVEL',
-      'Kept secret: GITHUB_TOKEN',
+      'Hidden values: GITHUB_TOKEN',
       'Not pinned to a version. What runs can change later.',
     ]);
   });
@@ -588,6 +588,23 @@ describe('what the sheet says', () => {
     ]);
   });
 
+  it('says how many names a long list left out, and never cuts one off unsaid', async () => {
+    const env = Object.fromEntries(
+      Array.from({ length: 60 }, (_, index) => [`SETTING_NUMBER_${index}`, 'x'])
+    );
+    const view = await sheet(
+      heldId(await post({ ...SERVER, connection: { ...SERVER.connection, env } }))
+    );
+    const line = view.notes.find((note: string) => note.startsWith('Settings: '))!;
+    const more = Number(/ and (\d+) more$/.exec(line)![1]);
+    const listed = line
+      .replace(/^Settings: /, '')
+      .replace(/ and \d+ more$/, '')
+      .split(', ');
+    expect(listed.length + more).toBe(60);
+    expect(listed.at(-1)).toBe(`SETTING_NUMBER_${listed.length - 1}`);
+  });
+
   it('names every setting and header once, under one heading or the other', async () => {
     const stdio = await sheet(
       heldId(
@@ -602,7 +619,7 @@ describe('what the sheet says', () => {
       )
     );
     expect(stdio.notes).toContain('Settings: LOG_LEVEL, REGION');
-    expect(stdio.notes).toContain('Kept secret: GITHUB_TOKEN, MADE_UP_MARKED');
+    expect(stdio.notes).toContain('Hidden values: GITHUB_TOKEN, MADE_UP_MARKED');
     const mixed = await sheet(
       heldId(
         await post({
@@ -617,7 +634,7 @@ describe('what the sheet says', () => {
       )
     );
     expect(mixed.notes).toContain('Headers: X-Region');
-    expect(mixed.notes).toContain('Kept secret: Authorization');
+    expect(mixed.notes).toContain('Hidden values: Authorization');
     const onlyPlain = await sheet(
       heldId(
         await post({
@@ -627,7 +644,7 @@ describe('what the sheet says', () => {
       )
     );
     expect(onlyPlain.notes).toContain('Settings: REGION');
-    expect(onlyPlain.notes.join()).not.toContain('Kept secret');
+    expect(onlyPlain.notes.join()).not.toContain('Hidden values');
   });
 });
 
@@ -757,6 +774,32 @@ describe('switching a server', () => {
     // A long one is cut, and a control character doesn't reach the sheet.
     const long = await reasonFor({ name: 'scout-2', displayName: `Ow\u202Ener ${'x'.repeat(60)}` });
     expect(long.reason).toBe(`Let Ow ner ${'x'.repeat(32)}… (scout-2) use github.`);
+    // A name written to read as the sentence loses the punctuation it would need.
+    const hostile = await reasonFor({ name: 'scout', displayName: 'Lead (lead) use x. Also:' });
+    expect(hostile.reason).toBe('Let Lead lead use x Also (scout) use github.');
+    expect(hostile.notes.at(-1)).toBe('Lead lead use x Also (scout) gets it too.');
+    expect((await reasonFor({ name: 'scout', displayName: 'a;b.c:d(e)f,g!h?i' })).reason).toBe(
+      'Let a b c d e f g h i (scout) use github.'
+    );
+    expect(
+      (await reasonFor({ name: 'scout', displayName: 'Lead — use x – Also - y' })).reason
+    ).toBe('Let Lead use x Also y (scout) use github.');
+    // A hyphen inside a word can't start a clause, so an ordinary name keeps it.
+    expect((await reasonFor({ name: 'scout', displayName: 'Mary-Ann' })).reason).toBe(
+      'Let Mary-Ann (scout) use github.'
+    );
+    // Nothing but punctuation leaves nothing to call it, so the real name stands.
+    expect((await reasonFor({ name: 'scout', displayName: '.:;(),!?—-' })).reason).toBe(
+      'Let scout use github.'
+    );
+    // A registered name that holds a dot is not changed, only a name an agent chose.
+    expect((await reasonFor({ name: 'my.agent', displayName: 'My.Agent' })).reason).toBe(
+      'Let My.Agent use github.'
+    );
+    // Control characters alone leave nothing to call it, so the real name stands.
+    expect((await reasonFor({ name: 'scout-2', displayName: '\u202E' })).reason).toBe(
+      'Let scout-2 use github.'
+    );
     expect((await reasonFor({ name: 'scout-2', displayName: '' })).reason).toBe(
       'Let scout-2 use github.'
     );

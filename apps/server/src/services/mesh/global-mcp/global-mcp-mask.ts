@@ -3,8 +3,9 @@
  * everything a person is shown (DOR-3802). The store keeps the real values,
  * because the server needs them to run; this is only ever for display.
  *
- * It reads flag names, `name: value` shapes and URLs, so it misses a bare value
- * (`-p value`).
+ * It reads flag names, `name: value` shapes and URLs, so it misses a bare value (`-p value`), a
+ * credential with no scheme (`user:pw@host`, `user:pw@tcp(host)/db`), a scheme it doesn't know
+ * with no `//` (`postgres:user:pw@host`), and anything percent-encoded (`--t%6Fken=x`).
  * That is why the audited sentence leaves arguments out altogether.
  *
  * {@link argsLookSecret} is the same reading, for warning a person as they type. It warns and never
@@ -24,7 +25,7 @@ export const MASK = '•••';
 const URL_IN_TEXT = /([a-z][a-z0-9+.-]*:\/\/|\b(?:https?|wss?|ftp):[\\/]*)(\S*)/gi;
 
 /** Whether a scheme is `file:`, which names a file here and holds no key. */
-const isFileScheme = (scheme: string): boolean => /file:\/\/$/i.test(scheme);
+const isFileScheme = (scheme: string): boolean => /(^|\+)file:\/\/$/i.test(scheme);
 
 /**
  * Any URL inside a string, down to its scheme and host: hosted MCP addresses
@@ -48,12 +49,14 @@ export function maskUrls(text: string): string {
 }
 
 /**
- * Whether what follows a URL's scheme holds a password or a query. Any `user@` counts, and so does
- * a colon before the last `@`, since a password can hold a `/`. A port doesn't, so a package in a
- * path (`https://host:8080/pkg@1.0`) reads as the plain path it is.
+ * Whether what follows a URL's scheme holds a password, a query or a fragment. Any `user@` counts,
+ * with extra slashes before it too, since a URL parser skips those. So does a colon before the last
+ * `@`, since a password can hold a `/`. A port doesn't, so a package in a path
+ * (`https://host:8080/pkg@1.0`) reads as the plain path it is.
  */
-function urlRestHoldsSecret(rest: string): boolean {
-  if (/^[^/?#]*@/.test(rest) || /\?./.test(rest)) return true;
+function urlRestHoldsSecret(fullRest: string): boolean {
+  const rest = fullRest.replace(/^[\\/]+/, '');
+  if (/^[^/?#]*@/.test(rest) || /[?#]./.test(rest)) return true;
   const beforeAt = rest.slice(0, Math.max(rest.lastIndexOf('@'), 0));
   return beforeAt.replace(/^[^/?#:]*:\d+(?=[/?#]|$)/, '').includes(':');
 }
@@ -70,11 +73,11 @@ export function holdsMask(values: readonly string[]): boolean {
 
 /**
  * One argument with the value after a secret name hidden, whichever flag came
- * before it: `Authorization: Bearer x`, `--header=X-Api-Key: x`, `API_KEY=x`.
+ * before it: `Authorization: Bearer x`, `--header=X-Api-Key: x`, `API_KEY=x`, `{"token":"x"}`.
  * The rest of the argument goes, since a value can hold spaces.
  */
 function maskSecretShapes(arg: string): string {
-  for (const match of arg.matchAll(/([A-Za-z0-9_.-]+)\s*[:=]\s*/g)) {
+  for (const match of arg.matchAll(/([A-Za-z0-9_.-]+)["']?\s*[:=]\s*/g)) {
     if (SECRET_NAME_PATTERN.test(match[1]!)) {
       return `${arg.slice(0, match.index + match[0].length)}${MASK}`;
     }
@@ -97,9 +100,10 @@ function hideSecretValues(args: readonly string[], hideUrls: (arg: string) => st
       hideNext = false;
       continue;
     }
-    const flag = /^(--?[^=\s]+)(=?)/.exec(arg);
+    // The value can follow in this argument (`--token=x`, `--token:x`, a quoted `--token x`).
+    const flag = /^(--?[^=:\s]+)([=:\s]?)/.exec(arg);
     if (flag && SECRET_NAME_PATTERN.test(flag[1]!)) {
-      if (flag[2] === '=') out.push(`${flag[1]}=${MASK}`);
+      if (flag[2]) out.push(`${flag[1]}${flag[2]}${MASK}`);
       else {
         out.push(arg);
         hideNext = true;

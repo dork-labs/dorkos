@@ -156,16 +156,20 @@ export function AddServerDialog({ onClose }: { onClose: () => void }) {
                     value={form.args}
                     onChange={(event) => set({ args: event.target.value })}
                     onBlur={warnAboutArgs}
-                    aria-describedby={argsLookSecret ? argsWarningId : undefined}
+                    aria-invalid={problem?.field === 'args' || undefined}
+                    aria-describedby={
+                      describedBy('args') ?? (argsLookSecret ? argsWarningId : undefined)
+                    }
                     autoCapitalize="off"
                     autoComplete="off"
                     spellCheck={false}
                     disabled={busy}
                     className="font-mono"
                   />
+                  {problemLine('args')}
                   {argsLookSecret && (
                     <p id={argsWarningId} role="status" className="text-status-warning-fg text-xs">
-                      This looks like a secret. Use an Only you field if the server allows.
+                      This looks like a secret. Use a hidden field if the server allows.
                     </p>
                   )}
                 </div>

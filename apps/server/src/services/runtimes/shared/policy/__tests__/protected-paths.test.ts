@@ -71,7 +71,7 @@ describe('protected paths', () => {
       'api-key',
       'dork*.db*',
       'relay/adapters.json',
-      'mcp/global-servers.json',
+      'mcp/global-servers.json*',
       'push/**',
       'extension-secrets/**',
       'secrets/**',

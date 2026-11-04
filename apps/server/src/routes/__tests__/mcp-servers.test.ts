@@ -154,8 +154,9 @@ describe('/api/mcp-servers', () => {
       expect(res.body.code).toBe(MCP_SERVERS_PERSON_ONLY);
     });
 
-    it('refuses a body that is not arguments', async () => {
+    it('refuses a body that is not arguments, or too big to read', async () => {
       expect((await check('--token=made-up')).status).toBe(400);
+      expect((await check(['a'.repeat(4097)])).status).toBe(400);
     });
 
     it('saves nothing', async () => {

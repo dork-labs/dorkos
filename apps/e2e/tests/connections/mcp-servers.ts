@@ -114,10 +114,10 @@ export function registerMcpServerTests({ apiUrl }: { apiUrl: string }) {
         await dialog.getByLabel('Value of NODE_OPTIONS').fill('--max-old-space-size=512');
         await dialog.getByRole('button', { name: 'Add', exact: true }).click();
 
-        const sheet = page.getByRole('alertdialog', { name: 'Confirm it’s you' });
+        const sheet = page.getByRole('alertdialog');
         await expect(sheet).toContainText(`Add ${SERVER} (made-up-mcp@1.2.3) for all your agents.`);
         await expect(sheet).toContainText('Settings: NODE_OPTIONS');
-        await expect(sheet).toContainText('Kept secret: MADE_UP_TOKEN');
+        await expect(sheet).toContainText('Hidden values: MADE_UP_TOKEN');
         await expect(sheet).not.toContainText('made-up-value');
         await expect(sheet.getByText('NODE_OPTIONS changes what the program loads.')).toHaveClass(
           /text-status-warning-fg/

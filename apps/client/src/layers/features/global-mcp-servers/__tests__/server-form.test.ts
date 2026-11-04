@@ -67,6 +67,13 @@ describe('serverFormProblem', () => {
     }
   );
 
+  it('says when the arguments are too long, before the server would', () => {
+    expect(serverFormProblem(commandForm({ args: 'a'.repeat(5000) }))).toEqual({
+      field: 'args',
+      message: 'Those arguments are too long.',
+    });
+  });
+
   it('asks for a secret’s value, and a name for a value', () => {
     expect(serverFormProblem(commandForm({ env: [row('MADE_UP_KEY', '')] }))?.message).toContain(
       'MADE_UP_KEY'

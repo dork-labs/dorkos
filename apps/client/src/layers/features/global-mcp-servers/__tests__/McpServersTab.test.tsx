@@ -301,7 +301,7 @@ describe('adding a server', () => {
 });
 
 describe('the warning on Arguments', () => {
-  const WORDS = 'This looks like a secret. Use an Only you field if the server allows.';
+  const WORDS = 'This looks like a secret. Use a hidden field if the server allows.';
 
   it('asks the server on leaving the field, warns in warning ink, and Add stays on', async () => {
     const user = userEvent.setup();

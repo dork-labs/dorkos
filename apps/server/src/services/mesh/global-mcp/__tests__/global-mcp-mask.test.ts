@@ -82,6 +82,54 @@ describe('a secret that is not in a secret-named flag', () => {
   });
 });
 
+describe('a secret-named flag holding its value in the same argument', () => {
+  it.each([
+    [['--token:CANARY'], ['--token:•••']],
+    [['--token CANARY'], ['--token •••']],
+    [
+      ['--token:CANARY', 'next'],
+      ['--token:•••', 'next'],
+    ],
+    [
+      ['--token CANARY', 'next'],
+      ['--token •••', 'next'],
+    ],
+    [
+      ['--token=CANARY', 'next'],
+      ['--token=•••', 'next'],
+    ],
+  ])('%j', (args, shown) => {
+    expect(maskedArgs(args)).toEqual(shown);
+    expect(argsLookSecret(args)).toBe(true);
+  });
+});
+
+describe('a secret in JSON', () => {
+  it.each([
+    ['{"token":"CANARY"}', '{"token":•••'],
+    ['{"apiKey": "CANARY"}', '{"apiKey": •••'],
+    ["{'password':'CANARY'}", "{'password':•••"],
+    ['--config={"token":"CANARY"}', '--config={"token":•••'],
+  ])('%s', (arg, shown) => {
+    expect(maskedArgs([arg])).toEqual([shown]);
+    expect(argsLookSecret([arg])).toBe(true);
+  });
+
+  it('says nothing about JSON with no secret name', () => {
+    expect(argsLookSecret(['{"region":"eu"}'])).toBe(false);
+  });
+});
+
+describe('a scheme that only ends in file', () => {
+  it.each(['profile://user:CANARY@host.example.test', 'myfile://user:CANARY@host.example.test'])(
+    '%s is masked and warned',
+    (arg) => {
+      expect(maskUrls(arg)).not.toContain('CANARY');
+      expect(argsLookSecret([arg])).toBe(true);
+    }
+  );
+});
+
 describe('argsLookSecret', () => {
   it.each([
     [['--token=made-up']],
@@ -98,6 +146,8 @@ describe('argsLookSecret', () => {
     [['http:user:CANARY@host.example.test']],
     [['--url=https:user:CANARY@host.example.test']],
     [['http:host.example.test?key=CANARY']],
+    [['https:///CANARY@host.example.test']],
+    [['https://host.example.test/p#CANARY']],
   ])('warns on %j', (args) => {
     expect(argsLookSecret(args)).toBe(true);
   });

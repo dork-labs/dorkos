@@ -53,6 +53,19 @@ function shown(text: string): string {
   return flat.length > MAX_SHOWN ? `${flat.slice(0, MAX_SHOWN - 1)}…` : flat;
 }
 
+/** Names as a sheet lists them: never cut mid-list without saying how many it left out. */
+function shownNames(names: readonly string[]): string {
+  const kept: string[] = [];
+  let length = 0;
+  for (const name of names.map(shown)) {
+    if (kept.length > 0 && length + name.length > MAX_SHOWN) break;
+    kept.push(name);
+    length += name.length + 2;
+  }
+  const more = names.length - kept.length;
+  return `${kept.join(', ')}${more > 0 ? ` and ${more} more` : ''}`;
+}
+
 /** The env map of a stdio server, or the header map of a remote one. */
 function valuesOf(connection: McpServerTransport): Record<string, string> {
   return connection.transport === 'stdio' ? connection.env : connection.headers;
@@ -112,9 +125,15 @@ function scope(excludedAgents: readonly string[]): string {
 /** What a held change does, for its sentence. */
 export type ServerChange = 'add' | 'change' | 'turn-on' | 'let-more';
 
+/**
+ * What can end a clause and start another. A hyphen inside a word can't, so `Mary-Ann` keeps its
+ * own; a hyphen with a space beside it reads as a dash, and goes.
+ */
+const CLAUSE_PUNCTUATION = /[.:;(),!?\u2010-\u2015]|(?<![\p{L}\p{N}])-|-(?![\p{L}\p{N}])/gu;
+
 /** What an agent is called, from the server's records. */
 export interface AgentNames {
-  /** Its registered name. Only a person can change it. */
+  /** Its registered name. No DorkOS tool lets an agent change it; it syncs from `agent.json`. */
   name: string;
   /** What it calls itself on screen. An agent can set this to anything. */
   displayName?: string;
@@ -129,15 +148,17 @@ function shownAgent(name: string): string {
 /**
  * What the sheet calls an agent. An agent picks its own display name, so when that says something
  * other than the registered name, the registered name goes beside it: an agent can't pass as
- * another one on a sheet a person is confirming.
+ * another one on a sheet a person is confirming. A display name loses the sentence's own
+ * punctuation, so it can't end the sentence and start another around the real name.
  *
  * @param agent - The agent's names.
  */
 export function agentLabel({ name, displayName }: AgentNames): string {
   const shownName = shownAgent(name);
-  const display = displayName === undefined ? '' : shownAgent(displayName);
-  if (display === '') return shownName;
-  return display.toLowerCase() === name.toLowerCase() ? display : `${display} (${shownName})`;
+  const called = displayName ?? '';
+  if (called.toLowerCase() === name.toLowerCase()) return shownAgent(called);
+  const display = shownAgent(called.replace(CLAUSE_PUNCTUATION, ' '));
+  return display === '' ? shownName : `${display} (${shownName})`;
 }
 
 /**
@@ -169,7 +190,7 @@ function letMoreReason(server: ServerForStepUp, added: readonly (string | undefi
   const name = shown(server.name);
   if (server.excludedAgents.length === 0) return `Give ${name} to all your agents.`;
   const [only] = added;
-  if (added.length === 1) return `Let ${only ?? 'one more agent'} use ${name}.`;
+  if (added.length === 1) return `Let ${only || 'one more agent'} use ${name}.`;
   return `Let ${added.length} more agents use ${name}.`;
 }
 
@@ -222,7 +243,7 @@ export function serverWarnings(server: ServerForStepUp): string[] {
     );
     if (secrets.length > 0) {
       warnings.push(
-        `This address isn’t encrypted, so ${shown(secrets.join(', '))} travels in the clear.`
+        `This address isn’t encrypted, so ${shownNames(secrets)} travels in the clear.`
       );
     }
   }
@@ -232,7 +253,7 @@ export function serverWarnings(server: ServerForStepUp): string[] {
 
 /**
  * The sheet's lines: the whole of what runs, masked, and every name once, under either its plain
- * heading or "Kept secret". A person sees every setting and header they're agreeing to.
+ * heading or "Hidden values". A person sees every setting and header they're agreeing to.
  *
  * @param server - The server as it will be.
  * @param retyped - Whether a person just typed its secrets again.
@@ -250,10 +271,10 @@ export function serverNotes(server: ServerForStepUp, retyped = false): string[] 
   const plain = names.filter((name) => !secrets.includes(name));
   if (plain.length > 0) {
     const label = connection.transport === 'stdio' ? 'Settings' : 'Headers';
-    notes.push(`${label}: ${shown(plain.join(', '))}`);
+    notes.push(`${label}: ${shownNames(plain)}`);
   }
-  if (secrets.length > 0) notes.push(`Kept secret: ${shown(secrets.join(', '))}`);
-  if (retyped && secrets.length > 0) notes.push(`New values for: ${shown(secrets.join(', '))}`);
+  if (secrets.length > 0) notes.push(`Hidden values: ${shownNames(secrets)}`);
+  if (retyped && secrets.length > 0) notes.push(`New values for: ${shownNames(secrets)}`);
   if (connection.transport === 'stdio' && isUnpinnedPackage(connection.command, connection.args)) {
     notes.push('Not pinned to a version. What runs can change later.');
   }

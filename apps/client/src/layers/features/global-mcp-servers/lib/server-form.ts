@@ -8,6 +8,7 @@ import {
   GLOBAL_MCP_URL_PATTERN,
   GlobalMcpServerInputSchema,
   GlobalMcpServerNameSchema,
+  globalMcpArgsFit,
   isSecretName,
   type GlobalMcpServerInput,
 } from '@dorkos/shared/global-mcp-schemas';
@@ -51,7 +52,7 @@ export const EMPTY_SERVER_FORM: ServerForm = {
 
 /** The one thing to fix before the form can go, and the field it belongs to. */
 export interface FormProblem {
-  field: 'name' | 'command' | 'url' | 'rows';
+  field: 'name' | 'command' | 'args' | 'url' | 'rows';
   message: string;
 }
 
@@ -105,6 +106,9 @@ export function serverFormProblem(form: ServerForm): FormProblem | null {
   }
   if (form.kind === 'command' && form.command.trim() === '') {
     return { field: 'command', message: 'Type the program to run.' };
+  }
+  if (form.kind === 'command' && !globalMcpArgsFit(splitArgs(form.args))) {
+    return { field: 'args', message: 'Those arguments are too long.' };
   }
   const url = form.url.trim();
   if (
