@@ -40,7 +40,6 @@ import { MODE_TO_SANDBOX } from '../turn-input.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
-import { prepareCodexLoadParents } from '../policy/protected-parents.js';
 import { loadWithProtectedProfile } from './profile-load.js';
 import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
@@ -604,7 +603,7 @@ export class CodexThreadLoader {
       Object.keys(input.tools.agentTokenEnv).length === 0 && input.tools.mintAgentToken
         ? await input.tools.mintAgentToken()
         : input.tools.agentTokenEnv;
-    const overrides = buildLoadOverrides(
+    return buildLoadOverrides(
       { ...input, tools: { ...input.tools, agentTokenEnv } },
       {
         threadKey,
@@ -612,10 +611,6 @@ export class CodexThreadLoader {
         realCwd: this.realpath(input.cwd),
       }
     );
-    // The captured launch policy establishes ownership. Pure config/fingerprint
-    // construction and uncaptured fallback policies never create directories.
-    prepareCodexLoadParents(input.tools.filePolicy, overrides.config, input.settings);
-    return overrides;
   }
 
   private async recordedTrust(input: ThreadLoadInput): Promise<string | undefined> {
@@ -645,6 +640,8 @@ export class CodexThreadLoader {
    *   A changed server, URL, command or header NAME reloads the thread.
    * - The trust verdict is derived from the mode, which is already in it.
    */
+  // The rendered literal refusals depend on which parents exist. A disk change
+  // that changes that profile must reload a bound thread just like a config edit.
   private fingerprintOf(input: ThreadLoadInput): string {
     const placeholder = (record: Record<string, unknown>, value: string) =>
       Object.fromEntries(Object.keys(record).map((name) => [name, value]));
@@ -687,9 +684,9 @@ function sandboxFor(settings: SessionSettings): SandboxMode {
 }
 
 /**
- * Build one load's params (pure): exec's sandbox mapping, the mode's approval
- * policy (`approvalPolicyFor`), and the reviewer always the person — never a
- * model (spec §18).
+ * Build one load's params from a read-only filesystem snapshot: sandbox mapping,
+ * the mode's approval policy (`approvalPolicyFor`), and the reviewer always
+ * the person — never a model (spec §18).
  *
  * @param input - The load inputs.
  * @param secrets - The thread key, the trust verdict and the cwd's realpath.

@@ -128,7 +128,16 @@ export function protectedProbe(
     'commands',
     'agents',
   ].map((name) => path.join(project, '.claude', name));
+  const grantHomes = [
+    ...new Set([home, ...(selfGrantProbe ? [project] : []), ...(otherHome ? [otherHome] : [])]),
+  ];
+  const grantTargets = grantHomes.flatMap((base) =>
+    ['settings.json', 'skills'].map((name) => path.join(base, '.claude', name))
+  );
+  const attemptMarkers = grantHomes.map((_, index) => `PUBLIC-self-grant-attempt-${index}`);
   return {
+    grantTargets,
+    attemptMarkers,
     canaries: [...canaries, lateCanary],
     lateCanary,
     plugin,
@@ -137,19 +146,17 @@ export function protectedProbe(
     selfGrantTargets,
     command: [
       `printf changed-by-full-probe > ${quote(gitWrite)}`,
+      ...grantHomes.flatMap((base, index) => [
+        `printf '${attemptMarkers[index]}\n'`,
+        // Attempt the absent parent too: ENOENT alone is not a refusal proof.
+        `mkdir -p ${quote(path.join(base, '.claude'))}`,
+        `printf changed > ${quote(path.join(base, '.claude', 'settings.json'))}`,
+        `mkdir -p ${quote(path.join(base, '.claude', 'skills'))}`,
+      ]),
       ...(selfGrantProbe
         ? selfGrantTargets.map((file, index) =>
-            index < 2 ? `printf changed > ${quote(file)}` : `mkdir ${quote(file)}`
+            index < 2 ? `printf changed > ${quote(file)}` : `mkdir -p ${quote(file)}`
           )
-        : []),
-      ...(otherHome
-        ? [
-            // Try creating the absent parent too: ENOENT alone must not make
-            // an unprotected self-grant look like a successful refusal.
-            `mkdir -p ${quote(path.join(otherHome, '.claude'))}`,
-            `printf changed > ${quote(path.join(otherHome, '.claude', 'settings.json'))}`,
-            `mkdir -p ${quote(path.join(otherHome, '.claude', 'skills'))}`,
-          ]
         : []),
       ...[...secrets, lateSecret].map((file) => `cat ${quote(file)}`),
       ...[plugin, latePlugin].map((file) => `echo changed > ${quote(file)}`),

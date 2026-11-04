@@ -283,7 +283,8 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
 
 function makeTransport(
   backgroundWork?: AppServerTransportOptions['backgroundWork'],
-  setting: CodexTransportKind = 'app-server'
+  setting: CodexTransportKind = 'app-server',
+  onSpawn?: (child: ReturnType<typeof nodeSpawn>) => void
 ): AppServerCodexTransport {
   const spawn: SpawnAppServer = (binary, args, options) => {
     spawned.push({ args, env: options.env });
@@ -292,6 +293,7 @@ function makeTransport(
       cwd: options.cwd,
       stdio: 'pipe',
     });
+    onSpawn?.(child);
     child.stdout.on('data', (chunk: Buffer) => {
       turnStartedSeen += chunk.toString().split('"method":"turn/started"').length - 1;
     });
@@ -355,7 +357,6 @@ function request(
           agentHomes: [],
         },
         writable: [project],
-        ownAgentHomes: [],
       },
     },
     signal: new AbortController().signal,
@@ -368,12 +369,30 @@ function request(
 describe.skipIf(BINARY === null)('the app-server transport against the real Codex binary', () => {
   beforeAll(async () => {
     vi.setConfig({ testTimeout: 90_000, hookTimeout: 30_000 });
-    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-app-server-')));
+    const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
+    if (scenario) {
+      expect(process.env.CI).toBe('true');
+      expect(process.platform).toBe('linux');
+    }
+    // Keep the shared suite root until creation/kill traces explain stray files.
+    // The outside-tmp row changes its location, not its per-test lifetime.
+    let baseFolder = os.tmpdir();
+    if (scenario === 'outside-tmp-10k') {
+      baseFolder = path.resolve('.temp');
+      fs.mkdirSync(baseFolder, { recursive: true });
+      expect(fs.realpathSync(baseFolder).startsWith(fs.realpathSync(os.tmpdir()) + '/')).toBe(
+        false
+      );
+    }
+    root = fs.realpathSync(fs.mkdtempSync(path.join(baseFolder, 'codex-app-server-')));
     codexHome = path.join(root, 'codex-home');
     project = path.join(root, 'project');
     fs.mkdirSync(codexHome, { recursive: true });
     fs.mkdirSync(project, { recursive: true });
-    fs.mkdirSync(path.join(root, 'home'), { recursive: true });
+    if (scenario === 'person-symlink-10k') {
+      fs.mkdirSync(path.join(root, 'real-person-home'));
+      fs.symlinkSync(path.join(root, 'real-person-home'), path.join(root, 'home'), 'dir');
+    } else fs.mkdirSync(path.join(root, 'home'), { recursive: true });
     server = http.createServer((req, res) => {
       let body = '';
       req.on('data', (chunk) => (body += chunk));
@@ -630,7 +649,12 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       const control = 'PUBLIC-control-dor3595';
       const skillControl = 'PUBLIC-skill-control-dor3595';
       const agentHome = path.join(root, 'data', 'agents', 'probe');
-      const probeCwd = ownHomeCwd ? agentHome : project;
+      const personHome = path.join(root, 'home');
+      const probeCwd = ownHomeCwd
+        ? agentHome
+        : scenario === 'person-cwd-10k'
+          ? personHome
+          : project;
       const otherHome = path.join(probeCwd, 'unowned-agent-home');
       if (otherHomeProbe) fs.mkdirSync(otherHome);
       const readable = path.join(probeCwd, 'readable.txt');
@@ -649,11 +673,17 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           'cwd-500k',
           'agent-home-10k',
           'other-home-10k',
+          'person-cwd-10k',
+          'person-symlink-10k',
+          'outside-tmp-10k',
+          'kill-midturn-10k',
           'rg-unreadable-10k',
           'rg-vanishing-10k',
         ]).toContain(scenario);
         expect(['default', 'acceptEdits', 'bypassPermissions']).toContain(selectedMode);
-        if (ownHomeCwd) expect(selectedMode).toBe('acceptEdits');
+        if (ownHomeCwd) expect(['acceptEdits', 'bypassPermissions']).toContain(selectedMode);
+        if (scenario === 'person-cwd-10k' || scenario === 'kill-midturn-10k')
+          expect(selectedMode).toBe('acceptEdits');
         if (otherHomeProbe) expect(['acceptEdits', 'bypassPermissions']).toContain(selectedMode);
         if (scenario?.startsWith('rg-')) expect(selectedMode).toBe('default');
       }
@@ -708,6 +738,67 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               ? await startProbeScanRace(path.join(root, 'home'))
               : undefined;
           try {
+            if (scenario === 'kill-midturn-10k') {
+              // Kill only this fixture's exact child, after a real shell output
+              // proves it reached a running command. Never kill by process name.
+              expect(fs.existsSync(path.join(personHome, '.claude'))).toBe(false);
+              let victimChild: ReturnType<typeof nodeSpawn> | undefined;
+              let exit: Promise<string | null> | undefined;
+              let ready = false;
+              let killed = false;
+              scripted.push(
+                (res) =>
+                  res.end(
+                    sseCall({
+                      cmd: 'printf PUBLIC-kill-ready; sleep 30',
+                      login: false,
+                      yield_time_ms: 1000,
+                    })
+                  ),
+                (res, body) => {
+                  ready = shellControlReturned(body, 'PUBLIC-kill-ready');
+                  if (ready) killed = victimChild?.kill('SIGKILL') ?? false;
+                  res.end(sse('victim stopped'));
+                }
+              );
+              const victim = makeTransport(undefined, kind, (child) => {
+                victimChild = child;
+                exit = new Promise((resolve) =>
+                  child.once('exit', (_code, signal) => resolve(signal))
+                );
+              });
+              try {
+                const victimEvents: StreamEvent[] = [];
+                try {
+                  for await (const event of victim.runTurn(
+                    request(`kill-${kind}`, undefined, {
+                      settings: { permissionMode: mode, model: 'fake-model' },
+                    })
+                  ))
+                    victimEvents.push(event);
+                } catch (error) {
+                  console.info('Codex killed victim turn error', String(error));
+                }
+                expect(ready, JSON.stringify(victimEvents)).toBe(true);
+                expect(killed).toBe(true);
+                const signal = await exit;
+                const parents = probeParentKinds([personHome, path.join(root, 'data'), agentHome]);
+                console.info('Codex host parent kinds after SIGKILL before shutdown', {
+                  kind,
+                  scenario,
+                  signal,
+                  parents,
+                });
+                expect(signal).toBe('SIGKILL');
+                expect(
+                  parents.filter(({ kind }) => kind !== 'absent' && kind !== 'directory')
+                ).toEqual([]);
+              } finally {
+                await victim.shutdown();
+              }
+              // The victim is dead; the next launch must consume a fresh turn.
+              scripted.length = 0;
+            }
             scripted.push(
               (res) => {
                 // The provider is called only after the thread has started.
@@ -764,7 +855,6 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                   connectorTools: null,
                   filePolicy: {
                     writable: [probeCwd],
-                    ownAgentHomes: [...new Set([probeCwd, agentHome])],
                     roots: {
                       cwd: probeCwd,
                       data: path.join(root, 'data'),
@@ -806,12 +896,19 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             if (scenario) expect(shellControls).toEqual([true, true, true]);
             expect(result, JSON.stringify(events)).toContain(control);
             expect(result, JSON.stringify(events)).toContain(skillControl);
+            for (const marker of probe.attemptMarkers) expect(result).toContain(marker);
+            for (const target of probe.grantTargets)
+              expect(() => fs.lstatSync(target)).toThrow(
+                expect.objectContaining({ code: 'ENOENT' })
+              );
             for (const canary of probe.canaries) expect(result).not.toContain(canary);
             expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
             expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
             expect(result).toMatch(/denied|not permitted/i);
             if (ownHomeCwd) {
-              expect(fs.lstatSync(path.join(agentHome, '.claude')).isDirectory()).toBe(true);
+              expect(() => fs.lstatSync(path.join(agentHome, '.claude'))).toThrow(
+                expect.objectContaining({ code: 'ENOENT' })
+              );
               for (const target of probe.selfGrantTargets)
                 expect(() => fs.lstatSync(target)).toThrow(
                   expect.objectContaining({ code: 'ENOENT' })

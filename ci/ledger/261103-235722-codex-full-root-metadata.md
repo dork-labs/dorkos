@@ -88,3 +88,37 @@ Upload that folder separately. Main comparison has its own always-run
 Job budget is 110, recorded in ledger 261103-231650; restore to 20 before
 any final label and remove/review every diagnostic step and cap. Caps total
 109, so overhead can still leave incomplete evidence. No production change.
+
+Round five, authorized after 84d31f79a1: remove production parent preparation.
+The renderer now inspects literal paths with lstat and collapses missing
+ancestors to one strongest-access rule, with no mkdir. Globs stay untouched.
+Missing targets through two aliases of an existing parent share one canonical
+key. Existing symlinks count as existing. Inaccessible/non-directory ancestors
+refuse rather than lose rules. The load fingerprint includes the resulting
+configuration; targeted tests exercise a newly created .claude causing one
+reload, retaining backups, host-key and glob refusals in acceptEdits and Full.
+
+The small trace step now invokes run-codex-missing-parents.mjs. Within its
+unchanged ten-minute cap, it traces openat, mkdir, mkdirat, mknod and mknodat
+in addition to the previous syscalls, with -ttt and no -v. Every native row
+attempts person-home settings.json/skills writes, including mkdir of the
+missing parent, and requires returned attempt markers plus absent targets.
+Owned-home rows also attempt all five self-grants; unowned-home rows retain
+their write attempts and empty-home check. Add owned Full, person-home cwd,
+symlinked person-home, outside-/tmp and SIGKILL/relaunch scenarios. Existing
+/tmp rows, public controls, Full Git write proof and every canary stay required.
+
+The driver stops at the first failed protection row, preserving its log,
+JSON and argv, rather than attempting another workaround. The rg refusal rows
+stay last and both report their errors. Its total wall allowance is 570 seconds
+inside the step's 600 seconds; it kills only its owned process group after
+each invocation. Nothing reruns on failure. All artifacts remain flat files
+under the already proven single relative trace upload path. No cap changed.
+
+Keep the suite-wide shared root for now: per-test isolation and a FIFO reset
+must wait for creation/SIGKILL evidence. The kill row checks host parent types
+immediately after the exact Codex child exits with SIGKILL, before shutdown,
+and again after the next launch. No scan/error strategy change; DOR-3812 and
+the PM's performance decision remain external release gates. Remove the new
+driver/test/scenarios along with every prior diagnostic before final label;
+restore job timeout to 20. Native results for this round are pending CI.

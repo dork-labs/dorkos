@@ -419,7 +419,6 @@ export async function resolveCodexLaunchTools(
     filePolicy: {
       roots: protectedPathRoots(cwd, home, mesh),
       writable,
-      ownAgentHomes: home ? [home] : [],
     },
   };
 }

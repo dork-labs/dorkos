@@ -10,6 +10,7 @@ import {
 } from '../../shared/policy/protected-path-check.js';
 import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
+import { collapseProtectedPaths } from './collapse-protected-paths.js';
 
 /** Stable reserved names; the profile selection is explicit on every thread load and turn. */
 export function codexPermissionProfile(settings: Pick<SessionSettings, 'permissionMode'>): string {
@@ -20,8 +21,6 @@ export function codexPermissionProfile(settings: Pick<SessionSettings, 'permissi
 export interface CodexFilePolicy {
   roots: ProtectedPathRoots;
   writable: readonly string[];
-  /** Explicit current-agent ownership, never inferred from another agent's cwd. */
-  ownAgentHomes?: readonly string[];
 }
 
 /** Render the shared protected list in Codex's absolute path/glob spelling. */
@@ -78,7 +77,7 @@ function protectedEntries({ roots, writable }: CodexFilePolicy): Record<string, 
         if (entry.kind === 'folder' && file.includes('*')) entries[`${file}/**`] = 'deny';
       }
   }
-  return entries;
+  return collapseProtectedPaths(entries);
 }
 
 /**

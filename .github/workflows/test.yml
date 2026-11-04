@@ -1291,21 +1291,10 @@ jobs:
         run: |
           mkdir -p .temp/codex-bwrap-trace
           strace -ff -e trace=execve,execveat -s 4096 -o .temp/codex-bwrap-trace/exec pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
-      - name: Trace owned and unowned missing-parent scenarios
+      - name: Trace missing parents, host creation and killed-launch cleanup
         if: ${{ always() }}
         timeout-minutes: 10
-        env:
-          DORKOS_CODEX_PROBE_SCENARIO: agent-home-10k
-          DORKOS_CODEX_PROBE_MODE: acceptEdits
-        run: |
-          mkdir -p .temp/codex-bwrap-trace
-          trace_failed=0
-          strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/acceptEdits pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-acceptEdits.json || trace_failed=1
-          DORKOS_CODEX_PROBE_SCENARIO=other-home-10k DORKOS_CODEX_PROBE_MODE=acceptEdits strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/other-acceptEdits pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-other-acceptEdits.json || trace_failed=1
-          DORKOS_CODEX_PROBE_SCENARIO=other-home-10k DORKOS_CODEX_PROBE_MODE=bypassPermissions strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/other-Full pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-other-Full.json || trace_failed=1
-          DORKOS_CODEX_PROBE_SCENARIO=rg-unreadable-10k DORKOS_CODEX_PROBE_MODE=default strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/rg-unreadable-10k pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-rg-unreadable-10k.json || trace_failed=1
-          DORKOS_CODEX_PROBE_SCENARIO=rg-vanishing-10k DORKOS_CODEX_PROBE_MODE=default strace -ff -ttt -e trace=execve,execveat,mount,umount2,unlink,unlinkat -s 1048576 -o .temp/codex-bwrap-trace/rg-vanishing-10k pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts -t 'protects fake secrets through app-server despite a loaded legacy Full setting' --reporter=default --reporter=json --outputFile=.temp/codex-bwrap-trace/report-rg-vanishing-10k.json || trace_failed=1
-          exit "$trace_failed"
+        run: node scripts/run-codex-missing-parents.mjs
       - name: Preserve native bubblewrap arguments even on failure
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

@@ -12,6 +12,9 @@ import {
   type ThreadLoadInput,
 } from '../thread-loader.js';
 import type { CodexTurnTools } from '../../transport/codex-transport.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const HOME = '/fake/home';
 const NO_TOOLS: CodexTurnTools = {
@@ -288,6 +291,52 @@ describe('thread key lifecycle', () => {
 });
 
 describe('review fixes: fingerprint and identity', () => {
+  it.each(['acceptEdits', 'bypassPermissions'] as const)(
+    'reloads %s when a missing protected parent appears, retaining refusals',
+    async (permissionMode) => {
+      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-policy-reload-')));
+      const own = path.join(root, 'own');
+      const home = path.join(root, 'home');
+      const data = path.join(root, 'data');
+      for (const dir of [own, home, data]) fs.mkdirSync(dir);
+      try {
+        const { host, loader, fake, input } = await setup();
+        host.home(HOME).threads.set('disk-t', { id: 'disk-t', hasRollout: true });
+        const loadInput = input({
+          cwd: own,
+          boundThreadId: 'disk-t',
+          settings: { permissionMode },
+          tools: {
+            ...NO_TOOLS,
+            filePolicy: {
+              roots: { cwd: own, home, data, accounts: [], agentHomes: [own], agentFolders: [own] },
+              writable: [own],
+            },
+          },
+        });
+        const files = (id: string) => {
+          const config = fake.loaded.get(id)!.loadParams.config as {
+            permissions: Record<string, { filesystem: Record<string, string> }>;
+          };
+          return Object.values(config.permissions)[0]!.filesystem;
+        };
+        await loader.ensureLoaded(loadInput);
+        expect(files('disk-t')[path.join(home, '.claude')]).toBe('deny');
+        fs.mkdirSync(path.join(home, '.claude'));
+        const next = await loader.ensureLoaded(loadInput);
+        expect(next.threadId).not.toBe('disk-t');
+        expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+        expect(files(next.threadId)[path.join(home, '.claude')]).toBe('read');
+        expect(files(next.threadId)[path.join(home, '.claude', 'backups')]).toBe('deny');
+        expect(files(next.threadId)[path.join(data, 'host.key')]).toBe('deny');
+        expect(files(next.threadId)[path.join(own, '**', '.env')]).toBe('deny');
+        await loader.ensureLoaded({ ...loadInput, boundThreadId: next.threadId });
+        expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
   const managedWith = (header: string, value: string): CodexTurnTools['managed'] => ({
     servers: {
       notion: { url: 'https://n.example/mcp', env_http_headers: { [header]: 'DORKOS_MCP_HDR_N' } },

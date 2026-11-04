@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
 import path from 'node:path';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { buildLoadOverrides } from '../app-server/thread-loader.js';
 import { PROTECTED_PATHS } from '../../shared/policy/protected-paths.js';
+
+// This matrix pins rendering when all literal components exist. Missing-path
+// behavior is exercised against a real throwaway tree in its dedicated suite.
+beforeEach(() => vi.spyOn(fs, 'lstatSync').mockReturnValue({} as fs.Stats));
+afterEach(() => vi.restoreAllMocks());
 
 const roots = {
   cwd: '/probe/desk',

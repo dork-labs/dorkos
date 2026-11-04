@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(codex): collapse missing protected ancestors without disk writes (DOR-3595)'
   - 'fix(ci): preserve Codex diagnostic artifacts and budgets (DOR-3595)'
   - 'test(codex): trace host mount targets and unreadable scan failures (DOR-3595)'
   - 'fix(codex): confine parent preparation and trace unowned homes (DOR-3595)'
