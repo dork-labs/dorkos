@@ -64,6 +64,7 @@ function fakeSignIns() {
       return signIns.current!;
     }),
     close: vi.fn(),
+    onChange: vi.fn(),
   };
   return { signIns, finish: (next: 'saved' | 'failed') => (status = next) };
 }
@@ -297,5 +298,64 @@ describe('BrowserHandover answers', () => {
     await handover.ask('chat-1', 'wall');
     const state = await handover.open({ mode: 'new-window', sessionId: 'chat-2' });
     expect(state.handoff?.outcome).toBe('stopped');
+  });
+
+  it('sharing with another chat mid-handoff closes the old card, whose Continue is then refused', async () => {
+    const { handover } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await handover.open({ mode: 'new-window', sessionId: 'chat-2' });
+    await expect(handover.handBack(handoffId)).rejects.toMatchObject({ code: 'handoff_ended' });
+    await expect(handover.stop(handoffId)).rejects.toMatchObject({ code: 'handoff_ended' });
+  });
+});
+
+describe('telling the app something changed', () => {
+  function wired(state = connected()) {
+    const { browser } = fakeBrowser(state);
+    const { signIns } = fakeSignIns();
+    const handover = new BrowserHandover(
+      browser,
+      signIns as unknown as SignInWindow,
+      () => dataDirectory
+    );
+    handover.useOutsideTurnCheck(async () => false);
+    const changed = vi.fn();
+    handover.useChangeListener(changed);
+    return { handover, signIns, changed };
+  }
+
+  it('hands the same listener to the sign-in window', () => {
+    const { signIns, changed } = wired();
+    expect(signIns.onChange).toHaveBeenCalledWith(changed);
+  });
+
+  it('says so when a handoff starts, once, and not on a repeat ask', async () => {
+    const { handover, changed } = wired();
+    await handover.ask('chat-1', 'wall');
+    expect(changed).toHaveBeenCalledTimes(1);
+    await handover.ask('chat-1', 'wall');
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so after the record has the outcome, on Hand back and on Stop task', async () => {
+    for (const answer of ['handBack', 'stop'] as const) {
+      const { handover, changed } = wired();
+      const { handoffId } = await handover.ask('chat-1', 'wall');
+      changed.mockClear();
+      let outcomeWhenTold: unknown;
+      changed.mockImplementation(async () => {
+        outcomeWhenTold = (await handover.state()).handoff?.outcome;
+      });
+      await handover[answer](handoffId);
+      expect(changed).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(outcomeWhenTold).toBeTruthy());
+    }
+  });
+
+  it('says nothing when an outside turn is refused', async () => {
+    const { handover, changed } = wired();
+    handover.useOutsideTurnCheck(async () => true);
+    await expect(handover.ask('chat-1', 'wall')).rejects.toThrow();
+    expect(changed).not.toHaveBeenCalled();
   });
 });

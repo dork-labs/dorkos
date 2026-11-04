@@ -57,6 +57,10 @@ export const GENERIC_EVENTS = [
   // the Connections page's Needs you strip re-read their owner-scoped list on it,
   // so answering in one window retires the card in every other.
   'connector_agent_requests_changed',
+  // An agent handed the Agent browser to a person, a person answered, or a
+  // sign-in window moved (DOR-3218). A stamp only: the handoff card re-reads the
+  // person's state on it. ADDRESSED, so no agent receives it.
+  'local_browser_changed',
   // A running extension's tools joined or left the capability registry
   // (DOR-2685). A counter only: the permissions page re-reads its list on it,
   // so a tool an extension adds shows up, and one it takes away goes, live.

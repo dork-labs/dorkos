@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { LocalBrowserMode, LocalBrowserState } from '@dorkos/shared/local-browser';
+import type {
+  LocalBrowserMode,
+  LocalBrowserPersonState,
+  LocalBrowserState,
+} from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button, Input } from '@/layers/shared/ui';
@@ -98,7 +102,12 @@ export function LocalBrowserPanel({
       // An older poll must not overwrite a just-observed connect, tab choice, or pause.
       await queryClient.cancelQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
       if (ticket !== operation.current) return false;
-      queryClient.setQueryData(LOCAL_BROWSER_STATE_KEY, next);
+      // A plain browser answer says nothing about a handoff, so what's known about it stays.
+      queryClient.setQueryData<LocalBrowserPersonState>(LOCAL_BROWSER_STATE_KEY, (known) => ({
+        handoff: known?.handoff ?? null,
+        signIn: known?.signIn ?? null,
+        ...next,
+      }));
       return true;
     } catch (cause) {
       if (ticket !== operation.current) return false;

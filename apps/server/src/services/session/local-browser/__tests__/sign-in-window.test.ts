@@ -145,4 +145,27 @@ describe('SignInWindow', () => {
     await settle();
     expect(signIns.current?.status).toBe('saved');
   });
+
+  it('says so each time the status moves, and the status has moved by then', async () => {
+    const { signIns, chromium } = window();
+    const seen: Array<string | undefined> = [];
+    signIns.onChange(() => seen.push(signIns.current?.status));
+    await signIns.start('/profiles/a', null, 'https://example.com/');
+    expect(seen).toEqual(['open']);
+    chromium.exit({ code: 0, signal: null });
+    await settle();
+    expect(seen).toEqual(['open', 'saving', 'saved']);
+  });
+
+  it('says so when the window can’t open', async () => {
+    const { signIns } = window({
+      prepare: async () => {
+        throw new Error('disk');
+      },
+    });
+    const seen: Array<string | undefined> = [];
+    signIns.onChange(() => seen.push(signIns.current?.status));
+    await expect(signIns.start('/profiles/a', null, 'https://example.com/')).rejects.toThrow();
+    expect(seen).toEqual(['open', 'failed']);
+  });
 });

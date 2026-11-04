@@ -81,6 +81,7 @@ export class BrowserHandover {
   private outsideTurn: OutsideTurnCheck = async () => true;
   // The registry id of the agent in a folder; none until startup wires the mesh.
   private agentIdAt: (agentFolder: string) => string | undefined = () => undefined;
+  private changed: () => void = () => undefined;
 
   constructor(
     private readonly browser: HandoverBrowser,
@@ -98,6 +99,17 @@ export class BrowserHandover {
   /** Set once at startup: the mesh registry's id for the agent in a folder. */
   useAgentIdLookup(lookup: (agentFolder: string) => string | undefined): void {
     this.agentIdAt = lookup;
+  }
+
+  /**
+   * Set once at startup: called when a handoff starts or ends, or a sign-in moves,
+   * so an open card re-reads the state instead of polling for it.
+   *
+   * @param listener - Told that something changed, and nothing else.
+   */
+  useChangeListener(listener: () => void): void {
+    this.changed = listener;
+    this.signIns.onChange(listener);
   }
 
   /** What a person's controls see. */
@@ -164,6 +176,7 @@ export class BrowserHandover {
     this.reopenAt = undefined;
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
     await this.browser.selectTab(tab.id).catch(() => undefined);
+    this.changed();
     return { handoffId: this.record.id, site, next: HANDED_OVER_NEXT };
   }
 
@@ -290,6 +303,7 @@ export class BrowserHandover {
   private end(handoff: LocalBrowserHandoff, outcome: 'handed-back' | 'stopped'): void {
     if (this.record?.id === handoff.id) this.record = { ...handoff, outcome };
     this.reopenAt = undefined;
+    this.changed();
   }
 
   private async signInOnAgentProfile(): Promise<boolean> {

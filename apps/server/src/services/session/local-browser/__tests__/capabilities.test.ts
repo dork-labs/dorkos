@@ -209,6 +209,18 @@ describe('local browser scoped tool projection', () => {
     expect(service.action).not.toHaveBeenCalled();
     expect(service.agentState).not.toHaveBeenCalled();
   });
+  it('refuses every other chat on every tool during a handoff: only one chat is ever shared', async () => {
+    const { domain, deps, context, service } = setup();
+    for (const capability of domain.capabilities)
+      await expect(
+        (async () => capability.invoke(deps, inputFor(capability.id), context('chat-two')))()
+      ).rejects.toMatchObject({ payload: { code: 'not_shared' } });
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
+    expect(service.action).not.toHaveBeenCalled();
+    expect(service.agentState).not.toHaveBeenCalled();
+    expect(service.handover.ask).not.toHaveBeenCalled();
+  });
   it('hands over for the shared chat only, and answers again while the person has it', async () => {
     const { domain, deps, context, service } = setup();
     service.handover.requireAgentMayUse.mockRejectedValue(

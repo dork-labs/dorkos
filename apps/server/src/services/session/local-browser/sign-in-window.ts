@@ -54,8 +54,18 @@ export class SignInWindow {
   private window?: PlainChromium;
   private folder?: string;
   private attempt = 0;
+  private changed: () => void = () => undefined;
 
   constructor(private readonly deps: SignInWindowDeps = {}) {}
+
+  /**
+   * Set once at startup: called each time the sign-in's status moves.
+   *
+   * @param listener - Told that something changed, and nothing else.
+   */
+  onChange(listener: () => void): void {
+    this.changed = listener;
+  }
 
   /** The latest sign-in, or null when none has started since the server did. */
   get current(): LocalBrowserSignIn | null {
@@ -102,6 +112,7 @@ export class SignInWindow {
       status: 'open',
       startedAt: new Date(this.now()).toISOString(),
     };
+    this.changed();
     try {
       await (this.deps.prepare ?? preparePlainProfile)(profileFolder);
       const executable = await (this.deps.executable ?? managedChromiumPath)();
@@ -142,6 +153,7 @@ export class SignInWindow {
   private async save(attempt: number, profileFolder: string): Promise<void> {
     if (attempt !== this.attempt || !this.record) return;
     this.record = { ...this.record, status: 'saving' };
+    this.changed();
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
     const deadline = this.now() + SIGN_IN_SAVE_TIMEOUT_MS;
     // No fixed wait: saved is when Chromium has let go of the profile.
@@ -157,6 +169,7 @@ export class SignInWindow {
     if (attempt !== this.attempt || !this.record) return;
     this.record = { ...this.record, status };
     this.window = undefined;
+    this.changed();
   }
 
   private async ownsProfile(

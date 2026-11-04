@@ -42,6 +42,7 @@ import {
 } from '@/layers/features/chat';
 import { SlashCommandList } from '@/layers/features/slash-commands';
 import { FilePalette } from '@/layers/features/files';
+import { BrowserHandoffCard } from '@/layers/features/browser-handoff';
 import { useLimitComposer } from '@/layers/features/continue-on-account';
 import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
@@ -705,7 +706,12 @@ export function SessionComposer({
           )}
         </AnimatePresence>
       }
-      aboveInput={<BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />}
+      aboveInput={
+        <>
+          <BrowserHandoffCard sessionId={sessionId} />
+          <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
+        </>
+      }
       footer={
         /* `asChild`, so the status line stays a direct child of the card exactly
            as it was — the serialized-DOM baseline holds it to that. */

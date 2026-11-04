@@ -23,6 +23,8 @@ import type { UploadResult } from '@dorkos/shared/types';
 // The out-of-usage banner and its composer pause read the session's account
 // (spec claude-account-ui §6.7); they have their own tests, and this file's
 // narrow mocks do not carry what they read.
+// The handoff card reads the browser's state, which these tests don't serve.
+vi.mock('@/layers/features/browser-handoff', () => ({ BrowserHandoffCard: () => null }));
 vi.mock('@/layers/features/continue-on-account', () => ({
   AccountLimitBanner: () => null,
   AccountLimitMarker: () => null,

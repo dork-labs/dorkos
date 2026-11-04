@@ -1,7 +1,8 @@
 import type { LocalBrowserTransport } from '@dorkos/shared/transport-local-browser';
 import {
-  LocalBrowserStateSchema,
   LocalBrowserCapabilitiesSchema,
+  LocalBrowserPersonStateSchema,
+  LocalBrowserStateSchema,
 } from '@dorkos/shared/local-browser';
 import { YourBrowserScanSchema } from '@dorkos/shared/your-browser';
 import { fetchJSON } from './http-client';
@@ -22,17 +23,25 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
           cache: 'no-store',
         })
       ),
-    getLocalBrowserState: async () => LocalBrowserStateSchema.parse(await request('/state')),
+    getLocalBrowserState: async () => LocalBrowserPersonStateSchema.parse(await request('/state')),
     getLocalBrowserCapabilities: async () =>
       LocalBrowserCapabilitiesSchema.parse(await request('/capabilities')),
-    openLocalBrowser: async (input) => LocalBrowserStateSchema.parse(await request('/open', input)),
+    openLocalBrowser: async (input) =>
+      LocalBrowserPersonStateSchema.parse(await request('/open', input)),
     selectLocalBrowserTab: async (id) =>
       LocalBrowserStateSchema.parse(await request(`/tabs/${encodeURIComponent(id)}/select`, {})),
     navigateLocalBrowser: async (url) =>
       LocalBrowserStateSchema.parse(await request('/navigate', { url })),
     pauseLocalBrowser: async () => LocalBrowserStateSchema.parse(await request('/pause', {})),
-    resumeLocalBrowser: async () => LocalBrowserStateSchema.parse(await request('/resume', {})),
+    resumeLocalBrowser: async () =>
+      LocalBrowserPersonStateSchema.parse(await request('/resume', {})),
     disconnectLocalBrowser: async () =>
       LocalBrowserStateSchema.parse(await request('/disconnect', {})),
+    signInLocalBrowser: async (input) =>
+      LocalBrowserPersonStateSchema.parse(await request('/sign-in', input)),
+    handBackLocalBrowser: async (handoffId) =>
+      LocalBrowserPersonStateSchema.parse(await request('/handoff/hand-back', { handoffId })),
+    stopLocalBrowserHandoff: async (handoffId) =>
+      LocalBrowserPersonStateSchema.parse(await request('/handoff/stop', { handoffId })),
   };
 }

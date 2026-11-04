@@ -35,6 +35,7 @@ import { z } from 'zod';
 import { composeRegistry } from '../../capabilities/registry.js';
 import {
   connectorAgentRequestsChangedAnnouncer,
+  localBrowserChangedAnnouncer,
   wireCapabilitiesChangedBroadcast,
   wireLiveChangeBroadcasts,
   type AgentsChangedSource,
@@ -502,5 +503,22 @@ describe('capabilities_changed (DOR-2685)', () => {
     stop();
     registry.contribute(mail);
     expect(fanOut.sent).toEqual([]);
+  });
+});
+
+describe('local_browser_changed', () => {
+  it('carries a stamp and nothing about the site, the agent or the folder', () => {
+    const fanOut = recordingFanOut();
+    localBrowserChangedAnnouncer(fanOut, () => '2026-11-03T12:00:00Z')();
+    expect(fanOut.only('local_browser_changed').data).toEqual({
+      changedAt: '2026-11-03T12:00:00Z',
+    });
+  });
+
+  it('is ADDRESSED: a person receives it, an agent never does', () => {
+    const fanOut = recordingFanOut();
+    localBrowserChangedAnnouncer(fanOut)();
+    expect(fanOut.reaches('local_browser_changed', { kind: 'operator' })).toBe(true);
+    expect(fanOut.reaches('local_browser_changed', { kind: 'agent' })).toBe(false);
   });
 });
