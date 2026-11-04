@@ -426,7 +426,7 @@ describe('Files Routes', () => {
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toBe('image/svg+xml');
       expect(res.headers['content-security-policy']).toBe(
-        "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        "default-src 'none'; style-src 'unsafe-inline'; sandbox, frame-ancestors 'none'"
       );
     });
 

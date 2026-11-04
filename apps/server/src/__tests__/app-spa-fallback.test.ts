@@ -289,7 +289,7 @@ describe('the client build behind the chain', () => {
       // every bundle is bytes that enforce nothing.
       const res = await request(fixtureServer).get(`/assets/${HASHED_ASSET}`);
       expect(res.status).toBe(200);
-      expect(res.headers['content-security-policy']).toBeUndefined();
+      expect(res.headers['content-security-policy']).toBe("frame-ancestors 'none'");
     });
   });
 });
