@@ -224,7 +224,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   // From Wi-Fi an answer is Allow once or Deny (DOR-2969): Always allow is
   // neither offered nor suggested, and one line says where it lives.
   const onWifi = useOnWifi();
-  const offersAlways = approval.alwaysOffered && !onWifi;
+  const offersAlways = approval.alwaysOffered && !onWifi && !approval.cannotAllow;
   const suggest =
     offersAlways && approval.suggestAlways === true && !suggestionDismissed && !decision;
 
@@ -414,6 +414,11 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             </AskCard.Receipt>
           ) : (
             <>
+              {approval.cannotAllow && (
+                <p className="text-muted-foreground max-w-xs text-xs">
+                  {"This request can't be shown in full. Ask for it again after updating."}
+                </p>
+              )}
               {suggest && (
                 <p
                   data-slot="approval-suggestion"
@@ -432,20 +437,22 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                 </p>
               )}
               <AskCard.Actions className="w-full flex-col items-stretch gap-2 md:w-auto md:flex-row md:items-center">
-                <Button
-                  size="sm"
-                  variant={onWifi ? 'outline' : 'default'}
-                  data-slot="approval-allow"
-                  className={ANSWER_BUTTON}
-                  disabled={deciding}
-                  onClick={() =>
-                    answer('granted', (onError) =>
-                      grant.mutate({ approvalId: approval.approvalId }, { onError })
-                    )
-                  }
-                >
-                  {onWifi ? 'Allow once' : 'Allow'}
-                </Button>
+                {!approval.cannotAllow && (
+                  <Button
+                    size="sm"
+                    variant={onWifi ? 'outline' : 'default'}
+                    data-slot="approval-allow"
+                    className={ANSWER_BUTTON}
+                    disabled={deciding}
+                    onClick={() =>
+                      answer('granted', (onError) =>
+                        grant.mutate({ approvalId: approval.approvalId }, { onError })
+                      )
+                    }
+                  >
+                    {onWifi ? 'Allow once' : 'Allow'}
+                  </Button>
+                )}
                 {offersAlways && (
                   <Button
                     variant="outline"
@@ -481,7 +488,7 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                     )
                   }
                 >
-                  {onWifi ? 'Deny' : 'Don’t allow'}
+                  {approval.cannotAllow ? 'Decline' : onWifi ? 'Deny' : 'Don’t allow'}
                 </Button>
               </AskCard.Actions>
             </>

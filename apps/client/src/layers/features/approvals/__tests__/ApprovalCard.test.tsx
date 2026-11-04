@@ -716,3 +716,16 @@ describe('on Wi-Fi (DOR-2969)', () => {
     expect(screen.queryByText('Always allow is only available at this computer.')).toBeNull();
   });
 });
+
+it('shows only Decline when the full request cannot be shown', async () => {
+  const { transport } = renderCard(
+    buildApproval({ cannotAllow: true, alwaysOffered: true, suggestAlways: true })
+  );
+  expect(
+    screen.getByText("This request can't be shown in full. Ask for it again after updating.")
+  ).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Allow', exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Decline' }));
+  expect(transport.denyApproval).toHaveBeenCalled();
+});

@@ -398,6 +398,8 @@ export const PendingApprovalSchema = z
     approvalId: z.string(),
     /** Capability the request would invoke, e.g. `marketplace.uninstall`. */
     capabilityId: z.string(),
+    /** The full request cannot be shown, so only a decline is permitted. */
+    cannotAllow: z.literal(true).optional(),
     /** Human-facing capability title. */
     capabilityTitle: z.string(),
     /** Permission tier of the capability being requested. */

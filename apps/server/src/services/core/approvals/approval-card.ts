@@ -12,6 +12,7 @@ import {
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
+import { cannotAllowCard } from './approval-completeness.js';
 import { isAlwaysOffered } from './always-offered.js';
 import { withMarketplaceSummary, withServiceAction } from './approval-storable.js';
 import { extensionSourcePhrase } from './approval-summary.js';
@@ -77,6 +78,7 @@ export function toPendingApproval(
     tier: row.tier,
     ...(consequence ? { consequence } : {}),
     summary: row.summary,
+    ...(cannotAllowCard(row) ? { cannotAllow: true as const } : {}),
     ...(row.detail === null ? {} : { detail: row.detail }),
     ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
     // Both halves or neither: a label with no id behind it is the shape this
@@ -144,3 +146,21 @@ export type CapabilityDescriptorLookup = (capabilityId: string) =>
       titledPerRequest?: true;
     }
   | undefined;
+
+/** The grant route's scope, from the same stored row the card renders. */
+export function toAnswerScope(
+  row: ApprovalRow,
+  expired: boolean
+): import('./approval-service.js').ApprovalAnswerScope {
+  return {
+    capabilityId: row.capabilityId,
+    agentPath: row.requestedByPath,
+    area: recordedArea(row.area),
+    alwaysOffered: isAlwaysOffered(row),
+    blockedRequest: row.blockedRequest,
+    raisesPermissions: row.raisesPermissions,
+    state: row.state,
+    closed: row.consumedAt !== null || expired,
+    tier: row.tier,
+  };
+}

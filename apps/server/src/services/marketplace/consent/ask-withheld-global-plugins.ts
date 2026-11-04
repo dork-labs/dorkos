@@ -216,6 +216,12 @@ async function askForGlobalActivation(
   const ticket = gateway.request({
     ...binding,
     summary: summariseGlobalActivation(plugin.name, plugin.effects),
+    packageRequest: {
+      kind: 'global',
+      name: plugin.name,
+      summary: summariseGlobalActivation(plugin.name, plugin.effects),
+      detail: describeGlobalActivationInFull(plugin, origin),
+    },
     detail: describeGlobalActivationInFull(plugin, origin),
   });
   logger.info('[Marketplace] Waiting on a person to allow a global package in every session', {

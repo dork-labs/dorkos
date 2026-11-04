@@ -98,6 +98,7 @@
  *
  * @module routes/approvals
  */
+import { INCOMPLETE_APPROVAL_MESSAGE } from '../services/core/approvals/approval-completeness.js';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
@@ -249,6 +250,11 @@ function decisionFailureResponse(failure: ApprovalDecisionFailure): {
   body: { error: string; code: string };
 } {
   switch (failure) {
+    case 'incomplete':
+      return {
+        status: 409,
+        body: { error: INCOMPLETE_APPROVAL_MESSAGE, code: 'APPROVAL_INCOMPLETE' },
+      };
     case 'unknown':
       return {
         status: 404,
@@ -460,6 +466,7 @@ export function createApprovalsRoutes(
   ): Promise<Response> => {
     const scope = approvals.answerScope(approvalId);
     if (!scope) return failed(c, 'unknown');
+    if (approvals.getPending(approvalId)?.cannotAllow) return failed(c, 'incomplete');
 
     /** What an Always allow wrote, so a refused yes can put it back. */
     let alwaysWrite: { agentId: string; changes: PermissionChange[] } | undefined;
