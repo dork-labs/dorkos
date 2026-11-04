@@ -17,7 +17,8 @@ import { McpServerTransportSchema } from './mesh-schemas.js';
  * Names that hold a secret unless a person says otherwise: any env or header
  * name containing one of these words, `Authorization` included.
  */
-export const SECRET_NAME_PATTERN = /TOKEN|KEY|SECRET|PASSWORD|AUTH|COOKIE/i;
+export const SECRET_NAME_PATTERN =
+  /TOKEN|KEY|SECRET|PASS|PWD|BEARER|AUTH|COOKIE|CREDENTIAL|DATABASE_URL|DSN/i;
 
 /**
  * Whether an env or header name holds a secret: it matches
@@ -28,6 +29,42 @@ export const SECRET_NAME_PATTERN = /TOKEN|KEY|SECRET|PASSWORD|AUTH|COOKIE/i;
  */
 export function isSecretName(name: string, marked: readonly string[] = []): boolean {
   return SECRET_NAME_PATTERN.test(name) || marked.includes(name);
+}
+
+/** Programs that fetch and run the package named in their arguments. */
+const PACKAGE_RUNNERS = new Set(['npx', 'bunx', 'uvx']);
+
+/** Flags that change nothing about which package a runner runs. */
+const QUIET_RUNNER_FLAGS = new Set(['-y', '--yes', '-q', '--quiet']);
+
+/** A package spec with an exact version: `name@1.2.3`, `@scope/name@1.2.3`, `name==1.2.3`. */
+const PINNED_SPEC = /(?:.@|==)\d[^/\s]*$/;
+
+/**
+ * The package a runner will run, or `undefined`. Any flag beyond the quiet ones
+ * can change what really runs (`npx --package=other name`), so then it names
+ * nothing rather than something that might not be true.
+ *
+ * @param command - The program.
+ * @param args - Its arguments.
+ */
+export function runnerPackageSpec(command: string, args: readonly string[]): string | undefined {
+  if (!PACKAGE_RUNNERS.has(command)) return undefined;
+  const spec = args.find((arg) => !QUIET_RUNNER_FLAGS.has(arg));
+  return spec === undefined || spec.startsWith('-') ? undefined : spec;
+}
+
+/**
+ * Whether a command runs a package whose version could change later. A runner whose
+ * arguments carry any other flag counts: `npx --package=other name` may not run `name`.
+ *
+ * @param command - The program.
+ * @param args - Its arguments.
+ */
+export function isUnpinnedPackage(command: string, args: readonly string[]): boolean {
+  if (!PACKAGE_RUNNERS.has(command)) return false;
+  const spec = runnerPackageSpec(command, args);
+  return spec === undefined || !PINNED_SPEC.test(spec);
 }
 
 /** A global server's name: the same rule an agent's managed server follows. */
@@ -65,12 +102,14 @@ export const GlobalMcpServerPatchSchema = z
 
 export type GlobalMcpServerPatch = z.infer<typeof GlobalMcpServerPatchSchema>;
 
-/** One env var or header as a person sees it: a secret shows its name only. */
+/**
+ * One env var or header as a person sees it: its name, never its value. Reads
+ * need no session at an open gate, so what a value holds stays out whatever its
+ * name, and a later Edit starts from an empty field.
+ */
 export const GlobalMcpServerFieldSchema = z.object({
   name: z.string(),
   secret: z.boolean(),
-  /** Absent for a secret, always. */
-  value: z.string().optional(),
 });
 
 export type GlobalMcpServerField = z.infer<typeof GlobalMcpServerFieldSchema>;

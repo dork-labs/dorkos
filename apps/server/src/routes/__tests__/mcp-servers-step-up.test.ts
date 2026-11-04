@@ -262,7 +262,7 @@ describe('secrets', () => {
           `--token=${canary('flag')}`,
           `postgres://user:${canary('userinfo')}@db.example.test/app?sslkey=${canary('query')}`,
         ],
-        env: { MADE_UP_TOKEN: canary('env') },
+        env: { MADE_UP_TOKEN: canary('env'), LOG_TARGET: canary('plain-env') },
       },
     });
     const remote = await post({
@@ -270,8 +270,8 @@ describe('secrets', () => {
       enabled: true,
       connection: {
         transport: 'http',
-        url: `https://user:${canary('url-userinfo')}@mcp.example.test/v1?key=${canary('url-query')}`,
-        headers: { Authorization: canary('header') },
+        url: `https://user:${canary('url-userinfo')}@mcp.example.test/${canary('url-path')}?key=${canary('url-query')}`,
+        headers: { Authorization: canary('header'), 'X-Plain': canary('plain-header') },
       },
     });
     const ids = [heldId(stdio), heldId(remote)];
@@ -286,8 +286,35 @@ describe('secrets', () => {
       vi.mocked(logger.warn).mock.calls,
       vi.mocked(logger.error).mock.calls,
     ]);
+    const listed = await request(app()).get('/api/mcp-servers');
+    expect(JSON.stringify(listed.body)).not.toContain('canary-');
     expect(everywhere).not.toContain('canary-');
+    // What is shown is masked; what runs is not.
+    expect(store.injectableFor('agent-a')['stdio-canary']).toMatchObject({
+      args: expect.arrayContaining([`--token=${canary('flag')}`]),
+      env: { MADE_UP_TOKEN: canary('env') },
+    });
+    expect(store.injectableFor('agent-a')['remote-canary']).toMatchObject({
+      url: expect.stringContaining(canary('url-query')),
+    });
     expect(store.list().map((s) => s.name)).toEqual(['stdio-canary', 'remote-canary']);
+  });
+
+  it('a list and a write’s own answer mask args and address, like the sheet', async () => {
+    await store.add(
+      stored({
+        connection: {
+          transport: 'stdio',
+          command: 'npx',
+          args: ['-y', '@made-up/server', '--token', ARG_SECRET, `--api-key=${ARG_SECRET}`],
+          env: {},
+        },
+      })
+    );
+    const [view] = store.list();
+    expect(view!.args).toEqual(['-y', '@made-up/server', '--token', '•••', '--api-key=•••']);
+    const answer = await patch({ enabled: false });
+    expect(JSON.stringify(answer.body)).not.toContain(ARG_SECRET);
   });
 
   it('a value masking by flag name misses stays out of the audited sentence', async () => {
@@ -423,7 +450,7 @@ describe('secrets', () => {
     expect(JSON.stringify(view)).not.toContain(SECRET);
     expect(JSON.stringify(view)).not.toContain(ARG_SECRET);
     expect(view.reason).toBe(
-      'Confirm it’s you to add remote (`https://mcp.example.test`) for all your agents.'
+      'Confirm it’s you to add remote (https://mcp.example.test) for all your agents.'
     );
     expect(view.notes).toContain('Headers: Authorization');
   });
@@ -450,7 +477,7 @@ describe('what the sheet says', () => {
     const view = await sheet(heldId(await post()));
     expect(view.kind).toBe('mcp-server.allow-global');
     expect(view.reason).toBe(
-      'Confirm it’s you to add github (`@modelcontextprotocol/server-github`) for all your agents.'
+      'Confirm it’s you to add github (@modelcontextprotocol/server-github) for all your agents.'
     );
     expect(view.notes).toEqual([
       'Runs: npx -y @modelcontextprotocol/server-github',
@@ -469,7 +496,7 @@ describe('what the sheet says', () => {
         })
       )
     );
-    expect(view.reason).toContain('`docs-search-mcp@1.3.0`');
+    expect(view.reason).toContain('(docs-search-mcp@1.3.0)');
     expect(view.notes).not.toContain('Not pinned to a version. What runs can change later.');
   });
 
@@ -482,7 +509,7 @@ describe('what the sheet says', () => {
         })
       )
     );
-    expect(view.reason).toBe('Confirm it’s you to add github (`npx`) for all your agents.');
+    expect(view.reason).toBe('Confirm it’s you to add github (npx) for all your agents.');
     expect(view.notes[0]).toBe('Runs: npx --package=made-up-other trusted-name');
   });
 
@@ -599,7 +626,7 @@ describe('switching a server', () => {
     expect(store.list()[0]!.enabled).toBe(false);
     const id = heldId(res);
     const view = await sheet(id);
-    expect(view.reason).toContain('to turn on github (`@modelcontextprotocol/server-github`)');
+    expect(view.reason).toContain('to turn on github (@modelcontextprotocol/server-github)');
     expect(view.notes.at(-1)).toBe('All your agents get it.');
     expect(JSON.stringify(view)).not.toContain('file:');
     expect((await confirm(id)).body).toMatchObject({ ok: true, status: 200 });
@@ -636,6 +663,13 @@ describe('switching a server', () => {
     expect((await sheet(heldId(two))).reason).toBe(
       'Confirm it’s you to let 2 more agents use github.'
     );
+  });
+
+  it('says all agents get it when a PATCH turns a server on and clears its exclusions', async () => {
+    await store.add(stored({ enabled: false, excludedAgents: ['agent-a', 'agent-b'] }));
+    const view = await sheet(heldId(await patch({ enabled: true, excludedAgents: [] })));
+    expect(view.reason).toContain('to turn on github');
+    expect(view.notes.at(-1)).toBe('All your agents get it.');
   });
 
   it('going from All except… to All agents on a running server is held', async () => {
@@ -676,6 +710,18 @@ describe('switching a server', () => {
     const res = await confirm(id);
     expect(res.body).toMatchObject({ ok: true, status: 409, result: { code: 'changed' } });
     expect(store.list()[0]!.enabled).toBe(false);
+  });
+});
+
+describe('a mask sent back', () => {
+  it('is refused before the password, so a hidden value never runs', async () => {
+    const res = await post({
+      ...SERVER,
+      connection: { ...SERVER.connection, args: ['-y', '@made-up/server', '--token=•••'] },
+    });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('masked_value');
+    expect(store.list()).toEqual([]);
   });
 });
 

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): a person''s Allow on a server for every agent asks "Confirm it''s you" (DOR-3802)'
+  - 'fix(server): a list of servers for every agent masks arguments and addresses (DOR-3802)'
 ---
 
 ### Security

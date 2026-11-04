@@ -67,6 +67,7 @@ const STATUS_BY_CODE = {
   unreadable: 503,
   changed: 409,
   secret_left: 500,
+  masked_value: 422,
 } as const;
 
 /** What the change bar names, in its refusal. */
@@ -203,7 +204,7 @@ export function createMcpServerRoutes(
         target: name,
         input: { ...(boundServerInput(change, after) as object), expect },
         reason: serverReason(change, after, added),
-        notes: [...serverNotes(after), whoGetsIt(after, added.length)],
+        notes: [...serverNotes(after), whoGetsIt(after, change === 'turn-on' ? 0 : added.length)],
       },
       async () => ({ status: 200, body: await store.patch(name, patch, { expect }) })
     );

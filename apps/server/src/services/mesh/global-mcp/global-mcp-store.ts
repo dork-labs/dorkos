@@ -12,7 +12,7 @@
  * ## Secrets
  *
  * Any env or header value whose name is secret (`isSecretName`: TOKEN, KEY,
- * SECRET, PASSWORD, AUTH, COOKIE, or a name the person marked) is moved into the
+ * SECRET, PASS, PWD, BEARER, AUTH, COOKIE and the like, or a name the person marked) is moved into the
  * encrypted {@link CredentialStore} and replaced in the file by a `file:`
  * reference, the same scheme relay adapters use (`relay/adapter-secrets.ts`).
  * The real value is held in memory only, for injection, and is never logged,
@@ -62,6 +62,7 @@ import {
   type GlobalMcpGuardContext,
   type GlobalMcpRefusal,
 } from './global-mcp-guard.js';
+import { holdsMask, maskedArgs, maskUrls } from './global-mcp-mask.js';
 
 /** The file's mode: the person's own, like every other DorkOS secret file. */
 const FILE_MODE = 0o600;
@@ -97,6 +98,7 @@ export class GlobalMcpStoreError extends Error {
       | 'unreadable'
       | 'changed'
       | 'secret_left'
+      | 'masked_value'
       | GlobalMcpRefusal['code'],
     message: string
   ) {
@@ -447,6 +449,17 @@ export class GlobalMcpStore {
         'A server that signs in is added per agent for now.'
       );
     }
+    const { connection } = input;
+    const typed = [
+      ...Object.values(valuesOf(connection)),
+      ...(connection.transport === 'stdio' ? connection.args : [connection.url]),
+    ];
+    if (holdsMask(typed)) {
+      throw new GlobalMcpStoreError(
+        'masked_value',
+        'A value here is still hidden. Type the real one.'
+      );
+    }
     const refusal = refuseGlobalServer(input.connection, this.guardContext());
     if (refusal) throw new GlobalMcpStoreError(refusal.code, refusal.message);
   }
@@ -482,19 +495,18 @@ export class GlobalMcpStore {
 
   /** The person's view: a secret shows its name, never its value. */
   private view(server: StoredServer): GlobalMcpServerView {
-    const fields = Object.entries(valuesOf(server.connection)).map(([name, value]) =>
-      isSecretName(name, server.secretNames)
-        ? { name, secret: true }
-        : { name, secret: false, value }
-    );
+    const fields = Object.keys(valuesOf(server.connection)).map((name) => ({
+      name,
+      secret: isSecretName(name, server.secretNames),
+    }));
     const { connection } = server;
     return {
       name: server.name,
       enabled: server.enabled,
       transport: connection.transport,
       ...(connection.transport === 'stdio'
-        ? { command: connection.command, args: connection.args }
-        : { url: connection.url }),
+        ? { command: connection.command, args: maskedArgs(connection.args) }
+        : { url: maskUrls(connection.url) }),
       env: connection.transport === 'stdio' ? fields : [],
       headers: connection.transport === 'stdio' ? [] : fields,
       excludedAgents: server.excludedAgents,
@@ -538,7 +550,9 @@ export class GlobalMcpStore {
       const values: Record<string, string> = {};
       let complete = true;
       for (const [key, value] of Object.entries(valuesOf(server.connection))) {
-        if (!isSecretName(key, server.secretNames)) {
+        // A value saved before its name counted as secret stays in the file, in
+        // the clear, until a person types it again; it is not a reference.
+        if (!isSecretName(key, server.secretNames) || !value.startsWith('file:')) {
           values[key] = value;
           continue;
         }

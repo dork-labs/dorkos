@@ -19,28 +19,21 @@
  *
  * @module routes/mcp-server-step-up
  */
-import { isSecretName, SECRET_NAME_PATTERN } from '@dorkos/shared/global-mcp-schemas';
+import {
+  isSecretName,
+  isUnpinnedPackage,
+  runnerPackageSpec,
+} from '@dorkos/shared/global-mcp-schemas';
 import type { McpServerTransport } from '@dorkos/shared/mesh-schemas';
 
 import { flaggedEnvNames } from '../services/mesh/global-mcp/global-mcp-guard.js';
-
-/** What stands in for a value on the sheet. */
-const MASK = '•••';
+import { maskedArgs, maskUrls } from '../services/mesh/global-mcp/global-mcp-mask.js';
 
 /** The longest name, package or command line a sheet shows before cutting it. */
 const MAX_SHOWN = 400;
 
 /** The longest agent name a sentence shows; agents pick their own. */
 const MAX_AGENT_NAME = 40;
-
-/** Programs that fetch and run the package named in their arguments. */
-const PACKAGE_RUNNERS = new Set(['npx', 'bunx', 'uvx']);
-
-/** Flags that change nothing about which package a runner runs. */
-const QUIET_RUNNER_FLAGS = new Set(['-y', '--yes', '-q', '--quiet']);
-
-/** A package spec with an exact version: `name@1.2.3`, `@scope/name@1.2.3`, `name==1.2.3`. */
-const PINNED_SPEC = /(?:.@|==)\d[^/\s]*$/;
 
 /** The part of a global server the sheet and the hash read. */
 export interface ServerForStepUp {
@@ -63,57 +56,6 @@ function shown(text: string): string {
 /** The env map of a stdio server, or the header map of a remote one. */
 function valuesOf(connection: McpServerTransport): Record<string, string> {
   return connection.transport === 'stdio' ? connection.env : connection.headers;
-}
-
-/**
- * The package a runner will run, or `undefined`. Any flag beyond the quiet ones
- * can change what really runs (`npx --package=other name`), so then it names
- * nothing rather than something that might not be true.
- */
-function packageSpecOf(connection: McpServerTransport): string | undefined {
-  if (connection.transport !== 'stdio' || !PACKAGE_RUNNERS.has(connection.command))
-    return undefined;
-  const first = connection.args.findIndex((arg) => !QUIET_RUNNER_FLAGS.has(arg));
-  const spec = connection.args[first];
-  return spec === undefined || spec.startsWith('-') ? undefined : spec;
-}
-
-/** Whether a stdio server runs a package whose version could change later. */
-function isUnpinned(connection: McpServerTransport): boolean {
-  if (connection.transport !== 'stdio' || !PACKAGE_RUNNERS.has(connection.command)) return false;
-  const spec = packageSpecOf(connection);
-  return spec === undefined || !PINNED_SPEC.test(spec);
-}
-
-/** Credentials and query strings out of any URL inside a string. */
-function maskUrls(text: string): string {
-  return text
-    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi, `$1${MASK}@`)
-    .replace(/(:\/\/[^\s?#]*)[?#]\S*/g, `$1?${MASK}`);
-}
-
-/** Arguments with secret-named flags' values and URL credentials masked. */
-function maskedArgs(args: readonly string[]): string[] {
-  const out: string[] = [];
-  let hideNext = false;
-  for (const arg of args) {
-    if (hideNext) {
-      out.push(MASK);
-      hideNext = false;
-      continue;
-    }
-    const flag = /^(--?[^=\s]+)(=?)/.exec(arg);
-    if (flag && SECRET_NAME_PATTERN.test(flag[1]!)) {
-      if (flag[2] === '=') out.push(`${flag[1]}=${MASK}`);
-      else {
-        out.push(arg);
-        hideNext = true;
-      }
-      continue;
-    }
-    out.push(maskUrls(arg));
-  }
-  return out;
 }
 
 /**
@@ -155,9 +97,9 @@ function subject(server: ServerForStepUp): string {
   const { connection } = server;
   const what =
     connection.transport === 'stdio'
-      ? (packageSpecOf(connection) ?? connection.command)
+      ? (runnerPackageSpec(connection.command, connection.args) ?? connection.command)
       : new URL(connection.url).origin;
-  return `${shown(server.name)} (\`${shown(maskUrls(what))}\`)`;
+  return `${shown(server.name)} (${shown(maskUrls(what))})`;
 }
 
 /** Who gets the server, as the sentence ends. */
@@ -253,9 +195,7 @@ export function serverNotes(server: ServerForStepUp, retyped = false): string[] 
   if (connection.transport === 'stdio') {
     notes.push(`Runs: ${shown([connection.command, ...maskedArgs(connection.args)].join(' '))}`);
   } else {
-    const url = new URL(connection.url);
-    const hidden = url.search || url.hash ? `?${MASK}` : '';
-    notes.push(`Connects to: ${shown(`${url.origin}${url.pathname}${hidden}`)}`);
+    notes.push(`Connects to: ${shown(maskUrls(connection.url))}`);
   }
   const names = Object.keys(valuesOf(connection));
   if (names.length > 0) {
@@ -270,7 +210,9 @@ export function serverNotes(server: ServerForStepUp, retyped = false): string[] 
       `This address isn’t encrypted, so ${shown(secrets.join(', '))} travels in the clear.`
     );
   }
-  if (isUnpinned(connection)) notes.push('Not pinned to a version. What runs can change later.');
+  if (connection.transport === 'stdio' && isUnpinnedPackage(connection.command, connection.args)) {
+    notes.push('Not pinned to a version. What runs can change later.');
+  }
   notes.push(...flaggedEnvNames(connection).map((flag) => shown(flag.note)));
   return notes;
 }
