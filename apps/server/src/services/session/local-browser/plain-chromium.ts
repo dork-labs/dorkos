@@ -4,7 +4,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { readlinkSync, existsSync, rmSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 /** How a plain Chromium ended. A spawn error reads as no code and no signal. */
@@ -72,23 +72,53 @@ export function plainChromiumArgs(profileFolder: string, url: string, site: stri
  * @param profileFolder - The profile's folder.
  */
 export async function disablePasswordSaving(profileFolder: string): Promise<void> {
+  await editPreferences(profileFolder, (prefs) => {
+    prefs.credentials_enable_service = false;
+    prefs.profile = { ...section(prefs.profile), password_manager_enabled: false };
+  });
+}
+
+/**
+ * Make the next window open on the page it's given, alone.
+ *
+ * The profile is shared, so Chromium would otherwise bring back every tab an agent
+ * left open, reload them, and put a page an agent chose beside the person's real
+ * sign-in. Removing the saved tabs leaves nothing to restore, and the startup choice
+ * covers any Chromium that saves them somewhere else. Cookies are unaffected. A
+ * failure here stops the window from opening.
+ *
+ * @param profileFolder - The profile's folder.
+ */
+export async function forgetOpenTabs(profileFolder: string): Promise<void> {
+  await rm(path.join(profileFolder, 'Default', 'Sessions'), { recursive: true, force: true });
+  await editPreferences(profileFolder, (prefs) => {
+    prefs.session = { ...section(prefs.session), restore_on_startup: START_WITH_NEW_TAB };
+  });
+}
+
+/** Chromium's `session.restore_on_startup` value for not restoring the last session. */
+const START_WITH_NEW_TAB = 5;
+
+function section(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+async function editPreferences(
+  profileFolder: string,
+  edit: (prefs: Record<string, unknown>) => void
+): Promise<void> {
   const folder = path.join(profileFolder, 'Default');
   await mkdir(folder, { recursive: true, mode: 0o700 });
   const file = path.join(folder, 'Preferences');
   let prefs: Record<string, unknown> = {};
   try {
-    const parsed: unknown = JSON.parse(await readFile(file, 'utf8'));
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
-      prefs = parsed as Record<string, unknown>;
+    prefs = section(JSON.parse(await readFile(file, 'utf8')));
   } catch {
     // No preferences yet, or unreadable ones: start from an empty set.
   }
-  const profile =
-    prefs.profile && typeof prefs.profile === 'object' && !Array.isArray(prefs.profile)
-      ? (prefs.profile as Record<string, unknown>)
-      : {};
-  prefs.credentials_enable_service = false;
-  prefs.profile = { ...profile, password_manager_enabled: false };
+  edit(prefs);
   await writeFile(file, JSON.stringify(prefs), { mode: 0o600 });
 }
 
