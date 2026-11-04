@@ -5,6 +5,5 @@ covers:
 
 ### Fixed
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Clarify incomplete cards and refuse hidden text
+- Replace unreadable package commands with a clear explanation and a Decline button.
+- Block approval of package requests containing invisible control characters.
