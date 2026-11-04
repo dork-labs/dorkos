@@ -66,7 +66,7 @@ export function HookApprovalCard({ approval, onDecided, focusOnOpen = true }: Ap
           <h3
             ref={title}
             tabIndex={-1}
-            className="text-foreground focus-visible:ring-ring text-sm leading-snug font-medium [overflow-wrap:anywhere] outline-none focus-visible:ring-2"
+            className="focus-ring text-foreground text-sm leading-snug font-medium [overflow-wrap:anywhere]"
           >
             {label} wants to run code on this computer
           </h3>
