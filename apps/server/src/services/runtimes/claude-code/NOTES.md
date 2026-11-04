@@ -161,6 +161,29 @@ same toolkit, which keeps the server name and URL — compared EQUAL: `setMcpSer
 fired and the warm process went on using the old credential. Fields are hashed rather than
 spelled so no secret lands in the fingerprint.
 
+### External servers go over stdin, never on the command line (DOR-3882)
+
+The SDK turns `options.mcpServers` into `--mcp-config <json>`, so stdio env, http headers and a
+sign-in's bearer would sit in the process's arguments. `sdk/launch-query.ts` is the only launch:
+it passes `sdk` servers on the option, hands the full map to `setMcpServers`, and holds the input stream
+until that answers. The CLI answers once the servers are connected (measured: 307 ms, 4,359 ms with a
+stdio server that took 4 s), so their tools are ready on the first turn.
+
+Past `PLUGIN_RELOAD_ACK_TIMEOUT_MS` it fails closed: nothing goes back on the command line, the chat
+says some tools may not work, the turn opens, and the fingerprint records the servers as not held, so
+the next dispatch asks again. Warm chats already took this path; they now say so too.
+
+The CLI holds the first message until its own connect wait ends, so the 8 s bound sets when the notice
+goes out, not when the reply starts: a stdio server that never answers meant about 27 s to the first
+model request, the same as on the command line before this change.
+
+Measured in `--network none` Docker with CLI 2.1.304: `${VAR}` in the config does expand, but it puts
+the value in the CLI's environment, where the agent's own Bash can read it. Not used.
+
+**The limit:** this fixes the CLI's command line only. A stdio server's own environment and arguments
+stay readable by same-user programs, so keeping an agent from a server does not keep a stdio secret from
+that agent's shell (DOR-505).
+
 ### `toolSurface` (what the `dorkos` server lists) — RELAUNCH (DOR-2685)
 
 Because `mcpServers` drops `instance`, an in-process (`sdk`) server compares by its name alone,

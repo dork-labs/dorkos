@@ -31,12 +31,13 @@
  * @module services/runtimes/claude-code/sessions/pump-launch
  */
 import nodePath from 'node:path';
-import { query, type Options, type Query } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, Query } from '@anthropic-ai/claude-agent-sdk';
 import type { QueuedWaitingOn, StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import type { AgentSession } from '../agent-types.js';
 import { fireLaunchProbes } from '../messaging/launch-probes.js';
+import { commandLineServers, launchQuery } from '../sdk/launch-query.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
 import {
@@ -72,6 +73,42 @@ export interface PumpLaunchPlan {
   fingerprint: LaunchFingerprint;
 }
 
+/** What a launcher tells its pump's owner. */
+export interface PumpLaunchCallbacks {
+  /** A process started, and what it was launched with. */
+  onLaunched: (live: Query, fingerprint: LaunchFingerprint) => void;
+  /** That process did not take its external MCP servers in time. */
+  onServersNotHeld: (live: Query, fingerprint: LaunchFingerprint) => void;
+}
+
+/** The slot a pump's owner keeps its live process and what it holds in. */
+interface LiveProcessSlot {
+  live: Query | undefined;
+  fingerprint: LaunchFingerprint | undefined;
+}
+
+/**
+ * The callbacks that keep a slot current. A late answer about a process that has
+ * since been replaced or has died changes nothing.
+ *
+ * @param slot - Where the owner keeps its live process.
+ */
+export function pumpLaunchCallbacks(slot: LiveProcessSlot): PumpLaunchCallbacks {
+  return {
+    onLaunched: (live, fingerprint) => {
+      slot.live = live;
+      slot.fingerprint = fingerprint;
+    },
+    onServersNotHeld: (live, fingerprint) => {
+      if (slot.live !== live) return;
+      slot.fingerprint = {
+        ...fingerprint,
+        live: { ...fingerprint.live, mcpServers: commandLineServers(fingerprint.live.mcpServers) },
+      };
+    },
+  };
+}
+
 /**
  * Build the launcher for one session's pump.
  *
@@ -84,15 +121,15 @@ export interface PumpLaunchPlan {
  * @param session - The session whose process this launches
  * @param opts - The runtime's ports, for the per-process capability probes
  * @param currentPlan - Reads the plan of the dispatch that triggered the boot
- * @param onLaunched - Told what the new process is and what it is pinned to, so
- *   the next dispatch has something to compare against and the turn has
- *   something to arm `session.activeQuery` with
+ * @param callbacks - Told what the new process is and what it holds, so the next
+ *   dispatch has something to compare against and the turn has something to arm
+ *   `session.activeQuery` with
  */
 export function createPumpLauncher(
   session: AgentSession,
   opts: MessageSenderOpts,
   currentPlan: () => PumpLaunchPlan,
-  onLaunched: (live: Query, fingerprint: LaunchFingerprint) => void
+  callbacks: PumpLaunchCallbacks
 ): PumpLauncher {
   return ({ sessionId, prompt }): PumpQuery => {
     const plan = currentPlan();
@@ -101,12 +138,21 @@ export function createPumpLauncher(
     // can be orphaned by a server that dies without running its shutdown, so
     // only a persistent process is written into the ledger the next boot sweeps
     // (DOR-1310). The resume-per-message path keeps the SDK's own spawn.
-    const live = query({
+    const live = launchQuery({
       prompt,
       options: {
         ...plan.sdkOptions,
         spawnClaudeCodeProcess: createTrackedSpawn(sharedWarmProcessLedger()),
       },
+      session,
+      // What this subprocess supports, asked once per PROCESS, once its servers
+      // are handed over — the same probes the resume path fires, for the same
+      // reason. Skipping them here would leave a warm session's model cache, MCP
+      // snapshot, command palette and subagent list empty for as long as it
+      // stayed warm.
+      afterServers: (running) => fireLaunchProbes(running, opts),
+      // The next dispatch sees the servers missing and asks again.
+      onServersNotHeld: (running) => callbacks.onServersNotHeld(running, plan.fingerprint),
     });
     // Deliberately NOT `session.activeQuery = live` here. That field means "a
     // turn is in flight" to every consumer in this runtime — `interruptQuery`
@@ -114,13 +160,7 @@ export function createPumpLauncher(
     // process destroys a healthy subprocess and marks the session crashed. A
     // process is not a turn, so the field is armed and disarmed by the pump's
     // own `running` edge instead (`persistent-dispatch.ts`).
-    //
-    // What this subprocess supports, asked once per PROCESS — the same probes
-    // the resume path fires, for the same reason. Skipping them here would
-    // leave a warm session's model cache, MCP snapshot, command palette and
-    // subagent list empty for as long as it stayed warm.
-    fireLaunchProbes(live, opts);
-    onLaunched(live, plan.fingerprint);
+    callbacks.onLaunched(live, plan.fingerprint);
     logger.debug('[pump-launch] booted a persistent process', {
       sessionId,
       cwd: plan.effectiveCwd,
@@ -130,13 +170,22 @@ export function createPumpLauncher(
   };
 }
 
-/** Keep the account-health seam beside the launcher that pins that account. */
+/**
+ * Keep the account-health seam beside the launcher that pins that account.
+ *
+ * @param session - The session whose process this launches
+ * @param opts - The runtime's ports
+ * @param currentPlan - Reads the plan of the dispatch that triggered the boot
+ * @param slot - Where the pump's owner keeps its live process
+ */
 export function createPumpLaunchOptions(
-  ...args: Parameters<typeof createPumpLauncher>
+  session: AgentSession,
+  opts: MessageSenderOpts,
+  currentPlan: () => PumpLaunchPlan,
+  slot: LiveProcessSlot
 ): Pick<SessionPumpOptions, 'launch' | 'credentialAccountRoot'> {
-  const session = args[0];
   return {
-    launch: createPumpLauncher(...args),
+    launch: createPumpLauncher(session, opts, currentPlan, pumpLaunchCallbacks(slot)),
     credentialAccountRoot: () =>
       session.launchedPerToken ? undefined : session.launchedAccountRoot,
   };

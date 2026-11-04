@@ -194,6 +194,28 @@ describe('applyLiveChanges is bounded (DOR-1301)', () => {
     expect(outcome.fingerprint.live.model).toBe('claude-opus-4-6');
   });
 
+  it('says so when a warm process does not take its new MCP servers (DOR-3882)', async () => {
+    vi.useFakeTimers();
+    const { query } = deafControlQuery(['mcpServers']);
+    const decision = prepareDispatch(
+      capture(),
+      capture({
+        options: options({ mcpServers: { stdio: { type: 'stdio', command: 'node' } } }),
+      })
+    );
+    if (decision.action !== 'reuse') throw new Error('expected a reuse');
+    const notTaken = vi.fn();
+
+    const applying = applyLiveChanges(query, decision, { onMcpServersNotTaken: notTaken });
+    await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS);
+    const outcome = await applying;
+
+    expect(outcome.unapplied).toEqual([{ pin: 'mcpServers', ack: 'unacked' }]);
+    expect(notTaken).toHaveBeenCalledTimes(1);
+    // Still the old list, so the next dispatch asks again.
+    expect(outcome.fingerprint.live.mcpServers).toBeUndefined();
+  });
+
   it('reports a refused setter the same way, without waiting on the clock', async () => {
     const { query } = deafControlQuery([]);
     vi.mocked(query.setModel).mockImplementation(() => Promise.reject(new Error('refused')));

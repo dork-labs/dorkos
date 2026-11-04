@@ -10,7 +10,7 @@ import { CredentialsUnreadableError } from '../tooling/credential-read-health.js
  *
  * @module services/runtimes/claude-code/message-sender
  */
-import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, ErrorCategory } from '@dorkos/shared/types';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import {
@@ -20,6 +20,7 @@ import {
   isReportedFailure,
 } from './empty-stream-guard.js';
 import { fireLaunchProbes } from './launch-probes.js';
+import { launchQuery } from '../sdk/launch-query.js';
 import type { AgentSession } from '../agent-types.js';
 import { createToolState, stopWasAimedAt } from '../agent-types.js';
 import {
@@ -185,7 +186,15 @@ export async function* executeSdkQuery(
   // Hold the input stream open so the subprocess survives past the result message
   // and can answer getContextUsage() (closed below once the turn completes).
   const heldPrompt = createHeldUserPrompt(enrichedContent);
-  const agentQuery = query({ prompt: heldPrompt.prompt, options: sdkOptions });
+  // The per-PROCESS probes run once the servers are handed over: what this
+  // subprocess supports, asked once per launch and never awaited. Shared with the
+  // pump, which launches the same way and owes its session the same answers.
+  const agentQuery = launchQuery({
+    prompt: heldPrompt.prompt,
+    options: sdkOptions,
+    session,
+    afterServers: (live) => fireLaunchProbes(live, opts),
+  });
   const initGuard = credentialInitDeadline(
     agentQuery,
     session.launchedPerToken ? undefined : resolved.launch.accountRoot
@@ -207,11 +216,6 @@ export async function* executeSdkQuery(
     heldPrompt.close();
     (session.stdinEndedQueries ??= new WeakSet()).add(agentQuery);
   };
-
-  // The per-PROCESS probes: what this subprocess supports, asked once per
-  // launch and never awaited. Shared with the pump, which launches the same
-  // way and owes its session the same answers.
-  fireLaunchProbes(agentQuery, opts);
 
   logger.info('[sendMessage] stream start', {
     session: sessionId,

@@ -121,6 +121,8 @@ export interface LiveChangeOptions {
    * it. Reporting the hold is how it joins one.
    */
   readonly onPluginReloadHeld?: (impact: PluginReloadCacheImpact) => void;
+  /** Told when the process did not take its new MCP servers, so the chat can say so. */
+  readonly onMcpServersNotTaken?: () => void;
 }
 
 /** What {@link applyLiveChanges} managed to do to a warm process. */
@@ -319,6 +321,7 @@ export async function applyLiveChanges(
   // it would train a reader to ignore the line that means a setter really did
   // go missing.
   const failures = unapplied.filter((u) => u.ack !== 'held');
+  if (failures.some((u) => u.pin === 'mcpServers')) options?.onMcpServersNotTaken?.();
   if (failures.length > 0) {
     logger.warn('[launch-fingerprint] a warm process did not take every new setting', {
       applied,

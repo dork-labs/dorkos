@@ -8,7 +8,8 @@ vi.mock('../../../../../lib/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { createPumpLauncher, type PumpLaunchPlan } from '../pump-launch.js';
+import { createPumpLauncher, pumpLaunchCallbacks, type PumpLaunchPlan } from '../pump-launch.js';
+import type { LaunchFingerprint } from '../launch-fingerprint.js';
 import type { AgentSession } from '../../agent-types.js';
 import type { MessageSenderOpts } from '../../messaging/message-sender-shared.js';
 
@@ -37,12 +38,10 @@ function launch(plan: PumpLaunchPlan): void {
   const session = { hasStarted: false, sdkSessionId: undefined } as unknown as AgentSession;
   // No cache callbacks, so `fireLaunchProbes` asks the query nothing.
   const opts = {} as MessageSenderOpts;
-  const launcher = createPumpLauncher(
-    session,
-    opts,
-    () => plan,
-    () => {}
-  );
+  const launcher = createPumpLauncher(session, opts, () => plan, {
+    onLaunched: () => {},
+    onServersNotHeld: () => {},
+  });
   launcher({ sessionId: 'sess-1', prompt: (async function* () {})() as never, resuming: false });
 }
 
@@ -75,5 +74,35 @@ describe('the persistent pump launch records its process', () => {
 
     expect(sharedOptions.spawnClaudeCodeProcess).toBeUndefined();
     expect(plan.sdkOptions.spawnClaudeCodeProcess).toBeUndefined();
+  });
+});
+
+describe('a process that did not take its servers in time (DOR-3882)', () => {
+  const inProcess = { type: 'sdk', name: 'dorkos' } as never;
+  const stdio = { type: 'stdio', command: 'node' } as never;
+  const fingerprint = {
+    live: { mcpServers: { dorkos: inProcess, stdio } },
+  } as unknown as LaunchFingerprint;
+
+  it('is recorded as holding only its in-process servers, so the next dispatch asks again', () => {
+    const slot = { live: undefined, fingerprint: undefined } as Parameters<
+      typeof pumpLaunchCallbacks
+    >[0];
+    const callbacks = pumpLaunchCallbacks(slot);
+    const live = {} as never;
+    callbacks.onLaunched(live, fingerprint);
+    expect(slot.fingerprint).toBe(fingerprint);
+    callbacks.onServersNotHeld(live, fingerprint);
+    expect(slot.fingerprint?.live.mcpServers).toEqual({ dorkos: inProcess });
+  });
+
+  it('changes nothing when that process has since gone', () => {
+    const slot = { live: undefined, fingerprint: undefined } as Parameters<
+      typeof pumpLaunchCallbacks
+    >[0];
+    const callbacks = pumpLaunchCallbacks(slot);
+    callbacks.onServersNotHeld({} as never, fingerprint);
+    expect(slot.live).toBeUndefined();
+    expect(slot.fingerprint).toBeUndefined();
   });
 });
