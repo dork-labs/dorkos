@@ -374,11 +374,9 @@ describe('removing a server', () => {
     const ask = await askToRemove(user);
     expect(ask.getByRole('heading')).toHaveTextContent('Remove made-up-server?');
     expect(
-      ask.getByText(
-        'New chats won’t get its tools. One that’s already open may keep using them for a while.'
-      )
+      ask.getByText('New chats won’t get its tools. Open ones may keep them for a while.')
     ).toBeInTheDocument();
-    expect(ask.queryByText(/saved key/)).toBeNull();
+    expect(ask.queryByText(/Its key/)).toBeNull();
     expect(ask.getByRole('button', { name: 'Cancel' })).toHaveFocus();
   });
 
@@ -389,9 +387,7 @@ describe('removing a server', () => {
     );
     const one = await askToRemove(user);
     expect(
-      one.getByText(
-        'Its saved key is deleted from this computer. If it may have been misused, revoke it at the service too.'
-      )
+      one.getByText('Its key is deleted from this computer. If in doubt, revoke it at the service.')
     ).toBeInTheDocument();
     cleanup();
     renderTab(
@@ -407,7 +403,7 @@ describe('removing a server', () => {
     const several = await askToRemove(user);
     expect(
       several.getByText(
-        'Its saved keys are deleted from this computer. If they may have been misused, revoke them at the service too.'
+        'Its keys are deleted from this computer. If in doubt, revoke them at the service.'
       )
     ).toBeInTheDocument();
   });
@@ -432,10 +428,10 @@ describe('removing a server', () => {
     const ask = await askToRemove(user);
     await user.click(ask.getByRole('button', { name: 'Remove' }));
     const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('made-up-server is removed');
     expect(alert).toHaveTextContent(
-      'made-up-server is removed, but its saved key couldn’t be deleted from this computer.'
+      'Its key wasn’t deleted from this computer. If in doubt, revoke it at the service.'
     );
-    expect(alert).toHaveTextContent('If it may have been misused, revoke it at the service.');
     expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();
     await user.click(within(alert).getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByRole('alert')).toBeNull();

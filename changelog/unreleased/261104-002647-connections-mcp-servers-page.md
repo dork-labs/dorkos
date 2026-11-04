@@ -5,4 +5,4 @@ covers:
 
 ### Added
 
-- Connections now has an **MCP servers** tab. Add a server once and every agent can use it. You can keep it from some agents, turn it on or off, or remove it. Secrets are typed by you, stay hidden after that, and are never shown to agents (DOR-3213).
+- Connections now has an **MCP servers** tab. Add a server once and every agent can use it. You can keep it from some agents, turn it on or off, or remove it. Secrets are typed by you and stay hidden after that (DOR-3213).

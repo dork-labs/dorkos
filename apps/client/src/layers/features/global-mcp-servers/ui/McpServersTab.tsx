@@ -63,15 +63,11 @@ export function McpServersTab() {
 
       {keyLeft && (
         <div role="alert" className="bg-status-warning-bg space-y-2 rounded-lg p-3 text-sm">
-          <p>
-            {keyLeft.name} is removed, but{' '}
-            {keyLeft.several ? 'its saved keys couldn’t' : 'its saved key couldn’t'} be deleted from
-            this computer.
-          </p>
+          <p className="font-medium">{keyLeft.name} is removed</p>
           <p>
             {keyLeft.several
-              ? 'If they may have been misused, revoke them at the service.'
-              : 'If it may have been misused, revoke it at the service.'}
+              ? 'Its keys weren’t deleted from this computer. If in doubt, revoke them at the service.'
+              : 'Its key wasn’t deleted from this computer. If in doubt, revoke it at the service.'}
           </p>
           <Button
             variant="ghost"

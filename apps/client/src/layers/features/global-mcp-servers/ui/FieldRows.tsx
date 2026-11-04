@@ -103,9 +103,7 @@ export function FieldRows({ noun, rows, onChange, disabled, describedBy }: Field
         );
       })}
       {rows.some(rowIsSecret) && (
-        <p className="text-muted-foreground text-xs">
-          Agents never see it, and it stays hidden after this.
-        </p>
+        <p className="text-muted-foreground text-xs">It stays hidden after this.</p>
       )}
       <Button
         type="button"
