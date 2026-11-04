@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(browser): preserve explicit HTTP navigation in both windows (DOR-3884)'
   - 'fix(browser): qualify Chromium 157 alpha (DOR-3884)'
   - 'fix(browser): refresh managed Chromium with Playwright 1.64.1 (DOR-3884)'
 ---
