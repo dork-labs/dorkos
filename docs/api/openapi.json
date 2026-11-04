@@ -30500,7 +30500,7 @@
           "Local browser"
         ],
         "summary": "Choose the tab shared with the agent",
-        "description": "Only the owner on this computer can call this route. Invalidates earlier observations before sharing the selected tab.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Invalidates earlier observations before sharing the selected tab. During a handoff, only the tab already selected can be chosen.",
         "parameters": [
           {
             "schema": {
@@ -30717,7 +30717,7 @@
           "Local browser"
         ],
         "summary": "Open a web address in the selected tab",
-        "description": "Only the owner on this computer can call this route. Accepts HTTP or HTTPS addresses and invalidates earlier observations.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff.",
         "requestBody": {
           "required": true,
           "content": {
@@ -32020,10 +32020,10 @@
           "Local browser"
         ],
         "summary": "Disconnect the browser",
-        "description": "Only the owner on this computer can call this route. Stops sharing immediately. Closes DorkOS-owned pages and windows, keeping their saved sign-ins. A pending close blocks new opens.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Stops sharing immediately. Closes DorkOS-owned pages and windows, keeping their saved sign-ins. A pending close blocks new opens. During a handoff it ends the agent’s task, as Stop task does.",
         "responses": {
           "200": {
-            "description": "Current browser state",
+            "description": "Current browser state, with its handoff and sign-in",
             "content": {
               "application/json": {
                 "schema": {
@@ -32135,6 +32135,115 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
                     }
                   },
                   "required": [
@@ -32146,7 +32255,9 @@
                     "paused",
                     "tabs",
                     "selectedTabId",
-                    "revision"
+                    "revision",
+                    "handoff",
+                    "signIn"
                   ]
                 }
               }

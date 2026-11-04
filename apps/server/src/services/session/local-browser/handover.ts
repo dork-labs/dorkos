@@ -29,6 +29,7 @@ export interface HandoverBrowser {
   currentProfileId(): string | null;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
   selectTab(id: string): Promise<LocalBrowserState>;
+  navigate(url: string): Promise<LocalBrowserState>;
   pause(): Promise<LocalBrowserState>;
   resume(): Promise<LocalBrowserState>;
   disconnect(): Promise<LocalBrowserState>;
@@ -299,11 +300,7 @@ export class BrowserHandover {
    * @param input - The person's choice.
    */
   async open(input: LocalBrowserOpen): Promise<LocalBrowserPersonState> {
-    if (this.record?.outcome === null && this.record.sessionId !== input.sessionId)
-      throw new LocalBrowserError(
-        'handoff_open',
-        'Another agent is waiting on you in this browser. Answer its card first.'
-      );
+    if (this.record?.sessionId !== input.sessionId) this.refuseDuringHandoff();
     if (input.mode === 'new-window' && this.signIns.holds(this.folderOf(input.profileId ?? null)))
       throw new LocalBrowserError('signing_in', 'Finish signing in first.');
     await this.browser.open(input);
@@ -322,11 +319,61 @@ export class BrowserHandover {
     return this.state();
   }
 
-  private refuseStopped(sessionId: string): void {
+  /**
+   * A person's tab choice. Raising the agent's own tab is how Show window works. Any
+   * other tab would move the page out from under an open card.
+   *
+   * @param id - The tab to select.
+   */
+  async selectTab(id: string): Promise<LocalBrowserState> {
+    if (this.record?.outcome === null && id !== (await this.browser.state()).selectedTabId)
+      this.refuseDuringHandoff();
+    return this.browser.selectTab(id);
+  }
+
+  /**
+   * A person's address bar, refused during a handoff so the page can't leave the site
+   * the card names.
+   *
+   * @param url - The address to open.
+   */
+  async navigate(url: string): Promise<LocalBrowserState> {
+    this.refuseDuringHandoff();
+    return this.browser.navigate(url);
+  }
+
+  /**
+   * A person's Disconnect. During a handoff it ends as Stop task does, so no card stays
+   * up over a closed window. If the window won't close, the handoff stays open.
+   */
+  async disconnect(): Promise<LocalBrowserPersonState> {
+    await this.browser.disconnect();
+    if (this.record?.outcome === null) {
+      this.stoppedFor = this.record.sessionId;
+      this.end(this.record, 'stopped');
+    }
+    return this.state();
+  }
+
+  /**
+   * Refuse a chat whose task a person stopped. Checked before sharing, so a chat whose
+   * browser a person also closed still learns the person stopped it.
+   *
+   * @param sessionId - The calling chat.
+   */
+  refuseStopped(sessionId: string): void {
     if (this.stoppedFor === sessionId)
       throw new LocalBrowserError(
         'task_stopped',
         'The person stopped this task. They can open the browser for you again.'
+      );
+  }
+
+  private refuseDuringHandoff(): void {
+    if (this.record?.outcome === null)
+      throw new LocalBrowserError(
+        'handoff_open',
+        'An agent is waiting on you in this browser. Answer its card first.'
       );
   }
 

@@ -17,6 +17,7 @@ const transport = vi.hoisted(() => ({
   disconnectLocalBrowser: vi.fn(),
   selectLocalBrowserTab: vi.fn(),
   navigateLocalBrowser: vi.fn(),
+  interruptSession: vi.fn(),
 }));
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
@@ -93,6 +94,57 @@ describe('LocalBrowserPanel', () => {
     mount();
     expect(await screen.findByLabelText('Shared with another chat')).toBeInTheDocument();
     expect(screen.queryByLabelText('Shared with Kai')).not.toBeInTheDocument();
+  });
+  describe('Disconnect during a handoff', () => {
+    const handoff = {
+      id: 'h1',
+      sessionId: 'chat-one',
+      agentName: 'Kai',
+      agentId: null,
+      agentFolder: null,
+      profileId: null,
+      reason: 'wall',
+      site: 'example.com',
+      askedAt: '2026-11-03T00:00:00.000Z',
+      outcome: null,
+    };
+    it('takes the ended handoff from the answer and ends the agent’s turn', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
+      transport.interruptSession.mockResolvedValue(undefined);
+      transport.disconnectLocalBrowser.mockResolvedValue({
+        ...disconnected,
+        handoff: { ...handoff, outcome: 'stopped' },
+        signIn: null,
+      });
+      const view = mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await waitFor(() =>
+        expect(transport.interruptSession).toHaveBeenCalledExactlyOnceWith('chat-one')
+      );
+      expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+        handoff: { outcome: 'stopped' },
+      });
+    });
+    it('leaves the turn alone when the browser wouldn’t close', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
+      transport.disconnectLocalBrowser.mockRejectedValue(
+        Object.assign(new Error('closing'), { code: 'busy' })
+      );
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await waitFor(() => expect(transport.disconnectLocalBrowser).toHaveBeenCalledOnce());
+      await screen.findByText(/Browser is busy|Couldn’t reach the browser/);
+      expect(transport.interruptSession).not.toHaveBeenCalled();
+    });
+    it('interrupts nothing with no handoff open', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.disconnectLocalBrowser.mockResolvedValue(disconnected);
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await waitFor(() => expect(transport.disconnectLocalBrowser).toHaveBeenCalledOnce());
+      await screen.findByRole('button', { name: 'Open browser' });
+      expect(transport.interruptSession).not.toHaveBeenCalled();
+    });
   });
   it('remembers an owned browser choice through disconnect and remount without reopening', async () => {
     transport.openLocalBrowser.mockImplementation(async () => {

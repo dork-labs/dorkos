@@ -17,7 +17,7 @@ export interface LocalBrowserTransport {
   navigateLocalBrowser(url: string): Promise<LocalBrowserState>;
   pauseLocalBrowser(): Promise<LocalBrowserState>;
   resumeLocalBrowser(): Promise<LocalBrowserPersonState>;
-  disconnectLocalBrowser(): Promise<LocalBrowserState>;
+  disconnectLocalBrowser(): Promise<LocalBrowserPersonState>;
   /** Open the plain sign-in window, which no agent can reach. */
   signInLocalBrowser(input: LocalBrowserSignInRequest): Promise<LocalBrowserPersonState>;
   /** Give the browser back to the agent that handed it over. */
