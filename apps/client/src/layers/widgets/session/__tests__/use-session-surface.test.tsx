@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   noManifest: false,
   unknown: false,
   lookupFailed: false,
+  keptName: null as string | null,
 }));
 
 vi.mock('@/layers/features/direct-message', () => ({
@@ -29,7 +30,14 @@ vi.mock('@/layers/features/direct-message', () => ({
   }),
   useDirectMessageAgent: (agentPath: string | null) =>
     agentPath === null || state.name === null
-      ? { id: null, name: null, visual: null, role: null, member: undefined }
+      ? {
+          id: null,
+          name: null,
+          keptName: agentPath === null ? null : state.keptName,
+          visual: null,
+          role: null,
+          member: undefined,
+        }
       : {
           id: state.noManifest ? null : 'scout-manifest',
           name: state.name,
@@ -53,6 +61,7 @@ afterEach(() => {
   state.noManifest = false;
   state.unknown = false;
   state.lookupFailed = false;
+  state.keptName = null;
 });
 
 const AT_FOLDER = { id: 'm', name: 'scout', displayName: 'Scout' } as unknown as AgentManifest;
@@ -132,6 +141,18 @@ describe('useSessionSurface', () => {
     state.unknown = true;
     const { result } = renderHook(() => useSessionSurface('s', AT_FOLDER));
     expect(result.current.directMessage?.agent?.displayName).toBe('Unknown agent');
+    expect(result.current.placeholder).toBe('Send a message…');
+  });
+
+  it('gives the rows the kept name while the manifest is still out', () => {
+    state.mode = 'dm';
+    state.keptName = 'Tern';
+    const { result } = renderHook(() => useSessionSurface('s', null));
+    expect(result.current.directMessage?.agent).toEqual({
+      id: 'unknown-agent:/agents/scout',
+      displayName: 'Tern',
+    });
+    // The box waits for a settled name, as the bar does.
     expect(result.current.placeholder).toBe('Send a message…');
   });
 

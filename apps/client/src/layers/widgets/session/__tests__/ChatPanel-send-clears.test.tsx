@@ -137,10 +137,26 @@ vi.mock('@/layers/features/chat/ui/status', () => ({
 vi.mock('../ui/SessionComposer', async () => {
   const { useConversation } = await import('@/layers/features/conversation');
   return {
-    SessionComposer: ({ input, setInput }: { input: string; setInput: (v: string) => void }) => {
+    SessionComposer: ({
+      input,
+      setInput,
+      agentLookupError,
+      onRetryAgentLookup,
+    }: {
+      input: string;
+      setInput: (v: string) => void;
+      agentLookupError?: boolean;
+      onRetryAgentLookup?: () => void;
+    }) => {
       const { target } = useConversation();
       return (
         <div>
+          {agentLookupError && (
+            <>
+              <span>Couldn’t check this folder.</span>
+              <button onClick={onRetryAgentLookup}>Check again</button>
+            </>
+          )}
           <textarea
             data-testid="composer"
             value={input}
@@ -415,12 +431,13 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
 
     expect(postMessage).not.toHaveBeenCalled();
     expect(draft()).toBe('do not lose my owner');
-    expect(screen.getByText('Couldn’t check this folder')).toBeInTheDocument();
-    screen.getByRole('button', { name: 'Retry' }).click();
+    expect(screen.getByText('Couldn’t check this folder.')).toBeInTheDocument();
+    screen.getByRole('button', { name: 'Check again' }).click();
     await waitFor(() => expect(getAgentByPath).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(screen.queryByText('Couldn’t check this folder')).not.toBeInTheDocument()
+      expect(screen.queryByText('Couldn’t check this folder.')).not.toBeInTheDocument()
     );
+    expect(draft()).toBe('do not lose my owner');
 
     await send('ordinary directories stay unowned');
     await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
@@ -457,7 +474,7 @@ describe('ChatPanel — the send owns the clear (DOR-1354)', () => {
     await send('reply to the existing session');
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText('Couldn’t check this folder')).not.toBeInTheDocument();
+    expect(screen.queryByText('Couldn’t check this folder.')).not.toBeInTheDocument();
   });
 
   it('empties the composer once the trigger has been accepted', async () => {

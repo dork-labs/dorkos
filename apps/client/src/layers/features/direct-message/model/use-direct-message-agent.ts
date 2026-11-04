@@ -11,7 +11,7 @@ import {
   AGENT_IDENTITY_LIMIT_MS,
   getAgentDisplayName,
   resolveAgentVisual,
-  useWaitedPast,
+  useGaveUpWaiting,
   type AgentVisual,
 } from '@/layers/shared/lib';
 import { useCurrentAgent } from '@/layers/entities/agent';
@@ -34,6 +34,11 @@ export interface DirectMessageAgent {
    * {@link UNKNOWN_AGENT_NAME}. Without one, it stays null.
    */
   name: string | null;
+  /**
+   * The name the DM's roster keeps, as soon as it has answered, for rows shown
+   * before {@link name} settles. Null when there is a manifest, or none is kept.
+   */
+  keptName: string | null;
   /** Whether {@link name} is only the stand-in, so nothing should address it. */
   unknown: boolean;
   /** The agent's face, or null without a manifest. */
@@ -67,7 +72,7 @@ export function useDirectMessageAgent(
   const room = asksRoom ? rooms?.find((candidate) => candidate.id === roomId) : undefined;
   const lastKnownName = dmCounterpart(room?.participants)?.displayName.trim();
   const stillOut = asksRoom && (isPending || roomPending);
-  const gaveUp = useWaitedPast(stillOut, agentPath ?? '', AGENT_IDENTITY_LIMIT_MS);
+  const gaveUp = useGaveUpWaiting(stillOut, agentPath ?? '', AGENT_IDENTITY_LIMIT_MS);
   const fallbackReady = asksRoom && (!stillOut || gaveUp);
   const member = useMemo(
     () =>
@@ -85,6 +90,7 @@ export function useDirectMessageAgent(
       : fallbackReady
         ? lastKnownName || UNKNOWN_AGENT_NAME
         : null,
+    keptName: lastKnownName || null,
     unknown: !manifest && fallbackReady && !lastKnownName,
     visual: manifest ? resolveAgentVisual(manifest) : null,
     role: description ? description : null,

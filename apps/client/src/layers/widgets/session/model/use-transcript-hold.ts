@@ -14,7 +14,7 @@
  * @module widgets/session/model/use-transcript-hold
  */
 import { useEffect, useState } from 'react';
-import { AGENT_IDENTITY_LIMIT_MS, useWaitedPast } from '@/layers/shared/lib';
+import { AGENT_IDENTITY_LIMIT_MS, useGaveUpWaiting, useWaitedPast } from '@/layers/shared/lib';
 
 /** How long the conversation stays unseen while it waits, in milliseconds. */
 export const TRANSCRIPT_HOLD_MS = 300;
@@ -76,7 +76,11 @@ export function useTranscriptHold(
   }, [undecided, conversationId]);
 
   const drawnEarly = waitedTooLong === conversationId;
-  const gaveUpOnIdentity = useWaitedPast(identityPending, conversationId, AGENT_IDENTITY_LIMIT_MS);
+  const gaveUpOnIdentity = useGaveUpWaiting(
+    identityPending,
+    conversationId,
+    AGENT_IDENTITY_LIMIT_MS
+  );
   const held = (undecided && !drawnEarly) || (identityPending && !gaveUpOnIdentity);
 
   // Stays true for a few frames after the hold ends. A chat that was never held

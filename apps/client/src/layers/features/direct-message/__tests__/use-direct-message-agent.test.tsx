@@ -66,6 +66,12 @@ describe('useDirectMessageAgent', () => {
     expect(result.current).toMatchObject({ name: 'Tern', unknown: false });
   });
 
+  it('has the kept name ready for the rows, and keeps it out of the bar’s name', () => {
+    data.rooms = KEPT_NAME;
+    const { result } = renderHook(() => useDirectMessageAgent('/a', 'dm'));
+    expect(result.current).toMatchObject({ name: null, keptName: 'Tern', pending: true });
+  });
+
   it('caps a room list that hangs after the manifest said there is none', () => {
     data.manifest = { data: null, isPending: false };
     const { result } = renderHook(() => useDirectMessageAgent('/a', 'dm'));

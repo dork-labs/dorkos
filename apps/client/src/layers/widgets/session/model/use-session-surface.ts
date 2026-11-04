@@ -83,6 +83,9 @@ export function useSessionSurface(
   const humanName = config?.profile?.displayName?.trim() || null;
   const composerName = composerAgent ? getAgentDisplayName(composerAgent) : null;
   const { id, name } = dmAgent;
+  // Rows shown at the limit with the manifest still out go straight to the kept
+  // name. The bar and the box wait for `name`, so neither changes on a quick load.
+  const rowName = name ?? dmAgent.keptName ?? null;
   const emoji = dmAgent.visual?.emoji ?? null;
   const color = dmAgent.visual?.color ?? null;
 
@@ -97,18 +100,18 @@ export function useSessionSurface(
       // transcript resolves the agent at the folder, so the two cannot differ.
       // With no manifest it is the name alone, so the runtime never stands in.
       agent:
-        name === null
+        rowName === null
           ? null
           : {
               id: id ?? `unknown-agent:${agentPath}`,
-              displayName: name,
+              displayName: rowName,
               ...(emoji !== null && color !== null ? { emoji, color } : {}),
             },
       humanName,
       settled: true,
       agentPending: dmAgent.pending,
     };
-  }, [pending, isDm, agentPath, id, name, emoji, color, humanName, dmAgent.pending]);
+  }, [pending, isDm, agentPath, id, rowName, emoji, color, humanName, dmAgent.pending]);
 
   if (directMessage === null) {
     return {

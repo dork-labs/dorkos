@@ -385,7 +385,7 @@ export {
   type FilterValues,
 } from './filter-engine';
 export { getAgentDisplayName, slugifyAgentName } from '@dorkos/shared/validation';
-export { AGENT_IDENTITY_LIMIT_MS, useWaitedPast } from './use-waited-past';
+export { AGENT_IDENTITY_LIMIT_MS, useGaveUpWaiting, useWaitedPast } from './use-waited-past';
 export {
   buildTimelineRows,
   relayTimelineRows,

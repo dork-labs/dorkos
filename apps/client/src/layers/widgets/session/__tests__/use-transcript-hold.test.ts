@@ -133,6 +133,26 @@ describe('useTranscriptHold', () => {
       expect(result.current).toMatchObject({ hidden: false, showLoading: false });
     });
 
+    it('counts the last limit from the first wait, however often the wait restarts', () => {
+      const { result, rerender } = mount({ undecided: false, identity: true });
+      for (let restart = 0; restart < 8; restart += 1) {
+        act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS / 10));
+        rerender({ id: 'chat-1', undecided: false, dm: false, identity: false });
+        rerender({ id: 'chat-1', undecided: false, dm: false, identity: true });
+      }
+      expect(result.current.held).toBe(true);
+      act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS / 5));
+      expect(result.current.held).toBe(false);
+    });
+
+    it('stays let go once it has given up', () => {
+      const { result, rerender } = mount({ undecided: false, identity: true });
+      act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS));
+      rerender({ id: 'chat-1', undecided: false, dm: false, identity: false });
+      rerender({ id: 'chat-1', undecided: false, dm: false, identity: true });
+      expect(result.current.held).toBe(false);
+    });
+
     it('gives each conversation its own last limit', () => {
       const { result, rerender } = mount({ identity: true });
       act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS));

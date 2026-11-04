@@ -3,7 +3,7 @@
  *
  * @module shared/lib/use-waited-past
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * How long a chat holds its messages back for want of an agent's name, in
@@ -30,4 +30,26 @@ export function useWaitedPast(waiting: boolean, key: string, limitMs: number): b
     };
   }, [waiting, key, limitMs]);
   return waiting && waitedPast === key;
+}
+
+/**
+ * Whether to stop waiting for good: {@link useWaitedPast}, except the clock runs
+ * from the first time this key waited, whatever restarts it, and the answer stays
+ * `true`. A wait that a refetch could reset is a wait that may never end.
+ *
+ * @param waiting - Whether the wait is on now.
+ * @param key - What is being waited for; each one gets its own clock.
+ * @param limitMs - The limit, in milliseconds.
+ */
+export function useGaveUpWaiting(waiting: boolean, key: string, limitMs: number): boolean {
+  const firstWait = useRef<{ key: string; at: number } | null>(null);
+  const [gaveUpOn, setGaveUpOn] = useState<string | null>(null);
+  useEffect(() => {
+    if (!waiting || gaveUpOn === key) return;
+    if (firstWait.current?.key !== key) firstWait.current = { key, at: Date.now() };
+    const waited = Date.now() - firstWait.current.at;
+    const timer = setTimeout(() => setGaveUpOn(key), Math.max(0, limitMs - waited));
+    return () => clearTimeout(timer);
+  }, [waiting, key, limitMs, gaveUpOn]);
+  return gaveUpOn === key;
 }

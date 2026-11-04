@@ -39,9 +39,12 @@ export interface DirectMessageView {
  */
 export function useDirectMessageView(sessionId: string | null): DirectMessageView {
   const { enabled, settled } = useDmViewState();
-  const { data, isPending, isError } = useDirectChat(sessionId, { enabled });
+  const { data, isPending, errorUpdateCount } = useDirectChat(sessionId, { enabled });
   const { view } = useSessionSearch();
   const chat = enabled ? (data ?? null) : null;
+  // Failed once, with no answer since. Asking again reads as pending, and this
+  // chat isn't waiting for that: it stays where the failure put it.
+  const lookupFailed = enabled && data === undefined && errorUpdateCount > 0;
   return {
     mode:
       !settled && sessionId !== null
@@ -50,10 +53,10 @@ export function useDirectMessageView(sessionId: string | null): DirectMessageVie
             enabled,
             isDirect: chat !== null,
             view,
-            pending: sessionId !== null && isPending,
+            pending: sessionId !== null && isPending && !lookupFailed,
           }),
     chat,
-    lookupFailed: enabled && isError && chat === null,
+    lookupFailed,
   };
 }
 
