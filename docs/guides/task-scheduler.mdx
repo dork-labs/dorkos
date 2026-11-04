@@ -175,7 +175,7 @@ A schedule that shows up in a file has to ask before it runs. It lands on the Sc
 
 This matters because a `git pull`, a marketplace install, or an agent writing its own skill can all put a new timer on your machine. None of them can start one.
 
-Your approval is tied to what the task actually says and how it runs: its prompt, its timing (the timezone included), its name, the runtime, model and effort it runs with, the Claude account it runs on, its time limit, and whether it remembers earlier runs. Change any of those and it parks again for a fresh look. (A change you make yourself in DorkOS counts as your approval, so it keeps running, and so does a change one of your agents makes, unless the schedule came from a file or a package, or you chose Careful.) When an agent changes a schedule that came from a file or a package, or any schedule on Careful, the schedule stops in that same moment, before the new version can run, and the card says what changed, with the old and the new value side by side, for example **Model: claude-sonnet-4 → claude-opus-4**. Approve the same content twice, and it stays approved through every later sync. Its description and its on/off switch are not part of the approval.
+Your approval is tied to what the task actually says and how it runs: its prompt, its timing (the timezone included), its name, the runtime, model and effort it runs with, the Claude account it runs on, its time limit, and whether it remembers earlier runs. Change any of those and it parks again for a fresh look. (A change you make yourself in DorkOS counts as your approval, so it keeps running. So does a change a task's own agent makes from its own chat, within the limits in [When an agent sets how its task runs](#when-an-agent-sets-how-its-task-runs), unless the schedule came from a file or a package, or you chose Careful.) When an agent changes a schedule that came from a file or a package, or any schedule on Careful, the schedule stops in that same moment, before the new version can run, and the card says what changed, with the old and the new value side by side, for example **Model: claude-sonnet-4 → claude-opus-4**. Approve the same content twice, and it stays approved through every later sync. Its description and its on/off switch are not part of the approval.
 
 A schedule that leaves its runtime, model or effort on "follow the agent" also depends on the agent's own settings. An agent can't change those through DorkOS without asking you first. It could still edit its settings file (`.dork/agent.json`) directly, and so could you, and DorkOS can't tell which of you did. So DorkOS checks before each run and every few minutes. When one of those settings was changed outside DorkOS, the change is recorded in Activity as **Changed outside DorkOS**, and every approved schedule from a file or a package that follows the agent for that setting waits for you again. On Careful, every approved schedule that follows it waits. Its card shows the change, for example **Agent's model: claude-sonnet-4 → claude-opus-4**. Changing the setting back doesn't restart the schedule: the card says it was changed, then changed back, and you approve it. A change you make in DorkOS, from **Runs on** or the agent's settings, never makes a schedule wait.
 
@@ -185,9 +185,55 @@ A schedule one of your agents makes starts armed too. You get a notification tha
 
 Schedules that were already waiting for you when this changed stay waiting. Each one is a question to you, and DorkOS doesn't answer it for you.
 
+### When an agent sets how its task runs
+
+On Claude Code, an agent can set how its own scheduled task runs, from its own chat. It can go as high as the lower of two levels: its own, and the level its chat runs at. An agent at **Full autonomy**, in a chat at **Full autonomy**, can set **Full autonomy**. One at **Ask first** can't go past it. Asking for more is refused. The notice and the approval card use the runtime's own names, so on Claude Code they say Bypass permissions for **Full autonomy** and Default for **Ask first**.
+
+**It asks you first** in any of these cases:
+
+- It's on another runtime, or you chose **Careful**.
+- It's another agent's task.
+- The chat works from a linked git worktree and wants a mode above **Ask first**.
+- You lowered the task's mode, or undid an agent's raise, and it wants to go back up.
+- Someone other than you messaged the chat from a device on [your Wi-Fi](/docs/self-hosting/securing-your-instance#on-your-own-wi-fi). On its own task, that chat can't go past Never ask.
+
+**It doesn't check who messaged the chat.** Apart from Wi-Fi, someone else on Telegram or Slack, or a page the agent read, can lead it to make this change, and the change lasts after that chat ends. If other people can message your agents, turn this off.
+
+**On Trusted, when a task's own agent raises its mode from its own chat,** the task keeps running. You get a notice saying what changed, with **Undo**. Only you can use **Undo**, and it stops working once that setting changes again. The notice also names what started the change, as far as DorkOS can tell. It can say you started a change that someone else's Telegram or Slack message led to, so if you don't recognise it, check the chat.
+
+**When that agent rewrites the prompt of a task running above Never ask,** the same thing happens, but the notice shows a short code for the old prompt and the new one, not the words. A prompt rewrite on a task at Never ask or tighter keeps running with no notice.
+
+**The task waits for you instead** if it runs above Never ask and another agent proposed it, another agent approved it, it was last written by a chat someone other than you messaged from a device on your Wi-Fi, or it now sits above the agent's own level.
+
+**Scheduled runs and heartbeats can't raise an existing task's mode.** DorkOS refuses it, and the task keeps running as it was. If the mode was within that run's own level, you also get a note saying who asked. A scheduled run can still make a new task, up to its own level.
+
+**An agent's approval of a waiting task asks you first,** and an agent never approves a task it made or last changed. Setting **Approve a scheduled task** to Allowed skips that ask only in narrow cases, never above Never ask or for another agent's task.
+
+**The task's row shows which agent last set its mode or approved it, and when.** Activity records the change too, as "An agent". The audit view names the agent.
+
+#### When a task's SKILL file changes outside DorkOS
+
+If only the instructions change, a task with its own agent usually keeps running, at Never ask or the closest mode its runtime has, so some steps may fail. Its run history and row say so. On Claude Code, they name the steps it couldn't take.
+
+You get one notice per change, at its next run. A file that's broken or can't be read gets no notice.
+
+The task stops and waits for you if the file also changes its timing or settings, or asks for a looser mode, or if the task has no agent, or another agent approved it.
+
+To accept the change:
+
+- **On Claude Code, its own agent can accept the file** from an ordinary chat, after it has seen what changed.
+- **If its agent hasn't had an ordinary chat in 7 days,** the task offers **Approve file**, which shows what changed. **Approve** is turned off if the file is too long to show.
+- **A waiting task's approval card** shows the whole prompt, and approving there can approve the file too. On a page opened over plain `http`, it approves the task but not the file.
+
+Turning a task on from its row doesn't approve its file.
+
+#### Turning this off
+
+Run `dorkos config set tasks.agentModeControl false`. There's no switch in the app. Agents then can't set a task's mode or approve a task. If an agent rewrites its own task's prompt, the task stops and waits for you, with no **Undo**. A task whose file changed stops and waits for you too. Modes they already set stay as they are, except that an agent's edit to a task at **Full autonomy** drops it to Accept edits.
+
 ### Approving can also set how much it may do
 
-A schedule you did not create yourself is held back to the careful setting, whatever the file or the agent asked for: it may edit files on its own and stops before anything riskier. That is deliberate — nothing an agent writes should be able to hand a job that runs at 3am more power than the agent has itself.
+A schedule that comes from a file, or that an agent makes without being allowed to set its mode, is held back to the careful setting: it may edit files on its own and stops before anything riskier. That is deliberate: nothing an agent writes should be able to hand a job that runs at 3am more power than the agent has itself.
 
 You can lift it, one job at a time, as you approve it. DorkOS looks at your own level in **Control Center** to work out what to offer: if it is higher than the one the job was held to, the approval card puts a second button beside the plain Approve naming that level — "Approve at Full autonomy", say. The card tells you what each one will run the job at.
 
