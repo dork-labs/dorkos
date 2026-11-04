@@ -53,11 +53,31 @@ describe('formatCompletionMessage', () => {
           },
           run({ status, refusedTools: ['Bash'] })
         );
-        expect(body).toContain('\\[Approve this schedule\\]\\(https://evil\\.test\\)');
+        expect(body).toContain('(Approve this schedule)(https://evil.test)');
+        expect(body).not.toContain('\\');
         expect(body).not.toMatch(/[\r\t\u2028\u2029\u202e]/u);
         expect(body.split('\n')).toHaveLength(status === 'needs_attention' ? 2 : 1);
-        expect(formatForPlatform(body, 'telegram')).not.toContain('<a href=');
-        expect(formatForPlatform(body, 'slack')).not.toContain('<https://evil.test');
+        for (const platform of ['telegram', 'slack'] as const) {
+          const converted = formatForPlatform(body, platform);
+          expect(converted).toContain('(Approve this schedule)(');
+          // A plain URL may be linked; a misleading approval label may not.
+          expect(converted).not.toMatch(/<[^>\n]*\|[^>]*Approve this schedule[^>]*>/u);
+          expect(converted).not.toContain('<a href=');
+        }
+      }
+    }
+  );
+
+  it.each(['failed', 'needs_attention'] as const)(
+    'preserves ordinary punctuation and bare URLs in a %s name on both chat apps',
+    (status) => {
+      for (const name of ['nightly-backup.v2', 'https://example.test']) {
+        const body = formatCompletionMessage({ ...task, displayName: name }, run({ status }));
+        for (const platform of ['telegram', 'slack'] as const) {
+          const converted = formatForPlatform(body, platform);
+          expect(converted).toContain(name);
+          expect(converted).not.toContain('\\');
+        }
       }
     }
   );

@@ -202,11 +202,12 @@ export function formatCompletionMessage(
   return truncate(body, MESSAGE_MAX_CHARS);
 }
 
-/** A schedule name is one line of literal text, never channel markup or guidance. */
+/** Keep names on one line and prevent Markdown links without escaping phone-visible text. */
 function literalNoticeName(name: string): string {
   return name
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
-    .replace(/[\\`*_[\]{}()#+.!|<>~-]/g, '\\$&');
+    .replaceAll('[', '(')
+    .replaceAll(']', ')');
 }
 
 /** Truncate to `max` characters, appending an ellipsis when it had to cut. */

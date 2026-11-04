@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(tasks): preserve punctuation in channel schedule names (DOR-3839)'
   - 'fix(tasks): keep schedule names literal in channel failure notices (DOR-3839)'
   - 'fix(tasks): keep action guidance in channel refusal notices (DOR-3839)'
   - 'fix(tasks): restore the schedule creation mode explanation (DOR-3839)'
