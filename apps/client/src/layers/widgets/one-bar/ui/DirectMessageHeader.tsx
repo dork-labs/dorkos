@@ -79,7 +79,8 @@ export function DirectMessageHeader({ sessionId, chat }: DirectMessageHeaderProp
             </span>
           ) : agent.role ? (
             <span
-              className="text-muted-foreground min-w-0 shrink-[9999] truncate text-xs"
+              // On a phone's bar it would be cut to a letter or two.
+              className="text-muted-foreground min-w-0 shrink-[9999] truncate text-xs @max-md/bar:hidden"
               title={agent.role}
             >
               <span aria-hidden>· </span>
