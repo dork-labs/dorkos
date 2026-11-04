@@ -10,6 +10,7 @@
 export { agentKeys } from './api/queries';
 
 // Model — hooks and stores
+export { useCachedAgent } from './model/use-cached-agent';
 export { useCurrentAgent } from './model/use-current-agent';
 export { useSyncCurrentAgentId } from './model/use-sync-current-agent-id';
 export { useReconcileExplicitAgentPath } from './model/use-reconcile-explicit-agent-path';

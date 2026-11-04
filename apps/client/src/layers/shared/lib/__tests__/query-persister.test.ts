@@ -76,6 +76,7 @@ describe('the sidebar’s local memory', () => {
       ['every agent’s real name and face', ['agents', 'resolved', '/a', '/b']],
       ['the recent-sessions window', ['recent-sessions', 24]],
       ['the team roster', ['team']],
+      ['whether a session is a Direct chat', ['direct-chat', 's-1']],
     ])('remembers %s', (_what, key) => {
       expect(isBootQueryKey(key)).toBe(true);
     });
@@ -97,6 +98,7 @@ describe('the sidebar’s local memory', () => {
       ['one member’s rooms', ['team', 'rooms', 'm-1']],
       // A prefix that is not a key.
       ['the bare room root', ['rooms']],
+      ['the bare Direct chat root', ['direct-chat']],
       ['the bare config root', configKeys.all],
     ])('does not remember %s', (_what, key) => {
       expect(isBootQueryKey(key)).toBe(false);

@@ -212,6 +212,9 @@ export function ConversationComposer({
         placeholder={input.placeholder ?? target.placeholder}
         canSubmit={canSubmit}
         {...(canSubmitReason === undefined ? {} : { canSubmitReason })}
+        {...(canSubmitReason === input.canSubmitReason && input.canSubmitAction
+          ? { canSubmitAction: input.canSubmitAction }
+          : {})}
         {...(attachments === null
           ? {}
           : {

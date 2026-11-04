@@ -27,6 +27,12 @@ export interface TimelineLandingInput {
   /** Whether the decision can be made yet. A session waits for its read cursor. */
   landingReady: boolean;
   /**
+   * Changing this makes the decision again, in the same conversation. For a host
+   * whose rows changed height under a landing already made, so that landing no
+   * longer holds. A reader who scrolled in between keeps the row they were on.
+   */
+  landingKey?: string;
+  /**
    * The row this conversation was left on, asked for at landing time.
    *
    * A GETTER, and the HOST holds the answer — which is what makes it work at
@@ -104,6 +110,8 @@ export interface TimelineLanding {
   landedRow: string | null;
   /** Call from the scroll handler: tells the host which row is at the top. */
   reportTopRow: (scroller: HTMLElement | null, atBottom: boolean) => void;
+  /** Call when the reader scrolls by hand, so landing again leaves their place alone. */
+  noteReaderScrolled: () => void;
 }
 
 /**
@@ -139,6 +147,7 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     virtualizer,
     landOn,
     landingReady,
+    landingKey,
     resumeRow,
     landOnRow,
     onTopRow,
@@ -151,6 +160,8 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
   }, []);
 
   const anchoredRef = useRef<string | null>(null);
+  const landedInRef = useRef<string | null>(null);
+  const readerScrolledRef = useRef(false);
   const [landed, setLanded] = useState(false);
   const [landedOn, setLandedOn] = useState<string | null>(null);
   const [landedRow, setLandedRow] = useState<string | null>(null);
@@ -174,15 +185,21 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     // navigation leaves `conversationId` alone, so the guard below never lifts
     // on its own.
     const requested = landOnRow?.();
-    const arriving = anchoredRef.current !== conversationId;
+    const armedFor = landingKey === undefined ? conversationId : `${conversationId}:${landingKey}`;
+    const arriving = anchoredRef.current !== armedFor;
     if (!arriving && requested === undefined) return;
-    anchoredRef.current = conversationId;
+    anchoredRef.current = armedFor;
+    const landingAgain = arriving && landedInRef.current === conversationId;
+    landedInRef.current = conversationId;
     // A new conversation has its own rows and its own resume memory; forget the
     // last row reported for the previous one so the first genuine report here is
     // never mistaken for a repeat — including a first report of "caught up".
     // Not on a re-landing: the reader's own row is still this room's, and the
     // move below writes a fresh one anyway.
-    if (arriving) lastReportedRef.current = null;
+    if (arriving && !landingAgain) {
+      lastReportedRef.current = null;
+      readerScrolledRef.current = false;
+    }
     /* eslint-disable react-hooks/set-state-in-effect -- landing is a one-shot event per arrival (guarded by `anchoredRef`) plus one per consumed request, and what it decided has to be readable from the DOM (`data-landed-on`); it cannot be derived during render because it depends on the virtualizer having geometry */
     // A reader coming back belongs on the row they were reading. Asked for by
     // INDEX rather than by offset, because the virtualizer's total height is an
@@ -211,6 +228,18 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     // back. Arriving is different — there is no place yet to take away.
     if (!arriving) return;
     setLandedRow(null);
+    // Landing again under a reader who has since scrolled: their place wins over
+    // every guess below. Last reported as caught up means the newest row.
+    if (landingAgain && readerScrolledRef.current) {
+      setLandedOn('kept');
+      const kept = lastReportedRef.current;
+      if (kept === undefined) virtualizer.scrollToEnd();
+      else {
+        const index = rows.findIndex((row) => row.id === kept);
+        if (index !== -1) virtualizer.scrollToIndex(index, { align: 'start' });
+      }
+      return;
+    }
     const remembered = resumeRow?.();
     if (remembered !== undefined) {
       const index = rows.findIndex((row) => row.id === remembered);
@@ -233,7 +262,17 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     // "here is what you already read" edge that makes it legible.
     virtualizer.scrollToIndex(Math.max(0, unreadIndex - 1), { align: 'start' });
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [measured, landingReady, conversationId, rows, virtualizer, landOn, resumeRow, landOnRow]);
+  }, [
+    measured,
+    landingReady,
+    landingKey,
+    conversationId,
+    rows,
+    virtualizer,
+    landOn,
+    resumeRow,
+    landOnRow,
+  ]);
 
   const reportTopRow = useCallback(
     (scroller: HTMLElement | null, atBottom: boolean) => {
@@ -261,5 +300,9 @@ export function useTimelineLanding(input: TimelineLandingInput): TimelineLanding
     [virtualizer, rows, onTopRow]
   );
 
-  return { landed, landedOn, landedRow, reportTopRow };
+  const noteReaderScrolled = useCallback(() => {
+    readerScrolledRef.current = true;
+  }, []);
+
+  return { landed, landedOn, landedRow, reportTopRow, noteReaderScrolled };
 }

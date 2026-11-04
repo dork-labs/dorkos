@@ -7,7 +7,7 @@ import { useCallback } from 'react';
 import type { DirectChat } from '@dorkos/shared/room-schemas';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { toSession } from '@/layers/shared/lib';
-import { useDmViewEnabled } from '@/layers/entities/config';
+import { useDmViewState } from '@/layers/entities/config';
 import { useDirectChat } from '@/layers/entities/room';
 import { useSessionSearch } from '@/layers/entities/session';
 import { directMessageMode, type DirectMessageMode } from '../lib/direct-message-rules';
@@ -16,28 +16,47 @@ import { directMessageMode, type DirectMessageMode } from '../lib/direct-message
 export interface DirectMessageView {
   /** See {@link DirectMessageMode}. */
   mode: DirectMessageMode;
-  /** The Direct chat this session is, or `null` when it is an ordinary chat. */
+  /** The Direct chat this session is, or `null` without an answer naming one. */
   chat: DirectChat | null;
+  /**
+   * Whether the server could not say. The chat stays unresolved, because it may
+   * still belong to an agent, so nothing should name it after its runtime.
+   */
+  lookupFailed: boolean;
 }
 
 /**
  * How the chat on screen is drawn: as a DM, as the session behind one, or as a
  * session like any other.
  *
- * Asks the server whether this is a Direct chat only while the experiment is
- * on, so with it off nothing new is fetched and nothing changes. While it
- * asks, the answer is `pending`, which every surface draws neutral.
+ * Asks the server whether this is a Direct chat only while the view is on, so
+ * with it off nothing new is fetched and nothing changes. Until the setting is
+ * known, and while it asks, the answer is `pending`, which every surface draws
+ * neutral. No data means no answer, including a failed request or a query
+ * waiting on the boot cache to restore before it fetches.
  *
  * @param sessionId - The session on screen, or null for none.
  */
 export function useDirectMessageView(sessionId: string | null): DirectMessageView {
-  const enabled = useDmViewEnabled();
-  const { data, isLoading } = useDirectChat(sessionId, { enabled });
+  const { enabled, settled } = useDmViewState();
+  const { data, errorUpdateCount } = useDirectChat(sessionId, { enabled });
   const { view } = useSessionSearch();
   const chat = enabled ? (data ?? null) : null;
+  // An error is not an answer. Keep the same neutral surface as a hung lookup;
+  // lookupFailed only releases its transcript wait, including during retries.
+  const lookupFailed = enabled && data === undefined && errorUpdateCount > 0;
   return {
-    mode: directMessageMode({ enabled, isDirect: chat !== null, view, pending: isLoading }),
+    mode:
+      !settled && sessionId !== null
+        ? 'pending'
+        : directMessageMode({
+            enabled,
+            isDirect: chat !== null,
+            view,
+            pending: sessionId !== null && data === undefined,
+          }),
     chat,
+    lookupFailed,
   };
 }
 

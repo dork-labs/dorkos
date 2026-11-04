@@ -1952,6 +1952,21 @@ describe('ComposerInput', () => {
       expect(screen.getByText('Getting your agent ready…')).toBeDefined();
     });
 
+    it('offers a way out on that line when there is one, and it works', () => {
+      const onClick = vi.fn();
+      render(
+        <ComposerInput
+          {...defaultProps}
+          value="build me a blog"
+          canSubmit={false}
+          canSubmitReason="Couldn’t check this folder."
+          canSubmitAction={{ label: 'Check again', onClick }}
+        />
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+      expect(onClick).toHaveBeenCalledOnce();
+    });
+
     it('says nothing once the send target is ready', () => {
       render(
         <ComposerInput
