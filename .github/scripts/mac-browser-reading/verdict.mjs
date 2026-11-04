@@ -4,7 +4,7 @@
  * when a row is missing, which is the one failure a green run can't show.
  */
 
-/** The features that must be off in both windows, on top of Playwright's own list. */
+/** The features that must be off in both windows. The agent's window also keeps Playwright's own list. */
 export const REQUIRED_DISABLED = ['HttpsUpgrades', 'HttpsFirstBalancedModeAutoEnable'];
 
 /** Every row a run must report. A row that isn't here can't pass by being skipped. */
@@ -29,22 +29,42 @@ export function disabledFeatureFlags(args) {
   );
 }
 
+/** One `--disable-features` holding everything `wanted` names. */
+function checkOneFlag(args, wanted) {
+  const flags = disabledFeatureFlags(args);
+  const held = new Set(flags[0] ?? []);
+  const missing = [...new Set(wanted)].filter((name) => !held.has(name));
+  const problems = [];
+  if (flags.length !== 1) problems.push(`expected one --disable-features, found ${flags.length}`);
+  if (missing.length > 0) problems.push(`missing: ${missing.join(', ')}`);
+  return { pass: problems.length === 0, count: flags.length, missing, problems };
+}
+
 /**
- * Whether a window's command line has exactly one `--disable-features`, holding
- * Playwright's whole list plus the required features.
+ * The agent's window: exactly one `--disable-features`, holding Playwright's whole
+ * list plus the required features.
  *
  * @param {string} args - The window's arguments.
  * @param {string[]} playwrightList - What stock Playwright disables, read from a stock launch.
  */
-export function checkFlags(args, playwrightList) {
-  const flags = disabledFeatureFlags(args);
-  const held = new Set(flags[0] ?? []);
-  const missing = [...playwrightList, ...REQUIRED_DISABLED].filter((name) => !held.has(name));
-  const problems = [];
-  if (playwrightList.length === 0) problems.push('stock Playwright list is empty');
-  if (flags.length !== 1) problems.push(`expected one --disable-features, found ${flags.length}`);
-  if (missing.length > 0) problems.push(`missing: ${[...new Set(missing)].join(', ')}`);
-  return { pass: problems.length === 0, count: flags.length, missing, problems };
+export function checkAgentFlags(args, playwrightList) {
+  const result = checkOneFlag(args, [...playwrightList, ...REQUIRED_DISABLED]);
+  if (playwrightList.length > 0) return result;
+  return {
+    ...result,
+    pass: false,
+    problems: [...result.problems, 'stock Playwright list is empty'],
+  };
+}
+
+/**
+ * The plain sign-in window: Playwright never starts it, so it has no list of Playwright's
+ * to keep (Security's ruling, Nov 4). Exactly one `--disable-features`, holding the required features.
+ *
+ * @param {string} args - The window's arguments.
+ */
+export function checkPlainFlags(args) {
+  return checkOneFlag(args, REQUIRED_DISABLED);
 }
 
 /**

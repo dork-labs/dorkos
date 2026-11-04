@@ -1,44 +1,97 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
-import { checkFlags, disabledFeatureFlags, EXPECTED_ROWS, verdict } from './verdict.mjs';
+import {
+  checkAgentFlags,
+  checkPlainFlags,
+  disabledFeatureFlags,
+  EXPECTED_ROWS,
+  verdict,
+} from './verdict.mjs';
 
 const stock = ['LensOverlay', 'MediaRouter'];
 const all = () => EXPECTED_ROWS.map((id) => ({ id, pass: true }));
 
-describe('flags', () => {
+describe('agent window flags', () => {
   test('one flag with the whole list and both features passes', () => {
-    const args = '/x/chrome --a --disable-features=LensOverlay,MediaRouter,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable --b';
-    assert.equal(checkFlags(args, stock).pass, true);
+    const args =
+      '/x/chrome --a --disable-features=LensOverlay,MediaRouter,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable --b';
+    assert.equal(checkAgentFlags(args, stock).pass, true);
   });
 
   test('two flags fail, because Chromium honours only the last', () => {
-    const args = '--disable-features=LensOverlay,MediaRouter --disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable';
-    const result = checkFlags(args, stock);
+    const args =
+      '--disable-features=LensOverlay,MediaRouter --disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable';
+    const result = checkAgentFlags(args, stock);
     assert.equal(result.pass, false);
     assert.equal(result.count, 2);
   });
 
   test('a missing required feature fails and is named', () => {
-    const result = checkFlags('--disable-features=LensOverlay,MediaRouter,HttpsUpgrades', stock);
+    const result = checkAgentFlags(
+      '--disable-features=LensOverlay,MediaRouter,HttpsUpgrades',
+      stock
+    );
     assert.equal(result.pass, false);
     assert.deepEqual(result.missing, ['HttpsFirstBalancedModeAutoEnable']);
   });
 
   test('a dropped Playwright feature fails', () => {
-    const result = checkFlags('--disable-features=MediaRouter,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable', stock);
+    const result = checkAgentFlags(
+      '--disable-features=MediaRouter,HttpsUpgrades,HttpsFirstBalancedModeAutoEnable',
+      stock
+    );
     assert.deepEqual(result.missing, ['LensOverlay']);
   });
 
   test('no flag at all fails', () => {
-    assert.equal(checkFlags('/x/chrome --a', stock).pass, false);
+    assert.equal(checkAgentFlags('/x/chrome --a', stock).pass, false);
   });
 
   test('an unread Playwright list fails rather than passing on nothing', () => {
-    assert.equal(checkFlags('--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable', []).pass, false);
+    assert.equal(
+      checkAgentFlags('--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable', []).pass,
+      false
+    );
   });
 
   test('a similar flag is not counted', () => {
     assert.deepEqual(disabledFeatureFlags('--xdisable-features=A --disable-features=B'), [['B']]);
+  });
+});
+
+describe('plain window flags', () => {
+  test('one flag with both features passes, with no Playwright list', () => {
+    assert.equal(
+      checkPlainFlags(
+        '/x/chrome --a --disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable --b'
+      ).pass,
+      true
+    );
+  });
+
+  test('one feature of the two fails and names the other', () => {
+    const result = checkPlainFlags('--disable-features=HttpsUpgrades');
+    assert.equal(result.pass, false);
+    assert.deepEqual(result.missing, ['HttpsFirstBalancedModeAutoEnable']);
+  });
+
+  test('two flags fail, because Chromium honours only the last', () => {
+    assert.equal(
+      checkPlainFlags(
+        '--disable-features=HttpsUpgrades --disable-features=HttpsFirstBalancedModeAutoEnable'
+      ).pass,
+      false
+    );
+  });
+
+  test('no flag fails', () => {
+    assert.equal(checkPlainFlags('/x/chrome --a').pass, false);
+  });
+
+  test("the same line would fail for the agent window, which must keep Playwright's list", () => {
+    const line = '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable';
+    assert.equal(checkPlainFlags(line).pass, true);
+    assert.equal(checkAgentFlags(line, ['LensOverlay']).pass, false);
   });
 });
 

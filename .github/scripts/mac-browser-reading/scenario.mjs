@@ -7,7 +7,12 @@ import { appendFileSync } from 'node:fs';
 const ALLOWED = /^http:\/\/(both|only-http)\.example\.com\//;
 const LOG = process.env.READING_CALLS;
 
-export async function* run(content, ctx, opts, { browser, composeRegistry, createLocalBrowserDomain }) {
+export async function* run(
+  content,
+  ctx,
+  opts,
+  { browser, composeRegistry, createLocalBrowserDomain }
+) {
   const plan = JSON.parse(content);
   const registry = composeRegistry([createLocalBrowserDomain(browser)], {
     logger: { debug() {}, info() {}, warn() {}, error() {} },
@@ -28,7 +33,9 @@ export async function* run(content, ctx, opts, { browser, composeRegistry, creat
   const seen = await call('observe');
   if (plan.navigate) {
     if (!ALLOWED.test(plan.navigate)) throw new Error(`Not a made-up host: ${plan.navigate}`);
-    await call('act', { action: { kind: 'navigate', url: plan.navigate, revision: seen?.revision ?? 0 } });
+    await call('act', {
+      action: { kind: 'navigate', url: plan.navigate, revision: seen?.revision ?? 0 },
+    });
   }
   yield { type: 'text_delta', data: { text: `reading ${plan.tag}` } };
   yield { type: 'done', data: { sessionId: ctx.sessionId } };

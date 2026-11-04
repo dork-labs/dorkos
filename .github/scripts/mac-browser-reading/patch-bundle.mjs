@@ -11,5 +11,8 @@ const anchor = /^( *)"local-browser-driving": localBrowserDrivingScenario,$/gm;
 const found = source.match(anchor) ?? [];
 if (found.length !== 1) throw new Error(`Expected one scenario anchor, found ${found.length}`);
 const added = `"mac-reading": async function* (c, x, o) { yield* (await import(${JSON.stringify(`file://${scenario}`)})).run(c, x, o, { browser: currentBrowser(), composeRegistry, createLocalBrowserDomain }); },`;
-writeFileSync(bundle, source.replace(anchor, (line, indent) => `${line}\n${indent}${added}`));
+writeFileSync(
+  bundle,
+  source.replace(anchor, (line, indent) => `${line}\n${indent}${added}`)
+);
 console.log(`Added one line to ${bundle}`);
