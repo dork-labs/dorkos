@@ -96,8 +96,8 @@ export class ChatPage {
    * 2. the send button appears after the fill, which is the app's own signal
    *    that a session and an agent resolved AND that the field kept the draft;
    * 3. the person's message is in the transcript, and
-   * 4. the agent has BEGUN answering it — one MORE reply than before this send,
-   *    never merely "a reply exists", which is already true from the second send
+   * 4. the agent has BEGUN answering it — a reply after this message, never
+   *    merely "a reply exists", which is already true from the second send
    *    onward and would let the previous turn's answer stand in for this one.
    *
    * Step 4 is the one worth arguing for. An optimistic user message can be wiped
@@ -112,20 +112,22 @@ export class ChatPage {
    *   soon as it is satisfied, so this costs nothing on a healthy run.
    */
   async sendAndLand(text: string, timeoutMs = 30_000) {
-    const replies = this.page.locator('[data-testid="message-item"][data-role="assistant"]');
-    // Counted BEFORE the send, because "an assistant message exists" is already
-    // true on every send after the first — a `.first()` barrier would be
-    // satisfied by the PREVIOUS turn's reply and prove nothing about this one.
-    const repliesBefore = await replies.count();
-
     await expect(this.input).toBeEnabled({ timeout: timeoutMs });
     await this.input.fill(text);
     await expect(this.sendButton).toBeEnabled({ timeout: timeoutMs });
     await this.sendButton.click();
+    const sent = this.page
+      .locator('[data-testid="message-item"][data-role="user"]')
+      .filter({ hasText: text });
+    await expect(sent).toBeVisible({ timeout: timeoutMs });
+    // A reply AFTER this message, because "an assistant message exists" is already
+    // true on every send after the first. Not a count: the transcript draws only the
+    // rows near the bottom, so in a long chat the count stays the same as turns land.
     await expect(
-      this.page.locator('[data-testid="message-item"][data-role="user"]').filter({ hasText: text })
+      sent
+        .locator('xpath=following::*[@data-testid="message-item"][@data-role="assistant"]')
+        .first()
     ).toBeVisible({ timeout: timeoutMs });
-    await expect(replies).toHaveCount(repliesBefore + 1, { timeout: timeoutMs });
   }
 
   /**
