@@ -55,6 +55,7 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
     : undefined;
   const transport = createCodexTransport(options.setting ?? 'app-server', {
     pool,
+    mountTargets: false,
     connectorTools: () => tools,
     ...(options.relay ? { creditsRelay: () => options.relay } : {}),
     environment: {

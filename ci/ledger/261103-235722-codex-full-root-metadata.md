@@ -199,3 +199,23 @@ Fourteen rows share the existing 870-second deadline with no new time cap,
 retry, isolation or production behavior. A refusal remains red, not proof of
 the proposed default-only fallback. The fallback refusal is not implemented.
 Per-test roots and FIFO isolation wait for the reconcile proof round.
+
+Local reconcile candidate: keep the fourteen existing diagnostics and add nine
+rows for real crash recovery, live-sandbox refusal, nonempty listed files in
+both writable modes, root-owned home links in both modes, automatic skills
+in both modes, and a new agent folder forcing a history-preserving fork.
+All twenty-three rows share the unchanged 870-second deadline; no new job,
+step cap, retry, secret or paid path. Unfinished rows remain unproven.
+Per-test roots and scripted-response FIFO reset accompany these recovery rows.
+Raw host kinds are logged before teardown and reconciliation; the existing
+strict host check runs after actual reconciliation, so a captured stray
+must be removed rather than exempted. Intentional empty default stubs and
+the nonempty-person-file row retain exact before/after host snapshots.
+These new diagnostic selectors join the existing final-label removal list.
+
+Security shutdown revision: only normal shutdown gets thirty seconds per
+step. Credits/authority removal, replacement and reaping retain three seconds
+per step, and shorten an already-pending normal stop. Physical children stay
+listed until their OS exit. Reconciliation additionally holds the pinned
+Codex registry flock and checks marker PIDs plus same-user executable
+identities; the pool alone never authorizes removal. Native proof pending.

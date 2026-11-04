@@ -17,6 +17,15 @@ export const protectionRows = [
   ['person-symlink-10k', 'bypassPermissions'],
   ['outside-tmp-10k', 'acceptEdits'],
   ['outside-tmp-10k', 'bypassPermissions'],
+  ['reconcile-leak-10k', 'acceptEdits'],
+  ['concurrent-ledger-10k', 'acceptEdits'],
+  ['nonempty-ledger-10k', 'acceptEdits'],
+  ['nonempty-ledger-10k', 'bypassPermissions'],
+  ['person-root-link-10k', 'acceptEdits'],
+  ['person-root-link-10k', 'bypassPermissions'],
+  ['skill-discovery-10k', 'acceptEdits'],
+  ['skill-discovery-10k', 'bypassPermissions'],
+  ['new-agent-fork-10k', 'bypassPermissions'],
 ];
 
 export function traceMissingParents(

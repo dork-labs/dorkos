@@ -25,7 +25,10 @@ export interface CodexFilePolicy {
 }
 
 /** Render the shared protected list in Codex's absolute path/glob spelling. */
-function protectedEntries({ roots, writable }: CodexFilePolicy): Record<string, 'read' | 'deny'> {
+function protectedEntries(
+  { roots, writable }: CodexFilePolicy,
+  onMissingTargets?: (targets: string[]) => void
+): Record<string, 'read' | 'deny'> {
   const entries: Record<string, 'read' | 'deny'> = {};
   // Codex's rg and internal walkers disagree on fixed-depth glob suffixes.
   // Capture existing homes literally; a new home is protected on next render.
@@ -36,7 +39,8 @@ function protectedEntries({ roots, writable }: CodexFilePolicy): Record<string, 
     discoveredHomes = fs
       .readdirSync(agents, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(agents, entry.name));
+      .map((entry) => path.join(agents, entry.name))
+      .sort();
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     discoveredHomes = [];
@@ -93,15 +97,22 @@ function protectedEntries({ roots, writable }: CodexFilePolicy): Record<string, 
         if (entry.kind === 'folder' && file.includes('*')) entries[`${file}/**`] = 'deny';
       }
   }
-  return collapseProtectedPaths(entries, [
-    roots.home,
-    roots.data,
-    roots.cwd,
-    ...writable,
-    ...roots.agentFolders,
-    ...agentHomes,
-    ...roots.accounts,
-  ]);
+  const missing = new Set<string>();
+  const collapsed = collapseProtectedPaths(
+    entries,
+    [
+      roots.home,
+      roots.data,
+      roots.cwd,
+      ...writable,
+      ...roots.agentFolders,
+      ...agentHomes,
+      ...roots.accounts,
+    ],
+    (target) => missing.add(target)
+  );
+  onMissingTargets?.([...missing]);
+  return collapsed;
 }
 
 /**
@@ -114,9 +125,10 @@ function protectedEntries({ roots, writable }: CodexFilePolicy): Record<string, 
 export function codexProtectedConfig(
   cwd: string,
   policy: CodexFilePolicy = { roots: protectedPathRoots(cwd), writable: [] },
-  settings: Pick<SessionSettings, 'permissionMode'> = {}
+  settings: Pick<SessionSettings, 'permissionMode'> = {},
+  onMissingTargets?: (targets: string[]) => void
 ): NonNullable<CodexOptions['config']> {
-  const protectedFiles = protectedEntries(policy);
+  const protectedFiles = protectedEntries(policy, onMissingTargets);
   const mode = MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only';
   return {
     permissions: {

@@ -216,6 +216,43 @@ describe('idle reaping', () => {
 });
 
 describe('shutdown', () => {
+  it('shortens an in-progress normal shutdown when authority is removed', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const host = new FakeAppServerHost();
+    const spawn: typeof host.spawn = (binary, args, options) => {
+      const child = host.spawn(binary, args, options);
+      child.stdin.removeAllListeners('finish');
+      const kill = child.kill.bind(child);
+      child.kill = (signal: NodeJS.Signals | number = 'SIGTERM') => {
+        if (signal === 'SIGKILL') return kill(signal);
+        child.killSignals.push(String(signal));
+        return true;
+      };
+      return child;
+    };
+    const pool = new CodexAppServerPool({
+      spawn,
+      timing: { shutdownStepMs: 5, normalShutdownStepMs: 500 },
+    });
+    pools.push(pool);
+    try {
+      await pool.acquire(PERSON);
+      const normal = pool.shutdown();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(host.processes[0]!.killSignals).toEqual([]);
+      const authority = pool.closeWhere(() => true);
+      await vi.advanceTimersByTimeAsync(10);
+      await tick();
+      await Promise.all([normal, authority]);
+      expect(host.processes[0]!.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+      expect(pool.list()).toEqual([]);
+    } finally {
+      for (const child of host.processes) child.exit(0);
+      await tick();
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps a closing child visible after every stop deadline until its actual exit', async () => {
     const host = new FakeAppServerHost();
     const spawn: typeof host.spawn = (binary, args, options) => {
@@ -271,7 +308,7 @@ describe('shutdown', () => {
   });
 
   it('escalates to SIGTERM then SIGKILL for a process that ignores EOF and SIGTERM', async () => {
-    const signals = vi.spyOn(logger, 'info');
+    const signals = vi.spyOn(logger, 'debug');
     const host = new FakeAppServerHost();
     const stubborn: FakeAppServer[] = [];
     const spawn: typeof host.spawn = (binary, args, options) => {

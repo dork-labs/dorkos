@@ -35,12 +35,14 @@ function throughBase(file: string, bases: readonly string[]): string {
 /** Globs retain their spelling; the strongest refusal wins each collapsed key. */
 export function collapseProtectedPaths(
   entries: Readonly<Record<string, Access>>,
-  bases: readonly string[]
+  bases: readonly string[],
+  onMissing?: (target: string) => void
 ): Record<string, Access> {
   const collapsed: Record<string, Access> = {};
   for (const [file, access] of Object.entries(entries)) {
     const missing = /[*?[\]{}]/.test(file) ? undefined : firstMissing(file);
     const target = (missing ? throughBase(missing, bases) : file).split(path.sep).join('/');
+    if (missing) onMissing?.(target);
     collapsed[target] = access === 'deny' || collapsed[target] === 'deny' ? 'deny' : 'read';
   }
   return collapsed;

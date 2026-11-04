@@ -27,11 +27,15 @@
  * Skipped by name where no vendored binary is installed for this platform.
  */
 import http from 'node:http';
+import { codexProtectedConfig } from '../../policy/protected-profile.js';
+import { killFixtureWithRealLeak } from './fixtures/mount-recovery-probe.js';
+import { reconcileMountTargets } from '../../policy/reconcile-mount-targets.js';
+import { recordMountTargets } from '../../policy/mount-target-ledger.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations } from '@dorkos/db';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { resolveCodexVendoredBinary } from '../../check-dependencies.js';
@@ -46,7 +50,7 @@ import { ConnectorRuntimePrincipalService } from '../../../../connectors/princip
 import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { CodexTurnRequest } from '../../transport/codex-transport.js';
 import type { AppServerTransportOptions } from '../../transport/app-server-transport.js';
-import { spawn as nodeSpawn } from 'node:child_process';
+import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from 'node:child_process';
 import {
   protectedProbe,
   shellControlReturned,
@@ -369,13 +373,27 @@ function request(
 describe.skipIf(BINARY === null)('the app-server transport against the real Codex binary', () => {
   beforeAll(async () => {
     vi.setConfig({ testTimeout: 90_000, hookTimeout: 30_000 });
+    server = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => handle(req, res, body));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    await principals.initializeBoot();
+  });
+
+  beforeEach(() => {
+    scripted.length = 0;
+    seen.responses = 0;
+    seen.mcpAuthorizations.length = 0;
+    seen.resolvedDuringTurn.length = 0;
     const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
     if (scenario) {
       expect(process.env.CI).toBe('true');
       expect(process.platform).toBe('linux');
     }
-    // Keep the shared suite root until creation/kill traces explain stray files.
-    // The outside-tmp row changes its location, not its per-test lifetime.
+    // Every native test gets its own root; recovery rows still retain raw host checks.
     let baseFolder = os.tmpdir();
     if (scenario === 'outside-tmp-10k') {
       baseFolder = path.resolve('.temp');
@@ -393,13 +411,26 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       fs.mkdirSync(path.join(root, 'real-person-home'));
       fs.symlinkSync(path.join(root, 'real-person-home'), path.join(root, 'home'), 'dir');
     } else fs.mkdirSync(path.join(root, 'home'), { recursive: true });
-    server = http.createServer((req, res) => {
-      let body = '';
-      req.on('data', (chunk) => (body += chunk));
-      req.on('end', () => handle(req, res, body));
-    });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
-    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    fs.mkdirSync(path.join(root, 'data'), { recursive: true });
+    if (scenario === 'person-root-link-10k') {
+      fs.rmdirSync(path.join(root, 'home'));
+      fs.mkdirSync(path.join(root, 'real-person-home'));
+      fs.symlinkSync(path.join(root, 'real-person-home'), path.join(root, 'home'), 'dir');
+      fs.chmodSync(root, 0o755);
+      for (const args of [
+        ['-h', '0:0', path.join(root, 'home')],
+        ['0:0', root],
+      ]) {
+        const result = nodeSpawnSync('sudo', ['-n', 'chown', ...args], { encoding: 'utf8' });
+        expect(result.status, result.stderr).toBe(0);
+      }
+      console.info('Codex root-owned home alias', {
+        HOME: path.join(root, 'home'),
+        realHome: fs.realpathSync(path.join(root, 'home')),
+        parentUid: fs.lstatSync(root).uid,
+        linkUid: fs.lstatSync(path.join(root, 'home')).uid,
+      });
+    }
     // The throwaway home's provider is the local fake. No key anywhere.
     fs.writeFileSync(
       path.join(codexHome, 'config.toml'),
@@ -416,8 +447,24 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         'stream_max_retries = 0',
       ].join('\n') + '\n'
     );
-    await principals.initializeBoot();
   });
+
+  afterEach(async () => {
+    try {
+      await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
+      scripted.length = 0;
+    } finally {
+      if (process.env.DORKOS_CODEX_PROBE_SCENARIO === 'person-root-link-10k') {
+        const restored = nodeSpawnSync(
+          'sudo',
+          ['-n', 'chown', `${process.getuid?.()}:${process.getgid?.()}`, root],
+          { encoding: 'utf8' }
+        );
+        expect(restored.status, restored.stderr).toBe(0);
+      }
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
+  }, 120_000);
 
   afterAll(async () => {
     console.info('Codex native suite teardown requested', {
@@ -428,16 +475,6 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    // Codex may still be finishing a background write into the throwaway home
-    // (its plugin cache) as it exits; a leftover temp dir is not a failure.
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      try {
-        fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-        break;
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    }
   }, 60_000);
 
   it('streams a turn, binds the thread key to it only while it is open, and leaks nothing', async () => {
@@ -651,6 +688,8 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
       const ownSymlink = scenario === 'agent-symlink-10k';
       const defaultStub = scenario === 'default-stub-10k';
+      const nonemptyLedger = scenario === 'nonempty-ledger-10k';
+      const skillDiscovery = scenario === 'skill-discovery-10k';
       const ownHomeCwd = scenario === 'agent-home-10k' || ownSymlink;
       const otherHomeProbe = scenario === 'other-home-10k';
       const control = 'PUBLIC-control-dor3595';
@@ -662,12 +701,22 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         : scenario === 'person-cwd-10k'
           ? personHome
           : project;
-      const otherHome = path.join(probeCwd, 'unowned-agent-home');
-      if (otherHomeProbe) fs.mkdirSync(otherHome);
+      const otherHome = path.join(root, 'data', 'agents', 'unregistered-other');
+      const otherSkill = path.join(otherHome, '.agents', 'skills', 'other', 'SKILL.md');
+      const otherSkillMarker = 'PUBLIC-other-agent-skill-dor3595';
+      const otherWrite = path.join(otherHome, '.agents', 'write-probe');
+      if (otherHomeProbe) {
+        fs.mkdirSync(path.dirname(otherSkill), { recursive: true });
+        fs.writeFileSync(otherSkill, otherSkillMarker);
+      }
       const readable = path.join(probeCwd, 'readable.txt');
+      const ownAgentsWrite = path.join(agentHome, '.agents', 'write-probe');
       const skills = path.join(agentHome, '.agents', 'skills', 'probe');
       fs.mkdirSync(skills, { recursive: true });
-      fs.writeFileSync(path.join(skills, 'SKILL.md'), skillControl);
+      fs.writeFileSync(
+        path.join(skills, 'SKILL.md'),
+        `---\nname: dor3595-public-probe\ndescription: PUBLIC-auto-skill-desc-dor3595\n---\n${skillControl}\n`
+      );
       fs.writeFileSync(readable, control);
       // Diagnostic sizes are armed only by the CI step; normal proof stays 10k.
       const selectedMode = process.env.DORKOS_CODEX_PROBE_MODE;
@@ -686,6 +735,12 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           'outside-tmp-10k',
           'kill-midturn-10k',
           'default-stub-10k',
+          'nonempty-ledger-10k',
+          'reconcile-leak-10k',
+          'concurrent-ledger-10k',
+          'person-root-link-10k',
+          'skill-discovery-10k',
+          'new-agent-fork-10k',
           'rg-unreadable-10k',
           'rg-vanishing-10k',
         ]).toContain(scenario);
@@ -694,6 +749,11 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         if (ownSymlink || scenario === 'person-cwd-10k' || scenario === 'kill-midturn-10k')
           expect(selectedMode).toBe('acceptEdits');
         if (otherHomeProbe) expect(['acceptEdits', 'bypassPermissions']).toContain(selectedMode);
+        if (skillDiscovery || scenario === 'person-root-link-10k' || nonemptyLedger)
+          expect(['acceptEdits', 'bypassPermissions']).toContain(selectedMode);
+        if (scenario === 'reconcile-leak-10k' || scenario === 'concurrent-ledger-10k')
+          expect(selectedMode).toBe('acceptEdits');
+        if (scenario === 'new-agent-fork-10k') expect(selectedMode).toBe('bypassPermissions');
         if (defaultStub || scenario?.startsWith('rg-')) expect(selectedMode).toBe('default');
       }
       const size = {
@@ -716,7 +776,9 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       // these two planted paths may be files in this diagnostic's host check.
       const stubFiles = defaultStub
         ? ['.claude', '.config'].map((name) => path.join(personHome, name))
-        : [];
+        : nonemptyLedger
+          ? [path.join(personHome, '.claude')]
+          : [];
       const stubSnapshot = (file: string) => {
         const stat = fs.lstatSync(file);
         return {
@@ -731,7 +793,14 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           contents: fs.readFileSync(file, 'utf8'),
         };
       };
-      for (const file of stubFiles) fs.writeFileSync(file, '', { flag: 'wx' });
+      if (nonemptyLedger) {
+        const capture = request('capture-nonempty', undefined);
+        codexProtectedConfig(capture.cwd, capture.tools.filePolicy, capture.settings, (targets) =>
+          recordMountTargets(path.join(root, 'data'), targets)
+        );
+      }
+      for (const file of stubFiles)
+        fs.writeFileSync(file, nonemptyLedger ? 'PERSON-nonempty-synthetic' : '', { flag: 'wx' });
       const stubsBefore = stubFiles.map(stubSnapshot);
       const grantLink = path.join(agentHome, '.claude');
       const grantInitial = path.join(agentHome, 'self-grant-initial');
@@ -776,6 +845,120 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               ? await startProbeScanRace(path.join(root, 'home'))
               : undefined;
           try {
+            if (scenario === 'reconcile-leak-10k' || scenario === 'concurrent-ledger-10k') {
+              const target = path.join(personHome, '.claude');
+              expect(fs.existsSync(target)).toBe(false);
+              let victimChild: ReturnType<typeof nodeSpawn> | undefined;
+              let work: Promise<void> | undefined;
+              let ready = false;
+              const victim = makeTransport(undefined, kind, (child) => {
+                victimChild = child;
+              });
+              scripted.push(
+                (res) =>
+                  res.end(
+                    sseCall({
+                      cmd: 'printf PUBLIC-recovery-ready; sleep 5',
+                      login: false,
+                      yield_time_ms: 1000,
+                    })
+                  ),
+                (res, body) => {
+                  ready = shellControlReturned(body, 'PUBLIC-recovery-ready');
+                  work = (async () => {
+                    expect(ready).toBe(true);
+                    if (scenario === 'reconcile-leak-10k') {
+                      expect(victimChild?.pid).toBeDefined();
+                      await killFixtureWithRealLeak(victimChild!.pid!, target);
+                    } else {
+                      const before = fs.lstatSync(target);
+                      expect(before.isFile()).toBe(true);
+                      await expect(
+                        reconcileMountTargets(path.join(root, 'data'), {
+                          list: () => pools.flatMap((pool) => pool.list()),
+                          closeIdleForReconcile: async () => {},
+                        })
+                      ).rejects.toThrow('running processes');
+                      expect(fs.lstatSync(target).ino).toBe(before.ino);
+                      console.info('Codex live sandbox blocked target removal', { target });
+                    }
+                  })();
+                  void work.then(
+                    () => res.end(sse('recovery victim finished')),
+                    () => res.end(sse('recovery fixture failed'))
+                  );
+                }
+              );
+              try {
+                try {
+                  for await (const event of victim.runTurn(
+                    request('recovery-victim', undefined, {
+                      settings: { permissionMode: mode, model: 'fake-model' },
+                    })
+                  ))
+                    void event;
+                } catch (error) {
+                  if (scenario !== 'reconcile-leak-10k' || !ready || !work) throw error;
+                  console.info('Codex recovery victim exited during its turn', String(error));
+                }
+                await work;
+                expect(ready).toBe(true);
+              } finally {
+                await victim.shutdown();
+              }
+              scripted.length = 0;
+              if (scenario === 'reconcile-leak-10k') {
+                expect(fs.lstatSync(target).isFile()).toBe(true);
+                const removed = await reconcileMountTargets(path.join(root, 'data'), {
+                  list: () => pools.flatMap((pool) => pool.list()),
+                  closeIdleForReconcile: async () => {},
+                });
+                expect(removed).toContain(target);
+                expect(fs.existsSync(target)).toBe(false);
+                console.info('Codex real crash leftover removed before relaunch', {
+                  target,
+                  removed,
+                });
+              }
+            }
+            if (scenario === 'new-agent-fork-10k') {
+              const historyTransport = makeTransport(undefined, kind);
+              const bindings: Array<{ id: string; replaces?: string }> = [];
+              const onThreadBound = (id: string, replaces?: string) =>
+                bindings.push({ id, replaces });
+              scripted.push((res) => res.end(sse('PUBLIC-history-before-new-home')));
+              for await (const event of historyTransport.runTurn(
+                request('home-fork', undefined, {
+                  settings: { permissionMode: mode, model: 'fake-model' },
+                  onThreadBound,
+                })
+              ))
+                void event;
+              expect(bindings).toHaveLength(1);
+              fs.mkdirSync(path.join(root, 'data', 'agents', 'new-after-turn'), {
+                recursive: true,
+              });
+              let retained = false;
+              scripted.push((res, body) => {
+                retained = body.includes('PUBLIC-history-before-new-home');
+                res.end(sse('new-home fork complete'));
+              });
+              for await (const event of historyTransport.runTurn(
+                request('home-fork', undefined, {
+                  boundThreadId: bindings[0]!.id,
+                  settings: { permissionMode: mode, model: 'fake-model' },
+                  onThreadBound,
+                })
+              ))
+                void event;
+              expect(retained).toBe(true);
+              expect(bindings).toHaveLength(2);
+              expect(bindings[1]!.id).not.toBe(bindings[0]!.id);
+              expect(bindings[1]!.replaces).toBe(bindings[0]!.id);
+              console.info('Codex new agent folder fork retained history', { bindings, retained });
+              await historyTransport.shutdown();
+              scripted.length = 0;
+            }
             if (scenario === 'kill-midturn-10k') {
               // Kill only this fixture's exact child, after a real shell output
               // proves it reached a running command. Never kill by process name.
@@ -849,13 +1032,20 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               scripted.length = 0;
             }
             scripted.push(
-              (res) => {
+              (res, body) => {
+                if (skillDiscovery) {
+                  expect(body).toContain('PUBLIC-auto-skill-desc-dor3595');
+                  console.info('Codex automatic skill discovery reached the model at mode', mode);
+                }
                 // The provider is called only after the thread has started.
                 probe.createLate();
                 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-                const command = ownSymlink
+                let command = ownSymlink
                   ? `ln -sfn ${quote(grantSwap)} ${quote(grantLink)}; ${probe.command}`
                   : probe.command;
+                command += `; printf PUBLIC-own-agents-write-attempt; printf changed > ${quote(ownAgentsWrite)}`;
+                if (otherHomeProbe)
+                  command += `; printf PUBLIC-other-agents-write-attempt; printf changed > ${quote(otherWrite)}; cat ${quote(otherSkill)}`;
                 res.end(sseCall({ cmd: command, login: false }));
               },
               (res, body) => {
@@ -890,6 +1080,24 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               }
             }
             const transport = makeTransport(undefined, kind);
+            if (skillDiscovery) {
+              // Pinned 0.163 protocol; do not preload skills/list before the turn.
+              const proc = await pools.at(-1)!.acquire({
+                binary: BINARY!,
+                codexHome,
+                env: {
+                  PATH: '/usr/bin:/bin',
+                  HOME: personHome,
+                  CODEX_HOME: codexHome,
+                },
+              });
+              const rpc = proc.client as unknown as {
+                request(method: string, params: unknown): Promise<unknown>;
+              };
+              await rpc.request('skills/extraRoots/set', {
+                extraRoots: [path.join(agentHome, '.agents', 'skills')],
+              });
+            }
             expect(transport.kind).toBe('app-server');
             const events: StreamEvent[] = [];
             for await (const event of transport.runTurn(
@@ -914,9 +1122,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                       home: path.join(root, 'home'),
                       accounts: [codexHome],
                       agentFolders: [probeCwd, agentHome],
-                      agentHomes: [
-                        ...new Set([probeCwd, agentHome, ...(otherHomeProbe ? [otherHome] : [])]),
-                      ],
+                      agentHomes: [...new Set([probeCwd, agentHome])],
                     },
                   },
                 },
@@ -948,6 +1154,31 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                 fs.existsSync(probe.latePlugin) &&
                 fs.readFileSync(probe.latePlugin, 'utf8') !== 'original-late-plugin',
             });
+            if (nonemptyLedger) {
+              expect(startMs).toBeUndefined();
+              expect(JSON.stringify(events)).toMatch(/ENOTDIR|not a directory/i);
+              expect(stubFiles.map(stubSnapshot)).toEqual(stubsBefore);
+              console.info('Codex nonempty listed target preserved and launch refused', {
+                mode,
+                file: stubFiles[0],
+              });
+              await transport.shutdown();
+              continue;
+            }
+            if (
+              (scenario === 'person-cwd-10k' || scenario === 'person-root-link-10k') &&
+              startMs === undefined
+            ) {
+              const refusal = JSON.stringify(events);
+              if (scenario === 'person-cwd-10k') {
+                expect(refusal).toContain('.aws');
+                expect(refusal).toMatch(/invalid argument|not a directory|mount|bwrap/i);
+              } else expect(refusal).toContain('crosses writable symlink');
+              for (const canary of probe.canaries) expect(refusal).not.toContain(canary);
+              console.info('Codex known Linux layout refusal', { scenario, mode, refusal });
+              await transport.shutdown();
+              continue;
+            }
             if (ownSymlink && startMs === undefined) {
               const refusal = JSON.stringify(events);
               console.info('Codex writable self-grant link refused; person sees', refusal);
@@ -1001,7 +1232,17 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             if (mode === 'bypassPermissions')
               expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('changed-by-full-probe');
             else expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('original-git-control');
-            if (otherHomeProbe) expect(fs.readdirSync(otherHome)).toEqual([]);
+            expect(fs.existsSync(ownAgentsWrite)).toBe(false);
+            expect(shellControlReturned(result, 'PUBLIC-own-agents-write-attempt')).toBe(true);
+            if (otherHomeProbe) {
+              expect(fs.readdirSync(otherHome)).toEqual(['.agents']);
+              expect(fs.readFileSync(otherSkill, 'utf8')).toBe(otherSkillMarker);
+              expect(fs.existsSync(otherWrite)).toBe(false);
+              expect(shellControlReturned(result, 'PUBLIC-other-agents-write-attempt')).toBe(true);
+              expect(shellControlReturned(result, otherSkillMarker)).toBe(true);
+            }
+            if (skillDiscovery || otherHomeProbe)
+              expect(shellControlReturned(result, skillControl)).toBe(true);
             if (ownSymlink) {
               expect(fs.readdirSync(grantInitial)).toEqual([]);
               expect(fs.readdirSync(grantSwap)).toEqual([]);
@@ -1018,15 +1259,33 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           } finally {
             if (race)
               console.info('Codex scan race cycles', { kind, mode, cycles: await race.stop() });
-            const parents = probeParentKinds([
-              path.join(root, 'home'),
+            const checkedHomes = [
+              personHome,
               path.join(root, 'data'),
               agentHome,
               probeCwd,
               ...(otherHomeProbe ? [otherHome] : []),
-            ]);
+            ];
+            console.info('Codex raw host parent kinds before shutdown/reconcile', {
+              kind,
+              mode,
+              scenario,
+              parents: probeParentKinds(checkedHomes),
+            });
+            await Promise.all(pools.map((pool) => pool.shutdown()));
+            const removed = await reconcileMountTargets(path.join(root, 'data'), {
+              list: () => pools.flatMap((pool) => pool.list()),
+              closeIdleForReconcile: async () => {},
+            });
+            console.info('Codex host recovery removed recorded targets', {
+              kind,
+              mode,
+              scenario,
+              removed,
+            });
+            const parents = probeParentKinds(checkedHomes);
             console.info('Codex host parent kinds after row', { kind, mode, scenario, parents });
-            if (defaultStub) {
+            if (defaultStub || nonemptyLedger) {
               const stubsAfter = stubFiles.map(stubSnapshot);
               console.info('Codex default-mode planted-stub result', {
                 kind,
@@ -1048,7 +1307,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                   kind !== 'absent' &&
                   kind !== 'directory' &&
                   !(ownSymlink && file === grantLink && kind === 'symlink') &&
-                  !(defaultStub && stubFiles.includes(file) && kind === 'file')
+                  !((defaultStub || nonemptyLedger) && stubFiles.includes(file) && kind === 'file')
               )
             ).toEqual([]);
           }

@@ -121,6 +121,7 @@ export function makeAppServerRuntime(
   pools.push(pool);
   const transport = new AppServerCodexTransport({
     pool,
+    mountTargets: false,
     connectorTools: () => undefined,
     creditsRelay: () => relay,
     environment: {

@@ -337,6 +337,88 @@ describe('review fixes: fingerprint and identity', () => {
       }
     }
   );
+  it('refuses a load before RPC when its missing-target ledger cannot persist', async () => {
+    const { process, fake, input } = await setup();
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-record-order-')));
+    fs.mkdirSync(path.join(root, 'home'));
+    fs.mkdirSync(path.join(root, 'data'));
+    const loader = new CodexThreadLoader({
+      threadKeys: () => undefined,
+      recordMissingTargets: (_data, targets) => {
+        expect(targets).toContain(path.join(root, 'home', '.claude'));
+        expect(fake.requestsOf('thread/start')).toHaveLength(0);
+        throw new Error('synthetic ledger write failure');
+      },
+    });
+    try {
+      await expect(
+        loader.ensureLoaded(
+          input({
+            process,
+            cwd: root,
+            tools: {
+              ...NO_TOOLS,
+              filePolicy: {
+                roots: {
+                  cwd: root,
+                  home: path.join(root, 'home'),
+                  data: path.join(root, 'data'),
+                  accounts: [],
+                  agentHomes: [],
+                  agentFolders: [root],
+                },
+                writable: [root],
+              },
+            },
+          })
+        )
+      ).rejects.toThrow('ledger write failure');
+      expect(fake.requestsOf('thread/start')).toHaveLength(0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('forks once when a real agent folder is added between turns', async () => {
+    const { host, process, loader, fake, input } = await setup();
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-new-agent-')));
+    const data = path.join(root, 'data');
+    fs.mkdirSync(path.join(data, 'agents'), { recursive: true });
+    const args = input({
+      cwd: root,
+      settings: { permissionMode: 'bypassPermissions' },
+      tools: {
+        ...NO_TOOLS,
+        filePolicy: {
+          roots: {
+            cwd: root,
+            home: root,
+            data,
+            accounts: [],
+            agentHomes: [],
+            agentFolders: [root],
+          },
+          writable: [root],
+        },
+      },
+    });
+    try {
+      const first = await loader.ensureLoaded(args);
+      // A completed turn has a rollout; the native row checks its actual history.
+      host.home(HOME).threads.get(first.threadId)!.hasRollout = true;
+      loader.markBound(process, first.threadId);
+      fs.mkdirSync(path.join(data, 'agents', 'new'));
+      const next = await loader.ensureLoaded({ ...args, boundThreadId: first.threadId });
+      expect(next.threadId).not.toBe(first.threadId);
+      expect(next.replaces).toBe(first.threadId);
+      expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+      await loader.ensureLoaded({ ...args, boundThreadId: next.threadId });
+      expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   const managedWith = (header: string, value: string): CodexTurnTools['managed'] => ({
     servers: {
       notion: { url: 'https://n.example/mcp', env_http_headers: { [header]: 'DORKOS_MCP_HDR_N' } },

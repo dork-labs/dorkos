@@ -41,6 +41,7 @@ import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { loadWithProtectedProfile } from './profile-load.js';
+import { credentialsOf } from './thread-credentials.js';
 import { approvalPolicyFor } from './turn-parts.js';
 import { isCodexRpcError } from './protocol/errors.js';
 import type { SandboxMode, ThreadLoadOverrides } from './protocol/methods.js';
@@ -131,6 +132,8 @@ export interface CodexThreadLoaderOptions {
   readonly threadKeys: () => ConnectorThreadKeyPort | undefined;
   /** Realpath seam. */
   readonly realpath?: (path: string) => string;
+  /** Persist only the missing literals captured for an actual load. */
+  readonly recordMissingTargets?: (data: string, targets: string[]) => void;
 }
 
 /**
@@ -183,7 +186,7 @@ export class CodexThreadLoader {
   async ensureLoaded(input: ThreadLoadInput): Promise<LoadedThread> {
     const records = this.recordsFor(input.process);
     const desired = this.fingerprintOf(input);
-    const credentials = credentialsOf(input);
+    const credentials = credentialsOf(input.tools);
 
     const existingId = this.loadedThreadFor(input);
     if (existingId !== undefined) {
@@ -281,7 +284,7 @@ export class CodexThreadLoader {
       sessionId: input.sessionId,
       fingerprint: this.fingerprintOf(input),
       compactionOnly: true,
-      credentials: credentialsOf(input),
+      credentials: credentialsOf(input.tools),
       keyId: undefined,
       unbound: false,
       replaces: undefined,
@@ -370,7 +373,7 @@ export class CodexThreadLoader {
         input,
         records,
         this.fingerprintOf(input),
-        credentialsOf(input),
+        credentialsOf(input.tools),
         replaces
       );
       return { ...fresh, retired: threadId };
@@ -379,7 +382,7 @@ export class CodexThreadLoader {
     records.set(forked, {
       sessionId: input.sessionId,
       fingerprint: this.fingerprintOf(input),
-      credentials: credentialsOf(input),
+      credentials: credentialsOf(input.tools),
       keyId: key?.keyId,
       unbound: true,
       replaces,
@@ -609,6 +612,11 @@ export class CodexThreadLoader {
         threadKey,
         trust: trustLevelFor(input.home, sandbox, recorded),
         realCwd: this.realpath(input.cwd),
+        onMissingTargets:
+          input.tools.filePolicy && this.options.recordMissingTargets
+            ? (targets) =>
+                this.options.recordMissingTargets!(input.tools.filePolicy!.roots.data, targets)
+            : undefined,
       }
     );
   }
@@ -697,12 +705,14 @@ export function buildLoadOverrides(
     threadKey: string | undefined;
     trust: 'trusted' | 'untrusted' | undefined;
     realCwd: string;
+    onMissingTargets?: ((targets: string[]) => void) | undefined;
   }
 ): ThreadLoadOverrides {
   const config: Record<string, unknown> = codexProtectedConfig(
     input.cwd,
     input.tools.filePolicy,
-    input.settings
+    input.settings,
+    secrets.onMissingTargets
   );
   const servers: Record<string, unknown> = { ...withLiteralHeaders(input.tools.managed) };
   if (secrets.threadKey !== undefined) {
@@ -742,19 +752,4 @@ export function buildLoadOverrides(
     permissions: codexPermissionProfile(input.settings),
     config,
   };
-}
-
-/**
- * Digest of the credential VALUES a load carries: managed MCP header values
- * and stdio `env` values. Never stored or logged; compared only, so a refreshed
- * OAuth bearer can reload its one thread (spec §9).
- *
- * @param input - The load inputs.
- */
-function credentialsOf(input: Pick<ThreadLoadInput, 'tools'>): string {
-  const servers = Object.entries(input.tools.managed.servers)
-    .map(([name, server]) => [name, (server as { env?: unknown }).env ?? null])
-    .sort(([a], [b]) => String(a).localeCompare(String(b)));
-  const headers = Object.entries(input.tools.managed.env).sort(([a], [b]) => a.localeCompare(b));
-  return createHash('sha256').update(JSON.stringify({ servers, headers })).digest('hex');
 }

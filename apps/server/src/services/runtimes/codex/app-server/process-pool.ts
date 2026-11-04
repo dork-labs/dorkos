@@ -19,7 +19,7 @@
  *   is not live for 10 minutes is closed; one marked stale is closed as soon as
  *   it is not live. A replaced process is kept in a draining set until then,
  *   so the reaper and shutdown always see it.
- * - **Shutdown.** End stdin, wait 30 s, SIGTERM, wait 30 s, SIGKILL — only ever
+ * - **Shutdown.** Normal shutdown waits 30 s at EOF and SIGTERM; authority removal waits 3 s — only ever
  *   the PID this pool spawned (Hard Rule 7).
  *
  * @module services/runtimes/codex/app-server/process-pool
@@ -86,8 +86,10 @@ export interface CodexPoolTiming {
   readonly crashLimit: number;
   /** How long a tripped guard refuses a respawn. */
   readonly crashCooldownMs: number;
-  /** Each shutdown step's wait. */
+  /** Each authority-removal step's short wait. */
   readonly shutdownStepMs: number;
+  /** Normal server shutdown may allow more cleanup time. */
+  readonly normalShutdownStepMs: number;
   /** Bound on `initialize`. */
   readonly initializeMs: number;
 }
@@ -99,7 +101,8 @@ export const CODEX_POOL_TIMING: CodexPoolTiming = {
   crashWindowMs: 60_000,
   crashLimit: 3,
   crashCooldownMs: 30_000,
-  shutdownStepMs: 30_000,
+  shutdownStepMs: 3_000,
+  normalShutdownStepMs: 30_000,
   initializeMs: 15_000,
 };
 
@@ -146,6 +149,9 @@ export class CodexAppServerProcess {
   private readonly livenessProbes = new Set<() => Promise<boolean>>();
   private probeFailures = 0;
   private readonly exitedPromise: Promise<void>;
+  private stopping: Promise<void> | undefined;
+  private stopStepMs = Infinity;
+  private wakeStopWait: (() => void) | undefined;
 
   /**
    * Wrap a spawned child.
@@ -170,7 +176,7 @@ export class CodexAppServerProcess {
     this.exitedPromise = new Promise((resolve) => (markExited = resolve));
     child.once('exit', (code: number | null, signal: string | null) => {
       this.exited = true;
-      logger.info('[CodexAppServer] child exited', {
+      logger.debug('[CodexAppServer] child exited', {
         senderPid: process.pid,
         targetPid: child.pid,
         atMs: Date.now(),
@@ -308,12 +314,12 @@ export class CodexAppServerProcess {
       origin,
       atMs: Date.now(),
     };
-    logger.info('[CodexAppServer] signal requested', attempt);
+    logger.debug('[CodexAppServer] signal requested', attempt);
     try {
       const sent = this.child.kill(signal);
-      logger.info('[CodexAppServer] signal', { ...attempt, sent });
+      logger.debug('[CodexAppServer] signal', { ...attempt, sent });
     } catch {
-      logger.info('[CodexAppServer] signal', { ...attempt, sent: false });
+      logger.debug('[CodexAppServer] signal', { ...attempt, sent: false });
       // Already gone; preserve the existing shutdown behavior.
     }
   }
@@ -323,37 +329,57 @@ export class CodexAppServerProcess {
    *
    * @param stepMs - Each wait.
    */
-  async stop(stepMs: number): Promise<void> {
+  stop(stepMs: number): Promise<void> {
+    if (this.stopping) {
+      if (stepMs < this.stopStepMs) {
+        this.stopStepMs = stepMs;
+        this.wakeStopWait?.();
+      }
+      return this.stopping;
+    }
+    this.stopStepMs = stepMs;
+    this.stopping = this.stopOnce().finally(() => {
+      this.stopping = undefined;
+      this.stopStepMs = Infinity;
+    });
+    return this.stopping;
+  }
+
+  private async stopOnce(): Promise<void> {
     this.exitRequested = true;
     this.client.close({ kind: 'requested', detail: 'stopped by DorkOS' });
     if (this.exited) return;
-    logger.info('[CodexAppServer] shutdown EOF', {
+    logger.debug('[CodexAppServer] shutdown EOF', {
       senderPid: process.pid,
       targetPid: this.child.pid,
       atMs: Date.now(),
-      stepMs,
+      stepMs: this.stopStepMs,
     });
     try {
       this.child.stdin.end();
     } catch {
       // A broken pipe is a stopped reader.
     }
-    if (await this.waitForExit(stepMs)) return;
+    if (await this.waitForExit()) return;
     this.kill('SIGTERM', 'stop-after-eof');
-    if (await this.waitForExit(stepMs)) return;
+    if (await this.waitForExit()) return;
     this.kill('SIGKILL', 'stop-after-sigterm');
-    await this.waitForExit(stepMs);
+    await this.waitForExit();
   }
 
-  private waitForExit(ms: number): Promise<boolean> {
+  private waitForExit(): Promise<boolean> {
     if (this.exited) return Promise.resolve(true);
     return new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(false), ms);
-      timer.unref?.();
-      void this.exitedPromise.then(() => {
+      const finish = (exited: boolean) => {
         clearTimeout(timer);
-        resolve(true);
-      });
+        if (this.wakeStopWait === wake) this.wakeStopWait = undefined;
+        resolve(exited);
+      };
+      const wake = () => finish(false);
+      const timer = setTimeout(wake, this.stopStepMs);
+      timer.unref?.();
+      this.wakeStopWait = wake;
+      void this.exitedPromise.then(() => finish(true));
     });
   }
 
@@ -410,7 +436,14 @@ export class CodexAppServerPool {
   constructor(options: CodexAppServerPoolOptions = {}) {
     this.spawn = options.spawn ?? defaultSpawn;
     this.now = options.now ?? Date.now;
-    this.timing = { ...CODEX_POOL_TIMING, ...options.timing };
+    this.timing = {
+      ...CODEX_POOL_TIMING,
+      ...options.timing,
+      normalShutdownStepMs:
+        options.timing?.normalShutdownStepMs ??
+        options.timing?.shutdownStepMs ??
+        CODEX_POOL_TIMING.normalShutdownStepMs,
+    };
   }
 
   /**
@@ -516,6 +549,11 @@ export class CodexAppServerPool {
     if (!proc.isLive) await this.close(proc);
   }
 
+  /** Let idle children exit before checking whether crash leftovers can be removed. */
+  async closeIdleForReconcile(): Promise<void> {
+    await Promise.all(this.list().map((proc) => this.closeIfIdle(proc)));
+  }
+
   /**
    * One reaper pass: close stale processes with no hold, and any with no hold
    * for the idle window. Never touches a held (live) process, nor one whose
@@ -542,12 +580,20 @@ export class CodexAppServerPool {
     );
   }
 
-  private close(proc: CodexAppServerProcess): Promise<void> {
+  private close(
+    proc: CodexAppServerProcess,
+    reason: 'authority' | 'shutdown' = 'authority'
+  ): Promise<void> {
+    const stepMs =
+      reason === 'shutdown' ? this.timing.normalShutdownStepMs : this.timing.shutdownStepMs;
     const pending = this.closing.get(proc);
-    if (pending) return pending;
+    if (pending) {
+      void proc.stop(stepMs); // Authority removal shortens an already-running normal stop.
+      return pending;
+    }
     if (this.processes.get(proc.key) === proc) this.processes.delete(proc.key);
     this.draining.delete(proc);
-    const stop = proc.stop(this.timing.shutdownStepMs).finally(() => this.closing.delete(proc));
+    const stop = proc.stop(stepMs).finally(() => this.closing.delete(proc));
     this.closing.set(proc, stop);
     return stop;
   }
@@ -558,7 +604,7 @@ export class CodexAppServerPool {
     if (this.reaper) clearInterval(this.reaper);
     this.reaper = undefined;
     await Promise.allSettled([...this.booting.values()]);
-    await Promise.all(this.list().map((proc) => this.close(proc)));
+    await Promise.all(this.list().map((proc) => this.close(proc, 'shutdown')));
   }
 
   private ensureReaper(): void {

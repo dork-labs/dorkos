@@ -26,6 +26,9 @@
  *
  * @module services/runtimes/codex/transport/app-server-transport
  */
+import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
+import { recordMountTargets } from '../policy/mount-target-ledger.js';
+import { reconcileMountTargets } from '../policy/reconcile-mount-targets.js';
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type {
   DeliverIntoTurnOpts,
@@ -121,6 +124,8 @@ const NO_TOOLS: CodexTurnTools = {
 
 /** Dependencies of {@link AppServerCodexTransport}. */
 export interface AppServerTransportOptions {
+  /** Fake-host tests have no native mount targets; production always enables this. */
+  readonly mountTargets?: false;
   /** The connector listener's tools and thread keys, once boot installed them. */
   readonly connectorTools: () => ConnectorRuntimeTools | undefined;
   /** The credits relay, when boot started one. */
@@ -286,6 +291,9 @@ export class AppServerCodexTransport implements CodexTransport {
     });
     this.loader = new CodexThreadLoader({
       threadKeys: () => options.connectorTools()?.threadKeys,
+      ...(process.platform === 'linux' && options.mountTargets !== false
+        ? { recordMissingTargets: recordMountTargets }
+        : {}),
       ...(options.realpath ? { realpath: options.realpath } : {}),
     });
   }
@@ -335,6 +343,12 @@ export class AppServerCodexTransport implements CodexTransport {
     // winding down in Codex.
     let clear: boolean;
     try {
+      const filePolicy = request.tools.filePolicy ?? {
+        roots: protectedPathRoots(request.cwd),
+        writable: [],
+      };
+      if (globalThis.process.platform === 'linux' && this.options.mountTargets !== false)
+        await reconcileMountTargets(filePolicy.roots.data, this.pool);
       process = await this.acquire(request.binary, onCredits);
       release = process.hold();
       relay = onCredits ? this.relayFor(process) : undefined;
@@ -345,7 +359,7 @@ export class AppServerCodexTransport implements CodexTransport {
         boundThreadId: request.boundThreadId,
         cwd: request.cwd,
         settings: request.settings,
-        tools: request.tools,
+        tools: { ...request.tools, filePolicy },
         ...(relay ? { creditsRelay: relay } : {}),
         ...(preventIdleSleep ? { preventIdleSleep } : {}),
       };

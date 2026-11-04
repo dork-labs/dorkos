@@ -58,6 +58,7 @@ function appServerRuntime() {
   pools.push(pool);
   const transport = new AppServerCodexTransport({
     pool,
+    mountTargets: false,
     connectorTools: () => undefined,
     environment: {
       person: () => ({ PATH: '/usr/bin', CODEX_HOME: HOME }),
