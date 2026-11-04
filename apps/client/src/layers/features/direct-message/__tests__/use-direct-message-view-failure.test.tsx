@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * A chat whose Direct chat lookup failed is not still waiting (DOR-3074): asking
- * again must not put it back to "pending", or it never leaves "Loading chat…".
+ * A failed lookup stays unresolved (DOR-3074), including during bounded retries.
+ * Its failure flag releases the transcript wait without changing the surface.
  */
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -51,10 +51,10 @@ describe('useDirectMessageView when the lookup fails', () => {
     expect(result.current).toMatchObject({ mode: 'pending', lookupFailed: false });
   });
 
-  it('says so at once, drawn as an ordinary chat', async () => {
+  it('says so at once, still unresolved', async () => {
     const { result } = mount(vi.fn().mockRejectedValue(new Error('500')));
     await wait(1);
-    expect(result.current).toMatchObject({ mode: 'off', chat: null, lookupFailed: true });
+    expect(result.current).toMatchObject({ mode: 'pending', chat: null, lookupFailed: true });
   });
 
   it('stays that way while it asks again, however long that takes', async () => {
@@ -65,7 +65,7 @@ describe('useDirectMessageView when the lookup fails', () => {
     const { result } = mount(findDirectChat);
     await wait(TEN_MINUTES_MS);
     expect(findDirectChat).toHaveBeenCalledTimes(2);
-    expect(result.current).toMatchObject({ mode: 'off', lookupFailed: true });
+    expect(result.current).toMatchObject({ mode: 'pending', lookupFailed: true });
   });
 
   it('becomes a DM when asking again says it is one', async () => {

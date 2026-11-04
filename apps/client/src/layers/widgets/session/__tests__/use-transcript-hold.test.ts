@@ -23,12 +23,20 @@ interface Props {
   dm: boolean;
   ready?: boolean;
   identity?: boolean;
+  failed?: boolean;
 }
 
 function mount(initial: Partial<Props> = {}) {
   return renderHook(
-    ({ id, undecided, dm, ready = true, identity = false }: Props) =>
-      useTranscriptHold(id, undecided, dm, ready, identity),
+    ({ id, undecided, dm, ready = true, identity = false, failed = false }: Props) =>
+      useTranscriptHold({
+        conversationId: id,
+        undecided,
+        isDirectMessage: dm,
+        readyToLand: ready,
+        identityPending: identity,
+        lookupFailed: failed,
+      }),
     {
       initialProps: { id: 'chat-1', undecided: true, dm: false, ...initial } as Props,
     }
@@ -56,6 +64,16 @@ describe('useTranscriptHold', () => {
     act(() => void vi.advanceTimersByTime(1));
     expect(result.current.held).toBe(false);
     expect(result.current.landingKey).toBeUndefined();
+  });
+
+  it('releases both waits on failure and still lands again after a late DM answer', () => {
+    const { result, rerender } = mount({ identity: true });
+    rerender({ id: 'chat-1', undecided: true, dm: false, identity: true, failed: true });
+    expect(result.current.held).toBe(false);
+    act(() => void vi.advanceTimersByTime(FRAME * 4));
+    expect(result.current.hidden).toBe(false);
+    rerender({ id: 'chat-1', undecided: false, dm: true });
+    expect(result.current.landingKey).toBe('reflowed-as-dm');
   });
 
   it('lets the landing run first, and shows the conversation only after it has arrived', () => {

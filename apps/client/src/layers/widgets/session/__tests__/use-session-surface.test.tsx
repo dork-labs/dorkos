@@ -19,6 +19,8 @@ const state = vi.hoisted(() => ({
   keptName: null as string | null,
 }));
 
+vi.mock('@/layers/entities/agent', () => ({ useCachedAgent: () => null }));
+
 vi.mock('@/layers/features/direct-message', () => ({
   useDirectMessageView: () => ({
     lookupFailed: state.lookupFailed,
@@ -162,8 +164,9 @@ describe('useSessionSurface', () => {
       humanName: null,
     });
     state.lookupFailed = true;
+    state.mode = 'pending';
     const { result } = renderHook(() => useSessionSurface('s', null));
-    expect(result.current.directMessage).toBeNull();
+    expect(result.current.directMessage?.settled).toBe(false);
     expect(result.current.transcriptNames).toMatchObject({ lookupFailed: true });
   });
 
@@ -179,7 +182,11 @@ describe('useSessionSurface', () => {
     state.mode = 'pending';
     state.displayName = 'Dorian';
     const { result } = renderHook(() => useSessionSurface('s', AT_FOLDER));
-    expect(result.current.directMessage).toEqual({ agent: null, humanName: null, settled: false });
+    expect(result.current.directMessage).toEqual({
+      agent: { id: 'm', displayName: 'Scout' },
+      humanName: null,
+      settled: false,
+    });
     expect(result.current.quietTurnNumbers).toBe(true);
   });
 

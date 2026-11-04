@@ -359,7 +359,7 @@ export function SessionTranscript({
   // Past the hold's last limit, or with an answer that failed, this chat may
   // still be an agent's, so it claims nobody: the runtime only names a chat the
   // server has said is nobody's. A late answer corrects it in place.
-  const agentUnknown = identityPending || currentAgentFailed || lookupFailed;
+  const agentUnknown = identityPending || currentAgentFailed || undecided || lookupFailed;
   const authorContext = useMemo<MessageAuthorContext>(
     () => ({
       // A DM names the agent it is with, whatever folder is selected.
@@ -404,13 +404,14 @@ export function SessionTranscript({
   // The Direct chat log waits on the same answer, so past the hold the landing
   // cannot wait for it too: it lands without it, and again if the answer is a DM.
   const readyToLand = isHydrated && !earlier.isSeeking && ((directLog?.ready ?? true) || undecided);
-  const { held, hidden, showLoading, landingKey } = useTranscriptHold(
-    sessionId,
+  const { held, hidden, showLoading, landingKey } = useTranscriptHold({
+    conversationId: sessionId,
     undecided,
-    foldWork,
+    isDirectMessage: foldWork,
     readyToLand,
-    identityPending
-  );
+    identityPending,
+    lookupFailed,
+  });
   // The feed says it is busy from the start. The words wait, so a quick load
   // doesn't flicker them.
   const historyLoadingTooLong = useLoadingTooLong(isLoadingHistory, sessionId);

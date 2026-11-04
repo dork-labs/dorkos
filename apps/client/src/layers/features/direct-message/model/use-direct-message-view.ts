@@ -16,10 +16,10 @@ import { directMessageMode, type DirectMessageMode } from '../lib/direct-message
 export interface DirectMessageView {
   /** See {@link DirectMessageMode}. */
   mode: DirectMessageMode;
-  /** The Direct chat this session is, or `null` when it is an ordinary chat. */
+  /** The Direct chat this session is, or `null` without an answer naming one. */
   chat: DirectChat | null;
   /**
-   * Whether the server could not say. The chat is drawn as a session, but it may
+   * Whether the server could not say. The chat stays unresolved, because it may
    * still belong to an agent, so nothing should name it after its runtime.
    */
   lookupFailed: boolean;
@@ -32,18 +32,18 @@ export interface DirectMessageView {
  * Asks the server whether this is a Direct chat only while the view is on, so
  * with it off nothing new is fetched and nothing changes. Until the setting is
  * known, and while it asks, the answer is `pending`, which every surface draws
- * neutral. `isPending` rather than `isLoading`, because a query waiting on the
- * boot cache's restore is not fetching yet and still has no answer.
+ * neutral. No data means no answer, including a failed request or a query
+ * waiting on the boot cache to restore before it fetches.
  *
  * @param sessionId - The session on screen, or null for none.
  */
 export function useDirectMessageView(sessionId: string | null): DirectMessageView {
   const { enabled, settled } = useDmViewState();
-  const { data, isPending, errorUpdateCount } = useDirectChat(sessionId, { enabled });
+  const { data, errorUpdateCount } = useDirectChat(sessionId, { enabled });
   const { view } = useSessionSearch();
   const chat = enabled ? (data ?? null) : null;
-  // Failed once, with no answer since. Asking again reads as pending, and this
-  // chat isn't waiting for that: it stays where the failure put it.
+  // An error is not an answer. Keep the same neutral surface as a hung lookup;
+  // lookupFailed only releases its transcript wait, including during retries.
   const lookupFailed = enabled && data === undefined && errorUpdateCount > 0;
   return {
     mode:
@@ -53,7 +53,7 @@ export function useDirectMessageView(sessionId: string | null): DirectMessageVie
             enabled,
             isDirect: chat !== null,
             view,
-            pending: sessionId !== null && isPending && !lookupFailed,
+            pending: sessionId !== null && data === undefined,
           }),
     chat,
     lookupFailed,

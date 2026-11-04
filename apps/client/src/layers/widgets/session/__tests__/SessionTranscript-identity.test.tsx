@@ -13,6 +13,11 @@ import { createReadCursorHarness, renderWithTransport } from './session-transcri
 
 import { SessionTranscript } from '../ui/SessionTranscript';
 
+// Sending this row through another agent is outside the identity assertion.
+vi.mock('@/layers/features/entry-actions/ui/EntryRunWithMenu', () => ({
+  EntryRunWithMenu: () => null,
+}));
+
 const manifest = vi.hoisted(() => ({
   current: { data: null, isPending: false, isError: false } as {
     data: unknown;
@@ -196,13 +201,40 @@ describe('SessionTranscript — whose words these are', () => {
     });
   });
 
-  it('goes straight to "Unknown agent" when the lookup fails', async () => {
-    manifest.current = { data: null, isPending: false, isError: false };
-    render(<SessionTranscript {...props()} lookupFailed />);
-    expect(await screen.findByText('Unknown agent')).toBeTruthy();
-    expect(screen.queryByText('Claude Code')).toBeNull();
-    expect(screen.queryByText('Loading chat…')).toBeNull();
-  });
+  it.each([null, 'Tern'])(
+    'releases the unresolved transcript immediately on failure, kept name %s',
+    async (name) => {
+      manifest.current = { data: null, isPending: false, isError: false };
+      render(
+        <SessionTranscript
+          {...props()}
+          messages={[
+            REPLY,
+            {
+              id: 'sent',
+              role: 'user',
+              content: 'A sent message.',
+              parts: [],
+              timestamp: '2026-07-20T00:00:02.000Z',
+            },
+          ]}
+          lookupFailed
+          directMessage={{
+            settled: false,
+            humanName: null,
+            agent: name ? { id: 'tern', displayName: name } : null,
+          }}
+        />
+      );
+      expect(await screen.findByText(name ?? 'Unknown agent')).toBeTruthy();
+      expect(screen.getByText('A sent message.')).toBeTruthy();
+      await waitFor(() =>
+        expect(screen.getByTestId('message-list').className).not.toContain('invisible')
+      );
+      expect(screen.queryByText('Claude Code')).toBeNull();
+      expect(screen.queryByText('Loading chat…')).toBeNull();
+    }
+  );
 
   it('keeps the runtime’s name for a folder that has no agent', async () => {
     manifest.current = { data: null, isPending: false, isError: false };

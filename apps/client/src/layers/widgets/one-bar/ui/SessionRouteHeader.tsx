@@ -5,7 +5,9 @@
  * @module widgets/one-bar/ui/SessionRouteHeader
  */
 import { Terminal } from 'lucide-react';
-import { AgentAvatar } from '@/layers/entities/agent';
+import { useAppStore } from '@/layers/shared/model';
+import { getAgentDisplayName, resolveAgentVisual } from '@/layers/shared/lib';
+import { useCachedAgent, AgentAvatar } from '@/layers/entities/agent';
 import {
   useDirectMessageAgent,
   useDirectMessageView,
@@ -68,7 +70,11 @@ function BehindDirectMessage({ agentPath }: { agentPath: string }) {
  * nothing that only one of the two answers would show.
  */
 function PendingBar() {
-  const { agentName, agentVisual } = useOneBarState();
+  const { agentName: currentName, agentVisual: currentVisual } = useOneBarState();
+  const cwd = useAppStore((s) => s.selectedCwd);
+  const kept = useCachedAgent(cwd);
+  const agentName = currentName ?? (kept ? getAgentDisplayName(kept) : undefined);
+  const agentVisual = currentVisual ?? (kept ? resolveAgentVisual(kept) : undefined);
   return (
     <OneBar
       identity={

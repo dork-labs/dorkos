@@ -46,34 +46,43 @@ export interface TranscriptHold {
   landingKey: string | undefined;
 }
 
+/** Inputs to the shared wait for lookup and agent identity. */
+interface TranscriptHoldOptions {
+  conversationId: string;
+  undecided: boolean;
+  isDirectMessage: boolean;
+  readyToLand: boolean;
+  /** Wait for a trustworthy name, up to the longer identity limit. */
+  identityPending: boolean;
+  /** Release the wait on failure, keeping the unresolved surface and late landing. */
+  lookupFailed?: boolean;
+}
+
 /**
- * Hold a conversation while it waits for the answer, up to the limit.
+ * Hold a conversation until its lookup and identity answer, or their limits expire.
+ * Only the transcript waits; its bar and composer remain usable throughout.
  *
- * @param conversationId - The conversation on screen; each one gets its own wait.
- * @param undecided - Whether the answer is still out.
- * @param isDirectMessage - Whether the answer, once in, drew it as a DM.
- * @param readyToLand - Whether all the landing is waiting for now is this hold.
- * @param identityPending - Whether the agent's name and face are still on their
- *   way. The first limit doesn't let the list go without them, because a reply
- *   under the wrong name is worse than a wait: past {@link TRANSCRIPT_LOADING_MS} it
- *   says it is loading, and at {@link AGENT_IDENTITY_LIMIT_MS} it shows anyway,
- *   for the caller to draw under a name that claims nothing.
+ * @param options - The conversation, unresolved reads, and landing readiness.
  */
-export function useTranscriptHold(
-  conversationId: string,
-  undecided: boolean,
-  isDirectMessage: boolean,
-  readyToLand: boolean,
-  identityPending: boolean
-): TranscriptHold {
+export function useTranscriptHold({
+  conversationId,
+  undecided,
+  isDirectMessage,
+  readyToLand,
+  identityPending,
+  lookupFailed = false,
+}: TranscriptHoldOptions): TranscriptHold {
   // Named by conversation, so a wait that ran out for one never excuses the next.
   const [waitedTooLong, setWaitedTooLong] = useState<string | null>(null);
 
   useEffect(() => {
     if (!undecided) return;
-    const timer = setTimeout(() => setWaitedTooLong(conversationId), TRANSCRIPT_HOLD_MS);
+    const timer = setTimeout(
+      () => setWaitedTooLong(conversationId),
+      lookupFailed ? 0 : TRANSCRIPT_HOLD_MS
+    );
     return () => clearTimeout(timer);
-  }, [undecided, conversationId]);
+  }, [undecided, conversationId, lookupFailed]);
 
   const drawnEarly = waitedTooLong === conversationId;
   const gaveUpOnIdentity = useGaveUpWaiting(
@@ -81,7 +90,8 @@ export function useTranscriptHold(
     conversationId,
     AGENT_IDENTITY_LIMIT_MS
   );
-  const held = (undecided && !drawnEarly) || (identityPending && !gaveUpOnIdentity);
+  const held =
+    !lookupFailed && ((undecided && !drawnEarly) || (identityPending && !gaveUpOnIdentity));
 
   // Stays true for a few frames after the hold ends. A chat that was never held
   // never starts hidden, so it gains nothing here.

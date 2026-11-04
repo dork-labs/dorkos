@@ -105,6 +105,8 @@ function mountBar(
     dmView?: boolean;
     showSessions?: boolean;
     lookupPending?: boolean;
+    lookupError?: Error;
+    keptName?: string | null;
     configPending?: boolean;
     agentPending?: boolean;
     noManifest?: boolean;
@@ -119,14 +121,16 @@ function mountBar(
           version: '1.0.0',
           ui: { dmView: options.dmView ?? true, showSessions: options.showSessions ?? false },
         }),
-    findDirectChat: options.lookupPending
-      ? vi.fn().mockReturnValue(new Promise(() => {}))
-      : vi.fn().mockResolvedValue({
-          sessionId: SESSION,
-          sessionIds: [SESSION],
-          roomId: 'dm-scout',
-          agentPath: SCOUT_PATH,
-        }),
+    findDirectChat: options.lookupError
+      ? vi.fn().mockRejectedValue(options.lookupError)
+      : options.lookupPending
+        ? vi.fn().mockReturnValue(new Promise(() => {}))
+        : vi.fn().mockResolvedValue({
+            sessionId: SESSION,
+            sessionIds: [SESSION],
+            roomId: 'dm-scout',
+            agentPath: SCOUT_PATH,
+          }),
     getAgentByPath: options.agentPending
       ? vi.fn().mockReturnValue(new Promise(() => {}))
       : options.manifestFails
@@ -171,7 +175,10 @@ function mountBar(
   function Bar() {
     const search = useSearch({ strict: false }) as { session?: string };
     return (
-      <BarHarness sessionId={search.session} agentName="Scout">
+      <BarHarness
+        sessionId={search.session}
+        agentName={options.keptName === null ? undefined : (options.keptName ?? 'Scout')}
+      >
         <SessionRouteHeader />
       </BarHarness>
     );
@@ -206,7 +213,7 @@ function mountBar(
       <RouterProvider router={router} />
     </Wrapper>
   );
-  return { router, transport };
+  return { router, transport, queryClient };
 }
 
 describe('SessionRouteHeader', () => {
@@ -227,6 +234,26 @@ describe('SessionRouteHeader', () => {
     expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
     expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
     expect(screen.queryByTestId('dm-header-identity')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [new Error('500'), 'Tern'],
+    [new Error('500'), null],
+    [new TypeError('Failed to fetch'), 'Tern'],
+    [new TypeError('Failed to fetch'), null],
+  ])('keeps the hung lookup bar after %s, kept name %s', async (lookupError, keptName) => {
+    const { transport, queryClient } = mountBar(`/session?session=${SESSION}`, {
+      lookupError: lookupError as Error,
+      keptName,
+    });
+    await waitFor(() => expect(transport.findDirectChat).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(queryClient.getQueryState(['direct-chat', SESSION])?.status).toBe('error')
+    );
+    expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
+    const bar = await screen.findByTestId('session-bar-pending');
+    expect(bar.textContent).toBe(keptName ?? '');
+    expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
   });
 
   it('draws the same neutral bar, not the session bar, until the setting is known', async () => {

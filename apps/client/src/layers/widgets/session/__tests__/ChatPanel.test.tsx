@@ -129,6 +129,9 @@ vi.mock('@/layers/entities/session/model/settings/use-session-status', () => ({
   }),
 }));
 
+// This suite supplies no query cache; cached identity is covered by the surface suite.
+vi.mock('@/layers/entities/agent/model/use-cached-agent', () => ({ useCachedAgent: () => null }));
+
 // Mock TanStack Query — ChatStatusSection uses useQuery and useQueryClient
 vi.mock('@tanstack/react-query', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-query')>();

@@ -6,6 +6,8 @@
  */
 import { useMemo } from 'react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { useAppStore } from '@/layers/shared/model';
+import { useCachedAgent } from '@/layers/entities/agent';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useConfig, useShowSessions } from '@/layers/entities/config';
 import { useDirectMessageAgent, useDirectMessageView } from '@/layers/features/direct-message';
@@ -14,8 +16,8 @@ import type { MessageAuthorAgent } from '@/layers/features/chat';
 /** What a chat drawn as a DM needs beyond what a session already reads. */
 export interface DirectMessageSurface {
   /**
-   * The agent this DM is with, for every reply's face and name. `null` until
-   * its manifest arrives, when the transcript keeps its own resolution.
+   * The agent identity known to this surface, including a kept name while the
+   * lookup is unresolved. `null` leaves the transcript to resolve its own.
    */
   agent: MessageAuthorAgent | null;
   /**
@@ -81,7 +83,10 @@ export function useSessionSurface(
   const { data: config } = useConfig();
   const showSessions = useShowSessions();
   const humanName = config?.profile?.displayName?.trim() || null;
-  const composerName = composerAgent ? getAgentDisplayName(composerAgent) : null;
+  const cwd = useAppStore((s) => s.selectedCwd);
+  const cachedAgent = useCachedAgent(pending ? cwd : null);
+  const knownAgent = composerAgent ?? cachedAgent;
+  const composerName = knownAgent ? getAgentDisplayName(knownAgent) : null;
   const { id, name } = dmAgent;
   // Rows shown at the limit with the manifest still out go straight to the kept
   // name. The bar and the box wait for `name`, so neither changes on a quick load.
@@ -93,7 +98,12 @@ export function useSessionSurface(
   // keys its author resolver on it, and a fresh one each render would lay the
   // whole conversation out again on every streamed word (DOR-2912).
   const directMessage = useMemo<DirectMessageSurface | null>(() => {
-    if (pending) return { agent: null, humanName: null, settled: false };
+    if (pending)
+      return {
+        agent: knownAgent ? { id: knownAgent.id, displayName: composerName! } : null,
+        humanName: null,
+        settled: false,
+      };
     if (!isDm) return null;
     return {
       // Keyed by the manifest id and faced from the manifest, exactly as the
@@ -111,7 +121,19 @@ export function useSessionSurface(
       settled: true,
       agentPending: dmAgent.pending,
     };
-  }, [pending, isDm, agentPath, id, rowName, emoji, color, humanName, dmAgent.pending]);
+  }, [
+    pending,
+    knownAgent,
+    composerName,
+    isDm,
+    agentPath,
+    id,
+    rowName,
+    emoji,
+    color,
+    humanName,
+    dmAgent.pending,
+  ]);
 
   if (directMessage === null) {
     return {
@@ -120,7 +142,6 @@ export function useSessionSurface(
       transcriptNames: {
         directMessage: null,
         humanName,
-        ...(view.lookupFailed ? { lookupFailed: true as const } : {}),
       },
       placeholder: composerName ? `Message ${composerName}…` : 'Send a message…',
       quietTurnNumbers: false,
@@ -131,7 +152,11 @@ export function useSessionSurface(
   return {
     directMessage,
     humanName,
-    transcriptNames: { directMessage, humanName },
+    transcriptNames: {
+      directMessage,
+      humanName,
+      ...(view.lookupFailed ? { lookupFailed: true as const } : {}),
+    },
     // A room's box names who it reaches, with no trailing ellipsis.
     placeholder: dmName ? `Message ${dmName}` : 'Send a message…',
     quietTurnNumbers: !showSessions,
