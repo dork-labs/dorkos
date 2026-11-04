@@ -12,6 +12,7 @@ import type { McpServerConfig, Options, SDKUserMessage } from '@anthropic-ai/cla
 const queryMock = vi.hoisted(() => vi.fn());
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: queryMock }));
 
+import { applyRepoMcpServers } from '../../repo-settings/launch-repo-config.js';
 import { PLUGIN_RELOAD_ACK_TIMEOUT_MS } from '../../sessions/bounded-control.js';
 import {
   commandLineServers,
@@ -31,7 +32,12 @@ const REMOTE: McpServerConfig = {
   url: 'https://mcp.example.test',
   headers: { Authorization: 'Bearer CANARY-oauth', 'X-Api-Key': 'CANARY-header' },
 };
-const IN_PROCESS = { type: 'sdk', name: 'dorkos', instance: {} } as unknown as McpServerConfig;
+const IN_PROCESS = {
+  type: 'sdk',
+  name: 'dorkos',
+  instance: { connect: () => undefined },
+  timeout: 1234,
+} as unknown as McpServerConfig;
 const ALL = { dorkos: IN_PROCESS, stdio: STDIO, remote: REMOTE };
 
 const message = { type: 'user' } as unknown as SDKUserMessage;
@@ -48,7 +54,10 @@ function heldPrompt() {
 
 /** A fake live query whose `setMcpServers` settles when told. */
 function fakeLive(answer: () => Promise<unknown>) {
-  const live = { setMcpServers: vi.fn(answer) };
+  const live = {
+    setMcpServers: vi.fn(answer),
+    mcpServerStatus: vi.fn(async () => [{ name: 'dorkos', status: 'connected' }]),
+  };
   queryMock.mockImplementation(() => live);
   return live;
 }
@@ -86,7 +95,7 @@ describe('launchQuery', () => {
     launchQuery({ prompt: heldPrompt().prompt, options: { mcpServers: ALL }, session: session() });
     expect(launchedOptions().mcpServers).toEqual({ dorkos: IN_PROCESS });
     expect(JSON.stringify(launchedOptions())).not.toContain('CANARY');
-    expect(live.setMcpServers).toHaveBeenCalledWith(ALL);
+    await vi.waitFor(() => expect(live.setMcpServers).toHaveBeenCalledWith(ALL));
   });
 
   it('leaves the option off altogether with no in-process server', () => {
@@ -165,16 +174,46 @@ describe('commandLineServers', () => {
   it('keeps only in-process servers', () => {
     expect(commandLineServers(ALL)).toEqual({ dorkos: IN_PROCESS });
     expect(commandLineServers({ stdio: STDIO })).toBeUndefined();
-    // No instance, as a repo's `.mcp.json` could write: the SDK would put it on argv.
-    const forged = {
-      type: 'sdk',
-      name: 'x',
-      headers: { k: 'CANARY' },
-    } as unknown as McpServerConfig;
-    expect(commandLineServers({ forged })).toBeUndefined();
-    const extra = { ...IN_PROCESS, headers: { k: 'CANARY' } } as unknown as McpServerConfig;
-    expect(JSON.stringify(commandLineServers({ dorkos: extra }))).not.toContain('CANARY');
-    expect(commandLineServers(undefined)).toBeUndefined();
+    // Kept whole: `dorkos`'s tool timeout rides its entry.
+    expect(commandLineServers({ dorkos: IN_PROCESS })).toEqual({ dorkos: IN_PROCESS });
+    expect(commandLineServers({ dorkos: IN_PROCESS })?.dorkos).toHaveProperty('timeout', 1234);
+  });
+
+  it.each([[undefined], [null], [false], [0], [''], [{}]])(
+    'never trusts a forged in-process entry: instance %j',
+    async (instance) => {
+      // As a repo's `.mcp.json` could write. The SDK would put it on the command line.
+      const forged = {
+        type: 'sdk',
+        name: 'x',
+        instance,
+        headers: { k: 'CANARY' },
+      } as unknown as McpServerConfig;
+      expect(commandLineServers({ forged })).toBeUndefined();
+      const live = fakeLive(async () => ({}));
+      launchQuery({
+        prompt: heldPrompt().prompt,
+        options: { mcpServers: { forged } },
+        session: session(),
+      });
+      expect(JSON.stringify(launchedOptions())).not.toContain('CANARY');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(live.setMcpServers).not.toHaveBeenCalled();
+      queryMock.mockClear();
+    }
+  );
+});
+
+describe('a repo cannot declare an in-process server', () => {
+  it('drops the entry and keeps the rest', () => {
+    const sdkOptions: Options = { env: {} };
+    applyRepoMcpServers(sdkOptions, {
+      mcpServers: {
+        forged: { type: 'sdk', name: 'x', instance: {} },
+        real: { type: 'stdio', command: 'node' },
+      },
+    } as never);
+    expect(Object.keys(sdkOptions.mcpServers ?? {})).toEqual(['real']);
   });
 });
 
@@ -196,7 +235,8 @@ describe('every launch goes through launchQuery', () => {
           const reachesIt =
             (text.match(named) ?? []).some((line) => /[{\s,]query[\s,}]/.test(line)) ||
             new RegExp(`import \\* as \\w+ from ${sdk}`).test(text) ||
-            new RegExp(`import\\(\\s*${sdk}`).test(text);
+            new RegExp(`import\\(\\s*${sdk}`).test(text) ||
+            new RegExp(`export \\* (?:as \\w+ )?from ${sdk}`).test(text);
           if (reachesIt) importers.push(path.relative(root, full));
         }
       }

@@ -147,7 +147,7 @@ describe('a process that did not answer for its servers in time (DOR-3882)', () 
 });
 
 describe('the persistent launch keeps servers off the command line (DOR-3882)', () => {
-  it('passes query() no external server, and hands them over stdin', () => {
+  it('passes query() no external server, and hands them over stdin', async () => {
     const setMcpServers = vi.fn(async () => ({}));
     queryMock.mockImplementationOnce(() => ({ setMcpServers }) as never);
     const stdio = { type: 'stdio', command: 'node', env: { TOKEN: 'CANARY' } } as never;
@@ -157,6 +157,6 @@ describe('the persistent launch keeps servers off the command line (DOR-3882)', 
     const passed = (queryMock.mock.calls as unknown as Array<[{ options: Options }]>)[0]?.[0];
     expect(JSON.stringify(passed?.options)).not.toContain('CANARY');
     expect(passed?.options).not.toHaveProperty('mcpServers');
-    expect(setMcpServers).toHaveBeenCalledWith({ stdio });
+    await vi.waitFor(() => expect(setMcpServers).toHaveBeenCalledWith({ stdio }));
   });
 });

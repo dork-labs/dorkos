@@ -2,6 +2,7 @@
 covers:
   - 'fix(claude-code): MCP server secrets and sign-ins stay off the command line (DOR-3882)'
   - 'fix(claude-code): a server that lands late can still be removed from a running chat (DOR-3882)'
+  - 'fix(claude-code): a hung MCP server no longer takes the DorkOS tools down with it (DOR-3882)'
 ---
 
 ### Security

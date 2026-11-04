@@ -169,6 +169,10 @@ it passes `sdk` servers on the option, hands the full map to `setMcpServers`, an
 until that answers. The CLI answers once the servers are connected (measured: 307 ms, 4,359 ms with a
 stdio server that took 4 s), so their tools are ready on the first turn.
 
+The swap itself waits, up to `IN_PROCESS_CONNECT_BOUND_MS`, for in-process servers to report connected:
+the CLI stops reading their connect answers while it handles a swap, so one sent straight after launch let a
+hung external server make `dorkos` hit the same 30 s limit, and it stayed failed for that process.
+
 Past `PLUGIN_RELOAD_ACK_TIMEOUT_MS` it fails closed: nothing goes back on the command line, the chat
 says some tools may not work, the turn opens, and the fingerprint records what the process holds as
 unknown (`MCP_SERVERS_UNKNOWN`), so the next dispatch always sends its list. The CLI finishes a request it
