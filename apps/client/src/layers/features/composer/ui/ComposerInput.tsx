@@ -437,16 +437,26 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
           Enter and nothing happened", which a screen-reader user gets no other
           signal for at all. */}
         {!canSubmit && canSubmitReason && (
-          <div className="text-muted-foreground flex items-baseline gap-1.5 px-1 text-xs">
-            <span role="status">{canSubmitReason}</span>
-            {canSubmitAction && (
-              <button
-                type="button"
-                onClick={canSubmitAction.onClick}
-                className="focus-ring text-foreground/80 hover:text-foreground rounded-sm underline underline-offset-4"
-              >
-                {canSubmitAction.label}
-              </button>
+          <div
+            role={canSubmitAction ? undefined : 'status'}
+            className={cn(
+              'text-muted-foreground px-1 text-xs',
+              canSubmitAction && 'flex items-baseline gap-1.5'
+            )}
+          >
+            {canSubmitAction ? (
+              <>
+                <span role="status">{canSubmitReason}</span>
+                <button
+                  type="button"
+                  onClick={canSubmitAction.onClick}
+                  className="focus-ring text-foreground/80 hover:text-foreground rounded-sm underline underline-offset-4"
+                >
+                  {canSubmitAction.label}
+                </button>
+              </>
+            ) : (
+              canSubmitReason
             )}
           </div>
         )}
