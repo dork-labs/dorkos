@@ -766,6 +766,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: "changes a scheduled task's permission mode or approval status",
     call: 'updateTask(',
     allowed: {
+      'services/shapes/shape-schedule-service.ts':
+        "one write after the raw create fallback only: `updateTask(schedule.id, { status: 'pending_approval' })` parks that newly created row before registration (DOR-3861). It changes nothing else, grants no mode and cannot arm a schedule; this entry does not cover any other updateTask write",
       'routes/tasks.ts':
         'the cockpit REST route — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here',
       'services/tasks/lifecycle/create-task.ts':

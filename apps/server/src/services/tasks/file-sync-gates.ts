@@ -399,9 +399,10 @@ export class FileSyncGates {
    * and cron are still the ones the person approved.** A row being re-parked is
    * a row whose content changed under it, and a person's "yes, run this" does
    * not carry over to work they have not read; the package's own switch governs
-   * again until they approve the new content. A parked row never keeps its
-   * switch, so switching a package schedule on without approving it arms
-   * nothing and is undone by the next sweep (DOR-607).
+   * again until they approve the new content. An OFF switch survives while
+   * its file already said on (DOR-3860). A parked row never keeps an ON switch,
+   * so switching a package schedule on without
+   * approving it arms nothing and is undone by the next sweep (DOR-607).
    *
    * A row coming back from `paused` is NOT an exception. A package update is an
    * unlink and a reappearance; `markRemovedByFilePath` only pauses and leaves
@@ -441,7 +442,13 @@ export class FileSyncGates {
       return existing.enabled === false || arm?.status === 'active';
     }
     if (existing === undefined || options?.packageOwned === undefined) return false;
-    if (options.packageOwned !== null) return arm?.status === 'active';
+    if (options.packageOwned !== null) {
+      // Preserve a row held off while its package already said on (DOR-3860).
+      // A package changing from off to on still makes its first approval offer.
+      return (
+        (existing.enabled === false && existing.fileEnabled === true) || arm?.status === 'active'
+      );
+    }
     if (existing.packageOwned === null) return false;
     // A row older than the column (`unknown`) may have been the person's all
     // along, whose file then says what they last chose; only an OFF row is kept

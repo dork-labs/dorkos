@@ -238,7 +238,7 @@ const BaseScheduleDeclSchema = z.object({
     .optional(),
 
   /** What this schedule does, in one line. Required on an inline entry. */
-  description: z.string().min(1).optional(),
+  description: z.string().min(1).max(1024).optional(),
 
   /** What to send when the schedule fires. Required on an inline entry. */
   prompt: z.string().min(1).optional(),
@@ -553,7 +553,7 @@ const ShapeScheduleSchema = BaseScheduleDeclSchema.extend({
     .string()
     .min(1)
     .regex(/[a-zA-Z0-9]/, 'Must contain at least one letter or number'),
-  description: z.string().min(1),
+  description: z.string().min(1).max(1024),
   prompt: z.string().min(1),
   /**
    * Which Shape agent (`ShapeAgentSchema.ref`) this schedule runs as. Shape-only:

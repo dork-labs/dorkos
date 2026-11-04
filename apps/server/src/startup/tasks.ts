@@ -280,8 +280,8 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       );
     }
 
-    // Before the backfill, which then keeps what these rows already say, and before any sync reads
-    // their files (DOR-3440). They stay off: the backfill grants, it never switches on.
+    // Switch marked schedules off before discovery, keeping their marks and review (DOR-3860).
+    // The backfill below must not grant them approval merely because the server restarted.
     await taskStore.approvals.clearOutsiderParks();
 
     const backfilled = taskStore.approvals.backfillApprovalGrants();

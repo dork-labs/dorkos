@@ -379,3 +379,20 @@ describe('extension-id drift — marketplace mirror vs @dorkos/shared source', (
     expect(SHAPE_EXTENSION_ID_REGEX.flags).toBe(EXTENSION_ID_REGEX.flags);
   });
 });
+
+describe('Shape schedule description limit (DOR-3861)', () => {
+  it.each([1024, 1025])(
+    'validates a %i-character description against the skill limit',
+    (length) => {
+      const manifest = validShapeManifest() as { schedules: Record<string, unknown>[] };
+      manifest.schedules[0]!.description = 'x'.repeat(length);
+      const result = MarketplacePackageManifestSchema.safeParse(manifest);
+      expect(result.success).toBe(length === 1024);
+      if (!result.success) {
+        expect(
+          result.error.issues.some((issue) => issue.path.join('.') === 'schedules.0.description')
+        ).toBe(true);
+      }
+    }
+  );
+});
