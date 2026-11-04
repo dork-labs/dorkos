@@ -270,7 +270,7 @@ describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
             ...failing,
             mark: 'refused',
             title: `${name} ${result}`,
-            body: 'The reason wasn’t recorded. Open the schedule to check its mode.',
+            body: 'It may have needed approval. Open the schedule to check its mode.',
           }}
           onOpen={() => {}}
         />

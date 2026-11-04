@@ -886,7 +886,7 @@ describe('TaskSchedulerService', () => {
           expect.arrayContaining([
             expect.objectContaining({
               title: 'Health check had a command refused',
-              body: "The reason wasn't recorded. Open the schedule to check its mode.",
+              body: 'It may have needed approval. Open the schedule to check its mode.',
             }),
           ])
         )

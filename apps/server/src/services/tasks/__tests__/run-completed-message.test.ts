@@ -44,7 +44,23 @@ describe('formatCompletionMessage', () => {
     expect(
       formatCompletionMessage(
         task,
-        run({ status: 'needs_attention', error: REFUSAL, refusedTools: ['Bash'] }),
+        run({
+          status: 'needs_attention',
+          refusedTools: ['Bash'],
+          error: 'sample-command --sample',
+          outputSummary: 'sample run output',
+        })
+      )
+    ).not.toMatch(/sample-command|sample run output/);
+    expect(
+      formatCompletionMessage(
+        task,
+        run({
+          status: 'needs_attention',
+          error: REFUSAL,
+          outputSummary: 'sample run output',
+          refusedTools: ['Bash'],
+        }),
         true
       )
     ).toBe('Mailroom had a command refused');

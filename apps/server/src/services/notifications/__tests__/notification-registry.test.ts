@@ -508,12 +508,12 @@ describe('notification registry', () => {
     it('says the row’s reason, points at the schedule, and says it will not repeat', () => {
       const body = notificationEntry('run.completed').body;
       expect(body?.({ ...blocked, refusedTools: ['Bash', 'gmail: search'] })).toBe(
-        "The reason wasn't recorded. Open the schedule to check its mode."
+        'It may have needed approval. Open the schedule to check its mode.'
       );
       expect(
         body?.({ ...blocked, outcome: 'partial', refusedTools: ['Bash'], oncePerStreak: true })
       ).toBe(
-        "The reason wasn't recorded. Open the schedule to check its mode. " +
+        'It may have needed approval. Open the schedule to check its mode. ' +
           'No more notices until it runs cleanly and fails again.'
       );
       // "Didn't finish": only the reason line changes.

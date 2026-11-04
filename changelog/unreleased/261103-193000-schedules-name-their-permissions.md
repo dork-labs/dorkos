@@ -3,6 +3,7 @@ covers:
   - 'fix(tasks): show saved permissions when an agent creates a schedule (DOR-3839)'
   - 'fix(tasks): describe refused tools and open their schedules (DOR-3839)'
   - 'fix(tasks): keep refusal outcomes visible in notices (DOR-3839)'
+  - 'fix(tasks): clarify schedule refusal notices (DOR-3839)'
 ---
 
 ### Fixed

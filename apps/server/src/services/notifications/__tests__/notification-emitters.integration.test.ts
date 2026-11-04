@@ -158,7 +158,7 @@ describe('a finished run', () => {
       subject: { type: 'task', id: task.id },
     });
     expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-      "The reason wasn't recorded. Open the schedule to check its mode."
+      'It may have needed approval. Open the schedule to check its mode.'
     );
   });
 
@@ -213,7 +213,7 @@ describe('a finished run', () => {
       await finish(store, task.id, 'needs_attention');
 
       expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-        "The reason wasn't recorded. Open the schedule to check its mode. " +
+        'It may have needed approval. Open the schedule to check its mode. ' +
           'No more notices until it runs cleanly and fails again.'
       );
       expect(service.list({ limit: 25, unread: false }).notifications[0].mark).toBe('refused');

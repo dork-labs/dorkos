@@ -99,7 +99,7 @@ export function runFailureReason(p: RunCompletedPayload): string {
   if (p.status === 'needs_attention') {
     // The persisted run retains tool names, not the runtime's reasonType.
     // Do not infer a cause from the task's current (possibly changed) mode.
-    return "The reason wasn't recorded. Open the schedule to check its mode.";
+    return 'It may have needed approval. Open the schedule to check its mode.';
   }
   const message = p.detail?.trim();
   if (message?.startsWith(SIGN_IN_PREFIX))
