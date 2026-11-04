@@ -123,13 +123,15 @@ export function environmentFingerprint(env: Readonly<Record<string, string>>): s
 }
 
 /**
- * A process key: binary, home and environment fingerprint.
+ * A process key: binary, home, billing source and environment fingerprint.
  *
  * @param spec - What the process is for.
  */
 export function processKeyOf(spec: CodexProcessSpec): string {
   return createHash('sha256')
-    .update(`${spec.binary}\u0000${spec.codexHome}\u0000${environmentFingerprint(spec.env)}`)
+    .update(
+      `${spec.binary}\u0000${spec.codexHome}\u0000${spec.onCredits ? 'credits' : 'person'}\u0000${environmentFingerprint(spec.env)}`
+    )
     .digest('hex')
     .slice(0, 32);
 }

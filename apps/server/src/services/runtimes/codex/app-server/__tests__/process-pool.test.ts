@@ -49,6 +49,20 @@ describe('keying', () => {
     expect(key).not.toContain('sk-very-secret');
   });
 
+  it('never reuses a person process for credits even with identical home and environment', async () => {
+    const { pool } = makePool();
+    const person = await pool.acquire(PERSON);
+    const release = person.hold();
+    try {
+      const credits = await pool.acquire({ ...PERSON, onCredits: true });
+      expect(credits).not.toBe(person);
+      expect(credits.spec.onCredits).toBe(true);
+      expect(processKeyOf({ ...PERSON, onCredits: true })).not.toBe(processKeyOf(PERSON));
+    } finally {
+      release();
+    }
+  });
+
   it('gives each home its own process and reuses it', async () => {
     const { pool, host } = makePool();
     const one = await pool.acquire(PERSON);
