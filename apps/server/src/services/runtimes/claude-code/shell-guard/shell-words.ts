@@ -67,6 +67,18 @@ export function parseShell(command: string): ShellSegment[] {
       word += command[i + 1] ?? '';
       inWord = true;
       i += 2;
+    } else if (char === '$' && command[i + 1] === "'") {
+      // `$'it\'s'` has its own quoting: read as plain quotes, its `\'` ends the word early, and all
+      // that follows looks quoted. Its other escapes aren't decoded: a path spelled in them is the
+      // stated limit.
+      i += 2;
+      while (i < command.length && command[i] !== "'") {
+        if (command[i] === '\\') i += 1;
+        word += command[i] ?? '';
+        i += 1;
+      }
+      inWord = true;
+      i += 1;
     } else if (char === "'") {
       const close = command.indexOf(char, i + 1);
       const end = close === -1 ? command.length : close;
@@ -140,8 +152,14 @@ export function parseShell(command: string): ShellSegment[] {
     } else if (char === '<' || char === '>') {
       endWord();
       nextIsRedirect = char === '>';
-      // `>>` appends and `>|` overwrites: the next word is the target either way.
-      while (command[i + 1] === '>' || command[i + 1] === '|') i += 1;
+      // `>>` appends, and `>|` and zsh's `>!` overwrite: the next word is the target either way.
+      while (
+        command[i + 1] === '>' ||
+        command[i + 1] === '|' ||
+        (nextIsRedirect && command[i + 1] === '!')
+      ) {
+        i += 1;
+      }
       i += 1;
     } else if (char === ' ' || char === '\t' || char === '\r') {
       endWord();

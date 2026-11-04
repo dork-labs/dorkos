@@ -162,6 +162,17 @@ function withNested(segments: ShellSegment[], depth = 0): ShellSegment[] {
 /** One step of a wildcard pattern: `*`, or a test of one character. */
 type WildcardStep = '*' | ((char: string) => boolean);
 
+/**
+ * Whether a range holds the same letters in every shell. Bash under a UTF-8 locale orders a < A < b,
+ * so `[a-Z]` and `[:-~]` open into names they wouldn't by code point, and under `LC_ALL=C` they
+ * don't. A shell's locale can't be read from here, so only forward ranges of digits or same-case
+ * letters are read as written. Any other set may hold anything, because matching more only refuses.
+ */
+function ordersTheSameEverywhere(from: string, to: string): boolean {
+  if (from > to) return false;
+  return [/^[0-9]$/, /^[a-z]$/, /^[A-Z]$/].some((kind) => kind.test(from) && kind.test(to));
+}
+
 /** A `[…]` as a test of one lowercased character, and where it ends. No close means no set. */
 function characterSet(
   segment: string,
@@ -173,6 +184,7 @@ function characterSet(
   const first = at;
   const singles = new Set<string>();
   const ranges: [string, string][] = [];
+  let anything = false;
   while (at < segment.length && (segment[at] !== ']' || at === first)) {
     if (segment.startsWith('[:', at)) {
       // `[[:alpha:]]` and friends aren't read, so this set may hold anything. Matching more only
@@ -184,6 +196,7 @@ function characterSet(
       }
     }
     if (segment[at + 1] === '-' && at + 2 < segment.length && segment[at + 2] !== ']') {
+      if (!ordersTheSameEverywhere(segment[at]!, segment[at + 2]!)) anything = true;
       ranges.push([segment[at]!, segment[at + 2]!]);
       at += 3;
     } else {
@@ -196,6 +209,8 @@ function characterSet(
     if (!negate) return undefined;
     return { test: () => true, end: segment[first] === ']' ? first : first - 1 };
   }
+  // Negated too: a set that may hold anything may also leave anything out.
+  if (anything) return { test: () => true, end: at };
   const member = (char: string): boolean =>
     singles.has(char) || ranges.some(([from, to]) => char >= from && char <= to);
   // Read against the pattern as written, so `Z-d` keeps its meaning. A shell tests the real
@@ -497,7 +512,8 @@ export function readCommand(
           if (piece.length > MAX_PATH_PIECE) {
             // Too long to open as written, but a wildcard can open it into a real name:
             // `hos[ttt…1,100…].key` printed the file. Only plain text this long names nothing.
-            if (/[*?[]/.test(piece)) return null;
+            // A written word that could name a setup file too: `mkdir -p` walks folder by folder.
+            if (/[*?[]/.test(piece) || keep?.(piece)) return null;
             continue;
           }
           // Again per piece: `--file=~/x` and a script's `'~/x'` start with `~` only here.

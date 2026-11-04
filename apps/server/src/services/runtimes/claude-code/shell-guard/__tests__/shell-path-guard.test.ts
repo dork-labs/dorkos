@@ -4,6 +4,7 @@
  *
  * @vitest-environment node
  */
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -722,6 +723,58 @@ describe('commandWritesAgentSetup', () => {
     const open = { ...roots, openHome: agent };
     expect(commandWritesAgentSetup(`echo x > ${agent}/.dork/agent.json`, open)).toBe(true);
     expect(commandWritesAgentSetup(`rm ${agent}/.mcp.json`, open)).toBe(false);
+  });
+});
+
+describe('ranges whose order depends on the shell’s locale (Security, #3487)', () => {
+  /** A command writing the `.mcp.json` of the home, with `set` for its `c`. */
+  const write = (set: string) => `echo x > ${other}/.m[${set}]p.json`;
+
+  it.each(['a-Z', 'a-C', 'c-C', '_-M', 'Z-d', ':-~', 'z-a', '!a-Z', '^a-Z', '!z-a'])(
+    'refuses [%s], which may open into the file',
+    (set) => {
+      expect(shellWriteVerdict(write(set), roots)).toBe('writes');
+    }
+  );
+
+  it.each(['a-z', 'A-Z', 'a-d'])('still reads [%s] as written, and it holds the letter', (set) => {
+    expect(shellWriteVerdict(write(set), roots)).toBe('writes');
+  });
+
+  it.each(['d-z', 'D-Z', '0-9'])('still leaves out what [%s] can’t hold', (set) => {
+    expect(shellWriteVerdict(write(set), roots)).toBe('none');
+  });
+
+  // The real shell, under UTF-8: under `LC_ALL=C` these don't match, which is how this slipped by.
+  it.runIf(process.platform === 'darwin')('agrees with bash under UTF-8', () => {
+    for (const set of ['a-Z', 'a-C', 'c-C', '_-M']) {
+      const opened = spawnSync('/bin/bash', ['-c', `cd ${other} && echo .m[${set}]p.json`], {
+        encoding: 'utf8',
+        env: { LC_ALL: 'en_US.UTF-8' },
+      }).stdout.trim();
+      expect(opened).toBe('.mcp.json');
+      expect(shellWriteVerdict(write(set), roots)).toBe('writes');
+    }
+  });
+});
+
+describe('quoting and redirects that hid a write (Security, #3487)', () => {
+  it("reads $'…' as its own quoting, so what follows isn’t swallowed", () => {
+    const command = `echo $'it\\'s'; echo x > ${other}/.mcp.json; echo $'it\\'s'`;
+    expect(shellWriteVerdict(command, roots)).toBe('writes');
+  });
+
+  it.each(['>!', '>>!'])('reads zsh’s %s as a redirect', (redirect) => {
+    expect(shellWriteVerdict(`echo x ${redirect} ${other}/.mcp.json`, roots)).toBe('writes');
+  });
+
+  it('refuses a written word too long to read that could name a setup file', () => {
+    const long = `/.${'/.'.repeat(2_100)}/.mcp.json`;
+    expect(shellWriteVerdict(`mkdir -p ${long}`, roots)).toBe('unreadable');
+  });
+
+  it('still lets by a long plain word that names none', () => {
+    expect(shellWriteVerdict(`touch /tmp/${'x'.repeat(4_200)}`, roots)).toBe('none');
   });
 });
 

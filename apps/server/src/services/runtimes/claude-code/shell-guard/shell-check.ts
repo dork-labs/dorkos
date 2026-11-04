@@ -3,8 +3,9 @@
  * files, and whether it reaches a protected read. Plain functions of a command and its folders.
  *
  * This reads text an agent chose, so it runs in the guard's own process (`guard-child.ts`), never
- * in the server: every expansion here is capped, but stalls past the caps (deep missing paths,
- * repeated copy sources) are the child's timer to end, and a crash takes only the child.
+ * in the server. The caps here are for a plain answer, not for safety: rounds of review kept finding
+ * shapes past them, up to 75 s and out of memory on about 260 KB. Those are the child's timer and
+ * heap limit to end, and ending the child refuses the command.
  *
  * @module services/runtimes/claude-code/shell-guard/shell-check
  */

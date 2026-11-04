@@ -103,17 +103,42 @@ describe('GuardHost on the real child', () => {
     ).toMatchObject({ write: 'writes' });
   });
 
-  it('refuses a command past the child’s heap limit, and the next one still works', async () => {
-    const host = hostWith({ tuning: { heapMb: 16, answerMs: 5_000 } });
-    const answered = await host.check('echo first', roots, false);
-    expect(answered.outcome).toBe('checked');
-    const values = Array.from({ length: 5_000 }, (_, i) => `value${i}`).join(' ');
-    const big = Array.from({ length: 40 }, (_, i) => `A${i}="${values}"`).join('; ');
-    const crashed = await host.check(big, roots, false);
-    expect(['failed', 'checked']).toContain(crashed.outcome);
-    expect(crashed).not.toMatchObject({ write: 'none' });
+  // Security's round 4 shape: about 240 KB that ran a whole process out of memory, in a child at its
+  // real limit. A kill counts as a refusal, and this process and the next command are fine.
+  it('refuses a command that runs the child out of memory, and the next one still works', async () => {
+    const host = hostWith();
+    const rest = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const names = Array.from(
+      { length: 31_000 },
+      // Three characters each: a longer name passes the size limit, and is refused unread.
+      (_, i) => rest[Math.floor(i / 1296)]! + rest[Math.floor(i / 36) % 36]! + rest[i % 36]!
+    );
+    const command = [
+      `xa0=${'x'.repeat(12)}`,
+      ...[1, 2, 3, 4].map((n) => `xa${n}=${`$xa${n - 1}`.repeat(8)}`),
+      'V=$xa4$xa3$xa3$xa2$xa2$xa2$xa2$xa2$xa1$xa1',
+      ...names.map((name) => `${name}=x$V`),
+      'echo hi',
+    ].join(';');
+    expect(await host.check(command, roots, false)).toEqual({ outcome: 'failed' });
     expect(await host.check('echo after', roots, false)).toMatchObject({ outcome: 'checked' });
-  });
+  }, 30_000);
+
+  // Security's round 4 stall, ended by the timer, with this process free the whole time.
+  it('ends a stall at its timer, with the server free meanwhile', async () => {
+    const host = hostWith({ tuning: { answerMs: 300 } });
+    const command = `V=${root}/nomatch/${'[a'.repeat(1900)}; rm ${'$V '.repeat(400)}`;
+    let worst = 0;
+    let last = performance.now();
+    const ticker = setInterval(() => {
+      worst = Math.max(worst, performance.now() - last);
+      last = performance.now();
+    }, 5);
+    const result = await host.check(command, roots, false);
+    clearInterval(ticker);
+    expect(result).toEqual({ outcome: 'failed' });
+    expect(worst).toBeLessThan(250);
+  }, 15_000);
 });
 
 describe('GuardHost when a child misbehaves', () => {
