@@ -1,4 +1,4 @@
-/** A failed native row must retain evidence and stop the new protection matrix. */
+/** Native failures retain their evidence without hiding any later row. */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
@@ -24,6 +24,8 @@ it.each(['passed', 'failed', 'missing'])(
         import { writeFileSync, readFileSync } from 'node:fs';
         import { traceMissingParents, protectionRows } from ${JSON.stringify(module)};
         let count = 0;
+        assert.equal(protectionRows[2][0], 'kill-midturn-10k');
+        assert(protectionRows.some(([scenario]) => scenario === 'agent-symlink-10k'));
         const code = traceMissingParents((command, args, options) => {
           count++;
           assert.equal(command, 'strace');
@@ -39,7 +41,7 @@ it.each(['passed', 'failed', 'missing'])(
           return { status: 0, stdout: 'synthetic output', stderr: '' };
         }, ${JSON.stringify(dir)});
         assert.equal(code, ${status === 'passed' ? 0 : 1});
-        assert.equal(count, ${status === 'passed' ? 'protectionRows.length + 2' : '1'});
+        assert.equal(count, protectionRows.length + 2);
         const rows = JSON.parse(readFileSync(${JSON.stringify(path.join(dir, 'missing-parents-summary.json'))}, 'utf8'));
         assert.equal(rows.length, count);
         assert.equal(readFileSync(${JSON.stringify(path.join(dir, 'agent-home-10k-acceptEdits.log'))}, 'utf8').trim(), 'synthetic output');

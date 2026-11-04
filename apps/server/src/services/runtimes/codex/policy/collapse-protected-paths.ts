@@ -6,15 +6,13 @@ import { realPathOf } from '@dorkos/shared/directory-grants';
 type Access = 'read' | 'deny';
 
 /** Read-only inspection: links exist; inaccessible or non-directory ancestors refuse. */
-function firstMissing(file: string): string {
+function firstMissing(file: string): string | undefined {
   let candidate = file;
   let missing: string | undefined;
   for (;;) {
     try {
       fs.lstatSync(candidate);
-      // Resolve only the existing parent of a missing component. Two lexical
-      // aliases of that parent must not produce two mounts for the same target.
-      return missing ? path.join(realPathOf(candidate), path.basename(missing)) : file;
+      return missing;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       missing = candidate;
@@ -25,13 +23,24 @@ function firstMissing(file: string): string {
   }
 }
 
+/** Canonicalize a captured base only; links below it must remain visible to Codex. */
+function throughBase(file: string, bases: readonly string[]): string {
+  const base = bases
+    .map((base) => path.resolve(base))
+    .filter((base) => file === base || file.startsWith(base + path.sep))
+    .sort((a, b) => b.length - a.length)[0];
+  return base ? path.join(realPathOf(base), path.relative(base, file)) : file;
+}
+
 /** Globs retain their spelling; the strongest refusal wins each collapsed key. */
 export function collapseProtectedPaths(
-  entries: Readonly<Record<string, Access>>
+  entries: Readonly<Record<string, Access>>,
+  bases: readonly string[]
 ): Record<string, Access> {
   const collapsed: Record<string, Access> = {};
   for (const [file, access] of Object.entries(entries)) {
-    const target = /[*?[\]{}]/.test(file) ? file : firstMissing(file).split(path.sep).join('/');
+    const missing = /[*?[\]{}]/.test(file) ? undefined : firstMissing(file);
+    const target = (missing ? throughBase(missing, bases) : file).split(path.sep).join('/');
     collapsed[target] = access === 'deny' || collapsed[target] === 'deny' ? 'deny' : 'read';
   }
   return collapsed;

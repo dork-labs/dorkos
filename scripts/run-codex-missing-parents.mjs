@@ -1,4 +1,4 @@
-/** Temporary Linux-CI evidence: stop at the first failed protection row, retaining its argv. */
+/** Temporary Linux-CI evidence: collect every row, retaining each failure and argv. */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 export const protectionRows = [
   ['agent-home-10k', 'acceptEdits'],
   ['agent-home-10k', 'bypassPermissions'],
+  ['kill-midturn-10k', 'acceptEdits'],
+  ['agent-symlink-10k', 'acceptEdits'],
   ['other-home-10k', 'acceptEdits'],
   ['other-home-10k', 'bypassPermissions'],
   ['person-cwd-10k', 'acceptEdits'],
@@ -14,7 +16,6 @@ export const protectionRows = [
   ['person-symlink-10k', 'bypassPermissions'],
   ['outside-tmp-10k', 'acceptEdits'],
   ['outside-tmp-10k', 'bypassPermissions'],
-  ['kill-midturn-10k', 'acceptEdits'],
 ];
 
 export function traceMissingParents(
@@ -23,18 +24,22 @@ export function traceMissingParents(
   now = Date.now
 ) {
   mkdirSync(out, { recursive: true });
-  const deadline = now() + 570_000; // Leave cleanup time inside the approved ten-minute step.
+  const deadline = now() + 870_000; // Leave cleanup time inside the approved fifteen-minute step.
   const rows = [];
-  for (const [scenario, mode] of [
+  const matrix = [
     ...protectionRows,
     ['rg-unreadable-10k', 'default'],
     ['rg-vanishing-10k', 'default'],
-  ]) {
+  ];
+  for (const [index, [scenario, mode]] of matrix.entries()) {
     const stem = path.join(out, `${scenario}-${mode}`);
-    const budget = Math.min(190_000, deadline - now());
+    // Reserve a share for every remaining row, even after a timeout. Fast rows
+    // release their unused share to later rows; no row can consume the step.
+    const budget = Math.min(190_000, Math.floor((deadline - now()) / (matrix.length - index)));
     if (budget <= 0) {
       rows.push({ scenario, mode, complete: false, error: 'Diagnostic step budget exhausted' });
-      break;
+      writeFileSync(`${stem}.log`, 'Diagnostic step budget exhausted; row unproven\n');
+      continue;
     }
     const result = run(
       'strace',
@@ -102,9 +107,6 @@ export function traceMissingParents(
     console.info('Codex missing-parent diagnostic', row);
     console.info(result.stdout ?? '');
     console.error(result.stderr ?? '');
-    // Security requires argv before another attempted fix. Keep the refusal
-    // rows last: their expected rg failures must not hide protection evidence.
-    if (!row.complete && !scenario.startsWith('rg-')) break;
   }
   writeFileSync(path.join(out, 'missing-parents-summary.json'), JSON.stringify(rows, null, 2));
   return rows.length === protectionRows.length + 2 && rows.every((row) => row.complete) ? 0 : 1;

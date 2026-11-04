@@ -77,7 +77,15 @@ function protectedEntries({ roots, writable }: CodexFilePolicy): Record<string, 
         if (entry.kind === 'folder' && file.includes('*')) entries[`${file}/**`] = 'deny';
       }
   }
-  return collapseProtectedPaths(entries);
+  return collapseProtectedPaths(entries, [
+    roots.home,
+    roots.data,
+    roots.cwd,
+    ...writable,
+    ...roots.agentFolders,
+    ...roots.agentHomes,
+    ...roots.accounts,
+  ]);
 }
 
 /**

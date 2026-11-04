@@ -644,7 +644,8 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     { timeout: 180_000 },
     async (kind) => {
       const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
-      const ownHomeCwd = scenario === 'agent-home-10k';
+      const ownSymlink = scenario === 'agent-symlink-10k';
+      const ownHomeCwd = scenario === 'agent-home-10k' || ownSymlink;
       const otherHomeProbe = scenario === 'other-home-10k';
       const control = 'PUBLIC-control-dor3595';
       const skillControl = 'PUBLIC-skill-control-dor3595';
@@ -672,6 +673,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           'home-500k',
           'cwd-500k',
           'agent-home-10k',
+          'agent-symlink-10k',
           'other-home-10k',
           'person-cwd-10k',
           'person-symlink-10k',
@@ -682,7 +684,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         ]).toContain(scenario);
         expect(['default', 'acceptEdits', 'bypassPermissions']).toContain(selectedMode);
         if (ownHomeCwd) expect(['acceptEdits', 'bypassPermissions']).toContain(selectedMode);
-        if (scenario === 'person-cwd-10k' || scenario === 'kill-midturn-10k')
+        if (ownSymlink || scenario === 'person-cwd-10k' || scenario === 'kill-midturn-10k')
           expect(selectedMode).toBe('acceptEdits');
         if (otherHomeProbe) expect(['acceptEdits', 'bypassPermissions']).toContain(selectedMode);
         if (scenario?.startsWith('rg-')) expect(selectedMode).toBe('default');
@@ -703,6 +705,14 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         ownHomeCwd,
         otherHomeProbe ? otherHome : undefined
       );
+      const grantLink = path.join(agentHome, '.claude');
+      const grantInitial = path.join(agentHome, 'self-grant-initial');
+      const grantSwap = path.join(agentHome, 'self-grant-swap');
+      if (ownSymlink) {
+        fs.mkdirSync(grantInitial);
+        fs.mkdirSync(grantSwap);
+        fs.symlinkSync(grantInitial, grantLink, 'dir');
+      }
       const fixtureMs = performance.now() - fixtureStarted;
       const unreadable = path.join(root, 'home', 'rg-unreadable');
       if (scenario === 'rg-unreadable-10k') {
@@ -803,7 +813,11 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               (res) => {
                 // The provider is called only after the thread has started.
                 probe.createLate();
-                res.end(sseCall({ cmd: probe.command, login: false }));
+                const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+                const command = ownSymlink
+                  ? `ln -sfn ${quote(grantSwap)} ${quote(grantLink)}; ${probe.command}`
+                  : probe.command;
+                res.end(sseCall({ cmd: command, login: false }));
               },
               (res, body) => {
                 result = body;
@@ -873,6 +887,9 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             console.info('Codex protected probe', {
               kind,
               mode,
+              scenario,
+              launchOutcome: startMs === undefined ? 'refused' : 'started',
+              refusalEvents: startMs === undefined ? events : [],
               ...size,
               fixtureMs,
               startMs,
@@ -892,6 +909,23 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                 fs.existsSync(probe.latePlugin) &&
                 fs.readFileSync(probe.latePlugin, 'utf8') !== 'original-late-plugin',
             });
+            if (ownSymlink && startMs === undefined) {
+              const refusal = JSON.stringify(events);
+              console.info('Codex writable self-grant link refused; person sees', refusal);
+              // Only the specific writable-symlink safeguard satisfies this row.
+              // An unrelated startup error or missing report is not protection proof.
+              expect(refusal).toContain('crosses writable symlink');
+              expect(refusal).toContain(grantLink);
+              expect(fs.readlinkSync(grantLink)).toBe(grantInitial);
+              expect(fs.readdirSync(grantInitial)).toEqual([]);
+              expect(fs.readdirSync(grantSwap)).toEqual([]);
+              for (const target of probe.grantTargets)
+                expect(() => fs.lstatSync(target)).toThrow(
+                  expect.objectContaining({ code: 'ENOENT' })
+                );
+              await transport.shutdown();
+              continue;
+            }
             expect(startMs, JSON.stringify(events)).toBeDefined();
             if (scenario) expect(shellControls).toEqual([true, true, true]);
             expect(result, JSON.stringify(events)).toContain(control);
@@ -906,9 +940,10 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
             expect(result).toMatch(/denied|not permitted/i);
             if (ownHomeCwd) {
-              expect(() => fs.lstatSync(path.join(agentHome, '.claude'))).toThrow(
-                expect.objectContaining({ code: 'ENOENT' })
-              );
+              if (!ownSymlink)
+                expect(() => fs.lstatSync(path.join(agentHome, '.claude'))).toThrow(
+                  expect.objectContaining({ code: 'ENOENT' })
+                );
               for (const target of probe.selfGrantTargets)
                 expect(() => fs.lstatSync(target)).toThrow(
                   expect.objectContaining({ code: 'ENOENT' })
@@ -920,6 +955,10 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('changed-by-full-probe');
             else expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('original-git-control');
             if (otherHomeProbe) expect(fs.readdirSync(otherHome)).toEqual([]);
+            if (ownSymlink) {
+              expect(fs.readdirSync(grantInitial)).toEqual([]);
+              expect(fs.readdirSync(grantSwap)).toEqual([]);
+            }
             await transport.shutdown();
           } finally {
             if (race)
@@ -932,9 +971,14 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               ...(otherHomeProbe ? [otherHome] : []),
             ]);
             console.info('Codex host parent kinds after row', { kind, mode, scenario, parents });
-            expect(parents.filter(({ kind }) => kind !== 'absent' && kind !== 'directory')).toEqual(
-              []
-            );
+            expect(
+              parents.filter(
+                ({ file, kind }) =>
+                  kind !== 'absent' &&
+                  kind !== 'directory' &&
+                  !(ownSymlink && file === grantLink && kind === 'symlink')
+              )
+            ).toEqual([]);
           }
         }
       } finally {

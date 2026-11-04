@@ -57,3 +57,36 @@ step cap remains unchanged. Main comparison output has its own single-path
 upload outside the witness directory. Restore the job to 20 before any final
 label, remove the diagnostic comparison/rg/narrowing machinery and review
 all step caps. This is evidence collection only, never a startup remedy.
+
+Security revision after be2f5b67e2 supersedes the small-row fail-fast driver
+and its budget. Run every diagnostic row, retaining each failure's argv/log/
+JSON; stopping means no further lane workaround, not stopping CI collection.
+Move kill-midturn immediately after the two agent-home rows, then test an
+owned .claude symlink with missing settings.json in acceptEdits. That row
+requires either a specific crosses-writable-symlink refusal (logging what
+the person sees), or actual swap/write attempts with all targets still absent.
+Only its intentionally created .claude symlink is exempt from the host-type
+check; stray files elsewhere still fail. Log person-symlink Full's launch
+outcome and refusal events explicitly, even when that row remains red.
+
+Canonicalization is now limited to captured bases (person/data/cwd/write/
+agent-folder/agent-home/account), preserving path components inside each
+base. Links below a base stay in logical refusal keys so Codex can reject
+writable symlink crossings. Aliases at or above a captured base may resolve.
+Globs stay unchanged; no mkdir, scan change or weakened rg error is added.
+Unit tests cover an internal writable link and an alias above a base with
+an internal link, as well as strongest access and ordinary base aliases.
+
+Small traced step: 10 to 15 minutes. Untraced measurement step: 64 to 50.
+Native 20 plus small 15 plus main comparison 15 plus untraced 50 total 100
+of the 110-minute job. The trace driver has 870 seconds inside its 900-second
+step, reserving a share for every remaining row, each capped at 190 seconds.
+A timed-out or unattempted row stays unproven, never green. Thirteen rows now
+include the new internal-link case. Keep no-retry behavior and owned process
+group cleanup. Restore job to 20 and remove/review every diagnostic script,
+scenario, test narrowing and step cap before final label; this includes the
+new agent-symlink-10k case and revised 15/50-minute caps.
+
+The PM decided to ship the unbounded scan. The Linux-only changelog now
+separates unreadable-folder startup refusal from a disappearing-folder command
+failure and advises retry for the latter. DOR-3812 remains outside this round.
