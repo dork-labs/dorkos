@@ -21,6 +21,7 @@ export {
 export {
   UNKNOWN_AGENT_NAME,
   useDirectMessageAgent,
+  useKeptDirectMessageAgent,
   useSharedChannels,
   useAgentStatusLine,
   type DirectMessageAgent,

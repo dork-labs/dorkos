@@ -22,6 +22,9 @@ import {
   useSearch,
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
+import { agentAuthorRef } from '@dorkos/shared/room-schemas';
+import { useAppStore } from '@/layers/shared/model';
+import { roomKeys } from '@/layers/entities/room';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -60,6 +63,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   working.current = false;
+  useAppStore.setState({ selectedCwd: null });
 });
 
 const SESSION = 'scout-direct';
@@ -107,6 +111,7 @@ function mountBar(
     lookupPending?: boolean;
     lookupError?: Error;
     keptName?: string | null;
+    keptRoomTitle?: string;
     configPending?: boolean;
     agentPending?: boolean;
     noManifest?: boolean;
@@ -171,6 +176,27 @@ function mountBar(
     ]),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  if (options.keptRoomTitle) {
+    useAppStore.setState({ selectedCwd: SCOUT_PATH });
+    queryClient.setQueryData(roomKeys.list(), [
+      {
+        id: 'dm-scout',
+        kind: 'dm',
+        title: options.keptRoomTitle,
+        archived: false,
+        participants: [
+          { id: 'me', kind: 'human', displayName: 'You' },
+          {
+            id: 'scout',
+            kind: 'agent',
+            displayName: options.keptRoomTitle,
+            agentRef: agentAuthorRef(SCOUT_PATH),
+          },
+        ],
+      },
+    ]);
+  }
 
   function Bar() {
     const search = useSearch({ strict: false }) as { session?: string };
@@ -255,6 +281,25 @@ describe('SessionRouteHeader', () => {
     expect(bar.textContent).toBe(keptName ?? '');
     expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
   });
+
+  it.each(['500', 'never'] as const)(
+    'keeps a room-only name in the neutral bar with lookup %s',
+    async (lookup) => {
+      const { queryClient } = mountBar(`/session?session=${SESSION}`, {
+        keptName: null,
+        keptRoomTitle: 'Tern',
+        noManifest: true,
+        ...(lookup === '500' ? { lookupError: new Error('500') } : { lookupPending: true }),
+      });
+      if (lookup === '500')
+        await waitFor(() =>
+          expect(queryClient.getQueryState(['direct-chat', SESSION])?.status).toBe('error')
+        );
+      expect(await screen.findByTestId('session-bar-pending')).toHaveTextContent('Tern');
+      expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
+    }
+  );
 
   it('draws the same neutral bar, not the session bar, until the setting is known', async () => {
     const { transport } = mountBar(`/session?session=${SESSION}`, { configPending: true });

@@ -6,6 +6,7 @@
  * @module features/direct-message/model/use-direct-message-agent
  */
 import { useCallback, useMemo } from 'react';
+import { agentAuthorRef, oneToOneDmAgentRef } from '@dorkos/shared/room-schemas';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import {
   AGENT_IDENTITY_LIMIT_MS,
@@ -14,7 +15,7 @@ import {
   useGaveUpWaiting,
   type AgentVisual,
 } from '@/layers/shared/lib';
-import { useCurrentAgent } from '@/layers/entities/agent';
+import { useCachedAgent, useCurrentAgent } from '@/layers/entities/agent';
 import { dmCounterpart, roomDisplayTitle, useRooms } from '@/layers/entities/room';
 import { useMemberRooms, useTeamRoster } from '@/layers/entities/team';
 import { agentStatusLine, sharedChannels, type SharedChannel } from '../lib/direct-message-rules';
@@ -47,6 +48,34 @@ export interface DirectMessageAgent {
   role: string | null;
   /** The agent's row on the team roster, or undefined while unknown. */
   member: TeamMember | undefined;
+}
+
+/**
+ * The identity already kept for an agent while its Direct-chat lookup is out.
+ * Uses the sidebar's cached batch manifest, then its one-to-one room title.
+ * The room match is the same stable agent reference the sidebar uses, never a
+ * folder basename. A disabled observer subscribes to the shared room cache
+ * without requesting it again; room renames reach all three chat surfaces.
+ *
+ * @param agentPath - The selected agent's directory, or null outside this wait.
+ */
+export function useKeptDirectMessageAgent(
+  agentPath: string | null
+): Pick<DirectMessageAgent, 'id' | 'name' | 'visual'> {
+  const manifest = useCachedAgent(agentPath);
+  const { data: rooms } = useRooms({ enabled: false });
+  return useMemo(() => {
+    const ref = agentPath === null ? null : agentAuthorRef(agentPath);
+    const room =
+      ref === null
+        ? undefined
+        : rooms?.find((candidate) => !candidate.archived && oneToOneDmAgentRef(candidate) === ref);
+    return {
+      id: manifest?.id ?? dmCounterpart(room?.participants)?.id ?? null,
+      name: manifest ? getAgentDisplayName(manifest) : room?.title.trim() || null,
+      visual: manifest ? resolveAgentVisual(manifest) : null,
+    };
+  }, [agentPath, manifest, rooms]);
 }
 
 /**

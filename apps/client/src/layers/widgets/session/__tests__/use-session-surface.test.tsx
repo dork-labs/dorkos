@@ -19,9 +19,8 @@ const state = vi.hoisted(() => ({
   keptName: null as string | null,
 }));
 
-vi.mock('@/layers/entities/agent', () => ({ useCachedAgent: () => null }));
-
 vi.mock('@/layers/features/direct-message', () => ({
+  useKeptDirectMessageAgent: () => ({ id: null, name: null, visual: null }),
   useDirectMessageView: () => ({
     lookupFailed: state.lookupFailed,
     mode: state.mode,

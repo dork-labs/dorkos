@@ -7,10 +7,13 @@
 import { useMemo } from 'react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { useAppStore } from '@/layers/shared/model';
-import { useCachedAgent } from '@/layers/entities/agent';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useConfig, useShowSessions } from '@/layers/entities/config';
-import { useDirectMessageAgent, useDirectMessageView } from '@/layers/features/direct-message';
+import {
+  useDirectMessageAgent,
+  useDirectMessageView,
+  useKeptDirectMessageAgent,
+} from '@/layers/features/direct-message';
 import type { MessageAuthorAgent } from '@/layers/features/chat';
 
 /** What a chat drawn as a DM needs beyond what a session already reads. */
@@ -84,9 +87,9 @@ export function useSessionSurface(
   const showSessions = useShowSessions();
   const humanName = config?.profile?.displayName?.trim() || null;
   const cwd = useAppStore((s) => s.selectedCwd);
-  const cachedAgent = useCachedAgent(pending ? cwd : null);
-  const knownAgent = composerAgent ?? cachedAgent;
-  const composerName = knownAgent ? getAgentDisplayName(knownAgent) : null;
+  const keptAgent = useKeptDirectMessageAgent(pending ? cwd : null);
+  const knownId = composerAgent?.id ?? keptAgent.id ?? `unknown-agent:${cwd}`;
+  const composerName = composerAgent ? getAgentDisplayName(composerAgent) : keptAgent.name;
   const { id, name } = dmAgent;
   // Rows shown at the limit with the manifest still out go straight to the kept
   // name. The bar and the box wait for `name`, so neither changes on a quick load.
@@ -100,7 +103,7 @@ export function useSessionSurface(
   const directMessage = useMemo<DirectMessageSurface | null>(() => {
     if (pending)
       return {
-        agent: knownAgent ? { id: knownAgent.id, displayName: composerName! } : null,
+        agent: composerName ? { id: knownId, displayName: composerName } : null,
         humanName: null,
         settled: false,
       };
@@ -123,7 +126,7 @@ export function useSessionSurface(
     };
   }, [
     pending,
-    knownAgent,
+    knownId,
     composerName,
     isDm,
     agentPath,

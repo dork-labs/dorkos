@@ -6,10 +6,10 @@
  */
 import { Terminal } from 'lucide-react';
 import { useAppStore } from '@/layers/shared/model';
-import { getAgentDisplayName, resolveAgentVisual } from '@/layers/shared/lib';
-import { useCachedAgent, AgentAvatar } from '@/layers/entities/agent';
+import { AgentAvatar } from '@/layers/entities/agent';
 import {
   useDirectMessageAgent,
+  useKeptDirectMessageAgent,
   useDirectMessageView,
   useSessionViewLinks,
 } from '@/layers/features/direct-message';
@@ -72,9 +72,9 @@ function BehindDirectMessage({ agentPath }: { agentPath: string }) {
 function PendingBar() {
   const { agentName: currentName, agentVisual: currentVisual } = useOneBarState();
   const cwd = useAppStore((s) => s.selectedCwd);
-  const kept = useCachedAgent(cwd);
-  const agentName = currentName ?? (kept ? getAgentDisplayName(kept) : undefined);
-  const agentVisual = currentVisual ?? (kept ? resolveAgentVisual(kept) : undefined);
+  const kept = useKeptDirectMessageAgent(cwd);
+  const agentName = currentName ?? kept.name;
+  const agentVisual = currentVisual ?? kept.visual;
   return (
     <OneBar
       identity={
