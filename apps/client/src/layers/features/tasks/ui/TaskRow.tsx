@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { TaskScheduleReview } from './review/TaskScheduleReview';
+import { useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import cronstrue from 'cronstrue';
 import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield, RotateCcw } from 'lucide-react';
@@ -195,6 +196,12 @@ export function TaskRow({
   const updateTask = useUpdateTask();
   const triggerTask = useTriggerTask();
   const deleteTask = useDeleteTask();
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const reviewTrigger = useRef<HTMLElement | null>(null);
+  const openReview = (element: HTMLElement) => {
+    reviewTrigger.current = element;
+    setReviewOpen(true);
+  };
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const agentVisual = agent ? resolveAgentVisual(agent) : null;
 
@@ -255,6 +262,12 @@ export function TaskRow({
 
   return (
     <>
+      <TaskScheduleReview
+        task={task}
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        returnFocus={() => reviewTrigger.current?.focus()}
+      />
       {/* Rounds its first and last child rather than clipping with
           `overflow-hidden` — clipping cut the keyboard focus ring off on
           three of its four sides (batch 06, N1). Rounding the edge children
@@ -434,7 +447,7 @@ export function TaskRow({
           >
             {/* Approving keeps the switch as it is (DOR-3309). */}
             {awaitingApproval ? (
-              <TaskApproveButtons task={task} />
+              <TaskApproveButtons task={task} onReview={openReview} />
             ) : isCompact ? (
               <button
                 className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-xs transition-colors"
@@ -459,7 +472,7 @@ export function TaskRow({
                     // `enabled` says; the switch reads off and cannot be flipped
                     // until the file comes back. A declined one reads off too
                     // (DOR-2097), and flipping it on is approving it, below.
-                    checked={task.enabled && task.status !== 'paused' && !task.declined}
+                    checked={task.enabled && task.status === 'active' && !task.declined}
                     disabled={task.status === 'paused'}
                     onCheckedChange={(checked) => {
                       // A package-shipped schedule that ships off is
@@ -474,12 +487,15 @@ export function TaskRow({
                       // back on needs none of that — `enabled` alone is
                       // agent-writable and reversible.
                       if (checked && task.status === 'pending_approval') {
-                        updateTask.mutate({ id: task.id, status: 'active', enabled: true });
+                        setReviewOpen(true);
                         return;
                       }
                       updateTask.mutate({ id: task.id, enabled: checked });
                     }}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      reviewTrigger.current = e.currentTarget;
+                    }}
                     aria-label={`Toggle ${task.name}`}
                   />
                 ) : (

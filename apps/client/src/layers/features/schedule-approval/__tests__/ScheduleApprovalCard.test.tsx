@@ -50,6 +50,7 @@ function minutesFromLoad(minutes: number): string {
 function proposal(overrides: Partial<Task> = {}): Task {
   return {
     id: 'task-1',
+    approvalRevision: 'a'.repeat(64),
     name: 'nightly-sweep',
     displayName: 'Nightly sweep',
     description: null,
@@ -111,7 +112,10 @@ function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
 }
 
 /** What the card's yes carries beside its fields: the hash of the prompt it showed (M4). */
-const SHOWN = { approvedPromptHash: expect.stringMatching(/^sha256:[A-Za-z0-9_-]{43}$/) };
+const SHOWN = {
+  expectedApprovalRevision: 'a'.repeat(64),
+  approvedPromptHash: expect.stringMatching(/^sha256:[A-Za-z0-9_-]{43}$/),
+};
 
 /** Render one card over a mock transport. */
 function renderCard(
@@ -306,9 +310,7 @@ describe('ScheduleApprovalCard — what it says', () => {
     // `findByText`: the fallback renders first and a query that returns on its
     // first match would settle on it.
     await waitFor(() =>
-      expect(slot('schedule-permission-mode')).toHaveTextContent(
-        'Runs as no agent, at Accept edits'
-      )
+      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as: Accept edits')
     );
   });
 
@@ -332,7 +334,7 @@ describe('ScheduleApprovalCard — what it says', () => {
     cleanup();
     renderCard(proposal(), {}, { pinActions: true });
     const pinned = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
-    expect(pinned.parentElement!.className).toContain('max-sm:sticky');
+    expect(pinned.parentElement!.className).toContain('sticky');
   });
 
   it('keeps a person’s own schedule behind the disclosure when its yes approves no file', async () => {
@@ -349,7 +351,12 @@ describe('ScheduleApprovalCard — what it says', () => {
     renderCard(proposal({ proposedByAgentPath: null, proposedByName: null }), { updateTask });
     expect(slot('schedule-prompt')).toBeNull();
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
-    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        expectedApprovalRevision: 'a'.repeat(64),
+      })
+    );
   });
 
   it('opens on the instructions whenever its yes would approve a file, and its yes sends their hash', async () => {
@@ -365,6 +372,7 @@ describe('ScheduleApprovalCard — what it says', () => {
       expect(updateTask).toHaveBeenCalledWith('task-1', {
         status: 'active',
         approvedPromptHash: shown,
+        expectedApprovalRevision: 'a'.repeat(64),
       })
     );
   });
@@ -375,7 +383,12 @@ describe('ScheduleApprovalCard — what it says', () => {
       const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
       renderCard(proposal(), { updateTask });
       await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
-      await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
+      await waitFor(() =>
+        expect(updateTask).toHaveBeenCalledWith('task-1', {
+          status: 'active',
+          expectedApprovalRevision: 'a'.repeat(64),
+        })
+      );
     } finally {
       vi.unstubAllGlobals();
     }
@@ -384,7 +397,7 @@ describe('ScheduleApprovalCard — what it says', () => {
   it('names the agent the schedule runs as (DOR-3640)', async () => {
     renderCard(proposal({ agentId: 'agent-b', runsAsName: 'Scout' }));
     await waitFor(() =>
-      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as Scout, at Accept edits')
+      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as: Accept edits')
     );
   });
 
@@ -1332,5 +1345,50 @@ describe('what changed since the person approved it (DOR-2323)', () => {
     renderCard(proposal());
 
     expect(slot('schedule-changes')).toBeNull();
+  });
+});
+
+describe('stale schedule approval', () => {
+  it('refreshes instructions and mode before allowing another approval', async () => {
+    let finishRefresh!: (tasks: Task[]) => void;
+    const staleError = Object.assign(new Error('This schedule changed. Review it again.'), {
+      code: 'schedule_review_changed',
+    });
+    const updateTask = vi.fn().mockRejectedValueOnce(staleError).mockResolvedValue(proposal());
+    const listTasks = vi.fn(
+      () =>
+        new Promise<Task[]>((resolve) => {
+          finishRefresh = resolve;
+        })
+    );
+    renderCard(proposal(), { updateTask, listTasks });
+    const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    await userEvent.click(approve);
+    expect(await screen.findByText('This schedule changed. Review it again.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+    await act(async () =>
+      finishRefresh([
+        proposal({
+          prompt: 'Check the sample ledger.',
+          permissionMode: 'dontAsk',
+          approvalRevision: 'b'.repeat(64),
+        }),
+      ])
+    );
+    expect(await screen.findByText('Check the sample ledger.')).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
+    );
+    expect(document.querySelector('[data-slot="schedule-permission-mode"]')).toHaveTextContent(
+      'Runs as: Never ask'
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenLastCalledWith(
+        'task-1',
+        expect.objectContaining({ expectedApprovalRevision: 'b'.repeat(64) })
+      )
+    );
   });
 });

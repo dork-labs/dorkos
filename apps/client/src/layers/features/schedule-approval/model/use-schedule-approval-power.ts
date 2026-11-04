@@ -27,5 +27,10 @@ export function useScheduleApprovalPower(task: Task) {
   const modes = agentUnknown ? [] : (capabilities?.permissionModes?.values ?? []);
   const stop = runtime ? operatorStopForRuntime(config?.executionDefaults, runtime) : null;
   const ceiling = modes.find((mode) => mode.id === resolveConfiguredStopMode(stop, modes));
-  return { modes, ceiling, current: modes.find((mode) => mode.id === task.permissionMode) ?? null };
+  return {
+    runtime,
+    modes,
+    ceiling,
+    current: modes.find((mode) => mode.id === task.permissionMode) ?? null,
+  };
 }

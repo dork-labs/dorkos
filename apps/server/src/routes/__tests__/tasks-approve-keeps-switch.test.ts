@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * Nothing turns a scheduled task on except a person turning it on (DOR-3309).
  *
@@ -81,7 +82,14 @@ describe('PATCH /api/tasks/:id — only a person turns a task on (DOR-3309)', ()
   }
 
   const patch = (id: string, body: Record<string, unknown>) =>
-    request(fixtureTarget.server).patch(`/api/tasks/${id}`).send(body);
+    request(fixtureTarget.server)
+      .patch(`/api/tasks/${id}`)
+      .send({
+        ...body,
+        ...(body.status === 'active' && {
+          expectedApprovalRevision: taskReviewRevision(store.getTask(id)!),
+        }),
+      });
 
   beforeEach(async () => {
     const scheduler = {

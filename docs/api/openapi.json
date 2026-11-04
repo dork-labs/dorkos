@@ -10461,6 +10461,18 @@
               "pending"
             ]
           },
+          "runsAsName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fileCapNext": {
+            "type": "boolean"
+          },
+          "approvalRevision": {
+            "type": "string"
+          },
           "runtime": {
             "type": [
               "string",
@@ -10535,12 +10547,6 @@
             ],
             "default": null
           },
-          "runsAsName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "origin": {
             "type": [
               "string",
@@ -10571,9 +10577,6 @@
           },
           "fileCap": {
             "$ref": "#/components/schemas/TaskFileCap"
-          },
-          "fileCapNext": {
-            "type": "boolean"
           },
           "quietHold": {
             "type": "boolean"
@@ -11064,6 +11067,10 @@
           "approvedPromptHash": {
             "type": "string",
             "minLength": 1
+          },
+          "expectedApprovalRevision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           }
         }
       },
