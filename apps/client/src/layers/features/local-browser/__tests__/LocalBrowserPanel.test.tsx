@@ -9,6 +9,7 @@ import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
 import { readLocalBrowserChoice } from '@/layers/shared/model/app-store/local-browser-preference';
 
 const transport = vi.hoisted(() => ({
+  listLocalBrowserProfiles: vi.fn().mockResolvedValue({ profiles: [] }),
   getLocalBrowserState: vi.fn(),
   getLocalBrowserCapabilities: vi.fn(),
   openLocalBrowser: vi.fn(),
@@ -81,6 +82,7 @@ function mount(visible = true) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  transport.listLocalBrowserProfiles.mockResolvedValue({ profiles: [] });
   delete window.electronAPI;
   localStorage.clear();
   useAppStore.setState({ localBrowserChoice: null, localBrowserChoiceIssue: null });

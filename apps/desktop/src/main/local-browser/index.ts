@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { ConnectOverCDPTransport } from 'playwright-core';
 import { isCockpitSender as isAppSender, isWebLink } from '../window-manager';
+import { forgetGuestSignIns } from './forget-sign-ins';
 import { pageTransport } from './page-transport';
 
 export const LOCAL_BROWSER_BOUNDS_CHANNEL = 'local-browser:set-bounds';
@@ -32,6 +33,7 @@ export async function startLocalBrowserBridge(
   getWindow: () => BrowserWindow | null
 ): Promise<{ close(): Promise<void> }> {
   const token = randomBytes(32).toString('hex');
+  let forgetting = false;
   const guests = new Map<string, Guest>();
   const guestSession = session.fromPartition('persist:dorkos-local-browser');
   guestSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -63,7 +65,10 @@ export async function startLocalBrowserBridge(
         response.writeHead(403).end();
         return;
       }
-      if (request.method !== 'POST' || !['/open', '/close'].includes(request.url ?? '')) {
+      if (
+        request.method !== 'POST' ||
+        !['/open', '/close', '/forget-sign-ins'].includes(request.url ?? '')
+      ) {
         response.writeHead(404).end();
         return;
       }
@@ -85,7 +90,31 @@ export async function startLocalBrowserBridge(
         response.writeHead(200).end('{}');
         return;
       }
-      if (guests.has(connectionId)) {
+      if (request.url === '/forget-sign-ins') {
+        if (forgetting) {
+          response.writeHead(409).end();
+          return;
+        }
+        forgetting = true;
+        try {
+          await forgetGuestSignIns(guestSession, async () => {
+            const closed = [...guests].map(([id, guest]) => {
+              const contents = guest.view.webContents;
+              const done = contents.isDestroyed()
+                ? Promise.resolve()
+                : new Promise<void>((resolve) => contents.once('destroyed', () => resolve()));
+              closeGuest(id);
+              return done;
+            });
+            await Promise.all(closed);
+          });
+          response.writeHead(200).end('{}');
+        } finally {
+          forgetting = false;
+        }
+        return;
+      }
+      if (forgetting || guests.has(connectionId)) {
         response.writeHead(409).end();
         return;
       }

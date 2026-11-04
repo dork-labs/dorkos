@@ -24,6 +24,7 @@ import type { SignInWindow } from './sign-in-window.js';
 
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
+  profileRemoval?: { assertAvailable(): void };
   state(): Promise<LocalBrowserState>;
   capabilities(): { newWindow: boolean };
   currentProfileId(): string | null;
@@ -75,6 +76,22 @@ export function assertSignInUrl(value: string): URL {
 
 /** One handoff at a time, and the plain sign-in window it can open. */
 export class BrowserHandover {
+  private signingIn = 0;
+
+  /** Includes preparation, saving, and a handoff that can reopen this profile. */
+  holdsProfile(profileId: string | null): boolean {
+    return (
+      this.signingIn > 0 ||
+      this.signIns.holds(this.folderOf(profileId)) ||
+      (this.record?.outcome === null && this.record.profileId === profileId)
+    );
+  }
+
+  /** Clear stale success notices only after the disk operation succeeded. */
+  forgetProfileState(profileId: string | null): void {
+    this.signIns.forgetSaved(profileId);
+    this.changed();
+  }
   private record: LocalBrowserHandoff | null = null;
   private reopenAt?: ReopenAt;
   // The agent's page when it asked. Saved here, so Continue never takes a URL from the agent.
@@ -216,6 +233,16 @@ export class BrowserHandover {
    * @param input - A page the person typed, or the open handoff, whose site is the agent's current page.
    */
   async signIn(input: LocalBrowserSignInRequest): Promise<LocalBrowserPersonState> {
+    this.browser.profileRemoval?.assertAvailable();
+    this.signingIn++;
+    try {
+      return await this.startSignIn(input);
+    } finally {
+      this.signingIn--;
+    }
+  }
+
+  private async startSignIn(input: LocalBrowserSignInRequest): Promise<LocalBrowserPersonState> {
     const state = await this.browser.state();
     let url: URL;
     let profileId: string | null;
