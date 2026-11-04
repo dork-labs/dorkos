@@ -543,8 +543,8 @@ function RefusedToolsLine({ run }: { run: TaskRun }) {
   const named = listRefusedTools(tools);
   const line =
     named !== null
-      ? `Refused: nobody to approve (${tools.length}). ${named.list}.`
-      : (run.error ?? 'Refused: nobody was there to approve a tool this run needed.');
+      ? `Refused: ${tools.length} ${tools.length === 1 && tools[0] === 'Bash' ? 'Bash command' : `tool${tools.length === 1 ? '' : 's'}: ${named.list}`}.`
+      : (run.error ?? 'Refused: a tool.');
 
   return (
     <span

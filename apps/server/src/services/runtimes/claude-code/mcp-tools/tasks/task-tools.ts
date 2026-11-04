@@ -26,7 +26,7 @@ import { jsonContent, requireTasks } from '../types.js';
 import { createDeleteScheduleHandler } from './task-delete-tool.js';
 import {
   PARKED_SCHEDULE_NOTE,
-  ARMED_SCHEDULE_NOTE,
+  armedScheduleNote,
   REAPPROVAL_NOTE,
   TIMING_REAPPROVAL_NOTE,
   RESET_TIMING_DESCRIPTION,
@@ -313,7 +313,7 @@ export function createCreateScheduleHandler(
       metadata: { status: task.status },
     });
 
-    if (armed) return jsonContent({ schedule: task, note: ARMED_SCHEDULE_NOTE });
+    if (armed) return jsonContent({ schedule: task, note: armedScheduleNote(armed.execution) });
 
     return jsonContent({
       schedule: task,

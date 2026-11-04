@@ -78,6 +78,14 @@ function withMonoHashes(body: string): ReactNode {
   );
 }
 
+/** Keep the refusal visible while only its schedule name shortens. */
+function refusalTitleParts(title: string): { name: string; result: string } | null {
+  const bash = ' had a command refused';
+  if (title.endsWith(bash)) return { name: title.slice(0, -bash.length), result: bash.trim() };
+  const at = title.lastIndexOf(' was refused ');
+  return at < 0 ? null : { name: title.slice(0, at), result: title.slice(at + 1) };
+}
+
 export interface InboxRowProps {
   /** The notification this row draws. */
   notification: NotificationDTO;
@@ -118,7 +126,7 @@ const OPEN_SCHEDULE_ACTION_ID = 'open-schedule';
  * "Open schedule": takes the person to the Schedules page, filtered to the
  * failing schedules, where the fix lives.
  */
-function OpenScheduleAction() {
+function OpenScheduleAction({ scheduleId }: { scheduleId?: string }) {
   const navigate = useSafeNavigate();
   return (
     <Button
@@ -130,7 +138,10 @@ function OpenScheduleAction() {
       className="h-11 w-full shrink-0 sm:h-auto sm:w-auto"
       onClick={() => {
         if (navigate !== null)
-          void navigate({ ...appRoutes.tasks(), search: { health: 'failing' } });
+          void navigate({
+            ...appRoutes.tasks(),
+            search: scheduleId ? { schedule: scheduleId } : { health: 'failing' },
+          });
       }}
     >
       Open schedule
@@ -195,7 +206,12 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   // An agent's change to a schedule is the person's only signal of it, so its
   // title and body read in full, never cut (DOR-3703, M6: the mode, the hashes
   // and who started the turn).
-  const readsInFull = notification.kind === 'schedule.armed_by_agent';
+  const readsInFull =
+    notification.mark === 'refused' || notification.kind === 'schedule.armed_by_agent';
+  const isScheduleCreation =
+    readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
+  const refusalTitle =
+    notification.mark === 'refused' ? refusalTitleParts(notification.title) : null;
   const tone = notificationRowTone(notification);
   const unread = notification.readAt === undefined;
   const visual = tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
@@ -249,11 +265,35 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           data-slot="inbox-row-title"
           className={cn(
             'block text-xs',
-            readsInFull ? 'break-words' : hasAction ? 'line-clamp-2 break-words' : 'truncate',
+            refusalTitle
+              ? 'flex min-w-0 items-baseline gap-0'
+              : isScheduleCreation
+                ? 'truncate'
+                : readsInFull
+                  ? 'break-words'
+                  : hasAction
+                    ? 'line-clamp-2 break-words'
+                    : 'truncate',
             unread ? 'text-foreground font-medium' : 'text-foreground/90'
           )}
+          title={isScheduleCreation ? notification.title : undefined}
         >
-          {notification.title}
+          {refusalTitle ? (
+            <>
+              <span
+                data-slot="refusal-schedule-name"
+                className="min-w-0 truncate"
+                title={refusalTitle.name}
+              >
+                {refusalTitle.name}
+              </span>
+              <span data-slot="refusal-result" className="max-w-[75%] shrink-0 break-words">
+                {refusalTitle.result}
+              </span>
+            </>
+          ) : (
+            notification.title
+          )}
         </span>
         {notification.body !== undefined && (
           <span
@@ -261,7 +301,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
             className={cn(
               'text-muted-foreground block text-xs',
               readsInFull
-                ? 'break-words'
+                ? 'break-words whitespace-pre-line'
                 : twoLineBody
                   ? 'line-clamp-2 sm:line-clamp-none sm:truncate'
                   : 'truncate'
@@ -340,7 +380,11 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
       )}
       {/* A failing schedule's one fix, beside the row rather than inside it (a
           button cannot hold a button). Only on a row a person can act on. */}
-      {opensSchedule && <OpenScheduleAction />}
+      {opensSchedule && (
+        <OpenScheduleAction
+          scheduleId={notification.subject.type === 'task' ? notification.subject.id : undefined}
+        />
+      )}
       {undoesMode && (
         <UndoAgentModeAction taskId={notification.subject.id} notificationId={notification.id} />
       )}

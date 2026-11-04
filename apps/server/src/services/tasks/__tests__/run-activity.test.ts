@@ -64,8 +64,7 @@ describe('emitTerminalRunActivity (DOR-1573)', () => {
     expect(emit).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'tasks.run_needs_attention',
-        summary:
-          'digest needs attention: a tool was refused because nobody was there to approve it (1s)',
+        summary: 'digest was refused a tool',
       })
     );
   });
@@ -126,7 +125,7 @@ describe('createRelayRefusedAskEmitter (DOR-1580)', () => {
         actorType: 'tasks',
         actorLabel: 'Scheduler',
         resourceLabel: 'digest',
-        summary: 'digest could not use Bash — nobody was there to approve it',
+        summary: 'digest had a Bash command refused',
         metadata: { runId: run.id, toolName: 'Bash', reason: 'no surface' },
       })
     );
@@ -139,7 +138,7 @@ describe('createRelayRefusedAskEmitter (DOR-1580)', () => {
     report({ taskId: task.id, runId: run.id, refused: { toolName: 'Bash', neverAsk: true } });
 
     expect(emit).toHaveBeenCalledWith(
-      expect.objectContaining({ summary: 'digest could not use Bash — it is set to Never ask' })
+      expect.objectContaining({ summary: 'digest had a Bash command refused' })
     );
   });
 
