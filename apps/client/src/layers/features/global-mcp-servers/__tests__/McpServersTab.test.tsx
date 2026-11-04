@@ -125,8 +125,50 @@ describe('the list', () => {
     );
     const toggle = await screen.findByRole('switch');
     await user.click(toggle);
-    expect(await screen.findByText('Not confirmed. Nothing changed.')).toBeInTheDocument();
+    expect(await screen.findByText(/Not confirmed\. Nothing changed\./)).toBeInTheDocument();
     expect(toggle).not.toBeChecked();
+  });
+
+  it('an off server dims its name and "Off", never its warning', async () => {
+    renderTab(
+      transportWith([
+        createMockGlobalMcpServer({
+          enabled: false,
+          warnings: [{ name: 'NODE_OPTIONS', note: 'Made-up warning.' }],
+        }),
+      ])
+    );
+    const row = within(await screen.findByTestId('mcp-server-row-made-up-server'));
+    expect(row.getByText('made-up-server')).toHaveClass('opacity-55');
+    expect(row.getByText(/^Off/)).toHaveClass('opacity-55');
+    const warning = row.getByText(/Made-up warning/);
+    expect(warning).toHaveClass('text-status-warning-fg');
+    for (let el: HTMLElement | null = warning; el; el = el.parentElement) {
+      expect(el.className).not.toMatch(/(^|\s)opacity-/);
+    }
+  });
+
+  it('a cancel goes in front of the row’s line, and opening the sheet clears it', async () => {
+    const user = userEvent.setup();
+    renderTab(
+      transportWith(
+        [
+          createMockGlobalMcpServer({
+            enabled: false,
+            warnings: [{ name: 'NODE_OPTIONS', note: 'Made-up warning.' }],
+          }),
+        ],
+        { patchGlobalMcpServer: vi.fn().mockRejectedValue(refusal('step_up_required')) }
+      )
+    );
+    const row = await screen.findByTestId('mcp-server-row-made-up-server');
+    await user.click(within(row).getByRole('switch'));
+    await within(row).findByText(/Not confirmed\. Nothing changed\./);
+    expect(row).toHaveTextContent(
+      'Not confirmed. Nothing changed. · Off · Made-up warning. · All agents'
+    );
+    await user.click(within(row).getByRole('button', { name: /made-up-server/ }));
+    await waitFor(() => expect(row).not.toHaveTextContent('Not confirmed'));
   });
 
   it('a server’s refusal is said in its own words', async () => {

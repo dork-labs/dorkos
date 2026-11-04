@@ -75,7 +75,7 @@ export function AddServerDialog({ onClose }: { onClose: () => void }) {
           <ResponsiveDialogTitle>Add a server</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
         <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
-          <ResponsiveDialogBody alignWithHeader className="space-y-4 py-1">
+          <ResponsiveDialogBody alignWithHeader className="space-y-4 py-1 [&_input]:scroll-my-6">
             <div className="space-y-1.5">
               <Label htmlFor={nameId}>Name</Label>
               <Input

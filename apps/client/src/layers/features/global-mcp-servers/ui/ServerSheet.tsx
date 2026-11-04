@@ -61,7 +61,7 @@ export function ServerSheet({ server, onClose, onRemove, onCloseAutoFocus }: Ser
     >
       <ResponsiveDialogContent
         className="max-h-[85vh]"
-        desktopProps={{ className: 'sm:max-w-lg' }}
+        desktopProps={{ className: 'min-h-0 sm:max-w-lg' }}
         onCloseAutoFocus={onCloseAutoFocus}
       >
         <ResponsiveDialogHeader>

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { GlobalMcpServerView } from '@dorkos/shared/global-mcp-schemas';
 import { usePatchGlobalMcpServer } from '@/layers/entities/global-mcp';
 import { cn } from '@/layers/shared/lib';
@@ -17,7 +18,7 @@ interface McpServerRowProps {
 
 /**
  * One server: its name, who gets it, and its switch. The switch shows what is true, so a turn-on
- * waiting on "Confirm it's you" stays off and the second line says so.
+ * waiting on "Confirm it's you" stays off and the second line says so. Opening the sheet clears what the last press came to.
  */
 export function McpServerRow({ server, nameOf, onOpen }: McpServerRowProps) {
   const patch = usePatchGlobalMcpServer();
@@ -30,18 +31,28 @@ export function McpServerRow({ server, nameOf, onOpen }: McpServerRowProps) {
     >
       <button
         type="button"
-        onClick={onOpen}
+        onClick={() => {
+          patch.reset();
+          onOpen();
+        }}
         className="focus-ring flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-lg px-3 py-2 text-left"
       >
-        <span
-          className={cn('flex min-w-0 flex-1 items-center gap-3', !server.enabled && 'opacity-55')}
-        >
+        <span className={cn('shrink-0', !server.enabled && 'opacity-55')}>
           <ServerMark />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium">{server.name}</span>
-            {!waiting && !patch.isError && <DetailLine server={server} nameOf={nameOf} />}
-            {(waiting || patch.isError) && <RowOutcome waiting={waiting} error={patch.error} />}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span
+            className={cn('block truncate text-sm font-medium', !server.enabled && 'opacity-55')}
+          >
+            {server.name}
           </span>
+          <DetailLine
+            server={server}
+            nameOf={nameOf}
+            outcome={
+              waiting || patch.isError ? <RowOutcome waiting={waiting} error={patch.error} /> : null
+            }
+          />
         </span>
       </button>
       <div className="flex min-h-11 shrink-0 items-center pr-3">
@@ -56,18 +67,24 @@ export function McpServerRow({ server, nameOf, onOpen }: McpServerRowProps) {
   );
 }
 
-/** The row's second line: what's in the way first, then who gets it. */
+/**
+ * The row's second line: what the switch just came to, what's in the way, then who gets it. A
+ * warning keeps its full ink on an off server: only the name and "Off" dim.
+ */
 function DetailLine({
   server,
   nameOf,
+  outcome,
 }: {
   server: GlobalMcpServerView;
   nameOf: McpServerRowProps['nameOf'];
+  outcome: ReactNode;
 }) {
   const [first, ...rest] = server.warnings;
   return (
     <span className="text-muted-foreground line-clamp-2 block text-xs">
-      {!server.enabled && 'Off · '}
+      {outcome}
+      {!server.enabled && <span className="opacity-55">Off · </span>}
       {first && (
         <span className="text-status-warning-fg">
           {first.note}
@@ -88,23 +105,17 @@ function DetailLine({
 
 /** What pressing the switch came to: waiting, not confirmed, or the server's refusal. */
 function RowOutcome({ waiting, error }: { waiting: boolean; error: unknown }) {
-  if (waiting) {
-    return (
-      <span role="status" className="text-muted-foreground block text-xs">
-        Confirm it’s you…
-      </span>
-    );
-  }
+  if (waiting) return <span role="status">Confirm it’s you… · </span>;
   if (wasNotConfirmed(error)) {
     return (
-      <span role="status" className="block text-xs">
-        Not confirmed. Nothing changed.
+      <span role="status" className="text-foreground">
+        Not confirmed. Nothing changed. ·{' '}
       </span>
     );
   }
   return (
-    <span role="alert" className="text-destructive block text-xs">
-      {changeError(error)}
+    <span role="alert" className="text-destructive">
+      {changeError(error)} ·{' '}
     </span>
   );
 }
