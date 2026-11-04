@@ -92,8 +92,10 @@ it.each([
         { structural: true, marked: false, sessionId: 'telegram-probe' },
         liveRunOriginSources(tasks)
       )
-    ).toBe('you');
-    for await (const _ of registered.sendMessage('telegram-probe', 'Read it again.')) {
+    ).toBe('something DorkOS couldn’t identify');
+    for await (const _ of registered.sendMessage('telegram-probe', 'Read it again.', {
+      turnStarter: 'person',
+    })) {
       /* consume */
     }
     expect(seen).toEqual([label, 'you']);

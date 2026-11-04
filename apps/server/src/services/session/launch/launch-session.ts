@@ -760,6 +760,7 @@ async function launchSessionMessage(
   // moves.
   const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
     dispatchMessage({
+      turnStarter: origin.kind === 'interactive' ? 'person' : 'agent',
       sessionId,
       clientId,
       content,

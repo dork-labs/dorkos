@@ -112,7 +112,9 @@ describe('dispatchSessionMessage', () => {
       expect.objectContaining({ cwd: '/actual' }),
       undefined
     );
-    expect(dispatchMessage).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/actual' }));
+    expect(dispatchMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/actual', turnStarter: 'person' })
+    );
     expect(validateBoundaryOrDorkHome).toHaveBeenCalledWith('/actual');
   });
 

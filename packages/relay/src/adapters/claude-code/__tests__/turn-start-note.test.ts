@@ -93,6 +93,9 @@ describe('the send’s display provenance (DOR-3848)', () => {
     ['relay.human.slack.sample.sender', 'slack'],
     ['relay.webhook.sample', 'webhook'],
     ['relay.agent.default.sample', 'agent-message'],
+    ['relay.session.sample', 'agent-message'],
+    ['relay.human.console', 'unknown'],
+    ['relay.human.console.sample', 'unknown'],
     ['a2a-sample', 'outside-message'],
     ['relay.human.unknown.sample', 'outside-message'],
   ])('stamps %s from its envelope', async (from, expected) => {

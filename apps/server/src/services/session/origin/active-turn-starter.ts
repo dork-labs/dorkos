@@ -3,6 +3,7 @@ import type { TurnStarter, AgentRuntime, MessageOpts } from '@dorkos/shared/agen
 import { primaryOf } from '../resolution/session-key-registry.js';
 
 const LABELS: Record<TurnStarter, string> = {
+  person: 'you',
   telegram: 'a Telegram message',
   slack: 'a Slack message',
   webhook: 'a webhook',
@@ -27,13 +28,13 @@ export function beginTurnStarter(sessionId: string, starter: TurnStarter | undef
   };
 }
 
-/** No guess when sends overlap. The ordinary lineage fallback handles an unlabelled send. */
+/** Missing or overlapping stamps never identify the person. */
 export function activeTurnStarterOf(sessionId: string): string | undefined {
   const entries = active.get(primaryOf(sessionId));
   if (!entries?.size) return undefined;
   if (entries.size !== 1) return 'something DorkOS couldn’t identify';
   const starter = [...entries][0]!.starter;
-  if (starter === undefined) return undefined;
+  if (starter === undefined) return LABELS.unknown;
   return Object.hasOwn(LABELS, starter) ? LABELS[starter] : 'something DorkOS couldn’t identify';
 }
 

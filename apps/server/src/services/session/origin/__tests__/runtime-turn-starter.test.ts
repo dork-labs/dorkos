@@ -29,7 +29,7 @@ it.each(['claude-code', 'codex', 'opencode', 'doe', 'sample-future-runtime'])(
     for await (const _ of registered.sendMessage('sample', 'Read it again.')) {
       /* consume */
     }
-    expect(seen).toEqual(['a Telegram message', undefined]);
+    expect(seen).toEqual(['a Telegram message', 'something DorkOS couldn’t identify']);
     expect(activeTurnStarterOf('sample')).toBeUndefined();
   }
 );

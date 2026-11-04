@@ -1,10 +1,12 @@
 import { expect, it } from 'vitest';
-import { externalNaturalKey } from '../author-registry.js';
+import { externalNaturalKey, type AuthorRecord } from '../author-registry.js';
 import { roomTurnStarter } from '../room-trigger/turn-starter.js';
 import { roomTurnMarksOf } from '../limits/teammate-turn.js';
 
 const keys: Record<string, string> = {
-  local: 'owner',
+  local: 'local',
+  teammate: 'user:sample-teammate',
+  agent: '/sample/agent',
   telegram: externalNaturalKey({
     platformType: 'telegram',
     instanceId: 'sample',
@@ -24,9 +26,27 @@ const keys: Record<string, string> = {
     displayName: 'Sample person',
   }),
 };
-const authors = { getById: (id: string) => (keys[id] ? { naturalKey: keys[id]! } : null) };
+const authors = {
+  getById: (id: string): AuthorRecord | null =>
+    keys[id]
+      ? {
+          id,
+          naturalKey: keys[id]!,
+          kind: id === 'agent' ? 'agent' : 'human',
+          displayName: 'Sample',
+          handle: null,
+          emoji: null,
+          color: null,
+          imageUrl: null,
+          mintedForManifestId: null,
+          linkedOwnerKey: null,
+        }
+      : null,
+};
 it.each([
-  [['local'], undefined],
+  [['local'], 'person'],
+  [['teammate'], 'agent'],
+  [['agent'], 'agent'],
   [['telegram'], 'telegram'],
   [['slack'], 'slack'],
   [['telegram', 'telegram'], 'telegram'],
@@ -61,4 +81,16 @@ it('uses unknown if the author store cannot answer, without failing the turn', (
       [{ authorId: 'sample' }]
     )
   ).toBe('unknown');
+});
+
+it('only names the current owner as the person once accounts exist', () => {
+  const record = authors.getById('local')!;
+  expect(roomTurnStarter(authors, [{ authorId: 'local' }], 'sample-owner')).toBe('agent');
+  expect(
+    roomTurnStarter(
+      { getById: () => ({ ...record, naturalKey: 'user:sample-owner' }) },
+      [{ authorId: 'owner' }],
+      'sample-owner'
+    )
+  ).toBe('person');
 });

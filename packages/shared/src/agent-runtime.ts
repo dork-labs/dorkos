@@ -1011,8 +1011,9 @@ export interface DirectoryGrant {
   access: 'read' | 'write';
 }
 
-/** Server-stamped display provenance for one turn; never a permission or sender identity. */
+/** Display provenance for one turn; relay subjects are labels, never verified sender identities. */
 export type TurnStarter =
+  | 'person'
   | 'telegram'
   | 'slack'
   | 'webhook'

@@ -368,6 +368,7 @@ describe('resumeAfterMcpSignin', () => {
     ]);
     expect(dispatchMessage).toHaveBeenCalledTimes(1);
     const content = dispatchMessage.mock.calls[0][0].content as string;
+    expect(dispatchMessage.mock.calls[0][0].turnStarter).toBe('agent');
     expect(content).toContain('Continue the task');
     expect(content).toContain('Do not describe or narrate');
     expect(content).toContain(SERVER);

@@ -105,6 +105,7 @@ export function launchDispatchInner(
   try {
     started = triggerTurn({
       sessionId: plan.sessionId,
+      ...(turn.turnStarter !== undefined ? { turnStarter: turn.turnStarter } : {}),
       clientId,
       // The ROW's words, not the ones the plan was built with: a message that
       // waited may have been reworded while it waited, and running what the

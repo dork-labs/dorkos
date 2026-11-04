@@ -7,6 +7,7 @@
  *
  * @module server/services/rooms/room-trigger/run-turn
  */
+import { readOwnerAccount } from '../../core/auth/index.js';
 import { roomTurnStarter } from './turn-starter.js';
 import { noteRoomTurnWakers } from '../../session/chat-messages/chat-started-turns.js';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
@@ -94,7 +95,11 @@ export async function runOneInDispatch(
     // A space's local copy, where every message nobody vouched for is a teammate's (DOR-2955).
     const inSpaceRoom = self.deps.isSpaceRoom?.(room.id) === true;
     const answered = target.answers ?? [entry];
-    const turnStarter = roomTurnStarter(self.deps.authors, answered);
+    const turnStarter = roomTurnStarter(
+      self.deps.authors,
+      answered,
+      readOwnerAccount()?.id ?? null
+    );
     // The seat this turn runs on: moved first when its transcript expired or
     // its account is nearly out, and carrying a move's one-shot launch.
     const launch = await prepareSeat(self, room, entry, target);

@@ -22,9 +22,9 @@ describe('one send’s display starter', () => {
     try {
       expect(activeTurnStarterOf('sample')).toBe('something DorkOS couldn’t identify');
       first();
-      expect(activeTurnStarterOf('sample')).toBeUndefined();
+      expect(activeTurnStarterOf('sample')).toBe('something DorkOS couldn’t identify');
       first();
-      expect(activeTurnStarterOf('sample')).toBeUndefined();
+      expect(activeTurnStarterOf('sample')).toBe('something DorkOS couldn’t identify');
     } finally {
       first();
       second();
@@ -52,4 +52,13 @@ describe('one send’s display starter', () => {
       expect(activeTurnStarterOf('sample')).toBeUndefined();
     }
   );
+});
+
+it.each(['__proto__', 'constructor', 'toString'])('rejects inherited label key %s', (starter) => {
+  const done = beginTurnStarter('sample', starter as never);
+  try {
+    expect(activeTurnStarterOf('sample')).toBe('something DorkOS couldn’t identify');
+  } finally {
+    done();
+  }
 });

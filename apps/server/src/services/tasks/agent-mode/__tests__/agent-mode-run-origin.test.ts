@@ -59,16 +59,18 @@ describe('a turn a scheduled run started (M7)', () => {
     expect(turnStarterOf({ ...base, sessionId: 'ses-x', scheduledRun: true }, sources())).toBe(
       'a scheduled run'
     );
-    expect(turnStarterOf({ ...base, sessionId: 'ses-own' }, sources(), () => null)).toBe(
-      'a message from another chat'
-    );
+    for (const sessionId of ['ses-own', 'ses-ext', 'ses-person']) {
+      expect(turnStarterOf({ ...base, sessionId }, sources())).toBe(
+        'something DorkOS couldn’t identify'
+      );
+    }
+    const stamped = {
+      ...sources(),
+      turnStarter: (id: string) => (id === 'send-key' ? 'a Telegram message' : undefined),
+    };
     expect(
-      turnStarterOf({ ...base, sessionId: 'ses-ext' }, sources(), () => ({
-        kind: 'extension',
-        extensionId: 'mini-apps',
-      }))
-    ).toBe('the mini-apps extension');
-    expect(turnStarterOf({ ...base, sessionId: 'ses-person' }, sources(), () => null)).toBe('you');
+      turnStarterOf({ ...base, sessionId: 'sdk-key', turnSessionIds: ['send-key'] }, stamped)
+    ).toBe('a Telegram message');
   });
 
   describe('a stamp on the chat’s own started-by row (ME)', () => {

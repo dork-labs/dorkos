@@ -189,32 +189,21 @@ export function withRunOrigin(caller: AgentModeCaller, sources: RunOriginSources
   return { ...caller, scheduledRun: true, ...(origin === 'heartbeat' ? { heartbeat: true } : {}) };
 }
 
-/** What a started-by record says about the chat at the root of a chain. */
-type StartedByKind = (
-  sessionId: string
-) => { kind: 'extension' | 'chat'; extensionId: string | null } | null;
-
 /**
  * Who started the calling chat's turn, as a person reads it (M6): a heartbeat,
- * a scheduled run, an extension, another chat, or the person themselves.
+ * a scheduled run, the current send’s source, or an unknown source.
  *
  * @param caller - The caller, with {@link withRunOrigin} applied.
  * @param sources - See {@link RunOriginSources}.
- * @param recordOf - The chat's started-by record; the live store by default.
  */
-export function turnStarterOf(
-  caller: AgentModeCaller,
-  sources: RunOriginSources,
-  recordOf: StartedByKind = (id) => getSessionStartedByStore()?.get(id) ?? null
-): string {
+export function turnStarterOf(caller: AgentModeCaller, sources: RunOriginSources): string {
   if (caller.heartbeat) return 'a heartbeat';
   if (caller.scheduledRun) return 'a scheduled run';
-  const sessionId = caller.sessionId;
-  if (!sessionId) return 'an agent DorkOS cannot name';
-  const starter = sources.turnStarter?.(sessionId);
-  if (starter !== undefined) return starter;
-  if (sources.turnSenders(sessionId).length > 0) return 'a message from another chat';
-  const record = recordOf(sessionId);
-  if (record?.kind === 'extension') return `the ${record.extensionId ?? 'unnamed'} extension`;
-  return record?.kind === 'chat' ? 'another chat' : 'you';
+  const starters = new Set(
+    [caller.sessionId, ...(caller.turnSessionIds ?? [])]
+      .filter((id): id is string => !!id)
+      .map((id) => sources.turnStarter?.(id))
+      .filter((starter): starter is string => starter !== undefined)
+  );
+  return starters.size === 1 ? [...starters][0]! : 'something DorkOS couldn’t identify';
 }
