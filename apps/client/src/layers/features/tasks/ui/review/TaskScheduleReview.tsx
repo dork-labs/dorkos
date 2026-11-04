@@ -53,6 +53,7 @@ export function TaskScheduleReview({
           <ScheduleApprovalCard
             task={task}
             pinActions
+            onApproved={() => onOpenChange(false)}
             turnOnApproval={turnOnApproval}
             onNavigate={() => onOpenChange(false)}
           />

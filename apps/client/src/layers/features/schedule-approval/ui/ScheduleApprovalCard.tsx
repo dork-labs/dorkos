@@ -68,6 +68,8 @@ export interface ScheduleApprovalCardProps {
    * same (the rule the row this card replaces already held).
    */
   onNavigate?: () => void;
+  /** An overlay can close after the server accepts the approval. */
+  onApproved?: () => void;
   className?: string;
   /**
    * Keep the mode and actions outside the review body scroller. Only for a card that
@@ -149,6 +151,7 @@ function ScheduleApprovalContent({
   turnOnApproval = false,
   compact = false,
   onStale,
+  onApproved,
   refreshing = false,
 }: ScheduleApprovalCardProps & { onStale: () => void; refreshing?: boolean }) {
   const now = useNow(AGE_TICK_MS);
@@ -262,6 +265,7 @@ function ScheduleApprovalContent({
         }),
       },
       {
+        onSuccess: () => onApproved?.(),
         onError: (error) => {
           if ('code' in error && error.code === 'schedule_review_changed') onStale();
           releaseSettledSchedule(task.id);
@@ -326,7 +330,16 @@ function ScheduleApprovalContent({
         className
       )}
     >
-      {pinActions && <p className="shrink-0 px-1 text-xs">Runs as: {currentLabel}</p>}
+      {pinActions && (
+        <p
+          className={cn(
+            'shrink-0 px-1 text-xs',
+            isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
+          )}
+        >
+          Runs as: {currentLabel}
+        </p>
+      )}
       <div
         className={cn('space-y-2', pinActions && 'min-h-0 flex-1 overflow-y-auto px-1 py-1')}
         data-slot="schedule-review-body"

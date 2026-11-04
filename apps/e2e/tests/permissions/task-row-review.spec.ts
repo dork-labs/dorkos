@@ -54,6 +54,7 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
   }, testInfo) => {
     let task = sampleTask(false);
     const writes: unknown[] = [];
+    let staleOnApproval = false;
     await page.setViewportSize(
       surface === 'phone' ? { width: 390, height: 844 } : { width: 1280, height: 900 }
     );
@@ -92,6 +93,21 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await page.route('**/api/tasks', (route) => route.fulfill({ json: [task] }));
     await page.route('**/api/tasks/sample-review', (route) => {
       writes.push(route.request().postDataJSON());
+      if (staleOnApproval) {
+        staleOnApproval = false;
+        task = {
+          ...task,
+          prompt: 'Review the sample ledger before recording differences.',
+          approvalRevision: 'b'.repeat(64),
+        };
+        return route.fulfill({
+          status: 409,
+          json: {
+            error: 'This schedule changed. Review it again.',
+            code: 'schedule_review_changed',
+          },
+        });
+      }
       return route.fulfill({ json: { ...task, status: 'active' } });
     });
     await basePage.goto();
@@ -160,5 +176,25 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
       enabled: true,
       expectedApprovalRevision: task.approvalRevision,
     });
+    await expect(review).toBeHidden();
+    task = sampleTask(false);
+    await page.reload();
+    await basePage.waitForAppReady();
+    await reviewButton.click();
+    staleOnApproval = true;
+    await review.getByRole('button', { name: 'Approve Sample ledger', exact: true }).click();
+    await expect(review.getByText('This schedule changed. Review it again.')).toBeVisible();
+    await expect(
+      review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
+    ).toBeDisabled();
+    await expect(review.locator('[data-slot="schedule-prompt"]')).toHaveText(instructions);
+    await page.keyboard.press('a');
+    await page.screenshot({ path: testInfo.outputPath(`${surface}-changed-review.png`) });
+    await review.getByRole('button', { name: 'Review again' }).click();
+    await expect(review.locator('[data-slot="schedule-prompt"]')).toHaveText(task.prompt);
+    await expect(
+      review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
+    ).toBeEnabled();
+    await page.keyboard.press('Escape');
   });
 }

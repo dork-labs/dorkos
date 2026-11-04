@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCanUseTool, type ToolApprovalContext } from '../interactive-handlers.js';
 import type { InteractiveSession } from '../interaction-wait.js';
 
-describe('the Accept edits schedule review promise', () => {
-  it('keeps automatic tools but immediately refuses a command that needs a person', async () => {
+describe('the DorkOS unattended permission gate at Accept edits', () => {
+  it('allows Read and immediately refuses escalated Bash without a pending approval', async () => {
     const session: InteractiveSession & { permissionMode: 'acceptEdits' } = {
       permissionMode: 'acceptEdits',
       unattended: true,
