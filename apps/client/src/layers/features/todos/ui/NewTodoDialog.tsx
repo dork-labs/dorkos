@@ -218,7 +218,9 @@ function NewTodoForm({ onDone, source }: { onDone: () => void; source?: TodoMess
 export function NewTodoDialog({ open, onOpenChange, source }: NewTodoDialogProps) {
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="max-w-md">
+      {/* Sized to its three fields: the dialog's default half-screen height left a gap above
+          the buttons (DOR-3715). */}
+      <ResponsiveDialogContent className="min-h-0 max-w-md">
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>{source ? 'Make a to-do' : 'New to-do'}</ResponsiveDialogTitle>
           <ResponsiveDialogDescription className={source ? undefined : 'sr-only'}>
