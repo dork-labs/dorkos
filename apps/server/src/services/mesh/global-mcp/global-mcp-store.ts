@@ -12,7 +12,7 @@
  * ## Secrets
  *
  * Any env or header value whose name is secret (`isSecretName`: TOKEN, KEY,
- * SECRET, PASSWORD, AUTH, COOKIE, or a name the person marked) is moved into the
+ * SECRET, PASS, PWD, BEARER, AUTH, COOKIE and the like, or a name the person marked) is moved into the
  * encrypted {@link CredentialStore} and replaced in the file by a `file:`
  * reference, the same scheme relay adapters use (`relay/adapter-secrets.ts`).
  * The real value is held in memory only, for injection, and is never logged,
@@ -38,11 +38,13 @@
  *
  * @module services/mesh/global-mcp/global-mcp-store
  */
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import type { McpAppServerConnection } from '@dorkos/shared/agent-runtime';
+import { stableStringify } from '@dorkos/shared/capabilities';
 import {
   GlobalMcpServerNameSchema,
   isSecretName,
@@ -60,6 +62,7 @@ import {
   type GlobalMcpGuardContext,
   type GlobalMcpRefusal,
 } from './global-mcp-guard.js';
+import { holdsMask, maskedArgs, maskUrls } from './global-mcp-mask.js';
 
 /** The file's mode: the person's own, like every other DorkOS secret file. */
 const FILE_MODE = 0o600;
@@ -93,12 +96,52 @@ export class GlobalMcpStoreError extends Error {
       | 'not_found'
       | 'oauth_unsupported'
       | 'unreadable'
+      | 'changed'
+      | 'secret_left'
+      | 'masked_value'
       | GlobalMcpRefusal['code'],
     message: string
   ) {
     super(message);
     this.name = 'GlobalMcpStoreError';
   }
+}
+
+/** A switch that would let more agents run a server, asked for without confirming it. */
+export class GlobalMcpWidensError extends Error {
+  constructor() {
+    super('That lets more agents run this server.');
+    this.name = 'GlobalMcpWidensError';
+  }
+}
+
+/** What a server does, secret values as `file:` references. Server-side only. */
+export type GlobalMcpServerShape = Pick<
+  StoredServer,
+  'name' | 'enabled' | 'connection' | 'secretNames' | 'excludedAgents'
+>;
+
+/** How a {@link GlobalMcpStore.patch} must be checked inside the write queue. */
+export interface GlobalMcpPatchGuard {
+  /** Refuse with {@link GlobalMcpWidensError} if it would let more agents run the server. */
+  narrowOnly?: boolean;
+  /** Refuse unless the server still matches this {@link GlobalMcpStore.fingerprint}. */
+  expect?: string;
+}
+
+/** Whether a change makes a server run for any agent it did not run for before. */
+function widens(before: StoredServer, after: StoredServer): boolean {
+  if (!after.enabled) return false;
+  if (!before.enabled) return true;
+  return before.excludedAgents.some((agent) => !after.excludedAgents.includes(agent));
+}
+
+/** The hash of what a server does. Its stored references stay inside this process. */
+function fingerprintOf(server: StoredServer): string {
+  const { name, enabled, connection, secretNames, excludedAgents } = server;
+  return createHash('sha256')
+    .update(stableStringify({ name, enabled, connection, secretNames, excludedAgents }), 'utf8')
+    .digest('hex');
 }
 
 /** The env map of a stdio server, or the header map of a remote one. */
@@ -247,14 +290,57 @@ export class GlobalMcpStore {
    */
   add(input: GlobalMcpServerInput): Promise<GlobalMcpServerView> {
     return this.exclusive(async () => {
-      if (this.servers.some((s) => s.name === input.name)) {
-        throw new GlobalMcpStoreError(
-          'name_taken',
-          `There's already a server named ${input.name}.`
-        );
-      }
+      this.refuseAdd(input);
       return this.put(input, new Date().toISOString());
     });
+  }
+
+  /**
+   * Throw why this add would be refused, without writing anything, so a person
+   * is not asked to confirm what cannot run.
+   *
+   * @param input - The server.
+   */
+  refuseAdd(input: GlobalMcpServerInput): void {
+    this.refuseUnreadable();
+    if (this.servers.some((s) => s.name === input.name)) {
+      throw new GlobalMcpStoreError('name_taken', `There's already a server named ${input.name}.`);
+    }
+    this.refuseInput(input);
+  }
+
+  /**
+   * Throw why this replace would be refused, without writing anything.
+   *
+   * @param name - The server to replace.
+   * @param input - Its new definition.
+   */
+  refuseReplace(name: string, input: GlobalMcpServerInput): void {
+    this.refuseUnreadable();
+    this.find(name);
+    if (input.name !== name) {
+      throw new GlobalMcpStoreError('name_taken', 'Remove the server to give it a new name.');
+    }
+    this.refuseInput(input);
+  }
+
+  /**
+   * What a server does now, for a step-up to name. Secrets stay references.
+   *
+   * @param name - The server.
+   */
+  shapeOf(name: string): GlobalMcpServerShape {
+    const { enabled, connection, secretNames, excludedAgents } = this.find(name);
+    return { name, enabled, connection, secretNames, excludedAgents };
+  }
+
+  /**
+   * A hash of what a server does now, so a held change can tell it moved.
+   *
+   * @param name - The server.
+   */
+  fingerprint(name: string): string {
+    return fingerprintOf(this.find(name));
   }
 
   /**
@@ -265,13 +351,10 @@ export class GlobalMcpStore {
    */
   replace(name: string, input: GlobalMcpServerInput): Promise<GlobalMcpServerView> {
     return this.exclusive(async () => {
-      const existing = this.find(name);
-      if (input.name !== name) {
-        throw new GlobalMcpStoreError('name_taken', 'Remove the server to give it a new name.');
-      }
       // Every refusal before anything is deleted, so a refused edit leaves the
       // working server running with its secrets.
-      this.refuseInput(input);
+      this.refuseReplace(name, input);
+      const existing = this.find(name);
       await this.deleteSecrets(existing);
       this.servers = this.servers.filter((s) => s.name !== name);
       return this.put(input, existing.addedAt);
@@ -283,15 +366,26 @@ export class GlobalMcpStore {
    *
    * @param name - The server.
    * @param patch - What to change.
+   * @param guard - Checks that must hold in the write queue, not before it, so
+   *   another write can't change the answer in between.
+   * @throws GlobalMcpWidensError when `guard.narrowOnly` and it would widen.
    */
-  patch(name: string, patch: GlobalMcpServerPatch): Promise<GlobalMcpServerView> {
+  patch(
+    name: string,
+    patch: GlobalMcpServerPatch,
+    guard: GlobalMcpPatchGuard = {}
+  ): Promise<GlobalMcpServerView> {
     return this.exclusive(async () => {
       const existing = this.find(name);
+      if (guard.expect !== undefined && fingerprintOf(existing) !== guard.expect) {
+        throw new GlobalMcpStoreError('changed', `${name} changed. Check it and try again.`);
+      }
       const next: StoredServer = {
         ...existing,
         ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
         ...(patch.excludedAgents !== undefined ? { excludedAgents: patch.excludedAgents } : {}),
       };
+      if (guard.narrowOnly && widens(existing, next)) throw new GlobalMcpWidensError();
       this.servers = this.servers.map((s) => (s.name === name ? next : s));
       await this.persist();
       return this.view(next);
@@ -299,9 +393,13 @@ export class GlobalMcpStore {
   }
 
   /**
-   * Remove a server and its stored secrets.
+   * Remove a server and its stored secrets. The file is written first, so no
+   * agent can get the server again whatever happens next; a secret that then
+   * fails to delete is said out loud, since retrying the remove finds no server.
    *
    * @param name - The server.
+   * @throws GlobalMcpStoreError `secret_left` when the server is gone but a saved
+   *   secret was not deleted. Adding the same server again overwrites it.
    */
   remove(name: string): Promise<void> {
     return this.exclusive(async () => {
@@ -309,23 +407,35 @@ export class GlobalMcpStore {
       this.servers = this.servers.filter((s) => s.name !== name);
       this.resolved.delete(name);
       await this.persist();
-      await this.deleteSecrets(existing);
+      try {
+        await this.deleteSecrets(existing);
+      } catch {
+        throw new GlobalMcpStoreError(
+          'secret_left',
+          `${name} is removed, but its saved key couldn't be deleted.`
+        );
+      }
     });
   }
 
   /** Run one write after every write before it, refusing all of them on an unreadable file. */
   private exclusive<T>(work: () => Promise<T>): Promise<T> {
     const run = this.writes.then(() => {
-      if (this.unreadable) {
-        throw new GlobalMcpStoreError(
-          'unreadable',
-          'The saved MCP servers could not be read, so nothing was changed.'
-        );
-      }
+      this.refuseUnreadable();
       return work();
     });
     this.writes = run.catch(() => undefined);
     return run;
+  }
+
+  /** Throw when the file exists but could not be read. */
+  private refuseUnreadable(): void {
+    if (this.unreadable) {
+      throw new GlobalMcpStoreError(
+        'unreadable',
+        'The saved MCP servers could not be read, so nothing was changed.'
+      );
+    }
   }
 
   /** Throw why a server may not be saved, if it may not. Changes nothing. */
@@ -337,6 +447,17 @@ export class GlobalMcpStore {
       throw new GlobalMcpStoreError(
         'oauth_unsupported',
         'A server that signs in is added per agent for now.'
+      );
+    }
+    const { connection } = input;
+    const typed = [
+      ...Object.values(valuesOf(connection)),
+      ...(connection.transport === 'stdio' ? connection.args : [connection.url]),
+    ];
+    if (holdsMask(typed)) {
+      throw new GlobalMcpStoreError(
+        'masked_value',
+        'A value here is still hidden. Type the real one.'
       );
     }
     const refusal = refuseGlobalServer(input.connection, this.guardContext());
@@ -374,19 +495,18 @@ export class GlobalMcpStore {
 
   /** The person's view: a secret shows its name, never its value. */
   private view(server: StoredServer): GlobalMcpServerView {
-    const fields = Object.entries(valuesOf(server.connection)).map(([name, value]) =>
-      isSecretName(name, server.secretNames)
-        ? { name, secret: true }
-        : { name, secret: false, value }
-    );
+    const fields = Object.keys(valuesOf(server.connection)).map((name) => ({
+      name,
+      secret: isSecretName(name, server.secretNames),
+    }));
     const { connection } = server;
     return {
       name: server.name,
       enabled: server.enabled,
       transport: connection.transport,
       ...(connection.transport === 'stdio'
-        ? { command: connection.command, args: connection.args }
-        : { url: connection.url }),
+        ? { command: connection.command, args: maskedArgs(connection.args) }
+        : { url: maskUrls(connection.url) }),
       env: connection.transport === 'stdio' ? fields : [],
       headers: connection.transport === 'stdio' ? [] : fields,
       excludedAgents: server.excludedAgents,
@@ -430,7 +550,9 @@ export class GlobalMcpStore {
       const values: Record<string, string> = {};
       let complete = true;
       for (const [key, value] of Object.entries(valuesOf(server.connection))) {
-        if (!isSecretName(key, server.secretNames)) {
+        // A value saved before its name counted as secret stays in the file, in
+        // the clear, until a person types it again; it is not a reference.
+        if (!isSecretName(key, server.secretNames) || !value.startsWith('file:')) {
           values[key] = value;
           continue;
         }
