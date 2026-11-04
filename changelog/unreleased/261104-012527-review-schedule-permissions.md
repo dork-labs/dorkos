@@ -4,6 +4,7 @@ covers:
   - 'fix(tasks): make schedule review readable and enable package schedules'
   - 'fix(tasks): pin schedule reviews until explicitly refreshed'
   - 'fix(tasks): keep stale schedule reviews focused and safe'
+  - 'fix(tasks): cover the phone review sticky line'
 ---
 
 ### Fixed

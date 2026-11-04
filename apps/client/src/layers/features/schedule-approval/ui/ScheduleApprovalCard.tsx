@@ -346,14 +346,18 @@ function ScheduleApprovalContent({
         </p>
       )}
       <div
-        className={cn('space-y-2', pinActions && 'min-h-0 flex-1 overflow-y-auto px-1 py-1')}
+        className={cn(
+          'space-y-2',
+          pinActions && 'min-h-0 flex-1 overflow-y-auto px-1 py-1',
+          reviewHeader && 'pt-0'
+        )}
         data-slot="schedule-review-body"
       >
         {reviewHeader}
         {pinActions && reviewHeader && (
           <p
             className={cn(
-              'bg-background sticky top-0 z-10 py-1 text-xs',
+              'bg-background sticky top-0 z-10 -mt-2! mb-0! pt-2 pb-3 text-xs',
               isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
             )}
           >
