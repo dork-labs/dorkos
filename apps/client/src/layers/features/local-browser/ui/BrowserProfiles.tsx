@@ -95,9 +95,6 @@ export function BrowserProfiles({
             className="bg-muted/40 space-y-2 rounded-md p-3"
           >
             <h5 className="text-sm font-medium break-words">{profile.label}</h5>
-            <p className="text-muted-foreground text-xs">
-              Forgetting removes every site’s sign-in in this profile.
-            </p>
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
