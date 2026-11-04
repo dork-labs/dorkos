@@ -108,7 +108,7 @@ it('refuses removal while an observed child remains, even when the OS guard woul
   const assertGone = vi.fn();
   await expect(
     reconcileMountTargets(data, busy as unknown as typeof pool, { ...guard, assertGone })
-  ).rejects.toThrow('running processes');
+  ).resolves.toEqual([]);
   expect(assertGone).not.toHaveBeenCalled();
   expect(fs.existsSync(file)).toBe(true);
 });
@@ -124,7 +124,7 @@ it('fails closed on the marker/process guard and does not remove a listed file',
         throw new Error('marker still live');
       },
     })
-  ).rejects.toThrow('marker still live');
+  ).resolves.toEqual([]);
   expect(fs.existsSync(file)).toBe(true);
 });
 
@@ -218,4 +218,66 @@ it('heals a listed parent file when an older record names its now-unreachable ch
   expect(await reconcileMountTargets(data, pool, guard)).toEqual([parent]);
   expect(fs.existsSync(parent)).toBe(false);
   expect(readMountTargets(data)).toEqual([]);
+});
+
+it('rejects a nonnormalized ledger path before it can escape the permissions exclusion', () => {
+  recordMountTargets(data, [path.join(root, 'missing')]);
+  fs.writeFileSync(
+    mountTargetLedgerFile(data),
+    JSON.stringify({
+      version: 1,
+      targets: [data + '/x/../permissions/person-set-agent-permissions.json'],
+    })
+  );
+  expect(() => readMountTargets(data)).toThrow('records are invalid');
+});
+
+it('preserves an outside file when a real rendered agent parent is replaced by a symlink', async () => {
+  const home = path.join(root, 'home');
+  const agent = path.join(data, 'agents', 'agent-a');
+  fs.mkdirSync(home);
+  fs.mkdirSync(path.join(agent, '.dork'), { recursive: true });
+  codexProtectedConfig(
+    agent,
+    {
+      roots: { cwd: agent, home, data, accounts: [], agentHomes: [agent], agentFolders: [agent] },
+      writable: [agent],
+    },
+    {},
+    (targets) => recordMountTargets(data, targets)
+  );
+  const target = path.join(agent, '.dork', 'agent.json');
+  expect(readMountTargets(data)).toContain(target);
+  fs.rmdirSync(path.join(agent, '.dork'));
+  const outside = path.join(root, 'outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'agent.json'), '');
+  fs.symlinkSync(outside, path.join(agent, '.dork'));
+  expect(await reconcileMountTargets(data, pool, guard)).toEqual([]);
+  expect(fs.lstatSync(path.join(outside, 'agent.json')).isFile()).toBe(true);
+});
+
+it('renders a busy listed ancestor as protected without unlinking or recording it as missing', async () => {
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  const target = path.join(home, '.claude');
+  recordMountTargets(data, [target]);
+  fs.writeFileSync(target, '');
+  const before = fs.lstatSync(target);
+  const busy = { ...pool, list: () => [{}] };
+  expect(await reconcileMountTargets(data, busy as unknown as typeof pool, guard)).toEqual([]);
+  const missing = vi.fn();
+  const config = codexProtectedConfig(
+    home,
+    {
+      roots: { cwd: home, home, data, accounts: [], agentHomes: [], agentFolders: [home] },
+      writable: [home],
+    },
+    { permissionMode: 'bypassPermissions' },
+    missing
+  );
+  const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
+  expect(Object.values(profiles)[0]!.filesystem[target]).toBe('deny');
+  expect(missing.mock.calls.flat(2)).not.toContain(target);
+  expect(fs.lstatSync(target).ino).toBe(before.ino);
 });

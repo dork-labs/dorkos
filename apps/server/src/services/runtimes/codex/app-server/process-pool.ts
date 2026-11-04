@@ -59,6 +59,8 @@ export type SpawnAppServer = (
 export interface CodexProcessSpec {
   /** The `codex` binary. */
   readonly binary: string;
+  /** Credits authority must be revoked with the short stop, including on quit. */
+  readonly onCredits?: boolean;
   /** The `CODEX_HOME` it runs on (also its working directory). */
   readonly codexHome: string;
   /** Its complete environment; nothing per turn is layered on it. */
@@ -585,7 +587,9 @@ export class CodexAppServerPool {
     reason: 'authority' | 'shutdown' = 'authority'
   ): Promise<void> {
     const stepMs =
-      reason === 'shutdown' ? this.timing.normalShutdownStepMs : this.timing.shutdownStepMs;
+      reason === 'shutdown' && !proc.spec.onCredits
+        ? this.timing.normalShutdownStepMs
+        : this.timing.shutdownStepMs;
     const pending = this.closing.get(proc);
     if (pending) {
       void proc.stop(stepMs); // Authority removal shortens an already-running normal stop.
@@ -599,12 +603,12 @@ export class CodexAppServerPool {
   }
 
   /** Stop every process (server shutdown and admin restart). */
-  async shutdown(): Promise<void> {
+  async shutdown(reason: 'authority' | 'shutdown' = 'shutdown'): Promise<void> {
     this.shutDown = true;
     if (this.reaper) clearInterval(this.reaper);
     this.reaper = undefined;
     await Promise.allSettled([...this.booting.values()]);
-    await Promise.all(this.list().map((proc) => this.close(proc, 'shutdown')));
+    await Promise.all(this.list().map((proc) => this.close(proc, reason)));
   }
 
   private ensureReaper(): void {

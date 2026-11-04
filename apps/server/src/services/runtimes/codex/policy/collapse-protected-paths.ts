@@ -67,12 +67,26 @@ function throughBase(file: string, bases: readonly string[]): string {
 export function collapseProtectedPaths(
   entries: Readonly<Record<string, Access>>,
   bases: readonly string[],
-  onMissing?: (target: string) => void
+  onMissing?: (target: string) => void,
+  allowBlocking?: (target: string) => boolean
 ): Record<string, Access> {
   const collapsed: Record<string, Access> = {};
   for (const [file, access] of Object.entries(entries)) {
-    const missing = /[*?[\]{}]/.test(file) ? undefined : firstMissing(file);
-    const target = (missing ? throughBase(missing, bases) : file).split(path.sep).join('/');
+    let missing: string | undefined;
+    let blocking: string | undefined;
+    try {
+      missing = /[*?[\]{}]/.test(file) ? undefined : firstMissing(file);
+    } catch (error) {
+      if (
+        !(error instanceof ProtectedPathNotDirectoryError) ||
+        !allowBlocking?.(error.blockingPath)
+      )
+        throw error;
+      blocking = error.blockingPath;
+    }
+    const target = (missing || blocking ? throughBase((missing ?? blocking)!, bases) : file)
+      .split(path.sep)
+      .join('/');
     if (missing) onMissing?.(target);
     collapsed[target] = access === 'deny' || collapsed[target] === 'deny' ? 'deny' : 'read';
   }

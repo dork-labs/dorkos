@@ -147,3 +147,28 @@ it('resolves an alias above a captured base without resolving a link inside it',
     [path.join(own, '.claude', 'settings.json')]: 'read',
   });
 });
+
+it.each([false, true])(
+  'retains the strongest rule on a permitted blocking file in either order: %s',
+  (reverse) => {
+    const root = fixture();
+    const file = path.join(root, '.claude');
+    fs.writeFileSync(file, '');
+    const entries: [string, 'read' | 'deny'][] = [
+      [path.join(file, 'settings.json'), 'read'],
+      [path.join(file, 'backups'), 'deny'],
+    ];
+    if (reverse) entries.reverse();
+    const missing = vi.fn();
+    expect(
+      collapseProtectedPaths(
+        Object.fromEntries(entries),
+        [root],
+        missing,
+        (target) => target === file
+      )
+    ).toEqual({ [file]: 'deny' });
+    expect(missing).not.toHaveBeenCalled();
+    expect(fs.readFileSync(file, 'utf8')).toBe('');
+  }
+);

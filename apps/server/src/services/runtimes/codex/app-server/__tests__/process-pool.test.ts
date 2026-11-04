@@ -18,6 +18,7 @@ const PERSON: CodexProcessSpec = {
 const CREDITS: CodexProcessSpec = {
   binary: '/opt/codex',
   codexHome: '/dork/credits',
+  onCredits: true,
   env: { PATH: '/usr/bin', CODEX_HOME: '/dork/credits' },
 };
 
@@ -252,6 +253,47 @@ describe('shutdown', () => {
       vi.useRealTimers();
     }
   });
+
+  it.each(['reset', 'credits'] as const)(
+    'uses short steps for %s even when normal quit allows 30 seconds',
+    async (kind) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const host = new FakeAppServerHost();
+      const spawn: typeof host.spawn = (binary, args, options) => {
+        const child = host.spawn(binary, args, options);
+        child.stdin.removeAllListeners('finish');
+        const kill = child.kill.bind(child);
+        child.kill = (signal: NodeJS.Signals | number = 'SIGTERM') => {
+          if (signal === 'SIGKILL') return kill(signal);
+          child.killSignals.push(String(signal));
+          return true;
+        };
+        return child;
+      };
+      const pool = new CodexAppServerPool({
+        spawn,
+        timing: { shutdownStepMs: 3_000, normalShutdownStepMs: 30_000 },
+      });
+      pools.push(pool);
+      try {
+        await pool.acquire(kind === 'credits' ? CREDITS : PERSON);
+        const closing = pool.shutdown(kind === 'reset' ? 'authority' : 'shutdown');
+        await vi.advanceTimersByTimeAsync(2_999);
+        expect(host.processes[0]!.killSignals).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(host.processes[0]!.killSignals).toEqual(['SIGTERM']);
+        await vi.advanceTimersByTimeAsync(3_000);
+        await tick();
+        await closing;
+        expect(host.processes[0]!.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+        expect(pool.list()).toEqual([]);
+      } finally {
+        for (const child of host.processes) child.exit(0);
+        await tick();
+        vi.useRealTimers();
+      }
+    }
+  );
 
   it('keeps a closing child visible after every stop deadline until its actual exit', async () => {
     const host = new FakeAppServerHost();

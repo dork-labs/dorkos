@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(codex): guard cleanup parents and shorten authority shutdown (DOR-3595)'
   - 'fix(codex): repair recovery proof and explain blocking files (DOR-3595)'
   - 'fix(codex): reconcile recorded Linux mount leftovers safely (DOR-3595)'
   - 'fix(codex): retain closing children and allow sandbox cleanup grace (DOR-3595)'

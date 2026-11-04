@@ -1136,7 +1136,9 @@ export class AppServerCodexTransport implements CodexTransport {
       const env =
         this.options.environment?.credits() ??
         codexCreditsAppServerEnv(runtimeEnvironment('codex', 'turn'));
-      return this.watch(await this.pool.acquire({ binary, codexHome: creditsCodexHome(), env }));
+      return this.watch(
+        await this.pool.acquire({ binary, codexHome: creditsCodexHome(), env, onCredits: true })
+      );
     }
     const env = this.options.environment?.person() ?? runtimeEnvironment('codex', 'turn');
     const process = this.watch(

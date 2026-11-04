@@ -529,6 +529,7 @@ describe('credits', () => {
     const h = harness({ relay });
     const events = await h.run(h.request({ sessionId: 's1', launch: credits as never }));
     expect(dones(events)).toHaveLength(1);
+    expect(h.pool.list()[0]!.spec.onCredits).toBe(true);
     const fake = h.host.home(CREDITS_ENV_HOME).processes[0]!;
     const config = fake.requestsOf('thread/start')[0]!.config as Record<string, unknown>;
     expect(config).toMatchObject({

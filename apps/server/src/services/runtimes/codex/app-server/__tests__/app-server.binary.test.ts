@@ -888,7 +888,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                 (res) =>
                   res.end(
                     sseCall({
-                      cmd: `printf PUBLIC-recovery-ready; sleep ${defaultRecovery ? 60 : 5}`,
+                      cmd: `printf PUBLIC-recovery-ready; sleep ${defaultRecovery || scenario === 'concurrent-ledger-10k' ? 60 : 5}`,
                       login: false,
                       yield_time_ms: 1000,
                     })
@@ -911,9 +911,41 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                           list: () => pools.flatMap((pool) => pool.list()),
                           closeIdleForReconcile: async () => {},
                         })
-                      ).rejects.toThrow('running processes');
+                      ).resolves.toEqual([]);
                       expect(fs.lstatSync(target).ino).toBe(before.ino);
                       console.info('Codex live sandbox blocked target removal', { target });
+                      // Use another real production transport while the first
+                      // command still owns this host placeholder. A direct
+                      // reconcile call alone cannot prove turn availability.
+                      const peer = makeTransport(undefined, kind);
+                      let peerControl = false;
+                      scripted.push(
+                        (response) =>
+                          response.end(
+                            sseCall({
+                              cmd: 'printf PUBLIC-concurrent-peer',
+                              login: false,
+                            })
+                          ),
+                        (response, body) => {
+                          peerControl = shellControlReturned(body, 'PUBLIC-concurrent-peer');
+                          response.end(sse('concurrent peer finished'));
+                        }
+                      );
+                      try {
+                        const peerEvents = [];
+                        for await (const event of peer.runTurn(
+                          request('concurrent-peer', undefined, {
+                            settings: { permissionMode: mode, model: 'fake-model' },
+                          })
+                        ))
+                          peerEvents.push(event);
+                        expect(peerControl).toBe(true);
+                        expect(peerEvents.some((event) => event.type === 'error')).toBe(false);
+                        expect(fs.lstatSync(target).ino).toBe(before.ino);
+                      } finally {
+                        await peer.shutdown();
+                      }
                     }
                   })();
                   void work.then(
@@ -943,6 +975,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                 await work;
                 expect(ready).toBe(true);
               } finally {
+                if (scenario === 'concurrent-ledger-10k')
+                  await Promise.all(pools.map((pool) => pool.closeWhere(() => true)));
                 await victim.shutdown();
               }
               scripted.length = 0;

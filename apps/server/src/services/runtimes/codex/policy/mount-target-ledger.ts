@@ -50,6 +50,7 @@ export function readMountTargets(data: string): string[] {
         (target: unknown) =>
           typeof target === 'string' &&
           path.isAbsolute(target) &&
+          path.normalize(target) === target &&
           target !== path.parse(target).root &&
           !target.includes('\0') &&
           !/[*?[\]{}]/.test(target) &&
