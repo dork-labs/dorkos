@@ -20,6 +20,7 @@
  *
  * @module services/runtimes/claude-code/sessions/launch-live-settings
  */
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from '../../../../lib/logger.js';
 import {
   awaitControlAck,
@@ -141,6 +142,17 @@ export interface LiveChangeOutcome {
   readonly fingerprint: LaunchFingerprint;
 }
 
+/**
+ * What a process holds after a server swap nobody answered: not known. The CLI
+ * may still finish the request, so neither the old list nor the new one is true.
+ * No server can have this name, so the next dispatch never reads as "no change"
+ * and always sends its list, even an empty one, which is what lets a Remove reach
+ * a server that landed late (DOR-3882).
+ */
+export const MCP_SERVERS_UNKNOWN: Readonly<Record<string, McpServerConfig>> = {
+  '<unknown>': { type: 'stdio', command: '' },
+};
+
 /** How one pin's setter came out: an ack, or a reason it stayed put. */
 type PinOutcome = ControlAck | UnappliedReason;
 
@@ -228,6 +240,9 @@ function fingerprintAfter(
   // process) instead of riding a mode it cannot name.
   if (unapplied.some(({ pin, ack }) => pin === 'permissionMode' && ack === 'unacked')) {
     live.permissionMode = undefined;
+  }
+  if (unapplied.some(({ pin, ack }) => pin === 'mcpServers' && ack === 'unacked')) {
+    live.mcpServers = MCP_SERVERS_UNKNOWN;
   }
   return { ...decision.to, live };
 }

@@ -15,13 +15,15 @@
  *
  * **Past the bound it fails closed.** The servers are never put back on the
  * command line. The turn opens, the chat says some tools may not work yet, and
- * the caller records the process as not holding them, so the next dispatch asks
- * again. Slow or refused both take this path.
+ * the caller records what the process holds as unknown, so the next dispatch
+ * asks again. Slow or refused both take this path.
  *
  * **What this does not do.** It fixes the CLI's command line only. A stdio
- * server's own environment and its own arguments stay readable by programs
- * running as the same user, so keeping an agent from a server does not keep a
- * stdio secret from that agent's shell (DOR-505).
+ * server's own environment stays readable by programs running as the same user,
+ * and its own arguments stay on its own command line, readable by every account
+ * on the computer. So a secret belongs in a setting, not an argument, and keeping
+ * an agent from a server does not keep a stdio secret from that agent's shell
+ * (DOR-505).
  *
  * @module services/runtimes/claude-code/sdk/launch-query
  */
@@ -64,7 +66,10 @@ export interface LaunchQueryInput {
 }
 
 /**
- * The servers a launch may name on the command line: in-process ones only.
+ * The servers a launch may name on the command line: in-process ones only, and
+ * only what makes them so. The SDK treats `type: 'sdk'` with no `instance` as an
+ * ordinary server and writes it to `--mcp-config`, and a repo's `.mcp.json` can
+ * supply one, so the type alone is not enough and no other field goes along.
  *
  * @param servers - Every server this launch wants.
  * @returns The in-process servers, or `undefined` when there are none.
@@ -72,7 +77,11 @@ export interface LaunchQueryInput {
 export function commandLineServers(
   servers: Readonly<Record<string, McpServerConfig>> | undefined
 ): Record<string, McpServerConfig> | undefined {
-  const kept = Object.entries(servers ?? {}).filter(([, config]) => config.type === 'sdk');
+  const kept = Object.entries(servers ?? {}).flatMap(([key, config]) =>
+    config.type === 'sdk' && 'instance' in config
+      ? [[key, { type: config.type, name: config.name, instance: config.instance }] as const]
+      : []
+  );
   return kept.length > 0 ? Object.fromEntries(kept) : undefined;
 }
 
@@ -123,7 +132,7 @@ export function launchQuery(input: LaunchQueryInput): Query {
   void awaitControlAck(() => live.setMcpServers(servers), PLUGIN_RELOAD_ACK_TIMEOUT_MS).then(
     (ack) => {
       if (ack !== 'acked') {
-        logger.warn('[launch-query] a new process did not take its MCP servers in time', { ack });
+        logger.warn('[launch-query] a new process did not answer for its MCP servers', { ack });
         noteServersStarting(session);
         onServersNotHeld?.(live);
       }

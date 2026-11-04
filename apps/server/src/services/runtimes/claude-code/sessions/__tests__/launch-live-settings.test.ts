@@ -13,7 +13,7 @@ import {
   AccountPinViolationError,
   type LaunchParams,
 } from '../launch-fingerprint.js';
-import { applyLiveChanges, prepareDispatch } from '../launch-live-settings.js';
+import { applyLiveChanges, MCP_SERVERS_UNKNOWN, prepareDispatch } from '../launch-live-settings.js';
 import { decideProcessReuse } from '../pump-launch.js';
 import { LIVE_SETTING_ACK_TIMEOUT_MS, PLUGIN_RELOAD_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import type { PumpControlQuery } from '../session-pump-contract.js';
@@ -212,8 +212,12 @@ describe('applyLiveChanges is bounded (DOR-1301)', () => {
 
     expect(outcome.unapplied).toEqual([{ pin: 'mcpServers', ack: 'unacked' }]);
     expect(notTaken).toHaveBeenCalledTimes(1);
-    // Still the old list, so the next dispatch asks again.
-    expect(outcome.fingerprint.live.mcpServers).toBeUndefined();
+    // Not known, so the next dispatch sends its list again, even with the server
+    // removed: the CLI may still finish this request (Security's P2).
+    expect(outcome.fingerprint.live.mcpServers).toBe(MCP_SERVERS_UNKNOWN);
+    const afterRemove = prepareDispatch(outcome.fingerprint, capture());
+    if (afterRemove.action !== 'reuse') throw new Error('expected a reuse');
+    expect(afterRemove.liveChanges).toEqual([{ pin: 'mcpServers', servers: {} }]);
   });
 
   it('reports a refused setter the same way, without waiting on the clock', async () => {

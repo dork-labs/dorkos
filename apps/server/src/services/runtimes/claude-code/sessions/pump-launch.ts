@@ -37,11 +37,12 @@ import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import type { AgentSession } from '../agent-types.js';
 import { fireLaunchProbes } from '../messaging/launch-probes.js';
-import { commandLineServers, launchQuery } from '../sdk/launch-query.js';
+import { launchQuery } from '../sdk/launch-query.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
 import {
   applyLiveChanges,
+  MCP_SERVERS_UNKNOWN,
   prepareDispatch,
   type LiveChangeOptions,
 } from './launch-live-settings.js';
@@ -77,8 +78,8 @@ export interface PumpLaunchPlan {
 export interface PumpLaunchCallbacks {
   /** A process started, and what it was launched with. */
   onLaunched: (live: Query, fingerprint: LaunchFingerprint) => void;
-  /** That process did not take its external MCP servers in time. */
-  onServersNotHeld: (live: Query, fingerprint: LaunchFingerprint) => void;
+  /** That process did not answer for its external MCP servers in time. */
+  onServersNotHeld: (live: Query) => void;
 }
 
 /** The slot a pump's owner keeps its live process and what it holds in. */
@@ -99,11 +100,11 @@ export function pumpLaunchCallbacks(slot: LiveProcessSlot): PumpLaunchCallbacks 
       slot.live = live;
       slot.fingerprint = fingerprint;
     },
-    onServersNotHeld: (live, fingerprint) => {
-      if (slot.live !== live) return;
+    onServersNotHeld: (live) => {
+      if (slot.live !== live || slot.fingerprint === undefined) return;
       slot.fingerprint = {
-        ...fingerprint,
-        live: { ...fingerprint.live, mcpServers: commandLineServers(fingerprint.live.mcpServers) },
+        ...slot.fingerprint,
+        live: { ...slot.fingerprint.live, mcpServers: MCP_SERVERS_UNKNOWN },
       };
     },
   };
@@ -151,8 +152,8 @@ export function createPumpLauncher(
       // snapshot, command palette and subagent list empty for as long as it
       // stayed warm.
       afterServers: (running) => fireLaunchProbes(running, opts),
-      // The next dispatch sees the servers missing and asks again.
-      onServersNotHeld: (running) => callbacks.onServersNotHeld(running, plan.fingerprint),
+      // What it holds is not known, so the next dispatch sends its list again.
+      onServersNotHeld: (running) => callbacks.onServersNotHeld(running),
     });
     // Deliberately NOT `session.activeQuery = live` here. That field means "a
     // turn is in flight" to every consumer in this runtime — `interruptQuery`

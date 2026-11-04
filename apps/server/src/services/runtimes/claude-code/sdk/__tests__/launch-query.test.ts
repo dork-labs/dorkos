@@ -165,6 +165,15 @@ describe('commandLineServers', () => {
   it('keeps only in-process servers', () => {
     expect(commandLineServers(ALL)).toEqual({ dorkos: IN_PROCESS });
     expect(commandLineServers({ stdio: STDIO })).toBeUndefined();
+    // No instance, as a repo's `.mcp.json` could write: the SDK would put it on argv.
+    const forged = {
+      type: 'sdk',
+      name: 'x',
+      headers: { k: 'CANARY' },
+    } as unknown as McpServerConfig;
+    expect(commandLineServers({ forged })).toBeUndefined();
+    const extra = { ...IN_PROCESS, headers: { k: 'CANARY' } } as unknown as McpServerConfig;
+    expect(JSON.stringify(commandLineServers({ dorkos: extra }))).not.toContain('CANARY');
     expect(commandLineServers(undefined)).toBeUndefined();
   });
 });
@@ -180,12 +189,15 @@ describe('every launch goes through launchQuery', () => {
           if (entry.name !== '__tests__') walk(full);
         } else if (entry.name.endsWith('.ts')) {
           const text = readFileSync(full, 'utf8');
-          // Any value import naming `query`, on one line or several.
-          const imports =
-            text.match(/import \{[^}]*\} from '@anthropic-ai\/claude-agent-sdk'/g) ?? [];
-          if (imports.some((line) => /[{\s,]query[\s,}]/.test(line))) {
-            importers.push(path.relative(root, full));
-          }
+          // Any way to reach the SDK's `query` as a value: a named import or
+          // re-export, either quote, a namespace import, or a dynamic import.
+          const sdk = `['"]@anthropic-ai/claude-agent-sdk['"]`;
+          const named = new RegExp(`(?:import|export) \\{[^}]*\\} from ${sdk}`, 'g');
+          const reachesIt =
+            (text.match(named) ?? []).some((line) => /[{\s,]query[\s,}]/.test(line)) ||
+            new RegExp(`import \\* as \\w+ from ${sdk}`).test(text) ||
+            new RegExp(`import\\(\\s*${sdk}`).test(text);
+          if (reachesIt) importers.push(path.relative(root, full));
         }
       }
     };
@@ -198,7 +210,9 @@ describe('every launch goes through launchQuery', () => {
       'sdk/launch-query.ts',
     ]);
     for (const file of importers.filter((f) => !f.includes('launch-query'))) {
-      expect(readFileSync(path.join(root, file), 'utf8')).not.toMatch(/^\s*mcpServers:/m);
+      expect(readFileSync(path.join(root, file), 'utf8')).not.toMatch(
+        /\bmcpServers\s*[,:}]|\.\.\.sdkOptions/
+      );
     }
   });
 });

@@ -170,19 +170,26 @@ until that answers. The CLI answers once the servers are connected (measured: 30
 stdio server that took 4 s), so their tools are ready on the first turn.
 
 Past `PLUGIN_RELOAD_ACK_TIMEOUT_MS` it fails closed: nothing goes back on the command line, the chat
-says some tools may not work, the turn opens, and the fingerprint records the servers as not held, so
-the next dispatch asks again. Warm chats already took this path; they now say so too.
+says some tools may not work, the turn opens, and the fingerprint records what the process holds as
+unknown (`MCP_SERVERS_UNKNOWN`), so the next dispatch always sends its list. The CLI finishes a request it
+was slow on, so a server can land after the bound, and only that record lets a later Remove reach it.
+Warm chats took this path already; they now say so too, and record the same unknown.
 
 The CLI holds the first message until its own connect wait ends, so the 8 s bound sets when the notice
 goes out, not when the reply starts: a stdio server that never answers meant about 27 s to the first
-model request, the same as on the command line before this change.
+model request (Security measured 30.2 s, the CLI's own 30 s connect limit), the same as on the command
+line before this change.
+
+**Name clash:** a repo `.mcp.json` server with the same name as a managed one, with project servers
+on, now starts at launch and is replaced before the first message. On the command line it never started.
+With `strictMcpConfig` none of this applies.
 
 Measured in `--network none` Docker with CLI 2.1.304: `${VAR}` in the config does expand, but it puts
 the value in the CLI's environment, where the agent's own Bash can read it. Not used.
 
-**The limit:** this fixes the CLI's command line only. A stdio server's own environment and arguments
-stay readable by same-user programs, so keeping an agent from a server does not keep a stdio secret from
-that agent's shell (DOR-505).
+**The limit:** this fixes the CLI's command line only. A stdio server's own environment stays readable by
+same-user programs, and its own arguments stay on its own command line, readable by every account on the
+computer. So keeping an agent from a server does not keep a stdio secret from that agent's shell (DOR-505).
 
 ### `toolSurface` (what the `dorkos` server lists) — RELAUNCH (DOR-2685)
 
