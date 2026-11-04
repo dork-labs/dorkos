@@ -218,6 +218,20 @@ describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
     actions: [{ id: 'open-schedule', label: 'Open schedule', style: 'primary' }],
   });
 
+  it('opens the exact schedule carried by a refusal notice', () => {
+    navigate.mockClear();
+    render(
+      <InboxRow
+        notification={{ ...failing, subject: { type: 'task', id: 'sample-schedule' } }}
+        onOpen={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open schedule' }));
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ search: { schedule: 'sample-schedule' } })
+    );
+  });
+
   it('draws Open schedule beside a row that offers it, and never a raise', () => {
     render(<InboxRow notification={failing} onOpen={() => {}} />);
 

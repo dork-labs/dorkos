@@ -487,7 +487,12 @@ describe('notification registry', () => {
 
     it('titles every failing run "needs attention", and a success "finished"', () => {
       const entry = notificationEntry('run.completed');
-      expect(entry.title(blocked)).toBe('Mailroom needs attention');
+      expect(entry.title({ ...blocked, refusedTools: ['Bash'] })).toBe(
+        'Mailroom had a command refused'
+      );
+      expect(entry.title({ ...blocked, refusedTools: ['Write'] })).toBe(
+        'Mailroom was refused Write'
+      );
       expect(entry.title({ ...blocked, status: 'failed' })).toBe('Mailroom needs attention');
       expect(entry.title({ ...blocked, status: 'completed' })).toBe('Mailroom finished');
     });
@@ -503,13 +508,13 @@ describe('notification registry', () => {
     it('says the row’s reason, points at the schedule, and says it will not repeat', () => {
       const body = notificationEntry('run.completed').body;
       expect(body?.({ ...blocked, refusedTools: ['Bash', 'gmail: search'] })).toBe(
-        'Nothing got done: Bash and gmail: search were refused. Open the schedule to fix it.'
+        "The reason wasn't recorded. Open the schedule to check its mode."
       );
       expect(
         body?.({ ...blocked, outcome: 'partial', refusedTools: ['Bash'], oncePerStreak: true })
       ).toBe(
-        'Bash was refused, with nobody there to approve it. Open the schedule to fix it. ' +
-          'You won’t get another notice about it until it runs cleanly and fails again.'
+        "The reason wasn't recorded. Open the schedule to check its mode. " +
+          'No more notices until it runs cleanly and fails again.'
       );
       // "Didn't finish": only the reason line changes.
       expect(body?.({ ...blocked, status: 'failed', detail: 'API Error: 500' })).toBe(

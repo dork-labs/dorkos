@@ -369,7 +369,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     case 'task':
       return {
         ...appRoutes.tasks(),
-        search: kind === 'schedule.armed_by_agent' ? { schedule: subject.id } : {},
+        search:
+          kind === 'schedule.armed_by_agent' || kind === 'run.completed'
+            ? { schedule: subject.id }
+            : {},
       };
     case 'room':
       // `?id=`, which is how every other link to a room is spelled — the route

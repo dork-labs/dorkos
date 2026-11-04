@@ -118,7 +118,7 @@ const OPEN_SCHEDULE_ACTION_ID = 'open-schedule';
  * "Open schedule": takes the person to the Schedules page, filtered to the
  * failing schedules, where the fix lives.
  */
-function OpenScheduleAction() {
+function OpenScheduleAction({ scheduleId }: { scheduleId?: string }) {
   const navigate = useSafeNavigate();
   return (
     <Button
@@ -130,7 +130,10 @@ function OpenScheduleAction() {
       className="h-11 w-full shrink-0 sm:h-auto sm:w-auto"
       onClick={() => {
         if (navigate !== null)
-          void navigate({ ...appRoutes.tasks(), search: { health: 'failing' } });
+          void navigate({
+            ...appRoutes.tasks(),
+            search: scheduleId ? { schedule: scheduleId } : { health: 'failing' },
+          });
       }}
     >
       Open schedule
@@ -195,7 +198,8 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   // An agent's change to a schedule is the person's only signal of it, so its
   // title and body read in full, never cut (DOR-3703, M6: the mode, the hashes
   // and who started the turn).
-  const readsInFull = notification.kind === 'schedule.armed_by_agent';
+  const readsInFull =
+    notification.mark === 'refused' || notification.kind === 'schedule.armed_by_agent';
   const isScheduleCreation =
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const tone = notificationRowTone(notification);
@@ -349,7 +353,11 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
       )}
       {/* A failing schedule's one fix, beside the row rather than inside it (a
           button cannot hold a button). Only on a row a person can act on. */}
-      {opensSchedule && <OpenScheduleAction />}
+      {opensSchedule && (
+        <OpenScheduleAction
+          scheduleId={notification.subject.type === 'task' ? notification.subject.id : undefined}
+        />
+      )}
       {undoesMode && (
         <UndoAgentModeAction taskId={notification.subject.id} notificationId={notification.id} />
       )}

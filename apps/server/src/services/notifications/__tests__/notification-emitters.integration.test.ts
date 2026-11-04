@@ -154,10 +154,11 @@ describe('a finished run', () => {
     expect(announced()).toHaveLength(1);
     expect(announced()[0]).toMatchObject({
       kind: 'run.completed',
-      title: 'mailroom needs attention',
+      title: 'mailroom had a command refused',
+      subject: { type: 'task', id: task.id },
     });
     expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-      'Bash was refused, with nobody there to approve it. Open the schedule to fix it.'
+      "The reason wasn't recorded. Open the schedule to check its mode."
     );
   });
 
@@ -197,7 +198,7 @@ describe('a finished run', () => {
 
       const notices = announced().filter((n) => n.kind === 'run.completed');
       expect(notices).toHaveLength(1);
-      expect(notices[0]).toMatchObject({ title: 'health-check needs attention' });
+      expect(notices[0]).toMatchObject({ title: 'health-check had a command refused' });
       // Only the notice is spared: every run still says what happened.
       expect(ids.map((id) => store.getRun(id)!.status)).toEqual([
         'needs_attention',
@@ -212,8 +213,8 @@ describe('a finished run', () => {
       await finish(store, task.id, 'needs_attention');
 
       expect(service.list({ limit: 25, unread: false }).notifications[0].body).toBe(
-        'Bash was refused, with nobody there to approve it. Open the schedule to fix it. ' +
-          'You won’t get another notice about it until it runs cleanly and fails again.'
+        "The reason wasn't recorded. Open the schedule to check its mode. " +
+          'No more notices until it runs cleanly and fails again.'
       );
       expect(service.list({ limit: 25, unread: false }).notifications[0].mark).toBe('refused');
     });
@@ -227,7 +228,7 @@ describe('a finished run', () => {
       await finish(store, task.id, 'needs_attention');
 
       const failing = announced().filter(
-        (n) => n.kind === 'run.completed' && n.title.endsWith('needs attention')
+        (n) => n.kind === 'run.completed' && n.title.endsWith('had a command refused')
       );
       expect(failing).toHaveLength(2);
     });

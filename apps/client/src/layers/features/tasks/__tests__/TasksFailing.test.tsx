@@ -163,7 +163,7 @@ describe('the Schedules list when something is failing (DOR-3123)', () => {
 
     expect(screen.getByLabelText('Needs attention')).toBeInTheDocument();
     const reason = document.querySelector('[data-slot="task-failing-reason"]')!;
-    expect(reason.textContent).toMatch(/^Bash was refused/);
+    expect(reason.textContent).toMatch(/^A Bash command was refused/);
     expect(reason.textContent).not.toMatch(/Something went wrong|\bwe\b/i);
     expect(screen.getByText(/Failing since .* · 3 runs/)).toBeInTheDocument();
     // One action on the row, never an offer to raise the stop.
@@ -179,7 +179,7 @@ describe('the Schedules list when something is failing (DOR-3123)', () => {
     renderList([schedule('s1', { health: FAILING, permissionMode: 'acceptEdits' })]);
 
     expect(
-      await screen.findByText('Bash was refused: this schedule runs at Act.')
+      await screen.findByText('A Bash command was refused. This schedule runs as Accept edits.')
     ).toBeInTheDocument();
   });
 
@@ -210,7 +210,7 @@ describe('the Schedules list when something is failing (DOR-3123)', () => {
     renderList([schedule('s1', { health: FAILING, permissionMode: 'dontAsk' })], transport);
 
     expect(
-      await screen.findByText('Bash was refused: this schedule runs at Never ask.')
+      await screen.findByText('A Bash command was refused. This schedule runs as Never ask.')
     ).toBeInTheDocument();
   });
 
@@ -228,13 +228,13 @@ describe('describeFailure (SF-8)', () => {
   it('names the tool by its readable name and the stop by its dial name', () => {
     expect(
       describeFailure({ ...base, kind: 'tool_refused', tools: ['mcp__gmail__search'] }, 'Act')
-    ).toBe('gmail: search was refused: this schedule runs at Act.');
+    ).toBe('gmail: search was refused. This schedule runs as Act.');
   });
 
   it('says when nothing got done', () => {
     expect(
       describeFailure({ ...base, kind: 'tool_refused', tools: ['Bash'], nothingDone: true }, 'Act')
-    ).toBe('Nothing got done: Bash was refused at Act.');
+    ).toBe('A Bash command was refused. This schedule runs as Act.');
   });
 
   it('counts past two tools', () => {
@@ -243,7 +243,7 @@ describe('describeFailure (SF-8)', () => {
         { ...base, kind: 'tools_refused', tools: ['Bash', 'Write', 'Edit', 'WebFetch'] },
         'Ask first'
       )
-    ).toBe('Bash, Write and 2 more were refused: this schedule runs at Ask first.');
+    ).toBe('Bash, Write and 2 more were refused. This schedule runs as Ask first.');
   });
 
   it('quotes a short error, and never says "Something went wrong"', () => {

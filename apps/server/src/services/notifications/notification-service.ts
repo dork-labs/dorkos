@@ -464,7 +464,7 @@ export class NotificationService {
     const notification = this.store.insert({
       kind,
       tier: resolvePerKind(entry.tier, payload),
-      subjectType: entry.subjectType,
+      subjectType: location.subjectType ?? entry.subjectType,
       subjectId: location.subjectId,
       ...(location.agentId ? { agentId: location.agentId } : {}),
       ...(location.sessionId ? { sessionId: location.sessionId } : {}),

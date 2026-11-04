@@ -17,7 +17,12 @@ import type { Task, TaskRun } from '@dorkos/shared/types';
 import { formatDuration } from '../../../lib/format-duration.js';
 import { readableToolName } from '@dorkos/shared/run-refusals';
 import { notify } from '../notification-service.js';
-import { ONCE_PER_STREAK_LINE, OPEN_TO_FIX_LINE, runFailureReason } from '../run-completed-copy.js';
+import {
+  ONCE_PER_STREAK_LINE,
+  OPEN_TO_FIX_LINE,
+  runCompletedTitle,
+  runFailureReason,
+} from '../run-completed-copy.js';
 
 /** Relay `from` principal for automatic task-completion notifications. */
 const TASK_NOTIFIER_PRINCIPAL = 'relay.system.tasks.notifier';
@@ -149,12 +154,23 @@ export function formatCompletionMessage(
 ): string {
   const name = task?.displayName?.trim() || task?.name || 'Scheduled task';
 
-  if (run.status === 'failed' || run.status === 'needs_attention') {
+  if (run.status === 'needs_attention') {
+    // Chat channels get the title only: no run output or command text.
+    return runCompletedTitle({
+      runId: run.id,
+      taskId: run.scheduleId,
+      taskName: name,
+      status: run.status,
+      refusedTools: [...new Set((run.refusedTools ?? []).map(readableToolName))],
+      channelMessage: '',
+    });
+  }
+  if (run.status === 'failed') {
     // The same parts as the inbox notice, in the same order (DOR-3123): what
     // happened, why, the one fix, and — on a streak's one notice — that no
     // more will follow. Only the reason is ever cut, so the fix and the
     // promise always arrive whole.
-    const mark = run.status === 'failed' ? '✕' : '🔒';
+    const mark = '✕';
     const reason = runFailureReason({
       runId: run.id,
       taskId: run.scheduleId,

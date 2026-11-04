@@ -12,18 +12,13 @@ import { Lock, XCircle } from 'lucide-react';
 import type { Task } from '@dorkos/shared/types';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
-import { Button, stopLabel } from '@/layers/shared/ui';
+import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
-import {
-  describeFailure,
-  failingSince,
-  isRefusal,
-  NEVER_ASK_MODE_ID,
-} from '../lib/schedule-health';
+import { describeFailure, failingSince, isRefusal } from '../lib/schedule-health';
 
 /**
- * The Trust Dial's name for the stop a schedule runs at, read from the
+ * The runtime's name for the mode a schedule runs as, read from the
  * runtime it runs on, or `null` while that is not known. Never ask is named
  * for itself: it sits inside the Ask first stop, and "runs at Ask first"
  * would point the person at the wrong fix.
@@ -31,13 +26,13 @@ import {
  * @param task - The schedule.
  * @param agent - Its agent, whose runtime it follows when it names none.
  */
-function useStopName(task: Task, agent: AgentManifest | null | undefined): string | null {
+function useModeName(task: Task, agent: AgentManifest | null | undefined): string | null {
   const capabilities = useCapabilitiesForRuntime(task.runtime ?? agent?.runtime ?? null);
   const descriptor = capabilities?.permissionModes?.values?.find(
     (mode) => mode.id === task.permissionMode
   );
   if (!descriptor) return null;
-  return descriptor.id === NEVER_ASK_MODE_ID ? descriptor.label : stopLabel(descriptor.stop);
+  return descriptor.label;
 }
 
 /**
@@ -79,7 +74,7 @@ interface TaskFailingReasonProps {
  * it off is not fixing it — and the line says it is off.
  */
 export function TaskFailingReason({ task, agent }: TaskFailingReasonProps) {
-  const stop = useStopName(task, agent);
+  const stop = useModeName(task, agent);
   const reason = task.health?.reason;
   if (!reason) return null;
   const off = !task.enabled || task.status === 'paused';

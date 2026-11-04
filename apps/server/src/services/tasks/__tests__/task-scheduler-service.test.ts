@@ -885,8 +885,8 @@ describe('TaskSchedulerService', () => {
         expect(notifications.list({ limit: 25, unread: false }).notifications).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              title: 'Health check needs attention',
-              body: 'Bash was refused, with nobody there to approve it. Open the schedule to fix it.',
+              title: 'Health check had a command refused',
+              body: "The reason wasn't recorded. Open the schedule to check its mode.",
             }),
           ])
         )
@@ -1062,8 +1062,8 @@ describe('TaskSchedulerService', () => {
       // One entry each: the operator's morning question is WHICH tools, and the
       // run row's own line already answers "were there any".
       expect(refusals.map((event) => event.summary)).toEqual([
-        'Noted could not use Bash — nobody was there to approve it',
-        'Noted could not use control_ui — nobody was there to approve it',
+        'Noted had a Bash command refused',
+        'Noted was refused control_ui',
       ]);
 
       await service.stop();

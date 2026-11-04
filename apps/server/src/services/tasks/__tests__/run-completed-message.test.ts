@@ -40,68 +40,20 @@ const REFUSAL =
   'Skipped Bash and gmail: search — nobody was there to approve them on a scheduled run.';
 
 describe('formatCompletionMessage', () => {
-  it('leads a run that needs attention with the padlock, not the tick or the warning triangle', () => {
-    const body = formatCompletionMessage(
-      task,
-      run({ status: 'needs_attention', error: REFUSAL, refusedTools: ['Bash'] })
-    );
-
-    expect(body).toContain('🔒');
-    expect(body).not.toContain('✅');
-    expect(body).not.toContain('⚠️');
-    expect(body).not.toContain('✕');
-  });
-
-  it('says what the inbox notice says, in its four parts, with no log wording (DOR-3123)', () => {
-    const body = formatCompletionMessage(
-      task,
-      run({
-        status: 'needs_attention',
-        outcome: 'partial',
-        error: REFUSAL,
-        refusedTools: ['Bash', 'mcp__gmail__search'],
-      }),
-      true
-    );
-
-    expect(body).toBe(
-      '🔒 Mailroom needs attention. Bash and gmail: search were refused, with nobody there to ' +
-        'approve them. Open the schedule to fix it. ' +
-        'You won’t get another notice about it until it runs cleanly and fails again.'
-    );
-    // Neither the run's own log sentence nor how long it ran.
-    expect(body).not.toContain('Skipped');
-    expect(body).not.toContain('4s');
-  });
-
-  it('says when nothing got done', () => {
+  it('sends only the refusal title to a chat channel, even on a streak notice', () => {
     expect(
       formatCompletionMessage(
         task,
-        run({ status: 'needs_attention', outcome: 'nothing_done', refusedTools: ['Bash'] })
+        run({ status: 'needs_attention', error: REFUSAL, refusedTools: ['Bash'] }),
+        true
       )
-    ).toBe(
-      '🔒 Mailroom needs attention. Nothing got done: Bash was refused. Open the schedule to fix it.'
-    );
-  });
-
-  it('ends the one notice of a failing streak with the no-repeat line, never cut off (DOR-3123)', () => {
-    const body = formatCompletionMessage(
-      task,
-      run({
-        status: 'needs_attention',
-        outcome: 'partial',
-        refusedTools: [`mcp__${'a'.repeat(300)}__search`],
-      }),
-      true
-    );
-
+    ).toBe('Mailroom had a command refused');
     expect(
-      body.endsWith(' You won’t get another notice about it until it runs cleanly and fails again.')
-    ).toBe(true);
-    expect(body.length).toBeLessThanOrEqual(280);
-    // The reason is what got cut, and the fix survived it.
-    expect(body).toContain('… Open the schedule to fix it.');
+      formatCompletionMessage(
+        task,
+        run({ status: 'needs_attention', refusedTools: ['mcp__sample__search'] })
+      )
+    ).toBe('Mailroom was refused sample: search');
   });
 
   it('still says done for a success, and a run that did not finish gets the cross', () => {
