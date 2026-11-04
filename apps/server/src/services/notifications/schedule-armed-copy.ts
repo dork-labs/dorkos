@@ -125,7 +125,13 @@ export const SCHEDULE_ARMED_COPY = {
           : p.modeChange
             ? `Was ${p.modeChange.from}.${p.modeChange.startedBy ? ` Started by ${p.modeChange.startedBy}.` : ''}`
             : p.execution
-              ? `Runs as: ${p.execution.modeLabel}\n${p.execution.limitation}`
+              ? [
+                  `Runs as: ${p.execution.modeLabel}`,
+                  p.execution.modeSummary,
+                  p.execution.limitation,
+                ]
+                  .filter(Boolean)
+                  .join('\n')
               : `Runs ${p.cadence}${p.runsAs ? ` as ${p.runsAs}` : ''}. Pause it any time.`,
   actions: (p: ScheduleArmedPayload) =>
     p.fileChange?.kind === 'capped' || p.refusedRaise

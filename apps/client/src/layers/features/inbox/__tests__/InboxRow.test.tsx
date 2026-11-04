@@ -38,7 +38,7 @@ const AGENT: AgentVisualSource = { id: 'alpha', color: '#6366f1', icon: '🐙' }
 it('keeps a creation notice’s mode and warning visible beside a long truncated name', () => {
   const title = 'Scout made a schedule: The very long nightly report for every made-up project';
   const body =
-    'Runs as: Accept edits\nSome commands run on their own. Others are refused, because nobody’s there to approve them.';
+    'Runs as: Accept edits\nEdits files without asking.\nSome commands run on their own. Others are refused, because nobody’s there to approve them.';
   render(
     <InboxRow
       notification={build({

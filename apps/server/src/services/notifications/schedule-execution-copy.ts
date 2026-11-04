@@ -3,6 +3,8 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 
 export interface ScheduleExecutionCopy {
   modeLabel: string;
+  /** What the asking Accept edits mode permits without somebody answering. */
+  modeSummary?: string;
   limitation: string;
   /** Approval requests are refused because timer runs have nobody to answer. */
   refusesUnansweredApprovals: boolean;
@@ -52,5 +54,12 @@ export function scheduleExecutionCopy(
     descriptor?.reach !== 'read' &&
     descriptor?.asks !== 'never' &&
     (descriptor !== undefined || Object.hasOwn(FALLBACK_LABELS, mode));
-  return { modeLabel, limitation, refusesUnansweredApprovals };
+  return {
+    modeLabel,
+    ...(mode === 'acceptEdits' && refusesUnansweredApprovals
+      ? { modeSummary: 'Edits files without asking.' }
+      : {}),
+    limitation,
+    refusesUnansweredApprovals,
+  };
 }

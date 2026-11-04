@@ -266,7 +266,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           className={cn(
             'block text-xs',
             refusalTitle
-              ? 'flex min-w-0 items-baseline gap-0.5'
+              ? 'flex min-w-0 items-baseline gap-0'
               : isScheduleCreation
                 ? 'truncate'
                 : readsInFull

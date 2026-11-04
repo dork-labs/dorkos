@@ -152,7 +152,7 @@ describe('an agent schedule on a Trusted install', () => {
     const armed = outcome.armedPayload!;
     expect(entry.title(armed)).toBe('An agent made a schedule: nightly-sweep');
     expect(entry.body?.(armed)).toBe(
-      'Runs as: Accept edits\nSome commands run on their own. Others are refused, because nobody’s there to approve them.'
+      'Runs as: Accept edits\nEdits files without asking.\nSome commands run on their own. Others are refused, because nobody’s there to approve them.'
     );
     expect(entry.actions?.(armed).map((a) => a.id)).toEqual(['pause', 'open']);
   });
