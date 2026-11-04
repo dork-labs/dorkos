@@ -74,6 +74,50 @@ async function rest(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
 }
 
 describe('a turn', () => {
+  it.each(['.config', '.claude'])(
+    'names the blocking %s file in a default-mode refusal without changing it',
+    async (name) => {
+      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-blocking-file-')));
+      const home = path.join(root, 'home');
+      const data = path.join(root, 'data');
+      const cwd = path.join(root, 'project');
+      for (const dir of [home, data, cwd]) fs.mkdirSync(dir);
+      const blocking = path.join(home, name);
+      fs.writeFileSync(blocking, 'personal contents');
+      try {
+        const h = harness();
+        const base = h.request({ sessionId: 'blocking-file' });
+        const events = await h.run(
+          h.request({
+            sessionId: base.sessionId,
+            cwd,
+            settings: { permissionMode: 'default' },
+            tools: {
+              ...base.tools,
+              filePolicy: {
+                roots: { cwd, home, data, accounts: [], agentHomes: [], agentFolders: [cwd] },
+                writable: [cwd],
+              },
+            },
+          })
+        );
+        expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+        expect(events[0]).toMatchObject({
+          data: {
+            code: 'codex_protected_path_not_directory',
+            message: `Codex needs ${blocking} to be a folder. Rename the file, then retry.`,
+            details: expect.stringContaining('ENOTDIR'),
+          },
+        });
+        expect(h.bindings).toEqual([]);
+        expect(h.host.home(PERSON_HOME).processes[0]!.requestsOf('thread/start')).toEqual([]);
+        expect(fs.readFileSync(blocking, 'utf8')).toBe('personal contents');
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
+
   it.each(['default', 'acceptEdits', 'bypassPermissions'] as const)(
     'explains a Linux namespace refusal at %s without starting an unprotected turn',
     async (permissionMode) => {

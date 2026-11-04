@@ -1,5 +1,6 @@
 /** Codex named filesystem policies. Legacy sandbox flags must never accompany these. */
 import fs from 'node:fs';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import path from 'node:path';
 import { realPathOf } from '@dorkos/shared/directory-grants';
 import type { CodexOptions } from '@openai/codex-sdk';
@@ -34,11 +35,19 @@ function protectedEntries(
   // Capture existing homes literally; a new home is protected on next render.
   // Only directory Dirents are included; symlink entries are not followed.
   let discoveredHomes: string[];
+  const savedCopies: string[] = [];
   try {
     const agents = path.join(roots.data, 'agents');
     discoveredHomes = fs
       .readdirSync(agents, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
+      .filter((entry) => {
+        if (!entry.isDirectory()) return false;
+        if (!isInstallSiblingName(entry.name)) return true;
+        // Saved installs are not active homes, but skipping their protection
+        // would leave a full copy of an agent's setup writable at Full.
+        savedCopies.push(path.join(agents, entry.name));
+        return false;
+      })
       .map((entry) => path.join(agents, entry.name))
       .sort();
   } catch (error) {
@@ -98,6 +107,9 @@ function protectedEntries(
       }
   }
   const missing = new Set<string>();
+  for (const saved of savedCopies.sort())
+    entries[saved] =
+      entries[saved] === 'deny' || isProtectedPath(saved, 'read', roots) ? 'deny' : 'read';
   const collapsed = collapseProtectedPaths(
     entries,
     [
@@ -107,6 +119,7 @@ function protectedEntries(
       ...writable,
       ...roots.agentFolders,
       ...agentHomes,
+      ...savedCopies,
       ...roots.accounts,
     ],
     (target) => missing.add(target)

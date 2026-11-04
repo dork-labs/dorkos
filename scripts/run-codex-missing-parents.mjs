@@ -18,6 +18,7 @@ export const protectionRows = [
   ['outside-tmp-10k', 'acceptEdits'],
   ['outside-tmp-10k', 'bypassPermissions'],
   ['reconcile-leak-10k', 'acceptEdits'],
+  ['reconcile-default-10k', 'default'],
   ['concurrent-ledger-10k', 'acceptEdits'],
   ['nonempty-ledger-10k', 'acceptEdits'],
   ['nonempty-ledger-10k', 'bypassPermissions'],

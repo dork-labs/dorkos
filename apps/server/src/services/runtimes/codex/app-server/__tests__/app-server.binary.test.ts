@@ -30,7 +30,7 @@ import http from 'node:http';
 import { codexProtectedConfig } from '../../policy/protected-profile.js';
 import { killFixtureWithRealLeak } from './fixtures/mount-recovery-probe.js';
 import { reconcileMountTargets } from '../../policy/reconcile-mount-targets.js';
-import { recordMountTargets } from '../../policy/mount-target-ledger.js';
+import { readMountTargets, recordMountTargets } from '../../policy/mount-target-ledger.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -336,7 +336,7 @@ function request(
   bindingId: string | undefined,
   overrides: Partial<CodexTurnRequest> = {}
 ): CodexTurnRequest {
-  return {
+  const baseRequest: CodexTurnRequest = {
     binary: BINARY!,
     sessionId,
     boundThreadId: undefined,
@@ -366,13 +366,25 @@ function request(
     signal: new AbortController().signal,
     events: createCodexEventContext(sessionId),
     onThreadBound: () => {},
-    ...overrides,
   };
+  // Replacing a managed tool must not replace the throwaway file policy
+  // with the parent runner's real HOME/data defaults.
+  const merged = {
+    ...baseRequest,
+    ...overrides,
+    tools: { ...baseRequest.tools, ...overrides.tools },
+  };
+  expect(merged.tools.filePolicy).toBeDefined();
+  expect(merged.tools.filePolicy!.roots.home).toBe(path.join(root, 'home'));
+  expect(merged.tools.filePolicy!.roots.data).toBe(path.join(root, 'data'));
+  return merged;
 }
 
-describe.skipIf(BINARY === null)('the app-server transport against the real Codex binary', () => {
+// Apply the intended limit during collection; beforeAll is too late.
+const NATIVE_LIMITS = { timeout: 90_000 };
+const nativeSuite = describe.skipIf(BINARY === null);
+nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIMITS, () => {
   beforeAll(async () => {
-    vi.setConfig({ testTimeout: 90_000, hookTimeout: 30_000 });
     server = http.createServer((req, res) => {
       let body = '';
       req.on('data', (chunk) => (body += chunk));
@@ -385,6 +397,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
 
   beforeEach(() => {
     scripted.length = 0;
+    stallNext = false;
     seen.responses = 0;
     seen.mcpAuthorizations.length = 0;
     seen.resolvedDuringTurn.length = 0;
@@ -438,6 +451,10 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         'model_provider = "fake"',
         'cli_auth_credentials_store = "file"',
         'mcp_oauth_credentials_store = "file"',
+        // Keep the fake-server fixture local: Codex's optional remote plugin
+        // sync mutates its own clone during our intentionally unbounded scan.
+        // File-policy plugin canaries, MCP and .agents skill controls stay on.
+        'features.plugins = false',
         '[model_providers.fake]',
         'name = "fake"',
         `base_url = "${base}/v1"`,
@@ -688,6 +705,11 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
       const scenario = process.env.DORKOS_CODEX_PROBE_SCENARIO;
       const ownSymlink = scenario === 'agent-symlink-10k';
       const defaultStub = scenario === 'default-stub-10k';
+      const defaultRecovery = scenario === 'reconcile-default-10k';
+      const recoveryTargets = [
+        path.join(root, 'home', '.claude'),
+        path.join(root, 'home', '.config'),
+      ];
       const nonemptyLedger = scenario === 'nonempty-ledger-10k';
       const skillDiscovery = scenario === 'skill-discovery-10k';
       const ownHomeCwd = scenario === 'agent-home-10k' || ownSymlink;
@@ -737,6 +759,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           'default-stub-10k',
           'nonempty-ledger-10k',
           'reconcile-leak-10k',
+          'reconcile-default-10k',
           'concurrent-ledger-10k',
           'person-root-link-10k',
           'skill-discovery-10k',
@@ -755,6 +778,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           expect(selectedMode).toBe('acceptEdits');
         if (scenario === 'new-agent-fork-10k') expect(selectedMode).toBe('bypassPermissions');
         if (defaultStub || scenario?.startsWith('rg-')) expect(selectedMode).toBe('default');
+        if (defaultRecovery) expect(selectedMode).toBe('default');
       }
       const size = {
         homeFiles: scenario === 'home-500k' ? 500_000 : 10_000,
@@ -845,9 +869,15 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               ? await startProbeScanRace(path.join(root, 'home'))
               : undefined;
           try {
-            if (scenario === 'reconcile-leak-10k' || scenario === 'concurrent-ledger-10k') {
+            if (
+              scenario === 'reconcile-leak-10k' ||
+              defaultRecovery ||
+              scenario === 'concurrent-ledger-10k'
+            ) {
               const target = path.join(personHome, '.claude');
               expect(fs.existsSync(target)).toBe(false);
+              if (defaultRecovery)
+                for (const file of recoveryTargets) expect(fs.existsSync(file)).toBe(false);
               let victimChild: ReturnType<typeof nodeSpawn> | undefined;
               let work: Promise<void> | undefined;
               let ready = false;
@@ -858,7 +888,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                 (res) =>
                   res.end(
                     sseCall({
-                      cmd: 'printf PUBLIC-recovery-ready; sleep 5',
+                      cmd: `printf PUBLIC-recovery-ready; sleep ${defaultRecovery ? 60 : 5}`,
                       login: false,
                       yield_time_ms: 1000,
                     })
@@ -867,9 +897,12 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                   ready = shellControlReturned(body, 'PUBLIC-recovery-ready');
                   work = (async () => {
                     expect(ready).toBe(true);
-                    if (scenario === 'reconcile-leak-10k') {
+                    if (scenario === 'reconcile-leak-10k' || defaultRecovery) {
                       expect(victimChild?.pid).toBeDefined();
-                      await killFixtureWithRealLeak(victimChild!.pid!, target);
+                      const targets = defaultRecovery ? recoveryTargets : [target];
+                      const recorded = readMountTargets(path.join(root, 'data'));
+                      for (const file of targets) expect(recorded).toContain(file);
+                      await killFixtureWithRealLeak(victimChild!.pid!, targets);
                     } else {
                       const before = fs.lstatSync(target);
                       expect(before.isFile()).toBe(true);
@@ -893,12 +926,18 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                 try {
                   for await (const event of victim.runTurn(
                     request('recovery-victim', undefined, {
-                      settings: { permissionMode: mode, model: 'fake-model' },
+                      settings: {
+                        // Produce the host placeholders under Full, then
+                        // prove that the next default turn safely recovers.
+                        permissionMode: defaultRecovery ? 'bypassPermissions' : mode,
+                        model: 'fake-model',
+                      },
                     })
                   ))
                     void event;
                 } catch (error) {
-                  if (scenario !== 'reconcile-leak-10k' || !ready || !work) throw error;
+                  if ((!defaultRecovery && scenario !== 'reconcile-leak-10k') || !ready || !work)
+                    throw error;
                   console.info('Codex recovery victim exited during its turn', String(error));
                 }
                 await work;
@@ -907,6 +946,19 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                 await victim.shutdown();
               }
               scripted.length = 0;
+              if (defaultRecovery) {
+                // Leave real recorded crash leftovers for the NEXT production
+                // runTurn/default to reconcile, without test-side removal.
+                for (const file of recoveryTargets) {
+                  const leftover = fs.lstatSync(file);
+                  expect(leftover.isFile()).toBe(true);
+                  expect(leftover.size).toBe(0);
+                }
+                console.info(
+                  'Codex listed crash targets awaiting default recovery',
+                  recoveryTargets
+                );
+              }
               if (scenario === 'reconcile-leak-10k') {
                 expect(fs.lstatSync(target).isFile()).toBe(true);
                 const removed = await reconcileMountTargets(path.join(root, 'data'), {
@@ -955,7 +1007,10 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               expect(bindings).toHaveLength(2);
               expect(bindings[1]!.id).not.toBe(bindings[0]!.id);
               expect(bindings[1]!.replaces).toBe(bindings[0]!.id);
-              console.info('Codex new agent folder fork retained history', { bindings, retained });
+              console.info('Codex new agent folder fork retained history', {
+                bindings,
+                retained,
+              });
               await historyTransport.shutdown();
               scripted.length = 0;
             }
@@ -1105,6 +1160,8 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                 cwd: probeCwd,
                 settings: { permissionMode: mode, model: 'fake-model' },
                 onThreadBound: () => {
+                  if (defaultRecovery)
+                    for (const file of recoveryTargets) expect(fs.existsSync(file)).toBe(false);
                   startMs = performance.now() - started;
                   console.info('Codex protected thread bound', { kind, mode, ...size, startMs });
                 },
@@ -1205,6 +1262,13 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               continue;
             }
             expect(startMs, JSON.stringify(events)).toBeDefined();
+            if (defaultRecovery) {
+              for (const file of recoveryTargets) expect(fs.existsSync(file)).toBe(false);
+              console.info(
+                'Codex default turn recovered real listed targets through before-load reconciliation',
+                recoveryTargets
+              );
+            }
             if (scenario) expect(shellControls).toEqual([true, true, true]);
             expect(result, JSON.stringify(events)).toContain(control);
             expect(result, JSON.stringify(events)).toContain(skillControl);

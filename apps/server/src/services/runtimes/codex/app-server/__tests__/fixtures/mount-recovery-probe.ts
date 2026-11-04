@@ -27,7 +27,10 @@ function markerDirectory(target: string): string {
   return path.join(codexMountRegistry(), hash.toString(16).padStart(16, '0'));
 }
 
-export async function killFixtureWithRealLeak(rootPid: number, target: string): Promise<void> {
+export async function killFixtureWithRealLeak(
+  rootPid: number,
+  target: string | readonly string[]
+): Promise<void> {
   if (process.platform !== 'linux' || process.env.CI !== 'true')
     throw new Error('Requires Linux CI.');
   const root = identity(rootPid);
@@ -64,34 +67,37 @@ export async function killFixtureWithRealLeak(rootPid: number, target: string): 
       if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
     }
   };
-  let holders: number[] = [];
-  try {
-    holders = fs
-      .readdirSync(markerDirectory(target))
-      .map(Number)
-      .filter((pid) => owned.has(pid));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  const targets = typeof target === 'string' ? [target] : target;
+  const holders = new Set<number>();
+  for (const file of targets) {
+    for (const name of fs.readdirSync(markerDirectory(file))) {
+      const pid = Number(name);
+      if (owned.has(pid)) holders.add(pid);
+    }
   }
   // Freeze actual marker holders first so their cleanup cannot win the kill
   // race. Only a descendant of the exact child spawned by this test qualifies.
-  for (const pid of holders) signal(pid, 'SIGSTOP');
   try {
-    const file = fs.lstatSync(target);
-    if (!file.isFile() || file.size !== 0)
-      throw new Error('No real synthetic mount target was created.');
+    for (const pid of holders) signal(pid, 'SIGSTOP');
+    for (const target of targets) {
+      const file = fs.lstatSync(target);
+      if (!file.isFile() || file.size !== 0)
+        throw new Error('No real synthetic mount target was created.');
+    }
     for (const pid of holders) signal(pid, 'SIGKILL');
     signal(rootPid, 'SIGKILL');
     for (const pid of [...owned.keys()].reverse())
-      if (pid !== rootPid && !holders.includes(pid)) signal(pid, 'SIGKILL');
+      if (pid !== rootPid && !holders.has(pid)) signal(pid, 'SIGKILL');
     const deadline = Date.now() + 8_000;
     while (Date.now() < deadline && [...owned.keys()].some((pid) => !processIsGone(pid)))
       await new Promise((resolve) => setTimeout(resolve, 20));
     if ([...owned.keys()].some((pid) => !processIsGone(pid)))
       throw new Error('Fixture descendants have not exited.');
-    const leftover = fs.lstatSync(target);
-    if (!leftover.isFile() || leftover.size !== 0)
-      throw new Error('Crash did not leave a real mount target.');
+    for (const target of targets) {
+      const leftover = fs.lstatSync(target);
+      if (!leftover.isFile() || leftover.size !== 0)
+        throw new Error('Crash did not leave a real mount target.');
+    }
   } finally {
     // Never strand a stopped fixture if validation or crash injection fails.
     for (const pid of holders) signal(pid, 'SIGCONT');

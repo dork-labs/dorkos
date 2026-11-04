@@ -10,6 +10,7 @@ import { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import { CodexCrashLoopError } from '../app-server/process-pool.js';
 import type { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
+import { ProtectedPathNotDirectoryError } from '../policy/collapse-protected-paths.js';
 
 /** The machine refused Linux isolation; retrying the reply cannot repair it. */
 const SANDBOX_UNAVAILABLE_COPY =
@@ -28,6 +29,15 @@ export function* failedSetup(sessionId: string, err: unknown): Generator<StreamE
     yield refusal;
   } else if (err instanceof CodexCrashLoopError) {
     yield { type: 'error', data: { message: err.message, code: 'codex_crash_loop' } };
+  } else if (err instanceof ProtectedPathNotDirectoryError) {
+    yield {
+      type: 'error',
+      data: {
+        message: err.message,
+        code: 'codex_protected_path_not_directory',
+        details: err.cause instanceof Error ? err.cause.message : err.message,
+      },
+    };
   } else {
     logger.warn('[CodexAppServer] could not open the turn', { sessionId, err: String(err) });
     const sandboxUnavailable = isCodexRpcError(err, 'sandbox-unavailable');

@@ -219,3 +219,19 @@ per step, and shorten an already-pending normal stop. Physical children stay
 listed until their OS exit. Reconciliation additionally holds the pinned
 Codex registry flock and checks marker PIDs plus same-user executable
 identities; the pool alone never authorizes removal. Native proof pending.
+
+Follow-up after run 41783467897: the fourteen original diagnostics plus ten
+recovery/skill/layout rows now share the same 870-second deadline. Add default
+recovery of real recorded crash leftovers through the production before-load
+path, retaining the distinct unlisted-stub control, all canaries and host checks.
+No additional step/job time, retry or permission. Incomplete rows stay unproven.
+The native fixture now retains its throwaway file policy when managed tools
+are overridden, resets its stall flag per test, and sets the already-intended
+90-second timeout at suite collection rather than in beforeAll after collection.
+The outer 20-minute native step and all other diagnostic caps stay unchanged.
+This fixes fixture boundaries; it does not prove the thirteen failures green.
+The fake native home disables Codex's optional remote plugin catalog sync
+with its pinned features.plugins setting. The run showed that background
+clone vanishing during an unbounded glob scan. Explicit managed MCP servers,
+own .agents skill discovery and every filesystem/plugin canary remain tested.
+Production features and unreadable/vanishing scan behavior are unchanged.

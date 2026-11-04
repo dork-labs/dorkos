@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(codex): repair recovery proof and explain blocking files (DOR-3595)'
   - 'fix(codex): reconcile recorded Linux mount leftovers safely (DOR-3595)'
   - 'fix(codex): retain closing children and allow sandbox cleanup grace (DOR-3595)'
   - 'fix(codex): render existing agent homes as literal protections'
@@ -29,3 +30,4 @@ covers:
 - Codex may not start in the standard Docker image.
 - On Linux, Codex refuses to start if it cannot read a folder in your home folder. Change that folder’s permissions, or move it out of your home folder. A folder that disappears during a scan can also stop a command. Try the command again (DOR-3595).
 - On Linux, Codex may refuse to use your home as a project folder. Choose a folder inside it instead. A home reached through a symbolic link may also be refused (DOR-3595).
+- Codex names files that block a folder it needs and explains how to retry (DOR-3595).

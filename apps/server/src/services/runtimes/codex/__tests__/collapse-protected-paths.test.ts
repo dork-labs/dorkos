@@ -2,7 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { collapseProtectedPaths } from '../policy/collapse-protected-paths.js';
+import {
+  collapseProtectedPaths,
+  ProtectedPathNotDirectoryError,
+} from '../policy/collapse-protected-paths.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -74,7 +77,29 @@ it('refuses an obstructing file instead of dropping the protected child', () => 
   fs.writeFileSync(path.join(root, '.dork'), '');
   expect(() =>
     collapseProtectedPaths({ [path.join(root, '.dork', 'config.json')]: 'deny' }, [root])
-  ).toThrow(expect.objectContaining({ code: 'ENOTDIR' }));
+  ).toThrow(
+    expect.objectContaining({
+      code: 'ENOTDIR',
+      blockingPath: path.join(root, '.dork'),
+      message: `Codex needs ${path.join(root, '.dork')} to be a folder. Rename the file, then retry.`,
+    })
+  );
+});
+
+it('names the blocking file above multiple missing-looking child components', () => {
+  const root = fixture();
+  const blocked = path.join(root, '.config');
+  const leaf = path.join(blocked, 'gh', 'hosts.yml');
+  fs.writeFileSync(blocked, 'personal file');
+  try {
+    collapseProtectedPaths({ [leaf]: 'deny' }, [root]);
+    expect.unreachable('The non-directory ancestor must refuse.');
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProtectedPathNotDirectoryError);
+    expect(error).toMatchObject({ blockingPath: blocked, cause: { code: 'ENOTDIR' } });
+    expect((error as Error).message).not.toContain(leaf);
+  }
+  expect(fs.readFileSync(blocked, 'utf8')).toBe('personal file');
 });
 
 it('refuses inaccessible literal metadata instead of assuming it is missing', () => {

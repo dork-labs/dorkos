@@ -5,6 +5,35 @@ import { realPathOf } from '@dorkos/shared/directory-grants';
 
 type Access = 'read' | 'deny';
 
+/** A real file occupies a path that a protected descendant needs as a folder. */
+export class ProtectedPathNotDirectoryError extends Error {
+  readonly code = 'ENOTDIR';
+
+  constructor(
+    readonly blockingPath: string,
+    cause: Error
+  ) {
+    super(`Codex needs ${blockingPath} to be a folder. Rename the file, then retry.`, { cause });
+    this.name = 'ProtectedPathNotDirectoryError';
+  }
+}
+
+/** Locate the blocking file without following links or changing the filesystem. */
+function explainNotDirectory(file: string, original: Error): never {
+  for (let candidate = file; ; candidate = path.dirname(candidate)) {
+    let stat: fs.Stats | undefined;
+    try {
+      stat = fs.lstatSync(candidate);
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+    }
+    if (stat?.isFile()) throw new ProtectedPathNotDirectoryError(candidate, original);
+    // An existing link or directory does not prove which file obstructed the
+    // original lookup. Preserve that refusal rather than inventing a fix.
+    if (stat || path.dirname(candidate) === candidate) throw original;
+  }
+}
+
 /** Read-only inspection: links exist; inaccessible or non-directory ancestors refuse. */
 function firstMissing(file: string): string | undefined {
   let candidate = file;
@@ -14,6 +43,8 @@ function firstMissing(file: string): string | undefined {
       fs.lstatSync(candidate);
       return missing;
     } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOTDIR')
+        explainNotDirectory(candidate, error as Error);
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       missing = candidate;
       const parent = path.dirname(candidate);

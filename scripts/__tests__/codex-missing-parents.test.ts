@@ -31,7 +31,7 @@ it.each(['passed', 'failed', 'missing'])(
         assert.equal(protectionRows[2][0], 'kill-midturn-10k');
         assert.deepEqual(protectionRows[3], ['default-stub-10k', 'default']);
         assert(protectionRows.some(([scenario]) => scenario === 'agent-symlink-10k'));
-        for (const scenario of ['reconcile-leak-10k', 'concurrent-ledger-10k', 'nonempty-ledger-10k', 'person-root-link-10k', 'skill-discovery-10k', 'new-agent-fork-10k'])
+        for (const scenario of ['reconcile-leak-10k', 'reconcile-default-10k', 'concurrent-ledger-10k', 'nonempty-ledger-10k', 'person-root-link-10k', 'skill-discovery-10k', 'new-agent-fork-10k'])
           assert(protectionRows.some(([name]) => name === scenario));
         const code = traceMissingParents((command, args, options) => {
           count++;

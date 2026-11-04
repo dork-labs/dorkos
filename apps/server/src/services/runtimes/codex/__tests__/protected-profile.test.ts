@@ -5,6 +5,7 @@ import os from 'node:os';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { buildLoadOverrides } from '../app-server/thread-loader.js';
 import { PROTECTED_PATHS } from '../../shared/policy/protected-paths.js';
+import { MARKETPLACE_INSTALL_SIBLING_MARKERS } from '@dorkos/shared/marketplace-schemas';
 
 // This matrix pins rendering when all literal components exist. Missing-path
 // behavior is exercised against a real throwaway tree in its dedicated suite.
@@ -146,6 +147,10 @@ describe('capturing agent homes', () => {
         fs.mkdirSync(outside);
         fs.symlinkSync(outside, path.join(agents, 'linked'), 'dir');
         fs.writeFileSync(path.join(agents, 'regular-file'), '');
+        const copies = MARKETPLACE_INSTALL_SIBLING_MARKERS.map((marker) =>
+          path.join(agents, `probe${marker}saved`)
+        );
+        for (const copy of copies) fs.mkdirSync(copy);
         const policy = { ...filePolicy, roots: { ...roots, data } };
         const config = codexProtectedConfig(roots.cwd, policy, { permissionMode });
         const profiles = config.permissions as Record<
@@ -156,6 +161,11 @@ describe('capturing agent homes', () => {
         expect(files[path.join(home, '.claude', 'settings.json')]).toBe('read');
         expect(files[path.join(home, '.claude', 'skills')]).toBe('read');
         expect(files[path.join(home, '.agents')]).toBe('read');
+        for (const copy of copies) {
+          expect(files[copy]).toBe('read');
+          expect(files).not.toHaveProperty(path.join(copy, '.claude'));
+          expect(files).not.toHaveProperty(path.join(copy, '.agents'));
+        }
         for (const ignored of ['linked', 'regular-file'])
           expect(
             Object.keys(files).some((file) => file.startsWith(path.join(agents, ignored)))
