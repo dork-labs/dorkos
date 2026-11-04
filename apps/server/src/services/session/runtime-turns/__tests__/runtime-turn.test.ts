@@ -84,7 +84,7 @@ describe('a turn the agent started reaches the durable stream (T9)', () => {
 
     const turn = pushable();
     runtime.emitRuntimeTurn(sessionId, turn.stream);
-    expect(activeTurnStarterOf(sessionId)).toBe('the agent');
+    expect(activeTurnStarterOf(sessionId)).toBe('the agent itself');
     await flush();
 
     // Taken under the RESERVED holder, which `acquireLock` refuses to everyone

@@ -8,9 +8,9 @@ const LABELS: Record<TurnStarter, string> = {
   webhook: 'a webhook',
   'agent-message': 'a message from another agent',
   'outside-message': 'a message from outside DorkOS',
-  agent: 'the agent',
+  agent: 'the agent itself',
   'room-messages': 'messages in the room',
-  unknown: 'an unknown source',
+  unknown: 'something DorkOS couldn’t identify',
 };
 const active = new Map<string, Set<{ starter: TurnStarter | undefined }>>();
 
@@ -31,10 +31,10 @@ export function beginTurnStarter(sessionId: string, starter: TurnStarter | undef
 export function activeTurnStarterOf(sessionId: string): string | undefined {
   const entries = active.get(primaryOf(sessionId));
   if (!entries?.size) return undefined;
-  if (entries.size !== 1) return 'an unknown source';
+  if (entries.size !== 1) return 'something DorkOS couldn’t identify';
   const starter = [...entries][0]!.starter;
   if (starter === undefined) return undefined;
-  return Object.hasOwn(LABELS, starter) ? LABELS[starter] : 'an unknown source';
+  return Object.hasOwn(LABELS, starter) ? LABELS[starter] : 'something DorkOS couldn’t identify';
 }
 
 /** Scope provenance to iteration, including errors, interruption and early iterator return. */

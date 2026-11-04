@@ -20,7 +20,7 @@ describe('one send’s display starter', () => {
     const first = beginTurnStarter('sample', 'telegram');
     const second = beginTurnStarter('sample', undefined);
     try {
-      expect(activeTurnStarterOf('sample')).toBe('an unknown source');
+      expect(activeTurnStarterOf('sample')).toBe('something DorkOS couldn’t identify');
       first();
       expect(activeTurnStarterOf('sample')).toBeUndefined();
       first();
