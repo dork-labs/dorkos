@@ -27,6 +27,7 @@
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
+  GlobalMcpArgsCheckSchema,
   GlobalMcpServerInputSchema,
   GlobalMcpServerPatchSchema,
   type GlobalMcpServerInput,
@@ -43,11 +44,15 @@ import {
   GlobalMcpWidensError,
   type GlobalMcpStore,
 } from '../services/mesh/global-mcp/global-mcp-store.js';
+import { argsLookSecret } from '../services/mesh/global-mcp/global-mcp-mask.js';
 import {
   boundServerInput,
+  agentLabel,
   serverNotes,
   serverReason,
+  serverWarnings,
   whoGetsIt,
+  type AgentNames,
   type ServerChange,
 } from './mcp-server-step-up.js';
 import { noOwnerRefusal } from './relay-adapter-http.js';
@@ -85,6 +90,7 @@ interface HeldWrite {
   input: unknown;
   reason: string;
   notes: readonly string[];
+  warnings: readonly string[];
 }
 
 /** The bar for reading the list: a person, never an agent. */
@@ -126,12 +132,12 @@ async function writeResult(run: () => Promise<WriteResult>): Promise<WriteResult
  * Build the routes mounted at `/api/mcp-servers`.
  *
  * @param store - The person's global MCP servers.
- * @param agentName - What an agent is called, for the sheet; none by default.
+ * @param agentNames - What an agent is called, for the sheet; nothing by default.
  * @param ownerExists - Whether this install has an owner yet; the owner account by default.
  */
 export function createMcpServerRoutes(
   store: GlobalMcpStore,
-  agentName: (agentId: string) => string | undefined = () => undefined,
+  agentNames: (agentId: string) => AgentNames | undefined = () => undefined,
   ownerExists: () => boolean = () => readOwnerAccount() !== null
 ): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
@@ -177,6 +183,7 @@ export function createMcpServerRoutes(
         input: boundServerInput(change, input),
         reason: serverReason(change, input),
         notes: serverNotes(input, change === 'change'),
+        warnings: serverWarnings(input),
       },
       run
     );
@@ -196,7 +203,10 @@ export function createMcpServerRoutes(
     const expect = store.fingerprint(name);
     const added = before.excludedAgents
       .filter((agentId) => !after.excludedAgents.includes(agentId))
-      .map(agentName);
+      .map((agentId) => {
+        const names = agentNames(agentId);
+        return names && agentLabel(names);
+      });
     const change: ServerChange = before.enabled ? 'let-more' : 'turn-on';
     return runOrHold(
       c,
@@ -204,7 +214,8 @@ export function createMcpServerRoutes(
         target: name,
         input: { ...(boundServerInput(change, after) as object), expect },
         reason: serverReason(change, after, added),
-        notes: [...serverNotes(after), whoGetsIt(after, change === 'turn-on' ? 0 : added.length)],
+        notes: [...serverNotes(after), whoGetsIt(after, change === 'turn-on' ? [] : added)],
+        warnings: serverWarnings(after),
       },
       async () => ({ status: 200, body: await store.patch(name, patch, { expect }) })
     );
@@ -212,6 +223,18 @@ export function createMcpServerRoutes(
 
   /** GET /api/mcp-servers — every server, secrets by name only. */
   router.get('/', (c) => refuseRead(c) ?? c.json({ servers: store.list() }));
+
+  /**
+   * POST /api/mcp-servers/check-args — whether typed arguments look like a secret, so the server
+   * holds the one rule. It answers a yes or a no, keeps nothing and logs nothing it was sent.
+   */
+  router.post('/check-args', (c) => {
+    const refusal = refuseRead(c);
+    if (refusal) return refusal;
+    const parsed = GlobalMcpArgsCheckSchema.safeParse(readJsonBody(c));
+    if (!parsed.success) return c.json({ error: 'Send the arguments to check.' }, 400);
+    return c.json({ looksSecret: argsLookSecret(parsed.data.args) });
+  });
 
   /** POST /api/mcp-servers — add a server for every agent. */
   router.post('/', async (c) => {

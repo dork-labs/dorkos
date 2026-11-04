@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isSecretName, isUnpinnedPackage } from '../global-mcp-schemas.js';
+import {
+  GlobalMcpServerInputSchema,
+  isSecretName,
+  isUnpinnedPackage,
+} from '../global-mcp-schemas.js';
 
 describe('isSecretName', () => {
   it('a name matching the rule is secret, whatever a person marked', () => {
@@ -13,6 +17,35 @@ describe('isSecretName', () => {
   it('marking can only add a secret', () => {
     expect(isSecretName('MADE_UP_SETTING')).toBe(false);
     expect(isSecretName('MADE_UP_SETTING', ['MADE_UP_SETTING'])).toBe(true);
+  });
+});
+
+describe('GlobalMcpServerInputSchema', () => {
+  const remote = (url: string) =>
+    GlobalMcpServerInputSchema.safeParse({
+      name: 'remote',
+      connection: { transport: 'http', url, headers: {} },
+    }).success;
+
+  it('takes an address with https:// or http://', () => {
+    expect(remote('https://mcp.example.test/v1')).toBe(true);
+    expect(remote('http://localhost:3000')).toBe(true);
+    expect(remote('HTTPS://mcp.example.test')).toBe(true);
+  });
+
+  it('refuses any other shape of address, a password with no // included', () => {
+    expect(remote('http:user:made-up@mcp.example.test')).toBe(false);
+    expect(remote('ftp://mcp.example.test')).toBe(false);
+    expect(remote('javascript:alert(1)')).toBe(false);
+  });
+
+  it('leaves a command alone', () => {
+    expect(
+      GlobalMcpServerInputSchema.safeParse({
+        name: 'local',
+        connection: { transport: 'stdio', command: 'npx', args: [], env: {} },
+      }).success
+    ).toBe(true);
   });
 });
 

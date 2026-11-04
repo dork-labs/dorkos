@@ -32,6 +32,19 @@ function useRefreshOnSettled() {
 }
 
 /**
+ * Ask whether typed arguments look like a secret. They may be one, so they get the same care as
+ * Add's input: nothing cached past the answer. A failed check just means no warning.
+ */
+export function useCheckGlobalMcpArgs() {
+  const transport = useTransport();
+  return useMutation({
+    ...CHANGE_OPTIONS,
+    gcTime: 0,
+    mutationFn: (args: readonly string[]) => transport.checkGlobalMcpArgs(args),
+  });
+}
+
+/**
  * Add a server for every agent. Waits on "Confirm it's you" when the server holds it. Its input
  * holds typed secrets, so the cache keeps none of it past the form: `gcTime: 0` drops each press
  * as soon as nothing is watching it.

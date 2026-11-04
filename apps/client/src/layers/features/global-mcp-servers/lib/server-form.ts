@@ -5,6 +5,7 @@
  * @module features/global-mcp-servers/lib/server-form
  */
 import {
+  GLOBAL_MCP_URL_PATTERN,
   GlobalMcpServerInputSchema,
   GlobalMcpServerNameSchema,
   isSecretName,
@@ -105,7 +106,11 @@ export function serverFormProblem(form: ServerForm): FormProblem | null {
   if (form.kind === 'command' && form.command.trim() === '') {
     return { field: 'command', message: 'Type the program to run.' };
   }
-  if (form.kind === 'url' && !z.string().url().safeParse(form.url.trim()).success) {
+  const url = form.url.trim();
+  if (
+    form.kind === 'url' &&
+    !(GLOBAL_MCP_URL_PATTERN.test(url) && z.string().url().safeParse(url).success)
+  ) {
     return { field: 'url', message: 'Type the full address, starting with https://' };
   }
   const seen = new Set<string>();

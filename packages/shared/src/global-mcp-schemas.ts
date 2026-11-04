@@ -74,10 +74,19 @@ export const GlobalMcpServerNameSchema = z
   .max(64)
   .regex(/^[a-zA-Z0-9_-]+$/, 'Use letters, numbers, dashes and underscores');
 
+/**
+ * The addresses a global server may have. The `//` is not optional: `http:user:pw@host` parses as
+ * a URL, with its password in a shape the mask would have to guess at.
+ */
+export const GLOBAL_MCP_URL_PATTERN = /^https?:\/\//i;
+
 /** What a person sends to add a global server, or to replace one. */
 export const GlobalMcpServerInputSchema = z.object({
   name: GlobalMcpServerNameSchema,
-  connection: McpServerTransportSchema,
+  connection: McpServerTransportSchema.refine(
+    (connection) => connection.transport === 'stdio' || GLOBAL_MCP_URL_PATTERN.test(connection.url),
+    { message: 'Use an address that starts with https:// or http://' }
+  ),
   /** Extra env or header names to keep secret, beyond {@link SECRET_NAME_PATTERN}. */
   secretNames: z.array(z.string().min(1)).max(64).default([]),
   /** Agent ids this server is kept from. Empty means every agent. */
@@ -148,6 +157,18 @@ export const GlobalMcpServerViewSchema = z.object({
 });
 
 export type GlobalMcpServerView = z.infer<typeof GlobalMcpServerViewSchema>;
+
+/** `POST /api/mcp-servers/check-args`: the arguments as a person typed them. */
+export const GlobalMcpArgsCheckSchema = z.object({
+  args: z.array(z.string()).max(500),
+});
+
+/** What the check answers. It warns and never refuses. */
+export const GlobalMcpArgsCheckResultSchema = z.object({
+  looksSecret: z.boolean(),
+});
+
+export type GlobalMcpArgsCheckResult = z.infer<typeof GlobalMcpArgsCheckResultSchema>;
 
 /** `GET /api/mcp-servers`. */
 export const GlobalMcpServerListSchema = z.object({

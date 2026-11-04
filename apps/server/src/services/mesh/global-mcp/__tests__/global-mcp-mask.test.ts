@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { isSecretName } from '@dorkos/shared/global-mcp-schemas';
 
-import { holdsMask, maskedArgs, maskUrls } from '../global-mcp-mask.js';
+import { argsLookSecret, holdsMask, maskedArgs, maskUrls } from '../global-mcp-mask.js';
 
 describe('maskUrls', () => {
   it.each([
@@ -18,6 +18,19 @@ describe('maskUrls', () => {
     ['https://mcp.example.test/', 'https://mcp.example.test'],
     ['--db=mysql://u:p@h:3306/x', '--db=mysql://•••@h:3306/•••'],
   ])('%s', (input, shown) => {
+    expect(maskUrls(input)).toBe(shown);
+  });
+
+  it.each([
+    ['http:user:CANARY@host.example.test', 'http:•••@host.example.test'],
+    [
+      '--db=https:user:CANARY@host.example.test/app?k=v',
+      '--db=https:•••@host.example.test/•••?•••',
+    ],
+    ['http:/user:CANARY@host.example.test', 'http:/•••@host.example.test'],
+    ['http:\\\\user:CANARY@host.example.test', 'http:\\\\•••@host.example.test'],
+    ['http:host.example.test?key=CANARY', 'http:host.example.test?•••'],
+  ])('a URL with no // is still a URL: %s', (input, shown) => {
     expect(maskUrls(input)).toBe(shown);
   });
 
@@ -66,6 +79,47 @@ describe('a secret that is not in a secret-named flag', () => {
   it('leaves arguments that only look close', () => {
     const plain = ['-y', '@made-up/server', '--port=3000', 'LOG_LEVEL=info', 'host:5432'];
     expect(maskedArgs(plain)).toEqual(plain);
+  });
+});
+
+describe('argsLookSecret', () => {
+  it.each([
+    [['--token=made-up']],
+    [['--token', 'made-up']],
+    [['API_KEY=made-up']],
+    [['-H', 'X-Api-Key: made-up']],
+    [['Bearer made-up']],
+    [['Bearer', 'made-up']],
+    [['postgres://user:CANARY@db.example.test/app']],
+    [['postgres://user@db.example.test/app']],
+    [['postgres://user:CAN/ARY@db.example.test/app']],
+    [['--db=mysql://u:p@h:3306/x']],
+    [['https://mcp.example.test/v1?key=CANARY']],
+    [['http:user:CANARY@host.example.test']],
+    [['--url=https:user:CANARY@host.example.test']],
+    [['http:host.example.test?key=CANARY']],
+  ])('warns on %j', (args) => {
+    expect(argsLookSecret(args)).toBe(true);
+  });
+
+  it.each([
+    [[]],
+    [['-y', '@made-up/server@1.0.0', '--port=3000', 'LOG_LEVEL=info', 'host:5432']],
+    [['git@example.test:org/repo']],
+    [['https://mcp.example.test']],
+    [['https://mcp.example.test:8080/v1']],
+    [['https://cdn.example.test:8080/pkg@1.0.0/index.js']],
+    [['file:///opt/server.js?x=1']],
+    [['--token']],
+  ])('says nothing on %j', (args) => {
+    expect(argsLookSecret(args)).toBe(false);
+  });
+
+  it('misses a key in a plain path, by ruling: the warning is not the protection', () => {
+    expect(argsLookSecret(['https://hooks.example.test/made-up-key/mcp'])).toBe(false);
+    expect(maskUrls('https://hooks.example.test/made-up-key/mcp')).toBe(
+      'https://hooks.example.test/•••'
+    );
   });
 });
 

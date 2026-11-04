@@ -86,6 +86,8 @@ export const DATA_FOLDER_SECRET_PATHS = group('data', 'read', [
   ['dork*.db*', 'file'],
   // Chat bot tokens, stored as written (`relay/adapter-config.ts`).
   ['relay/adapters.json', 'file'],
+  // MCP servers for every agent: arguments stay in plain text, and can hold a secret.
+  ['mcp/global-servers.json', 'file'],
   // The web-push private key.
   ['push', 'folder'],
   ['extension-secrets', 'folder'],

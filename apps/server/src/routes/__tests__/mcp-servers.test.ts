@@ -133,6 +133,48 @@ describe('/api/mcp-servers', () => {
     expect(store.list()).toHaveLength(1);
   });
 
+  describe('check-args', () => {
+    const check = (args: unknown) =>
+      request(app()).post('/api/mcp-servers/check-args').send({ args });
+
+    it('says whether arguments look secret, and never says them back', async () => {
+      const yes = await check(['--token=made-up-canary']);
+      expect(yes.status).toBe(200);
+      expect(yes.body).toEqual({ looksSecret: true });
+      expect(JSON.stringify(yes.body)).not.toContain('made-up-canary');
+      expect((await check(['-y', '@made-up/server'])).body).toEqual({ looksSecret: false });
+    });
+
+    it('refuses an agent', async () => {
+      const res = await request(app())
+        .post('/api/mcp-servers/check-args')
+        .set('x-dorkos-agent', 'agent-token')
+        .send({ args: ['--token=made-up'] });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe(MCP_SERVERS_PERSON_ONLY);
+    });
+
+    it('refuses a body that is not arguments', async () => {
+      expect((await check('--token=made-up')).status).toBe(400);
+    });
+
+    it('saves nothing', async () => {
+      await check(['--token=made-up']);
+      expect(store.list()).toEqual([]);
+    });
+  });
+
+  it.each(['ftp://mcp.example.test', 'http:user:made-up@mcp.example.test', 'javascript:alert(1)'])(
+    'refuses %s as an address',
+    async (url) => {
+      const res = await request(app())
+        .post('/api/mcp-servers')
+        .send({ name: 'remote', connection: { transport: 'http', url, headers: {} } });
+      expect(res.status).toBe(400);
+      expect(store.list()).toEqual([]);
+    }
+  );
+
   it('refuses a change from another device', async () => {
     const res = await request(app())
       .post('/api/mcp-servers')

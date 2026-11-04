@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from 'react';
-import { useAddGlobalMcpServer } from '@/layers/entities/global-mcp';
+import { useAddGlobalMcpServer, useCheckGlobalMcpArgs } from '@/layers/entities/global-mcp';
 import {
   Button,
   Input,
@@ -17,6 +17,7 @@ import {
   EMPTY_SERVER_FORM,
   serverFormProblem,
   serverInputFrom,
+  splitArgs,
   type FormProblem,
   type ServerForm,
   type ServerKind,
@@ -36,11 +37,14 @@ export function AddServerDialog({ onClose }: { onClose: () => void }) {
   const nameId = useId();
   const commandId = useId();
   const argsId = useId();
+  const argsWarningId = useId();
   const urlId = useId();
   const kindLabelId = useId();
   const [form, setForm] = useState<ServerForm>(EMPTY_SERVER_FORM);
   const [problem, setProblem] = useState<FormProblem | null>(null);
+  const [argsLookSecret, setArgsLookSecret] = useState(false);
   const add = useAddGlobalMcpServer();
+  const checkArgs = useCheckGlobalMcpArgs();
   const waiting = useConfirmWaiting(add.isPending);
   const busy = add.isPending;
   const set = (patch: Partial<ServerForm>) => setForm((current) => ({ ...current, ...patch }));
@@ -52,6 +56,16 @@ export function AddServerDialog({ onClose }: { onClose: () => void }) {
     setProblem(found);
     if (found) return;
     add.mutate(serverInputFrom(form), { onSuccess: onClose });
+  }
+
+  /** On leaving Arguments. It warns and Add stays on; a failed check just means no warning. */
+  function warnAboutArgs() {
+    const args = splitArgs(form.args);
+    if (args.length === 0) {
+      setArgsLookSecret(false);
+      return;
+    }
+    checkArgs.mutate(args, { onSuccess: ({ looksSecret }) => setArgsLookSecret(looksSecret) });
   }
 
   const problemLine = (field: FormProblem['field']) =>
@@ -141,12 +155,19 @@ export function AddServerDialog({ onClose }: { onClose: () => void }) {
                     id={argsId}
                     value={form.args}
                     onChange={(event) => set({ args: event.target.value })}
+                    onBlur={warnAboutArgs}
+                    aria-describedby={argsLookSecret ? argsWarningId : undefined}
                     autoCapitalize="off"
                     autoComplete="off"
                     spellCheck={false}
                     disabled={busy}
                     className="font-mono"
                   />
+                  {argsLookSecret && (
+                    <p id={argsWarningId} role="status" className="text-status-warning-fg text-xs">
+                      This looks like a secret. Use an Only you field if the server allows.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <p className="text-sm font-medium">Environment</p>

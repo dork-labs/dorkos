@@ -60,6 +60,13 @@ describe('serverFormProblem', () => {
     );
   });
 
+  it.each(['ftp://mcp.example.test', 'http:user:made-up@mcp.example.test', 'javascript:alert(1)'])(
+    'takes only an address starting https:// or http://, not %s',
+    (url) => {
+      expect(serverFormProblem(commandForm({ kind: 'url', url }))?.field).toBe('url');
+    }
+  );
+
   it('asks for a secret’s value, and a name for a value', () => {
     expect(serverFormProblem(commandForm({ env: [row('MADE_UP_KEY', '')] }))?.message).toContain(
       'MADE_UP_KEY'
