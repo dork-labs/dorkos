@@ -329,7 +329,9 @@ describe('the headers a fetch handler’s answer may carry', () => {
     expect(res.headers['access-control-allow-origin']).not.toBe('https://evil.example');
     expect(res.headers['strict-transport-security']).toBeUndefined();
     expect(res.headers['x-dorkos-agent']).toBeUndefined();
-    expect(res.headers['content-security-policy']).toBe("sandbox; default-src 'none'");
+    expect(res.headers['content-security-policy']).toBe(
+      "sandbox; default-src 'none', frame-ancestors 'none'"
+    );
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 

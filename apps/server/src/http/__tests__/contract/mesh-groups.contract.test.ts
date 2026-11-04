@@ -923,13 +923,15 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     const dir = freshDir('registered');
     const registered = await setup(server, 'POST', '/api/mesh/agents', {
       path: dir,
+      // The fixture lives inside the repository boundary, outside the sealed HOME.
+      scanRoot: WORK,
       overrides: { name: 'registered-agent', runtime: 'claude-code' },
     });
     expect(registered.name).toBe('registered-agent');
     await check(server, {
       method: 'POST',
       path: '/api/mesh/agents',
-      body: { path: dir },
+      body: { path: dir, scanRoot: WORK },
       expect: {
         status: 201,
         schema: MANIFEST.extend({ id: z.literal(registered.id as string) }),

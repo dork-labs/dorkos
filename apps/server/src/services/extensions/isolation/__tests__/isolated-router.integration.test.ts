@@ -239,7 +239,9 @@ describe('the header policy', () => {
     expect(res.headers.get('set-cookie')).toBeNull();
     expect(res.headers.get('strict-transport-security')).toBeNull();
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
-    expect(res.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'");
+    expect(res.headers.get('content-security-policy')).toBe(
+      "sandbox; default-src 'none', frame-ancestors 'none'"
+    );
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('x-ext-own')).toBe('kept');
   });
