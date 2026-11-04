@@ -92,7 +92,8 @@ export function cannotAllowCard(
     }
     return (
       row.capabilityId !== 'marketplace.activate_global_plugin' ||
-      [full.name, full.summary, full.detail].some(hasHiddenCardCharacters) ||
+      [full.name, full.summary].some(hasHiddenCardCharacters) ||
+      hasHiddenCardCharacters(full.detail.replaceAll('\n', '')) ||
       quoteSummaryValue(full.name) !== JSON.stringify(full.name) ||
       full.summary !== row.summary ||
       storableSummary(full.summary) !== full.summary ||

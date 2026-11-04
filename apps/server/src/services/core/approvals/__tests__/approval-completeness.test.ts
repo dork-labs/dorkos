@@ -228,8 +228,58 @@ describe('package approvals require a whole card', () => {
     expect(service.grant(ticket.approvalId)).toBe(length === 4000 ? undefined : 'incomplete');
   });
 
+  it('allows a whole multiline global disclosure', () => {
+    const detail = 'Command: echo safe\nEvent: Stop\nWorking directory: /workspaces/cedar';
+    const ticket = service.request({
+      capabilityId: 'marketplace.activate_global_plugin',
+      inputHash: 'global-multiline',
+      summary: 'Allow package',
+      detail,
+      packageRequest: { kind: 'global', name: 'acme-hooks', summary: 'Allow package', detail },
+    });
+    expect(service.getPending(ticket.approvalId)).toMatchObject({
+      approvalId: ticket.approvalId,
+      detail,
+    });
+    expect(service.getPending(ticket.approvalId)).not.toHaveProperty('cannotAllow');
+    expect(service.grant(ticket.approvalId)).toBeUndefined();
+  });
+
+  it.each(['name', 'summary'] as const)('keeps global %s strict about LF', (field) => {
+    const full = {
+      kind: 'global' as const,
+      name: 'acme-hooks',
+      summary: 'Allow package',
+      detail: 'echo safe\nEvent: Stop',
+      [field]: 'first\nsecond',
+    };
+    const ticket = service.request({
+      capabilityId: 'marketplace.activate_global_plugin',
+      inputHash: 'global-strict',
+      summary: full.summary,
+      detail: full.detail,
+      packageRequest: full,
+    });
+    expect(service.grant(ticket.approvalId)).toBe('incomplete');
+  });
+
+  it.each(['\r', '\t', '\u200B', '\u2028', '\u2029', '\u0000'])(
+    'refuses hidden characters other than LF in global detail (%j)',
+    (character) => {
+      const detail = `echo safe\n${character}hidden`;
+      const ticket = service.request({
+        capabilityId: 'marketplace.activate_global_plugin',
+        inputHash: 'global-hidden',
+        summary: 'Allow package',
+        detail,
+        packageRequest: { kind: 'global', name: 'acme-hooks', summary: 'Allow package', detail },
+      });
+      expect(service.grant(ticket.approvalId)).toBe('incomplete');
+    }
+  );
+
   it('refuses global activation when full detail contains a bidi override', () => {
-    const detail = 'echo safe\u202Ehidden';
+    const detail = 'echo safe\n\u202Ehidden';
     const ticket = service.request({
       capabilityId: 'marketplace.activate_global_plugin',
       inputHash: 'global-bidi',
