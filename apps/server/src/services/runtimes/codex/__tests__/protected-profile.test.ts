@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import path from 'node:path';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { buildLoadOverrides } from '../app-server/thread-loader.js';
 import { PROTECTED_PATHS } from '../../shared/policy/protected-paths.js';
@@ -82,6 +83,22 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
           { permissionMode }
         )
       ).toThrow('Choose a folder inside it');
+    });
+
+    it('overrides only root-level automatic metadata masks, only at Full', () => {
+      const config = codexProtectedConfig(roots.cwd, filePolicy, { permissionMode });
+      const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
+      const files = profiles[codexPermissionProfile({ permissionMode })]!.filesystem;
+      const names = ['.git', '.agents', '.codex', '.aws'];
+      const metadata = names.map((name) => path.join(path.parse(roots.cwd).root, name));
+      for (const file of metadata) {
+        if (permissionMode === 'bypassPermissions') expect(files[file]).toBe('write');
+        else expect(files).not.toHaveProperty(file);
+      }
+      expect(Object.keys(files).filter((file) => files[file] === 'write')).toEqual(
+        permissionMode === 'bypassPermissions' ? [':root', ...metadata] : []
+      );
+      for (const name of names) expect(files[path.join(roots.cwd, name)]).not.toBe('write');
     });
   }
 );

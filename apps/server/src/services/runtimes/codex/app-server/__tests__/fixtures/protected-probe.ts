@@ -35,6 +35,10 @@ export function protectedProbe(
   const lateSecret = path.join(sibling, '.credentials-midturn');
   const plugin = path.join(plugins, 'plugin.js');
   const latePlugin = path.join(plugins, 'late.js');
+  const gitDirectory = path.join(project, '.git');
+  const madeGitDirectory = !fs.existsSync(gitDirectory);
+  const gitWrite = path.join(gitDirectory, 'dor3595-write-control');
+  fs.mkdirSync(gitDirectory, { recursive: true });
   const canaries = secrets.map((_, index) => `CANARY-dor3595-${index}`);
   const lateCanary = 'CANARY-dor3595-midturn';
   for (const [index, file] of secrets.entries()) {
@@ -61,13 +65,16 @@ export function protectedProbe(
     lateCanary,
     plugin,
     latePlugin,
+    gitWrite,
     command: [
+      `printf changed-by-full-probe > ${quote(gitWrite)}`,
       ...[...secrets, lateSecret].map((file) => `cat ${quote(file)}`),
       ...[plugin, latePlugin].map((file) => `echo changed > ${quote(file)}`),
       'cat readable.txt',
       'cat ../data/agents/probe/.agents/skills/probe/SKILL.md',
     ].join('; '),
     resetLate() {
+      fs.writeFileSync(gitWrite, 'original-git-control');
       fs.rmSync(lateSecret, { force: true });
       fs.rmSync(latePlugin, { force: true });
     },
@@ -81,6 +88,8 @@ export function protectedProbe(
       fs.rmSync(large, { recursive: true, force: true });
       fs.rmSync(cwdLarge, { recursive: true, force: true });
       fs.rmSync(modules, { recursive: true, force: true });
+      fs.rmSync(gitWrite, { force: true });
+      if (madeGitDirectory) fs.rmSync(gitDirectory, { recursive: true, force: true });
     },
   };
 }

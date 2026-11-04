@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(codex): avoid synthetic root metadata masks at Full (DOR-3595)'
   - 'fix(runtimes): enforce shared file protections and managed-server pins (DOR-3595)'
   - 'fix(runtimes): close protected-profile and native env deny gaps (DOR-3595)'
   - 'fix(runtimes): repair CI fixtures and prefix Codex protected globs (DOR-3595)'

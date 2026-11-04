@@ -101,6 +101,17 @@ export function codexProtectedConfig(
           : {}),
         filesystem: {
           ':root': mode === 'danger-full-access' ? 'write' : 'read',
+          // Codex otherwise synthesizes missing metadata mounts at / for a
+          // root-wide write policy. These exact overrides are not recursive;
+          // shared protected entries below still win on any overlap.
+          ...(mode === 'danger-full-access'
+            ? Object.fromEntries(
+                ['.git', '.agents', '.codex', '.aws'].map((name) => [
+                  path.join(path.parse(cwd).root, name).split(path.sep).join('/'),
+                  'write',
+                ])
+              )
+            : {}),
           ...protectedFiles,
         },
         ...(mode === 'workspace-write'

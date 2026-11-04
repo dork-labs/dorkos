@@ -82,7 +82,7 @@ describe('the hosted Codex proof receipt', () => {
     ]
       .map((match) => match[1])
       .sort();
-    expect(routed).toEqual(files);
+    expect([...new Set(routed)]).toEqual(files);
   });
   it('uses scoped distro prerequisites only in the probe job', () => {
     expect(job).toContain('runs-on: ubuntu-24.04');

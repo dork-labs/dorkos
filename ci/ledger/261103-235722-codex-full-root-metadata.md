@@ -1,0 +1,33 @@
+---
+id: 261103-235722
+title: Trace the acceptEdits filesystem helper with its complete profile
+kind: hygiene
+status: proposed
+actor: agent
+gates: [wf.test.codex-sandbox]
+prs: [3480]
+ratchet-release: []
+field-changes: []
+---
+
+Security's round-three ruling retains the unbounded globs and the diagnostic
+90-minute job while the Full root-metadata render is tested. There is no
+depth cap, scanner, production timeout or missing-path-deny change.
+
+Add one always-run traced app-server/acceptEdits row at 10000 home files,
+before the trace upload. strace -s 1048576 retains the complete serialized
+permission profile for this bounded fixture; no -v, so environment values
+remain abbreviated. Its JSON report joins the argv artifact on failure.
+The original traced suite and its report remain intact. The inventory guard
+still requires every native file, allowing the diagnostic to repeat one.
+
+This diagnostic adds a four-minute step cap. Combined with 20 and 64, the
+step ceilings total 88 of the existing 90 minutes; setup/upload overhead can
+still cause whole-job cancellation. The complete acceptEdits trace uploads
+before the long untraced diagnostic, preserving it if a later step is cut.
+Incomplete or cancelled measurements remain unproven, never a green result.
+
+No new gate, trigger, permission, secret or retry. This records evidence
+collection, not an invented improvement metric. Remove this environment-armed
+trace row before the final label along with the other DORKOS_CODEX_PROBE_*
+diagnostics, and restore/review the existing ledger's final-label deadlines.

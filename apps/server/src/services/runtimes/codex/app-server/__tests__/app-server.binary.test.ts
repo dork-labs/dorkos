@@ -729,6 +729,7 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
             startMs,
             shellRoundTripMs,
             shellControls,
+            projectGitWritable: fs.readFileSync(probe.gitWrite, 'utf8') === 'changed-by-full-probe',
             lateSecretReadable: result.includes(probe.lateCanary),
             latePluginChanged:
               fs.existsSync(probe.latePlugin) &&
@@ -742,6 +743,10 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
           expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
           expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
           expect(result).toMatch(/denied|not permitted/i);
+          // Pin Full's project Git authority separately from the exact root
+          // metadata overrides. CI must prove this, not infer it from :root.
+          if (mode === 'bypassPermissions')
+            expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe('changed-by-full-probe');
           await transport.shutdown();
         }
       } finally {
