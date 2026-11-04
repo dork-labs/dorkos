@@ -454,7 +454,7 @@ describe('tasks_* and an agent’s mode or approval', () => {
       expect(notices.filter((n) => n.modeChange !== undefined)).toEqual([
         expect.objectContaining({
           taskId: id,
-          modeChange: expect.objectContaining({ startedBy: 'you' }),
+          modeChange: expect.objectContaining({ startedBy: 'something DorkOS couldn’t identify' }),
         }),
       ]);
       // Its own attestation, never a person's yes; a mode change vouches for no content (M1, M3).
@@ -462,7 +462,7 @@ describe('tasks_* and an agent’s mode or approval', () => {
       expect(store.approvals.agentEditsOf(id)?.attestation).toMatchObject({
         agentPath: homeA,
         sessionId: 'ses-a',
-        startedBy: 'you',
+        startedBy: 'something DorkOS couldn’t identify',
         marked: false,
         // The mode change kept the content its create vouched for, and vouched for no more.
         contentHash: vouchedContent,
@@ -1207,7 +1207,9 @@ describe('tasks_* and an agent’s mode or approval', () => {
         expect(notices.filter((n) => n.promptChange !== undefined)).toEqual([
           expect.objectContaining({
             taskId: id,
-            promptChange: expect.objectContaining({ startedBy: 'you' }),
+            promptChange: expect.objectContaining({
+              startedBy: 'something DorkOS couldn’t identify',
+            }),
           }),
         ]);
         const notice = notices.find((n) => n.promptChange !== undefined)!;

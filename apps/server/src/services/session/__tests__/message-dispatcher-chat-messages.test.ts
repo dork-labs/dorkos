@@ -14,6 +14,8 @@
  *   person.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { activeTurnStarterOf, recordTurnStarters } from '../origin/active-turn-starter.js';
+import { turnStarterOf } from '../../tasks/agent-mode/agent-mode-run-origin.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -275,5 +277,48 @@ describe('the Wi-Fi hold a row another chat sent carries on (DOR-3561)', () => {
     expect(resolver).toHaveBeenCalledTimes(1);
     expect(carriedOfCall(0)).toBeUndefined();
     expect(carriedOfCall(1)).toBeUndefined();
+  });
+});
+
+describe('the current send’s starter (DOR-3848)', () => {
+  it('keeps Telegram, an agent wake, and a person distinct through real dispatch and queuing', async () => {
+    const first = gate();
+    const seen: string[] = [];
+    runtime.sendMessage.mockImplementation(async function* () {
+      seen.push(
+        turnStarterOf(
+          { structural: true, marked: false, sessionId: 'sdk-alias', turnSessionIds: [session] },
+          {
+            runSessions: () => new Set(),
+            startedBy: () => null,
+            turnSenders: () => [],
+            turnStarter: activeTurnStarterOf,
+          }
+        )
+      );
+      yield { type: 'text_delta', data: { text: 'Sample' } } as StreamEvent;
+      if (seen.length === 1) await first.wait;
+      yield { type: 'done', data: {} } as StreamEvent;
+    });
+    const tracked = recordTurnStarters(runtime);
+    await send('Sample Telegram question', PERSON, { runtime: tracked, turnStarter: 'telegram' });
+    await send('Sample verdict wake', PERSON, { runtime: tracked, turnStarter: 'agent' });
+    await send('Sample app question', PERSON, { runtime: tracked, turnStarter: 'person' });
+    first.open();
+    await vi.waitFor(() => expect(seen).toHaveLength(3));
+    expect(seen).toEqual(['a Telegram message', 'the agent itself', 'you']);
+    await settle();
+    expect(activeTurnStarterOf(session)).toBeUndefined();
+    expect(
+      turnStarterOf(
+        { structural: true, marked: false, sessionId: session },
+        {
+          runSessions: () => new Set(),
+          startedBy: () => null,
+          turnSenders: () => [],
+          turnStarter: activeTurnStarterOf,
+        }
+      )
+    ).toBe('something DorkOS couldn’t identify');
   });
 });

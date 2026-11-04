@@ -15,7 +15,7 @@ import type {
   StreamEvent,
 } from '@dorkos/shared/types';
 import type { RefusedAsk } from '@dorkos/shared/run-refusals';
-import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import type { TurnPermissionCeiling, TurnStarter } from '@dorkos/shared/agent-runtime';
 import type { ApprovalAuthorizer } from './approval-handler.js';
 
 /**
@@ -236,6 +236,8 @@ export interface AgentRuntimeLike {
     sessionId: string,
     content: string,
     opts?: TurnExecutionSettings & {
+      /** Display provenance of this send only; never a permission input. */
+      turnStarter?: TurnStarter;
       permissionMode?: PermissionMode;
       cwd?: string;
       /**

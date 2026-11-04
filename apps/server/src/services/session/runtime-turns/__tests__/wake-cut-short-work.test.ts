@@ -122,6 +122,7 @@ describe('a boot with background work a previous run left behind', () => {
 
     expect(dispatchMessage).toHaveBeenCalledTimes(1);
     expect(dispatchMessage.mock.calls[0]![0]).toMatchObject({
+      turnStarter: 'agent',
       sessionId: 'sess-1',
       cwd: '/projects/one',
       content: CUT_SHORT_WAKE_MESSAGE,

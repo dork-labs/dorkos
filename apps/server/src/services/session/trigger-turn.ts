@@ -458,6 +458,8 @@ export interface TriggerTurnDeps {
 
 /** Inputs for {@link triggerTurn}. */
 export interface TriggerTurnOpts {
+  /** The source of this send, for notices only. */
+  turnStarter?: MessageOpts['turnStarter'];
   sessionId: string;
   clientId: string;
   content: string;
@@ -964,6 +966,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     const offerHold = deps.answersDispatchHold === true && opts.privateReceiptId === undefined;
     const send = (dispatchHold?: DispatchHoldHandshake): AsyncGenerator<StreamEvent> =>
       deps.sendMessage(sessionId, dispatchContent, {
+        ...(opts.turnStarter !== undefined ? { turnStarter: opts.turnStarter } : {}),
         // Conditional, on the same idiom as the three below it. A turn with no
         // opinion about its directory must hand the runtime NO cwd, not a `cwd`
         // key holding `undefined`: the session route takes care not to stamp one

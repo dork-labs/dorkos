@@ -6,6 +6,7 @@
  * @module services/tasks/agent-mode/__tests__/agent-mode-run-origin
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { beginTurnStarter } from '../../../session/origin/active-turn-starter.js';
 import { logger } from '../../../../lib/logger.js';
 import {
   noteRunSession,
@@ -59,16 +60,45 @@ describe('a turn a scheduled run started (M7)', () => {
     expect(turnStarterOf({ ...base, sessionId: 'ses-x', scheduledRun: true }, sources())).toBe(
       'a scheduled run'
     );
-    expect(turnStarterOf({ ...base, sessionId: 'ses-own' }, sources(), () => null)).toBe(
-      'a message from another chat'
-    );
+    for (const sessionId of ['ses-own', 'ses-ext', 'ses-person']) {
+      expect(turnStarterOf({ ...base, sessionId }, sources())).toBe(
+        'something DorkOS couldn’t identify'
+      );
+    }
+    const stamped = {
+      ...sources(),
+      turnStarter: (id: string) => (id === 'send-key' ? 'a Telegram message' : undefined),
+    };
     expect(
-      turnStarterOf({ ...base, sessionId: 'ses-ext' }, sources(), () => ({
-        kind: 'extension',
-        extensionId: 'mini-apps',
-      }))
-    ).toBe('the mini-apps extension');
-    expect(turnStarterOf({ ...base, sessionId: 'ses-person' }, sources(), () => null)).toBe('you');
+      turnStarterOf({ ...base, sessionId: 'sdk-key', turnSessionIds: ['send-key'] }, stamped)
+    ).toBe('a Telegram message');
+  });
+
+  it('names only current-send steering, including SDK aliases, never stale room wakers', () => {
+    const live = liveRunOriginSources({ resolveTaskOrigins: () => new Map() } as never);
+    const caller = {
+      structural: true,
+      marked: false,
+      sessionId: 'sdk-key',
+      turnSessionIds: ['send-key'],
+    };
+    noteRoomTurnWakers('send-key', ['old-room-agent']);
+    const finish = beginTurnStarter('send-key', 'person');
+    try {
+      expect(turnStarterOf(caller, live)).toBe('you');
+      noteSteeredInto('send-key', ['sample-helper']);
+      expect(turnStarterOf(caller, live)).toBe('a message from another agent');
+    } finally {
+      finish();
+    }
+    expect(turnStarterOf(caller, live)).toBe('something DorkOS couldn’t identify');
+    const next = beginTurnStarter('send-key', 'person');
+    try {
+      expect(turnStarterOf(caller, live)).toBe('you');
+    } finally {
+      next();
+      resetChatStartedTurns();
+    }
   });
 
   describe('a stamp on the chat’s own started-by row (ME)', () => {

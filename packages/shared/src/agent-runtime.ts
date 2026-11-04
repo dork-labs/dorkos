@@ -1011,8 +1011,22 @@ export interface DirectoryGrant {
   access: 'read' | 'write';
 }
 
+/** Display provenance for one turn; relay subjects are labels, never verified sender identities. */
+export type TurnStarter =
+  | 'person'
+  | 'telegram'
+  | 'slack'
+  | 'webhook'
+  | 'agent-message'
+  | 'outside-message'
+  | 'agent'
+  | 'room-messages'
+  | 'unknown';
+
 /** Options for sending a message to a session. */
 export interface MessageOpts extends SessionSettings {
+  /** The current send’s starter, for notices only. Never read from message content or persisted as a session origin. */
+  turnStarter?: TurnStarter;
   cwd?: string;
   systemPromptAppend?: string;
   /**
@@ -1053,6 +1067,8 @@ export interface MessageOpts extends SessionSettings {
    * Absent on every turn a room did not trigger, which is most of them.
    */
   roomTurn?: {
+    /** Display-only source of the messages this turn answers, stamped by the room dispatcher. */
+    turnStarter?: TurnStarter;
     /** The room the turn is answering in. */
     roomId: string;
     /** The acting agent's author id IN THAT ROOM — what a document is attributed to. */

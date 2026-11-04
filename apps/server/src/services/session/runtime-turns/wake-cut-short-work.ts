@@ -110,6 +110,7 @@ export async function wakeCutShortChat(
     });
     projector.cwd = cwd;
     const result = await dispatchMessage({
+      turnStarter: 'agent',
       sessionId,
       clientId: 'background-work-wake',
       content: CUT_SHORT_WAKE_MESSAGE,
