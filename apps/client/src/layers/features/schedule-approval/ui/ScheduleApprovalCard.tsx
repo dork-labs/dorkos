@@ -554,7 +554,7 @@ function ScheduleApprovalContent({
             pinActions && 'shrink-0 pt-2'
           )}
         >
-          {!turnOnApproval && (
+          {(!turnOnApproval || misplacedMode) && (
             <Button
               size="sm"
               data-slot="schedule-approve"
@@ -568,7 +568,7 @@ function ScheduleApprovalContent({
           )}
           {/* A plain review can approve without enabling. The switch path explicitly
               asks to turn it on, so that is its only approval action. */}
-          {!task.enabled && (
+          {!misplacedMode && !task.enabled && (
             <Button
               variant={turnOnApproval ? 'default' : 'outline'}
               size="sm"

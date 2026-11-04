@@ -1531,14 +1531,14 @@ it.each([
         enabled: false,
       }),
       {},
-      { pinActions }
+      { pinActions, turnOnApproval: true }
     );
     expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.getByRole('alert')).toHaveTextContent('permissions is in the wrong place');
     expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
     expect(
-      screen.getByRole('button', { name: 'Approve Nightly sweep and turn it on' })
-    ).toBeDisabled();
+      screen.queryByRole('button', { name: 'Approve Nightly sweep and turn it on' })
+    ).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeEnabled();
     expect(
       screen.getByText(

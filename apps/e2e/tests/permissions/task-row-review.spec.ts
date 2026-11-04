@@ -417,7 +417,13 @@ for (const surface of ['light', 'phone'] as const) {
       reasonSource: 'dorkos' as const,
       reason:
         "`permissions` is in the wrong place, so this schedule won't run. Move it under `schedule`.",
-      prompt: 'Read the sample ledger.\nRecord any differences in a short report.',
+      prompt:
+        surface === 'phone'
+          ? Array.from(
+              { length: 32 },
+              (_, index) => `Sample ${index + 1}: ${'counterrevolutionary'.repeat(8)}`
+            ).join('\n')
+          : 'Read the sample ledger.\nRecord any differences in a short report.',
       enabled: false,
     };
     await page.setViewportSize(
@@ -454,6 +460,25 @@ for (const surface of ['light', 'phone'] as const) {
       review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
     ).toBeDisabled();
     await expect(review.locator('[data-slot="schedule-prompt"]')).toHaveText(task.prompt);
+    await expect(
+      review.getByRole('button', { name: 'Approve Sample ledger and turn it on' })
+    ).toHaveCount(0);
+    const body = review.locator('[data-slot="schedule-review-body"]');
+    if (surface === 'phone') {
+      await body.evaluate((element) => {
+        element.scrollTop = element.scrollHeight / 2;
+      });
+      await expect(review.getByRole('alert')).toBeInViewport();
+      const warningY = (await review.getByRole('alert').boundingBox())!.y;
+      await body.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      await expect(review.getByRole('alert')).toBeInViewport();
+      expect(
+        Math.abs((await review.getByRole('alert').boundingBox())!.y - warningY)
+      ).toBeLessThanOrEqual(1);
+      await page.screenshot({ path: testInfo.outputPath('phone-review-scrolled-long-words.png') });
+    }
     const trial = review.getByRole('button', { name: 'Run Sample ledger once', exact: true });
     await expect(trial).toBeInViewport();
     await expect(

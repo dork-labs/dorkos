@@ -23,6 +23,7 @@ export async function checkMisplacedMode(
   try {
     content = await readTextFileWithin(task.filePath, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
   } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return task;
     throw new Error('The schedule file could not be read. Open it to check.', { cause });
   }
   const raw = readRawFrontmatter(content);

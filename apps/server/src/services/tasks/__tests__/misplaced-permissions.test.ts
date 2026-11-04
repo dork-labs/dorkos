@@ -94,6 +94,18 @@ describe('a misplaced schedule mode', () => {
     ).toBe(MISPLACED_SCHEDULE_PERMISSIONS);
   });
 
+  it.each(['manual', 'scheduled'] as const)(
+    'lets a missing file reach the existing cap (%s)',
+    async (trigger) => {
+      const valid = content('');
+      await fs.writeFile(file, valid);
+      const task = store.fileSync.upsertFromFile(discover(valid).def);
+      await fs.unlink(file);
+      const run = store.createRun(task.id, trigger);
+      expect(await checkMisplacedMode(task, run, store)).toBe(task);
+    }
+  );
+
   it.each([
     'oversized',
     'directory',
