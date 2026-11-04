@@ -8,7 +8,6 @@ import path from 'node:path';
 import { gt, valid } from 'semver';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import type { NewSinceData } from '@dorkos/shared/additional-context';
-import { IS_DEV_BUILD, SERVER_VERSION } from '../../../lib/version.js';
 import { logger } from '../../../lib/logger.js';
 import {
   notesSince,
@@ -103,8 +102,11 @@ export class SeenVersions {
 let store: SeenVersions | undefined;
 
 /** Wire the resolved data directory once during session-services startup. */
-export function initSeenVersions(dorkHome: string): void {
-  store = new SeenVersions(dorkHome, { version: SERVER_VERSION, dev: IS_DEV_BUILD });
+export function initSeenVersions(
+  dorkHome: string,
+  options: { version: string; dev: boolean }
+): void {
+  store = new SeenVersions(dorkHome, options);
 }
 
 /** The boot-wired store, absent in harnesses that do not run ordinary turns. */
