@@ -125,9 +125,16 @@ describe('individual hook re-asks', () => {
   it('a new yes after restart replaces exactly the old refusal and pins the reviewed files', async () => {
     const source = declined();
     const changed = { ...full, scripts: [['loop.mjs', 'b'.repeat(64)]] as [string, string][] };
+    db.update(approvals)
+      .set({ expiresAt: new Date(Date.now() - 3 * 86400000).toISOString() })
+      .where(eq(approvals.id, source.approvalId))
+      .run();
     const next = service.reaskHook(source.approvalId, input(changed));
     if (typeof next === 'string') throw new Error(next);
+    // Cleanup must keep the original denial while its fresh review is still live.
+    expect(service.purgeExpired()).toBe(0);
     const restarted = new ApprovalService(db);
+    expect(restarted.isReaskedHook(hookProjectionBinding(changed, true))).toBe(true);
     expect(restarted.grant(next.approvalId)).toBeUndefined();
     const reproject = vi.fn(async () => []);
     expect(resumePassiveHookRows({ dorkHome: home, approvals: restarted, reproject })).toEqual([

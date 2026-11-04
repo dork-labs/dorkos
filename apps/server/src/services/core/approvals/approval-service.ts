@@ -41,19 +41,8 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { newApprovalRow, APPROVAL_TOKEN_BYTES } from './approval-new-row.js';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gte,
-  isNotNull,
-  isNull,
-  lt,
-  approvals,
-  type Db,
-} from '@dorkos/db';
+import { purgeExpiredApprovals } from './approval-retention.js';
+import { and, asc, count, desc, eq, gte, isNotNull, isNull, approvals, type Db } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
@@ -1187,11 +1176,7 @@ export class ApprovalService {
    * @returns How many rows were deleted.
    */
   purgeExpired(olderThan: Date = new Date(Date.now() - 24 * 60 * 60 * 1000)): number {
-    const result = this.db
-      .delete(approvals)
-      .where(lt(approvals.expiresAt, olderThan.toISOString()))
-      .run();
-    return result.changes;
+    return purgeExpiredApprovals(this.db, olderThan);
   }
 
   /**
