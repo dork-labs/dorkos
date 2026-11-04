@@ -1,8 +1,10 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { chromium, type BrowserContext } from 'playwright-core';
+import { lexWithoutComments } from '../../../../../../../scripts/lib/code-only.mjs';
 const mocks = vi.hoisted(() => ({
   access: vi.fn(),
   mkdir: vi.fn(async () => undefined),
@@ -62,7 +64,7 @@ describe('pinned managed browser preparation', () => {
       const done = args.at(-1) as (error: unknown, stdout?: string, stderr?: string) => void;
       queueMicrotask(() => {
         mocks.stdout!.write(
-          'Downloading Chrome for Testing 153 from https://private/token\n|■■|  40% of 100 MiB\n'
+          'Downloading Chrome for Testing 157 from https://private/token\n|■■|  40% of 100 MiB\n'
         );
         done(undefined, '', '');
       });
@@ -90,12 +92,28 @@ describe('pinned managed browser preparation', () => {
         { stage: 'checking', component: null, percent: null },
         { stage: 'launching', component: null, percent: null },
       ]);
+      // Check against the real pinned package, not a second copy of our feature list.
+      const require = createRequire(import.meta.url);
+      const bundle = readFileSync(
+        path.join(
+          path.dirname(require.resolve('playwright-core/package.json')),
+          'lib/coreBundle.js'
+        ),
+        'utf8'
+      );
+      const array = bundle.match(/disabledFeatures = (\[[\s\S]*?\])\.filter\(Boolean\);/)?.[1];
+      expect(array).toBeDefined();
+      const lexed = lexWithoutComments(array!, 'pinned-disabled-features.js');
+      expect(lexed.parseErrors).toBe(0);
+      const features = JSON.parse(lexed.code.replace(/,\s*\]/, ']'));
+      const defaultFeatures = `--disable-features=${features.join(',')}`;
       expect(launch).toHaveBeenCalledExactlyOnceWith('test-only-storage', {
         timeout: 15_000,
         headless: false,
         viewport: null,
         chromiumSandbox: true,
-        ignoreDefaultArgs: ['--enable-automation'],
+        args: [`${defaultFeatures},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`],
+        ignoreDefaultArgs: ['--enable-automation', defaultFeatures],
       });
       expect(mocks.execFile).not.toHaveBeenCalled();
       // The agent's window shares the profile with the sign-in window: neither saves passwords.

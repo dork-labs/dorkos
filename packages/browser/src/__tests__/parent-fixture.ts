@@ -51,15 +51,15 @@ export function configuration(): EngineConfiguration {
     runtime: {
       library: {
         package: 'playwright-core',
-        version: '1.63.0',
+        version: '1.65.0-alpha-2026-10-30',
         rootDir: '/fixture/library',
         assets: { manifest: 'browsers.json', cli: 'cli.js' },
       },
       executable: {
         path: '/fixture/chromium',
         sha256: '0'.repeat(64),
-        revision: '1243',
-        version: '153.0.8010.12',
+        revision: '1252',
+        version: '157.0.8103.15',
         platform: 'darwin',
         arch: 'arm64',
       },

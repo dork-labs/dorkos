@@ -10,9 +10,28 @@ import { BrowserDownloadProgress, type BrowserPreparationListener } from './prep
 import { disablePasswordSaving } from './plain-chromium.js';
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
-export const LOCAL_PLAYWRIGHT_VERSION = '1.63.0';
-export const LOCAL_MANAGED_CHROMIUM_VERSION = '153.0.8010.12';
+export const LOCAL_PLAYWRIGHT_VERSION = '1.65.0-alpha-2026-10-30';
+export const LOCAL_MANAGED_CHROMIUM_VERSION = '157.0.8103.15';
 const BROWSER_LAUNCH_TIMEOUT_MS = 15_000;
+// Exact disabledFeatures list from the pinned library. Chromium takes only the last
+// --disable-features argument, so replace that argument with one merged list.
+const PINNED_DISABLED_FEATURES = [
+  'AvoidUnnecessaryBeforeUnloadCheckSync',
+  'DestroyProfileOnBrowserClose',
+  'LensOverlay',
+  'MediaRouter',
+  'PaintHolding',
+  'ThirdPartyStoragePartitioning',
+  'AvoidCorsURLLoaderRestartOnRedirect',
+  'TcpPortRandomizationWin',
+  'OptimizationHints',
+  'NetworkTimeServiceQuerying',
+  'AimEnabled',
+  'PreconnectToSearch',
+  'msForceBrowserSignIn',
+  'msEdgeUpdateLaunchServicesPreferredVersion',
+].join(',');
+const PINNED_DISABLED_FEATURES_ARG = `--disable-features=${PINNED_DISABLED_FEATURES}`;
 /** Refuse drift between the shipped library and its supported browser revision. */
 export function assertLocalPlaywrightVersion(): void {
   const installed = require('playwright-core/package.json') as { version?: string };
@@ -109,9 +128,10 @@ export const productionBackend: LocalBrowserBackend = {
       headless: false,
       viewport: null,
       chromiumSandbox: true,
+      args: [`${PINNED_DISABLED_FEATURES_ARG},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`],
       // Without the automation flag the window looks like the person's Chrome;
       // password saving is off in the profile itself.
-      ignoreDefaultArgs: ['--enable-automation'],
+      ignoreDefaultArgs: ['--enable-automation', PINNED_DISABLED_FEATURES_ARG],
     });
   },
   connect: (endpoint, headers) => {

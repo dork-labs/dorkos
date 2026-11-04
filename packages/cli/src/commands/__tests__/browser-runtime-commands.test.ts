@@ -18,7 +18,7 @@ const successful: InstallResult = {
   installationId: 'installation',
   attemptId: 'attempt',
   generation: 1,
-  observedVersion: '153.0.8010.12',
+  observedVersion: '157.0.8103.15',
   executableSHA256: 'a'.repeat(64),
   platform: 'darwin',
   arch: 'arm64',
@@ -28,8 +28,8 @@ const successful: InstallResult = {
 };
 const installed: RuntimeInstallationStatus = {
   schemaVersion: 1,
-  pinnedPackageVersion: '1.63.0',
-  chromiumRevision: '1243',
+  pinnedPackageVersion: '1.65.0-alpha-2026-10-30',
+  chromiumRevision: '1252',
   platform: 'darwin',
   arch: 'arm64',
   observation: 'files-only',
@@ -39,7 +39,7 @@ const installed: RuntimeInstallationStatus = {
   installationId: 'historical',
   executableSHA256: 'a'.repeat(64),
   currentManifestDigest: 'b'.repeat(64),
-  lastFreshVerifiedVersion: '153.0.8010.12',
+  lastFreshVerifiedVersion: '157.0.8103.15',
   historicalAttemptId: 'old-attempt',
   historicalGeneration: 3,
   verificationDigest: 'c'.repeat(64),
@@ -175,7 +175,7 @@ describe('runtime handlers', () => {
   it('describes the historical version and file-only status in human output', async () => {
     const { deps } = fixture();
     expect(await runBrowserRuntimeCommand('status', ['--runtime'], deps)).toBe(0);
-    expect(deps.log).toHaveBeenCalledWith('Last verified browser version: 153.0.8010.12');
+    expect(deps.log).toHaveBeenCalledWith('Last verified browser version: 157.0.8103.15');
     expect(deps.log).toHaveBeenCalledWith(
       'This checks the files only. Browser readiness has not been verified.'
     );
@@ -186,8 +186,8 @@ describe('runtime handlers', () => {
       const { runtime, deps } = fixture();
       const common = {
         schemaVersion: 1,
-        pinnedPackageVersion: '1.63.0',
-        chromiumRevision: '1243',
+        pinnedPackageVersion: '1.65.0-alpha-2026-10-30',
+        chromiumRevision: '1252',
         platform: 'darwin',
         arch: 'arm64',
         observation: 'files-only',

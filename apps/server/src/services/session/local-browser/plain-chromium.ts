@@ -58,6 +58,7 @@ export function plainChromiumArgs(profileFolder: string, url: string, site: stri
     '--password-store=basic',
     // An extension could read the page; the person's own window needs none.
     '--disable-extensions',
+    '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable',
     `--window-name=Sign in to ${site}`,
     url,
   ];

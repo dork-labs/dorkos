@@ -107,7 +107,7 @@ async function run(): Promise<void> {
   ) as typeof import('../../apps/desktop/node_modules/playwright-core/index.js');
   assert.equal(
     (desktopRequire('playwright-core/package.json') as { version: string }).version,
-    '1.63.0'
+    '1.65.0-alpha-2026-10-30'
   );
   const devElectron = desktopRequire('electron') as string;
   const expectedElectron = (desktopRequire('electron/package.json') as { version: string }).version;

@@ -171,7 +171,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
       20000
     );
     stage = 'own-library';
-    if (status.state !== 'installed-files' || status.lastFreshVerifiedVersion !== '153.0.8010.12')
+    if (status.state !== 'installed-files' || status.lastFreshVerifiedVersion !== '157.0.8103.15')
       throw new Error('FIXTURE_OWN_INSTALLATION_REQUIRED');
     const require = createRequire(import.meta.url);
     const packageRoot = await call(() =>
@@ -193,7 +193,7 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
       fixture.installation.cacheRoot,
       'candidates',
       status.installationId,
-      'payload/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+      'payload/chromium-1252/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
     );
     if (![helper, worker, journalWorker, executable].every(isAbsolute))
       throw new Error('FIXTURE_OWN_PATH_REQUIRED');
@@ -300,15 +300,15 @@ it.skipIf(!fixturePath || process.platform !== 'darwin' || process.arch !== 'arm
         runtime: {
           library: {
             package: 'playwright-core',
-            version: '1.63.0',
+            version: '1.65.0-alpha-2026-10-30',
             rootDir: libraryRoot,
             assets: { manifest: 'browsers.json', cli: 'cli.js' },
           },
           executable: {
             path: executable,
             sha256: status.executableSHA256,
-            revision: '1243',
-            version: '153.0.8010.12',
+            revision: '1252',
+            version: '157.0.8103.15',
             platform: 'darwin',
             arch: 'arm64',
           },
