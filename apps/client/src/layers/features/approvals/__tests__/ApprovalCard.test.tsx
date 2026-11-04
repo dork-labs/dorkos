@@ -733,7 +733,7 @@ it('shows only Decline when the full request cannot be shown', async () => {
   expect(screen.queryByText('Cannot be undone')).not.toBeInTheDocument();
   expect(screen.queryByText('Uninstall "sentry-monitor"')).not.toBeInTheDocument();
   expect(screen.queryByText('Uninstall a marketplace package')).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Allow', exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Decline' }));
   expect(transport.denyApproval).toHaveBeenCalled();
