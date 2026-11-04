@@ -155,3 +155,24 @@ new agent-symlink-10k case and revised 15/50-minute caps.
 The PM decided to ship the unbounded scan. The Linux-only changelog now
 separates unreadable-folder startup refusal from a disappearing-folder command
 failure and advises retry for the latter. DOR-3812 remains outside this round.
+
+Step-one leak attribution after 5c954e4805: log EOF, signal request/result and
+child exit with sender PID, target PID, origin and wall-clock milliseconds in
+the process pool. Instrument the intentional kill row and all three diagnostic
+drivers' existing group SIGKILLs, including ESRCH outcomes and spawnSync timeout
+SIGTERM observations. No stop order, wait, timeout, signal target, error handling
+or cleanup behavior changes. The native suite and protected rows log teardown
+boundaries to separate ordinary turn shutdown from failing-suite cleanup.
+
+Add kill/tgkill/tkill and -ttt to the full traced suite; add those syscalls plus
+creat to the small traces. Never -v. These identify upstream/helper senders and
+the previously invisible file creation call. Existing caps and the 110-minute
+job stay unchanged; no retries. Native correlation remains pending CI. Remove
+step-one tracing/driver/test diagnostics with the prior must-go list before label.
+
+Reconciliation is not built in this step. Source review finds the current pool
+removes closing children from its list before they exit; list empty cannot be
+used alone as proof of no live Codex. Safe persistent ledger/reconciliation,
+registry/process coordination, server-start integration and concurrent native
+proof are sized above one engineering day. Per lead instruction, report that
+size for the PM decision before implementation. No per-test isolation yet.

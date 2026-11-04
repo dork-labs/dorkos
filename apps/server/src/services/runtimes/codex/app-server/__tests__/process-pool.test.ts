@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../../../../lib/logger.js';
 import { FakeAppServerHost, type FakeAppServer } from '../../__tests__/fake-app-server.js';
 import {
   APP_SERVER_ARGS,
@@ -33,6 +34,7 @@ function makePool(host = new FakeAppServerHost(), now = () => Date.now()) {
 
 afterEach(async () => {
   await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
+  vi.restoreAllMocks();
 });
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -220,6 +222,7 @@ describe('shutdown', () => {
   });
 
   it('escalates to SIGTERM then SIGKILL for a process that ignores EOF and SIGTERM', async () => {
+    const signals = vi.spyOn(logger, 'info');
     const host = new FakeAppServerHost();
     const stubborn: FakeAppServer[] = [];
     const spawn: typeof host.spawn = (binary, args, options) => {
@@ -240,6 +243,17 @@ describe('shutdown', () => {
     await pool.shutdown();
     expect(stubborn[0]!.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
     expect(stubborn[0]!.hasExited).toBe(true);
+    expect(signals).toHaveBeenCalledWith(
+      '[CodexAppServer] signal',
+      expect.objectContaining({
+        senderPid: process.pid,
+        targetPid: stubborn[0]!.pid,
+        signal: 'SIGKILL',
+        origin: 'stop-after-sigterm',
+        sent: true,
+        atMs: expect.any(Number),
+      })
+    );
   });
 });
 

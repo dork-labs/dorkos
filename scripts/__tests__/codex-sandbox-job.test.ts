@@ -91,7 +91,7 @@ describe('the hosted Codex proof receipt', () => {
     expect(job).not.toMatch(/secrets\.|sysctl|continue-on-error|passWithNoTests|curl|wget/);
     expect(job).toContain('sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict');
     expect(job).toContain('/usr/bin/bwrap --unshare-user --unshare-net');
-    expect(job).toContain('strace -ff -e trace=execve,execveat');
+    expect(job).toContain('strace -ff -ttt -e trace=execve,execveat,kill,tgkill,tkill');
     expect(workflow.match(/sudo apparmor_parser/g)).toHaveLength(1);
     expect(workflow).toContain(
       'needs: [test-shard, community-pg, community-packaged, codex-sandbox]'

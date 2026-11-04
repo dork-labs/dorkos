@@ -170,6 +170,14 @@ export class CodexAppServerProcess {
     this.exitedPromise = new Promise((resolve) => (markExited = resolve));
     child.once('exit', (code: number | null, signal: string | null) => {
       this.exited = true;
+      logger.info('[CodexAppServer] child exited', {
+        senderPid: process.pid,
+        targetPid: child.pid,
+        atMs: Date.now(),
+        code,
+        signal,
+        exitRequested: this.exitRequested,
+      });
       markExited();
       const detail = `exit code ${code ?? 'none'}${signal ? `, signal ${signal}` : ''}`;
       this.client.close(
@@ -181,7 +189,7 @@ export class CodexAppServerProcess {
     });
     this.client.onClose((close) => {
       // A protocol fault or broken pipe leaves the child running: stop it.
-      if (!this.exited && !this.exitRequested) this.kill('SIGTERM');
+      if (!this.exited && !this.exitRequested) this.kill('SIGTERM', 'connection-close');
       for (const listener of [...this.exitListeners]) listener(close);
       this.exitListeners.clear();
     });
@@ -282,11 +290,21 @@ export class CodexAppServerProcess {
   }
 
   /** Kill by the PID this pool holds. */
-  private kill(signal: NodeJS.Signals): void {
+  private kill(signal: NodeJS.Signals, origin: string): void {
+    const attempt = {
+      senderPid: process.pid,
+      targetPid: this.child.pid,
+      signal,
+      origin,
+      atMs: Date.now(),
+    };
+    logger.info('[CodexAppServer] signal requested', attempt);
     try {
-      this.child.kill(signal);
+      const sent = this.child.kill(signal);
+      logger.info('[CodexAppServer] signal', { ...attempt, sent });
     } catch {
-      // Already gone.
+      logger.info('[CodexAppServer] signal', { ...attempt, sent: false });
+      // Already gone; preserve the existing shutdown behavior.
     }
   }
 
@@ -299,15 +317,21 @@ export class CodexAppServerProcess {
     this.exitRequested = true;
     this.client.close({ kind: 'requested', detail: 'stopped by DorkOS' });
     if (this.exited) return;
+    logger.info('[CodexAppServer] shutdown EOF', {
+      senderPid: process.pid,
+      targetPid: this.child.pid,
+      atMs: Date.now(),
+      stepMs,
+    });
     try {
       this.child.stdin.end();
     } catch {
       // A broken pipe is a stopped reader.
     }
     if (await this.waitForExit(stepMs)) return;
-    this.kill('SIGTERM');
+    this.kill('SIGTERM', 'stop-after-eof');
     if (await this.waitForExit(stepMs)) return;
-    this.kill('SIGKILL');
+    this.kill('SIGKILL', 'stop-after-sigterm');
     await this.waitForExit(stepMs);
   }
 
@@ -326,7 +350,7 @@ export class CodexAppServerProcess {
   /** Mark exited after a failed boot (the child was killed). */
   markBootFailed(): void {
     this.exitRequested = true;
-    this.kill('SIGTERM');
+    this.kill('SIGTERM', 'boot-failure');
   }
 }
 

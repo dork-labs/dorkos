@@ -36,11 +36,42 @@ export function measure(run = spawnSync, out = '.temp/codex-untraced') {
       );
       // Each invocation owns this new process group. A timed-out pnpm must not
       // leave Codex helpers consuming CPU during the next measurement.
+      if (result.error?.code === 'ETIMEDOUT')
+        console.info('Codex diagnostic timeout signal', {
+          source: 'run-codex-untraced.mjs',
+          scenario,
+          mode,
+          senderPid: process.pid,
+          targetPid: result.pid,
+          signal: 'SIGTERM',
+          origin: 'spawnSync-timeout',
+          observedAtMs: Date.now(),
+        });
       let cleanupError;
       if (result.pid) {
         try {
+          const signal = {
+            source: 'run-codex-untraced.mjs',
+            scenario,
+            mode,
+            senderPid: process.pid,
+            targetGroup: result.pid,
+            signal: 'SIGKILL',
+            atMs: Date.now(),
+          };
+          console.info('Codex diagnostic signal requested', signal);
           process.kill(-result.pid, 'SIGKILL');
+          console.info('Codex diagnostic signal sent', { ...signal, sent: true });
         } catch (error) {
+          console.info('Codex diagnostic signal failed', {
+            source: 'run-codex-untraced.mjs',
+            scenario,
+            mode,
+            senderPid: process.pid,
+            targetGroup: result.pid,
+            atMs: Date.now(),
+            code: error.code,
+          });
           if (error.code !== 'ESRCH') cleanupError = error.message;
         }
       }

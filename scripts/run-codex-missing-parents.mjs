@@ -47,7 +47,7 @@ export function traceMissingParents(
         '-ff',
         '-ttt',
         '-e',
-        'trace=execve,execveat,mount,umount2,unlink,unlinkat,openat,mkdir,mkdirat,mknod,mknodat',
+        'trace=execve,execveat,mount,umount2,unlink,unlinkat,openat,mkdir,mkdirat,mknod,mknodat,creat,kill,tgkill,tkill',
         '-s',
         '1048576',
         '-o',
@@ -74,11 +74,42 @@ export function traceMissingParents(
         maxBuffer: 32 * 1024 * 1024,
       }
     );
+    if (result.error?.code === 'ETIMEDOUT')
+      console.info('Codex diagnostic timeout signal', {
+        source: 'run-codex-missing-parents.mjs',
+        scenario,
+        mode,
+        senderPid: process.pid,
+        targetPid: result.pid,
+        signal: 'SIGTERM',
+        origin: 'spawnSync-timeout',
+        observedAtMs: Date.now(),
+      });
     let cleanupError;
     if (result.pid) {
       try {
+        const signal = {
+          source: 'run-codex-missing-parents.mjs',
+          scenario,
+          mode,
+          senderPid: process.pid,
+          targetGroup: result.pid,
+          signal: 'SIGKILL',
+          atMs: Date.now(),
+        };
+        console.info('Codex diagnostic signal requested', signal);
         process.kill(-result.pid, 'SIGKILL');
+        console.info('Codex diagnostic signal sent', { ...signal, sent: true });
       } catch (error) {
+        console.info('Codex diagnostic signal failed', {
+          source: 'run-codex-missing-parents.mjs',
+          scenario,
+          mode,
+          senderPid: process.pid,
+          targetGroup: result.pid,
+          atMs: Date.now(),
+          code: error.code,
+        });
         if (error.code !== 'ESRCH') cleanupError = error.message;
       }
     }

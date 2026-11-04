@@ -20,10 +20,38 @@ function run(name, command, args, cwd, timeout = 180_000, env = process.env) {
     maxBuffer: 32 * 1024 * 1024,
     detached: true,
   });
+  if (result.error?.code === 'ETIMEDOUT')
+    console.info('Codex diagnostic timeout signal', {
+      source: 'run-codex-main-comparison.mjs',
+      name,
+      senderPid: process.pid,
+      targetPid: result.pid,
+      signal: 'SIGTERM',
+      origin: 'spawnSync-timeout',
+      observedAtMs: Date.now(),
+    });
   if (result.pid) {
     try {
+      const signal = {
+        source: 'run-codex-main-comparison.mjs',
+        name,
+        senderPid: process.pid,
+        targetGroup: result.pid,
+        signal: 'SIGKILL',
+        atMs: Date.now(),
+      };
+      console.info('Codex diagnostic signal requested', signal);
       process.kill(-result.pid, 'SIGKILL');
+      console.info('Codex diagnostic signal sent', { ...signal, sent: true });
     } catch (error) {
+      console.info('Codex diagnostic signal failed', {
+        source: 'run-codex-main-comparison.mjs',
+        name,
+        senderPid: process.pid,
+        targetGroup: result.pid,
+        atMs: Date.now(),
+        code: error.code,
+      });
       if (error.code !== 'ESRCH') throw error;
     }
   }

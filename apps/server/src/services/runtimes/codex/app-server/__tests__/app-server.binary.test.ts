@@ -420,6 +420,11 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
   });
 
   afterAll(async () => {
+    console.info('Codex native suite teardown requested', {
+      senderPid: process.pid,
+      atMs: Date.now(),
+      poolCount: pools.length,
+    });
     await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -767,7 +772,18 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                   ),
                 (res, body) => {
                   ready = shellControlReturned(body, 'PUBLIC-kill-ready');
-                  if (ready) killed = victimChild?.kill('SIGKILL') ?? false;
+                  if (ready) {
+                    const signal = {
+                      source: 'kill-midturn-10k',
+                      senderPid: process.pid,
+                      targetPid: victimChild?.pid,
+                      signal: 'SIGKILL',
+                      atMs: Date.now(),
+                    };
+                    console.info('Codex native probe signal requested', signal);
+                    killed = victimChild?.kill('SIGKILL') ?? false;
+                    console.info('Codex native probe signal sent', { ...signal, sent: killed });
+                  }
                   res.end(sse('victim stopped'));
                 }
               );
@@ -923,6 +939,14 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
                 expect(() => fs.lstatSync(target)).toThrow(
                   expect.objectContaining({ code: 'ENOENT' })
                 );
+              console.info('Codex protected row shutdown requested', {
+                kind,
+                mode,
+                scenario,
+                senderPid: process.pid,
+                atMs: Date.now(),
+                refused: true,
+              });
               await transport.shutdown();
               continue;
             }
@@ -959,6 +983,14 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
               expect(fs.readdirSync(grantInitial)).toEqual([]);
               expect(fs.readdirSync(grantSwap)).toEqual([]);
             }
+            console.info('Codex protected row shutdown requested', {
+              kind,
+              mode,
+              scenario,
+              senderPid: process.pid,
+              atMs: Date.now(),
+              refused: false,
+            });
             await transport.shutdown();
           } finally {
             if (race)
