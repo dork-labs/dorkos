@@ -43,6 +43,12 @@ describe('plainChromiumArgs', () => {
     expect(args).toContain('--disable-extensions');
   });
 
+  it('disables both HTTPS upgrade modes with one feature argument', () => {
+    expect(args.filter((arg) => arg.startsWith('--disable-features='))).toEqual([
+      '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable',
+    ]);
+  });
+
   it('uses the profile folder, names the site in the title, and opens the page', () => {
     expect(args).toContain('--user-data-dir=/profiles/default');
     expect(args).toContain('--window-name=Sign in to linear.app');
