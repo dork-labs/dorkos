@@ -15,7 +15,7 @@ const tick = async () => {
 };
 const bytes = (s: string) => new TextEncoder().encode(s);
 afterEach(() => vi.useRealTimers());
-it('actual115 source-byte reader/hash composition returns mock files-only installed, never ready', async () => {
+it('actual116 source-byte reader/hash composition returns mock files-only installed, never ready', async () => {
   const h = fixture();
   expect(distributionDigest(corpus)).toBe(DISTRIBUTION);
   const result = await h.inspector.inspectExisting();
@@ -328,7 +328,7 @@ it('short or zero read cannot certify the observed complete file', async () => {
   h.port.readInto = async (lease, handle) => ({ lease, handle, value: 0 });
   expect((await h.inspector.inspectExisting()).state).toBe('unverified');
 });
-it('partial reads advance exact offsets and still measure the actual115 byte corpus', async () => {
+it('partial reads advance exact offsets and still measure the actual116 byte corpus', async () => {
   const h = fixture();
   const original = h.port.readInto;
   h.port.readInto = (l, handle, b, offset, length) =>

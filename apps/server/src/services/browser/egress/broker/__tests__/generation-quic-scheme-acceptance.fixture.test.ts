@@ -45,7 +45,7 @@ it.skipIf(!supplied || process.platform !== 'darwin' || process.arch !== 'arm64'
           const status = await createRuntimeInstallation(input.installation).inspectExisting();
           if (
             status.state !== 'installed-files' ||
-            status.lastFreshVerifiedVersion !== '156.0.8078.4'
+            status.lastFreshVerifiedVersion !== '157.0.8103.15'
           )
             throw Error('QUIC_OWN_INSTALLATION_REQUIRED');
           const require = createRequire(import.meta.url);
@@ -173,7 +173,7 @@ it.skipIf(!supplied || process.platform !== 'darwin' || process.arch !== 'arm64'
               runtime: {
                 library: {
                   package: 'playwright-core',
-                  version: '1.64.1',
+                  version: '1.65.0-alpha-2026-10-30',
                   rootDir: setup.libraryRoot,
                   assets: { manifest: 'browsers.json', cli: 'cli.js' },
                 },
@@ -182,11 +182,11 @@ it.skipIf(!supplied || process.platform !== 'darwin' || process.arch !== 'arm64'
                     setup.input.installation.cacheRoot,
                     'candidates',
                     setup.status.installationId,
-                    'payload/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+                    'payload/chromium-1252/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
                   ),
                   sha256: setup.status.executableSHA256,
-                  revision: '1248',
-                  version: '156.0.8078.4',
+                  revision: '1252',
+                  version: '157.0.8103.15',
                   platform: 'darwin',
                   arch: 'arm64',
                 },

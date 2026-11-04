@@ -28,7 +28,7 @@ const verified: InstallResult = {
   installationId: 'installation_verified_original',
   attemptId: 'fresh_attempt_original',
   generation: 1,
-  observedVersion: '156.0.8078.4',
+  observedVersion: '157.0.8103.15',
   executableSHA256: hash,
   platform: 'darwin',
   arch: 'arm64',
@@ -38,8 +38,8 @@ const verified: InstallResult = {
 };
 const current: RuntimeInstallationStatus = {
   schemaVersion: 1,
-  pinnedPackageVersion: '1.64.1',
-  chromiumRevision: '1248',
+  pinnedPackageVersion: '1.65.0-alpha-2026-10-30',
+  chromiumRevision: '1252',
   platform: 'darwin',
   arch: 'arm64',
   observation: 'files-only',

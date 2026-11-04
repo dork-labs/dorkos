@@ -277,7 +277,7 @@ it.skipIf(!supplied || process.platform !== 'darwin' || process.arch !== 'arm64'
       const installed = await call(() => installation.inspectExisting(), 20000);
       if (
         installed.state !== 'installed-files' ||
-        installed.lastFreshVerifiedVersion !== '156.0.8078.4'
+        installed.lastFreshVerifiedVersion !== '157.0.8103.15'
       )
         throw new Error('REGISTRY_OWN_INSTALLED_FILES_REQUIRED');
       const require = createRequire(import.meta.url);
@@ -298,7 +298,7 @@ it.skipIf(!supplied || process.platform !== 'darwin' || process.arch !== 'arm64'
         input.installation.cacheRoot,
         'candidates',
         installed.installationId,
-        'payload/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+        'payload/chromium-1252/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
       );
       await call(async () => {
         home = await mkdtemp(join(tmpdir(), 'browser-registry-native-'));
@@ -358,15 +358,15 @@ it.skipIf(!supplied || process.platform !== 'darwin' || process.arch !== 'arm64'
         runtime: {
           library: {
             package: 'playwright-core',
-            version: '1.64.1',
+            version: '1.65.0-alpha-2026-10-30',
             rootDir: libraryRoot,
             assets: { manifest: 'browsers.json', cli: 'cli.js' },
           },
           executable: {
             path: executable,
             sha256: installed.executableSHA256,
-            revision: '1248',
-            version: '156.0.8078.4',
+            revision: '1252',
+            version: '157.0.8103.15',
             platform: 'darwin',
             arch: 'arm64',
           },

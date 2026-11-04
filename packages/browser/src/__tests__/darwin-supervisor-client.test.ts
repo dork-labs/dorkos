@@ -102,15 +102,15 @@ async function fixture(
       runtime: {
         library: {
           package: 'playwright-core',
-          version: '1.64.1',
+          version: '1.65.0-alpha-2026-10-30',
           rootDir: root,
           assets: { manifest: 'browsers.json', cli: 'cli.js' },
         },
         executable: {
           path: join(root, 'not-executed-browser'),
           sha256: 'b'.repeat(64),
-          revision: '1248',
-          version: '156.0.8078.4',
+          revision: '1252',
+          version: '157.0.8103.15',
           platform: 'darwin',
           arch: 'arm64',
         },

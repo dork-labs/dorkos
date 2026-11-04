@@ -788,7 +788,7 @@ describe('installation original jobs (semantic controls, no native acceptance)',
     });
     await expect(producer.runInstaller(request)).rejects.toThrow('BINDING_MISMATCH');
     const child = new OriginalChild();
-    installChild(child, () => child.finish(0, null, 'Chromium 156.0.8078.4\n'));
+    installChild(child, () => child.finish(0, null, 'Chromium 157.0.8103.15\n'));
     const run = await producer.runVersionProbe(probe);
     expect(spawnMock.mock.calls[0][0]).toBe(executablePath);
     expect(spawnMock.mock.calls[0][1]).toEqual(['--version']);

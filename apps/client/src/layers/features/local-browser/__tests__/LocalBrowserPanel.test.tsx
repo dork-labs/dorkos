@@ -50,9 +50,9 @@ const capabilities: LocalBrowserCapabilities = {
   newWindow: true,
   defaultMode: 'new-window',
   platform: 'darwin',
-  managedChromiumVersion: '156.0.8078.4',
+  managedChromiumVersion: '157.0.8103.15',
   unavailableReasons: {},
-  playwrightVersion: '1.64.1',
+  playwrightVersion: '1.65.0-alpha-2026-10-30',
 };
 function holdOpening() {
   let resolve!: (state: LocalBrowserState) => void;

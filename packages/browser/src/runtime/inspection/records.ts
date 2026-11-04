@@ -16,7 +16,7 @@ export const LIMITS = Object.freeze({
   path: 1024,
   frontier: 1048576,
 });
-export const DISTRIBUTION = '1aee7fc2f91a8d7745fa075bd6896df3bfcde2c00ccdcbbc3249f220382b5fa9';
+export const DISTRIBUTION = 'e88b7d6034b38fe0929052e012868755207a931b6348507c477afbc6dd430822';
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const opaque = z
   .string()
@@ -66,7 +66,7 @@ export const ManifestSchema = z
     schemaVersion: z.literal(1),
     installationId: opaque,
     packageName: z.literal('playwright-core'),
-    packageVersion: z.literal('1.64.1'),
+    packageVersion: z.literal('1.65.0-alpha-2026-10-30'),
     libraryDistributionSHA256: hash,
     chromiumRevision: z.string().max(16).regex(/^\d+$/),
     observedVersion: z
@@ -95,7 +95,7 @@ export interface PinnedTarget {
 }
 type Common = Readonly<{
   schemaVersion: 1;
-  pinnedPackageVersion: '1.64.1';
+  pinnedPackageVersion: '1.65.0-alpha-2026-10-30';
   chromiumRevision: string;
   platform: PinnedTarget['platform'];
   arch: PinnedTarget['arch'];

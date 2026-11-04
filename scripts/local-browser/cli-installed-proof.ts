@@ -190,7 +190,7 @@ try {
     'Workspace resolution is not installed proof'
   );
   const playwrightPackage = JSON.parse(await readFile(playwrightPath, 'utf8'));
-  assert.equal(playwrightPackage.version, '1.64.1');
+  assert.equal(playwrightPackage.version, '1.65.0-alpha-2026-10-30');
   const descriptors = JSON.parse(
     await readFile(path.join(path.dirname(playwrightPath), 'browsers.json'), 'utf8')
   );
@@ -206,7 +206,7 @@ try {
     await readFile(path.join(installedPackage, 'package.json'), 'utf8')
   );
   assert.equal(installedMetadata.version, packed.metadata.version);
-  assert.equal(installedMetadata.dependencies['playwright-core'], '1.64.1');
+  assert.equal(installedMetadata.dependencies['playwright-core'], '1.65.0-alpha-2026-10-30');
   // Installed Playwright must see the same isolated cache as the installed CLI child.
   // eslint-disable-next-line no-restricted-syntax
   process.env.PLAYWRIGHT_BROWSERS_PATH = browserCache;
@@ -334,7 +334,7 @@ try {
   );
   assert.equal(caps.embedded, false);
   assert.equal(caps.defaultMode, 'new-window');
-  assert.equal(caps.playwrightVersion, '1.64.1');
+  assert.equal(caps.playwrightVersion, '1.65.0-alpha-2026-10-30');
   checks.webCapabilities = caps;
   const embedded = await http('/api/local-browser/open', { mode: 'embedded' });
   assert.equal(embedded.status, 409);

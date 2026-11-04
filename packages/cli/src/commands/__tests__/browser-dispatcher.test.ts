@@ -16,8 +16,8 @@ const fixture = vi.hoisted(() => ({
 const readiness = { state: 'unavailable', cause: 'VERIFICATION_UNAVAILABLE' };
 const missing = {
   schemaVersion: 1,
-  pinnedPackageVersion: '1.64.1',
-  chromiumRevision: '1248',
+  pinnedPackageVersion: '1.65.0-alpha-2026-10-30',
+  chromiumRevision: '1252',
   platform: 'darwin',
   arch: 'arm64',
   observation: 'files-only',

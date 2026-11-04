@@ -323,9 +323,9 @@ export const LocalEvidenceSchema = z.strictObject({
 });
 export type LocalEvidence = z.infer<typeof LocalEvidenceSchema>;
 export const pins = Object.freeze({
-  libraryDistributionSHA256: '1aee7fc2f91a8d7745fa075bd6896df3bfcde2c00ccdcbbc3249f220382b5fa9',
-  chromiumRevision: '1248',
-  observedVersion: '156.0.8078.4',
+  libraryDistributionSHA256: 'e88b7d6034b38fe0929052e012868755207a931b6348507c477afbc6dd430822',
+  chromiumRevision: '1252',
+  observedVersion: '157.0.8103.15',
 });
 
 const allObserved = (a: Accounting) =>
