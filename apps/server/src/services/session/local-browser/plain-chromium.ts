@@ -58,6 +58,9 @@ export function plainChromiumArgs(profileFolder: string, url: string, site: stri
     '--password-store=basic',
     // An extension could read the page; the person's own window needs none.
     '--disable-extensions',
+    // A person types a password here, under a bar saying this build is only for automated
+    // testing. Only safe while the release check holds the build near stable (DOR-3876).
+    '--disable-infobars',
     `--window-name=Sign in to ${site}`,
     url,
   ];
