@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'docs(codex): explain Linux home scan refusals (DOR-3595)'
   - 'fix(codex): collapse missing protected ancestors without disk writes (DOR-3595)'
   - 'fix(ci): preserve Codex diagnostic artifacts and budgets (DOR-3595)'
   - 'test(codex): trace host mount targets and unreadable scan failures (DOR-3595)'
@@ -22,3 +23,4 @@ covers:
 - Older Codex setups using `exec` now run through app-server and show approval cards (DOR-3595).
 - Codex now explains when Linux blocks program isolation and what needs to change. This also applies at Full access (DOR-3595).
 - Codex may not start in the standard Docker image.
+- On Linux, Codex refuses to start if it cannot read a folder in your home folder. Codex also refuses to start if a folder disappears during the scan. Change that folder’s permissions, or move it out of your home folder (DOR-3595).
