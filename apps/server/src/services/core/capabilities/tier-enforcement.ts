@@ -147,6 +147,7 @@ import {
   APPROVAL_TOKEN_ARGUMENT,
   APPROVAL_TOKEN_HEADER,
   approvalMessage,
+  approvalDeclineMessage,
   needsApprovalClause,
   retryGuidance,
 } from './approval-wording.js';
@@ -1095,15 +1096,12 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       return { outcome: 'approval_required', payload };
     }
 
+    case 'incomplete':
     case 'denied': {
-      const payload = denied(
-        action,
-        'operator_denied',
-        result.reason
-          ? `A person refused this: ${result.reason}`
-          : `A person refused this. Do not try again unless they ask for it.`,
-        { approvable: true, approvalId: result.approvalId }
-      );
+      const payload = denied(action, 'operator_denied', approvalDeclineMessage(result), {
+        approvable: true,
+        approvalId: result.approvalId,
+      });
       audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
       return { outcome: 'denied', payload };
     }

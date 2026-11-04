@@ -178,6 +178,7 @@ export async function mountLateRoutes(refs: ServerRefs, built: MountLateRoutesIn
   deps.approvals = {
     service: approvalService,
     options: {
+      dorkHome,
       activity: activityService,
       // An "Always allow" writes through the one permission write owner, like
       // Settings does (spec `agent-permissions` D7).

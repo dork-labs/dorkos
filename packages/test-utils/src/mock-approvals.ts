@@ -9,6 +9,8 @@ import type { Transport } from '@dorkos/shared/transport';
 
 /** The approval methods of the Transport. */
 type ApprovalMethods =
+  | 'listDeclinedHookApprovals'
+  | 'askAgainHookApproval'
   | 'listPendingApprovals'
   | 'getApprovalFullDetail'
   | 'grantApproval'
@@ -18,6 +20,10 @@ type ApprovalMethods =
 /** Mock approval methods, each a `vi.fn()`. */
 export function createMockApprovalTransport(): Pick<Transport, ApprovalMethods> {
   return {
+    listDeclinedHookApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+    askAgainHookApproval: vi
+      .fn()
+      .mockImplementation((approvalId: string) => Promise.resolve({ ok: true, approvalId })),
     listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
     getApprovalFullDetail: vi.fn().mockResolvedValue({ text: '' }),
     grantApproval: vi

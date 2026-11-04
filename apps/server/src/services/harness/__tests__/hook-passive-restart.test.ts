@@ -199,7 +199,7 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     const pending = after.listPending();
     expect(pending).toHaveLength(1);
     expect(pending[0]?.approvalId).not.toBe(approvalId);
-    expect(pending[0]?.summary).toContain('b'.repeat(12));
+    expect(pending[0]?.detail).toContain('b'.repeat(64));
     expect(readPassiveHookRows(dorkHome)).toEqual([V2.request]);
   });
 

@@ -40,7 +40,7 @@
  * @module services/core/approvals/approval-service
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { ulid } from 'ulidx';
+import { newApprovalRow, APPROVAL_TOKEN_BYTES } from './approval-new-row.js';
 import {
   and,
   asc,
@@ -60,7 +60,14 @@ import type { ProjectRef } from '@dorkos/shared/project-schemas';
 import { type ApprovalOutcome, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
-import { cannotAllowCard, storablePackageRequest } from './approval-completeness.js';
+import { cannotAllowCard } from './approval-completeness.js';
+import {
+  declinedHookCards,
+  declinedHookRequest,
+  isReaskedHook,
+  reaskHook,
+  reaskedHookRequests,
+} from './hook-reasks.js';
 import { isAlwaysOffered } from './always-offered.js';
 import {
   toAnswerScope,
@@ -70,21 +77,12 @@ import {
 } from './approval-card.js';
 
 export { isAlwaysOffered };
-import {
-  storableDetail,
-  storableReason,
-  storableServiceAction,
-  storableSummary,
-  ownAnswerInput,
-  storableMarketplaceCard,
-  storedFullDetail,
-} from './approval-storable.js';
+import { ownAnswerInput, storedFullDetail } from './approval-storable.js';
 import {
   raiseCapabilityApproval,
   resolveCapabilityApproval,
 } from '../../notifications/emitters/capability-approval.js';
 import { eventFanOut } from '../event-fan-out.js';
-import { approvalExpiresAt } from './passive-approval.js';
 import { retireSupersededApprovals, sweepExpiredApprovals } from './approval-retirement.js';
 import { toDecisionOutcome, type ApprovalDecisionOutcome } from './approval-decision-outcome.js';
 export type { ApprovalDecisionOutcome } from './approval-decision-outcome.js';
@@ -98,7 +96,6 @@ export type {
   ApprovalConsumeOptions,
   ApprovalConsumptionSettlement,
 } from './approval-consumption.js';
-import { renderRequesterLabel } from './approval-summary.js';
 import type { ApprovalRequestInput } from './approval-request-input.js';
 export type {
   ApprovalConnectorAuthority,
@@ -179,7 +176,7 @@ export function resolveApprovalTtlMs(requested: number | undefined): number | un
 }
 
 /** Bytes of CSPRNG randomness behind an approval token (128 bits). */
-const TOKEN_BYTES = 16;
+const TOKEN_BYTES = APPROVAL_TOKEN_BYTES;
 
 /** One approval's verdict, and the session it is owed to. */
 export interface ApprovalVerdictDelivery {
@@ -276,7 +273,7 @@ export type ApprovalConsumeResult =
       decidedByUserId?: string;
     }
   | { outcome: 'pending'; approvalId: string; expiresAt: string }
-  | { outcome: 'denied'; approvalId: string; reason?: string }
+  | { outcome: 'denied' | 'incomplete'; approvalId: string; reason?: string }
   | { outcome: 'expired'; approvalId: string }
   | { outcome: 'consumed'; approvalId: string }
   | { outcome: 'unknown' }
@@ -475,70 +472,53 @@ export class ApprovalService {
     return true;
   }
 
-  /** A new pending row and its one-time token, every caller-supplied field swept and capped. */
+  /** Build a bounded pending row, before its atomic write and announcement. */
   private newRow(input: ApprovalRequestInput) {
-    const token = randomBytes(TOKEN_BYTES).toString('hex');
-    const now = Date.now();
-    const descriptor = this.options.describeCapability?.(input.capabilityId);
-    const row = {
-      id: ulid(),
-      tokenHash: hashToken(token),
-      capabilityId: input.capabilityId,
-      capabilityTitle:
-        input.title && descriptor?.titledPerRequest
-          ? storableSummary(input.title)
-          : (descriptor?.title ?? input.capabilityId),
-      tier: descriptor?.tier ?? ('destructive' as const),
-      inputHash: input.inputHash,
-      authorityBindingDigest: input.connectorAuthority?.digest ?? null,
-      connectorOwnerKind: input.connectorAuthority?.ownerKind ?? null,
-      connectorOwnerId: input.connectorAuthority?.ownerId ?? null,
-      connectorAgentId: input.connectorAuthority?.agentId ?? null,
-      connectorSessionId: input.connectorAuthority?.sessionId ?? null,
-      connectorConnectionId: input.connectorAuthority?.connectionId ?? null,
-      connectorOperationRevisionId: input.connectorAuthority?.operationRevisionId ?? null,
-      summary: storableSummary(input.summary),
-      packageRequest: storablePackageRequest(input),
-      // Absent for every capability that declares no detail field, which is all
-      // but one — `null` rather than `undefined` so the column is written.
-      detail: input.detail === undefined ? null : storableDetail(input.detail),
-      // Caller-supplied, so capped and swept for secrets exactly like the summary.
-      requestedBy: input.requestedBy ? renderRequesterLabel(input.requestedBy) : null,
-      // Stored raw and never rendered: an Always allow writes onto the agent this
-      // names, so sweeping or shortening it would break the match.
-      requestedByPath: input.requestedByPath ?? null,
-      area: input.area ?? null,
-      blockedRequest: input.blockedRequest !== undefined,
-      raisesPermissions: input.raisesPermissions === true,
-      requestReason: input.blockedRequest ? storableReason(input.blockedRequest.reason) : null,
-      // Capped HERE as well as in the resolver, for the reason `storableSummary`
-      // gives two lines up: `ApprovalRequestInput` is public API, not private to
-      // `resolveApprovalSubject`, and the wire schema caps these at 60 — so a
-      // caller passing a longer label would store a row the cockpit's own parse
-      // rejects, and a dropped card is worse than a shortened one.
-      subjectKind: input.subject?.kind ?? null,
-      subjectId: input.subject ? renderRequesterLabel(input.subject.id) : null,
-      subjectLabel: input.subject ? renderRequesterLabel(input.subject.label) : null,
-      otherArguments: input.otherArguments ? storableSummary(input.otherArguments) : null,
-      serviceAction: input.serviceAction ? storableServiceAction(input.serviceAction) : null,
-      ...storableMarketplaceCard(input.marketplace),
-      // Withheld the moment a caller IS named, so the two can never contradict
-      // each other on a card.
-      origin: input.requestedBy ? null : (input.origin ?? null),
-      state: 'pending' as const,
-      denyReason: null,
-      createdAt: new Date(now).toISOString(),
-      expiresAt: approvalExpiresAt(input.passive === true, now + this.ttlMs),
-      decidedAt: null,
-      decidedByUserId: null,
-      consumedAt: null,
-      // A delivery ADDRESS, not an authority: where to tell the answer to, when
-      // the asking surface had a session at all.
-      requestingSessionId: input.requestingSession?.sessionId ?? null,
-      requestingCwd: input.requestingSession?.cwd ?? null,
-      notifiedAt: null,
-    };
-    return { row, token };
+    return newApprovalRow(input, this.ttlMs, this.options.describeCapability);
+  }
+
+  /** Individual declined hook rows, with their audited decision kept intact. */
+  declinedHooks() {
+    return declinedHookCards(this.db, (row) => this.toCard(row));
+  }
+
+  /** Server-only original input for rebuilding a person-requested review. */
+  declinedHookRequest(id: string) {
+    return declinedHookRequest(this.db, id);
+  }
+
+  /** Start a new review without clearing the refusal that currently holds hooks off. */
+  reaskHook(id: string, input: ApprovalRequestInput) {
+    return reaskHook(
+      this.db,
+      id,
+      input,
+      (next) => this.newRow(next),
+      (row) => {
+        const card = this.toCard(row);
+        broadcastApprovalPending(card);
+        raiseCapabilityApproval(card, undefined);
+      }
+    );
+  }
+
+  /** Whether a live row was explicitly re-asked by a person, including after restart. */
+  isReaskedHook(binding: ApprovalBinding) {
+    return isReaskedHook(this.db, binding);
+  }
+
+  /** Restart source for live person-requested hook reviews. */
+  reaskedHookRequests() {
+    return reaskedHookRequests(this.db);
+  }
+
+  /** The server-recorded meaning of a decline, independent of the caller's reason. */
+  declineKind(id: string) {
+    return this.db
+      .select({ kind: approvals.declineKind })
+      .from(approvals)
+      .where(eq(approvals.id, id))
+      .get()?.kind;
   }
 
   /**
@@ -669,7 +649,7 @@ export class ApprovalService {
 
     if (row.state === 'denied') {
       return {
-        outcome: 'denied',
+        outcome: row.declineKind === 'incomplete' ? 'incomplete' : 'denied',
         approvalId: row.id,
         ...(row.denyReason ? { reason: row.denyReason } : {}),
       };
@@ -1317,6 +1297,14 @@ export class ApprovalService {
       .update(approvals)
       .set({
         state: decision,
+        declineKind:
+          decision === 'denied' &&
+          (row.capabilityId === 'harness.project_hooks' ||
+            row.capabilityId === 'marketplace.activate_global_plugin')
+            ? cannotAllowCard(row)
+              ? 'incomplete'
+              : 'refused'
+            : null,
         decidedAt: new Date().toISOString(),
         denyReason: decision === 'denied' ? (reason ?? null) : null,
         decidedByUserId: decision === 'granted' ? (decidedByUserId ?? null) : null,

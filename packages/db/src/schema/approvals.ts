@@ -222,6 +222,12 @@ export const approvals = sqliteTable(
     /** Why the operator said no, when they gave a reason. */
     denyReason: text('deny_reason'),
 
+    /** Server-derived meaning of a package decline; never chosen by the caller. */
+    declineKind: text('decline_kind', { enum: ['incomplete', 'refused'] }),
+
+    /** The declined hook row this fresh person-requested review replaces. */
+    retryOf: text('retry_of').unique(),
+
     /** When the request was created. ISO 8601 UTC. */
     createdAt: text('created_at').notNull(),
 
