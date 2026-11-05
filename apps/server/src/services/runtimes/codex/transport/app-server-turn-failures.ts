@@ -10,6 +10,7 @@ import { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import { CodexCrashLoopError } from '../app-server/process-pool.js';
 import type { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
+import { CodexFullMissingTargetsError } from '../policy/full-missing-targets.js';
 import { ProtectedPathNotDirectoryError } from '../policy/collapse-protected-paths.js';
 
 /** The machine refused Linux isolation; retrying the reply cannot repair it. */
@@ -29,6 +30,15 @@ export function* failedSetup(sessionId: string, err: unknown): Generator<StreamE
     yield refusal;
   } else if (err instanceof CodexCrashLoopError) {
     yield { type: 'error', data: { message: err.message, code: 'codex_crash_loop' } };
+  } else if (err instanceof CodexFullMissingTargetsError) {
+    yield {
+      type: 'error',
+      data: {
+        message: err.message,
+        code: 'codex_full_missing_protected_targets',
+        details: err.missingPaths.join('\n'),
+      },
+    };
   } else if (err instanceof ProtectedPathNotDirectoryError) {
     yield {
       type: 'error',

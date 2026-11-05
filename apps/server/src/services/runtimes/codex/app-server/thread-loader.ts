@@ -39,6 +39,7 @@ import { withLiteralHeaders } from '../mcp-server-config.js';
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 import type { CodexTurnTools } from '../transport/codex-transport.js';
 import type { CodexAppServerProcess } from './process-pool.js';
+import { guardedMountTargetRecorder } from '../policy/full-missing-targets.js';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { loadWithProtectedProfile } from './profile-load.js';
 import { credentialsOf } from './thread-credentials.js';
@@ -712,7 +713,7 @@ export function buildLoadOverrides(
     input.cwd,
     input.tools.filePolicy,
     input.settings,
-    secrets.onMissingTargets
+    guardedMountTargetRecorder(input.settings, secrets.onMissingTargets)
   );
   const servers: Record<string, unknown> = { ...withLiteralHeaders(input.tools.managed) };
   if (secrets.threadKey !== undefined) {

@@ -84,7 +84,7 @@
     "apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts": 551,
     "apps/server/src/services/runtimes/codex/app-server/notification-mapper.ts": 546,
     "apps/server/src/services/runtimes/codex/codex-runtime.ts": 1073,
-    "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts": 1156,
+    "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts": 1150,
     "apps/server/src/services/runtimes/opencode/opencode-runtime.ts": 851,
     "apps/server/src/services/session/chat-messages/chat-message-service.ts": 613,
     "apps/server/src/services/session/devtools-capture-store.ts": 666,

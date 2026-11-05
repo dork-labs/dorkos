@@ -395,6 +395,56 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     await principals.initializeBoot();
   });
 
+  it.skipIf(process.platform !== 'linux')(
+    'refuses Full with missing protected targets before any Codex or bwrap launch',
+    async () => {
+      const snapshot = (dir: string): unknown =>
+        fs
+          .readdirSync(dir)
+          .sort()
+          .map((name) => {
+            const file = path.join(dir, name);
+            const stat = fs.lstatSync(file);
+            return {
+              file,
+              ino: stat.ino,
+              mode: stat.mode,
+              size: stat.size,
+              mtimeMs: stat.mtimeMs,
+              ctimeMs: stat.ctimeMs,
+              contents: stat.isDirectory() ? snapshot(file) : fs.readFileSync(file, 'base64'),
+            };
+          });
+      const before = snapshot(root);
+      const spawnCount = spawned.length;
+      const bound = vi.fn();
+      const transport = makeTransport();
+      const full = request('full-missing-native', undefined, {
+        settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
+        onThreadBound: bound,
+      });
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(full)) events.push(event);
+      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+      expect(events[0]).toMatchObject({
+        data: {
+          code: 'codex_full_missing_protected_targets',
+          message:
+            'Codex can’t use Full access while protected files are missing. Choose Ask, then retry.',
+          details: expect.stringContaining(path.join(root, 'home', '.claude.json')),
+        },
+      });
+      expect(bound).not.toHaveBeenCalled();
+      expect(spawned).toHaveLength(spawnCount);
+      expect(snapshot(root)).toEqual(before);
+      expect(full.settings.permissionMode).toBe('bypassPermissions');
+      console.info('Codex Full missing-target refusal proved before native launch', {
+        newProcesses: spawned.length - spawnCount,
+        hostUnchanged: true,
+      });
+    }
+  );
+
   beforeEach(() => {
     scripted.length = 0;
     stallNext = false;

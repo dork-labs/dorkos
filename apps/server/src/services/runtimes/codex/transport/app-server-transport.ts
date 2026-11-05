@@ -26,9 +26,7 @@
  *
  * @module services/runtimes/codex/transport/app-server-transport
  */
-import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
 import { recordMountTargets } from '../policy/mount-target-ledger.js';
-import { reconcileMountTargets } from '../policy/reconcile-mount-targets.js';
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type {
   DeliverIntoTurnOpts,
@@ -82,6 +80,7 @@ import type {
   CodexTurnRequest,
   CodexTurnTools,
 } from './codex-transport.js';
+import { prepareCodexFilePolicy } from './prepare-file-policy.js';
 import { acquireCodexProcess } from './acquire-codex-process.js';
 import { failedCompaction, failedSetup, failedStart } from './app-server-turn-failures.js';
 
@@ -342,12 +341,7 @@ export class AppServerCodexTransport implements CodexTransport {
     // winding down in Codex.
     let clear: boolean;
     try {
-      const filePolicy = request.tools.filePolicy ?? {
-        roots: protectedPathRoots(request.cwd),
-        writable: [],
-      };
-      if (globalThis.process.platform === 'linux' && this.options.mountTargets !== false)
-        await reconcileMountTargets(filePolicy.roots.data);
+      const filePolicy = await prepareCodexFilePolicy(request, this.options.mountTargets);
       process = this.watch(
         await acquireCodexProcess(request.binary, onCredits, this.pool, this.options)
       );
