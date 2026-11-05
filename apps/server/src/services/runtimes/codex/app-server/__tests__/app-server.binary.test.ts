@@ -1334,10 +1334,17 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
             expect(result, JSON.stringify(events)).toContain(control);
             expect(result, JSON.stringify(events)).toContain(skillControl);
             for (const marker of probe.attemptMarkers) expect(result).toContain(marker);
-            for (const target of probe.grantTargets)
+            for (const target of probe.grantTargets) {
+              // A recorded, unchanged crash file blocks all descendants. It
+              // must survive; the protected child still cannot be created.
+              const blocker = defaultRecovery
+                ? [...preservedAfterCrash.keys()].find((file) => target.startsWith(file + '/'))
+                : undefined;
+              if (blocker) expect(stubSnapshot(blocker)).toEqual(preservedAfterCrash.get(blocker));
               expect(() => fs.lstatSync(target)).toThrow(
-                expect.objectContaining({ code: 'ENOENT' })
+                expect.objectContaining({ code: blocker ? 'ENOTDIR' : 'ENOENT' })
               );
+            }
             for (const canary of probe.canaries) expect(result).not.toContain(canary);
             expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
             expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
