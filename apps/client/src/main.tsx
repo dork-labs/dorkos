@@ -369,7 +369,7 @@ const bootCache = buildBootCache();
 // when the server answered. `pagehide` is the browser saying it is leaving, and
 // it fires for a reload, a navigation and a close alike.
 if (bootCache !== null) {
-  window.addEventListener('pagehide', () => bootCache.flush(queryClient));
+  bootCache.connect(queryClient);
 }
 
 // Router at module scope — creating it inside Root() caused StrictMode to

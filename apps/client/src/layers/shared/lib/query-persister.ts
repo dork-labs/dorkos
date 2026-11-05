@@ -38,13 +38,13 @@
  *
  * @module shared/lib/query-persister
  */
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import { defaultShouldDehydrateQuery, dehydrate, type QueryClient } from '@tanstack/react-query';
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client';
 
 import type { Transport } from '@dorkos/shared/transport';
 
 import { HttpTransport } from './transport';
+import { bootCacheSession, canWriteBootCache, observeBootCacheSession } from './boot-cache-session';
 import {
   BOOT_CACHE_DISABLED_KEY,
   BOOT_CACHE_MAX_AGE_MS,
@@ -152,6 +152,8 @@ export interface BootCache {
    * @param queryClient - The client whose current answers to write.
    */
   flush(queryClient: QueryClient): void;
+  /** Bind cross-tab cleanup and pagehide to the live query cache; returns teardown. */
+  connect(queryClient: QueryClient): () => void;
   /** What `PersistQueryClientProvider` needs to keep writing the blob. */
   persistOptions: {
     persister: Persister;
@@ -221,49 +223,76 @@ export function createBootCache(options: {
   if (claimed === null) return null;
   const { storage, key } = claimed;
 
-  const persister = createSyncStoragePersister({
-    storage,
-    key,
-    throttleTime: SAVE_THROTTLE_MS,
-  });
-
-  /**
-   * Write, unless there is nothing to remember.
-   *
-   * **An empty write is how a sign-out undid itself.** Signing out clears the
-   * storage AND drops the boot queries from the cache — and dropping them is a
-   * cache event, so the throttled save fires up to a second later and recreates
-   * the key holding `queries: []`. The person is left with an empty artefact of
-   * a session they ended. Nothing to remember means nothing on disk.
-   */
-  const write = (client: PersistedClient): void => {
-    if (client.clientState.queries.length === 0) {
-      persister.removeClient();
-      return;
+  let generation = bootCacheSession(storage);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let pending: PersistedClient | undefined;
+  const discardPending = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    pending = undefined;
+  };
+  const save = (client: PersistedClient, snapshotGeneration: string) => {
+    if (!canWriteBootCache(storage, snapshotGeneration)) return;
+    try {
+      if (client.clientState.queries.length === 0) storage.removeItem(key);
+      else storage.setItem(key, JSON.stringify(client));
+      // Another tab can sign out between our check and setItem. Its generation
+      // also blocks restore, and this second check removes the late write.
+      if (!canWriteBootCache(storage, snapshotGeneration)) storage.removeItem(key);
+    } catch {
+      // Unusable/full storage means the next load is cold, never a broken page.
     }
-    persister.persistClient(client);
+  };
+  const persister: Persister = {
+    persistClient(client) {
+      if (!canWriteBootCache(storage, generation)) return;
+      pending = client;
+      if (timer !== undefined) return;
+      const snapshotGeneration = generation;
+      timer = setTimeout(() => {
+        const snapshot = pending;
+        discardPending();
+        if (snapshot) save(snapshot, snapshotGeneration);
+      }, SAVE_THROTTLE_MS);
+    },
+    restoreClient() {
+      if (!canWriteBootCache(storage, generation)) return undefined;
+      const raw = storage.getItem(key);
+      return raw ? JSON.parse(raw) : undefined;
+    },
+    removeClient() {
+      discardPending();
+      storage.removeItem(key);
+    },
   };
 
   return {
+    connect(queryClient) {
+      const stop = observeBootCacheSession(queryClient, () => {
+        discardPending();
+        generation = bootCacheSession(storage);
+      });
+      const onPageHide = () => {
+        discardPending();
+        this.flush(queryClient);
+      };
+      window.addEventListener('pagehide', onPageHide);
+      return () => {
+        stop();
+        discardPending();
+        window.removeEventListener('pagehide', onPageHide);
+      };
+    },
     flush(queryClient) {
       const clientState = dehydrate(queryClient, { shouldDehydrateQuery: shouldPersist });
-      if (clientState.queries.length === 0) {
-        storage.removeItem(key);
-        return;
-      }
-      try {
-        storage.setItem(key, JSON.stringify({ buster, timestamp: Date.now(), clientState }));
-      } catch {
-        // A full quota on the way out of the page is not worth a thrown error
-        // nobody can see. The next load reads whatever the throttled save left.
-      }
+      save({ buster, timestamp: Date.now(), clientState }, generation);
     },
     persistOptions: {
       maxAge: BOOT_CACHE_MAX_AGE_MS,
       buster,
       dehydrateOptions: { shouldDehydrateQuery: shouldPersist },
       persister: {
-        persistClient: (client) => write(client),
+        persistClient: (client) => persister.persistClient(client),
         removeClient: () => persister.removeClient(),
         /**
          * Read the blob, and refuse anything `hydrate` would choke on.

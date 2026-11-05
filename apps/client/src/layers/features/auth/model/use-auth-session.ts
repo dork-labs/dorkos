@@ -12,9 +12,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {
-  clearBootCache,
+  bootCacheSignInCheck,
+  forgetBootCacheOnSignOut,
+  resumeBootCacheAfterSignIn,
   invalidateCommunityAuthority,
-  isBootQueryKey,
   isStreamOwnedQuery,
   setAuthRequired,
 } from '@/layers/shared/lib';
@@ -44,16 +45,26 @@ function invalidateProtectedCommunityState(queryClient: QueryClient): void {
   queryClient.removeQueries({ queryKey: ['communities'] });
 }
 
+/** Publish a completed sign-out only after forgetting protected browser state. */
+function completeSignOut(queryClient: QueryClient): void {
+  invalidateProtectedCommunityState(queryClient);
+  forgetBootCacheOnSignOut(queryClient);
+  queryClient.setQueryData<AuthSession | null>(authSessionKey, null);
+}
+
 /** TanStack Query key for the current auth session. */
 export const authSessionKey = ['auth', 'session'] as const;
 
 /** Read the current auth session (`null` when signed out). Cached via TanStack Query. */
 export function useAuthSession() {
   const client = useAuthClient();
+  const queryClient = useQueryClient();
   return useQuery<AuthSession | null>({
     queryKey: authSessionKey,
     queryFn: async () => {
+      const confirmSignIn = bootCacheSignInCheck(queryClient);
       const { data } = await client.getSession();
+      if (data) confirmSignIn();
       return data ?? null;
     },
     staleTime: 30_000,
@@ -97,6 +108,7 @@ export function useSignIn(): AuthActionState<[email: string, password: string]> 
       // refused and changes nothing.
       await confirmItsYou(password);
       setIsPending(false);
+      resumeBootCacheAfterSignIn(queryClient);
       setAuthRequired(false);
       await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
       return { ok: true };
@@ -201,6 +213,7 @@ export function useSignUp(): AuthActionState<
       // first chat after setup asks nothing more (DOR-3330).
       await confirmItsYou(password);
       setIsPending(false);
+      resumeBootCacheAfterSignIn(queryClient);
       setAuthRequired(false);
       await queryClient.invalidateQueries({ queryKey: authSessionKey });
       return { ok: true };
@@ -228,18 +241,7 @@ export function useSignOut(): AuthActionState<[]> {
       setError(err);
       return { ok: false, error: err };
     }
-    // Community descriptors and content are owner-private. Remove them before
-    // publishing the signed-out session so the next render cannot reuse the
-    // previous owner's same-browser cache while a refetch is still pending.
-    queryClient.setQueryData<AuthSession | null>(authSessionKey, null);
-    // Forget the sidebar's local memory, in the cache and on disk. It holds this
-    // person's channels, agents and today's conversations, and the whole point
-    // of it is that the NEXT load paints from it before the server has said
-    // anything — so leaving it behind would show the signed-out install's panel
-    // to whoever opens the browser next. Dropped from the cache first so the
-    // persister's next save has nothing left to write.
-    queryClient.removeQueries({ predicate: (query) => isBootQueryKey(query.queryKey) });
-    clearBootCache();
+    completeSignOut(queryClient);
     await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
     return { ok: true };
   }, [client, queryClient]);
@@ -284,6 +286,7 @@ function lastActivity(fallback: number): number {
 export function usePublicComputerIdleSignOut(): void {
   const { data } = useAuthSession();
   const client = useAuthClient();
+  const queryClient = useQueryClient();
   const publicComputer = data?.session.publicComputer === true;
 
   useEffect(() => {
@@ -306,7 +309,10 @@ export function usePublicComputerIdleSignOut(): void {
       void client.signOut().then(
         ({ error }) => {
           if (error) timer = setTimeout(check, SIGN_OUT_RETRY_MS);
-          else window.location.reload();
+          else {
+            completeSignOut(queryClient);
+            window.location.reload();
+          }
         },
         () => (timer = setTimeout(check, SIGN_OUT_RETRY_MS))
       );
@@ -318,5 +324,5 @@ export function usePublicComputerIdleSignOut(): void {
       clearTimeout(timer);
       for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, record);
     };
-  }, [publicComputer, client]);
+  }, [publicComputer, client, queryClient]);
 }
