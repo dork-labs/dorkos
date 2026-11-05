@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'test(server): retain fixture shutdown coverage with reason parameter (DOR-3595)'
   - 'fix(codex): project registry lock inspection environment (DOR-3595)'
   - 'refactor(codex): extract app-server process acquisition (DOR-3595)'
   - 'fix(codex): bind pool identity to credits shutdown authority (DOR-3595)'
