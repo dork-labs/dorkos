@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'test(codex): distinguish incomplete Full refusal from complete-home protection (DOR-3595)'
   - 'fix(codex): refuse Linux Full with missing protected targets (DOR-3595)'
   - 'test(codex): prepare root-owned fixtures outside strace (DOR-3595)'
   - 'test(codex): verify blocked descendants of preserved crash files (DOR-3595)'

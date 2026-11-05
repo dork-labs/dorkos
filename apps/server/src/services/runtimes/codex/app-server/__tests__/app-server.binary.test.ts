@@ -27,6 +27,8 @@
  * Skipped by name where no vendored binary is installed for this platform.
  */
 import http from 'node:http';
+import { createHash } from 'node:crypto';
+import { PROTECTED_PATHS } from '../../../shared/policy/protected-paths.js';
 import { codexProtectedConfig } from '../../policy/protected-profile.js';
 import { killFixtureWithRealLeak } from './fixtures/mount-recovery-probe.js';
 import { reconcileMountTargets } from '../../policy/reconcile-mount-targets.js';
@@ -380,6 +382,70 @@ function request(
   return merged;
 }
 
+/** Snapshot every host entry without following links or retaining large file trees. */
+function hostTreeDigest(dir: string): string {
+  const hash = createHash('sha256');
+  const visit = (file: string): void => {
+    const stat = fs.lstatSync(file);
+    hash.update(
+      JSON.stringify([file, stat.ino, stat.mode, stat.uid, stat.size, stat.mtimeMs, stat.ctimeMs])
+    );
+    if (stat.isDirectory())
+      for (const name of fs.readdirSync(file).sort()) visit(path.join(file, name));
+    else if (stat.isSymbolicLink()) hash.update(fs.readlinkSync(file));
+    else if (stat.isFile()) hash.update(fs.readFileSync(file));
+  };
+  visit(dir);
+  return hash.digest('hex');
+}
+
+/** Only incomplete Linux Full rows change contract; complete homes still execute Full. */
+async function expectFullRefusalIfMissing(
+  turn: CodexTurnRequest,
+  kind: CodexTransportKind = 'app-server'
+): Promise<boolean> {
+  if (process.platform !== 'linux' || turn.settings.permissionMode !== 'bypassPermissions')
+    return false;
+  let missing: string[] = [];
+  try {
+    codexProtectedConfig(turn.cwd, turn.tools.filePolicy, turn.settings, (targets) => {
+      missing = targets;
+    });
+  } catch {
+    return false;
+  } // Preserve the existing specific layout/file-refusal assertions.
+  if (missing.length === 0) return false;
+  const before = hostTreeDigest(root);
+  const parentHomes = [
+    path.join(root, 'home'),
+    path.join(root, 'data'),
+    turn.cwd,
+    ...turn.tools.filePolicy!.roots.agentHomes,
+  ];
+  const parents = probeParentKinds(parentHomes);
+  const count = spawned.length;
+  const bound = vi.fn();
+  const transport = makeTransport(undefined, kind);
+  const events: StreamEvent[] = [];
+  for await (const event of transport.runTurn({ ...turn, onThreadBound: bound }))
+    events.push(event);
+  expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+  expect(events[0]).toMatchObject({ data: { code: 'codex_full_missing_protected_targets' } });
+  expect(bound).not.toHaveBeenCalled();
+  expect(spawned).toHaveLength(count); // No Codex process means no bwrap child for this row.
+  expect(hostTreeDigest(root)).toBe(before);
+  expect(probeParentKinds(parentHomes)).toEqual(parents); // No new host regular files.
+  expect(turn.settings.permissionMode).toBe('bypassPermissions');
+  await transport.shutdown();
+  scripted.length = 0;
+  console.info('Codex incomplete Full row refused without bwrap or host changes', {
+    sessionId: turn.sessionId,
+    newProcesses: spawned.length - count,
+    missing,
+  });
+  return true;
+}
+
 // Apply the intended limit during collection; beforeAll is too late.
 const NATIVE_LIMITS = { timeout: 90_000 };
 const nativeSuite = describe.skipIf(BINARY === null);
@@ -442,6 +508,96 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         newProcesses: spawned.length - spawnCount,
         hostUnchanged: true,
       });
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'starts Full from a complete home and preserves protected host files',
+    async () => {
+      const turn = request('full-complete-home', undefined, {
+        settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
+      });
+      const policy = turn.tools.filePolicy!;
+      policy.roots.agentHomes = [project];
+      const allBases = [policy.roots.home, policy.roots.data, project, codexHome];
+      const protectedFiles = new Set<string>();
+      for (const entry of PROTECTED_PATHS) {
+        if (/[*?[\]{}]/.test(entry.path)) continue;
+        const bases =
+          entry.root === 'data'
+            ? [policy.roots.data]
+            : entry.root === 'home'
+              ? [policy.roots.home]
+              : entry.root === 'account'
+                ? policy.roots.accounts
+                : entry.root === 'agent-home'
+                  ? policy.roots.agentHomes
+                  : allBases;
+        for (const base of bases) {
+          const target = path.join(base, entry.path);
+          if (entry.kind === 'folder') fs.mkdirSync(target, { recursive: true });
+          else {
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+            if (!fs.existsSync(target)) fs.writeFileSync(target, '{}');
+            protectedFiles.add(target);
+          }
+        }
+      }
+      const secret = path.join(policy.roots.home, '.ssh', 'authorized_keys');
+      const grant = path.join(project, '.dork', 'agent.json');
+      fs.writeFileSync(secret, 'CANARY-complete-home-secret');
+      protectedFiles.add(secret);
+      const snapshot = () =>
+        [...protectedFiles].sort().map((file) => {
+          const stat = fs.lstatSync(file);
+          return {
+            file,
+            ino: stat.ino,
+            mode: stat.mode,
+            contents: fs.readFileSync(file, 'base64'),
+          };
+        });
+      const before = snapshot();
+      const homes = [policy.roots.home, policy.roots.data, project];
+      const parents = probeParentKinds(homes);
+      expect(parents.filter(({ kind }) => kind !== 'absent' && kind !== 'directory')).toEqual([]);
+      let missing: string[] = [];
+      codexProtectedConfig(turn.cwd, policy, turn.settings, (targets) => {
+        missing = targets;
+      });
+      expect(missing).toEqual([]);
+      const quote = (value: string) => JSON.stringify(value);
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: `printf PUBLIC-complete-full; cat ${quote(secret)}; printf unsafe >> ${quote(secret)}; printf unsafe > ${quote(grant)}; printf PUBLIC-complete-attempts`,
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('complete Full finished'));
+        }
+      );
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({ ...turn, onThreadBound: bound }))
+        events.push(event);
+      expect(bound).toHaveBeenCalledTimes(1);
+      expect(events.some((event) => event.type === 'error')).toBe(false);
+      expect(shellControlReturned(returned, 'PUBLIC-complete-full')).toBe(true);
+      expect(shellControlReturned(returned, 'PUBLIC-complete-attempts')).toBe(true);
+      expect(returned).not.toContain('CANARY-complete-home-secret');
+      await Promise.all(pools.map((pool) => pool.shutdown()));
+      expect(snapshot()).toEqual(before);
+      expect(probeParentKinds(homes)).toEqual(parents);
+      expect(
+        probeParentKinds(homes).filter(({ kind }) => kind !== 'absent' && kind !== 'directory')
+      ).toEqual([]);
+      expect(turn.settings.permissionMode).toBe('bypassPermissions');
+      console.info('Codex complete-home Full started with masks and no new host regular files');
     }
   );
 
@@ -912,6 +1068,41 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
               : undefined;
           try {
             if (
+              await expectFullRefusalIfMissing(
+                request(`protected-${kind}-${mode}`, undefined, {
+                  cwd: probeCwd,
+                  settings: { permissionMode: mode, model: 'fake-model' },
+                  onThreadBound: () => {
+                    if (defaultRecovery)
+                      for (const file of recoveryTargets)
+                        expect(fs.lstatSync(file).isFile()).toBe(true);
+                    startMs = performance.now() - started;
+                    console.info('Codex protected thread bound', { kind, mode, ...size, startMs });
+                  },
+                  writableDirectories: [probeCwd],
+                  tools: {
+                    agentTokenEnv: {},
+                    managed: { servers: {}, env: {} },
+                    dorkosTools: null,
+                    connectorTools: null,
+                    filePolicy: {
+                      writable: [probeCwd],
+                      roots: {
+                        cwd: probeCwd,
+                        data: path.join(root, 'data'),
+                        home: path.join(root, 'home'),
+                        accounts: [codexHome],
+                        agentFolders: [probeCwd, agentHome],
+                        agentHomes: [...new Set([probeCwd, agentHome])],
+                      },
+                    },
+                  },
+                }),
+                kind
+              )
+            )
+              continue;
+            if (
               scenario === 'reconcile-leak-10k' ||
               defaultRecovery ||
               scenario === 'concurrent-ledger-10k'
@@ -920,6 +1111,16 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
               expect(fs.existsSync(target)).toBe(false);
               if (defaultRecovery)
                 for (const file of recoveryTargets) expect(fs.existsSync(file)).toBe(false);
+              if (
+                defaultRecovery &&
+                (await expectFullRefusalIfMissing(
+                  request('default-recovery-full-producer', undefined, {
+                    settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
+                  }),
+                  kind
+                ))
+              )
+                continue;
               let victimChild: ReturnType<typeof nodeSpawn> | undefined;
               let work: Promise<void> | undefined;
               let ready = false;
@@ -1659,6 +1860,14 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     // still win over the higher one the thread was started at.
     it('asks again after a person lowers Full to Ask and the thread resumes cold', async () => {
       fs.rmSync(made(), { force: true });
+      if (
+        await expectFullRefusalIfMissing(
+          request('lowered-1', undefined, {
+            settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
+          })
+        )
+      )
+        return;
       scripted.push((res) => res.end(sse('started at full')));
       const bound: string[] = [];
       const first = makeTransport();
@@ -1772,6 +1981,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     };
 
     it('wakes the chat exactly once when a command finishes after its turn completed', async () => {
+      if (await expectFullRefusalIfMissing(request('bg-1', undefined, { settings: fullAccess })))
+        return;
       startInBackground('sleep 2; echo done-in-background');
       const transport = makeTransport();
       const wakes = collect(transport);
@@ -1800,6 +2011,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }, 60_000);
 
     it('never wakes for a command that never ends, and Stop terminates it without a model turn', async () => {
+      if (await expectFullRefusalIfMissing(request('bg-2', undefined, { settings: fullAccess })))
+        return;
       startInBackground('sleep 600');
       const transport = makeTransport();
       const wakes = collect(transport);
@@ -1824,6 +2037,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }, 60_000);
 
     it('stops a never-ending command once at the ceiling, and still wakes no model turn', async () => {
+      if (await expectFullRefusalIfMissing(request('bg-3', undefined, { settings: fullAccess })))
+        return;
       startInBackground('sleep 600');
       const transport = makeTransport({ ceilingMs: 2_000 });
       const wakes = collect(transport);
