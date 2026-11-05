@@ -280,3 +280,106 @@ describe('sign-out forgets boot data until the next sign-in', () => {
     expect(localStorage.getItem(key)).toContain('after redirect');
   });
 });
+
+describe('a public computer never saves boot data', () => {
+  it('clears saved data and rejects queued saves and pagehide without losing live data', async () => {
+    vi.useFakeTimers();
+    const current = tab(true);
+    const suspended = tab(false, false);
+    current.cache.flush(current.queryClient);
+    expect(localStorage.getItem(key)).toContain('tern private room');
+    await suspended.cache.persistOptions.persister.persistClient({
+      buster: 'test',
+      timestamp: Date.now(),
+      clientState: dehydrate(suspended.queryClient),
+    });
+    const session = renderHook(() => useAuthSession(), { wrapper: current.wrapper });
+    await act(async () => {
+      await session.result.current.refetch();
+    });
+    const writes = vi.spyOn(Storage.prototype, 'setItem');
+    try {
+      expect(current.queryClient.getQueryData(roomsKey)).toEqual([{ title: 'tern private room' }]);
+      current.cache.flush(current.queryClient);
+      suspended.cache.flush(suspended.queryClient);
+      window.dispatchEvent(new Event('pagehide'));
+      await current.cache.persistOptions.persister.persistClient({
+        buster: 'test',
+        timestamp: Date.now(),
+        clientState: dehydrate(current.queryClient),
+      });
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(localStorage.getItem(key)).toBeNull();
+      expect(writes.mock.calls.filter(([name]) => name.startsWith('dorkos:rq:'))).toEqual([]);
+    } finally {
+      writes.mockRestore();
+    }
+  });
+
+  it('clears storage when an ordinary session turns public in the same tab', async () => {
+    const current = tab();
+    const session = renderHook(() => useAuthSession(), { wrapper: current.wrapper });
+    await act(async () => {
+      await session.result.current.refetch();
+    });
+    current.cache.flush(current.queryClient);
+    expect(localStorage.getItem(key)).not.toBeNull();
+    const { data } = await current.auth.getSession();
+    vi.mocked(current.auth.getSession).mockResolvedValue({
+      data: {
+        ...data!,
+        session: { ...data!.session, publicComputer: true },
+      },
+      error: null,
+    });
+    await act(async () => {
+      await session.result.current.refetch();
+    });
+    current.cache.flush(current.queryClient);
+    expect(localStorage.getItem(key)).toBeNull();
+  });
+
+  it('keeps a reopened browser cold until an ordinary session is verified', async () => {
+    const current = tab(true);
+    const session = renderHook(() => useAuthSession(), { wrapper: current.wrapper });
+    await act(async () => {
+      await session.result.current.refetch();
+    });
+    const reopened = tab();
+    reopened.cache.flush(reopened.queryClient);
+    expect(localStorage.getItem(key)).toBeNull();
+    resumeBootCacheAfterSignIn(reopened.queryClient);
+    reopened.cache.flush(reopened.queryClient);
+    expect(localStorage.getItem(key)).toBeNull();
+    const ordinary = renderHook(() => useAuthSession(), { wrapper: reopened.wrapper });
+    await act(async () => {
+      await ordinary.result.current.refetch();
+    });
+    reopened.queryClient.setQueryData(roomsKey, [{ title: 'fresh ordinary session' }]);
+    reopened.cache.flush(reopened.queryClient);
+    expect(localStorage.getItem(key)).toContain('fresh ordinary session');
+  });
+
+  it('does not let an older ordinary-session response lift a new public barrier', async () => {
+    const current = tab(true);
+    const olderResponse = bootCacheSignInCheck(current.queryClient);
+    const session = renderHook(() => useAuthSession(), { wrapper: current.wrapper });
+    await act(async () => {
+      await session.result.current.refetch();
+    });
+    olderResponse();
+    current.cache.flush(current.queryClient);
+    expect(localStorage.getItem(key)).toBeNull();
+  });
+
+  it('still saves ordinary sessions and login-off installs', async () => {
+    const current = tab();
+    vi.mocked(current.auth.getSession).mockResolvedValue({ data: null, error: null });
+    const session = renderHook(() => useAuthSession(), { wrapper: current.wrapper });
+    await act(async () => {
+      await session.result.current.refetch();
+    });
+    current.cache.flush(current.queryClient);
+    expect(localStorage.getItem(key)).toContain('tern private room');
+  });
+});
