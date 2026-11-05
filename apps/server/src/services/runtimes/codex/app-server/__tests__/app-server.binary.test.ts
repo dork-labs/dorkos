@@ -420,16 +420,60 @@ function expectedNewFolders(turn: CodexTurnRequest): Set<string> {
   );
 }
 
+/** A linked active folder refuses before launch, preserving the link and its empty target. */
+async function expectLinkedFolderRefusal(
+  turn: CodexTurnRequest,
+  kind: CodexTransportKind,
+  link: string
+): Promise<boolean> {
+  const beforeLink = { ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) };
+  expect(fs.readdirSync(beforeLink.target)).toEqual([]);
+  // The earlier project folder may be prepared; nothing under the linked agent folder may change.
+  const newFolders = new Set(
+    [...expectedNewFolders(turn)].filter((folder) => path.dirname(folder) !== path.dirname(link))
+  );
+  const before = hostTreeDigest(root, newFolders);
+  const count = spawned.length;
+  const bound = vi.fn();
+  const chosenMode = turn.settings.permissionMode;
+  const transport = makeTransport(undefined, kind);
+  const events: StreamEvent[] = [];
+  for await (const event of transport.runTurn({ ...turn, onThreadBound: bound }))
+    events.push(event);
+  expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+  expect(events[0]).toMatchObject({
+    data: {
+      code: 'codex_unavailable',
+      details: 'Codex cannot protect a linked folder. Choose another folder, then retry.',
+    },
+  });
+  expect(bound).not.toHaveBeenCalled();
+  expect(spawned).toHaveLength(count);
+  expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+  expect({ ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) }).toEqual(beforeLink);
+  expect(fs.readdirSync(beforeLink.target)).toEqual([]);
+  expect(hostTreeDigest(root, newFolders)).toBe(before);
+  for (const folder of newFolders) expect(fs.lstatSync(folder).isDirectory()).toBe(true);
+  expect(turn.settings.permissionMode).toBe(chosenMode);
+  await transport.shutdown();
+  scripted.length = 0;
+  console.info('Codex linked-folder refusal preserved link and target with no native launch');
+  return true;
+}
+
 /** Incomplete writable rows refuse; complete homes still exercise real native masks. */
 async function expectWritableRefusalIfMissing(
   turn: CodexTurnRequest,
-  kind: CodexTransportKind = 'app-server'
+  kind: CodexTransportKind = 'app-server',
+  linkedFolder?: string
 ): Promise<boolean> {
   if (
     process.platform !== 'linux' ||
     !['bypassPermissions', 'acceptEdits'].includes(turn.settings.permissionMode ?? '')
   )
     return false;
+  if (linkedFolder) return expectLinkedFolderRefusal(turn, kind, linkedFolder);
+  const chosenMode = turn.settings.permissionMode;
   let missing: string[] = [];
   try {
     codexProtectedConfig(turn.cwd, turn.tools.filePolicy, turn.settings, (targets) => {
@@ -475,7 +519,7 @@ async function expectWritableRefusalIfMissing(
   expect(probeParentKinds(parentHomes)).toEqual(
     parents.map((entry) => (newFolders.has(entry.file) ? { ...entry, kind: 'directory' } : entry))
   ); // No new host regular files.
-  expect(turn.settings.permissionMode).toBe('bypassPermissions');
+  expect(turn.settings.permissionMode).toBe(chosenMode);
   await transport.shutdown();
   scripted.length = 0;
   console.info('Codex incomplete writable row refused without bwrap or new host regular files', {
@@ -1121,7 +1165,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                     },
                   },
                 }),
-                kind
+                kind,
+                ownSymlink ? grantLink : undefined
               )
             )
               continue;

@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'test(codex): preserve row levels and prove linked-folder refusal (DOR-3595)'
   - 'fix(codex): prepare project folders and refuse missing writable masks (DOR-3595)'
   - 'test(codex): distinguish incomplete Full refusal from complete-home protection (DOR-3595)'
   - 'fix(codex): refuse Linux Full with missing protected targets (DOR-3595)'
