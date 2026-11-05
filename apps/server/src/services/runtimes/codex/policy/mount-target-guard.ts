@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 
 /** Registry location used by the pinned Linux Codex sandbox helper. */
 export function codexMountRegistry(): string {
@@ -107,7 +108,10 @@ export async function withCodexRegistryLock<T>(action: (registry: string) => T):
         '-e',
         "process.stdout.write('locked\\n'); process.stdin.resume();",
       ],
-      { stdio: ['pipe', 'pipe', 'pipe', fd] }
+      {
+        stdio: ['pipe', 'pipe', 'pipe', fd],
+        env: runtimeEnvironment('codex', 'process-inspection'),
+      }
     );
     return await new Promise<T>((resolve, reject) => {
       let value: T;
