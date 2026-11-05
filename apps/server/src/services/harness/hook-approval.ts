@@ -59,7 +59,6 @@
  *
  * @module services/harness/hook-approval
  */
-import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { ProjectedHook } from '@dorkos/harness';
 import type {
@@ -68,7 +67,6 @@ import type {
   ApprovalRequestInput,
   ApprovalTicket,
 } from '../core/approvals/approval-service.js';
-import { hashApprovalInput } from '../core/approvals/index.js';
 import { PASSIVE_APPROVAL_EXPIRES_AT } from '../core/approvals/passive-approval.js';
 import { familyInputHash } from '../core/approvals/approval-retirement.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
@@ -78,7 +76,13 @@ import {
   recordHookRefusal,
   type HookProjectionRequest,
 } from './hook-consent.js';
-import { summariseHookProjection } from './hook-card.js';
+import {
+  HOOK_CARD_PRESENTATION,
+  describeHookProjection,
+  summariseHookProjection,
+  hookRequestInputHash,
+  hookRequestFamily,
+} from './hook-card.js';
 export { summariseHookProjection, hookCardIsComplete } from './hook-card.js';
 import { logger } from '../../lib/logger.js';
 
@@ -138,6 +142,10 @@ export interface HookApprovalGateway {
    * package edited twice leaves one passive row, not two (DOR-3433).
    */
   retireSuperseded?(binding: ApprovalBinding, family: string): number;
+  /** A person explicitly requested another review of an existing refusal. */
+  isReaskedHook?(binding: ApprovalBinding): boolean;
+  /** Re-asks live in SQLite, so their follower survives a restart without another file. */
+  reaskedHookRequests?(): HookProjectionRequest[];
 }
 
 /**
@@ -146,10 +154,7 @@ export interface HookApprovalGateway {
  * packages apart, and stable, because a row raised before a restart must match.
  */
 function passiveRowFamily(projectPath: string, packageName: string): string {
-  return createHash('sha256')
-    .update(`${projectPath}\0${packageName}`, 'utf8')
-    .digest('hex')
-    .slice(0, 16);
+  return hookRequestFamily({ projectPath, packageName });
 }
 
 /**
@@ -206,7 +211,7 @@ export interface HookCardOptions {
  * so nobody said no, and the person who missed it should be asked again. This
  * set is what keeps that from stacking two open cards for one package meanwhile.
  */
-const askingNow = new Set<string>();
+const askingNow = new Map<string, symbol>();
 
 /**
  * Whether this projection may be put in front of a person, or has already been
@@ -261,34 +266,21 @@ export async function askForHookProjection(
   request: HookProjectionRequest,
   options: HookCardOptions = {}
 ): Promise<boolean> {
-  const { projectPath, packageName, hooks } = canonical(request);
-  // A passive card (DOR-3427) is one ticket per package for good, so its binding
-  // carries the package's family in front of the exact action (DOR-3433).
+  const { projectPath, packageName } = canonical(request);
   const passive = options.notInstalledByDorkos === true;
   const family = passive ? passiveRowFamily(projectPath, packageName) : undefined;
-  // Bound to the same facts the stored entry digests, so a token granted for one
-  // package's hooks can never be spent on another's — or on the same commands
-  // moved to a different event, or running other files.
-  const inputHash = hashApprovalInput({
-    projectPath,
-    packageName,
-    hooks: hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
-    scripts: request.scripts ?? [],
-  });
-  const binding: ApprovalBinding = {
-    capabilityId: HOOK_PROJECTION_CAPABILITY_ID,
-    inputHash: family === undefined ? inputHash : familyInputHash(family, inputHash),
-  };
+  const binding = hookProjectionBinding(request, passive);
 
   const entry = hookApprovalEntry(request);
-  askingNow.add(entry);
+  const lease = Symbol();
+  askingNow.set(entry, lease);
   // The row for files the package has since moved on from is closed, with no
   // refusal recorded; an open one for these very files, even from before a
   // restart, is picked up again rather than raised twice.
-  if (family !== undefined) gateway.retireSuperseded?.(binding, family);
+  const retired = family === undefined ? 0 : (gateway.retireSuperseded?.(binding, family) ?? 0);
   const reused = passive ? gateway.reissue?.(binding) : undefined;
-  if (options.resumeOnly === true && reused === undefined) {
-    askingNow.delete(entry);
+  if (options.resumeOnly === true && reused === undefined && retired === 0) {
+    if (askingNow.get(entry) === lease) askingNow.delete(entry);
     return false;
   }
   const ticket = reused
@@ -296,8 +288,10 @@ export async function askForHookProjection(
     : gateway.request({
         ...binding,
         summary: summariseHookProjection(request, options),
+        detail: describeHookProjection(request),
         packageRequest: {
           kind: 'hooks',
+          presentation: HOOK_CARD_PRESENTATION,
           request,
           options: { notInstalledByDorkos: options.notInstalledByDorkos },
         },
@@ -336,6 +330,21 @@ export async function askForHookProjection(
   } finally {
     // Whatever happened, including a throw out of the store, this card is no
     // longer on screen.
-    askingNow.delete(entry);
+    if (askingNow.get(entry) === lease) askingNow.delete(entry);
   }
+}
+
+/** Bind a review to its presentation and all exact execution/consent values. */
+export function hookProjectionBinding(
+  request: HookProjectionRequest,
+  passive = false
+): ApprovalBinding {
+  const { projectPath, packageName } = canonical(request);
+  const inputHash = hookRequestInputHash(request);
+  return {
+    capabilityId: HOOK_PROJECTION_CAPABILITY_ID,
+    inputHash: passive
+      ? familyInputHash(passiveRowFamily(projectPath, packageName), inputHash)
+      : inputHash,
+  };
 }

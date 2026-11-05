@@ -1,13 +1,20 @@
 /** Rebuild package cards from their full request before accepting a yes. */
 import { z } from 'zod';
-import { APPROVAL_FULL_DETAIL_MAX_LENGTH } from '@dorkos/shared/approval-schemas';
+import {
+  APPROVAL_DETAIL_MAX_LENGTH,
+  APPROVAL_FULL_DETAIL_MAX_LENGTH,
+} from '@dorkos/shared/approval-schemas';
 import type { ApprovalRow } from './approval-card.js';
 import type { ApprovalRequestInput } from './approval-request-input.js';
-import { storableSummary, storableDetail } from './approval-storable.js';
+import { clampForStorage, storableSummary, storableDetail } from './approval-storable.js';
 import { redactSecretsInText, quoteSummaryValue } from './approval-summary.js';
 import {
+  HOOK_CARD_PRESENTATION,
+  describeHookProjection,
   hasHiddenCardCharacters,
   hookCardIsComplete,
+  hookRequestInputHash,
+  hookRequestFamily,
   summariseHookProjection,
 } from '../../harness/hook-card.js';
 
@@ -17,6 +24,7 @@ export const INCOMPLETE_APPROVAL_MESSAGE =
 
 const hookRequest = z.object({
   kind: z.literal('hooks'),
+  presentation: z.literal(HOOK_CARD_PRESENTATION).optional(),
   request: z.object({
     projectPath: z.string(),
     packageName: z.string(),
@@ -76,7 +84,7 @@ export function storablePackageRequest(input: ApprovalRequestInput): string | nu
 
 /** Rebuild from full input at every read, grant and token retry; never infer from ellipses. */
 export function cannotAllowCard(
-  row: Pick<ApprovalRow, 'capabilityId' | 'packageRequest' | 'summary' | 'detail'>
+  row: Pick<ApprovalRow, 'capabilityId' | 'inputHash' | 'packageRequest' | 'summary' | 'detail'>
 ): boolean {
   if (!requiresCompleteCard(row.capabilityId)) return false;
   try {
@@ -85,9 +93,22 @@ export function cannotAllowCard(
       const summary = summariseHookProjection(full.request, full.options);
       return (
         row.capabilityId !== 'harness.project_hooks' ||
+        full.presentation !== HOOK_CARD_PRESENTATION ||
+        row.inputHash !==
+          (full.options?.notInstalledByDorkos
+            ? `${hookRequestFamily(full.request)}.${hookRequestInputHash(full.request)}`
+            : hookRequestInputHash(full.request)) ||
         !hookCardIsComplete(full.request) ||
         summary !== row.summary ||
-        storableSummary(summary) !== summary
+        storableSummary(summary) !== summary ||
+        row.detail !== describeHookProjection(full.request) ||
+        storablePackageDetail({
+          capabilityId: row.capabilityId,
+          inputHash: row.inputHash,
+          summary,
+          detail: row.detail ?? undefined,
+          packageRequest: full,
+        }) !== row.detail
       );
     }
     return (
@@ -117,5 +138,31 @@ export function incompletePackageLabel(stored: string | null): string {
       : 'This package';
   } catch {
     return 'This package';
+  }
+}
+
+/** Preserve server file fingerprints only in an exact, safely rebuilt hook disclosure. */
+export function storablePackageDetail(input: ApprovalRequestInput): string | null {
+  if (input.detail === undefined) return null;
+  const full = input.packageRequest;
+  if (
+    input.capabilityId === 'harness.project_hooks' &&
+    full?.kind === 'hooks' &&
+    full.presentation === HOOK_CARD_PRESENTATION &&
+    storablePackageRequest(input) !== null &&
+    input.detail === describeHookProjection(full.request)
+  ) {
+    return clampForStorage(input.detail, APPROVAL_DETAIL_MAX_LENGTH);
+  }
+  return storableDetail(input.detail);
+}
+
+/** Read a saved hook request for a person-only re-ask; never scrape a summary. */
+export function storedHookRequest(stored: string | null) {
+  try {
+    const full = packageRequest.parse(JSON.parse(stored ?? 'null'));
+    return full.kind === 'hooks' ? full.request : undefined;
+  } catch {
+    return undefined;
   }
 }

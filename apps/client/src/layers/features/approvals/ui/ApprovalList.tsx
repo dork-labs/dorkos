@@ -99,8 +99,13 @@ export function ApprovalList({ approvals }: ApprovalListProps) {
       className="flex flex-col gap-2 outline-none"
     >
       <AnimatePresence initial={false}>
-        {shown.map((approval) => (
-          <ApprovalCard key={approval.approvalId} approval={approval} onDecided={handleDecided} />
+        {shown.map((approval, index) => (
+          <ApprovalCard
+            key={approval.approvalId}
+            approval={approval}
+            onDecided={handleDecided}
+            focusOnOpen={index === 0}
+          />
         ))}
       </AnimatePresence>
       {hidden > 0 && (

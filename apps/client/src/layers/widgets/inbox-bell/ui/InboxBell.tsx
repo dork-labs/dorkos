@@ -32,7 +32,11 @@ import { useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
 import { useScheduleApprovalCards } from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
 import { BrowserHandoffInboxItem } from '@/layers/features/browser-handoff';
-import { ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
+import {
+  ApprovalsUnavailable,
+  useApprovalCards,
+  DeclinedHookReviews,
+} from '@/layers/features/approvals';
 import { takeOffersShownInBell, useExtensionDecisionActions } from '@/layers/entities/extension';
 import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
 import { InboxBellPill, type InboxBellGlyph } from './InboxBellPill';
@@ -314,7 +318,7 @@ export function InboxBell() {
     settling.length === 0 &&
     unreadCount === 0 &&
     !unreadable &&
-    // …unless somebody asked for the Inbox. `⌘⇧Y` on a quiet cockpit and "View
+    // …unless somebody asked for the Inbox. `⌘⇧Y` in a quiet app and "View
     // notifications" in a session's menu both set `open`, and a panel that
     // stayed unmounted because there was no news would make both of them do
     // nothing at all. It goes back to drawing nothing the moment it is closed.
@@ -360,6 +364,7 @@ export function InboxBell() {
 
       {!quiet && (
         <ResponsivePopover
+          autoFocus
           open={open}
           onOpenChange={(next) => {
             setOpen(next);
@@ -393,7 +398,7 @@ export function InboxBell() {
                 below take over — the two are exact complements at the same
                 breakpoint (768px) that decides sheet versus popover. */}
             <ResponsivePopoverTitle>Inbox</ResponsivePopoverTitle>
-            <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-w-0 flex-col gap-3 [--hook-card-max-height:calc(90dvh-10rem)] md:[--hook-card-max-height:calc(70dvh-8rem)]">
               {showsPinned && (
                 <div>
                   <h2
@@ -490,6 +495,8 @@ export function InboxBell() {
                   All clear
                 </motion.p>
               )}
+
+              <DeclinedHookReviews enabled={open} />
 
               {/* History, always drawn: the Inbox is the one place a person can
                   go to find out what happened while they were away, and a

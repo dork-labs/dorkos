@@ -653,7 +653,7 @@ export const ApprovalDecisionResponseSchema = z
     /** ULID of the approval that was decided. */
     approvalId: z.string(),
     /** The decision that was recorded. */
-    outcome: z.enum(['granted', 'denied']),
+    outcome: z.enum(['granted', 'denied', 'incomplete']),
     /** On a yes: whether it was for this one call or from now on. */
     answer: z.enum(APPROVAL_ANSWERS).optional(),
   })
@@ -661,3 +661,17 @@ export const ApprovalDecisionResponseSchema = z
 
 /** Response body of the grant and deny endpoints. */
 export type ApprovalDecisionResponse = z.infer<typeof ApprovalDecisionResponseSchema>;
+
+/** One declined hook row, retained for individual person-requested reviews. */
+export const DeclinedHookApprovalSchema = z.object({
+  approval: PendingApprovalSchema,
+  declineKind: z.enum(['incomplete', 'refused']),
+  canAskAgain: z.boolean(),
+  reviewPending: z.boolean(),
+  askedAgain: z.boolean(),
+});
+export type DeclinedHookApproval = z.infer<typeof DeclinedHookApprovalSchema>;
+export const DeclinedHookApprovalsResponseSchema = z.object({
+  approvals: z.array(DeclinedHookApprovalSchema),
+});
+export type DeclinedHookApprovalsResponse = z.infer<typeof DeclinedHookApprovalsResponseSchema>;

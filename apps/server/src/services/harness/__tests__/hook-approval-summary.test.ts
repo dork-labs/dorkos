@@ -5,7 +5,7 @@
  * deciding on, and hiding it would make the card unanswerable.
  */
 import { describe, expect, it } from 'vitest';
-import { summariseHookProjection } from '../hook-approval.js';
+import { describeHookProjection, visibleHookValue } from '../hook-card.js';
 
 describe('the hook approval card keeps ordinary commands readable', () => {
   it.each([
@@ -16,11 +16,11 @@ describe('the hook approval card keeps ordinary commands readable', () => {
     ['echo Zk9Lm2Qx7Rt5Vw8Yz1Ab3Cd4Ef6Gh8Ij0Kl2Mn4Op6'],
     ['git log --oneline -20 && pnpm vitest run apps/server'],
   ])('shows %s as written', (command) => {
-    const summary = summariseHookProjection({
+    const detail = describeHookProjection({
       projectPath: '/projects/acme',
       packageName: 'acme-hooks',
       hooks: [{ event: 'Stop', command }],
     });
-    expect(summary).toContain(JSON.stringify(command));
+    expect(detail).toContain(visibleHookValue(command));
   });
 });

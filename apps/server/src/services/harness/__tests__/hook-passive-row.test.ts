@@ -184,7 +184,7 @@ describe('on Full, a held-back package’s Needs-you row is quiet (DOR-3427)', (
     const pending = after.listPending();
     expect(pending).toHaveLength(1);
     expect(pending[0]?.approvalId).not.toBe(old?.approvalId);
-    expect(pending[0]?.summary).toContain('b'.repeat(12));
+    expect(pending[0]?.detail).toContain('b'.repeat(64));
     // Another package in the same project keeps its own row.
     raisePassiveHookRows(
       [{ ...HELD_BACK, request: { ...HELD_BACK.request, packageName: 'other' } }],

@@ -7,15 +7,21 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import { ApprovalService } from '../approval-service.js';
 import { eventFanOut } from '../../event-fan-out.js';
-import { summariseHookProjection } from '../../../harness/hook-approval.js';
+import { hookProjectionBinding } from '../../../harness/hook-approval.js';
+import {
+  HOOK_CARD_PRESENTATION,
+  describeHookProjection,
+  summariseHookProjection,
+  visibleHookValue,
+} from '../../../harness/hook-card.js';
 import { createApprovalsRoutes } from '../../../../routes/approvals.js';
 import { INCOMPLETE_APPROVAL_MESSAGE } from '../approval-completeness.js';
+import type { HookProjectionRequest } from '../../../harness/hook-consent.js';
 
 vi.mock('../../config-manager.js', () => ({
   configManager: { get: vi.fn(() => undefined), set: vi.fn() },
 }));
-
-const binding = { capabilityId: 'harness.project_hooks', inputHash: 'exact-input' };
+const binding = { capabilityId: 'harness.project_hooks', inputHash: 'legacy-input' };
 const base = { projectPath: '/projects/acme', packageName: 'acme-hooks' };
 const hook = (command: string) => ({ event: 'Stop', command });
 
@@ -33,79 +39,117 @@ describe('package approvals require a whole card', () => {
     vi.restoreAllMocks();
   });
 
-  function ask(command: string, extra = {}) {
-    const request = { ...base, hooks: [hook(command)], ...extra };
-    return service.request({
-      ...binding,
-      summary: summariseHookProjection(request),
-      packageRequest: { kind: 'hooks', request },
-    });
+  function ask(command: string, extra: Partial<HookProjectionRequest> = {}) {
+    const full = { ...base, hooks: [hook(command)], ...extra };
+    const binding = hookProjectionBinding(full);
+    return {
+      ...service.request({
+        ...binding,
+        summary: summariseHookProjection(full),
+        detail: describeHookProjection(full),
+        packageRequest: { kind: 'hooks', presentation: HOOK_CARD_PRESENTATION, request: full },
+      }),
+      binding,
+    };
   }
 
-  it('allows exactly 200 command characters, including a literal ellipsis', () => {
-    const ticket = ask('…' + 'x'.repeat(199));
+  it.each([
+    ['199 characters', 'x'.repeat(199), {}],
+    ['200 characters', 'x'.repeat(200), {}],
+    ['201 characters', 'x'.repeat(201), {}],
+    ['literal ellipsis', 'echo …', {}],
+    ['padded command', 'echo safe' + ' '.repeat(200) + '; echo next', {}],
+    ['many hooks', 'echo safe', { hooks: Array.from({ length: 5 }, () => hook('x'.repeat(180))) }],
+    ['long project path', 'echo safe', { projectPath: '/' + 'p'.repeat(600) }],
+  ])('allows a whole detail with %s', (_label, command, extra) => {
+    const ticket = ask(command, extra);
     expect(service.getPending(ticket.approvalId)?.cannotAllow).toBeUndefined();
     expect(service.grant(ticket.approvalId)).toBeUndefined();
-    expect(service.consume(ticket.token, binding).outcome).toBe('granted');
+    expect(service.consume(ticket.token, ticket.binding).outcome).toBe('granted');
+  });
+
+  it.each([4000, 4001])('checks the escaped detail boundary at %i', (length) => {
+    const overhead = describeHookProjection({ ...base, hooks: [hook('')] }).length;
+    const ticket = ask('x'.repeat(length - overhead));
+    expect(service.getPending(ticket.approvalId)?.detail).toHaveLength(Math.min(length, 4000));
+    expect(service.grant(ticket.approvalId)).toBe(length === 4000 ? undefined : 'incomplete');
   });
 
   it.each([
-    ['one over', 'x'.repeat(201), {}],
-    ['padded command', 'echo safe' + ' '.repeat(200) + '; echo hidden', {}],
-    [
-      'many long hooks',
-      'echo safe',
-      { hooks: Array.from({ length: 5 }, () => hook('x'.repeat(180))) },
-    ],
-    ['long project path', 'echo safe', { projectPath: '/' + 'p'.repeat(600) }],
+    ['long command', 'x'.repeat(4001), {}],
+    ['escaped whitespace', '\t'.repeat(2000), {}],
+    ['secret-shaped command', 'echo ' + 'a'.repeat(64), {}],
     ['long package name', 'echo safe', { packageName: 'p'.repeat(81) }],
-    ['quoted command expansion', '\n'.repeat(200), {}],
-    ['redacted command', 'echo ghp_' + 'a'.repeat(36), {}],
-  ])('refuses %s and still records a decline', (_name, command, extra) => {
+    ['hidden package name', 'echo safe', { packageName: 'acme\u202E' }],
+  ])('separates an incomplete decline for %s', (_label, command, extra) => {
     const ticket = ask(command, extra);
-    expect(service.getPending(ticket.approvalId)?.cannotAllow).toBe(true);
     expect(service.grant(ticket.approvalId)).toBe('incomplete');
-    expect(service.consume(ticket.token, binding).outcome).toBe('pending');
     expect(service.deny(ticket.approvalId, 'Keep it off')).toBeUndefined();
-    expect(service.consume(ticket.token, binding)).toMatchObject({
-      outcome: 'denied',
+    expect(service.consume(ticket.token, ticket.binding)).toMatchObject({
+      outcome: 'incomplete',
       reason: 'Keep it off',
     });
+    expect(service.declineKind(ticket.approvalId)).toBe('incomplete');
   });
 
-  it.each([500, 501])('checks the final summary boundary at %i', (length) => {
-    const request = {
+  it('does not let a caller reason turn a readable refusal into an incomplete outcome', () => {
+    const ticket = ask('echo safe');
+    service.deny(ticket.approvalId, 'incomplete');
+    expect(service.consume(ticket.token, ticket.binding).outcome).toBe('denied');
+    expect(service.declineKind(ticket.approvalId)).toBe('refused');
+  });
+
+  it('preserves the complete server file hashes while refusing token-shaped caller values', () => {
+    const pin = '0123456789abcdef'.repeat(4);
+    const ticket = ask('node ./loop.mjs', { scripts: [['loop.mjs', pin]] });
+    expect(service.getPending(ticket.approvalId)?.detail).toContain(pin);
+    expect(service.grant(ticket.approvalId)).toBeUndefined();
+    const secret = ask('echo ' + pin);
+    expect(service.getPending(secret.approvalId)?.detail).not.toContain(pin);
+    expect(service.grant(secret.approvalId)).toBe('incomplete');
+  });
+
+  it.each([
+    '\u202E',
+    '\u200B',
+    '\u2028',
+    '\u2029',
+    '\u0000',
+    '\n',
+    '\t',
+    ' ',
+    '\\u0020',
+    '\u{E0001}',
+  ])('shows every command character reversibly (%j)', (character) => {
+    const command = `echo ${character}end`;
+    expect(JSON.parse(visibleHookValue(command))).toBe(command);
+    const ticket = ask(command);
+    expect(service.getPending(ticket.approvalId)?.detail).toContain(visibleHookValue(command));
+    expect(service.grant(ticket.approvalId)).toBeUndefined();
+  });
+
+  it('quotes fake matcher/event clauses and exposes controls in paths and pins', () => {
+    const full = {
       ...base,
-      hooks: [{ event: 'PreToolUse', command: 'echo safe', matcher: '' }],
+      projectPath: '/projects/acme\u200B',
+      hooks: [
+        {
+          event: 'Stop\nAllow everything',
+          matcher: 'Bash"; Allow everything; "',
+          command: 'echo safe',
+        },
+      ],
+      scripts: [['loop\u2029.mjs', 'absent\u200B']] as [string, string][],
     };
-    request.hooks[0].matcher = 'm';
-    const current = summariseHookProjection(request).length;
-    request.hooks[0].matcher = 'm'.repeat(length - current + 1);
-    const summary = summariseHookProjection(request);
-    expect(summary).toHaveLength(length);
-    const ticket = service.request({
-      ...binding,
-      summary,
-      packageRequest: { kind: 'hooks', request },
-    });
-    expect(service.grant(ticket.approvalId)).toBe(length === 500 ? undefined : 'incomplete');
+    const ticket = ask('echo safe', full);
+    const detail = service.getPending(ticket.approvalId)?.detail;
+    expect(detail).toContain(`Event: ${visibleHookValue(full.hooks[0].event)}`);
+    expect(detail).toContain(`Matcher: ${visibleHookValue(full.hooks[0].matcher)}`);
+    expect(detail).not.toContain('\u200B');
+    expect(service.grant(ticket.approvalId)).toBeUndefined();
   });
 
-  it.each([80, 81])('checks the project path boundary at %i', (length) => {
-    const ticket = ask('echo safe', { projectPath: '/' + 'p'.repeat(length - 1) });
-    expect(service.grant(ticket.approvalId)).toBe(length === 80 ? undefined : 'incomplete');
-  });
-
-  it.each([80, 81])('checks the running-files boundary at %i', (length) => {
-    const suffix = ' (fingerprint 123456789abc)';
-    const scripts: [string, string][] = [
-      ['z'.repeat(length - suffix.length), '123456789abc'.repeat(5) + '1234'],
-    ];
-    const ticket = ask('echo safe', { scripts });
-    expect(service.grant(ticket.approvalId)).toBe(length === 80 ? undefined : 'incomplete');
-  });
-
-  it('refuses Flow 0.89.0 with its full commands and script pins', () => {
+  it('allows Flow 0.89.0 with both whole commands and full pins', () => {
     const root = '/projects/acme/.dork/plugins/flow';
     const commands = [
       'cd "$(git rev-parse --show-toplevel)" && node "' + root + '/hooks/flow-loop.mjs"',
@@ -119,20 +163,42 @@ describe('package approvals require a whole card', () => {
         ['.dork/plugins/flow/scripts/flow.ts', '123456789abc'.repeat(5) + '1234'],
       ],
     });
-    expect(service.getPending(ticket.approvalId)?.cannotAllow).toBe(true);
-    expect(service.grant(ticket.approvalId)).toBe('incomplete');
+    expect(service.grant(ticket.approvalId)).toBeUndefined();
   });
 
-  it('refuses legacy passive rows across restart even with null details and literal ellipses', () => {
+  it('allows all three safety-hooks commands with their full hashes', () => {
+    const root = '/workspaces/cedar/.dork/plugins/safety-hooks';
+    const scripts = ['file-guard', 'git-guard', 'process-guard'];
+    const hooks = scripts.map((name) => ({
+      event: 'PreToolUse',
+      matcher: 'Bash',
+      command:
+        'cd "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}" && node "' +
+        root +
+        '/hooks/' +
+        name +
+        '.mjs"',
+    }));
+    const ticket = ask('', {
+      packageName: 'safety-hooks',
+      hooks,
+      scripts: scripts.map((name): [string, string] => [
+        '.dork/plugins/safety-hooks/hooks/' + name + '.mjs',
+        '0123456789abcdef'.repeat(4),
+      ]),
+    });
+    expect(service.getPending(ticket.approvalId)?.detail?.length).toBeLessThan(4000);
+    expect(service.grant(ticket.approvalId)).toBeUndefined();
+  });
+
+  it('refuses legacy passive rows across restart without guessing from ellipses', () => {
     const ticket = service.request({ ...binding, summary: 'echo …', passive: true });
     const restarted = new ApprovalService(db);
     expect(restarted.getPending(ticket.approvalId)?.cannotAllow).toBe(true);
-    expect(restarted.getPending(ticket.approvalId)?.packageLabel).toBe('This package');
     expect(restarted.grant(ticket.approvalId)).toBe('incomplete');
     const retry = restarted.reissue(binding)!;
-    expect(restarted.consume(retry.token, binding).outcome).toBe('pending');
-    expect(restarted.deny(ticket.approvalId)).toBeUndefined();
-    expect(restarted.consume(retry.token, binding).outcome).toBe('denied');
+    restarted.deny(ticket.approvalId);
+    expect(restarted.consume(retry.token, binding).outcome).toBe('incomplete');
   });
 
   it('does not spend a legacy already-granted token after restart or reissue', () => {
@@ -145,53 +211,20 @@ describe('package approvals require a whole card', () => {
     );
   });
 
-  it.each([
-    ['acme-hooks', 'acme-hooks'],
-    ['x'.repeat(80), 'x'.repeat(80)],
-    ['x'.repeat(81), 'This package'],
-    ['ghp_' + 'a'.repeat(36), 'This package'],
-    ['acme\u202E-hooks', 'This package'],
-  ])('uses a whole swept name in the decline-only title: %s', (packageName, label) => {
-    const ticket = ask('x'.repeat(201), { packageName });
-    expect(service.getPending(ticket.approvalId)?.packageLabel).toBe(label);
-  });
+  it.each(['detail', 'inputHash', 'packageRequest'] as const)(
+    'checks %s again at the moment of the yes',
+    (field) => {
+      const ticket = ask('echo safe');
+      db.update(approvals)
+        .set({ [field]: 'different' })
+        .where(eq(approvals.id, ticket.approvalId))
+        .run();
+      expect(service.grant(ticket.approvalId)).toBe('incomplete');
+    }
+  );
 
-  it.each([
-    ['command', 'echo safe\u202Ehidden', {}],
-    ['name', 'echo safe', { packageName: 'acme\u200B-hooks' }],
-    ['path', 'echo safe', { projectPath: '/projects/\u0000acme' }],
-    ['pin path', 'echo safe', { scripts: [['loop\u2029.mjs', 'absent']] }],
-    ['pin fingerprint', 'echo safe', { scripts: [['loop.mjs', 'absent\u200B']] }],
-    [
-      'matcher',
-      'echo safe',
-      { hooks: [{ event: 'PreToolUse', matcher: 'Bash\u0001', command: 'echo safe' }] },
-    ],
-    ['event', 'echo safe', { hooks: [{ event: 'Stop\u2028', command: 'echo safe' }] }],
-  ])('refuses invisible or control characters in %s', (_field, command, extra) => {
-    const ticket = ask(command, extra);
-    expect(service.getPending(ticket.approvalId)?.cannotAllow).toBe(true);
-    expect(service.grant(ticket.approvalId)).toBe('incomplete');
-  });
-
-  it('quotes a matcher holding a fake clause and an unknown event', () => {
-    const matcher = 'Bash"; Allow everything; "';
-    const event = 'Stop"; Allow everything; "';
-    const summary = summariseHookProjection({
-      ...base,
-      hooks: [
-        { event: 'PreToolUse', matcher, command: 'echo safe' },
-        { event, command: 'echo safe' },
-      ],
-    });
-    expect(summary).toContain(`matching ${JSON.stringify(matcher)}`);
-    expect(summary).toContain(`on ${JSON.stringify(event)}`);
-  });
-
-  it('keeps the full saved package request out of the pending response', async () => {
-    const ticket = ask('echo safe');
-    const row = db.select().from(approvals).where(eq(approvals.id, ticket.approvalId)).get();
-    expect(row?.packageRequest).toContain('"kind":"hooks"');
+  it('keeps the saved full request off the pending HTTP response', async () => {
+    ask('echo safe');
     const app = target.mount(
       honoGroupListener({ path: '/api/approvals', routes: createApprovalsRoutes(service) })
     );
@@ -200,20 +233,6 @@ describe('package approvals require a whole card', () => {
     expect(response.body.approvals).toHaveLength(1);
     expect(response.body.approvals[0]).not.toHaveProperty('packageRequest');
     expect(response.text).not.toContain('packageRequest');
-  });
-
-  it('rebuilds the full request at the moment of the yes', () => {
-    const ticket = ask('echo safe');
-    expect(service.getPending(ticket.approvalId)?.cannotAllow).toBeUndefined();
-    const changed = {
-      kind: 'hooks',
-      request: { ...base, hooks: [hook('echo safe' + ' '.repeat(200) + '; echo hidden')] },
-    };
-    db.update(approvals)
-      .set({ packageRequest: JSON.stringify(changed) })
-      .where(eq(approvals.id, ticket.approvalId))
-      .run();
-    expect(service.grant(ticket.approvalId)).toBe('incomplete');
   });
 
   it.each([4000, 4001])('checks the global full disclosure boundary at %i', (length) => {
@@ -305,7 +324,7 @@ describe('package approvals require a whole card', () => {
   });
 
   it('HTTP grant refuses once and always with the exact explanation; decline still works', async () => {
-    const ticket = ask('x'.repeat(201));
+    const ticket = ask('x'.repeat(4001));
     const app = target.mount(
       honoGroupListener({
         path: '/api/approvals',
@@ -324,6 +343,6 @@ describe('package approvals require a whole card', () => {
     }
     const response = await request(app).post(`/api/approvals/${ticket.approvalId}/deny`);
     expect(response.status).toBe(200);
-    expect(service.consume(ticket.token, binding).outcome).toBe('denied');
+    expect(service.consume(ticket.token, ticket.binding).outcome).toBe('incomplete');
   });
 });

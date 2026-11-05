@@ -108,6 +108,8 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     [
       'POST /api/approvals/:id/grant',
       'POST /api/approvals/:id/deny',
+      // Starts one person-only review; grants nothing and keeps the prior refusal.
+      'POST /api/approvals/:id/ask-again',
       'POST /api/approvals/:id/dismiss-suggestion',
       'POST /api/sessions/:id/approve',
       'POST /api/sessions/:id/deny',

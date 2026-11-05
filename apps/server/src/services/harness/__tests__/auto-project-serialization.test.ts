@@ -181,7 +181,10 @@ function grantingGateway(timeline: string[]): HookApprovalGateway {
   const presented = new Map<string, number>();
   return {
     request: (input) => {
-      const name = PACKAGES.find((p) => input.summary.includes(p)) ?? 'unknown';
+      const name =
+        input.packageRequest?.kind === 'hooks'
+          ? input.packageRequest.request.packageName
+          : 'unknown';
       timeline.push(`ask:${name}`);
       const token = `token-${++issued}`;
       return {
