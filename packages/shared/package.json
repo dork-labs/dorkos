@@ -652,6 +652,10 @@
     "./space-page": {
       "types": "./src/space-page/index.ts",
       "default": "./dist/space-page/index.js"
+    },
+    "./schedule-file-problems": {
+      "types": "./src/schedule-file-problems.ts",
+      "default": "./dist/schedule-file-problems.js"
     }
   },
   "scripts": {

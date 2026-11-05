@@ -752,6 +752,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/tasks/task-file-watcher.ts':
         'syncs a file a person (or anything that can write a project file) edited on disk; the frontmatter path is deliberately NOT covered by the DOR-504 policy (see task-write-policy.ts)',
       'services/tasks/task-reconciler.ts': 'the periodic resync of the same files',
+      'services/tasks/execution/misplaced-mode.ts':
+        'the pre-dispatch misplaced-file guard (DOR-3840), only with source: discovery and problem: MISPLACED_SCHEDULE_PERMISSIONS; FileSyncGates parks the row instead of approving it. Timer runs are refused, and the person-only manual path returns Accept edits for that one run, never the misplaced value or a new approval',
       'services/shapes/shape-schedule-service.ts':
         'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy',
       'services/tasks/legacy-migration.ts':

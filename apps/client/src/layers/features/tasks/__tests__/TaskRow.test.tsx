@@ -9,6 +9,10 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import {
+  MISPLACED_SCHEDULE_PERMISSIONS,
+  MISPLACED_PERMISSIONS_RUN_ONCE,
+} from '@dorkos/shared/schedule-file-problems';
 import type { Task } from '@dorkos/shared/types';
 
 vi.mock('cronstrue', () => ({
@@ -163,6 +167,26 @@ function renderScheduleRow(
 // ---------------------------------------------------------------------------
 
 describe('ScheduleRow', () => {
+  it.each([false, true])(
+    'reviews misplaced-mode instructions before any trial (file capped: %s)',
+    (fileCapNext) => {
+      renderScheduleRow({
+        ...pendingSchedule,
+        origin: 'file',
+        reasonSource: 'dorkos',
+        reason: MISPLACED_SCHEDULE_PERMISSIONS,
+        fileCapNext,
+        enabled: false,
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent('permissions is in the wrong place');
+      expect(screen.getByRole('alert')).toHaveClass('text-status-warning-fg');
+      expect(screen.getByRole('button', { name: /^Review / })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: 'Run once' })).not.toBeInTheDocument();
+      expect(screen.queryByText(MISPLACED_PERMISSIONS_RUN_ONCE)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Approve/ })).not.toBeInTheDocument();
+    }
+  );
+
   beforeEach(() => {
     vi.clearAllMocks();
   });

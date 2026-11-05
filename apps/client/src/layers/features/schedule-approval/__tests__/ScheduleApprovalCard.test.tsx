@@ -35,6 +35,10 @@ import {
   discardSettlingSchedules,
   useScheduleApprovalCards,
 } from '../index';
+import {
+  MISPLACED_SCHEDULE_PERMISSIONS,
+  MISPLACED_PERMISSIONS_RUN_ONCE,
+} from '@dorkos/shared/schedule-file-problems';
 import { promptHash } from '../lib/prompt-hash';
 import { ScheduleApprovalCard } from '../ui/ScheduleApprovalCard';
 
@@ -1510,3 +1514,38 @@ describe('stale schedule approval', () => {
     );
   });
 });
+it.each([
+  [false, false],
+  [false, true],
+  [true, false],
+  [true, true],
+])(
+  'blocks misplaced-mode approval and labels its trial (file capped: %s, pinned: %s)',
+  (fileCapNext, pinActions) => {
+    renderCard(
+      proposal({
+        origin: 'file',
+        reasonSource: 'dorkos',
+        reason: MISPLACED_SCHEDULE_PERMISSIONS,
+        fileCapNext,
+        enabled: false,
+      }),
+      {},
+      { pinActions, turnOnApproval: true }
+    );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('alert')).toHaveTextContent('permissions is in the wrong place');
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Approve Nightly sweep and turn it on' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeEnabled();
+    expect(
+      screen.getByText(
+        fileCapNext
+          ? 'The next run is capped until you approve the file.'
+          : MISPLACED_PERMISSIONS_RUN_ONCE
+      )
+    ).toBeInTheDocument();
+  }
+);

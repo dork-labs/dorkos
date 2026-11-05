@@ -1,3 +1,4 @@
+import { hasMisplacedSchedulePermissions } from '@dorkos/shared/schedule-file-problems';
 /**
  * Whether a scheduled task is genuinely waiting on a person, as opposed to
  * merely carrying `pending_approval` on its row.
@@ -45,10 +46,11 @@ export function isScheduleAwaitingApproval(task: {
   enabled: boolean;
   origin: string | null;
   declined?: boolean;
+  reason?: string | null;
 }): boolean {
   return (
     task.status === 'pending_approval' &&
     task.declined !== true &&
-    (task.origin !== 'file' || task.enabled)
+    (task.origin !== 'file' || task.enabled || hasMisplacedSchedulePermissions(task))
   );
 }

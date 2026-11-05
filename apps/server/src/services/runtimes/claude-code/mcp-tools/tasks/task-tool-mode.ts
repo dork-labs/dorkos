@@ -425,6 +425,11 @@ export async function armToolApproval(
 ): Promise<Task | null | undefined> {
   const grant = mode.grant;
   if (!grant?.decision.approves) return undefined;
+  const fileCheck = await applyTaskFileUpdate(
+    { dorkHome: deps.dorkHome, ...(deps.meshCore && { meshCore: deps.meshCore }) },
+    { existing: { ...before, status: 'pending_approval' }, data: { status: 'active' } }
+  );
+  if (!fileCheck.ok) return null;
   const armed = armAgentApproval({
     grant,
     before,

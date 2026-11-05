@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures';
+import type { Page } from '@playwright/test';
 import type { Task } from '@dorkos/shared/types';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -140,6 +141,40 @@ test('Inbox schedule carries the real server revision at 390 @smoke', async ({
     await request.delete(`/api/tasks/${task.id}`);
   }
 });
+async function withReviewModes(page: Page) {
+  await page.route('**/api/capabilities', async (route) => {
+    const response = await route.fetch();
+    const map = await response.json();
+    const base = Object.values(map.capabilities)[0] as Record<string, unknown>;
+    map.capabilities['claude-code'] = {
+      ...base,
+      type: 'claude-code',
+      permissionModes: {
+        supported: true,
+        default: 'acceptEdits',
+        values: [
+          {
+            id: 'acceptEdits',
+            label: 'Accept edits',
+            stop: 'act',
+            asks: 'when-risky',
+            reach: 'edit',
+            promise: 'Edits files without asking.',
+          },
+          {
+            id: 'bypassPermissions',
+            label: 'Full autonomy',
+            stop: 'autonomy',
+            asks: 'never',
+            reach: 'everything',
+            promise: 'Runs everything without asking.',
+          },
+        ],
+      },
+    };
+    await route.fulfill({ json: map });
+  });
+}
 
 for (const surface of ['light', 'dark', 'phone'] as const) {
   test(`schedule row review keeps actions visible: ${surface} @smoke`, async ({
@@ -161,38 +196,7 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
       (theme) => localStorage.setItem('dorkos-theme', theme),
       surface === 'dark' ? 'dark' : 'light'
     );
-    await page.route('**/api/capabilities', async (route) => {
-      const response = await route.fetch();
-      const map = await response.json();
-      const base = Object.values(map.capabilities)[0] as Record<string, unknown>;
-      map.capabilities['claude-code'] = {
-        ...base,
-        type: 'claude-code',
-        permissionModes: {
-          supported: true,
-          default: 'acceptEdits',
-          values: [
-            {
-              id: 'acceptEdits',
-              label: 'Accept edits',
-              stop: 'act',
-              asks: 'when-risky',
-              reach: 'edit',
-              promise: 'Edits files without asking.',
-            },
-            {
-              id: 'bypassPermissions',
-              label: 'Full autonomy',
-              stop: 'autonomy',
-              asks: 'never',
-              reach: 'everything',
-              promise: 'Runs everything without asking.',
-            },
-          ],
-        },
-      };
-      await route.fulfill({ json: map });
-    });
+    await withReviewModes(page);
     await page.route('**/api/tasks', (route) => route.fulfill({ json: [task] }));
     await page.route('**/api/tasks/sample-review', (route) => {
       writes.push(route.request().postDataJSON());
@@ -398,3 +402,96 @@ test('dark schedule review shows the Full autonomy warning @smoke', async ({
   await expect(full).toHaveClass(/text-status-warning-fg/);
   await page.screenshot({ path: testInfo.outputPath('dark-full-review.png') });
 });
+// M2: the misplaced-mode row must lead to a real, readable review sheet.
+for (const surface of ['light', 'phone'] as const) {
+  test(`misplaced schedule permissions open for review: ${surface} @smoke`, async ({
+    page,
+    basePage,
+    tasksPage,
+  }, testInfo) => {
+    const task = {
+      ...sampleTask(false),
+      name: 'sample-ledger',
+      displayName: 'Sample ledger',
+      origin: 'file' as const,
+      reasonSource: 'dorkos' as const,
+      reason:
+        "`permissions` is in the wrong place, so this schedule won't run. Move it under `schedule`.",
+      prompt:
+        surface === 'phone'
+          ? Array.from(
+              { length: 32 },
+              (_, index) => `Sample ${index + 1}: ${'counterrevolutionary'.repeat(8)}`
+            ).join('\n')
+          : 'Read the sample ledger.\nRecord any differences in a short report.',
+      enabled: false,
+    };
+    await page.setViewportSize(
+      surface === 'phone' ? { width: 390, height: 844 } : { width: 1280, height: 900 }
+    );
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+    await page.addInitScript(() => localStorage.setItem('dorkos-theme', 'light'));
+    await withReviewModes(page);
+    await page.route('**/api/tasks', (route) => route.fulfill({ json: [task] }));
+    await basePage.goto(
+      process.env.DORKOS_REVIEW_TEST_CWD
+        ? `/?dir=${encodeURIComponent(process.env.DORKOS_REVIEW_TEST_CWD)}`
+        : '/'
+    );
+    await basePage.waitForAppReady();
+    await tasksPage.open();
+    const open = page.getByRole('button', { name: 'Review Sample ledger', exact: true });
+    await expect(open).toBeVisible();
+    await expect(tasksPage.dialog.getByRole('button', { name: /Run.*once/ })).toHaveCount(0);
+    await expect(tasksPage.dialog.getByRole('alert')).toHaveText(
+      'permissions is in the wrong place, so this schedule won’t run. Move it under schedule.'
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(surface === 'phone' ? 'phone-row.png' : 'row-light.png'),
+    });
+    await open.click();
+    const review = page.getByRole('dialog', { name: 'Review schedule', exact: true });
+    await expect(review).toBeVisible();
+    await expect(review.getByRole('alert')).toBeInViewport();
+    await expect(review.getByRole('alert')).toHaveText(
+      'permissions is in the wrong place, so this schedule won’t run. Move it under schedule.'
+    );
+    await expect(
+      review.getByRole('button', { name: 'Approve Sample ledger', exact: true })
+    ).toBeDisabled();
+    await expect(review.locator('[data-slot="schedule-prompt"]')).toHaveText(task.prompt);
+    await expect(
+      review.getByRole('button', { name: 'Approve Sample ledger and turn it on' })
+    ).toHaveCount(0);
+    const body = review.locator('[data-slot="schedule-review-body"]');
+    if (surface === 'phone') {
+      await body.evaluate((element) => {
+        element.scrollTop = element.scrollHeight / 2;
+      });
+      await expect(review.getByRole('alert')).toBeInViewport();
+      const warningY = (await review.getByRole('alert').boundingBox())!.y;
+      await body.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      await expect(review.getByRole('alert')).toBeInViewport();
+      expect(
+        Math.abs((await review.getByRole('alert').boundingBox())!.y - warningY)
+      ).toBeLessThanOrEqual(1);
+      await page.screenshot({ path: testInfo.outputPath('phone-review-scrolled-long-words.png') });
+    }
+    const trial = review.getByRole('button', { name: 'Run Sample ledger once', exact: true });
+    await expect(trial).toBeInViewport();
+    await expect(
+      review.getByText('Runs as Accept edits, not the value in the file.', { exact: true })
+    ).toBeInViewport();
+    expect((await trial.boundingBox())!.y).toBeGreaterThan(
+      (await review.locator('[data-slot="schedule-prompt"]').boundingBox())!.y
+    );
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      surface === 'phone' ? 390 : 1280
+    );
+    await page.screenshot({
+      path: testInfo.outputPath(surface === 'phone' ? 'phone-review.png' : 'review-light.png'),
+    });
+  });
+}

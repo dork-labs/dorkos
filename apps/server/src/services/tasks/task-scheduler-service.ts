@@ -9,7 +9,6 @@ import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
 import {
   describeRelayRefusal,
-  RELAY_DISPATCH_OK,
   type RelayDispatchVerdict,
 } from '../relay/task-dispatch/readiness.js';
 import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
@@ -47,6 +46,8 @@ import { runDeadline, WakeSettle } from './timing/wake-settle.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { resolveRunSession, STICKY_BUSY_SKIP_REASON } from './session/sticky-session.js';
 import { parkIfAgentApprovalStale } from './agent-mode/agent-mode-record.js';
+import { V1_RELAY_RUNTIME } from './execution/relay-runtime.js';
+import { checkMisplacedMode } from './execution/misplaced-mode.js';
 import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
@@ -95,26 +96,6 @@ import {
  * @param subject - The subject the dispatch would publish to.
  */
 export type RelayRuntimePredicate = (runtimeType: string, subject: string) => RelayDispatchVerdict;
-
-/**
- * What a caller that wired a relay but never said which runtimes it holds means:
- * the v1 answer, claude-code and nothing else.
- *
- * The same compat reading `normalizeAgentRuntimes` gives a bare runtime that
- * declares no `type`, and for the same reason — it is what such a caller has
- * always meant, so honouring it keeps every existing relay caller routing
- * exactly as it did. Defaulting to "holds nothing" was measured instead: it sent
- * every relay test's run down the direct path, which is safe but silently makes
- * those tests stop testing the bus.
- *
- * Production never takes this default; `index.ts` passes
- * `AdapterManager.canRunTaskOnBus`, which is the only answer that reads live
- * adapter state.
- */
-const V1_RELAY_RUNTIME: RelayRuntimePredicate = (runtimeType) =>
-  runtimeType === 'claude-code'
-    ? RELAY_DISPATCH_OK
-    : { deliverable: false, reason: 'runtime-not-on-bus' };
 
 export type { CancelRunOutcome } from './run-cancel.js';
 export {
@@ -1089,9 +1070,7 @@ export class TaskSchedulerService {
     recordDispatchStart({ dispatchId, origin: 'task' });
     return runInDispatch({ dispatchId, origin: 'task' }, () =>
       withSpan(SPAN.TASK_RUN, { [ATTR.TASK_TRIGGER]: run.trigger }, async (span) => {
-        // Both resolved FIRST, before either dispatch path. The execution
-        // decides which path is even eligible, and a run that cannot resolve a
-        // runtime must fail without a turn being started anywhere (DOR-1615).
+        // Validate and resolve before either dispatch path starts a turn.
         // The placement comes first because the execution ladder's agent tier
         // reads out of it, and because resolving it once is what stops the cwd
         // chain running (and, in `managed` mode, PROVISIONING) two or three
@@ -1099,6 +1078,7 @@ export class TaskSchedulerService {
         let placement: RunPlacement;
         let execution: RunExecution;
         try {
+          task = await checkMisplacedMode(task, run, this.store);
           placement = await this.resolveRunPlacement(task);
           execution = await this.resolveExecution(task, placement, checkedAgent);
           // A SKILL file changed outside the task tools runs capped at Never ask, in
