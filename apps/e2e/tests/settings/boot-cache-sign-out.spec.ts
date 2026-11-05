@@ -64,6 +64,11 @@ test.describe('Sign-out erases boot memory in every tab @auth', () => {
     await other.reload();
     await expect(other.getByTestId('app-shell')).toBeVisible();
     await expect.poll(() => bootEntries(other)).not.toEqual([]);
+    // The shell and shared boot blob can be ready before get-session returns.
+    // The idle hook records activity only after it has received the public flag.
+    await expect
+      .poll(() => other.evaluate(() => localStorage.getItem('dorkos.publicComputer.lastActivity')))
+      .not.toBeNull();
     const reloaded = other.waitForEvent('load');
     await other.clock.fastForward(30 * 60 * 1_000 + 10_000);
     await reloaded;
