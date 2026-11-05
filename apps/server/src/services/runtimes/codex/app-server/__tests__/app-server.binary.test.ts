@@ -28,7 +28,11 @@
  */
 import http from 'node:http';
 import { createHash } from 'node:crypto';
-import { PROTECTED_PATHS } from '../../../shared/policy/protected-paths.js';
+import {
+  CodexWritableMissingTargetsError,
+  refuseMissingWritableTargets,
+} from '../../policy/writable-missing-targets.js';
+import { completeHostFixture } from './fixtures/complete-protected-home.js';
 import { codexProtectedConfig } from '../../policy/protected-profile.js';
 import { killFixtureWithRealLeak } from './fixtures/mount-recovery-probe.js';
 import { reconcileMountTargets } from '../../policy/reconcile-mount-targets.js';
@@ -383,13 +387,20 @@ function request(
 }
 
 /** Snapshot every host entry without following links or retaining large file trees. */
-function hostTreeDigest(dir: string): string {
+function hostTreeDigest(dir: string, newFolders = new Set<string>()): string {
   const hash = createHash('sha256');
   const visit = (file: string): void => {
     const stat = fs.lstatSync(file);
-    hash.update(
-      JSON.stringify([file, stat.ino, stat.mode, stat.uid, stat.size, stat.mtimeMs, stat.ctimeMs])
-    );
+    if (!newFolders.has(file))
+      hash.update(
+        JSON.stringify([
+          file,
+          stat.ino,
+          stat.mode,
+          stat.uid,
+          ...(stat.isDirectory() ? [] : [stat.size, stat.mtimeMs, stat.ctimeMs]),
+        ])
+      );
     if (stat.isDirectory())
       for (const name of fs.readdirSync(file).sort()) visit(path.join(file, name));
     else if (stat.isSymbolicLink()) hash.update(fs.readlinkSync(file));
@@ -399,12 +410,25 @@ function hostTreeDigest(dir: string): string {
   return hash.digest('hex');
 }
 
-/** Only incomplete Linux Full rows change contract; complete homes still execute Full. */
-async function expectFullRefusalIfMissing(
+function expectedNewFolders(turn: CodexTurnRequest): Set<string> {
+  const roots = turn.tools.filePolicy!.roots;
+  return new Set(
+    [roots.cwd, ...roots.agentFolders]
+      .filter((dir) => dir !== roots.home)
+      .flatMap((dir) => ['.claude', '.dork'].map((name) => path.join(dir, name)))
+      .filter((file) => !fs.existsSync(file))
+  );
+}
+
+/** Incomplete writable rows refuse; complete homes still exercise real native masks. */
+async function expectWritableRefusalIfMissing(
   turn: CodexTurnRequest,
   kind: CodexTransportKind = 'app-server'
 ): Promise<boolean> {
-  if (process.platform !== 'linux' || turn.settings.permissionMode !== 'bypassPermissions')
+  if (
+    process.platform !== 'linux' ||
+    !['bypassPermissions', 'acceptEdits'].includes(turn.settings.permissionMode ?? '')
+  )
     return false;
   let missing: string[] = [];
   try {
@@ -414,8 +438,14 @@ async function expectFullRefusalIfMissing(
   } catch {
     return false;
   } // Preserve the existing specific layout/file-refusal assertions.
-  if (missing.length === 0) return false;
-  const before = hostTreeDigest(root);
+  try {
+    refuseMissingWritableTargets(turn.settings, missing, turn.tools.filePolicy);
+    return false;
+  } catch (error) {
+    if (!(error instanceof CodexWritableMissingTargetsError)) throw error;
+  }
+  const newFolders = expectedNewFolders(turn);
+  const before = hostTreeDigest(root, newFolders);
   const parentHomes = [
     path.join(root, 'home'),
     path.join(root, 'data'),
@@ -430,15 +460,25 @@ async function expectFullRefusalIfMissing(
   for await (const event of transport.runTurn({ ...turn, onThreadBound: bound }))
     events.push(event);
   expect(events.map((event) => event.type)).toEqual(['error', 'done']);
-  expect(events[0]).toMatchObject({ data: { code: 'codex_full_missing_protected_targets' } });
+  expect(events[0]).toMatchObject({
+    data: {
+      code:
+        turn.settings.permissionMode === 'bypassPermissions'
+          ? 'codex_full_missing_protected_targets'
+          : 'codex_writable_missing_protected_targets',
+    },
+  });
   expect(bound).not.toHaveBeenCalled();
   expect(spawned).toHaveLength(count); // No Codex process means no bwrap child for this row.
-  expect(hostTreeDigest(root)).toBe(before);
-  expect(probeParentKinds(parentHomes)).toEqual(parents); // No new host regular files.
+  expect(hostTreeDigest(root, newFolders)).toBe(before);
+  for (const folder of newFolders) expect(fs.lstatSync(folder).isDirectory()).toBe(true);
+  expect(probeParentKinds(parentHomes)).toEqual(
+    parents.map((entry) => (newFolders.has(entry.file) ? { ...entry, kind: 'directory' } : entry))
+  ); // No new host regular files.
   expect(turn.settings.permissionMode).toBe('bypassPermissions');
   await transport.shutdown();
   scripted.length = 0;
-  console.info('Codex incomplete Full row refused without bwrap or host changes', {
+  console.info('Codex incomplete writable row refused without bwrap or new host regular files', {
     sessionId: turn.sessionId,
     newProcesses: spawned.length - count,
     missing,
@@ -464,24 +504,6 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
   it.skipIf(process.platform !== 'linux')(
     'refuses Full with missing protected targets before any Codex or bwrap launch',
     async () => {
-      const snapshot = (dir: string): unknown =>
-        fs
-          .readdirSync(dir)
-          .sort()
-          .map((name) => {
-            const file = path.join(dir, name);
-            const stat = fs.lstatSync(file);
-            return {
-              file,
-              ino: stat.ino,
-              mode: stat.mode,
-              size: stat.size,
-              mtimeMs: stat.mtimeMs,
-              ctimeMs: stat.ctimeMs,
-              contents: stat.isDirectory() ? snapshot(file) : fs.readFileSync(file, 'base64'),
-            };
-          });
-      const before = snapshot(root);
       const spawnCount = spawned.length;
       const bound = vi.fn();
       const transport = makeTransport();
@@ -489,6 +511,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
         onThreadBound: bound,
       });
+      const newFolders = expectedNewFolders(full);
+      const before = hostTreeDigest(root, newFolders);
       const events: StreamEvent[] = [];
       for await (const event of transport.runTurn(full)) events.push(event);
       expect(events.map((event) => event.type)).toEqual(['error', 'done']);
@@ -502,7 +526,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       });
       expect(bound).not.toHaveBeenCalled();
       expect(spawned).toHaveLength(spawnCount);
-      expect(snapshot(root)).toEqual(before);
+      expect(hostTreeDigest(root, newFolders)).toBe(before);
+      for (const folder of newFolders) expect(fs.lstatSync(folder).isDirectory()).toBe(true);
       expect(full.settings.permissionMode).toBe('bypassPermissions');
       console.info('Codex Full missing-target refusal proved before native launch', {
         newProcesses: spawned.length - spawnCount,
@@ -511,40 +536,25 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }
   );
 
-  it.skipIf(process.platform !== 'linux')(
-    'starts Full from a complete home and preserves protected host files',
-    async () => {
+  it.skipIf(process.platform !== 'linux').each([false, true])(
+    'starts Full from a complete home and preserves protected host files (fresh project: %s)',
+    async (freshProject) => {
       const turn = request('full-complete-home', undefined, {
         settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
       });
       const policy = turn.tools.filePolicy!;
-      policy.roots.agentHomes = [project];
-      const allBases = [policy.roots.home, policy.roots.data, project, codexHome];
-      const protectedFiles = new Set<string>();
-      for (const entry of PROTECTED_PATHS) {
-        if (/[*?[\]{}]/.test(entry.path)) continue;
-        const bases =
-          entry.root === 'data'
-            ? [policy.roots.data]
-            : entry.root === 'home'
-              ? [policy.roots.home]
-              : entry.root === 'account'
-                ? policy.roots.accounts
-                : entry.root === 'agent-home'
-                  ? policy.roots.agentHomes
-                  : allBases;
-        for (const base of bases) {
-          const target = path.join(base, entry.path);
-          if (entry.kind === 'folder') fs.mkdirSync(target, { recursive: true });
-          else {
-            fs.mkdirSync(path.dirname(target), { recursive: true });
-            if (!fs.existsSync(target)) fs.writeFileSync(target, '{}');
-            protectedFiles.add(target);
-          }
-        }
-      }
+      policy.roots.agentHomes = freshProject ? [] : [project];
+      const allBases = [
+        policy.roots.home,
+        policy.roots.data,
+        ...(freshProject ? [] : [project]),
+        codexHome,
+      ];
+      const protectedFiles = completeHostFixture(policy, allBases);
       const secret = path.join(policy.roots.home, '.ssh', 'authorized_keys');
-      const grant = path.join(project, '.dork', 'agent.json');
+      const grant = freshProject
+        ? path.join(policy.roots.home, '.claude.json')
+        : path.join(project, '.dork', 'agent.json');
       fs.writeFileSync(secret, 'CANARY-complete-home-secret');
       protectedFiles.add(secret);
       const snapshot = () =>
@@ -559,6 +569,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         });
       const before = snapshot();
       const homes = [policy.roots.home, policy.roots.data, project];
+      const newFolders = expectedNewFolders(turn);
       const parents = probeParentKinds(homes);
       expect(parents.filter(({ kind }) => kind !== 'absent' && kind !== 'directory')).toEqual([]);
       let missing: string[] = [];
@@ -592,7 +603,12 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       expect(returned).not.toContain('CANARY-complete-home-secret');
       await Promise.all(pools.map((pool) => pool.shutdown()));
       expect(snapshot()).toEqual(before);
-      expect(probeParentKinds(homes)).toEqual(parents);
+      for (const folder of newFolders) expect(fs.lstatSync(folder).isDirectory()).toBe(true);
+      expect(probeParentKinds(homes)).toEqual(
+        parents.map((entry) =>
+          newFolders.has(entry.file) ? { ...entry, kind: 'directory' } : entry
+        )
+      );
       expect(
         probeParentKinds(homes).filter(({ kind }) => kind !== 'absent' && kind !== 'directory')
       ).toEqual([]);
@@ -667,6 +683,13 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         'stream_max_retries = 0',
       ].join('\n') + '\n'
     );
+    const name = expect.getState().currentTestName ?? '';
+    if (
+      !/protects fake secrets|refuses Full with missing|starts Full from a complete home/.test(name)
+    ) {
+      const policy = request('complete-fixture', undefined).tools.filePolicy!;
+      completeHostFixture(policy, [policy.roots.home, policy.roots.data, codexHome]);
+    }
   });
 
   afterEach(async () => {
@@ -1068,7 +1091,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
               : undefined;
           try {
             if (
-              await expectFullRefusalIfMissing(
+              await expectWritableRefusalIfMissing(
                 request(`protected-${kind}-${mode}`, undefined, {
                   cwd: probeCwd,
                   settings: { permissionMode: mode, model: 'fake-model' },
@@ -1113,7 +1136,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                 for (const file of recoveryTargets) expect(fs.existsSync(file)).toBe(false);
               if (
                 defaultRecovery &&
-                (await expectFullRefusalIfMissing(
+                (await expectWritableRefusalIfMissing(
                   request('default-recovery-full-producer', undefined, {
                     settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
                   }),
@@ -1861,7 +1884,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     it('asks again after a person lowers Full to Ask and the thread resumes cold', async () => {
       fs.rmSync(made(), { force: true });
       if (
-        await expectFullRefusalIfMissing(
+        await expectWritableRefusalIfMissing(
           request('lowered-1', undefined, {
             settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
           })
@@ -1981,7 +2004,9 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     };
 
     it('wakes the chat exactly once when a command finishes after its turn completed', async () => {
-      if (await expectFullRefusalIfMissing(request('bg-1', undefined, { settings: fullAccess })))
+      if (
+        await expectWritableRefusalIfMissing(request('bg-1', undefined, { settings: fullAccess }))
+      )
         return;
       startInBackground('sleep 2; echo done-in-background');
       const transport = makeTransport();
@@ -2011,7 +2036,9 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }, 60_000);
 
     it('never wakes for a command that never ends, and Stop terminates it without a model turn', async () => {
-      if (await expectFullRefusalIfMissing(request('bg-2', undefined, { settings: fullAccess })))
+      if (
+        await expectWritableRefusalIfMissing(request('bg-2', undefined, { settings: fullAccess }))
+      )
         return;
       startInBackground('sleep 600');
       const transport = makeTransport();
@@ -2037,7 +2064,9 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }, 60_000);
 
     it('stops a never-ending command once at the ceiling, and still wakes no model turn', async () => {
-      if (await expectFullRefusalIfMissing(request('bg-3', undefined, { settings: fullAccess })))
+      if (
+        await expectWritableRefusalIfMissing(request('bg-3', undefined, { settings: fullAccess }))
+      )
         return;
       startInBackground('sleep 600');
       const transport = makeTransport({ ceilingMs: 2_000 });

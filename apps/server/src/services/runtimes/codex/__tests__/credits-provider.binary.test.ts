@@ -13,6 +13,8 @@ import { startCreditsRelay, type CreditsRelay } from '../../../core/cloud/credit
 import { CodexAppServerPool } from '../app-server/process-pool.js';
 import { AppServerCodexTransport } from '../transport/app-server-transport.js';
 import { createCodexEventContext } from '../event-mapper.js';
+import { completeHostFixture } from '../app-server/__tests__/fixtures/complete-protected-home.js';
+import type { CodexFilePolicy } from '../policy/protected-profile.js';
 
 const BINARY = resolveCodexVendoredBinary();
 const TOKEN = 'fake-credits-token-never-real';
@@ -107,6 +109,7 @@ describe.skipIf(BINARY === null)(
   () => {
     let relay: CreditsRelay;
     let pool: CodexAppServerPool;
+    let filePolicy: CodexFilePolicy;
     const spawnedEnv: Array<Record<string, string>> = [];
     const spawnedArgs: Array<readonly string[]> = [];
 
@@ -138,6 +141,24 @@ describe.skipIf(BINARY === null)(
       vi.stubEnv('OPENAI_API_KEY', PERSON_KEY);
       vi.stubEnv('CODEX_API_KEY', PERSON_KEY);
       vi.stubEnv('OPENAI_BASE_URL', `${attacker.url}/v1`);
+      filePolicy = {
+        roots: {
+          cwd: folder,
+          home: path.join(root, 'home'),
+          data: path.join(root, 'dork-home'),
+          accounts: [personHome, creditsCodexHome()],
+          agentFolders: [folder],
+          agentHomes: [],
+        },
+        writable: [folder],
+      };
+      for (const dir of [filePolicy.roots.home, filePolicy.roots.data, creditsCodexHome()])
+        fs.mkdirSync(dir, { recursive: true });
+      completeHostFixture(filePolicy, [
+        filePolicy.roots.home,
+        filePolicy.roots.data,
+        ...filePolicy.roots.accounts,
+      ]);
       for (const name of [
         'HTTP_PROXY',
         'HTTPS_PROXY',
@@ -197,6 +218,7 @@ describe.skipIf(BINARY === null)(
             managed: { servers: {}, env: {} },
             dorkosTools: null,
             connectorTools: null,
+            filePolicy,
           },
           signal: abort.signal,
           events: createCodexEventContext('credits-session'),

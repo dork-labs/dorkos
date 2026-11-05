@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(codex): prepare project folders and refuse missing writable masks (DOR-3595)'
   - 'test(codex): distinguish incomplete Full refusal from complete-home protection (DOR-3595)'
   - 'fix(codex): refuse Linux Full with missing protected targets (DOR-3595)'
   - 'test(codex): prepare root-owned fixtures outside strace (DOR-3595)'
@@ -43,4 +44,4 @@ covers:
 - On Linux, Codex may refuse to use your home as a project folder. Choose a folder inside it instead. A home reached through a symbolic link may also be refused (DOR-3595).
 - Codex names files that block a folder it needs and explains how to retry (DOR-3595).
 
-- On Linux, Codex refuses Full access when protected paths are missing. Choose Ask to continue (DOR-3595).
+- On Linux, Codex refuses edits when missing protected paths could create files on your computer. Choose Ask to continue (DOR-3595).
