@@ -50,7 +50,7 @@ import { ConnectorRuntimePrincipalService } from '../../../../connectors/princip
 import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { CodexTurnRequest } from '../../transport/codex-transport.js';
 import type { AppServerTransportOptions } from '../../transport/app-server-transport.js';
-import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from 'node:child_process';
+import { spawn as nodeSpawn } from 'node:child_process';
 import {
   protectedProbe,
   shellControlReturned,
@@ -415,7 +415,10 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         false
       );
     }
-    root = fs.realpathSync(fs.mkdtempSync(path.join(baseFolder, 'codex-app-server-')));
+    root =
+      scenario === 'person-root-link-10k'
+        ? fs.realpathSync(process.env.DORKOS_CODEX_PROBE_ROOT!)
+        : fs.realpathSync(fs.mkdtempSync(path.join(baseFolder, 'codex-app-server-')));
     codexHome = path.join(root, 'codex-home');
     project = path.join(root, 'project');
     fs.mkdirSync(codexHome, { recursive: true });
@@ -426,17 +429,11 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     } else fs.mkdirSync(path.join(root, 'home'), { recursive: true });
     fs.mkdirSync(path.join(root, 'data'), { recursive: true });
     if (scenario === 'person-root-link-10k') {
-      fs.rmdirSync(path.join(root, 'home'));
-      fs.mkdirSync(path.join(root, 'real-person-home'));
-      fs.symlinkSync(path.join(root, 'real-person-home'), path.join(root, 'home'), 'dir');
-      fs.chmodSync(root, 0o755);
-      for (const args of [
-        ['-h', '0:0', path.join(root, 'home')],
-        ['0:0', root],
-      ]) {
-        const result = nodeSpawnSync('sudo', ['-n', 'chown', ...args], { encoding: 'utf8' });
-        expect(result.status, result.stderr).toBe(0);
-      }
+      // The driver established ownership before strace. Never elevate here.
+      expect(fs.lstatSync(root).uid).toBe(0);
+      expect(fs.lstatSync(path.join(root, 'home')).uid).toBe(0);
+      expect(fs.lstatSync(path.join(root, 'home')).isSymbolicLink()).toBe(true);
+      expect(fs.realpathSync(path.join(root, 'home'))).toBe(path.join(root, 'real-person-home'));
       console.info('Codex root-owned home alias', {
         HOME: path.join(root, 'home'),
         realHome: fs.realpathSync(path.join(root, 'home')),
@@ -471,15 +468,9 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
       scripted.length = 0;
     } finally {
-      if (process.env.DORKOS_CODEX_PROBE_SCENARIO === 'person-root-link-10k') {
-        const restored = nodeSpawnSync(
-          'sudo',
-          ['-n', 'chown', `${process.getuid?.()}:${process.getgid?.()}`, root],
-          { encoding: 'utf8' }
-        );
-        expect(restored.status, restored.stderr).toBe(0);
-      }
-      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      // The untraced driver restores and removes the root-owned fixture.
+      if (process.env.DORKOS_CODEX_PROBE_SCENARIO !== 'person-root-link-10k')
+        fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     }
   }, 120_000);
 

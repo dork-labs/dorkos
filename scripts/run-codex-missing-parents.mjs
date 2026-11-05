@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { prepareRootHome } from './codex-root-home-fixture.mjs';
 
 export const protectionRows = [
   ['agent-home-10k', 'acceptEdits'],
@@ -32,7 +33,8 @@ export const protectionRows = [
 export function traceMissingParents(
   run = spawnSync,
   out = '.temp/codex-bwrap-trace',
-  now = Date.now
+  now = Date.now,
+  prepare = prepareRootHome
 ) {
   mkdirSync(out, { recursive: true });
   const deadline = now() + 870_000; // Leave cleanup time inside the approved fifteen-minute step.
@@ -52,76 +54,96 @@ export function traceMissingParents(
       writeFileSync(`${stem}.log`, 'Diagnostic step budget exhausted; row unproven\n');
       continue;
     }
-    const result = run(
-      'strace',
-      [
-        '-ff',
-        '-ttt',
-        '-e',
-        'trace=execve,execveat,mount,umount2,unlink,unlinkat,openat,mkdir,mkdirat,mknod,mknodat,creat,kill,tgkill,tkill',
-        '-s',
-        '1048576',
-        '-o',
-        stem,
-        'pnpm',
-        'vitest',
-        'run',
-        'apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts',
-        '-t',
-        'protects fake secrets through app-server despite a loaded legacy Full setting',
-        '--reporter=default',
-        '--reporter=json',
-        `--outputFile=${stem}.json`,
-      ],
-      {
-        env: {
-          ...process.env,
-          DORKOS_CODEX_PROBE_SCENARIO: scenario,
-          DORKOS_CODEX_PROBE_MODE: mode,
-        },
-        encoding: 'utf8',
-        detached: true,
-        timeout: budget,
-        maxBuffer: 32 * 1024 * 1024,
-      }
-    );
-    if (result.error?.code === 'ETIMEDOUT')
-      console.info('Codex diagnostic timeout signal', {
-        source: 'run-codex-missing-parents.mjs',
-        scenario,
-        mode,
-        senderPid: process.pid,
-        targetPid: result.pid,
-        signal: 'SIGTERM',
-        origin: 'spawnSync-timeout',
-        observedAtMs: Date.now(),
-      });
+    let fixture;
+    try {
+      fixture = scenario === 'person-root-link-10k' ? prepare() : undefined;
+    } catch (error) {
+      const row = { scenario, mode, complete: false, error: String(error) };
+      rows.push(row);
+      writeFileSync(`${stem}.log`, `Root fixture setup failed: ${error}\n`);
+      writeFileSync(path.join(out, 'missing-parents-summary.json'), JSON.stringify(rows, null, 2));
+      continue;
+    }
+    let result;
     let cleanupError;
-    if (result.pid) {
-      try {
-        const signal = {
+    try {
+      result = run(
+        'strace',
+        [
+          '-ff',
+          '-ttt',
+          '-e',
+          'trace=execve,execveat,mount,umount2,unlink,unlinkat,openat,mkdir,mkdirat,mknod,mknodat,creat,kill,tgkill,tkill',
+          '-s',
+          '1048576',
+          '-o',
+          stem,
+          'pnpm',
+          'vitest',
+          'run',
+          'apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts',
+          '-t',
+          'protects fake secrets through app-server despite a loaded legacy Full setting',
+          '--reporter=default',
+          '--reporter=json',
+          `--outputFile=${stem}.json`,
+        ],
+        {
+          env: {
+            ...process.env,
+            DORKOS_CODEX_PROBE_SCENARIO: scenario,
+            DORKOS_CODEX_PROBE_MODE: mode,
+            ...(fixture ? { DORKOS_CODEX_PROBE_ROOT: fixture.root } : {}),
+          },
+          encoding: 'utf8',
+          detached: true,
+          timeout: budget,
+          maxBuffer: 32 * 1024 * 1024,
+        }
+      );
+      if (result.error?.code === 'ETIMEDOUT')
+        console.info('Codex diagnostic timeout signal', {
           source: 'run-codex-missing-parents.mjs',
           scenario,
           mode,
           senderPid: process.pid,
-          targetGroup: result.pid,
-          signal: 'SIGKILL',
-          atMs: Date.now(),
-        };
-        console.info('Codex diagnostic signal requested', signal);
-        process.kill(-result.pid, 'SIGKILL');
-        console.info('Codex diagnostic signal sent', { ...signal, sent: true });
-      } catch (error) {
-        console.info('Codex diagnostic signal failed', {
-          source: 'run-codex-missing-parents.mjs',
-          scenario,
-          mode,
-          senderPid: process.pid,
-          targetGroup: result.pid,
-          atMs: Date.now(),
-          code: error.code,
+          targetPid: result.pid,
+          signal: 'SIGTERM',
+          origin: 'spawnSync-timeout',
+          observedAtMs: Date.now(),
         });
-        if (error.code !== 'ESRCH') cleanupError = error.message;
+      if (result.pid) {
+        try {
+          const signal = {
+            source: 'run-codex-missing-parents.mjs',
+            scenario,
+            mode,
+            senderPid: process.pid,
+            targetGroup: result.pid,
+            signal: 'SIGKILL',
+            atMs: Date.now(),
+          };
+          console.info('Codex diagnostic signal requested', signal);
+          process.kill(-result.pid, 'SIGKILL');
+          console.info('Codex diagnostic signal sent', { ...signal, sent: true });
+        } catch (error) {
+          console.info('Codex diagnostic signal failed', {
+            source: 'run-codex-missing-parents.mjs',
+            scenario,
+            mode,
+            senderPid: process.pid,
+            targetGroup: result.pid,
+            atMs: Date.now(),
+            code: error.code,
+          });
+          if (error.code !== 'ESRCH') cleanupError = error.message;
+        }
+      }
+    } finally {
+      try {
+        fixture?.cleanup();
+      } catch (error) {
+        cleanupError = String(error);
       }
     }
     writeFileSync(`${stem}.log`, `${result.stdout ?? ''}\n${result.stderr ?? ''}`);

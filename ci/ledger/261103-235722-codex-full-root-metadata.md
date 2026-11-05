@@ -235,3 +235,11 @@ with its pinned features.plugins setting. The run showed that background
 clone vanishing during an unbounded glob scan. Explicit managed MCP servers,
 own .agents skill discovery and every filesystem/plugin canary remain tested.
 Production features and unreadable/vanishing scan behavior are unchanged.
+
+Linux run41967701245 found sudo suppressed under unprivileged strace.
+Prepare the root-owned parent and alias outside the trace, assert both
+owners inside the unchanged native row, and restore/remove only the exact
+throwaway fixture after its traced process group stops. Setup and cleanup
+failures stay failed; all24 rows and870s total/190s per-row caps remain.
+No Full host-file assertion, policy, retries, or required checks change.
+The root-owned layout remains unproven until this revised row runs on Linux.

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { it } from 'vitest';
 
-it.each(['passed', 'failed', 'missing'])(
+it.each(['passed', 'failed', 'missing', 'cleanup-failed'])(
   'preserves a %s report and respects the trace budget',
   (status) => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'codex-trace-driver-'));
@@ -24,6 +24,8 @@ it.each(['passed', 'failed', 'missing'])(
         import { writeFileSync, readFileSync } from 'node:fs';
         import { traceMissingParents, protectionRows } from ${JSON.stringify(module)};
         let count = 0;
+        let prepared = 0;
+        let cleaned = 0;
         const sentSignals = [];
         const signalLogs = [];
         process.kill = (pid, signal) => { sentSignals.push([pid, signal]); return true; };
@@ -35,6 +37,10 @@ it.each(['passed', 'failed', 'missing'])(
           assert(protectionRows.some(([name]) => name === scenario));
         const code = traceMissingParents((command, args, options) => {
           count++;
+          if (options.env.DORKOS_CODEX_PROBE_SCENARIO === 'person-root-link-10k') {
+            assert.equal(options.env.DORKOS_CODEX_PROBE_ROOT, '/fake-root-owned-home');
+            assert.equal(prepared, cleaned + 1);
+          } else assert.equal(options.env.DORKOS_CODEX_PROBE_ROOT, undefined);
           assert.equal(command, 'strace');
           assert(args.includes('-ttt'));
           assert(!args.includes('-v'));
@@ -43,10 +49,15 @@ it.each(['passed', 'failed', 'missing'])(
           assert(options.timeout > 0 && options.timeout <= 190000);
           const report = args.find(arg => arg.startsWith('--outputFile=')).slice(13);
           if (${JSON.stringify(status)} !== 'missing') writeFileSync(report, JSON.stringify({
-            testResults: [{ assertionResults: [{ title: 'protects fake secrets through app-server', status: ${JSON.stringify(status)} }] }]
+            testResults: [{ assertionResults: [{ title: 'protects fake secrets through app-server', status: ${JSON.stringify(status === 'cleanup-failed' ? 'passed' : status)} }] }]
           }));
           return { pid: 424242, status: 0, stdout: 'synthetic output', stderr: '' };
-        }, ${JSON.stringify(dir)});
+        }, ${JSON.stringify(dir)}, Date.now, () => {
+          prepared++;
+          return { root: '/fake-root-owned-home', cleanup: () => { cleaned++; ${status === 'cleanup-failed' ? 'throw new Error("fixture cleanup failed");' : ''} } };
+        });
+        assert.equal(prepared, 2);
+        assert.equal(cleaned, 2);
         assert.equal(code, ${status === 'passed' ? 0 : 1});
         assert.equal(count, protectionRows.length + 2);
         const rows = JSON.parse(readFileSync(${JSON.stringify(path.join(dir, 'missing-parents-summary.json'))}, 'utf8'));

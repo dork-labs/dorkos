@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'test(codex): prepare root-owned fixtures outside strace (DOR-3595)'
   - 'test(codex): verify blocked descendants of preserved crash files (DOR-3595)'
   - 'test(server): retain fixture shutdown coverage with reason parameter (DOR-3595)'
   - 'fix(codex): project registry lock inspection environment (DOR-3595)'
