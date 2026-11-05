@@ -37,12 +37,10 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../../lib/logger.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { keepAwakeService } from '../../../core/keep-awake/index.js';
 import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
-import { creditsCodexHome, resolveCodexHome } from '../codex-home.js';
-import { codexCreditsAppServerEnv, ensureCreditsCodexHome } from '../credits-launch.js';
+import { creditsCodexHome } from '../codex-home.js';
 import { buildSteerText, EFFORT_TO_REASONING } from '../turn-input.js';
 import {
   CodexAppServerPool,
@@ -84,6 +82,7 @@ import type {
   CodexTurnRequest,
   CodexTurnTools,
 } from './codex-transport.js';
+import { acquireCodexProcess } from './acquire-codex-process.js';
 import { failedCompaction, failedSetup, failedStart } from './app-server-turn-failures.js';
 
 /** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
@@ -349,7 +348,10 @@ export class AppServerCodexTransport implements CodexTransport {
       };
       if (globalThis.process.platform === 'linux' && this.options.mountTargets !== false)
         await reconcileMountTargets(filePolicy.roots.data);
-      process = await this.acquire(request.binary, onCredits);
+      process = this.watch(
+        await acquireCodexProcess(request.binary, onCredits, this.pool, this.options)
+      );
+      if (!onCredits && !this.rateLimits.has(process.key)) this.readRateLimits(process);
       release = process.hold();
       relay = onCredits ? this.relayFor(process) : undefined;
       loadInput = {
@@ -1127,25 +1129,6 @@ export class AppServerCodexTransport implements CodexTransport {
     );
     await this.terminateCommandsIn(keys, 2_000);
     await this.pool.closeWhere((process) => process.spec.codexHome === home);
-  }
-
-  private async acquire(binary: string, onCredits: boolean): Promise<CodexAppServerProcess> {
-    if (onCredits) {
-      if (!this.options.creditsRelay?.()) throw new CreditsUnavailableError('unreachable', 'Codex');
-      ensureCreditsCodexHome();
-      const env =
-        this.options.environment?.credits() ??
-        codexCreditsAppServerEnv(runtimeEnvironment('codex', 'turn'));
-      return this.watch(
-        await this.pool.acquire({ binary, codexHome: creditsCodexHome(), env, onCredits: true })
-      );
-    }
-    const env = this.options.environment?.person() ?? runtimeEnvironment('codex', 'turn');
-    const process = this.watch(
-      await this.pool.acquire({ binary, codexHome: resolveCodexHome(env), env })
-    );
-    if (!this.rateLimits.has(process.key)) this.readRateLimits(process);
-    return process;
   }
 
   /** Per-process bookkeeping, once: relay key and rate-limit cleanup, warnings. */

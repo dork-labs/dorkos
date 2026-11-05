@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'refactor(codex): extract app-server process acquisition (DOR-3595)'
   - 'fix(codex): bind pool identity to credits shutdown authority (DOR-3595)'
   - 'fix(codex): isolate agent-home file refusals without dropping protections (DOR-3595)'
   - 'fix(codex): preserve mount targets without inode provenance (DOR-3595)'
