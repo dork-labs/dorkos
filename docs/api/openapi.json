@@ -29952,6 +29952,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -29983,6 +29989,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -30299,6 +30306,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -30330,6 +30343,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -31305,6 +31319,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -31336,6 +31356,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -32393,6 +32414,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32424,6 +32451,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -32746,6 +32774,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32777,6 +32811,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -33099,6 +33134,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -33130,6 +33171,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",

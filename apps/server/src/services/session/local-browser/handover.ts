@@ -25,6 +25,7 @@ import type { SignInWindow } from './sign-in-window.js';
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
   state(): Promise<LocalBrowserState>;
+  capabilities(): { newWindow: boolean };
   currentProfileId(): string | null;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
   selectTab(id: string): Promise<LocalBrowserState>;
@@ -75,6 +76,8 @@ export function assertSignInUrl(value: string): URL {
 export class BrowserHandover {
   private record: LocalBrowserHandoff | null = null;
   private reopenAt?: ReopenAt;
+  // The agent's page when it asked. Saved here, so Continue never takes a URL from the agent.
+  private askedUrl?: string;
   // After Stop task the browser stays open for the person (2FA, a payment), so that
   // chat reads nothing until a person opens or resumes the browser for it again.
   private stoppedFor: string | null = null;
@@ -185,12 +188,14 @@ export class BrowserHandover {
       agentName: asker?.name ?? null,
       agentId: asker ? (this.agentIdAt(asker.folder) ?? null) : null,
       agentFolder: asker?.folder ?? null,
+      profileId: this.browser.currentProfileId(),
       reason,
       site,
       askedAt: new Date(this.now()).toISOString(),
       outcome: null,
     };
     this.reopenAt = undefined;
+    this.askedUrl = tab.url;
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
     await this.browser.selectTab(tab.id).catch(() => undefined);
     this.changed();
@@ -215,7 +220,7 @@ export class BrowserHandover {
     let profileId: string | null;
     if ('handoffId' in input) {
       const handoff = this.openHandoff(input.handoffId);
-      if (state.mode === 'embedded')
+      if (state.mode === 'embedded' && !this.browser.capabilities().newWindow)
         throw new LocalBrowserError('unsupported', 'Open the browser in a new window to sign in.');
       // The origin the agent's browser is on now, never one the agent named.
       const tab = state.tabs.find((candidate) => candidate.id === state.selectedTabId);
@@ -229,7 +234,11 @@ export class BrowserHandover {
         );
       url = assertSignInUrl(new URL(tab.url).origin);
       profileId = this.browser.currentProfileId();
-      this.reopenAt = { sessionId: handoff.sessionId, profileId, url: tab.url };
+      this.reopenAt = { sessionId: handoff.sessionId, profileId, url: this.askedUrl ?? tab.url };
+      // The Mac app's panel keeps cookies in the app's own store and has a debugging
+      // channel. So it closes, the person signs in on the default profile, and Continue
+      // brings the agent back in its own window on that profile.
+      if (state.mode === 'embedded') await this.browser.disconnect();
     } else {
       url = assertSignInUrl(input.url);
       profileId = input.profileId ?? null;
@@ -284,18 +293,21 @@ export class BrowserHandover {
   }
 
   /**
-   * A person's open goes through here, so it can't take a profile a sign-in holds.
-   * Opening the browser for another chat ends that chat's handoff.
+   * A person's open goes through here, so it can't take a profile a sign-in holds, or
+   * close a window out from under a person partway through another chat's handoff.
    *
    * @param input - The person's choice.
    */
   async open(input: LocalBrowserOpen): Promise<LocalBrowserPersonState> {
+    if (this.record?.outcome === null && this.record.sessionId !== input.sessionId)
+      throw new LocalBrowserError(
+        'handoff_open',
+        'Another agent is waiting on you in this browser. Answer its card first.'
+      );
     if (input.mode === 'new-window' && this.signIns.holds(this.folderOf(input.profileId ?? null)))
       throw new LocalBrowserError('signing_in', 'Finish signing in first.');
     await this.browser.open(input);
     this.stoppedFor = null;
-    if (this.record?.outcome === null && this.record.sessionId !== input.sessionId)
-      this.end(this.record, 'stopped');
     return this.state();
   }
 
@@ -328,6 +340,7 @@ export class BrowserHandover {
     if (this.record?.id === handoff.id) this.record = { ...handoff, outcome };
     logger.info('[Browser] A browser handoff ended', { handoffId: handoff.id, outcome });
     this.reopenAt = undefined;
+    this.askedUrl = undefined;
     this.changed();
   }
 

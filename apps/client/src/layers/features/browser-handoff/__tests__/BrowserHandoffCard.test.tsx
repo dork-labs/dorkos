@@ -33,6 +33,7 @@ const handoff: LocalBrowserHandoff = {
   agentName: 'Atlas',
   agentId: 'agent-1',
   agentFolder: '/work/atlas',
+  profileId: 'p1',
   reason: 'wall',
   site: 'northwind.example',
   askedAt: ASKED_AT,
@@ -217,6 +218,42 @@ describe('BrowserHandoffCard', () => {
     expect(await button('Continue')).toBeTruthy();
   });
 
+  describe('on a check', () => {
+    it('warns about a password and offers the plain window, because the agent chose the reason', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(person());
+      transport.signInLocalBrowser.mockResolvedValue(person({ signIn: signIn('open') }));
+      mount();
+      expect(
+        await screen.findByText('If it asks for a password, don’t type it in Atlas’s window.')
+      ).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Sign in to northwind.example' }));
+      await waitFor(() =>
+        expect(transport.signInLocalBrowser).toHaveBeenCalledWith({ handoffId: 'h1' })
+      );
+      expect(await screen.findByText(/Sign-in window open/)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
+    });
+
+    it('holds Continue while that sign-in saves, then offers it', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(person({ signIn: signIn('saving') }));
+      const saving = mount();
+      expect((await button('Continue')).getAttribute('aria-disabled')).toBe('true');
+      saving.unmount();
+      transport.getLocalBrowserState.mockResolvedValue(person({ signIn: signIn('saved') }));
+      mount();
+      expect((await button('Continue')).getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('says the agent moves, in the Mac app’s panel', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(person({ mode: 'embedded' }));
+      mount();
+      expect(
+        await screen.findByText('Atlas moves to its own window after you sign in.')
+      ).toBeTruthy();
+    });
+  });
+
   describe('on a password page', () => {
     const password = { ...handoff, reason: 'password' as const };
 
@@ -285,16 +322,36 @@ describe('BrowserHandoffCard', () => {
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
     });
 
-    it('in the Mac app’s built-in browser, says not to type it there and offers only Stop task', async () => {
+    it('in the Mac app’s panel, offers the plain window and says the agent moves', async () => {
       transport.getLocalBrowserState.mockResolvedValue(
         person({ handoff: password, mode: 'embedded' })
       );
       mount();
-      expect(await button('Stop task')).toBeTruthy();
-      expect(screen.getByText(/Don’t type it in this panel/)).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
-      expect(screen.queryByRole('button', { name: /^Sign in to/ })).toBeNull();
+      expect(await button('Sign in to northwind.example')).toBeTruthy();
+      expect(screen.getByText('Atlas moves to its own window after you sign in.')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
+    });
+
+    it('says nothing about moving in a new window', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(person({ handoff: password }));
+      mount();
+      await button('Sign in to northwind.example');
+      expect(screen.queryByText(/moves to its own window/)).toBeNull();
+    });
+
+    it('says every agent can use the sign-in only on the shared profile', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ handoff: { ...password, profileId: null } })
+      );
+      const shared = mount();
+      expect(await screen.findByText(/Every agent that uses the Agent browser/)).toBeTruthy();
+      shared.unmount();
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ handoff: { ...password, profileId: 'p1' } })
+      );
+      mount();
+      await button('Sign in to northwind.example');
+      expect(screen.queryByText(/Every agent that uses the Agent browser/)).toBeNull();
     });
 
     it('still offers Continue for a check with no password in the built-in browser', async () => {
