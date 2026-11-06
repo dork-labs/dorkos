@@ -16,6 +16,8 @@ export function assertOpenable(
   capabilities: LocalBrowserCapabilities,
   profileExists?: (id: string) => boolean
 ): void {
+  if (input.mode !== 'embedded' && input.mode !== 'new-window')
+    throw new LocalBrowserError('unsupported', 'Choose the DorkOS browser or a new window.');
   if (input.mode === 'embedded' && !hasEmbedded)
     throw new LocalBrowserError('unsupported', 'Use the desktop app for the DorkOS browser.');
   if (input.mode === 'embedded' && input.profileId)

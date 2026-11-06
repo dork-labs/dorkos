@@ -14,6 +14,7 @@ import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { BrowserPreparation } from './BrowserPreparation';
 import { WaitingElsewhere } from './WaitingElsewhere';
+import { BrowserProfiles } from './BrowserProfiles';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -188,7 +189,7 @@ export function LocalBrowserPanel({
     <section
       aria-label="Local browser"
       data-slot="local-browser-panel"
-      className="flex h-full min-h-0 flex-col gap-3 p-3"
+      className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3"
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-medium">{connected ? BROWSER_MODE_LABELS[mode] : 'Browser'}</h3>
@@ -412,6 +413,10 @@ export function LocalBrowserPanel({
           )}
         </>
       )}
+      <BrowserProfiles
+        enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
+        disabled={busy || cancelling}
+      />
     </section>
   );
 }

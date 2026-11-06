@@ -14,6 +14,8 @@ export interface LocalBrowserProfileStore {
   /** Sign and store a binding. Call only after the person confirmed it's them. */
   bind(profileId: string, agentId: string, agentFolder: string): void;
   unbind(profileId: string, agentId: string): void;
+  /** Delete a profile and all its agent bindings after its disk data is gone. */
+  remove(profileId: string): void;
 }
 
 /** What a signature covers. The prefix keeps it from meaning anything elsewhere. */
@@ -118,6 +120,14 @@ export function createLocalBrowserProfileStore(
     },
     unbind(profileId, agentId) {
       db.delete(agentBrowserProfileAgents).where(matching(profileId, agentId)).run();
+    },
+    remove(profileId) {
+      db.transaction((tx) => {
+        tx.delete(agentBrowserProfileAgents)
+          .where(eq(agentBrowserProfileAgents.profileId, profileId))
+          .run();
+        tx.delete(agentBrowserProfiles).where(eq(agentBrowserProfiles.id, profileId)).run();
+      });
     },
   };
 }
