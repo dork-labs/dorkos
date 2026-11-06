@@ -1491,6 +1491,8 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                 });
               }
             }
+            const turnStartsBefore = turnStartedSeen;
+            const responsesBefore = seen.responses;
             const transport = makeTransport(undefined, kind);
             if (skillDiscovery) {
               // Pinned 0.163 protocol; do not preload skills/list before the turn.
@@ -1569,6 +1571,36 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
                 fs.existsSync(probe.latePlugin) &&
                 fs.readFileSync(probe.latePlugin, 'utf8') !== 'original-late-plugin',
             });
+            if (
+              mode === 'default' &&
+              (scenario === 'rg-unreadable-10k' || scenario === 'rg-vanishing-10k')
+            ) {
+              // Accepted fail-closed limitation (DOR-3852): the native helper
+              // refuses while building bwrap, before any model turn or shell.
+              expect(startMs).toBeUndefined();
+              const refusal = events.find((event) => event.type === 'error');
+              expect(refusal).toMatchObject({ data: { code: 'codex_unavailable' } });
+              const details =
+                refusal && 'details' in refusal.data ? String(refusal.data.details) : '';
+              expect(details).toContain('error building bubblewrap command');
+              expect(details).toContain('ripgrep unreadable glob scan failed');
+              expect(details).toContain(personHome);
+              if (scenario === 'rg-unreadable-10k') {
+                expect(details).toContain(unreadable);
+                expect(details).toContain('Permission denied (os error 13)');
+              } else {
+                expect(details).toContain(path.join(personHome, 'rg-vanishing-tree'));
+                expect(details).toContain('No such file or directory (os error 2)');
+              }
+              expect(turnStartedSeen).toBe(turnStartsBefore);
+              expect(seen.responses).toBe(responsesBefore);
+              expect(shellControls).toEqual([]);
+              expect(result).toBe('');
+              for (const canary of probe.canaries)
+                expect(JSON.stringify(events)).not.toContain(canary);
+              await transport.shutdown();
+              continue;
+            }
             if (nonemptyLedger || defaultStub) {
               expect(startMs).toBeUndefined();
               const refusal = events.find((event) => event.type === 'error');
