@@ -5,7 +5,7 @@ import { RightPanelPage } from './RightPanelPage';
 export class LocalBrowserPage {
   readonly controls: Locator;
   constructor(readonly page: Page) {
-    this.controls = page.getByRole('region', { name: 'Local browser', exact: true });
+    this.controls = page.getByRole('region', { name: 'Agent browser', exact: true });
   }
   /** Reveal the existing Browser view or add its controls through the shared menu. */
   async open(): Promise<void> {

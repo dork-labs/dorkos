@@ -8,7 +8,7 @@ import type {
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button, Input } from '@/layers/shared/ui';
-import { BrowserModeChoice, BROWSER_MODE_LABELS } from './BrowserModeChoice';
+import { BrowserModeChoice } from './BrowserModeChoice';
 import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
@@ -180,12 +180,12 @@ export function LocalBrowserPanel({
 
   return (
     <section
-      aria-label="Local browser"
+      aria-label="Agent browser"
       data-slot="local-browser-panel"
       className="flex h-full min-h-0 flex-col gap-3 p-3"
     >
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium">{connected ? BROWSER_MODE_LABELS[mode] : 'Browser'}</h3>
+        <h3 className="text-sm font-medium">Agent browser</h3>
         <span role="status" className="text-muted-foreground text-xs">
           {cancelling
             ? 'Cancelling…'
@@ -253,7 +253,7 @@ export function LocalBrowserPanel({
           />
           {state?.status === 'closed' && (
             <p className="text-muted-foreground text-xs">
-              Open it again to reconnect. Saved logins are kept.
+              Open it again to reconnect. Saved sign-ins are kept.
             </p>
           )}
           <Button

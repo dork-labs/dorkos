@@ -1,10 +1,11 @@
 ---
-title: Browser
+title: Agent browser
 description: Share a live browser page with the agent in your current chat.
 ---
 
 Open **Browser** from the right panel’s **+** menu. Choose where the page opens.
 Your agent uses that same live page. You can click, type, and navigate while it works.
+This is the Agent browser. The older signed-in browser uses a separate hidden page.
 
 ## Choose a browser
 
@@ -67,7 +68,9 @@ These choices are for DorkOS running on your computer.
 ## Previously configured browser tools
 
 Existing custom browser servers and saved sign-ins are kept.
-The former saved-browser setup created a separate hidden page; it did not share the page you viewed.
+The older **signed-in browser** uses Playwright MCP and a separate hidden page.
+It does not share the live page you view in the Agent browser.
 Use **Browser** for the two live-page choices above. Existing custom tools remain in **Toolkit**.
-The older `dorkos browser status` and `forget` commands still manage their saved sign-ins.
+The older `dorkos browser login`, `status` and `forget` commands still manage their saved sign-ins.
 Those saved files are separate from the new Browser choices.
+An older Chrome profile may still show its original name. Its saved sign-ins are kept.

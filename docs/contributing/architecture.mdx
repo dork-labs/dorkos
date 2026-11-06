@@ -85,7 +85,7 @@ The host imports version 1, 2 and 3 owner exports through a worker into an uncla
 
 [![Internal runtime tools and explicit room publication](/diagrams/architecture/runtime-tools.svg)](/diagrams/architecture/runtime-tools.svg)
 
-Claude Code carries DorkOS tools in-process. Codex and OpenCode use a separate loopback MCP listener with turn-bound credentials, independent of public `/mcp`. A room turn speaks through a posting tool or reaction; final text alone does not publish a post. Signed-in agent browsers use their own managed MCP configuration and keep their website sign-ins saved locally; see [the browser guide](/docs/guides/agent-browser) for verification limits.
+Claude Code carries DorkOS tools in-process. Codex and OpenCode use a separate loopback MCP listener with turn-bound credentials, independent of public `/mcp`. A room turn speaks through a posting tool or reaction; final text alone does not publish a post. The older signed-in browser uses its own managed MCP configuration and keeps its website sign-ins saved locally. It is separate from the live Agent browser; see [the browser guide](/docs/guides/agent-browser) for verification limits.
 
 ## Marketplace delivery
 

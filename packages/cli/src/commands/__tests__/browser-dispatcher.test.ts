@@ -76,7 +76,8 @@ describe('browser runtime dispatcher cold branch', () => {
     expect(await runBrowserDispatcher('--help', [])).toBe(0);
     const help = vi.mocked(console.log).mock.calls.flat().join('\n');
     expect(help).toContain('open Browser from the DorkOS app');
-    expect(help).toContain('older saved-sign-in browser');
+    expect(help).toContain('older signed-in browser (Playwright MCP)');
+    expect(help).toContain('live Agent browser');
     expect(help).not.toContain('Tools & MCP');
     expect(help).not.toContain('Signed-in browser');
     expect(help).not.toContain('never your');
