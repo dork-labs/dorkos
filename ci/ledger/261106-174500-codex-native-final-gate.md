@@ -34,3 +34,7 @@ This is completion of temporary evidence collection, not a performance claim.
 Previous run 42239938316 native job took 31m32s including all diagnostics; its
 initial controls passed. Keep the reduced gate red if any native assertion or
 started-mode guard fails. No extra timeout or retry is authorized here.
+
+Security permits dropping the strace bwrap-executable witness: started rows prove the canaries and masks by behavior.
+
+The vanishing-folder case is not tested deterministically: it is a race, and rg-unreadable covers the same fatal nonzero-rg-exit branch.

@@ -56,7 +56,6 @@ import {
   protectedProbe,
   shellControlReturned,
   probeParentKinds,
-  startProbeScanRace,
 } from './fixtures/protected-probe.js';
 
 const BINARY = resolveCodexVendoredBinary();
@@ -552,44 +551,36 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }
   );
 
-  it.skipIf(process.platform !== 'linux').each(['unreadable', 'vanishing'] as const)(
-    'refuses rg-%s rather than skipping protected content at Ask',
-    async (kind) => {
+  it.skipIf(process.platform !== 'linux')(
+    'refuses rg-unreadable rather than skipping protected content at Ask',
+    async () => {
       const home = path.join(root, 'home');
       const probe = protectedProbe(root, project);
       const unreadable = path.join(home, 'rg-unreadable');
-      let race: Awaited<ReturnType<typeof startProbeScanRace>> | undefined;
-      if (kind === 'unreadable') {
-        expect(process.getuid?.()).not.toBe(0);
-        fs.mkdirSync(unreadable);
-        fs.writeFileSync(path.join(unreadable, '.env'), 'FAKE-unreadable-canary');
-        fs.chmodSync(unreadable, 0o000);
-      } else race = await startProbeScanRace(home);
+      expect(process.getuid?.()).not.toBe(0);
+      fs.mkdirSync(unreadable);
+      fs.writeFileSync(path.join(unreadable, '.env'), 'FAKE-unreadable-canary');
+      fs.chmodSync(unreadable, 0o000);
       try {
         const events = await nativeRefusal(
-          request('rg-' + kind, undefined, {
+          request('rg-unreadable', undefined, {
             settings: { permissionMode: 'default', model: 'fake-model' },
           }),
           'codex_unavailable',
           [
             'error building bubblewrap command',
             'ripgrep unreadable glob scan failed',
-            kind === 'unreadable' ? unreadable : path.join(home, 'rg-vanishing-tree'),
-            kind === 'unreadable'
-              ? 'Permission denied (os error 13)'
-              : 'No such file or directory (os error 2)',
+            unreadable,
+            'Permission denied (os error 13)',
           ]
         );
         for (const canary of [...probe.canaries, 'FAKE-unreadable-canary'])
           expect(events).not.toContain(canary);
       } finally {
-        if (race) expect(await race.stop()).toBeGreaterThan(0);
-        if (kind === 'unreadable') {
-          fs.chmodSync(unreadable, 0o700);
-          expect(fs.readFileSync(path.join(unreadable, '.env'), 'utf8')).toBe(
-            'FAKE-unreadable-canary'
-          );
-        }
+        fs.chmodSync(unreadable, 0o700);
+        expect(fs.readFileSync(path.join(unreadable, '.env'), 'utf8')).toBe(
+          'FAKE-unreadable-canary'
+        );
         expect(await reconcileMountTargets(path.join(root, 'data'))).toEqual([]);
         checkHostParents([home, path.join(root, 'data'), project]);
         probe.cleanup();

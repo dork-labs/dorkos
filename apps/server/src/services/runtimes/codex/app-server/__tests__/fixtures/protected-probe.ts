@@ -1,8 +1,6 @@
 /** Synthetic filesystem for the CI-only real-binary protection probe. */
 import fs from 'node:fs';
 import path from 'node:path';
-import { Worker } from 'node:worker_threads';
-import { once } from 'node:events';
 
 /** Read host metadata after failed launches as well as successful turns. */
 export function probeParentKinds(homes: readonly string[]) {
@@ -23,42 +21,6 @@ export function probeParentKinds(homes: readonly string[]) {
       }
     })
   );
-}
-
-/** Native refusal fixture: repeatedly remove a fake home subtree while Codex scans. */
-export async function startProbeScanRace(home: string) {
-  const folder = path.join(home, 'rg-vanishing-tree');
-  const counts = new Int32Array(new SharedArrayBuffer(4));
-  const worker = new Worker(
-    `
-    const fs = require('node:fs');
-    const path = require('node:path');
-    const { workerData, parentPort } = require('node:worker_threads');
-    const count = new Int32Array(workerData.counts);
-    function cycle() {
-      fs.rmSync(workerData.folder, { recursive: true, force: true });
-      for (let i = 0; i < 100; i++) {
-        const dir = path.join(workerData.folder, String(i));
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, '.env'), 'FAKE-rg-race');
-      }
-      Atomics.add(count, 0, 1);
-    }
-    cycle();
-    parentPort.postMessage('ready');
-    setInterval(cycle, 10);
-  `,
-    { eval: true, workerData: { folder, counts: counts.buffer } }
-  );
-  await once(worker, 'message');
-  return {
-    async stop() {
-      await worker.terminate();
-      const cycles = Atomics.load(counts, 0);
-      fs.rmSync(folder, { recursive: true, force: true });
-      return cycles;
-    },
-  };
 }
 
 /** A printed command in history is not proof that a shell returned its marker. */
