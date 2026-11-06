@@ -56,6 +56,7 @@ import {
   protectedProbe,
   shellControlReturned,
   probeParentKinds,
+  startProbeScanRace,
 } from './fixtures/protected-probe.js';
 
 const BINARY = resolveCodexVendoredBinary();
@@ -415,6 +416,43 @@ function expectedNewFolders(turn: CodexTurnRequest): Set<string> {
   );
 }
 
+/** A specific refusal, never a successful unprotected turn or a generic failure. */
+async function nativeRefusal(
+  turn: CodexTurnRequest,
+  code: string,
+  details: readonly string[],
+  beforeAcquire = false
+) {
+  const count = spawned.length;
+  const starts = turnStartedSeen;
+  const responses = seen.responses;
+  const bound = vi.fn();
+  const events: StreamEvent[] = [];
+  const transport = makeTransport();
+  try {
+    for await (const event of transport.runTurn({ ...turn, onThreadBound: bound }))
+      events.push(event);
+    expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+    expect(events[0]).toMatchObject({ data: { code } });
+    const error = events[0]!;
+    const reason = 'details' in error.data ? String(error.data.details) : '';
+    for (const detail of details) expect(reason).toContain(detail);
+    expect(bound).not.toHaveBeenCalled();
+    expect(turnStartedSeen).toBe(starts);
+    expect(seen.responses).toBe(responses);
+    if (beforeAcquire) expect(spawned).toHaveLength(count);
+    return JSON.stringify(events);
+  } finally {
+    await transport.shutdown();
+  }
+}
+
+function checkHostParents(homes: string[]) {
+  expect(
+    probeParentKinds(homes).filter(({ kind }) => kind !== 'absent' && kind !== 'directory')
+  ).toEqual([]);
+}
+
 // Apply the intended limit during collection; beforeAll is too late.
 const NATIVE_LIMITS = { timeout: 90_000 };
 const nativeSuite = describe.skipIf(BINARY === null);
@@ -429,6 +467,224 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     await principals.initializeBoot();
   });
+
+  it.skipIf(process.platform !== 'linux')(
+    'refuses a writable symlink inside the agent home without creating through it',
+    async () => {
+      const turn = request('own-home-writable-link', undefined);
+      const policy = turn.tools.filePolicy!;
+      policy.roots.agentHomes = [project];
+      completeHostFixture(policy, [policy.roots.home, policy.roots.data, project, codexHome]);
+      const target = path.join(root, 'empty-skill-target');
+      fs.mkdirSync(target);
+      // The leaf inside .claude is writable; the existing linked-folder row
+      // separately covers a link replacing .claude itself before acquisition.
+      const link = path.join(project, '.claude', 'skills');
+      fs.rmdirSync(link);
+      fs.symlinkSync(target, link, 'dir');
+      const before = { ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) };
+      const parents = [policy.roots.home, policy.roots.data, project];
+      try {
+        await nativeRefusal(turn, 'codex_unavailable', ['crosses writable symlink', link]);
+        expect({ ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) }).toEqual(before);
+        expect(fs.readdirSync(target)).toEqual([]);
+      } finally {
+        checkHostParents(parents);
+      }
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux').each(['acceptEdits', 'bypassPermissions'] as const)(
+    'refuses writes into another agent home inside writable cwd at %s',
+    async (mode) => {
+      const other = path.join(project, 'other-agent');
+      fs.mkdirSync(other);
+      const turn = request('other-home-in-cwd', undefined, {
+        settings: { permissionMode: mode, model: 'fake-model' },
+      });
+      turn.tools.filePolicy!.roots.agentHomes = [other];
+      const folders = expectedNewFolders(turn);
+      const before = hostTreeDigest(root, folders);
+      const writes = ['settings.json', 'skills'].map((name) => path.join(other, '.claude', name));
+      try {
+        await nativeRefusal(
+          turn,
+          mode === 'acceptEdits'
+            ? 'codex_writable_missing_protected_targets'
+            : 'codex_full_missing_protected_targets',
+          [path.join(other, '.claude')],
+          true
+        );
+        expect(fs.readdirSync(other)).toEqual([]);
+        for (const file of writes)
+          expect(() => fs.lstatSync(file)).toThrow(expect.objectContaining({ code: 'ENOENT' }));
+        expect(hostTreeDigest(root, folders)).toBe(before);
+        expect(turn.settings.permissionMode).toBe(mode);
+      } finally {
+        checkHostParents([path.join(root, 'home'), path.join(root, 'data'), project, other]);
+      }
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'refuses Edit plainly when cwd is the person home with a missing protected file',
+    async () => {
+      const home = path.join(root, 'home');
+      fs.unlinkSync(path.join(home, '.netrc'));
+      const turn = request('person-home-edit', undefined, { cwd: home });
+      const policy = turn.tools.filePolicy!;
+      policy.roots.cwd = home;
+      policy.roots.agentFolders = [home];
+      policy.writable = [home];
+      const before = hostTreeDigest(root);
+      try {
+        const events = await nativeRefusal(
+          turn,
+          'codex_writable_missing_protected_targets',
+          [path.join(home, '.netrc')],
+          true
+        );
+        expect(events).toContain('Choose Ask, then retry.');
+        expect(hostTreeDigest(root)).toBe(before);
+      } finally {
+        checkHostParents([home, policy.roots.data, project]);
+      }
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux').each(['unreadable', 'vanishing'] as const)(
+    'refuses rg-%s rather than skipping protected content at Ask',
+    async (kind) => {
+      const home = path.join(root, 'home');
+      const probe = protectedProbe(root, project);
+      const unreadable = path.join(home, 'rg-unreadable');
+      let race: Awaited<ReturnType<typeof startProbeScanRace>> | undefined;
+      if (kind === 'unreadable') {
+        expect(process.getuid?.()).not.toBe(0);
+        fs.mkdirSync(unreadable);
+        fs.writeFileSync(path.join(unreadable, '.env'), 'FAKE-unreadable-canary');
+        fs.chmodSync(unreadable, 0o000);
+      } else race = await startProbeScanRace(home);
+      try {
+        const events = await nativeRefusal(
+          request('rg-' + kind, undefined, {
+            settings: { permissionMode: 'default', model: 'fake-model' },
+          }),
+          'codex_unavailable',
+          [
+            'error building bubblewrap command',
+            'ripgrep unreadable glob scan failed',
+            kind === 'unreadable' ? unreadable : path.join(home, 'rg-vanishing-tree'),
+            kind === 'unreadable'
+              ? 'Permission denied (os error 13)'
+              : 'No such file or directory (os error 2)',
+          ]
+        );
+        for (const canary of [...probe.canaries, 'FAKE-unreadable-canary'])
+          expect(events).not.toContain(canary);
+      } finally {
+        if (race) expect(await race.stop()).toBeGreaterThan(0);
+        if (kind === 'unreadable') {
+          fs.chmodSync(unreadable, 0o700);
+          expect(fs.readFileSync(path.join(unreadable, '.env'), 'utf8')).toBe(
+            'FAKE-unreadable-canary'
+          );
+        }
+        expect(await reconcileMountTargets(path.join(root, 'data'))).toEqual([]);
+        checkHostParents([home, path.join(root, 'data'), project]);
+        probe.cleanup();
+      }
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'preserves host files after SIGKILL mid-turn and protects the next launch',
+    async () => {
+      const turn = request('kill-native', undefined);
+      const policy = turn.tools.filePolicy!;
+      policy.roots.agentHomes = [project];
+      const files = completeHostFixture(policy, [
+        policy.roots.home,
+        policy.roots.data,
+        project,
+        codexHome,
+      ]);
+      const snapshot = () =>
+        [...files].sort().map((file) => [file, fs.readFileSync(file, 'base64')]);
+      const before = snapshot();
+      let child: ReturnType<typeof nodeSpawn> | undefined;
+      let exited: Promise<string | null> | undefined;
+      let ready = false;
+      let killed = false;
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: 'printf PUBLIC-kill-ready; sleep 30',
+              login: false,
+              yield_time_ms: 1000,
+            })
+          ),
+        (res, body) => {
+          ready = shellControlReturned(body, 'PUBLIC-kill-ready');
+          if (ready) killed = child?.kill('SIGKILL') ?? false;
+          res.end(sse('victim stopped'));
+        }
+      );
+      const victim = makeTransport(undefined, 'app-server', (spawnedChild) => {
+        child = spawnedChild;
+        exited = new Promise((resolve) =>
+          spawnedChild.once('exit', (_code, signal) => resolve(signal))
+        );
+      });
+      try {
+        try {
+          for await (const event of victim.runTurn(turn)) void event;
+        } catch (error) {
+          expect(killed, String(error)).toBe(true);
+        }
+        expect(ready).toBe(true);
+        expect(killed).toBe(true);
+        expect(await exited).toBe('SIGKILL');
+        checkHostParents([policy.roots.home, policy.roots.data, project]);
+        expect(snapshot()).toEqual(before);
+      } finally {
+        await victim.shutdown();
+      }
+      scripted.length = 0;
+      expect(await reconcileMountTargets(policy.roots.data)).toEqual([]);
+      const secret = path.join(policy.roots.home, '.ssh', 'authorized_keys');
+      fs.writeFileSync(secret, 'CANARY-after-kill');
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: `cat ${JSON.stringify(secret)}; printf changed >> ${JSON.stringify(secret)}; printf PUBLIC-after-kill`,
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('recovered'));
+        }
+      );
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({
+        ...turn,
+        sessionId: 'after-kill',
+        onThreadBound: bound,
+      }))
+        events.push(event);
+      expect(bound).toHaveBeenCalledTimes(1);
+      expect(events.some((event) => event.type === 'error')).toBe(false);
+      expect(shellControlReturned(returned, 'PUBLIC-after-kill')).toBe(true);
+      expect(returned).not.toContain('CANARY-after-kill');
+      expect(fs.readFileSync(secret, 'utf8')).toBe('CANARY-after-kill');
+      checkHostParents([policy.roots.home, policy.roots.data, project]);
+    }
+  );
 
   it.skipIf(process.platform !== 'linux')(
     'refuses a linked active folder without changing its target or starting Codex',
