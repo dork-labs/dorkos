@@ -17,6 +17,7 @@ const STEPS: Array<{
   { label: 'Saving the sign-in', step: 'saving' },
   { label: 'Signed in', step: 'saved' },
   { label: 'Saving failed', step: 'failed' },
+  { label: 'The window closed', step: 'window-closed' },
   {
     label: 'A button’s call was refused',
     step: 'wall',
@@ -51,6 +52,7 @@ export function BrowserHandoffShowcases() {
                 error={error ?? null}
                 onContinue={ignore}
                 onSignIn={ignore}
+                onOpenWindow={ignore}
                 onShowWindow={ignore}
                 onStop={ignore}
               />

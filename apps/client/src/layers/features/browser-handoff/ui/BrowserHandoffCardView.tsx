@@ -23,6 +23,7 @@ export interface BrowserHandoffCardViewProps {
   error: string | null;
   onContinue: () => void;
   onSignIn: () => void;
+  onOpenWindow: () => void;
   onShowWindow: () => void;
   onStop: () => void;
 }
@@ -57,6 +58,7 @@ export function BrowserHandoffCardView({
   error,
   onContinue,
   onSignIn,
+  onOpenWindow,
   onShowWindow,
   onStop,
 }: BrowserHandoffCardViewProps) {
@@ -100,25 +102,28 @@ export function BrowserHandoffCardView({
       {/* The agent chooses the reason, so a page it called a check could still ask for a
           password. The card can't know, so every check says where a password goes. */}
       {step === 'wall' && (
-        <div className="bg-muted/50 flex flex-wrap items-center gap-2 rounded-md p-2">
-          <KeyRound className="size-4 shrink-0" aria-hidden />
-          <p className="min-w-0 flex-1 basis-48">
-            If it asks for a password, don’t type it in {name}’s window.
-          </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={onSignIn}
-            className="min-h-11 md:min-h-8"
-          >
-            Sign in to {site}
-          </Button>
-          {movesToOwnWindow && (
-            <p className="text-muted-foreground basis-full">
-              {name} moves to its own window after you sign in.
+        <div className="bg-muted/50 flex gap-2 rounded-md p-2">
+          <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden />
+          {/* Inside the text column, so a wrapped button lines up with the sentence. */}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1 basis-48">
+              If it asks for a password, don’t type it in {name}’s window.
             </p>
-          )}
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={onSignIn}
+              className="min-h-11 md:min-h-8"
+            >
+              Sign in to {site}
+            </Button>
+            {movesToOwnWindow && (
+              <p className="text-muted-foreground basis-full">
+                {name} moves to its own window after you sign in.
+              </p>
+            )}
+          </div>
         </div>
       )}
       {asksPassword && (
@@ -137,6 +142,9 @@ export function BrowserHandoffCardView({
           {sharedProfile && <p>Every agent that uses the Agent browser can use this sign-in.</p>}
         </div>
       )}
+      {step === 'window-closed' && (
+        <p>The window closed. Open it again to finish, or stop the task.</p>
+      )}
       {status && (
         <p role="status" aria-live="polite">
           {status}
@@ -149,6 +157,12 @@ export function BrowserHandoffCardView({
       )}
       {error && <p role="alert">{error}</p>}
       <div className="flex flex-wrap items-center gap-2">
+        {step === 'window-closed' && (
+          <Button disabled={busy} onClick={onOpenWindow} className="min-h-11 md:min-h-9">
+            <Monitor className="size-4" aria-hidden />
+            Open window
+          </Button>
+        )}
         {asksPassword && (
           <Button disabled={busy} onClick={onSignIn} className="min-h-11 md:min-h-9">
             <LogIn className="size-4" aria-hidden />
