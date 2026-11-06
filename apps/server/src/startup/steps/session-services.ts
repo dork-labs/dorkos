@@ -7,6 +7,8 @@
  *
  * @module startup/steps/session-services
  */
+import { initSeenVersions } from '../../services/session/new-since/seen-versions.js';
+import { IS_DEV_BUILD, SERVER_VERSION } from '../../lib/version.js';
 import {
   SessionStartedByStore,
   setSessionStartedByStore,
@@ -309,6 +311,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   // scheduled task or room turn is never silent (ADR 261001-000811).
   watchCreditsRefusals();
   // Nothing tells the server it was updated, so it compares versions on boot.
+  initSeenVersions(dorkHome, { version: SERVER_VERSION, dev: IS_DEV_BUILD });
   void announceInstalledVersion(dorkHome);
   // Git older than 2.38 cannot refuse a folder set up to look like a git
   // repository; say so once, in plain words (DOR-2326).

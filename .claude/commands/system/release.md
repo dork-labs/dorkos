@@ -359,6 +359,16 @@ from each other, so a forgotten bump here is caught by `test` rather than discov
 
 Bumping the desktop app keeps its artifact version (`DorkOS-X.Y.Z-arm64.dmg`) and electron-updater's version comparison in lockstep with the product version — the macOS build rides the `vX.Y.Z` tag (see Phase 4 and the "Desktop Release" workflow).
 
+### 6.3a: Stamp agent release facts
+
+In `apps/server/src/services/runtimes/shared/awareness/agent-release-notes.ts`,
+replace every note's `version: 'next'` with the exact release version `X.Y.Z`.
+Only stamp features included in this release; remove a note if its feature was removed.
+Never derive this prose from fragments at runtime. Unstamped notes stay silent.
+Run the targeted `agent-release-notes.test.ts` before the release commit and include
+the stamped source in that commit. The first release carrying this store only
+records each agent's baseline; notes begin with a later upgrade.
+
 ### 6.4: Compile fragments into the changelog
 
 Compile every fragment in `changelog/unreleased/` into a new version section (see `changelog/README.md` for the semantics):

@@ -267,6 +267,16 @@ Redaction, confirmation-token flows, and identity guards live inside `invoke` (o
 
 ## The awareness surface
 
+**Upgrade facts.** Add agent-facing changes to `runtimes/shared/awareness/agent-release-notes.ts`
+with `version: 'next'`, capability/tool ids in `covers`, and their permission areas or a static gate.
+Keep the rendered line under 160 characters. Release stamps the version; unstamped entries never render.
+The first ordinary agent turn after an upgrade takes at most eight facts in `<new_since_last_run>`,
+fenced as data by a shared writer on all four runtimes. `session/new-since/seen-versions.ts` owns
+the atomic per-agent map in `state/agent-seen-versions.json`; the first recorded run is silent,
+downgrades leave it unchanged, and a failed launch restores the claim. Scheduled runs and to-dos
+leave it owed. Keep it out of `agent-context.ts`: a vanishing block there would change the stable
+prompt and relaunch warm processes or re-anchor threads.
+
 Actuation is only half of it: an agent also has to know what it is and what it can reach. Two pieces carry that, and both are shared across runtimes rather than owned by one adapter.
 
 **The context blocks.** `runtimes/shared/agent-context.ts` builds the runtime-neutral system-prompt append: `<agent_identity>`, `<agent_persona>`, `<agent_safety_boundaries>`, `<dorkos_context>` (which names `dorkos capabilities` and `dorkos call`), and `<env>`. Every adapter delivers it through whatever channel its backend actually has:
