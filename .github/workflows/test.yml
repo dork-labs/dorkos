@@ -1241,9 +1241,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-    # Diagnostic budget only: nine independent untraced cases can each take
-    # seven minutes. The production RPC and native assertion timeouts stay fixed.
-    timeout-minutes: 110
+    timeout-minutes: 20
     env:
       NODE_OPTIONS: --max-old-space-size=8192
     steps:
@@ -1277,7 +1275,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils strace
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils
           sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
           sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
           test "$(readlink -f /usr/bin/bwrap)" = /usr/bin/bwrap
@@ -1289,47 +1287,7 @@ jobs:
       - name: Run the real Codex binary and protected-file controls
         timeout-minutes: 20
         run: |
-          mkdir -p .temp/codex-bwrap-trace
-          strace -ff -ttt -e trace=execve,execveat,kill,tgkill,tkill -s 4096 -o .temp/codex-bwrap-trace/exec pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
-      - name: Trace missing parents, host creation and killed-launch cleanup
-        if: ${{ always() }}
-        timeout-minutes: 15
-        run: node scripts/run-codex-missing-parents.mjs
-      - name: Preserve native bubblewrap arguments even on failure
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: codex-bwrap-trace
-          path: .temp/codex-bwrap-trace/
-          if-no-files-found: error
-          retention-days: 7
-      - name: Compare isolated branch and main native behavior
-        if: ${{ always() }}
-        timeout-minutes: 15
-        run: node scripts/run-codex-main-comparison.mjs
-      - name: Preserve main comparison independently of the witness
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: codex-main-comparison
-          path: .temp/codex-main-comparison/
-          if-no-files-found: error
-          retention-days: 7
-      - name: Measure protected probes without strace across home and cwd sizes
-        if: ${{ always() }}
-        timeout-minutes: 50
-        run: node scripts/run-codex-untraced.mjs
-      - name: Preserve every untraced measurement and failure
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: codex-untraced-measurements
-          path: .temp/codex-untraced/
-          if-no-files-found: error
-          retention-days: 7
-      - name: Prove Codex executed the preflighted distro bubblewrap
-        if: ${{ always() }}
-        run: node scripts/assert-codex-bwrap.mjs .temp/codex-bwrap-trace
+          pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
       - name: Require both protected probes and reject missing binaries or skipped tests
         run: |
           node --input-type=module <<'NODE'

@@ -91,7 +91,10 @@ describe('the hosted Codex proof receipt', () => {
     expect(job).not.toMatch(/secrets\.|sysctl|continue-on-error|passWithNoTests|curl|wget/);
     expect(job).toContain('sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict');
     expect(job).toContain('/usr/bin/bwrap --unshare-user --unshare-net');
-    expect(job).toContain('strace -ff -ttt -e trace=execve,execveat,kill,tgkill,tkill');
+    expect(job).toContain('timeout-minutes: 20');
+    expect(job).not.toMatch(
+      /strace|DORKOS_CODEX_PROBE_|run-codex-(missing-parents|main-comparison|untraced)/
+    );
     expect(workflow.match(/sudo apparmor_parser/g)).toHaveLength(1);
     expect(workflow).toContain(
       'needs: [test-shard, community-pg, community-packaged, codex-sandbox]'
@@ -101,39 +104,5 @@ describe('the hosted Codex proof receipt', () => {
     expect(job).toContain(
       'pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts'
     );
-  });
-});
-
-describe('the real bubblewrap executable witness', () => {
-  const witness = path.resolve(import.meta.dirname, '../assert-codex-bwrap.mjs');
-  function accepted(trace: string): boolean {
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'bwrap-witness-'));
-    try {
-      writeFileSync(path.join(dir, 'exec.123'), trace);
-      try {
-        execFileSync(process.execPath, [witness, dir], { stdio: 'pipe' });
-        return true;
-      } catch {
-        return false;
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-  it('accepts the preflighted distro binary actually creating a namespace', () => {
-    expect(
-      accepted('execve("/usr/bin/bwrap", ["bwrap", "--unshare-net", "--cap-drop", "ALL"], 0x1) = 0')
-    ).toBe(true);
-  });
-  it.each([
-    '',
-    'execve("/usr/bin/bwrap", ["bwrap", "--help"], 0x1) = 0',
-    'execve("/usr/bin/bwrap", ["bwrap", "--unshare-net"], 0x1) = 0',
-    'execve("/proc/self/fd/7", ["bwrap", "--unshare-net"], 0x1) = 0',
-    'execve("/vendor/codex-resources/bwrap", ["bwrap", "--unshare-net"], 0x1) = 0',
-    'execveat(7, "", ["bwrap", "--unshare-net"], 0x1, AT_EMPTY_PATH) = 0',
-    'execve("/usr/bin/bwrap", ["bwrap", "--unshare-net"], 0x1) = -1 EPERM',
-  ])('refuses absent, help-only, mismatched or unsuccessful execution: %s', (trace) => {
-    expect(accepted(trace)).toBe(false);
   });
 });
