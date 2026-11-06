@@ -1,16 +1,11 @@
 /**
  * @vitest-environment node
  *
- * DOR-3292's standing canary for OpenCode: what a secret file inside the
- * agent's folder is worth today. DorkOS runs OpenCode with edits, shell and
- * web fetches set to ask (`OPENCODE_SIDECAR_CONFIG`), and reads left free, so
- * reading a secret file in its folder runs without asking anybody, and the
- * secret reaches the model. (The case reads the file rather than searching the
- * folder: OpenCode's search downloads ripgrep when none is installed, and this
- * test never reaches the internet.) Expected, and the point: it records the limit the folder-secrets
- * warning and its copy describe, so a change in OpenCode either way shows up
- * here. Codex has the same canary (`app-server.binary.test.ts`), Claude Code
- * its own (`folder-secret-canary.binary.test.ts` under claude-code).
+ * The sidecar's real read-permission channel, using made-up secret data.
+ * DorkOS configures reads to ask the host, so a CLI with nobody to answer
+ * must refuse the read instead of returning a secret to the fake model.
+ * The runtime-level tests separately prove DorkOS's host refuses protected
+ * paths and auto-answers ordinary reads, including at Full.
  *
  * Nothing here can spend or reach the internet: a fake model on 127.0.0.1
  * scripts one `read` call, every other address goes to a proxy that does not
@@ -45,7 +40,8 @@ function chunk(delta: object, finish: string | null = null): string {
  */
 function fakeModel(
   results: string[],
-  secret: () => string
+  secret: () => string,
+  calls: string[]
 ): Promise<{ url: string; close: () => Promise<void> }> {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
@@ -59,6 +55,7 @@ function fakeModel(
         const hasResult = body.messages?.some((message) => message.role === 'tool') ?? false;
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         if (body.tools?.length && !hasResult) {
+          calls.push(raw);
           const call = {
             index: 0,
             id: 'call_1',
@@ -89,6 +86,8 @@ describe.skipIf(BINARY === null)('OpenCode and a secret file in its folder (DOR-
   let root: string;
   let folder: string;
   let results: string[];
+  let calls: string[];
+  let target: string;
   let model: Awaited<ReturnType<typeof fakeModel>>;
 
   beforeEach(async () => {
@@ -96,7 +95,8 @@ describe.skipIf(BINARY === null)('OpenCode and a secret file in its folder (DOR-
     folder = path.join(root, 'agent');
     fs.mkdirSync(path.join(folder, 'keys'), { recursive: true });
     results = [];
-    model = await fakeModel(results, () => path.join(folder, 'keys', 'host.key'));
+    calls = [];
+    model = await fakeModel(results, () => target, calls);
     fs.writeFileSync(
       path.join(folder, 'opencode.json'),
       JSON.stringify({
@@ -134,37 +134,64 @@ describe.skipIf(BINARY === null)('OpenCode and a secret file in its folder (DOR-
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
-  it('reads a secret file in its folder with nobody asked (today’s limit)', async () => {
-    fs.writeFileSync(path.join(folder, 'keys', 'host.key'), `${CANARY}\n`);
-    // DorkOS's own sidecar config: edits, shell and fetches ask; reads do not.
-    const env = {
-      ...buildSidecarSpawnEnv(OPENCODE_OWN_PLAN, 'pw', {}),
-      // Anything not on this machine goes to a port nobody answers.
-      ...OFFLINE_PROXY_ENV,
-    };
-    const child = spawn(BINARY!, ['run', '-m', 'fake/x', 'find the canary'], {
-      cwd: folder,
-      env,
-      stdio: ['ignore', 'ignore', 'ignore'],
-    });
-    child.once('error', (err) => results.push(`spawn failed: ${err.message}`));
-    await new Promise<void>((resolve) => {
-      const deadline = setTimeout(resolve, 60_000);
-      const watcher = setInterval(() => {
-        if (results.length > 0) {
+  it.each(['keys/host.key', '.env.ci', 'prod.env', 'readable.txt'])(
+    'enforces native read rules for %s',
+    async (file) => {
+      target = path.join(folder, file);
+      fs.writeFileSync(target, `${CANARY}\n`);
+      // DorkOS's own sidecar config: native reads ask too.
+      const env: Record<string, string> = {
+        ...buildSidecarSpawnEnv(OPENCODE_OWN_PLAN, 'pw', {}),
+        // Anything not on this machine goes to a port nobody answers.
+        ...OFFLINE_PROXY_ENV,
+      };
+      if (file !== 'keys/host.key') {
+        // Simulate the host allowing an ordinary read, without overriding native denies.
+        // The readable control must succeed; the env cases must still be refused.
+        const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as {
+          permission: { read: Record<string, string> };
+        };
+        config.permission.read['*'] = 'allow';
+        env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
+      }
+      const child = spawn(BINARY!, ['run', '-m', 'fake/x', 'find the canary'], {
+        cwd: folder,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let output = '';
+      child.stdout.on('data', (data) => {
+        output += String(data);
+      });
+      child.stderr.on('data', (data) => {
+        output += String(data);
+      });
+      child.once('error', (err) => results.push(`spawn failed: ${err.message}`));
+      await new Promise<void>((resolve) => {
+        const deadline = setTimeout(resolve, 60_000);
+        const watcher = setInterval(() => {
+          if (results.length > 0) {
+            clearTimeout(deadline);
+            clearInterval(watcher);
+            resolve();
+          }
+        }, 100);
+        child.once('exit', () => {
           clearTimeout(deadline);
           clearInterval(watcher);
           resolve();
-        }
-      }, 100);
-      child.once('exit', () => {
-        clearTimeout(deadline);
-        clearInterval(watcher);
-        resolve();
+        });
       });
-    });
-    child.kill('SIGKILL');
-    expect(results.length, 'the read never ran, or its result never reached the model').toBe(1);
-    expect(results[0]).toContain(CANARY);
-  }, 90_000);
+      child.kill('SIGKILL');
+      expect(calls.length, output).toBeGreaterThan(0);
+      const evidence = output + results.join('\n');
+      if (file === 'readable.txt') {
+        expect(evidence).toContain(CANARY);
+        return;
+      }
+      expect(evidence).not.toContain(CANARY);
+      expect(evidence).toMatch(/permission|reject|denied/i);
+    },
+    90_000
+  );
 });

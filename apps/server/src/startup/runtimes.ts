@@ -9,6 +9,7 @@
  *
  * @module startup/runtimes
  */
+import { reconcileMountTargets } from '../services/runtimes/codex/policy/reconcile-mount-targets.js';
 import { registerComputerRuntime } from './computers.js';
 import type { AgentRuntimeLike } from '@dorkos/relay';
 import type { Db } from '@dorkos/db';
@@ -80,6 +81,11 @@ export async function registerRuntimes(deps: RuntimeStartupDeps): Promise<Regist
     logger.info('[DorkOS] Hub mode: no agent runtimes on this server');
     return { claudeRuntime: null, doeRuntime: null, relayAgentRuntime: null, creditsRelay: null };
   }
+  // Validate observations even if Codex is now disabled. Neither an observed
+  // missing path nor a native marker proves ownership of the current file.
+  await reconcileMountTargets(deps.dorkHome).catch((err: unknown) =>
+    logger.warn('[CodexAppServer] startup cleanup refused', logError(err))
+  );
   if (currentServerRole() === 'agent-computer') return registerAgentComputerRuntimes(deps);
   const { db, dorkHome } = deps;
   let claudeRuntime: ClaudeCodeRuntime | null = null;

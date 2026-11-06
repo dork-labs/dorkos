@@ -25,6 +25,7 @@ import type {
 import type { CreditsLaunch } from '../../../core/cloud/credits-protocols.js';
 import type { DorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../../connector-tools.js';
+import type { CodexFilePolicy } from '../policy/protected-profile.js';
 import type { CodexManagedMcpServers } from '../mcp-server-config.js';
 import type { CodexEventContext } from '../event-mapper.js';
 import type { BackgroundWake } from '../app-server/background-work.js';
@@ -34,6 +35,8 @@ export type CodexLaunch = { home: 'person' } | { home: 'credits'; credits: Credi
 
 /** The tools one turn carries, resolved by the runtime. */
 export interface CodexTurnTools {
+  /** Native file protections and extra write roots, captured for this turn. */
+  readonly filePolicy?: CodexFilePolicy;
   /** The agent identity token's environment fragment; `{}` when unattributed. */
   readonly agentTokenEnv: Record<string, string>;
   /**

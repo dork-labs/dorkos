@@ -11,6 +11,8 @@ adr: 261005-113107
 
 Direction: `01-ideation.md`. Decision: ADR `261005-113107` (supersedes ADR-0309, amends ADR `261002-221210`). Protocol reference: `research/20261005_codex-app-server-protocol-0154.md` ("protocol §n" below). Spike evidence: `research/20261005_codex-app-server-spikes.md` ("spike n").
 
+**DOR-3595 amendment (2026-11-03).** ADR [261103-181907](../../decisions/261103-181907-codex-file-protections-have-no-exec-fallback.md) retires the exec fallback described in the original phases below. Every saved setting runs protected app-server; a startup failure refuses, never falls back. Thread loads and turns explicitly select the shared protected profile; load acknowledgement must match. Changed managed tools and file policy reload before the next turn. Earlier phase and exec descriptions remain historical.
+
 ## 1. Goal and non-goals
 
 **Goal.** Codex chats in DorkOS run on a long-lived `codex app-server` process, so that:
@@ -27,7 +29,7 @@ Direction: `01-ideation.md`. Decision: ADR `261005-113107` (supersedes ADR-0309,
 - Listing or importing the person's own Codex Desktop or CLI threads. The session list stays DorkOS-mapped threads only (§13).
 - Fork, compaction (`thread/compact/start`), rollback, `thread/queue/*`, realtime, plugins, review mode. Each is a possible follow-up; none is needed for the done-when.
 - Moving DorkOS context out of the prompt into `developerInstructions` or `turn/start.additionalContext`. Prompt assembly (`buildCodexPrompt`, `CodexContextGate`) is unchanged, so both transports send the model the same words. Follow-up.
-- Removing the exec path. It stays behind the switch until app-server has shipped a release with nobody needing it; removal is its own issue.
+- Original non-goal, retired by DOR-3595: keeping exec behind the switch. The production exec path is now removed.
 - Restart resume of background work across a DorkOS restart (DOR-2689) and the other DOR-2717 items outside item 8.
 
 ## 2. Phases
@@ -130,7 +132,7 @@ export interface CodexTransport {
   - every thread key minted for the process is revoked (§9).
     The next turn respawns lazily. A crash loop guard refuses a respawn for 30 s after 3 crashes within 60 s, with the error "Codex keeps stopping. Try again in a minute." and the stderr tail in the log. This mirrors `SIDECAR_TIMING` without eager restarts: nothing waits on a Codex process that has no turn.
 - **Idle reaping.** A process is **live** while any of these holds: a turn is open on any of its threads; a server request is pending; a wake is in flight (P3); a thread has a background terminal (`thread/backgroundTerminals/list` non-empty) or an unfinished sub-agent. A process not live for **10 minutes** is closed. A process that has a **stale** thread (its load fingerprint no longer matches, §8) is closed as soon as it is not live. The reaper checks every 60 s with an `unref`'d timer; `thread/backgroundTerminals/list` is only called for threads DorkOS saw start a process-backed command since their last empty listing.
-- **Shutdown.** `codexAppServerPool.shutdown()` is called in `apps/server/src/index.ts` `shutdownServices()` immediately after `openCodeServerManager.shutdown()`: for each process, end stdin, wait up to 3 s for exit, SIGTERM, wait 3 s, SIGKILL. Background terminals die with it (documented; restart resume is DOR-2689). The admin restart path runs the same function.
+- **Shutdown.** `codexAppServerPool.shutdown()` is called in `apps/server/src/index.ts` `shutdownServices()` immediately after `openCodeServerManager.shutdown()`: for each process, end stdin, wait up to 30 s for exit, SIGTERM, wait 30 s, SIGKILL. Authority/credits removal keeps the 3-second steps and shortens a normal shutdown already in progress. Closing and failed-boot children stay visible in the pool until their OS exit event; an RPC close or elapsed stop deadline is not proof of exit. Background terminals die with it (documented; restart resume is DOR-2689). The admin restart path runs the same function.
 - **Process hygiene.** The pool kills only children it spawned, by the PID it holds (Hard Rule 7). Tests inject `spawn`.
 
 ## 6. Thread lifecycle
@@ -357,7 +359,7 @@ P1 sends `approvalPolicy: 'never'` with the same sandbox mapping as exec, so P1 
 ## 15. Config: `runtimes.codex.transport`
 
 - **Schema** (`packages/shared/src/config-schema.ts`, inside `runtimes.codex`): `transport: z.enum(['auto', 'app-server', 'exec']).default('auto')`, and `transport: 'auto'` in both the object's and `runtimes`' `.default(() => …)` literals (config defaults are declared twice).
-- **Meaning.** `auto` = DorkOS's current default: exec in P1 and P2, app-server from P3. Resolved in one function, `resolveCodexTransport(config)` in `codex/transport/index.ts`. P3 flips it by changing that function only: **no migration** and no seeded value, so an explicit `exec` or `app-server` a person set survives the flip.
+- **Meaning after DOR-3595.** All three saved values resolve to protected app-server. `exec` remains valid input for existing configuration files, but no longer selects an SDK subprocess. No startup failure falls back to exec.
 - **Migration** (P1): a nested leaf in a section every stored config has, so the body is load-bearing. One new `CONFIG_MIGRATIONS` key strictly above the newest `v*` tag at merge time (today `v0.97.0`, so `0.98.0` unless a release lands first), writing `transport: 'auto'` when absent, idempotent; pinned in `merged-migration-hashes.ts`; upgrade-path test in `config-manager.test.ts`.
 - **Disclosure:** `'runtimes.codex.transport': 'expose'`. **Write policy:** `'operator-only'` (it changes which process DorkOS spawns and whether approvals can happen, so an agent should not flip it).
 - **Docs:** row in `contributing/configuration.md` and `docs/getting-started/configuration.mdx`: "How DorkOS runs Codex. `auto` follows DorkOS's default; `exec` is the older one-process-per-reply way. Takes effect after a restart."

@@ -103,7 +103,7 @@ describe('Admin routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.message).toContain('Reset initiated');
       await settle();
-      expect(mockShutdownServices).toHaveBeenCalled();
+      expect(mockShutdownServices).toHaveBeenCalledWith('authority');
       expect(mockCloseDb).toHaveBeenCalled();
       expect(fs.rm).toHaveBeenCalledWith(DORK_HOME, { recursive: true, force: true });
     });

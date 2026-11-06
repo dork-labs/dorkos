@@ -23,7 +23,8 @@ import type { Session } from '@dorkos/shared/types';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 
 // Mock boundary before importing app (same pattern as other route tests)
-vi.mock('../../lib/boundary.js', () => ({
+vi.mock('../../lib/boundary.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/boundary.js')>()),
   validateBoundary: vi.fn(async (p: string) => p),
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),
@@ -107,6 +108,8 @@ import { sessionMetadata, eq } from '@dorkos/db';
 import type { Db } from '@dorkos/db';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { CodexRuntime } from '../../services/runtimes/codex/codex-runtime.js';
+// Only the shared test transport crosses this boundary; scenario fixtures remain local.
+import { ScriptedCodexTransport } from '../../services/runtimes/codex/__tests__/fixtures/scripted-transport.js';
 import { CodexThreadMap } from '../../services/runtimes/codex/thread-map.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { OpenCodeRuntime } from '../../services/runtimes/opencode/opencode-runtime.js';
@@ -341,7 +344,7 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     runtimeA = new FakeAgentRuntime('fake-a');
     runtimeB = new FakeAgentRuntime('fake-b');
     codex = new CodexRuntime({
-      transport: 'exec',
+      transport: new ScriptedCodexTransport(),
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/bin/codex',
     });

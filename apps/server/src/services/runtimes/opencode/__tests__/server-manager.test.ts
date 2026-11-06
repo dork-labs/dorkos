@@ -189,7 +189,14 @@ describe('OpenCodeServerManager', () => {
       expect(env.OPENCODE_SERVER_PASSWORD).toMatch(/^[0-9a-f]{64}$/);
       // Conservative ask-ruleset — the safety boundary (NOTES.md §2).
       expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual({
-        permission: { edit: 'ask', bash: 'ask', webfetch: 'ask' },
+        permission: {
+          read: { '*': 'ask', '*.env': 'deny', '*.env.*': 'deny', '*.env.example': 'allow' },
+          grep: 'ask',
+          glob: 'ask',
+          edit: 'ask',
+          bash: 'ask',
+          webfetch: 'ask',
+        },
       });
       expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!)).toEqual(OPENCODE_SIDECAR_CONFIG);
 
