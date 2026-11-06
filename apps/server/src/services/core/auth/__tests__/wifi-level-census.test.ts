@@ -245,6 +245,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/step-up/:heldActionId/password',
   ],
   'Already this computer only: the route refuses every other caller': [
+    'POST /api/system/shell-check/continue',
     'POST /api/desktop/sign-in',
     'POST /api/person-session',
     'POST /api/onboarding/first-run',

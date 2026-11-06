@@ -40,6 +40,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { BASELINE_ENV_NAMES } from '../../shared/runtime-environment-catalog.js';
+import { runtimeInheritedNames } from '../../shared/runtime-environment-config.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import {
   CreditsUnavailableError,
@@ -328,4 +329,22 @@ export function creditsStoppedEvent(details?: string): StreamEvent {
  */
 export function asCreditsStopped(event: StreamEvent): StreamEvent {
   return asCreditsStoppedFor(event, CLAUDE_CODE_LABEL);
+}
+
+/**
+ * A credits turn's process environment is what {@link creditsProcessEnv} keeps (the
+ * baseline, DorkOS's own names and the inherit list, never a name that routes
+ * or pays), with the credits pair on top; any other turn's is returned as
+ * projected, and carries no credits variable because none was added.
+ *
+ * @param creditsEnv - The credits pair on a credits turn, else `undefined`.
+ * @param env - The projected environment.
+ */
+export function forCredits(
+  creditsEnv: Record<string, string> | undefined,
+  env: Record<string, string>
+): Record<string, string> {
+  return creditsEnv === undefined
+    ? env
+    : creditsProcessEnv(env, creditsEnv, runtimeInheritedNames('claude-code'));
 }

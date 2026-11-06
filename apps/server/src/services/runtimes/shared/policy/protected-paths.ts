@@ -205,6 +205,8 @@ export const AGENT_FOLDER_SECRET_PATHS = group(
  * - `extension-snapshots/` holds the approved files an extension runs from,
  *   and `cache/extensions/` the bundles built from them (DOR-3068). An agent
  *   that could rewrite either could run code nobody approved.
+ * - `cache/shell-guard/` holds the development child that checks shell commands.
+ *   Rewriting it could disable that check for every agent (DOR-3300).
  * - `marketplace/` holds what DorkOS's installer recorded, `project-installs.json`
  *   among it: which plugin came from where (DOR-3068).
  * - `plugins/` holds the plugins installed for every project. A plugin's
@@ -222,6 +224,7 @@ export const PERSON_ONLY_DATA_PATHS = group('data', 'write', [
   ['session-relay', 'folder'],
   ['extension-snapshots', 'folder'],
   ['cache/extensions', 'folder'],
+  ['cache/shell-guard', 'folder'],
   ['marketplace', 'folder'],
   ['plugins', 'folder'],
   ['config.json*', 'file'],

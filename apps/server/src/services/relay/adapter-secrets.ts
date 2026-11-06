@@ -603,3 +603,6 @@ export async function deleteApprovedReferences(
       logger.warn(`[AdapterSecrets] Could not delete approvals for adapter '${adapterId}':`, err)
     );
 }
+
+/** The adapter config file, relative to the data folder. Agents' tools are kept off it by name (DOR-3300). */
+export const ADAPTER_CONFIG_FILE = 'relay/adapters.json';

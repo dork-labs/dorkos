@@ -6,6 +6,9 @@ import path from 'node:path';
 
 const BINDING_KEY_BYTES = 32;
 
+/** Where profiles live in the data folder. Agents' tools are kept off it by name (DOR-3300). */
+export const BROWSER_PROFILES_FOLDER = 'browser-profiles';
+
 /**
  * Read the key browser profile bindings are signed with, making it the first
  * time. It sits in the denied profiles folder, so no agent file tool can reach it.
@@ -15,7 +18,7 @@ const BINDING_KEY_BYTES = 32;
  * @param dataDirectory - The DorkOS data folder.
  */
 export function loadProfileBindingKey(dataDirectory: string): Buffer {
-  const root = path.join(dataDirectory, 'browser-profiles');
+  const root = path.join(dataDirectory, BROWSER_PROFILES_FOLDER);
   mkdirSync(root, { recursive: true, mode: 0o700 });
   chmodSync(root, 0o700);
   const file = path.join(root, '.binding-key');
@@ -52,7 +55,7 @@ export async function prepareProfileFolder(
   dataDirectory: string,
   profileId: string | null
 ): Promise<string> {
-  const root = path.join(dataDirectory, 'browser-profiles');
+  const root = path.join(dataDirectory, BROWSER_PROFILES_FOLDER);
   await mkdir(root, { recursive: true, mode: 0o700 });
   // mkdir's mode doesn't change a folder that already exists.
   await chmod(root, 0o700);

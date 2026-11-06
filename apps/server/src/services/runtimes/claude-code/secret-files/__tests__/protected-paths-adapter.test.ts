@@ -106,6 +106,7 @@ describe('Claude Code protected-path adapter', () => {
       'session-relay',
       'extension-snapshots',
       'cache/extensions',
+      'cache/shell-guard',
       'marketplace',
       'plugins',
       'browser-profiles',

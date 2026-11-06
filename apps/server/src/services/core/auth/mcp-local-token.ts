@@ -46,7 +46,7 @@ import { configManager } from '../config-manager.js';
  * config surface: raw secrets live in files, never in `config.json` (ADR-0315,
  * `CREDENTIAL_REF_PATTERN`).
  */
-const TOKEN_FILE_NAME = 'mcp-local-token';
+export const TOKEN_FILE_NAME = 'mcp-local-token';
 
 /** Owner-only file mode for the persisted token (`rw-------`). */
 const TOKEN_FILE_MODE = 0o600;

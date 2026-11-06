@@ -13,10 +13,11 @@
  * Only the model's tools are stopped: `gh`, `git` and Claude Code itself still
  * read their own files. The CLI also holds a shell command that NAMES a denied
  * file (`cat`, `head`, `sed -n`), but not a search of a whole folder
- * (`grep -r`, `rg -uu`); that is part 2 (DOR-3300).
+ * (`grep -r`, `rg -uu`). Below Full, `shell-guard/shell-path-guard.ts` asks about
+ * those (DOR-3300).
  *
  * The rules also name `Grep` and `Glob`, for a Claude Code that has those tools;
- * the bundled CLI has neither, and searches through the shell instead (part 2).
+ * the bundled CLI has neither, and searches through the shell instead.
  * `*` in a rule crosses folders, so a file is named exactly and a folder ends
  * in `/**`.
  *
@@ -79,10 +80,10 @@ export const HOME_SECRETS = globs(HOME_SECRET_PATHS);
  * bundled CLI 0.3.304 (DOR-3511):
  * - Refused at every level, Bypass included: the `Read` tool, and a shell
  *   command that names the file (`cat .env`, a link to it, `.ENV`).
- * - Still read at every level: a search of the whole folder (`grep -r X .`,
- *   `rg -uu X .`), which never names the file.
- * - Still read at Full (Bypass): a program that opens the file itself
- *   (`python3 -c "open('.env')"`). Below Full it is a card or a refusal.
+ * - Still read at Full (Bypass): a search of the whole folder (`grep -r X .`,
+ *   `rg -uu X .`), which never names the file, and a program that opens the file
+ *   itself (`python3 -c "open('.env')"`). Below Full each is a card or a refusal
+ *   (`shell-guard/shell-path-guard.ts`, DOR-3300).
  * Only moving the file out of the folder stops those, or Claude Code's Bash
  * sandbox, which isn't on.
  *

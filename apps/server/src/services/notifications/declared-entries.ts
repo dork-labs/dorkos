@@ -13,6 +13,8 @@
  *   changed (DOR-3245).
  * - `browser-handoff-notifications.ts`: an agent handed a person the Agent browser
  *   (DOR-3218).
+ * - `shell-check-notifications.ts`: the check on agents' shell commands can't
+ *   start (DOR-3300).
  *
  * @module services/notifications/declared-entries
  */
@@ -31,6 +33,7 @@ import {
   ACCOUNT_SIGNIN_ENTRIES,
   type AccountSigninPayloads,
 } from './account-signin-notifications.js';
+import { SHELL_CHECK_ENTRIES, type ShellCheckPayloads } from './shell-check-notifications.js';
 
 import {
   BROWSER_HANDOFF_ENTRIES,
@@ -45,7 +48,8 @@ export interface DeclaredPayloads
     CommunityNotificationPayloads,
     SecretFilePayloads,
     AccountSigninPayloads,
-    BrowserHandoffPayloads {}
+    BrowserHandoffPayloads,
+    ShellCheckPayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
@@ -55,6 +59,7 @@ export const DECLARED_ENTRIES = {
   ...SECRET_FILE_ENTRIES,
   ...ACCOUNT_SIGNIN_ENTRIES,
   ...BROWSER_HANDOFF_ENTRIES,
+  ...SHELL_CHECK_ENTRIES,
 };
 
 /**
@@ -69,4 +74,5 @@ export const DECLARED_WIRED_KINDS = [
   'agent.secret_files',
   'account.signin_review',
   'browser.handoff',
+  'shell.check_down',
 ] as const;

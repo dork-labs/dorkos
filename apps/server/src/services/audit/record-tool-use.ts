@@ -309,7 +309,7 @@ function markFinished(sessionId: string, toolCallId: string): void {
  */
 export function recordRuntimeToolCall(
   call: RuntimeToolCall,
-  outcome: 'ok' | 'failed',
+  outcome: 'ok' | 'failed' | 'refused',
   error?: string
 ): void {
   if (isFinished(call.sessionId, call.toolCallId)) return;
