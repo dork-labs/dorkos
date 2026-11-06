@@ -155,6 +155,9 @@ function SegmentedControlItem({
           aria-hidden
           data-slot="segmented-control-thumb"
           layoutId={THUMB_LAYOUT_ID}
+          // Only a new choice moves it. Without this, anything shifting the row (a form growing
+          // above it, a dialog re-centering) leaves the thumb springing after it, off its row.
+          layoutDependency={row?.value}
           className="bg-background shadow-soft absolute inset-0 rounded-md"
           transition={THUMB_SPRING}
         />

@@ -4,7 +4,7 @@
  * run, message history, held connected-app actions, a hub's linked computers,
  * a canvas document's route controls, a space's docs, a person's signed-in
  * devices, an account's automatic moves, a framed page's script decision, an
- * agent's level, undoing an agent's task mode), joined here so `transport.ts` extends one name. Nothing consuming
+ * agent's level, undoing an agent's task mode, global MCP servers), joined here so `transport.ts` extends one name. Nothing consuming
  * the port sees a difference.
  *
  * @module shared/transport-slices
@@ -37,6 +37,7 @@ import type { FrameBridgeTransport } from './transport-frame-bridge.js';
 import type { AgentLevelTransport } from './transport-agent-level.js';
 import type { ApprovalTransport } from './transport-approvals.js';
 import type { TaskModeUndoTransport } from './transport-task-mode.js';
+import type { GlobalMcpTransport } from './transport-global-mcp.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -69,4 +70,5 @@ export interface TransportSlices
     AccountAutoMoveTransport,
     FrameBridgeTransport,
     AgentLevelTransport,
-    TaskModeUndoTransport {}
+    TaskModeUndoTransport,
+    GlobalMcpTransport {}

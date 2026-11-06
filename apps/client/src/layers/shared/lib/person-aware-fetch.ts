@@ -45,16 +45,37 @@ function targetOf(input: RequestInfo | URL, origin: string): URL | null {
 /** How many times one call is held again after its step-up expired. */
 const MAX_STEP_UP_ASKS = 3;
 
-/** The held action a `428` names, reading a copy of its body, or `null`. */
-async function heldActionOf(res: Response): Promise<string | null> {
+/** The held action a `428` names, reading a copy of its body, and that body as text. */
+async function heldActionOf(res: Response): Promise<{ id: string; refusal: string } | null> {
   if (res.status !== 428) return null;
-  const body = (await res
+  const refusal = await res
     .clone()
-    .json()
-    .catch(() => null)) as { code?: unknown; heldActionId?: unknown } | null;
+    .text()
+    .catch(() => '');
+  const body = parsedRefusal(refusal);
   return body?.code === STEP_UP_REQUIRED_CODE && typeof body.heldActionId === 'string'
-    ? body.heldActionId
+    ? { id: body.heldActionId, refusal }
     : null;
+}
+
+/** A `428`'s body as JSON, or `null` when it isn't. */
+function parsedRefusal(text: string): { code?: unknown; heldActionId?: unknown } | null {
+  try {
+    return JSON.parse(text) as { code?: unknown; heldActionId?: unknown } | null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The refusal again, as a new response. The caller's timeout kept running while the sheet was
+ * open, and once it fires the first response's body can no longer be read.
+ */
+function refusalResponse(refusal: string): Response {
+  return new Response(refusal, {
+    status: 428,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 /**
@@ -110,17 +131,19 @@ export function personAwareFetch(base: typeof fetch, origin: string): typeof fet
     // once the person confirms. An expired one is asked for again, a few times.
     let afterExpiry = false;
     for (let asks = 0; asks < MAX_STEP_UP_ASKS; asks++) {
-      const heldActionId = await heldActionOf(res);
-      if (heldActionId === null) break;
-      const outcome = await requestActionStepUp(heldActionId, { afterExpiry });
+      const held = await heldActionOf(res);
+      if (held === null) break;
+      const outcome = await requestActionStepUp(held.id, { afterExpiry });
       afterExpiry = outcome.kind === 'ask-again';
       if (outcome.kind === 'confirmed') return confirmedResponse(outcome.status, outcome.result);
-      if (outcome.kind === 'not-confirmed') return res;
+      if (outcome.kind === 'not-confirmed') return refusalResponse(held.refusal);
       // A new sign-in first. The old held action was dropped and never moves to
       // the new session: the call goes again and the server holds it afresh.
       if (outcome.kind === 'sign-in-again' && !(await requestPersonStepUp({ dismissible: true })))
-        return res;
-      res = await base(...build());
+        return refusalResponse(held.refusal);
+      // A fresh clock: the caller's timeout kept running while the sheet was open.
+      const [again, retryInit] = build();
+      res = await base(again, { ...retryInit, signal: AbortSignal.timeout(RETRY_TIMEOUT_MS) });
     }
     if (!(await asksForPersonSession(res))) return res;
     // Before a chat there is nothing to go back to; anything else may be cancelled.
