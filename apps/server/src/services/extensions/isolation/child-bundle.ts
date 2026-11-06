@@ -13,7 +13,7 @@
  *
  * @module services/extensions/isolation/child-bundle
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -21,6 +21,23 @@ import { fileURLToPath } from 'node:url';
 
 /** One development bundle per output folder and name, per server process. */
 const devBuilds = new Map<string, Promise<string>>();
+/** Expected bytes come from the build in this process, never from the cache file's name. */
+const devHashes = new Map<string, string>();
+
+/** Re-hash a development child before forking. Shipped siblings have no dev hash here. */
+export async function verifyDevChildBundle(file: string): Promise<boolean> {
+  const expected = devHashes.get(file);
+  if (!expected) return true;
+  try {
+    return (
+      createHash('sha256')
+        .update(await fs.readFile(file))
+        .digest('hex') === expected
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * The unpacked twin of a path inside an Electron `app.asar`, when it exists.
@@ -56,14 +73,17 @@ async function bundleForDev(
   });
   const output = result.outputFiles[0];
   if (!output) throw new Error(`Bundling ${fileName} produced no output.`);
-  const hash = createHash('sha256').update(output.contents).digest('hex').slice(0, 16);
+  const hash = createHash('sha256').update(output.contents).digest('hex');
   await fs.mkdir(devCacheDir, { recursive: true });
-  const file = path.join(devCacheDir, `${path.basename(fileName, '.cjs')}-${hash}.cjs`);
-  if (!existsSync(file)) {
-    const temp = `${file}.${process.pid}.tmp`;
-    await fs.writeFile(temp, output.contents);
-    await fs.rename(temp, file);
-  }
+  const file = path.join(
+    devCacheDir,
+    `${path.basename(fileName, '.cjs')}-${hash.slice(0, 16)}.cjs`
+  );
+  // A previous server's cache is untrusted, even when its name has the expected hash.
+  const temp = `${file}.${randomUUID()}.tmp`;
+  await fs.writeFile(temp, output.contents);
+  await fs.rename(temp, file);
+  devHashes.set(file, hash);
   return file;
 }
 
@@ -99,7 +119,7 @@ export async function resolveChildBundle(child: ChildBundle): Promise<string> {
   const cached = devBuilds.get(key);
   if (cached) {
     const file = await cached.catch(() => null);
-    if (file && existsSync(file)) return file;
+    if (file && (await verifyDevChildBundle(file))) return file;
   }
   const build = bundleForDev(source, child.fileName, child.devCacheDir);
   devBuilds.set(key, build);

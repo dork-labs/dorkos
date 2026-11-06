@@ -16,6 +16,7 @@
  */
 import { fork, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
+import { verifyDevChildBundle } from '../../../extensions/isolation/child-bundle.js';
 import { answerFrom, isGuardReady, type GuardRequest, type WireRoots } from './guard-protocol.js';
 import type { ShellCheckAnswer, ShellGuardRoots } from './shell-check.js';
 
@@ -117,6 +118,7 @@ function wireRoots(command: string, roots: ShellGuardRoots): WireRoots {
 export class GuardHost {
   private readonly tuning: GuardHostTuning;
   private readonly live = new Set<Worker>();
+  private starting = 0;
   private warm: Worker | null = null;
   private idleTimer: NodeJS.Timeout | null = null;
   private waiting: ((worker: Worker | null) => void)[] = [];
@@ -192,20 +194,31 @@ export class GuardHost {
       this.idleTimer = null;
       if (!worker.gone) return worker;
     }
-    if (this.live.size >= this.tuning.maxChildren) return this.waitForWorker();
+    if (this.live.size + this.starting >= this.tuning.maxChildren) return this.waitForWorker();
     // After a failed start, don't fork again on every command.
     if (this.unavailable && Date.now() - this.lastFailedStart < this.tuning.startRetryMs) {
       return null;
     }
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const worker = await this.start();
-      if (worker) {
-        this.startWorked();
-        return worker;
+    // Reserve before the first await: cold bursts and crash retries share the same limit.
+    this.starting++;
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const worker = await this.start();
+        if (worker) {
+          this.startWorked();
+          return worker;
+        }
+        this.startFailed();
       }
-      this.startFailed();
+      return null;
+    } finally {
+      this.starting--;
+      // A failed start leaves no worker to release a waiter.
+      if (this.live.size + this.starting < this.tuning.maxChildren) {
+        const next = this.waiting.shift();
+        if (next) void this.takeWorker().then(next);
+      }
     }
-    return null;
   }
 
   /** Wait in line for a child, for a limited time. */
@@ -228,6 +241,10 @@ export class GuardHost {
     let file: string;
     try {
       file = await this.options.childFile();
+      // Verify again after resolution, immediately before each fork. A mismatch rebuilds once;
+      // another mismatch refuses the start. Same-user replacement after this check is DOR-3053.
+      if (!(await verifyDevChildBundle(file))) file = await this.options.childFile();
+      if (!(await verifyDevChildBundle(file))) throw new Error('The child bundle changed.');
     } catch (err) {
       this.warn('the check’s file is missing', err);
       return null;

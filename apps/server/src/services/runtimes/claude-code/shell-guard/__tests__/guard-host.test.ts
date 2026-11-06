@@ -4,13 +4,15 @@
  *
  * @vitest-environment node
  */
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { resolveGuardChild } from '../guard-child-file.js';
 import { GuardHost, type GuardHostOptions } from '../guard-host.js';
 import type { ShellGuardRoots } from '../shell-check.js';
+import { resolveChildBundle } from '../../../../extensions/isolation/child-bundle.js';
+import { pathToFileURL } from 'node:url';
 
 let root: string;
 let roots: ShellGuardRoots;
@@ -142,6 +144,81 @@ describe('GuardHost on the real child', () => {
 });
 
 describe('GuardHost when a child misbehaves', () => {
+  it.each(['cached', 'after resolution'])(
+    'rebuilds an overwritten dev bundle before forking it: %s',
+    async (when) => {
+      const source = fakeChild(
+        'trusted-child.cjs',
+        `${READY} process.on('message', (m) => process.send({ type: 'answer', id: m.id, answer: { write: 'writes', reaches: false } }));`
+      );
+      const resolveFile = () =>
+        resolveChildBundle({
+          fileName: 'guard-fixture.cjs',
+          sources: [path.basename(source)],
+          devCacheDir: path.join(root, 'cache', 'shell-guard'),
+          moduleUrl: pathToFileURL(path.join(root, 'fixture-entry.js')).href,
+          description: 'The fixture child',
+        });
+      const file = await resolveFile();
+      const trusted = readFileSync(file, 'utf8');
+      const overwrite = () =>
+        writeFileSync(
+          file,
+          `${READY} process.on('message', (m) => process.send({ type: 'answer', id: m.id, answer: { write: 'none', reaches: false } }));`
+        );
+      if (when === 'cached') overwrite();
+      let changed = false;
+      const childFile = async () => {
+        const resolved = await resolveFile();
+        if (when === 'after resolution' && !changed) {
+          changed = true;
+          overwrite();
+        }
+        return resolved;
+      };
+      const host = hostWith({ childFile });
+      expect(await host.check('echo x > protected', roots, false)).toMatchObject({
+        outcome: 'checked',
+        write: 'writes',
+      });
+      expect(readFileSync(file, 'utf8')).toBe(trusted);
+    }
+  );
+
+  it.each([false, true])(
+    'keeps a burst at two children, with crash retries %s',
+    async (crashes) => {
+      const file = fakeChild(
+        'burst.cjs',
+        `${READY} process.on('message', (m) => setTimeout(() => {
+      ${crashes ? 'process.exit(3);' : "process.send({ type: 'answer', id: m.id, answer: { write: 'none', reaches: false } });"}
+    }, 30));`
+      );
+      const host = hostWith({
+        childFile: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return file;
+        },
+        tuning: { maxChildren: 2, queueMs: 5_000 },
+      });
+      let peak = 0;
+      const timer = setInterval(() => {
+        peak = Math.max(peak, (host as unknown as { live: Set<unknown> }).live.size);
+      }, 1);
+      try {
+        const results = await Promise.all(
+          Array.from({ length: 8 }, () => host.check('echo hi', roots, false))
+        );
+        expect(results.every((result) => result.outcome === (crashes ? 'failed' : 'checked'))).toBe(
+          true
+        );
+        expect(peak).toBe(2);
+      } finally {
+        clearInterval(timer);
+      }
+    }
+  );
+
   it('refuses a command a child never answers, after one retry', async () => {
     const childFile = vi.fn(async () => fakeChild('silent.cjs', READY));
     const host = hostWith({ childFile, tuning: { answerMs: 100 } });

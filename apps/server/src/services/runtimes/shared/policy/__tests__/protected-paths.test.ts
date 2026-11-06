@@ -114,6 +114,7 @@ describe('protected paths', () => {
       'session-relay/**',
       'extension-snapshots/**',
       'cache/extensions/**',
+      'cache/shell-guard/**',
       'marketplace/**',
       'plugins/**',
       'config.json*',
