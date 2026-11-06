@@ -186,16 +186,21 @@ function characterSet(
   const ranges: [string, string][] = [];
   let anything = false;
   while (at < segment.length && (segment[at] !== ']' || at === first)) {
-    if (segment.startsWith('[:', at)) {
-      // `[[:alpha:]]` and friends aren't read, so this set may hold anything. Matching more only
-      // refuses, and it makes the whole set one test that always fits.
-      const close = segment.indexOf(':]', at + 2);
-      if (close !== -1) {
-        const end = segment.indexOf(']', close + 2);
-        if (end !== -1) return { test: () => true, end };
-      }
+    if (['[:', '[.', '[='].some((form) => segment.startsWith(form, at))) {
+      // Classes, collating symbols and equivalence classes depend on the shell and locale.
+      // Skip the whole inner form; the outer set may hold anything, so matching more refuses.
+      const close = segment.indexOf(`${segment[at + 1]}]`, at + 2);
+      if (close === -1) throw new Error('Unclosed shell bracket form.');
+      anything = true;
+      at = close + 2;
+      continue;
     }
-    if (segment[at + 1] === '-' && at + 2 < segment.length && segment[at + 2] !== ']') {
+    if (
+      segment[at + 1] === '-' &&
+      at + 2 < segment.length &&
+      segment[at + 2] !== ']' &&
+      segment[at + 2] !== '['
+    ) {
       if (!ordersTheSameEverywhere(segment[at]!, segment[at + 2]!)) anything = true;
       ranges.push([segment[at]!, segment[at + 2]!]);
       at += 3;
@@ -205,6 +210,7 @@ function characterSet(
     }
   }
   if (at >= segment.length) {
+    if (anything) throw new Error('Unclosed shell bracket set.');
     // Zsh reads `[!]` as any one character, and the Mac's shell is zsh. Matching more only refuses.
     if (!negate) return undefined;
     return { test: () => true, end: segment[first] === ']' ? first : first - 1 };

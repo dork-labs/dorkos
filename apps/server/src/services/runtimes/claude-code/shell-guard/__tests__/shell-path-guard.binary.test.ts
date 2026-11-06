@@ -268,6 +268,7 @@ describe.skipIf(BINARY === null)('shell and file reads on the real CLI (DOR-3300
     fs.symlinkSync(path.join(home, '.ssh', 'id_ed25519'), path.join(folder, 'link-key.txt'));
     fs.mkdirSync(path.join(agentHome, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(agentHome, '.claude', 'settings.json'), '{}\n');
+    fs.writeFileSync(path.join(agentHome, '.mcp.json'), '{}\n');
   });
 
   afterAll(() => {
@@ -418,6 +419,22 @@ describe.skipIf(BINARY === null)('shell and file reads on the real CLI (DOR-3300
   it.each([
     ['a redirect', () => `echo '{}' > ${agentHome}/.claude/settings.json`],
     [
+      'a collating symbol in .claude',
+      () => `/bin/bash -c 'echo x > ${agentHome}/.cl[[.a.]]ude/settings.json'`,
+    ],
+    [
+      'a collating symbol in .mcp.json',
+      () => `/bin/bash -c 'echo x > ${agentHome}/.m[[.c.]]p.json'`,
+    ],
+    [
+      'an equivalence class in settings.json',
+      () => `/bin/bash -c 'echo x > ${agentHome}/.claude/settings.js[[=o=]]n'`,
+    ],
+    [
+      'Bash from zsh with an equivalence class',
+      () => `/bin/zsh -c "/bin/bash -c 'echo x > ${agentHome}/.m[[=c=]]p.json'"`,
+    ],
+    [
       'a python heredoc',
       () => `python3 - <<'EOF'\nopen('${agentHome}/.claude/settings.json','w').write('{}')\nEOF`,
     ],
@@ -427,12 +444,14 @@ describe.skipIf(BINARY === null)('shell and file reads on the real CLI (DOR-3300
     async (_label, command) => {
       refusals = [];
       fs.writeFileSync(path.join(agentHome, '.claude', 'settings.json'), 'unchanged\n');
+      fs.writeFileSync(path.join(agentHome, '.mcp.json'), 'unchanged\n');
       const call = { name: 'Bash', input: { command: command() } };
       expect(await outcomeOf(call, 'bypassPermissions')).toBe('refused');
       expect(fs.readFileSync(path.join(agentHome, '.claude', 'settings.json'), 'utf8')).toBe(
         'unchanged\n'
       );
       expect(refusals).toEqual([command()]);
+      expect(fs.readFileSync(path.join(agentHome, '.mcp.json'), 'utf8')).toBe('unchanged\n');
     },
     60_000
   );

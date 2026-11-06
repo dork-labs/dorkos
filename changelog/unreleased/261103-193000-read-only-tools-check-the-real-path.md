@@ -11,7 +11,7 @@ covers:
 
 ### Security
 
-- Ask before an agent reads a file outside its folders below Full. The real path decides, so a link to an outside file asks too (DOR-3300).
+- Ask before Claude Code reads outside its folders in every turn below Full. A link to an outside file asks too. Heartbeats, to-dos and queued work refuse these reads when nobody can approve (DOR-3300).
 - Ask before a shell command reaches a secret file below Full, also when it is chained after another command. This reads the command's text, so a path hidden on purpose can still get through (DOR-3300).
 - Refuse a shell command that plainly writes an agent's setup files, at every level, and record the attempt in the audit log. This reads the command's text too, so it stops a slip, not an agent set on getting past it (DOR-3300).
 - Stop shell commands at Full, and ask below it, when DorkOS can't start its check on them. You get a notice on your phone too (DOR-3300).
