@@ -71,6 +71,9 @@ function group(
 /** DorkOS's own secrets, in its data folder. */
 export const DATA_FOLDER_SECRET_PATHS = group('data', 'read', [
   ['host.key', 'file'],
+  // A secret file's temp file while being written (`secret-file.ts`, `writeFileAtomic`) holds the
+  // same secret and starts with a dot, so the glob for the file itself doesn't match it.
+  ['.host.key.*.tmp', 'file'],
   // The config (cloud and tunnel tokens among it), its backups beside it
   // (`config.json.bak`, `config-<time>.json.bak`), and full database and
   // settings snapshots.
@@ -78,7 +81,9 @@ export const DATA_FOLDER_SECRET_PATHS = group('data', 'read', [
   ['config-*.json.bak', 'file'],
   ['backups', 'folder'],
   ['mcp-local-token', 'file'],
+  ['.mcp-local-token.*.tmp', 'file'],
   ['better-auth-secret', 'file'],
+  ['.better-auth-secret.*.tmp', 'file'],
   // The key the CLI calls this server with.
   ['api-key', 'file'],
   // The database: sign-in sessions and connected-app tokens, with its -wal/-shm,
@@ -86,6 +91,10 @@ export const DATA_FOLDER_SECRET_PATHS = group('data', 'read', [
   ['dork*.db*', 'file'],
   // Chat bot tokens, stored as written (`relay/adapter-config.ts`).
   ['relay/adapters.json', 'file'],
+  ['relay/.adapters.json.*.tmp', 'file'],
+  // MCP servers for every agent: arguments stay in plain text, and can hold a secret.
+  ['mcp/global-servers.json*', 'file'],
+  ['mcp/.global-servers.json.*.tmp', 'file'],
   // The web-push private key.
   ['push', 'folder'],
   ['extension-secrets', 'folder'],
@@ -93,6 +102,7 @@ export const DATA_FOLDER_SECRET_PATHS = group('data', 'read', [
   ['secrets', 'folder'],
   // The agent browser's signed-in state, and its profiles' cookies.
   ['browser/storage-state.json', 'file'],
+  ['browser/.storage-state.json.*.tmp', 'file'],
   ['browser/profile', 'folder'],
   ['browser-profiles', 'folder'],
   ['local-browser/saved-logins', 'folder'],

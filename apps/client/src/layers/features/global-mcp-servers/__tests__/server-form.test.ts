@@ -1,10 +1,10 @@
+import { splitArgs } from '@dorkos/shared/global-mcp-schemas';
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SERVER_FORM,
   rowIsSecret,
   serverFormProblem,
   serverInputFrom,
-  splitArgs,
   type FieldRow,
   type ServerForm,
 } from '../lib/server-form';
@@ -58,6 +58,20 @@ describe('serverFormProblem', () => {
     expect(serverFormProblem(commandForm({ kind: 'url', url: 'not an address' }))?.field).toBe(
       'url'
     );
+  });
+
+  it.each(['ftp://mcp.example.test', 'http:user:made-up@mcp.example.test', 'javascript:alert(1)'])(
+    'takes only an address starting https:// or http://, not %s',
+    (url) => {
+      expect(serverFormProblem(commandForm({ kind: 'url', url }))?.field).toBe('url');
+    }
+  );
+
+  it('says when the arguments are too long, before the server would', () => {
+    expect(serverFormProblem(commandForm({ args: 'a'.repeat(5000) }))).toEqual({
+      field: 'args',
+      message: 'Those arguments are too long.',
+    });
   });
 
   it('asks for a secret’s value, and a name for a value', () => {

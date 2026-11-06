@@ -300,6 +300,87 @@ describe('adding a server', () => {
   });
 });
 
+describe('the warning on Arguments', () => {
+  const WORDS = 'This looks like a secret. Use a hidden field if the server allows.';
+
+  it('asks the server on leaving the field, warns in warning ink, and Add stays on', async () => {
+    const user = userEvent.setup();
+    const checkGlobalMcpArgs = vi.fn().mockResolvedValue({ looksSecret: true });
+    renderTab(transportWith([], { checkGlobalMcpArgs }));
+    await user.click(await screen.findByRole('button', { name: 'Add server' }));
+    const args = screen.getByLabelText('Arguments');
+    await user.type(args, '--flag "a b"');
+    expect(checkGlobalMcpArgs).not.toHaveBeenCalled();
+    await user.tab();
+    expect(checkGlobalMcpArgs).toHaveBeenCalledWith(['--flag', 'a b']);
+    const line = await screen.findByText(WORDS);
+    expect(line).toHaveClass('text-status-warning-fg');
+    expect(args).toHaveAccessibleDescription(WORDS);
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
+  });
+
+  it('goes away when the next check says it’s fine, or the field is empty', async () => {
+    const user = userEvent.setup();
+    const checkGlobalMcpArgs = vi
+      .fn()
+      .mockResolvedValueOnce({ looksSecret: true })
+      .mockResolvedValueOnce({ looksSecret: false })
+      .mockResolvedValueOnce({ looksSecret: true });
+    renderTab(transportWith([], { checkGlobalMcpArgs }));
+    await user.click(await screen.findByRole('button', { name: 'Add server' }));
+    const args = screen.getByLabelText('Arguments');
+    await user.type(args, 'first');
+    await user.tab();
+    await screen.findByText(WORDS);
+    await user.type(args, 'second');
+    await user.tab();
+    await waitFor(() => expect(screen.queryByText(WORDS)).toBeNull());
+    await user.type(args, 'third');
+    await user.tab();
+    await screen.findByText(WORDS);
+    await user.clear(args);
+    await user.tab();
+    await waitFor(() => expect(screen.queryByText(WORDS)).toBeNull());
+    expect(checkGlobalMcpArgs).toHaveBeenCalledTimes(3);
+  });
+
+  it('a failed check says nothing, and doesn’t get in the way', async () => {
+    const user = userEvent.setup();
+    const checkGlobalMcpArgs = vi.fn().mockRejectedValue(new Error('made-up failure'));
+    renderTab(transportWith([], { checkGlobalMcpArgs }));
+    await user.click(await screen.findByRole('button', { name: 'Add server' }));
+    await user.type(screen.getByLabelText('Arguments'), 'first');
+    await user.tab();
+    await waitFor(() => expect(checkGlobalMcpArgs).toHaveBeenCalled());
+    expect(screen.queryByText(WORDS)).toBeNull();
+    expect(screen.queryByText('made-up failure')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
+  });
+
+  it('the cache keeps none of what was checked', async () => {
+    const user = userEvent.setup();
+    const client = renderTab(
+      transportWith([], { checkGlobalMcpArgs: vi.fn().mockResolvedValue({ looksSecret: true }) })
+    );
+    await user.click(await screen.findByRole('button', { name: 'Add server' }));
+    await user.type(screen.getByLabelText('Arguments'), '--token=made-up-canary');
+    await user.tab();
+    await screen.findByText(WORDS);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByText('Add a server')).toBeNull());
+    await waitFor(() =>
+      expect(
+        JSON.stringify(
+          client
+            .getMutationCache()
+            .getAll()
+            .map((m) => m.state)
+        )
+      ).not.toContain('made-up-canary')
+    );
+  });
+});
+
 describe('what a typed secret leaves behind', () => {
   /** Everything the mutation cache holds, as text. */
   const cached = (client: QueryClient) =>
@@ -349,8 +430,14 @@ describe('what a typed secret leaves behind', () => {
     await screen.findByText('Not confirmed. Nothing changed.');
     await user.click(add);
     await waitFor(() => expect(add).toBeEnabled());
-    // Only the press still showing its outcome, never one copy per press.
-    await waitFor(() => expect(client.getMutationCache().getAll().length).toBeLessThanOrEqual(1));
+    // Only the press still showing its outcome, never one copy per press. A check of the arguments
+    // is its own mutation, and goes when the form does.
+    const presses = () =>
+      client
+        .getMutationCache()
+        .getAll()
+        .filter((mutation) => !Array.isArray(mutation.state.variables));
+    await waitFor(() => expect(presses().length).toBeLessThanOrEqual(1));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByText('Add a server')).toBeNull());
     await waitFor(() => expect(cached(client)).not.toContain('canary-typed'));

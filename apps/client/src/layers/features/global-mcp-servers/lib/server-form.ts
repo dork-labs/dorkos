@@ -5,8 +5,11 @@
  * @module features/global-mcp-servers/lib/server-form
  */
 import {
+  GLOBAL_MCP_URL_PATTERN,
   GlobalMcpServerInputSchema,
   GlobalMcpServerNameSchema,
+  globalMcpArgsFit,
+  splitArgs,
   isSecretName,
   type GlobalMcpServerInput,
 } from '@dorkos/shared/global-mcp-schemas';
@@ -50,32 +53,8 @@ export const EMPTY_SERVER_FORM: ServerForm = {
 
 /** The one thing to fix before the form can go, and the field it belongs to. */
 export interface FormProblem {
-  field: 'name' | 'command' | 'url' | 'rows';
+  field: 'name' | 'command' | 'args' | 'url' | 'rows';
   message: string;
-}
-
-/**
- * Split an arguments line the way a shell would for plain words and quotes: `-y "a b"` is two
- * arguments. A quote with no end stays part of its word.
- *
- * @param text - What the person typed.
- */
-export function splitArgs(text: string): string[] {
-  const args: string[] = [];
-  const pattern = /"([^"]*)"|'([^']*)'|(\S)/g;
-  let current: string | null = null;
-  let end = 0;
-  for (const match of text.matchAll(pattern)) {
-    // A gap since the last piece ends the argument.
-    if (current !== null && match.index > end) {
-      args.push(current);
-      current = null;
-    }
-    current = (current ?? '') + (match[1] ?? match[2] ?? match[3] ?? '');
-    end = match.index + match[0].length;
-  }
-  if (current !== null) args.push(current);
-  return args;
 }
 
 /**
@@ -105,7 +84,14 @@ export function serverFormProblem(form: ServerForm): FormProblem | null {
   if (form.kind === 'command' && form.command.trim() === '') {
     return { field: 'command', message: 'Type the program to run.' };
   }
-  if (form.kind === 'url' && !z.string().url().safeParse(form.url.trim()).success) {
+  if (form.kind === 'command' && !globalMcpArgsFit(splitArgs(form.args))) {
+    return { field: 'args', message: 'Those arguments are too long.' };
+  }
+  const url = form.url.trim();
+  if (
+    form.kind === 'url' &&
+    !(GLOBAL_MCP_URL_PATTERN.test(url) && z.string().url().safeParse(url).success)
+  ) {
     return { field: 'url', message: 'Type the full address, starting with https://' };
   }
   const seen = new Set<string>();

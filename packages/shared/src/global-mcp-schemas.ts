@@ -74,10 +74,69 @@ export const GlobalMcpServerNameSchema = z
   .max(64)
   .regex(/^[a-zA-Z0-9_-]+$/, 'Use letters, numbers, dashes and underscores');
 
+/**
+ * The addresses a global server may have. The `//` is not optional: `http:user:pw@host` parses as
+ * a URL, with its password in a shape the mask would have to guess at. Nor is a space, which ends
+ * the address as the mask reads it and would leave the rest of a password showing.
+ */
+export const GLOBAL_MCP_URL_PATTERN = /^https?:\/\/\S+$/i;
+
+/**
+ * Split an arguments line the way a shell would for plain words and quotes: `-y "a b"` is two
+ * arguments. A quote with no end stays part of its word.
+ *
+ * @param text - What the person typed.
+ */
+export function splitArgs(text: string): string[] {
+  const args: string[] = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S)/g;
+  let current: string | null = null;
+  let end = 0;
+  for (const match of text.matchAll(pattern)) {
+    // A gap since the last piece ends the argument.
+    if (current !== null && match.index > end) {
+      args.push(current);
+      current = null;
+    }
+    current = (current ?? '') + (match[1] ?? match[2] ?? match[3] ?? '');
+    end = match.index + match[0].length;
+  }
+  if (current !== null) args.push(current);
+  return args;
+}
+
+/** The longest argument the secret check reads, so a big paste can't hold up the server. */
+export const MAX_GLOBAL_MCP_ARG_LENGTH = 4096;
+
+/** The most arguments a global server can have. */
+export const MAX_GLOBAL_MCP_ARGS = 100;
+
+/** The most characters a global server's arguments can hold in all. */
+export const MAX_GLOBAL_MCP_ARGS_TOTAL = 16_384;
+
+/**
+ * Whether arguments are short enough to read on every list and every check.
+ *
+ * @param args - The arguments.
+ */
+export function globalMcpArgsFit(args: readonly string[]): boolean {
+  return (
+    args.length <= MAX_GLOBAL_MCP_ARGS &&
+    args.every((arg) => arg.length <= MAX_GLOBAL_MCP_ARG_LENGTH) &&
+    args.reduce((total, arg) => total + arg.length, 0) <= MAX_GLOBAL_MCP_ARGS_TOTAL
+  );
+}
+
 /** What a person sends to add a global server, or to replace one. */
 export const GlobalMcpServerInputSchema = z.object({
   name: GlobalMcpServerNameSchema,
-  connection: McpServerTransportSchema,
+  connection: McpServerTransportSchema.refine(
+    (connection) =>
+      connection.transport === 'stdio'
+        ? globalMcpArgsFit(connection.args)
+        : GLOBAL_MCP_URL_PATTERN.test(connection.url),
+    { message: 'Use an address starting https:// or http://, and arguments that fit.' }
+  ),
   /** Extra env or header names to keep secret, beyond {@link SECRET_NAME_PATTERN}. */
   secretNames: z.array(z.string().min(1)).max(64).default([]),
   /** Agent ids this server is kept from. Empty means every agent. */
@@ -148,6 +207,18 @@ export const GlobalMcpServerViewSchema = z.object({
 });
 
 export type GlobalMcpServerView = z.infer<typeof GlobalMcpServerViewSchema>;
+
+/** `POST /api/mcp-servers/check-args`: the arguments as a person typed them. */
+export const GlobalMcpArgsCheckSchema = z.object({
+  args: z.array(z.string()).refine(globalMcpArgsFit),
+});
+
+/** What the check answers. It warns and never refuses. */
+export const GlobalMcpArgsCheckResultSchema = z.object({
+  looksSecret: z.boolean(),
+});
+
+export type GlobalMcpArgsCheckResult = z.infer<typeof GlobalMcpArgsCheckResultSchema>;
 
 /** `GET /api/mcp-servers`. */
 export const GlobalMcpServerListSchema = z.object({

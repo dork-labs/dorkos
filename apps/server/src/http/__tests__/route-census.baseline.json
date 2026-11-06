@@ -529,6 +529,7 @@
     "POST /api/marketplace/sources/:name/refresh",
     "POST /api/marketplace/updates",
     "POST /api/mcp-servers",
+    "POST /api/mcp-servers/check-args",
     "POST /api/mesh/agents",
     "POST /api/mesh/agents/:id/heartbeat",
     "POST /api/mesh/deny",

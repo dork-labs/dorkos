@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { isSecretName, isUnpinnedPackage } from '../global-mcp-schemas.js';
+import {
+  GlobalMcpArgsCheckSchema,
+  GlobalMcpServerInputSchema,
+  MAX_GLOBAL_MCP_ARG_LENGTH,
+  MAX_GLOBAL_MCP_ARGS,
+  isSecretName,
+  isUnpinnedPackage,
+} from '../global-mcp-schemas.js';
 
 describe('isSecretName', () => {
   it('a name matching the rule is secret, whatever a person marked', () => {
@@ -13,6 +20,53 @@ describe('isSecretName', () => {
   it('marking can only add a secret', () => {
     expect(isSecretName('MADE_UP_SETTING')).toBe(false);
     expect(isSecretName('MADE_UP_SETTING', ['MADE_UP_SETTING'])).toBe(true);
+  });
+});
+
+describe('GlobalMcpServerInputSchema', () => {
+  const remote = (url: string) =>
+    GlobalMcpServerInputSchema.safeParse({
+      name: 'remote',
+      connection: { transport: 'http', url, headers: {} },
+    }).success;
+
+  it('takes an address with https:// or http://', () => {
+    expect(remote('https://mcp.example.test/v1')).toBe(true);
+    expect(remote('http://localhost:3000')).toBe(true);
+    expect(remote('HTTPS://mcp.example.test')).toBe(true);
+  });
+
+  it('refuses any other shape of address, a password with no // included', () => {
+    expect(remote('http:user:made-up@mcp.example.test')).toBe(false);
+    expect(remote('ftp://mcp.example.test')).toBe(false);
+    expect(remote('javascript:alert(1)')).toBe(false);
+    expect(remote('https://user:CAN ARY@mcp.example.test')).toBe(false);
+  });
+
+  it('caps what the secret check reads, on a command and on a check', () => {
+    const command = (args: string[]) =>
+      GlobalMcpServerInputSchema.safeParse({
+        name: 'local',
+        connection: { transport: 'stdio', command: 'npx', args, env: {} },
+      }).success;
+    const long = 'a'.repeat(MAX_GLOBAL_MCP_ARG_LENGTH);
+    expect(command([long])).toBe(true);
+    expect(command([`${long}a`])).toBe(false);
+    expect(command(Array(MAX_GLOBAL_MCP_ARGS + 1).fill('a'))).toBe(false);
+    expect(GlobalMcpArgsCheckSchema.safeParse({ args: [long] }).success).toBe(true);
+    expect(GlobalMcpArgsCheckSchema.safeParse({ args: [`${long}a`] }).success).toBe(false);
+    // Each one fits, and together they're too much to read on every list.
+    expect(command(Array(5).fill(long))).toBe(false);
+    expect(GlobalMcpArgsCheckSchema.safeParse({ args: Array(5).fill(long) }).success).toBe(false);
+  });
+
+  it('leaves a command alone', () => {
+    expect(
+      GlobalMcpServerInputSchema.safeParse({
+        name: 'local',
+        connection: { transport: 'stdio', command: 'npx', args: [], env: {} },
+      }).success
+    ).toBe(true);
   });
 });
 

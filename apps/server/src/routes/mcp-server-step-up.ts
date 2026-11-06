@@ -32,7 +32,7 @@ import { maskedArgs, maskUrls } from '../services/mesh/global-mcp/global-mcp-mas
 /** The longest name, package or command line a sheet shows before cutting it. */
 const MAX_SHOWN = 400;
 
-/** The longest agent name a sentence shows; agents pick their own. */
+/** The longest agent name a sentence shows; agents pick what they're called. */
 const MAX_AGENT_NAME = 40;
 
 /** The part of a global server the sheet and the hash read. */
@@ -51,6 +51,19 @@ function shown(text: string): string {
     .replace(/\s+/g, ' ')
     .trim();
   return flat.length > MAX_SHOWN ? `${flat.slice(0, MAX_SHOWN - 1)}…` : flat;
+}
+
+/** Names as a sheet lists them: never cut mid-list without saying how many it left out. */
+function shownNames(names: readonly string[]): string {
+  const kept: string[] = [];
+  let length = 0;
+  for (const name of names.map(shown)) {
+    if (kept.length > 0 && length + name.length > MAX_SHOWN) break;
+    kept.push(name);
+    length += name.length + 2;
+  }
+  const more = names.length - kept.length;
+  return `${kept.join(', ')}${more > 0 ? ` and ${more} more` : ''}`;
 }
 
 /** The env map of a stdio server, or the header map of a remote one. */
@@ -112,20 +125,55 @@ function scope(excludedAgents: readonly string[]): string {
 /** What a held change does, for its sentence. */
 export type ServerChange = 'add' | 'change' | 'turn-on' | 'let-more';
 
-/** An agent's name, from the server's records, as a sentence shows it. */
+/**
+ * What can end a clause and start another. A hyphen inside a word can't, so `Mary-Ann` keeps its
+ * own; a hyphen with a space beside it reads as a dash, and goes.
+ */
+const CLAUSE_PUNCTUATION = /[.:;(),!?\u2010-\u2015]|(?<![\p{L}\p{N}])-|-(?![\p{L}\p{N}])/gu;
+
+/** What an agent is called, from the server's records. */
+export interface AgentNames {
+  /** Its registered name. No DorkOS tool lets an agent change it; it syncs from `agent.json`. */
+  name: string;
+  /** What it calls itself on screen. An agent can set this to anything. */
+  displayName?: string;
+}
+
+/** One agent name as a sentence shows it: plain text, cut short. */
 function shownAgent(name: string): string {
   const flat = shown(name);
   return flat.length > MAX_AGENT_NAME ? `${flat.slice(0, MAX_AGENT_NAME - 1)}…` : flat;
 }
 
 /**
+ * What the sheet calls an agent. An agent picks its own display name, so when that says something
+ * other than the registered name, the registered name goes beside it: an agent can't pass as
+ * another one on a sheet a person is confirming. A display name loses the sentence's own
+ * punctuation, so it can't end the sentence and start another around the real name.
+ *
+ * @param agent - The agent's names.
+ */
+export function agentLabel({ name, displayName }: AgentNames): string {
+  const shownName = shownAgent(name);
+  const called = displayName ?? '';
+  if (called.toLowerCase() === name.toLowerCase()) return shownAgent(called);
+  const display = shownAgent(called.replace(CLAUSE_PUNCTUATION, ' '));
+  return display === '' ? shownName : `${display} (${shownName})`;
+}
+
+/**
  * Who gets a server, as the sheet's last line.
  *
  * @param server - The server as it will be.
- * @param added - How many agents this change adds; `0` when it turns the server on.
+ * @param added - The labels of the agents this change adds, an unknown one as `undefined`; none
+ *   when it turns the server on.
  */
-export function whoGetsIt(server: ServerForStepUp, added: number): string {
-  if (added > 0) return added === 1 ? 'One more agent gets it.' : `${added} more agents get it.`;
+export function whoGetsIt(server: ServerForStepUp, added: readonly (string | undefined)[]): string {
+  if (added.length > 0) {
+    const [only] = added;
+    if (added.length > 1) return `${added.length} more agents get it.`;
+    return only ? `${only} gets it too.` : 'One more agent gets it.';
+  }
   const left = server.excludedAgents.length;
   if (left === 0) return 'All your agents get it.';
   return `All your agents get it, except ${left === 1 ? 'one' : left}.`;
@@ -136,17 +184,14 @@ export function whoGetsIt(server: ServerForStepUp, added: number): string {
  * runs is not changing, so it names the server; the notes still show the command.
  *
  * @param server - The server as it will be.
- * @param added - The names of the agents it adds, an unknown one as `undefined`.
+ * @param added - The labels of the agents it adds, an unknown one as `undefined`.
  */
 function letMoreReason(server: ServerForStepUp, added: readonly (string | undefined)[]): string {
   const name = shown(server.name);
-  if (server.excludedAgents.length === 0)
-    return `Confirm it’s you to give ${name} to all your agents.`;
+  if (server.excludedAgents.length === 0) return `Give ${name} to all your agents.`;
   const [only] = added;
-  if (added.length === 1) {
-    return `Confirm it’s you to let ${only ? shownAgent(only) : 'one more agent'} use ${name}.`;
-  }
-  return `Confirm it’s you to let ${added.length} more agents use ${name}.`;
+  if (added.length === 1) return `Let ${only || 'one more agent'} use ${name}.`;
+  return `Let ${added.length} more agents use ${name}.`;
 }
 
 /**
@@ -155,7 +200,7 @@ function letMoreReason(server: ServerForStepUp, added: readonly (string | undefi
  *
  * @param change - What the held change does.
  * @param server - The server as it will be.
- * @param added - For `let-more`, the names of the agents it adds.
+ * @param added - For `let-more`, the labels of the agents it adds.
  */
 export function serverReason(
   change: ServerChange,
@@ -166,11 +211,11 @@ export function serverReason(
   const everyone = scope(server.excludedAgents);
   switch (change) {
     case 'add':
-      return `Confirm it’s you to add ${named} ${everyone}.`;
+      return `Add ${named} ${everyone}.`;
     case 'change':
-      return `Confirm it’s you to change ${named} ${everyone}.`;
+      return `Change ${named} ${everyone}.`;
     case 'turn-on':
-      return `Confirm it’s you to turn on ${named} ${everyone}.`;
+      return `Turn on ${named} ${everyone}.`;
     case 'let-more':
       return letMoreReason(server, added);
   }
@@ -184,7 +229,31 @@ function crossesInTheClear(raw: string): boolean {
 }
 
 /**
- * The sheet's quiet lines: the whole of what runs, masked, and names only.
+ * The sheet's lines to look at twice, in warning ink. They are words first, so colour is never
+ * the only signal.
+ *
+ * @param server - The server as it will be.
+ */
+export function serverWarnings(server: ServerForStepUp): string[] {
+  const { connection, secretNames } = server;
+  const warnings: string[] = [];
+  if (connection.transport !== 'stdio' && crossesInTheClear(connection.url)) {
+    const secrets = Object.keys(connection.headers).filter((name) =>
+      isSecretName(name, secretNames)
+    );
+    if (secrets.length > 0) {
+      warnings.push(
+        `This address isn’t encrypted, so ${shownNames(secrets)} travels in the clear.`
+      );
+    }
+  }
+  warnings.push(...flaggedEnvNames(connection).map((flag) => shown(flag.note)));
+  return warnings;
+}
+
+/**
+ * The sheet's lines: the whole of what runs, masked, and every name once, under either its plain
+ * heading or "Hidden values". A person sees every setting and header they're agreeing to.
  *
  * @param server - The server as it will be.
  * @param retyped - Whether a person just typed its secrets again.
@@ -198,21 +267,17 @@ export function serverNotes(server: ServerForStepUp, retyped = false): string[] 
     notes.push(`Connects to: ${shown(maskUrls(connection.url))}`);
   }
   const names = Object.keys(valuesOf(connection));
-  if (names.length > 0) {
-    const label = connection.transport === 'stdio' ? 'Settings' : 'Headers';
-    notes.push(`${label}: ${shown(names.join(', '))}`);
-  }
   const secrets = names.filter((name) => isSecretName(name, secretNames));
-  if (secrets.length > 0) notes.push(`Kept secret: ${shown(secrets.join(', '))}`);
-  if (retyped && secrets.length > 0) notes.push(`New values for: ${shown(secrets.join(', '))}`);
-  if (connection.transport !== 'stdio' && secrets.length > 0 && crossesInTheClear(connection.url)) {
-    notes.push(
-      `This address isn’t encrypted, so ${shown(secrets.join(', '))} travels in the clear.`
-    );
+  const plain = names.filter((name) => !secrets.includes(name));
+  if (plain.length > 0) {
+    const label = connection.transport === 'stdio' ? 'Settings' : 'Headers';
+    notes.push(`${label}: ${shownNames(plain)}`);
   }
+  if (secrets.length > 0) notes.push(`Hidden values: ${shownNames(secrets)}`);
+  if (retyped && secrets.length > 0) notes.push(`New values for: ${shownNames(secrets)}`);
   if (connection.transport === 'stdio' && isUnpinnedPackage(connection.command, connection.args)) {
     notes.push('Not pinned to a version. What runs can change later.');
   }
-  notes.push(...flaggedEnvNames(connection).map((flag) => shown(flag.note)));
+  notes.push(...serverWarnings(server));
   return notes;
 }

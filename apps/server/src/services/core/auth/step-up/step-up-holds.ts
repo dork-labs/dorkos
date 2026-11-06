@@ -60,6 +60,8 @@ export interface StepUpActionInput {
   reason: string;
   /** Quiet extra lines for the sheet. */
   notes?: readonly string[];
+  /** The notes to look at twice. Each one is in `notes` too. */
+  warnings?: readonly string[];
   /**
    * Run the action. Called once, only after a step-up passed, never with the
    * request that held it in scope: it must re-check anything that may have
@@ -77,6 +79,7 @@ export interface HeldStepUp {
   statement: LocalStepUpStatementV1;
   reason: string;
   notes: readonly string[];
+  warnings: readonly string[];
   /** The browser session that held it, or `null` when the caller had none. */
   sessionId: string | null;
   commit: StepUpActionInput['commit'];
@@ -170,6 +173,7 @@ export function holdStepUp(
     statement,
     reason: action.reason,
     notes: action.notes ?? [],
+    warnings: action.warnings ?? [],
     sessionId,
     commit: action.commit,
     triesLeft: STEP_UP_MAX_PASSWORD_TRIES,

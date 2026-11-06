@@ -343,6 +343,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
       kind: entry.statement.kind,
       reason: entry.reason,
       notes: [...entry.notes],
+      ...(entry.warnings.length > 0 ? { warnings: [...entry.warnings] } : {}),
       expiresAt: entry.statement.expiresAt,
       methods: unavailable ? [] : ['password'],
       ...(unavailable ? { passwordUnavailable: unavailable } : {}),

@@ -12,6 +12,7 @@ import {
   PasswordInput,
 } from '@/layers/shared/ui';
 import {
+  cn,
   finishActionStepUp,
   getActionStepUpAfterExpiry,
   getActionStepUpShowing,
@@ -224,7 +225,13 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
             {view?.reason ?? (stage.kind === 'loading' ? 'Checking what this will do…' : '')}
           </AlertDialogDescription>
           {view?.notes.map((note) => (
-            <p key={note} className="text-muted-foreground text-sm">
+            <p
+              key={note}
+              className={cn(
+                'text-sm',
+                view.warnings?.includes(note) ? 'text-status-warning-fg' : 'text-muted-foreground'
+              )}
+            >
               {note}
             </p>
           ))}
