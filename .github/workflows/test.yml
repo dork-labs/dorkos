@@ -959,12 +959,20 @@ jobs:
           # COMPLETE set of copies before intersecting them.
           printf '%s/6\n' '${{ matrix.shard }}' > "$RUNNER_TEMP/shard.txt"
 
+      # Commit time is identical across runners and reruns, unlike Date.now().
+      # Hash only fresh/fallback mode into test tasks; builds keep their cache.
+      - name: Pin the duration snapshot age to this commit
+        run: |
+          epoch=$(git show -s --format=%ct HEAD)
+          echo "VITEST_SHARD_EPOCH=$epoch" >> "$GITHUB_ENV"
+          node scripts/sharding/mode.mjs "$epoch" >> "$GITHUB_ENV"
+
       - name: Run every package's test suite (shard ${{ matrix.shard }}/6)
         id: sweep
         if: ${{ github.event_name != 'pull_request' }}
         run: |
           set +e
-          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -ne 0 ]; then
@@ -1092,7 +1100,7 @@ jobs:
           else
             echo "test plan: every package's suite"
           fi
-          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --passWithNoTests
+          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
