@@ -71,7 +71,7 @@ function runnerWith(triage: BeatTriagePort | undefined, launchThrows = false): B
     enabled: () => true,
     hoursFor: () => HOURS,
     gatherers: { addressed: async () => changes },
-    commitments: { list: () => [] },
+    todoPromises: { list: () => [] },
     launcher: {
       launch: async () => {
         launches += 1;

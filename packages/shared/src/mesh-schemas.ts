@@ -22,6 +22,7 @@ import { WorkspaceProviderTypeSchema } from './workspace.js';
 import {
   AgentPermissionsSchema,
   PERMISSION_AREA_IDS,
+  renameRetiredActionIds,
   type PermissionAreaId,
 } from './permissions/permission-schemas.js';
 import { AuditActorSchema } from './audit-schemas.js';
@@ -582,6 +583,23 @@ const LEGACY_GROUP_AREAS: Readonly<Record<string, PermissionAreaId>> = {
 };
 
 /**
+ * Move every per-action setting stored under a renamed action id to its current id
+ * (`RENAMED_PERMISSION_ACTIONS`, `permissions/permission-ids.ts`), so a person's Blocked or Allowed keeps applying to the
+ * same action after the rename (DOR-3933). Anything not shaped like a manifest with a
+ * `permissions.actions` object is returned untouched.
+ *
+ * @param raw - A manifest as parsed from JSON, before schema validation.
+ */
+export function foldRenamedPermissionActions(raw: unknown): unknown {
+  if (!isJsonObject(raw) || !isJsonObject(raw.permissions)) return raw;
+  const actions = raw.permissions.actions;
+  if (!isJsonObject(actions)) return raw;
+  const renamed = renameRetiredActionIds(actions);
+  if (!renamed) return raw;
+  return { ...raw, permissions: { ...raw.permissions, actions: renamed } };
+}
+
+/**
  * Fold the retired per-agent permission fields of a raw manifest into its
  * `permissions` object, then drop them. Permanent: marketplace packages and
  * copied or restored `.dork/agent.json` files carry the old fields for as long
@@ -612,6 +630,7 @@ const LEGACY_GROUP_AREAS: Readonly<Record<string, PermissionAreaId>> = {
  *   to reject.
  */
 export function foldLegacyPermissionFields(raw: unknown): unknown {
+  raw = foldRenamedPermissionActions(raw);
   if (!isJsonObject(raw)) return raw;
   const hasGroups = Object.prototype.hasOwnProperty.call(raw, 'enabledToolGroups');
   const hasCeiling = Object.prototype.hasOwnProperty.call(raw, 'tierCeiling');

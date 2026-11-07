@@ -284,7 +284,7 @@ export function ceilingCarrying(marks: TurnMarks): TurnPermissionCeiling | undef
 export { ceilingOnlyRecords };
 
 /**
- * The marks stored as JSON on a row (a commitment, say), or none when absent or unreadable. Only
+ * The marks stored as JSON on a row (a to-do, say), or none when absent or unreadable. Only
  * the shape of each kind is kept; anything else in the stored value is dropped.
  *
  * @param stored - The stored JSON, or null.

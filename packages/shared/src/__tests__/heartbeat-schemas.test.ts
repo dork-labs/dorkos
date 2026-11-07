@@ -10,7 +10,7 @@ describe('resolveHeartbeatSettings', () => {
   it('reads no file as events, every gatherer but workspace, a daily report and no sweep', () => {
     expect(resolveHeartbeatSettings(null)).toEqual({
       wake: 'events',
-      watch: ['addressed', 'commitments', 'schedules', 'health'],
+      watch: ['addressed', 'todos', 'schedules', 'health'],
       report: 'daily',
       sweepMs: null,
     });
@@ -21,6 +21,13 @@ describe('resolveHeartbeatSettings', () => {
       HeartbeatFrontmatterSchema.parse({ watch: ['workspace', 'addressed', 'workspace'] })
     );
     expect(settings.watch).toEqual(['addressed', 'workspace']);
+  });
+
+  it('still watches to-dos in a file that says the old word, commitments (DOR-3933)', () => {
+    const settings = resolveHeartbeatSettings(
+      HeartbeatFrontmatterSchema.parse({ watch: ['commitments', 'schedules'] })
+    );
+    expect(settings.watch).toEqual(['todos', 'schedules']);
   });
 
   it('turns a sweep into milliseconds', () => {

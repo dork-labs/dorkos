@@ -1,5 +1,5 @@
 /**
- * Open work that has stalled (DOR-3674): the half of the `commitments` gatherer
+ * Open work that has stalled (DOR-3674): the half of the `todos` gatherer
  * that sees what the agent started or owes going quiet, not only what falls due.
  *
  * On 2026-11-02 every lane chat ended its turn and nothing woke them for about
@@ -19,14 +19,14 @@
  * standing rule (`triage-rules.ts`) counts it no more. A lane that runs again
  * gets a new idle time, so a new stall starts from one.
  *
- * It lives inside `commitments` on purpose: every `HEARTBEAT.md` watches that
+ * It lives inside `todos` on purpose: every `HEARTBEAT.md` watches that
  * gatherer already, and a new gatherer name would reach nobody whose file lists
  * its own `watch:`. A paused agent, or one whose beats are off, never gets here
  * (`beat-runner.ts` gates both before any gatherer runs).
  *
  * @module services/heartbeats/gatherers/open-work
  */
-import type { Commitment } from '@dorkos/shared/commitment-schemas';
+import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import type { Change, GatherContext } from './types.js';
 
 /** How long a lane may sit idle before it counts as stalled. */
@@ -75,7 +75,7 @@ function nudgeOf(idleMs: number, firstAfterMs: number, periodMs: number): number
 /** One stalled item, as a change. */
 function stalled(key: string, summary: string, since: number, ref: Change['ref']): Change {
   return {
-    gatherer: 'commitments',
+    gatherer: 'todos',
     key,
     summary,
     at: new Date(since).toISOString(),
@@ -93,7 +93,7 @@ function stalled(key: string, summary: string, since: number, ref: Change['ref']
  */
 export async function openWorkChanges(
   ctx: GatherContext,
-  promises: readonly Commitment[],
+  promises: readonly TodoPromise[],
   reader: OpenWorkReader
 ): Promise<Change[]> {
   const now = ctx.now.getTime();
@@ -129,7 +129,7 @@ export async function openWorkChanges(
           changes.push(
             stalled(
               `stalled:commitment:${promise.id}@${since}#${nudge}`,
-              `Commitment ${promise.id} open, no chat running since ${new Date(since).toISOString()}`,
+              `To-do ${promise.id} open, no chat running since ${new Date(since).toISOString()}`,
               since,
               { kind: 'commitment', id: promise.id }
             )

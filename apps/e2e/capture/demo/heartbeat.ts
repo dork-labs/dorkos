@@ -15,7 +15,7 @@ import { API_URL, FLEET_ROOT } from '../config.js';
  * runtime, and that turn (the server's `demo-heartbeat` scenario) ends the
  * beat through the real `end_beat` capability, with a raise or without. What
  * a beat finds is real too: the promises are recorded by the agent's own
- * identity through the real `commitments.add` capability.
+ * identity through the real `todo_promises.add` capability.
  *
  * So the run is: quiet, a promise due (raised to the owner), quiet, another
  * promise due (worked on, nothing raised), quiet. The beats are seconds apart,
@@ -31,7 +31,7 @@ export const HEARTBEAT_AGENT = 'forge';
 /** Its `HEARTBEAT.md`: on a timer, watching its promises and its schedules. */
 const HEARTBEAT_FILE = `---
 wake: timed
-watch: [commitments, schedules]
+watch: [todos, schedules]
 report: off
 ---
 
@@ -122,7 +122,7 @@ async function promise(what: string, dueInHours: number): Promise<void> {
   })) as { token: string };
   const dueAt = new Date(Date.now() + dueInHours * 3_600_000).toISOString();
   await post(
-    '/api/capabilities/commitments.add/invoke',
+    '/api/capabilities/todo-promises.add/invoke',
     { what, dueAt },
     { 'X-DorkOS-Agent': token }
   );

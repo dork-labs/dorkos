@@ -1,6 +1,6 @@
 /**
  * Session-side services built before any runtime can start a turn: who started
- * a chat, chat messaging, commitments, the permission observer and gate, the
+ * a chat, chat messaging, to-dos, the permission observer and gate, the
  * notification pipeline and escalation, and the session watchers.
  *
  * Moved out of `index.ts` unchanged; it runs at the same point in `start()`.
@@ -26,7 +26,7 @@ import {
 import { AgentSendStore } from '../../services/extensions/agent-send/agent-send-store.js';
 import { wireChatMessaging } from '../../services/session/chat-messages/chat-message-wiring.js';
 import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
-import { wireCommitments } from '../../services/commitments/commitment-wiring.js';
+import { wireTodos } from '../../services/todos/todo-wiring.js';
 import { wireWorkQueue } from '../../services/work-queue/work-queue-wiring.js';
 import {
   setOnEveryAgentEnded,
@@ -139,7 +139,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   });
   // What agents promised (spec `heartbeats` §12). The due timers are rebuilt
   // from the table here, so a restart loses no wake and no missed mark.
-  const commitments = (refs.commitmentWiring = wireCommitments({
+  const todoPromises = (refs.todoWiring = wireTodos({
     db,
     meshCore: () => refs.meshCore,
     roomSessionPlace: () => refs.roomSessionPlacePort,
@@ -320,7 +320,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   watchShiftReport(notificationStore, () => configManager.get('onboarding'));
   return {
     chatMessaging,
-    commitments,
+    todoPromises,
     workQueue,
     arrivalRecord,
     personSetPermissions,

@@ -169,6 +169,25 @@ describe('the permission upgrade', () => {
     expect(onDisk('plain').permissions).toEqual({ areas: { messages: 'blocked' } });
   });
 
+  it('writes a renamed action id back under its new id, Blocked kept, with no event (DOR-3933)', async () => {
+    writeRaw(
+      'plain',
+      manifestBody('plain', {
+        permissions: { actions: { 'commitments.add': 'blocked', 'memory.write': 'ask' } },
+      })
+    );
+    await runPermissionRetirements(deps());
+    expect(onDisk('plain').permissions).toEqual({
+      actions: { 'memory.write': 'ask', 'todo_promises.add': 'blocked' },
+    });
+    expect(world.events.some((e) => e.resourceLabel === 'plain')).toBe(false);
+
+    // Nothing is left to move, so the next boot leaves the file alone.
+    const before = fs.readFileSync(path.join(root, 'plain', '.dork', 'agent.json'), 'utf8');
+    await runPermissionRetirements(deps());
+    expect(fs.readFileSync(path.join(root, 'plain', '.dork', 'agent.json'), 'utf8')).toBe(before);
+  });
+
   it('never overwrites an explicit area, and records no event for it', async () => {
     writeRaw(
       'granted',

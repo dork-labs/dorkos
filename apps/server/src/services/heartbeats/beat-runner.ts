@@ -26,7 +26,7 @@
  * @module services/heartbeats/beat-runner
  */
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import type { Commitment } from '@dorkos/shared/commitment-schemas';
+import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import type { BeatOutcome, EndBeatRaise } from '@dorkos/shared/heartbeat-schemas';
 import type { ResolvedWorkingHours } from '@dorkos/shared/working-hours';
 import { logger } from '../../lib/logger.js';
@@ -155,9 +155,9 @@ export interface BeatRunnerDeps {
   hoursFor(agentId: string): ResolvedWorkingHours;
   /** Every gatherer this server runs. */
   gatherers: GathererRegistry;
-  /** Open commitments, for the prompt and the in-flight rule. */
-  commitments: {
-    list(filter: { agentId: string; state: 'open' }, limit?: number): Commitment[];
+  /** Open to-dos, for the prompt and the in-flight rule. */
+  todoPromises: {
+    list(filter: { agentId: string; state: 'open' }, limit?: number): TodoPromise[];
     /** The marks the agent's open promises were made under (DOR-3036); absent reads none. */
     openMarks?(agentId: string): TurnMarks;
     /** Every bound the agent's open promises and to-dos carry (DOR-3088); absent reads none. */
@@ -229,7 +229,7 @@ export class BeatRunner {
       store: deps.store,
       hoursFor: (id) => deps.hoursFor(id),
       gatherers: deps.gatherers,
-      commitments: deps.commitments,
+      todoPromises: deps.todoPromises,
       launcher: deps.launcher,
       outbox: deps.outbox,
       ...(deps.resolveCwd ? { resolveCwd: deps.resolveCwd } : {}),

@@ -172,10 +172,10 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Handles: a person’s own anywhere; an agent’s refused by the route on plain-http Wi-Fi': [
     'PATCH /api/rooms/authors/:authorId/handle',
   ],
-  'Work and agents at the chat level: tasks, commitments, pausing, agent settings': [
+  'Work and agents at the chat level: tasks, to-dos, pausing, agent settings': [
     'DELETE /api/tasks/:id',
     'POST /api/tasks/runs/:id/cancel',
-    'PATCH /api/commitments/:id',
+    'PATCH /api/todo-promises/:id',
     'POST /api/agents/:id/pause',
     'POST /api/agents/:id/resume',
     'PATCH /api/agents/current',

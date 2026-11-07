@@ -541,7 +541,7 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
     refs.devLinkWatcher = undefined;
   }
   refs.searchIndexer?.stop();
-  refs.commitmentWiring?.stop();
+  refs.todoWiring?.stop();
   refs.workQueueWiring?.stop();
   heartbeats.stopHeartbeats();
   if (refs.meshCore) {
