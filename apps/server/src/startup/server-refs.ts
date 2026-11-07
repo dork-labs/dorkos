@@ -36,7 +36,7 @@ import type {
 } from '../services/harness/skills-watcher.js';
 import type { DevLinkWatcher } from '../services/marketplace/dev-links/index.js';
 import type { SearchIndexer } from '../services/search/index.js';
-import type { CommitmentWiring } from '../services/commitments/commitment-wiring.js';
+import type { TodoWiring } from '../services/todos/todo-wiring.js';
 import type { WorkQueueWiring } from '../services/work-queue/work-queue-wiring.js';
 import type { JitteredSchedule } from '../lib/jittered-schedule.js';
 import type { TerminalManager } from '../services/terminal/index.js';
@@ -140,7 +140,7 @@ export interface ServerRefs {
    */
   attachAgentTaskRoots: ((projectPath: string, agentId: string) => Promise<void>) | undefined;
   searchIndexer: SearchIndexer | undefined;
-  commitmentWiring: CommitmentWiring | undefined;
+  todoWiring: TodoWiring | undefined;
   workQueueWiring: WorkQueueWiring | undefined;
   healthCheckInterval: ReturnType<typeof setInterval> | undefined;
   dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
@@ -243,7 +243,7 @@ export function createServerRefs(): Omit<ServerRefs, BareServerRefs> {
     turnEndReprojection: undefined,
     attachAgentTaskRoots: undefined,
     searchIndexer: undefined,
-    commitmentWiring: undefined,
+    todoWiring: undefined,
     workQueueWiring: undefined,
     healthCheckInterval: undefined,
     dailySnapshotInterval: undefined,

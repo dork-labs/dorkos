@@ -102,7 +102,7 @@ export interface MountCoreRoutesInput {
   roomService: WireRoomsResult['roomService'];
   roomAuthors: WireRoomsResult['roomAuthors'];
   notifyDm: WireTeamRoomAndRelayAdaptersResult['notifyDm'];
-  commitments: WireSessionServicesResult['commitments'];
+  todoPromises: WireSessionServicesResult['todoPromises'];
   workQueue: WireSessionServicesResult['workQueue'];
   auditAccounts: WireCoreStoresResult['auditAccounts'];
   dorkHome: ClaimDataDirectoryResult['dorkHome'];
@@ -150,7 +150,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     roomService,
     roomAuthors,
     notifyDm,
-    commitments,
+    todoPromises,
     workQueue,
     auditAccounts,
     dorkHome,
@@ -305,7 +305,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     roomAuthors,
     notifyDm,
     relay: () => refs.relayChannelDeps,
-    commitments: commitments.service,
+    todoPromises: todoPromises.service,
   });
   sessionListBroadcaster.setOriginResolvers({ ...origins });
   // Who may read each session's transcript (spec `audit-trail` §3.4): an
@@ -664,11 +664,11 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   mountedRouters.push('permissions');
 
   // What agents promised (spec `heartbeats` §12). Always mounted, by the Hono
-  // app: the list at `/api/commitments`, a person's new one per agent at
-  // `/api/agents/:id/commitments`.
-  deps.commitments = commitments.routeDeps;
+  // app: the list at `/api/todo-promises`, a person's new one per agent at
+  // `/api/agents/:id/todo-promises`.
+  deps.todoPromises = todoPromises.routeDeps;
   // To-dos (DOR-3088) at `/api/todos`, behind their flag until v1 is complete.
-  if (env.DORKOS_TODOS_ENABLED) deps.todos = commitments.todoRouteDeps;
+  if (env.DORKOS_TODOS_ENABLED) deps.todos = todoPromises.todoRouteDeps;
   // An agent's work queue, for a person (DOR-3462).
   deps.workQueue = workQueue.routeDeps;
   // Pause an agent everywhere, and lift it (spec `audit-trail` PR5). Served by

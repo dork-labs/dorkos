@@ -15,7 +15,7 @@ import type { Change, GatherContext, Gatherer } from './types.js';
 
 export type { Change, ChangeTouch, GatherAgent, GatherContext, Gatherer } from './types.js';
 export { createAddressedGatherer } from './addressed.js';
-export { createCommitmentsGatherer, type CommitmentReader } from './commitments.js';
+export { createTodosGatherer, type TodoReader } from './todo-promises.js';
 export { createSchedulesGatherer, type OwnRun, type OwnRunReader } from './schedules.js';
 export { createHealthGatherer } from './health.js';
 export { createWorkspaceGatherer, runCommand, type RunCommand } from './workspace.js';

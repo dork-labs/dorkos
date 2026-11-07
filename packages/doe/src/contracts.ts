@@ -165,7 +165,7 @@ export interface BeatRequest {
   prompt: string;
   changes?: string;
   instructions?: string;
-  commitments?: string;
+  todoPromises?: string;
   signal?: AbortSignal;
   decide?: () => Promise<{ action: 'skip' | 'run'; reason: string }>;
 }

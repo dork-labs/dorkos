@@ -492,7 +492,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // 121 -> 124 for `chat_send`, `chat_read` and `chat_stop` (spec
     // `spin-off-chats` §1); 124 -> 118 (§7): the six relay send, inbox and
     // endpoint tools retire. `<chat_tools>` names the three chat tools prefixed.
-    // 118 -> 121 for the three commitment tools (spec `heartbeats` §12): no
+    // 118 -> 121 for the three to-do tools (spec `heartbeats` §12): no
     // prompt block names them, so they stay deferred and unprefixed.
     // 121 -> 125 for `audit_query`, `audit_get`, `account_timeline` and
     // `transcript_read` (spec `audit-trail` PR4): no prompt block names them,
