@@ -386,8 +386,11 @@ export interface OperatingSkill {
  *   task tools runs capped at Never ask until the agent accepts it, in two
  *   `tasks_update` calls from an ordinary chat (M4, SB3). 49 rather than 48
  *   because DOR-3720 landed on `main` first and took 48. Re-bump, never keep-mine.
+ * - 50: `operating-dorkos` and `working-on-a-heartbeat` name the promise tools by
+ *   their new names, `todo_promise_add` and `todo_promise_update` (DOR-3933). An
+ *   agent seeded at 49 would call `commitment_add`, which no longer exists.
  */
-export const OPERATING_SKILLS_VERSION = 49;
+export const OPERATING_SKILLS_VERSION = 50;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
