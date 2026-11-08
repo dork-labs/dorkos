@@ -30,6 +30,9 @@
  * a failed write cleans up after itself ({@link snapshotSqlite}), and every site
  * that reuses an existing file verifies its contents first.
  *
+ * **No snapshot keeps recorded turn text.** Both writers empty it out of the
+ * copy before anyone can rely on the file (`snapshot-scrub.ts`, DOR-4001).
+ *
  * Snapshots are a **manual** escape hatch. Nothing here ever restores one, and
  * nothing here ever deletes, moves or recreates a live database — see
  * `DatabaseOpenError` in `index.ts` for the other half of that rule.
@@ -42,6 +45,7 @@ import fs from 'fs';
 import path from 'path';
 import type { Db } from './index.js';
 import { migrationsFolder } from './migrations-folder.js';
+import { scrubSnapshot } from './snapshot-scrub.js';
 
 /**
  * Thrown when a snapshot could not be written.
@@ -152,6 +156,9 @@ export function snapshotSqlite(sqlite: BetterSqlite3.Database, destPath: string)
   const preexisting = fs.existsSync(destPath);
   try {
     sqlite.prepare('VACUUM INTO ?').run(destPath);
+    // No snapshot keeps recorded turn text (DOR-4001). A copy that could not be
+    // emptied is a failed snapshot, cleaned up below like any other.
+    scrubSnapshot(destPath);
   } catch (err) {
     if (!preexisting) {
       try {
@@ -225,6 +232,9 @@ export async function snapshotSqliteInSteps(
     } finally {
       copy.close();
     }
+    // Emptied before it takes its name, so no file at a snapshot's name ever
+    // holds recorded turn text (DOR-4001).
+    scrubSnapshot(partial);
     fs.renameSync(partial, destPath);
   } catch (err) {
     try {

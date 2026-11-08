@@ -22,14 +22,17 @@ const SERVER_SRC = path.join(REPO, 'apps/server/src');
 const RECORD_DIR = path.join(SERVER_SRC, 'services/session/turn-context') + path.sep;
 const STORE = 'apps/server/src/services/session/turn-context/turn-context-store.ts';
 const SCHEMA = 'packages/db/src/schema/session/turn-context.ts';
+/** Files allowed to name the tables: the store, the schema, and the snapshot scrub that empties them (DOR-4001). */
+const MAY_NAME_TABLES = new Set([STORE, SCHEMA, 'packages/db/src/snapshot-scrub.ts']);
 
 /** Files allowed to import the record, relative to the repo. Writers only. */
 const ALLOWED_IMPORTERS = new Set([
   // The installer and the hourly sweep.
   'apps/server/src/startup/steps/core-stores.ts',
   'apps/server/src/startup/steps/after-listen.ts',
-  // Deletion with the session.
+  // Deletion with the session, live and at boot (DOR-4002).
   'apps/server/src/services/session/message-dispatcher/queue-upkeep.ts',
+  'apps/server/src/startup/steps/rooms.ts',
   // The four adapters, each at the point it hands the prompt over.
   'apps/server/src/services/runtimes/claude-code/messaging/turn-context/turn-context-record.ts',
   'apps/server/src/services/runtimes/codex/turn-input.ts',
@@ -38,7 +41,9 @@ const ALLOWED_IMPORTERS = new Set([
 ]);
 
 /** The tables, by their code names and their exact SQL names (never Codex's `turn_context`). */
-const TABLE_NAME = /\bturnContext(?:s|Parts|Bodies)\b|\bturn_context(?:s|_parts|_bodies)\b/;
+const TABLE_NAME = /\bturnContext(?:s|Parts|Bodies)\b/;
+/** The SQL names, in any case: SQLite ignores case in a table name (DOR-4006). */
+const SQL_TABLE_NAME = /\bturn_context(?:s|_parts|_bodies)\b/i;
 /** Every module specifier: `from '…'`, `import('…')`, `require('…')`. */
 const SPECIFIER = /(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"`]([^'"`]+)['"`]/g;
 
@@ -89,7 +94,8 @@ function violations(files: readonly SourceFile[]): string[] {
   const found: string[] = [];
   for (const file of files) {
     const inRecord = path.join(REPO, file.rel).startsWith(RECORD_DIR);
-    if (file.rel !== STORE && file.rel !== SCHEMA && TABLE_NAME.test(file.source)) {
+    const namesTable = TABLE_NAME.test(file.source) || SQL_TABLE_NAME.test(file.source);
+    if (!MAY_NAME_TABLES.has(file.rel) && namesTable) {
       found.push(`${file.rel}: names a turn-context table`);
     }
     if (!inRecord && !ALLOWED_IMPORTERS.has(file.rel) && importsRecord(file)) {
@@ -138,6 +144,11 @@ describe('turn-context privacy', () => {
         rel: route,
         source:
           "export const load = async () => (await import('../services/session/turn-context/index.js')).getTurnContextStore();",
+      },
+      'raw SQL in upper case': {
+        rel: route,
+        source:
+          "export const rows = (db) => db.$client.prepare('SELECT BODY FROM TURN_CONTEXT_BODIES').all();",
       },
       'raw SQL': {
         rel: route,

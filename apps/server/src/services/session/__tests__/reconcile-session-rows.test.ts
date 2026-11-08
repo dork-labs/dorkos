@@ -4,6 +4,7 @@ import type { Db } from '@dorkos/db';
 import { reconcileSessionRows } from '../catalog/reconcile-session-rows.js';
 import { MessageQueueStore } from '../message-queue-store.js';
 import { StagedContextStore } from '../staged-context-store.js';
+import { TurnContextStore } from '../turn-context/turn-context-store.js';
 
 /**
  * The boot reconcile (DOR-1436): rows whose session disappeared while the
@@ -277,5 +278,53 @@ describe('reconcileSessionRows — a degraded runtime keeps every one of its row
       failedDeletes: 0,
       inventoryComplete: false,
     });
+  });
+});
+
+describe('reconcileSessionRows — turn-context records (DOR-4002)', () => {
+  /** A record of one turn, with text only this session holds. */
+  function record(store: TurnContextStore, sessionId: string): void {
+    store.record({
+      sessionId,
+      runtime: 'claude-code',
+      place: 'chat',
+      systemSentThisTurn: true,
+      parts: [{ slot: 'prompt', text: `made-up words for ${sessionId}` }],
+    });
+  }
+
+  it('deletes the records and text of a chat that vanished while DorkOS was down, and no other', async () => {
+    const contextRecords = new TurnContextStore(db);
+    for (const id of [LIVE, GONE, CODEX, UNBOUND]) record(contextRecords, id);
+
+    const report = await reconcileSessionRows({ ...deps(), contextRecords });
+
+    expect(report).toMatchObject({ candidates: 4, reaped: 1, rows: 1, failedDeletes: 0 });
+    expect(contextRecords.listSessionIds().sort()).toEqual([CODEX, LIVE, UNBOUND].sort());
+    const bodies = db.$client.prepare('SELECT body FROM turn_context_bodies').all() as {
+      body: string;
+    }[];
+    expect(bodies.some((row) => row.body.includes(GONE))).toBe(false);
+  });
+
+  it('finds a chat that holds only records, nothing queued or staged', async () => {
+    const contextRecords = new TurnContextStore(db);
+    record(contextRecords, GONE);
+
+    await reconcileSessionRows({ ...deps(), contextRecords });
+
+    expect(contextRecords.listSessionIds()).toEqual([]);
+  });
+
+  it('keeps every record when the inventory is incomplete', async () => {
+    const contextRecords = new TurnContextStore(db);
+    record(contextRecords, GONE);
+
+    await reconcileSessionRows({
+      ...deps({ inventory: () => Promise.resolve({ ids: new Set(), complete: false }) }),
+      contextRecords,
+    });
+
+    expect(contextRecords.listSessionIds()).toEqual([GONE]);
   });
 });

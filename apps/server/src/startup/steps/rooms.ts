@@ -77,6 +77,7 @@ import {
   reconcileSessionRows,
   continueActivity,
 } from '../../services/session/index.js';
+import { getTurnContextStore } from '../../services/session/turn-context/record-turn-context.js';
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { wireTeammateSpend } from '../../services/communities/remote/wake/teammate-spend-wiring.js';
@@ -542,6 +543,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     // directories, and startup is not the place to wait on a disk.
     const queueStore = getMessageQueueStore();
     const stagedStore = getStagedContextStore();
+    const contextRecords = getTurnContextStore();
     if (!queueStore || !stagedStore) {
       // Unreachable in this host — both stores are injected above, right after
       // `createDb()` — and said out loud anyway, because a reconcile that
@@ -552,6 +554,8 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
       void reconcileSessionRows({
         queue: queueStore,
         staged: stagedStore,
+        // What a vanished chat's turns were sent goes with it (DOR-4002).
+        ...(contextRecords ? { contextRecords } : {}),
         bindingsFor: (ids) => runtimeRegistry.getSessionBindings(ids),
         claudeCodeInventory: () => inventorySessionIds(transcripts.getProjectsRootSet()),
       }).then(
