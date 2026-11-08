@@ -16,10 +16,10 @@ const expected: Record<string, number> = {
   'claude-code/sdk/sdk-utils.ts': 1,
   'claude-code/tooling/provision.ts': 1,
   'codex/model-catalog.ts': 1,
-  'codex/transport/exec-transport.ts': 3,
   'codex/app-server/process-pool.ts': 1,
   'codex/app-server/protocol/snapshot.ts': 2,
   'codex/provision.ts': 1,
+  'codex/policy/mount-target-guard.ts': 1,
   'connect/delegated-login.ts': 2,
   'opencode/server-manager.ts': 1,
   'opencode/providers/provision.ts': 1,
@@ -125,6 +125,14 @@ describe('runtime launch adoption census', () => {
         expect(census(mutant, name).unprojected).toHaveLength(1);
       }
     }
+  });
+
+  it('rejects a registry-lock helper that drops its inspection projection', () => {
+    const name = 'codex/policy/mount-target-guard.ts';
+    const source = readFileSync(path.join(root, name), 'utf8');
+    const projection = "env: runtimeEnvironment('codex', 'process-inspection'),";
+    expect(source).toContain(projection);
+    expect(census(source.replace(projection, ''), name).unprojected).toEqual(['spawn']);
   });
 
   it('rejects a Codex model probe that drops projection or restores ambient inheritance', () => {

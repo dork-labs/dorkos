@@ -328,11 +328,11 @@ describe('TeamPage — grouping by manager', () => {
 
     await user.click(chip('Group by owner'));
 
-    // The Commitments section below the roster has its own heading; only the
+    // The To-dos section below the roster has its own heading; only the
     // owner clusters count here.
     const headings = screen
       .getAllByRole('heading', { level: 2 })
-      .filter((heading) => heading.textContent !== 'Commitments');
+      .filter((heading) => heading.textContent !== 'To-dos');
     expect(headings).toHaveLength(3);
     expect(within(headings[0]!).getByText('Dorian')).toBeInTheDocument();
     expect(within(headings[0]!).getByText('@dorian')).toBeInTheDocument();
@@ -505,7 +505,7 @@ describe('the query-restore pause (DOR-1419)', () => {
   });
 });
 
-describe('TeamPage — commitments', () => {
+describe('TeamPage — to-dos', () => {
   /** Someone else's person, and the cartographer re-homed onto them. */
   const priya: TeamMember = {
     id: 'person-priya',
@@ -521,7 +521,7 @@ describe('TeamPage — commitments', () => {
   const warden = byId('agent-warden');
   const theirs: TeamMember = { ...byId('agent-cartographer'), ownerId: priya.id };
 
-  const commitment = (id: string, agentId: string, what: string) => ({
+  const todoPromise = (id: string, agentId: string, what: string) => ({
     id,
     agentId,
     to: null,
@@ -536,7 +536,7 @@ describe('TeamPage — commitments', () => {
     note: null,
   });
 
-  it('offers controls on your own agents’ commitments only', async () => {
+  it('offers controls on your own agents’ to-dos only', async () => {
     const members = [
       ...MOCK_TEAM_ROSTER.filter((member) => member.id !== theirs.id),
       priya,
@@ -545,10 +545,10 @@ describe('TeamPage — commitments', () => {
     renderPage(
       { members },
       {
-        listCommitments: vi.fn().mockResolvedValue({
-          commitments: [
-            commitment('mine', warden.agent!.manifestId, 'Warden promise'),
-            commitment('other', theirs.agent!.manifestId, 'Cartographer promise'),
+        listTodoPromises: vi.fn().mockResolvedValue({
+          todoPromises: [
+            todoPromise('mine', warden.agent!.manifestId, 'Warden promise'),
+            todoPromise('other', theirs.agent!.manifestId, 'Cartographer promise'),
           ],
         }),
       }

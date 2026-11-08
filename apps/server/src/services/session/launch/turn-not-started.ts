@@ -88,6 +88,8 @@ export type SettledAs = [outcome: 'ok' | 'failed', reason?: TurnRefusal | typeof
 export interface WatchedTurn {
   /** The same events, in order. */
   stream: AsyncIterable<StreamEvent>;
+  /** Whether the agent produced output, even if its turn later failed. */
+  readonly started: boolean;
   /** Set when the turn threw: it settles `failed` too. */
   threw: boolean;
   /** How the turn settles, as `onSettled`'s arguments. */
@@ -115,6 +117,9 @@ export function watchNotStarted(source: AsyncIterable<StreamEvent>): WatchedTurn
   }
   const watched: WatchedTurn = {
     stream: stream(),
+    get started() {
+      return sawOutput;
+    },
     threw: false,
     settledAs: () => {
       if (reason !== undefined) return ['failed', reason];

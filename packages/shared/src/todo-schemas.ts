@@ -1,6 +1,6 @@
 /**
  * Zod schemas for to-dos (DOR-3088): one thing someone has to do, assigned to one agent or one
- * person, on the same record as an agent's promises (`commitment-schemas.ts`).
+ * person, on the same record as an agent's promises (`todo-promise-schemas.ts`).
  *
  * Field and state names follow the To-dos spec exactly (`what`, assignee, `assignedBy`, `to`,
  * `dueAt`, room, `sourceEntryId`, notes, `rank`; open / kept / dropped + note), so other views
@@ -12,11 +12,11 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import {
-  COMMITMENT_NOTE_MAX,
-  COMMITMENT_TO_MAX,
-  COMMITMENT_WHAT_MAX,
-  CommitmentStateSchema,
-} from './commitment-schemas.js';
+  TODO_NOTE_MAX,
+  TODO_TO_MAX,
+  TODO_WHAT_MAX,
+  TodoStateSchema,
+} from './todo-promise-schemas.js';
 
 extendZodWithOpenApiOnce();
 
@@ -50,7 +50,7 @@ export const TodoSchema = z
     assignedBy: z.object({ kind: z.enum(['agent', 'person', 'outsider']), id: z.string() }),
     to: z.string().nullable(),
     dueAt: z.string().nullable(),
-    state: CommitmentStateSchema,
+    state: TodoStateSchema,
     /** Open with a due date in the past. Computed on read, never stored. */
     overdue: z.boolean(),
     roomId: z.string().nullable(),
@@ -94,9 +94,9 @@ const DueAtSchema = z.string().datetime({ offset: true });
 /** What a person sends to make a to-do. Who made it is never in the body. */
 export const CreateTodoRequestSchema = z
   .object({
-    what: z.string().trim().min(1).max(COMMITMENT_WHAT_MAX),
+    what: z.string().trim().min(1).max(TODO_WHAT_MAX),
     assignee: TodoAssigneeSchema,
-    to: z.string().trim().min(1).max(COMMITMENT_TO_MAX).optional(),
+    to: z.string().trim().min(1).max(TODO_TO_MAX).optional(),
     dueAt: DueAtSchema.optional(),
     roomId: z.string().min(1).optional(),
     notes: z.string().trim().max(TODO_NOTES_MAX).optional(),
@@ -117,14 +117,14 @@ export type CreateTodoRequest = z.infer<typeof CreateTodoRequestSchema>;
 export const UpdateTodoRequestSchema = z
   .object({
     state: z.enum(['open', 'kept', 'dropped']).optional(),
-    note: z.string().trim().max(COMMITMENT_NOTE_MAX).optional(),
-    what: z.string().trim().min(1).max(COMMITMENT_WHAT_MAX).optional(),
+    note: z.string().trim().max(TODO_NOTE_MAX).optional(),
+    what: z.string().trim().min(1).max(TODO_WHAT_MAX).optional(),
     notes: z.string().trim().max(TODO_NOTES_MAX).nullable().optional(),
     dueAt: DueAtSchema.nullable().optional(),
     assignee: TodoAssigneeSchema.optional(),
     rank: z.string().max(TODO_RANK_MAX).nullable().optional(),
     /** The state the caller believes it is in; a mismatch is refused (`CONFLICT`). */
-    from: CommitmentStateSchema.optional(),
+    from: TodoStateSchema.optional(),
   })
   .strict()
   .openapi('UpdateTodoRequest');

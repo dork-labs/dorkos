@@ -29,6 +29,13 @@ import {
   resetAgentIdentityService,
 } from '../../../core/agent-identity/index.js';
 import { CodexRuntime } from '../codex-runtime.js';
+import { ScriptedCodexTransport } from './fixtures/scripted-transport.js';
+
+// These injection cases start with approved content; launch consent has its own
+// integration coverage in folder-settings/__tests__/folder-config-launch.test.ts.
+vi.mock('../../shared/policy/managed-config.js', () => ({
+  managedConfigHeld: vi.fn(async () => false),
+}));
 import { CodexThreadMap } from '../thread-map.js';
 import { codexSimpleTurn, makeMockThread } from './codex-scenarios.js';
 import type { ConnectorRuntimePrincipalPort } from '../../../connectors/runtime-principal-port.js';
@@ -219,7 +226,7 @@ describe('the dorkos tool server on a Codex turn', () => {
     } = {}
   ): CodexRuntime {
     const runtime = new CodexRuntime({
-      transport: 'exec',
+      transport: new ScriptedCodexTransport(),
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/bin/codex',
       defaultCwd: agentDir,
@@ -543,7 +550,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       const principals = connectorPort();
       const stop = vi.fn();
       const runtime = new CodexRuntime({
-        transport: 'exec',
+        transport: new ScriptedCodexTransport(),
         threadMap: new CodexThreadMap(db),
         resolveBinary: async () => {
           throw new Error('binary setup failed');
@@ -784,7 +791,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       // composition root, so a runtime built without one has no way to identify
       // anybody and injects nothing.
       const runtime = new CodexRuntime({
-        transport: 'exec',
+        transport: new ScriptedCodexTransport(),
         threadMap: new CodexThreadMap(db),
         resolveBinary: async () => '/bin/codex',
         defaultCwd: agentDir,

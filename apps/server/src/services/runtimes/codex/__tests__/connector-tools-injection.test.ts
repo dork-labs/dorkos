@@ -8,7 +8,7 @@ import {
   CONNECTOR_RUNTIME_MCP_SERVER_NAME,
   connectorRuntimeHeaders,
 } from '../../connector-tools.js';
-import { buildCodexOptions } from '../codex-options.js';
+import { buildCodexOptions } from './fixtures/sdk-options.js';
 
 describe('Codex connector runtime MCP injection', () => {
   it('keeps every header value out of config and visible argv material', () => {

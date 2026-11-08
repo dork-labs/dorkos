@@ -45,8 +45,8 @@ const DOR_3394_TOOLS = [
   'end_beat',
   'accounts_usage',
   'session_start',
-  'commitments_list',
-  'commitment_add',
+  'todo_promises_list',
+  'todo_promise_add',
   'accounts_probe',
 ].map((name) => `mcp__dorkos__${name}`);
 

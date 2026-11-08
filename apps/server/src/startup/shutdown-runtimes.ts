@@ -7,7 +7,10 @@ import { logger } from '../lib/logger.js';
 import { shutdownComputers } from './computers.js';
 
 /** Preserve host shutdown order, while also retaining and stopping the computer disk. */
-export async function shutdownRuntimes(creditsRelay: CreditsRelay | null): Promise<void> {
+export async function shutdownRuntimes(
+  creditsRelay: CreditsRelay | null,
+  reason: 'authority' | 'shutdown' = 'shutdown'
+): Promise<void> {
   try {
     await shutdownComputers();
   } catch {
@@ -15,7 +18,7 @@ export async function shutdownRuntimes(creditsRelay: CreditsRelay | null): Promi
     logger.warn('[Computer] shutdown stop unconfirmed', { reason: 'shutdown', code: 'stop-threw' });
   }
   await openCodeServerManager.shutdown();
-  await codexAppServerPool.shutdown();
+  await codexAppServerPool.shutdown(reason);
   await creditsRelay?.close();
   await shutdownSessionPumps();
 }

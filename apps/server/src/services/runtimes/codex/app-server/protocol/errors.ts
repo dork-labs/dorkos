@@ -22,6 +22,7 @@ export type CodexRpcErrorKind =
   | 'not-steerable'
   | 'experimental-required'
   | 'overloaded'
+  | 'sandbox-unavailable'
   | 'other';
 
 /** The JSON-RPC code Codex answers `Server overloaded; retry later.` with. */
@@ -32,6 +33,13 @@ export const OVERLOADED_CODE = -32001;
  * pinned binary (protocol §1 and §3, spikes 1b and 4).
  */
 const MESSAGE_PATTERNS: ReadonlyArray<readonly [RegExp, CodexRpcErrorKind]> = [
+  // Linux can refuse the filesystem helper before thread/start reads AGENTS.md.
+  // Match the namespace refusal, not ordinary protected-file permission errors.
+  [/bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted/i, 'sandbox-unavailable'],
+  [
+    /bwrap: (?:Creating new namespace failed: Operation not permitted|No permissions to create new namespace)/i,
+    'sandbox-unavailable',
+  ],
   [/^Not initialized/i, 'not-initialized'],
   [/^Already initialized/i, 'already-initialized'],
   [/unknown variant/i, 'unknown-method'],

@@ -1,6 +1,6 @@
 /**
- * The two one-time notes DorkOS owes a session's next turn: `context_warning`
- * (DOR-2732) and `turn_cutoff` (DOR-3307). Kept beside `additional-context.ts`,
+ * One-time notes DorkOS owes a session or agent's next turn: context warnings,
+ * turn cutoffs, and release facts. Kept beside `additional-context.ts`,
  * which re-exports the types.
  *
  * @module shared/owed-notes-context
@@ -55,4 +55,27 @@ export interface TurnCutoffData {
 export const TurnCutoffDataSchema = z.object({
   windowMs: z.number().int().positive(),
   neverStarted: z.boolean(),
+});
+
+/** Compiled release facts owed to an agent's first ordinary turn after an update. */
+export interface NewSinceData {
+  previousVersion: string;
+  currentVersion: string;
+  lines: string[];
+  omitted: number;
+}
+
+/** Schema for the bounded, server-derived release note payload. */
+export const NewSinceDataSchema = z.object({
+  previousVersion: z.string(),
+  currentVersion: z.string(),
+  lines: z
+    .array(
+      z
+        .string()
+        .max(160)
+        .regex(/^[^<\r\n]+$/)
+    )
+    .max(8),
+  omitted: z.number().int().nonnegative(),
 });

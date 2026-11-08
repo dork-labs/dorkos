@@ -1,3 +1,5 @@
+import { Codex } from '@openai/codex-sdk';
+import { ScriptedCodexTransport } from './fixtures/scripted-transport.js';
 import {
   DOC_VISIBLE_TRIGGER,
   docBoundaryEntry,
@@ -13,7 +15,7 @@ import {
  *
  * --- Local live-binary smoke (env-gated, never required by CI) -----------
  *
- * To exercise the REAL Codex CLI end-to-end (real `codex exec` turns through
+ * To exercise the REAL Codex CLI end-to-end (app-server turns through
  * the full adapter: thread start/resume, event mapping, terminal `done`), run:
  *
  *   DORKOS_CODEX_LIVE=1 pnpm vitest run \
@@ -121,7 +123,7 @@ const threadMints = vi.hoisted(() => [] as Array<'start' | 'resume'>);
  * §4.6 gate reads folder grants off it.
  */
 const threadOptionsSeen = vi.hoisted(
-  () => [] as Array<{ additionalDirectories?: string[]; sandboxMode?: string }>
+  () => [] as Array<{ additionalDirectories?: string[]; permissionProfile?: string }>
 );
 
 /**
@@ -352,7 +354,7 @@ afterAll(() => {
 describe('what codex says it does with media', () => {
   it('promises nothing when it was wired nowhere to put a picture', () => {
     const runtime = new CodexRuntime({
-      transport: 'exec',
+      transport: LIVE ? 'app-server' : new ScriptedCodexTransport((options) => new Codex(options)),
       threadMap: new CodexThreadMap(createTestDb()),
       resolveBinary: async () => '/bin/codex',
     });
@@ -363,7 +365,9 @@ describe('what codex says it does with media', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-codex-media-decl-'));
     try {
       const runtime = new CodexRuntime({
-        transport: 'exec',
+        transport: LIVE
+          ? 'app-server'
+          : new ScriptedCodexTransport((options) => new Codex(options)),
         threadMap: new CodexThreadMap(createTestDb()),
         resolveBinary: async () => '/bin/codex',
         attachments: new LocalSessionAttachmentStore(home),
@@ -381,7 +385,12 @@ describe('what codex says it does with media', () => {
  */
 const LIVE_MODEL = LIVE
   ? await accountDefaultModel(
-      new CodexRuntime({ transport: 'exec', threadMap: new CodexThreadMap(createTestDb()) })
+      new CodexRuntime({
+        transport: LIVE
+          ? 'app-server'
+          : new ScriptedCodexTransport((options) => new Codex(options)),
+        threadMap: new CodexThreadMap(createTestDb()),
+      })
     )
   : undefined;
 
@@ -391,7 +400,9 @@ runtimeConformance(
   () =>
     onModel(
       new CodexRuntime({
-        transport: 'exec',
+        transport: LIVE
+          ? 'app-server'
+          : new ScriptedCodexTransport((options) => new Codex(options)),
         threadMap: new CodexThreadMap(createTestDb()),
         // LIVE runs resolve the real binary through the shared ladder (the
         // default); mocked runs never spawn anything, so any path will do.
@@ -405,7 +416,7 @@ runtimeConformance(
   {
     name: LIVE
       ? 'CodexRuntime (LIVE codex binary) — AgentRuntime conformance'
-      : 'CodexRuntime (mocked SDK) — AgentRuntime conformance',
+      : 'CodexRuntime (scripted event transport) — AgentRuntime conformance',
     projectDir,
     // Codex is a stateless adapter: conformance drains sendMessage directly
     // (no feedProjector), so native history is [] by design — completed
@@ -420,7 +431,9 @@ runtimeConformance(
             driveContextReading(
               onModel(
                 new CodexRuntime({
-                  transport: 'exec',
+                  transport: LIVE
+                    ? 'app-server'
+                    : new ScriptedCodexTransport((options) => new Codex(options)),
                   threadMap: new CodexThreadMap(createTestDb()),
                 }),
                 LIVE_MODEL
@@ -453,7 +466,9 @@ runtimeConformance(
     roomCanvasTurn: () =>
       driveRoomCanvasTurn(
         new CodexRuntime({
-          transport: 'exec',
+          transport: LIVE
+            ? 'app-server'
+            : new ScriptedCodexTransport((options) => new Codex(options)),
           threadMap: new CodexThreadMap(createTestDb()),
           resolveBinary: async () => '/bin/codex',
         }),
@@ -484,7 +499,9 @@ runtimeConformance(
           mediaTurn: async () => {
             imageNextThread.value = true;
             const runtime = new CodexRuntime({
-              transport: 'exec',
+              transport: LIVE
+                ? 'app-server'
+                : new ScriptedCodexTransport((options) => new Codex(options)),
               threadMap: new CodexThreadMap(createTestDb()),
               resolveBinary: async () => '/bin/codex',
               attachments: new LocalSessionAttachmentStore(ATTACHMENT_HOME),
@@ -602,7 +619,7 @@ runtimeConformance(
             const handed = threadOptionsSeen.slice(optionsBefore);
             const handedFor = (turn: 0 | 1): HandedGrants => {
               const options = handed[turn] ?? {};
-              const sandboxReads = options.sandboxMode !== undefined;
+              const sandboxReads = options.permissionProfile !== undefined;
               return {
                 writable: [...(options.additionalDirectories ?? [])],
                 readOnly: [],
@@ -638,7 +655,9 @@ runtimeConformance(
           makeFailingRuntime: () => {
             nextTurnFailure.message = 'Simulated Codex turn failure';
             return new CodexRuntime({
-              transport: 'exec',
+              transport: LIVE
+                ? 'app-server'
+                : new ScriptedCodexTransport((options) => new Codex(options)),
               threadMap: new CodexThreadMap(createTestDb()),
               ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
             });
@@ -661,7 +680,9 @@ runtimeConformance(
               nextTurnFailure.message = CODEX_VENDOR_AUTH_TEXT;
               nextTurnFailure.withErrorItem = true;
               return new CodexRuntime({
-                transport: 'exec',
+                transport: LIVE
+                  ? 'app-server'
+                  : new ScriptedCodexTransport((options) => new Codex(options)),
                 threadMap: new CodexThreadMap(createTestDb()),
                 ...(LIVE ? {} : { resolveBinary: async () => '/bin/codex' }),
               });
@@ -881,7 +902,7 @@ it.skipIf(LIVE)(
   'doc SDK boundary: Codex runStreamed receives the fenced document on start and resume',
   async () => {
     const runtime = new CodexRuntime({
-      transport: 'exec',
+      transport: LIVE ? 'app-server' : new ScriptedCodexTransport((options) => new Codex(options)),
       threadMap: new CodexThreadMap(createTestDb()),
       resolveBinary: async () => '/bin/codex',
     });
@@ -931,7 +952,9 @@ describe.skipIf(LIVE)('the model a Codex credits turn runs (DOR-2636)', () => {
     });
     try {
       const runtime = new CodexRuntime({
-        transport: 'exec',
+        transport: LIVE
+          ? 'app-server'
+          : new ScriptedCodexTransport((options) => new Codex(options)),
         threadMap: new CodexThreadMap(createTestDb()),
         resolveBinary: async () => '/bin/codex',
       });
@@ -990,7 +1013,9 @@ describe.skipIf(LIVE)('the model a Codex credits turn runs (DOR-2636)', () => {
     });
     try {
       const runtime = new CodexRuntime({
-        transport: 'exec',
+        transport: LIVE
+          ? 'app-server'
+          : new ScriptedCodexTransport((options) => new Codex(options)),
         threadMap: new CodexThreadMap(createTestDb()),
         resolveBinary: async () => '/bin/codex',
       });

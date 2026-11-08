@@ -103,6 +103,7 @@ import {
   seedUiDmViewLeaves,
   markLegacyPathOnlyApprovals,
   seedMaxAgentChats,
+  renameTodoPromiseActions,
 } from './v0-90-onward.js';
 
 /**
@@ -1354,4 +1355,11 @@ export const CONFIG_MIGRATIONS = {
   // Writes `runtimes.maxAgentChats: 8` where the stored `runtimes` section
   // lacks it, and touches nothing else (DOR-3413). See `seedMaxAgentChats`.
   '0.126.5': seedMaxAgentChats,
+  // v0.132.0 is the newest tag, so this opens 0.133.0. Frozen from merge;
+  // anything further opens `'0.134.0'`.
+  //
+  // Moves each per-action default stored under `commitments.add|update|list`
+  // to `todo_promises.add|update|list`, and touches nothing else (DOR-3933).
+  // See `renameTodoPromiseActions`.
+  '0.133.0': renameTodoPromiseActions,
 } as const;

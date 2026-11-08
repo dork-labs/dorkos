@@ -11,8 +11,9 @@
  * settings, other runtimes take a refusal in their own approval step. So the
  * paths live here, and each runtime keeps a thin adapter that turns them into
  * its own form. Claude Code's is `claude-code/secret-files/secret-read-deny.ts`
- * and `claude-code/messaging/directory-grants.ts`; no other runtime reads this
- * list yet (DOR-3595).
+ * and `claude-code/messaging/directory-grants.ts`; Codex renders a named
+ * filesystem profile, and OpenCode and Doe check their native file tools
+ * against the same entries (DOR-3595).
  *
  * ## The shape of an entry
  *

@@ -16,6 +16,7 @@ export function BrowserHandoffInboxItem() {
     error,
     continueAgent,
     signIn,
+    openWindow,
     showWindow,
     stopTask,
   } = useBrowserHandoff();
@@ -34,6 +35,7 @@ export function BrowserHandoffInboxItem() {
         error={error}
         onContinue={() => void continueAgent()}
         onSignIn={signIn}
+        onOpenWindow={openWindow}
         onShowWindow={showWindow}
         onStop={() => void stopTask()}
       />

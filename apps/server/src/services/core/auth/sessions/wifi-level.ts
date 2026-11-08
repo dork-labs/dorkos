@@ -320,7 +320,7 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     // A promise's due beat runs at the agent's own level (DOR-3037).
     surface: 'host',
     methods: 'writes',
-    pattern: /^\/api\/agents\/[^/]+\/commitments$/,
+    pattern: /^\/api\/agents\/[^/]+\/todo-promises$/,
     reason: `Record an agent's promises ${ON_THE_COMPUTER}`,
   },
   {

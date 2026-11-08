@@ -514,6 +514,7 @@ export class LocalBrowserService {
     this.tabs.clear();
     this.selectedTabId = null;
     this.invalidate();
+    this.handover.windowClosed();
   }
   private invalidate(): void {
     this.revision += 1;

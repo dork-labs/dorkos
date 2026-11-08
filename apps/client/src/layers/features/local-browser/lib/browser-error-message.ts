@@ -7,7 +7,7 @@ const MESSAGES: Record<string, string> = {
   browser_download: 'Couldn’t download the browser. Check your connection and try again.',
   cancelled: 'Browser setup stopped. Open it again to continue.',
   focus_unavailable: 'This tab stopped responding. Choose it again.',
-  handoff_open: 'Another agent is waiting on you in this browser. Answer its card first.',
+  handoff_open: 'An agent is waiting on you in this browser. Answer its card first.',
 };
 const STORAGE_MESSAGES = [
   'Free some space, then open the browser again.',

@@ -61,10 +61,10 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
     title: 'Schedules',
     component: lazy(() => import('./TasksPage').then((m) => ({ default: m.TasksPage }))),
   },
-  commitments: {
-    title: 'Commitments',
+  todos: {
+    title: 'To-dos',
     component: lazy(() =>
-      import('./CommitmentsPage').then((m) => ({ default: m.CommitmentsPage }))
+      import('./TodoPromisesPage').then((m) => ({ default: m.TodoPromisesPage }))
     ),
   },
   'work-queue': {

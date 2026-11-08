@@ -30,6 +30,7 @@ function requireSession(service: LocalBrowserService, context: CapabilityHandler
       error: 'Use the browser from an open agent chat.',
     });
   try {
+    service.handover.refuseStopped(context.sessionId);
     service.requireSharedSession(context.sessionId);
   } catch (error) {
     if (error instanceof LocalBrowserError)

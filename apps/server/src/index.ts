@@ -442,7 +442,7 @@ let docNotificationCleanup: (() => void) | undefined;
 /** DorkOS's own https listener, when its settings opened one (DOR-3172). */
 let tlsServer: import('node:http').Server | null = null;
 
-async function shutdownServices() {
+async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
   await localBrowserHost.close();
@@ -541,14 +541,14 @@ async function shutdownServices() {
     refs.devLinkWatcher = undefined;
   }
   refs.searchIndexer?.stop();
-  refs.commitmentWiring?.stop();
+  refs.todoWiring?.stop();
   refs.workQueueWiring?.stop();
   heartbeats.stopHeartbeats();
   if (refs.meshCore) {
     refs.meshCore.stopPeriodicReconciliation();
     refs.meshCore.close();
   }
-  await shutdownRuntimes(refs.creditsRelay);
+  await shutdownRuntimes(refs.creditsRelay, reason);
   refs.creditsRelay = null;
   // Stream cancelled, managed access drained within its deadline, what is owed kept (DOR-2086).
   await managedRemoteCommands.shutdown();
