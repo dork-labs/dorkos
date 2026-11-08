@@ -261,6 +261,9 @@ button {
 button.secondary { border-color: var(--line-strong); }
 button.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
 button:disabled { opacity: .5; cursor: default; }
+/* Looks only: the 1s gate and the press check live in the script, not here. */
+button { transition: opacity 150ms ease; }
+@media (prefers-reduced-motion: reduce) { button { transition: none; } }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 a { color: inherit; }
 #result:empty { display: none; }

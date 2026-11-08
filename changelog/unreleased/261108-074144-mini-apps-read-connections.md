@@ -12,6 +12,7 @@ covers:
   - 'fix(connectors): the mini app decide page says it is DorkOS, and its labels, buttons and account read cleanly in both themes'
   - 'docs(api): the mini app access list and revoke are in the API reference, and the route census knows the new routes'
   - 'fix(connectors): a single account on the mini app decide page reads as a fact, not a field'
+  - 'fix(connectors): the mini app decide page buttons fade on in 150ms; the one-second gate is unchanged'
 ---
 
 ### Added
