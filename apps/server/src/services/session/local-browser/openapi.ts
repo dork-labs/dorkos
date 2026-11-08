@@ -112,7 +112,8 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
         (deleting
           ? 'Removes the whole profile folder and all its agent bindings before dropping its record.'
           : 'Removes all cookies and site storage. The profile and its agent bindings remain. ' +
-            'The default profile also clears the embedded browser and older CLI state and source profile.'),
+            'The default profile also clears the embedded browser and older CLI state and source profile.') +
+        ' This can’t be undone.',
       request: {
         params: z.object({
           id: deleting ? z.string().uuid() : z.union([z.literal('default'), z.string().uuid()]),

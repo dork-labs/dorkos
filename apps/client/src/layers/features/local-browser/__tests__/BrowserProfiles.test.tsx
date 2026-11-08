@@ -47,13 +47,11 @@ describe('Browser profile removal', () => {
     trigger.focus();
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('alertdialog', {
-      name: 'Forget every sign-in in Example work?',
+      name: 'Forget sign-ins for Example work?',
+      description: 'Every site in this profile will be signed out. This can’t be undone.',
     });
     const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
     await waitFor(() => expect(cancel).toHaveFocus());
-    expect(
-      within(dialog).getByText('This removes every site’s sign-in in this profile.')
-    ).toBeVisible();
     expect(within(dialog).getByRole('button', { name: 'Forget sign-ins' })).toHaveAttribute(
       'data-variant',
       'destructive'
@@ -90,11 +88,17 @@ describe('Browser profile removal', () => {
       })
     ).toBeNull();
     fireEvent.click(within(row).getByRole('button', { name: 'Delete profile' }));
-    const dialog = await screen.findByRole('alertdialog', { name: 'Delete Example work?' });
+    const dialog = await screen.findByRole('alertdialog', {
+      name: 'Delete Example work?',
+      description: 'Agents using it lose access to it. This can’t be undone.',
+    });
     await waitFor(() =>
       expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
     );
-    expect(within(dialog).getByText('Agents using it lose access to this profile.')).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Delete profile' })).toHaveAttribute(
+      'data-variant',
+      'destructive'
+    );
     transport.listLocalBrowserProfiles.mockResolvedValue({ profiles: [] });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete profile' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Example work' })).toBeNull());
