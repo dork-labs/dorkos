@@ -3,7 +3,7 @@
  * `agent-grant-autonomy` §4.1, §4.4): refused for every turn DorkOS marks,
  * every turn another agent started, and every turn it can't read.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { anotherAgentTurnRefusal, type TurnGateSources } from '../access/turn-gate.js';
 
 const CLEAN: TurnGateSources = {
@@ -92,5 +92,43 @@ describe('what the narrowing tools say about their limits', () => {
       (capability) => capability.id === 'connectors.narrow_agent_access'
     );
     expect(other?.description).toContain('these limits don’t cover that case');
+  });
+});
+
+// Giving up your own access skips the gate, so the tool must never reach
+// another agent: its input has no agent field, and it always targets the caller.
+describe('narrow_own_access only ever reaches the caller', () => {
+  it('refuses any agent field, and narrows the calling agent', async () => {
+    const { ACCESS_CHANGE_CAPABILITIES } = await import('../access/access-change-capabilities.js');
+    const { createServerPrincipal } = await import('../principal/server-principal.js');
+    const own = ACCESS_CHANGE_CAPABILITIES.find(
+      (capability) => capability.id === 'connectors.narrow_own_access'
+    )!;
+
+    for (const field of ['agentId', 'targetAgentId']) {
+      expect(
+        own.input.safeParse({ connectionId: 'connection-a', to: 'none', [field]: 'agent-b' })
+          .success
+      ).toBe(false);
+    }
+
+    const narrow = vi.fn().mockResolvedValue({ changed: true, changeId: 'change-1' });
+    const serverPrincipal = createServerPrincipal({
+      kind: 'runtime',
+      owner: { kind: 'local_install', installationId: 'install-1' },
+      bindingId: 'binding-1',
+      runtime: 'claude-code',
+      canonicalSessionId: 'session-a',
+      agentId: 'agent-a',
+      agentPath: '/agents/a',
+    });
+    await own.invoke(
+      { accessChangeDeps: { narrowing: { narrow }, db: {} } } as never,
+      { connectionId: 'connection-a', to: 'none' } as never,
+      { serverPrincipal } as never
+    );
+    expect(narrow).toHaveBeenCalledTimes(1);
+    expect(narrow.mock.calls[0]![0]).toMatchObject({ agentId: 'agent-a' });
+    expect(narrow.mock.calls[0]![1]).toMatchObject({ targetAgentId: 'agent-a' });
   });
 });
