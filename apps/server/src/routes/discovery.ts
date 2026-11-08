@@ -18,6 +18,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { validationFailureBody } from '../lib/route-utils.js';
 import { isWithinBoundary, getBoundary } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import { createScanBrowserWarner } from '../services/browser/agent-browser-lint.js';
 
 /** Zod schema for the POST /scan request body. */
 const ScanRequestSchema = z.object({
@@ -86,6 +87,8 @@ async function streamScan(
   const startMs = Date.now();
   let candidateCount = 0;
   let autoImportCount = 0;
+  // A folder the scan finds may hold a browser server outside DorkOS's guard (DOR-3957).
+  const warnBrowsers = createScanBrowserWarner(logger);
 
   try {
     for await (const event of meshCore.discover(roots, {
@@ -101,6 +104,7 @@ async function streamScan(
         // enough to render a summary card.
         autoImportCount++;
         const { manifest, path: agentPath } = event.data;
+        warnBrowsers(agentPath);
         const existing: ExistingAgent = {
           path: agentPath,
           name: manifest.name,
@@ -118,6 +122,7 @@ async function streamScan(
 
       if (event.type === 'candidate') {
         candidateCount++;
+        warnBrowsers(event.data.path);
         logger.debug('[Discovery] Candidate found', {
           path: event.data.path,
           strategy: event.data.strategy,
