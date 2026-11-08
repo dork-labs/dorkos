@@ -9,6 +9,7 @@ covers:
   - 'feat(connectors): the Connections page lists what mini apps wait for and may read, and can take a yes back'
   - 'feat(connections): a mini app waiting to read an app shows in Needs you as a link, and each account lists the mini apps that can read it'
   - 'feat(connectors): a person lets a mini app read an app only on its own page, outside the app'
+  - 'fix(connectors): the mini app decide page says it is DorkOS, and its labels, buttons and account read cleanly in both themes'
 ---
 
 ### Added

@@ -40,6 +40,7 @@ function shell(title: string, body: string): string {
 </head>
 <body>
 <main>
+<p class="brand">DorkOS</p>
 ${body}
 </main>
 </body>
@@ -83,13 +84,17 @@ export function decidePage(request: MiniAppAccessRequest, token: string): string
 </label>`
     )
     .join('');
+  const only = request.accounts.length === 1 ? request.accounts[0] : undefined;
   const choose =
     request.accounts.length === 0
       ? `<p class="notice">Connect a ${app} account first, on the Connections page.</p>`
-      : `<fieldset><legend>Account it reads</legend>${accounts}</fieldset>`;
+      : only
+        ? `<section aria-labelledby="account"><h2 id="account">Account it reads</h2>
+<p class="account" data-account="${escapeHtml(only.connectionId)}">${escapeHtml(only.label)}</p></section>`
+        : `<fieldset><legend>Account it reads</legend>${accounts}</fieldset>`;
   return shell(
-    `Let ${waiting.extensionName} read ${serviceName(waiting.service)}?`,
-    `<h1>Let ${name} read ${app}?</h1>
+    'Allow access',
+    `<h1 tabindex="-1">Let ${name} read ${app}?</h1>
 ${origin ? `<p class="quiet" data-testid="mini-app-origin">${origin}</p>` : ''}
 <p>It could only read. It never sees your password or sign-in.</p>
 <section aria-labelledby="reads">
@@ -168,6 +173,7 @@ export const MINI_APP_ACCESS_PAGE_SCRIPT = `'use strict';
     disable();
     hold.textContent = '';
     var picked = form.querySelector('input[name="account"]:checked');
+    var single = form.querySelector('[data-account]');
     fetch('decision', {
       method: 'POST',
       credentials: 'same-origin',
@@ -175,7 +181,7 @@ export const MINI_APP_ACCESS_PAGE_SCRIPT = `'use strict';
       body: JSON.stringify({
         token: token,
         decision: decision,
-        connectionId: picked ? picked.value : undefined,
+        connectionId: picked ? picked.value : single ? single.getAttribute('data-account') : undefined,
       }),
     })
       .then(function (response) {
@@ -193,6 +199,9 @@ export const MINI_APP_ACCESS_PAGE_SCRIPT = `'use strict';
       });
   }
 
+  // First focus is the question, never Allow, so a key already held does nothing.
+  var title = document.querySelector('h1');
+  if (title) title.focus();
   arm();
 })();
 `;
@@ -202,11 +211,13 @@ export const MINI_APP_ACCESS_PAGE_STYLES = `:root {
   color-scheme: light dark;
   --bg: #fafafa; --fg: #171717; --muted: #525252; --line: #e5e5e5;
   --card: #ffffff; --primary: #171717; --primary-fg: #fafafa; --warn: #92400e;
+  --line-strong: #d4d4d4;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0a0a0a; --fg: #fafafa; --muted: #a3a3a3; --line: #262626;
     --card: #171717; --primary: #fafafa; --primary-fg: #171717; --warn: #fbbf24;
+    --line-strong: #525252;
   }
 }
 * { box-sizing: border-box; }
@@ -219,14 +230,20 @@ main {
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;
 }
 h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
-h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 1.25rem 0 .5rem; }
+h1:focus { outline: none; }
+.brand { font-size: 13px; color: var(--muted); margin: 0 0 .75rem; }
+h2, legend {
+  font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); margin: 1.25rem 0 .5rem;
+}
+legend { padding: 0; margin-inline: 0; }
+input[type="radio"] { accent-color: var(--fg); }
 p { margin: .5rem 0; }
 .quiet, .hint { color: var(--muted); font-size: .875rem; }
 .notice { color: var(--warn); }
 .operations { margin: 0; padding-left: 1.1rem; }
 .operations code { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
-fieldset { border: 0; padding: 0; margin: 1.25rem 0 0; }
-legend { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: .5rem; }
+fieldset { border: 0; padding: 0; margin: 0; }
 .account {
   display: flex; align-items: center; gap: .6rem; min-height: 44px;
   padding: .5rem .75rem; border: 1px solid var(--line); border-radius: 8px; margin-bottom: .5rem;
@@ -237,8 +254,9 @@ button {
   font: inherit; font-weight: 600; cursor: pointer; border: 1px solid var(--line);
   background: transparent; color: var(--fg);
 }
+button.secondary { border-color: var(--line-strong); }
 button.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
-button:disabled { opacity: .45; cursor: not-allowed; }
+button:disabled { opacity: .5; cursor: default; }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
 a { color: inherit; }
 #result:empty { display: none; }

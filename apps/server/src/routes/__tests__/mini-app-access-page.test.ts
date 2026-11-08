@@ -131,6 +131,20 @@ describe('the mini app access page', () => {
     expect(res.headers['x-frame-options']).toBe('DENY');
   });
 
+  it('names DorkOS, shows one account as text, and offers a choice only for two or more', async () => {
+    const one = await request(target.server).get(PAGE).set(NAVIGATE);
+    expect(one.text).toContain('<p class="brand">DorkOS</p>');
+    expect(one.text).toContain('<title>Allow access · DorkOS</title>');
+    expect(one.text).toContain('data-account="linear-work"');
+    expect(one.text).not.toContain('type="radio"');
+    access.describe.mockReturnValue({
+      ...REQUEST,
+      accounts: [...REQUEST.accounts, { connectionId: 'linear-home', label: 'Home Linear' }],
+    });
+    const two = await request(target.server).get(PAGE).set(NAVIGATE);
+    expect(two.text.match(/type="radio"/gu)).toHaveLength(2);
+  });
+
   it('says nothing waits, with no token, when nothing does', async () => {
     access.describe.mockReturnValue(undefined);
     const res = await request(target.server).get(PAGE).set(NAVIGATE);
