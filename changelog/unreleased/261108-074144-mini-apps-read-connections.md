@@ -2,6 +2,7 @@
 covers:
   - 'feat(extensions): a mini app can declare the apps it reads, and a change to that list waits for a person (DOR-3547)'
   - 'feat(connectors): a mini app reads a connected app through DorkOS, with no token and only what a person approved (DOR-3547)'
+  - 'refactor(extensions): the lifecycle wires ctx.connections in one line, inside its size limit'
 ---
 
 ### Added
