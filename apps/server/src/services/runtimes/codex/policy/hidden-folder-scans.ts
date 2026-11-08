@@ -22,6 +22,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveCodexVendoredBinary } from '../check-dependencies.js';
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 
 type Access = 'read' | 'deny';
 
@@ -140,6 +141,9 @@ export function hasPathCopy(root: string, dir: string, rg: string | null): boole
   if (!rg) return true;
   let out: string;
   try {
+    // The vendored rg resolved from Codex's package, run with no shell and
+    // fixed flags. Only the scan root and the glob vary, and DorkOS builds
+    // both from its own protected list, never from anything an agent sends.
     out = execFileSync(
       rg,
       [
@@ -152,7 +156,13 @@ export function hasPathCopy(root: string, dir: string, rg: string | null): boole
         '--',
         root,
       ],
-      { cwd: dir, encoding: 'utf8', timeout: 20_000, maxBuffer: 1 << 20 }
+      {
+        cwd: dir,
+        encoding: 'utf8',
+        timeout: 20_000,
+        maxBuffer: 1 << 20,
+        env: runtimeEnvironment('codex', 'process-inspection'),
+      }
     );
   } catch (error) {
     const failure = error as { status?: number; stderr?: string };
