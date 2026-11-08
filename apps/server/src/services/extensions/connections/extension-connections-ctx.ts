@@ -43,8 +43,23 @@ export function originOf(record: ExtensionRecord, approvals: ExtensionApprovals)
   if (record.trustedOrigin && !record.originProblem) {
     return { origin: 'trusted_source', source: record.trustedOrigin.source };
   }
-  if (isApprovedByDigest(record, approvals)) return { origin: 'digest_pinned' };
+  if (isApprovedByDigest(record, approvals) && byPerson(approvals.approvedSources?.[record.id])) {
+    return { origin: 'digest_pinned' };
+  }
   return { origin: null };
+}
+
+/**
+ * Whether a person gave this digest yes: not `create_extension` on its own
+ * (Security C1), and not DorkOS pinning an old path approval to whatever
+ * files it found after an upgrade.
+ *
+ * @param source - The stored approval for the copy.
+ */
+function byPerson(
+  source: { autoApprovedBy?: string; pinnedOnFirstUse?: string } | undefined
+): boolean {
+  return !!source && !source.autoApprovedBy && !source.pinnedOnFirstUse;
 }
 
 /**
@@ -135,10 +150,23 @@ export function settleApprovals(
   }
 }
 
+/**
+ * `ctx.connections` as the host holds it: the extension's `read`, plus the
+ * signal that cancels a read in flight when the extension is stopped (C2).
+ */
+export interface HostConnectionsApi {
+  read(
+    operation: string,
+    params?: Record<string, unknown>,
+    signal?: AbortSignal
+  ): ReturnType<ExtensionConnectionsApi['read']>;
+  status: ExtensionConnectionsApi['status'];
+}
+
 /** What an isolated start wires: the ctx member, and where to say which host runs it. */
 export interface IsolatedConnections {
   /** `ctx.connections`, or `undefined` when the copy declares none. */
-  readonly api: ExtensionConnectionsApi | undefined;
+  readonly api: HostConnectionsApi | undefined;
   /** Name the host once it exists, so the broker can read its live self-check. */
   attach(host: { readonly sqliteRefused: boolean }): void;
 }
@@ -177,7 +205,7 @@ export function extensionConnectionsFor(
   record: ExtensionRecord,
   config: () => ExtensionsConfig,
   isolated: () => boolean
-): ExtensionConnectionsApi | undefined {
+): HostConnectionsApi | undefined {
   const services = getExtensionConnectionServices();
   if (!services || !record.manifest.serverCapabilities?.connections?.length) return undefined;
   const install = (): LiveExtensionInstall => {
@@ -197,7 +225,7 @@ export function extensionConnectionsFor(
     return facts;
   };
   return {
-    read: (operation, params) => services.reader.read(install(), operation, params),
+    read: (operation, params, signal) => services.reader.read(install(), operation, params, signal),
     status: async () => services.reader.status(install()),
   };
 }

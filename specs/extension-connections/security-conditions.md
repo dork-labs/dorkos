@@ -51,6 +51,11 @@ Security passed the design (`02-specification.md`, PR #3527) **with conditions**
 - **S6.** Audit rows carry the connection id, the operation revision and a hash of the arguments.
 - **S7.** Contract tests refuse `extension` with `every_agent`, and `extension` with a write. **Only the schema half landed in phase 1** (`packages/cloud-api/src/__tests__/contract.test.ts`, "extension grants"). Nothing on the Cloud side uses `ConnectionGrantCoverageSchema` yet, so **the Cloud-side refusal test is still owed in phase 6.**
 
+## From the #3537 review (phase 4)
+
+- **C1. Only a person's yes is a digest origin.** An approval `create_extension` wrote on its own (`autoApprovedBy: 'create_extension'`), or one DorkOS pinned after an upgrade (`pinnedOnFirstUse`), never makes a copy `digest_pinned`. A person's own approval rewrites the source without either, which lifts it.
+- **C2. A change while the app answers.** The checks run again when the answer comes back. If access changed meanwhile (a revoke, a stopped child, other files) or the extension was stopped, the answer is kept from the extension and the usage row says `AUTHORITY_CHANGED_AFTER_DISPATCH`. That one request already reached the app; it only reads, so nothing changed there. Stopping the extension also aborts a read in flight.
+
 ## Phase map after the conditions
 
 1. **Contract** (`cloud-api`): the `extension` subject, a typed subject reference, the read-only rule, S7's schema tests. An agent's hosted call can't name `extension`.

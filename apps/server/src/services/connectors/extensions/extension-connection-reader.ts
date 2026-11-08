@@ -21,6 +21,12 @@
  * `agent_id` null, with an arguments hash; S6, P4-5), and an answer over
  * 8 MB is refused, never truncated (Q5).
  *
+ * **A change while the app answers** (Security C2): the checks run once more
+ * when the answer comes back. If access changed meanwhile (a revoke, a
+ * stopped child, other files) or the extension was stopped, the answer is
+ * kept from the extension. The request itself already reached the app, which
+ * is safe because it only reads. A stop also aborts the request in flight.
+ *
  * @module services/connectors/extensions/extension-connection-reader
  */
 import { createHash } from 'node:crypto';
@@ -173,7 +179,12 @@ export class ExtensionConnectionReader {
         };
       }
     }
+    // Access may have changed while the app answered: keep the data then (C2).
+    const changed =
+      result.status === 'success' &&
+      (signal.aborted || !this.stillAuthorized(install, operation, params, authorized));
     const tooLarge =
+      !changed &&
       result.status === 'success' &&
       Buffer.byteLength(JSON.stringify(result.data ?? null) ?? 'null') >
         EXTENSION_CONNECTION_RESULT_MAX_BYTES;
@@ -184,19 +195,22 @@ export class ExtensionConnectionReader {
       owner: authorized.owner,
       providerInstanceId: authorized.operation.providerInstanceId,
       operationRevisionId: authorized.operation.id,
-      outcome: tooLarge ? 'error' : result.status,
+      outcome: tooLarge || changed ? 'error' : result.status,
       ...('providerLogId' in result && result.providerLogId
         ? { providerLogId: result.providerLogId }
         : {}),
-      ...(tooLarge
-        ? { errorCode: 'EXTENSION_CONNECTION_RESULT_TOO_LARGE' }
-        : 'code' in result
-          ? { errorCode: result.code }
-          : {}),
+      ...(changed
+        ? { errorCode: 'AUTHORITY_CHANGED_AFTER_DISPATCH' }
+        : tooLarge
+          ? { errorCode: 'EXTENSION_CONNECTION_RESULT_TOO_LARGE' }
+          : 'code' in result
+            ? { errorCode: result.code }
+            : {}),
       completedAt: recordedAt,
       recordedAt,
       provenance: 'broker',
     });
+    if (changed) return refuse('EXTENSION_CONNECTION_NOT_GRANTED', NOT_GRANTED);
     if (tooLarge) {
       return refuse(
         'EXTENSION_CONNECTION_RESULT_TOO_LARGE',

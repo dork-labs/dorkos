@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import {
   connectionOperationGrants,
@@ -182,6 +182,22 @@ describe('extension connections, extension side', () => {
         origin: null,
       });
     });
+
+    it('C1: a digest yes no person gave is no origin, and a person approving lifts it', () => {
+      const plain = record({ trustedOrigin: undefined });
+      const withSource = (source: Record<string, unknown>) => ({
+        approvedToRun: ['flow-owner'],
+        approvedSources: { 'flow-owner': { path: folder, digest: 'sha256:files-1', ...source } },
+      });
+      // Written by create_extension on a Trusted install, exactly as the scaffold writes it.
+      expect(originOf(plain, withSource({ autoApprovedBy: 'create_extension' }))).toEqual({
+        origin: null,
+      });
+      // DorkOS pinned an old path approval to the files it found after an upgrade.
+      expect(originOf(plain, withSource({ pinnedOnFirstUse: NOW }))).toEqual({ origin: null });
+      // A person's approveToRun rewrites the source without either stamp.
+      expect(originOf(plain, withSource({}))).toEqual({ origin: 'digest_pinned' });
+    });
   });
 
   it('builds the install from the real path of the folder (P4-1)', () => {
@@ -238,6 +254,43 @@ describe('extension connections, extension side', () => {
     });
     api.attach({ sqliteRefused: true });
     await expect(api.api!.status()).resolves.toEqual([{ service: 'linear', granted: false }]);
+  });
+
+  it('T: an attached host whose sqlite check did not pass can read nothing', async () => {
+    approve();
+    const wired = isolatedConnectionsFor(record(), () => NO_APPROVALS as never);
+    const host = { sqliteRefused: false };
+    wired.attach(host);
+    await expect(wired.api!.status()).resolves.toEqual([{ service: 'linear', granted: false }]);
+    await expect(wired.api!.read('LINEAR_LIST_LINEAR_PROJECTS', {})).rejects.toMatchObject({
+      code: 'EXTENSION_CONNECTION_NOT_ALLOWED',
+    });
+    host.sqliteRefused = true;
+    await expect(wired.api!.status()).resolves.toEqual([
+      { service: 'linear', granted: true, accountLabel: 'Work Linear' },
+    ]);
+  });
+
+  it('S: a stopped instance reads nothing, and a read in flight is cancelled', async () => {
+    let seen: AbortSignal | undefined;
+    const read = vi.fn((_operation: string, _params?: unknown, signal?: AbortSignal) => {
+      seen = signal;
+      return new Promise<never>(() => undefined);
+    });
+    const built = createDataProviderContext({
+      extensionId: 'flow-owner',
+      extensionDir: folder,
+      dorkHome: tmp,
+      connections: { read, status: async () => [] },
+    });
+    void built.ctx.connections!.read('LINEAR_LIST_LINEAR_PROJECTS', {});
+    expect(seen?.aborted).toBe(false);
+    built.dispose();
+    expect(seen?.aborted).toBe(true);
+    await expect(built.ctx.connections!.read('LINEAR_LIST_LINEAR_PROJECTS', {})).rejects.toThrow(
+      /stopped/
+    );
+    expect(read).toHaveBeenCalledTimes(1);
   });
 
   it('an in-process ctx has no connections member at all', () => {

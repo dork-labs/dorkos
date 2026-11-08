@@ -99,6 +99,14 @@ export const ExtensionApprovedSourceSchema = z.object({
    */
   pinnedOnFirstUse: z.string().optional(),
   /**
+   * Set when no person gave this yes: `create_extension` wrote it for a copy
+   * one of our agents just made, on a Trusted install (DOR-2739). It still
+   * lets the copy run, but it never stands for a person's yes to the files,
+   * so the copy can't read a connected app on it (DOR-3547). A person's own
+   * approval rewrites the source without it.
+   */
+  autoApprovedBy: z.literal('create_extension').optional(),
+  /**
    * Set once, by the `'0.126.1'` config migration, on an approval written
    * before approvals named content (DOR-3068). Only such an approval is pinned
    * to the files the next scan finds; a digest-less approval written since is

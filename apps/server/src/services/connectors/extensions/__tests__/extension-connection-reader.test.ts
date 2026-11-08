@@ -20,6 +20,7 @@ import {
   eq,
   extensionConnectionApprovals,
   runMigrations,
+  sql,
   type Db,
 } from '@dorkos/db';
 import {
@@ -49,6 +50,8 @@ interface Scripted extends ConnectorProvider {
   readonly commands: ConnectorProviderExecuteCommand[];
   readonly results: ConnectorProviderExecuteResult[];
   beforeDispatch?: () => void;
+  /** Runs once the request has left: what happens while the app answers. */
+  afterDispatch?: (command: ConnectorProviderExecuteCommand) => void;
 }
 
 /** A fake provider that records commands and returns scripted results. */
@@ -75,6 +78,7 @@ function scriptedProvider(): Scripted {
             retryable: false,
           };
         }
+        provider.afterDispatch?.(command);
         return results.shift() ?? { status: 'success' as const, data: { projects: [] } };
       },
     },
@@ -272,6 +276,96 @@ describe('extension connections, host side', () => {
     });
     await expect(reader.read(installOf(), LIST, {})).resolves.toMatchObject({ status: 'success' });
     expect(provider.commands).toHaveLength(1);
+  });
+
+  it('C2: a revoke while the app answers keeps the answer from the extension', async () => {
+    approve();
+    provider.results.push({ status: 'success', data: { leaked: 'after-revoke' } });
+    provider.afterDispatch = () => {
+      approvals.revokeForConnection('flow-owner', CONNECTION);
+    };
+    await expect(reader.read(installOf(), LIST, {})).rejects.toMatchObject({
+      code: 'EXTENSION_CONNECTION_NOT_GRANTED',
+    });
+    expect(db.select().from(connectorUsageTerminalReceipts).all()).toMatchObject([
+      { outcome: 'error', errorCode: 'AUTHORITY_CHANGED_AFTER_DISPATCH' },
+    ]);
+  });
+
+  it('C2: a child that stops while the app answers gets nothing, and a stop cancels the read', async () => {
+    approve();
+    let running = true;
+    provider.afterDispatch = () => {
+      running = false;
+    };
+    await expect(
+      reader.read(installOf({ isolated: () => running }), LIST, {})
+    ).rejects.toMatchObject({ code: 'EXTENSION_CONNECTION_NOT_GRANTED' });
+    const stop = new AbortController();
+    let cancelled: boolean | undefined;
+    provider.afterDispatch = (command) => {
+      stop.abort();
+      cancelled = command.signal.aborted;
+    };
+    await expect(reader.read(installOf(), LIST, {}, stop.signal)).rejects.toMatchObject({
+      code: 'EXTENSION_CONNECTION_NOT_GRANTED',
+    });
+    expect(cancelled).toBe(true);
+  });
+
+  it('E: a copy at the same path with the same origin but another scope gets nothing', async () => {
+    approve();
+    await expect(reader.read(installOf({ scope: 'local' }), LIST, {})).rejects.toMatchObject({
+      code: 'EXTENSION_CONNECTION_NOT_GRANTED',
+    });
+  });
+
+  it('G: with the database guard gone, the code still refuses a write grant', async () => {
+    approve();
+    db.run(sql`DROP TRIGGER connection_operation_grants_extension_read_only_insert`);
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'forged',
+        subjectType: 'extension',
+        subjectId: 'flow-owner',
+        agentId: null,
+        extensionId: 'flow-owner',
+        connectionId: CONNECTION,
+        operationRevisionId: 'rev-update',
+        createdBy: 'nobody',
+        createdAt: NOW,
+      })
+      .run();
+    await expect(reader.read(installOf(), UPDATE, {})).rejects.toMatchObject({
+      code: 'EXTENSION_CONNECTION_NOT_READ',
+    });
+    expect(provider.commands).toHaveLength(0);
+  });
+
+  it("H: one extension can't read through another's grant on the same account", async () => {
+    approve();
+    const other = installOf({ extensionId: 'other-ext' });
+    db.insert(extensionConnectionApprovals)
+      .values({
+        id: 'approval-other',
+        extensionId: 'other-ext',
+        installScope: other.scope,
+        installRealPath: other.realPath,
+        installOrigin: 'trusted_source',
+        originSource: 'dork-labs/marketplace',
+        approvedFilesDigest: other.liveFilesDigest!,
+        approvedVersion: other.version,
+        service: 'linear',
+        connectionId: CONNECTION,
+        approvedOperationsDigest: 'sha256:none',
+        approvedBy: 'owner',
+        approvedAt: NOW,
+      })
+      .run();
+    await expect(reader.read(other, LIST, {})).rejects.toMatchObject({
+      code: 'EXTENSION_CONNECTION_NOT_GRANTED',
+    });
+    expect(provider.commands).toHaveLength(0);
   });
 
   it('N2: a same-id copy elsewhere, or with another origin, gets nothing', async () => {
