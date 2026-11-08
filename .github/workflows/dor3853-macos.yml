@@ -34,6 +34,8 @@ jobs:
         with:
           node-version: 24
       - run: pnpm install --frozen-lockfile
+      - name: Install the PATH rg witness dependency
+        run: brew install ripgrep
       - name: Record host and rg version
         run: |
           mkdir -p "$DOR3853_OUT"
