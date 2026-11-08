@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { ChevronRight, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { Button, Chip, Input, Skeleton } from '@/layers/shared/ui';
-import { openLink } from '@/layers/shared/lib';
+import { cn, openLink } from '@/layers/shared/lib';
 import { useDeepLinkScroll, useSettingsDeepLink } from '@/layers/shared/model';
 import {
   useExtensions,
@@ -320,8 +320,15 @@ export function ExtensionsSettingsTab() {
                 aria-expanded={coreOpen || searching}
                 onClick={() => setCoreOpen((open) => !open)}
                 disabled={searching}
-                className="text-muted-foreground hover:text-foreground focus-ring flex min-h-10 w-full items-center rounded-lg px-3 text-left text-[13px] max-sm:min-h-11"
+                className="text-muted-foreground hover:text-foreground focus-ring flex min-h-10 w-full items-center gap-1.5 rounded-lg px-3 text-left text-[13px] max-sm:min-h-11"
               >
+                <ChevronRight
+                  aria-hidden="true"
+                  className={cn(
+                    'size-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none',
+                    (coreOpen || searching) && 'rotate-90'
+                  )}
+                />
                 Comes with DorkOS · {core.length}
               </button>
               {(coreOpen || searching) && <ul className="space-y-0.5">{core.map(renderRow)}</ul>}

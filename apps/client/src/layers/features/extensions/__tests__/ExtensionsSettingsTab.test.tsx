@@ -404,6 +404,31 @@ describe('ExtensionsSettingsTab', () => {
       expect(within(core).getByTestId('extension-card-core-a')).toBeInTheDocument();
     });
 
+    // Purpose: the fold's chevron is decoration: the button's name stays
+    // exactly "Comes with DorkOS · N", and the chevron turns when it opens.
+    it('names the fold by its words alone, with a chevron that turns open', async () => {
+      mockFetch({
+        '/api/extensions': [
+          named('core-a', 'Files', { origin: 'core' }),
+          named('core-b', 'Terminal', { origin: 'core' }),
+        ],
+      });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+      const fold = await screen.findByRole('button', { name: 'Comes with DorkOS · 2' });
+      const chevron = fold.querySelector('svg');
+      expect(chevron).not.toBeNull();
+      expect(chevron).toHaveAttribute('aria-hidden', 'true');
+      expect(chevron).not.toHaveClass('rotate-90');
+      fireEvent.click(fold);
+      expect(screen.getByRole('button', { name: 'Comes with DorkOS · 2' })).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      );
+      expect(chevron).toHaveClass('rotate-90');
+    });
+
     // Purpose: flipping a switch never moves a row.
     it('keeps a row in place when it is turned off', async () => {
       const list = [named('a', 'Alpha'), named('b', 'Beta'), named('c', 'Gamma')];

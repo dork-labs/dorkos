@@ -3,6 +3,7 @@ covers:
   - 'feat(extensions): one line per extension in Settings, with what needs you on top'
   - 'fix(extensions): Open leads the open row, and the row tint uses a token'
   - 'fix(extensions): designer pass on the rows: one needs you, phone labels at 13, Stop it running lines up, empty filters hide, failed-load reads two sentences'
+  - 'fix(extensions): the Comes with DorkOS fold gets a chevron that turns open, so it reads as a control'
 ---
 
 ### Changed
