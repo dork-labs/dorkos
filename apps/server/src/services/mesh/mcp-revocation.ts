@@ -132,8 +132,8 @@
  *   `McpServerStatus`. The type is **byte-identical** across 0.3.224 and 0.3.268 —
  *   diffed declaration-body to declaration-body, `status` union included. (The
  *   `added` / `removed` / `errors` triple that appears at 0.3.268 belongs to the
- *   NEW `McpSetServersResult`, the return of `setMcpServers`, which DorkOS never
- *   calls. Do not read it as a change to this type.)
+ *   NEW `McpSetServersResult`, the return of `setMcpServers`, whose answer DorkOS
+ *   does not read. Do not read it as a change to this type.)
  * - a REAL `needs-auth` row was observed for the first time, on an unrelated
  *   project server, and it carries no `error` field — which is what the binary
  *   reading behind point 3 said it would do;

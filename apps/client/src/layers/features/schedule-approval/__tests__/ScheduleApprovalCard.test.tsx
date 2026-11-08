@@ -35,6 +35,11 @@ import {
   discardSettlingSchedules,
   useScheduleApprovalCards,
 } from '../index';
+import {
+  MISPLACED_SCHEDULE_PERMISSIONS,
+  MISPLACED_PERMISSIONS_RUN_ONCE,
+} from '@dorkos/shared/schedule-file-problems';
+import { promptHash } from '../lib/prompt-hash';
 import { ScheduleApprovalCard } from '../ui/ScheduleApprovalCard';
 
 /** Frozen so a suite that takes a minute cannot age its own fixtures. */
@@ -49,6 +54,7 @@ function minutesFromLoad(minutes: number): string {
 function proposal(overrides: Partial<Task> = {}): Task {
   return {
     id: 'task-1',
+    approvalRevision: 'a'.repeat(64),
     name: 'nightly-sweep',
     displayName: 'Nightly sweep',
     description: null,
@@ -109,8 +115,18 @@ function taskRun(overrides: Partial<TaskRun> = {}): TaskRun {
   };
 }
 
+/** What the card's yes carries beside its fields: the hash of the prompt it showed (M4). */
+const SHOWN = {
+  expectedApprovalRevision: 'a'.repeat(64),
+  approvedPromptHash: expect.stringMatching(/^sha256:[A-Za-z0-9_-]{43}$/),
+};
+
 /** Render one card over a mock transport. */
-function renderCard(task: Task = proposal(), overrides: Partial<Transport> = {}) {
+function renderCard(
+  task: Task = proposal(),
+  overrides: Partial<Transport> = {},
+  props: { pinActions?: boolean; compact?: boolean; turnOnApproval?: boolean } = {}
+) {
   const base = createMockTransport();
   const transport = createMockTransport({
     getSession: vi.fn().mockResolvedValue(createMockSession({ title: '' })),
@@ -141,7 +157,10 @@ function renderCard(task: Task = proposal(), overrides: Partial<Transport> = {})
       </QueryClientProvider>
     );
   }
-  return { transport, ...render(<ScheduleApprovalCard task={task} />, { wrapper: Wrapper }) };
+  return {
+    transport,
+    ...render(<ScheduleApprovalCard task={task} {...props} />, { wrapper: Wrapper }),
+  };
 }
 
 /** The card element itself. */
@@ -275,33 +294,119 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(slot('schedule-first-runs')).toBeNull();
   });
 
-  it('keeps the exact instructions behind a disclosure, and says what power they run with', async () => {
+  it('opens an agent’s proposal on the exact instructions, since its yes approves the file (M4), and says what power they run with', async () => {
     renderCard();
-
-    // Collapsed by default: a wall of prompt on every card is what stops anybody
-    // reading any of them.
-    expect(slot('schedule-prompt')).toBeNull();
+    expect(slot('schedule-prompt')).toHaveTextContent('Sweep the backlog and file anything stale.');
+    // No toggle at all: the prompt is a focusable region a keyboard can scroll.
+    expect(screen.queryByRole('button', { name: /exact instructions/ })).toBeNull();
+    const region = screen.getByRole('region', { name: 'Prompt' });
+    expect(region).toBe(slot('schedule-prompt'));
+    expect(region.getAttribute('tabindex')).toBe('0');
+    expect(region.className).toContain('focus-ring');
+    expect(region.className).toContain('text-sm');
+    expect(region.className).toContain('whitespace-pre-wrap');
+    expect(region.className).toContain('break-words');
+    expect(region.className).toContain('max-h-[40dvh]');
+    expect(region.className).toContain('sm:max-h-64');
     // The runtime's OWN word for the level, once its profile lands — the same
     // word the Trust Dial shows, rather than the id-keyed fallback this card
     // used before it resolved a profile of its own (DOR-2100). `waitFor`, not
     // `findByText`: the fallback renders first and a query that returns on its
     // first match would settle on it.
     await waitFor(() =>
-      expect(slot('schedule-permission-mode')).toHaveTextContent(
-        'Runs as no agent, at Accept edits'
-      )
+      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as: Accept edits')
     );
+  });
 
+  it('shows a long prompt whole, with nothing cut off, faded or behind “show more”', () => {
+    const long = Array.from(
+      { length: 120 },
+      (_, i) => `Step ${i + 1}: do the next careful thing.`
+    ).join('\n');
+    renderCard(proposal({ prompt: long }));
+    const region = screen.getByRole('region', { name: 'Prompt' });
+    expect(region.textContent).toBe(long);
+    expect(screen.queryByText(/show more/i)).toBeNull();
+    expect(region.className).not.toMatch(/line-clamp|truncate/);
+  });
+
+  it('lets its actions flow under the prompt by default, pinning them only for a sheet', async () => {
+    renderCard();
+    const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    expect(approve.parentElement!.className).not.toMatch(/sticky/);
+    expect(screen.getByRole('region', { name: 'Prompt' }).className).toContain('sm:max-h-64');
+    cleanup();
+    renderCard(proposal(), {}, { pinActions: true });
+    const pinned = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    expect(pinned.parentElement!.className).toContain('shrink-0');
+    expect(screen.getByRole('region', { name: 'Prompt' }).className).not.toMatch(
+      /max-h|overflow-auto/
+    );
+  });
+
+  it('keeps a person’s own schedule behind the disclosure when its yes approves no file', async () => {
+    renderCard(proposal({ proposedByAgentPath: null, proposedByName: null }));
+    // Collapsed by default: a wall of prompt on every card is what stops anybody
+    // reading any of them.
+    expect(slot('schedule-prompt')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: /Show exact instructions/ }));
-
     expect(slot('schedule-prompt')).toHaveTextContent('Sweep the backlog and file anything stale.');
+  });
+
+  it('sends no hash from a folded prompt, so its yes approves no file (SC2)', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(proposal({ proposedByAgentPath: null, proposedByName: null }), { updateTask });
+    expect(slot('schedule-prompt')).toBeNull();
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        expectedApprovalRevision: 'a'.repeat(64),
+      })
+    );
+  });
+
+  it('opens on the instructions whenever its yes would approve a file, and its yes sends their hash', async () => {
+    const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+    renderCard(proposal({ proposedByAgentPath: null, proposedByName: null, fileCapNext: true }), {
+      updateTask,
+    });
+    expect(slot('schedule-prompt')).toHaveTextContent('Sweep the backlog and file anything stale.');
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+    // sha256 of the prompt the card showed, base64url: what the server compares the file to.
+    const shown = await promptHash('Sweep the backlog and file anything stale.');
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        approvedPromptHash: shown,
+        expectedApprovalRevision: 'a'.repeat(64),
+      })
+    );
+  });
+
+  it('still approves on a plain-http page, with no hash, so it attests no file', async () => {
+    vi.stubGlobal('crypto', {});
+    try {
+      const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active' }));
+      renderCard(proposal(), { updateTask });
+      await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+      await waitFor(() =>
+        expect(updateTask).toHaveBeenCalledWith('task-1', {
+          status: 'active',
+          expectedApprovalRevision: 'a'.repeat(64),
+        })
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('names the agent the schedule runs as (DOR-3640)', async () => {
     renderCard(proposal({ agentId: 'agent-b', runsAsName: 'Scout' }));
     await waitFor(() =>
-      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as Scout, at Accept edits')
+      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as: Accept edits')
     );
+    expect(screen.getByText('Agent: Scout')).toBeVisible();
   });
 
   it('says a proposal has no agent identity rather than inventing one', async () => {
@@ -315,6 +420,8 @@ describe('ScheduleApprovalCard — what it says', () => {
     // unchanged: no name and no agent mark are invented.
     expect(await screen.findByText(AGENT_UNNAMED_COPY)).toBeInTheDocument();
     expect(slot('ask-detail')).toHaveTextContent('Proposed by an agent');
+    expect(screen.getByText('No agent', { exact: true })).toBeVisible();
+    expect(screen.queryByText(/^Agent:/)).toBeNull();
   });
 
   // A schedule DorkOS found in a skills root had no asker at all (DOR-1485).
@@ -439,7 +546,12 @@ describe('ScheduleApprovalCard — answering it', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
     expect(slot('schedule-approve-turn-on')).toBeNull();
   });
 
@@ -451,11 +563,41 @@ describe('ScheduleApprovalCard — answering it', () => {
     expect(stayOff).toHaveTextContent(/^Approve$/);
     await userEvent.click(stayOff);
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
     expect(await findSlot('schedule-receipt')).toHaveTextContent(
       'Approved at Accept edits. Off until you turn it on.'
     );
   });
+
+  it.each(['button', 'shortcut'] as const)(
+    'makes approval turn on the task from its switch: %s',
+    async (answer) => {
+      const updateTask = vi.fn().mockResolvedValue(proposal({ status: 'active', enabled: true }));
+      renderCard(
+        proposal({ enabled: false }),
+        { updateTask },
+        { pinActions: true, turnOnApproval: true }
+      );
+      expect(screen.queryByRole('button', { name: 'Approve Nightly sweep' })).toBeNull();
+      const turnOn = await screen.findByRole('button', {
+        name: 'Approve Nightly sweep and turn it on',
+      });
+      if (answer === 'button') await userEvent.click(turnOn);
+      else fireEvent.keyDown(card(), { key: 'a' });
+      await waitFor(() =>
+        expect(updateTask).toHaveBeenCalledWith('task-1', {
+          ...SHOWN,
+          status: 'active',
+          enabled: true,
+        })
+      );
+    }
+  );
 
   it('orders the answers Approve, Approve and turn on, Run it once, Reject', async () => {
     renderCard(proposal({ enabled: false }));
@@ -482,7 +624,13 @@ describe('ScheduleApprovalCard — answering it', () => {
       await screen.findByRole('button', { name: 'Approve Nightly sweep and turn it on' })
     );
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active', enabled: true });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+        enabled: true,
+      })
+    );
   });
 
   it('says when the first run will be, in the receipt', async () => {
@@ -580,7 +728,12 @@ describe('ScheduleApprovalCard — answering it', () => {
     card().focus();
     await userEvent.keyboard('a');
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
   });
 
   it('denies on D', async () => {
@@ -988,7 +1141,12 @@ describe('ScheduleApprovalCard — running it once', () => {
     await waitFor(() => expect(slot('schedule-test-run')).toHaveAttribute('data-phase', 'running'));
 
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
   });
 });
 
@@ -1020,10 +1178,13 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(slot('schedule-folder-rules')).toHaveTextContent('Bash(pnpm check:watchdog)');
     expect(slot('schedule-mode-mismatch')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
-    expect(updateTask).toHaveBeenCalledWith('task-1', {
-      status: 'active',
-      permissionMode: 'dontAsk',
-    });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+        permissionMode: 'dontAsk',
+      })
+    );
     expect(await findSlot('schedule-receipt')).toHaveTextContent(/Approved at/);
   });
 
@@ -1038,13 +1199,19 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(slot('schedule-mode-mismatch')).toHaveTextContent('Edits files on its own.');
     expect(updateTask).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+      })
+    );
   });
 
   it('adds the selected mode’s consequence when the person chooses a looser mode', async () => {
     renderCard(proposal({ reason: 'Run at Accept edits.' }));
     const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
     await userEvent.selectOptions(picker, 'bypassPermissions');
+    expect(slot('schedule-permission-mode')).toHaveClass('text-status-warning-fg');
     expect(slot('schedule-mode-mismatch')).toHaveTextContent(
       'DorkBot asked for Accept edits. This will run at Bypass permissions.'
     );
@@ -1072,10 +1239,13 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
       'Approving this schedule doesn’t approve these rules.'
     );
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
-    expect(updateTask).toHaveBeenCalledWith('task-1', {
-      status: 'active',
-      permissionMode: 'dontAsk',
-    });
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        ...SHOWN,
+        status: 'active',
+        permissionMode: 'dontAsk',
+      })
+    );
   });
 
   it.each([null, { outsider: true }] as const)(
@@ -1091,9 +1261,15 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
       expect(slot('schedule-mode-mismatch')).toHaveTextContent(
         'asked for Bypass permissions. This will run at Accept edits.'
       );
-      screen.getByRole('button', { name: 'Show exact instructions' }).focus();
+      // Open from the start on an agent's proposal, whose yes approves its file (M4).
+      screen.getByRole('region', { name: 'Prompt' }).focus();
       await userEvent.keyboard('a');
-      expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+      await waitFor(() =>
+        expect(updateTask).toHaveBeenCalledWith('task-1', {
+          ...SHOWN,
+          status: 'active',
+        })
+      );
     }
   );
 
@@ -1207,3 +1383,169 @@ describe('what changed since the person approved it (DOR-2323)', () => {
     expect(slot('schedule-changes')).toBeNull();
   });
 });
+
+describe('stale schedule approval', () => {
+  it.each([false, true])(
+    'disables Run it once while a review is stale (pinned: %s)',
+    async (pinActions) => {
+      const triggerTask = vi.fn();
+      const { rerender } = renderCard(proposal(), { triggerTask }, { pinActions });
+      const run = await screen.findByRole('button', { name: 'Run Nightly sweep once' });
+      expect(run).toBeEnabled();
+      rerender(
+        <ScheduleApprovalCard
+          task={proposal({ prompt: 'Changed work.', approvalRevision: 'b'.repeat(64) })}
+          pinActions={pinActions}
+        />
+      );
+      expect(await screen.findByRole('status')).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeDisabled();
+      await userEvent.click(screen.getByRole('button', { name: 'Run Nightly sweep once' }));
+      expect(triggerTask).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['prompt', 'permissionMode', 'enabled'] as const)(
+    'pins an open review across a background %s change',
+    async (field) => {
+      const first = proposal({ enabled: false });
+      const fresh = {
+        ...first,
+        approvalRevision: 'b'.repeat(64),
+        [field]:
+          field === 'prompt'
+            ? 'Check the sample ledger.'
+            : field === 'permissionMode'
+              ? 'dontAsk'
+              : true,
+      } as Task;
+      const updateTask = vi.fn().mockResolvedValue(fresh);
+      const { rerender } = renderCard(first, { updateTask }, { pinActions: true });
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
+      );
+      screen.getByRole('button', { name: 'Approve Nightly sweep' }).focus();
+      rerender(<ScheduleApprovalCard task={fresh} pinActions />);
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'This schedule changed. Review it again.'
+      );
+      expect(screen.getByRole('button', { name: 'Review again' })).toHaveFocus();
+      expect(await screen.findByText('This schedule changed. Review it again.')).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Approve Nightly sweep and turn it on' })
+      ).toBeDisabled();
+      fireEvent.keyDown(card(), { key: 'a' });
+      expect(updateTask).not.toHaveBeenCalled();
+      if (field === 'prompt') expect(screen.queryByText('Check the sample ledger.')).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Review again' }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
+      );
+      if (field === 'prompt') expect(screen.getByText('Check the sample ledger.')).toBeVisible();
+      fireEvent.keyDown(card(), { key: 'a' });
+      await waitFor(() =>
+        expect(updateTask).toHaveBeenCalledWith(
+          'task-1',
+          expect.objectContaining({ expectedApprovalRevision: 'b'.repeat(64) })
+        )
+      );
+    }
+  );
+
+  it('preserves an approval receipt when the accepted task refetches', async () => {
+    const first = proposal();
+    const { rerender } = renderCard(first);
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
+    await findSlot('schedule-receipt');
+    rerender(
+      <ScheduleApprovalCard
+        task={proposal({ status: 'active', approvalRevision: 'b'.repeat(64) })}
+      />
+    );
+    expect(slot('schedule-receipt')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Approve Nightly sweep' })).toBeNull();
+    expect(screen.queryByText('This schedule changed. Review it again.')).toBeNull();
+  });
+
+  it('refreshes instructions and mode before allowing another approval', async () => {
+    let finishRefresh!: (tasks: Task[]) => void;
+    const staleError = Object.assign(new Error('This schedule changed. Review it again.'), {
+      code: 'schedule_review_changed',
+    });
+    const updateTask = vi.fn().mockRejectedValueOnce(staleError).mockResolvedValue(proposal());
+    const listTasks = vi.fn(
+      () =>
+        new Promise<Task[]>((resolve) => {
+          finishRefresh = resolve;
+        })
+    );
+    renderCard(proposal(), { updateTask, listTasks });
+    const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    await userEvent.click(approve);
+    expect(await screen.findByText('This schedule changed. Review it again.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+    await act(async () =>
+      finishRefresh([
+        proposal({
+          prompt: 'Check the sample ledger.',
+          permissionMode: 'dontAsk',
+          approvalRevision: 'b'.repeat(64),
+        }),
+      ])
+    );
+    expect(screen.queryByText('Check the sample ledger.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Review again' }));
+    expect(await screen.findByText('Check the sample ledger.')).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
+    );
+    expect(document.querySelector('[data-slot="schedule-permission-mode"]')).toHaveTextContent(
+      'Runs as: Never ask'
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenLastCalledWith(
+        'task-1',
+        expect.objectContaining({ expectedApprovalRevision: 'b'.repeat(64) })
+      )
+    );
+  });
+});
+it.each([
+  [false, false],
+  [false, true],
+  [true, false],
+  [true, true],
+])(
+  'blocks misplaced-mode approval and labels its trial (file capped: %s, pinned: %s)',
+  (fileCapNext, pinActions) => {
+    renderCard(
+      proposal({
+        origin: 'file',
+        reasonSource: 'dorkos',
+        reason: MISPLACED_SCHEDULE_PERMISSIONS,
+        fileCapNext,
+        enabled: false,
+      }),
+      {},
+      { pinActions, turnOnApproval: true }
+    );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('alert')).toHaveTextContent('permissions is in the wrong place');
+    expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: 'Approve Nightly sweep and turn it on' })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run Nightly sweep once' })).toBeEnabled();
+    expect(
+      screen.getByText(
+        fileCapNext
+          ? 'The next run is capped until you approve the file.'
+          : MISPLACED_PERMISSIONS_RUN_ONCE
+      )
+    ).toBeInTheDocument();
+  }
+);

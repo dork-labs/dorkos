@@ -337,7 +337,7 @@ export interface OperatingSkill {
  *   without a bump, so the bump is for the sibling lists in `operating-dorkos`
  *   and `answering-dorkos-questions`, which would otherwise keep omitting it.
  * - 39: `operating-dorkos` tells agents to record a promise with
- *   `commitment_add` once made, mark it kept with `commitment_update`, and ask
+ *   `todo_promise_add` once made, mark it kept with `todo_promise_update`, and ask
  *   before promising an outsider anything (spec `heartbeats` §12, DOR-2788). An
  *   agent seeded at 38 would keep its promises only in a chat nobody else reads.
  * - 40: `working-on-a-heartbeat` joins the pack (spec `heartbeats` §10 PR 6,
@@ -379,8 +379,18 @@ export interface OperatingSkill {
  * - 48: `working-with-spin-off-chats` says a report waits up to 15 minutes for
  *   background work, instead of never going for a turn that ended only to wait
  *   (DOR-3720). An agent seeded at 47 would not expect a report from such a turn.
+ * - 49: `scheduling-tasks` says an agent may set its own task's `permissionMode`
+ *   up to its own level, that approving still asks, and that it never approves
+ *   its own work (DOR-3703). An agent seeded at 48 would tell the user both
+ *   fields are always refused. Same release: a SKILL file edited outside the
+ *   task tools runs capped at Never ask until the agent accepts it, in two
+ *   `tasks_update` calls from an ordinary chat (M4, SB3). 49 rather than 48
+ *   because DOR-3720 landed on `main` first and took 48. Re-bump, never keep-mine.
+ * - 50: `operating-dorkos` and `working-on-a-heartbeat` name the promise tools by
+ *   their new names, `todo_promise_add` and `todo_promise_update` (DOR-3933). An
+ *   agent seeded at 49 would call `commitment_add`, which no longer exists.
  */
-export const OPERATING_SKILLS_VERSION = 48;
+export const OPERATING_SKILLS_VERSION = 50;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

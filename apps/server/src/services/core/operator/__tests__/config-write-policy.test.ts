@@ -264,6 +264,8 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'sessionRelay.enabled',
       'spaces.enabled',
       'spaces.official.url',
+      // Whether agents may set a scheduled task's mode or approve one (DOR-3703).
+      'tasks.agentModeControl',
       'telemetry.aiMetadata',
       'telemetry.errorReporting',
       'telemetry.heartbeat',

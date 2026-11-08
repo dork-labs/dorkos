@@ -811,7 +811,7 @@ export class ChatMessageService {
       if (event.phase === 'started') noteOtherTurnStarted(event.sessionId);
       return;
     }
-    if (event.phase === 'started') noteChatTurnStarted(event.sessionId, this.now());
+    if (event.phase === 'started') noteChatTurnStarted(event.sessionId, this.now(), rows);
     else if (event.phase === 'settled') noteChatTurnSettled(event.sessionId);
     for (const row of rows) {
       let status: ChatMessageStatus | null = null;

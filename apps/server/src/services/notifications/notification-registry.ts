@@ -49,6 +49,7 @@ import {
   type DeclaredPayloads,
 } from './declared-entries.js';
 import { RUN_COMPLETED_COPY, type RunCompletedPayload } from './run-completed-copy.js';
+import { SCHEDULE_ARMED_COPY, type ScheduleArmedPayload } from './schedule-armed-copy.js';
 
 /**
  * How a run finished, as `run.completed` reports it.
@@ -103,17 +104,11 @@ export interface NotificationPayloads extends DeclaredPayloads {
   };
   /**
    * One of our agents made a schedule that runs without asking, because the
-   * install is Trusted (ADR 261006-225605). Told so the person knows it exists
-   * and can pause it; nothing waits on them.
+   * install is Trusted (ADR 261006-225605), or changed how a running one runs
+   * (DOR-3703). Told so the person knows, and can pause it or undo the change;
+   * nothing waits on them.
    */
-  'schedule.armed_by_agent': ScheduleSubject & {
-    /** The session the agent made it from, when there was one. */
-    proposedBySessionId?: string;
-    /** What to call the agent that made it. */
-    armedBy: string;
-    /** When it runs, as the end of "Runs …", e.g. `every day at 9:00 AM`. */
-    cadence: string;
-  };
+  'schedule.armed_by_agent': ScheduleArmedPayload;
   /**
    * An agent asked to do something irreversible and is waiting on a yes.
    *
@@ -570,6 +565,8 @@ type PerKind<K extends NotificationKind, T> = T | ((payload: NotificationPayload
 
 /** Where a notification files itself — its subject id and its lens keys. */
 export interface NotificationLocation {
+  /** Override when a kind has more than one actionable subject. */
+  subjectType?: NotificationSubjectType;
   /** Id of the subject within {@link NotificationRegistryEntry.subjectType}. */
   subjectId: string;
   agentId?: string;
@@ -672,16 +669,6 @@ const SCHEDULE_ACTIONS: NotificationActionDTO[] = [
   { id: 'reject', label: 'Reject', style: 'danger' },
 ];
 
-/**
- * What a schedule an agent armed offers: stop it, or go and look at it. Pause
- * switches it off through the ordinary task update (`enabled: false`), the same
- * write a person's own switch makes.
- */
-const ARMED_SCHEDULE_ACTIONS: NotificationActionDTO[] = [
-  { id: 'pause', label: 'Pause', style: 'neutral' },
-  { id: 'open', label: 'Open', style: 'primary' },
-];
-
 /** The single "take me there" action a standing condition offers. */
 const OPEN_ACTION: NotificationActionDTO[] = [{ id: 'open', label: 'Open', style: 'primary' }];
 
@@ -738,13 +725,8 @@ const ENTRIES: NotificationRegistryMap = {
     storage: 'event',
     subjectType: 'task',
     locate: (p) => ({ subjectId: p.taskId, agentId: p.agentId, sessionId: p.proposedBySessionId }),
-    title: (p) => `${p.armedBy} scheduled ${p.taskName}`,
-    body: (p) => `Runs ${p.cadence}${p.runsAs ? ` as ${p.runsAs}` : ''}. Pause it any time.`,
-    actions: () => ARMED_SCHEDULE_ACTIONS,
-    // Not `schedule:` — that is the parked condition's key, and dedupe and the
-    // escalation ledger are keyed across kinds, so sharing it would let this
-    // row swallow a later park of the same schedule.
-    dedupeKey: (p) => `schedule-armed:${p.taskId}`,
+    // Pause for a new schedule, Undo for a mode an agent changed (DOR-3703).
+    ...SCHEDULE_ARMED_COPY,
     relay: 'never',
   },
 
@@ -803,13 +785,10 @@ const ENTRIES: NotificationRegistryMap = {
     tier: (p) => (p.status === 'completed' ? 'quiet' : 'notable'),
     storage: 'event',
     subjectType: 'run',
-    locate: (p) => ({ subjectId: p.runId, agentId: p.agentId }),
     // Its title, body, action and reach: see `run-completed-copy.ts`.
     ...RUN_COMPLETED_COPY,
     dedupeKey: (p) => `run:${p.runId}`,
-    // The chat message keeps the wording DOR-240 shipped rather than being
-    // rebuilt from title and body: a phone message and an inbox row are not the
-    // same sentence, and this one is already tuned.
+    // Refusal chat messages carry the title only.
     channelMessage: (p) => p.channelMessage,
   },
 

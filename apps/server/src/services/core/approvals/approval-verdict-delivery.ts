@@ -213,6 +213,7 @@ export async function deliverApprovalVerdict(
     projector.cwd = workingDir;
 
     await dispatchMessage({
+      turnStarter: 'agent',
       sessionId,
       clientId: `approval-verdict-${approvalId}`,
       content: TRIGGER_CONTENT[verdict.outcome],

@@ -25,6 +25,75 @@ export const CHAT_TURN_LINGER_MS = 10_000;
 const turns = new Map<string, number>();
 
 /**
+ * Filing id → the chats whose messages started that turn, so a tool call in
+ * it can ask who started it (DOR-3703, M7: a turn a scheduled run's message
+ * started counts as that run). Kept and dropped with {@link turns}.
+ */
+const senders = new Map<string, readonly string[]>();
+
+/** Only messages steered into the current send; room wakers never enter this map. */
+const steered = new Map<string, readonly string[]>();
+
+/** Read current-send steering separately from remembered chat and room senders. */
+export function steeredTurnSendersOf(sessionId: string): readonly string[] {
+  return steered.get(primaryOf(sessionId)) ?? [];
+}
+
+/** Forget steering when the send begins or ends. */
+export function clearTurnSteering(sessionId: string): void {
+  steered.delete(primaryOf(sessionId));
+}
+
+/**
+ * The chats whose messages started the chat's running turn, or none when
+ * nothing but a person or a schedule started it.
+ *
+ * @param sessionId - The chat, by either id it is known by.
+ */
+export function chatTurnSendersOf(sessionId: string): readonly string[] {
+  const key = primaryOf(sessionId);
+  return [...(senders.get(key) ?? []), ...(wakers.get(key) ?? [])];
+}
+
+/**
+ * Filing id → the chats whose room posts woke that chat's room turn (DOR-3703,
+ * M7: a room turn a scheduled run's post woke counts as that run). Replaced by
+ * each room turn of the chat, and kept through a person's later turn on it, the
+ * stricter reading.
+ */
+const wakers = new Map<string, readonly string[]>();
+
+/**
+ * Another chat's message joined this chat's running turn (`steer`): the turn
+ * now carries that chat's words too (M7).
+ *
+ * @param sessionId - The chat whose turn it joined.
+ * @param fromSessionIds - The chats the message came from.
+ */
+export function noteSteeredInto(sessionId: string, fromSessionIds: readonly string[]): void {
+  const key = primaryOf(sessionId);
+  const current = steered.get(key) ?? [];
+  steered.set(key, [...new Set([...current, ...fromSessionIds])]);
+  const known = senders.get(key) ?? [];
+  senders.set(key, [...known, ...fromSessionIds.filter((id) => !known.includes(id))]);
+}
+
+/**
+ * A room turn is starting on this chat, woken by these posts' writers (M7). A
+ * person's post has no chat, and wakes nothing.
+ *
+ * @param sessionId - The chat the room turn runs on.
+ * @param postSessionIds - The chats that wrote the posts it answers, `null` for a person's.
+ */
+export function noteRoomTurnWakers(
+  sessionId: string,
+  postSessionIds: readonly (string | null | undefined)[]
+): void {
+  const ids = postSessionIds.filter((id): id is string => !!id && id !== sessionId);
+  wakers.set(primaryOf(sessionId), ids);
+}
+
+/**
  * Whether the chat's latest turn was started by another chat's message.
  *
  * @param sessionId - The chat, by either id it is known by.
@@ -38,9 +107,18 @@ export function isChatStartedTurn(sessionId: string): boolean {
  *
  * @param sessionId - The chat.
  * @param at - When, epoch ms.
+ * @param messages - The messages it carries, by the chat each came from.
  */
-export function noteChatTurnStarted(sessionId: string, at: number): void {
+export function noteChatTurnStarted(
+  sessionId: string,
+  at: number,
+  messages: readonly { fromSessionId: string }[] = []
+): void {
   turns.set(primaryOf(sessionId), at);
+  senders.set(
+    primaryOf(sessionId),
+    messages.map((m) => m.fromSessionId)
+  );
 }
 
 /**
@@ -54,7 +132,9 @@ export function noteChatTurnSettled(sessionId: string): void {
   const startedAt = turns.get(key);
   if (startedAt === undefined) return;
   const timer = setTimeout(() => {
-    if (turns.get(key) === startedAt) turns.delete(key);
+    if (turns.get(key) !== startedAt) return;
+    turns.delete(key);
+    senders.delete(key);
   }, CHAT_TURN_LINGER_MS);
   timer.unref?.();
 }
@@ -67,6 +147,7 @@ export function noteChatTurnSettled(sessionId: string): void {
  */
 export function noteOtherTurnStarted(sessionId: string): void {
   turns.delete(primaryOf(sessionId));
+  senders.delete(primaryOf(sessionId));
 }
 
 /**
@@ -75,5 +156,8 @@ export function noteOtherTurnStarted(sessionId: string): void {
  * @internal Exported for testing only — the map outlives one test.
  */
 export function resetChatStartedTurns(): void {
+  steered.clear();
   turns.clear();
+  senders.clear();
+  wakers.clear();
 }

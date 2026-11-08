@@ -1,3 +1,11 @@
+import { env } from '../env.js';
+import { scanHookRequests } from '../services/harness/project-with-consent.js';
+import { hookProjectionBinding } from '../services/harness/hook-approval.js';
+import {
+  describeHookProjection,
+  summariseHookProjection,
+  HOOK_CARD_PRESENTATION,
+} from '../services/harness/hook-card.js';
 /**
  * `POST /api/test/seed-approval`, one of the test-control routes: raise a
  * request card for an action no agent can reach yet. Test runtime only, like
@@ -31,6 +39,8 @@ const seedApprovalSchema = z.object({
   area: z.enum(PERMISSION_AREA_IDS),
   /** The sentence the card shows. */
   summary: z.string().min(1).max(500),
+  /** A throwaway test project whose real installed hooks should be reviewed. */
+  hookProject: z.string().min(1).optional(),
 });
 
 /**
@@ -62,6 +72,11 @@ export function registerSeedApprovalRoute(
     if (!approvals) {
       return c.json({ error: 'The approval service is not running on this server.' }, 503);
     }
+    const hook =
+      parsed.data.hookProject && capabilityId === 'harness.project_hooks'
+        ? scanHookRequests(parsed.data.hookProject, env.DORK_HOME ?? '').at(0)
+        : undefined;
+    if (parsed.data.hookProject && !hook) return c.json({ error: 'No test hooks found.' }, 400);
     const ticket = approvals.request({
       capabilityId,
       inputHash: hashApprovalInput({ seeded: summary }),
@@ -69,6 +84,19 @@ export function registerSeedApprovalRoute(
       requestedBy: agent.displayName ?? agent.name,
       requestedByPath: agentPath,
       area,
+      ...(hook
+        ? {
+            ...hookProjectionBinding(hook, true),
+            summary: summariseHookProjection(hook),
+            detail: describeHookProjection(hook),
+            packageRequest: {
+              kind: 'hooks' as const,
+              presentation: HOOK_CARD_PRESENTATION,
+              request: hook,
+              options: { notInstalledByDorkos: true },
+            },
+          }
+        : {}),
     });
     return c.json({ approvalId: ticket.approvalId });
   });

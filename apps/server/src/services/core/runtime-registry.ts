@@ -1,4 +1,5 @@
 import { ComputerAgentBinding, requireRegisteredRuntime } from '../computers/agent-binding.js';
+import { moveAlongside, moveScheduledChats } from '../session/origin/rekey-moves.js';
 import { resolveCodexHome } from '../runtimes/codex/codex-home.js';
 import type { CallerPrincipal } from '../../lib/caller-principal.js';
 import { validateBoundaryOrDorkHome } from '../../lib/boundary.js';
@@ -1018,27 +1019,17 @@ export class RuntimeRegistry {
     // Who started the chat moves with it too (spec `flow-multiproject` §7.7):
     // its first line and its place in an extension's start limits both hang
     // off the row. Same isolation as the reading above.
-    try {
-      getSessionStartedByStore()?.move(fromId, toId);
-    } catch (err) {
-      logger.warn('[RuntimeRegistry] could not move who started a session', {
-        fromId,
-        toId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    moveAlongside('who started a session', fromId, toId, () =>
+      getSessionStartedByStore()?.move(fromId, toId)
+    );
     // When you opened or wrote in it moves too (spec `your-activity-first`
     // D1): the chat page can mark a chat opened under the id it was asked
     // with, before the runtime settles on its own.
-    try {
-      getSessionTouchStore()?.move(fromId, toId);
-    } catch (err) {
-      logger.warn('[RuntimeRegistry] could not move when you touched a session', {
-        fromId,
-        toId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    moveAlongside('when you touched a session', fromId, toId, () =>
+      getSessionTouchStore()?.move(fromId, toId)
+    );
+    // A run's and a beat's rows name their chat as started-by rows do (DOR-3703).
+    moveAlongside('a scheduled chat', fromId, toId, () => moveScheduledChats(db, fromId, toId));
     if (!source) return;
     db.transaction((tx) => {
       // Native location and sign-in source belong to the conversation identity,

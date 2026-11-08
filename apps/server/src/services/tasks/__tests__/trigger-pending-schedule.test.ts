@@ -28,6 +28,12 @@
  * @module services/tasks/__tests__/trigger-pending-schedule
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { parseSkillFile } from '@dorkos/skills/parser';
+import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
+import { readScheduleFromSkill } from '../skills-root-discovery.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { TaskSchedulerService, type SchedulerAgentManager } from '../task-scheduler-service.js';
@@ -128,6 +134,39 @@ describe('a schedule waiting for approval can still be run once', () => {
     expect(service.getNextRun(task.id)).toBeNull();
 
     await service.stop();
+  });
+
+  it('runs a misplaced mode once as Accept edits without approving it', async () => {
+    const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'sample-trial-'));
+    const file = path.join(folder, 'SKILL.md');
+    const text =
+      "---\nname: sample\ndescription: Sample\npermissions: bypassPermissions\nschedule:\n  cron: '0 3 * * *'\n---\nRead the sample list.\n";
+    const service = new TaskSchedulerService(store, agent, CONFIG);
+    try {
+      await fs.writeFile(file, text);
+      const parsed = parseSkillFile(file, text, SkillFrontmatterSchema, {
+        requireNameMatch: false,
+      });
+      if (!parsed.ok) throw new Error(parsed.error);
+      const found = readScheduleFromSkill(parsed.definition, {
+        resolvedPath: file,
+        scope: 'global',
+      });
+      if (!found) throw new Error('No schedule');
+      const task = store.fileSync.upsertFromFile(found.def);
+      await service.start();
+      await service.triggerManualRun(task.id);
+      await vi.waitFor(() => expect(agent.sendMessage).toHaveBeenCalledOnce());
+      expect(vi.mocked(agent.sendMessage).mock.calls[0]?.[2]).toMatchObject({
+        permissionMode: 'acceptEdits',
+      });
+      expect(service.isRegistered(task.id)).toBe(false);
+      expect(store.getTask(task.id)?.status).toBe('pending_approval');
+      expect(store.approvals.personApprovedCurrent(task.id)).toBe(false);
+    } finally {
+      await service.stop();
+      await fs.rm(folder, { recursive: true, force: true });
+    }
   });
 
   it('does not approve the schedule', async () => {

@@ -101,6 +101,32 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('ConnectionsPage', () => {
+  it.each([undefined, { enabled: false }])(
+    'hides browser discovery when its flag is %j',
+    async (yourBrowser) => {
+      const transport = transportWith([]);
+      vi.mocked(transport.getConfig).mockResolvedValue({ yourBrowser } as Awaited<
+        ReturnType<Transport['getConfig']>
+      >);
+      renderPage(transport);
+      await waitFor(() => expect(transport.getConfig).toHaveBeenCalled());
+      expect(screen.queryByRole('tab', { name: 'Browsers' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Find my browsers' })).not.toBeInTheDocument();
+      expect(transport.scanYourBrowsers).not.toHaveBeenCalled();
+    }
+  );
+
+  it('shows the browser tab only when the server enables discovery', async () => {
+    const transport = transportWith([]);
+    vi.mocked(transport.getConfig).mockResolvedValue({ yourBrowser: { enabled: true } } as Awaited<
+      ReturnType<Transport['getConfig']>
+    >);
+    renderPage(transport);
+    await userEvent.click(await screen.findByRole('tab', { name: 'Browsers' }));
+    expect(await screen.findByRole('button', { name: 'Find my browsers' })).toBeVisible();
+    expect(transport.scanYourBrowsers).not.toHaveBeenCalled();
+  });
+
   it('floats a signed-out app to the top and starts its sign-in from the row', async () => {
     const user = userEvent.setup();
     const transport = transportWith([

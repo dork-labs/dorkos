@@ -511,9 +511,7 @@ describe('TaskRunHistoryPanel', () => {
     it('counts and names the tools it was refused, on the row (DOR-3132)', async () => {
       await renderBlocked();
 
-      expect(
-        screen.getByText('Refused: nobody to approve (2). Bash and gmail: search.')
-      ).toBeTruthy();
+      expect(screen.getByText('Refused: 2 tools: Bash and gmail: search.')).toBeTruthy();
     });
 
     it('falls back to the stored line for a run recorded before the tools were kept', async () => {
@@ -532,18 +530,14 @@ describe('TaskRunHistoryPanel', () => {
 
       expect(screen.queryByText(REFUSAL)).toBeNull();
       expect(screen.getByText('I could not read the mail.')).toBeTruthy();
-      expect(
-        screen.getByText('Refused: nobody to approve (2). Bash and gmail: search.')
-      ).toBeTruthy();
+      expect(screen.getByText('Refused: 2 tools: Bash and gmail: search.')).toBeTruthy();
     });
 
     it('shows nothing extra when the refusal was the whole summary', async () => {
       await renderBlocked({ outputSummary: REFUSAL });
 
       expect(screen.queryByText(REFUSAL)).toBeNull();
-      expect(
-        screen.getByText('Refused: nobody to approve (2). Bash and gmail: search.')
-      ).toBeTruthy();
+      expect(screen.getByText('Refused: 2 tools: Bash and gmail: search.')).toBeTruthy();
     });
 
     it('can be filtered for on its own', async () => {
@@ -725,5 +719,73 @@ describe('TaskRunHistoryPanel', () => {
       await renderRun({ scheduledFor: minutesBefore(STARTED, 0.2), missedTicks: 1000 });
       expect(screen.getByText('Missed 1000+ earlier runs while asleep.')).toBeInTheDocument();
     });
+  });
+});
+
+describe('TaskRunHistoryPanel: a run capped for a changed SKILL file (DOR-3703, M4)', () => {
+  afterEach(() => cleanup());
+
+  async function renderRun(run: Partial<TaskRun>) {
+    const transport = createMockTransport({
+      listTaskRuns: vi.fn().mockResolvedValue([createMockRun({ id: 'run-capped', ...run })]),
+    });
+    const Wrapper = createWrapper(transport);
+    render(
+      <Wrapper>
+        <TaskRunHistoryPanel scheduleId="sched-1" scheduleCwd="/test/cwd" />
+      </Wrapper>
+    );
+    await waitFor(() => expect(document.querySelector('[data-slot="run-capped"]')).toBeTruthy());
+    return document.querySelector('[data-slot="run-capped"]')!.textContent;
+  }
+
+  it('says it ran capped and which steps the cap refused', async () => {
+    const line = await renderRun({
+      status: 'needs_attention',
+      cappedAt: 'dontAsk',
+      refusedTools: ['Bash', 'Write'],
+      outputSummary: 'Skipped Bash and Write.\nDid what it could.',
+    });
+    expect(line).toBe('Capped at Never ask. Refused: Bash and Write.');
+  });
+
+  it('never reads as a plain success, even when nothing was refused', async () => {
+    const line = await renderRun({ status: 'completed', cappedAt: 'dontAsk', refusedTools: [] });
+    expect(line).toBe('Capped at Never ask. Nothing was refused.');
+  });
+
+  it('wraps on a narrow screen instead of cutting the cap off, and keeps one line from sm', async () => {
+    await renderRun({ status: 'completed', cappedAt: 'dontAsk', refusedTools: [] });
+    const cls = document.querySelector('[data-slot="run-capped"]')!.className.split(/\s+/);
+    expect(cls).not.toContain('truncate');
+    expect(cls).toContain('break-words');
+    expect(cls).toContain('sm:truncate');
+  });
+
+  it('on a phone: when and how long first, the trigger as its icon, the status in full under it', async () => {
+    await renderRun({
+      status: 'needs_attention',
+      cappedAt: 'dontAsk',
+      refusedTools: ['Bash'],
+      durationMs: 95_000,
+      trigger: 'scheduled',
+    });
+    const row = document
+      .querySelector('[data-slot="run-capped"]')!
+      .closest('[class*="grid-cols"]')!;
+    expect(row.className).toContain('grid-cols-[20px_20px_minmax(0,1fr)_auto_20px]');
+    expect(screen.getByText('Schedule').className).toContain('sr-only');
+    expect(screen.getByText('· 1m 35s').className).toContain('sm:hidden');
+    expect(document.querySelector('[data-slot="run-capped"]')!.className).toContain(
+      'text-status-warning-fg'
+    );
+  });
+
+  it('a capped run that finished keeps its line but not a warning wash', async () => {
+    await renderRun({ status: 'completed', cappedAt: 'dontAsk', refusedTools: [] });
+    const row = document
+      .querySelector('[data-slot="run-capped"]')!
+      .closest('[class*="grid-cols"]')!;
+    expect(row.className).not.toMatch(/bg-amber|bg-status-warning/);
   });
 });

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { LocalBrowserMode, LocalBrowserState } from '@dorkos/shared/local-browser';
+import type {
+  LocalBrowserMode,
+  LocalBrowserPersonState,
+  LocalBrowserState,
+} from '@dorkos/shared/local-browser';
 import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button, Input } from '@/layers/shared/ui';
@@ -9,6 +13,7 @@ import { useNativeBrowserSurface } from '../model/use-native-browser-surface';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { useActionFocusReturn } from '../model/use-action-focus-return';
 import { BrowserPreparation } from './BrowserPreparation';
+import { WaitingElsewhere } from './WaitingElsewhere';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -57,6 +62,11 @@ export function LocalBrowserPanel({
   const surface = useRef<HTMLDivElement>(null);
   const connected = state?.status === 'connected';
   const sharedElsewhere = !!state?.sessionId && state.sessionId !== sessionId;
+  // Another chat's agent is waiting on a person. Nothing here may answer for that chat.
+  const waitingElsewhere =
+    state?.handoff?.outcome === null && state.handoff.sessionId !== sessionId
+      ? state.handoff
+      : null;
   const mode =
     connected && state.mode
       ? state.mode
@@ -98,7 +108,12 @@ export function LocalBrowserPanel({
       // An older poll must not overwrite a just-observed connect, tab choice, or pause.
       await queryClient.cancelQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
       if (ticket !== operation.current) return false;
-      queryClient.setQueryData(LOCAL_BROWSER_STATE_KEY, next);
+      // A plain browser answer says nothing about a handoff, so what's known about it stays.
+      queryClient.setQueryData<LocalBrowserPersonState>(LOCAL_BROWSER_STATE_KEY, (known) => ({
+        handoff: known?.handoff ?? null,
+        signIn: known?.signIn ?? null,
+        ...next,
+      }));
       return true;
     } catch (cause) {
       if (ticket !== operation.current) return false;
@@ -225,7 +240,8 @@ export function LocalBrowserPanel({
             Reconnect
           </Button>
         )}
-      {!connected && (
+      {waitingElsewhere && <WaitingElsewhere sessionId={waitingElsewhere.sessionId} />}
+      {!connected && !waitingElsewhere && (
         <div className="min-h-0 space-y-3 overflow-y-auto">
           {choiceIssue && (
             <p className="text-muted-foreground text-xs">
@@ -256,7 +272,7 @@ export function LocalBrowserPanel({
           </Button>
         </div>
       )}
-      {connected && (
+      {connected && !waitingElsewhere && (
         <>
           {sharedElsewhere && (
             <p className="text-muted-foreground text-xs">
@@ -287,7 +303,17 @@ export function LocalBrowserPanel({
               disabled={busy}
               onClick={(event) => {
                 rememberFocus(event.currentTarget);
-                void action(() => transport.disconnectLocalBrowser());
+                const asked = state.handoff?.outcome === null ? state.handoff.id : null;
+                let answer: LocalBrowserPersonState | undefined;
+                void action(async () => (answer = await transport.disconnectLocalBrowser())).then(
+                  (closed) => {
+                    // Disconnect ends a handoff as Stop task does, and that ends the agent's turn.
+                    // Only this one: a handoff that ended first must not cost that chat its next turn.
+                    const ended = answer?.handoff;
+                    if (closed && ended?.id === asked && ended?.outcome === 'stopped')
+                      void transport.interruptSession(ended.sessionId).catch(() => {});
+                  }
+                );
               }}
             >
               Disconnect

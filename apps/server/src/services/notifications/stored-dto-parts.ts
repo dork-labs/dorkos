@@ -115,3 +115,6 @@ export function buildActions(
     return undefined;
   }
 }
+
+// Read back by id for a notice's own action (DOR-3703); its own module, re-exported here.
+export { readStoredPayload, type StoredPayload } from './stored-payload.js';

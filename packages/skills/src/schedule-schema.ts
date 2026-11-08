@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MISPLACED_SCHEDULE_PERMISSIONS } from '@dorkos/shared/schedule-file-problems';
 // The dependency-free constants module, never `@dorkos/shared/schemas`. The
 // effort ladder is ONE list by design (see `EFFORT_LEVELS`), and this package
 // ships to the browser through the barrel — the DRIFT NOTE below is about the
@@ -418,6 +419,8 @@ export function hasSchedule<T extends { schedule?: ScheduleField }>(
  * @returns The complaint, or `null` when the block is fine or absent.
  */
 export function scheduleProblem<T extends { schedule?: ScheduleField }>(meta: T): string | null {
+  if (meta.schedule !== undefined && Object.hasOwn(meta, 'permissions'))
+    return MISPLACED_SCHEDULE_PERMISSIONS;
   return isInvalidSchedule(meta.schedule) ? meta.schedule.problem : null;
 }
 

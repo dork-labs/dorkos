@@ -386,7 +386,7 @@ describe('the rows', () => {
   it('draws someone else’s agent as facts, plus the rooms you share', async () => {
     // Nothing private, and nothing to change: About and Runs on are plain
     // facts. Rooms is a door because a room is a shared surface, and
-    // Commitments and Heartbeat because anyone may read any agent's promises
+    // To-dos and Heartbeat because anyone may read any agent's promises
     // and how it wakes.
     await renderProfile(OTHERS_AGENT);
     await openProfileFolds();
@@ -394,7 +394,7 @@ describe('the rows', () => {
       (row) => `${row.getAttribute('data-profile-row')}:${row.getAttribute('data-row-kind')}`
     );
     // No Level, and no Setup or Files: those are not a teammate's to read.
-    expect(kinds).toEqual(['runs-on:text', 'rooms:nav', 'commitments:nav', 'heartbeat:nav']);
+    expect(kinds).toEqual(['runs-on:text', 'rooms:nav', 'todos:nav', 'heartbeat:nav']);
   });
 
   it('keeps DorkBot’s locked rows visible, and explains them on tap', async () => {
@@ -436,7 +436,7 @@ describe('the rows', () => {
       'rooms',
       'sessions',
       'tasks',
-      'commitments',
+      'todos',
       'work-queue',
       'heartbeat',
       'activity',
@@ -526,7 +526,7 @@ describe('the rows', () => {
       'rooms',
       'sessions',
       'tasks',
-      'commitments',
+      'todos',
       'work-queue',
       'heartbeat',
       'activity',

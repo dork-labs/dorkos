@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * From Wi-Fi a schedule runs at Default at most (DOR-3037): one made there
  * with no mode gets Default rather than the operator's trust stop, naming a
@@ -178,7 +179,7 @@ describe('changing a schedule from Wi-Fi', () => {
     const approve = await request(server)
       .patch(`/api/tasks/${id}`)
       .set('x-test-via', 'wifi')
-      .send({ status: 'active' });
+      .send({ expectedApprovalRevision: taskReviewRevision(store.getTask(id)!), status: 'active' });
     expect(approve.status).toBe(403);
 
     const pause = await request(server)
@@ -195,7 +196,11 @@ it('refuses Wi-Fi approval even at Default (DOR-3651)', async () => {
   const response = await request(server)
     .patch(`/api/tasks/${id}`)
     .set('x-test-via', 'wifi')
-    .send({ status: 'active', permissionMode: 'default' });
+    .send({
+      expectedApprovalRevision: taskReviewRevision(store.getTask(id)!),
+      status: 'active',
+      permissionMode: 'default',
+    });
   expect(response.status).toBe(403);
   expect(response.body.code).toBe(NOT_FROM_WIFI);
   expect(store.getTask(id)?.status).toBe('pending_approval');

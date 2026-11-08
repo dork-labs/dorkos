@@ -39,6 +39,7 @@
  */
 import {
   askForHookProjection,
+  hookProjectionBinding,
   mayAskAboutHooks,
   type HookApprovalGateway,
 } from './hook-approval.js';
@@ -228,11 +229,17 @@ export function resumePassiveHookRows(opts: {
   reproject: (request: HookProjectionRequest) => Promise<void | Reprojected>;
 }): string[] {
   const picked: string[] = [];
-  for (const request of readPassiveHookRows(opts.dorkHome)) {
+  const saved = new Map(
+    [...readPassiveHookRows(opts.dorkHome), ...(opts.approvals.reaskedHookRequests?.() ?? [])].map(
+      (request) => [`${request.projectPath}\0${request.packageName}`, request]
+    )
+  );
+  for (const request of saved.values()) {
     // One row at a time, each on its own: this runs while the server starts, so
     // a row nothing can make sense of is logged and dropped, never thrown.
     try {
-      if (!mayAskAboutHooks(request)) {
+      const reasked = opts.approvals.isReaskedHook?.(hookProjectionBinding(request, true)) === true;
+      if (!mayAskAboutHooks(request) && !reasked) {
         if (isHookProjectionRefused(request)) forgetPassiveHookRow(opts.dorkHome, request);
         continue;
       }
@@ -270,6 +277,7 @@ function followPassiveRow(
   resumeOnly: boolean
 ): void {
   const { dorkHome } = opts;
+  const reasked = opts.approvals.isReaskedHook?.(hookProjectionBinding(request, true)) === true;
   // A failed save never stops the row: only a yes given after a restart would
   // then wait for the next sync, as it did before rows were saved.
   const saved = (write: (home: string, row: HookProjectionRequest) => void): void => {
@@ -290,7 +298,7 @@ function followPassiveRow(
       // The wait is over whatever the answer, so the saved row goes.
       saved(forgetPassiveHookRow);
       // A no on record for these commands wins over a yes on an old ticket.
-      if (!granted || isHookProjectionRefused(request)) return;
+      if (!granted || (!reasked && isHookProjectionRefused(request))) return;
       recordHookApproval(request);
       const still = await opts.reproject();
       if (still) raisePassiveHookRows(still, opts);
@@ -302,4 +310,13 @@ function followPassiveRow(
         error: err instanceof Error ? err.message : String(err),
       });
     });
+}
+
+/** Follow the one fresh row a person requested, retaining any refusal until its yes. */
+export function followReaskedHookRow(
+  request: HookProjectionRequest,
+  opts: AskAboutWithheldHooksOptions
+): void {
+  if (opts.approvals.isReaskedHook?.(hookProjectionBinding(request, true)) !== true) return;
+  followPassiveRow(request, opts, true);
 }

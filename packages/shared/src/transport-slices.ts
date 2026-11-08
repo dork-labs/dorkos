@@ -1,10 +1,10 @@
 /**
  * The slices of the {@link Transport} port kept in modules of their own (rooms,
- * community connections, remote communities, commitments, to-dos, heartbeats, the first
+ * community connections, remote communities, agents' promises, to-dos, heartbeats, the first
  * run, message history, held connected-app actions, a hub's linked computers,
  * a canvas document's route controls, a space's docs, a person's signed-in
  * devices, an account's automatic moves, a framed page's script decision, an
- * agent's level), joined here so `transport.ts` extends one name. Nothing consuming
+ * agent's level, undoing an agent's task mode), joined here so `transport.ts` extends one name. Nothing consuming
  * the port sees a difference.
  *
  * @module shared/transport-slices
@@ -14,7 +14,7 @@ import type { FileSaveRecoveryTransport } from './file-save/recovery-transport.j
 import type { RoomTransport } from './transport-rooms.js';
 import type { CommunityConnectionTransport } from './community-connections.js';
 import type { RemoteCommunityTransport } from './community-views.js';
-import type { CommitmentTransport } from './transport-commitments.js';
+import type { TodoPromiseTransport } from './transport-todo-promises.js';
 import type { TodoTransport } from './transport-todos.js';
 import type { WorkQueueTransport } from './transport-work-queue.js';
 import type { ActivityTransport } from './transport-activity.js';
@@ -36,6 +36,7 @@ import type { AccountAutoMoveTransport } from './transport-account-auto-move.js'
 import type { FrameBridgeTransport } from './transport-frame-bridge.js';
 import type { AgentLevelTransport } from './transport-agent-level.js';
 import type { ApprovalTransport } from './transport-approvals.js';
+import type { TaskModeUndoTransport } from './transport-task-mode.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -46,7 +47,7 @@ export interface TransportSlices
     RoomTransport,
     CommunityConnectionTransport,
     RemoteCommunityTransport,
-    CommitmentTransport,
+    TodoPromiseTransport,
     TodoTransport,
     WorkQueueTransport,
     ActivityTransport,
@@ -67,4 +68,5 @@ export interface TransportSlices
     DocLinksTransport,
     AccountAutoMoveTransport,
     FrameBridgeTransport,
-    AgentLevelTransport {}
+    AgentLevelTransport,
+    TaskModeUndoTransport {}

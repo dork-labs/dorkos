@@ -77,7 +77,7 @@ async function roomExists(request: APIRequestContext, title: string): Promise<bo
  */
 async function openCard(page: Page, approvalId: string) {
   await page.getByTestId('inbox-bell').click();
-  const card = page.locator(`[data-approval-id="${approvalId}"]`);
+  const card = page.locator(`[data-approval-id="${approvalId}"]`).last();
   await expect(card).toBeVisible();
   return card;
 }
@@ -367,6 +367,51 @@ test.describe('The request card @permissions', () => {
       card.getByText('Always allow isn’t offered here. This always needs your yes.')
     ).toBeVisible();
     await card.getByRole('button', { name: 'Don’t allow' }).click();
+    await answerLanded(request, approvalId);
+    await expect(card.getByText('Not allowed')).toBeVisible();
+  });
+  test('a package card without its full request only offers Decline', async ({
+    request,
+    basePage,
+  }) => {
+    const bot = await requester(request);
+    const seeded = await request.post('/api/test/seed-approval', {
+      data: {
+        capabilityId: 'harness.project_hooks',
+        agentPath: bot.path,
+        area: 'packages',
+        summary: 'Let package "acme-hooks" run commands automatically: "echo safe…"',
+      },
+    });
+    expect(seeded.ok()).toBe(true);
+    const { approvalId } = await seeded.json();
+    for (const answer of ['once', 'always']) {
+      const granted = await request.post(`/api/approvals/${approvalId}/grant`, {
+        data: { answer },
+      });
+      expect(granted.status()).toBe(409);
+      expect((await granted.json()).code).toBe('APPROVAL_INCOMPLETE');
+    }
+    await basePage.page.setViewportSize({ width: 390, height: 844 });
+    await gotoActivity(basePage);
+    const card = (await openCard(basePage.page, approvalId)).last();
+    await expect(card.getByRole('button')).toHaveText(['Decline']);
+    await expect(card.getByText('This package wants to run code on this computer')).toBeVisible();
+    await expect(card.getByText('Cannot be undone')).toHaveCount(0);
+    await expect(card.getByText(/echo safe/)).toHaveCount(0);
+    const buttonBox = await card.getByRole('button', { name: 'Decline' }).boundingBox();
+    const cardBox = await card.locator('[data-slot="approval-card"]').boundingBox();
+    expect(buttonBox).not.toBeNull();
+    expect(cardBox).not.toBeNull();
+    const contentWidth = await card.locator('footer').evaluate((node) => {
+      const style = getComputedStyle(node);
+      return node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    });
+    expect(buttonBox!.width).toBeCloseTo(contentWidth, 0);
+    await expect(
+      card.getByText("This request can't be shown in full, so it can't be allowed yet.")
+    ).toBeVisible();
+    await card.getByRole('button', { name: 'Decline' }).click();
     await answerLanded(request, approvalId);
     await expect(card.getByText('Not allowed')).toBeVisible();
   });

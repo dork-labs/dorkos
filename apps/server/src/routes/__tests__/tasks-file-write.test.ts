@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * What `PATCH /api/tasks/:id` writes to the SKILL.md on disk (DOR-1481).
  *
@@ -490,7 +491,11 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
-      .send({ status: 'active', enabled: true });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(id)!),
+        status: 'active',
+        enabled: true,
+      });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
 
     expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
@@ -504,7 +509,11 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
-      .send({ status: 'active', enabled: true });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(id)!),
+        status: 'active',
+        enabled: true,
+      });
 
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('permissions');
@@ -587,7 +596,11 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
 
     const res = await request(fixtureServer)
       .patch(`/api/tasks/${id}`)
-      .send({ status: 'active', cron: '0 21 * * *' });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(id)!),
+        status: 'active',
+        cron: '0 21 * * *',
+      });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
 
     vi.restoreAllMocks();

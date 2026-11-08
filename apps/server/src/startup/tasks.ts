@@ -37,6 +37,7 @@ import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { setTasksEnabled } from '../services/tasks/task-state.js';
 import type { TaskStore } from '../services/tasks/task-store.js';
 import { ensureDefaultTemplates } from '../services/tasks/task-templates.js';
+import { registerAgentModeEscalators } from '../services/tasks/agent-mode/agent-mode-escalation.js';
 
 /** What starting Tasks needs from the startup that came before it. */
 export interface TasksStartupDeps {
@@ -201,6 +202,8 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
     };
     setTasksEnabled(true);
     mountedRouters.push('tasks');
+    // A task's mode or approval, named by an agent, is decided as its own action (DOR-3703).
+    registerAgentModeEscalators({ store: taskStore, ...(meshCore && { meshCore }) });
 
     // Cascade-pause: when an agent is unregistered from Mesh, pause its linked task schedules.
     // The callback receives the project path captured before registry removal —
@@ -277,8 +280,8 @@ export async function startTasks(deps: TasksStartupDeps): Promise<StartedTasks> 
       );
     }
 
-    // Before the backfill, which then keeps what these rows already say, and before any sync reads
-    // their files (DOR-3440). They stay off: the backfill grants, it never switches on.
+    // Switch marked schedules off before discovery, keeping their marks and review (DOR-3860).
+    // The backfill below must not grant them approval merely because the server restarted.
     await taskStore.approvals.clearOutsiderParks();
 
     const backfilled = taskStore.approvals.backfillApprovalGrants();

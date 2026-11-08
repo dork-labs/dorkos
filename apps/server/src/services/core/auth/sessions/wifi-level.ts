@@ -124,6 +124,13 @@ const ON_THE_COMPUTER = 'at this computer.';
 
 /** Every route a Wi-Fi sign-in is refused on. The single source of the level. */
 export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
+  {
+    // Private browser metadata is read only for the owner over a trusted connection.
+    surface: 'host',
+    methods: 'writes',
+    pattern: /^\/api\/your-browser\/scan$/,
+    reason: `Find browser profiles ${ON_THE_COMPUTER}`,
+  },
   // A queue starts chats later with nobody watching, at the agent's own level, so
   // turning one on or filling it is a standing grant (DOR-3462). The stop goes with
   // it, so this list stays one rule: every queue write is made at the computer.
@@ -313,7 +320,7 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     // A promise's due beat runs at the agent's own level (DOR-3037).
     surface: 'host',
     methods: 'writes',
-    pattern: /^\/api\/agents\/[^/]+\/commitments$/,
+    pattern: /^\/api\/agents\/[^/]+\/todo-promises$/,
     reason: `Record an agent's promises ${ON_THE_COMPUTER}`,
   },
   {

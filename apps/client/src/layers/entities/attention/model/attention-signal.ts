@@ -49,7 +49,8 @@ export type AttentionSignalKind =
   | 'schedule-approval'
   | 'extension-approval'
   | 'extension-decision'
-  | 'connection-confirmation';
+  | 'connection-confirmation'
+  | 'browser-handoff';
 
 /**
  * The four blockages: every kind but the two an extension raises. The name is
@@ -60,7 +61,7 @@ export type AttentionSignalKind =
  */
 export type HeadsUpSignalKind = Exclude<
   AttentionSignalKind,
-  'extension-approval' | 'extension-decision' | 'connection-confirmation'
+  'extension-approval' | 'extension-decision' | 'connection-confirmation' | 'browser-handoff'
 >;
 
 /**

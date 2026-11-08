@@ -106,6 +106,16 @@ describe('useDirectMessagePanel', () => {
     });
   });
 
+  it('says it is still waiting while the chat may yet be a DM, before the setting is known', () => {
+    state.mode = 'pending';
+    expect(renderHook(() => useDirectMessagePanel()).result.current).toEqual({
+      kind: 'pending',
+      showSessions: false,
+    });
+    state.pathname = '/channels';
+    expect(renderHook(() => useDirectMessagePanel()).result.current).toBeNull();
+  });
+
   it('is null on the session view behind a DM, and beside an ordinary session', () => {
     state.enabled = true;
     state.mode = 'session';

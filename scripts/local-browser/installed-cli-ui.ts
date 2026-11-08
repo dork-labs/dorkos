@@ -147,7 +147,7 @@ export function installedCliUi(options: InstalledCliUiOptions) {
           source: 'workspace @playwright/test',
           executable: driver.executablePath(),
           browserVersion: browser.version(),
-          version: '1.63.0',
+          version: '1.65.0-alpha-2026-10-30',
           cache: 'existing host runner cache',
         },
         appBackend: {

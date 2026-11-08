@@ -115,6 +115,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'thumbs',
     ],
   },
+  // BrowserHandoffShowcases
+  {
+    id: 'browser-handoff-card',
+    title: 'Browser handoff card',
+    page: 'home-inbox',
+    category: 'Home',
+    keywords: ['browser', 'agent browser', 'handoff', 'sign in', 'password', 'paused', 'continue'],
+  },
   // ScheduleApprovalShowcases
   {
     id: 'schedule-approval-card',

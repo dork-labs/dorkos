@@ -1,12 +1,14 @@
 /**
  * Session-side services built before any runtime can start a turn: who started
- * a chat, chat messaging, commitments, the permission observer and gate, the
+ * a chat, chat messaging, to-dos, the permission observer and gate, the
  * notification pipeline and escalation, and the session watchers.
  *
  * Moved out of `index.ts` unchanged; it runs at the same point in `start()`.
  *
  * @module startup/steps/session-services
  */
+import { initSeenVersions } from '../../services/session/new-since/seen-versions.js';
+import { IS_DEV_BUILD, SERVER_VERSION } from '../../lib/version.js';
 import {
   SessionStartedByStore,
   setSessionStartedByStore,
@@ -24,7 +26,7 @@ import {
 import { AgentSendStore } from '../../services/extensions/agent-send/agent-send-store.js';
 import { wireChatMessaging } from '../../services/session/chat-messages/chat-message-wiring.js';
 import { ChatMessageStore } from '../../services/session/chat-messages/chat-message-store.js';
-import { wireCommitments } from '../../services/commitments/commitment-wiring.js';
+import { wireTodos } from '../../services/todos/todo-wiring.js';
 import { wireWorkQueue } from '../../services/work-queue/work-queue-wiring.js';
 import {
   setOnEveryAgentEnded,
@@ -109,6 +111,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
       projects: projectRegistry,
       extensionName: (id) => refs.extensionManager?.get(id)?.manifest.name ?? id,
       activity: activityService,
+      taskStore: () => refs.taskStore,
     })
   );
   // The seam behind `ctx.agent.send` (DOR-2683): an extension sending one of
@@ -136,7 +139,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   });
   // What agents promised (spec `heartbeats` §12). The due timers are rebuilt
   // from the table here, so a restart loses no wake and no missed mark.
-  const commitments = (refs.commitmentWiring = wireCommitments({
+  const todoPromises = (refs.todoWiring = wireTodos({
     db,
     meshCore: () => refs.meshCore,
     roomSessionPlace: () => refs.roomSessionPlacePort,
@@ -308,6 +311,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   // scheduled task or room turn is never silent (ADR 261001-000811).
   watchCreditsRefusals();
   // Nothing tells the server it was updated, so it compares versions on boot.
+  initSeenVersions(dorkHome, { version: SERVER_VERSION, dev: IS_DEV_BUILD });
   void announceInstalledVersion(dorkHome);
   // Git older than 2.38 cannot refuse a folder set up to look like a git
   // repository; say so once, in plain words (DOR-2326).
@@ -316,7 +320,7 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   watchShiftReport(notificationStore, () => configManager.get('onboarding'));
   return {
     chatMessaging,
-    commitments,
+    todoPromises,
     workQueue,
     arrivalRecord,
     personSetPermissions,

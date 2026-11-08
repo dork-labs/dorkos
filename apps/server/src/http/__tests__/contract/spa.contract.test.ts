@@ -4,7 +4,7 @@
  * `app.ts`). They move to Hono in DOR-2817; that PR must pass this file
  * unchanged.
  *
- * The server boots in production mode, the only mode that serves the client,
+ * The server boots in production mode, and in preview with an explicit build,
  * against a small stand-in build: a shell, one hashed bundle and an icon.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -70,7 +70,7 @@ contractSuite(
         headers: {
           'content-type': /^(text|application)\/javascript\b/,
           'cache-control': 'public, max-age=31536000, immutable',
-          'content-security-policy': null,
+          'content-security-policy': "frame-ancestors 'none'",
         },
         body: BUNDLE,
       },
@@ -129,7 +129,10 @@ contractSuite(
       path: '/favicon.svg',
       expect: {
         status: 200,
-        headers: { 'cache-control': 'public, max-age=0', 'content-security-policy': null },
+        headers: {
+          'cache-control': 'public, max-age=0',
+          'content-security-policy': "frame-ancestors 'none'",
+        },
         body: ICON,
       },
     },
@@ -157,4 +160,30 @@ contractSuite(
     },
   ],
   { env: { NODE_ENV: 'production', CLIENT_DIST_PATH: dist } }
+);
+
+contractSuite(
+  'the desktop preview app',
+  [
+    {
+      name: 'an explicit build serves the preview shell in development',
+      path: '/',
+      expect: { status: 200, headers: SHELL_HEADERS, body: SHELL },
+    },
+    {
+      name: 'a restored extension page serves that shell',
+      path: '/x/mkt-site',
+      expect: { status: 200, headers: SHELL_HEADERS, body: SHELL },
+    },
+    {
+      name: 'the preview serves JavaScript, not a shell fallback',
+      path: '/assets/app-3f9a1c.js',
+      expect: {
+        status: 200,
+        headers: { 'content-type': /^(text|application)\/javascript\b/ },
+        body: BUNDLE,
+      },
+    },
+  ],
+  { env: { NODE_ENV: 'development', CLIENT_DIST_PATH: dist } }
 );

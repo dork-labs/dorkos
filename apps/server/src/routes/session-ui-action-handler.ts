@@ -32,6 +32,7 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { isPersonTurn } from '../lib/caller-authority.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import { getDirectChats } from '../services/rooms/direct-chat/index.js';
 import { personTurnBound } from './room-post-bound.js';
@@ -107,6 +108,7 @@ export async function sessionUiActionHandler(c: Context<ApiEnv>): Promise<Respon
   if (cwd !== undefined) projector.cwd = cwd;
 
   const result = await dispatchMessage({
+    turnStarter: isPersonTurn(honoRequestFacts(c)) ? 'person' : 'agent',
     sessionId,
     clientId,
     content,

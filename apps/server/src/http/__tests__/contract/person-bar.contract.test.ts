@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PERSON_SESSION_REQUIRED_CODE } from '@dorkos/shared/person-session';
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 
 import {
   BOOT_HOOK_TIMEOUT_MS,
@@ -175,9 +176,19 @@ describe('contract: the person-only routes at this computer, with an owner', () 
     }
   );
 
-  it('lets the owner’s session add and remove a server for every agent', async () => {
+  it('holds the owner’s add for “Confirm it’s you”, runs it on their password, and removes it with no ask', async () => {
     const headers = { origin: server!.baseUrl, 'x-client-id': 'window-1', ...person };
-    expect((await send(MCP_SERVER_WRITES[0]!, headers)).status).toBe(201);
+    const held = await send(MCP_SERVER_WRITES[0]!, headers);
+    expect(held.status).toBe(428);
+    expect(held.json.code).toBe(STEP_UP_REQUIRED_CODE);
+    // Nothing was written: there is nothing yet to remove.
+    expect((await send(MCP_SERVER_WRITES[3]!, headers)).status).toBe(404);
+    const stepUp = `/api/step-up/${String(held.json.heldActionId)}/password`;
+    const done = await send(
+      { method: 'POST', path: stepUp, body: { password: OWNER.password } },
+      headers
+    );
+    expect(done.json).toMatchObject({ ok: true, status: 201, result: { name: 'planted' } });
     expect((await send(MCP_SERVER_WRITES[3]!, headers)).status).toBe(204);
   });
 

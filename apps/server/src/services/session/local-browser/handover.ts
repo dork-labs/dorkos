@@ -17,6 +17,7 @@ import type {
   LocalBrowserSignInRequest,
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
+import { logger } from '../../../lib/logger.js';
 import { LocalBrowserError } from './errors.js';
 import { prepareProfileFolder } from './profile-folders.js';
 import type { SignInWindow } from './sign-in-window.js';
@@ -24,9 +25,11 @@ import type { SignInWindow } from './sign-in-window.js';
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
   state(): Promise<LocalBrowserState>;
+  capabilities(): { newWindow: boolean };
   currentProfileId(): string | null;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
   selectTab(id: string): Promise<LocalBrowserState>;
+  navigate(url: string): Promise<LocalBrowserState>;
   pause(): Promise<LocalBrowserState>;
   resume(): Promise<LocalBrowserState>;
   disconnect(): Promise<LocalBrowserState>;
@@ -74,6 +77,8 @@ export function assertSignInUrl(value: string): URL {
 export class BrowserHandover {
   private record: LocalBrowserHandoff | null = null;
   private reopenAt?: ReopenAt;
+  // The agent's page when it asked. Saved here, so Continue never takes a URL from the agent.
+  private askedUrl?: string;
   // After Stop task the browser stays open for the person (2FA, a payment), so that
   // chat reads nothing until a person opens or resumes the browser for it again.
   private stoppedFor: string | null = null;
@@ -81,6 +86,8 @@ export class BrowserHandover {
   private outsideTurn: OutsideTurnCheck = async () => true;
   // The registry id of the agent in a folder; none until startup wires the mesh.
   private agentIdAt: (agentFolder: string) => string | undefined = () => undefined;
+  private changed: () => void = () => undefined;
+  private handedOver: (handoff: LocalBrowserHandoff) => void = () => undefined;
 
   constructor(
     private readonly browser: HandoverBrowser,
@@ -100,6 +107,26 @@ export class BrowserHandover {
     this.agentIdAt = lookup;
   }
 
+  /**
+   * Set once at startup: called when a handoff starts or ends, or a sign-in moves,
+   * so an open card re-reads the state instead of polling for it.
+   *
+   * @param listener - Told that something changed, and nothing else.
+   */
+  useChangeListener(listener: () => void): void {
+    this.changed = listener;
+    this.signIns.onChange(listener);
+  }
+
+  /**
+   * Set once at startup: called once for each new handoff, for the Inbox's record.
+   *
+   * @param listener - Given the new handoff.
+   */
+  useHandoffListener(listener: (handoff: LocalBrowserHandoff) => void): void {
+    this.handedOver = listener;
+  }
+
   /** What a person's controls see. */
   async state(): Promise<LocalBrowserPersonState> {
     return { ...(await this.browser.state()), handoff: this.record, signIn: this.signIns.current };
@@ -112,11 +139,17 @@ export class BrowserHandover {
    */
   async requireAgentMayUse(sessionId: string): Promise<void> {
     this.refuseStopped(sessionId);
-    if (this.record && this.record.outcome === null && this.record.sessionId === sessionId)
+    if (this.record && this.record.outcome === null && this.record.sessionId === sessionId) {
+      // QA reads these: every browser call an agent tried while a person had the browser.
+      logger.info('[Browser] Refused an agent call during a handoff', {
+        handoffId: this.record.id,
+        sessionId,
+      });
       throw new LocalBrowserError(
         'handed_to_person',
         'A person has the browser. Wait until they hand it back.'
       );
+    }
     if (this.signIns.active && (await this.signInOnAgentProfile()))
       throw new LocalBrowserError('signing_in', 'A person is signing in. Wait until they finish.');
   }
@@ -156,14 +189,24 @@ export class BrowserHandover {
       agentName: asker?.name ?? null,
       agentId: asker ? (this.agentIdAt(asker.folder) ?? null) : null,
       agentFolder: asker?.folder ?? null,
+      profileId: this.browser.currentProfileId(),
       reason,
       site,
       askedAt: new Date(this.now()).toISOString(),
       outcome: null,
     };
     this.reopenAt = undefined;
+    this.askedUrl = tab.url;
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
     await this.browser.selectTab(tab.id).catch(() => undefined);
+    this.changed();
+    this.handedOver(this.record);
+    logger.info('[Browser] An agent handed the browser to a person', {
+      handoffId: this.record.id,
+      sessionId,
+      site,
+      reason,
+    });
     return { handoffId: this.record.id, site, next: HANDED_OVER_NEXT };
   }
 
@@ -178,7 +221,7 @@ export class BrowserHandover {
     let profileId: string | null;
     if ('handoffId' in input) {
       const handoff = this.openHandoff(input.handoffId);
-      if (state.mode === 'embedded')
+      if (state.mode === 'embedded' && !this.browser.capabilities().newWindow)
         throw new LocalBrowserError('unsupported', 'Open the browser in a new window to sign in.');
       // The origin the agent's browser is on now, never one the agent named.
       const tab = state.tabs.find((candidate) => candidate.id === state.selectedTabId);
@@ -192,7 +235,11 @@ export class BrowserHandover {
         );
       url = assertSignInUrl(new URL(tab.url).origin);
       profileId = this.browser.currentProfileId();
-      this.reopenAt = { sessionId: handoff.sessionId, profileId, url: tab.url };
+      this.reopenAt = { sessionId: handoff.sessionId, profileId, url: this.askedUrl ?? tab.url };
+      // The Mac app's panel keeps cookies in the app's own store and has a debugging
+      // channel. So it closes, the person signs in on the default profile, and Continue
+      // brings the agent back in its own window on that profile.
+      if (state.mode === 'embedded') await this.browser.disconnect();
     } else {
       url = assertSignInUrl(input.url);
       profileId = input.profileId ?? null;
@@ -247,19 +294,30 @@ export class BrowserHandover {
   }
 
   /**
-   * A person's open goes through here, so it can't take a profile a sign-in holds.
-   * Opening the browser for another chat ends that chat's handoff.
+   * A person's open goes through here, so it can't take a profile a sign-in holds, or
+   * close a window out from under a person partway through another chat's handoff.
    *
    * @param input - The person's choice.
    */
   async open(input: LocalBrowserOpen): Promise<LocalBrowserPersonState> {
+    if (this.record?.sessionId !== input.sessionId) this.refuseDuringHandoff();
     if (input.mode === 'new-window' && this.signIns.holds(this.folderOf(input.profileId ?? null)))
       throw new LocalBrowserError('signing_in', 'Finish signing in first.');
-    await this.browser.open(input);
+    if (this.record?.outcome === null) {
+      // The window closed under an open handoff. It reopens at the page saved when the
+      // agent asked, and the agent stays paused until the person answers the card.
+      await this.browser.open({ ...input, url: this.askedUrl ?? input.url });
+      await this.browser.pause();
+    } else {
+      await this.browser.open(input);
+    }
     this.stoppedFor = null;
-    if (this.record?.outcome === null && this.record.sessionId !== input.sessionId)
-      this.end(this.record, 'stopped');
     return this.state();
+  }
+
+  /** The window closed on its own, so a card saying "finish it in the window" re-reads the state. */
+  windowClosed(): void {
+    this.changed();
   }
 
   /**
@@ -273,11 +331,61 @@ export class BrowserHandover {
     return this.state();
   }
 
-  private refuseStopped(sessionId: string): void {
+  /**
+   * A person's tab choice. Raising the agent's own tab is how Show window works. Any
+   * other tab would move the page out from under an open card.
+   *
+   * @param id - The tab to select.
+   */
+  async selectTab(id: string): Promise<LocalBrowserState> {
+    if (this.record?.outcome === null && id !== (await this.browser.state()).selectedTabId)
+      this.refuseDuringHandoff();
+    return this.browser.selectTab(id);
+  }
+
+  /**
+   * A person's address bar, refused during a handoff so the page can't leave the site
+   * the card names.
+   *
+   * @param url - The address to open.
+   */
+  async navigate(url: string): Promise<LocalBrowserState> {
+    this.refuseDuringHandoff();
+    return this.browser.navigate(url);
+  }
+
+  /**
+   * A person's Disconnect. During a handoff it ends as Stop task does, so no card stays
+   * up over a closed window. If the window won't close, the handoff stays open.
+   */
+  async disconnect(): Promise<LocalBrowserPersonState> {
+    await this.browser.disconnect();
+    if (this.record?.outcome === null) {
+      this.stoppedFor = this.record.sessionId;
+      this.end(this.record, 'stopped');
+    }
+    return this.state();
+  }
+
+  /**
+   * Refuse a chat whose task a person stopped. Checked before sharing, so a chat whose
+   * browser a person also closed still learns the person stopped it.
+   *
+   * @param sessionId - The calling chat.
+   */
+  refuseStopped(sessionId: string): void {
     if (this.stoppedFor === sessionId)
       throw new LocalBrowserError(
         'task_stopped',
         'The person stopped this task. They can open the browser for you again.'
+      );
+  }
+
+  private refuseDuringHandoff(): void {
+    if (this.record?.outcome === null)
+      throw new LocalBrowserError(
+        'handoff_open',
+        'An agent is waiting on you in this browser. Answer its card first.'
       );
   }
 
@@ -289,7 +397,10 @@ export class BrowserHandover {
 
   private end(handoff: LocalBrowserHandoff, outcome: 'handed-back' | 'stopped'): void {
     if (this.record?.id === handoff.id) this.record = { ...handoff, outcome };
+    logger.info('[Browser] A browser handoff ended', { handoffId: handoff.id, outcome });
     this.reopenAt = undefined;
+    this.askedUrl = undefined;
+    this.changed();
   }
 
   private async signInOnAgentProfile(): Promise<boolean> {

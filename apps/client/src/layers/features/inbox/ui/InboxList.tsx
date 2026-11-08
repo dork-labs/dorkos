@@ -175,7 +175,13 @@ export function InboxList({
 
   return (
     <div className="min-w-0">
-      <motion.div variants={staggerContainer} initial="initial" animate="animate">
+      {/* A finger needs room between notices on a phone: 12px; from `sm`, tight. */}
+      <motion.div
+        variants={staggerContainer}
+        initial="initial"
+        animate="animate"
+        className="flex flex-col gap-3 sm:gap-0"
+      >
         {items.map((item, index) =>
           item.type === 'away' ? (
             // Decisions an extension made while the person was away, folded

@@ -6,6 +6,7 @@
  *
  * @module services/session/chat-messages/chat-message-wiring
  */
+import { noteSteeredInto } from './chat-started-turns.js';
 import { setQueuedChatView } from '../message-queue-store.js';
 import { queuedChatViewOf } from './queued-chat-view.js';
 import type { MeshCore } from '@dorkos/mesh';
@@ -263,7 +264,15 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     sessionCwd: liveSessionCwd,
     isBusy: isSessionBusy,
     interruptTurn: interruptChatTurn,
-    steerInto: steerChatTurn,
+    // A steer that lands carries its sender into the running turn (DOR-3703, M7).
+    steerInto: async (sessionId, content, messageId) => {
+      const landed = await steerChatTurn(sessionId, content, messageId);
+      if (landed) {
+        const from = deps.store.listByQueueMessage(messageId).map((row) => row.fromSessionId);
+        noteSteeredInto(sessionId, from);
+      }
+      return landed;
+    },
     canonicalId: canonicalChatId,
     turnLevelOf: passedOnLevelOf,
     emitActivity: emitChatActivity,

@@ -311,12 +311,14 @@ export function registerRightPanelTabs(register: RegisterFn): void {
 /**
  * Whether a tab that shows the session's own machinery shows here: always,
  * except in a chat with one agent drawn as a DM, where it waits for Show
- * sessions (DOR-3075).
+ * sessions (DOR-3075), and in a chat that may yet be one.
  *
  * @param directMessage - The DM the panel sits beside, or null/undefined.
  */
 function sessionDetailShows(
-  directMessage: { kind: 'one-to-one' | 'group'; showSessions: boolean } | null | undefined
+  directMessage:
+    { kind: 'pending' | 'one-to-one' | 'group'; showSessions: boolean } | null | undefined
 ): boolean {
+  if (directMessage?.kind === 'pending') return false;
   return directMessage?.kind !== 'one-to-one' || directMessage.showSessions;
 }

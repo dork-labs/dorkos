@@ -36,7 +36,7 @@ import { RESERVED_TASK_DIRNAMES } from '../task-templates.js';
 import { agentSkillsRoot, globalSkillsRoot, resolveRootPath } from '../skills-roots.js';
 import { readScheduleFromSkill } from '../skills-root-discovery.js';
 import { describeScheduleProblem } from '../cron-validation.js';
-import { clampSchedulePermissionMode } from '../schedule-permission-clamp.js';
+import { scheduleExecutionCopy } from '../../notifications/schedule-execution-copy.js';
 import {
   capabilitiesForTaskRuntime,
   resolveScheduledRunPermissionMode,
@@ -68,6 +68,26 @@ import {
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
 import { marksHold, type TurnMarks } from '../../core/turn-power/turn-marks.js';
+
+/**
+ * An ungranted agent create may preserve only these known modes. In particular,
+ * Auto can permit commands Accept edits would ask about; a numeric rank that
+ * groups both at the Act stop cannot enforce this cap. New ids fail closed.
+ * Explicit grants keep their existing, separately audited path.
+ */
+export function clampCreatedScheduleMode(
+  mode: string
+): 'plan' | 'default' | 'dontAsk' | 'acceptEdits' {
+  switch (mode) {
+    case 'plan':
+    case 'default':
+    case 'dontAsk':
+    case 'acceptEdits':
+      return mode;
+    default:
+      return 'acceptEdits';
+  }
+}
 
 /** The collaborators a create needs. Every one of them is required to get a task right. */
 export interface TaskLifecycleDeps {
@@ -134,6 +154,17 @@ export interface CreateScheduledTaskOptions {
    * arms without a person. Never read from the request body.
    */
   callerAgentPath?: string;
+  /**
+   * The agent's named mode was decided as `tasks.set_mode` and granted
+   * (DOR-3703): by a person's card, or by a setting for that action. It lands
+   * as named, Bypass included, instead of being clamped.
+   */
+  modeGranted?: boolean;
+  /**
+   * The granted mode is looser than Don't ask and no person approved it: the
+   * task waits for one, whatever would otherwise arm it (DOR-3703, M-A).
+   */
+  parkForPerson?: boolean;
 }
 
 /** A create that did not happen, and what to tell the caller. */
@@ -305,6 +336,7 @@ export async function createScheduledTask(
   const parks =
     !trusted &&
     (marked ||
+      options.parkForPerson === true ||
       !runsAsItsCreator(data.target, callerId) ||
       !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
 
@@ -326,11 +358,12 @@ export async function createScheduledTask(
   // filed under an agent pinned to it — must not have its trust stop mapped
   // through Claude Code's mode ids, because the mode this resolves is the one
   // stored on the row and the one that actually executes.
-  const target = data.permissionMode ? undefined : await resolveCreateRuntime(data, deps);
+  const target = await resolveCreateRuntime(data, deps);
+  const capabilities = capabilitiesForTaskRuntime(target.runtime);
   const permissionMode =
     data.permissionMode ??
     resolveScheduledRunPermissionMode({
-      capabilities: capabilitiesForTaskRuntime(target?.runtime),
+      capabilities,
     });
 
   // …and clamped ONCE, for every caller that did not clear the agent bar. This is
@@ -339,9 +372,10 @@ export async function createScheduledTask(
   // Both row paths below are covered by clamping here rather than on one of them:
   // which path runs depends on whether the file we just wrote parses back, and a
   // caller could choose that (DOR-1432).
-  const effectivePermissionMode = trusted
+  const unclamped = trusted || options.modeGranted === true;
+  const effectivePermissionMode = unclamped
     ? permissionMode
-    : clampSchedulePermissionMode(permissionMode).mode;
+    : clampCreatedScheduleMode(permissionMode);
 
   // An agent's schedule has to make its own case (DOR-1394), whether it parks
   // or is armed: the person reads the reason on the approval card, or on the
@@ -536,7 +570,7 @@ export async function createScheduledTask(
 
   // The ONE un-clamp, after BOTH branches, because both need the same patch and
   // two copies of a security exception are two chances to fix only one of them.
-  if (trusted && permissionMode === 'bypassPermissions') {
+  if (unclamped && permissionMode === 'bypassPermissions') {
     schedule = deps.store.updateTask(schedule.id, { permissionMode: 'bypassPermissions' })!;
   }
 
@@ -563,12 +597,20 @@ export async function createScheduledTask(
         proposedByAgentPath: options.proposal.agentPath,
       }),
     });
+    // Its maker is its first editor, so no agent in its chain approves it (DOR-3703).
+    deps.store.approvals.recordAgentEdit(schedule.id, {
+      agentPath: options.proposal?.agentPath ?? callerAgentPath ?? null,
+      sessionId: options.proposal?.sessionId ?? null,
+    });
     schedule = deps.store.getTask(schedule.id)!;
   }
   if (!trusted && !parks) {
     // Armed without asking, so the person is told it exists and can pause it.
     // An event, not a standing condition: nothing waits on them.
     armedPayload = await resolveScheduleArmedPayload(schedule);
+    // Read the SAVED mode, after both the create cap and file sync. Neither the
+    // request nor the agent's eventual reply is the person's source of truth.
+    armedPayload.execution = scheduleExecutionCopy(schedule.permissionMode, capabilities);
     announceScheduleArmed(armedPayload);
   }
   if (parks) {
@@ -584,6 +626,9 @@ export async function createScheduledTask(
     parkPayload = await resolveScheduleParkPayload(schedule);
     raiseStanding('schedule.parked', parkPayload);
   }
+
+  // A person's own task is their approval of its content (DOR-3703).
+  if (trusted) deps.store.approvals.recordPersonApproval(schedule.id);
 
   // Through the registrar, not the scheduler directly: the same seam the watcher
   // and the reconciler use, so a task created here and a task created by dropping

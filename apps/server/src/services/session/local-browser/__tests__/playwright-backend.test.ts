@@ -1,13 +1,16 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { chromium, type BrowserContext } from 'playwright-core';
+import { lexWithoutComments } from '../../../../../../../scripts/lib/code-only.mjs';
 const mocks = vi.hoisted(() => ({
   access: vi.fn(),
   mkdir: vi.fn(async () => undefined),
   readFile: vi.fn(async () => '{}'),
   writeFile: vi.fn(async () => undefined),
+  rm: vi.fn(async () => undefined),
   stdout: undefined as PassThrough | undefined,
   failure: undefined as undefined | { code?: string; stderr?: string },
   execFile: vi.fn((...args: unknown[]) => {
@@ -21,6 +24,7 @@ vi.mock('node:fs/promises', () => ({
   mkdir: mocks.mkdir,
   readFile: mocks.readFile,
   writeFile: mocks.writeFile,
+  rm: mocks.rm,
 }));
 vi.mock('node:child_process', () => {
   // Match Node's custom promisify contract: its promise retains the observable child.
@@ -38,6 +42,17 @@ vi.mock('node:child_process', () => {
   });
   return { execFile };
 });
+/** A window whose theme data reports this frame colour. */
+function themedContext(frame = '#b6520b'): BrowserContext {
+  return {
+    newPage: vi.fn(async () => ({
+      goto: vi.fn(async () => null),
+      evaluate: vi.fn(async () => `--color-frame-active:${frame}ff;`),
+      close: vi.fn(async () => undefined),
+    })),
+    close: vi.fn(async (): Promise<void> => undefined),
+  } as unknown as BrowserContext;
+}
 import {
   acquireLocalChromium,
   LOCAL_MANAGED_CHROMIUM_VERSION,
@@ -62,7 +77,7 @@ describe('pinned managed browser preparation', () => {
       const done = args.at(-1) as (error: unknown, stdout?: string, stderr?: string) => void;
       queueMicrotask(() => {
         mocks.stdout!.write(
-          'Downloading Chrome for Testing 153 from https://private/token\n|■■|  40% of 100 MiB\n'
+          'Downloading Chrome for Testing 157 from https://private/token\n|■■|  40% of 100 MiB\n'
         );
         done(undefined, '', '');
       });
@@ -81,25 +96,46 @@ describe('pinned managed browser preparation', () => {
   it('reports launching only after the installed executable is checked', async () => {
     mocks.access.mockResolvedValue(undefined);
     const report = vi.fn();
-    const launch = vi
-      .spyOn(chromium, 'launchPersistentContext')
-      .mockResolvedValue({} as BrowserContext);
+    const launch = vi.spyOn(chromium, 'launchPersistentContext').mockResolvedValue(themedContext());
     try {
       await productionBackend.launch('test-only-storage', undefined, report);
       expect(report.mock.calls.map(([state]) => state)).toEqual([
         { stage: 'checking', component: null, percent: null },
         { stage: 'launching', component: null, percent: null },
       ]);
+      // Check against the real pinned package, not a second copy of our feature list.
+      const require = createRequire(import.meta.url);
+      const bundle = readFileSync(
+        path.join(
+          path.dirname(require.resolve('playwright-core/package.json')),
+          'lib/coreBundle.js'
+        ),
+        'utf8'
+      );
+      const array = bundle.match(/disabledFeatures = (\[[\s\S]*?\])\.filter\(Boolean\);/)?.[1];
+      expect(array).toBeDefined();
+      const lexed = lexWithoutComments(array!, 'pinned-disabled-features.js');
+      expect(lexed.parseErrors).toBe(0);
+      const features = JSON.parse(lexed.code.replace(/,\s*\]/, ']'));
+      const defaultFeatures = `--disable-features=${features.join(',')}`;
       expect(launch).toHaveBeenCalledExactlyOnceWith('test-only-storage', {
         timeout: 15_000,
         headless: false,
         viewport: null,
         chromiumSandbox: true,
-        ignoreDefaultArgs: ['--enable-automation'],
+        // Keep the pinned feature overrides and allow only the theme extension.
+        args: [
+          `${defaultFeatures},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
+          `--disable-extensions-except=${path.join('.agent-window-theme')}`,
+          `--load-extension=${path.join('.agent-window-theme')}`,
+        ],
+        ignoreDefaultArgs: ['--enable-automation', defaultFeatures, '--disable-extensions'],
       });
       expect(mocks.execFile).not.toHaveBeenCalled();
       // The agent's window shares the profile with the sign-in window: neither saves passwords.
-      const [file, written] = mocks.writeFile.mock.calls.at(-1) as unknown as [string, string];
+      const [file, written] = (mocks.writeFile.mock.calls as unknown as [string, string][]).find(
+        ([target]) => target.endsWith('Preferences')
+      )!;
       expect(file).toMatch(/test-only-storage[\\/]Default[\\/]Preferences$/);
       expect(JSON.parse(written)).toMatchObject({
         credentials_enable_service: false,
@@ -112,12 +148,23 @@ describe('pinned managed browser preparation', () => {
       launch.mockRestore();
     }
   });
+  it('closes and refuses a window that didn’t come up orange', async () => {
+    mocks.access.mockResolvedValue(undefined);
+    const context = themedContext('#1f2020');
+    const launch = vi.spyOn(chromium, 'launchPersistentContext').mockResolvedValue(context);
+    try {
+      await expect(productionBackend.launch('test-only-storage')).rejects.toMatchObject({
+        code: 'window_unlabelled',
+      });
+      expect(context.close).toHaveBeenCalled();
+    } finally {
+      launch.mockRestore();
+    }
+  });
   it('returns a context that arrives after abort so the service can close its owned browser', async () => {
     mocks.access.mockResolvedValue(undefined);
     const controller = new AbortController();
-    const context = {
-      close: vi.fn(async (): Promise<void> => undefined),
-    } as unknown as BrowserContext;
+    const context = themedContext();
     let finish!: (context: BrowserContext) => void;
     const launch = vi.spyOn(chromium, 'launchPersistentContext').mockImplementationOnce(
       () =>

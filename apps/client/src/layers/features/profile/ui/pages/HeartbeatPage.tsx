@@ -7,7 +7,7 @@
  * agent's profile. On someone else's agent it is facts only: how it wakes, its
  * last checks and what is held for people. `HEARTBEAT.md` sits beside SOUL.md
  * and NOPE.md, private to the agent's own people, so its editor is drawn only
- * on your own agents and DorkBot (`deriveRelationship`, as on Commitments).
+ * on your own agents and DorkBot (`deriveRelationship`, as on To-dos).
  *
  * @module features/profile/ui/pages/HeartbeatPage
  */

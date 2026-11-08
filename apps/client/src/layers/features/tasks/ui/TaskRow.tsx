@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { hasMisplacedSchedulePermissions } from '@dorkos/shared/schedule-file-problems';
+import { TaskScheduleReview } from './review/TaskScheduleReview';
+import { useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import cronstrue from 'cronstrue';
 import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   isScheduleAwaitingApproval,
+  ScheduleFileProblem,
   useUpdateTask,
   useTriggerTask,
   useDeleteTask,
@@ -48,6 +51,7 @@ import {
 } from './TaskHealthParts';
 import { isFailing } from '../lib/schedule-health';
 import { TaskApproveButtons, TaskFileSaysOnNote } from './TaskSwitchOffers';
+import { TaskAgentModeNote, TaskFileCapNote } from './TaskAgentModeNote';
 
 /**
  * Density steps controlling how much detail a TaskRow displays.
@@ -140,9 +144,18 @@ function StatusSlot({ task }: { task: Task }) {
       ? 'neutral'
       : null;
 
+  const failing = isFailing(task);
   return (
-    <span data-slot="task-status-slot" className="flex w-5 shrink-0 justify-center sm:w-4">
-      {isFailing(task) ? (
+    // On a phone an empty slot takes no room, so the title starts at the card's
+    // edge; from `sm` it keeps its width, so the column still aligns.
+    <span
+      data-slot="task-status-slot"
+      className={cn(
+        'mr-3 w-4 shrink-0 justify-center [grid-area:status]',
+        failing || tone ? 'flex' : 'hidden sm:flex'
+      )}
+    >
+      {failing ? (
         <TaskFailingMark task={task} />
       ) : tone ? (
         <span className={cn('inline-block size-2 rounded-full', STATUS_TONE_DOT[tone])} />
@@ -185,10 +198,20 @@ export function TaskRow({
   const updateTask = useUpdateTask();
   const triggerTask = useTriggerTask();
   const deleteTask = useDeleteTask();
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewTurnsOn, setReviewTurnsOn] = useState(false);
+  const reviewTrigger = useRef<HTMLElement | null>(null);
+  const openReview = (element: HTMLElement) => {
+    reviewTrigger.current = element;
+    setReviewTurnsOn(false);
+    setReviewOpen(true);
+  };
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const agentVisual = agent ? resolveAgentVisual(agent) : null;
 
   const isMinimal = size === 'minimal';
+  const misplacedMode = hasMisplacedSchedulePermissions(task);
+  const awaitingApproval = !isMinimal && isScheduleAwaitingApproval(task);
   const isCompact = size === 'compact';
   const isComfortable = size === 'comfortable';
   const shouldShowAgent = showAgent && !isMinimal;
@@ -244,6 +267,13 @@ export function TaskRow({
 
   return (
     <>
+      <TaskScheduleReview
+        task={task}
+        open={reviewOpen}
+        turnOnApproval={reviewTurnsOn}
+        onOpenChange={setReviewOpen}
+        returnFocus={() => reviewTrigger.current?.focus()}
+      />
       {/* Rounds its first and last child rather than clipping with
           `overflow-hidden` — clipping cut the keyboard focus ring off on
           three of its four sides (batch 06, N1). Rounding the edge children
@@ -255,62 +285,69 @@ export function TaskRow({
         <div
           role="button"
           tabIndex={0}
-          className="hover:bg-accent/50 focus-visible:bg-accent/50 flex cursor-pointer items-center gap-3 p-3 transition-colors"
+          // A phone puts the title, the switch and the menu on top, the row's text
+          // under them at the card's full width, and any buttons last; from `sm`
+          // the text sits beside the switch, as one line of columns.
+          className={cn(
+            'hover:bg-accent/50 focus-visible:bg-accent/50 grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-y-1 p-3 transition-colors',
+            "[grid-template-areas:'status_head_actions'_'body_body_body'_'foot_foot_foot']",
+            "sm:gap-y-0 sm:[grid-template-areas:'status_head_actions'_'status_body_actions']"
+          )}
           onClick={onToggleExpand}
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onToggleExpand()}
         >
           <StatusSlot task={task} />
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-1.5">
-              {shouldShowAgent && agent ? (
-                <>
-                  <AgentAvatar
-                    color={agentVisual!.color}
-                    emoji={agentVisual!.emoji}
-                    size="xs"
-                    className="shrink-0"
-                  />
-                  {/* Never shrinks below its own cap: a long schedule name
+          <div className="flex min-w-0 items-center gap-1.5 [grid-area:head]">
+            {shouldShowAgent && agent ? (
+              <>
+                <AgentAvatar
+                  color={agentVisual!.color}
+                  emoji={agentVisual!.emoji}
+                  size="xs"
+                  className="shrink-0"
+                />
+                {/* Never shrinks below its own cap: a long schedule name
                       once crushed it to one letter at 390px. It keeps up to
                       40% of the line and ends in "…". */}
-                  <span
-                    data-slot="task-agent-name"
-                    className="max-w-[40%] shrink-0 truncate text-sm font-medium"
-                    title={getAgentDisplayName(agent)}
-                  >
-                    {getAgentDisplayName(agent)}
-                  </span>
-                  {isSystem && (
-                    <Badge size="xs" variant="outline" className="px-1 leading-tight">
-                      <Shield className="mr-0.5 size-2.5" />
-                      System
-                    </Badge>
-                  )}
-                  <span className="text-muted-foreground text-xs">&middot;</span>
-                </>
-              ) : shouldShowAgent && task.agentId ? (
-                <>
-                  <AlertCircle className="text-destructive size-3.5 shrink-0" />
-                  <span className="text-destructive text-xs">Agent not found</span>
-                  <span className="text-muted-foreground text-xs">&middot;</span>
-                </>
-              ) : null}
-              {/* Its own block, so a long name wraps to two lines rather than
-                  squeezing the agent name or cutting to one line. */}
-              <span
-                data-slot="task-name"
-                title={task.displayName ?? task.name}
-                className={cn(
-                  'line-clamp-2 min-w-0 flex-1 break-words',
-                  shouldShowAgent && (agent || task.agentId)
-                    ? 'text-muted-foreground text-xs'
-                    : 'text-sm font-medium'
+                <span
+                  data-slot="task-agent-name"
+                  className="max-w-[40%] shrink-0 truncate text-sm font-medium"
+                  title={getAgentDisplayName(agent)}
+                >
+                  {getAgentDisplayName(agent)}
+                </span>
+                {isSystem && (
+                  <Badge size="xs" variant="outline" className="px-1 leading-tight">
+                    <Shield className="mr-0.5 size-2.5" />
+                    System
+                  </Badge>
                 )}
-              >
-                {task.displayName ?? task.name}
-              </span>
-              {!isMinimal && <TaskOverrideChip task={task} />}
-            </div>
+                <span className="text-muted-foreground text-xs">&middot;</span>
+              </>
+            ) : shouldShowAgent && task.agentId ? (
+              <>
+                <AlertCircle className="text-destructive size-3.5 shrink-0" />
+                <span className="text-destructive text-xs">Agent not found</span>
+                <span className="text-muted-foreground text-xs">&middot;</span>
+              </>
+            ) : null}
+            {/* Its own block, so a long name wraps to two lines rather than
+                  squeezing the agent name or cutting to one line. */}
+            <span
+              data-slot="task-name"
+              title={task.displayName ?? task.name}
+              className={cn(
+                'line-clamp-2 min-w-0 flex-1 break-words',
+                shouldShowAgent && (agent || task.agentId)
+                  ? 'text-muted-foreground text-xs'
+                  : 'text-sm font-medium'
+              )}
+            >
+              {task.displayName ?? task.name}
+            </span>
+            {!isMinimal && <TaskOverrideChip task={task} />}
+          </div>
+          <div className="min-w-0 [grid-area:body]">
             {shouldShowCron && (
               <div className="text-muted-foreground text-xs">
                 {task.cron ? formatCron(task.cron) : 'On-demand'}
@@ -339,7 +376,9 @@ export function TaskRow({
             )}
             {/* Why it is failing, and on a phone the fix under it, full width
                 (DOR-3123, spec `schedules-failing` §2.4). */}
-            {!isMinimal && isFailing(task) && (
+            {/* A capped task's cap line names what was refused, so the failure line
+                would only say it twice, in red (DOR-3703, M4). */}
+            {!isMinimal && isFailing(task) && !task.fileCap && (
               <>
                 <TaskFailingReason task={task} agent={agent} />
                 {isComfortable && (
@@ -351,24 +390,7 @@ export function TaskRow({
                 )}
               </>
             )}
-            {/* Why this one is waiting. A schedule DorkOS found in a file says
-                so here — including what is wrong with the file, when something
-                is — because the row is where a person meets it first and the
-                Approve button is right there. Without this line, a schedule
-                parked over a typo in its cron looks identical to one parked
-                only for a look.
-
-                Gated on ORIGIN, not on status. `reason` means two different
-                things depending on where the row came from: DorkOS's own words
-                on a file-found schedule, and an AGENT'S CASE on one an agent
-                proposed. The second belongs on the approval card, which can say
-                who is making it — printing it here as a bare line would put an
-                agent's argument on screen with nothing attributing it (DOR-1485
-                review, I5). `reasonSource` catches the other half: a schedule a
-                person made themselves whose file has drifted also carries our
-                words, not theirs. Both conditions are needed: a schedule that
-                is already running is not waiting for anything, so whatever
-                `reason` it still carries is history. */}
+            {/* File complaints are server-authored; an agent's case belongs on its card. */}
             {isScheduleAwaitingApproval(task) &&
               (task.origin === 'file' || task.reasonSource === 'dorkos') &&
               task.reason && (
@@ -376,7 +398,7 @@ export function TaskRow({
                   data-slot="task-park-reason"
                   className="text-muted-foreground min-w-0 text-xs break-words"
                 >
-                  {task.reason}
+                  {misplacedMode ? <ScheduleFileProblem /> : task.reason}
                 </div>
               )}
             {/* Names the source on the row itself, not only in the expanded
@@ -384,6 +406,17 @@ export function TaskRow({
                 is indistinguishable from one the person switched off
                 themselves (DOR-2059 review). */}
             {!isMinimal && <TaskFileSaysOnNote task={task} />}
+            {!isMinimal && task.agentModeRecord && (
+              <TaskAgentModeNote record={task.agentModeRecord} runtime={task.runtime} />
+            )}
+            {!isMinimal && <TaskFileCapNote task={task} />}
+            {/* The row's Approve and switch show no content, so they approve no
+                file: the person is told before they press (DOR-3703, M4). */}
+            {!isMinimal && task.fileCapNext === true && !task.fileCap && (
+              <div data-slot="task-file-cap-next" className="text-status-warning-fg text-xs">
+                The next run is capped until you approve the file.
+              </div>
+            )}
             {!isMinimal && isQuietlyParkedFromFile && task.filePath && (
               <div
                 data-slot="task-quiet-source"
@@ -394,110 +427,121 @@ export function TaskRow({
             )}
           </div>
 
-          {/* Actions — vary by size */}
-          {/* Approving keeps the switch as it is (DOR-3309). */}
-          {!isMinimal && isScheduleAwaitingApproval(task) ? (
-            <TaskApproveButtons task={task} />
-          ) : isCompact ? (
-            <button
-              className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-xs transition-colors"
-              onClick={handleRunNow}
-              aria-label={`Run ${task.name}`}
-            >
-              <Play className="size-3" />
-              Run
-            </button>
-          ) : isComfortable ? (
-            <div className="flex items-center gap-2">
-              {isFailing(task) && (
-                <TaskOpenScheduleButton
-                  task={task}
-                  onOpen={onEdit}
-                  className="hidden sm:inline-flex"
-                />
-              )}
-              {task.cron ? (
-                <Switch
-                  // A paused row's file is gone, so nothing will run whatever
-                  // `enabled` says; the switch reads off and cannot be flipped
-                  // until the file comes back. A declined one reads off too
-                  // (DOR-2097), and flipping it on is approving it, below.
-                  checked={task.enabled && task.status !== 'paused' && !task.declined}
-                  disabled={task.status === 'paused'}
-                  onCheckedChange={(checked) => {
-                    // A package-shipped schedule that ships off is
-                    // `pending_approval` on the row even though it draws as an
-                    // ordinary switched-off task (DOR-2059) — so switching it
-                    // ON here is the FIRST time anybody has approved it, and
-                    // has to run the same door the Approve button does
-                    // (`TaskApproveButtons`): `status` is operator-only, and
-                    // sending it alongside `enabled` is what runs the arm
-                    // blocker and the permission clamp before anything is
-                    // armed. Flipping an already-approved schedule off and
-                    // back on needs none of that — `enabled` alone is
-                    // agent-writable and reversible.
-                    if (checked && task.status === 'pending_approval') {
-                      updateTask.mutate({ id: task.id, status: 'active', enabled: true });
-                      return;
-                    }
-                    updateTask.mutate({ id: task.id, enabled: checked });
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label={`Toggle ${task.name}`}
-                />
-              ) : (
-                <button
-                  className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-xs transition-colors"
-                  onClick={handleRunNow}
-                  aria-label={`Run ${task.name}`}
-                >
-                  <Play className="size-3" />
-                  Run
-                </button>
-              )}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="text-muted-foreground hover:text-foreground rounded-md p-1 transition-colors"
-                    aria-label={`Actions for ${task.name}`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onEdit()}>
-                    <Pencil className="mr-2 size-3.5" />
-                    Edit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={handleRunNow}
-                    disabled={!task.enabled || task.status === 'paused' || task.declined}
-                  >
-                    <Play className="mr-2 size-3.5" />
-                    Run now
-                  </DropdownMenuItem>
-                  {task.timingOverridden && (
-                    <DropdownMenuItem onClick={handleResetTiming}>
-                      <RotateCcw className="mr-2 size-3.5" />
-                      Reset to the package’s default
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
+          {/* Actions — vary by size. On a phone, Approve comes last, under the text. */}
+          <div
+            className={cn(
+              'ml-3 [grid-area:actions]',
+              awaitingApproval && 'max-sm:mt-1 max-sm:ml-0 max-sm:[grid-area:foot]'
+            )}
+          >
+            {/* Approving keeps the switch as it is (DOR-3309). */}
+            {awaitingApproval ? (
+              <TaskApproveButtons task={task} onReview={openReview} />
+            ) : isCompact ? (
+              <button
+                className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-xs transition-colors"
+                onClick={handleRunNow}
+                aria-label={`Run ${task.name}`}
+              >
+                <Play className="size-3" />
+                Run
+              </button>
+            ) : isComfortable ? (
+              <div className="flex items-center gap-2">
+                {isFailing(task) && (
+                  <TaskOpenScheduleButton
+                    task={task}
+                    onOpen={onEdit}
+                    className="hidden sm:inline-flex"
+                  />
+                )}
+                {task.cron ? (
+                  <Switch
+                    // A paused row's file is gone, so nothing will run whatever
+                    // `enabled` says; the switch reads off and cannot be flipped
+                    // until the file comes back. A declined one reads off too
+                    // (DOR-2097), and flipping it on is approving it, below.
+                    checked={task.enabled && task.status === 'active' && !task.declined}
+                    disabled={task.status === 'paused'}
+                    onCheckedChange={(checked) => {
+                      // A package-shipped schedule that ships off is
+                      // `pending_approval` on the row even though it draws as an
+                      // ordinary switched-off task (DOR-2059) — so switching it
+                      // ON here is the FIRST time anybody has approved it, and
+                      // has to run the same door the Approve button does
+                      // (`TaskApproveButtons`): `status` is operator-only, and
+                      // sending it alongside `enabled` is what runs the arm
+                      // blocker and the permission clamp before anything is
+                      // armed. Flipping an already-approved schedule off and
+                      // back on needs none of that — `enabled` alone is
+                      // agent-writable and reversible.
+                      if (checked && task.status === 'pending_approval') {
+                        setReviewTurnsOn(true);
+                        setReviewOpen(true);
+                        return;
+                      }
+                      updateTask.mutate({ id: task.id, enabled: checked });
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setDeleteConfirmOpen(true);
+                      reviewTrigger.current = e.currentTarget;
                     }}
-                    className="text-destructive focus:text-destructive"
+                    aria-label={`Toggle ${task.name}`}
+                  />
+                ) : (
+                  <button
+                    className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-xs transition-colors"
+                    onClick={handleRunNow}
+                    aria-label={`Run ${task.name}`}
                   >
-                    <Trash2 className="mr-2 size-3.5" />
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          ) : null}
+                    <Play className="size-3" />
+                    Run
+                  </button>
+                )}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="text-muted-foreground hover:text-foreground rounded-md p-1 transition-colors"
+                      aria-label={`Actions for ${task.name}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onEdit()}>
+                      <Pencil className="mr-2 size-3.5" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleRunNow}
+                      disabled={!task.enabled || task.status === 'paused' || task.declined}
+                    >
+                      <Play className="mr-2 size-3.5" />
+                      Run now
+                    </DropdownMenuItem>
+                    {task.timingOverridden && (
+                      <DropdownMenuItem onClick={handleResetTiming}>
+                        <RotateCcw className="mr-2 size-3.5" />
+                        Reset to the package’s default
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirmOpen(true);
+                      }}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 size-3.5" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* Expanded panel — file path + run history (comfortable size only) */}

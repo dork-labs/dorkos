@@ -1683,21 +1683,21 @@
         ],
         "description": "Why not, when `supported` is false; null otherwise. `denied` is retried on a backoff and when the setting is switched off and on; the others last until restart."
       },
-      "ListCommitmentsResponse": {
+      "ListTodoPromisesResponse": {
         "type": "object",
         "properties": {
-          "commitments": {
+          "todoPromises": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Commitment"
+              "$ref": "#/components/schemas/TodoPromise"
             }
           }
         },
         "required": [
-          "commitments"
+          "todoPromises"
         ]
       },
-      "Commitment": {
+      "TodoPromise": {
         "type": "object",
         "properties": {
           "id": {
@@ -1722,7 +1722,7 @@
             ]
           },
           "state": {
-            "$ref": "#/components/schemas/CommitmentState"
+            "$ref": "#/components/schemas/TodoState"
           },
           "overdue": {
             "type": "boolean"
@@ -1770,7 +1770,7 @@
           "note"
         ]
       },
-      "CommitmentState": {
+      "TodoState": {
         "type": "string",
         "enum": [
           "open",
@@ -1779,7 +1779,7 @@
           "dropped"
         ]
       },
-      "CommitmentError": {
+      "TodoPromiseError": {
         "type": "object",
         "properties": {
           "error": {
@@ -1794,7 +1794,7 @@
           "code"
         ]
       },
-      "CreateCommitmentRequest": {
+      "CreateTodoPromiseRequest": {
         "type": "object",
         "properties": {
           "what": {
@@ -1816,11 +1816,11 @@
           "what"
         ]
       },
-      "UpdateCommitmentRequest": {
+      "UpdateTodoPromiseRequest": {
         "type": "object",
         "properties": {
           "state": {
-            "$ref": "#/components/schemas/CommitmentState"
+            "$ref": "#/components/schemas/TodoState"
           },
           "dueAt": {
             "type": [
@@ -1834,7 +1834,7 @@
             "maxLength": 500
           },
           "from": {
-            "$ref": "#/components/schemas/CommitmentState"
+            "$ref": "#/components/schemas/TodoState"
           }
         },
         "required": [
@@ -2450,7 +2450,7 @@
               "quietBeats": {
                 "$ref": "#/components/schemas/MeasureRate"
               },
-              "commitmentsOnTime": {
+              "todosOnTime": {
                 "$ref": "#/components/schemas/MeasureRate"
               },
               "noEndBeat": {
@@ -2499,7 +2499,7 @@
             "required": [
               "beats",
               "quietBeats",
-              "commitmentsOnTime",
+              "todosOnTime",
               "noEndBeat",
               "triage",
               "turns",
@@ -4612,6 +4612,16 @@
           },
           "capabilityId": {
             "type": "string"
+          },
+          "cannotAllow": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "packageLabel": {
+            "type": "string",
+            "maxLength": 80
           },
           "capabilityTitle": {
             "type": "string"
@@ -10461,6 +10471,18 @@
               "pending"
             ]
           },
+          "runsAsName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fileCapNext": {
+            "type": "boolean"
+          },
+          "approvalRevision": {
+            "type": "string"
+          },
           "runtime": {
             "type": [
               "string",
@@ -10535,12 +10557,6 @@
             ],
             "default": null
           },
-          "runsAsName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "origin": {
             "type": [
               "string",
@@ -10565,6 +10581,12 @@
           },
           "originMarks": {
             "$ref": "#/components/schemas/ScheduleOriginMarks"
+          },
+          "agentModeRecord": {
+            "$ref": "#/components/schemas/TaskAgentModeRecord"
+          },
+          "fileCap": {
+            "$ref": "#/components/schemas/TaskFileCap"
           },
           "quietHold": {
             "type": "boolean"
@@ -10684,6 +10706,95 @@
             }
           }
         }
+      },
+      "TaskAgentModeRecord": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "set_mode"
+            ]
+          },
+          "agentPath": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "at": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/PermissionMode"
+          },
+          "previousMode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionMode"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "agentPath",
+          "at",
+          "mode",
+          "previousMode"
+        ]
+      },
+      "TaskFileCap": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "needsPerson": {
+            "type": "boolean"
+          },
+          "hash": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "previous": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "at",
+          "needsPerson",
+          "hash",
+          "previous",
+          "current"
+        ]
       },
       "TaskHealth": {
         "type": "object",
@@ -10962,6 +11073,14 @@
             "enum": [
               true
             ]
+          },
+          "approvedPromptHash": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expectedApprovalRevision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           }
         }
       },
@@ -11046,6 +11165,16 @@
               "type": "string"
             },
             "default": null
+          },
+          "cappedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "dontAsk",
+              null
+            ]
           },
           "outcome": {
             "$ref": "#/components/schemas/TaskRunOutcome"
@@ -13371,6 +13500,62 @@
           "text"
         ]
       },
+      "ApprovalDecisionResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "approvalId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "granted",
+              "denied",
+              "incomplete"
+            ]
+          },
+          "answer": {
+            "type": "string",
+            "enum": [
+              "once",
+              "always"
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "approvalId",
+          "outcome"
+        ]
+      },
+      "GrantApprovalBody": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string",
+            "enum": [
+              "once",
+              "always"
+            ],
+            "default": "once"
+          }
+        }
+      },
+      "DenyApprovalBody": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        }
+      },
       "PendingExtensionApprovalsResponse": {
         "type": "object",
         "properties": {
@@ -13759,61 +13944,6 @@
         "required": [
           "source"
         ]
-      },
-      "ApprovalDecisionResponse": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          },
-          "approvalId": {
-            "type": "string"
-          },
-          "outcome": {
-            "type": "string",
-            "enum": [
-              "granted",
-              "denied"
-            ]
-          },
-          "answer": {
-            "type": "string",
-            "enum": [
-              "once",
-              "always"
-            ]
-          }
-        },
-        "required": [
-          "ok",
-          "approvalId",
-          "outcome"
-        ]
-      },
-      "GrantApprovalBody": {
-        "type": "object",
-        "properties": {
-          "answer": {
-            "type": "string",
-            "enum": [
-              "once",
-              "always"
-            ],
-            "default": "once"
-          }
-        }
-      },
-      "DenyApprovalBody": {
-        "type": "object",
-        "properties": {
-          "reason": {
-            "type": "string",
-            "maxLength": 1024
-          }
-        }
       },
       "PermissionsResponse": {
         "type": "object",
@@ -18751,6 +18881,7 @@
           "community.owner-replacement",
           "community.teammate-limit",
           "community.teammate-limits-reset",
+          "browser.handoff",
           "heartbeat.credits-offer",
           "connector.destructive_pending",
           "connector.destructive_executed",
@@ -22372,10 +22503,10 @@
         }
       }
     },
-    "/api/commitments": {
+    "/api/todo-promises": {
       "get": {
         "tags": [
-          "Commitments"
+          "To-dos"
         ],
         "summary": "What agents promised",
         "description": "Every agent's promises, readable by anyone in the space: open first (soonest due first), then kept, missed and dropped, newest first. `overdue` is computed on read.",
@@ -22391,7 +22522,7 @@
           },
           {
             "schema": {
-              "$ref": "#/components/schemas/CommitmentState"
+              "$ref": "#/components/schemas/TodoState"
             },
             "required": false,
             "name": "state",
@@ -22423,7 +22554,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ListCommitmentsResponse"
+                  "$ref": "#/components/schemas/ListTodoPromisesResponse"
                 }
               }
             }
@@ -22431,13 +22562,13 @@
         }
       }
     },
-    "/api/agents/{id}/commitments": {
+    "/api/agents/{id}/todo-promises": {
       "post": {
         "tags": [
-          "Commitments"
+          "To-dos"
         ],
         "summary": "Add a promise for an agent",
-        "description": "A person records something an agent promised. Agents record their own with `commitment_add`, so a caller presenting an agent identity is refused.",
+        "description": "A person records something an agent promised. Agents record their own with `todo_promise_add`, so a caller presenting an agent identity is refused.",
         "parameters": [
           {
             "schema": {
@@ -22452,7 +22583,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateCommitmentRequest"
+                "$ref": "#/components/schemas/CreateTodoPromiseRequest"
               }
             }
           }
@@ -22463,7 +22594,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Commitment"
+                  "$ref": "#/components/schemas/TodoPromise"
                 }
               }
             }
@@ -22473,7 +22604,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommitmentError"
+                  "$ref": "#/components/schemas/TodoPromiseError"
                 }
               }
             }
@@ -22483,7 +22614,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommitmentError"
+                  "$ref": "#/components/schemas/TodoPromiseError"
                 }
               }
             }
@@ -22493,7 +22624,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommitmentError"
+                  "$ref": "#/components/schemas/TodoPromiseError"
                 }
               }
             }
@@ -22501,10 +22632,10 @@
         }
       }
     },
-    "/api/commitments/{id}": {
+    "/api/todo-promises/{id}": {
       "patch": {
         "tags": [
-          "Commitments"
+          "To-dos"
         ],
         "summary": "Close a promise or move its date",
         "description": "Mark a promise kept, missed or dropped. `state: \"open\"` moves an open promise to a new `dueAt`, or reopens a closed one. Only the agent that promised, or a person, may change it.",
@@ -22522,7 +22653,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateCommitmentRequest"
+                "$ref": "#/components/schemas/UpdateTodoPromiseRequest"
               }
             }
           }
@@ -22533,7 +22664,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Commitment"
+                  "$ref": "#/components/schemas/TodoPromise"
                 }
               }
             }
@@ -22543,7 +22674,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommitmentError"
+                  "$ref": "#/components/schemas/TodoPromiseError"
                 }
               }
             }
@@ -22553,7 +22684,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommitmentError"
+                  "$ref": "#/components/schemas/TodoPromiseError"
                 }
               }
             }
@@ -22563,7 +22694,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommitmentError"
+                  "$ref": "#/components/schemas/TodoPromiseError"
                 }
               }
             }
@@ -22573,7 +22704,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CommitmentError"
+                  "$ref": "#/components/schemas/TodoPromiseError"
                 }
               }
             }
@@ -29821,6 +29952,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -29852,6 +29989,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -30168,6 +30306,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -30199,6 +30343,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -30355,7 +30500,7 @@
           "Local browser"
         ],
         "summary": "Choose the tab shared with the agent",
-        "description": "Only the owner on this computer can call this route. Invalidates earlier observations before sharing the selected tab.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Invalidates earlier observations before sharing the selected tab. During a handoff, only the tab already selected can be chosen.",
         "parameters": [
           {
             "schema": {
@@ -30572,7 +30717,7 @@
           "Local browser"
         ],
         "summary": "Open a web address in the selected tab",
-        "description": "Only the owner on this computer can call this route. Accepts HTTP or HTTPS addresses and invalidates earlier observations.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff.",
         "requestBody": {
           "required": true,
           "content": {
@@ -31174,6 +31319,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -31205,6 +31356,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -31868,10 +32020,10 @@
           "Local browser"
         ],
         "summary": "Disconnect the browser",
-        "description": "Only the owner on this computer can call this route. Stops sharing immediately. Closes DorkOS-owned pages and windows, keeping their saved sign-ins. A pending close blocks new opens.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Stops sharing immediately. Closes DorkOS-owned pages and windows, keeping their saved sign-ins. A pending close blocks new opens. During a handoff it ends the agent’s task, as Stop task does.",
         "responses": {
           "200": {
-            "description": "Current browser state",
+            "description": "Current browser state, with its handoff and sign-in",
             "content": {
               "application/json": {
                 "schema": {
@@ -31983,6 +32135,115 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
                     }
                   },
                   "required": [
@@ -31994,7 +32255,9 @@
                     "paused",
                     "tabs",
                     "selectedTabId",
-                    "revision"
+                    "revision",
+                    "handoff",
+                    "signIn"
                   ]
                 }
               }
@@ -32262,6 +32525,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32293,6 +32562,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -32615,6 +32885,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32646,6 +32922,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -32968,6 +33245,12 @@
                             "null"
                           ]
                         },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "reason": {
                           "type": "string",
                           "enum": [
@@ -32999,6 +33282,7 @@
                         "agentName",
                         "agentId",
                         "agentFolder",
+                        "profileId",
                         "reason",
                         "site",
                         "askedAt",
@@ -33145,6 +33429,112 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/your-browser/scan": {
+      "post": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Find browser profiles on this computer",
+        "description": "Off by default; enable DORKOS_YOUR_BROWSER_ENABLED=true in the server environment and restart. Reads profile names only when the person taps Find my browsers. Only the owner in the app can call it; agents, API keys and approval tokens are refused. The response must not be cached. Email is for the picker only and is discarded on selection or close.",
+        "responses": {
+          "200": {
+            "description": "Browser profile metadata for the picker",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "supported": {
+                      "type": "boolean"
+                    },
+                    "profiles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "browser": {
+                            "type": "string",
+                            "enum": [
+                              "chrome",
+                              "edge",
+                              "brave"
+                            ]
+                          },
+                          "directory": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^(?:Default|Profile [0-9]+)(?![\\s\\S])"
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "email": {
+                            "type": "string",
+                            "maxLength": 254
+                          }
+                        },
+                        "required": [
+                          "browser",
+                          "directory",
+                          "displayName"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 300
+                    },
+                    "unreadable": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "chrome",
+                          "edge",
+                          "brave"
+                        ]
+                      },
+                      "maxItems": 3
+                    }
+                  },
+                  "required": [
+                    "supported",
+                    "profiles",
+                    "unreadable"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner in the app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Browser discovery is disabled"
           }
         }
       }
@@ -43027,6 +43417,159 @@
           },
           "404": {
             "description": "Schedule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/undo-agent-mode": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Put back the mode an agent set on a schedule without asking",
+        "description": "The Undo on the notice DorkOS posts when one of your agents changes how a running schedule runs, above Don’t ask, without asking you (DOR-3703). Only a person can use it: an agent is refused. Answers 409 once the mode changed again since.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The schedule, back on its old mode",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schedule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing to undo: the mode changed again since",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{id}/approve-file": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Approve a schedule’s changed SKILL file",
+        "description": "Lifts the cap a change outside the task tools put on a schedule: its runs go back to its own mode instead of Never ask (DOR-3703). The body names the cap you saw and the file hash its diff showed (`capAt` and `hash`, from `fileCap`). Only a person can use it: an agent is refused. Answers 409 once the file changed since that diff.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "capAt": {
+                    "type": "string"
+                  },
+                  "hash": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "capAt",
+                  "hash"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The schedule, its cap lifted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body names no cap",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can do this",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Schedule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The file changed again since the cap you saw",
             "content": {
               "application/json": {
                 "schema": {
@@ -85559,6 +86102,403 @@
         }
       }
     },
+    "/api/approvals/{id}/grant": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Allow the requested action",
+        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the app apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\n`answer: 'always'` also sets this action to Allowed for the agent that asked, written through the same permission service Settings uses, before the agent is told the answer, so the resumed call and the new setting agree. It records its own `permission.changed` event beside the `permission.answered` event every answer records. It is refused (409 `ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach & secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before anything is granted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantApprovalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approval granted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalDecisionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`). With login on, only a person signed in to the DorkOS app can decide (`operator_cookie_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already decided; or `answer: 'always'` on an approval that does not offer it (`ALWAYS_NOT_OFFERED`). Nothing is granted in that case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired before it was decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/{id}/deny": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Refuse the requested action",
+        "description": "Denies a pending approval, with an optional reason the requester sees. Who may decide is exactly as for grant: no agent identity, no approval token, and an authenticated user when local login is enabled.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DenyApprovalBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approval denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalDecisionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Expired before it was decided",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/{id}/dismiss-suggestion": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Stop suggesting Always allow",
+        "description": "\"Not now\" on a card that suggests Always allow: the suggestion never comes back for this agent and action. Recorded as a `permission.suggestion_dismissed` Activity event. Who may call it is exactly as for grant.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The suggestion is off for this agent and action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "approvalId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "approvalId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This request never suggests Always allow (`SUGGESTION_NOT_OFFERED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/approvals/declined-hooks": {
+      "get": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Read individual declined hook requests",
+        "description": "Person-only history. No tokens or saved full request objects are returned.",
+        "responses": {
+          "200": {
+            "description": "Declined hook requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "approvals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "approval": {
+                            "$ref": "#/components/schemas/PendingApproval"
+                          },
+                          "declineKind": {
+                            "type": "string",
+                            "enum": [
+                              "incomplete",
+                              "refused"
+                            ]
+                          },
+                          "canAskAgain": {
+                            "type": "boolean"
+                          },
+                          "reviewPending": {
+                            "type": "boolean"
+                          },
+                          "askedAgain": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "approval",
+                          "declineKind",
+                          "canAskAgain",
+                          "reviewPending",
+                          "askedAgain"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "approvals"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required"
+          },
+          "403": {
+            "description": "A person must read this history"
+          }
+        }
+      }
+    },
+    "/api/approvals/{id}/ask-again": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Request a fresh review of one declined hook request",
+        "description": "Person-only, under the same authority checks as grant and deny. Rebuilds the current package request. Keeps the original denial and existing refusal until a fresh yes. Never grants permission or returns a token. No bulk action exists.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Fresh review requested",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "approvalId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "approvalId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required"
+          },
+          "403": {
+            "description": "Only a person may ask again"
+          },
+          "409": {
+            "description": "Already asked again, or the request cannot be rebuilt"
+          }
+        }
+      }
+    },
     "/api/extensions/pending-approvals": {
       "get": {
         "tags": [
@@ -85912,282 +86852,6 @@
           },
           "404": {
             "description": "That source is not trusted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/approvals/{id}/grant": {
-      "post": {
-        "tags": [
-          "Approvals"
-        ],
-        "summary": "Allow the requested action",
-        "description": "Grants a pending approval so the requester can spend its token once, on exactly the capability and input the approval is bound to. Deciding is the human half of the gate, and it needs proof of a person rather than the absence of proof of a machine: a caller presenting an agent identity (`X-DorkOS-Agent`) or an approval token (`X-DorkOS-Approval`) is refused in every posture, and when local login is enabled an authenticated user is required. With login disabled DorkOS cannot tell the app apart from a local script, so every decision is recorded in the Activity feed with the posture it was made under.\n\n`answer: 'always'` also sets this action to Allowed for the agent that asked, written through the same permission service Settings uses, before the agent is told the answer, so the resumed call and the new setting agree. It records its own `permission.changed` event beside the `permission.answered` event every answer records. It is refused (409 `ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach & secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before anything is granted.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GrantApprovalBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Approval granted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApprovalDecisionResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`). With login on, only a person signed in to the DorkOS app can decide (`operator_cookie_required`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such approval",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Already decided; or `answer: 'always'` on an approval that does not offer it (`ALWAYS_NOT_OFFERED`). Nothing is granted in that case",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Expired before it was decided",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/approvals/{id}/deny": {
-      "post": {
-        "tags": [
-          "Approvals"
-        ],
-        "summary": "Refuse the requested action",
-        "description": "Denies a pending approval, with an optional reason the requester sees. Who may decide is exactly as for grant: no agent identity, no approval token, and an authenticated user when local login is enabled.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DenyApprovalBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Approval denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApprovalDecisionResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such approval",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Already decided",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "Expired before it was decided",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/approvals/{id}/dismiss-suggestion": {
-      "post": {
-        "tags": [
-          "Approvals"
-        ],
-        "summary": "Stop suggesting Always allow",
-        "description": "\"Not now\" on a card that suggests Always allow: the suggestion never comes back for this agent and action. Recorded as a `permission.suggestion_dismissed` Activity event. Who may call it is exactly as for grant.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "id",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The suggestion is off for this agent and action",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "enum": [
-                        true
-                      ]
-                    },
-                    "approvalId": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "ok",
-                    "approvalId"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such approval",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "This request never suggests Always allow (`SUGGESTION_NOT_OFFERED`)",
             "content": {
               "application/json": {
                 "schema": {

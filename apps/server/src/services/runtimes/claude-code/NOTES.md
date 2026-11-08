@@ -161,6 +161,40 @@ same toolkit, which keeps the server name and URL — compared EQUAL: `setMcpSer
 fired and the warm process went on using the old credential. Fields are hashed rather than
 spelled so no secret lands in the fingerprint.
 
+### External servers go over stdin, never on the command line (DOR-3882)
+
+The SDK turns `options.mcpServers` into `--mcp-config <json>`, so stdio env, http headers and a
+sign-in's bearer would sit in the process's arguments. `sdk/launch-query.ts` is the only launch:
+it passes `sdk` servers on the option, hands the full map to `setMcpServers`, and holds the input stream
+until that answers. The CLI answers once the servers are connected (measured: 307 ms, 4,359 ms with a
+stdio server that took 4 s), so their tools are ready on the first turn.
+
+The swap itself waits, up to `IN_PROCESS_CONNECT_BOUND_MS`, for in-process servers to report connected:
+the CLI stops reading their connect answers while it handles a swap, so one sent straight after launch let a
+hung external server make `dorkos` hit the same 30 s limit, and it stayed failed for that process.
+
+Past `PLUGIN_RELOAD_ACK_TIMEOUT_MS` it fails closed: nothing goes back on the command line, the chat
+says some tools may not work, the turn opens, and the fingerprint records what the process holds as
+unknown (`MCP_SERVERS_UNKNOWN`), so the next dispatch always sends its list. The CLI finishes a request it
+was slow on, so a server can land after the bound, and only that record lets a later Remove reach it.
+Warm chats took this path already; they now say so too, and record the same unknown.
+
+The CLI holds the first message until its own connect wait ends, so the 8 s bound sets when the notice
+goes out, not when the reply starts: a stdio server that never answers meant about 27 s to the first
+model request (Security measured 30.2 s, the CLI's own 30 s connect limit), the same as on the command
+line before this change.
+
+**Name clash:** a repo `.mcp.json` server with the same name as a managed one, with project servers
+on, now starts at launch and is replaced before the first message. On the command line it never started.
+With `strictMcpConfig` none of this applies.
+
+Measured in `--network none` Docker with CLI 2.1.304: `${VAR}` in the config does expand, but it puts
+the value in the CLI's environment, where the agent's own Bash can read it. Not used.
+
+**The limit:** this fixes the CLI's command line only. A stdio server's own environment stays readable by
+same-user programs, and its own arguments stay on its own command line, readable by every account on the
+computer. So keeping an agent from a server does not keep a stdio secret from that agent's shell (DOR-505).
+
 ### `toolSurface` (what the `dorkos` server lists) — RELAUNCH (DOR-2685)
 
 Because `mcpServers` drops `instance`, an in-process (`sdk`) server compares by its name alone,

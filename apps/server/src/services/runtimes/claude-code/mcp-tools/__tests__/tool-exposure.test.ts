@@ -550,8 +550,8 @@ describe('in-session tool exposure', () => {
     // `spin-off-chats` §1), all three DEFERRED on a plain session.
     // 124 -> 118 (spec `spin-off-chats` §7): the six relay send, inbox and
     // endpoint tools retire. Both counts move by the same amounts.
-    // 118 -> 121 for `commitment_add`, `commitment_update` and
-    // `commitments_list` (spec `heartbeats` §12), all three DEFERRED.
+    // 118 -> 121 for `todo_promise_add`, `todo_promise_update` and
+    // `todo_promises_list` (spec `heartbeats` §12), all three DEFERRED.
     // 121 -> 125 for `audit_query`, `audit_get`, `account_timeline` and
     // `transcript_read` (spec `audit-trail` PR4), all four DEFERRED like
     // `audit_verify`: reviewing the record or another agent's work is a
@@ -577,8 +577,10 @@ describe('in-session tool exposure', () => {
     // (DOR-3218), reached only by an agent already using the shared page.
     // 142 -> 143 total, 130 -> 131 deferred: `reseat_room_agent` (DOR-3145), in-session now that
     // an agent may move its own seat; no prompt block names it. Its options list stays external.
-    expect(tools).toHaveLength(143);
-    expect(deferred).toHaveLength(131);
+    // 143 -> 144 total, 131 -> 132 deferred: `room_handoff_status` (DOR-3778), a read a chat makes
+    // only after a post of its own was handed off; no prompt block names it.
+    expect(tools).toHaveLength(144);
+    expect(deferred).toHaveLength(132);
     for (const name of [
       'local_browser_ask_person',
       'local_browser_state',

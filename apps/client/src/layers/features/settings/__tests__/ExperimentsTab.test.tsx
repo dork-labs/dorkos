@@ -151,10 +151,13 @@ describe('ExperimentsTab', () => {
     expect(await screen.findByTestId('experiments-empty')).toHaveTextContent(
       /No experiments right now/
     );
-    // "Show dev tools" is not one of the server-sent experiments — it is the
-    // one switch this tab draws itself — so it survives an empty list.
-    expect(screen.queryAllByRole('switch')).toHaveLength(1);
+    // "Show dev tools" and the DM view are not server-sent experiments — they
+    // are the switches this tab draws itself — so they survive an empty list.
+    expect(screen.queryAllByRole('switch')).toHaveLength(2);
     expect(screen.getByRole('switch', { name: 'Show dev tools' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('switch', { name: 'Chats with one agent read like a DM' })
+    ).toBeInTheDocument();
   });
 
   it('does not claim the list is empty while the config is still loading', () => {

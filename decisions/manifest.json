@@ -2,6 +2,21 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261103-181907",
+      "slug": "codex-file-protections-have-no-exec-fallback",
+      "title": "Codex file protections have no exec fallback",
+      "status": "accepted",
+      "created": "2026-11-03",
+      "extractedFrom": null,
+      "specSlug": "codex-app-server-transport",
+      "supersedes": null,
+      "amends": ["261005-113107"],
+      "affects": [
+        "apps/server/src/services/runtimes/codex/**",
+        "packages/shared/src/config-schema/runtime-settings.ts"
+      ]
+    },
+    {
       "id": "261015-125850",
       "slug": "this-computer-and-other-devices",
       "title": "This computer is trusted by default and other devices always sign in; sessions are bound to the route that made them",

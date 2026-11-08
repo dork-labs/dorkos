@@ -180,7 +180,7 @@ describe('BindingAdvancedSection permissions', () => {
       renderSection({ permissionMode: 'bypassPermissions' }, transport);
 
       const note = await screen.findByTestId('trust-dial-unavailable');
-      expect(note).toHaveTextContent(/Bypass all/);
+      expect(note).toHaveTextContent(/Bypass permissions/);
       expect(note).toHaveTextContent(/No other levels to choose yet/);
       expect(note).toHaveTextContent(/saving keeps it/i);
       expect(screen.queryByRole('radiogroup', { name: /how much/i })).not.toBeInTheDocument();

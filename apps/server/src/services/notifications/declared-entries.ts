@@ -11,6 +11,8 @@
  *   limit, or it was changed (DOR-2956).
  * - `account-signin-notifications.ts`: a Claude folder's sign-in is new or
  *   changed (DOR-3245).
+ * - `browser-handoff-notifications.ts`: an agent handed a person the Agent browser
+ *   (DOR-3218).
  *
  * @module services/notifications/declared-entries
  */
@@ -30,6 +32,11 @@ import {
   type AccountSigninPayloads,
 } from './account-signin-notifications.js';
 
+import {
+  BROWSER_HANDOFF_ENTRIES,
+  type BrowserHandoffPayloads,
+} from './browser-handoff-notifications.js';
+
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads
   extends
@@ -37,7 +44,8 @@ export interface DeclaredPayloads
     WebDevicePayloads,
     CommunityNotificationPayloads,
     SecretFilePayloads,
-    AccountSigninPayloads {}
+    AccountSigninPayloads,
+    BrowserHandoffPayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
@@ -46,6 +54,7 @@ export const DECLARED_ENTRIES = {
   ...COMMUNITY_NOTIFICATION_ENTRIES,
   ...SECRET_FILE_ENTRIES,
   ...ACCOUNT_SIGNIN_ENTRIES,
+  ...BROWSER_HANDOFF_ENTRIES,
 };
 
 /**
@@ -59,4 +68,5 @@ export const DECLARED_WIRED_KINDS = [
   'web.new_device',
   'agent.secret_files',
   'account.signin_review',
+  'browser.handoff',
 ] as const;

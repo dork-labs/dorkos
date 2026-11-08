@@ -7,6 +7,7 @@
  * @module services/core/runtime-seam/decorate-runtime
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import { recordTurnStarters } from '../../session/origin/active-turn-starter.js';
 import { traceRuntime, watchRuntimeSignin } from '../../observability/index.js';
 import { holdAwakeDuringTurns } from '../keep-awake/hold-during-turn.js';
 import { recordTurnLevels } from '../turn-power/turn-levels.js';
@@ -26,6 +27,9 @@ export interface SessionReads {
 
 /**
  * Wrap one runtime in every registration-seam decorator, innermost first:
+ *
+ * The innermost display provenance scope follows the send’s own lifetime,
+ * including errors and early returns. It changes no arguments or authority.
  *
  * 0. **The agent's level** (DOR-3175) holds every turn to its agent's
  *    current level before anything records it, so the level a turn hands on
@@ -75,7 +79,7 @@ export function decorateRuntime(runtime: AgentRuntime, sessions: SessionReads): 
         watchRuntimeSignin(
           traceRuntime(
             meterTeammateTurns(
-              boundToAgentLevel(recordTurnLevels(runtime, storedModeOf), {
+              boundToAgentLevel(recordTurnLevels(recordTurnStarters(runtime), storedModeOf), {
                 storedModeOf,
                 ...(recordedAgentOf ? { recordedAgentOf } : {}),
               })

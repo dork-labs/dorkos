@@ -61,9 +61,7 @@ describe('useTabIdentity', () => {
     /** The config answer, with the DM view on or off. */
     function dmView(enabled: boolean) {
       vi.mocked(transport.getConfig).mockResolvedValue({
-        experiments: [
-          { key: 'ui.dmView', title: '', description: '', enabled, lockedByEnv: false },
-        ],
+        ui: { dmView: enabled },
       } as never);
     }
 

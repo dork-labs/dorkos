@@ -72,7 +72,7 @@ describe('the lanes an agent started', () => {
   });
 });
 
-// Security on DOR-3674: open-work reads `session_started_by`, the commitments store and chat
+// Security on DOR-3674: open-work reads `session_started_by`, the to-dos store and chat
 // status, and starts or messages nothing; the beat decides. Pinned by what the two files import,
 // so a later edit that reaches for a launcher or a sender fails here.
 describe('open work only reads', () => {

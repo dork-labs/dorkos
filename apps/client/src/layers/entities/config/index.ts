@@ -44,8 +44,12 @@ export {
 export { useComposerRichText, useUpdateComposerPrefs } from './model/use-composer-prefs';
 export {
   useDmViewEnabled,
+  useDmViewState,
+  type DmViewState,
   useShowSessions,
+  useUpdateDmView,
   useUpdateShowSessions,
+  type UpdateDmView,
   type UpdateShowSessions,
 } from './model/use-dm-view';
 export {

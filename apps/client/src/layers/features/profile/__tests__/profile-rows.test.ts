@@ -147,7 +147,7 @@ describe('an agent you manage', () => {
       'Rooms nav',
       'Chats nav',
       'Schedules nav',
-      'Commitments nav',
+      'To-dos nav',
       'Work queue nav',
       'Heartbeat nav',
       'Activity nav',
@@ -178,7 +178,7 @@ describe('an agent you manage', () => {
       personality: 'Custom',
       tasksAvailable: true,
     };
-    expect(fold('work', { facts, commitments: { open: 5, overdue: 0 } })).toBe(
+    expect(fold('work', { facts, todoPromises: { open: 5, overdue: 0 } })).toBe(
       '200 chats · 12 schedules · 5 open'
     );
     expect(fold('setup', { facts })).toBe('Custom personality · 0 servers');
@@ -190,14 +190,14 @@ describe('an agent you manage', () => {
   });
 
   it('puts Needs you first, tinted, only while a promise is overdue', () => {
-    expect(build(WITH_FOLDER, { commitments: { open: 5, overdue: 0 } })[0]!.id).toBe('essentials');
-    const [needs] = build(WITH_FOLDER, { commitments: { open: 5, overdue: 1 } });
+    expect(build(WITH_FOLDER, { todoPromises: { open: 5, overdue: 0 } })[0]!.id).toBe('essentials');
+    const [needs] = build(WITH_FOLDER, { todoPromises: { open: 5, overdue: 1 } });
     expect(needs!.rows).toEqual([
       expect.objectContaining({
         id: 'needs-you',
         tone: 'attention',
         value: '1 overdue',
-        page: 'commitments',
+        page: 'todos',
       }),
     ]);
   });
@@ -253,7 +253,7 @@ describe('someone else’s agent', () => {
       'About text',
       'Runs on text',
       'Rooms nav',
-      'Commitments nav',
+      'To-dos nav',
       'Heartbeat nav',
     ]);
   });
@@ -263,19 +263,19 @@ describe('someone else’s agent', () => {
   });
 });
 
-describe('the Commitments row', () => {
+describe('the To-dos row', () => {
   const row = (over: Partial<ProfileRowsContext>) =>
-    flat(build(OTHERS_AGENT, over)).find((r) => r.id === 'commitments')!;
+    flat(build(OTHERS_AGENT, over)).find((r) => r.id === 'todos')!;
 
   it('says how many are open and how many are overdue', () => {
-    const drawn = row({ commitments: { open: 2, overdue: 1 } });
+    const drawn = row({ todoPromises: { open: 2, overdue: 1 } });
     expect(drawn.value).toBe('2 open');
     expect(drawn.meta).toBe('1 overdue');
   });
 
   it('says nothing about overdue when none are, and nothing at all while unknown', () => {
-    expect(row({ commitments: { open: 1, overdue: 0 } }).meta).toBeUndefined();
-    expect(row({ commitments: null }).value).toBeNull();
+    expect(row({ todoPromises: { open: 1, overdue: 0 } }).meta).toBeUndefined();
+    expect(row({ todoPromises: null }).value).toBeNull();
   });
 });
 
@@ -324,7 +324,7 @@ describe('DorkBot', () => {
       'Rooms nav',
       'Chats nav',
       'Schedules nav',
-      'Commitments nav',
+      'To-dos nav',
       'Work queue nav',
       'Heartbeat nav',
       'Activity nav',

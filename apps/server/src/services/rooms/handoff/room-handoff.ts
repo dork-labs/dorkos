@@ -42,6 +42,7 @@ import { nameForAgents } from '../room-context.js';
 import { RoomError } from '../room-errors.js';
 import type { AsideCarry, AsideResult } from '../room-trigger/aside.js';
 import type { RoomCore } from '../service/room-core.js';
+import { HandoffOutcomes } from './handoff-outcomes.js';
 import { carryFrom, withRoomMarks } from './seat-carry.js';
 import { RoomSeatReports } from './seat-report.js';
 
@@ -132,6 +133,8 @@ export class RoomHandoffs {
   private readonly pending = new Set<Promise<HandoffOutcome>>();
   /** Spin-off reports into the seat that started them (DOR-3488). */
   readonly reports: RoomSeatReports;
+  /** How each hand-off stands, by the id its sender holds (DOR-3778). */
+  readonly outcomes = new HandoffOutcomes();
 
   /**
    * Build the seats and hand-offs for one room service.
@@ -291,6 +294,7 @@ export class RoomHandoffs {
       carried: carryFrom(input.callerSessionId, author.naturalKey),
     };
     const key = agentKey(roomId, author.id);
+    this.outcomes.noteWaiting(handoff.id, author.id, this.chains.has(key) ? 'queued' : 'running');
     const settled = (this.chains.get(key) ?? Promise.resolve()).then(() => this.run(handoff));
     const chain = settled.then(() => undefined);
     this.chains.set(key, chain);
@@ -308,8 +312,9 @@ export class RoomHandoffs {
         `Not posted from this chat: only your own chat in ${target} posts there. It has your ` +
         'draft, re-reads the room, then posts it or says why not. ' +
         (handoff.origin.roomId !== null
-          ? 'The answer shows in this room.'
-          : 'The answer comes back to this chat.'),
+          ? 'The answer shows in this room. '
+          : 'The answer comes back to this chat. ') +
+        'The tool whose name ends in `room_handoff_status` reads how it stands, by handoffId.',
     };
   }
 
@@ -361,10 +366,12 @@ export class RoomHandoffs {
           carried: withRoomMarks(this.core, handoff.authorId, handoff.carried, room, latest),
           onClaimed: (dispatchId) => {
             handoff.dispatchId = dispatchId;
+            this.outcomes.noteWaiting(handoff.id, handoff.authorId, 'running', deadline);
           },
         });
         const left = deadline - Date.now();
         if (result.outcome !== 'busy' || left <= 0) break;
+        this.outcomes.noteWaiting(handoff.id, handoff.authorId, 'seat_busy', deadline);
         // Woken only when this agent's own turn ends: another agent's release says nothing about
         // this seat (and a refused try wakes nobody, see `releaseClaim`). Otherwise on a backoff.
         await this.core.triggers.nextRelease(
@@ -385,6 +392,13 @@ export class RoomHandoffs {
       handoff.postedEntryId !== undefined
         ? { posted: true, entryId: handoff.postedEntryId }
         : { posted: false, reason: declineReason(this.core.store.getRoom(handoff.roomId), result) };
+    this.outcomes.settle(
+      handoff.id,
+      handoff.authorId,
+      outcome.posted
+        ? { status: 'posted', entryId: outcome.entryId }
+        : { status: 'declined', reason: outcome.reason }
+    );
     this.report(handoff, outcome);
     return outcome;
   }

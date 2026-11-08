@@ -8,6 +8,8 @@ export {
   useTasks,
   useCreateTask,
   useUpdateTask,
+  useUndoAgentTaskMode,
+  useApproveTaskFile,
   useDeleteTask,
   useTriggerTask,
   TASKS_KEY,
@@ -29,3 +31,5 @@ export type { TaskTemplate } from './model/use-task-templates';
 export { useTaskTemplateDialog } from './model/use-task-template-dialog';
 export { isScheduleAwaitingApproval } from './lib/is-schedule-awaiting-approval';
 export { summarizeRecentRuns, type RecentRunsSummary } from './lib/summarize-recent-runs';
+
+export { ScheduleFileProblem } from './ui/ScheduleFileProblem';

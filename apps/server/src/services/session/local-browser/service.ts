@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Browser, BrowserContext, Page, JSHandle } from 'playwright-core';
 import { localBrowserAuditWriter, type LocalBrowserAuditWriter } from './action-audit.js';
 import { LocalBrowserError, assertLocalBrowserUrl, protectedPageRefusal } from './errors.js';
+import { assertOpenable } from './open-input.js';
 import { localBrowserAppOrigins } from './app-origins.js';
 import { prepareProfileFolder } from './profile-folders.js';
 import type { LocalBrowserProfileAccess } from './profile-access.js';
@@ -26,6 +27,7 @@ import {
   localBrowserHostFacts,
   type LocalBrowserHostFacts,
 } from './presentation.js';
+import { FullScreenGuard } from './agent-window/full-screen-guard.js';
 import { productionBackend, type LocalBrowserBackend } from './playwright-backend.js';
 import { BrowserHandover } from './handover.js';
 import { SignInWindow } from './sign-in-window.js';
@@ -77,6 +79,7 @@ export class LocalBrowserService {
   private lifecycle = 0;
   private readonly preparation = new BrowserPreparation();
   private readonly metadata = new LocalBrowserTabMetadata();
+  private readonly fullScreen = new FullScreenGuard();
   /** Handing the browser to the person and back, and the plain sign-in window. */
   readonly handover = new BrowserHandover(this, new SignInWindow(), () => this.dataDirectory);
 
@@ -125,17 +128,7 @@ export class LocalBrowserService {
       throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
     if (this.opening)
       throw new LocalBrowserError('busy', 'The browser is starting. Wait a moment.');
-    if (input.mode === 'embedded' && !this.embedded)
-      throw new LocalBrowserError('unsupported', 'Use the desktop app for the DorkOS browser.');
-    if (input.mode === 'embedded' && input.profileId)
-      throw new LocalBrowserError('unsupported', 'Open a browser profile in a new window.');
-    if (input.profileId && !this.profileExists?.(input.profileId))
-      throw new LocalBrowserError('profile_not_found', 'That browser profile no longer exists.');
-    if (input.mode === 'new-window') {
-      const capabilities = this.capabilities();
-      if (!capabilities.newWindow)
-        throw new LocalBrowserError('unsupported', capabilities.unavailableReasons['new-window']!);
-    }
+    assertOpenable(input, Boolean(this.embedded), this.capabilities(), this.profileExists);
     if (input.url) assertLocalBrowserUrl(input.url, 'person');
     this.opening = true;
     const setupAbort = new AbortController();
@@ -232,6 +225,12 @@ export class LocalBrowserService {
     if (!this.profileAccess)
       throw new LocalBrowserError('profile_not_allowed', 'This agent can’t use this profile.');
     await this.profileAccess(this.profileId, sessionId);
+  }
+
+  /** Refuse an agent while any page, including a new popup, is in full screen. */
+  async requireNotFullScreen(): Promise<void> {
+    this.syncTabs();
+    await this.fullScreen.requireNone();
   }
 
   /** A tool describes only the selected tab, excluding DorkOS and Cloud pages. */
@@ -484,6 +483,7 @@ export class LocalBrowserService {
     for (const [id, known] of this.tabs) if (known === page) return id;
     const id = randomUUID();
     this.tabs.set(id, page);
+    if (this.ownedContext) this.fullScreen.watch(page);
     this.metadata.track(page, {
       active: () => [...this.tabs.values()].includes(page),
       selected: () => this.tabs.get(this.selectedTabId ?? '') === page,
@@ -514,6 +514,7 @@ export class LocalBrowserService {
     this.tabs.clear();
     this.selectedTabId = null;
     this.invalidate();
+    this.handover.windowClosed();
   }
   private invalidate(): void {
     this.revision += 1;

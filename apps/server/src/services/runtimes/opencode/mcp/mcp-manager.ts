@@ -38,6 +38,7 @@
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { AgentRegistryPort, ManagedMcpServerResolver } from '@dorkos/shared/agent-runtime';
+import { managedConfigHeld } from '../../shared/policy/managed-config.js';
 import { logger, logError } from '../../../../lib/logger.js';
 import { resolveDorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
 import { DORKOS_MCP_SERVER_NAME } from '../../shared/dorkos-tool-names.js';
@@ -304,10 +305,12 @@ export class OpenCodeMcpManager {
     client: OpencodeClient,
     cwd: string,
     connectorTools?: ConnectorRuntimeMcpInjection,
-    agentCwd: string | null = cwd
+    agentCwd: string | null = cwd,
+    full = false
   ): Promise<EnsureManagedResult> {
+    const held = await managedConfigHeld(agentCwd ?? undefined, cwd, full, this.meshCore);
     const managed =
-      this.resolver && agentCwd !== null
+      !held && this.resolver && agentCwd !== null
         ? toOpenCodeMcpServers(this.resolver.injectableServersForCwd(agentCwd))
         : { servers: {}, skipped: [] };
     if (managed.skipped.length > 0) {

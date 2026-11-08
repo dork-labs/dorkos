@@ -30,6 +30,7 @@ import { WorkView } from './WorkView';
  */
 export function WorkPanel() {
   const panel = useDirectMessagePanel();
+  if (panel?.kind === 'pending') return null;
   if (panel?.kind === 'one-to-one') {
     return (
       <DirectWork

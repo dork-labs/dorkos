@@ -16,7 +16,11 @@
  * @module server/services/rooms/room-turn-port
  */
 import type { TurnFailure } from './turn-guards/turn-waits.js';
-import type { DirectoryGrant, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
+import type {
+  DirectoryGrant,
+  TurnPermissionCeiling,
+  TurnStarter,
+} from '@dorkos/shared/agent-runtime';
 import type { RoomContextData, RoomContextFiles } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
@@ -157,6 +161,8 @@ export interface RoomTurnRequest {
    * while reporting a stranger as local would lose the boundary.
    */
   externalAuthor: boolean;
+  /** Display-only provenance of the answered messages; never a permission input. */
+  turnStarter?: TurnStarter;
   /**
    * The loosest level this turn may run at, whatever the conversation is set
    * to (spec `trusted-by-default-flip` §4, "power flows downstream, never up").

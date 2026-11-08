@@ -69,3 +69,18 @@ export function announceScheduleArmed(
 ): void {
   void notify('schedule.armed_by_agent', payload);
 }
+
+/**
+ * Post the notice and wait for it: whether a row was stored for the person
+ * (or an identical one already was). A change that may stand only once the
+ * person is told (an agent's mode change, DOR-3703) is undone when this
+ * answers `false` or throws.
+ *
+ * @param payload - From {@link resolveScheduleArmedPayload}, with its `modeChange`.
+ */
+export async function postScheduleArmed(
+  payload: NotificationPayload<'schedule.armed_by_agent'>
+): Promise<boolean> {
+  const result = await notify('schedule.armed_by_agent', payload);
+  return result.notification !== null || result.deduped;
+}

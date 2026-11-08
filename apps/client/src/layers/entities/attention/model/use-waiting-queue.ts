@@ -30,6 +30,7 @@ import {
   useExtensionDecisions,
   usePendingExtensionApprovals,
 } from '@/layers/entities/extension';
+import { useLocalBrowserPersonState } from '@/layers/entities/local-browser';
 import { TASKS_KEY } from '@/layers/entities/tasks';
 import { useAdapterCatalog, useRelayEnabled } from '@/layers/entities/relay';
 import {
@@ -76,6 +77,8 @@ export interface WaitingQueueState {
    * settings they send (DOR-3271). Only the owner can answer one.
    */
   pausedConnections: readonly PausedConnectionItem[];
+  /** The id of the Agent browser handoff waiting on a person, if any. */
+  browserHandoffId: string | null;
   /**
    * The same four queues, flattened to one id/kind per item — what an
    * agreement check against {@link deriveAttentionSignals} compares against.
@@ -186,6 +189,10 @@ export function useWaitingQueue(): WaitingQueueState {
     [catalog]
   );
 
+  // A phone is refused this read, and its failure is not a failed approvals read.
+  const { data: browserState } = useLocalBrowserPersonState();
+  const browserHandoffId = browserState?.handoff?.outcome === null ? browserState.handoff.id : null;
+
   const retryFailed = useCallback(() => {
     for (const queryKey of waitingQueryKeys()) {
       void queryClient.refetchQueries({
@@ -207,8 +214,17 @@ export function useWaitingQueue(): WaitingQueueState {
         extensionApprovals,
         extensionDecisions,
         pausedConnections,
+        browserHandoffId,
       }),
-    [approvals, asks, schedules, extensionApprovals, extensionDecisions, pausedConnections]
+    [
+      approvals,
+      asks,
+      schedules,
+      extensionApprovals,
+      extensionDecisions,
+      pausedConnections,
+      browserHandoffId,
+    ]
   );
 
   return {
@@ -219,6 +235,7 @@ export function useWaitingQueue(): WaitingQueueState {
     extensionDecisions,
     decisionOffers,
     pausedConnections,
+    browserHandoffId,
     items,
     isLoading:
       approvalsLoading ||

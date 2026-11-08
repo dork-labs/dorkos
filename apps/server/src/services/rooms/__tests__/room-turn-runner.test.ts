@@ -2750,6 +2750,23 @@ describe('what power a room turn runs at (DOR-1917)', () => {
     expect(permissionSeedForOrigin(origin)).toBe('configured-stop-on-insert');
   });
 
+  it.each(['telegram', 'slack'] as const)(
+    'carries %s provenance while keeping the bridged ceiling',
+    async (starter) => {
+      runtimesConfig = atStop('autonomy');
+      await createSessionRoomTurnRunner().run(
+        request({
+          externalAuthor: true,
+          turnStarter: starter,
+          permissionCeiling: 'runtime-default',
+        })
+      );
+      expect(triggered[0].roomTurn?.turnStarter).toBe(starter);
+      expect(triggered[0].permissionCeiling).toBe('runtime-default');
+      expect(triggered[0].newSessionPermissionMode).toBeUndefined();
+    }
+  );
+
   it('never lets a stranger on a bridged chat start a session at that level', async () => {
     // A bridged Telegram or Slack chat is a projection of a relay binding into a
     // room, so an off-machine sender's message reaches this same path. A binding

@@ -20,7 +20,8 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule } from '@dorkos/skills';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
+import { pulseSchedules, type Db } from '@dorkos/db';
+import { eq } from 'drizzle-orm';
 import { TaskStore } from '../../tasks/task-store.js';
 import { TaskRegistrar, type SchedulerRegistrationTarget } from '../../tasks/task-registrar.js';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
@@ -480,6 +481,7 @@ describe('ShapeScheduleService.createSchedule — the fallback path (DOR-823)', 
   let store: TaskStore;
   let dorkHome: string;
   let service: ShapeScheduleService;
+  let registerTask: Mock<SchedulerRegistrationTarget['registerTask']>;
 
   beforeEach(async () => {
     db = createTestDb();
@@ -491,13 +493,14 @@ describe('ShapeScheduleService.createSchedule — the fallback path (DOR-823)', 
     // this service reads. Pointing DORK_HOME at the same tmpdir is what makes
     // that true here too.
     vi.stubEnv('DORK_HOME', dorkHome);
+    registerTask = vi.fn(() => true);
     service = new ShapeScheduleService({
       taskStore: store,
       registrar: new TaskRegistrar({
         store,
         scheduler: {
           isStarted: true,
-          registerTask: vi.fn(() => true),
+          registerTask,
           unregisterTask: vi.fn(),
           hasJob: () => false,
         },
@@ -518,6 +521,32 @@ describe('ShapeScheduleService.createSchedule — the fallback path (DOR-823)', 
     vi.unstubAllEnvs();
     vi.mocked(parseSkillFile).mockClear();
     await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  it('keeps an enabled schedule pending when its oversized description fails the real parser', async () => {
+    const created = await service.createSchedule(
+      {
+        ...tick('sample-ledger', 'global'),
+        description: 'x'.repeat(1025),
+      },
+      { shape: 'sample-pack' }
+    );
+
+    expect(created).toEqual({ created: true });
+    const row = store.getTasks()[0];
+    expect(row).toMatchObject({ status: 'pending_approval', enabled: true });
+    expect(
+      db.select().from(pulseSchedules).where(eq(pulseSchedules.id, row.id)).get()
+        ?.approvedContentKey
+    ).toBeNull();
+    const parsed = parseSkillFile(
+      row.filePath,
+      await fs.readFile(row.filePath, 'utf8'),
+      SkillFrontmatterSchema
+    );
+    expect(parsed.ok).toBe(false);
+    expect(store.approvals.backfillApprovalGrants()).toBe(0);
+    expect(registerTask).not.toHaveBeenCalled();
   });
 
   it('clamps bypassPermissions in the row even when parseSkillFile fails on the file it just wrote', async () => {
@@ -547,6 +576,13 @@ describe('ShapeScheduleService.createSchedule — the fallback path (DOR-823)', 
     // Not 'bypassPermissions': a package-declared schedule cannot self-elevate,
     // and a parse failure on the fallback path is not an exemption from that.
     expect(row?.permissionMode).toBe('acceptEdits');
+    expect(row?.status).toBe('pending_approval');
+    expect(
+      db.select().from(pulseSchedules).where(eq(pulseSchedules.id, row!.id)).get()
+        ?.approvedContentKey
+    ).toBeNull();
+    expect(registerTask).not.toHaveBeenCalled();
+    expect(store.approvals.backfillApprovalGrants()).toBe(0);
   });
 });
 

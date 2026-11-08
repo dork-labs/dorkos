@@ -106,11 +106,11 @@ export function supportingLines(measures: HeartbeatMeasures): string[] {
   const s = measures.supporting;
   const tokens = (n: number) => Math.round(n).toLocaleString('en-US');
   const quiet = percentWords(s.quietBeats);
-  const onTime = percentWords(s.commitmentsOnTime);
+  const onTime = percentWords(s.todosOnTime);
   const lines = [
     quiet ? `Quiet checks: ${quiet}, ${partOfWords(s.quietBeats)}.` : null,
     onTime
-      ? `Promises kept on time: ${onTime}, ${partOfWords(s.commitmentsOnTime)}.`
+      ? `Promises kept on time: ${onTime}, ${partOfWords(s.todosOnTime)}.`
       : 'No promises came due.',
     s.noEndBeat > 0 ? `Ended without a summary: ${s.noEndBeat}.` : null,
     s.triage.checks > 0

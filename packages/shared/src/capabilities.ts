@@ -40,8 +40,13 @@ export type CapabilityTier = (typeof CAPABILITY_TIERS)[number];
  * where DorkOS will run it (adding or changing an MCP server's command), so an
  * area-level Allowed still asks (ADR `261006-225605`). Every other destructive
  * action runs, recorded, when its area is Allowed.
+ *
+ * `'standing-grant'`: the action arms work that runs later with nobody
+ * watching, or decides how much that work may do (a scheduled task's mode or
+ * its approval, DOR-3703). An area-level Allowed still asks for it at any
+ * tier: only a setting for the action itself may allow it.
  */
-export type ActionConsent = 'third-party-code';
+export type ActionConsent = 'third-party-code' | 'standing-grant';
 
 /** The two MCP servers a capability's tool surface can be advertised on. */
 export type McpServerId = 'in-session' | 'external';

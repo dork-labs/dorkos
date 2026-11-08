@@ -287,6 +287,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'permissions.approvedFolderAllows',
       'permissions.refusedFolderAllows',
       'permissions.approvedFolderAllowRules',
+      // Whether an agent may set a scheduled task's mode or approve one (DOR-3703).
+      'tasks.agentModeControl',
     ],
   },
   {

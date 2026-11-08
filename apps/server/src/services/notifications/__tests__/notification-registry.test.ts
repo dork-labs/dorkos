@@ -190,6 +190,13 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     total: 1,
     fingerprint: 'fp-1',
   },
+  'browser.handoff': {
+    handoffId: 'h-1',
+    sessionId: 'sess-1',
+    site: 'northwind.example',
+    agentName: 'Atlas',
+    agentId: 'agent-1',
+  },
   'account.signin_review': {
     accountRoot: '/home/me/.claude2',
     accountName: 'Work',
@@ -247,6 +254,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'agent.secret_files': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
   'account.signin_review': 'notable',
+  'browser.handoff': 'notable',
 };
 
 /**
@@ -330,6 +338,7 @@ describe('notification registry', () => {
       'agent.unreachable',
       'approval.pending',
       'ask.pending',
+      'browser.handoff',
       'community.owner-replacement',
       'community.teammate-limit',
       'community.teammate-limits-reset',
@@ -487,7 +496,12 @@ describe('notification registry', () => {
 
     it('titles every failing run "needs attention", and a success "finished"', () => {
       const entry = notificationEntry('run.completed');
-      expect(entry.title(blocked)).toBe('Mailroom needs attention');
+      expect(entry.title({ ...blocked, refusedTools: ['Bash'] })).toBe(
+        'Mailroom had a command refused'
+      );
+      expect(entry.title({ ...blocked, refusedTools: ['Write'] })).toBe(
+        'Mailroom was refused Write'
+      );
       expect(entry.title({ ...blocked, status: 'failed' })).toBe('Mailroom needs attention');
       expect(entry.title({ ...blocked, status: 'completed' })).toBe('Mailroom finished');
     });
@@ -503,13 +517,13 @@ describe('notification registry', () => {
     it('says the row’s reason, points at the schedule, and says it will not repeat', () => {
       const body = notificationEntry('run.completed').body;
       expect(body?.({ ...blocked, refusedTools: ['Bash', 'gmail: search'] })).toBe(
-        'Nothing got done: Bash and gmail: search were refused. Open the schedule to fix it.'
+        'It may have needed approval. Open the schedule to check its mode.'
       );
       expect(
         body?.({ ...blocked, outcome: 'partial', refusedTools: ['Bash'], oncePerStreak: true })
       ).toBe(
-        'Bash was refused, with nobody there to approve it. Open the schedule to fix it. ' +
-          'You won’t get another notice about it until it runs cleanly and fails again.'
+        'It may have needed approval. Open the schedule to check its mode. ' +
+          'No more notices until it runs cleanly and fails again.'
       );
       // "Didn't finish": only the reason line changes.
       expect(body?.({ ...blocked, status: 'failed', detail: 'API Error: 500' })).toBe(

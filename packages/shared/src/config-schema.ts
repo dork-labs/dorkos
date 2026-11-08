@@ -592,9 +592,9 @@ export const UserConfigSchema = z.object({
       /**
        * Whether a chat with one agent reads like a direct message: the room's
        * header, messages and composer over the agent's Direct chat (DOR-3074).
-       * An experiment, off until a person turns it on.
+       * On by default; a person can turn it off in Settings.
        */
-      dmView: z.boolean().default(false),
+      dmView: z.boolean().default(true),
       /**
        * Whether the working session behind a chat can be opened: its model,
        * account, permissions and context. For everyone using this DorkOS, off by
@@ -629,7 +629,7 @@ export const UserConfigSchema = z.object({
       // on, this literal is what an install with no stored `ui` block lands on,
       // and a field declared in only one of the two is a silent disagreement.
       trustNoticeSeenAt: null,
-      dmView: false,
+      dmView: true,
       showSessions: false,
     })),
   /**
@@ -709,6 +709,20 @@ export const UserConfigSchema = z.object({
       enabled: z.boolean().default(false),
     })
     .default(() => ({ enabled: false })),
+  /**
+   * Scheduled tasks, as agents may handle them (DOR-3703).
+   *
+   * `agentModeControl` ships ON, as a kill switch. On, both become permission
+   * actions in Tasks & schedules: `tasks.set_mode` (an agent sets its own
+   * schedule's mode up to its own level) and `tasks.approve` (asks a person by
+   * default). Off, an agent can neither set a scheduled task's mode nor approve
+   * a waiting one, exactly as before. Read on every call.
+   */
+  tasks: z
+    .object({
+      agentModeControl: z.boolean().default(true),
+    })
+    .default(() => ({ agentModeControl: true })),
   /**
    * Letting agents on other systems talk to the agents on this one.
    *

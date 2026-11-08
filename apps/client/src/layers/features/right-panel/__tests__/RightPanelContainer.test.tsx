@@ -18,7 +18,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 vi.mock('@/layers/entities/room', () => ({ useRoom: () => ({ data: undefined }) }));
 // Beside no DM: the panel these tests describe is the one with the DM view off.
 vi.mock('@/layers/features/direct-message', () => ({
-  useDirectMessagePanel: () => null,
+  useDirectMessagePanel: () => mockDmPanel,
   GroupDmMemberPicker: () => null,
 }));
 vi.mock('@/layers/entities/computer', () => ({ useComputer: () => ({ data: undefined }) }));
@@ -160,6 +160,8 @@ let mockIsMobile = false;
 // is the tier that decides the panel overlays instead of docking.
 let mockIsBelowDesktop = false;
 let mockContributions: RightPanelContribution[] = [];
+// Null beside no DM; `pending` while the chat may yet be one.
+let mockDmPanel: { kind: 'pending'; showSessions: false } | null = null;
 // The container gates capability-scoped tabs (e.g. the web-only terminal) on the
 // active transport; mutate per-test to exercise the transport-gated path.
 let mockTransport: { supportsTerminal: boolean } = { supportsTerminal: true };
@@ -241,6 +243,50 @@ describe('RightPanelContainer', () => {
     mockCurrentAgentId = null;
     mockSelectedCwd = null;
     mockExplicitAgentPath = null;
+  });
+
+  describe('while the chat may yet be a DM', () => {
+    const SESSION_TAB = {
+      visibleWhen: ({ directMessage }: { directMessage?: { kind: string } | null }) =>
+        directMessage?.kind !== 'pending',
+    };
+
+    beforeEach(() => {
+      mockRightPanelOpen = true;
+      mockDmPanel = { kind: 'pending', showSessions: false };
+      mockContributions = [makeContribution('files'), makeContribution('session', SESSION_TAB)];
+    });
+
+    afterEach(() => {
+      mockDmPanel = null;
+    });
+
+    it('keeps the body of a tab the strip holds back, and does not pick another', () => {
+      mockActiveRightPanelTab = 'session';
+      render(<RightPanelContainer pathname={mockPathname} />);
+
+      expect(screen.getByTestId('tab-content-session')).toBeVisible();
+      expect(screen.queryByRole('tab', { name: 'Tab session' })).not.toBeInTheDocument();
+      expect(mockSetActiveRightPanelTabView).not.toHaveBeenCalled();
+    });
+
+    it('keeps an ordinary tab’s body too', () => {
+      mockActiveRightPanelTab = 'files';
+      render(<RightPanelContainer pathname={mockPathname} />);
+      expect(screen.getByTestId('tab-content-files')).toBeVisible();
+    });
+
+    it('drops the held tab’s body once the answer says it does not belong', () => {
+      mockActiveRightPanelTab = 'session';
+      const { rerender } = render(<RightPanelContainer pathname={mockPathname} />);
+      mockDmPanel = null;
+      mockContributions = [
+        makeContribution('files'),
+        makeContribution('session', { visibleWhen: () => false }),
+      ];
+      rerender(<RightPanelContainer pathname={mockPathname} />);
+      expect(screen.queryByTestId('tab-content-session')).not.toBeInTheDocument();
+    });
   });
 
   it('contains a retained terminal failure without replacing the active document view', () => {

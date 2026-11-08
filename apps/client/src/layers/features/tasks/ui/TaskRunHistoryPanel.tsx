@@ -12,7 +12,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useInfiniteTaskRuns, useCancelTaskRun } from '@/layers/entities/tasks';
 import { useSessionId, useDirectoryState } from '@/layers/entities/session';
-import { RuntimeIdentity } from '@/layers/entities/runtime';
+import { RuntimeIdentity, usePermissionModeLabel } from '@/layers/entities/runtime';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { listRefusedTools, readableToolName } from '@dorkos/shared/run-refusals';
 import {
@@ -239,7 +239,9 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
           : undefined
       }
       className={cn(
-        'grid grid-cols-[20px_56px_1fr_64px_72px_20px] items-center gap-2',
+        // A phone stacks each run: when and how long first, the full status under it;
+        // the trigger is its icon alone. From `sm`, the columns.
+        'grid grid-cols-[20px_20px_minmax(0,1fr)_auto_20px] items-start gap-2 sm:items-center',
         'sm:grid-cols-[20px_72px_1fr_64px_72px_20px]',
         'rounded-md border border-transparent px-2 py-2 text-xs transition-colors',
         isClickable && [
@@ -253,13 +255,16 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
 
       <span className="text-muted-foreground truncate">
         <TriggerIcon trigger={run.trigger} />
-        {TRIGGER_LABEL[run.trigger]}
+        <span className="sr-only sm:not-sr-only">{TRIGGER_LABEL[run.trigger]}</span>
       </span>
 
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="text-foreground shrink-0">
             {run.startedAt ? <RunTimestamp date={run.startedAt} /> : '-'}
+            {run.status !== 'skipped' && (
+              <span className="sm:hidden"> · {formatDuration(run.durationMs)}</span>
+            )}
           </span>
           {/* The occurrence it stood for, against when it actually started: a
               computer asleep at 09:00 runs the 09:00 occurrence when it wakes,
@@ -302,7 +307,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
         {(run.status === 'failed' || run.status === 'skipped') && run.error && (
           <span
             className={cn(
-              'truncate',
+              'break-words sm:truncate',
               run.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'
             )}
             title={run.error}
@@ -310,7 +315,13 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
             {firstLine(run.error)}
           </span>
         )}
-        {run.status === 'needs_attention' && <RefusedToolsLine run={run} />}
+        {/* A run capped for a changed SKILL file says so, and what the cap
+            refused, so it never reads as a plain success (DOR-3703, M4). */}
+        {run.cappedAt ? (
+          <RunCapLine run={run} />
+        ) : (
+          run.status === 'needs_attention' && <RefusedToolsLine run={run} />
+        )}
         {/* Croner fires one late run on wake and none for the occurrences
             before it; this is the only record that they came round (DOR-2718). */}
         {missedLine && (
@@ -322,7 +333,7 @@ function RunRow({ run, onNavigate, onCancel, isCancelling }: RunRowProps) {
 
       {/* No duration for a run that never started — a "< 1s" against a skipped
           row reads as if it ran and finished instantly. */}
-      <span className="text-muted-foreground">
+      <span className="text-muted-foreground hidden sm:block">
         {run.status === 'skipped' ? '' : formatDuration(run.durationMs)}
       </span>
 
@@ -532,12 +543,42 @@ function RefusedToolsLine({ run }: { run: TaskRun }) {
   const named = listRefusedTools(tools);
   const line =
     named !== null
-      ? `Refused: nobody to approve (${tools.length}). ${named.list}.`
-      : (run.error ?? 'Refused: nobody was there to approve a tool this run needed.');
+      ? `Refused: ${tools.length} ${tools.length === 1 && tools[0] === 'Bash' ? 'Bash command' : `tool${tools.length === 1 ? '' : 's'}: ${named.list}`}.`
+      : (run.error ?? 'Refused: a tool.');
 
   return (
-    <span data-slot="run-refused-tools" className="text-destructive truncate" title={line}>
+    <span
+      data-slot="run-refused-tools"
+      className="text-destructive break-words sm:truncate"
+      title={line}
+    >
       {firstLine(line)}
+    </span>
+  );
+}
+
+/**
+ * What a run capped at Don't ask says on its row (DOR-3703, M4): that it ran
+ * capped, because its SKILL file changed outside the task tools, and which
+ * steps the cap refused.
+ */
+function RunCapLine({ run }: { run: TaskRun }) {
+  // Named as the runtime's mode picker names it, like every other surface.
+  const capLabel = usePermissionModeLabel(run.resolvedRuntime)(run.cappedAt ?? 'dontAsk');
+  const tools = [...new Set((run.refusedTools ?? []).map(readableToolName))];
+  const named = listRefusedTools(tools);
+  const line = named
+    ? `Capped at ${capLabel}. Refused: ${named.list}.`
+    : `Capped at ${capLabel}. Nothing was refused.`;
+  return (
+    // Wraps on a narrow screen rather than cutting the cap and its refusals off;
+    // from `sm` the row has room, and it stays on one tidy line.
+    <span
+      data-slot="run-capped"
+      className="text-status-warning-fg break-words sm:truncate"
+      title={`${line} Its file changed outside the task tools.`}
+    >
+      {line}
     </span>
   );
 }

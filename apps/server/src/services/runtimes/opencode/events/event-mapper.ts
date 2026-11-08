@@ -144,6 +144,7 @@ export function createOpenCodeEventContext(
 ): OpenCodeEventContext {
   return {
     sessionId,
+    nativeToolInputs: new Map(),
     clock,
     turnStartedAtMs: clock(),
     spentByMessageId: new Map(),
@@ -274,6 +275,13 @@ export function mapOpenCodeEvent(
     // What the turn cost, the parent's messages and a subagent's alike: both
     // are billed (spec claude-account-fleet §6 R). Once per message.
     if (info.role === 'assistant') recordOpenCodeSpend(ctx, info, new Date(ctx.clock()));
+  }
+
+  if (event.type === 'message.part.updated') {
+    const part = event.properties.part;
+    if (part.type === 'tool' && isAssistantMessage(part.messageID, ctx)) {
+      ctx.nativeToolInputs?.set(`${part.sessionID}:${part.callID}`, part.state.input);
+    }
   }
 
   // A subagent's child session speaks only through its parent's task card:

@@ -128,6 +128,14 @@ export function resolveRunSession(
   return { sessionId: previous.sessionId, hasStarted: true };
 }
 
+/**
+ * Why a sticky tick was not run: its own previous run is still going, and a
+ * sticky task keeps everything in one session (DOR-1571).
+ */
+export const STICKY_BUSY_SKIP_REASON =
+  'This task resumes one chat every run, and its previous run was still going when this ' +
+  'one came round — so it was skipped rather than starting a second turn on the same chat';
+
 /** The machine-readable code a refused account change on a sticky schedule carries. */
 export const STICKY_ACCOUNT_LOCKED_CODE = 'STICKY_ACCOUNT_LOCKED';
 

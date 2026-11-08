@@ -155,10 +155,13 @@ describe('a turn started from Wi-Fi', () => {
     const ana = fresh('ana');
     const { runtime } = seam({ [ana]: 'bypassPermissions' });
     await run(runtime, ana, WIFI);
-    const handler = createCreateScheduleHandler({ taskStore: {} } as never, () => ({
-      sessionId: ana,
-      agentPath: '/agents/ana',
-    }));
+    const handler = createCreateScheduleHandler(
+      { taskStore: { resolveTaskOrigins: () => new Map() } } as never,
+      () => ({
+        sessionId: ana,
+        agentPath: '/agents/ana',
+      })
+    );
     await handler({
       name: 'nightly',
       prompt: 'sweep it',
@@ -173,10 +176,13 @@ describe('a turn started from Wi-Fi', () => {
     const ana = fresh('ana');
     const { runtime } = seam({ [ana]: 'bypassPermissions' });
     await run(runtime, ana);
-    const handler = createCreateScheduleHandler({ taskStore: {} } as never, () => ({
-      sessionId: ana,
-      agentPath: '/agents/ana',
-    }));
+    const handler = createCreateScheduleHandler(
+      { taskStore: { resolveTaskOrigins: () => new Map() } } as never,
+      () => ({
+        sessionId: ana,
+        agentPath: '/agents/ana',
+      })
+    );
     await handler({
       name: 'nightly',
       prompt: 'sweep it',

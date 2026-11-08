@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import { permissionModeLabel } from '@/layers/shared/lib';
 
 /** Query key for the capabilities endpoint — static for the server lifetime. */
 const CAPABILITIES_KEY = ['capabilities'] as const;
@@ -84,6 +85,22 @@ export function useCapabilitiesForRuntime(
   if (!data) return undefined;
   const type = runtimeType ?? data.defaultRuntime;
   return Object.hasOwn(data.capabilities, type) ? data.capabilities[type] : undefined;
+}
+
+/**
+ * A permission mode's name as the runtime's own mode picker shows it (its
+ * capability profile's label), so a task row, its run history and the notices
+ * about it call one mode by one name. Falls back to the built-in names while
+ * the profile loads, or for a mode the runtime does not declare.
+ *
+ * @param runtimeType - The runtime the mode belongs to; `null` is the default runtime.
+ * @returns A function from a mode id to its label.
+ */
+export function usePermissionModeLabel(
+  runtimeType: string | null | undefined
+): (mode: string) => string {
+  const values = useCapabilitiesForRuntime(runtimeType)?.permissionModes?.values;
+  return (mode) => values?.find((m) => m.id === mode)?.label ?? permissionModeLabel(mode);
 }
 
 /**

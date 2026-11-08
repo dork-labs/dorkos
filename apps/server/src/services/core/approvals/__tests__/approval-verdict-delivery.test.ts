@@ -133,6 +133,7 @@ describe('deliverApprovalVerdict', () => {
 
     expect(dispatchMessage).toHaveBeenCalledTimes(1);
     const call = dispatchMessage.mock.calls[0][0];
+    expect(dispatchMessage.mock.calls[0][0].turnStarter).toBe('agent');
     expect(call.sessionId).toBe(SESSION_ID);
     // The substance rides the neutral bag, so every adapter renders it its own
     // way rather than one of them dumping JSON.

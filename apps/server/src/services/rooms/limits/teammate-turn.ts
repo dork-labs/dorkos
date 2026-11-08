@@ -43,9 +43,10 @@ export function turnBoundsOf(
  * @param request - The turn about to start.
  */
 export function roomTurnMarksOf(
-  request: Pick<RoomTurnRequest, 'teammate' | 'permissionCeiling' | 'untrustedText'>
-): Pick<NonNullable<MessageOpts['roomTurn']>, 'teammate' | 'untrustedText'> {
+  request: Pick<RoomTurnRequest, 'teammate' | 'permissionCeiling' | 'untrustedText' | 'turnStarter'>
+): Pick<NonNullable<MessageOpts['roomTurn']>, 'teammate' | 'untrustedText' | 'turnStarter'> {
   return {
+    ...(request.turnStarter !== undefined ? { turnStarter: request.turnStarter } : {}),
     ...(request.teammate ? { teammate: true as const } : {}),
     ...(request.untrustedText || request.permissionCeiling !== undefined || request.teammate
       ? { untrustedText: true as const }

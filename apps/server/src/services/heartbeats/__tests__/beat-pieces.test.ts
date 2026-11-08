@@ -85,7 +85,7 @@ describe('the beat prompt', () => {
       agentName: 'Juno',
       kind: 'pulse',
       changes: [change],
-      commitments: [],
+      todoPromises: [],
       openRaises: [],
       checklist: null,
       newManager: false,

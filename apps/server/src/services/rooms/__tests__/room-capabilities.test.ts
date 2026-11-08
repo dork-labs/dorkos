@@ -375,6 +375,14 @@ describe('the rooms capability domain', () => {
           servers: ['in-session', 'external'],
           readOnly: false,
         },
+        {
+          id: 'rooms.handoff_status',
+          tool: 'room_handoff_status',
+          tier: 'observe',
+          area: null,
+          servers: ['in-session'],
+          readOnly: false,
+        },
       ]);
     });
 

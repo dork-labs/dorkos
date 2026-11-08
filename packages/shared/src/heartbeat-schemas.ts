@@ -28,7 +28,7 @@ export type HeartbeatWake = z.infer<typeof HeartbeatWakeSchema>;
 /** The gatherers a beat can run, in the order a beat reads them (spec §5). */
 export const HEARTBEAT_GATHERERS = [
   'addressed',
-  'commitments',
+  'todos',
   'schedules',
   'health',
   'workspace',
@@ -41,12 +41,32 @@ export const HeartbeatGathererSchema = z.enum(HEARTBEAT_GATHERERS).openapi('Hear
 export type HeartbeatGatherer = z.infer<typeof HeartbeatGathererSchema>;
 
 /**
+ * Watch names an earlier release wrote, and the gatherer each one is now. `commitments` became
+ * `todos` (DOR-3933); every `HEARTBEAT.md` already on disk still says the old word, and must keep
+ * watching the same thing.
+ */
+const RENAMED_GATHERERS: Readonly<Record<string, HeartbeatGatherer>> = { commitments: 'todos' };
+
+/** A watch list as written, with every renamed gatherer read under its current name. */
+const WatchSchema = z.preprocess(
+  (value) =>
+    Array.isArray(value)
+      ? value.map((name: unknown) =>
+          typeof name === 'string' && Object.hasOwn(RENAMED_GATHERERS, name)
+            ? RENAMED_GATHERERS[name]
+            : name
+        )
+      : value,
+  z.array(HeartbeatGathererSchema).max(HEARTBEAT_GATHERERS.length)
+);
+
+/**
  * What a beat watches when `HEARTBEAT.md` names nothing: every gatherer but
  * `workspace`, which reads git and is opted into.
  */
 export const DEFAULT_HEARTBEAT_WATCH: readonly HeartbeatGatherer[] = [
   'addressed',
-  'commitments',
+  'todos',
   'schedules',
   'health',
 ];
@@ -101,7 +121,7 @@ export const HeartbeatFrontmatterSchema = z
     name: z.string().max(100).optional(),
     description: z.string().max(500).optional(),
     wake: HeartbeatWakeSchema.optional(),
-    watch: z.array(HeartbeatGathererSchema).max(HEARTBEAT_GATHERERS.length).optional(),
+    watch: WatchSchema.optional(),
     report: HeartbeatReportSchema.optional(),
     sweep: SweepSchema.optional(),
   })
@@ -361,7 +381,7 @@ export type MeasureRate = z.infer<typeof MeasureRateSchema>;
 
 /**
  * Whether an agent's work on its own helped, over a window (spec §13, canon
- * §6). Computed on read from the beat record, the outbox, commitments and the
+ * §6). Computed on read from the beat record, the outbox, to-dos and the
  * audit trail; nothing comes from the agent's own account of itself.
  */
 export const HeartbeatMeasuresSchema = z
@@ -401,7 +421,7 @@ export const HeartbeatMeasuresSchema = z
       /** Beats that ended with nothing raised. */
       quietBeats: MeasureRateSchema,
       /** Promises that came due in the window and were kept by their date. */
-      commitmentsOnTime: MeasureRateSchema,
+      todosOnTime: MeasureRateSchema,
       /** Beat turns that ended without `end_beat`. */
       noEndBeat: z.number().int(),
       /** Cheap checks on a decision model, and their tokens. */

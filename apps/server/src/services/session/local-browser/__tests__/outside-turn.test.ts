@@ -46,8 +46,10 @@ function handover(launchOrigin: string | null) {
   const browser = {
     state: vi.fn(async () => state),
     currentProfileId: () => null,
+    capabilities: () => ({ newWindow: true }),
     open: vi.fn(async () => state),
     selectTab: vi.fn(async () => state),
+    navigate: vi.fn(async () => state),
     pause: vi.fn(async () => state),
     resume: vi.fn(async () => state),
     disconnect: vi.fn(async () => state),

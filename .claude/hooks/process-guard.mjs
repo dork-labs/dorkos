@@ -37,8 +37,9 @@
  *     (`$!`, or the id the Bash tool gave you), or `TaskStop` for a
  *     background task.
  *   - Otherwise find it by the port YOU chose: `lsof -ti :<your port>` (or
- *     `pgrep -lf <pattern>` and read the list), then `kill <that pid>`. Never
- *     kill a process you did not start.
+ *     `pgrep -f <pattern>` for candidate PIDs). Inspect a candidate with
+ *     `ps -o pid=,comm= -p <pid>` (no arguments), then `kill <that pid>`.
+ *     Never kill a process you did not start.
  *
  * WHY THIS IS A HOOK AND NOT `permissions.deny`
  *
@@ -100,12 +101,12 @@ const KILL_OPTIONS_WITH_VALUE = new Set(['-s', '--signal', '-n']);
 const KILL_LISTING_FLAGS = new Set(['-l', '-L', '--list', '--table']);
 
 const NAME_MESSAGE = `Blocked: pkill / killall kill by name, and every DorkOS process on this machine shares the same names.
-On 2026-08-18 \`pkill -f "tsx src/index.ts"\` meant to stop one verification cockpit also killed the operator's dev server (:6242) — and other agents' worktree cockpits (43xx–45xx) and the dogfood cockpit (:4242) are built from the same source.
-Stop the process YOU started, by its PID: the id you already have (\`$!\`, the Bash tool's background id, or TaskStop for a background task), or \`lsof -ti :<your port>\` / \`pgrep -lf <pattern>\` to look first, then \`kill <pid>\`. Never kill a process you did not start.`;
+On 2026-08-18 \`pkill -f "tsx src/index.ts"\` meant to stop one verification app also killed the operator's dev server (:6242) — and other agents' worktree apps (43xx–45xx) and the dogfood app (:4242) are built from the same source.
+Stop the process YOU started, by its PID: the id you already have (\`$!\`, the Bash tool's background id, or TaskStop for a background task), or \`lsof -ti :<your port>\` / \`pgrep -f <pattern>\` for candidate PIDs. Inspect a candidate with \`ps -o pid=,comm= -p <pid>\` (no arguments), then \`kill <pid>\`. Never kill a process you did not start.`;
 
 const GROUP_MESSAGE = `Blocked: kill aimed at every process or a whole process group (a negative or zero target).
-That signals processes you do not own — other agents' cockpits and the operator's servers included.
-Name the one PID you started instead: \`kill <pid>\`; find it with \`lsof -ti :<your port>\` or \`pgrep -lf <pattern>\` if you have lost the handle.`;
+That signals processes you do not own — other agents' apps and the operator's servers included.
+Name the one PID you started instead: \`kill <pid>\`; find candidate PIDs with \`lsof -ti :<your port>\` or \`pgrep -f <pattern>\` if you have lost the handle. Inspect a candidate with \`ps -o pid=,comm= -p <pid>\` (no arguments). Never kill a process you did not start.`;
 
 /**
  * Decide whether a `kill` invocation targets a group or everything.

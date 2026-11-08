@@ -129,6 +129,7 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     timingOverridden: false,
     packageOwned: null,
     approvalChanges: [],
+    approvalRevision: 'a'.repeat(64),
     agentId: null,
     // True: this fixture stands in for a schedule an AGENT proposed, which is
     // asking to run by definition (DOR-2059 only quiets a package-shipped
@@ -436,6 +437,22 @@ describe('InboxBell', () => {
     expect(screen.getByRole('button', { name: 'Open chat' })).toBeInTheDocument();
   });
 
+  it('pins a schedule card’s actions to the bottom of the bell’s sheet on a phone', async () => {
+    renderIndicator({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
+      listTasks: vi.fn().mockResolvedValue([parkedSchedule({ fileCapNext: true })]),
+    });
+    await userEvent.click(await screen.findByTestId('inbox-bell'));
+    const approve = await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    const card = screen.getByTestId('schedule-approval-card');
+    const body = card.querySelector('[data-slot="schedule-review-body"]')!;
+    // The instructions scroll inside the card; its actions stay outside that scroller.
+    expect(body).toHaveClass('overflow-y-auto', 'flex-1');
+    expect(body).not.toContainElement(approve);
+    expect(approve.parentElement).toHaveClass('shrink-0');
+    expect(card).toHaveClass('min-h-0', 'flex-col');
+  });
+
   it('counts a schedule an agent parked, and answers it in the panel without closing it', async () => {
     // The one event with no marker anywhere before this: an agent proposes a
     // scheduled run, it parks because nothing arms itself, and the only way to
@@ -466,7 +483,14 @@ describe('InboxBell', () => {
     await userEvent.click(marker);
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' });
+    // The Inbox's pinned card shows its prompt, so its yes binds both words and revision.
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        expectedApprovalRevision: 'a'.repeat(64),
+        approvedPromptHash: 'sha256:PumzqSIeJOkvMji_z_hHg7UAzmnYW2kSn_2dPHDjyuQ',
+      })
+    );
     // Still open, and the schedule that was NOT decided is still answerable.
     expect(screen.getByRole('button', { name: 'Approve Weekly digest' })).toBeInTheDocument();
   });

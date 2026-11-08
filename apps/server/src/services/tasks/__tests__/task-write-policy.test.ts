@@ -75,7 +75,12 @@ describe('TASK_WRITE_POLICY drift guard', () => {
     // should have to delete a test that says why.
     expect(TASK_WRITE_POLICY.permissionMode).toBe('operator-only');
     expect(TASK_WRITE_POLICY.status).toBe('operator-only');
-    expect([...OPERATOR_ONLY_TASK_FIELDS].sort()).toEqual(['permissionMode', 'status']);
+    expect([...OPERATOR_ONLY_TASK_FIELDS].sort()).toEqual([
+      'approvedPromptHash',
+      'expectedApprovalRevision',
+      'permissionMode',
+      'status',
+    ]);
   });
 });
 

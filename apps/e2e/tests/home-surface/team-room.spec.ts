@@ -6,6 +6,7 @@ import {
   type TeamRoomEntry,
 } from '../../fixtures/team-room-api';
 import { publishSessionStreaming, tapGlobalStream } from '../rooms/room-signals';
+import { ensureTestOwner, removeTestOwner } from '../../fixtures/person-step-up';
 
 /**
  * Home is the #team room (spec `team-room-home`, Phase 2).
@@ -88,8 +89,40 @@ async function postedHere(
     .cascadeRoot;
 }
 
+test('removing a temporary owner keeps the local person in #team @smoke', async ({
+  page,
+  request,
+  teamRoomApi,
+}) => {
+  // eslint-disable-next-line no-restricted-syntax -- Playwright's test-mode port, not app configuration.
+  const apiUrl = `http://localhost:${process.env.DORKOS_MOCK_PORT || '4243'}`;
+  const team = await teamRoomApi.teamRoom();
+  const before = await (await request.get(`/api/rooms/${team.id}`)).json();
+  const owner = {
+    email: `team-owner-${teamRoomApi.runId}@example.test`,
+    password: 'made-up-owner-password-for-test',
+    name: 'Temporary Test Owner',
+  };
+  try {
+    const signup = await ensureTestOwner(page.context().request, apiUrl, owner);
+    expect(signup.ok(), `could not create the test owner: ${await signup.text()}`).toBe(true);
+    const bound = await (await page.context().request.get(`${apiUrl}/api/rooms/${team.id}`)).json();
+    expect(bound.viewerAuthorId).toBe(before.viewerAuthorId);
+  } finally {
+    removeTestOwner(apiUrl, owner.email);
+    await page.context().clearCookies();
+  }
+  const after = await (await request.get(`/api/rooms/${team.id}`)).json();
+  expect(after.viewerAuthorId, 'cleanup preserves the local person’s existing author').toBe(
+    before.viewerAuthorId
+  );
+  expect(after.members.map((member: { authorId: string }) => member.authorId)).toContain(
+    after.viewerAuthorId
+  );
+});
+
 /**
- * Milestones, and they must come FIRST in this file.
+ * Milestones: the first block in this file that creates an agent.
  *
  * #team marks at most one moment an hour (`MOMENT_QUIET_PERIOD_MS`), which is
  * the etiquette rule that stops an afternoon of setting things up from filling

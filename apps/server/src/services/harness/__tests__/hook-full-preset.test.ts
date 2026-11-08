@@ -325,7 +325,7 @@ describe('on Full, a package DorkOS did not install is held back (DOR-3422)', ()
 
     expect(requests).toHaveLength(1);
     expect(requests[0]?.capabilityId).toBe(HOOK_PROJECTION_CAPABILITY_ID);
-    expect(requests[0]?.summary).toContain('not installed by DorkOS');
+    expect(requests[0]?.summary).toContain('Review 1 hook');
   });
 
   it('a second copy by the same name that DorkOS did not install holds the name back', async () => {

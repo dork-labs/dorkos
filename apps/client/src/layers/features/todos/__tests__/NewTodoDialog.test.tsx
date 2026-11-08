@@ -12,7 +12,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { COMMITMENT_WHAT_MAX } from '@dorkos/shared/commitment-schemas';
+import { TODO_WHAT_MAX } from '@dorkos/shared/todo-promise-schemas';
 import { NewTodoDialog, titleFromMessage, type TodoMessageSource } from '../index';
 
 beforeAll(() => {
@@ -122,9 +122,7 @@ describe('the title field (DOR-3715)', () => {
 
 describe('titleFromMessage', () => {
   it('cuts a long first line to the longest title a to-do takes', () => {
-    expect(titleFromMessage('x'.repeat(COMMITMENT_WHAT_MAX + 40))).toHaveLength(
-      COMMITMENT_WHAT_MAX
-    );
+    expect(titleFromMessage('x'.repeat(TODO_WHAT_MAX + 40))).toHaveLength(TODO_WHAT_MAX);
     expect(titleFromMessage('   \n\n')).toBe('');
   });
 });

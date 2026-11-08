@@ -835,7 +835,11 @@ describe('contract: tasks, account rules and model setup, driven by hand (login 
     await check(server, {
       method: 'PATCH',
       path: `/api/tasks/${id}/`,
-      body: { status: 'active', permissionMode: 'acceptEdits' },
+      body: {
+        status: 'active',
+        permissionMode: 'acceptEdits',
+        expectedApprovalRevision: proposed.json.approvalRevision,
+      },
       expect: {
         status: 200,
         schema: TASK.extend({
@@ -1213,7 +1217,7 @@ describe('contract: the same groups with login on', () => {
       method: 'PATCH',
       path: `/api/tasks/${id}`,
       headers: cookie,
-      body: { status: 'active' },
+      body: { status: 'active', expectedApprovalRevision: proposed.json.approvalRevision },
       expect: {
         status: 200,
         schema: TASK.extend({

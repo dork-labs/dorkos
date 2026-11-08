@@ -169,6 +169,15 @@ export class NotificationService {
    * @param payload - That kind's payload.
    * @param opts - Who acted, and how to reach out of the app.
    */
+  /**
+   * One stored notification's kind and payload; see {@link NotificationStore.payloadOf}.
+   *
+   * @param id - The notification.
+   */
+  payloadOf(id: string): { kind: string; payload: unknown } | null {
+    return this.store.payloadOf(id);
+  }
+
   async notify<K extends EventNotificationKind>(
     kind: K,
     payload: NotificationPayload<K>,
@@ -455,7 +464,7 @@ export class NotificationService {
     const notification = this.store.insert({
       kind,
       tier: resolvePerKind(entry.tier, payload),
-      subjectType: entry.subjectType,
+      subjectType: location.subjectType ?? entry.subjectType,
       subjectId: location.subjectId,
       ...(location.agentId ? { agentId: location.agentId } : {}),
       ...(location.sessionId ? { sessionId: location.sessionId } : {}),
@@ -595,6 +604,16 @@ export function setNotificationService(service: NotificationService | null): voi
 /** The live service, or `null` before boot wired one. */
 export function getNotificationService(): NotificationService | null {
   return current;
+}
+
+/**
+ * One stored notification's kind and payload, or `null` (none, or no service
+ * wired): what a notice's own action reads to act on exactly what it named.
+ *
+ * @param id - The notification.
+ */
+export function storedNotificationPayload(id: string): { kind: string; payload: unknown } | null {
+  return current?.payloadOf(id) ?? null;
 }
 
 /**

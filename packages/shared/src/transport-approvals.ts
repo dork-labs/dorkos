@@ -7,6 +7,7 @@
  * @module shared/transport-approvals
  */
 import type {
+  DeclinedHookApprovalsResponse,
   ApprovalAnswer,
   ApprovalDecisionResponse,
   ApprovalFullDetailResponse,
@@ -15,6 +16,11 @@ import type {
 
 /** Approvals: what waits on a person, and their answer. */
 export interface ApprovalTransport {
+  /** Individual declined hook cards; kept separate from the pending request count. */
+  listDeclinedHookApprovals(): Promise<DeclinedHookApprovalsResponse>;
+  /** Ask for one fresh review. This clears no refusal and grants nothing. */
+  askAgainHookApproval(approvalId: string): Promise<{ ok: true; approvalId: string }>;
+
   /**
    * List approvals an agent has requested and nobody has decided yet, oldest
    * first. Expired requests are excluded and no token material is returned.

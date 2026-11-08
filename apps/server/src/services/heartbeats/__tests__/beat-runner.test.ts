@@ -13,7 +13,7 @@ import { resolveWorkingHours } from '@dorkos/shared/working-hours';
 import { AuditLog } from '../../audit/audit-log.js';
 import { AccountIds } from '../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../audit/audit-trail.js';
-import { HeartbeatStore } from '../heartbeat-store.js';
+import { HeartbeatStore, moveBeatChats } from '../heartbeat-store.js';
 import {
   BeatRunner,
   FILE_SCAN_MS,
@@ -27,7 +27,7 @@ import { endBeatTurn, liveBeatTurn, resetBeatTurns } from '../beat-turns.js';
 import type { HeartbeatFileRead } from '../heartbeat-file.js';
 import { parseHeartbeatText, hashFrontmatter } from '../heartbeat-file.js';
 import type { Change } from '../gatherers/index.js';
-import { createCommitmentsGatherer } from '../gatherers/commitments.js';
+import { createTodosGatherer } from '../gatherers/todo-promises.js';
 import type { OpenWorkReader } from '../gatherers/open-work.js';
 import { BEAT_INTERVALS } from '../beat-scheduler.js';
 import { GATHER_HOLD_MAX_MS } from '../beat-cycle.js';
@@ -138,7 +138,7 @@ function runner(overrides: Partial<BeatRunnerDeps> = {}): BeatRunner {
       addressed: async (ctx) =>
         changes.filter((change) => ctx.since === null || change.at > ctx.since),
     },
-    commitments: { list: () => [] },
+    todoPromises: { list: () => [] },
     launcher: launcher(),
     outbox,
     readHeartbeat: async () => heartbeatFile,
@@ -245,7 +245,7 @@ describe('a beat that reads a promise made in a marked turn', () => {
     changes = [LOCAL_MESSAGE];
     const marks = { outsider: true as const, teammate: [{ roomId: 'space', authorId: 'priya' }] };
     runtime.withScenarios([endsWith({ summary: 'Done.', raises: [] }, () => currentSession)]);
-    const marked = runner({ commitments: { list: () => [], openMarks: () => marks } });
+    const marked = runner({ todoPromises: { list: () => [], openMarks: () => marks } });
     const done = marked.wake(juno.id, { wake: 'event:room-mention', causedBy: 'entry-1' });
     await settle();
     await done;
@@ -270,7 +270,7 @@ describe('a beat that reads a promise made in a marked turn', () => {
   it('runs without a ceiling when no open promise is marked', async () => {
     changes = [LOCAL_MESSAGE];
     runtime.withScenarios([endsWith({ summary: 'Done.', raises: [] }, () => currentSession)]);
-    const plain = runner({ commitments: { list: () => [], openMarks: () => ({}) } });
+    const plain = runner({ todoPromises: { list: () => [], openMarks: () => ({}) } });
     const done = plain.wake(juno.id, { wake: 'event:room-mention', causedBy: 'entry-1' });
     await settle();
     await done;
@@ -748,6 +748,49 @@ describe('starting and stopping', () => {
   });
 });
 
+describe('a beat’s chat on its row (DOR-3703, MD)', () => {
+  it('is there before the turn starts, so a restart mid-beat leaves it a beat', async () => {
+    changes = [LOCAL_MESSAGE];
+    let atLaunch: string | null | undefined;
+    const r = runner({
+      launcher: {
+        ...launcher(),
+        launch: async (request) => {
+          atLaunch = beats()[0]?.turnSessionId;
+          return { status: 'started', sessionId: request.sessionId };
+        },
+      },
+    });
+    void r.wake(juno.id, { wake: 'event:test' });
+    await settle();
+    expect(atLaunch).toEqual(expect.any(String));
+    r.stop();
+  });
+
+  it('is taken back from a beat whose turn never started', async () => {
+    changes = [LOCAL_MESSAGE];
+    launchResults = ['cap-full'];
+    const r = runner();
+    await r.start();
+    await r.wake(juno.id, { wake: 'event:test' });
+    expect(beats()[0]).toMatchObject({ outcome: 'refused', turnSessionId: null });
+    r.stop();
+  });
+
+  it('moves with the chat when the runtime renames it', () => {
+    store.insertBeat({
+      id: 'renamed-beat',
+      agentId: juno.id,
+      startedAt: new Date(MONDAY_10AM).toISOString(),
+      kind: 'pulse',
+      wake: 'timer',
+    });
+    store.setBeatChat('renamed-beat', 'asked-with');
+    moveBeatChats(db, 'asked-with', 'settled-on');
+    expect(store.beatSessionsAmong(['asked-with', 'settled-on'])).toEqual(new Set(['settled-on']));
+  });
+});
+
 describe('recovering interrupted beats', () => {
   it('leaves alone a beat this process is running', async () => {
     changes = [LOCAL_MESSAGE];
@@ -1066,7 +1109,7 @@ describe('a beat whose account is out of usage', () => {
 });
 
 // DOR-3674: overnight 11-01→11-02 every lane went quiet and the beats said "Nothing needs it"
-// 30 times. Through the real runner and the real commitments gatherer: a stalled lane, or an
+// 30 times. Through the real runner and the real to-dos gatherer: a stalled lane, or an
 // open promise with no chat running, wakes a real turn that names it; fresh work does not.
 describe('a beat over open work gone quiet', () => {
   const HOUR = 60 * 60 * 1000;
@@ -1075,14 +1118,14 @@ describe('a beat over open work gone quiet', () => {
     startedAt: '2026-10-11T00:00:00Z',
   };
 
-  /** The real commitments gatherer, over these promises and this lane activity. */
+  /** The real to-dos gatherer, over these promises and this lane activity. */
   function openWorkRunner(opts: {
     lastActive?: number;
     agent?: 'running' | number;
     promises?: { id: string; what: string }[];
     isPaused?: () => boolean;
   }) {
-    const commitments = { list: () => (opts.promises ?? []) as never[] };
+    const todoPromises = { list: () => (opts.promises ?? []) as never[] };
     const reader: OpenWorkReader = {
       lanesOf: async () => [LANE],
       isRunning: () => false,
@@ -1091,8 +1134,8 @@ describe('a beat over open work gone quiet', () => {
       watchingSince: () => Date.now() - 48 * HOUR,
     };
     return runner({
-      gatherers: { commitments: createCommitmentsGatherer(commitments, reader) },
-      commitments,
+      gatherers: { todos: createTodosGatherer(todoPromises, reader) },
+      todoPromises,
       ...(opts.isPaused ? { isPaused: opts.isPaused } : {}),
     });
   }
@@ -1122,11 +1165,11 @@ describe('a beat over open work gone quiet', () => {
     await settle();
     await done;
     expect(launches).toHaveLength(1);
-    expect(launches[0]).toContain('Commitment c1 open, no chat running since');
+    expect(launches[0]).toContain('To-do c1 open, no chat running since');
     // Ids only in what changed: the stall line never carries the promise text. (The prompt's own
-    // "Your open commitments and to-dos" list, which is older than this, shows it, fenced.)
-    const changed = launches[0]!.split('Your open commitments and to-dos:')[0]!;
-    expect(changed).toContain('Commitment c1 open');
+    // "Your open to-dos" list, which is older than this, shows it, fenced.)
+    const changed = launches[0]!.split('Your open to-dos:')[0]!;
+    expect(changed).toContain('To-do c1 open');
     expect(changed).not.toContain('Send the release notes');
   });
 

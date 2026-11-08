@@ -9,7 +9,6 @@ import type { ActivityService } from '../activity/activity-service.js';
 import { isRelayEnabled } from '../relay/relay-state.js';
 import {
   describeRelayRefusal,
-  RELAY_DISPATCH_OK,
   type RelayDispatchVerdict,
 } from '../relay/task-dispatch/readiness.js';
 import { taskDispatchSubject } from '@dorkos/shared/relay-schemas';
@@ -29,7 +28,7 @@ import { SchedulerLock, SCHEDULER_HEARTBEAT_MS, type LeaderLock } from './schedu
 import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
 import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
-import { RunAccounting } from './run-accounting.js';
+import { atCapSkipReason, RunAccounting } from './run-accounting.js';
 import {
   emitRefusedAskActivity,
   emitRunActivity,
@@ -45,7 +44,12 @@ import { previewNextRuns } from './cron-preview.js';
 import { resolveOccurrence, STALE_SKIP_REASON } from './timing/occurrence.js';
 import { runDeadline, WakeSettle } from './timing/wake-settle.js';
 import { resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
-import { resolveRunSession } from './session/sticky-session.js';
+import { resolveRunSession, STICKY_BUSY_SKIP_REASON } from './session/sticky-session.js';
+import { parkIfAgentApprovalStale } from './agent-mode/agent-mode-record.js';
+import { V1_RELAY_RUNTIME } from './execution/relay-runtime.js';
+import { checkMisplacedMode } from './execution/misplaced-mode.js';
+import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
+import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { assertOwnDesk, deskBindingFor } from '../core/agent-identity/index.js';
@@ -92,26 +96,6 @@ import {
  * @param subject - The subject the dispatch would publish to.
  */
 export type RelayRuntimePredicate = (runtimeType: string, subject: string) => RelayDispatchVerdict;
-
-/**
- * What a caller that wired a relay but never said which runtimes it holds means:
- * the v1 answer, claude-code and nothing else.
- *
- * The same compat reading `normalizeAgentRuntimes` gives a bare runtime that
- * declares no `type`, and for the same reason — it is what such a caller has
- * always meant, so honouring it keeps every existing relay caller routing
- * exactly as it did. Defaulting to "holds nothing" was measured instead: it sent
- * every relay test's run down the direct path, which is safe but silently makes
- * those tests stop testing the bus.
- *
- * Production never takes this default; `index.ts` passes
- * `AdapterManager.canRunTaskOnBus`, which is the only answer that reads live
- * adapter state.
- */
-const V1_RELAY_RUNTIME: RelayRuntimePredicate = (runtimeType) =>
-  runtimeType === 'claude-code'
-    ? RELAY_DISPATCH_OK
-    : { deliverable: false, reason: 'runtime-not-on-bus' };
 
 export type { CancelRunOutcome } from './run-cancel.js';
 export {
@@ -936,6 +920,9 @@ export class TaskSchedulerService {
     // active, and is skipped like any other (DOR-2337).
     const checkedAgent = task.agentId ? await this.beforeScheduledFire?.(task) : undefined;
 
+    // An agent's approval never covers a later version: one that no longer
+    // matches is parked here instead of run (DOR-3703).
+    if (await parkIfAgentApprovalStale(task.id, this.store, this.meshCore)) return;
     // Re-read task to check current state
     const current = this.store.getTask(task.id);
     if (!current || !current.enabled || current.status !== 'active') {
@@ -974,9 +961,9 @@ export class TaskSchedulerService {
       : pausedAgent
         ? AGENT_PAUSED_SKIP_REASON
         : atCap
-          ? this.atCapReason()
+          ? atCapSkipReason(this.config.maxConcurrentRuns)
           : stickyBusy
-            ? this.stickyBusyReason()
+            ? STICKY_BUSY_SKIP_REASON
             : null;
 
     // Idempotency gate (ADR-285): atomically claim this scheduled occurrence,
@@ -1032,23 +1019,6 @@ export class TaskSchedulerService {
     await this.executeRun(current, run, checkedAgent);
   }
 
-  /** Why a tick was not run, in the words a person reads on the run row. */
-  private atCapReason(): string {
-    const cap = this.config.maxConcurrentRuns;
-    return `DorkOS was already running ${cap} task${cap === 1 ? '' : 's'} at once, which is its limit`;
-  }
-
-  /**
-   * Why a sticky tick was not run: its own previous run is still going, and a
-   * sticky task keeps everything in one session (DOR-1571).
-   */
-  private stickyBusyReason(): string {
-    return (
-      'This task resumes one chat every run, and its previous run was still going when this ' +
-      'one came round — so it was skipped rather than starting a second turn on the same chat'
-    );
-  }
-
   /**
    * Execute a run, holding the computer awake for all of it (spec
    * `keep-awake`). The work is {@link executeRunHeld}.
@@ -1067,11 +1037,10 @@ export class TaskSchedulerService {
     // tells it which session its turn runs under once a dispatch path picks
     // one, so that turn counts as this task and not also as a chat.
     const awake = this.keepAwake?.holdTask(run.id);
-    try {
-      await this.executeRunHeld(task, run, checkedAgent, awake);
-    } finally {
-      awake?.release();
-    }
+    // The run's chats stop counting as a run here too, however it ends (DOR-3703, M-A).
+    await this.executeRunHeld(task, run, checkedAgent, awake).finally(() =>
+      endRunSessions(run.id, awake)
+    );
   }
 
   /**
@@ -1095,14 +1064,13 @@ export class TaskSchedulerService {
     checkedAgent: AgentExecutionDefaults | undefined,
     awake: TaskAwakeHold | undefined
   ): Promise<void> {
-    const onSession = (sessionId: string): void => awake?.attachSession(sessionId);
+    // On its row as this run's chat before its turn starts, every trigger, either path (MB1).
+    const onSession = (sessionId: string) => noteRunSession(run.id, sessionId, awake, this.store);
     const dispatchId = newDispatchId();
     recordDispatchStart({ dispatchId, origin: 'task' });
     return runInDispatch({ dispatchId, origin: 'task' }, () =>
       withSpan(SPAN.TASK_RUN, { [ATTR.TASK_TRIGGER]: run.trigger }, async (span) => {
-        // Both resolved FIRST, before either dispatch path. The execution
-        // decides which path is even eligible, and a run that cannot resolve a
-        // runtime must fail without a turn being started anywhere (DOR-1615).
+        // Validate and resolve before either dispatch path starts a turn.
         // The placement comes first because the execution ladder's agent tier
         // reads out of it, and because resolving it once is what stops the cwd
         // chain running (and, in `managed` mode, PROVISIONING) two or three
@@ -1110,8 +1078,12 @@ export class TaskSchedulerService {
         let placement: RunPlacement;
         let execution: RunExecution;
         try {
+          task = await checkMisplacedMode(task, run, this.store);
           placement = await this.resolveRunPlacement(task);
           execution = await this.resolveExecution(task, placement, checkedAgent);
+          // A SKILL file changed outside the task tools runs capped at Never ask, in
+          // the mode its resolved runtime declares; a check that fails, fails the run (M4).
+          task = await capRunIfFileChanged(task, run, this.store, this.meshCore, execution);
         } catch (err) {
           this.failRun(run, err);
           recordDispatchEnd(dispatchId, 'failed');

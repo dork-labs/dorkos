@@ -5,6 +5,7 @@
  *
  * @module services/tasks/history/schedule-health
  */
+import { readRefusedToolsColumn } from './run-cap-column.js';
 import { asc, desc, inArray } from 'drizzle-orm';
 import { pulseRuns, type Db } from '@dorkos/db';
 import type { TaskFailureReason, TaskHealth } from '@dorkos/shared/types';
@@ -65,15 +66,8 @@ function firstLine(error: string | null): string | null {
  * @param raw - The `refused_tools` column as stored.
  */
 function readTools(raw: string | null): string[] {
-  if (raw === null) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.every((t) => typeof t === 'string')
-      ? [...new Set(parsed as string[])]
-      : [];
-  } catch {
-    return [];
-  }
+  // A capped run keeps its list inside an object (`run-cap-column.ts`, DOR-3703).
+  return [...new Set(readRefusedToolsColumn(raw).tools ?? [])];
 }
 
 /**

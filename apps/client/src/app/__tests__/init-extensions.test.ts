@@ -249,6 +249,14 @@ describe('initializeExtensions — the right panel beside a DM (DOR-3075)', () =
     ]);
   });
 
+  it('holds back the session’s machinery and Work while the chat may yet be a DM', () => {
+    const pending = { kind: 'pending' as const, showSessions: false };
+    const tabs = tabsFor({ pathname: '/session', transport, directMessage: pending });
+    expect(tabs).not.toContain('Chat');
+    expect(tabs).not.toContain('Terminal');
+    expect(tabs).not.toContain('Work');
+  });
+
   it('adds Terminal and the session readout to a DM with Show sessions on', () => {
     const dm = { kind: 'one-to-one' as const, showSessions: true };
     expect(tabsFor({ pathname: '/session', transport, directMessage: dm })).toEqual([

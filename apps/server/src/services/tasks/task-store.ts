@@ -1,3 +1,4 @@
+import { refusedToolsColumnOf, type RunCap } from './history/run-cap-column.js';
 import {
   eq,
   ne,
@@ -122,6 +123,8 @@ interface RunUpdate {
    * `[]` is a real answer and clears it.
    */
   refusedTools?: string[];
+  /** The run runs capped, because its SKILL file changed (DOR-3703, M4). Never unset. */
+  cappedAt?: RunCap;
   /** How much a `needs_attention` run got done (DOR-3123). */
   outcome?: TaskRunOutcome;
 }
@@ -511,14 +514,13 @@ export class TaskStore {
         error: update.error ?? existing.error,
         sessionId: update.sessionId ?? existing.sessionId,
         // Serialized here rather than by the caller, so the one shape this
-        // column holds is decided in one place. An absent list leaves the
-        // stored value alone, exactly as every field above does.
-        refusedTools:
-          update.refusedTools !== undefined
-            ? JSON.stringify(update.refusedTools)
-            : existing.refusedTools !== null
-              ? JSON.stringify(existing.refusedTools)
-              : null,
+        // column holds is decided in one place (`run-cap-column.ts`). An absent
+        // list leaves the stored value alone, as every field above does, and a
+        // run's cap, once set, stays (DOR-3703, M4).
+        refusedTools: refusedToolsColumnOf(
+          update.refusedTools ?? existing.refusedTools,
+          update.cappedAt ?? existing.cappedAt
+        ),
         outcome: update.outcome ?? existing.outcome,
       })
       .where(eq(pulseRuns.id, id))

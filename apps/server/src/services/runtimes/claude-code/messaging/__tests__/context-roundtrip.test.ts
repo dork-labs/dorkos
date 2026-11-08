@@ -106,6 +106,7 @@ const CARRIES_PROSE: Record<ContextKind, boolean> = {
   context_warning: false,
   // Two server-derived facts about how the stall guard ended the last turn.
   turn_cutoff: false,
+  new_since_last_run: false,
 };
 
 /** One representative entry per ContextKind — keyed so the test is exhaustive. */
@@ -178,6 +179,16 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
     kind: 'context_warning',
     scope: 'per-turn',
     data: { percent: 81, canCompact: true },
+  },
+  new_since_last_run: {
+    kind: 'new_since_last_run',
+    scope: 'per-turn',
+    data: {
+      previousVersion: '0.1.0',
+      currentVersion: '0.2.0',
+      lines: ['New facts [information only]'],
+      omitted: 0,
+    },
   },
   turn_cutoff: {
     kind: 'turn_cutoff',

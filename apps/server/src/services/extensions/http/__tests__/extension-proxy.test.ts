@@ -987,7 +987,9 @@ describe('the extension data proxy', () => {
 
       const res = await request(fixtureTarget.mount(proxyApp())).get('/api/ext/test-ext/proxy/x');
 
-      expect(res.headers['content-security-policy']).toBe("sandbox; default-src 'none'");
+      expect(res.headers['content-security-policy']).toBe(
+        "sandbox; default-src 'none', frame-ancestors 'none'"
+      );
       expect(res.headers['x-content-type-options']).toBe('nosniff');
     });
   });

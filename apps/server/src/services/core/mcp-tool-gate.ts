@@ -121,6 +121,7 @@ import {
   type HandToolReach,
 } from './capabilities/index.js';
 import { approvalTokenArgument } from './capabilities/mcp-projection.js';
+import { escalateToolCall, noteEscalatedGrant } from './capabilities/tool-call-escalation.js';
 import {
   CapabilityGateRefusal,
   enforceCapabilityTier,
@@ -262,20 +263,34 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
   // same reason, and the same shape, as awaiting the identity above.
   const subject = await resolveApprovalSubject(action.approvalSubject, input);
   // The permission, resolved fresh for this call (spec `agent-permissions` D6).
-  const permission = await resolveCallPermission({
+  const resolved = await resolveCallPermission({
     action,
     input,
     ...(identity ? { identity } : {}),
     ...(requestingSession ? { sessionId: requestingSession.sessionId } : {}),
   });
+  // Arguments that reach an action of their own are decided as it (DOR-3703).
+  const escalation = await escalateToolCall({
+    action,
+    input,
+    permission: resolved,
+    context: {
+      ...(identity ? { identity } : {}),
+      origin,
+      ...(requestingSession ? { sessionId: requestingSession.sessionId } : {}),
+      ...(requestingSession?.cwd ? { cwd: requestingSession.cwd } : {}),
+    },
+  });
+  const permission = escalation ? escalation.permission : resolved;
 
   const decision = enforceCapabilityTier({
-    action,
+    action: escalation?.action ?? action,
     input,
     permission,
     ...(identity ? { identity } : {}),
     ...(approvalToken ? { approvalToken } : {}),
     ...(subject ? { subject } : {}),
+    ...(escalation?.change !== undefined ? { change: escalation.change } : {}),
     origin,
     // An MCP client cannot set an HTTP header on a tool call, so the retry
     // instructions must name the tool ARGUMENT this module advertises.
@@ -291,6 +306,7 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
     ...(run.blockedRequest ? { blockedRequest: run.blockedRequest } : {}),
   });
 
+  noteEscalatedGrant(input, escalation, decision, origin);
   if (decision.outcome !== 'allowed') {
     const fresh =
       decision.outcome === 'approval_required' && isFreshApprovalAsk(decision.payload)

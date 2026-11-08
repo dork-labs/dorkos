@@ -752,6 +752,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/tasks/task-file-watcher.ts':
         'syncs a file a person (or anything that can write a project file) edited on disk; the frontmatter path is deliberately NOT covered by the DOR-504 policy (see task-write-policy.ts)',
       'services/tasks/task-reconciler.ts': 'the periodic resync of the same files',
+      'services/tasks/execution/misplaced-mode.ts':
+        'the pre-dispatch misplaced-file guard (DOR-3840), only with source: discovery and problem: MISPLACED_SCHEDULE_PERMISSIONS; FileSyncGates parks the row instead of approving it. Timer runs are refused, and the person-only manual path returns Accept edits for that one run, never the misplaced value or a new approval',
       'services/shapes/shape-schedule-service.ts':
         'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy',
       'services/tasks/legacy-migration.ts':
@@ -766,12 +768,24 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: "changes a scheduled task's permission mode or approval status",
     call: 'updateTask(',
     allowed: {
+      'services/shapes/shape-schedule-service.ts':
+        "one write after the raw create fallback only: `updateTask(schedule.id, { status: 'pending_approval' })` parks that newly created row before registration (DOR-3861). It changes nothing else, grants no mode and cannot arm a schedule; this entry does not cover any other updateTask write",
       'routes/tasks.ts':
         'the cockpit REST route — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here',
       'services/tasks/lifecycle/create-task.ts':
         'the shared create sequence, which parks a proposal and lifts the permission clamp for a trusted caller only — reached through a door that already refused operator-only fields (DOR-1568)',
       'services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts':
-        'the tasks_update handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504)',
+        'the tasks_update handler shared by both MCP servers — refuses operator-only fields unconditionally (DOR-504) unless `tasks.agentModeControl` is on, when the mode and the approval are decided as `tasks.set_mode` / `tasks.approve` by the tool gate and again before the write (DOR-3703)',
+      'services/tasks/agent-mode/agent-mode-record.ts':
+        "two writes (DOR-3703). `armAgentApproval` arms a waiting schedule — status 'active', with the mode the approval names, possibly looser than the current one — only for a grant `settleAgentModeCall` made from the tool gate's own note for `tasks.approve` (Allowed by that action's own setting, or a person's yes on its card; self-, chain- and unreadable-lineage approvals refused before), after the snapshot check finds the task, its SKILL file and its last editor unchanged, the audit row is stored, and inside one transaction that re-checks the snapshot. The parks (`reparkIfAgentApprovalBroken`, and at dispatch a mode an agent set above Don't ask on content no person approved) only ever take running away",
+      'services/tasks/agent-mode/agent-mode-undo.ts':
+        "a person's Undo of a mode an agent set (DOR-3703): reached only through `routes/task-mode-undo.ts`, which refuses any caller that does not clear the agent bar, and it only writes back the mode the agent's own recorded change replaced, while the task still runs at the agent's mode. The same path undoes an agent's change the person could not be told about (condition 4), and parks the task when even that fails: it only takes power away",
+      'services/tasks/agent-mode/file-cap/file-cap-person.ts':
+        "a person's Approve file on a capped SKILL file (DOR-3703, M4): reached only through `routes/task-file-approve.ts`, which refuses any caller that does not clear the agent bar and refuses Wi-Fi, and it writes only `prompt`, set to the exact file body whose hash the person's diff showed: never a mode or a status",
+      'services/runtimes/claude-code/mcp-tools/tasks/task-tool-file-cap.ts':
+        "the task's own agent lifting its file cap (DOR-3703, M4): runs only after `mayAttestFile` passes every same-agent condition (own agent and proposer, a home-vouched chat, an unmarked turn, not a scheduled run), and it writes only `prompt`, set to the body it just attested from the same read its diff came from (M-D): never a mode or a status",
+      'services/runtimes/claude-code/mcp-tools/tasks/task-tool-mode.ts':
+        'parks a schedule at pending_approval after an agent edit when its agent-set mode above Don’t ask has no person approval of the current content (DOR-3703, the run rule): it only ever takes running away, never grants a mode or an approval',
       'services/tasks/task-store.ts': 'the definition itself',
     },
   },

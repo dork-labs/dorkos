@@ -1189,7 +1189,7 @@ describe('CreateTaskDialog', () => {
       await openAdvanced();
 
       const note = await screen.findByTestId('trust-dial-unavailable');
-      expect(note).toHaveTextContent(/Bypass all/);
+      expect(note).toHaveTextContent(/Bypass permissions/);
       expect(note).toHaveTextContent(/Saving keeps it\./);
       expect(screen.queryByRole('radiogroup', { name: /how much/i })).toBeNull();
       expect(screen.queryByText(/This covers editing files, running commands/)).toBeNull();

@@ -910,6 +910,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
         return { status: 'approved' };
       case 'pending':
         return { status: 'pending', token };
+      case 'incomplete':
       case 'denied':
         return { status: 'declined', ...(result.reason ? { reason: result.reason } : {}) };
       case 'expired':

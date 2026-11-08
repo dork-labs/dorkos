@@ -2,6 +2,8 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, act, fireEvent, waitFor } from '@testing-library/react';
+import { AGENT_IDENTITY_LIMIT_MS } from '@/layers/shared/lib';
+import { TRANSCRIPT_LOADING_MS } from '../model/use-transcript-hold';
 // Mock child components to isolate SessionComposer behavior
 // The composer barrel is mocked as one object: `Composer.Input` and
 // `Composer.Attachments` are stand-ins so this file tests the container's
@@ -13,6 +15,8 @@ import { render, screen, cleanup, act, fireEvent, waitFor } from '@testing-libra
 const { mockLimitComposer } = vi.hoisted(() => ({
   mockLimitComposer: vi.fn(() => ({ canSubmit: true, placeholder: null as string | null })),
 }));
+// The handoff card reads the browser's state, which these tests don't serve.
+vi.mock('@/layers/features/browser-handoff', () => ({ BrowserHandoffCard: () => null }));
 vi.mock('@/layers/features/continue-on-account', () => ({
   AccountLimitBanner: () => null,
   AccountLimitMarker: () => null,
@@ -533,7 +537,73 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
 
     const props = lastChatInputProps();
     expect(props.canSubmit).toBe(false);
-    expect(props.canSubmitReason).toBe('Checking this folder…');
+    // A quick lookup says nothing, so a chat that is set up doesn't flicker.
+    expect(props).not.toHaveProperty('canSubmitReason');
+  });
+
+  describe('a folder check that takes too long or fails', () => {
+    const COULD_NOT = 'Couldn’t check this folder.';
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('says it is checking, then that it couldn’t, with a way to try again', () => {
+      render(<SessionComposerBench {...baseProps} input="hello?" agentLookupPending />);
+      act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS));
+      expect(lastChatInputProps().canSubmitReason).toBe('Checking this folder…');
+      expect(lastChatInputProps().canSubmitAction).toBeUndefined();
+
+      act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS - TRANSCRIPT_LOADING_MS));
+      const props = lastChatInputProps();
+      expect(props.canSubmit).toBe(false);
+      expect(props.canSubmitReason).toBe(COULD_NOT);
+      expect(props.canSubmitAction?.label).toBe('Check again');
+    });
+
+    it('goes back to checking when pressed, and waits the whole limit again', () => {
+      const onRetryAgentLookup = vi.fn();
+      render(
+        <SessionComposerBench
+          {...baseProps}
+          input="hello?"
+          agentLookupPending
+          onRetryAgentLookup={onRetryAgentLookup}
+        />
+      );
+      act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS));
+      act(() => lastChatInputProps().canSubmitAction?.onClick());
+
+      expect(onRetryAgentLookup).toHaveBeenCalledOnce();
+      expect(lastChatInputProps().canSubmitReason).toBe('Checking this folder…');
+      act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS - 1));
+      expect(lastChatInputProps().canSubmitReason).toBe('Checking this folder…');
+      act(() => void vi.advanceTimersByTime(1));
+      expect(lastChatInputProps().canSubmitReason).toBe(COULD_NOT);
+    });
+
+    it('says the same at once for a check that errors', () => {
+      render(<SessionComposerBench {...baseProps} input="hello?" agentLookupError />);
+      const props = lastChatInputProps();
+      expect(props.canSubmit).toBe(false);
+      expect(props.canSubmitReason).toBe(COULD_NOT);
+      expect(props.canSubmitAction?.label).toBe('Check again');
+    });
+
+    it('opens the send and leaves the words alone when a late answer comes', () => {
+      const view = render(
+        <SessionComposerBench {...baseProps} input="hello?" agentLookupPending />
+      );
+      act(() => void vi.advanceTimersByTime(AGENT_IDENTITY_LIMIT_MS));
+      view.rerender(<SessionComposerBench {...baseProps} input="hello?" />);
+      const props = lastChatInputProps();
+      expect(props).not.toHaveProperty('canSubmitReason');
+      expect(props.canSubmitAction).toBeUndefined();
+      expect(props.value).toBe('hello?');
+    });
   });
 
   it('waits with the banner words while the account is out (spec claude-account-ui §6.7)', () => {

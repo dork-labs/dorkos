@@ -108,6 +108,8 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     [
       'POST /api/approvals/:id/grant',
       'POST /api/approvals/:id/deny',
+      // Starts one person-only review; grants nothing and keeps the prior refusal.
+      'POST /api/approvals/:id/ask-again',
       'POST /api/approvals/:id/dismiss-suggestion',
       'POST /api/sessions/:id/approve',
       'POST /api/sessions/:id/deny',
@@ -170,10 +172,10 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Handles: a person’s own anywhere; an agent’s refused by the route on plain-http Wi-Fi': [
     'PATCH /api/rooms/authors/:authorId/handle',
   ],
-  'Work and agents at the chat level: tasks, commitments, pausing, agent settings': [
+  'Work and agents at the chat level: tasks, to-dos, pausing, agent settings': [
     'DELETE /api/tasks/:id',
     'POST /api/tasks/runs/:id/cancel',
-    'PATCH /api/commitments/:id',
+    'PATCH /api/todo-promises/:id',
     'POST /api/agents/:id/pause',
     'POST /api/agents/:id/resume',
     'PATCH /api/agents/current',
@@ -200,6 +202,10 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/tasks',
     'PATCH /api/tasks/:id',
     'POST /api/tasks/:id/trigger',
+    // Putting back the mode an agent set: refused when the old mode is a raise (DOR-3703).
+    'POST /api/tasks/:id/undo-agent-mode',
+    // Approving a changed SKILL file lifts a cap, so it is an approval: refused (DOR-3703, M4).
+    'POST /api/tasks/:id/approve-file',
     'PATCH /api/permissions/defaults',
     'PUT /api/permissions/preset',
     'PATCH /api/agents/:id/permissions',

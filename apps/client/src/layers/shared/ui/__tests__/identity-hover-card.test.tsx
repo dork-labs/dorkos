@@ -382,6 +382,30 @@ describe('IdentityHoverCard', () => {
     });
   });
 
+  it('does nothing when an open timer fires after the card is gone (DOR-3430)', () => {
+    withFakeTimers(() => {
+      const onOpenChange = vi.fn();
+      const { unmount } = render(
+        <IdentityHoverCard
+          identity={{ kind: 'human', displayName: 'Ana' }}
+          onOpenChange={onOpenChange}
+        >
+          <button type="button">Ana</button>
+        </IdentityHoverCard>
+      );
+      const trigger = screen.getByRole('button', { name: 'Ana' });
+      // A focus and a hover, as any click gives: Radix's second open timer
+      // overwrites the first, which its unmount cleanup then cannot reach.
+      fireEvent.focus(trigger);
+      fireEvent.pointerEnter(trigger, { pointerType: 'mouse' });
+      unmount();
+      act(() => {
+        vi.advanceTimersByTime(1000); // past Radix's 700 ms open delay
+      });
+      expect(onOpenChange).not.toHaveBeenCalled();
+    });
+  });
+
   describe('touch — open lifecycle (real timers)', () => {
     it('stays open once the finger lifts — release does not close it', async () => {
       const trigger = renderTrigger();

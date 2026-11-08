@@ -24,6 +24,7 @@ const ALL_KINDS: ContextKind[] = [
   'doc_events',
   'context_warning',
   'turn_cutoff',
+  'new_since_last_run',
 ];
 
 /** A minimal but complete room context — every field the union requires. */

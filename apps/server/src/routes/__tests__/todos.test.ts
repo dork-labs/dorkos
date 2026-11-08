@@ -21,22 +21,22 @@ vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { commitments, eq, type Db } from '@dorkos/db';
+import { todos as todoTable, eq, type Db } from '@dorkos/db';
 import { PERSON_APP_HEADER } from '@dorkos/shared/person-session';
 import { createTodosRoutes } from '../todos.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
-import { CommitmentService } from '../../services/commitments/commitment-service.js';
-import { CommitmentStore } from '../../services/commitments/commitment-store.js';
-import { TodoService } from '../../services/commitments/todo-service.js';
-import { TodoStore } from '../../services/commitments/todo-store.js';
+import { TodoPromiseService } from '../../services/todos/todo-promise-service.js';
+import { TodoPromiseStore } from '../../services/todos/todo-promise-store.js';
+import { TodoService } from '../../services/todos/todo-service.js';
+import { TodoStore } from '../../services/todos/todo-store.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 describe('to-do routes', () => {
   let db: Db;
-  let promises: CommitmentService;
+  let promises: TodoPromiseService;
   let todos: TodoService;
   /** Whether the request proves the person; flipped per test. */
   let proven: boolean;
@@ -45,9 +45,9 @@ describe('to-do routes', () => {
 
   function power(id: string) {
     return db
-      .select({ authority: commitments.authority, marks: commitments.authorityMarks })
-      .from(commitments)
-      .where(eq(commitments.id, id))
+      .select({ authority: todoTable.authority, marks: todoTable.authorityMarks })
+      .from(todoTable)
+      .where(eq(todoTable.id, id))
       .get();
   }
 
@@ -55,7 +55,7 @@ describe('to-do routes', () => {
     state.ownerId = null;
     proven = false;
     db = createTestDb();
-    promises = new CommitmentService({ store: new CommitmentStore(db) });
+    promises = new TodoPromiseService({ store: new TodoPromiseStore(db) });
     todos = new TodoService({
       store: new TodoStore(db),
       agentExists: (id) => id === 'agent-ana',
@@ -196,7 +196,7 @@ describe('to-do routes', () => {
       .send({ what: 'Ship it', assignee: { kind: 'agent', agentId: 'agent-ana' } });
     expect(res.status).toBe(401);
     expect(res.body.code).toBe('person_session_required');
-    expect(db.select().from(commitments).all()).toEqual([]);
+    expect(db.select().from(todoTable).all()).toEqual([]);
   });
 
   // G2 holds here because an agent presenting itself is refused even when the request proves the
@@ -210,7 +210,7 @@ describe('to-do routes', () => {
       .send({ what: 'x', assignee: { kind: 'person', account: 'owner' } });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('NOT_A_PERSON');
-    expect(db.select().from(commitments).all()).toEqual([]);
+    expect(db.select().from(todoTable).all()).toEqual([]);
   });
 
   it("reads every person assignee as the owner, so a body never picks another person's list", async () => {

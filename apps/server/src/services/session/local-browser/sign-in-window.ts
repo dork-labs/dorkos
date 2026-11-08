@@ -1,9 +1,11 @@
 /** One plain sign-in window at a time, and whether its sign-in reached the disk. */
 import type { LocalBrowserSignIn } from '@dorkos/shared/local-browser';
+import { clearAgentWindowTheme } from './agent-window/theme.js';
 import { LocalBrowserError } from './errors.js';
 import { managedChromiumPath } from './playwright-backend.js';
 import {
   disablePasswordSaving,
+  forgetOpenTabs,
   plainChromiumArgs,
   profileHeld,
   profileLockPid,
@@ -17,6 +19,13 @@ export const SIGN_IN_SAVE_TIMEOUT_MS = 20_000;
 const SAVE_POLL_MS = 200;
 /** How long a new window may take to take hold of its profile. */
 export const SIGN_IN_LOCK_TIMEOUT_MS = 5_000;
+
+/** No saved passwords, no agent window's orange, no tabs an agent left open: only a person is here. */
+async function preparePlainProfile(profileFolder: string): Promise<void> {
+  await disablePasswordSaving(profileFolder);
+  await clearAgentWindowTheme(profileFolder);
+  await forgetOpenTabs(profileFolder);
+}
 
 /** The pid holding a profile, or `unchecked` where the lock names none (Windows). */
 type LockOwner = (profileFolder: string) => number | undefined | 'unchecked';
@@ -32,7 +41,7 @@ export interface SignInWindowDeps {
   held?: (profileFolder: string) => boolean;
   /** Which process holds a profile, read after the window starts. */
   lockOwner?: LockOwner;
-  /** Get the profile ready: password saving off. */
+  /** Get the profile ready: password saving off, the agent window's theme out, no tabs to bring back. */
   prepare?: (profileFolder: string) => Promise<void>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -47,8 +56,18 @@ export class SignInWindow {
   private window?: PlainChromium;
   private folder?: string;
   private attempt = 0;
+  private changed: () => void = () => undefined;
 
   constructor(private readonly deps: SignInWindowDeps = {}) {}
+
+  /**
+   * Set once at startup: called each time the sign-in's status moves.
+   *
+   * @param listener - Told that something changed, and nothing else.
+   */
+  onChange(listener: () => void): void {
+    this.changed = listener;
+  }
 
   /** The latest sign-in, or null when none has started since the server did. */
   get current(): LocalBrowserSignIn | null {
@@ -95,8 +114,9 @@ export class SignInWindow {
       status: 'open',
       startedAt: new Date(this.now()).toISOString(),
     };
+    this.changed();
     try {
-      await (this.deps.prepare ?? disablePasswordSaving)(profileFolder);
+      await (this.deps.prepare ?? preparePlainProfile)(profileFolder);
       const executable = await (this.deps.executable ?? managedChromiumPath)();
       const spawner = this.deps.spawner ?? spawnPlainChromium;
       this.window = spawner(executable, plainChromiumArgs(profileFolder, url, site));
@@ -135,6 +155,7 @@ export class SignInWindow {
   private async save(attempt: number, profileFolder: string): Promise<void> {
     if (attempt !== this.attempt || !this.record) return;
     this.record = { ...this.record, status: 'saving' };
+    this.changed();
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
     const deadline = this.now() + SIGN_IN_SAVE_TIMEOUT_MS;
     // No fixed wait: saved is when Chromium has let go of the profile.
@@ -150,6 +171,7 @@ export class SignInWindow {
     if (attempt !== this.attempt || !this.record) return;
     this.record = { ...this.record, status };
     this.window = undefined;
+    this.changed();
   }
 
   private async ownsProfile(

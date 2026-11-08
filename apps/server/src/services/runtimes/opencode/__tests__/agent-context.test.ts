@@ -37,6 +37,15 @@ import {
 beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
 
+// The turn consults folder consent before attaching managed tools.
+vi.mock('../../../core/config-manager.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../core/config-manager.js')>();
+  return {
+    ...actual,
+    configManager: { get: () => undefined, getAll: () => ({}) },
+  };
+});
+
 vi.mock('../providers/check-dependencies.js', () => ({
   checkOpenCodeDependencies: vi.fn(() => []),
   resolveOpenCodeBinaryPath: vi.fn(() => null),

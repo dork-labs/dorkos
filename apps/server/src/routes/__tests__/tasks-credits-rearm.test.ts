@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * An edit to a live schedule on DorkOS credits keeps it approved only for the
  * owner of this DorkOS (DOR-2678). A person's edit normally re-arms their own
@@ -132,7 +133,14 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
   });
 
   const patch = (id: string, body: Record<string, unknown>) =>
-    request(target.server).patch(`/api/tasks/${id}`).send(body);
+    request(target.server)
+      .patch(`/api/tasks/${id}`)
+      .send({
+        ...body,
+        ...(body.status === 'active' && {
+          expectedApprovalRevision: taskReviewRevision(store.getTask(id)!),
+        }),
+      });
 
   /** The schedule, discovered, put on credits and approved by the owner. */
   async function approvedOnCredits(): Promise<Task> {

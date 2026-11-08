@@ -124,6 +124,9 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // is narrowed further still — a document whose tree this reader could not
     // already read comes back as its name and nothing more.
     'read_canvas',
+    // How the caller's own hand-off went (DOR-3778). A post's answer sends the chat here, so a card
+    // or a refusal would strand it. It reads one record, keyed to the caller's agent.
+    'room_handoff_status',
     // The verbs that ARRANGE rooms (DOR-1611; `archive_room` from spec
     // `agent-permissions` D12). They carry everything above them plus one bound
     // none of the others has: the Rooms permission, resolved for THIS agent at
@@ -398,6 +401,7 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'get_room',
     'find_room',
     'read_canvas',
+    'room_handoff_status',
     'create_room',
     'add_room_members',
     'remove_room_members',

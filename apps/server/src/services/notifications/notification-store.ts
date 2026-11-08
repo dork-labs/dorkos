@@ -35,7 +35,7 @@ import type {
   NotificationTier,
 } from '@dorkos/shared/notification-schemas';
 import { logger } from '../../lib/logger.js';
-import { buildActions, buildPayloadFacts } from './stored-dto-parts.js';
+import { buildActions, buildPayloadFacts, readStoredPayload } from './stored-dto-parts.js';
 
 /**
  * Ids that keep increasing even inside one millisecond.
@@ -755,6 +755,15 @@ export class NotificationStore {
    *
    * @internal Exported for tests.
    */
+  /**
+   * One stored notification's kind and raw payload ({@link readStoredPayload}).
+   *
+   * @param id - The notification.
+   */
+  payloadOf(id: string): ReturnType<typeof readStoredPayload> {
+    return readStoredPayload(this.db, id);
+  }
+
   byIds(ids: string[]): NotificationDTO[] {
     if (ids.length === 0) return [];
     return this.db

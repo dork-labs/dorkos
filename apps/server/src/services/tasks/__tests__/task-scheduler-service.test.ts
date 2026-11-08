@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import {
   clearTestHomes,
@@ -20,6 +20,13 @@ import { AdapterRegistry } from '@dorkos/relay';
 import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay';
 import { taskDispatchSubject, TASK_DISPATCH_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from '../task-append.js';
+import { agentApprovalBindingOf } from '../agent-mode/agent-mode-binding.js';
+import { NotificationStore } from '../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../notifications/notification-service.js';
+import { notifyRunCompleted } from '../../notifications/emitters/run-completed.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -525,6 +532,67 @@ describe('TaskSchedulerService', () => {
     });
   });
 
+  describe('an agent-approved schedule that changed (DOR-3703)', () => {
+    /** A schedule an agent approved as it is now. */
+    function agentApproved(name: string, agentId?: string, cwd: string | null = null) {
+      const task = store.createTask(
+        taskInput({ name, prompt: 'test', cron: '0 * * * *', ...(agentId ? { agentId } : {}) })
+      );
+      store.approvals.recordAgentApproval(task.id, agentApprovalBindingOf(task, cwd), '{}');
+      return task;
+    }
+
+    it('parks it instead of running it when its work changed', async () => {
+      const task = agentApproved('Armed');
+      store.updateTask(task.id, { prompt: 'something nobody approved' });
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: { ...DEFAULT_CONFIG },
+      });
+
+      await (service as unknown as Fireable).dispatch(store.getTask(task.id)!, ON_TIME_HOURLY);
+
+      expect(store.getTask(task.id)!.status).toBe('pending_approval');
+      expect(store.listRuns()).toHaveLength(0);
+      await service.stop();
+    });
+
+    it('parks it when its agent’s folder moved', async () => {
+      const task = agentApproved('Moved', 'agent-1', '/agents/one');
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: { ...DEFAULT_CONFIG },
+        meshCore: { getProjectPath: () => '/agents/elsewhere' } as unknown as MeshCore,
+      });
+
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
+
+      expect(store.getTask(task.id)!.status).toBe('pending_approval');
+      expect(store.listRuns()).toHaveLength(0);
+      await service.stop();
+    });
+
+    it('runs it while it is still what the agent approved', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'ok' } };
+      });
+      const task = agentApproved('Same');
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: { ...DEFAULT_CONFIG },
+      });
+
+      await (service as unknown as Fireable).dispatch(task, ON_TIME_HOURLY);
+
+      expect(store.getTask(task.id)!.status).toBe('active');
+      expect(store.listRuns().length).toBeGreaterThan(0);
+      await service.stop();
+    });
+  });
+
   describe('dispatch idempotency (ADR-285)', () => {
     const okAgent = () =>
       vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
@@ -781,6 +849,12 @@ describe('TaskSchedulerService', () => {
     });
 
     it('never records an Accept edits schedule that lost Bash as completed (DOR-3123)', async () => {
+      // Reuse the timer-refusal regression to prove its terminal hook reaches
+      // the person's real notification store too (DOR-3839), not only run history.
+      const notifications = new NotificationService(new NotificationStore(db));
+      setNotificationService(notifications);
+      store.setOnRunTerminal((run, task) => void notifyRunCompleted(run, task));
+      onTestFinished(() => setNotificationService(null));
       // QA's census, 2026-10-25: 23 refusals in a day, every one on an Accept
       // edits schedule, and every run row said `completed`.
       vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
@@ -807,6 +881,16 @@ describe('TaskSchedulerService', () => {
       expect(finished.trigger).toBe('scheduled');
       expect(finished.status).toBe('needs_attention');
       expect(finished.refusedTools).toEqual(['Bash']);
+      await vi.waitFor(() =>
+        expect(notifications.list({ limit: 25, unread: false }).notifications).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              title: 'Health check had a command refused',
+              body: 'It may have needed approval. Open the schedule to check its mode.',
+            }),
+          ])
+        )
+      );
       expect(finished.error).toBe(
         'Skipped Bash — nobody was there to approve it on a scheduled run.'
       );
@@ -978,8 +1062,8 @@ describe('TaskSchedulerService', () => {
       // One entry each: the operator's morning question is WHICH tools, and the
       // run row's own line already answers "were there any".
       expect(refusals.map((event) => event.summary)).toEqual([
-        'Noted could not use Bash — nobody was there to approve it',
-        'Noted could not use control_ui — nobody was there to approve it',
+        'Noted had a Bash command refused',
+        'Noted was refused control_ui',
       ]);
 
       await service.stop();

@@ -1,7 +1,13 @@
+import { hasMisplacedSchedulePermissions } from '@dorkos/shared/schedule-file-problems';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '@tanstack/react-form';
 import { Copy, Trash2 } from 'lucide-react';
-import { PACKAGE_OWNED_SCHEDULE_CODE, useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
+import {
+  PACKAGE_OWNED_SCHEDULE_CODE,
+  ScheduleFileProblem,
+  useCreateTask,
+  useUpdateTask,
+} from '@/layers/entities/tasks';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import {
   ResponsiveDialogFooter,
@@ -243,6 +249,7 @@ export function ScheduleForm({
         className="min-h-0 flex-1 overflow-y-auto"
       >
         <div className="space-y-5 px-4 py-5">
+          {editTask && hasMisplacedSchedulePermissions(editTask) && <ScheduleFileProblem />}
           {ownedBy !== null && (
             <div
               role="status"
@@ -378,11 +385,7 @@ export function ScheduleForm({
             </div>
           </CollapsibleFieldCard>
 
-          {/* The cron warning lives inside the Schedule section, which collapses
-              — and a collapsed section plus a disabled Create button is a dead
-              end with its reason hidden. This sits OUTSIDE that section, so the
-              reason is on screen either way. Deliberately not forcing the
-              section open instead: a person who closed it meant it. */}
+          {/* Outside the collapsed settings so a blocked save always says why. */}
           <form.Subscribe selector={(s) => !isCronValid(s.values.cron)}>
             {(cronIsBroken) =>
               cronIsBroken ? (

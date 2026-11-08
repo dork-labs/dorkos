@@ -77,6 +77,16 @@ type ActiveRun =
       expiresAt: number;
     };
 
+/**
+ * Why a tick was not run because DorkOS was at its limit of runs at once, in
+ * the words a person reads on the run row.
+ *
+ * @param cap - The limit (`maxConcurrentRuns`).
+ */
+export function atCapSkipReason(cap: number): string {
+  return `DorkOS was already running ${cap} task${cap === 1 ? '' : 's'} at once, which is its limit`;
+}
+
 /** The live runs of one scheduler, across both dispatch paths. */
 export class RunAccounting {
   private runs = new Map<string, ActiveRun>();

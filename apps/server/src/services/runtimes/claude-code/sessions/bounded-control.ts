@@ -175,6 +175,15 @@ export const LIVE_SETTING_ACK_TIMEOUT_MS = 3_000;
 export const PLUGIN_RELOAD_ACK_TIMEOUT_MS = 8_000;
 
 /**
+ * How long a new process may take to connect its in-process MCP servers before
+ * its external servers are handed over regardless (DOR-3882). The CLI handles a
+ * server swap in order and stops reading their connect answers while it waits, so
+ * a swap sent too soon lets one hung external server take `dorkos` down with it.
+ * Normally a few milliseconds; this only bounds a process that never reports.
+ */
+export const IN_PROCESS_CONNECT_BOUND_MS = 3_000;
+
+/**
  * How long a probe fired at a freshly launched subprocess — the model list, the
  * MCP status snapshot, the command and subagent lists, and the model-cache
  * warm-up's own `supportedModels()` — may go unanswered.

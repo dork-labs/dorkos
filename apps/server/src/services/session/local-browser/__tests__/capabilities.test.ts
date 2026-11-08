@@ -28,6 +28,7 @@ function setup() {
   };
   const service = {
     requireProfileAccess: vi.fn(async () => undefined),
+    requireNotFullScreen: vi.fn(async () => undefined),
     requireSharedSession: vi.fn((id: string) => {
       if (id !== 'chat-one')
         throw new LocalBrowserError(
@@ -57,6 +58,7 @@ function setup() {
     })),
     handover: {
       requireAgentMayUse: vi.fn(async (_sessionId: string) => undefined),
+      refuseStopped: vi.fn((_sessionId: string) => undefined),
       ask: vi.fn(async () => ({ handoffId: 'h1', site: 'fixture.test', next: 'Wait.' })),
     },
   };
@@ -209,6 +211,44 @@ describe('local browser scoped tool projection', () => {
     expect(service.action).not.toHaveBeenCalled();
     expect(service.agentState).not.toHaveBeenCalled();
   });
+  it('refuses every read and action while a page is in full screen, before reading', async () => {
+    const { domain, deps, context, service } = setup();
+    service.requireNotFullScreen.mockRejectedValue(
+      new LocalBrowserError('full_screen', 'A page is in full screen.')
+    );
+    for (const capability of domain.capabilities.filter(
+      (item) => item.id !== 'local_browser.ask_person'
+    ))
+      await expect(
+        capability.invoke(deps, inputFor(capability.id), context('chat-one'))
+      ).rejects.toMatchObject({ payload: { code: 'full_screen' } });
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
+    expect(service.action).not.toHaveBeenCalled();
+    expect(service.agentState).not.toHaveBeenCalled();
+  });
+  it('still lets an agent hand over from full screen', async () => {
+    const { domain, deps, context, service } = setup();
+    service.requireNotFullScreen.mockRejectedValue(
+      new LocalBrowserError('full_screen', 'A page is in full screen.')
+    );
+    const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;
+    await expect(
+      ask.invoke(deps, inputFor('local_browser.ask_person'), context('chat-one'))
+    ).resolves.toBeDefined();
+  });
+  it('refuses every other chat on every tool during a handoff: only one chat is ever shared', async () => {
+    const { domain, deps, context, service } = setup();
+    for (const capability of domain.capabilities)
+      await expect(
+        (async () => capability.invoke(deps, inputFor(capability.id), context('chat-two')))()
+      ).rejects.toMatchObject({ payload: { code: 'not_shared' } });
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
+    expect(service.action).not.toHaveBeenCalled();
+    expect(service.agentState).not.toHaveBeenCalled();
+    expect(service.handover.ask).not.toHaveBeenCalled();
+  });
   it('hands over for the shared chat only, and answers again while the person has it', async () => {
     const { domain, deps, context, service } = setup();
     service.handover.requireAgentMayUse.mockRejectedValue(
@@ -242,8 +282,10 @@ describe('local browser scoped tool projection', () => {
     const browser = {
       state: async () => service.agentState(),
       currentProfileId: () => null,
+      capabilities: () => ({ newWindow: true }),
       open: vi.fn(async () => service.agentState()),
       selectTab: vi.fn(async () => service.agentState()),
+      navigate: vi.fn(async () => service.agentState()),
       pause: vi.fn(async () => service.agentState()),
       resume: vi.fn(async () => service.agentState()),
       disconnect: vi.fn(async () => service.agentState()),
@@ -260,11 +302,86 @@ describe('local browser scoped tool projection', () => {
     )) as { handoffId: string };
     await handover.stop(handoffId);
     for (const id of ['local_browser.observe', 'local_browser.screenshot', 'local_browser.state'])
-      await expect(tool(id).invoke(deps, {}, context('chat-one'))).rejects.toMatchObject({
-        payload: { code: 'task_stopped' },
-      });
+      await expect(
+        (async () => tool(id).invoke(deps, {}, context('chat-one')))()
+      ).rejects.toMatchObject({ payload: { code: 'task_stopped' } });
     expect(service.observe).not.toHaveBeenCalled();
     expect(service.screenshot).not.toHaveBeenCalled();
+  });
+  it('while a closed window reopens during a handoff, every tool stays refused', async () => {
+    const { domain, deps, context, service } = setup();
+    const seen: unknown[] = [];
+    // The real browser unpauses as open finishes, so the refusal can't lean on the pause.
+    const browser = {
+      state: async () => service.agentState(),
+      currentProfileId: () => null,
+      capabilities: () => ({ newWindow: true }),
+      open: vi.fn(async () => {
+        for (const capability of domain.capabilities.filter(
+          (item) => item.id !== 'local_browser.ask_person'
+        ))
+          await (async () =>
+            capability.invoke(deps, inputFor(capability.id), context('chat-one')))()
+            .then(() => seen.push(`${capability.id} answered`))
+            .catch((error: { payload?: { code?: string } }) => seen.push(error.payload?.code));
+        return service.agentState();
+      }),
+      selectTab: vi.fn(async () => service.agentState()),
+      navigate: vi.fn(async () => service.agentState()),
+      pause: vi.fn(async () => service.agentState()),
+      resume: vi.fn(async () => service.agentState()),
+      disconnect: vi.fn(async () => service.agentState()),
+    };
+    const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
+    const handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
+    handover.useOutsideTurnCheck(async () => false);
+    (service as { handover: unknown }).handover = handover;
+    await handover.ask('chat-one', 'wall');
+    service.observe.mockClear();
+    service.action.mockClear();
+    service.screenshot.mockClear();
+    await handover.open({ mode: 'new-window', sessionId: 'chat-one' });
+    expect(seen.length).toBe(domain.capabilities.length - 1);
+    expect(new Set(seen)).toEqual(new Set(['handed_to_person']));
+    expect(service.observe).not.toHaveBeenCalled();
+    expect(service.action).not.toHaveBeenCalled();
+    expect(service.screenshot).not.toHaveBeenCalled();
+    expect(browser.pause).toHaveBeenCalledTimes(2);
+  });
+  it('after Disconnect during a handoff, the chat hears task_stopped, not not_shared', async () => {
+    const { domain, deps, context, service } = setup();
+    const browser = {
+      state: async () => service.agentState(),
+      currentProfileId: () => null,
+      capabilities: () => ({ newWindow: true }),
+      open: vi.fn(async () => service.agentState()),
+      selectTab: vi.fn(async () => service.agentState()),
+      navigate: vi.fn(async () => service.agentState()),
+      pause: vi.fn(async () => service.agentState()),
+      resume: vi.fn(async () => service.agentState()),
+      // The real browser forgets its chat when it closes, as requireSharedSession then sees.
+      disconnect: vi.fn(async () => {
+        service.requireSharedSession.mockImplementation(() => {
+          throw new LocalBrowserError('not_shared', 'Open this chat’s browser.');
+        });
+        return service.agentState();
+      }),
+    };
+    const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
+    const handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
+    handover.useOutsideTurnCheck(async () => false);
+    (service as { handover: unknown }).handover = handover;
+    const tool = (id: string) => domain.capabilities.find((item) => item.id === id)!;
+    await tool('local_browser.ask_person').invoke(deps, { reason: 'wall' }, context('chat-one'));
+    await handover.disconnect();
+    for (const capability of domain.capabilities)
+      await expect(
+        (async () => capability.invoke(deps, inputFor(capability.id), context('chat-one')))()
+      ).rejects.toMatchObject({ payload: { code: 'task_stopped' } });
+    // Any other chat still only hears that the browser isn't shared with it.
+    await expect(
+      (async () => tool('local_browser.state').invoke(deps, {}, context('chat-two')))()
+    ).rejects.toMatchObject({ payload: { code: 'not_shared' } });
   });
   it('lets no agent name the site it hands over', () => {
     const { domain } = setup();

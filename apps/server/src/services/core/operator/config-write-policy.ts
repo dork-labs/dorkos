@@ -337,8 +337,8 @@ export const CONFIG_WRITE_POLICY = {
   // a record of what a person was told is still not an agent's to forge.
   'ui.trustNoticeSeenAt': 'operator-only',
   // How a chat with one agent is drawn, and whether its working session can be
-  // opened (DOR-3074). Like every experiment, `ui.dmView` is a person's to
-  // try, never an agent's. `ui.showSessions` decides whether the model,
+  // opened (DOR-3074). `ui.dmView` is how a person's own chats are drawn, so it
+  // is a person's to change, never an agent's. `ui.showSessions` decides whether the model,
   // account and context of a chat stay in view: an agent that turned it off
   // would hide from the person the readings about its own work.
   'ui.dmView': 'operator-only',
@@ -386,6 +386,9 @@ export const CONFIG_WRITE_POLICY = {
   // Whether the Docs experiment is on (DOR-2993). Like every experiment, a
   // person tries it, never an agent.
   'docs.enabled': 'operator-only',
+  // Whether agents may set a scheduled task's mode or approve one (DOR-3703).
+  // It widens what an agent may arm, so a person turns it on, never an agent.
+  'tasks.agentModeControl': 'operator-only',
   // Whether this DorkOS joins and talks to spaces on other servers (DOR-2740).
   // Another "who can this instance reach" door, so a person opens it, never an
   // agent.

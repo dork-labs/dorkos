@@ -23,6 +23,8 @@ export interface ApprovalRequestInput {
   inputHash: string;
   /** One plain sentence describing what the operator is about to allow. */
   summary: string;
+  /** Full package disclosure, rebuilt and checked again before a yes. */
+  packageRequest?: import('./approval-completeness.js').PackageApprovalRequest;
   /**
    * The card's title for this one request, in place of the capability's own
    * title. For a card whose question depends on what it is about, such as a

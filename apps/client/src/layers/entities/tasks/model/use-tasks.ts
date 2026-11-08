@@ -81,6 +81,46 @@ export function useUpdateTask(options: { isShownInline?: (error: Error) => boole
   });
 }
 
+/**
+ * Put a schedule back on the mode one of our agents set without asking: the
+ * Undo on the notice DorkOS posted for that change (DOR-3703). A person's
+ * action; the server refuses any agent. The calling button shows its own
+ * failure, so the shared toast leaves it alone.
+ */
+export function useUndoAgentTaskMode() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, notificationId }: { taskId: string; notificationId: string }) =>
+      transport.undoAgentTaskMode(taskId, notificationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [...TASKS_KEY], exact: true });
+    },
+    meta: { errorLabel: 'Couldn’t undo the mode', isShownInline: () => true },
+  });
+}
+
+/**
+ * Approve a task's SKILL file as the diff a person read showed it, lifting
+ * the cap a change outside the task tools put on its runs (DOR-3703, M4); bound
+ * to the hash that diff showed. A person's action; the server
+ * refuses any agent. The calling button shows its own failure.
+ */
+export function useApproveTaskFile() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, capAt, hash }: { taskId: string; capAt: string; hash: string }) =>
+      transport.approveTaskFile(taskId, capAt, hash),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [...TASKS_KEY], exact: true });
+    },
+    meta: { errorLabel: 'Couldn’t approve the file', isShownInline: () => true },
+  });
+}
+
 /** Delete a Task. */
 export function useDeleteTask() {
   const transport = useTransport();

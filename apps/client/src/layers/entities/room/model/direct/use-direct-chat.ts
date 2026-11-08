@@ -37,6 +37,23 @@ export const DIRECT_CHAT_TITLE = 'Direct';
 /** Query key for the Direct chat a session is. */
 export const directChatKey = (sessionId: string) => ['direct-chat', sessionId] as const;
 
+/** How long after its first failure a lookup asks again, in milliseconds. */
+const LOOKUP_FIRST_RETRY_MS = 5_000;
+
+/** How many failures a lookup takes before it stops asking on its own. */
+const LOOKUP_MAX_FAILURES = 5;
+
+/**
+ * When a failed lookup asks again: doubling, then not at all, until something
+ * else asks (a refocus, a reload).
+ *
+ * @param failures - How many times it has failed; `0` is one still on its way.
+ */
+function lookupRetryDelayMs(failures: number): number | false {
+  if (failures === 0 || failures >= LOOKUP_MAX_FAILURES) return false;
+  return LOOKUP_FIRST_RETRY_MS * 2 ** (failures - 1);
+}
+
 /** How {@link useDirectChat} reads. */
 export interface UseDirectChatOptions {
   /**
@@ -62,6 +79,12 @@ export function useDirectChat(
     queryFn: () => transport.findDirectChat(sessionId!),
     enabled: sessionId !== null && (options?.enabled ?? true),
     retry: false,
+    // Every surface on a chat reads this, and a surface mounting must not ask
+    // again: asking puts a failed lookup back to pending, which remounts them
+    // (70 to 90 requests a second against a failing server). It asks on a clock.
+    retryOnMount: false,
+    refetchInterval: (query) =>
+      query.state.data === undefined ? lookupRetryDelayMs(query.state.errorUpdateCount) : false,
     // Which session is a Direct chat changes only when its DM gains a member.
     staleTime: 60_000,
   });

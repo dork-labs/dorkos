@@ -20,7 +20,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { useOpenDirectChat, useRoomBoundSession } from '@/layers/entities/room';
 import { useSessionListStore } from '@/layers/entities/session';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
-import { useCommitments } from '@/layers/entities/commitment';
+import { useTodoPromises } from '@/layers/entities/todo';
 import { useAgentHeartbeat } from '@/layers/entities/heartbeat';
 import { useAgentLevel } from '@/layers/entities/permissions';
 import { deriveRelationship } from '../lib/profile-relationship';
@@ -107,17 +107,17 @@ export function ProfileView({
   // and must not be asked about it.
   const ownsWork = relationship === 'managed' || relationship === 'system';
   const facts = useManagedAgentFacts(member, ownsWork);
-  // The Commitments row's counts. Asked for on every agent's profile: anyone
+  // The To-dos row's counts. Asked for on every agent's profile: anyone
   // may read any agent's promises (spec `heartbeats` §12). The page it pushes
   // reads the same key, so opening it is a cache hit.
-  const commitmentAgentId = member.agent?.manifestId;
-  const commitments = useCommitments(
-    { agentId: commitmentAgentId ?? '' },
-    { enabled: Boolean(commitmentAgentId) }
+  const todoAgentId = member.agent?.manifestId;
+  const todoPromises = useTodoPromises(
+    { agentId: todoAgentId ?? '' },
+    { enabled: Boolean(todoAgentId) }
   );
   // The Heartbeat row's words, read for every agent for the same reason. The
   // page reads the same key live, so opening it is a cache hit too.
-  const heartbeat = useAgentHeartbeat(commitmentAgentId ?? null);
+  const heartbeat = useAgentHeartbeat(todoAgentId ?? null);
   // The Level row: what the agent actually runs at, resolved by the server.
   // Asked only where the Permissions row is drawn — the same audience.
   const level = useAgentLevel(ownsWork ? member.id : undefined);
@@ -149,10 +149,10 @@ export function ProfileView({
     rooms: rooms.data ? { count: rooms.data.rooms.length, rooms: rooms.data.rooms } : null,
     facts,
     reportsTo: manifest.data ? describeReportsTo(manifest.data, roster, member).label : null,
-    commitments: commitments.data
+    todoPromises: todoPromises.data
       ? {
-          open: commitments.data.filter((c) => c.state === 'open').length,
-          overdue: commitments.data.filter((c) => c.overdue).length,
+          open: todoPromises.data.filter((c) => c.state === 'open').length,
+          overdue: todoPromises.data.filter((c) => c.overdue).length,
         }
       : null,
     heartbeat: heartbeat.data ?? null,

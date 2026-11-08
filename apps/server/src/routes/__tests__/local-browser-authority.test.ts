@@ -37,16 +37,16 @@ const spies = {
   handBack: vi.fn(async () => ({})),
   stop: vi.fn(async () => ({})),
 };
-// The person's view, opening and resuming go through the handoff, so a sign-in can't be raced.
+// Everything a person does that can move, close or open the browser goes through the handoff.
 const service = {
   capabilities: spies.capabilities,
-  selectTab: spies.selectTab,
-  navigate: spies.navigate,
   pause: spies.pause,
-  disconnect: spies.disconnect,
   handover: {
     state: spies.state,
     open: spies.open,
+    selectTab: spies.selectTab,
+    navigate: spies.navigate,
+    disconnect: spies.disconnect,
     resume: spies.resume,
     signIn: spies.signIn,
     handBack: spies.handBack,
@@ -119,7 +119,10 @@ describe.each(endpoints)('%s %s authority', (method, path, body, effect) => {
 
 describe.each([
   ['/open', { mode: 'new-window' }],
+  ['/tabs/tab-1/select', undefined],
+  ['/navigate', { url: 'https://example.test/' }],
   ['/resume', undefined],
+  ['/disconnect', undefined],
   ['/sign-in', { url: 'https://example.test/' }],
   ['/handoff/hand-back', { handoffId: 'h1' }],
   ['/handoff/stop', { handoffId: 'h1' }],

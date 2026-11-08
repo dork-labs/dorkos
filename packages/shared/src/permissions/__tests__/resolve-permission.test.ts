@@ -80,6 +80,47 @@ describe('resolvePermission precedence', () => {
   });
 });
 
+describe('standing-grant rule (DOR-3703)', () => {
+  // Arming a scheduled task, or setting how much it may do, is a standing grant:
+  // only a setting for the action itself allows it, whatever the area says.
+  const grant = (extra: Partial<ResolvePermissionInput>) =>
+    resolvePermission(
+      input({ area: 'tasks', actionId: 'tasks.approve', consent: 'standing-grant', ...extra })
+    );
+
+  it('turns an area-level Allowed into Ask at any tier, on every layer', () => {
+    for (const tier of ['act', 'destructive'] as const) {
+      for (const r of [
+        grant({ tier, config: { preset: 'trusted', defaults: EMPTY } }),
+        grant({ tier, config: { preset: 'full', defaults: EMPTY } }),
+        grant({
+          tier,
+          config: { preset: null, defaults: { areas: { tasks: 'allowed' }, actions: {} } },
+        }),
+        grant({ tier, agent: { areas: { tasks: 'allowed' } } }),
+      ]) {
+        expect(r).toMatchObject({ state: 'ask', destructiveAsk: true });
+      }
+    }
+  });
+
+  it('keeps an Allowed set on the action itself, and a Blocked anywhere', () => {
+    expect(grant({ agent: { actions: { 'tasks.approve': 'allowed' } } })).toMatchObject({
+      state: 'allowed',
+      source: 'agent-action',
+    });
+    expect(
+      grant({
+        config: {
+          preset: 'trusted',
+          defaults: { areas: {}, actions: { 'tasks.approve': 'allowed' } },
+        },
+      })
+    ).toMatchObject({ state: 'allowed', source: 'default-action' });
+    expect(grant({ agent: { areas: { tasks: 'blocked' } } }).state).toBe('blocked');
+  });
+});
+
 describe('third-party-code rule', () => {
   // Agents are trusted by default (ADR 261006-225605): an area-level Allowed runs
   // a destructive action, recorded. Only an action that puts someone else's code

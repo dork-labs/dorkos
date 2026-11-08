@@ -2,7 +2,7 @@
  * The to-dos slice of the {@link Transport} port (DOR-3088): one list read through four views,
  * and a person making and changing to-dos.
  *
- * Split out of `transport.ts` the way the commitments slice is: `Transport` extends this, so
+ * Split out of `transport.ts` the way the to-dos slice is: `Transport` extends this, so
  * nothing consuming the port sees a difference.
  *
  * @module shared/transport-todos

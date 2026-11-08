@@ -226,7 +226,7 @@ import {
   requireRoomDeps,
   resolveHandles,
 } from './service/room-capability-answers.js';
-import { reseatCapabilities } from './reseat/reseat-capabilities.js';
+import { seatCapabilities } from './handoff/seat-capabilities.js';
 import {
   FIND_ROOMS_MAX,
   HISTORY_PAGE_MAX,
@@ -1399,7 +1399,7 @@ export const roomsDomain: CapabilityDomain = {
         return answeringAsync(() => readRoomCanvas(rooms, input, caller.id, context.cwd));
       },
     }),
-    ...reseatCapabilities,
+    ...seatCapabilities,
   ],
 };
 

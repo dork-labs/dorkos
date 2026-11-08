@@ -294,12 +294,12 @@ afterEach(async () => {
 });
 
 describe('real installation filesystem', () => {
-  it('observes the official Chromium 1243 mac-arm64 application layout', async () => {
+  it('observes the official Chromium 1252 mac-arm64 application layout', async () => {
     // Independent literal from the official installer output: deriving this fixture
     // from INSTALLATION_TARGET previously hid a stale executable-path pin.
     const fixture = await staged(
       'official-layout',
-      'payload/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+      'payload/chromium-1252/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
     );
     const snapshot = await fixture.producer.observeCandidate(fixture.candidate);
     expect(snapshot.executable.path).toBe(fixture.executable);
@@ -308,7 +308,7 @@ describe('real installation filesystem', () => {
       fs.lstat(
         path.join(
           fixture.candidate.candidateRoot,
-          'payload/chromium-1243/chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium'
+          'payload/chromium-1252/chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium'
         )
       )
     ).rejects.toMatchObject({ code: 'ENOENT' });
@@ -415,7 +415,7 @@ describe('real installation filesystem', () => {
   });
   it('refuses a different library without treating file count as distribution proof', async () => {
     await fs.mkdir(config().libraryRoot, { mode: 0o700 });
-    for (let i = 0; i < 114; i++)
+    for (let i = 0; i < 116; i++)
       await fs.writeFile(path.join(config().libraryRoot, `file_${i}`), 'different');
     await expect(createInstallationFilesystem(config()).validateLibrary()).rejects.toMatchObject({
       code: 'LIBRARY_MISMATCH',
@@ -481,7 +481,7 @@ describe('real installation filesystem', () => {
     await fs.chmod(toolCache, 0o700);
     const library = await producer.validateLibrary();
     expect(library.distributionSHA256).toBe(INSTALLATION_TARGET.libraryDistributionSHA256);
-    expect(library.files).toHaveLength(114);
+    expect(library.files).toHaveLength(116);
     expect(producer.custody().unresolvedHandles).toBe(0);
     // A sparse over-cap controller must refuse before hashing/opening it; this does
     // not widen the pinned official library or verifier file bounds.
@@ -520,7 +520,7 @@ describe('real installation filesystem', () => {
       createInstallationFilesystem({ ...configuration, libraryRoot: copiedRoot }).validateLibrary();
     const installed = await validate();
     expect(installed.distributionSHA256).toBe(INSTALLATION_TARGET.libraryDistributionSHA256);
-    expect(installed.files).toHaveLength(114);
+    expect(installed.files).toHaveLength(116);
     expect(installed.files.some((file) => file.path.includes('/node_modules/'))).toBe(false);
     await fs.writeFile(path.join(copiedRoot, 'node_modules', 'shadow.js'), 'module.exports = {};');
     await expect(validate()).rejects.toMatchObject({ code: 'LIBRARY_MISMATCH' });

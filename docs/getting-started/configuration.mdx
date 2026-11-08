@@ -1502,15 +1502,29 @@ Click a link while reading to open that doc in the canvas. While editing, Cmd-cl
 
 Links find the `.md` files in the folder your chat works in and every folder inside it, skipping hidden folders and folders such as `node_modules`. In a very large folder, the `[[` list holds only the docs nearest the top: it stops after 2,000 docs, 2,000 folders, or 8 folders deep. A link to a doc past that is still looked for across the whole folder. If even that takes too long, the link says the folder is too big to check, rather than calling the doc missing. When two docs share a name, the one nearest the doc you are writing in wins. Agents can read this setting but cannot change it.
 
+### Agents setting how a scheduled task runs
+
+<TypeTable
+  type={{
+    'tasks.agentModeControl': {
+      description: 'Let agents set how their own scheduled tasks run. On by default.',
+      type: 'boolean',
+      default: 'true',
+    },
+  }}
+/>
+
+On by default. On Claude Code, an agent can set how its own scheduled task runs, from its own chat, up to its own level. Other runtimes, and Careful, ask you first. The rules are in [When an agent sets how its task runs](/docs/guides/task-scheduler#when-an-agent-sets-how-its-task-runs). Turn `tasks.agentModeControl` off to stop agents doing this. There's no switch in the app: use `dorkos config set tasks.agentModeControl false`. Modes they already set stay as they are.
+
 ### Chats with one agent
 
 <TypeTable
   type={{
     'ui.dmView': {
       description:
-        'A chat with one agent looks like a direct message, with the agent’s face and name on every reply. Off by default.',
+        'A chat with one agent looks like a direct message, with the agent’s face and name on every reply. On by default.',
       type: 'boolean',
-      default: 'false',
+      default: 'true',
     },
     'ui.showSessions': {
       description:
@@ -1521,6 +1535,8 @@ Links find the `.md` files in the folder your chat works in and every folder ins
   }}
 />
 
-Settings → Advanced → Experiments lists **Chats with one agent read like a DM**, off by default. Turn it on, and talking to one agent looks like talking to a teammate: the agent's face and name at the top, its replies with its face, name and time, and a message box like a channel's. Everything the chat shows today stays: replies as they are written, tool steps, thinking and to-dos. Clicking the agent in the sidebar, Message on its card, its profile, the New menu and the agent in Cmd+K all open this same chat.
+Talking to one agent looks like talking to a teammate: the agent's face and name at the top, its replies with its face, name and time, and a message box like a channel's. Everything the chat shows today stays: replies as they are written, tool steps, thinking and to-dos. Clicking the agent in the sidebar, Message on its card, its profile, the New menu and the agent in Cmd+K all open this same chat.
 
-The model, account, permissions and context move out of the chat. To get to them, turn on **Show sessions** on the same page. The chat's header then shows a session chip with how full its context is, and clicking it opens the working session behind your chat, exactly as chats look today. Both settings apply to everyone using this DorkOS. Agents can read them but cannot change them.
+The model, account, permissions and context move out of the chat. To get to them, turn on **Show sessions** in Settings → Advanced → Experiments. The chat's header then shows a session chip with how full its context is, and clicking it opens the working session behind your chat, exactly as chats look today. To go back to chats that look like sessions, turn off **Chats with one agent read like a DM** on the same page. Both settings apply to everyone using this DorkOS. Agents can read them but cannot change them.
+
+When you upgrade, DorkOS turns the DM view on once, unless you already switched it yourself. If you opened any chat besides an agent's main chat in the 30 days before the upgrade, Show sessions turns on too, so you keep what you were using.

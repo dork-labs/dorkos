@@ -17,6 +17,7 @@ import {
   useAskAgentNames,
   useSettlingAsks,
   useWaitingQueue,
+  BROWSER_HANDOFF_WAITING,
 } from '@/layers/entities/attention';
 import { useTrustOfferStore } from '@/layers/entities/extension';
 import {
@@ -30,7 +31,12 @@ import {
 import { useAskShortcut, useAskTrayRequest } from '@/layers/features/ask';
 import { useScheduleApprovalCards } from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
-import { ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
+import { BrowserHandoffInboxItem } from '@/layers/features/browser-handoff';
+import {
+  ApprovalsUnavailable,
+  useApprovalCards,
+  DeclinedHookReviews,
+} from '@/layers/features/approvals';
 import { takeOffersShownInBell, useExtensionDecisionActions } from '@/layers/entities/extension';
 import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
 import { InboxBellPill, type InboxBellGlyph } from './InboxBellPill';
@@ -199,6 +205,7 @@ export function InboxBell() {
     extensionApprovals,
     extensionDecisions,
     pausedConnections,
+    browserHandoffId,
     items: waitingItems,
     isError,
     retry,
@@ -311,7 +318,7 @@ export function InboxBell() {
     settling.length === 0 &&
     unreadCount === 0 &&
     !unreadable &&
-    // …unless somebody asked for the Inbox. `⌘⇧Y` on a quiet cockpit and "View
+    // …unless somebody asked for the Inbox. `⌘⇧Y` in a quiet app and "View
     // notifications" in a session's menu both set `open`, and a panel that
     // stayed unmounted because there was no news would make both of them do
     // nothing at all. It goes back to drawing nothing the moment it is closed.
@@ -337,6 +344,7 @@ export function InboxBell() {
     extensionCount: extensionApprovals.length,
     decisionCount: extensionDecisions.length,
     pausedCount: pausedConnections.length,
+    browserHandoff: !!browserHandoffId,
     settlingCount: settling.length,
     unreadable,
     unreadCount,
@@ -356,6 +364,7 @@ export function InboxBell() {
 
       {!quiet && (
         <ResponsivePopover
+          autoFocus
           open={open}
           onOpenChange={(next) => {
             setOpen(next);
@@ -389,7 +398,7 @@ export function InboxBell() {
                 below take over — the two are exact complements at the same
                 breakpoint (768px) that decides sheet versus popover. */}
             <ResponsivePopoverTitle>Inbox</ResponsivePopoverTitle>
-            <div className="flex min-w-0 flex-col gap-3">
+            <div className="flex min-w-0 flex-col gap-3 [--hook-card-max-height:calc(90dvh-10rem)] md:[--hook-card-max-height:calc(70dvh-8rem)]">
               {showsPinned && (
                 <div>
                   <h2
@@ -418,6 +427,7 @@ export function InboxBell() {
                           extensionApprovals,
                           extensionDecisions,
                           pausedConnections,
+                          browserHandoffId,
                         })}
                       </p>
                     ))}
@@ -467,6 +477,9 @@ export function InboxBell() {
                   {/* Connections paused until their owner confirms what they
                       send (DOR-3271): after the approvals, only you can answer. */}
                   <PausedConnectionList items={pausedConnections} />
+                  {/* An agent's stopped until a person answers (DOR-3218). The card
+                      carries its buttons, so it works with the chat closed. */}
+                  <BrowserHandoffInboxItem />
                 </div>
               )}
 
@@ -482,6 +495,8 @@ export function InboxBell() {
                   All clear
                 </motion.p>
               )}
+
+              <DeclinedHookReviews enabled={open} />
 
               {/* History, always drawn: the Inbox is the one place a person can
                   go to find out what happened while they were away, and a
@@ -558,6 +573,7 @@ function resolvePill(counts: {
   extensionCount: number;
   decisionCount: number;
   pausedCount: number;
+  browserHandoff?: boolean;
   settlingCount: number;
   unreadable: boolean;
   unreadCount: number;
@@ -568,14 +584,17 @@ function resolvePill(counts: {
       glyph: 'waiting',
       count: counts.waitingCount,
       text: 'waiting on you',
-      label: waitingLabel(
-        counts.approvalCount,
-        counts.scheduleCount,
-        counts.askCount,
-        counts.extensionCount,
-        counts.decisionCount,
-        counts.pausedCount
-      ),
+      label:
+        counts.browserHandoff && counts.waitingCount === 1
+          ? `${BROWSER_HANDOFF_WAITING} Open to answer it.`
+          : `${waitingLabel(
+              counts.approvalCount,
+              counts.scheduleCount,
+              counts.askCount,
+              counts.extensionCount,
+              counts.decisionCount,
+              counts.pausedCount
+            )}${counts.browserHandoff ? ` ${BROWSER_HANDOFF_WAITING}` : ''}`,
     };
   }
   if (counts.settlingCount > 0) {

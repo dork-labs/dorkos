@@ -201,6 +201,8 @@ export function WaitingGroups({
                 task={task}
                 className="mt-2"
                 onNavigate={onScheduleNavigate}
+                // On a phone the bell's panel is a full-height sheet.
+                pinActions
               />
             ))}
           </AnimatePresence>

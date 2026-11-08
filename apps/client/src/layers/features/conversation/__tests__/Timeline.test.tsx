@@ -260,6 +260,33 @@ describe('Conversation.Timeline', () => {
       expect(landedOn()).toBe('end');
     });
 
+    describe('landing again, after the rows changed height', () => {
+      /** Land, do this to the scroller, then land again; what did it decide? */
+      function landAgainAfter(touch: (scroller: HTMLElement) => void) {
+        const props = { 'data-testid': 'timeline' };
+        const { rerender } = mount(props);
+        touch(screen.getByTestId('conversation-scroller'));
+        rerender(tree({ ...props, landingKey: 'reflowed-as-dm' }));
+        return screen.getByTestId('timeline').getAttribute('data-landed-on');
+      }
+
+      it('makes the ordinary decision when the reader left the list alone', () => {
+        expect(landAgainAfter(() => {})).toBe('end');
+      });
+
+      it('keeps the reader’s place after a wheel, a touch or a scroll key', () => {
+        expect(landAgainAfter((el) => fireEvent.wheel(el))).toBe('kept');
+        cleanup();
+        expect(landAgainAfter((el) => fireEvent.touchMove(el))).toBe('kept');
+        cleanup();
+        expect(landAgainAfter((el) => fireEvent.keyDown(el, { key: 'PageUp' }))).toBe('kept');
+      });
+
+      it('does not count a key that scrolls nothing', () => {
+        expect(landAgainAfter((el) => fireEvent.keyDown(el, { key: 'a' }))).toBe('end');
+      });
+    });
+
     it('does not land while a `loading` node is standing in for the list (DOR-1734)', () => {
       // **Seeded defect:** drop `loading == null` from `landingReady` → red.
       //
