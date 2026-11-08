@@ -63,7 +63,8 @@ test.describe('Starting work in a new chat — hello-world’s “Start a chat�
     const draft = 'Something I have not sent yet';
     await chat.input.fill(draft);
 
-    await openFromCommandPalette(page, 'Hello');
+    // ⌘K lists the app by its name (DOR-3970), not its page's title.
+    await openFromCommandPalette(page, 'Hello World');
     await expect(page).toHaveURL(/\/x\/hello-world$/);
     const start = page.getByRole('button', { name: 'Start a chat' });
     await expect(start).toBeEnabled();

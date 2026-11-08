@@ -56,23 +56,34 @@ export interface AgentRosterEntry {
   attention: AttentionState;
 }
 
-/**
- * One page a mini app added, as the Add-ons section reads it.
- *
- * **A view type, not the registry entry.** `shared/model`'s extension registry
- * holds the page's component and icon; the model must not hold React, so the
- * assembly hook maps each listed page into this shape and the row component
- * looks the icon up again by {@link SidebarAddOnPage.id}.
- */
-export interface SidebarAddOnPage {
-  /** The page's contribution id, `<extensionId>:<path>`. */
+/** One pinned app, as the Apps door's rows read it (DOR-3970). */
+export interface SidebarPinnedApp {
+  /** The extension id. */
   id: string;
-  /** The extension that registered it. */
-  extensionId: string;
-  /** The path it registered: `''` for the extension's home. Never a `:param` path. */
+  /** Its name. */
+  name: string;
+  /** The page a press opens. */
   path: string;
-  /** The title it registered — what the row says. */
-  title: string;
+  /** The page's contribution id while it is registered (for its icon), else `null`. */
+  pageId: string | null;
+  /** What it is doing. An `off` app is never pinned in the panel. */
+  state: 'ok' | 'held' | 'error';
+  /** Its own count of things waiting; 0 for none. */
+  count: number;
+  /** The name with its state in words. */
+  accessibleName: string;
+}
+
+/** The Apps door and what sits under it. */
+export interface SidebarApps {
+  /** Whether the list could be read. `failed` is never "no apps". */
+  status: 'loading' | 'failed' | 'ready';
+  /** The pinned apps, in pin order. */
+  pinned: readonly SidebarPinnedApp[];
+  /** Whether an app waits on a person that is not one of {@link pinned}. */
+  heldUnpinned: boolean;
+  /** How many pins are stored, for the loading skeleton. */
+  storedPinCount: number;
 }
 
 /**
@@ -131,17 +142,8 @@ export interface SidebarState {
    * from this map has no unread mentions, or a source that cannot say.
    */
   mentions: Readonly<Record<string, number>>;
-  /**
-   * The pages mini apps added that a menu may list, by title — what the
-   * Add-ons section draws (spec `mini-app-placement` Part 2). Empty when no
-   * extension added one, and then the section is absent.
-   */
-  addOns: readonly SidebarAddOnPage[];
-  /**
-   * Whether the mini apps failed to load. Then an empty {@link addOns} means
-   * "couldn't tell", never "none", and the Add-ons section stands to say so.
-   */
-  addOnsLoadFailed: boolean;
+  /** The Apps door and its pinned apps (DOR-3970). */
+  apps: SidebarApps;
   /** The To-dos door, or `null` while to-dos are off and the door is absent. */
   todos: SidebarTodosDoor | null;
   /** What the operator has open right now, from the router. `null` off-route. */

@@ -438,7 +438,7 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     // Every field a phrase could hide in — `reason` is a string the rules
     // BUILD, so it is the likeliest place a verb would arrive by accident.
     for (const { row } of rowsOf(state)) {
-      const text = [row.primary, row.secondary, row.reason].filter(Boolean).join(' ');
+      const text = [row.primary, row.reason].filter(Boolean).join(' ');
       expect(text).not.toMatch(/\d+\s?(s|m|h|d)\s?ago/i);
       expect(text, `verb text in a row: ${text}`).not.toMatch(VERB_SHAPE);
     }

@@ -34,8 +34,7 @@ export interface SidebarStatusRowProps {
  * a list that cannot show its rows still reads as part of the panel rather than
  * as a caption under it. A failure carries the error glyph in the glyph slot
  * and a ghost "Try again" at the end. Nothing here is pressable but that
- * button, and nothing moves. A space's channels and the Add-ons section both
- * draw it.
+ * button, and nothing moves. A space's channels draw it.
  *
  * @param props - The words, and whether it failed and can be retried.
  */

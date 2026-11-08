@@ -201,7 +201,7 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
       });
       return;
     }
-    // Same mechanism, different reason: the top items and Add-ons fill
+    // Same mechanism, different reason: the top items fill
     // themselves, so a row dropped there has no place to be put (R3).
     if (op.kind === 'reject-computed-section') {
       toast.info(computedSectionRejection(op.section), { description: itemName(op.ref) });

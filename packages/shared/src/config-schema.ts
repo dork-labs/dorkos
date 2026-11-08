@@ -121,6 +121,7 @@ export {
   SidebarSectionPrefsSchema,
   SidebarPrefsSchema,
   SIDEBAR_PREFS_DEFAULTS,
+  MAX_PINNED_APPS,
 } from './config-schema/sidebar.js';
 export type {
   SidebarDisplayFilter,

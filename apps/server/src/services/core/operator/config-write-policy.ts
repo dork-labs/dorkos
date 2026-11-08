@@ -254,6 +254,8 @@ export const CONFIG_WRITE_POLICY = {
   'ui.sidebar.pinned[].kind': 'agent-writable',
   'ui.sidebar.pinned[].path': 'agent-writable',
   'ui.sidebar.pinned[].roomId': 'agent-writable',
+  // Layout only: a pin opens an app a person already allowed, and grants nothing.
+  'ui.sidebar.pinnedApps': 'agent-writable',
   // A sidebar group is an object inside an array, so each of its fields carries
   // its own verdict (the `[]` descent, same convention as `CONFIG_DISCLOSURE`).
   // A property added to a group is unclassified, so the guard fails until someone

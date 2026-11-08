@@ -5,6 +5,7 @@ import { useSessions, selectAgentSessions } from '@/layers/entities/session';
 import { useMenuExtensionPages, useSlotContributions } from '@/layers/shared/model';
 import { extensionPageHref, SETTINGS_TAB_DIRECTORY, settingsTabsFor } from '@/layers/shared/lib';
 import { useIsHub } from '@/layers/entities/config';
+import { useAppCatalogSnapshot, type AppTarget } from '@/layers/entities/extension';
 // Deep, because the day boundary is off the `shared/lib` barrel on purpose —
 // see that barrel's note beside it.
 import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
@@ -46,19 +47,25 @@ export interface QuickActionItem {
 }
 
 /**
- * A page an extension added, as the palette's "Add-ons" rows list it (spec
- * `flow-multiproject` §6.5): only pages that asked to be listed and need no
- * value in their address.
+ * One app, as the palette's Apps rows list it (DOR-3970, spec §5): every app,
+ * held and broken ones included, so ⌘K finds them all.
  */
 export interface PaletteAddOnPage {
-  /** The page's registry id, `<extensionId>:<path>`. */
+  /** A stable row id, `app:<extensionId>`. */
   id: string;
-  /** The page's title. */
+  /** The app's name. */
   label: string;
-  /** Where choosing it goes, e.g. `/x/flow`. */
+  /** Where choosing it goes when it is running, e.g. `/x/flow`. */
   href: string;
   /** The page's icon as the extension gave it; drawn through `ContributedIcon`. */
   icon?: unknown;
+  /**
+   * The app, for what choosing it does: a held app opens its approval card
+   * and a broken one tries again, the same as its tile. ⌘K never approves.
+   */
+  app: AppTarget;
+  /** The app's count of things waiting, or 0. */
+  count: number;
 }
 
 export interface CommandItemData {
@@ -187,20 +194,24 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
 
   const allPaletteItems = useSlotContributions('command-palette.items');
 
-  // Extension pages, the "Add-ons" rows. Searched, never drawn before a query:
+  // Apps, one row each (DOR-3970). Searched, never drawn before a query:
   // the empty palette is Continue, Recent and New and nothing else, and every
   // action lives one keystroke away (PaletteCommandCenter).
   const menuPages = useMenuExtensionPages();
-  const addOnPages = useMemo<PaletteAddOnPage[]>(
-    () =>
-      menuPages.map((page) => ({
-        id: page.id,
-        label: page.title,
-        href: extensionPageHref(page.extensionId, page.path),
-        icon: page.icon,
-      })),
-    [menuPages]
-  );
+  const apps = useAppCatalogSnapshot();
+  const addOnPages = useMemo<PaletteAddOnPage[]>(() => {
+    const iconOf = new Map(menuPages.map((page) => [page.id, page.icon]));
+    return apps
+      .filter((app) => app.state !== 'off')
+      .map((app) => ({
+        id: `app:${app.id}`,
+        label: app.name,
+        href: extensionPageHref(app.id, app.path),
+        icon: app.pageId === null ? undefined : iconOf.get(app.pageId),
+        app: { id: app.id, path: app.path, state: app.state },
+        count: app.count,
+      }));
+  }, [apps, menuPages]);
 
   // On a hub, no row leads to a Settings tab that is not there.
   const isHub = useIsHub();
@@ -386,7 +397,7 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
         id: page.id,
         name: page.label,
         type: 'page',
-        keywords: ['add-on', 'extension'],
+        keywords: ['app', 'add-on', 'extension'],
         ...UNTRACKED,
         data: page,
       });

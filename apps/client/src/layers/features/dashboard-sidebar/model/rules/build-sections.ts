@@ -1,6 +1,6 @@
 /**
- * The list, top to bottom: the top items, the operator's own sections,
- * Channels, Direct messages and Add-ons.
+ * The list, top to bottom: the top items (with the Apps door and its pinned
+ * apps), the operator's own sections, Channels and Direct messages.
  *
  * **Places, never sessions or threads.** Every row is a channel, a direct
  * message, a page, or a door to a page that lists the rest. An agent appears
@@ -28,7 +28,7 @@ import type {
 import { SIDEBAR_SECTION_IDS } from '../build-sidebar-model';
 import type { SidebarSortMode } from '../section-sort-options';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
-import { addOnRows } from './add-on-rows';
+import { appRows, appsNotice, heldDot } from './app-rows';
 import { indexAgentDms, type AgentDmIndex } from './agent-direct-messages';
 import { muteIndex } from './apply-mute-rules';
 import { liveSessionIdsForPath } from './live-sessions';
@@ -230,8 +230,8 @@ function sectionOptions(
 /**
  * One fixed section, or `null` when it holds nothing.
  *
- * Chrome appears by data volume: no Channels section without a channel, no
- * Add-ons section until a mini app adds a page (BC-32). Returning `null` is how
+ * Chrome appears by data volume: no Channels section without a channel
+ * (BC-32). Returning `null` is how
  * that promise is kept in one place instead of at every call site.
  *
  * @param id - Which fixed section this is. Narrower than
@@ -437,10 +437,21 @@ function doorRow(
  * you are in, the Directory every agent and person; each is here because its
  * page is. To-dos stands between them only while to-dos are switched on.
  *
+ * **Apps always stands, with its pins under it** (DOR-3970). The door never
+ * disappears, not even when the list failed to load: then a quiet notice
+ * replaces the pins, so a failed load never reads as "no apps".
+ *
  * @param todos - The To-dos door's state, or `null` while to-dos are off.
+ * @param apps - The Apps door's state.
  */
-function topSection(todos: SidebarState['todos']): SidebarSectionModel {
-  const rows = [doorRow('open-threads', 'threads', 'Threads', 'top:threads')];
+function topSection(todos: SidebarState['todos'], apps: SidebarState['apps']): SidebarSectionModel {
+  const appsDoor = doorRow('open-apps', 'apps', 'Apps', 'top:apps');
+  const rows = [
+    doorRow('open-threads', 'threads', 'Threads', 'top:threads'),
+    heldDot(apps) ? { ...appsDoor, heldDot: true as const } : appsDoor,
+    ...appRows(apps),
+  ];
+  const notice = appsNotice(apps);
   if (todos !== null) {
     const door = doorRow('open-todos', 'todos', 'To-dos', 'top:todos');
     rows.push(todos.badge > 0 ? { ...door, count: todos.badge } : door);
@@ -452,6 +463,7 @@ function topSection(todos: SidebarState['todos']): SidebarSectionModel {
     collapsible: false,
     collapsed: false,
     rows,
+    ...(notice ? { appsNotice: notice } : {}),
     reason: 'section:top',
   };
 }
@@ -555,7 +567,7 @@ function directMessagesSection(
 
 /**
  * Every section in the panel, in render order: the top items, the operator's
- * own sections, Channels, Direct messages and Add-ons.
+ * own sections, Channels and Direct messages.
  *
  * **The operator's own sections come right after the top items**, and they are
  * peers rather than children: the one part of the panel the operator built
@@ -612,7 +624,6 @@ export function buildSections(state: SidebarState): SidebarSectionModel[] {
       rows: orderRows(channelRows, state.prefs.sections.channels?.sortMode ?? 'name', recencyOf),
       reason: 'section:channels',
     },
-    addons: { label: 'Add-ons', rows: addOnRows(state), reason: 'section:addons' },
   };
   const dmRows = orderRows(
     directMessageRows(state, ctx, dms, dmRooms, groupedAgents, byPath),
@@ -621,17 +632,11 @@ export function buildSections(state: SidebarState): SidebarSectionModel[] {
   );
 
   return [
-    topSection(state.todos),
+    topSection(state.todos, state.apps),
     ...groupSections,
     ...SIDEBAR_SECTION_IDS.map((id) => {
       if (id === 'dms') return directMessagesSection(state, dmRows, isWorking);
       const { label, rows, reason } = content[id];
-      // **A failed load is not "no mini apps"** (DOR-2868 regression): with
-      // nothing to list because the list could not be read, Add-ons still
-      // stands, so it can say so and offer to try again.
-      if (id === 'addons' && rows.length === 0 && state.addOnsLoadFailed) {
-        return { ...fixedSection(id, label, rows, state, reason, isWorking), loadFailed: true };
-      }
       return section(id, label, rows, state, reason, isWorking);
     }).filter((entry): entry is SidebarSectionModel => entry !== null),
   ];

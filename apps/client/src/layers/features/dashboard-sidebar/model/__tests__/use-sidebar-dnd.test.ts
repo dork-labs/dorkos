@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
 import {
-  ADD_ONS_REJECTION,
   classifySidebarDrop,
   resolveSidebarDrop as resolveDrop,
   TOP_ITEMS_REJECTION,
@@ -64,7 +63,6 @@ function prefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
 const UNGROUPED: SidebarContainer = { kind: 'ungrouped' };
 const inGroup = (groupId: string): SidebarContainer => ({ kind: 'group', groupId });
 const TOP: SidebarContainer = { kind: 'computed', section: 'top' };
-const ADDONS: SidebarContainer = { kind: 'computed', section: 'addons' };
 
 const dragItem = (ref: SidebarItemRef, from: SidebarContainer): SidebarDragDescriptor => ({
   type: 'item',
@@ -435,9 +433,6 @@ describe('R3 — a drop into a section that fills itself', () => {
     const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/web')] })] });
     for (const drag of [dragAgent('/web', inGroup('g1')), dragAgent('/other', UNGROUPED)]) {
       expect(classifySidebarDrop(p, drag, dropContainer(TOP)).kind).toBe('reject-computed-section');
-      expect(classifySidebarDrop(p, drag, dropContainer(ADDONS)).kind).toBe(
-        'reject-computed-section'
-      );
     }
   });
 
@@ -450,12 +445,13 @@ describe('R3 — a drop into a section that fills itself', () => {
   it('changes nothing — a row filed in a section stays filed', () => {
     // Falling through to "ungrouped" would quietly take it out of its section.
     const p = prefs({ groups: [grp({ id: 'g1', items: [agent('/web')] })] });
-    expect(resolveSidebarDrop(p, dragAgent('/web', inGroup('g1')), dropContainer(ADDONS))).toBe(p);
     expect(resolveSidebarDrop(p, dragAgent('/web', inGroup('g1')), dropContainer(TOP))).toBe(p);
   });
 
   it('says where a row can go, rather than only refusing', () => {
-    expect(TOP_ITEMS_REJECTION).toBe('Threads and Directory are pages. Drop it in a section.');
+    expect(TOP_ITEMS_REJECTION).toBe(
+      'Threads, Apps and Directory are pages. Drop it in a section.'
+    );
   });
 
   it('reads a computed container back off a node payload, and rejects a malformed one', () => {
@@ -603,23 +599,16 @@ describe('buildSidebarAnnouncements', () => {
         over: over({ type: 'container', container: TOP }),
       })
     ).toBe(`Can’t move api-server there. ${TOP_ITEMS_REJECTION}`);
-    expect(
-      a.onDragEnd({
-        ...active(agentNode('/api', UNGROUPED)),
-        over: over({ type: 'container', container: ADDONS }),
-      })
-    ).toBe(`Can’t move api-server there. ${ADD_ONS_REJECTION}`);
   });
 
-  it('names the top items and Add-ons on drag-over', () => {
+  it('names the top items on drag-over', () => {
     const a = announcements(prefs());
     const hover = (container: SidebarContainer) =>
       a.onDragOver({
         ...active(agentNode('/api', UNGROUPED)),
         over: over({ type: 'container', container }),
       });
-    expect(hover(TOP)).toBe('Over Threads and Directory.');
-    expect(hover(ADDONS)).toBe('Over Add-ons.');
+    expect(hover(TOP)).toBe('Over Threads, Apps and Directory.');
   });
 
   it('announces the hovered container on drag-over', () => {

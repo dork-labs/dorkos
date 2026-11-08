@@ -31,6 +31,7 @@ import {
 } from '@/layers/entities/session';
 import { useOpenDirectChat, type RoomSummary } from '@/layers/entities/room';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { useAppActions, type AppTarget } from '@/layers/entities/extension';
 import { PROFILE_PANEL_ID } from '@/layers/features/profile';
 import { composeCommandDraft } from './palette-command-draft';
 import { runPaletteCommandHandler } from './palette-command-handlers';
@@ -49,8 +50,11 @@ interface PaletteActions {
   handleSessionSelect: (sessionId: string, dir?: string | null) => void;
   /** Put a slash command into the active conversation's composer and go there. */
   handleCommandSelect: (command: string) => void;
-  /** Open an extension page by its in-app address (`/x/<extensionId>/…`). */
-  handlePageSelect: (href: string) => void;
+  /**
+   * Open an app (DOR-3970): its page when it is running, else what its tile
+   * does — a held app's approval card, a broken one's Try again. Never approves.
+   */
+  handlePageSelect: (href: string, app?: AppTarget) => void;
   /**
    * Record that the operator reached an agent, for the rows that open one
    * without going through {@link PaletteActions.handleAgentSelect} — a second
@@ -264,12 +268,17 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   // An extension page (spec `flow-multiproject` §6.5). The href was built from
   // the registry by `extensionPageHref`, never typed by anyone, so it goes
   // straight to the router.
+  const appActions = useAppActions();
   const handlePageSelect = useCallback(
-    (href: string) => {
+    (href: string, app?: AppTarget) => {
       closePalette();
+      if (app !== undefined && app.state !== 'ok') {
+        appActions.open(app);
+        return;
+      }
       void navigate({ href });
     },
-    [closePalette, navigate]
+    [appActions, closePalette, navigate]
   );
 
   /**

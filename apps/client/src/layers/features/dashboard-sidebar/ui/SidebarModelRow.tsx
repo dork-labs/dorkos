@@ -16,17 +16,23 @@
  */
 import { useCallback, useMemo } from 'react';
 import { useReducedMotion } from 'motion/react';
-import { BookUser, MessageSquareReply, Plus, SquareCheck } from 'lucide-react';
+import { BookUser, LayoutGrid, MessageSquareReply, Plus, SquareCheck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { isWithinDirectory } from '@dorkos/shared/paths';
-import { useExtensionRegistry } from '@/layers/shared/model';
-import { ContributedIcon, CountPill, SidebarRow, type SidebarRowMotion } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
+import { CountPill, SidebarRow, STATUS_TONE_DOT, type SidebarRowMotion } from '@/layers/shared/ui';
 import { useAgentVisual } from '@/layers/entities/agent';
-import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
+import type {
+  SidebarCommandId,
+  SidebarIconId,
+  SidebarRowModel,
+  SidebarTarget,
+} from '../model/build-sidebar-model';
 import type { UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { sameTarget } from '../model/rules/targets';
 import { AgentListItem } from './AgentListItem';
+import { PinnedAppRow } from './apps/PinnedAppRow';
 import { RoomRow } from './rooms/RoomRow';
 import { Sortable, sidebarDndData, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import { buildRowMotion } from './motion/sidebar-motion';
@@ -79,11 +85,17 @@ export function isRowActive(
     if (active.kind === 'agent') return active.path === target.path;
     return active.kind === 'session' && isWithinDirectory(active.cwd, target.path);
   }
-  // A room, a door and an add-on page are each one row with one key, so a key
-  // comparison lights exactly one of them. The open page already names the one
-  // listed add-on page that holds the address (`listedPageAt`).
+  // A pinned app is one row for all its pages, so any of them lights it.
+  if (target.kind === 'add-on') {
+    return active.kind === 'add-on' && active.extensionId === target.extensionId;
+  }
+  // A room and a door are each one row with one key, so a key comparison
+  // lights exactly one of them.
   return sameTarget(target, active);
 }
+
+/** Stable handles for the doors that have one, for tests and recordings. */
+const DOOR_TEST_IDS: Partial<Record<SidebarCommandId, string>> = { 'open-apps': 'apps-door' };
 
 /** The mark each semantic icon id draws. */
 const ICON: Record<SidebarIconId, LucideIcon> = {
@@ -91,6 +103,7 @@ const ICON: Record<SidebarIconId, LucideIcon> = {
   todos: SquareCheck,
   directory: BookUser,
   add: Plus,
+  apps: LayoutGrid,
 };
 
 /**
@@ -218,53 +231,10 @@ function SidebarModelRowBody({
   }
 
   if (target.kind === 'add-on') {
-    return <AddOnRowFromModel row={row} isActive={isActive} rowMotion={rowMotion} />;
+    return <PinnedAppRow row={row} isActive={isActive} rowMotion={rowMotion} />;
   }
 
   return <DoorRowFromModel row={row} isActive={isActive} rowMotion={rowMotion} />;
-}
-
-/**
- * A page a mini app added: its own title and icon, and pressing it opens it.
- *
- * The icon is read back out of the registry by the page's id, because the model
- * holds no components. `ContributedIcon` draws a puzzle piece when the page
- * gave none or gave something that cannot draw, so a bad icon costs the glyph
- * and never the row.
- */
-function AddOnRowFromModel({
-  row,
-  isActive,
-  rowMotion,
-}: {
-  row: SidebarRowModel;
-  isActive: boolean;
-  rowMotion: SidebarRowMotion;
-}) {
-  const chrome = useSidebarChrome();
-  const pageId = row.glyph.kind === 'page-icon' ? row.glyph.pageId : null;
-  const icon = useExtensionRegistry(
-    (state) => state.slots.pages.find((page) => page.id === pageId)?.icon
-  );
-  return (
-    <SidebarRow
-      glyph={
-        // Hidden from the accessibility tree: an extension's SVG can carry a
-        // `<title>`, which would otherwise be read into the row's name.
-        <span aria-hidden className="contents">
-          <ContributedIcon icon={icon} className={ROW_GLYPH_CLASS} />
-        </span>
-      }
-      // Two pages sharing a title read `extension › title` (`add-on-rows`).
-      {...(row.secondary === undefined ? {} : { who: row.primary })}
-      title={row.secondary ?? row.primary}
-      isActive={isActive}
-      emphasized={false}
-      muted={false}
-      onSelect={() => chrome.openTarget(row.target)}
-      rowMotion={rowMotion}
-    />
-  );
 }
 
 /**
@@ -387,6 +357,20 @@ function DoorRowFromModel({
       muted={false}
       onSelect={() => chrome.openTarget(row.target)}
       rowMotion={rowMotion}
+      {...(row.target.kind === 'command' ? { testId: DOOR_TEST_IDS[row.target.commandId] } : {})}
+      {...(row.heldDot
+        ? {
+            trailing: (
+              <>
+                <span
+                  aria-hidden
+                  className={cn('size-1.5 rounded-full', STATUS_TONE_DOT.warning)}
+                />
+                <span className="sr-only">, an app needs your OK</span>
+              </>
+            ),
+          }
+        : {})}
       {...(row.count === undefined
         ? {}
         : {

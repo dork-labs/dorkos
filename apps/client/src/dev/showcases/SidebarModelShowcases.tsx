@@ -140,8 +140,7 @@ function ModelRow({
   return (
     <SidebarRow
       glyph={<RowGlyph row={row} state={state} />}
-      who={row.secondary === undefined ? undefined : row.primary}
-      title={row.secondary ?? row.primary}
+      title={row.primary}
       trailing={<RowTrailing row={row} />}
       reservesVerbLine={row.reservesVerbLine}
       isActive={row.key === activeKey}
@@ -327,7 +326,7 @@ export function SidebarModelJourneysShowcase() {
   return (
     <PlaygroundSection
       title="Sidebar Model Journeys"
-      description="buildSidebarModel over all four journey fixtures — first run, quiet morning, busy morning, power user. The list holds places, never sessions or threads: the doors to Threads and the Directory, your own sections, Channels, Direct messages (an agent is its direct message) and Add-ons. Each section and row carries the reason the model stamped on it. No server, no clock, no network: the whole panel is one pure function of one snapshot."
+      description="buildSidebarModel over all four journey fixtures — first run, quiet morning, busy morning, power user. The list holds places, never sessions or threads: the doors to Threads, Apps (with its pinned apps) and the Directory, your own sections, Channels and Direct messages (an agent is its direct message). Each section and row carries the reason the model stamped on it. No server, no clock, no network: the whole panel is one pure function of one snapshot."
     >
       <div className="flex items-center gap-2">
         <Switch id="sidebar-model-reasons" checked={showReasons} onCheckedChange={setShowReasons} />

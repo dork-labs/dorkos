@@ -21,6 +21,7 @@
  */
 import { SidebarContent } from '@/layers/shared/ui';
 import { SidebarBottomSlot } from './bottom-slot/SidebarBottomSlot';
+import { useAppPinSeed } from '../model/use-app-pin-seed';
 import { useLegacyPinMigration } from '../model/use-legacy-pin-migration';
 import { useSidebarModel } from '../model/use-sidebar-model';
 import { useSidebarState } from '../model/use-sidebar-state';
@@ -40,6 +41,7 @@ const BODY_CLASS = 'flex min-h-0 flex-1 flex-col';
  */
 export function DashboardSidebar() {
   useLegacyPinMigration();
+  useAppPinSeed();
   const state = useSidebarState();
   const model = useSidebarModel(state);
   const insideLandmark = useInsideSidebarLandmark();

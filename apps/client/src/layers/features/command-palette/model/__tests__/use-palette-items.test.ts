@@ -137,6 +137,9 @@ const mockUseMenuExtensionPages = vi.fn((): ExtensionPageContribution[] => []);
 // Whether the palette runs on a hub; a computer unless a case says otherwise.
 const hub = vi.hoisted(() => ({ value: false }));
 vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
+// The shell publishes the app list (`usePublishAppCatalog`); here it is set by hand.
+const snapshotApps = vi.hoisted(() => ({ value: [] as unknown[] }));
+vi.mock('@/layers/entities/extension', () => ({ useAppCatalogSnapshot: () => snapshotApps.value }));
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: () => mockUseMeshAgentPaths(),
 }));
@@ -270,7 +273,7 @@ describe('usePaletteItems', () => {
     return items.searchableItems.filter((item) => item.type === type);
   }
 
-  it('offers each listed extension page as an Add-ons row that goes to its address', () => {
+  it('offers every app that is on as an Apps row, held and broken ones too (DOR-3970)', () => {
     const Icon = () => null;
     mockUseMenuExtensionPages.mockReturnValue([
       {
@@ -282,22 +285,36 @@ describe('usePaletteItems', () => {
         icon: Icon,
         menu: true,
       },
-      {
-        id: 'flow:settings',
-        extensionId: 'flow',
-        path: 'settings',
-        component: () => null,
-        title: 'Flow settings',
-        menu: true,
-      },
     ]);
+    const entry = (id: string, name: string, state: string, pageId: string | null) => ({
+      id,
+      name,
+      summary: '',
+      state,
+      path: '',
+      pageId,
+      count: 0,
+      line: null,
+    });
+    snapshotApps.value = [
+      entry('flow', 'Flow', 'ok', 'flow:'),
+      entry('radar', 'Release Radar', 'held', null),
+      entry('old', 'Old Board', 'off', null),
+    ];
     const { result } = renderHook(() => usePaletteItems(null, NOW));
     const pages = corpusOf(result.current, 'page');
-    expect(pages.map((row) => [row.name, row.type === 'page' && row.data.href])).toEqual([
-      ['Flow', '/x/flow'],
-      ['Flow settings', '/x/flow/settings'],
+    expect(
+      pages.map((row) => [
+        row.name,
+        row.type === 'page' && row.data.href,
+        row.type === 'page' && row.data.app.state,
+      ])
+    ).toEqual([
+      ['Flow', '/x/flow', 'ok'],
+      ['Release Radar', '/x/radar', 'held'],
     ]);
     expect(pages[0]!.type === 'page' && pages[0]!.data.icon).toBe(Icon);
+    snapshotApps.value = [];
   });
 
   it('offers every registered feature as a searchable row', () => {

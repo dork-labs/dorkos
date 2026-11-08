@@ -14,6 +14,7 @@ import { useWindowFocusDimming } from './app/use-window-focus-dimming';
 import { useOpenRoom } from './app/use-open-room';
 import { WindowTitle } from './app/WindowTitle';
 import { useCommunityWatchers } from './app/use-community-watchers';
+import { useAppsPalette } from '@/layers/widgets/apps-home';
 import { useTodosPalette } from './app/use-todos-palette';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
@@ -266,6 +267,7 @@ export function AppShell() {
   // sync, and the approval checks that finish a pairing).
   useCommunityWatchers();
   useTodosPalette();
+  useAppsPalette();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,

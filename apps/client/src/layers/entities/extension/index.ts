@@ -93,3 +93,31 @@ export {
   type ExtensionDecisionActions,
   type DecisionAnswerInput,
 } from './model/use-extension-decisions';
+export {
+  appAccessibleName,
+  appState,
+  buildAppCatalog,
+  matchesAppSearch,
+  pinnedApps,
+  type AppCatalog,
+  type AppCatalogStatus,
+  type AppEntry,
+  type AppState,
+  type KnownApps,
+} from './lib/app-catalog';
+export {
+  PIN_CAP_TOAST,
+  useAppCatalog,
+  useAppCatalogSnapshot,
+  useAppPins,
+  usePublishAppCatalog,
+  useRetryApps,
+  type AppCatalogState,
+  type AppPinActions,
+} from './model/use-app-catalog';
+export {
+  useAppActions,
+  useAppTrying,
+  type AppActions,
+  type AppTarget,
+} from './model/use-app-actions';

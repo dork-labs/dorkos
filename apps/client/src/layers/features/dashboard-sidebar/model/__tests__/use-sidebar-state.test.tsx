@@ -105,6 +105,13 @@ vi.mock('@/layers/entities/todo', () => ({
   useTodoBadge: () => todos.badge,
 }));
 
+// The app catalog has its own tests; here it is one stable answer with nothing pinned.
+const APP_CATALOG = { status: 'ready', apps: [], pinned: [], pins: [] };
+vi.mock('@/layers/entities/extension', () => ({
+  useAppCatalog: () => APP_CATALOG,
+  appAccessibleName: (app: { name: string }) => app.name,
+}));
+
 import { useSidebarState } from '../use-sidebar-state';
 // Imported after the mocks like the hook itself, so the rules see the same
 // mocked module graph the hook does.

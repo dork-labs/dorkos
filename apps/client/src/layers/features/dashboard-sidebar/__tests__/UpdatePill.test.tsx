@@ -282,7 +282,7 @@ describe('UpdatePill', () => {
     // update is a card in the bottom slot, never a row.
     const rows = buildSidebarModel(busyFixture).sections.flatMap((section) => section.rows);
     expect(rows.length).toBeGreaterThan(0);
-    const text = rows.map((r) => `${r.primary} ${r.secondary ?? ''} ${r.reason}`);
+    const text = rows.map((r) => `${r.primary} ${r.reason}`);
     expect(text.filter((line) => /update|version|restart/i.test(line))).toEqual([]);
   });
 });

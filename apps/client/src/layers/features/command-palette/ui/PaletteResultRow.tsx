@@ -8,8 +8,9 @@
  *
  * @module features/command-palette/ui/PaletteResultRow
  */
+import type { AppTarget } from '@/layers/entities/extension';
 import { motion } from 'motion/react';
-import { CommandItem, ContributedIcon } from '@/layers/shared/ui';
+import { CommandItem, ContributedIcon, CountPill } from '@/layers/shared/ui';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import type { RoomSummary } from '@/layers/entities/room';
 import { AgentCommandItem } from './AgentCommandItem';
@@ -42,7 +43,7 @@ export interface PaletteResultRowProps {
   /** Put a slash command in the active conversation's composer and go there. */
   onCommandSelect: (command: string) => void;
   /** Open an extension page. */
-  onPageSelect: (href: string) => void;
+  onPageSelect: (href: string, app?: AppTarget) => void;
 }
 
 /**
@@ -130,7 +131,10 @@ export function PaletteResultRow({
 
     case 'page': {
       return (
-        <CommandItem value={item.data.id} onSelect={() => onPageSelect(item.data.href)}>
+        <CommandItem
+          value={item.data.id}
+          onSelect={() => onPageSelect(item.data.href, item.data.app)}
+        >
           <motion.div
             whileHover={{ x: 2 }}
             transition={{ duration: 0.1, ease: EASE_OUT }}
@@ -138,6 +142,7 @@ export function PaletteResultRow({
           >
             <ContributedIcon icon={item.data.icon} className="size-4" />
             <span>{item.data.label}</span>
+            <PaletteAppTrailing state={item.data.app.state} count={item.data.count} />
           </motion.div>
         </CommandItem>
       );
@@ -159,4 +164,30 @@ export function PaletteResultRow({
       );
     }
   }
+}
+
+/**
+ * The one trailing mark on an Apps row (spec §5): "Needs your OK", "Not
+ * working", the app's own count, or the word "App".
+ */
+function PaletteAppTrailing({ state, count }: { state: AppTarget['state']; count: number }) {
+  if (state === 'held') {
+    return <span className="text-brand-text ml-auto text-xs font-medium">Needs your OK</span>;
+  }
+  if (state === 'error') {
+    return <span className="text-status-error-fg ml-auto text-xs">Not working</span>;
+  }
+  if (count > 0) {
+    return (
+      <span className="ml-auto">
+        <CountPill count={count} tone="warning" label={`${count} waiting`} />
+      </span>
+    );
+  }
+  // A label for the eye only: "App" adds nothing to the name a reader hears.
+  return (
+    <span aria-hidden className="text-muted-foreground ml-auto text-xs">
+      App
+    </span>
+  );
 }

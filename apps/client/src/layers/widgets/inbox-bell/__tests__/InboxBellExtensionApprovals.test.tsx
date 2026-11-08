@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -40,6 +40,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 import { toast } from 'sonner';
 import { TransportProvider } from '@/layers/shared/model';
+import { clearInboxRequest, requestInbox } from '@/layers/entities/notifications';
 import { InboxBell } from '../ui/InboxBell';
 
 const FLOW: PendingExtensionApproval = {
@@ -165,6 +166,19 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+  });
+
+  it('opens on the card a held app’s tile asked for, ringed and focused (DOR-3970)', async () => {
+    renderBell();
+    await screen.findByTestId('inbox-bell');
+
+    act(() => requestInbox(undefined, { focus: 'flow' }));
+
+    const frame = (await screen.findByText('Turn on Flow?')).closest('[data-decision-id]');
+    expect(frame).not.toBeNull();
+    await waitFor(() => expect(frame).toHaveFocus());
+    expect(frame).toHaveAttribute('data-focused', 'true');
+    clearInboxRequest();
   });
 
   it('counts it in the pill, in its own words', async () => {

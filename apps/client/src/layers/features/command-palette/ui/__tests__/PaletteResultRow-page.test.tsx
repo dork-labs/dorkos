@@ -4,7 +4,7 @@
  * the page's title under "Add-ons", and choosing it goes to the page.
  */
 import { describe, expect, it, vi, beforeAll } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Command, CommandList } from '@/layers/shared/ui';
 import { PaletteResultRow } from '../PaletteResultRow';
@@ -21,7 +21,10 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-function pageRow(icon?: unknown): RankedRow<SearchResult> {
+function pageRow(
+  icon?: unknown,
+  app: { state: 'ok' | 'held' | 'error' | 'off'; count?: number } = { state: 'ok' }
+): RankedRow<SearchResult> {
   return {
     key: 'flow:',
     item: {
@@ -34,7 +37,14 @@ function pageRow(icon?: unknown): RankedRow<SearchResult> {
         waiting: false,
         demoted: false,
         scopes: [],
-        data: { id: 'flow:', label: 'Flow', href: '/x/flow', icon },
+        data: {
+          id: 'app:flow',
+          label: 'Flow',
+          href: '/x/flow',
+          icon,
+          app: { id: 'flow', path: '', state: app.state },
+          count: app.count ?? 0,
+        },
       },
       matches: undefined,
     },
@@ -44,9 +54,9 @@ function pageRow(icon?: unknown): RankedRow<SearchResult> {
   };
 }
 
-describe('PaletteResultRow — an extension page', () => {
-  it('is headed "Add-ons" in the ranked list', () => {
-    expect(RESULT_GROUP_LABEL.page).toBe('Add-ons');
+describe('PaletteResultRow — an app', () => {
+  it('is headed "Apps" in the ranked list', () => {
+    expect(RESULT_GROUP_LABEL.page).toBe('Apps');
   });
 
   function renderRow(row: RankedRow<SearchResult>, onPageSelect = vi.fn()) {
@@ -81,7 +91,7 @@ describe('PaletteResultRow — an extension page', () => {
   ])('still draws the row when the icon is %s', (_label, icon) => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     renderRow(pageRow(icon));
-    expect(screen.getByRole('option', { name: 'Flow' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /^Flow/ })).toBeTruthy();
   });
 
   it('shows the page title and hands its address over when chosen', () => {
@@ -105,7 +115,29 @@ describe('PaletteResultRow — an extension page', () => {
       </Command>
     );
 
-    fireEvent.click(screen.getByRole('option', { name: 'Flow' }));
-    expect(onPageSelect).toHaveBeenCalledWith('/x/flow');
+    fireEvent.click(screen.getByRole('option', { name: /^Flow/ }));
+    expect(onPageSelect).toHaveBeenCalledWith('/x/flow', { id: 'flow', path: '', state: 'ok' });
+  });
+
+  it.each([
+    ['held', 'Needs your OK'],
+    ['error', 'Not working'],
+  ] as const)(
+    'says a %s app’s state, and hands the app over so choosing it never approves',
+    (state, words) => {
+      const onPageSelect = vi.fn();
+      renderRow(pageRow(undefined, { state }), onPageSelect);
+      const option = screen.getByRole('option', { name: new RegExp(`^Flow.*${words}`) });
+      fireEvent.click(option);
+      expect(onPageSelect).toHaveBeenCalledWith('/x/flow', { id: 'flow', path: '', state });
+    }
+  );
+
+  it('shows a running app’s own count, else the word App', () => {
+    renderRow(pageRow(undefined, { state: 'ok', count: 2 }));
+    expect(screen.getByRole('option', { name: /^Flow/ })).toHaveTextContent('2');
+    cleanup();
+    renderRow(pageRow());
+    expect(screen.getByRole('option', { name: /^Flow/ })).toHaveTextContent('App');
   });
 });

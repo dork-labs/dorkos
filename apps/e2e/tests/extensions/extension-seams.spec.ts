@@ -8,7 +8,7 @@ import { PHONE } from '../rooms/room-sheet-helpers.js';
 /**
  * The extension seams, seen in a real browser (spec `flow-multiproject` §12,
  * phase 2): an extension's page, its status-bar item and its tab dot, and the
- * sidebar's Add-ons section that lists the page (spec `mini-app-placement`).
+ * sidebar's Apps door and the Apps page that list it (DOR-3970).
  *
  * **Two halves, one file.** The first half drives the `hello-world` core
  * extension, which is the worked example of the client seams (DOR-2525). The
@@ -58,7 +58,8 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await page.goto('/');
     await new BasePage(page).waitForAppReady();
 
-    await openFromCommandPalette(page, 'Hello');
+    // ⌘K lists the app by its name (DOR-3970), not its page's title.
+    await openFromCommandPalette(page, 'Hello World');
     await expect(page).toHaveURL(/\/x\/hello-world$/);
     await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
 
@@ -150,36 +151,53 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await expect(panel.header.locator('[data-slot="right-panel-tab-marker"]')).toHaveCount(0);
   });
 
-  test('lists its page under Add-ons in the sidebar, opens it, and marks it open', async ({
+  test('lists it on the Apps page, pins it under the Apps door, and opens it from there', async ({
     page,
   }) => {
     await page.goto('/');
     const base = new BasePage(page);
     await base.ensureSidebarOpen();
 
-    const addOns = page.locator('[data-sidebar-section="addons"]');
-    await expect(addOns.getByRole('heading', { name: 'Add-ons' })).toBeVisible();
-    const row = addOns.getByRole('button', { name: 'Hello', exact: true });
-    await row.click();
-    await expect(page).toHaveURL(/\/x\/hello-world$/);
+    // The door replaced the bottom Add-ons section (DOR-3970).
+    await expect(page.locator('[data-sidebar-section="addons"]')).toHaveCount(0);
+    await page.getByTestId('apps-door').click();
+    await expect(page).toHaveURL(/\/apps$/);
+
+    const tile = page.getByTestId(`apps-tile-${HELLO}`);
+    await expect(tile).toBeVisible();
+
+    // Pin it, unless the one-time seed already did.
+    const pinned = page.getByTestId(`apps-pinned-${HELLO}`);
+    if ((await pinned.count()) === 0) {
+      await tile.hover();
+      await page
+        .getByRole('button', { name: /actions$/ })
+        .filter({ visible: true })
+        .first()
+        .click();
+      await page.getByRole('menuitem', { name: 'Pin' }).click();
+    }
+    await expect(pinned).toBeVisible();
+
+    await pinned.click();
+    await expect(page).toHaveURL(/\/x\/hello-world/);
     await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
-    await expect(row).toHaveAttribute('aria-current', 'page');
+    await expect(pinned).toHaveAttribute('aria-current', 'page');
   });
 
   test.describe('on a phone', () => {
     test.use({ viewport: PHONE, hasTouch: true, isMobile: true });
 
-    test('lists its page under Add-ons in the Home tab, and opens it', async ({ page }) => {
+    test('reaches it from the Home tab’s Apps door, as a row', async ({ page }) => {
       await page.goto('/');
       await new BasePage(page).waitForAppReady();
 
       await page.getByTestId('mobile-tab-home').click();
-      const home = page.getByTestId('mobile-tab-panel-home');
-      const addOns = home.locator('[data-sidebar-section="addons"]');
-      await expect(addOns.getByRole('heading', { name: 'Add-ons' })).toBeVisible();
+      await page.getByTestId('mobile-tab-panel-home').getByTestId('apps-door').click();
+      await expect(page).toHaveURL(/\/apps$/);
 
-      await addOns.getByRole('button', { name: 'Hello', exact: true }).click();
-      await expect(page).toHaveURL(/\/x\/hello-world$/);
+      await page.getByTestId(`apps-tile-${HELLO}`).click();
+      await expect(page).toHaveURL(/\/x\/hello-world/);
       await expect(page.getByRole('heading', { name: 'Hello, there' })).toBeVisible();
     });
   });

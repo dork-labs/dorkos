@@ -20,6 +20,7 @@ import {
   type ExtensionAnswerInput,
 } from '@/layers/entities/extension';
 import { InboxDecisionRow } from '@/layers/features/inbox';
+import { DecisionFrame } from './ExtensionDecisionList';
 
 /**
  * The exact copy a row shows, sent with either answer so the server acts only
@@ -79,6 +80,14 @@ export interface ExtensionApprovalListProps {
   approvals: readonly PendingExtensionApproval[];
   /** Open Settings → Extensions, closing the Inbox first. */
   onOpenSettings: () => void;
+  /**
+   * The extension id a link asked the Inbox to single out — a held app's tile,
+   * pinned row or ⌘K item (DOR-3970). Its row is ringed, scrolled to and
+   * focused; it never approves anything.
+   */
+  focusId?: string;
+  /** Focus left the singled-out row. */
+  onFocusSpent?: () => void;
 }
 
 /**
@@ -108,7 +117,12 @@ function titleOf(approval: PendingExtensionApproval): string {
  *
  * @param props - The waiting extensions and how to reach Settings.
  */
-export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionApprovalListProps) {
+export function ExtensionApprovalList({
+  approvals,
+  onOpenSettings,
+  focusId,
+  onFocusSpent,
+}: ExtensionApprovalListProps) {
   const { approve, dismiss, pending } = useExtensionApprovalActions();
   if (approvals.length === 0) return null;
 
@@ -118,59 +132,67 @@ export function ExtensionApprovalList({ approvals, onOpenSettings }: ExtensionAp
         const gifts = agentGiftsFromApproval(approval);
         const giftsLine = agentGiftsLine(gifts);
         return (
-          <InboxDecisionRow
+          <DecisionFrame
             key={`${approval.id}:${approval.path}:${approval.version}`}
-            icon={Puzzle}
-            title={titleOf(approval)}
-            why={approval.why}
-            // What it gives agents, on the row itself, so it is read before the
-            // yes; each tool and its tier is in the ⓘ panel (DOR-2685).
-            {...(giftsLine ? { meta: giftsLine } : {})}
-            // Where it runs and what it may reach, on the row itself, so the
-            // yes is given to what it lists; a re-ask leads with what is new.
-            // Nothing extra when the server sent no set (one version behind).
-            {...(approval.permissions
-              ? {
-                  details: <ApprovalPermissionLines approval={approval} />,
+            decisionId={approval.id}
+            focused={approval.id === focusId}
+            {...(onFocusSpent ? { onFocusSpent } : {})}
+          >
+            {() => (
+              <InboxDecisionRow
+                icon={Puzzle}
+                title={titleOf(approval)}
+                why={approval.why}
+                // What it gives agents, on the row itself, so it is read before the
+                // yes; each tool and its tier is in the ⓘ panel (DOR-2685).
+                {...(giftsLine ? { meta: giftsLine } : {})}
+                // Where it runs and what it may reach, on the row itself, so the
+                // yes is given to what it lists; a re-ask leads with what is new.
+                // Nothing extra when the server sent no set (one version behind).
+                {...(approval.permissions
+                  ? {
+                      details: <ApprovalPermissionLines approval={approval} />,
+                    }
+                  : {})}
+                sourceLine={approval.sourceLabel}
+                more={
+                  <>
+                    <ExtensionAgentGifts gifts={gifts} variant="list" />
+                    <p>
+                      {extensionConsentCopy(
+                        approval.runsInServer,
+                        approval.permissions?.runtime === 'subprocess'
+                      )}
+                    </p>
+                    <p>{EXTENSION_TRUST_COPY}</p>
+                    <p>
+                      <button
+                        type="button"
+                        onClick={onOpenSettings}
+                        className="text-foreground underline underline-offset-2"
+                      >
+                        See it in Settings → Extensions
+                      </button>
+                    </p>
+                  </>
                 }
-              : {})}
-            sourceLine={approval.sourceLabel}
-            more={
-              <>
-                <ExtensionAgentGifts gifts={gifts} variant="list" />
-                <p>
-                  {extensionConsentCopy(
-                    approval.runsInServer,
-                    approval.permissions?.runtime === 'subprocess'
-                  )}
-                </p>
-                <p>{EXTENSION_TRUST_COPY}</p>
-                <p>
-                  <button
-                    type="button"
-                    onClick={onOpenSettings}
-                    className="text-foreground underline underline-offset-2"
-                  >
-                    See it in Settings → Extensions
-                  </button>
-                </p>
-              </>
-            }
-            actions={{
-              kind: 'yes-no',
-              approveLabel: 'Turn it on',
-              rejectLabel: 'Not now',
-              onApprove: () => approve(approvalOf(approval)),
-              onReject: () => dismiss(copyOf(approval)),
-            }}
-            pending={
-              pending?.id === approval.id
-                ? pending.action === 'approve'
-                  ? 'approve'
-                  : 'reject'
-                : null
-            }
-          />
+                actions={{
+                  kind: 'yes-no',
+                  approveLabel: 'Turn it on',
+                  rejectLabel: 'Not now',
+                  onApprove: () => approve(approvalOf(approval)),
+                  onReject: () => dismiss(copyOf(approval)),
+                }}
+                pending={
+                  pending?.id === approval.id
+                    ? pending.action === 'approve'
+                      ? 'approve'
+                      : 'reject'
+                    : null
+                }
+              />
+            )}
+          </DecisionFrame>
         );
       })}
     </div>

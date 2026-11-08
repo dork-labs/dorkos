@@ -13,8 +13,8 @@ import {
   type SidebarSectionModel,
 } from '../build-sidebar-model';
 import {
-  addOn,
   agent,
+  appsState,
   agentDm,
   agentMember,
   busyFixture,
@@ -22,6 +22,7 @@ import {
   firstRunFixture,
   hoursAgo,
   person,
+  pinnedApp,
   powerFixture,
   prefs,
   quietFixture,
@@ -78,13 +79,16 @@ describe('the order, top to bottom', () => {
     ).toEqual(['group:group-codex', 'group:group-frontend']);
   });
 
-  it('ends with Add-ons, once a mini app has added a page', () => {
-    const state: SidebarState = { ...quietFixture, addOns: [addOn('crm', '', 'Clients')] };
-    expect(sections(state).map((entry) => entry.id)).toEqual(['top', 'channels', 'dms', 'addons']);
+  it('draws no Add-ons section: apps live under the Apps door (DOR-3970)', () => {
+    const state: SidebarState = {
+      ...quietFixture,
+      apps: appsState({ pinned: [pinnedApp('crm', 'Clients')] }),
+    };
+    expect(sections(state).map((entry) => entry.id)).toEqual(['top', 'channels', 'dms']);
   });
 
   it('emits the fixed sections in the tuple’s order', () => {
-    const fixed = sections({ ...busyFixture, addOns: [addOn('crm', '', 'Clients')] })
+    const fixed = sections(busyFixture)
       .map((entry) => entry.id)
       .filter((id) => persistedSectionId(id) !== null);
     expect(fixed).toEqual([...SIDEBAR_SECTION_IDS]);
@@ -92,12 +96,13 @@ describe('the order, top to bottom', () => {
 });
 
 describe('the top items', () => {
-  it('are Threads and Directory, headerless, and nothing else', () => {
+  it('are Threads, Apps and Directory, headerless, and nothing else', () => {
     const top = section(busyFixture, 'top');
     expect(top?.label).toBeNull();
     expect(top?.collapsible).toBe(false);
     expect(top?.rows.map((row) => [row.primary, row.target])).toEqual([
       ['Threads', { kind: 'command', commandId: 'open-threads' }],
+      ['Apps', { kind: 'command', commandId: 'open-apps' }],
       ['Directory', { kind: 'command', commandId: 'open-directory' }],
     ]);
   });
@@ -118,6 +123,7 @@ describe('the top items', () => {
     const on = section({ ...busyFixture, todos: { badge: 0 } }, 'top');
     expect(on?.rows.map((row) => [row.primary, row.target])).toEqual([
       ['Threads', { kind: 'command', commandId: 'open-threads' }],
+      ['Apps', { kind: 'command', commandId: 'open-apps' }],
       ['To-dos', { kind: 'command', commandId: 'open-todos' }],
       ['Directory', { kind: 'command', commandId: 'open-directory' }],
     ]);

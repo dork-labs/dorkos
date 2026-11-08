@@ -130,6 +130,8 @@ export const CONFIG_DISCLOSURE = {
   'ui.sidebar.pinned[].kind': 'expose',
   'ui.sidebar.pinned[].path': 'expose',
   'ui.sidebar.pinned[].roomId': 'expose',
+  // Extension ids, in pin order: the same ids `GET /api/extensions` lists.
+  'ui.sidebar.pinnedApps': 'expose',
   // A sidebar group is an object inside an array, so each of its fields carries
   // its own verdict. That is the point of the `[]` descent: a credential-shaped
   // property added to a group is unclassified, so the guard fails, and the

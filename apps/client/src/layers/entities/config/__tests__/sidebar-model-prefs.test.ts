@@ -44,6 +44,7 @@ describe('toSidebarModelPrefs', () => {
       groups: stored.groups,
       muted: [{ kind: 'room', roomId: '01JNOISY' }],
       sections: { dms: { collapsed: true, sortMode: 'recent' } },
+      pinnedApps: null,
     } satisfies SidebarModelPrefs);
   });
 
@@ -53,6 +54,7 @@ describe('toSidebarModelPrefs', () => {
       groups: [],
       muted: [],
       sections: {},
+      pinnedApps: null,
     });
   });
 

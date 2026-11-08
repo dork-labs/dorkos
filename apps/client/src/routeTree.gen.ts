@@ -13,6 +13,7 @@ import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as SignedInRouteImport } from './routes/signed-in'
 import { Route as ShellHomeRouteImport } from './routes/_shell._home'
 import { Route as ShellAgentsRouteImport } from './routes/_shell.agents'
+import { Route as ShellAppsRouteImport } from './routes/_shell.apps'
 import { Route as ShellChannelsRouteImport } from './routes/_shell.channels'
 import { Route as ShellConnectionsRouteImport } from './routes/_shell.connections'
 import { Route as ShellFeedbackRequestsRouteImport } from './routes/_shell.feedback-requests'
@@ -45,6 +46,11 @@ const ShellHomeRoute = ShellHomeRouteImport.update({
 const ShellAgentsRoute = ShellAgentsRouteImport.update({
   id: '/agents',
   path: '/agents',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellAppsRoute = ShellAppsRouteImport.update({
+  id: '/apps',
+  path: '/apps',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellChannelsRoute = ShellChannelsRouteImport.update({
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/': typeof ShellHomeIndexRoute
   '/signed-in': typeof SignedInRoute
   '/agents': typeof ShellAgentsRoute
+  '/apps': typeof ShellAppsRoute
   '/channels': typeof ShellChannelsRoute
   '/connections': typeof ShellConnectionsRoute
   '/feedback-requests': typeof ShellFeedbackRequestsRoute
@@ -146,6 +153,7 @@ export interface FileRoutesByTo {
   '/': typeof ShellHomeIndexRoute
   '/signed-in': typeof SignedInRoute
   '/agents': typeof ShellAgentsRoute
+  '/apps': typeof ShellAppsRoute
   '/channels': typeof ShellChannelsRoute
   '/connections': typeof ShellConnectionsRoute
   '/feedback-requests': typeof ShellFeedbackRequestsRoute
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/signed-in': typeof SignedInRoute
   '/_shell/_home': typeof ShellHomeRouteWithChildren
   '/_shell/agents': typeof ShellAgentsRoute
+  '/_shell/apps': typeof ShellAppsRoute
   '/_shell/channels': typeof ShellChannelsRoute
   '/_shell/connections': typeof ShellConnectionsRoute
   '/_shell/feedback-requests': typeof ShellFeedbackRequestsRoute
@@ -189,6 +198,7 @@ export interface FileRouteTypes {
     | '/'
     | '/signed-in'
     | '/agents'
+    | '/apps'
     | '/channels'
     | '/connections'
     | '/feedback-requests'
@@ -208,6 +218,7 @@ export interface FileRouteTypes {
     | '/'
     | '/signed-in'
     | '/agents'
+    | '/apps'
     | '/channels'
     | '/connections'
     | '/feedback-requests'
@@ -228,6 +239,7 @@ export interface FileRouteTypes {
     | '/signed-in'
     | '/_shell/_home'
     | '/_shell/agents'
+    | '/_shell/apps'
     | '/_shell/channels'
     | '/_shell/connections'
     | '/_shell/feedback-requests'
@@ -278,6 +290,13 @@ declare module '@tanstack/react-router' {
       path: '/agents'
       fullPath: '/agents'
       preLoaderRoute: typeof ShellAgentsRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/apps': {
+      id: '/_shell/apps'
+      path: '/apps'
+      fullPath: '/apps'
+      preLoaderRoute: typeof ShellAppsRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/channels': {
@@ -409,6 +428,7 @@ const ShellHomeRouteWithChildren = ShellHomeRoute._addFileChildren(
 interface ShellRouteChildren {
   ShellHomeRoute: typeof ShellHomeRouteWithChildren
   ShellAgentsRoute: typeof ShellAgentsRoute
+  ShellAppsRoute: typeof ShellAppsRoute
   ShellChannelsRoute: typeof ShellChannelsRoute
   ShellConnectionsRoute: typeof ShellConnectionsRoute
   ShellFeedbackRequestsRoute: typeof ShellFeedbackRequestsRoute
@@ -425,6 +445,7 @@ interface ShellRouteChildren {
 const ShellRouteChildren: ShellRouteChildren = {
   ShellHomeRoute: ShellHomeRouteWithChildren,
   ShellAgentsRoute: ShellAgentsRoute,
+  ShellAppsRoute: ShellAppsRoute,
   ShellChannelsRoute: ShellChannelsRoute,
   ShellConnectionsRoute: ShellConnectionsRoute,
   ShellFeedbackRequestsRoute: ShellFeedbackRequestsRoute,

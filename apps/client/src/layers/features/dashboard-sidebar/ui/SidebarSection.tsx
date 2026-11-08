@@ -14,12 +14,13 @@ import { AnimatePresence } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
 import { useRovingFocus, type SidebarDragActivatorProps } from '@/layers/shared/model';
 import { SectionHeader, SidebarGroup, SidebarMenu, statusDotClass } from '@/layers/shared/ui';
-import type { SidebarSectionModel } from '../model/build-sidebar-model';
+import type { SidebarRowModel, SidebarSectionModel } from '../model/build-sidebar-model';
 import type { SidebarContainer, UngroupedSectionId } from '../model/use-sidebar-dnd';
 import { Droppable, Sortable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import { SidebarFoldBody } from './motion/SidebarFoldBody';
 import { sectionLayoutKey } from './motion/sidebar-motion';
 import { useArrivedRows } from './motion/use-arrived-rows';
+import { TopRows } from './apps/TopRows';
 import { useSidebarChrome } from './SidebarChrome';
 import { dragRefOf, SidebarModelRow } from './SidebarModelRow';
 import { useSectionChrome } from './useSectionChrome';
@@ -59,7 +60,7 @@ const MemoSectionHeader = memo(SectionHeader);
  * an ungrouped section at all.
  *
  * Two ids and no fallback. A hand-made section is its own container, and the
- * top items and Add-ons fill themselves — none of them is "ungrouped", so none
+ * top items fill themselves — they are not "ungrouped", so none
  * of them may borrow another section's name for a drag announcement.
  *
  * @param id - The section's id.
@@ -73,14 +74,14 @@ function ungroupedSectionId(id: SidebarSectionModel['id']): UngroupedSectionId |
  *
  * Channels and Direct messages are both "ungrouped" — landing in either takes
  * a row out of its section — and a hand-made section is its own. The top items
- * and Add-ons fill themselves, so they are `computed`, which the drop reducer
+ * fill themselves, so they are `computed`, which the drop reducer
  * rejects with a sentence rather than in silence (R3).
  *
  * @param id - The section's id.
  */
 export function sectionContainer(id: SidebarSectionModel['id']): SidebarContainer {
   if (id.startsWith('group:')) return { kind: 'group', groupId: id.slice('group:'.length) };
-  if (id === 'top' || id === 'addons') return { kind: 'computed', section: id };
+  if (id === 'top') return { kind: 'computed', section: id };
   // Reached only after hand-made sections and the computed ones have been
   // answered above, so the fallback is unreachable in practice — spelled out
   // rather than defaulted so a new section shows up as a wrong announcement
@@ -136,7 +137,7 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
   const { bootSettled } = useSidebarChrome();
   const arrived = useArrivedRows(layoutKey, announcesArrivals && bootSettled);
 
-  const list = section.rows.map((row) => (
+  const renderRow = (row: SidebarRowModel) => (
     <SidebarModelRow
       key={`${prefix}-${row.key}`}
       row={row}
@@ -146,7 +147,13 @@ export function SidebarSection({ section, onToggleAll }: SidebarSectionProps) {
       {...(arrived.has(row.key) ? { arrived: true } : {})}
       {...(sectionId === undefined ? {} : { sectionId })}
     />
-  ));
+  );
+  const list =
+    section.id === 'top' ? (
+      <TopRows section={section} renderRow={renderRow} />
+    ) : (
+      section.rows.map(renderRow)
+    );
 
   const rows = (
     <SidebarMenu id={bodyId}>

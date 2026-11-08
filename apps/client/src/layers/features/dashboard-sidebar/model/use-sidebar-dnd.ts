@@ -37,22 +37,18 @@ import {
  * One spelling, read by the toast the operator sees and by the announcement a
  * screen reader hears, so the two can never drift.
  */
-export const TOP_ITEMS_REJECTION = 'Threads and Directory are pages. Drop it in a section.';
-
-/**
- * What a drop into Add-ons is answered with. Add-ons lists the pages mini apps
- * add and nothing else, so a channel or an agent has no place there.
- */
-export const ADD_ONS_REJECTION = 'Add-ons lists extension pages only.';
+export const TOP_ITEMS_REJECTION = 'Threads, Apps and Directory are pages. Drop it in a section.';
 
 /**
  * The sentence a drop into one computed section is refused with — one source
  * for the toast and the screen-reader announcement.
  *
- * @param section - The computed section the drop landed in.
+ * @param _section - The computed section the drop landed in. Only the top
+ *   items are one since Add-ons left (DOR-3970); kept as a parameter so a
+ *   second computed section has one place to answer.
  */
-export function computedSectionRejection(section: ComputedSection): string {
-  return section === 'addons' ? ADD_ONS_REJECTION : TOP_ITEMS_REJECTION;
+export function computedSectionRejection(_section: ComputedSection): string {
+  return TOP_ITEMS_REJECTION;
 }
 
 /**
@@ -84,8 +80,7 @@ export type SidebarContainer =
    */
   | { kind: 'ungrouped'; section?: UngroupedSectionId }
   /**
-   * A section that fills itself: the top items, or Add-ons with the pages mini
-   * apps add.
+   * A section that fills itself: the top items, the Apps door's pins among them.
    *
    * These are the only containers that are never a home: nothing is dragged
    * OUT of them, because the model gives every row in them `draggable: false`.
@@ -95,7 +90,7 @@ export type SidebarContainer =
   | { kind: 'computed'; section: ComputedSection };
 
 /** The sections that fill themselves, so nothing may be dropped into them. */
-export type ComputedSection = 'top' | 'addons';
+export type ComputedSection = 'top';
 
 /**
  * The `data` object a draggable/droppable node carries. dnd-kit reuses one data
@@ -170,7 +165,7 @@ function isSidebarContainer(value: unknown): value is SidebarContainer {
   }
   if (kind === 'computed') {
     const section = (value as { section?: unknown }).section;
-    return section === 'top' || section === 'addons';
+    return section === 'top';
   }
   return kind === 'group' && typeof (value as { groupId?: unknown }).groupId === 'string';
 }
@@ -291,7 +286,7 @@ function moveToGroupOp(
  * - item in a manual group → same group: reorder within group
  * - item in a name/recent group → same group: no reorder (sort owns order)
  * - item in a group → Channels or Direct messages (ungrouped): remove from group
- * - anything → the top items or Add-ons: refused with a sentence
+ * - anything → the top items: refused with a sentence
  *
  * A `null`/void drop (released with no valid target) is always a no-op.
  *
@@ -319,7 +314,7 @@ export function classifySidebarDrop(
   const { ref, from } = drag;
   const { container, overRef } = resolveTarget(drop);
 
-  // The top items and Add-ons fill themselves, and dragging into them would be
+  // The top items fill themselves, and dragging into them would be
   // a lie about what the operator controls (R3, design-meta rule 6). Checked
   // FIRST, before any source branch: where the row came from does not change
   // the answer.
@@ -463,7 +458,7 @@ function describeSidebarDragOver(
     case 'ungrouped':
       return `Over ${UNGROUPED_SECTION_LABEL[container.section ?? 'dms']}.`;
     case 'computed':
-      return container.section === 'addons' ? 'Over Add-ons.' : 'Over Threads and Directory.';
+      return 'Over Threads, Apps and Directory.';
     case 'group':
       return `Over ${ctx.groupName(container.groupId)}.`;
   }
