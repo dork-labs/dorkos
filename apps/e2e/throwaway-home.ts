@@ -1,6 +1,7 @@
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { boundaryRootFor, mainCheckoutOf } from './boundary-root';
 
 /**
  * A throwaway server's own `HOME` (DOR-3587).
@@ -33,6 +34,9 @@ import { pathToFileURL } from 'node:url';
  * legitimately reaches falls outside it.
  */
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
+
+/** The boundary itself: the checkout, widened only in a linked worktree (see `boundary-root.ts`). */
+const BOUNDARY_ROOT = boundaryRootFor(REPO_ROOT, mainCheckoutOf(REPO_ROOT));
 
 /**
  * The environment that gives a server a home of its own: `HOME`, and every
@@ -122,7 +126,7 @@ export function bootServerOnThrowawayHome(dorkHome: string): string {
   const assignments = Object.entries({
     ...isolatedHomeEnv(throwawayHomeOf(dorkHome)),
     PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath(),
-    DORKOS_BOUNDARY: REPO_ROOT,
+    DORKOS_BOUNDARY: BOUNDARY_ROOT,
   })
     // Double quotes: this lands inside the leg's single-quoted `sh -c`.
     .map(([key, value]) => `${key}="${value}"`)
