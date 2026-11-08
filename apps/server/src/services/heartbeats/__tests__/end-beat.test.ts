@@ -36,7 +36,7 @@ import {
   resetBeatTurns,
   settleBeatTurn,
 } from '../beat-turns.js';
-import { commitmentsDomain } from '../../commitments/commitment-capabilities.js';
+import { todoPromisesDomain } from '../../todos/todo-promise-capabilities.js';
 
 const juno: AgentIdentity = {
   agentPath: '/agents/juno',
@@ -58,9 +58,9 @@ beforeEach(() => {
     readConfig: () => ({ preset, defaults: { areas: {}, actions: {} } }),
     readAgentPermissions: async () => agentPermissions,
   });
-  registry = composeRegistry([heartbeatDomain, commitmentsDomain], {
+  registry = composeRegistry([heartbeatDomain, todoPromisesDomain], {
     logger: { debug() {}, info() {}, warn() {}, error() {} },
-    commitmentDeps: {
+    todoPromiseDeps: {
       service: { create: vi.fn(), update: vi.fn(), list: vi.fn(() => []) },
       agentIdForPath: () => 'agent-juno',
     },

@@ -35,17 +35,13 @@ import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import {
-  CommitmentError,
+  TodoPromiseError,
   PERSON_ASSIGNER,
-  type CommitmentErrorCode,
-} from '../services/commitments/commitment-service.js';
-import type { TodoActor } from '../services/commitments/commitment-authority.js';
-import type {
-  TodoAssignee,
-  TodoService,
-  TodoSource,
-} from '../services/commitments/todo-service.js';
-import { titleIsFromSource, type TodoSourceFacts } from '../services/commitments/todo-source.js';
+  type TodoPromiseErrorCode,
+} from '../services/todos/todo-promise-service.js';
+import type { TodoActor } from '../services/todos/todo-authority.js';
+import type { TodoAssignee, TodoService, TodoSource } from '../services/todos/todo-service.js';
+import { titleIsFromSource, type TodoSourceFacts } from '../services/todos/todo-source.js';
 
 /** What the routes are built from. */
 export interface TodoRouterDeps {
@@ -64,7 +60,7 @@ export interface TodoRouterDeps {
 }
 
 /** The HTTP status for each refusal. */
-const STATUS: Record<CommitmentErrorCode, ContentfulStatusCode> = {
+const STATUS: Record<TodoPromiseErrorCode, ContentfulStatusCode> = {
   NOT_FOUND: 404,
   NOT_YOURS: 403,
   NOTHING_TO_CHANGE: 400,
@@ -75,9 +71,9 @@ const STATUS: Record<CommitmentErrorCode, ContentfulStatusCode> = {
   TOO_MANY: 429,
 };
 
-/** Answer a {@link CommitmentError} with its status, or rethrow. */
+/** Answer a {@link TodoPromiseError} with its status, or rethrow. */
 function refusal(c: Context<ApiEnv>, err: unknown): Response {
-  if (!(err instanceof CommitmentError)) throw err;
+  if (!(err instanceof TodoPromiseError)) throw err;
   return c.json(errorBody(err.message, err.code), STATUS[err.code]);
 }
 

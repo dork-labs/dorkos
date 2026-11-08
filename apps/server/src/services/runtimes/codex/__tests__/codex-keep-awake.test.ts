@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Codex } from '@openai/codex-sdk';
 import { keepAwakeService } from '../../../core/keep-awake/index.js';
-import { buildCodexOptions } from '../codex-options.js';
+import { buildCodexOptions } from './fixtures/sdk-options.js';
 import { APP_SERVER_ARGS } from '../app-server/process-pool.js';
 import { makeAppServerHarness, PERSON_HOME } from './app-server-harness.js';
 
@@ -98,7 +98,7 @@ describe('Codex prevent_idle_sleep on app-server', () => {
     expect(loadConfig(h)).not.toHaveProperty('features');
   });
 
-  it('marks the process stale when the setting changes under a loaded thread', async () => {
+  it('reloads the thread before its next turn when the keep-awake setting changes', async () => {
     const applies = vi.spyOn(keepAwakeService, 'preventsIdleSleep').mockReturnValue(false);
     const h = harness();
     await h.run(h.request({ sessionId: 's1' }));
@@ -106,6 +106,12 @@ describe('Codex prevent_idle_sleep on app-server', () => {
     expect(h.pool.list()[0]!.stale).toBe(false);
     applies.mockReturnValue(true);
     await h.run(h.request({ sessionId: 's1', boundThreadId: threadId }));
-    expect(h.pool.list()[0]!.stale).toBe(true);
+    const process = h.host.home(PERSON_HOME).processes[0]!;
+    expect(process.requestsOf('thread/fork')[0]).toMatchObject({
+      config: { features: { prevent_idle_sleep: true } },
+    });
+    const turns = process.requestsOf('turn/start');
+    expect(turns[1]!.threadId).not.toBe(turns[0]!.threadId);
+    expect(h.pool.list()[0]!.stale).toBe(false);
   });
 });

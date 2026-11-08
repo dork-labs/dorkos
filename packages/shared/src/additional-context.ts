@@ -28,8 +28,10 @@ import { DirectNotesDataSchema, type DirectNotesData } from './direct-notes-cont
 import {
   ContextWarningDataSchema,
   TurnCutoffDataSchema,
+  NewSinceDataSchema,
   type ContextWarningData,
   type TurnCutoffData,
+  type NewSinceData,
 } from './owed-notes-context.js';
 
 import {
@@ -44,7 +46,7 @@ export type {
   WorktreeRefreshOutcome,
 } from './worktree-refresh-context.js';
 export { MainMovedSchema, WorktreeRefreshOutcomeSchema } from './worktree-refresh-context.js';
-export type { ContextWarningData, TurnCutoffData } from './owed-notes-context.js';
+export type { ContextWarningData, TurnCutoffData, NewSinceData } from './owed-notes-context.js';
 
 /** Kinds of additional context DorkOS can attach to a turn. */
 export type ContextKind =
@@ -61,7 +63,8 @@ export type ContextKind =
   | 'accounts_access'
   | 'doc_events'
   | 'context_warning'
-  | 'turn_cutoff';
+  | 'turn_cutoff'
+  | 'new_since_last_run';
 
 /** Lifetime of an entry — informs adapter placement, not yet load-bearing. */
 export type ContextScope = 'per-turn' | 'per-session';
@@ -925,7 +928,8 @@ export type AdditionalContextEntry =
   | { kind: 'direct_notes'; scope: 'per-turn'; data: DirectNotesData }
   | { kind: 'accounts_access'; scope: 'per-turn'; data: AccountsAccessData }
   | { kind: 'context_warning'; scope: 'per-turn'; data: ContextWarningData }
-  | { kind: 'turn_cutoff'; scope: 'per-turn'; data: TurnCutoffData };
+  | { kind: 'turn_cutoff'; scope: 'per-turn'; data: TurnCutoffData }
+  | { kind: 'new_since_last_run'; scope: 'per-turn'; data: NewSinceData };
 
 /** The per-turn bag a runtime receives via `MessageOpts.additionalContext`. */
 export type AdditionalContext = AdditionalContextEntry[];
@@ -964,6 +968,7 @@ export const CONTEXT_TAG = {
   doc_events: 'doc_events',
   context_warning: 'context_warning',
   turn_cutoff: 'turn_cutoff',
+  new_since_last_run: 'new_since_last_run',
 } satisfies Record<ContextKind, string>;
 
 /**
@@ -1303,6 +1308,11 @@ export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
     kind: z.literal('turn_cutoff'),
     scope: z.literal('per-turn'),
     data: TurnCutoffDataSchema,
+  }),
+  z.object({
+    kind: z.literal('new_since_last_run'),
+    scope: z.literal('per-turn'),
+    data: NewSinceDataSchema,
   }),
 ]);
 

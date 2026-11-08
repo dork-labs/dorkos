@@ -24,7 +24,7 @@
  */
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import type { Commitment } from '@dorkos/shared/commitment-schemas';
+import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import { buildBeatPrompt } from '@dorkos/server/services/heartbeats/beat-prompt';
 import type { EvalCase, EvalSandbox, Oracle } from '../types.js';
@@ -168,7 +168,7 @@ function common(): Pick<
 }
 
 /** An open promise the overdue-invoice beat carries. */
-const OVERDUE_REMINDER: Commitment = {
+const OVERDUE_REMINDER: TodoPromise = {
   id: 'c-acme-reminder',
   agentId: '01JQXYZEVALHEARTBEATLEDGER',
   to: 'external:Acme',
@@ -193,7 +193,7 @@ export const heartbeatNothingChangedCase: EvalCase = {
     agentName: 'Scout',
     kind: 'pulse',
     changes: [],
-    commitments: [],
+    todoPromises: [],
     openRaises: [],
     checklist: '- The build on main.\n- Unanswered support email older than four hours.',
     newManager: false,
@@ -212,14 +212,14 @@ export const heartbeatOverdueInvoiceCase: EvalCase = {
     kind: 'pulse',
     changes: [
       {
-        gatherer: 'commitments',
+        gatherer: 'todos',
         key: 'commitment:c-acme-reminder',
         summary: 'Overdue: Send Acme the second reminder for invoice #1042.',
         at: '2026-10-11T09:00:00.000Z',
         signal: 'commitment-overdue',
       },
     ],
-    commitments: [OVERDUE_REMINDER],
+    todoPromises: [OVERDUE_REMINDER],
     openRaises: [],
     checklist:
       '- Invoices: anything unpaid past 14 days gets the second reminder. Sending it is my job.\n' +
@@ -247,7 +247,7 @@ export const heartbeatSomeoneElsesQuestionCase: EvalCase = {
         signal: 'info',
       },
     ],
-    commitments: [],
+    todoPromises: [],
     openRaises: [],
     checklist: '- The build on main.\n- Unanswered support email older than four hours.',
     newManager: false,
@@ -274,7 +274,7 @@ export const heartbeatLateNightFindingCase: EvalCase = {
         signal: 'run-failed',
       },
     ],
-    commitments: [],
+    todoPromises: [],
     openRaises: [],
     checklist: '- The docs site: broken links, slow pages, failed deploys.',
     newManager: false,

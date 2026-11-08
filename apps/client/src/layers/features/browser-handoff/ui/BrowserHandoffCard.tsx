@@ -20,6 +20,7 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
     error,
     continueAgent,
     signIn,
+    openWindow,
     showWindow,
     stopTask,
   } = useBrowserHandoff(sessionId);
@@ -47,6 +48,7 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
             error={error}
             onContinue={() => void continueAgent()}
             onSignIn={signIn}
+            onOpenWindow={openWindow}
             onShowWindow={showWindow}
             onStop={() => void stopTask()}
           />

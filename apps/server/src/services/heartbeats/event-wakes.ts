@@ -45,7 +45,7 @@ const FAILURE_TYPES: ReadonlySet<WakeEventType> = new Set([
 export interface WakeEvent {
   /** What happened. */
   type: WakeEventType;
-  /** The fact's id (an entry, a run, a commitment), for the record's `causedBy`. */
+  /** The fact's id (an entry, a run, a to-do), for the record's `causedBy`. */
   eventId?: string;
   /** For a failure: which source failed (a schedule id, a connection id). */
   source?: string;

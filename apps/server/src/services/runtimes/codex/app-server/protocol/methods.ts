@@ -189,18 +189,6 @@ export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 /** `AskForApproval` without the experimental `granular` variant (unused). */
 export type AskForApproval = 'untrusted' | 'on-request' | 'never';
 
-/** `SandboxPolicy`: the tagged object `turn/start` takes (protocol risk 6). */
-export type SandboxPolicy =
-  | { type: 'dangerFullAccess' }
-  | { type: 'readOnly'; networkAccess: boolean }
-  | {
-      type: 'workspaceWrite';
-      writableRoots: string[];
-      networkAccess: boolean;
-      excludeTmpdirEnvVar: boolean;
-      excludeSlashTmp: boolean;
-    };
-
 /** One text input item; `text_elements` is required by the schema. */
 export interface TextUserInput {
   type: 'text';
@@ -228,7 +216,7 @@ export interface ThreadLoadOverrides {
   model?: string;
   approvalPolicy: AskForApproval;
   approvalsReviewer: 'user';
-  sandbox: SandboxMode;
+  permissions: string;
   config: Record<string, unknown>;
 }
 
@@ -247,6 +235,7 @@ export interface ThreadInfo {
 
 /** `thread/start` / `thread/resume` result (the part DorkOS reads). */
 export interface ThreadLoadResult {
+  activePermissionProfile?: { id: string } | null;
   thread: ThreadInfo;
   model?: string;
 }
@@ -258,7 +247,7 @@ export interface TurnStartParams {
   clientUserMessageId?: string;
   cwd: string;
   approvalPolicy: AskForApproval;
-  sandboxPolicy: SandboxPolicy;
+  permissions: string;
   model?: string;
   effort?: string;
   summary: 'auto';

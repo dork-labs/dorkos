@@ -10,7 +10,7 @@ import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
 import { logError, logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
 import type { RoomService } from '../../rooms/room-service.js';
-import type { CommitmentService } from '../../commitments/index.js';
+import type { TodoPromiseService } from '../../todos/index.js';
 import { createIdleAlertWatch, IDLE_ALERT_CHECK_MS } from './idle-alert.js';
 
 /** What the watch is started with. */
@@ -22,7 +22,7 @@ export interface StartIdleAlertDeps {
   /** How many chats a `session_start` opened in the last three days. */
   recentLaneCount: (at: Date) => number;
   /** Every agent's promises. */
-  commitments: Pick<CommitmentService, 'list'>;
+  todoPromises: Pick<TodoPromiseService, 'list'>;
   /** Where the notice goes. */
   rooms: Pick<RoomService, 'postNotice' | 'findWellKnownRoom'>;
 }
@@ -40,7 +40,7 @@ export function createIdleAlert(deps: StartIdleAlertDeps): { start(): void; stop
     chatActivity: deps.computerActivity,
     openWork: async () => ({
       lanes: deps.recentLaneCount(new Date()),
-      promises: deps.commitments.list({ state: 'open' }).length,
+      promises: deps.todoPromises.list({ state: 'open' }).length,
     }),
     targetRoom: () => {
       const chosen = configManager.get('heartbeats').idleAlertRoomId ?? null;

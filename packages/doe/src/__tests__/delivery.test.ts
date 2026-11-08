@@ -98,7 +98,7 @@ it('delivers deferred MCP, builder, durable restart, compaction and isolated bea
       { tool: 'write', args: { path: 'delivery.txt', content: 'verified' } },
       { text: 'Wrote and verified delivery.txt.' },
       { text: 'Invoice checked and artifact written.' },
-      { text: 'Outcome: invoice paid. Artifact: delivery.txt. No open commitments.' },
+      { text: 'Outcome: invoice paid. Artifact: delivery.txt. No open to-dos.' },
       { text: 'Continued from compacted context.' },
       { tool: 'end_beat', args: { kind: 'quiet' } }
     );
@@ -193,8 +193,8 @@ it('delivers deferred MCP, builder, durable restart, compaction and isolated bea
     expect(
       await new Doe(config).runBeat({
         id: 'delivery',
-        prompt: 'Check commitments',
-        commitments: 'Invoice already reported as paid',
+        prompt: 'Check to-dos',
+        todoPromises: 'Invoice already reported as paid',
       })
     ).toEqual({ kind: 'quiet' });
     expect(wire.bodies).toHaveLength(9);

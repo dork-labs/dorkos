@@ -14,6 +14,7 @@ const transport = vi.hoisted(() => ({
   handBackLocalBrowser: vi.fn(),
   stopLocalBrowserHandoff: vi.fn(),
   signInLocalBrowser: vi.fn(),
+  openLocalBrowser: vi.fn(),
   selectLocalBrowserTab: vi.fn(),
   postMessage: vi.fn(),
   interruptSession: vi.fn(),
@@ -216,6 +217,77 @@ describe('BrowserHandoffCard', () => {
     fireEvent.click(await button('Show window'));
     await waitFor(() => expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('t1'));
     expect(await button('Continue')).toBeTruthy();
+  });
+
+  describe('when the window closed', () => {
+    const closed = (overrides: Partial<LocalBrowserPersonState> = {}) =>
+      person({ status: 'closed', tabs: [], selectedTabId: null, ...overrides });
+
+    it.each(['wall', 'password'] as const)(
+      'on a %s handoff, says so and offers only Open window and Stop task',
+      async (reason) => {
+        transport.getLocalBrowserState.mockResolvedValue(
+          closed({ handoff: { ...handoff, reason } })
+        );
+        mount();
+        expect(
+          await screen.findByText('The window closed. Open it again to finish, or stop the task.')
+        ).toBeInTheDocument();
+        const names = screen.getAllByRole('button').map((item) => item.textContent);
+        expect(names).toEqual(['Open window', 'Stop task']);
+      }
+    );
+
+    it('opens for the same chat and profile, naming no page', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(closed());
+      transport.openLocalBrowser.mockResolvedValue(person());
+      mount();
+      fireEvent.click(await button('Open window'));
+      await waitFor(() =>
+        expect(transport.openLocalBrowser).toHaveBeenCalledExactlyOnceWith({
+          mode: 'new-window',
+          sessionId: 'chat-one',
+          profileId: 'p1',
+        })
+      );
+      expect(await button('Continue')).toBeInTheDocument();
+    });
+
+    it('leaves out the profile when the handoff is on the default one', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        closed({ handoff: { ...handoff, profileId: null } })
+      );
+      transport.openLocalBrowser.mockResolvedValue(person());
+      mount();
+      fireEvent.click(await button('Open window'));
+      await waitFor(() =>
+        expect(transport.openLocalBrowser).toHaveBeenCalledExactlyOnceWith({
+          mode: 'new-window',
+          sessionId: 'chat-one',
+        })
+      );
+    });
+
+    it('keeps Continue after a saved sign-in, which closes the window on purpose', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({
+          status: 'disconnected',
+          sessionId: null,
+          tabs: [],
+          selectedTabId: null,
+          signIn: signIn('saved'),
+        })
+      );
+      mount();
+      expect(await button('Continue')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Open window' })).toBeNull();
+    });
+
+    it('offers Open window after a failed sign-in, when no window is left to retry from', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(closed({ signIn: signIn('failed') }));
+      mount();
+      expect(await button('Open window')).toBeInTheDocument();
+    });
   });
 
   describe('on a check', () => {

@@ -165,7 +165,7 @@ export function fileProblemWords(error: string): string {
     case 'report':
       return 'Set report to daily, weekly or off.';
     case 'watch':
-      return 'Watch lists addressed, commitments, schedules, health or workspace.';
+      return 'Watch lists addressed, todos, schedules, health or workspace.';
     case 'sweep': {
       const message = error.slice('sweep: '.length);
       return PLAIN_SWEEP_MESSAGES.has(message) ? message : 'Set sweep like "4h" or "1h30m".';

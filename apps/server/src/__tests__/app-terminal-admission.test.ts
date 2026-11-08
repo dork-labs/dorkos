@@ -255,9 +255,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/canvas/docs');
     expect(mounts).toContain('/api/audit');
     expect(mounts).toContain('/api/session-locations');
-    // 70 -> 72: `/api/commitments` and `/api/agents/:id/commitments` (spec
+    // 70 -> 72: `/api/todo-promises` and `/api/agents/:id/todo-promises` (spec
     // `heartbeats` §12).
-    expect(mounts).toContain('/api/commitments');
+    expect(mounts).toContain('/api/todo-promises');
     // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
     // `http/client-files.ts`, and is asked for by hand below.
     // 71 -> 72: `/api/remote-access`, the remote access report and actions (DOR-2086).

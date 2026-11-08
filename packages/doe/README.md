@@ -117,7 +117,7 @@ The parent receives a bounded final result. Child progress stays tagged as child
 
 ## Run one beat when your host asks
 
-A beat is one short run with fresh changes, instructions and commitments. A host decision callback can skip it without making a full model request. A run returns a quiet result or bounded raises with their reporting level.
+A beat is one short run with fresh changes, instructions and to-dos. A host decision callback can skip it without making a full model request. A run returns a quiet result or bounded raises with their reporting level.
 
 Free text is activity, not a notification. Only explicit host posting tools can notify people. The package does not start timers, gather changes, schedule future runs or batch notifications.
 

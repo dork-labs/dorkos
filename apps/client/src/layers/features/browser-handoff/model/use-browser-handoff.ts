@@ -47,7 +47,7 @@ export function useBrowserHandoff(sessionId?: string | null) {
   const selectedTabId = state?.selectedTabId ?? null;
   return {
     handoff,
-    step: handoff ? handoffStep(handoff, state?.signIn) : null,
+    step: handoff ? handoffStep(handoff, state?.signIn, state?.status === 'connected') : null,
     canShowWindow: state?.mode === 'new-window' && state.status === 'connected' && !!selectedTabId,
     movesToOwnWindow: state?.mode === 'embedded',
     sharedProfile: handoff?.profileId === null,
@@ -63,6 +63,17 @@ export function useBrowserHandoff(sessionId?: string | null) {
     },
     signIn: () => {
       if (handoff) void run(() => transport.signInLocalBrowser({ handoffId: handoff.id }));
+    },
+    openWindow: () => {
+      // The server puts it back on the page saved when the agent asked, never one named here.
+      if (handoff)
+        void run(() =>
+          transport.openLocalBrowser({
+            mode: 'new-window',
+            sessionId: handoff.sessionId,
+            ...(handoff.profileId ? { profileId: handoff.profileId } : {}),
+          })
+        );
     },
     showWindow: () => {
       // A plain browser answer says nothing about the handoff, so nothing is cached from it.

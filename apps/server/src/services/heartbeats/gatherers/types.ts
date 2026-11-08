@@ -29,7 +29,7 @@ export interface Change {
   ref?: { kind: string; id: string };
   /**
    * What kind of fact this is, for the rules rung (§6.1): an unanswered local
-   * message, an overdue commitment, a failed or parked run, a lost connection, a
+   * message, an overdue to-do, a failed or parked run, a lost connection, a
    * failing check on the agent's own branch, a failure of its own beats, open
    * work gone quiet (DOR-3674), or something informational.
    */

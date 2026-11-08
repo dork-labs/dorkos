@@ -12,7 +12,7 @@
  *
  * @module services/heartbeats/beat-plan
  */
-import type { Commitment } from '@dorkos/shared/commitment-schemas';
+import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import {
   HeartbeatFrontmatterSchema,
   resolveHeartbeatSettings,
@@ -165,18 +165,18 @@ export interface CadenceDeps {
   store: HeartbeatStore;
   /** The agent's chain person's hours. */
   hoursFor(agentId: string): ResolvedWorkingHours;
-  /** Open commitments. */
-  commitments: { list(filter: { agentId: string; state: 'open' }, limit?: number): Commitment[] };
+  /** Open to-dos. */
+  todoPromises: { list(filter: { agentId: string; state: 'open' }, limit?: number): TodoPromise[] };
   /** Whether a turn of the agent's own is running now, in any of its chats. */
   ownTurnRunning?(agentId: string): boolean;
 }
 
 /**
  * The facts the cadence table reads for an agent at a moment (§3.2). "In
- * flight" is an open commitment due today in its chain person's zone, or a turn
+ * flight" is an open to-do due today in its chain person's zone, or a turn
  * of its own still running.
  *
- * @param deps - The store, hours and commitments.
+ * @param deps - The store, hours and to-dos.
  * @param agentId - The agent.
  * @param now - Epoch ms.
  */
@@ -186,7 +186,7 @@ export function cadenceFacts(deps: CadenceDeps, agentId: string, now: number): C
   const today = zonedDay(new Date(now), hours.timezone);
   const inFlight =
     deps.ownTurnRunning?.(agentId) === true ||
-    deps.commitments
+    deps.todoPromises
       .list({ agentId, state: 'open' }, 200)
       .some((c) => c.dueAt !== null && zonedDay(new Date(c.dueAt), hours.timezone) === today);
   let pace: CadenceFacts['pace'];

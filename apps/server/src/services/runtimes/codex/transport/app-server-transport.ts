@@ -26,6 +26,7 @@
  *
  * @module services/runtimes/codex/transport/app-server-transport
  */
+import { recordMountTargets } from '../policy/mount-target-ledger.js';
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type {
   DeliverIntoTurnOpts,
@@ -34,12 +35,10 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../../lib/logger.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
-import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { keepAwakeService } from '../../../core/keep-awake/index.js';
 import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
-import { creditsCodexHome, resolveCodexHome } from '../codex-home.js';
-import { codexCreditsAppServerEnv, ensureCreditsCodexHome } from '../credits-launch.js';
+import { creditsCodexHome } from '../codex-home.js';
 import { buildSteerText, EFFORT_TO_REASONING } from '../turn-input.js';
 import {
   CodexAppServerPool,
@@ -54,7 +53,7 @@ import {
 import { ThreadChannel, turnIdOf, type TurnSink } from '../app-server/thread-channel.js';
 import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
-import { approvalPolicyFor, EventQueue, sandboxPolicyFor } from '../app-server/turn-parts.js';
+import { approvalPolicyFor, EventQueue, codexPermissionProfile } from '../app-server/turn-parts.js';
 import { CODEX_APP_SERVER_CAPABILITIES } from '../runtime-constants.js';
 import {
   BACKGROUND_CEILING_MS,
@@ -81,6 +80,8 @@ import type {
   CodexTurnRequest,
   CodexTurnTools,
 } from './codex-transport.js';
+import { prepareCodexFilePolicy } from './prepare-file-policy.js';
+import { acquireCodexProcess } from './acquire-codex-process.js';
 import { failedCompaction, failedSetup, failedStart } from './app-server-turn-failures.js';
 
 /** The shared bound on a stop's acknowledgement (claude-code's `STOP_ACK_TIMEOUT_MS`). */
@@ -121,6 +122,8 @@ const NO_TOOLS: CodexTurnTools = {
 
 /** Dependencies of {@link AppServerCodexTransport}. */
 export interface AppServerTransportOptions {
+  /** Fake-host tests have no native mount targets; production always enables this. */
+  readonly mountTargets?: false;
   /** The connector listener's tools and thread keys, once boot installed them. */
   readonly connectorTools: () => ConnectorRuntimeTools | undefined;
   /** The credits relay, when boot started one. */
@@ -286,6 +289,9 @@ export class AppServerCodexTransport implements CodexTransport {
     });
     this.loader = new CodexThreadLoader({
       threadKeys: () => options.connectorTools()?.threadKeys,
+      ...(process.platform === 'linux' && options.mountTargets !== false
+        ? { recordMissingTargets: recordMountTargets }
+        : {}),
       ...(options.realpath ? { realpath: options.realpath } : {}),
     });
   }
@@ -335,7 +341,11 @@ export class AppServerCodexTransport implements CodexTransport {
     // winding down in Codex.
     let clear: boolean;
     try {
-      process = await this.acquire(request.binary, onCredits);
+      const filePolicy = await prepareCodexFilePolicy(request, this.options.mountTargets);
+      process = this.watch(
+        await acquireCodexProcess(request.binary, onCredits, this.pool, this.options)
+      );
+      if (!onCredits && !this.rateLimits.has(process.key)) this.readRateLimits(process);
       release = process.hold();
       relay = onCredits ? this.relayFor(process) : undefined;
       loadInput = {
@@ -345,7 +355,7 @@ export class AppServerCodexTransport implements CodexTransport {
         boundThreadId: request.boundThreadId,
         cwd: request.cwd,
         settings: request.settings,
-        tools: request.tools,
+        tools: { ...request.tools, filePolicy },
         ...(relay ? { creditsRelay: relay } : {}),
         ...(preventIdleSleep ? { preventIdleSleep } : {}),
       };
@@ -1115,23 +1125,6 @@ export class AppServerCodexTransport implements CodexTransport {
     await this.pool.closeWhere((process) => process.spec.codexHome === home);
   }
 
-  private async acquire(binary: string, onCredits: boolean): Promise<CodexAppServerProcess> {
-    if (onCredits) {
-      if (!this.options.creditsRelay?.()) throw new CreditsUnavailableError('unreachable', 'Codex');
-      ensureCreditsCodexHome();
-      const env =
-        this.options.environment?.credits() ??
-        codexCreditsAppServerEnv(runtimeEnvironment('codex', 'turn'));
-      return this.watch(await this.pool.acquire({ binary, codexHome: creditsCodexHome(), env }));
-    }
-    const env = this.options.environment?.person() ?? runtimeEnvironment('codex', 'turn');
-    const process = this.watch(
-      await this.pool.acquire({ binary, codexHome: resolveCodexHome(env), env })
-    );
-    if (!this.rateLimits.has(process.key)) this.readRateLimits(process);
-    return process;
-  }
-
   /** Per-process bookkeeping, once: relay key and rate-limit cleanup, warnings. */
   private watch(process: CodexAppServerProcess): CodexAppServerProcess {
     if (this.watched.has(process)) return process;
@@ -1530,7 +1523,7 @@ export class AppServerCodexTransport implements CodexTransport {
       // Sent every turn (they are sticky): a mode or model change between turns lands.
       cwd: request.cwd,
       approvalPolicy: approvalPolicyFor(request.settings),
-      sandboxPolicy: sandboxPolicyFor(request),
+      permissions: codexPermissionProfile(request.settings),
       ...(request.settings.model !== undefined ? { model: request.settings.model } : {}),
       ...(effort !== undefined ? { effort } : {}),
       summary: 'auto',

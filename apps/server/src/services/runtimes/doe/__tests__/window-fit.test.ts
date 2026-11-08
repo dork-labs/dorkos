@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, realpath, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { initConfigManager } from '../../../core/config-manager.js';
 import type { ToolDescriptor } from '@dorkos/doe';
 import { defaultNopeTemplate } from '@dorkos/shared/convention-files';
 import { assembleDoeHost } from '../tools.js';
@@ -17,6 +18,7 @@ let home: string;
 
 beforeEach(async () => {
   root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'doe-window-')));
+  initConfigManager(path.join(root, 'test-config'));
   home = path.join(root, 'agent');
   await mkdir(path.join(home, '.dork'), { recursive: true });
   registerTestHomes([home]);

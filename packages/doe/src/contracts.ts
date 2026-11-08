@@ -88,6 +88,8 @@ export interface ResourceConfig {
   skillRoots: readonly SkillRoot[];
   memory?: string;
   context?: string;
+  /** Host policy checked on canonical targets before reading resource text or metadata. */
+  beforeRead?: (path: string) => void | Promise<void>;
 }
 /** Metadata catalogue excludes skill bodies. */
 export interface SkillMetadata {
@@ -163,7 +165,7 @@ export interface BeatRequest {
   prompt: string;
   changes?: string;
   instructions?: string;
-  commitments?: string;
+  todoPromises?: string;
   signal?: AbortSignal;
   decide?: () => Promise<{ action: 'skip' | 'run'; reason: string }>;
 }
