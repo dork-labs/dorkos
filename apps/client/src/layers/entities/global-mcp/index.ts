@@ -6,6 +6,7 @@
 export {
   GLOBAL_MCP_KEY,
   useAddGlobalMcpServer,
+  useCheckGlobalMcpArgs,
   useGlobalMcpServers,
   usePatchGlobalMcpServer,
   useRemoveGlobalMcpServer,

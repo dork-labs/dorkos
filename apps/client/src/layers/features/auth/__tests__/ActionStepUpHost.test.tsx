@@ -88,6 +88,22 @@ describe('ActionStepUpHost', () => {
     expect(screen.getByText(VIEW.notes[0]!)).toBeTruthy();
   });
 
+  it('shows a warning in warning ink, in its place among the notes, and the rest quietly', async () => {
+    const warning = 'Made-up line to look at twice.';
+    const last = 'All your agents get it.';
+    heldWith({ ...VIEW, notes: [VIEW.notes[0]!, warning, last], warnings: [warning] }, [
+      200,
+      { ok: true, status: 201, result: {} },
+    ]);
+    render(<ActionStepUpHost />);
+    void ask();
+    const line = await screen.findByText(warning);
+    expect(line).toHaveClass('text-status-warning-fg');
+    expect(screen.getByText(VIEW.notes[0]!)).toHaveClass('text-muted-foreground');
+    expect(screen.getByText(last)).toHaveClass('text-muted-foreground');
+    expect(line.nextElementSibling).toBe(screen.getByText(last));
+  });
+
   it('confirms with the password and answers with the action’s own result', async () => {
     const fetchSpy = heldWith(VIEW, [200, { ok: true, status: 201, result: { added: 'github' } }]);
     render(<ActionStepUpHost />);

@@ -7,6 +7,7 @@
  * @module shared/lib/transport/global-mcp-methods
  */
 import type {
+  GlobalMcpArgsCheckResult,
   GlobalMcpServerInput,
   GlobalMcpServerList,
   GlobalMcpServerPatch,
@@ -23,6 +24,13 @@ export function createGlobalMcpMethods(baseUrl: string) {
   return {
     listGlobalMcpServers(): Promise<GlobalMcpServerList> {
       return fetchJSON(baseUrl, '/mcp-servers');
+    },
+
+    checkGlobalMcpArgs(args: readonly string[]): Promise<GlobalMcpArgsCheckResult> {
+      return fetchJSON(baseUrl, '/mcp-servers/check-args', {
+        method: 'POST',
+        body: JSON.stringify({ args }),
+      });
     },
 
     addGlobalMcpServer(input: GlobalMcpServerInput): Promise<GlobalMcpServerView> {

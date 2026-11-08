@@ -9,6 +9,7 @@
  * @module shared/transport-global-mcp
  */
 import type {
+  GlobalMcpArgsCheckResult,
   GlobalMcpServerInput,
   GlobalMcpServerList,
   GlobalMcpServerPatch,
@@ -19,6 +20,13 @@ import type {
 export interface GlobalMcpTransport {
   /** Every global server, secrets by name only. */
   listGlobalMcpServers(): Promise<GlobalMcpServerList>;
+
+  /**
+   * Whether typed arguments look like they hold a secret. It warns and never refuses.
+   *
+   * @param args - The arguments as a person typed them.
+   */
+  checkGlobalMcpArgs(args: readonly string[]): Promise<GlobalMcpArgsCheckResult>;
 
   /**
    * Add a server for every agent.

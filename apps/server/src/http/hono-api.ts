@@ -561,7 +561,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.mcpServers) {
     app.route(
       '/api/mcp-servers',
-      createMcpServerRoutes(deps.mcpServers, (id) => deps.mesh?.meshCore.get(id)?.name)
+      createMcpServerRoutes(deps.mcpServers, (id) => deps.mesh?.meshCore.get(id))
     );
   }
   mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);

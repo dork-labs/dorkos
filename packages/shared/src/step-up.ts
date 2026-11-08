@@ -152,10 +152,12 @@ export type StepUpExtensionRisk = z.infer<typeof StepUpExtensionRiskSchema>;
 export const HeldStepUpViewSchema = z.object({
   heldActionId: z.string().min(1),
   kind: StepUpActionKindSchema,
-  /** What will actually run, e.g. "Confirm it's you to add github (`@modelcontextprotocol/server-github`) for all your agents." */
+  /** What will actually run, e.g. "Add github (`@modelcontextprotocol/server-github`) for all your agents." */
   reason: z.string().min(1),
   /** Quiet extra lines, e.g. "Not pinned to a version. What runs can change later." */
   notes: z.array(z.string().min(1)),
+  /** The notes to look at twice, which show in warning ink. Each one is in `notes` too, in its place. */
+  warnings: z.array(z.string().min(1)).optional(),
   expiresAt: z.string().datetime(),
   /** The ways this caller may confirm it, in the order to offer them. Empty when none. */
   methods: z.array(StepUpMethodSchema),

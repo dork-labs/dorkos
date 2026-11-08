@@ -99,8 +99,8 @@ const stored = (over: Record<string, unknown> = {}) =>
   ({ ...SERVER, secretNames: [], excludedAgents: [], ...over }) as never;
 
 /** What the server's records call each agent. */
-const agentNames: Record<string, string> = {
-  'agent-a': 'Made\u202Eup Scout',
+const agentNames: Record<string, { name: string; displayName?: string }> = {
+  'agent-a': { name: 'Made\u202Eup Scout' },
 };
 
 let home: string;
@@ -458,10 +458,9 @@ describe('secrets', () => {
     const view = await sheet(id);
     expect(JSON.stringify(view)).not.toContain(SECRET);
     expect(JSON.stringify(view)).not.toContain(ARG_SECRET);
-    expect(view.reason).toBe(
-      'Confirm it’s you to add remote (https://mcp.example.test) for all your agents.'
-    );
-    expect(view.notes).toContain('Headers: Authorization');
+    expect(view.reason).toBe('Add remote (https://mcp.example.test) for all your agents.');
+    expect(view.notes).toContain('Hidden values: Authorization');
+    expect(view.notes.join()).not.toContain('Headers:');
   });
 
   it('the hash binds what runs, not a secret: a resend with a new secret replaces the hold', async () => {
@@ -486,12 +485,12 @@ describe('what the sheet says', () => {
     const view = await sheet(heldId(await post()));
     expect(view.kind).toBe('mcp-server.allow-global');
     expect(view.reason).toBe(
-      'Confirm it’s you to add github (@modelcontextprotocol/server-github) for all your agents.'
+      'Add github (@modelcontextprotocol/server-github) for all your agents.'
     );
     expect(view.notes).toEqual([
       'Runs: npx -y @modelcontextprotocol/server-github',
-      'Settings: GITHUB_TOKEN, LOG_LEVEL',
-      'Kept secret: GITHUB_TOKEN',
+      'Settings: LOG_LEVEL',
+      'Hidden values: GITHUB_TOKEN',
       'Not pinned to a version. What runs can change later.',
     ]);
   });
@@ -518,7 +517,7 @@ describe('what the sheet says', () => {
         })
       )
     );
-    expect(view.reason).toBe('Confirm it’s you to add github (npx) for all your agents.');
+    expect(view.reason).toBe('Add github (npx) for all your agents.');
     expect(view.notes[0]).toBe('Runs: npx --package=made-up-other trusted-name');
   });
 
@@ -554,6 +553,98 @@ describe('what the sheet says', () => {
     expect(view.reason).toContain('for all your agents except 2.');
     expect(view.notes).toContain("NODE_OPTIONS changes what the program loads. Check it's yours.");
     expect(JSON.stringify(view)).not.toContain('--inspect');
+  });
+
+  it('marks the lines to look at twice, each still in its place among the notes', async () => {
+    const flagged = await sheet(
+      heldId(
+        await post({
+          ...SERVER,
+          connection: { ...SERVER.connection, env: { NODE_OPTIONS: '--inspect' } },
+        })
+      )
+    );
+    expect(flagged.warnings).toEqual([
+      "NODE_OPTIONS changes what the program loads. Check it's yours.",
+    ]);
+    expect(flagged.notes).toEqual(expect.arrayContaining(flagged.warnings!));
+    const quiet = await sheet(heldId(await post()));
+    expect(quiet.warnings).toBeUndefined();
+    const plainHttp = await sheet(
+      heldId(
+        await post({
+          name: 'remote',
+          enabled: true,
+          connection: {
+            transport: 'http',
+            url: 'http://mcp.example.test',
+            headers: { Authorization: SECRET },
+          },
+        })
+      )
+    );
+    expect(plainHttp.warnings).toEqual([
+      'This address isn’t encrypted, so Authorization travels in the clear.',
+    ]);
+  });
+
+  it('says how many names a long list left out, and never cuts one off unsaid', async () => {
+    const env = Object.fromEntries(
+      Array.from({ length: 60 }, (_, index) => [`SETTING_NUMBER_${index}`, 'x'])
+    );
+    const view = await sheet(
+      heldId(await post({ ...SERVER, connection: { ...SERVER.connection, env } }))
+    );
+    const line = view.notes.find((note: string) => note.startsWith('Settings: '))!;
+    const more = Number(/ and (\d+) more$/.exec(line)![1]);
+    const listed = line
+      .replace(/^Settings: /, '')
+      .replace(/ and \d+ more$/, '')
+      .split(', ');
+    expect(listed.length + more).toBe(60);
+    expect(listed.at(-1)).toBe(`SETTING_NUMBER_${listed.length - 1}`);
+  });
+
+  it('names every setting and header once, under one heading or the other', async () => {
+    const stdio = await sheet(
+      heldId(
+        await post({
+          ...SERVER,
+          secretNames: ['MADE_UP_MARKED'],
+          connection: {
+            ...SERVER.connection,
+            env: { GITHUB_TOKEN: SECRET, MADE_UP_MARKED: 'x', LOG_LEVEL: 'info', REGION: 'eu' },
+          },
+        })
+      )
+    );
+    expect(stdio.notes).toContain('Settings: LOG_LEVEL, REGION');
+    expect(stdio.notes).toContain('Hidden values: GITHUB_TOKEN, MADE_UP_MARKED');
+    const mixed = await sheet(
+      heldId(
+        await post({
+          name: 'remote',
+          enabled: true,
+          connection: {
+            transport: 'http',
+            url: 'https://mcp.example.test',
+            headers: { Authorization: SECRET, 'X-Region': 'eu' },
+          },
+        })
+      )
+    );
+    expect(mixed.notes).toContain('Headers: X-Region');
+    expect(mixed.notes).toContain('Hidden values: Authorization');
+    const onlyPlain = await sheet(
+      heldId(
+        await post({
+          ...SERVER,
+          connection: { ...SERVER.connection, env: { REGION: 'eu' } },
+        })
+      )
+    );
+    expect(onlyPlain.notes).toContain('Settings: REGION');
+    expect(onlyPlain.notes.join()).not.toContain('Hidden values');
   });
 });
 
@@ -597,7 +688,7 @@ describe('replacing a server', () => {
     });
     const id = heldId(res);
     const view = await sheet(id);
-    expect(view.reason).toContain('to change github');
+    expect(view.reason).toContain('Change github');
     expect(view.notes).toContain('New values for: GITHUB_TOKEN');
     expect((await confirm(id)).body).toMatchObject({ ok: true, status: 200 });
     expect(store.injectableFor('agent-a').github).toMatchObject({
@@ -635,7 +726,9 @@ describe('switching a server', () => {
     expect(store.list()[0]!.enabled).toBe(false);
     const id = heldId(res);
     const view = await sheet(id);
-    expect(view.reason).toContain('to turn on github (@modelcontextprotocol/server-github)');
+    expect(view.reason).toBe(
+      'Turn on github (@modelcontextprotocol/server-github) for all your agents.'
+    );
     expect(view.notes.at(-1)).toBe('All your agents get it.');
     expect(JSON.stringify(view)).not.toContain('file:');
     expect((await confirm(id)).body).toMatchObject({ ok: true, status: 200 });
@@ -647,37 +740,85 @@ describe('switching a server', () => {
     const res = await patch({ excludedAgents: ['agent-b'] });
     expect(res.status).toBe(428);
     const id = heldId(res);
-    expect((await sheet(id)).reason).toBe('Confirm it’s you to let Made up Scout use github.');
+    const view = await sheet(id);
+    expect(view.reason).toBe('Let Made up Scout use github.');
+    expect(view.notes.at(-1)).toBe('Made up Scout gets it too.');
     expect(store.list()[0]!.excludedAgents).toEqual(['agent-a', 'agent-b']);
     await confirm(id);
     expect(store.list()[0]!.excludedAgents).toEqual(['agent-b']);
   });
 
   it('cuts a long agent name, since an agent picks its own', async () => {
-    agentNames['agent-long'] = 'x'.repeat(60);
+    agentNames['agent-long'] = { name: 'x'.repeat(60) };
     await store.add(stored({ excludedAgents: ['agent-long', 'agent-b'] }));
     const res = await patch({ excludedAgents: ['agent-b'] });
-    expect((await sheet(heldId(res))).reason).toBe(
-      `Confirm it’s you to let ${'x'.repeat(39)}… use github.`
+    expect((await sheet(heldId(res))).reason).toBe(`Let ${'x'.repeat(39)}… use github.`);
+  });
+
+  it('shows the real name beside a display name that says something else', async () => {
+    const reasonFor = async (names: { name: string; displayName?: string }) => {
+      agentNames['agent-x'] = names;
+      resetHeldStepUpsForTests();
+      await store.remove('github').catch(() => undefined);
+      await store.add(stored({ excludedAgents: ['agent-x', 'agent-b'] }));
+      return sheet(heldId(await patch({ excludedAgents: ['agent-b'] })));
+    };
+    // The same name in other letter case: nothing to tell apart.
+    expect((await reasonFor({ name: 'scout', displayName: 'Scout' })).reason).toBe(
+      'Let Scout use github.'
+    );
+    // An agent can call itself anything, so its real name stays in view.
+    const different = await reasonFor({ name: 'scout-2', displayName: 'Scout' });
+    expect(different.reason).toBe('Let Scout (scout-2) use github.');
+    expect(different.notes.at(-1)).toBe('Scout (scout-2) gets it too.');
+    // A long one is cut, and a control character doesn't reach the sheet.
+    const long = await reasonFor({ name: 'scout-2', displayName: `Ow\u202Ener ${'x'.repeat(60)}` });
+    expect(long.reason).toBe(`Let Ow ner ${'x'.repeat(32)}… (scout-2) use github.`);
+    // A name written to read as the sentence loses the punctuation it would need.
+    const hostile = await reasonFor({ name: 'scout', displayName: 'Lead (lead) use x. Also:' });
+    expect(hostile.reason).toBe('Let Lead lead use x Also (scout) use github.');
+    expect(hostile.notes.at(-1)).toBe('Lead lead use x Also (scout) gets it too.');
+    expect((await reasonFor({ name: 'scout', displayName: 'a;b.c:d(e)f,g!h?i' })).reason).toBe(
+      'Let a b c d e f g h i (scout) use github.'
+    );
+    expect(
+      (await reasonFor({ name: 'scout', displayName: 'Lead — use x – Also - y' })).reason
+    ).toBe('Let Lead use x Also y (scout) use github.');
+    // A hyphen inside a word can't start a clause, so an ordinary name keeps it.
+    expect((await reasonFor({ name: 'scout', displayName: 'Mary-Ann' })).reason).toBe(
+      'Let Mary-Ann (scout) use github.'
+    );
+    // Nothing but punctuation leaves nothing to call it, so the real name stands.
+    expect((await reasonFor({ name: 'scout', displayName: '.:;(),!?—-' })).reason).toBe(
+      'Let scout use github.'
+    );
+    // A registered name that holds a dot is not changed, only a name an agent chose.
+    expect((await reasonFor({ name: 'my.agent', displayName: 'My.Agent' })).reason).toBe(
+      'Let My.Agent use github.'
+    );
+    // Control characters alone leave nothing to call it, so the real name stands.
+    expect((await reasonFor({ name: 'scout-2', displayName: '\u202E' })).reason).toBe(
+      'Let scout-2 use github.'
+    );
+    expect((await reasonFor({ name: 'scout-2', displayName: '' })).reason).toBe(
+      'Let scout-2 use github.'
     );
   });
 
   it('names no one when it can’t, and counts when it adds several', async () => {
     await store.add(stored({ excludedAgents: ['agent-a', 'agent-b', 'agent-c', 'agent-d'] }));
     const one = await patch({ excludedAgents: ['agent-a', 'agent-c', 'agent-d'] });
-    expect((await sheet(heldId(one))).reason).toBe(
-      'Confirm it’s you to let one more agent use github.'
-    );
+    const oneView = await sheet(heldId(one));
+    expect(oneView.reason).toBe('Let one more agent use github.');
+    expect(oneView.notes.at(-1)).toBe('One more agent gets it.');
     const two = await patch({ excludedAgents: ['agent-a', 'agent-b'] });
-    expect((await sheet(heldId(two))).reason).toBe(
-      'Confirm it’s you to let 2 more agents use github.'
-    );
+    expect((await sheet(heldId(two))).reason).toBe('Let 2 more agents use github.');
   });
 
   it('says all agents get it when a PATCH turns a server on and clears its exclusions', async () => {
     await store.add(stored({ enabled: false, excludedAgents: ['agent-a', 'agent-b'] }));
     const view = await sheet(heldId(await patch({ enabled: true, excludedAgents: [] })));
-    expect(view.reason).toContain('to turn on github');
+    expect(view.reason).toContain('Turn on github');
     expect(view.notes.at(-1)).toBe('All your agents get it.');
   });
 
@@ -687,7 +828,7 @@ describe('switching a server', () => {
     expect(res.status).toBe(428);
     const id = heldId(res);
     const view = await sheet(id);
-    expect(view.reason).toBe('Confirm it’s you to give github to all your agents.');
+    expect(view.reason).toBe('Give github to all your agents.');
     expect(view.notes[0]).toBe('Runs: npx -y @modelcontextprotocol/server-github');
     expect(view.notes.at(-1)).toBe('2 more agents get it.');
     expect(store.list()[0]!.excludedAgents).toEqual(['agent-a', 'agent-b']);

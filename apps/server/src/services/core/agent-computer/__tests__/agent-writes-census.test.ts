@@ -407,6 +407,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'DELETE /api/mcp-servers/:name',
       'PATCH /api/mcp-servers/:name',
       'POST /api/mcp-servers',
+      'POST /api/mcp-servers/check-args',
       'PUT /api/mcp-servers/:name',
       'POST /api/shapes/:name/apply',
       'POST /api/shapes/:name/fork',

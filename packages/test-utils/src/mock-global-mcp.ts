@@ -10,7 +10,11 @@ import type { Transport } from '@dorkos/shared/transport';
 /** The global MCP server methods of the Transport port. */
 type GlobalMcpMethods = Pick<
   Transport,
-  'listGlobalMcpServers' | 'addGlobalMcpServer' | 'patchGlobalMcpServer' | 'removeGlobalMcpServer'
+  | 'listGlobalMcpServers'
+  | 'checkGlobalMcpArgs'
+  | 'addGlobalMcpServer'
+  | 'patchGlobalMcpServer'
+  | 'removeGlobalMcpServer'
 >;
 
 /**
@@ -41,6 +45,7 @@ export function createMockGlobalMcpServer(
 export function globalMcpTransportMocks(): GlobalMcpMethods {
   return {
     listGlobalMcpServers: vi.fn().mockResolvedValue({ servers: [] }),
+    checkGlobalMcpArgs: vi.fn().mockResolvedValue({ looksSecret: false }),
     addGlobalMcpServer: vi.fn().mockRejectedValue(new Error('addGlobalMcpServer not mocked')),
     patchGlobalMcpServer: vi.fn().mockRejectedValue(new Error('patchGlobalMcpServer not mocked')),
     removeGlobalMcpServer: vi.fn().mockRejectedValue(new Error('removeGlobalMcpServer not mocked')),
