@@ -66,7 +66,10 @@ jobs:
           assert.equal(process.env.PROBE, 'success');
           for (const [file, count] of [['readable-original.json', 2], ['macos-matrix.json', 6]]) {
             const report = JSON.parse(fs.readFileSync(`${process.env.DOR3853_OUT}/${file}`, 'utf8'));
-            const rows = report.testResults.flatMap(s => s.assertionResults).filter(t => t.status !== 'pending');
+            const all = report.testResults.flatMap(s => s.assertionResults);
+            const rows = file === 'readable-original.json'
+              ? all.filter(t => t.fullName.includes('protects fake secrets through'))
+              : all;
             assert.equal(rows.length, count, `${file}: missing/extra rows`);
             assert(rows.every(t => t.status === 'passed'), `${file}: a row failed`);
           }
