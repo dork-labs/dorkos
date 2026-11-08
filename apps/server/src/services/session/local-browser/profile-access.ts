@@ -15,6 +15,32 @@ export interface LocalBrowserProfileAccessDeps {
 /** Answers once per tool call. A refusal throws, so nothing is allowed by accident. */
 export type LocalBrowserProfileAccess = (profileId: string, sessionId: string) => Promise<void>;
 
+/** Admission facts for the selected profile; no profile data is read here. */
+export class BrowserProfileAccessGate {
+  exists?: (id: string) => boolean;
+  private access?: LocalBrowserProfileAccess;
+
+  use(access: LocalBrowserProfileAccess, exists: (id: string) => boolean): void {
+    this.access = access;
+    this.exists = exists;
+  }
+
+  requireShared(selected: string | null, sessionId: string): void {
+    if (selected !== sessionId)
+      throw new LocalBrowserError(
+        'not_shared',
+        'Open this chat’s browser to share it with your agent.'
+      );
+  }
+
+  async require(profileId: string | null, sessionId: string): Promise<void> {
+    if (!profileId) return;
+    if (!this.access)
+      throw new LocalBrowserError('profile_not_allowed', 'This agent can’t use this profile.');
+    await this.access(profileId, sessionId);
+  }
+}
+
 /**
  * Build the check run before and after every agent tool call on a named profile.
  *
