@@ -441,6 +441,28 @@ describe('CtxDispatcher errors', () => {
   });
 });
 
+describe('CtxDispatcher connections (DOR-3547)', () => {
+  // Purpose: a ctx the host built without connections refuses at the HOST,
+  // with a code an extension can branch on, whatever the child sends.
+  it('refuses connections.read when the real ctx has no connections', async () => {
+    const t = setup();
+    const ret = await t.call('connections.read', ['LINEAR_LIST_LINEAR_PROJECTS', {}]);
+    expect(ret.ok).toBe(false);
+    expect(ret.error).toMatchObject({ code: 'EXTENSION_CONNECTION_NOT_DECLARED' });
+  });
+
+  // Purpose: with the member, the call reaches the real one, and the child's
+  // arguments are only the operation and its params: nothing names a caller.
+  it('forwards to the real ctx.connections when the host gave one', async () => {
+    const t = setup();
+    const read = vi.fn(async () => ({ status: 'success', data: { ok: true } }));
+    (t.raw as Record<string, unknown>).connections = { read, status: vi.fn(async () => []) };
+    const ret = await t.call('connections.read', ['LINEAR_LIST_LINEAR_PROJECTS', { first: 1 }]);
+    expect(ret).toMatchObject({ ok: true, value: { status: 'success', data: { ok: true } } });
+    expect(read).toHaveBeenCalledWith('LINEAR_LIST_LINEAR_PROJECTS', { first: 1 });
+  });
+});
+
 describe('CtxDispatcher allow.agents', () => {
   // Purpose: without the grant, agent.send is refused at the HOST with the
   // spec's AgentSendError, and the real method never runs.

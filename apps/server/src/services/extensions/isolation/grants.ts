@@ -8,7 +8,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { HelloMessage } from './ipc-protocol.js';
+import { ISOLATION_LIMITS, type HelloMessage } from './ipc-protocol.js';
 
 /**
  * Where an extension's writable files folder is.
@@ -147,6 +147,42 @@ export function childExecArgv(
     ...(seams.omitSqliteOff ? [] : ['--no-experimental-sqlite']),
     `--max-old-space-size=${memoryMb}`,
   ];
+}
+
+/** Timings, overridable by tests so a hang is caught in seconds, not minutes. */
+export interface IsolatedHostTimings {
+  helloTimeoutMs: number;
+  loadTimeoutMs: number;
+  pingIntervalMs: number;
+  pongTimeoutMs: number;
+  stopGraceMs: number;
+}
+
+/** The default timings (spec §9). */
+export const DEFAULT_TIMINGS: IsolatedHostTimings = {
+  helloTimeoutMs: ISOLATION_LIMITS.helloTimeoutMs,
+  loadTimeoutMs: 15_000,
+  pingIntervalMs: ISOLATION_LIMITS.pingIntervalMs,
+  pongTimeoutMs: ISOLATION_LIMITS.pongTimeoutMs,
+  stopGraceMs: ISOLATION_LIMITS.stopGraceMs,
+};
+
+/** V8's message when a process dies at its heap limit. */
+export const OOM_MARKER = /heap out of memory|Reached heap limit/i;
+
+/**
+ * Whether an exit looks like V8's heap-limit abort (SIGABRT on POSIX; a
+ * normalized abort code on Windows), so a child that merely PRINTS the marker and exits
+ * is still reported as a crash.
+ *
+ * @param code - The exit code.
+ * @param signal - The signal, if one ended it.
+ */
+export function abortedLike(code: number | null, signal: NodeJS.Signals | null): boolean {
+  if (signal === 'SIGABRT' || signal === 'SIGTRAP' || signal === 'SIGILL') return true;
+  // Node normalizes its Windows ABORT path to kAbort (134), not any nonzero exit.
+  // https://github.com/nodejs/node/blob/v22.x/src/node_exit_code.h
+  return process.platform === 'win32' && code === 134;
 }
 
 /**

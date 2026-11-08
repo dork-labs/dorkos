@@ -273,7 +273,9 @@ function unsharedConnections(
         eq(connections.lifecycleState, 'connected'),
         isNull(connections.removedAt),
         sql`NOT EXISTS (SELECT 1 FROM ${connectionAccessLevels} WHERE ${connectionAccessLevels.connectionId} = ${connections.id})`,
-        sql`NOT EXISTS (SELECT 1 FROM ${connectionOperationGrants} WHERE ${connectionOperationGrants.connectionId} = ${connections.id})`,
+        // A mini app's grant is not an agent's (DOR-3547): an app only an
+        // extension reads was never shared with agents, so it still is.
+        sql`NOT EXISTS (SELECT 1 FROM ${connectionOperationGrants} WHERE ${connectionOperationGrants.connectionId} = ${connections.id} AND ${connectionOperationGrants.subjectType} <> 'extension')`,
         sql`NOT EXISTS (SELECT 1 FROM ${connectorManagedAuthorityScopes} WHERE ${connectorManagedAuthorityScopes.managedConnectionId} = ${connections.externalAccountRef} AND ${connectorManagedAuthorityScopes.scopeKind} IN ('agent_grants', 'every_agent_grants'))`
       )
     )

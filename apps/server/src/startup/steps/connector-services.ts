@@ -21,6 +21,9 @@ import { ConnectorManagementActionService } from '../../services/connectors/mana
 import { ConnectorManagementReviewService } from '../../services/connectors/management-review-service.js';
 import { applyTrustedStoresAtBoot } from '../../services/mesh/seed-open-mesh.js';
 import { ConnectorUsageStore } from '../../services/connectors/execution/usage-store.js';
+import { ExtensionConnectionApprovalStore } from '../../services/connectors/extensions/extension-connection-approvals.js';
+import { ExtensionConnectionReader } from '../../services/connectors/extensions/extension-connection-reader.js';
+import { setExtensionConnectionServices } from '../../services/connectors/extensions/extension-connections-seam.js';
 import { ManagedUsageMirrorService } from '../../services/connectors/execution/managed-usage-mirror-service.js';
 import { getCloudLinkManager } from '../../services/core/auth/cloud-link.js';
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
@@ -182,6 +185,17 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
     connections: grantAccess.sharing,
   });
   const connectorUsage = new ConnectorUsageStore(db);
+  // Mini apps that read a connected app through DorkOS (DOR-3547).
+  const extensionApprovals = new ExtensionConnectionApprovalStore(db);
+  setExtensionConnectionServices({
+    approvals: extensionApprovals,
+    reader: new ExtensionConnectionReader(
+      db,
+      connectorRegistry,
+      extensionApprovals,
+      connectorUsage
+    ),
+  });
   const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
   if (recoveredConnectorAttempts > 0) {
     logger.warn('[Connectors] Recovered interrupted execution attempts', {

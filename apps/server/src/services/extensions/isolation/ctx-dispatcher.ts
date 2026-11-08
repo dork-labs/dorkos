@@ -119,6 +119,10 @@ interface PendingRcall {
   settle: () => void;
 }
 
+/** The refusal for `ctx.connections` on a copy that has none (DOR-3547). */
+const CONNECTIONS_REFUSAL =
+  "This extension can't read apps: its manifest declares no connections, or this copy can't hold them.";
+
 /** Make the error a child sees for a refusal the dispatcher itself decides. */
 function refusal(message: string, code?: string): WireError {
   return { name: 'Error', message, ...(code ? { code } : {}) };
@@ -442,9 +446,15 @@ export class CtxDispatcher {
   }
 
   /** Whether a gated member may be used; refuses when not. */
-  private gateOpen(id: number, path: string, gate: 'agents' | undefined): boolean {
+  private gateOpen(id: number, path: string, gate: 'agents' | 'connections' | undefined): boolean {
     if (gate === 'agents' && !this.options.allowAgents) {
       this.refuse(id, toWireError(gateRefusal(path)));
+      return false;
+    }
+    // The real ctx has `connections` only when the host built it for a copy
+    // that declares connections and may hold them (DOR-3547).
+    if (gate === 'connections' && !this.options.ctx.connections) {
+      this.refuse(id, refusal(CONNECTIONS_REFUSAL, 'EXTENSION_CONNECTION_NOT_DECLARED'));
       return false;
     }
     return true;

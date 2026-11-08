@@ -197,6 +197,34 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     );
   });
 
+  // DOR-3547 (audit P4-4): reconciliation re-checks agents' access and has no
+  // step for a mini app's, so an account only an extension reads must not be
+  // left waiting on a review nothing can clear.
+  it('keeps an account ready on a key change when only an extension holds access', () => {
+    registry.register(provider, 'digest-a');
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'extension-grant',
+        subjectType: 'extension',
+        subjectId: 'flow-owner',
+        agentId: null,
+        extensionId: 'flow-owner',
+        connectionId: connection.id,
+        operationRevisionId: 'revision-1',
+        createdBy: 'test',
+        createdAt: NOW,
+      })
+      .run();
+    registry.register(provider, 'digest-b');
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe('ready');
+    // An agent's grant beside it still fences the account, as before.
+    grantRead(db, connection.id);
+    registry.register(provider, 'digest-c');
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe(
+      'migration_needs_reconcile'
+    );
+  });
+
   it('fences existing authority when the explicit provider deployment mode changes', () => {
     grantRead(db, connection.id);
     const before = db

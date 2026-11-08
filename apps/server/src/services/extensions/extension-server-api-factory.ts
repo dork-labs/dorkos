@@ -16,6 +16,7 @@ import {
   type AccountsApi,
   type AgentApi,
   type DataProviderContext,
+  type ExtensionConnectionsApi,
 } from '@dorkos/extension-api/server';
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
@@ -238,6 +239,11 @@ interface CreateContextDeps {
    * means the extension declares none, and every `handle` call is refused.
    */
   toolChecks?: readonly ExtensionToolCheck[];
+  /**
+   * `ctx.connections`, which only the host of an isolated extension that
+   * declares connections passes (DOR-3547). Omitted means the ctx has none.
+   */
+  connections?: ExtensionConnectionsApi;
 }
 
 /**
@@ -422,6 +428,16 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     },
     agent: guardedAgent,
     tools: tools.api,
+    // A given-up instance reads nothing: the read would outlive the extension.
+    ...(deps.connections && {
+      connections: {
+        read: (operation: string, params?: Record<string, unknown>) =>
+          disposed
+            ? Promise.reject(new Error('This extension was stopped, so it cannot read apps.'))
+            : deps.connections!.read(operation, params),
+        status: () => deps.connections!.status(),
+      },
+    }),
   };
 
   const releaseListeners = () => {

@@ -46,8 +46,12 @@ export interface ConstKind {
 /** An async request the host answers through the real ctx. */
 export interface CallKind {
   readonly kind: 'call';
-  /** When set, an isolated extension needs this grant (`allow.agents`). */
-  readonly gate?: 'agents';
+  /**
+   * When set, an isolated extension needs this grant: `agents` is
+   * `allow.agents`, `connections` is a `serverCapabilities.connections`
+   * declaration (DOR-3547).
+   */
+  readonly gate?: 'agents' | 'connections';
 }
 
 /** A fire-and-forget message. */
@@ -206,6 +210,15 @@ export const CTX_PROTOCOL = {
   tools: {
     kind: 'object',
     members: { handle: { kind: 'reverse', boundMs: TOOL_BOUND_MS } },
+  },
+  // The host answers through the real ctx, built for this one extension, so
+  // the call carries nothing that names the caller (DOR-3547 §2).
+  connections: {
+    kind: 'object',
+    members: {
+      read: { kind: 'call', gate: 'connections' },
+      status: { kind: 'call', gate: 'connections' },
+    },
   },
 } as const satisfies ProtocolFor<DataProviderContext>;
 

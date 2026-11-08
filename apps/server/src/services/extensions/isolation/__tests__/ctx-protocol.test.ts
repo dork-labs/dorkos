@@ -170,11 +170,17 @@ describe('CTX_PROTOCOL against a real in-process ctx', () => {
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
+  // With `connections` (DOR-3547), the one member only some extensions get, so
+  // the walk covers every member a ctx can have.
   function build() {
     return createDataProviderContext({
       extensionId: 'proto-ext',
       extensionDir: path.join(dorkHome, 'ext'),
       dorkHome,
+      connections: {
+        read: async () => ({ status: 'success', data: null }),
+        status: async () => [],
+      },
     });
   }
 
@@ -232,6 +238,8 @@ describe('lookup', () => {
     expect(lookup('accounts.registerAdvisor')).toEqual({ kind: 'reverse', boundMs: 2_000 });
     expect(lookup('emit')).toEqual({ kind: 'emit' });
     expect(lookup('tools.handle')).toEqual({ kind: 'reverse', boundMs: 0 });
+    expect(lookup('connections.read')).toEqual({ kind: 'call', gate: 'connections' });
+    expect(lookup('connections.status')).toEqual({ kind: 'call', gate: 'connections' });
   });
 
   // Purpose: nothing outside the table's own keys resolves: prototype keys,

@@ -296,6 +296,12 @@ export interface InitMessage {
    */
   allowAgents: boolean;
   /**
+   * Whether the host gave this extension `ctx.connections` (DOR-3547). When
+   * not, the child's ctx has no such member, so `ctx.connections !== undefined`
+   * stays a true probe. The host enforces it on every call.
+   */
+  connections?: boolean;
+  /**
    * Discovery's verdict on each tool the manifest declares, so the child's
    * `ctx.tools.handle` throws the in-process words. The host checks again.
    */

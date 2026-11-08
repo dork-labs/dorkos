@@ -79,6 +79,10 @@ import {
 } from './ipc-protocol.js';
 import { CHILD_ENTRY_FILE } from './child-entry.js';
 import {
+  abortedLike,
+  DEFAULT_TIMINGS,
+  OOM_MARKER,
+  type IsolatedHostTimings,
   ancestorsOf,
   buildChildEnv,
   childExecArgv,
@@ -119,14 +123,7 @@ export interface HostLogger extends ForwardLogger {
   error(message: string): void;
 }
 
-/** Timings, overridable by tests so a hang is caught in seconds, not minutes. */
-export interface IsolatedHostTimings {
-  helloTimeoutMs: number;
-  loadTimeoutMs: number;
-  pingIntervalMs: number;
-  pongTimeoutMs: number;
-  stopGraceMs: number;
-}
+export type { IsolatedHostTimings } from './grants.js';
 
 /** What {@link IsolatedExtensionHost} needs. */
 export interface IsolatedHostOptions {
@@ -192,18 +189,6 @@ export interface IsolatedHostOptions {
   testSeams?: { omitPermission?: boolean; omitSqliteOff?: boolean; probes?: boolean };
 }
 
-/** The default timings (spec §9). */
-const DEFAULT_TIMINGS: IsolatedHostTimings = {
-  helloTimeoutMs: ISOLATION_LIMITS.helloTimeoutMs,
-  loadTimeoutMs: 15_000,
-  pingIntervalMs: ISOLATION_LIMITS.pingIntervalMs,
-  pongTimeoutMs: ISOLATION_LIMITS.pongTimeoutMs,
-  stopGraceMs: ISOLATION_LIMITS.stopGraceMs,
-};
-
-/** V8's message when a process dies at its heap limit. */
-const OOM_MARKER = /heap out of memory|Reached heap limit/i;
-
 /** Messages a child may send per second before the rest are dropped. */
 const MAX_MESSAGES_PER_SECOND = 5_000;
 
@@ -224,21 +209,6 @@ function installExitHook(): void {
 }
 
 /**
- * Whether an exit looks like V8's heap-limit abort (SIGABRT on POSIX; a
- * normalized abort code on Windows), so a child that merely PRINTS the marker and exits
- * is still reported as a crash.
- *
- * @param code - The exit code.
- * @param signal - The signal, if one ended it.
- */
-function abortedLike(code: number | null, signal: NodeJS.Signals | null): boolean {
-  if (signal === 'SIGABRT' || signal === 'SIGTRAP' || signal === 'SIGILL') return true;
-  // Node normalizes its Windows ABORT path to kAbort (134), not any nonzero exit.
-  // https://github.com/nodejs/node/blob/v22.x/src/node_exit_code.h
-  return process.platform === 'win32' && code === 134;
-}
-
-/**
  * Starts, watches and stops one isolated extension's child process.
  */
 export class IsolatedExtensionHost {
@@ -247,6 +217,8 @@ export class IsolatedExtensionHost {
   private stopRequested = false;
   private killReason: IsolatedExitReason | null = null;
   private sawOom = false;
+  /** What the current child's self-check said about `node:sqlite` (false until it says). */
+  private helloSqliteOff = false;
   private exitPromise: Promise<void> | null = null;
   private pingTimer: NodeJS.Timeout | null = null;
   private lastPongAt = 0;
@@ -289,6 +261,15 @@ export class IsolatedExtensionHost {
   /** Whether a child is running. */
   get running(): boolean {
     return this.child !== null;
+  }
+
+  /**
+   * Whether a child runs now and its own self-check said `node:sqlite` can't
+   * load there. The connection broker refuses an extension without it
+   * (DOR-3547, Security S2), so the sqlite guard can't be skipped by order.
+   */
+  get sqliteRefused(): boolean {
+    return this.child !== null && this.helloSqliteOff;
   }
 
   /** Whether the running child's `register()` returned a cleanup function. */
@@ -396,6 +377,7 @@ export class IsolatedExtensionHost {
     this.stopRequested = false;
     this.killReason = null;
     this.sawOom = false;
+    this.helloSqliteOff = false;
     this.backlog = 0;
     // The data directory, then every folder above a grant, ride as arguments
     // so the child's self-check can confirm it can read NONE of them (the
@@ -544,6 +526,7 @@ export class IsolatedExtensionHost {
           return;
         }
         phase = 'load';
+        this.helloSqliteOff = message.permission.sqlite === false;
         if (this.options.ctx) {
           this.dispatcher = new CtxDispatcher({
             extensionId: this.options.extensionId,
@@ -586,6 +569,7 @@ export class IsolatedExtensionHost {
           },
           displayName: name,
           allowAgents: this.options.isolation.agents,
+          connections: this.options.ctx?.connections !== undefined,
           // Plain fields only: a check carries the parsed input schema too.
           tools: (this.options.tools ?? []).map((check) => ({
             name: check.name,

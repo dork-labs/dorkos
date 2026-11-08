@@ -50,6 +50,11 @@ import {
   type IsolatedStartErrorCode,
 } from './isolation/isolated-host.js';
 import { resolveChildEntry } from './isolation/child-entry.js';
+import {
+  isolatedConnectionsFor,
+  settleApprovals,
+} from './connections/extension-connections-ctx.js';
+import { settleWithin } from './settle-within.js';
 import { loadInProcessBundle } from './server-bundle/load-in-process.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
@@ -423,6 +428,8 @@ export class ExtensionServerLifecycle {
     await fs.writeFile(tempFile, compiled.code, 'utf-8');
 
     if (runsSeparately(record)) return this.startIsolated(id, record, tempFile, sourceKey);
+    // Running inside DorkOS now: any connection it held is revoked (DOR-3547, N3).
+    settleApprovals(record, configManager.get('extensions'), false);
 
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
@@ -663,12 +670,14 @@ export class ExtensionServerLifecycle {
     // Starting again lifts the stop on its messages (DOR-2683).
     getAgentSendService()?.extensionStarted(id);
     const toolChecks = checkDeclaredTools(record.manifest);
+    const connections = isolatedConnectionsFor(record, () => configManager.get('extensions'));
     const built = createDataProviderContext({
       extensionId: id,
       extensionDir: record.runPath ?? record.path,
       dorkHome: this.dorkHome,
       extensionName: name,
       toolChecks,
+      connections: connections.api,
     });
     const release = (): void => {
       built.tools.close();
@@ -706,6 +715,7 @@ export class ExtensionServerLifecycle {
         onExit: (exit) => this.onIsolatedExit(id, started, sourceKey, exit),
       });
       host = started;
+      connections.attach(started);
       result = await started.start();
     } catch (err) {
       release();
@@ -913,32 +923,6 @@ export class ExtensionServerLifecycle {
   private proxyFor(id: string, record: ExtensionRecord): ExtensionHttpHandler | null {
     const config = record.hasDataProxy ? record.manifest.dataProxy : undefined;
     return config ? createProxyHandler(id, config, this.dorkHome) : null;
-  }
-}
-
-/**
- * Wait for `promise`, but no longer than `ms`.
- *
- * @param promise - What to wait for.
- * @param ms - The longest to wait.
- * @returns Its value, or that it did not settle in time (with the promise, so
- *   the caller can clean up whatever it resolves to later).
- */
-async function settleWithin<T>(
-  promise: Promise<T>,
-  ms: number
-): Promise<{ timedOut: false; value: T } | { timedOut: true; late: Promise<T> }> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<'timeout'>((resolve) => {
-    timer = setTimeout(() => resolve('timeout'), ms);
-    timer.unref?.();
-  });
-  try {
-    const first = await Promise.race([promise.then((value) => ({ value })), timeout]);
-    if (first === 'timeout') return { timedOut: true, late: promise };
-    return { timedOut: false, value: first.value };
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }
 

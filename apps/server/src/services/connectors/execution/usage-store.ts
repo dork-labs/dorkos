@@ -21,10 +21,10 @@ export interface ConnectorUsageIntentInput {
   readonly logicalOperationId: string;
   /** One-based attempt order under the logical operation. */
   readonly attemptIndex: number;
-  /** DorkOS surface that initiated the call. */
-  readonly surface: 'mcp' | 'rest' | 'cli' | 'event';
-  /** Verified actor category. */
-  readonly actorKind: 'operator' | 'agent' | 'program' | 'event' | 'runtime';
+  /** DorkOS surface that initiated the call; `extension` is `ctx.connections` (DOR-3547). */
+  readonly surface: 'mcp' | 'rest' | 'cli' | 'event' | 'extension';
+  /** Verified actor category; for `extension`, `actorId` is the extension id and there is no agent. */
+  readonly actorKind: 'operator' | 'agent' | 'program' | 'event' | 'runtime' | 'extension';
   /** Stable verified actor identifier. */
   readonly actorId: string;
   /** Owner or local installation holding the connection authority. */
@@ -45,6 +45,8 @@ export interface ConnectorUsageIntentInput {
   readonly operationRevisionId: string;
   /** ISO timestamp recorded immediately before provider entry. */
   readonly startedAt: string;
+  /** A SHA-256 of the arguments, never the arguments (Security S6). */
+  readonly argumentsHash?: string;
 }
 
 /** Terminal evidence that must match its immutable pre-dispatch intent. */
@@ -136,6 +138,7 @@ export class ConnectorUsageStore {
         payer: input.payer,
         operationRevisionId: input.operationRevisionId,
         startedAt: input.startedAt,
+        argumentsHash: input.argumentsHash,
       })
       .run();
   }

@@ -123,6 +123,10 @@ export const ALLOW_NET_MAX = 64;
 export const ALLOW_RUN_MAX = 16;
 
 export { ISOLATION_MEMORY_MB } from './connections-declaration.js';
+export {
+  CONNECTIONS_NEED_SUBPROCESS,
+  type ConnectionDeclaration,
+} from './connections-declaration.js';
 
 /**
  * Where an extension's server half runs (DOR-2686):
