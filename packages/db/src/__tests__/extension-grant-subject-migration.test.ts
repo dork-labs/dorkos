@@ -270,23 +270,29 @@ describe('the typed extension subject (M4)', () => {
     }
   });
 
-  it('refuses an agent id that is a prefixed extension name', () => {
-    expect(() =>
-      insertGrant(sqlite, {
-        id: 'bad-prefix',
-        subjectType: 'agent',
-        subjectId: 'extension:flow-owner',
-        agentId: 'extension:flow-owner',
-      })
-    ).toThrow(REFUSED);
-    expect(() =>
-      insertGrant(sqlite, {
-        id: 'bad-prefix-case',
-        subjectType: 'agent',
-        subjectId: 'x',
-        agentId: 'EXTENSION:flow-owner',
-      })
-    ).toThrow(REFUSED);
+  it('reads the subject from subject_type alone, never from the shape of an id', () => {
+    // An agent id that reads like a prefixed extension is still only an
+    // agent's row: no extension id, so it can never answer for an extension.
+    insertGrant(sqlite, {
+      id: 'agent-prefixed',
+      subjectType: 'agent',
+      subjectId: 'extension:flow-owner',
+      agentId: 'extension:flow-owner',
+    });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT subject_type, extension_id FROM connection_operation_grants WHERE id = 'agent-prefixed'`
+        )
+        .get()
+    ).toEqual({ subject_type: 'agent', extension_id: null });
+    expect(
+      sqlite
+        .prepare(
+          `SELECT count(*) AS n FROM connection_operation_grants WHERE subject_type = 'extension' AND extension_id = 'flow-owner'`
+        )
+        .get()
+    ).toEqual({ n: 0 });
   });
 
   it('refuses a raw update that would break the rule, either way, and allows a revoke', () => {
