@@ -134,9 +134,9 @@ entries:
   # --- browser-test.yml ---
   - workflow: browser-test.yml
     job: browser-test
-    step: Defer to the merge queue on pull_request events
+    step: Refuse a PR whose smoke specs did not pass
     kind: step-if
-    reason: The browser suite skips pull requests (ADR 260728-112203, #1246) and runs in the merge queue and on the main canary; on pull_request the fan-in reports a named pass-through.
+    reason: PRs must pass the four smoke shards; off PRs that job is skipped and the fan-in instead requires the full shards and first-run journey. Failed, cancelled or skipped PR smoke fails this required context.
   - workflow: browser-test.yml
     job: browser-test
     step: Refuse a run whose shards did not all pass
@@ -156,7 +156,7 @@ entries:
     job: browser-test
     step: actions/checkout
     kind: step-if
-    reason: Checks out code for the executed-count proof the queue and the main canary run; the PR leg is a pass-through.
+    reason: Checks out code for the executed-count proof the queue and the main canary run; the PR smoke shards prove execution before reporting success.
   - workflow: browser-test.yml
     job: browser-test
     step: Collect every shard's quarantine lane
@@ -166,7 +166,7 @@ entries:
     job: browser-test
     step: Agree on the lane this build ran under
     kind: step-if
-    reason: Intersects the shards' copies of the lane, in the queue and on the main canary, so the execution proof can name what it absorbed and refuse a quarantined test that stopped running; the PR leg runs no suite.
+    reason: Intersects the shards' copies of the lane, in the queue and on the main canary, so the execution proof can name what it absorbed and refuse a quarantined test that stopped running; the PR smoke subset has no quarantine lane.
   - workflow: browser-test.yml
     job: browser-test
     step: Collect every shard's JSON report
@@ -176,7 +176,7 @@ entries:
     job: browser-test
     step: Prove the browser suite actually executed
     kind: step-if
-    reason: Proves the queue's and the canary's shards really ran the suite; there is no PR run to prove.
+    reason: Proves the queue's and the canary's shards really ran the suite; the PR smoke subset proves nonempty execution in each shard.
 
   # --- credential-free-build.yml ---
   - workflow: credential-free-build.yml
