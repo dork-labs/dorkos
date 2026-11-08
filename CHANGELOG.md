@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Isolated extensions can no longer open DorkOS's own database: they can't load Node's built-in SQLite, which skipped their file limits. Extensions that run inside DorkOS itself are unchanged. (DOR-3547)
+- Isolated extensions can no longer use Node's built-in SQLite, which got around their file limits. Extensions that run inside DorkOS itself are unchanged. (DOR-3547)
 
 ### Going back
 
