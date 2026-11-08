@@ -13,7 +13,8 @@
  * 2. With no override, a named-agent grant or an every-agent grant allows
  *    (ADR 260926-192625), on an account connected with the owner's own key and
  *    on one connected through a DorkOS account alike (DOR-2439): hosted
- *    authority honours the owner-wide subject too.
+ *    authority honours the owner-wide subject too. An agent left out of the
+ *    share on this account (DOR-3961) keeps only its named grants.
  *
  * @module services/connectors/execution/agent-grant-scope
  */
@@ -27,7 +28,7 @@ import {
   type DbTransaction,
   type SQL,
 } from '@dorkos/db';
-import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { everyAgentGrantFor } from '../every-agent-grants.js';
 
 /** Why a session override shuts an agent out of an account. */
 export type AgentGrantDenial = 'detached' | 'other_agent' | 'needs_reconciliation';
@@ -98,6 +99,6 @@ export function agentGrantScope(
   }
   return {
     kind: 'scope',
-    subject: or(namedAgent, everyAgentGrantSubject())!,
+    subject: or(namedAgent, everyAgentGrantFor(input.agentId))!,
   };
 }

@@ -12,6 +12,7 @@
  */
 import {
   and,
+  connectionGrantExclusions,
   connectionOperationGrants,
   connections,
   connectorOperationRevisions,
@@ -19,17 +20,41 @@ import {
   EVERY_AGENT_GRANT_SUBJECT_ID,
   inArray,
   isNull,
+  sql,
   type Db,
   type DbTransaction,
 } from '@dorkos/db';
 import type { ConnectorEveryAgentAccess } from '@dorkos/shared/connector-resource-schemas';
 
-/** SQL predicate matching only owner-wide every-agent grant rows. */
+/**
+ * SQL predicate matching only owner-wide every-agent grant rows, for any
+ * agent. Use it to read or change the share itself; to ask what one agent may
+ * do, use {@link everyAgentGrantFor}, which honours that agent's exclusions.
+ */
 export function everyAgentGrantSubject() {
   return and(
     eq(connectionOperationGrants.subjectType, 'every_agent'),
     eq(connectionOperationGrants.subjectId, EVERY_AGENT_GRANT_SUBJECT_ID),
     isNull(connectionOperationGrants.agentId)
+  );
+}
+
+/**
+ * SQL predicate matching the every-agent grant rows that speak for ONE agent:
+ * every-agent rows on a connection the agent has not been left out of
+ * (DOR-3961). This is the only predicate any "what can this agent do" read
+ * may use for the every-agent subject.
+ *
+ * The exclusion is checked inside the same statement as the grant, so it
+ * holds for shares made later, and a missing or unreadable exclusions table
+ * fails the whole read rather than letting the share through.
+ *
+ * @param agentId - The agent asked about.
+ */
+export function everyAgentGrantFor(agentId: string) {
+  return and(
+    everyAgentGrantSubject(),
+    sql`NOT EXISTS (SELECT 1 FROM ${connectionGrantExclusions} WHERE ${connectionGrantExclusions.agentId} = ${agentId} AND ${connectionGrantExclusions.connectionId} = ${connectionOperationGrants.connectionId} AND ${connectionGrantExclusions.revokedAt} IS NULL)`
   );
 }
 

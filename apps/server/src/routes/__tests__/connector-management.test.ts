@@ -13,6 +13,7 @@ import { getStaticLocalOrigins } from '../../lib/trusted-origins.js';
 import { createConnectorManagementRoutes } from '../connector-management.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { ConnectorSubscriptionError } from '../../services/connectors/events/subscription-store.js';
+import { ConnectorGrantExclusionError } from '../../services/connectors/access/grant-exclusions.js';
 import { ManagedConnectorCloudError } from '../../services/core/auth/cloud-link-client.js';
 import { ApiError } from '../../../../../packages/cli/src/lib/api-client.js';
 
@@ -51,6 +52,11 @@ describe('connector management routes', () => {
     apply: vi.fn(),
     revokeEveryAgent: vi.fn(),
   };
+  const exclusions = {
+    list: vi.fn(),
+    leaveOut: vi.fn(),
+    letBackIn: vi.fn(),
+  };
   const agentRequests = {
     listForOwner: vi.fn(),
     getForOwner: vi.fn(),
@@ -76,6 +82,19 @@ describe('connector management routes', () => {
     reconciliation.revokeEveryAgent.mockResolvedValue({
       connectionId: 'connection-a',
       revokedCount: 2,
+    });
+    exclusions.list.mockReturnValue([]);
+    exclusions.leaveOut.mockResolvedValue({
+      connectionId: 'connection-a',
+      agentId: 'agent-a',
+      excluded: true,
+      changed: true,
+    });
+    exclusions.letBackIn.mockResolvedValue({
+      connectionId: 'connection-a',
+      agentId: 'agent-a',
+      excluded: false,
+      changed: true,
     });
     agentRequests.listForOwner.mockReturnValue([]);
     agentRequests.getForOwner.mockReturnValue({ requestId: 'request-a' });
@@ -122,6 +141,7 @@ describe('connector management routes', () => {
           },
           reviews,
           reconciliation,
+          exclusions,
           agentRequests,
           resolveOwner: () => (options.ownerUnavailable ? undefined : OWNER),
           loginEnabled: () => options.loginEnabled ?? false,
@@ -430,6 +450,67 @@ describe('connector management routes', () => {
       .delete('/api/connectors/connections/connection-a/every-agent')
       .expect(200, { connectionId: 'connection-a', revokedCount: 2 });
     expect(reconciliation.revokeEveryAgent).toHaveBeenCalledWith(OWNER, 'connection-a');
+  });
+
+  // DOR-3961 term X2: only a person sets or lifts an exclusion here. An agent
+  // (even the excluded one) and a program holding an API key are refused.
+  it.each([
+    ['leave an agent out', 'put'],
+    ['let an agent back in', 'delete'],
+  ] as const)('lets only the owner %s of an every-agent share', async (_name, method) => {
+    const url = '/api/connectors/connections/connection-a/exclusions/agent-a';
+    await request(fixtureTarget.mount(buildApp()))
+      [method](url)
+      .set('X-DorkOS-Agent', 'agent-a')
+      .expect(403);
+    await request(fixtureTarget.mount(buildApp()))
+      [method](url)
+      .set('x-dorkos-approval', 'approval-token')
+      .expect(403);
+    await request(
+      fixtureTarget.mount(
+        buildApp({
+          user: { userId: 'user-a', credential: 'api-key', credentialId: 'credential-a' },
+          loginEnabled: true,
+        })
+      )
+    )
+      [method](url)
+      .set('Authorization', 'Bearer verified')
+      .expect(403);
+    await request(
+      fixtureTarget.mount(
+        buildApp({ user: { userId: 'user-b', credential: 'cookie' }, loginEnabled: true })
+      )
+    )
+      [method](url)
+      .set('Origin', 'http://localhost:4242')
+      .expect(403);
+    expect(exclusions.leaveOut).not.toHaveBeenCalled();
+    expect(exclusions.letBackIn).not.toHaveBeenCalled();
+
+    const ok = await request(fixtureTarget.mount(buildApp()))[method](url).expect(200);
+    expect(ok.body).toMatchObject({ connectionId: 'connection-a', agentId: 'agent-a' });
+    const called = method === 'put' ? exclusions.leaveOut : exclusions.letBackIn;
+    expect(called).toHaveBeenCalledWith(OWNER, 'connection-a', 'agent-a');
+  });
+
+  it('lists exclusions for the owner only, and answers a missing connection with 404', async () => {
+    await request(fixtureTarget.mount(buildApp()))
+      .get('/api/connectors/connections/connection-a/exclusions')
+      .set('X-DorkOS-Agent', 'agent-a')
+      .expect(403);
+    expect(exclusions.list).not.toHaveBeenCalled();
+    await request(fixtureTarget.mount(buildApp()))
+      .get('/api/connectors/connections/connection-a/exclusions')
+      .expect(200, { connectionId: 'connection-a', exclusions: [] });
+
+    exclusions.leaveOut.mockRejectedValueOnce(
+      new ConnectorGrantExclusionError('connection_not_found', 'Connection not found.')
+    );
+    await request(fixtureTarget.mount(buildApp()))
+      .put('/api/connectors/connections/connection-b/exclusions/agent-a')
+      .expect(404, { error: 'Connection not found.', code: 'connection_not_found' });
   });
 
   it('answers a refused managed-cloud call behind a preview honestly instead of a 500', async () => {
@@ -751,6 +832,7 @@ describe('connector management routes', () => {
           registry: { migrationHealth: () => ({ status: 'ready', migrated: false }) },
           reviews,
           reconciliation,
+          exclusions,
           agentRequests,
           resolveOwner: (user) => (user ? { kind: 'user', userId: user.userId } : undefined),
           loginEnabled: () => false,

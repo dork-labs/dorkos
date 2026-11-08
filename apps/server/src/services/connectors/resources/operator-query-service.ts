@@ -65,7 +65,7 @@ import {
   type ManagedGrantSubjects,
 } from '../execution/managed-agent-access.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
-import { everyAgentGrantSubject, liveEveryAgentAccess } from '../every-agent-grants.js';
+import { everyAgentGrantFor, liveEveryAgentAccess } from '../every-agent-grants.js';
 import { everyAgentLevel } from '../execution/access-levels.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
@@ -804,8 +804,8 @@ export class ConnectorOperatorQueryService {
       .all();
     // Every agent inherits the owner's every-agent grants, so they belong in
     // this agent's effective access exactly as the authorization check counts
-    // them: on every connection, managed ones included (DOR-2439), with no
-    // per-agent exclusion.
+    // them: on every connection, managed ones included (DOR-2439), except a
+    // connection this agent was left out of (DOR-3961).
     const inherited = this.db
       .select({
         connectionId: connections.id,
@@ -832,7 +832,7 @@ export class ConnectorOperatorQueryService {
       )
       .where(
         and(
-          everyAgentGrantSubject(),
+          everyAgentGrantFor(agentId),
           isNull(connectionOperationGrants.revokedAt),
           isNull(connections.removedAt),
           eq(connectorProviderInstances.ownerKind, owned.ownerKind),

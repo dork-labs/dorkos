@@ -85,6 +85,7 @@ export interface MountCoreRoutesInput {
   connectorRegistry: WireCoreStoresResult['connectorRegistry'];
   connectorManagementReviews: WireConnectorServicesResult['connectorManagementReviews'];
   connectorReconciliation: WireConnectorServicesResult['connectorReconciliation'];
+  connectorGrantExclusions: WireConnectorServicesResult['connectorGrantExclusions'];
   connectorOperatorQueries: WireConnectorServicesResult['connectorOperatorQueries'];
   catalogLogos: WireConnectorServicesResult['catalogLogos'];
   connectorAuthenticationFlows: WireConnectorServicesResult['connectorAuthenticationFlows'];
@@ -133,6 +134,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     connectorRegistry,
     connectorManagementReviews,
     connectorReconciliation,
+    connectorGrantExclusions,
     connectorOperatorQueries,
     catalogLogos,
     connectorAuthenticationFlows,
@@ -184,6 +186,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
       registry: connectorRegistry,
       reviews: connectorManagementReviews,
       reconciliation: connectorReconciliation,
+      exclusions: connectorGrantExclusions,
       ...connectorOwnerBoundary,
       ...(refs.connectorAgentRequests && { agentRequests: refs.connectorAgentRequests }),
     },

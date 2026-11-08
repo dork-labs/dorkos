@@ -2790,6 +2790,78 @@
           "code"
         ]
       },
+      "ConnectorGrantExclusionList": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorGrantExclusion"
+            }
+          }
+        },
+        "required": [
+          "connectionId",
+          "exclusions"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorGrantExclusion": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "agentId",
+          "displayName",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorGrantExclusionChange": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "agentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excluded": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connectionId",
+          "agentId",
+          "excluded",
+          "changed"
+        ],
+        "additionalProperties": false
+      },
       "MessageDisposition": {
         "type": "string",
         "enum": [
@@ -29685,6 +29757,184 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CancelHeldActionError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/exclusions": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Agents left out of a connection's every-agent share",
+        "description": "Owner only. Lists the agents the every-agent share does not reach.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agents left out, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorGrantExclusionList"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Connection absent or owned by someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/connections/{connectionId}/exclusions/{agentId}": {
+      "put": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Leave one agent out of a connection's every-agent share",
+        "description": "Owner only. The agent keeps only the access given to it by name. The share, now and as it changes later, no longer reaches it. Takes effect on its next call.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent is left out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorGrantExclusionChange"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Connection absent or owned by someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Let one agent back into a connection's every-agent share",
+        "description": "Owner only. The agent gets whatever the share gives every agent now. Only a person can do this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent is no longer left out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorGrantExclusionChange"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Connection absent or owned by someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
                 }
               }
             }

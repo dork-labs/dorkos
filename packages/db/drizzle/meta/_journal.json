@@ -1317,6 +1317,13 @@
       "when": 1794109827322,
       "tag": "20261108035027_dor3547_extension_grant_subject",
       "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "6",
+      "when": 1794158642583,
+      "tag": "20261108172402_connection_grant_exclusions",
+      "breakpoints": true
     }
   ]
 }
