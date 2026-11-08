@@ -80,14 +80,14 @@ describe('startHeartbeats', () => {
       roomAuthors: { resolveAgent: vi.fn() } as never,
       notifyDm: undefined,
       relay: () => undefined,
-      commitments: { observe, list: () => [] } as never,
+      todoPromises: { observe, list: () => [] } as never,
     });
     await settle();
     expect(vi.getTimerCount()).toBe(0);
     // A promise coming due, or any other source's wake, reaches no hub while
     // off: no coalescing window opens.
     const due = (observe.mock.calls[0] as unknown as [(event: unknown) => void])[0];
-    due({ type: 'commitment.due', commitment: { id: 'c1', agentId: 'agent-juno' } });
+    due({ type: 'commitment.due', todoPromise: { id: 'c1', agentId: 'agent-juno' } });
     wakeAgent('agent-juno', { type: 'room-mention' });
     expect(vi.getTimerCount()).toBe(0);
 
@@ -119,7 +119,7 @@ describe('startHeartbeats', () => {
       roomAuthors: { resolveAgent: vi.fn() } as never,
       notifyDm: undefined,
       relay: () => undefined,
-      commitments: { observe: () => () => undefined, list: () => [] } as never,
+      todoPromises: { observe: () => () => undefined, list: () => [] } as never,
     });
     changed();
     await settle();
@@ -137,7 +137,7 @@ describe('startHeartbeats', () => {
       roomAuthors: { resolveAgent: vi.fn() } as never,
       notifyDm: undefined,
       relay: () => undefined,
-      commitments: { observe: () => () => undefined, list: () => [] } as never,
+      todoPromises: { observe: () => () => undefined, list: () => [] } as never,
     });
     registerBeatTurn('beat-chat', { agentId: 'agent-juno', beatId: 'b1', messageId: 'beat-msg' });
     for (const listener of lifecycle.listeners) {
@@ -168,7 +168,7 @@ describe('startHeartbeats', () => {
       roomAuthors: { resolveAgent: vi.fn() } as never,
       notifyDm: undefined,
       relay: () => undefined,
-      commitments: { observe: vi.fn(() => () => undefined), list: () => [] } as never,
+      todoPromises: { observe: vi.fn(() => () => undefined), list: () => [] } as never,
     });
     await settle();
     const beats = vi.spyOn(handle.runner, 'refreshAgent');

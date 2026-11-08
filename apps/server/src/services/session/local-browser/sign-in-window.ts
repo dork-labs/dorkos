@@ -84,6 +84,15 @@ export class SignInWindow {
     return this.active && this.folder === profileFolder;
   }
 
+  /** A completed sign-in notice must not survive removal of its saved profile. */
+  forgetSaved(profileId: string | null): void {
+    if (!this.active && this.record?.profileId === profileId) {
+      this.record = null;
+      this.folder = undefined;
+      this.changed();
+    }
+  }
+
   /**
    * Open the window and follow it until the sign-in is saved.
    *

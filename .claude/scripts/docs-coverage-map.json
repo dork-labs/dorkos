@@ -130,9 +130,10 @@
     },
     {
       "guide": "configuration.md",
-      "description": "Config file system, settings reference, CLI commands, precedence",
+      "description": "Config file system, settings reference, Codex transport compatibility, CLI commands, precedence",
       "patterns": [
         "config-manager",
+        "codex/transport",
         "config-migrations",
         "config-schema",
         "packages/cli/"
@@ -241,7 +242,7 @@
     },
     {
       "guide": "browser-verification.md",
-      "description": "Real-browser verification, isolated instances, live local page tools, artifact proof runners and evidence limits",
+      "description": "Real-browser verification, browser stack names, isolated instances, live local page tools and artifact proof limits",
       "patterns": [
         "apps/e2e/multi-window/",
         "browser-verification",
@@ -367,7 +368,7 @@
     },
     {
       "guide": "adding-a-runtime.md",
-      "description": "Runtime adapter authoring: AgentRuntime contract, conformance suite, SDK confinement",
+      "description": "Runtime adapter authoring: AgentRuntime contract, conformance suite, SDK confinement, protected Codex launch",
       "patterns": [
         "agent-runtime",
         "apps/server/src/services/runtimes/",
@@ -503,8 +504,10 @@
     },
     {
       "guide": "agent-operator-surface.md",
-      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, tier enforcement + approvals, how to add a tool/verb",
+      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, tier enforcement + approvals, how to add a tool/verb, compiled upgrade facts",
       "patterns": [
+        "services/session/new-since/",
+        "services/runtimes/shared/awareness/",
         "services/core/operator/",
         "services/core/capabilities/",
         "services/core/approvals/",

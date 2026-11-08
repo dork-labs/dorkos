@@ -43,6 +43,8 @@ const CENTRAL_READERS = ['packages/skills/src/scanner.ts', 'packages/harness/src
 
 /** Files the heuristic flags that do not read installs, and why. */
 const NOT_READING_INSTALLS: Record<string, string> = {
+  'apps/server/src/services/runtimes/shared/policy/protected-path-check.ts':
+    'protection walk: skipping a sibling would leave it unprotected, and a name could hide a file from it',
   // One file, one reader: `dataEntriesAgentsNeverWrite` lists the TOP of the
   // data folder (never an install or skills root) to name a write-deny rule per
   // entry, and names `agents` only to leave agent homes out (DOR-3039, M1).

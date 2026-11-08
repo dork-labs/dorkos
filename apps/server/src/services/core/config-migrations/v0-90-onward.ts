@@ -834,3 +834,43 @@ export function seedMaxAgentChats(store: {
   if ('maxAgentChats' in runtimes) return;
   store.set('runtimes', { ...runtimes, maxAgentChats: 8 });
 }
+
+/**
+ * Move each everyone-level per-action permission setting stored under a renamed action id to
+ * its current id (DOR-3933): `commitments.add|update|list` became `todo_promises.add|update|list`.
+ * A setting a person made, Blocked included, keeps applying to the same action; without this it
+ * would sit under an id nothing reads, and the action would fall back to its area and preset.
+ *
+ * The map is written out here, not imported, so this body stays exactly what merged. A setting
+ * already stored under the new id wins over the old one. Running it twice changes nothing,
+ * because the first run left no old id.
+ *
+ * @param store - The conf store, narrowed to the two calls this needs.
+ */
+export function renameTodoPromiseActions(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const renamed: Readonly<Record<string, string>> = {
+    'commitments.add': 'todo_promises.add',
+    'commitments.update': 'todo_promises.update',
+    'commitments.list': 'todo_promises.list',
+  };
+  const permissions = store.get('permissions');
+  if (permissions === null || typeof permissions !== 'object' || Array.isArray(permissions)) return;
+  const defaults = (permissions as Record<string, unknown>).defaults;
+  if (defaults === null || typeof defaults !== 'object' || Array.isArray(defaults)) return;
+  const actions = (defaults as Record<string, unknown>).actions;
+  if (actions === null || typeof actions !== 'object' || Array.isArray(actions)) return;
+  const stored = actions as Record<string, unknown>;
+  if (!Object.keys(stored).some((id) => Object.hasOwn(renamed, id))) return;
+  const next: Record<string, unknown> = {};
+  for (const [id, state] of Object.entries(stored)) {
+    if (!Object.hasOwn(renamed, id)) next[id] = state;
+  }
+  for (const [id, state] of Object.entries(stored)) {
+    const current = renamed[id];
+    if (current !== undefined && !Object.hasOwn(next, current)) next[current] = state;
+  }
+  store.set('permissions', { ...permissions, defaults: { ...defaults, actions: next } });
+}

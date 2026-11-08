@@ -100,6 +100,29 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+describe('the Apps and MCP servers tabs', () => {
+  it('offers exactly those two, starting on Apps, and puts the choice in the address', async () => {
+    const user = userEvent.setup();
+    renderPage(transportWith([]));
+    const tabs = screen.getByRole('radiogroup', { name: 'What to show' });
+    expect(
+      within(tabs)
+        .getAllByRole('radio')
+        .map((tab) => tab.textContent)
+    ).toEqual(['Apps', 'MCP servers']);
+    expect(within(tabs).getByRole('radio', { name: 'Apps' })).toBeChecked();
+    await user.click(within(tabs).getByRole('radio', { name: 'MCP servers' }));
+    expect(nextSearch().tab).toBe('mcp');
+  });
+
+  it('shows the servers and hides the apps on ?tab=mcp', async () => {
+    route.search = { tab: 'mcp' };
+    renderPage(transportWith([]));
+    expect(await screen.findByText(/^No servers yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/Prefer your own Composio/)).not.toBeVisible();
+  });
+});
+
 describe('ConnectionsPage', () => {
   it.each([undefined, { enabled: false }])(
     'hides browser discovery when its flag is %j',

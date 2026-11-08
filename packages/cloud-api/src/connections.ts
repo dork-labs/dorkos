@@ -20,23 +20,117 @@ export const ConnectionStatusSchema = z
  * Who one hosted connection grant covers.
  *
  * `agent` covers one named agent. `every_agent` covers every agent of the
- * connection's owner, including agents added after the grant was given. Both
- * carry the same guarantees: a grant names exact reviewed operation revisions
- * and nothing else, a new or changed revision stays off until the owner
- * reviews it, and taking a grant away takes effect on the next call. Only the
- * owner can give an `every_agent` grant; an agent never can.
+ * connection's owner, including agents added after the grant was given.
+ * `extension` covers one installed extension's server code, named by its
+ * extension id. All three carry the same guarantees: a grant names
+ * exact reviewed operation revisions and nothing else, a new or changed
+ * revision stays off until the owner reviews it, and taking a grant away takes
+ * effect on the next call. Only the owner can give an `every_agent` grant; an
+ * agent never can.
+ *
+ * `every_agent` never covers an extension, and an extension grant holds read
+ * operations only: {@link ConnectionGrantSubjectRefSchema} and
+ * {@link ConnectionGrantCoverageSchema} state both rules.
  *
  * A mechanism enum: it says whose calls a grant answers for, not what anybody
- * bought.
+ * bought. `extension` is a minor-release member (README, "Additive within a
+ * major"): a consumer tolerates it like any member it has not seen.
  */
 export const ConnectionGrantSubjectSchema = z
-  .enum(['agent', 'every_agent'])
+  .enum(['agent', 'every_agent', 'extension'])
   .describe(
-    'Who a hosted connection grant covers: one named agent, or every agent of the connection`s owner including agents added later.'
+    'Who a hosted connection grant covers: one named agent, every agent of the connection`s owner including agents added later, or one installed extension`s server code.'
   );
 
 /** Who one hosted connection grant covers. */
 export type ConnectionGrantSubject = z.infer<typeof ConnectionGrantSubjectSchema>;
+
+/**
+ * An extension id as a grant names it: the extension manifest's id grammar
+ * (lowercase letters, digits and hyphens, starting with a letter or digit).
+ * It can never hold a `:`, so no `extension:<id>`-style prefixed string can
+ * stand for one, and it is never carried in an agent-id field.
+ */
+export const ConnectionGrantExtensionIdSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[a-z0-9][a-z0-9-]*$/)
+  .describe('The id of the extension a grant covers, in the manifest id grammar.');
+
+/**
+ * Who one hosted grant covers, with the subject's id in a field of its own
+ * kind. Each variant is strict: an `every_agent` subject carries no id, an
+ * `agent` subject carries only `agentId` and an `extension` subject carries
+ * only `extensionId`. So an extension can never hold an `every_agent` grant,
+ * and an agent can't be named into an extension's grant, or the reverse.
+ *
+ * What a subject is comes from `subject` alone, never from the shape of an id:
+ * an agent id that happens to read `extension:flow` is still only an agent's,
+ * and no string in `agentId` can ever stand for an extension.
+ */
+export const ConnectionGrantSubjectRefSchema = z
+  .discriminatedUnion('subject', [
+    z.object({ subject: z.literal('agent'), agentId: z.string().min(1).max(200) }).strict(),
+    z.object({ subject: z.literal('every_agent') }).strict(),
+    z
+      .object({ subject: z.literal('extension'), extensionId: ConnectionGrantExtensionIdSchema })
+      .strict(),
+  ])
+  .describe('Who one hosted grant covers, with the subject id in a typed field.');
+
+/** Who one hosted grant covers, with the subject id in a typed field. */
+export type ConnectionGrantSubjectRef = z.infer<typeof ConnectionGrantSubjectRefSchema>;
+
+/**
+ * What one reviewed operation revision can do: only look, change something,
+ * or remove something. A mechanism enum: it is the operation's own effect, not
+ * what anybody bought.
+ */
+export const ConnectionOperationClassificationSchema = z
+  .enum(['read', 'write', 'destructive'])
+  .describe('What one reviewed operation revision can do: read, write or destructive.');
+
+/** What one reviewed operation revision can do. */
+export type ConnectionOperationClassification = z.infer<
+  typeof ConnectionOperationClassificationSchema
+>;
+
+/**
+ * Whether a subject may hold a grant on an operation of this classification.
+ * An extension holds read operations only, until an owner page for its writes
+ * is designed; agents and `every_agent` are unchanged.
+ *
+ * @param subject - Who the grant would cover.
+ * @param classification - What the operation revision can do.
+ */
+export function grantSubjectMayHold(
+  subject: ConnectionGrantSubject,
+  classification: ConnectionOperationClassification
+): boolean {
+  return subject !== 'extension' || classification === 'read';
+}
+
+/**
+ * One hosted grant's coverage as the contract's rules see it: who it covers
+ * and what the operation revision can do. It refuses an `extension` subject on
+ * a `write` or `destructive` revision, so both sides of the wire refuse the
+ * same thing.
+ */
+export const ConnectionGrantCoverageSchema = z
+  .object({
+    grantee: ConnectionGrantSubjectRefSchema,
+    classification: ConnectionOperationClassificationSchema,
+  })
+  .strict()
+  .refine((coverage) => grantSubjectMayHold(coverage.grantee.subject, coverage.classification), {
+    message: 'An extension grant holds read operations only',
+    path: ['classification'],
+  })
+  .describe('Who one hosted grant covers and what its operation revision can do.');
+
+/** Who one hosted grant covers and what its operation revision can do. */
+export type ConnectionGrantCoverage = z.infer<typeof ConnectionGrantCoverageSchema>;
 
 /** One toolkit the catalog offers. */
 export const ToolkitSummarySchema = z

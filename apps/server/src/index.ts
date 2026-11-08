@@ -77,6 +77,7 @@ import { wireConnectorServices } from './startup/steps/connector-services.js';
 import { wireDocDelivery } from './startup/steps/doc-delivery.js';
 import { wireMcpTasksAndSkills } from './startup/steps/mcp-tasks-skills.js';
 import { mountCoreRoutes } from './startup/steps/core-routes.js';
+import { repairAgentHomes } from './services/core/agent-home/agent-home-scaffold.js';
 import { pinRegisteredFolderConfigsOnce } from './services/runtimes/claude-code/folder-settings/pin-folder-configs.js';
 import { pinKnownRepoBaselinesOnce } from './services/runtimes/claude-code/repo-settings/pin-repo-baselines.js';
 import { projectRegistry } from './services/projects/project-registry.js';
@@ -278,6 +279,9 @@ async function start() {
   };
   const upToTasks = { ...upToDocDelivery, ...(await wireMcpTasksAndSkills(refs, upToDocDelivery)) };
   const upToCoreRoutes = { ...upToTasks, ...mountCoreRoutes(refs, upToTasks) };
+  // Give every agent home DorkOS owns the `.agents/` and `.mcp.json` Codex
+  // needs before it edits there, before any turn launches (DOR-3914).
+  repairAgentHomes();
   // Pin the agents DorkOS already had, once ever, before any turn launches:
   // only agents seen after this first start wait for a person (DOR-3068).
   await pinRegisteredFolderConfigsOnce(async () => refs.meshCore?.listWithPaths() ?? []);
@@ -442,7 +446,7 @@ let docNotificationCleanup: (() => void) | undefined;
 /** DorkOS's own https listener, when its settings opened one (DOR-3172). */
 let tlsServer: import('node:http').Server | null = null;
 
-async function shutdownServices() {
+async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
   await localBrowserHost.close();
@@ -541,14 +545,14 @@ async function shutdownServices() {
     refs.devLinkWatcher = undefined;
   }
   refs.searchIndexer?.stop();
-  refs.commitmentWiring?.stop();
+  refs.todoWiring?.stop();
   refs.workQueueWiring?.stop();
   heartbeats.stopHeartbeats();
   if (refs.meshCore) {
     refs.meshCore.stopPeriodicReconciliation();
     refs.meshCore.close();
   }
-  await shutdownRuntimes(refs.creditsRelay);
+  await shutdownRuntimes(refs.creditsRelay, reason);
   refs.creditsRelay = null;
   // Stream cancelled, managed access drained within its deadline, what is owed kept (DOR-2086).
   await managedRemoteCommands.shutdown();

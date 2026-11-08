@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/monorepo",
   "private": true,
-  "version": "0.132.0",
+  "version": "0.133.0",
   "type": "module",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
@@ -88,6 +88,7 @@
     "tsx": "4.23.15",
     "turbo": "2.10.13",
     "typescript": "^5.9.3",
+    "vite": "7.3.7",
     "vitest": "^4.1.11"
   },
   "pnpm": {
@@ -136,7 +137,6 @@
       "@posthog/cli",
       "better-sqlite3",
       "esbuild",
-      "ffmpeg-static",
       "electron",
       "lefthook",
       "node-pty",
@@ -146,7 +146,8 @@
       "core-js"
     ],
     "ignoredBuiltDependencies": [
-      "electron-winstaller"
+      "electron-winstaller",
+      "ffmpeg-static"
     ],
     "patchedDependencies": {
       "when-exit@2.1.5": "patches/when-exit@2.1.5.patch"

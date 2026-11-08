@@ -80,7 +80,7 @@
       "abstraction_boundary": "AgentRuntime interface",
       "related_adrs": ["0255", "0309", "0310", "261005-113107"],
       "upgrade_notes": [
-        "Exec fallback only (ADR 261005-113107): Codex turns run on `codex app-server` (the `@openai/codex` entry) once `runtimes.codex.transport` resolves to it; this SDK drives the exec transport behind that switch until exec is removed.",
+        "Types and injected test fixtures only after DOR-3595. Every saved transport setting, including exec, runs protected app-server; the SDK no longer launches production turns.",
         "Versions track the Codex CLI release train and an active `alpha` dist-tag exists alongside `latest`; a fix may ship in alpha weeks before stable (the 0.143.0 logs_2.sqlite fix did). Check dist-tags when resolving the target, and never pin an alpha without an explicit user decision.",
         "Follow the pinned-SDK bump checklist in contributing/adding-a-runtime.md (section: Bumping a pinned SDK): dist-tag check, .d.ts diff of the ThreadEvent/ThreadItem unions and imported item types, event-mapper exhaustiveness compile, runtime conformance suite, one live smoke turn.",
         "The event mapper's `never` exhaustiveness checks fail compilation when the SDK adds union members; that is the intended upgrade tripwire, not an obstacle to suppress.",
@@ -107,10 +107,9 @@
         }
       ],
       "sdk_surface_map": {
-        "Codex": "transport/exec-transport.ts",
-        "CodexOptions": "codex-options.ts, credits-launch.ts, mcp-server-config.ts",
+        "CodexOptions": "mcp-server-config.ts, policy/protected-profile.ts",
         "ThreadEvent, ThreadItem (+ AgentMessageItem, CommandExecutionItem, FileChangeItem, McpToolCallItem, ReasoningItem, TodoListItem, WebSearchItem)": "event-mapper.ts",
-        "ThreadOptions, SandboxMode, ModelReasoningEffort": "turn-input.ts"
+        "SandboxMode, ModelReasoningEffort": "turn-input.ts"
       }
     },
     "@openai/codex": {

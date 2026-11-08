@@ -133,7 +133,13 @@ describe('extension child build entry', () => {
     const host = read('apps/server/src/services/extensions/isolation/isolated-host.ts');
     expect(host).toMatch(/import \{ fork, type ChildProcess \} from 'node:child_process';/);
     expect(host).toMatch(/const child = fork\(bootstrapReal,/);
-    expect(host).toMatch(/'--permission',/);
+    // The flags are built by childExecArgv (grants.ts), and the fork uses them.
+    expect(host).toMatch(/const execArgv = childExecArgv\(/);
+    expect(host).toMatch(/\bexecArgv,\n/);
+    const grants = read('apps/server/src/services/extensions/isolation/grants.ts');
+    expect(grants).toMatch(/'--permission',/);
+    expect(grants).toMatch(/'--no-experimental-sqlite'/);
     expect(host).not.toMatch(/utilityProcess|from 'electron'/);
+    expect(grants).not.toMatch(/utilityProcess|from 'electron'/);
   });
 });

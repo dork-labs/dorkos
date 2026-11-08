@@ -2,6 +2,7 @@ import type { LocalBrowserTransport } from '@dorkos/shared/transport-local-brows
 import {
   LocalBrowserCapabilitiesSchema,
   LocalBrowserPersonStateSchema,
+  LocalBrowserProfileSchema,
   LocalBrowserStateSchema,
 } from '@dorkos/shared/local-browser';
 import { YourBrowserScanSchema } from '@dorkos/shared/your-browser';
@@ -26,6 +27,16 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
     getLocalBrowserState: async () => LocalBrowserPersonStateSchema.parse(await request('/state')),
     getLocalBrowserCapabilities: async () =>
       LocalBrowserCapabilitiesSchema.parse(await request('/capabilities')),
+    listLocalBrowserProfiles: async () => {
+      const result = await request<{ profiles: unknown[] }>('/profiles');
+      return {
+        profiles: result.profiles.map((profile) => LocalBrowserProfileSchema.parse(profile)),
+      };
+    },
+    forgetLocalBrowserSignIns: (id) =>
+      request(`/profiles/${encodeURIComponent(id ?? 'default')}/forget-sign-ins`, {}),
+    deleteLocalBrowserProfile: (id) =>
+      fetchJSON(baseUrl, `/local-browser/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     openLocalBrowser: async (input) =>
       LocalBrowserPersonStateSchema.parse(await request('/open', input)),
     selectLocalBrowserTab: async (id) =>
@@ -36,7 +47,7 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
     resumeLocalBrowser: async () =>
       LocalBrowserPersonStateSchema.parse(await request('/resume', {})),
     disconnectLocalBrowser: async () =>
-      LocalBrowserStateSchema.parse(await request('/disconnect', {})),
+      LocalBrowserPersonStateSchema.parse(await request('/disconnect', {})),
     signInLocalBrowser: async (input) =>
       LocalBrowserPersonStateSchema.parse(await request('/sign-in', input)),
     handBackLocalBrowser: async (handoffId) =>

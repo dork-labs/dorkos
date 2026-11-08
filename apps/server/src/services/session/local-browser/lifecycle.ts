@@ -99,3 +99,15 @@ export async function resourceClosure(
     unsubscribe?.();
   }
 }
+import type { Browser } from 'playwright-core';
+
+/** Wait for an attached browser's disconnect without releasing a persistent profile lease. */
+export function closeBrowserConnection(browser: Browser): Promise<void> {
+  return resourceClosure(
+    () => browser.close(),
+    (closed) => {
+      browser.once('disconnected', closed);
+      return () => browser.off('disconnected', closed);
+    }
+  );
+}

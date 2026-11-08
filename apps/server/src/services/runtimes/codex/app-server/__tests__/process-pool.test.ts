@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../../../../lib/logger.js';
 import { FakeAppServerHost, type FakeAppServer } from '../../__tests__/fake-app-server.js';
 import {
   APP_SERVER_ARGS,
@@ -17,6 +18,7 @@ const PERSON: CodexProcessSpec = {
 const CREDITS: CodexProcessSpec = {
   binary: '/opt/codex',
   codexHome: '/dork/credits',
+  onCredits: true,
   env: { PATH: '/usr/bin', CODEX_HOME: '/dork/credits' },
 };
 
@@ -33,6 +35,7 @@ function makePool(host = new FakeAppServerHost(), now = () => Date.now()) {
 
 afterEach(async () => {
   await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
+  vi.restoreAllMocks();
 });
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -44,6 +47,20 @@ describe('keying', () => {
     expect(a).not.toBe(environmentFingerprint({ A: '1', B: '3' }));
     const key = processKeyOf({ ...PERSON, env: { SECRET: 'sk-very-secret' } });
     expect(key).not.toContain('sk-very-secret');
+  });
+
+  it('never reuses a person process for credits even with identical home and environment', async () => {
+    const { pool } = makePool();
+    const person = await pool.acquire(PERSON);
+    const release = person.hold();
+    try {
+      const credits = await pool.acquire({ ...PERSON, onCredits: true });
+      expect(credits).not.toBe(person);
+      expect(credits.spec.onCredits).toBe(true);
+      expect(processKeyOf({ ...PERSON, onCredits: true })).not.toBe(processKeyOf(PERSON));
+    } finally {
+      release();
+    }
   });
 
   it('gives each home its own process and reuses it', async () => {
@@ -178,6 +195,9 @@ describe('crashes', () => {
     pools.push(pool);
     await expect(pool.acquire(PERSON)).rejects.toThrow(/Already initialized/);
     expect(host.processes[0]!.killSignals).toEqual(['SIGTERM']);
+    // A failed handshake closes RPC before the fake emits its OS exit event.
+    expect(pool.list()).toHaveLength(1);
+    await tick();
     expect(pool.list()).toEqual([]);
   });
 });
@@ -211,6 +231,130 @@ describe('idle reaping', () => {
 });
 
 describe('shutdown', () => {
+  it('shortens an in-progress normal shutdown when authority is removed', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const host = new FakeAppServerHost();
+    const spawn: typeof host.spawn = (binary, args, options) => {
+      const child = host.spawn(binary, args, options);
+      child.stdin.removeAllListeners('finish');
+      const kill = child.kill.bind(child);
+      child.kill = (signal: NodeJS.Signals | number = 'SIGTERM') => {
+        if (signal === 'SIGKILL') return kill(signal);
+        child.killSignals.push(String(signal));
+        return true;
+      };
+      return child;
+    };
+    const pool = new CodexAppServerPool({
+      spawn,
+      timing: { shutdownStepMs: 5, normalShutdownStepMs: 500 },
+    });
+    pools.push(pool);
+    try {
+      await pool.acquire(PERSON);
+      const normal = pool.shutdown();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(host.processes[0]!.killSignals).toEqual([]);
+      const authority = pool.closeWhere(() => true);
+      await vi.advanceTimersByTimeAsync(10);
+      await tick();
+      await Promise.all([normal, authority]);
+      expect(host.processes[0]!.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+      expect(pool.list()).toEqual([]);
+    } finally {
+      for (const child of host.processes) child.exit(0);
+      await tick();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['reset', 'credits'] as const)(
+    'uses short steps for %s even when normal quit allows 30 seconds',
+    async (kind) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const host = new FakeAppServerHost();
+      const spawn: typeof host.spawn = (binary, args, options) => {
+        const child = host.spawn(binary, args, options);
+        child.stdin.removeAllListeners('finish');
+        const kill = child.kill.bind(child);
+        child.kill = (signal: NodeJS.Signals | number = 'SIGTERM') => {
+          if (signal === 'SIGKILL') return kill(signal);
+          child.killSignals.push(String(signal));
+          return true;
+        };
+        return child;
+      };
+      const pool = new CodexAppServerPool({
+        spawn,
+        timing: { shutdownStepMs: 3_000, normalShutdownStepMs: 30_000 },
+      });
+      pools.push(pool);
+      try {
+        await pool.acquire(kind === 'credits' ? CREDITS : PERSON);
+        const closing = pool.shutdown(kind === 'reset' ? 'authority' : 'shutdown');
+        await vi.advanceTimersByTimeAsync(2_999);
+        expect(host.processes[0]!.killSignals).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(host.processes[0]!.killSignals).toEqual(['SIGTERM']);
+        await vi.advanceTimersByTimeAsync(3_000);
+        await tick();
+        await closing;
+        expect(host.processes[0]!.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+        expect(pool.list()).toEqual([]);
+      } finally {
+        for (const child of host.processes) child.exit(0);
+        await tick();
+        vi.useRealTimers();
+      }
+    }
+  );
+
+  it('keeps a closing child visible after every stop deadline until its actual exit', async () => {
+    const host = new FakeAppServerHost();
+    const spawn: typeof host.spawn = (binary, args, options) => {
+      const server = host.spawn(binary, args, options);
+      server.stdin.removeAllListeners('finish');
+      server.kill = (signal: NodeJS.Signals | number = 'SIGTERM') => {
+        server.killSignals.push(String(signal));
+        return false;
+      };
+      return server;
+    };
+    const pool = new CodexAppServerPool({ spawn, timing: { shutdownStepMs: 5 } });
+    pools.push(pool);
+    const proc = await pool.acquire(PERSON);
+    const stop = pool.shutdown();
+    const repeated = pool.closeWhere(() => true);
+    expect(pool.list()).toContain(proc);
+    await Promise.all([stop, repeated]);
+    expect(host.processes[0]!.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
+    expect(host.processes[0]!.hasExited).toBe(false);
+    expect(pool.list()).toContain(proc);
+    host.processes[0]!.exit(0);
+    await tick();
+    expect(pool.list()).toEqual([]);
+  });
+
+  it('keeps a protocol-closed child visible while its OS process ignores SIGTERM', async () => {
+    const host = new FakeAppServerHost();
+    const spawn: typeof host.spawn = (binary, args, options) => {
+      const server = host.spawn(binary, args, options);
+      server.kill = () => false;
+      return server;
+    };
+    const pool = new CodexAppServerPool({ spawn, timing: { shutdownStepMs: 5 } });
+    pools.push(pool);
+    const proc = await pool.acquire(PERSON);
+    host.processes[0]!.stdout.write('broken json\n');
+    await tick();
+    expect(proc.client.isClosed).toBe(true);
+    expect(host.processes[0]!.hasExited).toBe(false);
+    expect(pool.list()).toContain(proc);
+    host.processes[0]!.exit(1);
+    await tick();
+    expect(pool.list()).toEqual([]);
+  });
+
   it('ends stdin first, and a process that exits on EOF is never signalled', async () => {
     const { pool, host } = makePool();
     await pool.acquire(PERSON);
@@ -220,6 +364,7 @@ describe('shutdown', () => {
   });
 
   it('escalates to SIGTERM then SIGKILL for a process that ignores EOF and SIGTERM', async () => {
+    const signals = vi.spyOn(logger, 'debug');
     const host = new FakeAppServerHost();
     const stubborn: FakeAppServer[] = [];
     const spawn: typeof host.spawn = (binary, args, options) => {
@@ -240,6 +385,17 @@ describe('shutdown', () => {
     await pool.shutdown();
     expect(stubborn[0]!.killSignals).toEqual(['SIGTERM', 'SIGKILL']);
     expect(stubborn[0]!.hasExited).toBe(true);
+    expect(signals).toHaveBeenCalledWith(
+      '[CodexAppServer] signal',
+      expect.objectContaining({
+        senderPid: process.pid,
+        targetPid: stubborn[0]!.pid,
+        signal: 'SIGKILL',
+        origin: 'stop-after-sigterm',
+        sent: true,
+        atMs: expect.any(Number),
+      })
+    );
   });
 });
 

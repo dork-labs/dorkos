@@ -4,6 +4,7 @@ import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { describeViolation, runAxe, settleAnimations } from '../../axe.js';
 import { registerOwnerManagementTests } from './owner-management.js';
 import { registerEventNotificationTests } from './event-notifications.js';
+import { registerMcpServerTests } from './mcp-servers.js';
 import { registerSessionAccessTests } from './session-access.js';
 import {
   registerChatConnectCardTests,
@@ -395,6 +396,7 @@ test.describe('Connections — save key, connect, multi-account', () => {
 
 registerOwnerManagementTests({ apiUrl: API_URL, connectWorkAccountViaApi, gotoConnections });
 registerEventNotificationTests({ apiUrl: API_URL, gotoConnections });
+registerMcpServerTests({ apiUrl: API_URL });
 const chatConnectHarness = {
   apiUrl: API_URL,
   enableTestConnector: async (request: APIRequestContext) => {

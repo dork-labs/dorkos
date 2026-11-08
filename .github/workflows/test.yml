@@ -959,12 +959,20 @@ jobs:
           # COMPLETE set of copies before intersecting them.
           printf '%s/6\n' '${{ matrix.shard }}' > "$RUNNER_TEMP/shard.txt"
 
+      # Commit time is identical across runners and reruns, unlike Date.now().
+      # Hash only fresh/fallback mode into test tasks; builds keep their cache.
+      - name: Pin the duration snapshot age to this commit
+        run: |
+          epoch=$(git show -s --format=%ct HEAD)
+          echo "VITEST_SHARD_EPOCH=$epoch" >> "$GITHUB_ENV"
+          node scripts/sharding/mode.mjs "$epoch" >> "$GITHUB_ENV"
+
       - name: Run every package's test suite (shard ${{ matrix.shard }}/6)
         id: sweep
         if: ${{ github.event_name != 'pull_request' }}
         run: |
           set +e
-          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --retry=1 --passWithNoTests --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/codex/**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -ne 0 ]; then
@@ -977,9 +985,10 @@ jobs:
       #
       # Quarantine here is per TEST, read out of the shard reports — NOT vitest
       # `exclude`, which can only drop a whole file and would empty a package's
-      # suite behind the union check's back. Nothing is excluded: every file is
-      # still collected, every test still runs, and the union in the fan-in is
-      # the union it would be with an empty lane.
+      # suite behind the union check's back. The only platform partition is the
+      # Codex binary suites: the required scoped Linux probe job runs all three
+      # files, rejects skips and checks the readable controls. Quarantine itself
+      # excludes no file.
       - name: Refuse any failure the quarantine lane does not cover
         if: ${{ github.event_name != 'pull_request' }}
         run: |
@@ -1092,7 +1101,7 @@ jobs:
           else
             echo "test plan: every package's suite"
           fi
-          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --passWithNoTests
+          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests --exclude='**/codex/**/*.binary.test.ts'
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -1257,17 +1266,104 @@ jobs:
           overwrite: true
           retention-days: 7
 
-  # THE ONE PRODUCER of the required `test` context, on both events (see ONE
-  # REQUIRED CONTEXT, ONE PRODUCER in the header).
-  #
-  # Pure fan-in on both events since DOR-1731: it fails unless every shard
-  # succeeded, and on `merge_group` it additionally proves the shards' union
-  # covers every package. It used to run the affected sweep itself on
-  # `pull_request`; that sweep is a shard job now, and this job runs no tests.
-  # `always()` is still what lets it report when a shard is red — without it
-  # GitHub skips this job, and a SKIPPED check run satisfies a required check.
+  # Distro bubblewrap with its scoped AppArmor profile; never a global sysctl.
+  # Every Codex binary suite moves here; Linux still runs mocked refusal tests.
+  codex-sandbox:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - name: A canary run is against main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ -z "$EVENT" ] || [ -z "$REF" ]; then
+            echo "::error title=The main canary runs against main only::EVENT or REF is empty, so this cannot be shown to be a safe run. Refusing rather than assuming it is not a canary."
+            exit 1
+          fi
+          if [ "$EVENT" != 'schedule' ] && [ "$EVENT" != 'workflow_dispatch' ]; then
+            echo "event '$EVENT' is not a canary event; nothing to check."
+            exit 0
+          fi
+          if [ "$REF" != 'refs/heads/main' ]; then
+            echo "::error title=The main canary runs against main only::this $EVENT run is on '$REF', not 'refs/heads/main'. Nothing was tested. Dispatch it with --ref main; a run on a branch would post this check on that branch's head, under the name of a required context."
+            exit 1
+          fi
+          echo "canary $EVENT run against $REF."
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Install distro bubblewrap and load its scoped AppArmor profile
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils
+          sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(readlink -f /usr/bin/bwrap)" = /usr/bin/bwrap
+          dpkg-query -S /usr/bin/bwrap
+          /usr/bin/bwrap --version
+          /usr/bin/bwrap --unshare-user --unshare-net --ro-bind / / --proc /proc --dev /dev -- /bin/true
+      - name: Build the server's workspace dependencies
+        run: pnpm exec turbo run build --filter='@dorkos/server^...'
+      - name: Run the real Codex binary and protected-file controls
+        timeout-minutes: 20
+        run: |
+          pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
+      - name: Require both protected probes and reject missing binaries or skipped tests
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const report = JSON.parse(readFileSync('vitest-shard-report.json', 'utf8'));
+          const tests = report.testResults.flatMap(suite => suite.assertionResults);
+          assert(tests.length > 0, 'No native tests ran');
+          assert(tests.every(test => test.status === 'passed'), 'A native test did not pass');
+          for (const file of [
+            'app-server/__tests__/app-server.binary.test.ts',
+            'app-server/__tests__/protocol-snapshot.binary.test.ts',
+            '__tests__/credits-provider.binary.test.ts',
+          ]) {
+            assert(report.testResults.some(suite =>
+              suite.name.endsWith('/codex/' + file) && suite.assertionResults.length > 0),
+              `Native suite did not execute: ${file}`);
+          }
+          for (const kind of ['app-server', 'exec']) {
+            assert(tests.some(test => test.title ===
+              `protects fake secrets through ${kind} despite a loaded legacy Full setting`),
+              `Missing protected probe: ${kind}`);
+          }
+          writeFileSync('shard-files-codex.txt', report.testResults.map(suite =>
+            suite.name.slice(process.cwd().length + 1)).sort().join('\n') + '\n');
+          NODE
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shard-files-codex
+          path: shard-files-codex.txt
+          if-no-files-found: error
+      - name: Preserve native Codex reports for CI Steward
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-shard-report-codex
+          path: vitest-shard-report.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # THE ONE PRODUCER of the required `test` context, on both events.
+  # Fan-in of every unit shard, community proof and the scoped Linux Codex suite.
+  # `always()` lets it report a failure rather than skip when a dependency is red.
   test:
-    needs: [test-shard, community-pg, community-packaged]
+    needs: [test-shard, community-pg, community-packaged, codex-sandbox]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     # This job runs no tests any more, so this is a ceiling on a gate, an
@@ -1385,6 +1481,12 @@ jobs:
         run: |
           result="${{ needs.test-shard.result }}"
           echo "shard matrix result: $result"
+          [ "$result" = "success" ]
+
+      - name: Require the real Codex sandbox proof green
+        run: |
+          result="${{ needs.codex-sandbox.result }}"
+          echo "Codex sandbox result: $result"
           [ "$result" = "success" ]
 
       - name: Require packaged community proof green

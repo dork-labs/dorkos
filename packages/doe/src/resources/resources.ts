@@ -48,6 +48,7 @@ export class LocalResources implements Resources {
       await stat(file);
       const target = await this.paths.resolve(file, 'read');
       if (this.instructions.has(target)) return '';
+      await this.config.beforeRead?.(target);
       const body = await textFile(target, signal);
       const result = `<instructions location="${escapeXml(target)}">\n${body}\n</instructions>`;
       this.instructions.set(target, result);
@@ -155,6 +156,7 @@ export class LocalResources implements Resources {
         if (entries.some((entry) => entry.name === 'SKILL.md')) {
           const location = await this.paths.resolve(path.join(canonical, 'SKILL.md'), 'read');
           if (files.has(location)) return;
+          await this.config.beforeRead?.(location);
           const raw = await textFile(location);
           const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(raw);
           if (!match) throw new Error(`Skill frontmatter missing: ${location}`);
@@ -205,6 +207,7 @@ export class LocalResources implements Resources {
     if (!skill) throw new Error('Unknown skill');
     if (skill.disableModelInvocation) throw new Error('Skill requires explicit host invocation');
     const location = await this.paths.resolve(skill.location, 'read');
+    await this.config.beforeRead?.(location);
     return `Skill directory: ${path.dirname(location)}\nResolve relative resources here. Send script execution to builder.\n\n${await textFile(location, signal)}`;
   }
   /** Resolve a skill-relative resource within that canonical skill directory and host read grants. */

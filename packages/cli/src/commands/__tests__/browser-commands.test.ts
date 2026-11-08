@@ -92,7 +92,7 @@ function deps(overrides: Partial<BrowserDeps> = {}): BrowserDeps {
   };
 }
 
-/** A fake agent browser holding one signed-in cookie. */
+/** A fake signed-in browser holding one signed-in cookie. */
 function signedInBrowser(): FakeCdp {
   return createFakeCdp({
     'Storage.getCookies': () => ({
@@ -214,7 +214,7 @@ describe('dorkos browser forget', () => {
     expect(out.join('\n')).toContain('Forgot github.com');
   });
 
-  it('warns that an open agent browser would bring the site back', async () => {
+  it('warns that an open signed-in browser would bring the site back', async () => {
     writeSaved();
     fs.mkdirSync(agentBrowserPaths(dorkHome).profileDir, { recursive: true });
     const code = await runBrowserForget(
@@ -222,7 +222,7 @@ describe('dorkos browser forget', () => {
       deps({ profileLock: () => ({ inUse: true, pid: 1 }) })
     );
     expect(code).toBe(0);
-    expect(err.join('\n')).toContain('The agent browser is open');
+    expect(err.join('\n')).toContain('The signed-in browser is open');
   });
 
   it('needs a yes before forgetting everything when nobody is at the keyboard', async () => {
@@ -230,7 +230,7 @@ describe('dorkos browser forget', () => {
     expect(await runBrowserForget({ all: true, yes: false }, deps({ interactive: false }))).toBe(1);
     expect(fs.existsSync(stateFile)).toBe(true);
     expect(await runBrowserForget({ all: true, yes: true }, deps({ interactive: false }))).toBe(0);
-    // Emptied, not deleted: an agent browser on a missing file fails outright.
+    // Emptied, not deleted: a signed-in browser on a missing file fails outright.
     expect(JSON.parse(fs.readFileSync(stateFile, 'utf8'))).toEqual({ cookies: [], origins: [] });
     expect(fs.statSync(stateFile).mode & 0o777).toBe(0o600);
 
@@ -259,7 +259,7 @@ describe('dorkos browser login', () => {
     expect(err.join('\n')).toContain('Could not find Google Chrome');
   });
 
-  it('will not open a second copy of an agent browser that is already open', async () => {
+  it('will not open a second copy of a signed-in browser that is already open', async () => {
     const code = await runBrowserLogin(
       { plain: false },
       deps({ profileLock: () => ({ inUse: true, pid: 77 }) })

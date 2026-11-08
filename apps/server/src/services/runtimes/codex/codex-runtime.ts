@@ -79,7 +79,6 @@ import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
 import {
   homeOf,
-  resolveAgentTokenEnv,
   resolveAgentHome,
   turnAgentOf,
   type AgentHome,
@@ -119,8 +118,7 @@ import {
 import { clampModeToCeiling, tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
 import {
-  ExecCodexTransport,
-  createAppServerTransport,
+  createCodexTransport,
   type CodexTransport,
   type CodexTransportKind,
 } from './transport/index.js';
@@ -135,14 +133,14 @@ import {
 } from './app-server/background-wake.js';
 import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
 import { CodexModelCatalog } from './model-catalog.js';
-import { dorkosToolsPosture, resolveDorkosMcpInjection } from '../shared/dorkos-mcp-injection.js';
+import { dorkosToolsPosture } from '../shared/dorkos-mcp-injection.js';
 import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import {
   renderBlockedAreaLines,
   resolveToolVisibilityFor,
 } from '../shared/permission-tool-filter.js';
-import { resolveManagedMcpServers } from './mcp-server-config.js';
+import { resolveCodexLaunchTools } from './mcp-server-config.js';
 import { buildCodexPrompt, grantedWritableDirectories } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
@@ -456,13 +454,10 @@ export class CodexRuntime implements AgentRuntime {
     creditsRelay: (() => CreditsRelay | undefined) | undefined
   ): CodexTransport {
     if (typeof choice !== 'string') return choice;
-    if (choice === 'app-server') {
-      return createAppServerTransport({
-        connectorTools: () => this.connectorRuntimeTools,
-        ...(creditsRelay ? { creditsRelay } : {}),
-      });
-    }
-    return new ExecCodexTransport();
+    return createCodexTransport(choice, {
+      connectorTools: () => this.connectorRuntimeTools,
+      ...(creditsRelay ? { creditsRelay } : {}),
+    });
   }
 
   /** Stop every process this runtime's transport started (server shutdown). */
@@ -621,7 +616,7 @@ export class CodexRuntime implements AgentRuntime {
    *
    * **"Next turn" is the whole story here, and for a TIGHTENING that has to be
    * said out loud (DOR-1435).** A mode becomes a `sandboxMode` in
-   * `projectThreadOptions` at the moment a turn starts (`turn-input.ts`), and
+   * the protected thread profile at the moment a turn starts, and
    * Codex has no control channel to move it afterwards — there is not even an
    * ack to wait for. So a session PATCHed from Full access back to Read only
    * while a turn is streaming keeps full file and network access until that
@@ -939,54 +934,21 @@ export class CodexRuntime implements AgentRuntime {
         connectorTools = opened.injection;
       }
 
-      // Mint this session's agent identity token when this cwd hosts a registered
-      // agent. It rides the subprocess env, never the prompt, so it stays a
-      // credential for the `dorkos` commands the agent runs rather than text in its
-      // context and transcript (spec `agent-trust` §3.1). `{}` leaves the turn
-      // unattributed, exactly as before.
-      //
-      // Minted under the name a PERSON reads, never the slug: the token's label
-      // is replayed onto the agent's author row by every room tool it calls, so
-      // the slug there renames a live agent mid-conversation (DOR-1264).
-      //
-      // On app-server a loaded thread keeps the token it loaded with, so the
-      // transport mints only when a thread actually loads (`mintAgentToken`).
-      const mintAgentToken = () =>
-        resolveAgentTokenEnv(
-          meshAgent ? agentPath : undefined,
-          meshAgent?.displayName ?? meshAgent?.name
-        );
-      const mintsOnLoad = this.transport.kind === 'app-server' && meshAgent !== undefined;
-      const agentTokenEnv = mintsOnLoad ? {} : await mintAgentToken();
-
-      // The `dorkos` tool server, when the experiment is on and this cwd hosts a
-      // registered agent (spec `tool-only-room-replies` §D4). It reuses the
-      // already-open connector turn binding on a separate capability route, so
-      // it expires and revokes with this exact turn. `null` injects nothing.
-      //
-      // Scoped to every agent-bound session rather than to room turns: the runtime
-      // cannot know why it was called, and these tools are worth having outside a
-      // room anyway.
-      //
-      // Resolved BEFORE the managed servers because it decides whether the name
-      // `dorkos` is reserved against them this turn — see below.
-      const dorkosTools = await resolveDorkosMcpInjection(
-        meshAgent ? agentPath : undefined,
-        connectorTools
-      );
-
-      // The agent's ENABLED managed MCP servers, injected inline via
-      // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Keyed
-      // on the agent the turn acts as — its own folder even when it stands in a
-      // room worktree (DOR-2091) — and a non-agent session contributes none.
-      // No anchored agent — including a refused turn standing in another
-      // agent's folder — means no managed servers, never the directory's.
-      const managedMcpServers = agentPath
-        ? resolveManagedMcpServers(this.managedMcpServers, agentPath, dorkosTools !== null)
-        : { servers: {}, env: {} };
-
-      // Validated before anything starts: an invalid grant set throws here.
+      // The launch helper resolves host tools, pinned managed servers and the
+      // native file policy from this turn's anchored identity. Tokens ride the
+      // environment on exec, and are minted on load by app-server.
       const writableDirectories = grantedWritableDirectories(opts?.additionalDirectories, cwd);
+      const tools = await resolveCodexLaunchTools(
+        agentPath,
+        cwd,
+        settings.permissionMode === 'bypassPermissions',
+        this.managedMcpServers,
+        this.meshCore,
+        connectorTools,
+        writableDirectories,
+        this.transport.kind
+      );
+      const { dorkosTools } = tools;
       // Resolved per turn, before any context work, so a missing CLI fails the
       // turn with its actionable message as a setup failure.
       const binary = await this.resolveTurnBinary();
@@ -1086,11 +1048,7 @@ export class CodexRuntime implements AgentRuntime {
         ...(opts?.messageId !== undefined ? { messageId: opts.messageId } : {}),
         launch: credits ? { home: 'credits', credits } : { home: 'person' },
         tools: {
-          agentTokenEnv,
-          ...(mintsOnLoad ? { mintAgentToken } : {}),
-          managed: managedMcpServers,
-          dorkosTools,
-          connectorTools,
+          ...tools,
           ...(connectorBinding ? { connectorBindingId: connectorBinding.bindingId } : {}),
         },
         signal: controller.signal,

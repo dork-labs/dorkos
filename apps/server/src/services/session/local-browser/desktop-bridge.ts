@@ -1,5 +1,13 @@
 /* eslint-disable no-restricted-syntax -- Read and delete the private shell handoff before any agent child can inherit it. */
-import type { EmbeddedBrowserPort } from './service.js';
+/** Desktop returns an authenticated connection to one guest page, never its app shell. */
+export interface EmbeddedBrowserPort {
+  forgetSignIns?(): Promise<void>;
+  open(connectionId: string): Promise<{
+    endpoint: string;
+    headers: Record<string, string>;
+    close(): Promise<void>;
+  }>;
+}
 
 /** Shell-only secret: never returned through UI state or agent tools. */
 export function desktopBrowserPort(): EmbeddedBrowserPort | undefined {
@@ -24,6 +32,9 @@ export function desktopBrowserPort(): EmbeddedBrowserPort | undefined {
     return response;
   };
   return {
+    async forgetSignIns() {
+      await call('/forget-sign-ins', 'default');
+    },
     async open(connectionId) {
       const response = await call('/open', connectionId);
       const guest = (await response.json()) as {

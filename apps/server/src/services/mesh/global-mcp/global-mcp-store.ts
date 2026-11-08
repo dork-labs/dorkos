@@ -24,8 +24,10 @@
  * Runtimes ask for their servers synchronously (`injectableServersForCwd`), and
  * the credential store is async. So the store resolves every reference once at
  * {@link GlobalMcpStore.load} and again after each write, and answers
- * {@link GlobalMcpStore.injectableFor} from memory. A change is visible to the
- * next turn of every running agent, with no restart.
+ * {@link GlobalMcpStore.injectableFor} from memory. A change reaches the next
+ * process a chat launches, with no server restart. A chat whose process launched
+ * with a server keeps its tools after off, keep-from or Remove until that process
+ * ends, and a turn in flight keeps them too.
  *
  * ## What it may run
  *

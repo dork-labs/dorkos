@@ -195,7 +195,9 @@ navigating — that is what put a light boot frame on film.
 ## Processing (the editing stage)
 
 Every loop is edited by `writeLoop` (`optimize.ts`) with the bundled
-`ffmpeg-static` binary — no system ffmpeg required:
+`ffmpeg-static` binary — no system ffmpeg required. `pnpm install` skips its
+download (`ignoredBuiltDependencies`, DOR-3954), so the first capture run fetches
+it once, retrying once, and later runs reuse it:
 
 1. **Head-trim.** Each raw loop carries a timestamp marker for where its action
    begins (recorded into `run.json` by `recordLoop` in `lib.ts`). Drives whose

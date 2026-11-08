@@ -36,8 +36,9 @@ import { createTerminalMethods } from './terminal-methods';
 import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
 import { createPermissionMethods } from './permission-methods';
-import { createCommitmentMethods } from './commitment-methods';
+import { createTodoPromiseMethods } from './todo-promise-methods';
 import { createTodoMethods } from './todo-methods';
+import { createGlobalMcpMethods } from './global-mcp-methods';
 import { createWorkQueueMethods } from './work-queue-methods';
 import { createHeartbeatMethods } from './heartbeat-methods';
 import { createNotificationMethods } from './notification-methods';
@@ -94,8 +95,9 @@ export interface HttpTransport
     ReturnType<typeof createFeedbackMethods>,
     ReturnType<typeof createApprovalMethods>,
     ReturnType<typeof createPermissionMethods>,
-    ReturnType<typeof createCommitmentMethods>,
+    ReturnType<typeof createTodoPromiseMethods>,
     ReturnType<typeof createTodoMethods>,
+    ReturnType<typeof createGlobalMcpMethods>,
     ReturnType<typeof createWorkQueueMethods>,
     ReturnType<typeof createHeartbeatMethods>,
     ReturnType<typeof createNotificationMethods>,
@@ -155,8 +157,9 @@ export class HttpTransport implements Transport {
       createFeedbackMethods(baseUrl),
       createApprovalMethods(baseUrl),
       createPermissionMethods(baseUrl),
-      createCommitmentMethods(baseUrl),
+      createTodoPromiseMethods(baseUrl),
       createTodoMethods(baseUrl),
+      createGlobalMcpMethods(baseUrl),
       createWorkQueueMethods(baseUrl),
       createHeartbeatMethods(baseUrl),
       createNotificationMethods(baseUrl),

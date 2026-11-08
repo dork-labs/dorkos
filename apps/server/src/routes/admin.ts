@@ -122,7 +122,7 @@ export interface AdminDeps {
   /** Absolute path to the DorkOS data directory (~/.dork). */
   dorkHome: string;
   /** Gracefully tears down all running services without exiting. */
-  shutdownServices: () => Promise<void>;
+  shutdownServices: (reason?: 'authority' | 'shutdown') => Promise<void>;
   /** Closes the consolidated database connection. */
   closeDb: () => void;
 }
@@ -289,7 +289,7 @@ export function createAdminRoutes(deps: AdminDeps): Hono<ApiEnv> {
 
     setImmediate(async () => {
       try {
-        await deps.shutdownServices();
+        await deps.shutdownServices('authority');
         deps.closeDb();
         await fs.rm(deps.dorkHome, { recursive: true, force: true });
       } catch {

@@ -39,6 +39,8 @@ const GUARD = 'A canary run is against main';
  */
 const NOT_ON_THE_CANARY_PATH: Record<string, Record<string, string>> = {
   'browser-test.yml': {
+    'browser-smoke':
+      'Runs only on pull_request; the canary runs the full browser-shard suite instead, including the smoke specs.',
     'copy-spec-drift':
       'Diffs a change against its base SHA, which no scheduled run carries, so it does not run on a canary event at all.',
   },
@@ -109,7 +111,7 @@ describe('the ref guard is present, first, and self-contained', () => {
   it('is byte-identical in every job, so one cannot rot alone', () => {
     // The count is asserted so a workflow silently losing its jobs, or the
     // canary list losing a workflow, does not turn this suite into a no-op.
-    expect(sites).toHaveLength(10);
+    expect(sites).toHaveLength(11);
     expect(new Set(sites.map(([f, j]) => jobOf(f, j).steps[0]!.run)).size).toBe(1);
     // The env block carries EVENT and REF; the body reads nothing else.
     for (const [f, j] of sites) {

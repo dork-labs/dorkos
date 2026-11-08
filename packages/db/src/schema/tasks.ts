@@ -167,6 +167,13 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    */
   originMarks: text('origin_marks'),
   /**
+   * The last agent OTHER than the one this schedule runs as that made or changed it (DOR-3938),
+   * as JSON `{ agentPath, sessionId, marks }`: its home, its chat, and the marks that chat's turn
+   * carried (a teammate's chain; an outsider's mark refuses the write). Every run records it and
+   * starts with those marks. NULL for a schedule only its own agent or a person wrote.
+   */
+  crossAgentWriter: text('cross_agent_writer'),
+  /**
    * The agent's runtime, model or effort that changed outside DorkOS since this
    * schedule was approved, while the schedule follows the agent for that part
    * (DOR-2337): JSON `[{ field, from, to }]`, `from` being the value when the
@@ -356,6 +363,20 @@ export const pulseRuns = sqliteTable(
      * agent runs, and on every run older than the column.
      */
     missedTicks: integer('missed_ticks'),
+    /**
+     * The agent that made this run's task, read from the task when the run was dispatched
+     * (DOR-3938): its home folder. NULL for a task a person (or a file) made, and on every run
+     * older than the column. When it is another agent than the one the task runs as, the run
+     * started with the marks below.
+     */
+    creatorAgentPath: text('creator_agent_path'),
+    /** The chat that agent made the task from, beside `creator_agent_path`; NULL when unknown. */
+    creatorSessionId: text('creator_session_id'),
+    /**
+     * The marks that chat's turn carried, as JSON `{ outsider?: true, teammate?: [...] }`, which the
+     * run started with (DOR-3938). `{}` for an unmarked creator; NULL beside a NULL creator.
+     */
+    creatorMarks: text('creator_marks'),
     trigger: text('trigger', {
       enum: ['scheduled', 'manual', 'agent'],
     })

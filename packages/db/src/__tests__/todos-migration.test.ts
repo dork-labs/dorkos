@@ -494,22 +494,23 @@ describe('To-dos rebuild of commitments (DOR-3088)', () => {
 
   it('keeps both legacy guards on the latest schema, through every later migration', () => {
     // Drizzle does not know the triggers exist, so a later rebuild of the table would drop them.
+    // The table is `todos` since DOR-3933 (`todos-rename-migration.test.ts`).
     runMigrations(db);
     const triggers = (
       db.$client
         .prepare(
-          `SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'commitments' ORDER BY name`
+          `SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'todos' ORDER BY name`
         )
         .all() as { name: string }[]
     ).map((t) => t.name);
-    expect(triggers).toEqual(['commitments_no_legacy_update', 'commitments_no_new_legacy']);
+    expect(triggers).toEqual(['todos_no_legacy_update', 'todos_no_new_legacy']);
   });
 
   it('is applied by the ordinary boot path', () => {
     runMigrations(db);
     expect(
       (
-        db.$client.prepare(`SELECT authority FROM commitments WHERE id = '01A'`).get() as {
+        db.$client.prepare(`SELECT authority FROM todos WHERE id = '01A'`).get() as {
           authority: string;
         }
       ).authority

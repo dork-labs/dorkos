@@ -454,6 +454,42 @@ describe('the sidebar’s local memory', () => {
       expect(written).toContain('promosDismissed');
     });
 
+    it('never writes a paused mutation: its variables can hold a typed key', async () => {
+      const storage = fakeStorage();
+      const cache = createBootCache({
+        transport: new HttpTransport('/api'),
+        apiBaseUrl: '/api',
+        buster: BUSTER,
+        storage,
+      })!;
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(configKeys.current(), { userSettings: {} });
+      queryClient.getMutationCache().build(
+        queryClient,
+        {},
+        {
+          context: undefined,
+          data: undefined,
+          error: null,
+          failureCount: 0,
+          failureReason: null,
+          isPaused: true,
+          status: 'pending',
+          submittedAt: 0,
+          variables: { env: { MADE_UP_TOKEN: 'canary-typed-value' } },
+        }
+      );
+
+      // The two ways out: the throttled save's dehydrate, and the page-hide flush.
+      const saved = dehydrate(queryClient, cache.persistOptions.dehydrateOptions);
+      expect(saved.mutations).toEqual([]);
+      expect(JSON.stringify(saved)).not.toContain('canary-typed-value');
+      cache.flush(queryClient);
+      const flushed = storage.getItem(`${BOOT_CACHE_KEY_PREFIX}http://localhost:6241`);
+      expect(flushed).toContain('userSettings');
+      expect(flushed).not.toContain('canary-typed-value');
+    });
+
     it('does not recreate the key after a sign-out has cleared it', async () => {
       const storage = fakeStorage();
       const cache = createBootCache({

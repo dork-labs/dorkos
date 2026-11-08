@@ -1,11 +1,17 @@
 /** Handing the browser to a person and back, with a fake browser and a fake sign-in window. */
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../../lib/logger.js';
 import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
+import { BrowserProfileRemoval } from '../profile-removal/index.js';
+import { prepareProfileFolder } from '../profile-folders.js';
+import { createLocalBrowserProfileStore } from '../profile-store.js';
 import type { SignInWindow } from '../sign-in-window.js';
 
 let dataDirectory: string;
@@ -37,6 +43,7 @@ function fakeBrowser(initial = connected()) {
     currentProfileId: vi.fn(() => profileId),
     open: vi.fn(async () => (state = connected())),
     selectTab: vi.fn(async () => state),
+    navigate: vi.fn(async () => state),
     pause: vi.fn(async () => (state = { ...state, paused: true })),
     resume: vi.fn(async () => (state = { ...state, paused: false })),
     disconnect: vi.fn(async () => (state = { ...state, status: 'disconnected', sessionId: null })),
@@ -312,6 +319,111 @@ describe('BrowserHandover answers', () => {
     await handover.open({ mode: 'new-window', sessionId: 'chat-2' });
     expect(browser.open).toHaveBeenCalled();
   });
+
+  it('a closed window reopens at the saved page, with the agent still out', async () => {
+    const { handover, browser, set } = setup();
+    await handover.ask('chat-1', 'wall');
+    set({ ...connected(), status: 'closed', tabs: [], selectedTabId: null });
+    browser.pause.mockClear();
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1', url: 'https://other.test/' });
+    expect(browser.open).toHaveBeenCalledExactlyOnceWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      url: 'https://accounts.example.com/login?next=%2Fhome',
+    });
+    expect(browser.pause).toHaveBeenCalledOnce();
+    expect((await handover.state()).handoff?.outcome).toBeNull();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+  });
+
+  it('with no handoff open, takes the address a person chose', async () => {
+    const { handover, browser } = setup();
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1', url: 'https://other.test/' });
+    expect(browser.open).toHaveBeenCalledExactlyOnceWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      url: 'https://other.test/',
+    });
+    expect(browser.pause).not.toHaveBeenCalled();
+  });
+
+  it('a person can clear a handoff whose chat and window have gone', async () => {
+    const { handover, browser, set } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    set({ ...connected(), status: 'disconnected', sessionId: null, tabs: [], selectedTabId: null });
+    expect((await handover.stop(handoffId)).handoff?.outcome).toBe('stopped');
+    expect(browser.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('a person’s own browser controls during a handoff', () => {
+  it('Disconnect ends the handoff as Stop task does, and that chat stays out', async () => {
+    const { handover, browser } = setup();
+    await handover.ask('chat-1', 'wall');
+    const state = await handover.disconnect();
+    expect(browser.disconnect).toHaveBeenCalledOnce();
+    expect(state.handoff?.outcome).toBe('stopped');
+    expect(state.status).toBe('disconnected');
+    expect(() => handover.refuseStopped('chat-1')).toThrow(
+      expect.objectContaining({ code: 'task_stopped' })
+    );
+    await expect(handover.ask('chat-1', 'wall')).rejects.toMatchObject({ code: 'task_stopped' });
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    expect(() => handover.refuseStopped('chat-1')).not.toThrow();
+  });
+
+  it('Disconnect leaves the card up if the window won’t close', async () => {
+    const { handover, browser } = setup();
+    await handover.ask('chat-1', 'wall');
+    browser.disconnect.mockRejectedValueOnce(new Error('still closing'));
+    await expect(handover.disconnect()).rejects.toThrow('still closing');
+    expect((await handover.state()).handoff?.outcome).toBeNull();
+    expect(() => handover.refuseStopped('chat-1')).not.toThrow();
+  });
+
+  it('Disconnect with no handoff stops nobody', async () => {
+    const { handover, browser } = setup();
+    expect((await handover.disconnect()).handoff).toBeNull();
+    expect(browser.disconnect).toHaveBeenCalledOnce();
+    await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
+  });
+
+  it('refuses a new address and another tab, and lets Show window raise the agent’s tab', async () => {
+    const { handover, browser } = setup();
+    await handover.ask('chat-1', 'wall');
+    browser.selectTab.mockClear();
+    await expect(handover.navigate('https://other.example/')).rejects.toMatchObject({
+      code: 'handoff_open',
+    });
+    await expect(handover.selectTab('t2')).rejects.toMatchObject({ code: 'handoff_open' });
+    expect(browser.navigate).not.toHaveBeenCalled();
+    expect(browser.selectTab).not.toHaveBeenCalled();
+    await handover.selectTab('t1');
+    expect(browser.selectTab).toHaveBeenCalledExactlyOnceWith('t1');
+  });
+
+  it('takes a new address and any tab once the handoff has ended, or with none open', async () => {
+    const { handover, browser } = setup();
+    await handover.selectTab('t2');
+    await handover.navigate('https://other.example/');
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await handover.handBack(handoffId);
+    await handover.selectTab('t2');
+    await handover.navigate('https://other.example/');
+    expect(browser.navigate).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a window that closes on its own', () => {
+  it('tells the app, so the card stops saying to finish in it', () => {
+    const { handover } = setup();
+    const listener = vi.fn();
+    handover.useChangeListener(listener);
+    handover.windowClosed();
+    expect(listener).toHaveBeenCalledOnce();
+  });
 });
 
 describe('telling the app something changed', () => {
@@ -515,5 +627,35 @@ describe('signing in from the Mac app’s built-in browser', () => {
     const { handoffId } = await handover.ask('chat-1', 'password');
     await expect(handover.signIn({ handoffId })).rejects.toMatchObject({ code: 'unsupported' });
     expect(browser.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('a handoff waiting on a profile (DOR-3887)', () => {
+  it('keeps that profile from being deleted until the handoff ends', async () => {
+    const { handover, set, setProfile } = setup();
+    const key = randomBytes(32);
+    const profiles = createLocalBrowserProfileStore(createTestDb(), () => key);
+    const { id } = profiles.create('Example work');
+    const folder = await prepareProfileFolder(dataDirectory, id);
+    await writeFile(path.join(folder, 'storage-state.json'), 'made-up-site-session');
+    // Wired as the service wires it: removal is busy while the handover holds the profile.
+    const removal = new BrowserProfileRemoval({
+      dataDirectory: () => dataDirectory,
+      busy: (profileId) => handover.holdsProfile(profileId),
+    });
+    setProfile(id);
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    // The window has closed, so only the waiting handoff can hold the profile now.
+    set({ ...connected(), status: 'disconnected', sessionId: null });
+    handover.windowClosed();
+    await expect(removal.delete(id, profiles)).rejects.toMatchObject({ code: 'profile_busy' });
+    expect(profiles.get(id)).toBeDefined();
+    expect(await readFile(path.join(folder, 'storage-state.json'), 'utf8')).toBe(
+      'made-up-site-session'
+    );
+    // Once the person hands back, nothing holds it and the delete goes through.
+    await handover.handBack(handoffId);
+    await expect(removal.delete(id, profiles)).resolves.toBeUndefined();
+    expect(profiles.get(id)).toBeUndefined();
   });
 });

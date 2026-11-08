@@ -577,3 +577,105 @@ describe("Security's conditions on the first-use pin (M4)", () => {
     await vi.waitFor(() => expect(denied).toEqual(['a1']));
   });
 });
+
+// The non-Claude launches share the same digest decision, not a second pin store.
+import { managedConfigHeld } from '../../../shared/policy/managed-config.js';
+import { resolvePinnedCodexMcp } from '../../../codex/mcp-server-config.js';
+import { OpenCodeMcpManager } from '../../../opencode/mcp/mcp-manager.js';
+import {
+  registerTestHomes,
+  clearTestHomes,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+describe('managed-server launches on the other engines', () => {
+  const mesh = { getByPath: () => AGENT, listWithPaths: () => [], updateLastSeen: () => {} };
+  it('requires a registered home before reading a manifest without a mesh match', async () => {
+    try {
+      write('.dork/agent.json', {
+        ...AGENT,
+        runtime: 'claude-code',
+        registeredAt: '2026-01-01T00:00:00.000Z',
+        registeredBy: 'test',
+        mcpServers: [],
+        account: 'work',
+      });
+      store.harness = { ...store.harness, approvedFolderConfig: [], approvedFolderConfigParts: {} };
+      await pinnedAtUpgrade();
+      registerTestHomes([home]);
+      expect(await managedConfigHeld(home, home, false)).toBe(false);
+      registerTestHomes([]);
+      expect(await managedConfigHeld(home, home, false)).toBe(true);
+    } finally {
+      clearTestHomes();
+    }
+  });
+  it.each(['codex', 'opencode', 'doe'])(
+    'holds a changed %s manifest and keeps its runtime held',
+    async (runtime) => {
+      write('.dork/agent.json', { id: AGENT.id, runtime, mcpServers: [{ name: 'changed' }] });
+      expect(await managedConfigHeld(home, home, false, mesh)).toBe(true);
+      expect(runtimeUnlessHeld({ id: AGENT.id, runtime }, home)).toBeUndefined();
+    }
+  );
+  it('loads at Full without approving, so dropping below Full holds it again', async () => {
+    write('.dork/agent.json', {
+      id: AGENT.id,
+      runtime: 'codex',
+      mcpServers: [{ name: 'changed' }],
+    });
+    expect(await managedConfigHeld(home, home, true, mesh)).toBe(false);
+    expect(await managedConfigHeld(home, home, false, mesh)).toBe(true);
+  });
+  it('continues loading the approved content', async () => {
+    expect(await managedConfigHeld(home, home, false, mesh)).toBe(false);
+  });
+
+  it('withholds changed servers from the actual Codex launch resolver', async () => {
+    const resolver = {
+      injectableServersForCwd: vi.fn(() => ({
+        files: { transport: 'stdio' as const, command: 'fake-server' },
+      })),
+    };
+    expect(
+      (await resolvePinnedCodexMcp(resolver, home, home, false, false, mesh)).servers
+    ).toHaveProperty('files');
+    resolver.injectableServersForCwd.mockClear();
+    write('.dork/agent.json', {
+      id: AGENT.id,
+      runtime: 'codex',
+      mcpServers: [{ name: 'changed' }],
+    });
+    expect((await resolvePinnedCodexMcp(resolver, home, home, false, false, mesh)).servers).toEqual(
+      {}
+    );
+    expect(resolver.injectableServersForCwd).not.toHaveBeenCalled();
+  });
+
+  it('disconnects previously injected OpenCode servers when the manifest becomes held', async () => {
+    const add = vi.fn(async () => ({ data: { files: { status: 'connected' } } }));
+    const disconnect = vi.fn(async () => ({ data: true }));
+    const client = {
+      mcp: { status: async () => ({ data: {} }), add, disconnect },
+    } as unknown as Parameters<OpenCodeMcpManager['ensureManaged']>[0];
+    const manager = new OpenCodeMcpManager({
+      getClient: async () => client,
+      peekClient: () => null,
+    });
+    manager.setMeshCore(mesh);
+    manager.setResolver({
+      injectableServersForCwd: () => ({ files: { transport: 'stdio', command: 'fake-server' } }),
+    });
+    await manager.ensureManaged(client, home);
+    expect(add).toHaveBeenCalledTimes(1);
+    write('.dork/agent.json', {
+      id: AGENT.id,
+      runtime: 'opencode',
+      mcpServers: [{ name: 'changed' }],
+    });
+    await manager.ensureManaged(client, home);
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(disconnect).toHaveBeenCalledWith({
+      path: { name: 'files' },
+      query: { directory: home },
+    });
+  });
+});

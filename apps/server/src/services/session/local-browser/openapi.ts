@@ -99,6 +99,38 @@ function registerHandoverOpenApi(registry: OpenAPIRegistry): void {
 
 /** Register the local browser setup and human controls. */
 export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
+  for (const operation of ['forget-sign-ins', 'delete'] as const) {
+    const deleting = operation === 'delete';
+    registry.registerPath({
+      method: deleting ? 'delete' : 'post',
+      path: `/api/local-browser/profiles/{id}${deleting ? '' : '/forget-sign-ins'}`,
+      tags: ['Local browser'],
+      summary: deleting ? 'Delete a browser profile' : 'Forget every site in a browser profile',
+      description:
+        inPerson +
+        'Refused while a window, sign-in, handoff or unfinished close holds the profile. ' +
+        (deleting
+          ? 'Removes the whole profile folder and all its agent bindings before dropping its record.'
+          : 'Removes all cookies and site storage. The profile and its agent bindings remain. ' +
+            'The default profile also clears the embedded browser and older CLI state and source profile.'),
+      request: {
+        params: z.object({
+          id: deleting ? z.string().uuid() : z.union([z.literal('default'), z.string().uuid()]),
+        }),
+      },
+      responses: {
+        200: {
+          description: 'Removed and recorded in Activity',
+          content: { 'application/json': { schema: z.object({ success: z.literal(true) }) } },
+        },
+        400: refusal('The profile id is invalid'),
+        403: refusal('The caller is not the owner in person on this computer'),
+        404: refusal('The browser profile no longer exists'),
+        409: refusal('A writer still holds the profile, or removal was incomplete'),
+        500: refusal('The profile data could not be removed'),
+      },
+    });
+  }
   registry.registerPath({
     method: 'get',
     path: '/api/local-browser/capabilities',
@@ -143,7 +175,11 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     path: '/api/local-browser/tabs/{id}/select',
     tags: ['Local browser'],
     summary: 'Choose the tab shared with the agent',
-    description: authority + 'Invalidates earlier observations before sharing the selected tab.',
+    description:
+      authority +
+      inPerson +
+      'Invalidates earlier observations before sharing the selected tab. ' +
+      'During a handoff, only the tab already selected can be chosen.',
     request: { params: z.object({ id: z.string() }) },
     responses: stateResponses,
   });
@@ -153,7 +189,9 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Local browser'],
     summary: 'Open a web address in the selected tab',
     description:
-      authority + 'Accepts HTTP or HTTPS addresses and invalidates earlier observations.',
+      authority +
+      inPerson +
+      'Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff.',
     request: {
       body: {
         required: true,
@@ -269,9 +307,10 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     summary: 'Disconnect the browser',
     description:
       authority +
+      inPerson +
       'Stops sharing immediately. Closes DorkOS-owned pages and windows, keeping their saved sign-ins. ' +
-      'A pending close blocks new opens.',
-    responses: stateResponses,
+      'A pending close blocks new opens. During a handoff it ends the agent’s task, as Stop task does.',
+    responses: personStateResponses,
   });
   registerHandoverOpenApi(registry);
 }

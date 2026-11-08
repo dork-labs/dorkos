@@ -81,4 +81,20 @@ describe('TodoRow', () => {
     });
     expect(row).toHaveTextContent('from you·DorkBot in #team');
   });
+
+  it('wraps a long title whole on a phone and stops it at three lines wider up', () => {
+    renderRow({ todo: createMockTodo({ what: 'A'.repeat(139) }), from: 'you' });
+    const title = screen.getByText('A'.repeat(139));
+    expect(title).toHaveClass('break-words', 'md:line-clamp-3');
+    expect(title).not.toHaveClass('line-clamp-3');
+    expect(title).not.toHaveClass('truncate');
+  });
+
+  it('tints a Reorder row under the pointer or holding focus, and no other row', () => {
+    const plain = renderRow({ todo: createMockTodo(), from: 'you' });
+    expect(plain).not.toHaveClass('hover:bg-muted/50');
+    cleanup();
+    const reorder = renderRow({ todo: createMockTodo(), from: 'you', trailing: <span /> });
+    expect(reorder).toHaveClass('hover:bg-muted/50', 'focus-within:bg-muted/50');
+  });
 });

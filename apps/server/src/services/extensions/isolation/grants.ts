@@ -107,8 +107,46 @@ export function selfCheckPassed(hello: HelloMessage): boolean {
     !p.child &&
     !p.worker &&
     !p.addon &&
-    !p.wasi
+    !p.wasi &&
+    !p.sqlite
   );
+}
+
+/**
+ * The Node flags an isolated child starts with: the permission model with
+ * exactly its read and write grants, no `node:sqlite`, and its memory cap.
+ *
+ * `node:sqlite` ignores `--permission`, so with it a child could open and
+ * write any SQLite file, DorkOS's own database included (DOR-3547).
+ * `--no-experimental-sqlite` removes the module, so `require`, `import()` and
+ * `getBuiltinModule` all fail, and `NODE_OPTIONS` can't put it back (the
+ * environment is scrubbed). The self-check proves it held.
+ *
+ * @param reads - The read grants (real paths).
+ * @param filesReal - The one write grant, the files folder (real path).
+ * @param memoryMb - The heap cap.
+ * @param seams - Test seams. `omitPermission` drops the model and its grants
+ *   together (a grant without `--permission` is a startup error, which would
+ *   never reach the self-check the seam exists to prove); `omitSqliteOff`
+ *   drops the sqlite flag alone.
+ */
+export function childExecArgv(
+  reads: readonly string[],
+  filesReal: string,
+  memoryMb: number,
+  seams: { omitPermission?: boolean; omitSqliteOff?: boolean } = {}
+): string[] {
+  return [
+    ...(seams.omitPermission
+      ? []
+      : [
+          '--permission',
+          ...reads.map((p) => `--allow-fs-read=${p}`),
+          `--allow-fs-write=${filesReal}`,
+        ]),
+    ...(seams.omitSqliteOff ? [] : ['--no-experimental-sqlite']),
+    `--max-old-space-size=${memoryMb}`,
+  ];
 }
 
 /**

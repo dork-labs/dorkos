@@ -74,6 +74,12 @@ import {
 beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
 
+// Synthetic homes here omit manifests; the actual content pin and disconnect
+// path are tested against real files in folder-config-launch.test.ts.
+vi.mock('../../shared/policy/managed-config.js', () => ({
+  managedConfigHeld: vi.fn(async () => false),
+}));
+
 vi.mock('../providers/check-dependencies.js', () => ({
   checkOpenCodeDependencies: vi.fn(),
   resolveOpenCodeBinaryPath: vi.fn(() => null),

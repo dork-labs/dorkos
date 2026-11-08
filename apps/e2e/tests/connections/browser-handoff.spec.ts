@@ -42,7 +42,8 @@ async function chatWithHandoff(
   chatPage: { goto: (id?: string, opts?: { dir: string }) => Promise<void> } & {
     sendMessage: (text: string) => Promise<void>;
   },
-  reason: 'wall' | 'password'
+  reason: 'wall' | 'password',
+  { windowClosed = false } = {}
 ) {
   const seed = await page.request.post('/api/test/seed-agent');
   expect(seed.ok()).toBe(true);
@@ -55,12 +56,16 @@ async function chatWithHandoff(
   await expect(page.getByTestId('transcript-feed').getByText(/Echo:/).first()).toBeVisible();
   const sessionId = new URL(page.url()).searchParams.get('session')!;
   const answers: string[] = [];
-  let state: ReturnType<typeof handoffState> = handoffState(sessionId, reason);
+  const asked = handoffState(sessionId, reason);
+  let state: ReturnType<typeof handoffState> = windowClosed
+    ? { ...asked, status: 'closed', tabs: [], selectedTabId: null as never }
+    : asked;
   await page.route('**/api/local-browser/**', async (route: Route) => {
     const url = new URL(route.request().url()).pathname;
     if (url.endsWith('/capabilities')) return route.fallback();
     if (route.request().method() === 'POST') {
       answers.push(url);
+      if (url.endsWith('/open')) state = asked;
       if (url.endsWith('/handoff/hand-back') || url.endsWith('/handoff/stop'))
         state = {
           ...state,
@@ -137,6 +142,56 @@ test.describe('Agent browser handoff card', () => {
     ).toBeVisible();
     await expect(card(page).getByRole('button', { name: 'Continue' })).toHaveCount(0);
     await expect(card(page).getByRole('button', { name: 'Show window' })).toHaveCount(0);
+  });
+
+  test('when the window closed, it says so, and Continue comes back once a window opens', async ({
+    page,
+    chatPage,
+  }) => {
+    const { answers } = await chatWithHandoff(page, chatPage, 'wall', { windowClosed: true });
+    await expect(
+      card(page).getByText('The window closed. Open it again to finish, or stop the task.')
+    ).toBeVisible();
+    await expect(card(page).getByRole('button', { name: 'Continue' })).toHaveCount(0);
+    await expect(card(page).getByRole('button', { name: 'Show window' })).toHaveCount(0);
+    await expect(card(page).getByRole('button', { name: 'Stop task' })).toBeVisible();
+    await card(page).getByRole('button', { name: 'Open window' }).click();
+    await expect(card(page).getByRole('button', { name: 'Continue' })).toBeVisible();
+    expect(answers).toContain('/api/local-browser/open');
+  });
+
+  test('a panel in another chat only points to the waiting chat', async ({ page, chatPage }) => {
+    await chatWithHandoff(page, chatPage, 'wall');
+    const elsewhere = handoffState('another-chat', 'wall');
+    await page.route('**/api/local-browser/**', async (route: Route) => {
+      if (new URL(route.request().url()).pathname.endsWith('/capabilities'))
+        return route.fallback();
+      return route.fulfill({ json: elsewhere });
+    });
+    await page.reload();
+    await page
+      .getByRole('button', { name: /right panel/i })
+      .first()
+      .click();
+    const tab = page.locator('[role="tab"][data-view-category="local-browser"]');
+    if (await tab.count()) await tab.first().click();
+    else {
+      await page.getByRole('button', { name: 'Add view', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Browser', exact: true }).click();
+    }
+    const panel = page.getByRole('region', { name: 'Agent browser', exact: true });
+    await expect(
+      panel.getByText('Another agent is waiting for a person in this window.')
+    ).toBeVisible();
+    await expect(panel.getByRole('button')).toHaveText(['Open that chat']);
+  });
+
+  test('at 390 the closed-window card keeps its buttons on screen', async ({ page, chatPage }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await chatWithHandoff(page, chatPage, 'wall', { windowClosed: true });
+    for (const name of ['Open window', 'Stop task'])
+      await expect(card(page).getByRole('button', { name })).toBeInViewport();
+    await expect(chatPage.input).toBeInViewport();
   });
 
   test('at 390 the composer stays usable and every button is on screen', async ({

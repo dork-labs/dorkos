@@ -15,6 +15,7 @@ import {
   type LocalBrowserService,
 } from '../services/session/local-browser/service.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { mountLocalBrowserProfileRemoval } from './local-browser-profile-removal.js';
 import {
   mountLocalBrowserProfileRoutes,
   type LocalBrowserProfileRouteDeps,
@@ -63,10 +64,13 @@ export function createLocalBrowserRoutes(
   router.post('/open', personOnly, async (c) =>
     c.json(await service.handover.open(LocalBrowserOpenSchema.parse(readJsonBody(c))))
   );
-  router.post('/tabs/:id/select', async (c) => c.json(await service.selectTab(c.req.param('id'))));
-  router.post('/navigate', async (c) => {
+  // These three can move or close the page under an open card, so they take a person too.
+  router.post('/tabs/:id/select', personOnly, async (c) =>
+    c.json(await service.handover.selectTab(c.req.param('id')))
+  );
+  router.post('/navigate', personOnly, async (c) => {
     const { url } = z.object({ url: z.string().url() }).strict().parse(readJsonBody(c));
-    return c.json(await service.navigate(url));
+    return c.json(await service.handover.navigate(url));
   });
   router.post('/pause', async (c) => c.json(await service.pause()));
   router.post('/resume', personOnly, async (c) => c.json(await service.handover.resume()));
@@ -82,7 +86,8 @@ export function createLocalBrowserRoutes(
     const { handoffId } = LocalBrowserHandoffAnswerSchema.parse(readJsonBody(c));
     return c.json(await service.handover.stop(handoffId));
   });
-  router.post('/disconnect', async (c) => c.json(await service.disconnect()));
+  router.post('/disconnect', personOnly, async (c) => c.json(await service.handover.disconnect()));
   if (profiles) mountLocalBrowserProfileRoutes(router, profiles);
+  mountLocalBrowserProfileRemoval(router, service, profiles);
   return router;
 }

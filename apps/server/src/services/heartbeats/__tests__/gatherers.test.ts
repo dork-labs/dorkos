@@ -16,7 +16,7 @@ import {
 } from '@dorkos/db';
 import {
   createAddressedGatherer,
-  createCommitmentsGatherer,
+  createTodosGatherer,
   createHealthGatherer,
   createSchedulesGatherer,
   createWorkspaceGatherer,
@@ -198,7 +198,7 @@ describe('addressed', () => {
   });
 });
 
-describe('commitments', () => {
+describe('todos', () => {
   it('finds promises due within a day or overdue', async () => {
     const list = () =>
       [
@@ -207,7 +207,7 @@ describe('commitments', () => {
         { id: 'c3', what: 'Next month', dueAt: '2026-11-12T20:00:00Z' },
         { id: 'c4', what: 'No date', dueAt: null },
       ] as never;
-    const changes = await createCommitmentsGatherer({ list })(ctx());
+    const changes = await createTodosGatherer({ list })(ctx());
     expect(changes.map((c) => [c.key, c.signal])).toEqual([
       ['commitment:c1', 'commitment-overdue'],
       ['commitment:c2', 'commitment-due'],

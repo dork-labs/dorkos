@@ -48,7 +48,7 @@ export interface CadenceFacts {
   consecutiveFailures: number;
   /** An asked-for pace still in force, or null. */
   pace: { everyMinutes: number; untilIso: string } | null;
-  /** An open commitment due today, or a turn of its own still running. */
+  /** An open to-do due today, or a turn of its own still running. */
   inFlight: boolean;
   /** When a beat last found a change (ISO 8601), or null. */
   lastChangeAt: string | null;

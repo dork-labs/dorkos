@@ -254,6 +254,10 @@ FILTERED_SPECS=(
 #     owner review, permission changes, notification delivery, and session
 #     access. Registered into connections.spec.ts on its sequential worker
 #     because those tests share connection credentials and reset state.
+#   connections/mcp-servers.ts — the Connections page's MCP servers tab: a
+#     person adds a server, turns it off and on, and removes it (DOR-3213).
+#     Registered into connections.spec.ts on the same sequential worker, since
+#     it writes the one server list this computer's agents share.
 REGISTERED_MODULES=(
   'chat/compaction.ts'
   'chat/composer-escape-and-ime.ts'
@@ -264,6 +268,7 @@ REGISTERED_MODULES=(
   'chat/session-read-state.ts'
   'connections/chat-connect-card.ts'
   'connections/event-notifications.ts'
+  'connections/mcp-servers.ts'
   'connections/owner-management.ts'
   'connections/session-access.ts'
   'conversation/ask-anywhere.ts'

@@ -49,6 +49,7 @@ function handover(launchOrigin: string | null) {
     capabilities: () => ({ newWindow: true }),
     open: vi.fn(async () => state),
     selectTab: vi.fn(async () => state),
+    navigate: vi.fn(async () => state),
     pause: vi.fn(async () => state),
     resume: vi.fn(async () => state),
     disconnect: vi.fn(async () => state),

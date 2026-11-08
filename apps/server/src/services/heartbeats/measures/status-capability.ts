@@ -4,7 +4,7 @@
  *
  * - **Any agent may read any agent's**, so a lead reads its reports' the way a
  *   manager reads a colleague's record. Tier `observe`, `area: null`, as
- *   `commitments_list`: the record it reads is readable by everyone in the
+ *   `todo_promises_list`: the record it reads is readable by everyone in the
  *   space, and a switch that blocked it would hide the record without stopping
  *   anything.
  * - **Summaries only.** It never returns the words of a held message or which

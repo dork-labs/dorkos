@@ -14,6 +14,8 @@ import { LocalBrowserService } from '../service.js';
 import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
 import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { createLocalBrowserProfileStore } from '../profile-store.js';
 
 function fixture() {
   const events = new EventEmitter();
@@ -153,6 +155,74 @@ async function create(appOrigins?: () => readonly string[]) {
     ),
   };
 }
+
+it('refuses forgetting a profile until its window has fully closed', async () => {
+  const f = await create();
+  await f.service.open({ mode: 'new-window' });
+  await expect(f.service.profileRemoval.forget(null)).rejects.toMatchObject({
+    code: 'profile_busy',
+  });
+  await f.service.disconnect();
+  await expect(f.service.profileRemoval.forget(null)).resolves.toBeUndefined();
+});
+
+it('does not remove the profile while its final close is still flushing cookies', async () => {
+  const f = await create();
+  await f.service.open({ mode: 'new-window' });
+  let finish!: () => void;
+  vi.mocked(f.context.close).mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  const closing = f.service.disconnect();
+  await Promise.resolve();
+  await expect(f.service.profileRemoval.forget(null)).rejects.toMatchObject({
+    code: 'profile_busy',
+  });
+  finish();
+  await closing;
+  await expect(f.service.profileRemoval.forget(null)).resolves.toBeUndefined();
+});
+
+it('refuses profile removal while a window is still acquiring its disk profile', async () => {
+  const f = await create();
+  let acquired!: () => void;
+  vi.mocked(f.backend.launch).mockImplementation(async () => {
+    await new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    return f.context;
+  });
+  const opening = f.service.open({ mode: 'new-window' });
+  await expect(f.service.profileRemoval.forget(null)).rejects.toMatchObject({
+    code: 'profile_busy',
+  });
+  // Let asynchronous folder preparation reach the fake browser launcher.
+  await vi.waitFor(() => expect(acquired).toBeTypeOf('function'));
+  acquired();
+  await opening;
+  await f.service.disconnect();
+});
+
+it('refuses removing a named profile while its window owns it', async () => {
+  const f = await create();
+  const profiles = createLocalBrowserProfileStore(createTestDb(), () => Buffer.alloc(32, 1));
+  const { id } = profiles.create('Example work');
+  f.service.useProfileAccess(
+    async () => undefined,
+    (candidate) => candidate === id
+  );
+  await f.service.open({ mode: 'new-window', profileId: id });
+  await expect(f.service.profileRemoval.delete(id, profiles)).rejects.toMatchObject({
+    code: 'profile_busy',
+  });
+  expect(profiles.get(id)).toBeDefined();
+  await f.service.disconnect();
+  await expect(f.service.profileRemoval.delete(id, profiles)).resolves.toBeUndefined();
+  expect(profiles.get(id)).toBeUndefined();
+});
 async function selectOwned(service: LocalBrowserService) {
   const state = await service.open({ mode: 'new-window' });
   await service.selectTab(state.tabs[0].id);

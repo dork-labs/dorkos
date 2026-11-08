@@ -6,13 +6,13 @@ import { LocalBrowserError, assertLocalBrowserUrl, protectedPageRefusal } from '
 import { assertOpenable } from './open-input.js';
 import { localBrowserAppOrigins } from './app-origins.js';
 import { prepareProfileFolder } from './profile-folders.js';
-import type { LocalBrowserProfileAccess } from './profile-access.js';
+import { BrowserProfileAccessGate, type LocalBrowserProfileAccess } from './profile-access.js';
 import type { CloudOriginEntry } from '@dorkos/shared/cloud-origin';
 import { cloudOriginsForThisServer } from '../../core/cloud/cloud-api-origin.js';
 import {
   BrowserActionFlight,
   responseDeadline,
-  resourceClosure,
+  closeBrowserConnection,
   CLOSE_RESPONSE_TIMEOUT_MS,
   PAGE_READ_RESPONSE_TIMEOUT_MS,
   closingError,
@@ -31,6 +31,9 @@ import { FullScreenGuard } from './agent-window/full-screen-guard.js';
 import { productionBackend, type LocalBrowserBackend } from './playwright-backend.js';
 import { BrowserHandover } from './handover.js';
 import { SignInWindow } from './sign-in-window.js';
+import { BrowserProfileRemoval } from './profile-removal/index.js';
+import type { EmbeddedBrowserPort } from './desktop-bridge.js';
+export type { EmbeddedBrowserPort } from './desktop-bridge.js';
 export { LocalBrowserError } from './errors.js';
 import type {
   LocalBrowserAction,
@@ -43,19 +46,26 @@ import type {
 
 const ACTION_TIMEOUT_MS = 750;
 
-/** Desktop returns an authenticated connection to one guest page, never its app shell. */
-export interface EmbeddedBrowserPort {
-  open(
-    connectionId: string
-  ): Promise<{ endpoint: string; headers: Record<string, string>; close(): Promise<void> }>;
-}
 /** One selected live tab, with consumed observations and bounded, never-retried actions. */
 export class LocalBrowserService {
+  readonly profileRemoval: BrowserProfileRemoval = new BrowserProfileRemoval({
+    dataDirectory: () => this.dataDirectory,
+    busy: (id) =>
+      Boolean(
+        this.opening ||
+        this.closing ||
+        this.acquisition ||
+        this.actions.active ||
+        this.handover.holdsProfile(id) ||
+        (this.profileId === id && (this.ownedContext || this.browser || this.embeddedClose))
+      ),
+    forgotten: (id) => this.handover.forgetProfileState(id),
+    embedded: () => this.embedded,
+  });
   private connectionId: string | null = null;
   private sessionId: string | null = null;
   private profileId: string | null = null;
-  private profileAccess?: LocalBrowserProfileAccess;
-  private profileExists?: (id: string) => boolean;
+  private readonly profileAuthorization = new BrowserProfileAccessGate();
   private mode: LocalBrowserMode | null = null;
   private status: LocalBrowserState['status'] = 'disconnected';
   private paused = false;
@@ -121,14 +131,18 @@ export class LocalBrowserService {
   }
 
   async open(input: LocalBrowserOpen): Promise<LocalBrowserState> {
+    this.profileRemoval.assertAvailable();
     this.assertNotClosing();
-    if (input.mode !== 'embedded' && input.mode !== 'new-window')
-      throw new LocalBrowserError('unsupported', 'Choose the DorkOS browser or a new window.');
     if (this.actions.active)
       throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
     if (this.opening)
       throw new LocalBrowserError('busy', 'The browser is starting. Wait a moment.');
-    assertOpenable(input, Boolean(this.embedded), this.capabilities(), this.profileExists);
+    assertOpenable(
+      input,
+      Boolean(this.embedded),
+      this.capabilities(),
+      this.profileAuthorization.exists
+    );
     if (input.url) assertLocalBrowserUrl(input.url, 'person');
     this.opening = true;
     const setupAbort = new AbortController();
@@ -201,11 +215,7 @@ export class LocalBrowserService {
 
   /** The browser is shared with one live chat, not every agent or external caller. */
   requireSharedSession(sessionId: string): void {
-    if (this.sessionId !== sessionId)
-      throw new LocalBrowserError(
-        'not_shared',
-        'Open this chat’s browser to share it with your agent.'
-      );
+    this.profileAuthorization.requireShared(this.sessionId, sessionId);
   }
 
   /** The profile the browser opened last, or null for the default one. */
@@ -215,16 +225,12 @@ export class LocalBrowserService {
 
   /** Set once at startup. Until then, no agent can use a named profile. */
   useProfileAccess(access: LocalBrowserProfileAccess, exists: (id: string) => boolean): void {
-    this.profileAccess = access;
-    this.profileExists = exists;
+    this.profileAuthorization.use(access, exists);
   }
 
   /** On a named profile, the chat's agent must be one a person added, on every call. */
   async requireProfileAccess(sessionId: string): Promise<void> {
-    if (!this.profileId) return;
-    if (!this.profileAccess)
-      throw new LocalBrowserError('profile_not_allowed', 'This agent can’t use this profile.');
-    await this.profileAccess(this.profileId, sessionId);
+    await this.profileAuthorization.require(this.profileId, sessionId);
   }
 
   /** Refuse an agent while any page, including a new popup, is in full screen. */
@@ -422,14 +428,7 @@ export class LocalBrowserService {
         const browser = this.browser;
         const embeddedClose = this.embeddedClose;
         await Promise.all([
-          browser &&
-            resourceClosure(
-              () => browser.close(),
-              (closed) => {
-                browser.once('disconnected', closed);
-                return () => browser.off('disconnected', closed);
-              }
-            ),
+          browser && closeBrowserConnection(browser),
           // Persistent Chromium's protocol-close event can precede process exit and
           // cookie flushing. Keep this profile owned until the original close request
           // settles; its protocol event cannot release the persistent profile lease.
@@ -514,6 +513,7 @@ export class LocalBrowserService {
     this.tabs.clear();
     this.selectedTabId = null;
     this.invalidate();
+    this.handover.windowClosed();
   }
   private invalidate(): void {
     this.revision += 1;

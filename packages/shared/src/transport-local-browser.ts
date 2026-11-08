@@ -2,6 +2,7 @@ import type {
   LocalBrowserCapabilities,
   LocalBrowserOpen,
   LocalBrowserPersonState,
+  LocalBrowserProfile,
   LocalBrowserSignInRequest,
   LocalBrowserState,
 } from './local-browser.js';
@@ -12,12 +13,18 @@ export interface LocalBrowserTransport {
   scanYourBrowsers(): Promise<import('./your-browser.js').YourBrowserScan>;
   getLocalBrowserState(): Promise<LocalBrowserPersonState>;
   getLocalBrowserCapabilities(): Promise<LocalBrowserCapabilities>;
+  /** Profile metadata for the person's browser controls. */
+  listLocalBrowserProfiles(): Promise<{ profiles: LocalBrowserProfile[] }>;
+  /** Forget every site in one profile; null selects the shared default. */
+  forgetLocalBrowserSignIns(profileId: string | null): Promise<{ success: true }>;
+  /** Remove a named profile, its saved site data and agent access. */
+  deleteLocalBrowserProfile(profileId: string): Promise<{ success: true }>;
   openLocalBrowser(input: LocalBrowserOpen): Promise<LocalBrowserPersonState>;
   selectLocalBrowserTab(id: string): Promise<LocalBrowserState>;
   navigateLocalBrowser(url: string): Promise<LocalBrowserState>;
   pauseLocalBrowser(): Promise<LocalBrowserState>;
   resumeLocalBrowser(): Promise<LocalBrowserPersonState>;
-  disconnectLocalBrowser(): Promise<LocalBrowserState>;
+  disconnectLocalBrowser(): Promise<LocalBrowserPersonState>;
   /** Open the plain sign-in window, which no agent can reach. */
   signInLocalBrowser(input: LocalBrowserSignInRequest): Promise<LocalBrowserPersonState>;
   /** Give the browser back to the agent that handed it over. */

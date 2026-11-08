@@ -102,7 +102,7 @@ it('quiet ends after the full tool batch and preserves main context plus opaque 
       prompt: 'check',
       changes: 'new order',
       instructions: 'be calm',
-      commitments: 'already raised invoice',
+      todoPromises: 'already raised invoice',
     })
   ).toEqual({ kind: 'quiet' });
   expect(calls).toHaveBeenCalledOnce();

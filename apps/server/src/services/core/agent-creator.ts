@@ -37,6 +37,7 @@ import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { scaffoldInstructions } from '@dorkos/harness';
 import { seedOperatingSkills } from '@dorkos/operating-skills';
 import { projectAgentWorkspace } from '../harness/project-agent-workspace.js';
+import { SCAFFOLD_TARGETS, scaffoldAgentHome } from './agent-home/agent-home-scaffold.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import { resolveAgentsDirectory } from '../../lib/agents-home.js';
 import { configManager } from './config-manager.js';
@@ -623,6 +624,20 @@ export async function createAgentWorkspace(
       }
     } catch (err) {
       logger.warn('[agents] Failed to seed Operating DorkOS skill pack: %s', String(err));
+    }
+
+    // The protected targets Codex needs to exist before it edits here
+    // (DOR-3914), before any reaction below can start a turn. Create only, only
+    // in a home DorkOS owns, and it never throws; what it made comes off on a
+    // rollback, files before the folders that hold them.
+    const homeScaffold = scaffoldAgentHome(resolvedPath);
+    if (homeScaffold.scaffolded) {
+      for (const { rel, content } of SCAFFOLD_TARGETS) {
+        if (homeScaffold.outcomes[rel] !== 'created') continue;
+        const made = path.join(resolvedPath, ...rel.split('/'));
+        if (content === 'folder') ledger.noteDirTree(made);
+        else ledger.noteFile(made);
+      }
     }
 
     // A marketplace install is an explicit act by the person, like registering

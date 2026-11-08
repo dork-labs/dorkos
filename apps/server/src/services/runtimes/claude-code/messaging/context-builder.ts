@@ -17,7 +17,7 @@ import type { AgentHome } from '../../../core/agent-identity/index.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import { buildCanvasContentCatalog, buildUiActionCatalog } from '../../shared/ui-tool-contract.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
-import { formatProseContext } from '../../shared/prose/prose-context.js';
+import { formatProseContext, wrapContextTag as wrapTag } from '../../shared/prose/prose-context.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import { IN_SESSION_TOOL_PREFIX } from '../mcp-tools/tool-exposure.js';
 import { WORKBENCH } from '../../../../config/constants.js';
@@ -302,8 +302,8 @@ Available tools:
   ${T}tasks_delete(id) -- remove a schedule
   ${T}tasks_get_run_history(scheduleId) -- view past run results
 
-Schedules can target a specific agent (by agentId) or a directory (by cwd).
-Agent-linked schedules automatically resolve the agent's project path at run time.
+A schedule's target is your own agent id, "global", or (only from a chat at Full autonomy whose turn read no messages from outside the team) another agent's id;
+a schedule you make or change for another agent runs at that agent's own level at most, and records that you made it.
 
 Claude Code's own CronCreate with durable: true is not reliable here: its job fires only
 while this chat's Claude Code process is running, and DorkOS ends idle processes. Use
@@ -760,17 +760,13 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
     case 'approval_verdict':
     case 'direct_notes':
     case 'turn_cutoff':
+    case 'new_since_last_run':
       // Prose with a security seam, written once for every runtime.
       return wrapTag(tag, formatProseContext(entry));
     case 'context_warning':
       // Shared so the note names tools each runtime can actually call.
       return wrapTag(tag, formatContextWarning(entry.data, 'claude-code'));
   }
-}
-
-/** Wrap inner content in a `<tag>…</tag>` block on its own lines. */
-function wrapTag(tag: string, inner: string): string {
-  return `<${tag}>\n${inner}\n</${tag}>`;
 }
 
 /**

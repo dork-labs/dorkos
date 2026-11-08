@@ -122,7 +122,7 @@ function runner(gatherers: GathererRegistry = {}): BeatRunner {
     enabled: () => true,
     hoursFor: () => HOURS,
     gatherers,
-    commitments: { list: () => [] },
+    todoPromises: { list: () => [] },
     launcher: launcher(),
     outbox,
     readHeartbeat: async () => ({ kind: 'absent' }),

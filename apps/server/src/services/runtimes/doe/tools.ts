@@ -16,6 +16,8 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import { homeOf, resolveAgentHome, type AgentHome } from '../../core/agent-identity/index.js';
 import type { ConnectorRuntimeMcpInjection } from '../connector-tools.js';
+import { managedConfigHeld } from '../shared/policy/managed-config.js';
+import { protectedPathRoots } from '../shared/policy/protected-path-roots.js';
 import { assembleDoeMcp } from './mcp.js';
 import { assembleDoeResources } from './resources.js';
 import { buildDoeContextParts } from './context.js';
@@ -46,6 +48,8 @@ export interface DoeHostOptions extends DoeBuilderLifecycle {
    * (`../shared/window/context-fit.ts`); when absent, nothing is left out.
    */
   window?: DoeWindow;
+  /** The effective, already-clamped mode for the folder pin. */
+  full?: boolean;
 }
 /** Assemble a new turn with no retained routing or directory grants. Caller owns token revocation. */
 export async function assembleDoeHost(options: DoeHostOptions) {
@@ -54,10 +58,13 @@ export async function assembleDoeHost(options: DoeHostOptions) {
   if (resolution.kind === 'refused') throw new Error('This turn cannot act as that agent.');
   const agentPath = options.agentPath ?? homeOf(resolution);
   const agentToAgent = loadsAgentToAgentTools(!!(agentPath && options.mesh?.getByPath(agentPath)));
+  const held = await managedConfigHeld(agentPath, options.cwd, options.full === true, options.mesh);
+  const protectedRoots = protectedPathRoots(options.cwd, agentPath, options.mesh);
   const mcp = await assembleDoeMcp({
     agentPath,
     connectorInjection: options.connectorInjection,
-    servers: agentPath ? options.managedMcp?.injectableServersForCwd(agentPath) : undefined,
+    servers:
+      agentPath && !held ? options.managedMcp?.injectableServersForCwd(agentPath) : undefined,
     signal: options.signal,
     agentToAgent,
   });
@@ -89,6 +96,7 @@ export async function assembleDoeHost(options: DoeHostOptions) {
       agentPath,
       additionalDirectories: options.opts?.additionalDirectories,
       context,
+      protectedRoots,
     });
     const registry = new DeferredToolRegistry();
     for (const tool of createLocalTools({ workingDirectory: options.cwd, resources, pathPolicy }))
@@ -114,6 +122,7 @@ export async function assembleDoeHost(options: DoeHostOptions) {
       resources,
       registry,
       pathPolicy,
+      protectedRoots,
       agentPath,
       roomToolsPosture: mcp.hostConnected,
       dispose: mcp.dispose,

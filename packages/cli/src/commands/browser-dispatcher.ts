@@ -14,11 +14,12 @@ import { docsUrl } from '@dorkos/shared/links';
 const HELP_TEXT = `
 Usage: dorkos browser <subcommand> [options]
 
-These commands manage the older saved-sign-in browser.
-For live browsing, open Browser from the DorkOS app’s add-view menu.
+login, status and forget manage the older signed-in browser (Playwright MCP).
+For the live Agent browser, open Browser from the DorkOS app’s add-view menu.
+install and status --runtime manage the separate browser engine's files.
 
 Subcommands:
-  login [site]        Open the agent browser, sign in, press Enter to save
+  login [site]        Open the older signed-in browser; press Enter to save
     --plain           Open it with no automation marker, for sites that refuse
                       to sign you in otherwise (sign-ins that end when the
                       browser closes are not kept)
