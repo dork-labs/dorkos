@@ -227,6 +227,39 @@ exports.probes = {
         })
     ),
   requireOther: (name) => attempt(() => typeof require(name)),
+  // node:sqlite ignores --permission (DOR-3547): every way of reaching it.
+  sqliteRequire: (name) => attempt(() => typeof require(name).DatabaseSync),
+  sqliteMainModule: () =>
+    attempt(() => typeof process.mainModule.require('node:sqlite').DatabaseSync),
+  sqliteImport: () => attempt(async () => typeof (await import('node:sqlite')).DatabaseSync),
+  sqliteGetBuiltin: () =>
+    attempt(() => {
+      const m = process.getBuiltinModule('node:sqlite');
+      if (!m) throw Object.assign(new Error('no node:sqlite'), { code: 'ERR_UNKNOWN_BUILTIN_MODULE' });
+      return typeof m.DatabaseSync;
+    }),
+  sqliteBinding: () => attempt(() => typeof process.binding('sqlite')),
+  // Forge a row in a SQLite file by any route that works; returns the row count.
+  sqliteWrite: (file) =>
+    attempt(() => {
+      const routes = [
+        () => process.getBuiltinModule('node:sqlite'),
+        () => process.mainModule.require('node:sqlite'),
+        () => require('node:sqlite'),
+      ];
+      let mod = null;
+      for (const route of routes) {
+        try { mod = route(); } catch {}
+        if (mod) break;
+      }
+      if (!mod) throw Object.assign(new Error('no route to node:sqlite'), { code: 'ERR_UNKNOWN_BUILTIN_MODULE' });
+      const db = new mod.DatabaseSync(file);
+      db.exec('CREATE TABLE IF NOT EXISTS grants (subject TEXT)');
+      db.prepare('INSERT INTO grants (subject) VALUES (?)').run('forged');
+      const n = db.prepare('SELECT count(*) AS n FROM grants').get().n;
+      db.close();
+      return n;
+    }),
   // Lifecycle probes. These do not report back.
   hang: () => { setTimeout(() => { for (;;) {} }, 10); return 'hanging'; },
   oom: () => {

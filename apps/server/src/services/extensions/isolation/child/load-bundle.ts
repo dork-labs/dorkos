@@ -20,6 +20,17 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { bundleDependencyRefusal } from '../ipc-protocol.js';
 
+/**
+ * The built-in names an isolated extension may never load: `node:sqlite`
+ * ignores the permission model (DOR-3547). In-process extensions are not
+ * limited by this; they share the server's trust and some use it.
+ */
+export const ISOLATED_REFUSED_BUILTINS: ReadonlySet<string> = new Set(['node:sqlite', 'sqlite']);
+
+/** The author-facing refusal for {@link ISOLATED_REFUSED_BUILTINS}. */
+export const SQLITE_REFUSAL =
+  "Isolated extensions can't use node:sqlite. Keep data in ctx.storage or your files folder.";
+
 /** Modules the bootstrap provides by name, resolved lazily on first use. */
 export type ProvidedModules = Record<string, () => unknown>;
 
@@ -28,10 +39,13 @@ export type ProvidedModules = Record<string, () => unknown>;
  *
  * @param provided - Modules provided by name (express, the extension API, the shim).
  * @param fromFile - A file to resolve built-ins relative to (the bootstrap).
+ * @param refused - Built-in names refused by name (the isolated child passes
+ *   {@link ISOLATED_REFUSED_BUILTINS}; in-process passes none).
  */
 export function createInjectedRequire(
   provided: ProvidedModules,
-  fromFile: string
+  fromFile: string,
+  refused: ReadonlySet<string> = new Set()
 ): (name: string) => unknown {
   const nodeRequire = createRequire(fromFile);
   const cache = new Map<string, unknown>();
@@ -43,6 +57,12 @@ export function createInjectedRequire(
     if (provide) {
       if (!cache.has(name)) cache.set(name, provide());
       return cache.get(name);
+    }
+    // Refused by name, before the built-in check. The isolated child also runs
+    // without the module, so this is the clear author-facing error, not the
+    // only lock.
+    if (refused.has(name)) {
+      throw Object.assign(new Error(SQLITE_REFUSAL), { code: 'ERR_EXTENSION_BUILTIN_REFUSED' });
     }
     if (isBuiltin(name)) return nodeRequire(name);
     throw Object.assign(new Error(bundleDependencyRefusal(name)), {
