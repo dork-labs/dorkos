@@ -123,6 +123,13 @@ export function ExtensionRow({
   const meta = extension.devLink ? 'Dev link' : extension.scope === 'local' ? 'This project' : null;
 
   function onRowKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    // Esc on the open row's own button closes the row, like Esc inside it.
+    if (event.key === 'Escape' && open) {
+      event.preventDefault();
+      event.stopPropagation();
+      onOpenChange(false);
+      return;
+    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
       moveRowFocus(event.currentTarget, event.key === 'ArrowDown' ? 1 : -1);
@@ -159,6 +166,8 @@ export function ExtensionRow({
           ref={rowButtonRef}
           type="button"
           data-row-button=""
+          // While open, Settings leaves Escape to the row (see onRowKeyDown).
+          data-keeps-escape={open ? '' : undefined}
           aria-expanded={open}
           aria-controls={panelId}
           onClick={() => onOpenChange(!open)}

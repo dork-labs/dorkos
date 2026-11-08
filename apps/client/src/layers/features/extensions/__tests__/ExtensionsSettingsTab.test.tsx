@@ -314,6 +314,24 @@ describe('ExtensionsSettingsTab', () => {
       expect(button).toHaveFocus();
     });
 
+    // Purpose: Esc with focus on the open row's own button closes the row, not
+    // Settings. The button keeps Escape (`data-keeps-escape`, which TabbedDialog
+    // honors) only while the row is open. The queue caught this (dev-link.spec).
+    it('closes on Escape from its own button, and keeps Escape from Settings only while open', async () => {
+      mockFetch({ '/api/extensions': [makeExtension()] });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      await screen.findByTestId('extension-card-test-ext');
+      const row = openRow('test-ext');
+      const button = row.querySelector('[data-row-button]') as HTMLElement;
+      expect(button).toHaveAttribute('data-keeps-escape');
+
+      fireEvent.keyDown(button, { key: 'Escape' });
+
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+      expect(button).not.toHaveAttribute('data-keeps-escape');
+    });
+
     it('moves between rows with the arrow keys', async () => {
       mockFetch({ '/api/extensions': [named('a', 'Alpha'), named('b', 'Beta')] });
 

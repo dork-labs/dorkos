@@ -128,7 +128,10 @@ test.describe('Run a package from a folder', () => {
     await expect(settingsPage.dialog.getByTestId(`extension-dev-link-${EXT_ID}`)).toContainText(
       folder
     );
-    // The first Escape closes the open row; the second closes Settings.
+    // The first Escape closes the open row; the second closes Settings. Focus
+    // goes to the row's own button first, the case the queue caught: Escape
+    // there once closed all of Settings.
+    await extRow.locator('[data-row-button]').focus();
     await page.keyboard.press('Escape');
     await expect(extRow.locator('[data-row-button]')).toHaveAttribute('aria-expanded', 'false');
     await settingsPage.close();
