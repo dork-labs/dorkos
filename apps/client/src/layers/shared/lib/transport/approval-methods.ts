@@ -8,6 +8,7 @@
  * @module shared/lib/transport/approval-methods
  */
 import type {
+  DeclinedHookApprovalsResponse,
   ApprovalAnswer,
   ApprovalDecisionResponse,
   ApprovalFullDetailResponse,
@@ -22,6 +23,14 @@ import { fetchJSON } from './http-client';
  */
 export function createApprovalMethods(baseUrl: string) {
   return {
+    listDeclinedHookApprovals(): Promise<DeclinedHookApprovalsResponse> {
+      return fetchJSON(baseUrl, '/approvals/declined-hooks');
+    },
+    askAgainHookApproval(approvalId: string): Promise<{ ok: true; approvalId: string }> {
+      return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/ask-again`, {
+        method: 'POST',
+      });
+    },
     listPendingApprovals(): Promise<PendingApprovalsResponse> {
       return fetchJSON(baseUrl, '/approvals/pending');
     },

@@ -1,5 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { useTransport } from '@/layers/shared/model';
+import {
+  useCoalescedInvalidation,
+  useEventSubscription,
+  useTransport,
+  type QueryInvalidation,
+} from '@/layers/shared/model';
 
 export const LOCAL_BROWSER_STATE_KEY = ['local-browser', 'state'] as const;
 
@@ -14,6 +19,24 @@ export function useLocalBrowserState(enabled = true) {
       const code = (query.state.error as { code?: string } | null)?.code;
       return code === 'local_only' || code === 'owner_only' ? false : 1000;
     },
+    retry: false,
+  });
+}
+
+const STATE_CACHE: readonly QueryInvalidation[] = [{ queryKey: LOCAL_BROWSER_STATE_KEY }];
+
+/**
+ * The person's browser state for surfaces outside the browser panel: one read, then
+ * another each time the server says a handoff or sign-in moved. It never polls, so
+ * every open chat can hold it. A phone gets `local_only` and shows nothing.
+ */
+export function useLocalBrowserPersonState() {
+  const transport = useTransport();
+  const schedule = useCoalescedInvalidation({ coalesceMs: 100 });
+  useEventSubscription('local_browser_changed', () => schedule(STATE_CACHE));
+  return useQuery({
+    queryKey: LOCAL_BROWSER_STATE_KEY,
+    queryFn: () => transport.getLocalBrowserState(),
     retry: false,
   });
 }

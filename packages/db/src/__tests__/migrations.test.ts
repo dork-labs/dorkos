@@ -187,8 +187,6 @@ describe('Database Migrations', () => {
       'chat_messages',
       'chat_read_cursors',
       'codex_threads',
-      // What each agent promised, to whom and by when (spec heartbeats §12).
-      'commitments',
       // Remote community enrollment, mirrored history, and durable delivery.
       'community_agent_enrollments',
       'community_entry_origins',
@@ -376,6 +374,9 @@ describe('Database Migrations', () => {
       // agent turn a to-do started, queued, held or will retry.
       'todo_person_asks',
       'todo_turns',
+      // Every to-do, an agent's own promises included (spec heartbeats §12, DOR-3088); named
+      // `commitments` until DOR-3933.
+      'todos',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,
       // migration 0048).

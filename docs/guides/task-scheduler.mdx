@@ -348,6 +348,8 @@ Clicking **Run now** is different. You are watching, so its cards work normally 
   will not change that.
 </Callout>
 
+A file’s `permissions` setting belongs under `schedule`, like the timing. If it sits at the top level, the schedule waits and shows what to fix. That misplaced value never grants a mode. Move the setting under `schedule`, then review and approve the corrected schedule.
+
 ## Get a message when one finishes
 
 DorkOS can message you the moment a scheduled task wraps up, so you do not have to sit and watch it. The message names the task, how long it took, and the first line of what it produced. This works on its own. The agent does not have to do anything.
@@ -435,7 +437,7 @@ curl -X POST http://localhost:4242/api/tasks \
   }'
 ```
 
-`target` is either an agent id (the task runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, `runtime`, `model`, `effort`, `account`, and `reason` are optional here. On a `PATCH`, sending `null` for `runtime`, `model`, `effort` or `account` clears it, so the task goes back to following its agent. Leave `permissionMode` out and the run starts at the level you chose for new chats, worked out for the runtime this task resolves to. If you never chose one, it starts where scheduled runs have always started: able to edit files, but stopping for anything riskier. There is one exception to the optional list: a caller that isn't you at the keyboard (an agent identity or an approval token) must send a `reason`, or the request is rejected with a 400. A registered agent's own token, on an install that isn't set to Careful, gets a schedule that runs right away. Any other such caller, and every caller on Careful, gets one that parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
+`target` is either an agent id (the task runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, `runtime`, `model`, `effort`, `account`, and `reason` are optional here. On a `PATCH`, sending `null` for `runtime`, `model`, `effort` or `account` clears it, so the task goes back to following its agent. When you create a task yourself, leaving `permissionMode` out uses your default for new chats. An agent creating a task without a mode gets at most Accept edits. Full autonomy becomes Accept edits. The create path also caps unsupported or future defaults. A separately approved mode keeps its existing grant. The creation notice names the saved mode. Commands needing approval are refused on timer runs because nobody can answer. There is one exception to the optional list: a caller that isn't you at the keyboard (an agent identity or an approval token) must send a `reason`, or the request is rejected with a 400. A registered agent's own token, on an install that isn't set to Careful, gets a schedule that runs right away. Any other such caller, and every caller on Careful, gets one that parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
 
 Pause or resume:
 

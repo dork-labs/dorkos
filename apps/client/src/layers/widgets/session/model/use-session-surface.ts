@@ -6,16 +6,21 @@
  */
 import { useMemo } from 'react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import { useAppStore } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import { useConfig, useShowSessions } from '@/layers/entities/config';
-import { useDirectMessageAgent, useDirectMessageView } from '@/layers/features/direct-message';
+import {
+  useDirectMessageAgent,
+  useDirectMessageView,
+  useKeptDirectMessageAgent,
+} from '@/layers/features/direct-message';
 import type { MessageAuthorAgent } from '@/layers/features/chat';
 
 /** What a chat drawn as a DM needs beyond what a session already reads. */
 export interface DirectMessageSurface {
   /**
-   * The agent this DM is with, for every reply's face and name. `null` until
-   * its manifest arrives, when the transcript keeps its own resolution.
+   * The agent identity known to this surface, including a kept name while the
+   * lookup is unresolved. `null` leaves the transcript to resolve its own.
    */
   agent: MessageAuthorAgent | null;
   /**
@@ -29,6 +34,8 @@ export interface DirectMessageSurface {
    * keeps its own names, so nothing is renamed on the way to an answer.
    */
   settled: boolean;
+  /** Whether the agent's name and face are still on their way, on a DM. */
+  agentPending?: boolean;
 }
 
 /** The surface a session's conversation is drawn as. */
@@ -43,8 +50,11 @@ export interface SessionSurface {
    * (FB-38/55). `null` when they have not given a name, and the row says "You".
    */
   humanName: string | null;
-  /** The two above, as the transcript takes them: `<SessionTranscript {...transcriptNames} />`. */
-  transcriptNames: Pick<SessionSurface, 'directMessage' | 'humanName'>;
+  /**
+   * The two above, as the transcript takes them: `<SessionTranscript {...transcriptNames} />`,
+   * and `lookupFailed` when the server could not say whether this is a DM.
+   */
+  transcriptNames: Pick<SessionSurface, 'directMessage' | 'humanName'> & { lookupFailed?: true };
   /** What the empty composer says. */
   placeholder: string;
   /**
@@ -71,12 +81,19 @@ export function useSessionSurface(
   const view = useDirectMessageView(sessionId);
   const isDm = view.mode === 'dm' && view.chat !== null;
   const pending = view.mode === 'pending';
-  const dmAgent = useDirectMessageAgent(isDm ? view.chat!.agentPath : null);
+  const agentPath = isDm ? view.chat!.agentPath : null;
+  const dmAgent = useDirectMessageAgent(agentPath, isDm ? view.chat!.roomId : null);
   const { data: config } = useConfig();
   const showSessions = useShowSessions();
   const humanName = config?.profile?.displayName?.trim() || null;
-  const composerName = composerAgent ? getAgentDisplayName(composerAgent) : null;
+  const cwd = useAppStore((s) => s.selectedCwd);
+  const keptAgent = useKeptDirectMessageAgent(pending ? cwd : null);
+  const knownId = composerAgent?.id ?? keptAgent.id ?? `unknown-agent:${cwd}`;
+  const composerName = composerAgent ? getAgentDisplayName(composerAgent) : keptAgent.name;
   const { id, name } = dmAgent;
+  // Rows shown at the limit with the manifest still out go straight to the kept
+  // name. The bar and the box wait for `name`, so neither changes on a quick load.
+  const rowName = name ?? dmAgent.keptName ?? null;
   const emoji = dmAgent.visual?.emoji ?? null;
   const color = dmAgent.visual?.color ?? null;
 
@@ -84,36 +101,67 @@ export function useSessionSurface(
   // keys its author resolver on it, and a fresh one each render would lay the
   // whole conversation out again on every streamed word (DOR-2912).
   const directMessage = useMemo<DirectMessageSurface | null>(() => {
-    if (pending) return { agent: null, humanName: null, settled: false };
+    if (pending)
+      return {
+        agent: composerName ? { id: knownId, displayName: composerName } : null,
+        humanName: null,
+        settled: false,
+      };
     if (!isDm) return null;
     return {
       // Keyed by the manifest id and faced from the manifest, exactly as the
       // transcript resolves the agent at the folder, so the two cannot differ.
+      // With no manifest it is the name alone, so the runtime never stands in.
       agent:
-        id !== null && name !== null && emoji !== null && color !== null
-          ? { id, displayName: name, emoji, color }
-          : null,
+        rowName === null
+          ? null
+          : {
+              id: id ?? `unknown-agent:${agentPath}`,
+              displayName: rowName,
+              ...(emoji !== null && color !== null ? { emoji, color } : {}),
+            },
       humanName,
       settled: true,
+      agentPending: dmAgent.pending,
     };
-  }, [pending, isDm, id, name, emoji, color, humanName]);
+  }, [
+    pending,
+    knownId,
+    composerName,
+    isDm,
+    agentPath,
+    id,
+    rowName,
+    emoji,
+    color,
+    humanName,
+    dmAgent.pending,
+  ]);
 
   if (directMessage === null) {
     return {
       directMessage: null,
       humanName,
-      transcriptNames: { directMessage: null, humanName },
+      transcriptNames: {
+        directMessage: null,
+        humanName,
+      },
       placeholder: composerName ? `Message ${composerName}…` : 'Send a message…',
       quietTurnNumbers: false,
     };
   }
-  const dmName = name ?? composerName;
+  // Once it is a DM, only its own agent: the agent at the folder may be another.
+  const dmName = pending ? composerName : dmAgent.unknown ? null : name;
   return {
     directMessage,
     humanName,
-    transcriptNames: { directMessage, humanName },
+    transcriptNames: {
+      directMessage,
+      humanName,
+      ...(view.lookupFailed ? { lookupFailed: true as const } : {}),
+    },
     // A room's box names who it reaches, with no trailing ellipsis.
-    placeholder: dmName ? `Message ${dmName}` : 'Send a message',
+    placeholder: dmName ? `Message ${dmName}` : 'Send a message…',
     quietTurnNumbers: !showSessions,
   };
 }

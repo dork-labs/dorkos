@@ -160,6 +160,7 @@ export {
   roomName,
   roomDisplayTitle,
   directMessageTitle,
+  dmCounterpart,
   authorColor,
   hasUnread,
   isRoomMember,

@@ -126,16 +126,9 @@ export const EXPERIMENTS: readonly ExperimentEntry[] = [
   },
   // `tasks.agentModeControl` (DOR-3703) is not listed: it ships ON as a kill
   // switch, not as an experiment, so there is no opt-in to offer here.
-  {
-    // The DM view (DOR-3074): a chat with one agent reads like a direct
-    // message, over the same Direct chat session. Ships with its right panel
-    // (DOR-3075), so it stays off until both are in one release.
-    path: 'ui.dmView',
-    title: 'Chats with one agent read like a DM',
-    description: 'Talk to an agent like a teammate. Every door to it opens the same chat.',
-    costNote: 'Early. Model and context move behind Show sessions.',
-    graduationIssue: 'DOR-3074',
-  },
+  // `ui.dmView` GRADUATED here (DOR-3074): a chat with one agent reads like a DM
+  // by default, so the entry went out in the same change that flipped it. The
+  // setting stays for now, with its switch beside Show sessions.
   // `runtimes.claudeCode.persistentSession` GRADUATED here (DOR-1290, spec
   // `full-power-defaults`): warm agents ship on by default, so the entry went
   // out in the same change that flipped the default, exactly as the contract

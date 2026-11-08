@@ -207,6 +207,8 @@ export type PermissionRepliedProperties = z.infer<typeof PermissionRepliedProper
 export interface OpenCodePermissionState {
   /** Permission id → the OpenCode session that raised it (the reply's target). */
   readonly pendingPermissionSessions: Map<string, string>;
+  /** Latest native tool input, keyed by session and call id, including children. */
+  readonly nativeToolInputs?: Map<string, Record<string, unknown>>;
 }
 
 /** `permission.asked` as it rides the wire — absent from the SDK's Event union. */
@@ -259,6 +261,14 @@ export function mapPermissionAsked(
   // An `edit` request names the file it wants to touch (`metadata.filepath`,
   // live-verified) — the one piece of metadata the approval card has a field for.
   const filepath = metadata['filepath'];
+  const tool = parsed.data.tool;
+  const nativeInput = tool ? state.nativeToolInputs?.get(`${sessionID}:${tool.callID}`) : undefined;
+  const searchRoot =
+    nativeInput && ['grep', 'glob'].includes(permission)
+      ? typeof nativeInput.path === 'string'
+        ? nativeInput.path
+        : '.'
+      : undefined;
   return [
     {
       type: 'approval_required',
@@ -266,7 +276,11 @@ export function mapPermissionAsked(
         toolCallId: id,
         toolName: permission,
         ...(title !== undefined ? { title } : {}),
-        input: JSON.stringify({ ...(patterns.length > 0 ? { patterns } : {}), ...metadata }),
+        input: JSON.stringify({
+          ...(patterns.length > 0 ? { patterns } : {}),
+          ...metadata,
+          dorkosSearchRoot: searchRoot,
+        }),
         timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
         startedAt: Date.now(),
         ...(typeof filepath === 'string' ? { blockedPath: filepath } : {}),

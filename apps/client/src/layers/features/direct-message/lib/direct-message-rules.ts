@@ -17,7 +17,7 @@ import { formatRelativeTime } from '@/layers/shared/lib';
  * - `dm` — as a direct message with the agent.
  * - `session` — as the working session behind that DM, asked for by the
  *   `?view=session` param.
- * - `pending` — the experiment is on and the server has not yet said whether
+ * - `pending` — the server has not yet said whether the view is on, or whether
  *   this chat is a Direct chat. Drawn neutral, with none of the session's
  *   chrome, so a DM never flashes the old header and status line first.
  */

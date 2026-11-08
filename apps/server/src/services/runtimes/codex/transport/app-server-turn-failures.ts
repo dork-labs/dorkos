@@ -9,7 +9,13 @@ import { logger } from '../../../../lib/logger.js';
 import { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import { CodexCrashLoopError } from '../app-server/process-pool.js';
 import type { AppServerTurnMapper } from '../app-server/notification-mapper.js';
-import { CodexProcessExitedError } from '../app-server/protocol/errors.js';
+import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
+import { CodexWritableMissingTargetsError } from '../policy/writable-missing-targets.js';
+import { ProtectedPathNotDirectoryError } from '../policy/collapse-protected-paths.js';
+
+/** The machine refused Linux isolation; retrying the reply cannot repair it. */
+const SANDBOX_UNAVAILABLE_COPY =
+  'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites';
 
 /**
  * The events a turn that could not be opened ends with: a credits refusal,
@@ -24,13 +30,37 @@ export function* failedSetup(sessionId: string, err: unknown): Generator<StreamE
     yield refusal;
   } else if (err instanceof CodexCrashLoopError) {
     yield { type: 'error', data: { message: err.message, code: 'codex_crash_loop' } };
-  } else {
-    logger.warn('[CodexAppServer] could not open the turn', { sessionId, err: String(err) });
+  } else if (err instanceof CodexWritableMissingTargetsError) {
     yield {
       type: 'error',
       data: {
-        message: 'Codex could not start this reply. Send your message again to retry.',
-        code: 'codex_unavailable',
+        message: err.message,
+        code:
+          err.mode === 'bypassPermissions'
+            ? 'codex_full_missing_protected_targets'
+            : 'codex_writable_missing_protected_targets',
+        details: err.missingPaths.join('\n'),
+      },
+    };
+  } else if (err instanceof ProtectedPathNotDirectoryError) {
+    yield {
+      type: 'error',
+      data: {
+        message: err.message,
+        code: 'codex_protected_path_not_directory',
+        details: err.cause instanceof Error ? err.cause.message : err.message,
+      },
+    };
+  } else {
+    logger.warn('[CodexAppServer] could not open the turn', { sessionId, err: String(err) });
+    const sandboxUnavailable = isCodexRpcError(err, 'sandbox-unavailable');
+    yield {
+      type: 'error',
+      data: {
+        message: sandboxUnavailable
+          ? SANDBOX_UNAVAILABLE_COPY
+          : 'Codex could not start this reply. Send your message again to retry.',
+        code: sandboxUnavailable ? 'codex_sandbox_unavailable' : 'codex_unavailable',
         details: err instanceof Error ? err.message : String(err),
       },
     };
@@ -71,6 +101,12 @@ export function failedCompaction(mapper: AppServerTurnMapper, err: unknown): Str
 export function failedStart(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
   if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
   logger.warn('[CodexAppServer] turn/start failed', { err: String(err) });
+  if (isCodexRpcError(err, 'sandbox-unavailable')) {
+    return mapper.closeQuietly({
+      message: SANDBOX_UNAVAILABLE_COPY,
+      code: 'codex_sandbox_unavailable',
+    });
+  }
   return mapper.closeQuietly({
     message: 'Codex could not start this reply. Send your message again to retry.',
     code: 'codex_unavailable',

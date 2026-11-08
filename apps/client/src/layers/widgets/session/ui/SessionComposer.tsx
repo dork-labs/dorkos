@@ -42,6 +42,7 @@ import {
 } from '@/layers/features/chat';
 import { SlashCommandList } from '@/layers/features/slash-commands';
 import { FilePalette } from '@/layers/features/files';
+import { BrowserHandoffCard } from '@/layers/features/browser-handoff';
 import { useLimitComposer } from '@/layers/features/continue-on-account';
 import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
@@ -52,6 +53,8 @@ import {
   registerComposerInsert,
 } from '@/layers/shared/lib';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
+import { AGENT_IDENTITY_LIMIT_MS, useWaitedPast } from '@/layers/shared/lib';
+import { useLoadingTooLong } from '../model/use-transcript-hold';
 import {
   useDirectoryState,
   useSessionAwaitingDecision,
@@ -108,6 +111,8 @@ interface SessionComposerProps {
   agentLookupPending?: boolean;
   /** Whether that lookup failed and needs an explicit retry before first send. */
   agentLookupError?: boolean;
+  /** Ask that lookup again, for a person pressing Check again. */
+  onRetryAgentLookup?: () => void;
   status: 'idle' | 'streaming' | 'error';
   /**
    * Interrupt the running turn and empty its queue. Resolves with the server's
@@ -169,6 +174,7 @@ export function SessionComposer({
   tryNativeCommand,
   commandPending,
   agentLookupPending = false,
+  onRetryAgentLookup,
   agentLookupError = false,
   status,
   stop,
@@ -198,6 +204,12 @@ export function SessionComposer({
   const { target } = useConversation();
   const defaultPlaceholder = target?.placeholder ?? 'Send a message…';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
+  // A quick lookup says nothing, so a chat that is set up doesn't flicker. Pressing
+  // Check again starts the wait over, and says so at once.
+  const [lookupChecks, setLookupChecks] = useState(0);
+  const lookupKey = `${sessionId}:${lookupChecks}`;
+  const lookupTooLong = useLoadingTooLong(agentLookupPending, lookupKey);
+  const lookupGaveUp = useWaitedPast(agentLookupPending, lookupKey, AGENT_IDENTITY_LIMIT_MS);
   // While the account is out the box waits with the banner's words, and after
   // a move it stays shut until "Continue here anyway" (spec §6.7). The banner
   // above says why, so the box adds no reason line of its own.
@@ -705,7 +717,12 @@ export function SessionComposer({
           )}
         </AnimatePresence>
       }
-      aboveInput={<BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />}
+      aboveInput={
+        <>
+          <BrowserHandoffCard sessionId={sessionId} />
+          <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
+        </>
+      }
       footer={
         /* `asChild`, so the status line stays a direct child of the card exactly
            as it was — the serialized-DOM baseline holds it to that. */
@@ -729,9 +746,20 @@ export function SessionComposer({
         ...(agentLookupPending || agentLookupError
           ? {
               canSubmit: false,
-              canSubmitReason: agentLookupError
-                ? 'Check this folder again before you start.'
-                : 'Checking this folder…',
+              ...(agentLookupError || lookupGaveUp
+                ? {
+                    canSubmitReason: 'Couldn’t check this folder.',
+                    canSubmitAction: {
+                      label: 'Check again',
+                      onClick: () => {
+                        setLookupChecks((checks) => checks + 1);
+                        onRetryAgentLookup?.();
+                      },
+                    },
+                  }
+                : lookupTooLong || lookupChecks > 0
+                  ? { canSubmitReason: 'Checking this folder…' }
+                  : {}),
             }
           : {}),
         ...(limitComposer.canSubmit ? {} : { canSubmit: false }),

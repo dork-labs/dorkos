@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * `PATCH /api/tasks/:id` on a package's schedule: a new timing lands, and who
  * asked decides what happens to the approval (DOR-2302).
@@ -115,7 +116,11 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
     const found = await resync();
     const res = await request(fixtureTarget.server)
       .patch(`/api/tasks/${found.id}`)
-      .send({ status: 'active', enabled: true });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(found.id)!),
+        status: 'active',
+        enabled: true,
+      });
     expect(res.status).toBe(200);
     return res.body as Task;
   }

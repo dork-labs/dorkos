@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { stringifyFrontmatter } from '@dorkos/skills/frontmatter';
+import { STALE_SCHEDULE_REVIEW } from '../approvals/person-review.js';
 /**
  * Editing a scheduled task: the SKILL.md half, which every update door owes.
  *
@@ -84,6 +87,8 @@ export interface TaskFileUpdateSuccess {
    * above exist to compensate for a write. No write, nothing to compensate for.
    */
   changesFile: boolean;
+  /** Exact bytes this reviewed request wrote, checked again before activation. */
+  reviewedFileHash?: string;
   /**
    * Where the request's `cron` and `timezone` go — see {@link TimingLandsOn}.
    *
@@ -213,7 +218,8 @@ async function rewriteTaskFile(
   existing: Task,
   content: string,
   data: UpdateTaskRequest,
-  clampTo: PermissionMode | undefined
+  clampTo: PermissionMode | undefined,
+  reviewStillMatches?: () => boolean
 ): Promise<TaskFileUpdateOutcome> {
   const written = clampTo ? { ...data, permissionMode: clampTo } : data;
   // A file the skill schema cannot read is the silent-success defect DOR-1481
@@ -300,6 +306,9 @@ async function rewriteTaskFile(
     return { ok: false, status: 409, error: plan.message, code: 'schedule_file_unreadable' };
   }
 
+  if (reviewStillMatches && !reviewStillMatches()) {
+    return { ok: false, status: 409, ...STALE_SCHEDULE_REVIEW };
+  }
   const dirPath = path.dirname(existing.filePath);
   try {
     await writeSkillFile(
@@ -318,6 +327,11 @@ async function rewriteTaskFile(
   return {
     ok: true,
     changesFile: true,
+    ...(reviewStillMatches && {
+      reviewedFileHash: createHash('sha256')
+        .update(stringifyFrontmatter(plan.body, plan.frontmatter))
+        .digest('hex'),
+    }),
     timingLandsOn: 'file',
     clampApplied: clampTo !== undefined,
   };
@@ -352,7 +366,12 @@ async function rewriteTaskFile(
  */
 export async function applyTaskFileUpdate(
   deps: TaskFileUpdateDeps,
-  options: { existing: Task; data: UpdateTaskRequest; clampTo?: PermissionMode }
+  options: {
+    existing: Task;
+    data: UpdateTaskRequest;
+    clampTo?: PermissionMode;
+    reviewStillMatches?: () => boolean;
+  }
 ): Promise<TaskFileUpdateOutcome> {
   const { existing, data, clampTo } = options;
   const clampApplied = clampTo !== undefined;
@@ -417,5 +436,5 @@ export async function applyTaskFileUpdate(
 
   if (!changesFile) return { ok: true, changesFile, timingLandsOn: 'file', clampApplied };
 
-  return rewriteTaskFile(deps, existing, content, data, clampTo);
+  return rewriteTaskFile(deps, existing, content, data, clampTo, options.reviewStillMatches);
 }

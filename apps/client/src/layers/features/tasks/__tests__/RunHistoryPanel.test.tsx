@@ -511,9 +511,7 @@ describe('TaskRunHistoryPanel', () => {
     it('counts and names the tools it was refused, on the row (DOR-3132)', async () => {
       await renderBlocked();
 
-      expect(
-        screen.getByText('Refused: nobody to approve (2). Bash and gmail: search.')
-      ).toBeTruthy();
+      expect(screen.getByText('Refused: 2 tools: Bash and gmail: search.')).toBeTruthy();
     });
 
     it('falls back to the stored line for a run recorded before the tools were kept', async () => {
@@ -532,18 +530,14 @@ describe('TaskRunHistoryPanel', () => {
 
       expect(screen.queryByText(REFUSAL)).toBeNull();
       expect(screen.getByText('I could not read the mail.')).toBeTruthy();
-      expect(
-        screen.getByText('Refused: nobody to approve (2). Bash and gmail: search.')
-      ).toBeTruthy();
+      expect(screen.getByText('Refused: 2 tools: Bash and gmail: search.')).toBeTruthy();
     });
 
     it('shows nothing extra when the refusal was the whole summary', async () => {
       await renderBlocked({ outputSummary: REFUSAL });
 
       expect(screen.queryByText(REFUSAL)).toBeNull();
-      expect(
-        screen.getByText('Refused: nobody to approve (2). Bash and gmail: search.')
-      ).toBeTruthy();
+      expect(screen.getByText('Refused: 2 tools: Bash and gmail: search.')).toBeTruthy();
     });
 
     it('can be filtered for on its own', async () => {

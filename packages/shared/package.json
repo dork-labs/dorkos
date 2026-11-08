@@ -609,9 +609,9 @@
       "types": "./src/chat-messages.ts",
       "default": "./dist/chat-messages.js"
     },
-    "./commitment-schemas": {
-      "types": "./src/commitment-schemas.ts",
-      "default": "./dist/commitment-schemas.js"
+    "./todo-promise-schemas": {
+      "types": "./src/todo-promise-schemas.ts",
+      "default": "./dist/todo-promise-schemas.js"
     },
     "./todo-schemas": {
       "types": "./src/todo-schemas.ts",
@@ -652,6 +652,10 @@
     "./space-page": {
       "types": "./src/space-page/index.ts",
       "default": "./dist/space-page/index.js"
+    },
+    "./schedule-file-problems": {
+      "types": "./src/schedule-file-problems.ts",
+      "default": "./dist/schedule-file-problems.js"
     }
   },
   "scripts": {

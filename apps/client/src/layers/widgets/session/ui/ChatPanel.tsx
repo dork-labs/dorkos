@@ -45,7 +45,6 @@ import {
   BirthCertificate,
   StartedByLine,
   CelebrationOverlay,
-  ErrorMessageBlock,
   TaskListPanel,
   TerminalReasonChip,
   TurnFailedNotice,
@@ -805,19 +804,6 @@ export function ChatPanel({
           />
         )}
 
-        {/* A REPORT, not an offer, so it stays inline rather than joining the
-            arbitrated slot above: the person cannot start the session until it
-            clears, and a card that waits its turn would hide the reason. */}
-        {needsFirstTurnProvenance && isComposerAgentError && (
-          <div className="mx-4 mb-2">
-            <ErrorMessageBlock
-              heading="Couldn’t check this folder"
-              message="DorkOS couldn’t tell if an agent owns this folder. Try again."
-              onRetry={() => void retryComposerAgent()}
-            />
-          </div>
-        )}
-
         {/* Directly above the box it pauses: who ran out, until when, and what
           to do about it (spec `claude-account-ui` §6.7). Its Continue sends
           the resume message the way the person's own message goes. */}
@@ -836,6 +822,7 @@ export function ChatPanel({
           commandPending={commandPending}
           agentLookupPending={needsFirstTurnProvenance && cwd !== null && isComposerAgentPending}
           agentLookupError={needsFirstTurnProvenance && cwd !== null && isComposerAgentError}
+          onRetryAgentLookup={() => void retryComposerAgent()}
           status={status}
           stop={stop}
           setInput={setInput}

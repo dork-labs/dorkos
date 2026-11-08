@@ -34,7 +34,7 @@ describe.skipIf(process.platform === 'win32')(
       libraryRoot = join(directory, 'playwright-core');
       const require = createRequire(import.meta.url);
       const source = await realpath(dirname(require.resolve('playwright-core/package.json')));
-      // This allocation's OWN genuine source, not a donor or fabricated114-file fixture.
+      // This allocation's OWN genuine source, not a donor or fabricated116-file fixture.
       await cp(source, libraryRoot, {
         recursive: true,
         filter: (entry) => !relative(source, entry).split(sep).includes('node_modules'),
@@ -45,7 +45,7 @@ describe.skipIf(process.platform === 'win32')(
       runtime = {
         library: {
           package: 'playwright-core',
-          version: '1.63.0',
+          version: '1.65.0-alpha-2026-10-30',
           rootDir: libraryRoot,
           assets: { cli: 'cli.js', manifest: 'browsers.json' },
         },
@@ -54,8 +54,8 @@ describe.skipIf(process.platform === 'win32')(
           sha256: createHash('sha256')
             .update(await readFile(executable))
             .digest('hex'),
-          revision: '1243',
-          version: '153.0.8010.12',
+          revision: '1252',
+          version: '157.0.8103.15',
           platform: process.platform as 'darwin' | 'linux',
           arch: process.arch as 'arm64' | 'x64',
         },

@@ -29,6 +29,8 @@ import { REACTION_FREQUENTS_DEFAULT, type RoomWithRoster } from '@dorkos/shared/
 // 2026-08-12, and `user`/`fireEvent` typing puts no text into a
 // `contenteditable` under jsdom — so without this every case below would press
 // Enter on an empty draft and pass for a reason unrelated to the port.
+// The handoff card reads the browser's state, which these tests don't serve.
+vi.mock('@/layers/features/browser-handoff', () => ({ BrowserHandoffCard: () => null }));
 vi.mock('@/layers/entities/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/config')>()),
   useComposerRichText: () => false,

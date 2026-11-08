@@ -93,8 +93,7 @@ vi.mock('@/layers/shared/model', () => ({
   useTransport: () => mockTransport,
   // The DM view switch, read when an agent is picked (DOR-3074). Off here, so
   // the pick opens the agent's latest chat as it always has.
-  readExperimentEnabled: () => false,
-  DM_VIEW_EXPERIMENT: 'ui.dmView',
+  readDmViewEnabled: () => false,
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
       globalPaletteOpen: true,

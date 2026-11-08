@@ -212,9 +212,10 @@ export function RightPanelContainer({
   // Profile (or the persisted tab), while dashboard/activity/tasks/… — where no
   // contextual tab is visible — fall back to Pulse.
   useEffect(() => {
-    // Never re-pick while "here" is resolving: the pick would overwrite the tab
-    // the person was on, and nothing would put it back.
-    if (hereState.status === 'pending') return;
+    // Never re-pick while "here" is resolving, or while the chat may yet be a
+    // DM: the pick would overwrite the tab the person was on, and nothing would
+    // put it back.
+    if (hereState.status === 'pending' || dmKind === 'pending') return;
     if (visibleContributions.length > 0) {
       const activeIsVisible = visibleContributions.some((c) => c.category === activeTab);
       if (!activeIsVisible) {
@@ -222,7 +223,7 @@ export function RightPanelContainer({
         setActiveTabView((firstContextual ?? visibleContributions[0]).category);
       }
     }
-  }, [visibleContributions, activeTab, setActiveTabView, hereState.status]);
+  }, [visibleContributions, activeTab, setActiveTabView, hereState.status, dmKind]);
 
   // The shell is never route-hidden — only its body varies (research:
   // 20260720_context-aware-right-inspector-panels). So "show" tracks the user's
@@ -250,10 +251,16 @@ export function RightPanelContainer({
     }
   }, [shouldShow, defaultPct]);
 
-  const activeContribution = views.available.find(
-    (c) => c.id === activeTab && visibleContributions.some((view) => view.category === c.id)
-  );
-  const terminalContribution = views.available.find((c) => c.id === 'terminal');
+  // While the chat may yet be a DM only the tab strip waits: a tab it holds back
+  // keeps its body on screen, and a running terminal keeps its owner.
+  const heldBack = (id: string | null) =>
+    dmKind === 'pending' ? allContributions.find((c) => c.id === id) : undefined;
+  const activeContribution =
+    views.available.find(
+      (c) => c.id === activeTab && visibleContributions.some((view) => view.category === c.id)
+    ) ?? heldBack(activeTab);
+  const terminalContribution =
+    views.available.find((c) => c.id === 'terminal') ?? heldBack('terminal');
   const TerminalComponent = terminalContribution?.component;
   const terminalRetained = views.terminal !== null || activeTab === 'terminal';
   const ActiveComponent = activeContribution?.component;

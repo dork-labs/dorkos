@@ -35,14 +35,14 @@ export const INSTALLATION_LIMITS = Object.freeze({
 });
 export const INSTALLATION_TARGET = Object.freeze({
   packageName: 'playwright-core' as const,
-  packageVersion: '1.63.0' as const,
-  chromiumRevision: '1243' as const,
-  observedVersion: '153.0.8010.12' as const,
+  packageVersion: '1.65.0-alpha-2026-10-30' as const,
+  chromiumRevision: '1252' as const,
+  observedVersion: '157.0.8103.15' as const,
   libraryDistributionSHA256: DISTRIBUTION,
   platform: 'darwin' as const,
   arch: 'arm64' as const,
   executablePath:
-    'payload/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    'payload/chromium-1252/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
 });
 export const DigestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const IdSchema = z
@@ -184,8 +184,8 @@ export const READINESS_UNAVAILABLE = Object.freeze({
 });
 interface StatusCommon {
   readonly schemaVersion: 1;
-  readonly pinnedPackageVersion: '1.63.0';
-  readonly chromiumRevision: '1243';
+  readonly pinnedPackageVersion: '1.65.0-alpha-2026-10-30';
+  readonly chromiumRevision: '1252';
   readonly platform: Platform;
   readonly arch: Architecture;
   readonly observation: 'files-only';
@@ -515,8 +515,8 @@ export const FreshVerifierRequestSchema = z.strictObject({
   executableIdentity: FileIdentitySchema,
   libraryDistributionSHA256: DigestSchema,
   sourceVintage: SourceVintageSchema,
-  expectedVersion: z.literal('153.0.8010.12'),
-  chromiumRevision: z.literal('1243'),
+  expectedVersion: z.literal('157.0.8103.15'),
+  chromiumRevision: z.literal('1252'),
   platform: z.literal('darwin'),
   arch: z.literal('arm64'),
 });
@@ -528,8 +528,8 @@ export const FreshVerifierReplySchema = z.strictObject({
   executableIdentity: FileIdentitySchema,
   libraryDistributionSHA256: DigestSchema,
   sourceManifestSHA256: DigestSchema,
-  observedVersion: z.literal('153.0.8010.12'),
-  chromiumRevision: z.literal('1243'),
+  observedVersion: z.literal('157.0.8103.15'),
+  chromiumRevision: z.literal('1252'),
   platform: z.literal('darwin'),
   arch: z.literal('arm64'),
   machOCPU: z.literal(16777228),

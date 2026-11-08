@@ -31,6 +31,7 @@ import {
   UserRoundCheck,
   WifiOff,
   type LucideIcon,
+  Hand,
 } from 'lucide-react';
 import type { NotificationDTO, NotificationKind } from '@dorkos/shared/notification-schemas';
 import { toSession } from '@/layers/shared/lib';
@@ -107,6 +108,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'community.teammate-limit': CircleAlert,
   'community.teammate-limits-reset': CircleAlert,
   'heartbeat.credits-offer': Sparkles,
+  // An agent handed a person the Agent browser (DOR-3218).
+  'browser.handoff': Hand,
   // An agent's high-risk action in a connected app, waiting or done.
   'connector.destructive_pending': Hourglass,
   'connector.destructive_executed': CheckCircle2,
@@ -367,7 +370,13 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     case 'run':
       return { ...appRoutes.home(), search: { detail: 'failed-run', itemId: subject.id } };
     case 'task':
-      return { ...appRoutes.tasks(), search: {} };
+      return {
+        ...appRoutes.tasks(),
+        search:
+          kind === 'schedule.armed_by_agent' || kind === 'run.completed'
+            ? { schedule: subject.id }
+            : {},
+      };
     case 'room':
       // `?id=`, which is how every other link to a room is spelled — the route
       // carries a room's identity as a search param, not a path segment.

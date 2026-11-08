@@ -169,6 +169,8 @@ export const LocalBrowserHandoffSchema = z.object({
   agentId: z.string().nullable(),
   /** The asking agent's folder, from its identity token. Show it beside the name. */
   agentFolder: z.string().nullable(),
+  /** The agent's named profile, or null for the default one every agent shares. */
+  profileId: z.string().nullable(),
   reason: LocalBrowserHandoffReasonSchema,
   /** The host of the agent's page when it asked, from its URL. Never a name the agent gave. */
   site: z.string(),

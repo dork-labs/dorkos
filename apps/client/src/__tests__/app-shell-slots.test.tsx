@@ -336,6 +336,7 @@ vi.mock('@/layers/features/approvals', () => ({
   ),
   ApprovalsUnavailable: () => <div data-testid="approvals-unavailable">unavailable</div>,
   StandingPermissionList: () => <div data-testid="standing-permission-list" />,
+  DeclinedHookReviews: () => null,
   // This suite is about WHERE the marker sits, not about standing permissions.
   // An empty list keeps the marker's appearance driven solely by the pending
   // queue, which is what every assertion below is written against.

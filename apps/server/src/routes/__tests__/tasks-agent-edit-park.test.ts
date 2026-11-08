@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * `PATCH /api/tasks/:id` by an agent on a schedule whose SKILL.md DorkOS
  * writes: the edit lands, and the schedule parks in the same request, with a
@@ -139,7 +140,11 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
     const found = await resync();
     const res = await request(fixtureTarget.server)
       .patch(`/api/tasks/${found.id}`)
-      .send({ status: 'active', enabled: true });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(found.id)!),
+        status: 'active',
+        enabled: true,
+      });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('active');
     vi.mocked(raiseStanding).mockClear();

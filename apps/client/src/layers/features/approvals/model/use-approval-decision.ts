@@ -1,3 +1,4 @@
+import { DECLINED_HOOKS_QUERY_KEY } from './use-hook-reviews';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { ApprovalAnswer } from '@dorkos/shared/approval-schemas';
@@ -39,6 +40,7 @@ export function useGrantApproval() {
       toast.error(describeDecisionRefusal(error, variables.answer === 'always').message);
     },
     onSettled: (_data, _error, variables) => {
+      void queryClient.invalidateQueries({ queryKey: DECLINED_HOOKS_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: PENDING_APPROVALS_QUERY_KEY });
       // An Always allow changed the agent's permissions, which the permissions
       // pages read.
@@ -67,6 +69,7 @@ export function useDenyApproval() {
       toast.error(describeDecisionRefusal(error, false).message);
     },
     onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: DECLINED_HOOKS_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: PENDING_APPROVALS_QUERY_KEY });
     },
   });

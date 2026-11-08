@@ -27,6 +27,8 @@ import type {
 } from '../../types.js';
 import { extractPayloadContent, extractSenderIdentity } from '../../lib/payload-utils.js';
 import { extractSessionIdFromSubject } from '../../lib/subjects.js';
+import { buildResponseFormatBlock, type ResponseContext } from './response-format.js';
+import { relayMessageStarter } from './turn-starter.js';
 import { isTurnShapingSender } from './turn-shaping-sender.js';
 import type {
   AgentRuntimeLike,
@@ -203,14 +205,6 @@ export function resolveAgentTurnIdentity(
     ...(persistedSdkSessionId ? { persistedSdkSessionId } : {}),
     key: persistedSdkSessionId ?? scope,
   };
-}
-
-/** Platform response context set by inbound chat adapters (Slack, Telegram, third-party). */
-interface ResponseContext {
-  platform?: string;
-  maxLength?: number;
-  supportedFormats?: string[];
-  formattingInstructions?: string;
 }
 
 /**
@@ -668,6 +662,7 @@ export async function handleAgentMessage(
         // approval card is answered from the inbox and the verdict wakes the
         // session; the turn does not hold for it (spec `agent-permissions` D6).
         unattendedApprovals: true,
+        turnStarter: relayMessageStarter(envelope.from),
       });
 
   let eventCount = 0,
@@ -999,39 +994,6 @@ async function resolveTurnSettings(
 function requestedAccountOf(payload: Record<string, unknown> | null): string | undefined {
   const account = payload?.account;
   return typeof account === 'string' && account.length > 0 ? account : undefined;
-}
-
-/**
- * Build a `<response_format>` system prompt block from platform response context.
- *
- * The function is a thin wrapper: it adds a platform header and passes through
- * whatever formatting instructions the adapter provided. When no adapter-supplied
- * `formattingInstructions` are present, a generic fallback is used for platforms
- * that don't support Markdown.
- *
- * Returns an empty string when no platform context is available, so the agent
- * behaves identically to today for non-adapter message sources.
- *
- * @internal Exported for testing only.
- */
-export function buildResponseFormatBlock(ctx: ResponseContext | undefined): string {
-  if (!ctx?.platform) return '';
-
-  const lines = [
-    `Platform: ${ctx.platform}`,
-    ctx.maxLength ? `Maximum response length: ${ctx.maxLength} characters` : '',
-  ];
-
-  if (ctx.formattingInstructions) {
-    lines.push('', ctx.formattingInstructions);
-  } else if (ctx.supportedFormats && !ctx.supportedFormats.includes('markdown')) {
-    lines.push('', 'FORMATTING RULES (you MUST follow these):');
-    lines.push(
-      '- Avoid complex Markdown formatting (tables, headings) — use plain text with bullet points.'
-    );
-  }
-
-  return `<response_format>\n${lines.filter(Boolean).join('\n')}\n</response_format>`;
 }
 
 /**

@@ -5,6 +5,13 @@ import '@testing-library/jest-dom/vitest';
 import type { Task } from '@dorkos/shared/types';
 
 let mockTasks: Task[] = [];
+const route = vi.hoisted(() => ({ search: {} as { schedule?: string }, navigate: vi.fn() }));
+
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSafeSearch: () => route.search,
+  useSafeNavigate: () => route.navigate,
+}));
 
 vi.mock('@/layers/entities/tasks', () => ({
   useTasksEnabled: () => true,
@@ -18,7 +25,16 @@ vi.mock('@/layers/entities/mesh', () => ({
 
 vi.mock('@/layers/features/tasks', () => ({
   TasksEmptyState: () => <div data-testid="empty-state">No schedules yet.</div>,
-  CreateTaskDialog: () => null,
+  CreateTaskDialog: ({
+    open,
+    editTask,
+    onOpenChange,
+  }: {
+    open: boolean;
+    editTask?: Task;
+    onOpenChange: (open: boolean) => void;
+  }) =>
+    open ? <button onClick={() => onOpenChange(false)}>Editing {editTask?.name}</button> : null,
   TasksList: () => <div data-testid="tasks-list" />,
 }));
 
@@ -27,6 +43,21 @@ import { TasksPage } from '../ui/TasksPage';
 afterEach(() => {
   cleanup();
   mockTasks = [];
+  route.search = {};
+  route.navigate.mockClear();
+});
+
+it('opens the schedule named by a notice and clears the link when closed', async () => {
+  const { fireEvent } = await import('@testing-library/react');
+  route.search = { schedule: 'nightly' };
+  mockTasks = [{ id: 'nightly', name: 'Nightly sweep' } as Task];
+  render(<TasksPage />);
+  fireEvent.click(screen.getByRole('button', { name: 'Editing Nightly sweep' }));
+  expect(route.navigate).toHaveBeenCalledWith({
+    to: '/tasks',
+    search: { schedule: undefined },
+    replace: true,
+  });
 });
 
 describe('TasksPage — the empty state is taller than a phone', () => {

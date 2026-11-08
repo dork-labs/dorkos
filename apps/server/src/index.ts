@@ -64,6 +64,7 @@ import { claimDataDirectory } from './startup/steps/data-directory.js';
 import { openConfigAndDatabase } from './startup/steps/config-and-database.js';
 import { raiseExistingChatsOnBoot } from './startup/steps/raise-existing-chats.js';
 import { recordKeptFromAutoMovesOnBoot } from './startup/steps/record-kept-from-auto-moves.js';
+import { applyDmViewUpgradeOnBoot } from './startup/steps/apply-dm-view-upgrade.js';
 import { startSecretFileScanOnBoot } from './startup/steps/secret-file-scan.js';
 import { wireCoreStores } from './startup/steps/core-stores.js';
 import { wireSessionServices } from './startup/steps/session-services.js';
@@ -300,6 +301,8 @@ async function start() {
   });
   // The accounts the upgrade kept out of automatic moves, one history line (Re-seat P0).
   await recordKeptFromAutoMovesOnBoot(refs, { dorkHome, activity: upToCoreRoutes.activityService });
+  // The DM view turns on, once, for an install that never chose (DOR-3074).
+  applyDmViewUpgradeOnBoot(refs, { dorkHome, db });
   // Secret-looking files in agent folders, told to the person (DOR-3292). Background.
   startSecretFileScanOnBoot(refs);
   const { deps, activityService, telemetryConfig, telemetryEnv, tier1SendGate, telemetryDebug } =
@@ -439,7 +442,7 @@ let docNotificationCleanup: (() => void) | undefined;
 /** DorkOS's own https listener, when its settings opened one (DOR-3172). */
 let tlsServer: import('node:http').Server | null = null;
 
-async function shutdownServices() {
+async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   mainRequestAdmission.close();
   await workspaceReconcilerLifecycle.dispose();
   await localBrowserHost.close();
@@ -538,14 +541,14 @@ async function shutdownServices() {
     refs.devLinkWatcher = undefined;
   }
   refs.searchIndexer?.stop();
-  refs.commitmentWiring?.stop();
+  refs.todoWiring?.stop();
   refs.workQueueWiring?.stop();
   heartbeats.stopHeartbeats();
   if (refs.meshCore) {
     refs.meshCore.stopPeriodicReconciliation();
     refs.meshCore.close();
   }
-  await shutdownRuntimes(refs.creditsRelay);
+  await shutdownRuntimes(refs.creditsRelay, reason);
   refs.creditsRelay = null;
   // Stream cancelled, managed access drained within its deadline, what is owed kept (DOR-2086).
   await managedRemoteCommands.shutdown();

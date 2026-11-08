@@ -50,6 +50,8 @@ vi.mock('../../lib/boundary.js', () => ({
 import { createTasksRoutes } from '../tasks.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
+import { ScheduleBlockSchema } from '@dorkos/skills/schedule-schema';
+import { MISPLACED_SCHEDULE_PERMISSIONS } from '@dorkos/shared/schedule-file-problems';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import { OPERATOR_ONLY_TASK_CODE } from '../../services/tasks/task-write-policy.js';
@@ -128,6 +130,40 @@ describe('POST /api/tasks/:id/trigger', () => {
     store.close();
   });
 
+  it('only lets a person run a misplaced-mode schedule once, without approving it', async () => {
+    const task = store.fileSync.upsertFromFile(
+      {
+        name: 'sample',
+        body: 'Read the sample list.',
+        scope: 'global',
+        filePath: '/tmp/sample/SKILL.md',
+        dirPath: '/tmp/sample',
+        meta: {
+          name: 'sample',
+          description: 'Sample',
+          permissions: 'plan',
+          schedule: ScheduleBlockSchema.parse({ cron: '0 3 * * *' }),
+        },
+      },
+      undefined,
+      { source: 'discovery' }
+    );
+    expect(task).toMatchObject({
+      status: 'pending_approval',
+      permissionMode: 'acceptEdits',
+      reason: MISPLACED_SCHEDULE_PERMISSIONS,
+    });
+    await request(fixtureServer)
+      .post(`/api/tasks/${task.id}/trigger`)
+      .set('x-dorkos-agent', 'sample-agent-token')
+      .expect(403);
+    expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
+    await request(fixtureServer).post(`/api/tasks/${task.id}/trigger`).expect(201);
+    expect(scheduler.triggerManualRun).toHaveBeenCalledWith(task.id);
+    expect(store.getTask(task.id)?.status).toBe('pending_approval');
+    expect(store.approvals.personApprovedCurrent(task.id)).toBe(false);
+  });
+
   describe('an agent that names itself', () => {
     it('cannot run a schedule that is still waiting for approval', async () => {
       // The escalation this closes: parking a proposal is worth nothing if the
@@ -163,7 +199,7 @@ describe('POST /api/tasks/:id/trigger', () => {
     });
   });
 
-  describe('a person in the cockpit', () => {
+  describe('a person in the app', () => {
     it('runs an approved schedule on demand', async () => {
       const res = await request(fixtureServer).post(`/api/tasks/${active.id}/trigger`);
 
@@ -205,7 +241,7 @@ describe('POST /api/tasks/:id/trigger', () => {
     });
 
     it('allows a signed-in person', async () => {
-      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      signedInUser = { userId: 'user_app', credential: 'cookie' };
 
       const res = await request(fixtureServer).post(`/api/tasks/${active.id}/trigger`);
 

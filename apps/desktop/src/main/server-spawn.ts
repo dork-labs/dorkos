@@ -296,10 +296,13 @@ function buildServerEnv(
   // `finalizeApp`) at the packaged renderer assets. Those must be real files
   // on disk, not virtual asar entries (electron-builder.yml unpacks
   // dist/renderer/** for exactly this), hence `app.asar.unpacked`. Left
-  // unset in dev — the server isn't the one serving the renderer there.
+  // unset in dev, where Vite serves it. Preview has no Vite server, so its
+  // already-running API server serves the built renderer from dist/renderer.
   const clientDistPath = app.isPackaged
     ? path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'renderer')
-    : undefined;
+    : rendererUrl
+      ? undefined
+      : path.join(__dirname, '../renderer');
   // In a packaged build, point the server at the unpacked, signed Claude Code
   // binary — the bundled server can't `require.resolve` it itself (see
   // resolvePackagedClaudeBinary). Unset in dev, where the server resolves

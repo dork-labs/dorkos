@@ -186,7 +186,8 @@ describe('TodoList', () => {
     ]);
     expect(await screen.findByText('Limited')).toBeInTheDocument();
     expect(screen.getByText('from a guest')).toBeInTheDocument();
-    expect(screen.getByText('Ana')).toBeInTheDocument();
+    // A bare name would read as the assignee (DOR-3715).
+    expect(screen.getByText('said by Ana')).toBeInTheDocument();
   });
 
   it("leaves the limit off the person's own to-do, where no turn runs", async () => {
@@ -230,5 +231,138 @@ describe('TodoList', () => {
     ]);
     await screen.findByText('First');
     expect(screen.queryByRole('button', { name: 'Move First' })).toBeNull();
+  });
+
+  describe('Reorder mode (DOR-3715)', () => {
+    const three = () => [
+      createMockTodo({ id: 'a', what: 'First', rank: 'f' }),
+      createMockTodo({ id: 'b', what: 'Second', rank: 'm' }),
+      createMockTodo({ id: 'c', what: 'Third', rank: 't' }),
+    ];
+
+    /** A server that keeps the ranks it is sent, so a re-read returns the new order. */
+    function rankedTransport(todos: Todo[]) {
+      const rows = todos.map((todo) => ({ ...todo }));
+      const transport = createMockTransport();
+      vi.mocked(transport.listTodos).mockImplementation(async () => ({
+        todos: [...rows].sort((x, y) => (x.rank ?? '').localeCompare(y.rank ?? '')),
+        doneCount: 0,
+        badge: 0,
+      }));
+      const keepRanks = () =>
+        vi.mocked(transport.updateTodo).mockImplementation(async (id, body) => {
+          const row = rows.find((todo) => todo.id === id)!;
+          if (typeof body.rank === 'string') row.rank = body.rank;
+          if (body.state) row.state = body.state;
+          return { ...row };
+        });
+      return { transport, keepRanks };
+    }
+
+    function renderRanked() {
+      const { transport, keepRanks } = rankedTransport(three());
+      renderList([], { transport });
+      // After renderList, whose own update mock would forget the ranks.
+      keepRanks();
+      return transport;
+    }
+
+    async function openMenu(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(screen.getByRole('button', { name: 'Filter and sort' }));
+    }
+
+    async function myOrder(user: ReturnType<typeof userEvent.setup>, transport: Transport) {
+      await openMenu(user);
+      await user.click(await screen.findByRole('menuitemradio', { name: 'My order' }));
+      await waitFor(() =>
+        expect(transport.listTodos).toHaveBeenCalledWith({ view: 'mine', sort: 'rank' })
+      );
+      await screen.findByRole('button', { name: 'Move First' });
+    }
+
+    async function enter(user: ReturnType<typeof userEvent.setup>) {
+      await openMenu(user);
+      await user.click(await screen.findByRole('menuitem', { name: 'Reorder' }));
+    }
+
+    it('is offered only while the list can move', async () => {
+      const user = userEvent.setup();
+      const transport = renderList(three());
+      await screen.findByText('First');
+      await openMenu(user);
+      expect(screen.queryByRole('menuitem', { name: 'Reorder' })).toBeNull();
+      await user.keyboard('{Escape}');
+      await myOrder(user, transport);
+      await openMenu(user);
+      expect(await screen.findByRole('menuitem', { name: 'Reorder' })).toBeInTheDocument();
+    });
+
+    it('moves a row with one tap, says where it went, and keeps focus on the button', async () => {
+      const user = userEvent.setup();
+      const transport = renderRanked();
+      await screen.findByText('First');
+      await myOrder(user, transport);
+      await enter(user);
+      // In the mode: its name and Done take the chips' place, and focus is on the first ↓.
+      expect(screen.getByRole('heading', { name: 'Reorder' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Assigned to me' })).toBeNull();
+      const down = screen.getByRole('button', { name: 'Move First down' });
+      await waitFor(() => expect(down).toHaveFocus());
+      expect(screen.getByRole('button', { name: 'Move First up' })).toBeDisabled();
+
+      await user.click(down);
+      await waitFor(() => expect(transport.updateTodo).toHaveBeenCalledOnce());
+      expect(vi.mocked(transport.updateTodo).mock.calls[0]![0]).toBe('a');
+      expect(screen.getByText('Moved to position 2 of 3.')).toHaveAttribute('role', 'status');
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Move First down' })).toHaveFocus()
+      );
+    });
+
+    it('hands focus to ↑ when a row reaches the bottom', async () => {
+      const user = userEvent.setup();
+      const transport = renderRanked();
+      await screen.findByText('First');
+      await myOrder(user, transport);
+      await enter(user);
+      await user.click(screen.getByRole('button', { name: 'Move Second down' }));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Move Second down' })).toBeDisabled()
+      );
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Move Second up' })).toHaveFocus()
+      );
+    });
+
+    it('leaves with Done or Esc and gives focus back to the menu', async () => {
+      const user = userEvent.setup();
+      const transport = renderRanked();
+      await screen.findByText('First');
+      await myOrder(user, transport);
+      await enter(user);
+      await user.click(screen.getByRole('button', { name: 'Done' }));
+      const trigger = screen.getByRole('button', { name: 'Filter and sort' });
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(screen.queryByRole('button', { name: 'Move First down' })).toBeNull();
+
+      await enter(user);
+      await screen.findByRole('heading', { name: 'Reorder' });
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('heading', { name: 'Reorder' })).toBeNull());
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Filter and sort' })).toHaveFocus()
+      );
+    });
+
+    it('holds the check while reordering, so a stray tap finishes nothing', async () => {
+      const user = userEvent.setup();
+      const transport = renderRanked();
+      await screen.findByText('First');
+      await myOrder(user, transport);
+      await enter(user);
+      expect(screen.getByRole('checkbox', { name: 'First' })).toBeDisabled();
+      await user.click(screen.getByRole('checkbox', { name: 'First' }));
+      expect(transport.updateTodo).not.toHaveBeenCalled();
+    });
   });
 });

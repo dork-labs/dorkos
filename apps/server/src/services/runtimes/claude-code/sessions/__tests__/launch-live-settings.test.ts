@@ -13,7 +13,7 @@ import {
   AccountPinViolationError,
   type LaunchParams,
 } from '../launch-fingerprint.js';
-import { applyLiveChanges, prepareDispatch } from '../launch-live-settings.js';
+import { applyLiveChanges, MCP_SERVERS_UNKNOWN, prepareDispatch } from '../launch-live-settings.js';
 import { decideProcessReuse } from '../pump-launch.js';
 import { LIVE_SETTING_ACK_TIMEOUT_MS, PLUGIN_RELOAD_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import type { PumpControlQuery } from '../session-pump-contract.js';
@@ -192,6 +192,32 @@ describe('applyLiveChanges is bounded (DOR-1301)', () => {
     // The fingerprint is what the process HOLDS: the new mode, the old model.
     expect(outcome.fingerprint.live.permissionMode).toBe('plan');
     expect(outcome.fingerprint.live.model).toBe('claude-opus-4-6');
+  });
+
+  it('says so when a warm process does not take its new MCP servers (DOR-3882)', async () => {
+    vi.useFakeTimers();
+    const { query } = deafControlQuery(['mcpServers']);
+    const decision = prepareDispatch(
+      capture(),
+      capture({
+        options: options({ mcpServers: { stdio: { type: 'stdio', command: 'node' } } }),
+      })
+    );
+    if (decision.action !== 'reuse') throw new Error('expected a reuse');
+    const notTaken = vi.fn();
+
+    const applying = applyLiveChanges(query, decision, { onMcpServersNotTaken: notTaken });
+    await vi.advanceTimersByTimeAsync(PLUGIN_RELOAD_ACK_TIMEOUT_MS);
+    const outcome = await applying;
+
+    expect(outcome.unapplied).toEqual([{ pin: 'mcpServers', ack: 'unacked' }]);
+    expect(notTaken).toHaveBeenCalledTimes(1);
+    // Not known, so the next dispatch sends its list again, even with the server
+    // removed: the CLI may still finish this request (Security's P2).
+    expect(outcome.fingerprint.live.mcpServers).toBe(MCP_SERVERS_UNKNOWN);
+    const afterRemove = prepareDispatch(outcome.fingerprint, capture());
+    if (afterRemove.action !== 'reuse') throw new Error('expected a reuse');
+    expect(afterRemove.liveChanges).toEqual([{ pin: 'mcpServers', servers: {} }]);
   });
 
   it('reports a refused setter the same way, without waiting on the clock', async () => {

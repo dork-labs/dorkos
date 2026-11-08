@@ -21,6 +21,7 @@ import { STEP_UP_REQUIRED_CODE, type StepUpRequiredBody } from '@dorkos/shared/s
 
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
 import { holdStepUp, type StepUpActionInput } from '../services/core/auth/step-up/step-up-holds.js';
 import { ApprovalInputNotBindableError } from '../services/core/approvals/approval-input-hash.js';
 import { errorBody } from '../lib/route-utils.js';
@@ -31,12 +32,18 @@ import { errorBody } from '../lib/route-utils.js';
  *
  * @param c - The request that asked for the action.
  * @param action - What to hold. See {@link StepUpActionInput}.
- * @returns The `428` answer.
+ * @returns The `428` answer, or a `403` when an owner exists and the caller has
+ *   no browser session: every such caller would share one held-action owner, so
+ *   any of them could confirm another's.
  */
 export function holdForStepUp(c: Context<ApiEnv>, action: StepUpActionInput): Response {
+  const sessionId = honoRequestFacts(c).user?.sessionId ?? null;
+  if (sessionId === null && readOwnerAccount() !== null) {
+    return c.json(errorBody('Only you can confirm this, in the DorkOS app.', 'not-a-person'), 403);
+  }
   let statement;
   try {
-    statement = holdStepUp(action, honoRequestFacts(c).user?.sessionId ?? null);
+    statement = holdStepUp(action, sessionId);
   } catch (error) {
     if (error instanceof ApprovalInputNotBindableError) {
       return c.json(errorBody('That can’t be confirmed as asked.', 'NOT_BINDABLE'), 400);

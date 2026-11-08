@@ -16,6 +16,7 @@
 import { FieldCard, FieldCardContent, SwitchSettingRow } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { DmViewRow } from './tabs/DmViewRow';
 import { ShowSessionsRow } from './tabs/ShowSessionsRow';
 
 /**
@@ -91,6 +92,9 @@ export function ExperimentsTab() {
             checked={devtoolsOpen}
             onCheckedChange={() => toggleDevtools()}
           />
+          {/* Graduated, so it starts on and sits with the settings rather than in
+              the list below, whose footer says those start off. */}
+          <DmViewRow />
           {/* The other "show me what is underneath" switch. Drawn only while
               the DM view is on, which is the only time it changes anything. */}
           <ShowSessionsRow />

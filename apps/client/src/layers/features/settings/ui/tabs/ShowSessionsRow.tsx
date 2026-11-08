@@ -11,9 +11,8 @@ import { useDmViewEnabled, useShowSessions, useUpdateShowSessions } from '@/laye
  * One switch row, drawn only while chats with one agent read like a DM.
  *
  * Without that view the session IS the chat, so a switch to reveal it would
- * change nothing, and a control that changes nothing is not drawn. The row
- * outlives the experiment: it is a setting for everyone using this DorkOS, not
- * a trial.
+ * change nothing, and a control that changes nothing is not drawn. It is a
+ * setting for everyone using this DorkOS, not a trial.
  */
 export function ShowSessionsRow() {
   const dmView = useDmViewEnabled();

@@ -688,6 +688,7 @@ capabilityConformance(registry, {
     'rooms.merge': { roomId: CONFORMANCE_ROOM_ID, summary: 'a conformance merge' },
     'rooms.set_up_files': { roomId: CONFORMANCE_ROOM_ID },
     'rooms.repo_status': { roomId: CONFORMANCE_ROOM_ID },
+    'rooms.handoff_status': { handoffId: 'a-conformance-hand-off' },
     'rooms.read_history': { roomId: CONFORMANCE_ROOM_ID, limit: 5 },
     'rooms.search_history': { roomId: CONFORMANCE_ROOM_ID, query: 'conformance' },
     'rooms.list_member_rooms': {},

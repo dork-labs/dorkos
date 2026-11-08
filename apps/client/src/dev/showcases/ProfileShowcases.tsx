@@ -197,7 +197,7 @@ function fixtureMeasures(since: string): HeartbeatMeasures {
     supporting: {
       beats: 140,
       quietBeats: rate(128, 140, '80% or more', 'Checks that ended with nothing sent.'),
-      commitmentsOnTime: rate(2, 2, '90% or more', 'Promises due this week, kept by their date.'),
+      todosOnTime: rate(2, 2, '90% or more', 'Promises due this week, kept by their date.'),
       noEndBeat: 1,
       triage: { checks: 41, tokens: 18_400 },
       turns: { count: 12, tokensPerTurn: null },

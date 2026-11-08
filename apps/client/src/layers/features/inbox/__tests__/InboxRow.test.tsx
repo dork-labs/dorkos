@@ -35,6 +35,32 @@ function build(overrides: Partial<NotificationDTO> = {}): NotificationDTO {
 
 const AGENT: AgentVisualSource = { id: 'alpha', color: '#6366f1', icon: '🐙' };
 
+it('keeps a creation notice’s mode and warning visible beside a long truncated name', () => {
+  const title = 'Scout made a schedule: The very long nightly report for every made-up project';
+  const body =
+    'Runs as: Accept edits\nEdits files without asking.\nSome commands run on their own. Others are refused, because nobody’s there to approve them.';
+  render(
+    <InboxRow
+      notification={build({
+        kind: 'schedule.armed_by_agent',
+        subject: { type: 'task', id: 'nightly' },
+        title,
+        body,
+        actions: [
+          { id: 'pause', label: 'Pause', style: 'neutral' },
+          { id: 'open', label: 'Open', style: 'primary' },
+        ],
+      })}
+      onOpen={() => {}}
+    />
+  );
+  expect(screen.getByText(title)).toHaveAttribute('title', title);
+  const content = document.querySelector('[data-slot="inbox-row-body"]');
+  expect(content).toHaveTextContent('Runs as: Accept edits');
+  expect(content).not.toHaveClass('truncate');
+  expect(content).not.toHaveClass('line-clamp-2');
+});
+
 afterEach(() => {
   cleanup();
 });
@@ -192,6 +218,20 @@ describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
     actions: [{ id: 'open-schedule', label: 'Open schedule', style: 'primary' }],
   });
 
+  it('opens the exact schedule carried by a refusal notice', () => {
+    navigate.mockClear();
+    render(
+      <InboxRow
+        notification={{ ...failing, subject: { type: 'task', id: 'sample-schedule' } }}
+        onOpen={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open schedule' }));
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ search: { schedule: 'sample-schedule' } })
+    );
+  });
+
   it('draws Open schedule beside a row that offers it, and never a raise', () => {
     render(<InboxRow notification={failing} onOpen={() => {}} />);
 
@@ -219,6 +259,36 @@ describe('InboxRow: a failing schedule’s Open schedule (DOR-3123)', () => {
       'sm:w-auto'
     );
   });
+
+  it.each(['had a command refused', 'was refused sample: search'])(
+    'keeps %s visible while only a long schedule name truncates',
+    (result) => {
+      const name = 'Nightly sample report for every imaginary project on the sample team';
+      const { container } = render(
+        <InboxRow
+          notification={{
+            ...failing,
+            mark: 'refused',
+            title: `${name} ${result}`,
+            body: 'It may have needed approval. Open the schedule to check its mode.',
+          }}
+          onOpen={() => {}}
+        />
+      );
+      expect(container.querySelector('[data-slot="refusal-schedule-name"]')).toHaveClass(
+        'truncate'
+      );
+      expect(container.querySelector('[data-slot="refusal-result"]')).toHaveTextContent(result);
+      expect(container.querySelector('[data-slot="refusal-result"]')).not.toHaveClass('truncate');
+      expect(container.querySelector('[data-slot="inbox-row-body"]')).toHaveClass(
+        'whitespace-pre-line'
+      );
+      expect(container.querySelector('[data-slot="inbox-row-body"]')).not.toHaveClass(
+        'line-clamp-2',
+        'sm:truncate'
+      );
+    }
+  );
 
   it('draws the Schedules row’s marks, never a red tick', () => {
     const { container } = render(

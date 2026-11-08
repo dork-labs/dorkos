@@ -1,4 +1,5 @@
 /** Runtime-neutral context delivered on the system channel with actual callable names. */
+import { formatNewSince } from '../shared/prose/new-since-block.js';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
@@ -34,6 +35,9 @@ export function renderDoeContextEntry(entry: AdditionalContextEntry): string {
       break;
     case 'context_warning':
       body = formatContextWarning(entry.data, 'claude-code', (name) => name);
+      break;
+    case 'new_since_last_run':
+      body = formatNewSince(entry.data);
       break;
     case 'turn_cutoff':
       body = formatTurnCutoff(entry.data);

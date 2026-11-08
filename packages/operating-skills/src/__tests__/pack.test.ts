@@ -596,7 +596,7 @@ describe('working-on-a-heartbeat', () => {
     expect(beat).toMatch(/5 to 60\s+minutes, for at most 12 hours/);
     expect(beat).toContain('`resolved`');
     expect(beat).toContain('`report: null`');
-    expect(beat).toContain('`commitment_add`');
+    expect(beat).toContain('`todo_promise_add`');
     expect(beat).toContain('Proactive in work, quiet in speech');
   });
 

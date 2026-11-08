@@ -53,12 +53,14 @@ import {
   useChatActivity,
   useEarlierMessages,
 } from '@/layers/features/chat';
+import { UNKNOWN_AGENT_NAME } from '@/layers/features/direct-message';
 import { SessionMessage } from './SessionMessage';
 import { withDirectNotes, type DirectChatLog } from '../model/use-direct-chat-notes';
 import type { DirectMessageSurface } from '../model/use-session-surface';
 import { LoadEarlierRow } from './LoadEarlierRow';
 import { liveReplyId, turnStartsByReply } from '../lib/work-turns';
-import { useRenderSlot, useStableCallback } from '@/layers/shared/lib';
+import { useLoadingTooLong, useTranscriptHold } from '../model/use-transcript-hold';
+import { cn, useRenderSlot, useStableCallback } from '@/layers/shared/lib';
 
 /**
  * What the transcript is called when a screen reader lands in it.
@@ -171,6 +173,8 @@ interface SessionTranscriptProps {
    * messages their name, the way a room draws them. Absent for a session.
    */
   directMessage?: DirectMessageSurface | null;
+  /** Whether the server could not say if this is a DM, so it may be an agent's. */
+  lookupFailed?: boolean;
   /**
    * What the person is called on their own messages in any chat (FB-38/55).
    * A DM's own `humanName` wins; absent or `null`, the row says "You".
@@ -212,6 +216,7 @@ export function SessionTranscript({
   foldFirstPrompt = false,
   directLog,
   directMessage = null,
+  lookupFailed = false,
   humanName: profileName = null,
 }: SessionTranscriptProps) {
   // Row handlers keep one identity, so a row whose message did not change can
@@ -294,7 +299,11 @@ export function SessionTranscript({
   // `useSessionRuntime` carries the identical limitation by the same mechanism.
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const runtime = useSessionRuntime(sessionId);
-  const { data: currentAgent } = useCurrentAgent(selectedCwd);
+  const {
+    data: currentAgent,
+    isPending: currentAgentPending,
+    isError: currentAgentFailed,
+  } = useCurrentAgent(selectedCwd);
   const dmAgent = directMessage?.agent ?? null;
   // A DM names a message's time the way a room does (DOR-3074), and only a
   // time that is true. History carries the server's own; a row with none shows
@@ -333,22 +342,42 @@ export function SessionTranscript({
     [foldWork, messages]
   );
   const liveReply = useMemo(() => (foldWork ? liveReplyId(messages) : null), [foldWork, messages]);
+  // Until the server says which this chat is, a DM's rows and a session's differ
+  // in height (folded work, names), so drawing either would move the conversation
+  // when the answer lands. It waits, laid out but unseen, up to a limit.
+  const undecided = directMessage?.settled === false;
+  // Whose words these are has to be known first: in a DM from the DM's own agent,
+  // and in any other chat from the agent at the folder. While it may yet be a DM,
+  // only an agent at the folder will do: no agent there says nothing about who
+  // this chat belongs to, so the runtime can't stand in until the server answers.
+  const settledDm = directMessage?.settled === true;
+  const identityPending = settledDm
+    ? directMessage.agentPending === true
+    : undecided
+      ? !currentAgent
+      : selectedCwd !== null && currentAgentPending;
+  // Past the hold's last limit, or with an answer that failed, this chat may
+  // still be an agent's, so it claims nobody: the runtime only names a chat the
+  // server has said is nobody's. A late answer corrects it in place.
+  const agentUnknown = identityPending || currentAgentFailed || undecided || lookupFailed;
   const authorContext = useMemo<MessageAuthorContext>(
     () => ({
       // A DM names the agent it is with, whatever folder is selected.
       agent:
         dmAgent ??
-        (currentAgent
+        (currentAgent && !settledDm
           ? {
               id: currentAgent.id,
               displayName: getAgentDisplayName(currentAgent),
               ...resolveAgentVisual(currentAgent),
             }
-          : null),
+          : agentUnknown
+            ? { id: `unknown-agent:${selectedCwd}`, displayName: UNKNOWN_AGENT_NAME }
+            : null),
       runtime,
       ...(humanName ? { humanName } : {}),
     }),
-    [currentAgent, runtime, dmAgent, humanName]
+    [currentAgent, settledDm, agentUnknown, selectedCwd, runtime, dmAgent, humanName]
   );
 
   // The turn happening NOW, mirrored into a live region below. The feed itself
@@ -371,6 +400,21 @@ export function SessionTranscript({
     transcript,
     earlier.messagesBefore
   );
+
+  // The Direct chat log waits on the same answer, so past the hold the landing
+  // cannot wait for it too: it lands without it, and again if the answer is a DM.
+  const readyToLand = isHydrated && !earlier.isSeeking && ((directLog?.ready ?? true) || undecided);
+  const { held, hidden, showLoading, landingKey } = useTranscriptHold({
+    conversationId: sessionId,
+    undecided,
+    isDirectMessage: foldWork,
+    readyToLand,
+    identityPending,
+    lookupFailed,
+  });
+  // The feed says it is busy from the start. The words wait, so a quick load
+  // doesn't flicker them.
+  const historyLoadingTooLong = useLoadingTooLong(isLoadingHistory, sessionId);
 
   // Rows, not messages, are what the list virtualizes: dividers are real rows so
   // their heights participate in measurement. Memoized on the messages array,
@@ -613,16 +657,17 @@ export function SessionTranscript({
       // conversation at the end, and being at the end is what marks it read.
       landOn="unread"
       // A link to an old message waits until the pages holding it are read.
-      landingReady={isHydrated && !earlier.isSeeking && (directLog?.ready ?? true)}
+      landingReady={readyToLand && !held}
+      {...(landingKey === undefined ? {} : { landingKey })}
       {...(landOnRow === undefined ? {} : { landOnRow })}
       onReachedBottom={markSeen}
       transcriptAnnouncement={announcement}
       approvalAnnouncement={approvalAnnouncement}
       // The pad the session's own chrome needs, and the matching start for the
       // scroll thumb's track — one fact, said once (`ScrollThumb`).
-      className="pt-12 [--conversation-thumb-top:3rem]"
+      className={cn('pt-12 [--conversation-thumb-top:3rem]', hidden && 'invisible')}
       loading={
-        isLoadingHistory ? (
+        isLoadingHistory || showLoading ? (
           // The same feed the loaded conversation renders, saying it is BUSY —
           // which is what the pattern asks for, and what turns a silent wait
           // into one a screen reader can report.
@@ -632,10 +677,12 @@ export function SessionTranscript({
             className="flex h-full items-center justify-center"
             data-testid="transcript-feed-loading"
           >
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
-              <TypingDots />
-              Loading chat…
-            </div>
+            {(historyLoadingTooLong || showLoading) && (
+              <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                <TypingDots />
+                Loading chat…
+              </div>
+            )}
           </Feed>
         ) : undefined
       }

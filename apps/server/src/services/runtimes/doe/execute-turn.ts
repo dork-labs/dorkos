@@ -239,6 +239,7 @@ export async function executeDoeTurn(
       sessionId: id,
       cwd,
       opts,
+      full: mode === 'bypassPermissions',
       signal: controller.signal,
       agentPath,
       managedMcp: hostState.managedMcp,
@@ -288,7 +289,8 @@ export async function executeDoeTurn(
           (event) => queue.push(event),
           controller.signal,
           opts?.unattended === true || opts?.unattendedApprovals === true,
-          host.trustedHostToolNames
+          host.trustedHostToolNames,
+          host.protectedRoots
         ),
         onEvent: mapper.receive,
         extensions,

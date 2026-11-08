@@ -59,7 +59,6 @@
  *
  * @module services/harness/hook-approval
  */
-import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { ProjectedHook } from '@dorkos/harness';
 import type {
@@ -68,11 +67,6 @@ import type {
   ApprovalRequestInput,
   ApprovalTicket,
 } from '../core/approvals/approval-service.js';
-import {
-  hashApprovalInput,
-  quoteSummaryValue,
-  redactSecretsInText,
-} from '../core/approvals/index.js';
 import { PASSIVE_APPROVAL_EXPIRES_AT } from '../core/approvals/passive-approval.js';
 import { familyInputHash } from '../core/approvals/approval-retirement.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
@@ -82,7 +76,14 @@ import {
   recordHookRefusal,
   type HookProjectionRequest,
 } from './hook-consent.js';
-import { describeHookScriptPins } from './hook-script-pins.js';
+import {
+  HOOK_CARD_PRESENTATION,
+  describeHookProjection,
+  summariseHookProjection,
+  hookRequestInputHash,
+  hookRequestFamily,
+} from './hook-card.js';
+export { summariseHookProjection, hookCardIsComplete } from './hook-card.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -141,6 +142,10 @@ export interface HookApprovalGateway {
    * package edited twice leaves one passive row, not two (DOR-3433).
    */
   retireSuperseded?(binding: ApprovalBinding, family: string): number;
+  /** A person explicitly requested another review of an existing refusal. */
+  isReaskedHook?(binding: ApprovalBinding): boolean;
+  /** Re-asks live in SQLite, so their follower survives a restart without another file. */
+  reaskedHookRequests?(): HookProjectionRequest[];
 }
 
 /**
@@ -149,10 +154,7 @@ export interface HookApprovalGateway {
  * packages apart, and stable, because a row raised before a restart must match.
  */
 function passiveRowFamily(projectPath: string, packageName: string): string {
-  return createHash('sha256')
-    .update(`${projectPath}\0${packageName}`, 'utf8')
-    .digest('hex')
-    .slice(0, 16);
+  return hookRequestFamily({ projectPath, packageName });
 }
 
 /**
@@ -173,115 +175,6 @@ function canonical(request: HookProjectionRequest): {
     packageName: request.packageName,
     hooks: request.hooks,
   };
-}
-
-/**
- * How much of one command the card shows.
- *
- * Deliberately larger than {@link quoteSummaryValue}'s 80, which exists so a
- * padded ARGUMENT cannot crowd out the argument that decides how destructive an
- * action is. Here the shell command IS the decision, and 80 characters is enough
- * to hide the interesting half of `node ./hooks/setup.mjs && curl … | sh`.
- * Recognition is not the bar when what is being recognized is a command line.
- *
- * The residual, stated: `APPROVAL_SUMMARY_MAX_LENGTH` still caps the whole
- * sentence at 500, so a package declaring many long hooks is shown truncated
- * (visibly, with an ellipsis). The count in the sentence always names how many
- * there are, so a truncated card under-shows rather than under-reports.
- */
-const COMMAND_DISPLAY_MAX_LENGTH = 200;
-
-/**
- * Render one command for the card: swept for secrets, shortened, then quoted and
- * escaped.
- *
- * The order matters and is the same one {@link quoteSummaryValue} documents:
- * shortening first can slice a token below the length its pattern matches, so
- * redaction has to run on the full string. `JSON.stringify` last both quotes the
- * value and flattens newlines, so a command cannot fake a second line of card.
- */
-function renderCommandForCard(command: string): string {
-  const safe = redactSecretsInText(command);
-  const shortened =
-    safe.length <= COMMAND_DISPLAY_MAX_LENGTH
-      ? safe
-      : `${safe.slice(0, COMMAND_DISPLAY_MAX_LENGTH - 1).trimEnd()}…`;
-  return JSON.stringify(shortened);
-}
-
-/**
- * Say when a hook fires, in words rather than in event names.
- *
- * "Before every tool call" and "when a session ends" are materially different
- * permissions, and an event name like `PreToolUse` means nothing to a person who
- * has never read the harness docs. Unknown events fall back to their own name
- * rather than being dropped: an event DorkOS does not have a phrase for still has
- * to appear on the card.
- */
-function describeHookTrigger(hook: ProjectedHook): string {
-  const scope = hook.matcher && hook.matcher !== '*' ? ` matching ${hook.matcher}` : '';
-  switch (hook.event) {
-    case 'PreToolUse':
-      return `before every tool call${scope}`;
-    case 'PostToolUse':
-      return `after every tool call${scope}`;
-    case 'UserPromptSubmit':
-      return 'every time you send a message';
-    case 'SessionStart':
-      return 'when a chat starts';
-    case 'SessionEnd':
-      return 'when a chat ends';
-    case 'Stop':
-      return 'when a turn finishes';
-    case 'SubagentStop':
-      return 'when a subagent finishes';
-    case 'Notification':
-      return 'on every notification';
-    case 'PreCompact':
-      return 'before the chat is compacted';
-    default:
-      return `on ${hook.event}${scope}`;
-  }
-}
-
-/**
- * The sentence on the card.
- *
- * Leads with what will run and WHEN, because both are the decision — the same
- * command on `Stop` and on `PreToolUse` are not the same permission, and a card
- * that showed only the command would let the second inherit consent given for the
- * first. Every value is quoted, escaped and capped, so a command carrying its own
- * quotes and connectives cannot forge the rest of the sentence.
- *
- * @param request - The package, project, and hooks being asked about.
- * @param options - How the card is worded.
- * @returns One plain sentence.
- */
-export function summariseHookProjection(
-  request: HookProjectionRequest,
-  options: HookCardOptions = {}
-): string {
-  const name = quoteSummaryValue(request.packageName);
-  const where = quoteSummaryValue(request.projectPath);
-  const hooks = request.hooks
-    .map((hook) => `${renderCommandForCard(hook.command)} ${describeHookTrigger(hook)}`)
-    .join('; ');
-  const count = request.hooks.length;
-  const commands = `${count} command${count === 1 ? '' : 's'}`;
-  // The files the yes covers, with a short hash, ahead of the commands so the
-  // 500-character cap never cuts them off: a reviewer can check the hash
-  // against the copy they read, and an edit after the yes asks again (DOR-3403).
-  const files = describeHookScriptPins(request.scripts ?? []);
-  const running = files ? `, running ${quoteSummaryValue(files)}` : '';
-  if (options.notInstalledByDorkos) {
-    // On Full (DOR-3422): said first, because it is the reason this one asks
-    // when nothing else on Full does.
-    return (
-      `Package ${name} found in ${where}, not installed by DorkOS. Allow it to run ` +
-      `${commands} automatically${running}? ${hooks}`
-    );
-  }
-  return `Let the installed package ${name} run ${commands} automatically in ${where}${running}: ${hooks}`;
 }
 
 /** How a hook card is worded. */
@@ -318,7 +211,7 @@ export interface HookCardOptions {
  * so nobody said no, and the person who missed it should be asked again. This
  * set is what keeps that from stacking two open cards for one package meanwhile.
  */
-const askingNow = new Set<string>();
+const askingNow = new Map<string, symbol>();
 
 /**
  * Whether this projection may be put in front of a person, or has already been
@@ -373,34 +266,21 @@ export async function askForHookProjection(
   request: HookProjectionRequest,
   options: HookCardOptions = {}
 ): Promise<boolean> {
-  const { projectPath, packageName, hooks } = canonical(request);
-  // A passive card (DOR-3427) is one ticket per package for good, so its binding
-  // carries the package's family in front of the exact action (DOR-3433).
+  const { projectPath, packageName } = canonical(request);
   const passive = options.notInstalledByDorkos === true;
   const family = passive ? passiveRowFamily(projectPath, packageName) : undefined;
-  // Bound to the same facts the stored entry digests, so a token granted for one
-  // package's hooks can never be spent on another's — or on the same commands
-  // moved to a different event, or running other files.
-  const inputHash = hashApprovalInput({
-    projectPath,
-    packageName,
-    hooks: hooks.map((hook) => [hook.event, hook.matcher ?? null, hook.command]),
-    scripts: request.scripts ?? [],
-  });
-  const binding: ApprovalBinding = {
-    capabilityId: HOOK_PROJECTION_CAPABILITY_ID,
-    inputHash: family === undefined ? inputHash : familyInputHash(family, inputHash),
-  };
+  const binding = hookProjectionBinding(request, passive);
 
   const entry = hookApprovalEntry(request);
-  askingNow.add(entry);
+  const lease = Symbol();
+  askingNow.set(entry, lease);
   // The row for files the package has since moved on from is closed, with no
   // refusal recorded; an open one for these very files, even from before a
   // restart, is picked up again rather than raised twice.
-  if (family !== undefined) gateway.retireSuperseded?.(binding, family);
+  const retired = family === undefined ? 0 : (gateway.retireSuperseded?.(binding, family) ?? 0);
   const reused = passive ? gateway.reissue?.(binding) : undefined;
-  if (options.resumeOnly === true && reused === undefined) {
-    askingNow.delete(entry);
+  if (options.resumeOnly === true && reused === undefined && retired === 0) {
+    if (askingNow.get(entry) === lease) askingNow.delete(entry);
     return false;
   }
   const ticket = reused
@@ -408,6 +288,13 @@ export async function askForHookProjection(
     : gateway.request({
         ...binding,
         summary: summariseHookProjection(request, options),
+        detail: describeHookProjection(request),
+        packageRequest: {
+          kind: 'hooks',
+          presentation: HOOK_CARD_PRESENTATION,
+          request,
+          options: { notInstalledByDorkos: options.notInstalledByDorkos },
+        },
         ...(passive ? { passive: true, requestedBy: 'DorkOS' } : {}),
       });
   logger.info('[HarnessSync] Waiting on a person to allow a package to install hooks', {
@@ -443,6 +330,21 @@ export async function askForHookProjection(
   } finally {
     // Whatever happened, including a throw out of the store, this card is no
     // longer on screen.
-    askingNow.delete(entry);
+    if (askingNow.get(entry) === lease) askingNow.delete(entry);
   }
+}
+
+/** Bind a review to its presentation and all exact execution/consent values. */
+export function hookProjectionBinding(
+  request: HookProjectionRequest,
+  passive = false
+): ApprovalBinding {
+  const { projectPath, packageName } = canonical(request);
+  const inputHash = hookRequestInputHash(request);
+  return {
+    capabilityId: HOOK_PROJECTION_CAPABILITY_ID,
+    inputHash: passive
+      ? familyInputHash(passiveRowFamily(projectPath, packageName), inputHash)
+      : inputHash,
+  };
 }

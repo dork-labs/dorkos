@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import type React from 'react';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { screen, cleanup } from '@testing-library/react';
+import { act, screen, cleanup } from '@testing-library/react';
 import { createReadCursorHarness, renderWithTransport } from './session-transcript-test-helpers';
 
+import { TRANSCRIPT_LOADING_MS } from '../model/use-transcript-hold';
 import { SessionTranscript } from '../ui/SessionTranscript';
 
 // Author identity comes from the working directory's agent and the session's
@@ -49,6 +50,18 @@ describe('SessionTranscript — the wait for a conversation', () => {
     const feed = screen.getByRole('feed');
     expect(feed.getAttribute('aria-busy')).toBe('true');
     expect(feed.getAttribute('aria-label')).toBe('Conversation');
+  });
+
+  it('keeps "Loading chat…" back until the wait has gone on too long', () => {
+    vi.useFakeTimers();
+    try {
+      render(<SessionTranscript {...props(true)} />);
+      expect(screen.queryByText('Loading chat…')).toBeNull();
+      act(() => void vi.advanceTimersByTime(TRANSCRIPT_LOADING_MS));
+      expect(screen.getByText('Loading chat…')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('stops saying so once there is nothing left to wait for', () => {

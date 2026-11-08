@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { logger } from '../../../../lib/logger.js';
 import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
 import type { SignInWindow } from '../sign-in-window.js';
 
@@ -32,9 +33,11 @@ function fakeBrowser(initial = connected()) {
   let profileId: string | null = 'p1';
   const browser = {
     state: vi.fn(async () => state),
+    capabilities: vi.fn(() => ({ newWindow: true })),
     currentProfileId: vi.fn(() => profileId),
     open: vi.fn(async () => (state = connected())),
     selectTab: vi.fn(async () => state),
+    navigate: vi.fn(async () => state),
     pause: vi.fn(async () => (state = { ...state, paused: true })),
     resume: vi.fn(async () => (state = { ...state, paused: false })),
     disconnect: vi.fn(async () => (state = { ...state, status: 'disconnected', sessionId: null })),
@@ -64,6 +67,7 @@ function fakeSignIns() {
       return signIns.current!;
     }),
     close: vi.fn(),
+    onChange: vi.fn(),
   };
   return { signIns, finish: (next: 'saved' | 'failed') => (status = next) };
 }
@@ -193,13 +197,6 @@ describe('BrowserHandover sign-in', () => {
     });
   });
 
-  it('refuses a sign-in for the embedded browser, whose cookies live elsewhere', async () => {
-    const { handover, set } = setup();
-    const { handoffId } = await handover.ask('chat-1', 'password');
-    set({ ...connected(), mode: 'embedded' });
-    await expect(handover.signIn({ handoffId })).rejects.toMatchObject({ code: 'unsupported' });
-  });
-
   it('keeps the agent out and Hand back closed until the sign-in is saved', async () => {
     const { handover, finish } = setup();
     const { handoffId } = await handover.ask('chat-1', 'password');
@@ -292,10 +289,337 @@ describe('BrowserHandover answers', () => {
     expect((await handover.resume()).handoff?.outcome).toBe('handed-back');
   });
 
-  it('opening the browser for another chat ends this chat’s handoff', async () => {
-    const { handover } = setup();
+  it('refuses to open the browser for another chat, or none, during a handoff', async () => {
+    const { handover, browser } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    browser.open.mockClear();
+    for (const input of [{ sessionId: 'chat-2' }, {}])
+      await expect(handover.open({ mode: 'new-window', ...input })).rejects.toMatchObject({
+        code: 'handoff_open',
+      });
+    await expect(handover.open({ mode: 'embedded', sessionId: 'chat-2' })).rejects.toMatchObject({
+      code: 'handoff_open',
+    });
+    expect(browser.open).not.toHaveBeenCalled();
+    expect(browser.disconnect).not.toHaveBeenCalled();
+    expect((await handover.state()).handoff?.outcome).toBeNull();
+    await expect(handover.handBack(handoffId)).resolves.toBeDefined();
+  });
+
+  it('lets another chat open the browser once the handoff has ended', async () => {
+    const { handover, browser } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await handover.stop(handoffId);
+    await handover.open({ mode: 'new-window', sessionId: 'chat-2' });
+    expect(browser.open).toHaveBeenCalled();
+  });
+
+  it('a closed window reopens at the saved page, with the agent still out', async () => {
+    const { handover, browser, set } = setup();
     await handover.ask('chat-1', 'wall');
-    const state = await handover.open({ mode: 'new-window', sessionId: 'chat-2' });
+    set({ ...connected(), status: 'closed', tabs: [], selectedTabId: null });
+    browser.pause.mockClear();
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1', url: 'https://other.test/' });
+    expect(browser.open).toHaveBeenCalledExactlyOnceWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      url: 'https://accounts.example.com/login?next=%2Fhome',
+    });
+    expect(browser.pause).toHaveBeenCalledOnce();
+    expect((await handover.state()).handoff?.outcome).toBeNull();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+  });
+
+  it('with no handoff open, takes the address a person chose', async () => {
+    const { handover, browser } = setup();
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1', url: 'https://other.test/' });
+    expect(browser.open).toHaveBeenCalledExactlyOnceWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      url: 'https://other.test/',
+    });
+    expect(browser.pause).not.toHaveBeenCalled();
+  });
+
+  it('a person can clear a handoff whose chat and window have gone', async () => {
+    const { handover, browser, set } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    set({ ...connected(), status: 'disconnected', sessionId: null, tabs: [], selectedTabId: null });
+    expect((await handover.stop(handoffId)).handoff?.outcome).toBe('stopped');
+    expect(browser.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('a person’s own browser controls during a handoff', () => {
+  it('Disconnect ends the handoff as Stop task does, and that chat stays out', async () => {
+    const { handover, browser } = setup();
+    await handover.ask('chat-1', 'wall');
+    const state = await handover.disconnect();
+    expect(browser.disconnect).toHaveBeenCalledOnce();
     expect(state.handoff?.outcome).toBe('stopped');
+    expect(state.status).toBe('disconnected');
+    expect(() => handover.refuseStopped('chat-1')).toThrow(
+      expect.objectContaining({ code: 'task_stopped' })
+    );
+    await expect(handover.ask('chat-1', 'wall')).rejects.toMatchObject({ code: 'task_stopped' });
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    expect(() => handover.refuseStopped('chat-1')).not.toThrow();
+  });
+
+  it('Disconnect leaves the card up if the window won’t close', async () => {
+    const { handover, browser } = setup();
+    await handover.ask('chat-1', 'wall');
+    browser.disconnect.mockRejectedValueOnce(new Error('still closing'));
+    await expect(handover.disconnect()).rejects.toThrow('still closing');
+    expect((await handover.state()).handoff?.outcome).toBeNull();
+    expect(() => handover.refuseStopped('chat-1')).not.toThrow();
+  });
+
+  it('Disconnect with no handoff stops nobody', async () => {
+    const { handover, browser } = setup();
+    expect((await handover.disconnect()).handoff).toBeNull();
+    expect(browser.disconnect).toHaveBeenCalledOnce();
+    await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
+  });
+
+  it('refuses a new address and another tab, and lets Show window raise the agent’s tab', async () => {
+    const { handover, browser } = setup();
+    await handover.ask('chat-1', 'wall');
+    browser.selectTab.mockClear();
+    await expect(handover.navigate('https://other.example/')).rejects.toMatchObject({
+      code: 'handoff_open',
+    });
+    await expect(handover.selectTab('t2')).rejects.toMatchObject({ code: 'handoff_open' });
+    expect(browser.navigate).not.toHaveBeenCalled();
+    expect(browser.selectTab).not.toHaveBeenCalled();
+    await handover.selectTab('t1');
+    expect(browser.selectTab).toHaveBeenCalledExactlyOnceWith('t1');
+  });
+
+  it('takes a new address and any tab once the handoff has ended, or with none open', async () => {
+    const { handover, browser } = setup();
+    await handover.selectTab('t2');
+    await handover.navigate('https://other.example/');
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await handover.handBack(handoffId);
+    await handover.selectTab('t2');
+    await handover.navigate('https://other.example/');
+    expect(browser.navigate).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a window that closes on its own', () => {
+  it('tells the app, so the card stops saying to finish in it', () => {
+    const { handover } = setup();
+    const listener = vi.fn();
+    handover.useChangeListener(listener);
+    handover.windowClosed();
+    expect(listener).toHaveBeenCalledOnce();
+  });
+});
+
+describe('telling the app something changed', () => {
+  function wired(state = connected()) {
+    const { browser } = fakeBrowser(state);
+    const { signIns } = fakeSignIns();
+    const handover = new BrowserHandover(
+      browser,
+      signIns as unknown as SignInWindow,
+      () => dataDirectory
+    );
+    handover.useOutsideTurnCheck(async () => false);
+    const changed = vi.fn();
+    handover.useChangeListener(changed);
+    const handedOver = vi.fn();
+    handover.useHandoffListener(handedOver);
+    return { handover, signIns, changed, handedOver };
+  }
+
+  it('hands the same listener to the sign-in window', () => {
+    const { signIns, changed } = wired();
+    expect(signIns.onChange).toHaveBeenCalledWith(changed);
+  });
+
+  it('says so when a handoff starts, once, and not on a repeat ask', async () => {
+    const { handover, changed } = wired();
+    await handover.ask('chat-1', 'wall');
+    expect(changed).toHaveBeenCalledTimes(1);
+    await handover.ask('chat-1', 'wall');
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it('says so after the record has the outcome, on Hand back and on Stop task', async () => {
+    for (const answer of ['handBack', 'stop'] as const) {
+      const { handover, changed } = wired();
+      const { handoffId } = await handover.ask('chat-1', 'wall');
+      changed.mockClear();
+      let outcomeWhenTold: unknown;
+      changed.mockImplementation(async () => {
+        outcomeWhenTold = (await handover.state()).handoff?.outcome;
+      });
+      await handover[answer](handoffId);
+      expect(changed).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(outcomeWhenTold).toBeTruthy());
+    }
+  });
+
+  it('records each new handoff once, not on a repeat ask or an answer', async () => {
+    const { handover, handedOver } = wired();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await handover.ask('chat-1', 'wall');
+    await handover.handBack(handoffId);
+    expect(handedOver).toHaveBeenCalledTimes(1);
+    expect(handedOver.mock.calls[0]![0]).toMatchObject({ id: handoffId, outcome: null });
+  });
+
+  it('logs the handoff, each agent call it refuses, and how it ended, for QA to read', async () => {
+    const info = vi.spyOn(logger, 'info');
+    const { handover } = wired();
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toThrow();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toThrow();
+    await handover.handBack(handoffId);
+    expect(info.mock.calls.map(([message]) => message)).toEqual([
+      '[Browser] An agent handed the browser to a person',
+      '[Browser] Refused an agent call during a handoff',
+      '[Browser] Refused an agent call during a handoff',
+      '[Browser] A browser handoff ended',
+    ]);
+    info.mockRestore();
+  });
+
+  it('says nothing when an outside turn is refused', async () => {
+    const { handover, changed } = wired();
+    handover.useOutsideTurnCheck(async () => true);
+    await expect(handover.ask('chat-1', 'wall')).rejects.toThrow();
+    expect(changed).not.toHaveBeenCalled();
+  });
+});
+
+describe('signing in from the Mac app’s built-in browser', () => {
+  const embedded = () => ({ ...connected(), mode: 'embedded' as const });
+  function panel() {
+    const fake = fakeBrowser(embedded());
+    fake.setProfile(null);
+    const { signIns, finish } = fakeSignIns();
+    const handover = new BrowserHandover(
+      fake.browser,
+      signIns as unknown as SignInWindow,
+      () => dataDirectory
+    );
+    handover.useOutsideTurnCheck(async () => false);
+    return { ...fake, signIns, finish, handover };
+  }
+
+  it('really closes the panel’s browser before the plain window opens', async () => {
+    const { handover, browser, signIns } = panel();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.signIn({ handoffId });
+    expect(browser.disconnect).toHaveBeenCalledTimes(1);
+    expect(browser.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+      signIns.start.mock.invocationCallOrder[0]!
+    );
+    expect(signIns.start.mock.calls[0]![0]).toMatch(/browser-profiles[\\/]default$/);
+  });
+
+  it('opens no plain window if the panel didn’t close', async () => {
+    const { handover, browser, signIns } = panel();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    browser.disconnect.mockRejectedValueOnce(new Error('stuck'));
+    await expect(handover.signIn({ handoffId })).rejects.toThrow();
+    expect(signIns.start).not.toHaveBeenCalled();
+  });
+
+  it('refuses every chat’s agent calls from Sign in until the window is back', async () => {
+    const { handover, finish } = panel();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.signIn({ handoffId });
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+    // The window holds the default profile, which is the one the agent would come back to.
+    await expect(handover.requireAgentMayUse('chat-2')).rejects.toMatchObject({
+      code: 'signing_in',
+    });
+    finish('saved');
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+    await handover.handBack(handoffId);
+    await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
+  });
+
+  it('refuses a share with another chat, in any mode, while the person signs in', async () => {
+    const { handover, browser } = panel();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.signIn({ handoffId });
+    browser.open.mockClear();
+    for (const mode of ['new-window', 'embedded'] as const)
+      await expect(handover.open({ mode, sessionId: 'chat-2' })).rejects.toMatchObject({
+        code: 'handoff_open',
+      });
+    expect(browser.open).not.toHaveBeenCalled();
+    expect((await handover.state()).handoff?.outcome).toBeNull();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+  });
+
+  it('Continue reopens in a new window at the page saved when the handoff began', async () => {
+    const { handover, browser, finish, set } = panel();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.signIn({ handoffId });
+    set({ ...embedded(), status: 'disconnected', sessionId: null, tabs: [], selectedTabId: null });
+    finish('saved');
+    await handover.handBack(handoffId);
+    expect(browser.open).toHaveBeenCalledExactlyOnceWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      url: 'https://accounts.example.com/login?next=%2Fhome',
+    });
+  });
+
+  it('keeps the page from when it asked, not one the agent moved to on the same site', async () => {
+    const { handover, browser, finish, set } = panel();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    set({
+      ...embedded(),
+      tabs: [{ id: 't1', url: 'https://accounts.example.com/other', title: 'Moved' }],
+    });
+    await handover.signIn({ handoffId });
+    set({ ...embedded(), status: 'disconnected', sessionId: null, tabs: [], selectedTabId: null });
+    finish('saved');
+    await handover.handBack(handoffId);
+    expect(browser.open.mock.calls[0]).toEqual([
+      expect.objectContaining({ url: 'https://accounts.example.com/login?next=%2Fhome' }),
+    ]);
+  });
+
+  it('leaves the handoff open when the reopened window isn’t orange', async () => {
+    const { handover, browser, finish, set } = panel();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.signIn({ handoffId });
+    set({ ...embedded(), status: 'disconnected', sessionId: null, tabs: [], selectedTabId: null });
+    finish('saved');
+    browser.open.mockRejectedValueOnce(
+      Object.assign(new Error('no frame'), { code: 'window_unlabelled' })
+    );
+    await expect(handover.handBack(handoffId)).rejects.toMatchObject({
+      code: 'window_unlabelled',
+    });
+    expect((await handover.state()).handoff?.outcome).toBeNull();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+  });
+
+  it('refuses before closing anything where a new window can’t open', async () => {
+    const { handover, browser } = panel();
+    browser.capabilities.mockReturnValue({ newWindow: false });
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await expect(handover.signIn({ handoffId })).rejects.toMatchObject({ code: 'unsupported' });
+    expect(browser.disconnect).not.toHaveBeenCalled();
   });
 });

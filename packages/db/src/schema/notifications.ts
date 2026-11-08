@@ -65,6 +65,7 @@ export const notifications = sqliteTable(
         'community.teammate-limit',
         'community.teammate-limits-reset',
         'heartbeat.credits-offer',
+        'browser.handoff',
         'connector.destructive_pending',
         'connector.destructive_executed',
         'web.new_device',

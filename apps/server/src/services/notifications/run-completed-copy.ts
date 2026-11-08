@@ -32,13 +32,26 @@ export interface RunCompletedPayload {
   channelMessage: string;
 }
 
+/** Refusals open the schedule; other outcomes retain their run details. */
+export function runCompletedLocation(p: RunCompletedPayload) {
+  return p.status === 'needs_attention'
+    ? { subjectType: 'task' as const, subjectId: p.taskId, agentId: p.agentId }
+    : { subjectId: p.runId, agentId: p.agentId };
+}
+
 /**
- * The row's title. A run that failed its job, either way, reads "needs
- * attention" (DOR-3123): the reason line says which way.
+ * The row's title names a refused command or tool. Other failures retain
+ * their existing title.
  *
  * @param p - The run's payload.
  */
 export function runCompletedTitle(p: RunCompletedPayload): string {
+  if (p.status === 'needs_attention') {
+    const tools = p.refusedTools ?? [];
+    return tools.includes('Bash')
+      ? `${p.taskName} had a command refused`
+      : `${p.taskName} was refused ${tools[0] ?? 'a tool'}`;
+  }
   return p.status === 'completed' ? `${p.taskName} finished` : `${p.taskName} needs attention`;
 }
 
@@ -46,27 +59,13 @@ export function runCompletedTitle(p: RunCompletedPayload): string {
 export const OPEN_TO_FIX_LINE = 'Open the schedule to fix it.';
 
 /** What the one notice of a failing streak promises (DOR-3123). */
-export const ONCE_PER_STREAK_LINE =
-  'You won’t get another notice about it until it runs cleanly and fails again.';
-
-/** How many tools a reason line names before it counts the rest. */
-const NAMED_TOOLS = 2;
+export const ONCE_PER_STREAK_LINE = 'No more notices until it runs cleanly and fails again.';
 
 /** How long an error is quoted before it is cut. */
 const MAX_ERROR_CHARS = 60;
 
 /** The prefix an expired sign-in's stored line carries (`run-outcome`). */
 const SIGN_IN_PREFIX = 'Sign in again:';
-
-/**
- * "Bash", "Bash and Write", or "Bash, Write and 4 more".
- *
- * @param names - The refused tools, already readable.
- */
-function toolPhrase(names: readonly string[]): string {
-  if (names.length <= NAMED_TOOLS) return names.join(' and ');
-  return `${names.slice(0, NAMED_TOOLS).join(', ')} and ${names.length - NAMED_TOOLS} more`;
-}
 
 /**
  * An error cut to what fits on a row, at a word where it can.
@@ -92,21 +91,15 @@ function asSentence(text: string): string {
 }
 
 /**
- * The same reason line the Schedules row shows for this run, in its wording
- * for a schedule whose level is not named (`describeFailure` in the client's
- * `features/tasks/lib/schedule-health.ts`; keep the two in step).
+ * The recorded reason, without guessing from an editable schedule mode.
  *
  * @param p - A failing run's payload.
  */
 export function runFailureReason(p: RunCompletedPayload): string {
   if (p.status === 'needs_attention') {
-    const tools = p.refusedTools ?? [];
-    if (tools.length === 0) return 'A tool was refused, with nobody there to approve it.';
-    const phrase = toolPhrase(tools);
-    const verb = tools.length === 1 ? 'was' : 'were';
-    return p.outcome === 'nothing_done'
-      ? `Nothing got done: ${phrase} ${verb} refused.`
-      : `${phrase} ${verb} refused, with nobody there to approve ${tools.length === 1 ? 'it' : 'them'}.`;
+    // The persisted run retains tool names, not the runtime's reasonType.
+    // Do not infer a cause from the task's current (possibly changed) mode.
+    return 'It may have needed approval. Open the schedule to check its mode.';
   }
   const message = p.detail?.trim();
   if (message?.startsWith(SIGN_IN_PREFIX))
@@ -127,7 +120,11 @@ export function runFailureReason(p: RunCompletedPayload): string {
  */
 export function runCompletedBody(p: RunCompletedPayload): string | undefined {
   if (p.status !== 'completed') {
-    return [runFailureReason(p), OPEN_TO_FIX_LINE, p.oncePerStreak ? ONCE_PER_STREAK_LINE : null]
+    return [
+      runFailureReason(p),
+      p.status === 'needs_attention' ? null : OPEN_TO_FIX_LINE,
+      p.oncePerStreak ? ONCE_PER_STREAK_LINE : null,
+    ]
       .filter(Boolean)
       .join(' ');
   }
@@ -181,6 +178,7 @@ export function runCompletedMark(p: RunCompletedPayload): 'refused' | 'failed' |
 
 /** The `run.completed` registry entry's wording, action and reach, in one piece. */
 export const RUN_COMPLETED_COPY = {
+  locate: runCompletedLocation,
   title: runCompletedTitle,
   body: runCompletedBody,
   actions: runCompletedActions,

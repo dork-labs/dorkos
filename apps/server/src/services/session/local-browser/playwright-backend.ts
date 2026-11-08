@@ -5,14 +5,38 @@ import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
+import {
+  agentWindowThemeArgs,
+  assertAgentFrame,
+  writeAgentWindowTheme,
+} from './agent-window/theme.js';
 import { LocalBrowserError } from './errors.js';
 import { BrowserDownloadProgress, type BrowserPreparationListener } from './preparation.js';
 import { disablePasswordSaving } from './plain-chromium.js';
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
-export const LOCAL_PLAYWRIGHT_VERSION = '1.63.0';
-export const LOCAL_MANAGED_CHROMIUM_VERSION = '153.0.8010.12';
+export const LOCAL_PLAYWRIGHT_VERSION = '1.65.0-alpha-2026-10-30';
+export const LOCAL_MANAGED_CHROMIUM_VERSION = '157.0.8103.15';
 const BROWSER_LAUNCH_TIMEOUT_MS = 15_000;
+// Exact disabledFeatures list from the pinned library. Chromium takes only the last
+// --disable-features argument, so replace that argument with one merged list.
+const PINNED_DISABLED_FEATURES = [
+  'AvoidUnnecessaryBeforeUnloadCheckSync',
+  'DestroyProfileOnBrowserClose',
+  'LensOverlay',
+  'MediaRouter',
+  'PaintHolding',
+  'ThirdPartyStoragePartitioning',
+  'AvoidCorsURLLoaderRestartOnRedirect',
+  'TcpPortRandomizationWin',
+  'OptimizationHints',
+  'NetworkTimeServiceQuerying',
+  'AimEnabled',
+  'PreconnectToSearch',
+  'msForceBrowserSignIn',
+  'msEdgeUpdateLaunchServicesPreferredVersion',
+].join(',');
+const PINNED_DISABLED_FEATURES_ARG = `--disable-features=${PINNED_DISABLED_FEATURES}`;
 /** Refuse drift between the shipped library and its supported browser revision. */
 export function assertLocalPlaywrightVersion(): void {
   const installed = require('playwright-core/package.json') as { version?: string };
@@ -102,17 +126,34 @@ export const productionBackend: LocalBrowserBackend = {
     // The profile is shared with the plain sign-in window, and with the basic
     // password store a saved password is readable on disk. Neither window saves one.
     await disablePasswordSaving(storagePath);
+    const theme = await writeAgentWindowTheme(storagePath);
     // Playwright launch does not accept AbortSignal. The service retains setup ownership
     // and closes a context that arrives after cancellation; never race this result away.
-    return chromium.launchPersistentContext(storagePath, {
+    const context = await chromium.launchPersistentContext(storagePath, {
       timeout: BROWSER_LAUNCH_TIMEOUT_MS,
       headless: false,
       viewport: null,
       chromiumSandbox: true,
+      args: [
+        `${PINNED_DISABLED_FEATURES_ARG},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
+        ...agentWindowThemeArgs(theme),
+      ],
       // Without the automation flag the window looks like the person's Chrome;
-      // password saving is off in the profile itself.
-      ignoreDefaultArgs: ['--enable-automation'],
+      // password saving is off in the profile itself. The theme's own flag allows
+      // that one folder and no other extension, in place of Playwright's blanket one.
+      ignoreDefaultArgs: [
+        '--enable-automation',
+        PINNED_DISABLED_FEATURES_ARG,
+        '--disable-extensions',
+      ],
     });
+    try {
+      await assertAgentFrame(context);
+    } catch (error) {
+      await context.close().catch(() => undefined);
+      throw error;
+    }
+    return context;
   },
   connect: (endpoint, headers) => {
     assertLocalPlaywrightVersion();

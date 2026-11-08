@@ -157,7 +157,10 @@ export async function resolveInstalledRuntimeConfiguration(
     name?: unknown;
     version?: unknown;
   };
-  if (packageRecord.name !== 'playwright-core' || packageRecord.version !== '1.63.0')
+  if (
+    packageRecord.name !== 'playwright-core' ||
+    packageRecord.version !== '1.65.0-alpha-2026-10-30'
+  )
     throw new Error('The pinned browser library is missing.');
   if (
     !['darwin', 'linux', 'win32'].includes(process.platform) ||
@@ -165,7 +168,7 @@ export async function resolveInstalledRuntimeConfiguration(
   )
     throw new Error('Managed browser installation is not supported on this computer.');
   return Object.freeze({
-    cacheRoot: resolve(dataDirectory, 'browser/runtime/playwright-1.63.0'),
+    cacheRoot: resolve(dataDirectory, 'browser/runtime/playwright-1.65.0-alpha-2026-10-30'),
     libraryRoot: dirname(libraryPackage),
     nodeExecutable,
     nodeExecutableSHA256: node.digest,

@@ -158,8 +158,12 @@ tests_dir="$e2e_root/tests"
 #     auth state (creates an owner, flips "require login"), so it is opt-in by
 #     design; its own file header says so, and says what wiring it into CI would
 #     need. Nothing sets DORKOS_E2E_AUTH, so it skips everywhere.
+#   settings/boot-cache-sign-out.spec.ts — same auth-state mutation and opt-in
+#     flag; verifies two-tab cleanup and public-computer idle sign-out against
+#     a fresh throwaway server with boot persistence enabled.
 OPT_IN_SPECS=(
   'settings/auth-login.spec.ts'
+  'settings/boot-cache-sign-out.spec.ts'
 )
 
 # Specs expected to be entirely ABSENT from the report.

@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * `POST /api/tasks` and `PATCH /api/tasks/:id` and an agent's mode or approval
  * (DOR-3703).
@@ -241,7 +242,10 @@ describe('the HTTP door and an agent’s mode or approval', () => {
     expect(store.approvals.personApprovedCurrent(existing.id)).toBe(false);
     const approved = await request(fixtureServer)
       .patch(`/api/tasks/${existing.id}`)
-      .send({ status: 'active' });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(existing.id)!),
+        status: 'active',
+      });
     expect(approved.status).toBe(200);
     expect(store.approvals.personApprovedCurrent(existing.id)).toBe(true);
     // A new prompt is content no person has seen.

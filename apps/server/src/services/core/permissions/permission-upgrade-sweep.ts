@@ -43,6 +43,7 @@ import { MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import { foldLegacyPermissionFields } from '@dorkos/shared/mesh-schemas';
 import {
   PERMISSION_AREA_IDS,
+  RENAMED_PERMISSION_ACTIONS,
   type AgentPermissions,
   type PermissionAreaId,
   type PermissionChange,
@@ -106,9 +107,22 @@ function rawAreas(raw: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
+ * Whether a raw manifest still stores a per-action setting under a renamed action id
+ * (`RENAMED_PERMISSION_ACTIONS`, DOR-3933).
+ */
+function hasRenamedActionIds(raw: Record<string, unknown>): boolean {
+  const permissions = raw.permissions;
+  if (!isObject(permissions) || !isObject(permissions.actions)) return false;
+  return Object.keys(permissions.actions).some((id) =>
+    Object.hasOwn(RENAMED_PERMISSION_ACTIONS, id)
+  );
+}
+
+/**
  * Write back every manifest that still carries a retired permission field
- * (`enabledToolGroups`, `tierCeiling`), folded, and record one event per agent
- * whose areas the fold decided. Runs on every boot; see the module doc.
+ * (`enabledToolGroups`, `tierCeiling`) or a renamed action id, folded, and record
+ * one event per agent whose areas the fold decided. A renamed id moves its
+ * setting unchanged, so it records nothing. Runs on every boot; see the module doc.
  */
 const foldLegacyManifestsStep: PermissionUpgradeStep = async (deps) => {
   let events = 0;
@@ -116,7 +130,11 @@ const foldLegacyManifestsStep: PermissionUpgradeStep = async (deps) => {
     try {
       const raw = await deps.readRawManifest(agent.projectPath);
       if (!isObject(raw)) continue;
-      if (!Object.hasOwn(raw, 'enabledToolGroups') && !Object.hasOwn(raw, 'tierCeiling')) {
+      if (
+        !Object.hasOwn(raw, 'enabledToolGroups') &&
+        !Object.hasOwn(raw, 'tierCeiling') &&
+        !hasRenamedActionIds(raw)
+      ) {
         continue;
       }
       const before = rawAreas(raw);

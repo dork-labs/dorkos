@@ -1,6 +1,6 @@
 /**
- * A schedule parked only for an outsider's words comes out OFF (DOR-3440), and stays off: not by
- * the approval back-fill, and not by the next sync copying the file's switch onto the row.
+ * A marked schedule stays off and pending review across boot and discovery (DOR-3860).
+ * Switching off never removes the marks or creates approval; cleared rows remain untouched.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -15,6 +15,11 @@ import { writeSkillFile } from '@dorkos/skills/writer';
 import { planTaskFileUpdate } from '../../task-file-update.js';
 import { TaskStore } from '../../task-store.js';
 import type { TaskFileSync } from '../../sync/task-file-sync.js';
+import {
+  decideAgentModeCall,
+  type AgentModeSources,
+} from '../../agent-mode/agent-mode-decision.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 
 let root: string;
 let db: Db;
@@ -80,17 +85,18 @@ async function sync(filePath: string, packageOwned: 'record' | null = null) {
 }
 
 describe('a real sync after the clear', () => {
-  it('a person’s file stays off and does not re-pend', async () => {
+  it('a person’s file stays off and pending review', async () => {
     const id = await parked('digest', { outsider: true });
     await store.approvals.clearOutsiderParks();
     store.approvals.backfillApprovalGrants();
 
     const task = await sync(rowOf(id).filePath);
 
-    expect(task).toMatchObject({ enabled: false, status: 'active' });
+    expect(task).toMatchObject({ enabled: false, status: 'pending_approval' });
+    expect(rowOf(id).approvedContentKey).toBeNull();
   });
 
-  it('a package’s file, still saying on, stays off and does not re-pend', async () => {
+  it('a package’s file, still saying on, stays off and pending review', async () => {
     const id = await parked('digest', { outsider: true });
     db.update(pulseSchedules)
       .set({ packageOwned: 'record' })
@@ -103,7 +109,8 @@ describe('a real sync after the clear', () => {
     expect((raw?.data.schedule as { enabled: unknown }).enabled).toBe(true);
     const task = await sync(rowOf(id).filePath, 'record');
 
-    expect(task).toMatchObject({ enabled: false, status: 'active' });
+    expect(task).toMatchObject({ enabled: false, status: 'pending_approval' });
+    expect(rowOf(id).approvedContentKey).toBeNull();
   });
 
   it('a project’s copy leaves the shared file alone, and stays off', async () => {
@@ -114,7 +121,7 @@ describe('a real sync after the clear', () => {
 
     const raw = readRawFrontmatter(await fs.readFile(rowOf(id).filePath, 'utf8'));
     expect((raw?.data.schedule as { enabled: unknown }).enabled).toBe(true);
-    expect(rowOf(id)).toMatchObject({ enabled: false, status: 'active' });
+    expect(rowOf(id)).toMatchObject({ enabled: false, status: 'pending_approval' });
   });
 
   it('a project’s copy stays off through a sync, and its neighbours do not change', async () => {
@@ -178,7 +185,12 @@ describe('a real sync after the clear', () => {
     store.approvals.backfillApprovalGrants();
     for (const agent of ['project-a', 'project-b', 'project-c']) await syncCopy(agent);
 
-    expect(rowOf(clearedId)).toMatchObject({ enabled: false, status: 'active', originMarks: null });
+    expect(rowOf(clearedId)).toMatchObject({
+      enabled: false,
+      status: 'pending_approval',
+      originMarks: JSON.stringify({ outsider: true }),
+      approvedContentKey: null,
+    });
     const raw = readRawFrontmatter(await fs.readFile(filePath, 'utf8'));
     expect((raw?.data.schedule as { enabled: unknown }).enabled).toBe(true);
     expect(rowOf(onId)).toMatchObject({
@@ -194,7 +206,7 @@ describe('a real sync after the clear', () => {
   });
 });
 
-describe('a person turns a cleared schedule back on', () => {
+describe('a person approves a cleared schedule and turns it on', () => {
   it('a person’s file: the file says on, and the next sync keeps it on and approved', async () => {
     const id = await parked('digest', { outsider: true });
     await store.approvals.clearOutsiderParks();
@@ -213,7 +225,7 @@ describe('a person turns a cleared schedule back on', () => {
       plan.frontmatter,
       plan.body
     );
-    store.updateTask(id, { enabled: true });
+    store.updateTask(id, { enabled: true, status: 'active' });
     const task = await sync(filePath);
 
     expect(task).toMatchObject({ enabled: true, status: 'active' });
@@ -229,7 +241,7 @@ describe('a person turns a cleared schedule back on', () => {
     await store.approvals.clearOutsiderParks();
     store.approvals.backfillApprovalGrants();
 
-    store.updateTask(id, { enabled: true });
+    store.updateTask(id, { enabled: true, status: 'active' });
     const task = await sync(rowOf(id).filePath, 'record');
 
     expect(task).toMatchObject({ enabled: true, status: 'active' });
@@ -239,12 +251,21 @@ describe('a person turns a cleared schedule back on', () => {
 describe('clearOutsiderParks', () => {
   it('leaves the row and its file off, and the back-fill does not switch it on', async () => {
     const id = await parked('digest', { outsider: true });
+    db.update(pulseSchedules)
+      .set({ approvedContentKey: 'stale-grant', previousApprovalKey: 'older-grant' })
+      .where(eq(pulseSchedules.id, id))
+      .run();
 
     expect(await store.approvals.clearOutsiderParks()).toBe(1);
     store.approvals.backfillApprovalGrants();
 
     const row = rowOf(id);
-    expect(row).toMatchObject({ enabled: false, status: 'active', originMarks: null });
+    expect(row).toMatchObject({
+      enabled: false,
+      status: 'pending_approval',
+      originMarks: JSON.stringify({ outsider: true }),
+      approvedContentKey: null,
+    });
     const raw = readRawFrontmatter(await fs.readFile(row.filePath, 'utf8'));
     expect((raw?.data.schedule as { enabled: unknown }).enabled).toBe(false);
   });
@@ -253,7 +274,103 @@ describe('clearOutsiderParks', () => {
     const id = await parked('digest', { teammate: [{ roomId: 'r', authorId: 'a' }] });
 
     expect(await store.approvals.clearOutsiderParks()).toBe(1);
-    expect(rowOf(id)).toMatchObject({ status: 'active', enabled: false, originMarks: null });
+    expect(rowOf(id)).toMatchObject({
+      status: 'pending_approval',
+      enabled: false,
+      originMarks: JSON.stringify({ teammate: [{ roomId: 'r', authorId: 'a' }] }),
+      approvedContentKey: null,
+    });
+  });
+
+  it('leaves an ordinary switched-off approved row untouched', async () => {
+    const id = await parked('ordinary-off', { outsider: true });
+    db.update(pulseSchedules)
+      .set({ enabled: false, status: 'active', originMarks: null })
+      .where(eq(pulseSchedules.id, id))
+      .run();
+    store.approvals.backfillApprovalGrants();
+    const before = rowOf(id);
+    expect(before.approvedContentKey).not.toBeNull();
+    const fileBefore = await fs.readFile(before.filePath, 'utf8');
+
+    expect(await store.approvals.clearOutsiderParks()).toBe(0);
+    expect(store.approvals.backfillApprovalGrants()).toBe(0);
+
+    expect(rowOf(id)).toEqual(before);
+    expect(await fs.readFile(before.filePath, 'utf8')).toBe(fileBefore);
+  });
+
+  it('preserves the row’s outside-word marks after switching it off', async () => {
+    const marks = {
+      outsider: true,
+      teammate: [{ roomId: 'sample-room', authorId: 'sample-agent' }],
+    };
+    const id = await parked('marked-words', marks);
+
+    expect(await store.approvals.clearOutsiderParks()).toBe(1);
+    expect(store.getTask(id)?.originMarks).toMatchObject(marks);
+    expect(rowOf(id).originMarks).toBe(JSON.stringify(marks));
+  });
+
+  it('still asks with marked-task when its owning agent approves after restart cleanup', async () => {
+    const owner = path.join(root, 'sample-owner');
+    const editor = path.join(root, 'sample-editor');
+    const sources: AgentModeSources = {
+      declaredModes: () => CLAUDE_CODE_CAPABILITIES.permissionModes,
+      agentLevelMode: async () => 'bypassPermissions',
+      agentPathOf: (id) => (id === 'sample-owner' ? owner : editor),
+      readConfig: () => ({
+        preset: 'trusted',
+        defaults: {
+          areas: {},
+          actions: { 'tasks.approve': 'allowed', 'tasks.set_mode': 'allowed' },
+        },
+      }),
+      readAgentPermissions: async () => undefined,
+      startedBy: () => null,
+      turnLevelOf: () => ({ asks: 'never', reach: 'everything' }),
+    };
+    const caller = {
+      structural: true,
+      agentPath: owner,
+      sessionId: 'sample-owner-chat',
+      marked: false,
+      resolved: 'home' as const,
+    };
+    for (const mode of ['dontAsk', 'default'] as const) {
+      const id = await parked(`marked-${mode.toLowerCase()}`, { outsider: true });
+      db.update(pulseSchedules)
+        .set({
+          agentId: 'sample-owner',
+          permissionMode: mode,
+          proposedByAgentPath: editor,
+          proposedBySessionId: 'sample-editor-chat',
+        })
+        .where(eq(pulseSchedules.id, id))
+        .run();
+      await store.approvals.clearOutsiderParks();
+      store.approvals.backfillApprovalGrants();
+      const task = store.getTask(id)!;
+      const call = {
+        door: 'update' as const,
+        body: { status: 'active' },
+        task,
+        edits: {
+          lastEditedByAgentPath: editor,
+          lastEditedBySessionId: 'sample-editor-chat',
+          agentApprovalKey: null,
+        },
+      };
+      const decision = await decideAgentModeCall(call, caller, sources);
+      expect(decision).toMatchObject({ kind: 'decided', state: 'ask', asks: ['marked-task'] });
+      expect(
+        await decideAgentModeCall(
+          { ...call, task: { ...task, originMarks: null } },
+          caller,
+          sources
+        )
+      ).toMatchObject({ kind: 'decided', state: 'allowed' });
+    }
   });
 
   it('matches nothing the second time', async () => {

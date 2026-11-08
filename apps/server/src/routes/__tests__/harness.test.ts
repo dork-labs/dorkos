@@ -153,10 +153,10 @@ const gateway = {
   /** Packages a card was raised for, in order. */
   requested: [] as string[],
   request(input: ApprovalRequestInput): ApprovalTicket {
-    const summary = input.summary ?? '';
-    // The card's summary names the package; the route's `askedAbout` is what is
-    // really under test, so this only has to be enough to tell two apart.
-    this.requested.push(summary.includes('acme') ? 'acme' : summary);
+    // Package identity is part of the request; presentation wording can change.
+    this.requested.push(
+      input.packageRequest?.kind === 'hooks' ? input.packageRequest.request.packageName : 'unknown'
+    );
     return {
       approvalId: `approval-${this.requested.length}`,
       token: `token-${this.requested.length}`,

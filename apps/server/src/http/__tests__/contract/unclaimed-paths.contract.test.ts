@@ -67,7 +67,7 @@ function cannot(method: string, target: string): string {
 /** The headers that page carries. */
 const CANNOT_HEADERS = {
   'content-type': 'text/html; charset=utf-8',
-  'content-security-policy': "default-src 'none'",
+  'content-security-policy': "default-src 'none', frame-ancestors 'none'",
   'x-content-type-options': 'nosniff',
 };
 

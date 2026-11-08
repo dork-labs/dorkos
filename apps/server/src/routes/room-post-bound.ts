@@ -16,7 +16,7 @@
 import type { RequestFacts } from '../http/request-facts.js';
 import { ownerAccountExists } from '../services/core/auth/gate-policy.js';
 import { wifiTurnBound } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
-import { personProof } from '../services/commitments/caller.js';
+import { personProof } from '../services/todos/caller.js';
 import { directChatHoldApplies } from '../services/rooms/limits/direct-chat-hold.js';
 import { env } from '../env.js';
 

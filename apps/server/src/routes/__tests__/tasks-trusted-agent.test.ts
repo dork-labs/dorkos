@@ -1,3 +1,4 @@
+import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * `POST` and `PATCH /api/tasks` from one of our agents on a Trusted install
  * (ADR 261006-225605, spec `trusted-by-default-flip` §5.4): the agent's
@@ -224,7 +225,11 @@ describe('tasks routes, one of our agents on a Trusted install', () => {
     const found = resync(filePath);
     await request(fixtureTarget.server)
       .patch(`/api/tasks/${found.id}`)
-      .send({ status: 'active', enabled: true });
+      .send({
+        expectedApprovalRevision: taskReviewRevision(store.getTask(found.id)!),
+        status: 'active',
+        enabled: true,
+      });
 
     const res = await request(fixtureTarget.server)
       .patch(`/api/tasks/${found.id}`)

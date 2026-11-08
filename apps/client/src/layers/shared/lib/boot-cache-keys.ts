@@ -115,6 +115,11 @@ export function isBootQueryKey(queryKey: readonly unknown[]): boolean {
     // question.
     case 'team':
       return queryKey.length === 1;
+    // `directChatKey(sessionId)` — whether a chat is a DM (DOR-3747). Not the
+    // sidebar's, but it decides how a reloaded chat's first frame is laid out:
+    // without it the bar draws neutral and the rows swap format when it answers.
+    case 'direct-chat':
+      return queryKey.length === 2;
     default:
       return false;
   }

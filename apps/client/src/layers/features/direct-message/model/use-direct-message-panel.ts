@@ -20,8 +20,11 @@ import { useDirectMessageView } from './use-direct-message-view';
  *   so every tab is about it.
  * - `group` — a direct message with more than one agent or person. Its tabs
  *   are about the member picked at the top of the panel.
+ * - `pending` — a chat the server has not yet said is a DM or not. The session's
+ *   own tabs wait, so a DM never flashes them first.
  */
 export type DirectMessagePanel =
+  | { kind: 'pending'; showSessions: false }
   | {
       kind: 'one-to-one';
       /** The session behind the DM, which the Work tab shows. */
@@ -55,7 +58,7 @@ export function useDirectMessagePanel(): DirectMessagePanel | null {
   const showSessions = useShowSessions();
   const pathname = useSafePathname();
   const [routeSessionId] = useSessionId();
-  const onSession = enabled && pathname === SESSION_ROUTE;
+  const onSession = pathname === SESSION_ROUTE;
   const view = useDirectMessageView(onSession ? (routeSessionId ?? null) : null);
   // A group DM is only ever addressed by its id: Home's room is #team.
   const search = useSafeSearch() as { id?: string };
@@ -67,9 +70,11 @@ export function useDirectMessagePanel(): DirectMessagePanel | null {
   const fleetAgents = fleet?.agents;
   // Live presence, not the list's snapshot: it is what says a turn has ended.
   const working = useRoomWorking(group?.id ?? '', group?.working) > 0;
-  const chat = view.mode === 'dm' ? view.chat : null;
+  const chat = enabled && view.mode === 'dm' ? view.chat : null;
+  const pending = onSession && view.mode === 'pending';
 
   return useMemo<DirectMessagePanel | null>(() => {
+    if (pending) return { kind: 'pending', showSessions: false };
     if (onSession && chat !== null && routeSessionId) {
       return {
         kind: 'one-to-one',
@@ -88,5 +93,5 @@ export function useDirectMessagePanel(): DirectMessagePanel | null {
       };
     }
     return null;
-  }, [onSession, chat, routeSessionId, showSessions, group, fleetAgents, working]);
+  }, [pending, onSession, chat, routeSessionId, showSessions, group, fleetAgents, working]);
 }

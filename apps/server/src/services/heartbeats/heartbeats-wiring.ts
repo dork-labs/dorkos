@@ -6,10 +6,10 @@
  *
  * - **Off is really off** (§3.6). With `heartbeats.enabled` false nothing is
  *   armed and nothing is answered: no beat timer, no outbox tick, no event-wake
- *   window, and every source's wake (commitments included) reaches no hub.
+ *   window, and every source's wake (to-dos included) reaches no hub.
  *   Held raises stay rows and go out once heartbeats are on again.
- * - **Commitment wakes** subscribe here through the same `wakeAgent` every
- *   other source uses, so the wakes the commitment service queued at its own
+ * - **To-do wakes** subscribe here through the same `wakeAgent` every
+ *   other source uses, so the wakes the to-do service queued at its own
  *   start reach the hub only while heartbeats are on.
  *
  * @module services/heartbeats/heartbeats-wiring
@@ -24,7 +24,7 @@ import { resolveWorkingHours, zonedDay } from '@dorkos/shared/working-hours';
 import { configManager } from '../core/config-manager.js';
 import { runsSchedules } from '../core/agent-computer/sealed.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
-import type { CommitmentService } from '../commitments/index.js';
+import type { TodoPromiseService } from '../todos/index.js';
 import { resolveAgentIdForPath } from '../mesh/agent-path-lookup.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { onDispatchLifecycle } from '../session/message-dispatcher.js';
@@ -59,7 +59,7 @@ import {
 } from './heartbeat-adapters.js';
 import {
   createAddressedGatherer,
-  createCommitmentsGatherer,
+  createTodosGatherer,
   createHealthGatherer,
   createSchedulesGatherer,
   createWorkspaceGatherer,
@@ -79,8 +79,8 @@ export interface HeartbeatsWiringDeps extends DeliveryDeps {
   origins: SessionOriginResolvers;
   /** Mesh, once it runs. */
   meshCore: () => MeshCore | undefined;
-  /** Commitments, for the gatherer, the prompt and due wakes. */
-  commitments: CommitmentService;
+  /** To-dos, for the gatherer, the prompt and due wakes. */
+  todoPromises: TodoPromiseService;
 }
 
 /** What the composition root keeps. */
@@ -130,17 +130,17 @@ function ownRunReader(db: Db) {
  * Every gatherer this server runs.
  *
  * @param db - The database.
- * @param commitments - The commitment service.
+ * @param to-dos - The to-do service.
  * @param openWork - Lanes and chat activity, for open work gone quiet (DOR-3674).
  */
 function gatherersFor(
   db: Db,
-  commitments: CommitmentService,
+  todoPromises: TodoPromiseService,
   openWork: OpenWorkReader
 ): GathererRegistry {
   return {
     addressed: createAddressedGatherer(db),
-    commitments: createCommitmentsGatherer(commitments, openWork),
+    todos: createTodosGatherer(todoPromises, openWork),
     schedules: createSchedulesGatherer(ownRunReader(db)),
     health: createHealthGatherer(db),
     workspace: createWorkspaceGatherer(),
@@ -221,7 +221,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     enabled,
     computerActivity: openWork.computerActivity,
     recentLaneCount: openWork.recentLaneCount,
-    commitments: deps.commitments,
+    todoPromises: deps.todoPromises,
     rooms: deps.rooms,
   });
   const runner = new BeatRunner({
@@ -232,8 +232,8 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
     // An agent a person paused (spec `audit-trail` PR5) never beats.
     isPaused: (agentId) => agentPause()?.pausedAgent(agentId) !== undefined,
     hoursFor: () => hours(),
-    gatherers: gatherersFor(db, deps.commitments, openWork.reader),
-    commitments: deps.commitments,
+    gatherers: gatherersFor(db, deps.todoPromises, openWork.reader),
+    todoPromises: deps.todoPromises,
     launcher: createBeatTurnLauncher(deps.meshCore),
     outbox,
     reports: { raises, managerOf, isAgent, presenceOf, nameOf },
@@ -307,7 +307,7 @@ export function startHeartbeats(deps: HeartbeatsWiringDeps): HeartbeatsHandle {
 }
 
 /**
- * Follow `heartbeats.enabled`, commitments coming due, and turns that start in
+ * Follow `heartbeats.enabled`, to-dos coming due, and turns that start in
  * a beat chat.
  *
  * @param deps - What the composition root handed over.
@@ -338,8 +338,8 @@ function follow(
     void parts.runner.refreshEnabled();
   };
   apply();
-  const unobserveCommitments = deps.commitments.observe((event) =>
-    wakeAgent(event.commitment.agentId, { type: 'commitment-due', eventId: event.commitment.id })
+  const unobserveTodos = deps.todoPromises.observe((event) =>
+    wakeAgent(event.todoPromise.agentId, { type: 'commitment-due', eventId: event.todoPromise.id })
   );
   // A turn started by any other message in a beat chat is an ordinary turn (§7.2).
   const unwatchTurns = onDispatchLifecycle((event) => {
@@ -353,7 +353,7 @@ function follow(
   return () => {
     unwatchTurns();
     unwatchConfig();
-    unobserveCommitments();
+    unobserveTodos();
   };
 }
 

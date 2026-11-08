@@ -16,6 +16,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { approvals, eq } from '@dorkos/db';
+import { hookRequestFamily } from '../hook-card.js';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -150,6 +152,33 @@ afterEach(async () => {
 });
 
 describe('a yes on a quiet row after a restart (DOR-3427)', () => {
+  it('retires a summary-only legacy card and raises a whole disclosure from the saved request', async () => {
+    const oldId = await raiseThenRestart(V1);
+    db.update(approvals)
+      .set({
+        packageRequest: null,
+        detail: null,
+        inputHash: `${hookRequestFamily(V1.request)}.legacy`,
+      })
+      .where(eq(approvals.id, oldId))
+      .run();
+    const after = freshService();
+    const reproject = vi.fn(async () => [] as WithheldHooks[]);
+    expect(resumePassiveHookRows({ dorkHome, approvals: after, reproject })).toEqual(['evil']);
+    await settle();
+    const pending = after.listPending();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.approvalId).not.toBe(oldId);
+    expect(pending[0]?.detail).toContain('a'.repeat(64));
+    expect(pending[0]?.cannotAllow).toBeUndefined();
+    const retired = db.select().from(approvals).where(eq(approvals.id, oldId)).get();
+    expect(retired).toMatchObject({ state: 'pending', declineKind: null });
+    expect(retired?.consumedAt).not.toBeNull();
+    expect(after.grant(pending[0]!.approvalId)).toBeUndefined();
+    await vi.waitFor(() => expect(reproject).toHaveBeenCalledTimes(1));
+    expect(config.harness.refusedHooks).toEqual([]);
+  });
+
   it('records the approval and projects', async () => {
     const approvalId = await raiseThenRestart(V1);
     const after = freshService();
@@ -199,7 +228,7 @@ describe('a yes on a quiet row after a restart (DOR-3427)', () => {
     const pending = after.listPending();
     expect(pending).toHaveLength(1);
     expect(pending[0]?.approvalId).not.toBe(approvalId);
-    expect(pending[0]?.summary).toContain('b'.repeat(12));
+    expect(pending[0]?.detail).toContain('b'.repeat(64));
     expect(readPassiveHookRows(dorkHome)).toEqual([V2.request]);
   });
 

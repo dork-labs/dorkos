@@ -17,24 +17,8 @@
 import { z } from 'zod';
 import type { ClientMethod, ServerNotificationMethod } from './methods.js';
 
-/** `SandboxMode` values DorkOS sends on `thread/start` / `thread/resume`. */
-export const SandboxModeSchema = z.enum(['read-only', 'workspace-write', 'danger-full-access']);
-
 /** `AskForApproval` values DorkOS sends. */
 export const AskForApprovalSchema = z.enum(['untrusted', 'on-request', 'never']);
-
-/** The tagged `SandboxPolicy` `turn/start` takes. */
-export const SandboxPolicySchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('dangerFullAccess') }),
-  z.strictObject({ type: z.literal('readOnly'), networkAccess: z.boolean() }),
-  z.strictObject({
-    type: z.literal('workspaceWrite'),
-    writableRoots: z.array(z.string()),
-    networkAccess: z.boolean(),
-    excludeTmpdirEnvVar: z.boolean(),
-    excludeSlashTmp: z.boolean(),
-  }),
-]);
 
 const TextUserInputSchema = z.strictObject({
   type: z.literal('text'),
@@ -58,7 +42,7 @@ const threadLoadShape = {
   // `auto_review` / `guardian_subagent` let a model answer an approval; DorkOS
   // never sends them (spec §18).
   approvalsReviewer: z.literal('user'),
-  sandbox: SandboxModeSchema,
+  permissions: z.string().min(1),
   config: z.record(z.string(), z.unknown()),
 };
 
@@ -71,7 +55,7 @@ const TurnStartParamsSchema = z.strictObject({
   clientUserMessageId: z.string().optional(),
   cwd: z.string(),
   approvalPolicy: AskForApprovalSchema,
-  sandboxPolicy: SandboxPolicySchema,
+  permissions: z.string().min(1),
   model: z.string().optional(),
   effort: z.string().optional(),
   summary: z.literal('auto'),

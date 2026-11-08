@@ -565,6 +565,8 @@ type PerKind<K extends NotificationKind, T> = T | ((payload: NotificationPayload
 
 /** Where a notification files itself — its subject id and its lens keys. */
 export interface NotificationLocation {
+  /** Override when a kind has more than one actionable subject. */
+  subjectType?: NotificationSubjectType;
   /** Id of the subject within {@link NotificationRegistryEntry.subjectType}. */
   subjectId: string;
   agentId?: string;
@@ -783,13 +785,10 @@ const ENTRIES: NotificationRegistryMap = {
     tier: (p) => (p.status === 'completed' ? 'quiet' : 'notable'),
     storage: 'event',
     subjectType: 'run',
-    locate: (p) => ({ subjectId: p.runId, agentId: p.agentId }),
     // Its title, body, action and reach: see `run-completed-copy.ts`.
     ...RUN_COMPLETED_COPY,
     dedupeKey: (p) => `run:${p.runId}`,
-    // The chat message keeps the wording DOR-240 shipped rather than being
-    // rebuilt from title and body: a phone message and an inbox row are not the
-    // same sentence, and this one is already tuned.
+    // Refusal chat messages carry the title only.
     channelMessage: (p) => p.channelMessage,
   },
 

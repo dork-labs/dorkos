@@ -134,7 +134,7 @@ describe('connector resource routes', () => {
     expect(response.headers['content-type']).toBe('image/svg+xml');
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['content-security-policy']).toBe(
-      "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+      "default-src 'none'; style-src 'unsafe-inline'; sandbox, frame-ancestors 'none'"
     );
     expect(response.headers['cache-control']).toBe('private, max-age=86400');
     expect(Buffer.from(response.body as Buffer).equals(svg)).toBe(true);

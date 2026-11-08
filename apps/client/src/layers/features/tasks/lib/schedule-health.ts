@@ -94,14 +94,11 @@ export function describeFailure(reason: TaskFailureReason, stop: string | null):
     case 'tools_refused': {
       const tools = toolPhrase(reason.tools);
       const verb = reason.tools.length === 1 ? 'was' : 'were';
-      if (reason.nothingDone) {
-        return stop
-          ? `Nothing got done: ${tools} ${verb} refused at ${stop}.`
-          : `Nothing got done: ${tools} ${verb} refused.`;
-      }
+      const subject =
+        reason.tools.length === 1 && reason.tools[0] === 'Bash' ? 'A Bash command' : tools;
       return stop
-        ? `${tools} ${verb} refused: this schedule runs at ${stop}.`
-        : `${tools} ${verb} refused, with nobody there to approve ${reason.tools.length === 1 ? 'it' : 'them'}.`;
+        ? `${subject} ${verb} refused. This schedule runs as ${stop}.`
+        : `${subject} ${verb} refused.`;
     }
     case 'signin_needed':
       return 'Its sign-in expired. Sign in again, then run it.';

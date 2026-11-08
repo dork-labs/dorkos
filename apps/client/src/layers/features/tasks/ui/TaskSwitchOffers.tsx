@@ -8,66 +8,32 @@
  *
  * @module features/tasks/ui/TaskSwitchOffers
  */
-import { toast } from 'sonner';
 import type { Task } from '@dorkos/shared/types';
-import { useDeleteTask, useUpdateTask } from '@/layers/entities/tasks';
 import { Button } from '@/layers/shared/ui';
 
 /** The card's button size (`ScheduleApprovalCard`), so the two read alike. */
-const BUTTON_CLASS = 'h-7 px-2.5 text-xs';
+const BUTTON_CLASS = 'min-h-11 px-2.5 text-xs sm:h-7 sm:min-h-0';
 
-/**
- * Approve or reject a parked task from its row.
- *
- * Approve sends `status` alone, so the switch stays as stored; only "Approve
- * and turn on" sends `enabled: true` with it.
- */
-export function TaskApproveButtons({ task }: { task: Task }) {
-  const updateTask = useUpdateTask();
-  const deleteTask = useDeleteTask();
-  // No local onError: the shared mutation toasts (`meta.errorLabel`) report a
-  // failure. Bare, matching Run started on the row.
-  const approve = (e: React.MouseEvent, turnOn: boolean) => {
-    e.stopPropagation();
-    updateTask.mutate(
-      { id: task.id, status: 'active', ...(turnOn && { enabled: true }) },
-      {
-        onSuccess: () =>
-          toast(
-            task.enabled || turnOn
-              ? 'Schedule approved'
-              : 'Schedule approved. Off until you turn it on.'
-          ),
-      }
-    );
-  };
+/** Open the shared review before a parked schedule can be approved. */
+export function TaskApproveButtons({
+  task,
+  onReview,
+}: {
+  task: Task;
+  onReview: (element: HTMLElement) => void;
+}) {
   return (
-    <div className="flex flex-wrap gap-1">
-      <Button size="sm" className={BUTTON_CLASS} onClick={(e) => approve(e, false)}>
-        Approve
-      </Button>
-      {!task.enabled && (
-        <Button
-          variant="outline"
-          size="sm"
-          className={BUTTON_CLASS}
-          onClick={(e) => approve(e, true)}
-        >
-          Approve and turn on
-        </Button>
-      )}
-      <Button
-        variant="ghost"
-        size="sm"
-        className={BUTTON_CLASS}
-        onClick={(e) => {
-          e.stopPropagation();
-          deleteTask.mutate(task.id);
-        }}
-      >
-        Reject
-      </Button>
-    </div>
+    <Button
+      size="sm"
+      className={BUTTON_CLASS}
+      aria-label={`Review ${task.displayName ?? task.name}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onReview(event.currentTarget);
+      }}
+    >
+      Review
+    </Button>
   );
 }
 

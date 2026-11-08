@@ -41,7 +41,7 @@ export {
 // and by Pulse, so the two cannot disagree (see its module doc, DOR-2578).
 export { useWaitingQueue } from './model/use-waiting-queue';
 // The sentence both of those surfaces say about that queue.
-export { describeWaitingQueue } from './model/describe-waiting-queue';
+export { BROWSER_HANDOFF_WAITING, describeWaitingQueue } from './model/describe-waiting-queue';
 // The id vocabulary a blockage is named in (see `signal-ids.ts`'s module doc).
 // Exported so a consumer that mints a signal id by hand — `MobileNowAttention`
 // matches its own covered-ids list against `deriveAttentionSignals`'s ids —

@@ -279,7 +279,7 @@ export function createProductionBrowserRuntimeOwner() {
           const runtime: BrowserRuntimeDescriptor = parseRuntimeDescriptor({
             library: {
               package: 'playwright-core',
-              version: '1.63.0',
+              version: '1.65.0-alpha-2026-10-30',
               rootDir: packaged.configuration.libraryRoot,
               assets: { manifest: 'browsers.json', cli: 'cli.js' },
             },
@@ -288,10 +288,10 @@ export function createProductionBrowserRuntimeOwner() {
                 packaged.configuration.cacheRoot,
                 'candidates',
                 verified.installationId,
-                'payload/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
+                'payload/chromium-1252/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
               ),
               sha256: verified.executableSHA256,
-              revision: '1243',
+              revision: '1252',
               version: verified.observedVersion,
               platform: 'darwin',
               arch: 'arm64',

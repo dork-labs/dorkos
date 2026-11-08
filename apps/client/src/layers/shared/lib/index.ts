@@ -385,6 +385,7 @@ export {
   type FilterValues,
 } from './filter-engine';
 export { getAgentDisplayName, slugifyAgentName } from '@dorkos/shared/validation';
+export { AGENT_IDENTITY_LIMIT_MS, useGaveUpWaiting, useWaitedPast } from './use-waited-past';
 export {
   buildTimelineRows,
   relayTimelineRows,
@@ -445,3 +446,9 @@ export { appRoutes } from './route-factory';
 
 export { newSessionTarget, sessionLocationTarget } from './session-link';
 export { WORK_PANEL_ID } from './right-panel-tab-ids';
+
+export {
+  bootCacheSignInCheck,
+  forgetBootCacheOnSignOut,
+  resumeBootCacheAfterSignIn,
+} from './boot-cache-session';

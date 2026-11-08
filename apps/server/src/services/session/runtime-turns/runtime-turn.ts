@@ -67,6 +67,7 @@ import {
   noteRuntimeTurnOpen,
   noteTurnBoundary,
 } from '../message-dispatcher.js';
+import { beginTurnStarter } from '../origin/active-turn-starter.js';
 import { persistenceModeFor } from '../projector-persistence.js';
 import { runtimeLockHolder } from '../session-lock.js';
 import { feedProjector } from '../session-event-normalizer.js';
@@ -111,12 +112,15 @@ export function subscribeRuntimeTurns(runtime: AgentRuntime): (() => void) | und
     // unhandled rejection escaping here would be swallowed by the server's
     // global handler, and the only symptom would be a chat that quietly stopped
     // answering with nothing in the log naming the session.
-    void projectRuntimeTurn(runtime, sessionId, events).catch((err) => {
-      logger.error('[runtime-turn] a turn the agent started could not be projected', {
-        sessionId,
-        ...logError(err),
+    const releaseStarter = beginTurnStarter(sessionId, 'agent');
+    void projectRuntimeTurn(runtime, sessionId, events)
+      .finally(releaseStarter)
+      .catch((err) => {
+        logger.error('[runtime-turn] a turn the agent started could not be projected', {
+          sessionId,
+          ...logError(err),
+        });
       });
-    });
   });
   // The other half of the pending-segment gate. `isSegmentPending` holds a
   // person's queued message while a helper's report is on its way; this is how

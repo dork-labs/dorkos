@@ -4,7 +4,7 @@
  * discovery scan stream (`/api/discovery`), and the two groups that share the
  * `/api/agents` prefix, the managed-MCP sign-in landing
  * (`/api/agents/mcp-oauth`) and an agent's promises
- * (`/api/agents/:id/commitments`, with their list at `/api/commitments`).
+ * (`/api/agents/:id/todo-promises`, with their list at `/api/todo-promises`).
  * That PR must pass this file unchanged.
  *
  * Two servers, both with login off:
@@ -34,7 +34,10 @@ import {
   TopologyViewSchema,
   AgentPauseListSchema,
 } from '@dorkos/shared/mesh-schemas';
-import { CommitmentSchema, ListCommitmentsResponseSchema } from '@dorkos/shared/commitment-schemas';
+import {
+  TodoPromiseSchema,
+  ListTodoPromisesResponseSchema,
+} from '@dorkos/shared/todo-promise-schemas';
 import {
   BOOT_HOOK_TIMEOUT_MS,
   bootComposedServer,
@@ -527,23 +530,23 @@ contractSuite('mesh, agent and discovery groups', [
     expect: { status: 404, body: NOT_FOUND },
   },
   {
-    name: 'POST /api/agents/:id/commitments refuses an agent',
+    name: 'POST /api/agents/:id/todo-promises refuses an agent',
     method: 'POST',
-    path: `/api/agents/${UNKNOWN_ULID}/commitments`,
+    path: `/api/agents/${UNKNOWN_ULID}/todo-promises`,
     headers: AGENT,
     body: {},
     expect: {
       status: 403,
       body: {
-        error: 'Agents record their own promises with commitment_add.',
+        error: 'Agents record their own promises with todo_promise_add.',
         code: 'NOT_A_PERSON',
       },
     },
   },
   {
-    name: 'POST /api/agents/:id/commitments refuses an empty body',
+    name: 'POST /api/agents/:id/todo-promises refuses an empty body',
     method: 'POST',
-    path: `/api/agents/${UNKNOWN_ULID}/commitments`,
+    path: `/api/agents/${UNKNOWN_ULID}/todo-promises`,
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
@@ -586,43 +589,43 @@ contractSuite('mesh, agent and discovery groups', [
     },
   },
   {
-    name: 'GET /api/agents/:id/commitments is the /api 404',
-    path: `/api/agents/${UNKNOWN_ULID}/commitments`,
+    name: 'GET /api/agents/:id/todo-promises is the /api 404',
+    path: `/api/agents/${UNKNOWN_ULID}/todo-promises`,
     expect: { status: 404, body: NOT_FOUND },
   },
 
   {
-    name: 'GET /api/commitments lists no promises',
-    path: '/api/commitments',
-    expect: { status: 200, headers: JSON_TYPE, body: { commitments: [] } },
+    name: 'GET /api/todo-promises lists no promises',
+    path: '/api/todo-promises',
+    expect: { status: 200, headers: JSON_TYPE, body: { todoPromises: [] } },
   },
   {
-    name: 'GET /api/commitments/ answers with a trailing slash and a filter',
-    path: '/api/commitments/?state=open&limit=5',
-    expect: { status: 200, schema: ListCommitmentsResponseSchema },
+    name: 'GET /api/todo-promises/ answers with a trailing slash and a filter',
+    path: '/api/todo-promises/?state=open&limit=5',
+    expect: { status: 200, schema: ListTodoPromisesResponseSchema },
   },
   {
-    name: 'HEAD /api/commitments answers the GET’s status with no body',
+    name: 'HEAD /api/todo-promises answers the GET’s status with no body',
     method: 'HEAD',
-    path: '/api/commitments',
+    path: '/api/todo-promises',
     expect: { status: 200, headers: JSON_TYPE, body: '' },
   },
   {
-    name: 'GET /api/commitments refuses a limit out of range',
-    path: '/api/commitments?limit=0',
+    name: 'GET /api/todo-promises refuses a limit out of range',
+    path: '/api/todo-promises?limit=0',
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'PATCH /api/commitments/:id refuses a body with no state',
+    name: 'PATCH /api/todo-promises/:id refuses a body with no state',
     method: 'PATCH',
-    path: '/api/commitments/no-such-promise',
+    path: '/api/todo-promises/no-such-promise',
     body: { note: 'x' },
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'PATCH /api/commitments/:id refuses an agent that could not be identified',
+    name: 'PATCH /api/todo-promises/:id refuses an agent that could not be identified',
     method: 'PATCH',
-    path: '/api/commitments/no-such-promise',
+    path: '/api/todo-promises/no-such-promise',
     headers: AGENT,
     body: { state: 'kept' },
     expect: {
@@ -631,15 +634,15 @@ contractSuite('mesh, agent and discovery groups', [
     },
   },
   {
-    name: 'PATCH /api/commitments/:id answers 404 for an unknown promise',
+    name: 'PATCH /api/todo-promises/:id answers 404 for an unknown promise',
     method: 'PATCH',
-    path: '/api/commitments/no-such-promise',
+    path: '/api/todo-promises/no-such-promise',
     body: { state: 'kept' },
     expect: { status: 404, schema: z.object({ code: z.literal('NOT_FOUND') }).loose() },
   },
   {
-    name: 'GET /api/commitments/:id is the /api 404',
-    path: '/api/commitments/no-such-promise',
+    name: 'GET /api/todo-promises/:id is the /api 404',
+    path: '/api/todo-promises/no-such-promise',
     expect: { status: 404, body: NOT_FOUND },
   },
 
@@ -854,7 +857,7 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     });
     await check(server, {
       method: 'POST',
-      path: `/api/agents/${id}/commitments`,
+      path: `/api/agents/${id}/todo-promises`,
       headers: asAgent,
       body: { text: 'a promise' },
       expect: { status: 403, schema: z.object({ code: z.literal('NOT_A_PERSON') }).loose() },
@@ -868,39 +871,39 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     });
 
     // A person adds a promise for the agent, anyone lists it, and a person closes it.
-    const promise = await setup(server, 'POST', `/api/agents/${id}/commitments`, {
+    const promise = await setup(server, 'POST', `/api/agents/${id}/todo-promises`, {
       what: 'Reply to the contract',
       to: 'external:Contract',
     });
     await check(server, {
       method: 'POST',
-      path: `/api/agents/${id}/commitments/`,
+      path: `/api/agents/${id}/todo-promises/`,
       body: { what: 'A second promise' },
       expect: {
         status: 201,
-        schema: CommitmentSchema.extend({ agentId: z.literal(id), state: z.literal('open') }),
+        schema: TodoPromiseSchema.extend({ agentId: z.literal(id), state: z.literal('open') }),
       },
     });
     await check(server, {
-      path: `/api/commitments?agentId=${id}`,
+      path: `/api/todo-promises?agentId=${id}`,
       headers: asAgent,
       expect: {
         status: 200,
-        schema: z.object({ commitments: z.array(CommitmentSchema).length(2) }),
+        schema: z.object({ todoPromises: z.array(TodoPromiseSchema).length(2) }),
       },
     });
     await check(server, {
       method: 'PATCH',
-      path: `/api/commitments/${promise.id as string}`,
+      path: `/api/todo-promises/${promise.id as string}`,
       body: { state: 'kept', note: 'replied' },
       expect: {
         status: 200,
-        schema: CommitmentSchema.extend({ state: z.literal('kept'), note: z.literal('replied') }),
+        schema: TodoPromiseSchema.extend({ state: z.literal('kept'), note: z.literal('replied') }),
       },
     });
     await check(server, {
       method: 'POST',
-      path: `/api/agents/${UNKNOWN_ULID}/commitments`,
+      path: `/api/agents/${UNKNOWN_ULID}/todo-promises`,
       body: { what: 'For nobody' },
       expect: {
         status: 404,
@@ -923,13 +926,15 @@ describe('contract: mesh, agents and discovery, driven by hand (login off)', () 
     const dir = freshDir('registered');
     const registered = await setup(server, 'POST', '/api/mesh/agents', {
       path: dir,
+      // The fixture lives inside the repository boundary, outside the sealed HOME.
+      scanRoot: WORK,
       overrides: { name: 'registered-agent', runtime: 'claude-code' },
     });
     expect(registered.name).toBe('registered-agent');
     await check(server, {
       method: 'POST',
       path: '/api/mesh/agents',
-      body: { path: dir },
+      body: { path: dir, scanRoot: WORK },
       expect: {
         status: 201,
         schema: MANIFEST.extend({ id: z.literal(registered.id as string) }),

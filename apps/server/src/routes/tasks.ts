@@ -1,3 +1,4 @@
+import * as personReview from '../services/tasks/approvals/person-review.js';
 /**
  * Tasks scheduler routes — CRUD for schedules and runs.
  *
@@ -65,7 +66,10 @@ import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withTaskFolderRules } from './task-approval-rules.js';
 import { withProposerNames } from '../services/tasks/task-provenance.js';
-import { projectsOfFolders } from '../services/projects/project-registry.js';
+import {
+  withTaskProjects,
+  withTaskRunTimes,
+} from '../services/tasks/approvals/task-presentation.js';
 import {
   clampSchedulePermissionMode,
   taskWorkOf,
@@ -98,16 +102,6 @@ import {
 import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import { mountTaskModeUndo } from './task-mode-undo.js';
 import { marksHold } from '../services/core/turn-power/turn-marks.js';
-
-/**
- * How many upcoming runs a parked schedule carries in `nextRuns`.
- *
- * Three, because the question the preview answers is "is this cron what the
- * agent says it is?" — one occurrence cannot show a rhythm, and a long list is
- * a wall of timestamps nobody reads. Three shows the interval and the
- * time-of-day at a glance.
- */
-const NEXT_RUNS_PREVIEW_COUNT = 3;
 
 /**
  * What a schedule on DorkOS credits says to a caller that is not the owner.
@@ -149,55 +143,6 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
   const { store, scheduler, registrar, dorkHome, meshCore, activity: activityService } = deps;
   const router = new Hono<ApiEnv>();
 
-  /**
-   * Describe when a task will run, for one task on its way out of this router.
-   *
-   * **`nextRuns` is computed for `pending_approval` rows and nobody else**, and
-   * the narrowness is the design (DOR-1394 review). Reading a cron means
-   * constructing a throwaway `croner` job and asking it for three occurrences —
-   * measured at roughly 1.4ms, synchronously, per task — and this route runs on
-   * every app poll over every task there is. The only surface that reads the
-   * field is the approval card, which only ever shows parked schedules, so
-   * computing it for the rest would be milliseconds per poll spent on an answer
-   * nothing asks for. Everything else reports `[]`.
-   *
-   * A parked schedule is exactly where the question cannot be answered any other
-   * way: the scheduler never registers one, so it holds no job to ask.
-   *
-   * `nextRun` keeps its old meaning everywhere it already had one: the live
-   * job's own answer, and `null` for a task that is not going to fire. The one
-   * addition is `pending_approval`, which now reports its first previewed
-   * occurrence instead of `null`. Paused and disabled tasks deliberately stay
-   * `null` — Home reads this field to say what happens next, and a time for a
-   * task nothing will fire is a promise nobody is keeping.
-   */
-  function withRunTimes(task: Task): Task {
-    const live = scheduler.getNextRun(task.id)?.toISOString() ?? null;
-    if (task.status !== 'pending_approval') return { ...task, nextRuns: [], nextRun: live };
-
-    const nextRuns = scheduler.previewNextRuns(task.cron, task.timezone, NEXT_RUNS_PREVIEW_COUNT);
-    return { ...task, nextRuns, nextRun: live ?? nextRuns[0] ?? null };
-  }
-
-  /** The folder a task's runs start in: its agent's, or none for a task with no agent. */
-  function runFolderOf(task: Task): string | undefined {
-    return task.agentId ? meshCore?.getProjectPath(task.agentId) : undefined;
-  }
-
-  /**
-   * Stamp each task's project (spec `flow-multiproject` §6.2): the project of
-   * the folder its runs start in, resolved once per distinct folder. `null`
-   * for a task with no agent folder, or one in no repository.
-   */
-  async function withProjects(tasks: Task[]): Promise<Task[]> {
-    const folders = tasks.map(runFolderOf);
-    const projects = await projectsOfFolders(folders.flatMap((dir) => (dir ? [dir] : [])));
-    return tasks.map((task, i) => {
-      const folder = folders[i];
-      return { ...task, project: folder ? (projects.get(folder) ?? null) : null };
-    });
-  }
-
   /** One task, ready to send: run times attached, its proposer named, its project stamped. */
   async function present(task: Task): Promise<Task> {
     const [presented] = await presentAll([task]);
@@ -212,7 +157,14 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // When each last ran, and whether its last finished run did its job.
     const history = store.runHistory();
     const named = await withProposerNames(tasks);
-    return withProjects(named.map((task) => ({ ...withRunTimes(task), ...history(task.id) })));
+    return withTaskProjects(
+      meshCore,
+      named.map((task) => ({
+        ...withTaskRunTimes(scheduler, task),
+        ...history(task.id),
+        approvalRevision: personReview.taskReviewRevision(task),
+      }))
+    );
   }
 
   // === Template endpoints ===
@@ -331,12 +283,10 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const parsed = UpdateTaskRequestSchema.safeParse(body);
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     // The hash an approval card showed is not a field of the task: only the settle reads it.
-    const { approvedPromptHash, ...data } = parsed.data;
+    const { approvedPromptHash, expectedApprovalRevision, ...data } = parsed.data;
 
     const existing = store.getTask(id);
-    if (!existing) {
-      return c.json({ error: 'Scheduled task not found' }, 404);
-    }
+    if (!existing) return c.json({ error: 'Scheduled task not found' }, 404);
     // From Wi-Fi a schedule runs at Default at most (DOR-3037).
     const wifiRefusal = wifiScheduleRefusal(caller, body, existing);
     if (wifiRefusal) return c.json(wifiRefusal, 403);
@@ -474,9 +424,16 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // the next reconciler sweep (DOR-1625). Every gate it runs — the read, the
     // arm blocker, the parse, the package-owned check, the plan — refuses before
     // anything is written, so a refusal here leaves the row untouched too.
+    const review = personReview.preparePersonTaskReview(
+      store,
+      existing,
+      data,
+      expectedApprovalRevision
+    );
+    if (review.stale) return c.json(personReview.STALE_SCHEDULE_REVIEW, 409);
     const fileOutcome = await applyTaskFileUpdate(
       { dorkHome, ...(meshCore && { meshCore }) },
-      { existing, data, clampTo }
+      { existing, data, clampTo, reviewStillMatches: review.beforeWrite }
     );
     if (!fileOutcome.ok) {
       return c.json(
@@ -488,7 +445,10 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         fileOutcome.status
       );
     }
-    const { changesFile, timingLandsOn } = fileOutcome;
+    const { changesFile, timingLandsOn, reviewedFileHash } = fileOutcome;
+    // No await between this compare and activation.
+    if (!review.beforeActivation(reviewedFileHash))
+      return c.json(personReview.STALE_SCHEDULE_REVIEW, 409);
     // What would run before this write, as it RUNS, and the status it had: what
     // `settleApprovedWorkChange` below compares against.
     const before = { ...taskWorkOf(existing), status: existing.status };
@@ -496,9 +456,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const rowData =
       fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
     let updated = store.updateTask(id, rowData, { timingLandsOn });
-    if (!updated) {
-      return c.json({ error: 'Scheduled task not found' }, 404);
-    }
+    if (!updated) return c.json({ error: 'Scheduled task not found' }, 404);
 
     // **Re-assert the status the caller asked for.** The file is written before
     // the row, and a watcher event landing in that gap syncs the NEW file

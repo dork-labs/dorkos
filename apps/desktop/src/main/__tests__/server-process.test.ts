@@ -566,6 +566,24 @@ describe('the environment handed to the server child', () => {
     expect(message).not.toMatch(/next free port|will not quietly move/i);
   });
 
+  it('serves the built renderer through the preview server', async () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    const { startServer } = await import('../server-process');
+    const { child } = await startReadyServer(startServer);
+
+    expect(child.env.CLIENT_DIST_PATH).toBe(join(__dirname, '../../renderer'));
+  });
+
+  it('leaves the renderer with Vite during development', async () => {
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173');
+    vi.stubEnv('CLIENT_DIST_PATH', '');
+    const { startServer } = await import('../server-process');
+    const { child } = await startReadyServer(startServer);
+
+    expect(child.env.CLIENT_DIST_PATH).toBe('');
+    expect(child.env.DORKOS_CORS_ORIGIN).toBe('http://localhost:5173');
+  });
+
   it('marks the server as desktop-managed so it refuses to restart itself', async () => {
     const { startServer } = await import('../server-process');
 

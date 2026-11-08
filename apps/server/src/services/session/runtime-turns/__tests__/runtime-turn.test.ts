@@ -17,6 +17,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../../config/constants.js';
 import { resetMessageDispatcher } from '../../message-dispatcher.js';
 import { getOrCreateProjector } from '../../session-state-projector.js';
+import { activeTurnStarterOf } from '../../origin/active-turn-starter.js';
 import { subscribeRuntimeTurns } from '../runtime-turn.js';
 
 /** A stream of events a test pushes by hand, with an explicit end. */
@@ -83,6 +84,7 @@ describe('a turn the agent started reaches the durable stream (T9)', () => {
 
     const turn = pushable();
     runtime.emitRuntimeTurn(sessionId, turn.stream);
+    expect(activeTurnStarterOf(sessionId)).toBe('the agent itself');
     await flush();
 
     // Taken under the RESERVED holder, which `acquireLock` refuses to everyone
@@ -107,6 +109,7 @@ describe('a turn the agent started reaches the durable stream (T9)', () => {
     // Nobody typed anything, so nothing may claim they did.
     expect((start as { userMessage?: string }).userMessage).toBeUndefined();
     expect(events.some((event) => event.type === 'turn_end')).toBe(true);
+    expect(activeTurnStarterOf(sessionId)).toBeUndefined();
 
     // And the session is given back, or every queued message waits for the life
     // of the process.

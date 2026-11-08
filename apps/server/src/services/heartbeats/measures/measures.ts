@@ -71,7 +71,7 @@ export const MEASURE_TARGETS = {
   interruptions: '1 or less',
   mutes: 'Trending to 0',
   quiet: '80% or more',
-  commitments: '90% or more',
+  todoPromises: '90% or more',
 } as const;
 
 /** Where each number comes from, in one plain line. */
@@ -82,7 +82,7 @@ export const MEASURE_SOURCES = {
   surprises: 'Not measured yet. It needs the manager to say so.',
   mutes: 'Pauses, heartbeat switched off, and mutes, by a person.',
   quiet: 'Checks that sent no message. Lines saved for a report still count.',
-  commitments: 'Promises due in this window, kept by their date.',
+  todoPromises: 'Promises due in this window, kept by their date.',
 } as const;
 
 /** What the computation needs beside the rows. */
@@ -291,10 +291,10 @@ export function computeMeasures(
     checks += used.checks;
     tokens += used.tokens;
   }
-  const onTime = records.commitments.filter(
+  const onTime = records.todoPromises.filter(
     (c) => c.state === 'kept' && c.closedAt !== null && ms(c.closedAt) <= ms(c.dueAt)
   ).length;
-  const counted = records.commitments.filter(
+  const counted = records.todoPromises.filter(
     (c) => c.state !== 'dropped' && ms(c.dueAt) <= ctx.now
   ).length;
   return {
@@ -330,11 +330,11 @@ export function computeMeasures(
         MEASURE_TARGETS.quiet,
         MEASURE_SOURCES.quiet
       ),
-      commitmentsOnTime: rate(
+      todosOnTime: rate(
         onTime,
         counted,
-        MEASURE_TARGETS.commitments,
-        MEASURE_SOURCES.commitments
+        MEASURE_TARGETS.todoPromises,
+        MEASURE_SOURCES.todoPromises
       ),
       noEndBeat: records.beats.filter((beat) => beat.outcome === 'no-end-beat').length,
       triage: { checks, tokens },

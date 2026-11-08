@@ -330,7 +330,7 @@ async function configureOpenCodeSandbox(opts: StartChildProcessServerOptions): P
   }
   // NEVER default the provider here. Writing `providers.<id>` into the sandbox
   // config is the moment this harness commits to spending somebody's provider
-  // account, and a default at THIS layer silently manufactures that commitment
+  // account, and a default at THIS layer silently manufactures that to-do
   // for a caller who never asked: it is precisely how `--tier claude-code-cheap
   // --runtime opencode` reached OpenRouter with the spend gate unarmed. The
   // caller resolves the provider alongside the gate (`run-suite.ts`) or this

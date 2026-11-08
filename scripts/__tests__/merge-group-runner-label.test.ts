@@ -60,7 +60,7 @@ function runsOnByJob(text: string): Array<{ job: string; runsOn: string }> {
  */
 function isPullRequestSafe(runsOn: string): boolean {
   const value = normalize(runsOn);
-  return value === 'ubuntu-latest' || value === QUEUE_ONLY;
+  return value === 'ubuntu-latest' || value === 'ubuntu-24.04' || value === QUEUE_ONLY;
 }
 
 function read(file: string): string {
@@ -70,6 +70,7 @@ function read(file: string): string {
 describe('merge_group-only runner label', () => {
   it('accepts the hosted runner and the exact queue-only expression', () => {
     expect(isPullRequestSafe('ubuntu-latest')).toBe(true);
+    expect(isPullRequestSafe('ubuntu-24.04')).toBe(true);
     expect(isPullRequestSafe(QUEUE_ONLY)).toBe(true);
   });
 
@@ -86,7 +87,7 @@ describe('merge_group-only runner label', () => {
   });
 
   for (const [file, jobs] of Object.entries(OPTED_IN)) {
-    it(`${file}: every pull_request path runs on ubuntu-latest`, () => {
+    it(`${file}: every pull_request path runs on a hosted runner`, () => {
       const entries = runsOnByJob(read(file));
       expect(entries.length, `${file} has no parseable \`runs-on:\` lines.`).toBeGreaterThan(0);
       const unsafe = entries.filter((e) => !isPullRequestSafe(e.runsOn));

@@ -10,7 +10,8 @@
  *
  * - **Bound to one action.** The statement carries the action's kind, its
  *   target and a canonical hash of its input, with a fresh nonce.
- * - **Short-lived.** {@link STEP_UP_TTL_MS}, then it is gone.
+ * - **Short-lived.** {@link STEP_UP_TTL_MS}, then a timer removes it, with
+ *   whatever its commit closed over.
  * - **Single use.** {@link takeHeldStepUp} removes it before it commits, so
  *   it can never run twice.
  * - **Bound to the browser that asked.** It records the session that held
@@ -87,6 +88,21 @@ export interface HeldStepUp {
 const held = new Map<string, HeldStepUp>();
 
 /**
+ * What removes each held action when its time is up. A commit can close over
+ * what a person typed (a global MCP server's secrets), so an expired one must
+ * not wait for the next step-up to be dropped.
+ */
+const expiries = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Drop one held action and its timer. */
+function drop(heldActionId: string): void {
+  const expiry = expiries.get(heldActionId);
+  if (expiry !== undefined) clearTimeout(expiry);
+  expiries.delete(heldActionId);
+  held.delete(heldActionId);
+}
+
+/**
  * The canonical hash of one action: its kind, target and input, through the
  * same canonical JSON hash approvals are bound with.
  *
@@ -112,7 +128,7 @@ function prune(now: number, sessionId: string | null, kind: string, inputSha256:
       entry.sessionId === sessionId &&
       statement.kind === kind &&
       statement.inputSha256 === inputSha256;
-    if (sameAction || now >= Date.parse(statement.expiresAt)) held.delete(id);
+    if (sameAction || now >= Date.parse(statement.expiresAt)) drop(id);
   }
 }
 
@@ -137,7 +153,7 @@ export function holdStepUp(
   while (held.size >= MAX_HELD_STEP_UPS) {
     const oldest = held.keys().next().value;
     if (oldest === undefined) break;
-    held.delete(oldest);
+    drop(oldest);
   }
   const statement: LocalStepUpStatementV1 = {
     t: LOCAL_STEP_UP_STATEMENT_TYPE,
@@ -158,6 +174,9 @@ export function holdStepUp(
     commit: action.commit,
     triesLeft: STEP_UP_MAX_PASSWORD_TRIES,
   });
+  const expiry = setTimeout(() => drop(statement.heldActionId), STEP_UP_TTL_MS);
+  expiry.unref?.();
+  expiries.set(statement.heldActionId, expiry);
   return statement;
 }
 
@@ -171,7 +190,7 @@ export function peekHeldStepUp(heldActionId: string, now = Date.now()): HeldStep
   const entry = held.get(heldActionId);
   if (!entry) return undefined;
   if (now >= Date.parse(entry.statement.expiresAt)) {
-    held.delete(heldActionId);
+    drop(heldActionId);
     return undefined;
   }
   return entry;
@@ -186,7 +205,7 @@ export function peekHeldStepUp(heldActionId: string, now = Date.now()): HeldStep
  */
 export function takeHeldStepUp(heldActionId: string, now = Date.now()): HeldStepUp | undefined {
   const entry = peekHeldStepUp(heldActionId, now);
-  held.delete(heldActionId);
+  drop(heldActionId);
   return entry;
 }
 
@@ -200,7 +219,7 @@ export function spendStepUpTry(heldActionId: string): number {
   const entry = held.get(heldActionId);
   if (!entry) return 0;
   entry.triesLeft -= 1;
-  if (entry.triesLeft <= 0) held.delete(heldActionId);
+  if (entry.triesLeft <= 0) drop(heldActionId);
   return Math.max(0, entry.triesLeft);
 }
 
@@ -210,7 +229,7 @@ export function spendStepUpTry(heldActionId: string): number {
  * @param heldActionId - Its id.
  */
 export function cancelHeldStepUp(heldActionId: string): void {
-  held.delete(heldActionId);
+  drop(heldActionId);
 }
 
 /**
@@ -230,5 +249,5 @@ export function parseLocalStepUpStatement(value: unknown): LocalStepUpStatementV
  * @internal Tests only.
  */
 export function resetHeldStepUpsForTests(): void {
-  held.clear();
+  for (const heldActionId of [...held.keys()]) drop(heldActionId);
 }

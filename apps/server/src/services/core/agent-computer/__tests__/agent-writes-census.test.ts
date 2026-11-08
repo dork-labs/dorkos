@@ -490,6 +490,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     'permissions and approvals are a person’s',
     [
       'PATCH /api/permissions/defaults',
+      'POST /api/approvals/:id/ask-again',
       'POST /api/approvals/:id/deny',
       'POST /api/approvals/:id/dismiss-suggestion',
       'POST /api/approvals/:id/grant',

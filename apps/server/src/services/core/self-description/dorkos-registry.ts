@@ -39,9 +39,9 @@ import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { memoryDomain } from '../../memory/memory-capabilities.js';
 import { sessionDomain } from '../../session/agent-compaction/compaction-capabilities.js';
 import { chatDomain } from '../../session/chat-messages/chat-capabilities.js';
-import { commitmentsDomain } from '../../commitments/commitment-capabilities.js';
+import { todoPromisesDomain } from '../../todos/todo-promise-capabilities.js';
 import { env } from '../../../env.js';
-import { todosDomain } from '../../commitments/todo-capabilities.js';
+import { todosDomain } from '../../todos/todo-capabilities.js';
 import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
@@ -78,7 +78,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.roomDeps) domains.push(roomsDomain);
   if (deps.sessionCompactionDeps) domains.push(sessionDomain);
   if (deps.chatMessageDeps) domains.push(chatDomain);
-  if (deps.commitmentDeps) domains.push(commitmentsDomain);
+  if (deps.todoPromiseDeps) domains.push(todoPromisesDomain);
   // Behind the flag here as well as at boot, so the docs composer below can match it (DOR-3088).
   if (deps.todoDeps && env.DORKOS_TODOS_ENABLED) domains.push(todosDomain);
   if (deps.workQueueDeps) domains.push(workQueueDomain);
@@ -152,7 +152,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     roomsDomain,
     sessionDomain,
     chatDomain,
-    commitmentsDomain,
+    todoPromisesDomain,
     // Hidden behind `DORKOS_TODOS_ENABLED` until To-dos ship (DOR-3088), so the generated docs do
     // not describe tools nobody can call.
     ...(env.DORKOS_TODOS_ENABLED ? [todosDomain] : []),
@@ -176,7 +176,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     roomDeps: {} as CapabilityDeps['roomDeps'],
     sessionCompactionDeps: {} as CapabilityDeps['sessionCompactionDeps'],
     chatMessageDeps: {} as CapabilityDeps['chatMessageDeps'],
-    commitmentDeps: {} as CapabilityDeps['commitmentDeps'],
+    todoPromiseDeps: {} as CapabilityDeps['todoPromiseDeps'],
     todoDeps: {} as CapabilityDeps['todoDeps'],
     workQueueDeps: {} as CapabilityDeps['workQueueDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],

@@ -1,3 +1,5 @@
+import { Codex } from '@openai/codex-sdk';
+import { ScriptedCodexTransport } from './fixtures/scripted-transport.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
@@ -8,7 +10,7 @@ import { CodexRuntime } from '../codex-runtime.js';
 import { MAX_CONSECUTIVE_WAKES, WAKE_BUDGET_SPENT_COPY } from '../app-server/background-wake.js';
 import { resolveCodexTransport, type CodexTransport } from '../transport/index.js';
 import type { BackgroundCompletion, BackgroundWake } from '../app-server/background-work.js';
-import { buildCodexOptions } from '../codex-options.js';
+import { buildCodexOptions } from './fixtures/sdk-options.js';
 import * as logHistory from '../../../session/log-backed-history.js';
 import { SessionDiscoveryUnavailableError } from '../../../session/resolution/session-lookup-error.js';
 import { RuntimeRegistry } from '../../../core/runtime-registry.js';
@@ -38,6 +40,12 @@ import {
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
 beforeEach(() => registerEveryFolderAsHome());
 afterEach(() => clearTestHomes());
+
+// These synthetic homes have no manifests. Real pin/reconcile behavior is
+// exercised by folder-config-launch.test.ts against actual pinned files.
+vi.mock('../../shared/policy/managed-config.js', () => ({
+  managedConfigHeld: vi.fn(async () => false),
+}));
 
 const environmentPolicy = vi.hoisted(() => ({ names: [] as string[] }));
 vi.mock('../../../core/config-manager.js', async () => {
@@ -141,7 +149,7 @@ function makeRuntime(opts: { binaryPath?: string | null; db?: Db } = {}) {
   const db = opts.db ?? createTestDb();
   const threadMap = new CodexThreadMap(db);
   const runtime = new CodexRuntime({
-    transport: 'exec',
+    transport: new ScriptedCodexTransport((options) => new Codex(options)),
     threadMap,
     // The runtime resolves its binary lazily through this seam (production
     // passes the shared ladder). `/bin/codex` is the ordinary "Codex is
@@ -451,13 +459,13 @@ describe('CodexRuntime', () => {
       expect(shared).toHaveProperty('env');
     });
 
-    it('reuses one shared client across turns while the resolved binary is unchanged', async () => {
+    it('builds a fresh policy-bearing client for each turn', async () => {
       const { runtime } = makeRuntime({ binaryPath: '/opt/custom/codex' });
 
       await drain(runtime.sendMessage(crypto.randomUUID(), 'one', { cwd: '/projects/demo' }));
       await drain(runtime.sendMessage(crypto.randomUUID(), 'two', { cwd: '/projects/demo' }));
 
-      expect(sdkMocks.constructorOptions).toHaveLength(1);
+      expect(sdkMocks.constructorOptions).toHaveLength(2);
     });
   });
 
@@ -1104,7 +1112,7 @@ describe('CodexRuntime', () => {
 
       expect(sdkMocks.startThread).toHaveBeenCalledTimes(1);
       expect(sdkMocks.startThread).toHaveBeenCalledWith({
-        sandboxMode: 'read-only',
+        permissionProfile: 'dorkos-files-read-only',
         approvalPolicy: 'never',
         skipGitRepoCheck: true,
         workingDirectory: '/projects/demo',
@@ -1151,14 +1159,20 @@ describe('CodexRuntime', () => {
       runtime.ensureSession(editsSession, { permissionMode: 'acceptEdits' });
       await drain(runtime.sendMessage(editsSession, 'hi'));
       expect(sdkMocks.startThread).toHaveBeenLastCalledWith(
-        expect.objectContaining({ sandboxMode: 'workspace-write', approvalPolicy: 'never' })
+        expect.objectContaining({
+          permissionProfile: 'dorkos-files-workspace-write',
+          approvalPolicy: 'never',
+        })
       );
 
       const bypassSession = crypto.randomUUID();
       runtime.ensureSession(bypassSession, { permissionMode: 'bypassPermissions' });
       await drain(runtime.sendMessage(bypassSession, 'hi'));
       expect(sdkMocks.startThread).toHaveBeenLastCalledWith(
-        expect.objectContaining({ sandboxMode: 'danger-full-access', approvalPolicy: 'never' })
+        expect.objectContaining({
+          permissionProfile: 'dorkos-files-danger-full-access',
+          approvalPolicy: 'never',
+        })
       );
     });
 
@@ -1169,13 +1183,13 @@ describe('CodexRuntime', () => {
       runtime.ensureSession(sessionId, { permissionMode: 'bypassPermissions' });
       await drain(runtime.sendMessage(sessionId, 'hi', { permissionCeiling: 'runtime-default' }));
       expect(sdkMocks.startThread).toHaveBeenLastCalledWith(
-        expect.objectContaining({ sandboxMode: 'read-only' })
+        expect.objectContaining({ permissionProfile: 'dorkos-files-read-only' })
       );
       const fresh = crypto.randomUUID();
       runtime.ensureSession(fresh, { permissionMode: 'bypassPermissions' });
       await drain(runtime.sendMessage(fresh, 'hi'));
       expect(sdkMocks.startThread).toHaveBeenLastCalledWith(
-        expect.objectContaining({ sandboxMode: 'danger-full-access' })
+        expect.objectContaining({ permissionProfile: 'dorkos-files-danger-full-access' })
       );
     });
 
@@ -1212,7 +1226,10 @@ describe('CodexRuntime', () => {
 
       expect(port.getSessionSettings).toHaveBeenCalledWith(sessionId);
       expect(sdkMocks.startThread).toHaveBeenCalledWith(
-        expect.objectContaining({ sandboxMode: 'workspace-write', model: 'gpt-5.4-mini' })
+        expect.objectContaining({
+          permissionProfile: 'dorkos-files-workspace-write',
+          model: 'gpt-5.4-mini',
+        })
       );
     });
 
@@ -1315,20 +1332,6 @@ describe('CodexRuntime', () => {
       expect(servers).toHaveProperty('files');
       expect(servers).not.toHaveProperty('stream');
     });
-
-    it('builds no per-turn client (reuses the shared client) when the agent has no managed servers', async () => {
-      const { runtime } = makeRuntime();
-      runtime.setManagedMcpServers({ injectableServersForCwd: () => ({}) });
-      // The shared client is built on the FIRST turn now (nothing touches the
-      // SDK before then); a second turn with no managed servers and no identity
-      // token must not add another.
-      await drain(runtime.sendMessage(crypto.randomUUID(), 'warm', { cwd: '/projects/demo' }));
-      sdkMocks.constructorOptions.length = 0;
-
-      await drain(runtime.sendMessage(crypto.randomUUID(), 'hi', { cwd: '/projects/demo' }));
-
-      expect(sdkMocks.constructorOptions).toHaveLength(0);
-    });
   });
 
   describe('sendMessage — resume path', () => {
@@ -1342,7 +1345,7 @@ describe('CodexRuntime', () => {
 
       expect(sdkMocks.resumeThread).toHaveBeenCalledTimes(1);
       expect(sdkMocks.resumeThread).toHaveBeenCalledWith('thread-existing', {
-        sandboxMode: 'read-only',
+        permissionProfile: 'dorkos-files-read-only',
         approvalPolicy: 'never',
         skipGitRepoCheck: true,
         workingDirectory: '/projects/demo',
@@ -1374,7 +1377,7 @@ describe('CodexRuntime', () => {
       await drain(runtime.sendMessage(sessionId, 'resume in the right dir'));
 
       expect(sdkMocks.resumeThread).toHaveBeenCalledWith('thread-persisted', {
-        sandboxMode: 'read-only',
+        permissionProfile: 'dorkos-files-read-only',
         approvalPolicy: 'never',
         skipGitRepoCheck: true,
         workingDirectory: '/projects/persisted',
@@ -1797,11 +1800,11 @@ describe('CodexRuntime', () => {
 });
 
 describe('resolveCodexTransport (spec §15)', () => {
-  it('runs app-server by default since phase 3, and still honours an explicit exec', () => {
+  it('routes every persisted setting through protected app-server', () => {
     expect(resolveCodexTransport(undefined)).toBe('app-server');
     expect(resolveCodexTransport('auto')).toBe('app-server');
     expect(resolveCodexTransport('app-server')).toBe('app-server');
-    expect(resolveCodexTransport('exec')).toBe('exec');
+    expect(resolveCodexTransport('exec')).toBe('app-server');
   });
 });
 
@@ -1894,7 +1897,7 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
   it('merges the transport’s capabilities over the shared base, and exec changes nothing', () => {
     const db = createTestDb();
     const exec = new CodexRuntime({
-      transport: 'exec',
+      transport: new ScriptedCodexTransport((options) => new Codex(options)),
       threadMap: new CodexThreadMap(db),
       resolveBinary: async () => '/opt/codex',
     });
@@ -2270,7 +2273,7 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
       const runtime = new CodexRuntime({
         threadMap: new CodexThreadMap(createTestDb()),
         resolveBinary: async () => '/opt/codex',
-        transport: 'exec',
+        transport: new ScriptedCodexTransport((options) => new Codex(options)),
       });
       expect(runtime.onRuntimeTurn).toBeUndefined();
       expect(runtime.isSegmentPending).toBeUndefined();

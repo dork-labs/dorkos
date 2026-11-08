@@ -1,0 +1,273 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import {
+  mountTargetLedgerFile,
+  readMountTargets,
+  recordMountTargets,
+} from '../policy/mount-target-ledger.js';
+import { reconcileMountTargets } from '../policy/reconcile-mount-targets.js';
+import {
+  assertNoLiveCodex,
+  codexMountRegistry,
+  withCodexRegistryLock,
+} from '../policy/mount-target-guard.js';
+import { codexProtectedConfig } from '../policy/protected-profile.js';
+
+let root: string;
+let data: string;
+beforeEach(() => {
+  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-mount-ledger-')));
+  data = path.join(root, 'data');
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+it('captures only missing literal targets from the actual renderer, never existing paths or globs', () => {
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  fs.mkdirSync(data);
+  fs.writeFileSync(path.join(data, 'host.key'), 'synthetic');
+  const captured: string[] = [];
+  codexProtectedConfig(
+    home,
+    {
+      roots: { cwd: home, home, data, accounts: [], agentHomes: [], agentFolders: [home] },
+      writable: [],
+    },
+    {},
+    (targets) => {
+      captured.push(...targets);
+      recordMountTargets(data, targets);
+    }
+  );
+  expect(captured).toContain(path.join(home, '.claude'));
+  expect(captured).not.toContain(path.join(data, 'host.key'));
+  expect(captured.every((file) => !file.includes('*'))).toBe(true);
+  expect(readMountTargets(data)).toEqual([...new Set(captured)].sort());
+  expect(fs.statSync(mountTargetLedgerFile(data)).mode & 0o777).toBe(0o600);
+});
+
+it('preserves the previous private ledger if atomic replacement fails', () => {
+  const first = path.join(root, 'first');
+  recordMountTargets(data, [first]);
+  vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+    throw new Error('synthetic power loss');
+  });
+  expect(() => recordMountTargets(data, [path.join(root, 'second')])).toThrow('power loss');
+  expect(readMountTargets(data)).toEqual([first]);
+  expect(fs.readdirSync(path.dirname(mountTargetLedgerFile(data)))).toEqual([
+    'codex-mount-targets.json',
+  ]);
+});
+
+it('preserves every ambiguous listed file as well as unlisted, nonempty, linked or directory targets', async () => {
+  const files = ['empty', 'personal', 'link', 'directory', 'unlisted', 'hardlink'].map((name) =>
+    path.join(root, name)
+  );
+  const [empty, personal, link, directory, unlisted, hardlink] = files as [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
+  recordMountTargets(data, [empty, personal, link, directory, hardlink]);
+  fs.writeFileSync(empty, '');
+  fs.writeFileSync(personal, 'keep this');
+  fs.writeFileSync(unlisted, '');
+  fs.symlinkSync(unlisted, link);
+  fs.mkdirSync(directory);
+  fs.linkSync(unlisted, hardlink);
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  expect(fs.lstatSync(empty).isFile()).toBe(true);
+  expect(fs.readFileSync(personal, 'utf8')).toBe('keep this');
+  expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+  expect(fs.statSync(directory).isDirectory()).toBe(true);
+  expect(fs.existsSync(unlisted)).toBe(true);
+  expect(fs.existsSync(hardlink)).toBe(true);
+});
+
+it('does not forget absent targets that a live helper could still create', async () => {
+  const file = path.join(root, 'not-created-yet');
+  recordMountTargets(data, [file]);
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  expect(readMountTargets(data)).toEqual([file]);
+});
+
+it('refuses a linked ledger or linked private directory', () => {
+  recordMountTargets(data, [path.join(root, 'empty')]);
+  const file = mountTargetLedgerFile(data);
+  fs.renameSync(file, file + '.original');
+  fs.symlinkSync(file + '.original', file);
+  expect(() => readMountTargets(data)).toThrow();
+  fs.unlinkSync(file);
+  fs.renameSync(path.dirname(file), path.dirname(file) + '-original');
+  fs.symlinkSync(path.dirname(file) + '-original', path.dirname(file));
+  expect(() => readMountTargets(data)).toThrow();
+});
+
+it('a live marker PID prevents cleanup even with an otherwise empty synthetic process tree', () => {
+  const registry = path.join(root, 'registry');
+  const folder = path.join(registry, '0123456789abcdef');
+  const proc = path.join(root, 'proc');
+  fs.mkdirSync(folder, { recursive: true });
+  fs.mkdirSync(proc);
+  fs.writeFileSync(path.join(folder, String(process.pid)), 'synthetic');
+  expect(() => assertNoLiveCodex(registry, proc)).toThrow('running processes');
+});
+
+it('a Codex executable without markers prevents cleanup', () => {
+  const registry = path.join(root, 'registry');
+  fs.mkdirSync(registry);
+  const proc = path.join(root, 'proc');
+  const pid = path.join(proc, String(process.pid));
+  fs.mkdirSync(pid, { recursive: true });
+  fs.symlinkSync('/synthetic/bin/codex', path.join(pid, 'exe'));
+  expect(() => assertNoLiveCodex(registry, proc)).toThrow('running processes');
+});
+
+it('refuses a foreign-owned empty target even when every process guard passes', async () => {
+  const file = path.join(root, 'foreign');
+  recordMountTargets(data, [file]);
+  fs.writeFileSync(file, '');
+  const lstat = fs.lstatSync;
+  vi.spyOn(fs, 'lstatSync').mockImplementation(((name: fs.PathLike, options?: unknown) => {
+    const stat = lstat(name, options as never);
+    if (String(name) === file)
+      Object.defineProperty(stat, 'uid', { value: (process.getuid?.() ?? 0) + 1 });
+    return stat;
+  }) as typeof fs.lstatSync);
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  expect(fs.existsSync(file)).toBe(true);
+});
+
+it.skipIf(process.platform !== 'linux')(
+  'holds Codex’s actual flock throughout the synchronous critical section',
+  async () => {
+    const result = await withCodexRegistryLock(() => {
+      const other = spawnSync('/usr/bin/flock', [
+        '--nonblock',
+        path.join(codexMountRegistry(), 'lock'),
+        '/usr/bin/true',
+      ]);
+      expect(other.status).toBe(1);
+      return 'locked';
+    });
+    expect(result).toBe('locked');
+  }
+);
+
+it('preserves an ambiguous parent and its observations when a child is unreachable', async () => {
+  const parent = path.join(root, '.claude');
+  recordMountTargets(data, [parent, path.join(parent, 'backups')]);
+  fs.writeFileSync(parent, '');
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  expect(fs.existsSync(parent)).toBe(true);
+  expect(readMountTargets(data)).toEqual([parent, path.join(parent, 'backups')]);
+});
+
+it('rejects a nonnormalized ledger path before it can escape the permissions exclusion', () => {
+  recordMountTargets(data, [path.join(root, 'missing')]);
+  fs.writeFileSync(
+    mountTargetLedgerFile(data),
+    JSON.stringify({
+      version: 1,
+      targets: [data + '/x/../permissions/person-set-agent-permissions.json'],
+    })
+  );
+  expect(() => readMountTargets(data)).toThrow('records are invalid');
+});
+
+it('preserves an outside file when a real rendered agent parent is replaced by a symlink', async () => {
+  const home = path.join(root, 'home');
+  const agent = path.join(data, 'agents', 'agent-a');
+  fs.mkdirSync(home);
+  fs.mkdirSync(path.join(agent, '.dork'), { recursive: true });
+  codexProtectedConfig(
+    agent,
+    {
+      roots: { cwd: agent, home, data, accounts: [], agentHomes: [agent], agentFolders: [agent] },
+      writable: [agent],
+    },
+    {},
+    (targets) => recordMountTargets(data, targets)
+  );
+  const target = path.join(agent, '.dork', 'agent.json');
+  expect(readMountTargets(data)).toContain(target);
+  fs.rmdirSync(path.join(agent, '.dork'));
+  const outside = path.join(root, 'outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'agent.json'), '');
+  fs.symlinkSync(outside, path.join(agent, '.dork'));
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  expect(fs.lstatSync(path.join(outside, 'agent.json')).isFile()).toBe(true);
+});
+
+it('renders a busy listed ancestor as protected without unlinking or recording it as missing', async () => {
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  const target = path.join(home, '.claude');
+  recordMountTargets(data, [target]);
+  fs.writeFileSync(target, '');
+  const before = fs.lstatSync(target);
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  const missing = vi.fn();
+  const config = codexProtectedConfig(
+    home,
+    {
+      roots: { cwd: home, home, data, accounts: [], agentHomes: [], agentFolders: [home] },
+      writable: [home],
+    },
+    { permissionMode: 'bypassPermissions' },
+    missing
+  );
+  const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
+  expect(Object.values(profiles)[0]!.filesystem[target]).toBe('deny');
+  expect(missing.mock.calls.flat(2)).not.toContain(target);
+  expect(fs.lstatSync(target).ino).toBe(before.ino);
+});
+
+it('preserves a person-created empty .netrc even when its path was recorded before creation', async () => {
+  const file = path.join(root, '.netrc');
+  recordMountTargets(data, [file]);
+  fs.writeFileSync(file, '', { mode: 0o600, flag: 'wx' });
+  const before = fs.lstatSync(file);
+  const unlink = vi.spyOn(fs, 'unlinkSync');
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  const after = fs.lstatSync(file);
+  expect(after.ino).toBe(before.ino);
+  expect(after.mode).toBe(before.mode);
+  expect(after.ctimeMs).toBe(before.ctimeMs);
+  expect(unlink).not.toHaveBeenCalled();
+});
+
+it('preserves a person’s replacement empty file despite a stale synthetic marker and no live owner', async () => {
+  const file = path.join(root, '.netrc');
+  recordMountTargets(data, [file]);
+  const registry = path.join(root, 'registry');
+  const marker = path.join(registry, '0123456789abcdef');
+  const proc = path.join(root, 'proc');
+  fs.mkdirSync(marker, { recursive: true });
+  fs.mkdirSync(proc);
+  fs.writeFileSync(path.join(marker, '99999999'), 'synthetic\n');
+  // The old owner and old file are gone. The marker cannot identify this
+  // person's new inode, even when every process liveness check passes.
+  fs.writeFileSync(file, 'old synthetic fixture');
+  fs.unlinkSync(file);
+  fs.writeFileSync(file, '', { mode: 0o600, flag: 'wx' });
+  const before = fs.lstatSync(file);
+  expect(() => assertNoLiveCodex(registry, proc)).not.toThrow();
+  const unlink = vi.spyOn(fs, 'unlinkSync');
+  expect(await reconcileMountTargets(data)).toEqual([]);
+  const after = fs.lstatSync(file);
+  expect(after.ino).toBe(before.ino);
+  expect(after.mode).toBe(before.mode);
+  expect(after.ctimeMs).toBe(before.ctimeMs);
+  expect(unlink).not.toHaveBeenCalled();
+});

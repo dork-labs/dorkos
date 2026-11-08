@@ -1,13 +1,13 @@
 /**
  * Small pieces of one app-server turn: the queue its generator drains, and the
- * tagged sandbox policy its `turn/start` carries.
+ * named filesystem profile its `turn/start` selects.
  *
  * @module services/runtimes/codex/app-server/turn-parts
  */
 import type { StreamEvent } from '@dorkos/shared/types';
-import { MODE_TO_SANDBOX } from '../turn-input.js';
+export { codexPermissionProfile } from '../policy/protected-profile.js';
 import type { CodexTurnRequest } from '../transport/codex-transport.js';
-import type { AskForApproval, SandboxPolicy } from './protocol/methods.js';
+import type { AskForApproval } from './protocol/methods.js';
 
 /** A small single-consumer queue the generator drains. */
 export class EventQueue {
@@ -38,31 +38,6 @@ export class EventQueue {
     const waiting = this.waiting;
     this.waiting = undefined;
     waiting?.();
-  }
-}
-
-/**
- * The tagged `SandboxPolicy` `turn/start` takes (protocol risk 6), from the
- * session's mode and the turn's validated write grants.
- *
- * @param request - The turn.
- */
-export function sandboxPolicyFor(
-  request: Pick<CodexTurnRequest, 'settings' | 'writableDirectories'>
-): SandboxPolicy {
-  switch (MODE_TO_SANDBOX[request.settings.permissionMode ?? 'default'] ?? 'read-only') {
-    case 'danger-full-access':
-      return { type: 'dangerFullAccess' };
-    case 'workspace-write':
-      return {
-        type: 'workspaceWrite',
-        writableRoots: [...request.writableDirectories],
-        networkAccess: false,
-        excludeTmpdirEnvVar: false,
-        excludeSlashTmp: false,
-      };
-    default:
-      return { type: 'readOnly', networkAccess: false };
   }
 }
 

@@ -1,3 +1,4 @@
+import { visibleHookValue } from '../hook-card.js';
 /**
  * The DOR-522 reproduction: installing a marketplace package must not put shell
  * commands into the files a coding agent runs on your behalf without asking.
@@ -175,9 +176,9 @@ describe('DOR-522 — a package that ships shell commands', () => {
     expect(codexHooksText()).not.toContain(HOSTILE_COMMAND);
 
     expect(request).toHaveBeenCalledTimes(1);
-    const summary = request.mock.calls[0]?.[0]?.summary as string;
-    expect(summary).toContain('evil');
-    expect(summary).toContain(HOSTILE_COMMAND);
+    const detail = request.mock.calls[0]?.[0]?.detail as string;
+    expect(detail).toContain('evil');
+    expect(detail).toContain(visibleHookValue(HOSTILE_COMMAND));
 
     // The gate is on the hooks, not on the package: everything else still lands.
     expect(skillProjected()).toBe(true);
@@ -303,7 +304,7 @@ describe('DOR-522 — a package that ships shell commands', () => {
       { dorkHome: home, approvals: { request, consume } }
     );
 
-    expect(request.mock.calls[0]?.[0]?.summary).toContain('before every tool call');
+    expect(request.mock.calls[0]?.[0]?.detail).toContain('Event: "PreToolUse"');
   });
 
   it('does not install what the card never showed, when the package changes mid-decision', async () => {
@@ -322,7 +323,7 @@ describe('DOR-522 — a package that ships shell commands', () => {
       { dorkHome: home, approvals: { request, consume } }
     );
 
-    expect(request.mock.calls[0]?.[0]?.summary).toContain('echo harmless');
+    expect(request.mock.calls[0]?.[0]?.detail).toContain(visibleHookValue('echo harmless'));
     expect(settingsText()).not.toContain(HOSTILE_COMMAND);
   });
 

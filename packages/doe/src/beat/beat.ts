@@ -84,7 +84,7 @@ export function createBeatExtension(
       prompt: request.prompt,
       changes: request.changes,
       instructions: request.instructions,
-      commitments: request.commitments,
+      todoPromises: request.todoPromises,
     })) {
       if (value !== undefined && (typeof value !== 'string' || value.length > MAX_INPUT_CHARACTERS))
         throw new Error(`Invalid beat ${key}`);
@@ -217,13 +217,13 @@ export function createBeatExtension(
       prompt: request.prompt,
       ...(request.changes === undefined ? {} : { changes: request.changes }),
       ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
-      ...(request.commitments === undefined ? {} : { commitments: request.commitments }),
+      ...(request.todoPromises === undefined ? {} : { todoPromises: request.todoPromises }),
       ...(decisionReason === undefined ? {} : { decisionReason }),
     };
     const result = await context.execute({
       prompt:
         businessPrompt(context.config.profile, '') +
-        '\nThis is one autonomous beat. Use the supplied changes and commitments. Do useful work within your role; stay quiet when nothing changed. Raise an unchanged issue only once, using supplied commitments to recognize prior raises. Choose the lowest useful reporting rung. Free text is activity, never a user notification. Only explicit host posting tools send messages. Call end_beat to finish after the current tool batch.',
+        '\nThis is one autonomous beat. Use the supplied changes and to-dos. Do useful work within your role; stay quiet when nothing changed. Raise an unchanged issue only once, using supplied to-dos to recognize prior raises. Choose the lowest useful reporting rung. Free text is activity, never a user notification. Only explicit host posting tools send messages. Call end_beat to finish after the current tool batch.',
       messages: [{ role: 'user', content: JSON.stringify(input), timestamp: Date.now() }],
       tools,
       registry,

@@ -72,6 +72,9 @@ export const approvals = sqliteTable(
     /** One plain sentence describing what the operator is about to allow. */
     summary: text('summary').notNull(),
 
+    /** Full package request rebuilt at Allow; null on legacy or unsafe-to-store rows. */
+    packageRequest: text('package_request'),
+
     /**
      * The one argument a person has to read IN FULL before answering, verbatim,
      * or null when the capability declares none (DOR-1698).
@@ -218,6 +221,12 @@ export const approvals = sqliteTable(
 
     /** Why the operator said no, when they gave a reason. */
     denyReason: text('deny_reason'),
+
+    /** Server-derived meaning of a package decline; never chosen by the caller. */
+    declineKind: text('decline_kind', { enum: ['incomplete', 'refused'] }),
+
+    /** The declined hook row this fresh person-requested review replaces. */
+    retryOf: text('retry_of').unique(),
 
     /** When the request was created. ISO 8601 UTC. */
     createdAt: text('created_at').notNull(),

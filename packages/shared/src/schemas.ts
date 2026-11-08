@@ -1,4 +1,7 @@
-import { ScheduleOriginMarksSchema, TaskFolderRulesSchema } from './task-approval-schemas.js';
+import {
+  ScheduleOriginMarksSchema,
+  TaskReviewPresentationSchema,
+} from './task-approval-schemas.js';
 export { ScheduleOriginMarksSchema } from './task-approval-schemas.js';
 export type { ScheduleOriginMarks } from './task-approval-schemas.js';
 import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
@@ -5366,6 +5369,13 @@ export const ServerConfigSchema = z
           description:
             'When this person saw the notice that agents work without asking (ISO 8601), or null when they have not. Gates the notice only; it grants nothing',
         }),
+        // Whether a chat with one agent reads like a direct message (DOR-3074).
+        // On the wire because Settings shows it back as a switch and every door
+        // to an agent reads it. Optional so an older server still parses.
+        dmView: z.boolean().optional().openapi({
+          description:
+            'Whether a chat with one agent reads like a direct message, for everyone using this DorkOS. On by default',
+        }),
         // Whether the working session behind a chat can be opened
         // (DOR-3074). On the wire because Settings shows it back as a switch
         // and the chat header reads it. Optional so an older server still parses.
@@ -5930,7 +5940,7 @@ export const TaskSchema = z
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
     /** Read-time, person-only preview; absent for older servers and agent callers. */
-    folderRules: TaskFolderRulesSchema.optional(),
+    ...TaskReviewPresentationSchema.shape,
     /**
      * Which agent runtime this task's runs execute on, or `null` to follow the
      * task's agent (DOR-1615).
@@ -5990,13 +6000,6 @@ export const TaskSchema = z
      */
     proposedByName: z.string().nullable().default(null),
     /**
-     * The name of the agent this schedule runs as (the agent `agentId` names),
-     * resolved when the task is READ, like `proposedByName`, so an approval card
-     * and its notification say whose turn it would be (DOR-3640 R1). `null` for
-     * a global schedule, or when the agent cannot be named; absent on a task not yet read that way.
-     */
-    runsAsName: z.string().nullable().optional(),
-    /**
      * Where this schedule came from, when that is not a person using DorkOS.
      *
      * `file` means DorkOS found a `schedule:` block in a SKILL.md on disk and
@@ -6034,12 +6037,6 @@ export const TaskSchema = z
      * are capped at Don't ask (DOR-3703, M4). Absent otherwise. Response-only.
      */
     fileCap: TaskFileCapSchema.nullable().optional(),
-    /**
-     * Whether the task's next run would be capped at Never ask until a person
-     * approves its file (DOR-3703, M4): it is capped now, or no approval covers
-     * the prompt it runs. Absent where the cap does not apply. Response-only.
-     */
-    fileCapNext: z.boolean().optional(),
     /**
      * Held for a person, but nothing is waiting on them (DOR-3425): the file of a
      * schedule whose agent is at Full autonomy asks for more than was approved. It
@@ -6546,6 +6543,11 @@ export const UpdateTaskRequestSchema = z
      * person may send it.
      */
     approvedPromptHash: z.string().min(1).optional(),
+    /** Revision shown by the approval card; required when explicitly activating a task. */
+    expectedApprovalRevision: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
   })
   .openapi('UpdateTaskRequest');
 

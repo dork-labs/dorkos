@@ -312,7 +312,7 @@ describe('offline Composio browser upstream', () => {
       /start\(\)\.catch\(async \(err\) => \{[\s\S]*?await testComposioFixture\?\.close\(\)/
     );
     expect(source).toMatch(
-      /async function shutdownServices\(\) \{[\s\S]*?await testComposioFixture\?\.close\(\)/
+      /async function shutdownServices\([^)]*\) \{[\s\S]*?await testComposioFixture\?\.close\(\)/
     );
   });
 });

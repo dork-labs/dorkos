@@ -17,7 +17,12 @@ import type { Task, TaskRun } from '@dorkos/shared/types';
 import { formatDuration } from '../../../lib/format-duration.js';
 import { readableToolName } from '@dorkos/shared/run-refusals';
 import { notify } from '../notification-service.js';
-import { ONCE_PER_STREAK_LINE, OPEN_TO_FIX_LINE, runFailureReason } from '../run-completed-copy.js';
+import {
+  ONCE_PER_STREAK_LINE,
+  OPEN_TO_FIX_LINE,
+  runCompletedTitle,
+  runFailureReason,
+} from '../run-completed-copy.js';
 
 /** Relay `from` principal for automatic task-completion notifications. */
 const TASK_NOTIFIER_PRINCIPAL = 'relay.system.tasks.notifier';
@@ -147,14 +152,34 @@ export function formatCompletionMessage(
   run: TaskRun,
   oncePerStreak = false
 ): string {
-  const name = task?.displayName?.trim() || task?.name || 'Scheduled task';
+  const rawName = task?.displayName?.trim() || task?.name || 'Scheduled task';
+  const name =
+    run.status === 'failed' || run.status === 'needs_attention'
+      ? literalNoticeName(rawName)
+      : rawName;
 
-  if (run.status === 'failed' || run.status === 'needs_attention') {
+  if (run.status === 'needs_attention') {
+    // Only fixed guidance follows the title. Reserve it before shortening the name.
+    const tail = `\n${OPEN_TO_FIX_LINE}${oncePerStreak ? "\nYou won't get another notice about it until it runs cleanly and fails again." : ''}`;
+    const suffix = runCompletedTitle({
+      runId: run.id,
+      taskId: run.scheduleId,
+      taskName: '',
+      status: run.status,
+      refusedTools: [...new Set((run.refusedTools ?? []).map(readableToolName))].map((tool) =>
+        truncate(tool, 64)
+      ),
+      channelMessage: '',
+    });
+    const nameRoom = FAILING_MESSAGE_MAX_CHARS - tail.length - suffix.length;
+    return `${truncate(name, nameRoom)}${suffix}${tail}`;
+  }
+  if (run.status === 'failed') {
     // The same parts as the inbox notice, in the same order (DOR-3123): what
     // happened, why, the one fix, and — on a streak's one notice — that no
     // more will follow. Only the reason is ever cut, so the fix and the
     // promise always arrive whole.
-    const mark = run.status === 'failed' ? '✕' : '🔒';
+    const mark = '✕';
     const reason = runFailureReason({
       runId: run.id,
       taskId: run.scheduleId,
@@ -175,6 +200,14 @@ export function formatCompletionMessage(
   const body =
     `✅ ${name} — done${duration ? ` in ${duration}` : ''}.` + (detail ? ` ${detail}` : '');
   return truncate(body, MESSAGE_MAX_CHARS);
+}
+
+/** Keep names on one line and prevent Markdown links without escaping phone-visible text. */
+function literalNoticeName(name: string): string {
+  return name
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
+    .replaceAll('[', '(')
+    .replaceAll(']', ')');
 }
 
 /** Truncate to `max` characters, appending an ellipsis when it had to cut. */
