@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -106,7 +107,32 @@ function resolveFfmpeg(): string {
   if (!ffmpegStatic) {
     throw new Error('ffmpeg-static did not resolve a binary — cannot post-process loops');
   }
+  if (!existsSync(ffmpegStatic)) fetchFfmpeg(ffmpegStatic);
   return ffmpegStatic;
+}
+
+/**
+ * Download the ffmpeg binary on first use, with one retry. `pnpm install` skips
+ * ffmpeg-static's download script (`ignoredBuiltDependencies`, DOR-3954): capture
+ * is its only user, and every CI install was failing whenever GitHub releases
+ * answered 504. This runs the package's own installer, so the release tag and the
+ * `FFMPEG_BINARIES_URL` mirror override behave exactly as an install would.
+ */
+function fetchFfmpeg(binaryPath: string): void {
+  const installer = path.join(path.dirname(binaryPath), 'install.js');
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      execFileSync(process.execPath, [installer], { stdio: 'inherit' });
+      break;
+    } catch (error) {
+      if (attempt === 2) {
+        throw new Error('Could not download ffmpeg for capture (tried twice)', { cause: error });
+      }
+    }
+  }
+  if (!existsSync(binaryPath)) {
+    throw new Error(`ffmpeg is still missing at ${binaryPath} after its installer ran`);
+  }
 }
 
 /** Clamp `value` into the inclusive `[min, max]` range. */

@@ -137,7 +137,6 @@
       "@posthog/cli",
       "better-sqlite3",
       "esbuild",
-      "ffmpeg-static",
       "electron",
       "lefthook",
       "node-pty",
@@ -147,7 +146,8 @@
       "core-js"
     ],
     "ignoredBuiltDependencies": [
-      "electron-winstaller"
+      "electron-winstaller",
+      "ffmpeg-static"
     ],
     "patchedDependencies": {
       "when-exit@2.1.5": "patches/when-exit@2.1.5.patch"
