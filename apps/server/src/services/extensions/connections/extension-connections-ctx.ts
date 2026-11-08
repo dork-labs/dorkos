@@ -21,6 +21,7 @@ import type { ExtensionApprovalOrigin } from '@dorkos/db';
 import type { ExtensionsConfig } from '../extension-enable-resolution.js';
 import { getExtensionConnectionServices } from '../../connectors/extensions/extension-connections-seam.js';
 import type { LiveExtensionInstall } from '../../connectors/extensions/live-extension-install.js';
+import { MiniAppAccess } from '../../connectors/extensions/mini-app-access.js';
 import { isApprovedByDigest, type ExtensionApprovals } from '../extension-load-policy.js';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
@@ -159,6 +160,27 @@ export function settleApprovals(
   } catch (err) {
     logger.warn(`[Extensions] ${record.id}: could not settle its connection approvals`, { err });
   }
+}
+
+/**
+ * The Connections page's view of mini apps' access, or `undefined` before
+ * the connection services are wired.
+ *
+ * @param records - Every extension copy that runs here.
+ * @param config - Reads `config.extensions` now (the live config by default).
+ */
+export function miniAppAccessFor(
+  records: () => readonly ExtensionRecord[],
+  config: () => ExtensionsConfig = () => configManager.get('extensions')
+): MiniAppAccess | undefined {
+  const services = getExtensionConnectionServices();
+  if (!services) return undefined;
+  return new MiniAppAccess({
+    db: services.db,
+    approvals: services.approvals,
+    extensions: records,
+    installOf: (record) => installOf(record, config(), () => false),
+  });
 }
 
 /**

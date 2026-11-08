@@ -118,6 +118,7 @@ describe('extension connections, extension side', () => {
       .run();
     approvals = new ExtensionConnectionApprovalStore(db, () => new Date(NOW));
     setExtensionConnectionServices({
+      db,
       approvals,
       reader: new ExtensionConnectionReader(db, registry, approvals, new ConnectorUsageStore(db)),
     });

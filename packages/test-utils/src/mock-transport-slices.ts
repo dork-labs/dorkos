@@ -3,6 +3,8 @@
  * happened (`ActivityTransport`), where every read answers an empty page, and
  * pausing agents (`AgentPauseTransport`), where nothing is paused and every
  * pause or resume succeeds, held connected-app actions, where every cancel
+ * succeeds, mini apps' access to connected apps, where none waits and every
+ * revoke
  * succeeds, sign-in landing pages, where no landing is held, a canvas
  * document's route controls, where no document declares a route or has work
  * to review, a space's docs, where there are none, signed-in devices, where
@@ -35,6 +37,8 @@ type SliceMethods =
   | 'cancelHeldConnectorAction'
   | 'getAccessChange'
   | 'undoAccessChange'
+  | 'getMiniAppAccess'
+  | 'revokeMiniAppAccess'
   | 'getSignInLanding'
   | 'retrySignIn'
   | 'getCanvasDocRoutes'
@@ -108,6 +112,10 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     resumeAgent: vi
       .fn()
       .mockImplementation(async (agentId: string) => ({ agentId, paused: false, changed: true })),
+    getMiniAppAccess: vi.fn().mockResolvedValue({ waiting: [], allowed: [] }),
+    revokeMiniAppAccess: vi
+      .fn()
+      .mockImplementation(async (approvalId: string) => ({ status: 'revoked', approvalId })),
     cancelHeldConnectorAction: vi
       .fn()
       .mockImplementation(async (holdId: string) => ({ status: 'cancelled', holdId })),
