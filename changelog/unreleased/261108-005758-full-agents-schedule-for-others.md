@@ -1,6 +1,8 @@
 ---
 covers:
   - 'feat(tasks): a chat at Full autonomy can schedule tasks for any agent (DOR-3938)'
+  - "fix(tasks): only an outsider's mark refuses a cross-agent task write, and Full prompt edits stay live (DOR-3938)"
+  - "fix(tasks): a cross-agent task's runs carry every writer's marks, capped on the edited runtime (DOR-3938)"
 ---
 
 ### Added

@@ -137,7 +137,13 @@ export async function capPatch(
   const keys = Object.keys(patch);
   if (keys.length === 1 && keys[0] === 'enabled' && patch.enabled === false) return;
   const asked = patch.permissionMode ?? existing.permissionMode;
-  const capped = (await capEditMode(deps, existing, asked)) as PermissionMode;
+  // Against the runtime the task will run on after this edit, not the one it ran on before.
+  const runtime = patch.runtime !== undefined ? patch.runtime : existing.runtime;
+  const capped = (await capEditMode(
+    deps,
+    { agentId: existing.agentId, runtime },
+    asked
+  )) as PermissionMode;
   if (capped !== asked) patch.permissionMode = capped;
 }
 

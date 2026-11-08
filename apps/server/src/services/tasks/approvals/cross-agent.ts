@@ -212,16 +212,18 @@ export interface CrossAgentWriter {
 
 /**
  * Keep the agent that just made or changed a task for another agent on the task, with its turn's
- * marks, so the next run starts with them. Replaces the one before: the latest writer is the one
- * whose words the run now carries.
+ * marks, so the next run starts with them. The marks are MERGED with every earlier writer's (a
+ * union, Security's ruling): if A made B's task and C edits it, its runs carry A's and C's marks.
+ * The agent and chat named are the latest writer's. A person's approval does not clear it.
  *
  * @param db - The database the store writes.
  * @param id - The task.
  * @param writer - Who wrote it, read by the server.
  */
 export function recordCrossAgentWriter(db: Db, id: string, writer: CrossAgentWriter): void {
+  const marks = mergeMarks(crossAgentWriterOf(db, id)?.marks ?? NO_MARKS, writer.marks);
   db.update(pulseSchedules)
-    .set({ crossAgentWriter: JSON.stringify({ ...writer, marks: marksOnly(writer.marks) }) })
+    .set({ crossAgentWriter: JSON.stringify({ ...writer, marks: marksOnly(marks) }) })
     .where(eq(pulseSchedules.id, id))
     .run();
 }

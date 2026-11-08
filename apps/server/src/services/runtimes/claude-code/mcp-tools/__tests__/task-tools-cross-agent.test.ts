@@ -30,7 +30,13 @@ vi.mock('../../../../session/resolution/agent-launch-level.js', () => ({
 vi.mock('../../../../tasks/scheduled-run-power.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../tasks/scheduled-run-power.js')>();
   const { CLAUDE_CODE_CAPABILITIES } = await import('../../runtime-constants.js');
-  return { ...actual, capabilitiesForTaskRuntime: () => CLAUDE_CODE_CAPABILITIES };
+  // A runtime named `no-modes` declares none, so a cap read against it falls back to Default.
+  const none = { ...CLAUDE_CODE_CAPABILITIES, permissionModes: { supported: false, values: [] } };
+  return {
+    ...actual,
+    capabilitiesForTaskRuntime: (runtime?: string | null) =>
+      runtime === 'no-modes' ? none : CLAUDE_CODE_CAPABILITIES,
+  };
 });
 
 import { TaskStore } from '../../../../tasks/task-store.js';
@@ -63,6 +69,7 @@ let db: Db;
 let scratch: string;
 let homeA: string;
 let homeB: string;
+let homeC: string;
 let deps: McpToolDeps;
 let mesh: MeshCore;
 let serial = 0;
@@ -101,9 +108,12 @@ beforeEach(async () => {
   homeB = path.join(scratch, 'b');
   await fs.mkdir(homeA, { recursive: true });
   await fs.mkdir(homeB, { recursive: true });
+  homeC = path.join(scratch, 'c');
+  await fs.mkdir(homeC, { recursive: true });
   const agents = [
     { id: 'agent-a', name: 'alpha', projectPath: homeA },
     { id: 'agent-b', name: 'bravo', projectPath: homeB },
+    { id: 'agent-c', name: 'charlie', projectPath: homeC },
   ];
   mesh = {
     listWithPaths: () => agents,
@@ -124,7 +134,12 @@ afterEach(async () => {
 
 /** Agent A's in-session tools, from the chat `sessionId`. */
 function toolsOfA(sessionId: string): Record<string, SessionTool> {
-  const tools = getTasksTools(deps, () => ({ sessionId, agentPath: homeA }));
+  return toolsOf(homeA, sessionId);
+}
+
+/** An agent's in-session tools, from the chat `sessionId`. */
+function toolsOf(agentPath: string, sessionId: string): Record<string, SessionTool> {
+  const tools = getTasksTools(deps, () => ({ sessionId, agentPath }));
   return Object.fromEntries((tools as unknown as SessionTool[]).map((t) => [t.name, t] as const));
 }
 
@@ -365,6 +380,60 @@ describe('PM: a prompt edit to another agent’s task', () => {
       sessionId,
       marks: { teammate: TEAMMATE },
     });
+  });
+});
+
+describe('Security: the creator is merged with every later writer, never replaced', () => {
+  const ROOM_1 = [{ roomId: 'room-1', authorId: 'author-1' }];
+  const ROOM_2 = [{ roomId: 'room-2', authorId: 'author-2' }];
+  const hop = (teammate: typeof ROOM_1) => ({
+    permissionCeiling: { asks: 'never', reach: 'everything', teammate },
+  });
+
+  it('A creates B’s task and C edits its prompt: the run starts with A’s and C’s marks', async () => {
+    const aTurn = await ranTurn('bypassPermissions', hop(ROOM_1));
+    await call(toolsOf(homeA, aTurn), 'tasks_create', { ...ARGS, target: 'agent-b' });
+    const task = store.getTasks()[0]!;
+    const cTurn = await ranTurn('bypassPermissions', hop(ROOM_2));
+    const edit = await call(toolsOf(homeC, cTurn), 'tasks_update', {
+      id: task.id,
+      prompt: 'A better sweep.',
+    });
+    expect(edit.isError).toBe(false);
+    const both = [...ROOM_1, ...ROOM_2];
+    expect(store.approvals.crossAgentWriterOf(task.id)).toEqual({
+      agentPath: homeC,
+      sessionId: cTurn,
+      marks: { teammate: both },
+    });
+    expect(withCreatorMarks(store, task, {}).permissionCeiling).toEqual({
+      asks: 'never',
+      reach: 'everything',
+      teammate: both,
+    });
+    const run = store.createRun(task.id, 'scheduled');
+    store.recordRunExecution(run.id, { runtime: 'claude-code' });
+    expect(creatorOfRun(run.id)?.marks).toEqual({ teammate: both });
+  });
+
+  it('a person approving the task keeps the writer’s marks', async () => {
+    const aTurn = await ranTurn('bypassPermissions', hop(ROOM_1));
+    await call(toolsOf(homeA, aTurn), 'tasks_create', { ...ARGS, target: 'agent-b' });
+    const task = store.getTasks()[0]!;
+    store.approvals.recordApproval(task.id);
+    expect(store.approvals.crossAgentWriterOf(task.id)?.marks).toEqual({ teammate: ROOM_1 });
+  });
+});
+
+describe('Must 4: the cap reads the runtime the edit leaves the task on', () => {
+  it('an edit that changes runtime is capped against the new runtime', async () => {
+    const theirs = bTask('acceptEdits');
+    levels.set(homeB, 'acceptEdits');
+    const tools = toolsOfA(await ranTurn('bypassPermissions'));
+    const { isError } = await call(tools, 'tasks_update', { id: theirs.id, runtime: 'no-modes' });
+    expect(isError).toBe(false);
+    // Against Claude Code's modes the task would keep Accept edits; the new runtime declares none.
+    expect(store.getTask(theirs.id)!.permissionMode).toBe('default');
   });
 });
 
