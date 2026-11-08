@@ -73,12 +73,15 @@ export function StaleApprovalRow({
           >
             {approval.id}
           </span>
+          {/* The short path is for the eye; a screen reader hears the full one. */}
           <span
+            aria-hidden="true"
             title={approval.path ?? undefined}
             className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs max-sm:basis-full"
           >
             {approval.path ? shortenHomePath(approval.path) : ''}
           </span>
+          {approval.path && <span className="sr-only">{approval.path}</span>}
           <Badge tone="warning" className="shrink-0">
             Folder missing
           </Badge>

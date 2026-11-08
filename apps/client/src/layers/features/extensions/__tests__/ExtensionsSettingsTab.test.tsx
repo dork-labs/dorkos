@@ -1393,6 +1393,12 @@ describe('Folder missing (DOR-3372)', () => {
     // The home folder reads as ~, the full path stays on hover.
     const path = within(row).getByText('~/.dork/extensions/social-queue');
     expect(path).toHaveAttribute('title', '/Users/sam/.dork/extensions/social-queue');
+    // Keyboard and screen-reader users get the full path, not the ~ one.
+    const rowButton = row.querySelector('[data-row-button]') as HTMLElement;
+    expect(rowButton).toHaveAccessibleName(
+      expect.stringContaining('/Users/sam/.dork/extensions/social-queue')
+    );
+    expect(rowButton).not.toHaveAccessibleName(expect.stringContaining('~/'));
     fireEvent.click(within(row).getByRole('button', { name: 'Review social-queue' }));
 
     const forget = within(row).getByRole('button', { name: 'Forget it' });
