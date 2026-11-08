@@ -18,7 +18,7 @@ const caller = { sessionId: 'session-a', agentPath: '/agents/a' };
 describe('another-agent turn gate', () => {
   it('allows a clean turn a person started', () => {
     expect(anotherAgentTurnRefusal(caller, CLEAN)).toBeNull();
-    for (const origin of ['room', 'heartbeat', 'session-relay']) {
+    for (const origin of ['room', 'session-relay']) {
       expect(anotherAgentTurnRefusal(caller, { ...CLEAN, launchOrigin: () => origin })).toBeNull();
     }
   });
@@ -55,9 +55,12 @@ describe('another-agent turn gate', () => {
     expect(anotherAgentTurnRefusal(caller, { ...CLEAN, launchOrigin: () => null })).toBe(
       'GRANT_MARKS_UNREADABLE'
     );
-    expect(anotherAgentTurnRefusal(caller, { ...CLEAN, launchOrigin: () => 'schedule' })).toBe(
-      'GRANT_MARKS_UNREADABLE'
-    );
+    // A schedule, or a beat another agent's room post may have woken (PR B review M2).
+    for (const origin of ['schedule', 'heartbeat']) {
+      expect(anotherAgentTurnRefusal(caller, { ...CLEAN, launchOrigin: () => origin })).toBe(
+        'GRANT_MARKS_UNREADABLE'
+      );
+    }
     expect(
       anotherAgentTurnRefusal(caller, {
         ...CLEAN,

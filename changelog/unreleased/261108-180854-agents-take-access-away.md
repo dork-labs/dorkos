@@ -1,7 +1,7 @@
 ---
 covers:
-  - 'feat(connectors): agents take connection access away, with a ledger and a person''s Undo'
-  - 'feat(connectors): one access change for the person''s Needs-you item, and the census entries for Undo'
+  - "feat(connectors): agents take connection access away, with a ledger and a person's Undo"
+  - "feat(connectors): one access change for the person's Needs-you item, and the census entries for Undo"
 ---
 
 ### Added

@@ -39,10 +39,7 @@ import {
   BROWSER_HANDOFF_ENTRIES,
   type BrowserHandoffPayloads,
 } from './browser-handoff-notifications.js';
-import {
-  ACCESS_CHANGE_ENTRIES,
-  type AccessChangePayloads,
-} from './access-change-notifications.js';
+import { ACCESS_CHANGE_ENTRIES, type AccessChangePayloads } from './access-change-notifications.js';
 
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads

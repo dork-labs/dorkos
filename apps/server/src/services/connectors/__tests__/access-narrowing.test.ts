@@ -4,7 +4,7 @@
  * needs a reason, an allowed turn and the hourly budget, raises a Needs-you
  * item, and a person can undo it. One test per refusal (§7, E3).
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectionGrantChanges,
   connectionGrantExclusions,
@@ -34,6 +34,16 @@ import {
   listAccessChangesForOwner,
 } from '../access/access-change-ledger.js';
 import type { TurnGateRefusal } from '../access/turn-gate.js';
+import { createAccessChangeEvents } from '../access/access-change-events.js';
+import { recordAudit } from '../../audit/audit-trail.js';
+import { notify } from '../../notifications/notification-service.js';
+
+// The live events write through these two; spied, so a test sees exactly what
+// the person, the audit trail and Activity are handed (PR B review M3).
+vi.mock('../../audit/audit-trail.js', () => ({ recordAudit: vi.fn() }));
+vi.mock('../../notifications/notification-service.js', () => ({
+  notify: vi.fn(async () => ({ notification: null, deduped: false })),
+}));
 import { ConnectorExecutionAuthorizationService } from '../execution/authorization-service.js';
 import { createServerPrincipal } from '../principal/server-principal.js';
 import { ConnectorReconciliationService } from '../reconciliation-service.js';
@@ -423,6 +433,96 @@ describe('agents taking access away', () => {
       expect(
         listAccessChangesForOwner(db, { kind: 'local_install', installationId: 'other' })
       ).toEqual([]);
+    });
+  });
+
+  // G2 at the layer that actually emits (PR B review M3): the real events,
+  // with Activity, notify and audit captured.
+  describe('what the person, Activity and the audit trail are told', () => {
+    const SECRET = 'a reason nobody but the person sees';
+
+    function liveNarrowing() {
+      vi.mocked(notify).mockClear();
+      vi.mocked(recordAudit).mockClear();
+      const activity = { emit: vi.fn() };
+      const service = new AccessNarrowingService({
+        db,
+        ownsAgent: (_owner, agentId) => AGENTS.has(agentId),
+        events: createAccessChangeEvents({ activity, agentName: (id) => `name-${id}` }),
+        turnGate: () => null,
+        now: () => clock,
+        createId: () => `live-${++nextId}`,
+      });
+      return { service, activity };
+    }
+
+    function payloads(activity: { emit: ReturnType<typeof vi.fn> }) {
+      return JSON.stringify([
+        activity.emit.mock.calls,
+        vi.mocked(notify).mock.calls,
+        vi.mocked(recordAudit).mock.calls,
+      ]);
+    }
+
+    it("raises exactly one Needs-you item with Undo when an agent narrows another agent's access", async () => {
+      const { service, activity } = liveNarrowing();
+      const made = await service.narrow(caller('pm'), {
+        targetAgentId: 'agent-b',
+        connectionId: CONNECTION_ID,
+        change: { kind: 'level', to: 'read' },
+        reason: SECRET,
+      });
+      expect(vi.mocked(notify).mock.calls).toEqual([
+        [
+          'connector.access_narrowed',
+          expect.objectContaining({
+            changeId: made.changeId,
+            actorAgentId: 'pm',
+            targetAgentId: 'agent-b',
+          }),
+        ],
+      ]);
+      expect(activity.emit).toHaveBeenCalledTimes(1);
+      expect(recordAudit).toHaveBeenCalledTimes(1);
+      expect(payloads(activity)).not.toContain(SECRET);
+    });
+
+    it('raises none when an agent narrows its own access, and keeps the reason out there too', async () => {
+      const { service, activity } = liveNarrowing();
+      await service.narrow(caller('agent-b'), {
+        targetAgentId: 'agent-b',
+        connectionId: CONNECTION_ID,
+        change: { kind: 'leave_out' },
+        reason: SECRET,
+      });
+      expect(notify).not.toHaveBeenCalled();
+      expect(activity.emit).toHaveBeenCalledTimes(1);
+      expect(payloads(activity)).not.toContain(SECRET);
+    });
+
+    it('keeps the reason out of a refusal’s audit row', async () => {
+      const { activity } = liveNarrowing();
+      const refusing = new AccessNarrowingService({
+        db,
+        ownsAgent: () => true,
+        events: createAccessChangeEvents({ activity, agentName: (id) => id }),
+        turnGate: () => 'GRANT_AGENT_STARTED',
+        now: () => clock,
+        createId: () => `refused-${++nextId}`,
+      });
+      expect(
+        await code(
+          refusing.narrow(caller('pm'), {
+            targetAgentId: 'agent-b',
+            connectionId: CONNECTION_ID,
+            change: { kind: 'leave_out' },
+            reason: SECRET,
+          })
+        )
+      ).toBe('GRANT_AGENT_STARTED');
+      expect(recordAudit).toHaveBeenCalledTimes(1);
+      expect(notify).not.toHaveBeenCalled();
+      expect(payloads(activity)).not.toContain(SECRET);
     });
   });
 

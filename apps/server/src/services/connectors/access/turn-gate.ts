@@ -37,12 +37,16 @@ export const TURN_GATE_MESSAGES: Record<TurnGateRefusal, string> = {
     "Another agent's message started this turn, so it can't change another agent's access. Ask a person.",
 };
 
-/** Starts a person (or the agent's own beat) makes; anything else is refused. */
+/**
+ * Starts a person makes; anything else is refused. A heartbeat beat is not one:
+ * another agent's room post can wake a beat, and nothing records who woke it,
+ * so a beat is refused like a schedule (Security, PR B review M2). A beat can
+ * still give up its own agent's access.
+ */
 const PERSON_STARTS: ReadonlySet<string> = new Set([
   'interactive',
   'room',
   'session-relay',
-  'heartbeat',
   'account-handoff',
   'account-resume',
 ]);

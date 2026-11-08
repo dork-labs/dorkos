@@ -139,14 +139,14 @@ const narrowOwnAccess = defineCapability({
     'some actions, remove it, or leave yourself out of the app’s every-agent share. Always ' +
     'allowed, from any turn. It never disconnects the app. Only a person can give the access ' +
     'back. reason is optional: one line, at most ' +
-    `${REASON_MAX_WORDS} words, shown only to the person.`,
+    `${REASON_MAX_WORDS} words. It’s shown to the person and not sent to the other agent.`,
   tier: 'act',
   area: null,
   areaNote: 'an agent can always give up its own access (spec agent-grant-autonomy N1)',
   input: z
     .object({
       ...ChangeSchema,
-      reason: z.string().optional().describe('Why, in one line. Only the person sees it.'),
+      reason: z.string().optional().describe('Why, in one line. It’s shown to the person.'),
     })
     .strict(),
   output: NarrowResultSchema,
@@ -176,9 +176,9 @@ const narrowAgentAccess = defineCapability({
     'remove some actions, remove it, or leave that agent out of the app’s every-agent share. ' +
     'It never disconnects the app, and never gives access. A left-out agent can’t use the app ' +
     'directly. reason is required: one line, at most ' +
-    `${REASON_MAX_WORDS} words, shown only to the person. The person is told at once and can ` +
+    `${REASON_MAX_WORDS} words. It’s shown to the person and not sent to the other agent. The person is told at once and can ` +
     'undo it. Refused in a turn another agent’s message started, in a turn DorkOS marks as ' +
-    'having read words it can’t vouch for, when DorkOS can’t tell either, and after 3 such ' +
+    'having read words it can’t vouch for, when DorkOS can’t tell either (a scheduled run or a heartbeat counts), and after 3 such ' +
     'changes in an hour. DorkOS doesn’t yet notice when a turn reads an email or web page ' +
     'through a connected app, so these limits don’t cover that case.',
   tier: 'act',
@@ -188,7 +188,11 @@ const narrowAgentAccess = defineCapability({
     .object({
       agentId: z.string().min(1).describe('The other agent.'),
       ...ChangeSchema,
-      reason: z.string().describe('Why, in one line, at most 15 words. Only the person sees it.'),
+      reason: z
+        .string()
+        .describe(
+          'Why, in one line, at most 15 words. It’s shown to the person and not sent to the other agent.'
+        ),
     })
     .strict(),
   output: NarrowResultSchema,
@@ -233,7 +237,7 @@ const listAccessChanges = defineCapability({
   title: 'List access changes you made or that were made to you',
   description:
     'List the changes to app access you made, or that another agent made to your access, ' +
-    'newest first, with their changeId. Reasons are not included: only the person sees them.',
+    'newest first, with their changeId. Reasons are not included: they’re shown to the person, not sent to agents.',
   tier: 'observe',
   area: null,
   areaNote: 'reads only the caller’s own ledger rows, never a reason',
