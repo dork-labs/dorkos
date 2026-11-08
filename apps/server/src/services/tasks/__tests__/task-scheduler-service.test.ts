@@ -29,6 +29,8 @@ import {
 import { notifyRunCompleted } from '../../notifications/emitters/run-completed.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
+import * as misplacedMode from '../execution/misplaced-mode.js';
+import { recentDispatches } from '../../observability/dispatch-buffers.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
@@ -175,6 +177,15 @@ function parkedTurn(): {
     await new Promise(() => {});
   };
   return { impl, parked };
+}
+
+/** A promise a test resolves when preparation may continue or the run has ended. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
 }
 
 /**
@@ -1107,6 +1118,63 @@ describe('TaskSchedulerService', () => {
       const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
       await expect(service.cancelRun('nonexistent')).resolves.toEqual({ state: 'not_found' });
     });
+
+    it.each([false, true])(
+      'stops a manual run during preparation without starting it (relay: %s)',
+      async (withRelay) => {
+        const preparing = deferred();
+        const resume = deferred();
+        const finished = deferred();
+        // Hold the real pre-dispatch boundary: the schedule read can outlast
+        // the trigger response and the person's following Stop request.
+        const read = vi
+          .spyOn(misplacedMode, 'checkMisplacedMode')
+          .mockImplementationOnce(async (task) => {
+            preparing.resolve();
+            await resume.promise;
+            return task;
+          });
+        const relay = { publish: vi.fn().mockResolvedValue({ messageId: 'stop', deliveredTo: 0 }) };
+        const service = new TaskSchedulerService({
+          store,
+          runtimes: singleRuntimeSource(mockAgent),
+          config: DEFAULT_CONFIG,
+          relay: withRelay ? (relay as unknown as RelayCore) : null,
+          keepAwake: {
+            holdTask: () => ({ attachSession: vi.fn(), release: () => finished.resolve() }),
+          },
+        });
+        const task = store.createTask(
+          taskInput({ name: 'Preparing', prompt: 'test', cron: '0 * * * *' })
+        );
+        try {
+          const run = await service.triggerManualRun(task.id);
+          await preparing.promise;
+          const stopped = await service.cancelRun(run!.id);
+          resume.resolve();
+          // A released hold means preparation and execution have both settled:
+          // the negative assertions cannot pass ahead of a delayed start.
+          await finished.promise;
+          expect(stopped).toEqual({ state: 'stopping' });
+          expect(store.getRun(run!.id)).toMatchObject({
+            status: 'cancelled',
+            sessionId: null,
+            error: 'Stopped before it started.',
+          });
+          expect(mockAgent.ensureSession).not.toHaveBeenCalled();
+          expect(mockAgent.sendMessage).not.toHaveBeenCalled();
+          expect(relay.publish).not.toHaveBeenCalled();
+          expect(recentDispatches(1)[0]).toMatchObject({
+            outcome: 'halted',
+            endedAt: expect.any(String),
+          });
+        } finally {
+          resume.resolve();
+          read.mockRestore();
+          await service.stop();
+        }
+      }
+    );
   });
 
   describe('interrupting a run in flight', () => {
