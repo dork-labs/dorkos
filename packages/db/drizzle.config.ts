@@ -25,6 +25,7 @@ export default defineConfig({
     './src/schema/session/session-locations.ts',
     './src/schema/session/session-native-bindings.ts',
     './src/schema/session/session-touches.ts',
+    './src/schema/session/turn-context.ts',
     './src/schema/session/chat-messages.ts',
     './src/schema/workspace.ts',
     './src/schema/auth.ts',

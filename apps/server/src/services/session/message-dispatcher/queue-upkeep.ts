@@ -18,6 +18,7 @@ import {
   queueKeyOf,
 } from '../resolution/session-key-registry.js';
 import { getStagedContextStore } from '../staged-context-store.js';
+import { deleteTurnContextForSessions } from '../turn-context/record-turn-context.js';
 import { forgetContextWarning } from '../agent-compaction/context-warning.js';
 import { forgetTurnCutoff } from '../turn-cutoff/turn-cutoff.js';
 import { logger } from '../../../lib/logger.js';
@@ -105,6 +106,11 @@ export function sweepOrphanedMessageQueues(opts?: {
     // nobody can open again will never dispatch, so its hold can only sit there
     // for the life of the install.
     staged?.deleteForSessions(chunk);
+    // So does the record of what its turns were sent, and any text only it held
+    // (Security, Nov 8). Both ids: the record follows the canonical one.
+    deleteTurnContextForSessions([
+      ...new Set([...doomed.slice(i, i + SWEEP_CHUNK_SIZE), ...chunk]),
+    ]);
   }
   // So does a summary the agent asked for: there is no conversation left to summarize.
   for (const id of doomed) {

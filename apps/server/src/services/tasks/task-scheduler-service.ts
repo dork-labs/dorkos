@@ -39,7 +39,7 @@ import { dispatchRunViaRelay } from './relay-dispatch.js';
 import { pruneRunHistory, PRUNE_INTERVAL_MS } from './run-retention.js';
 import { sweepInterruptedRuns } from './crash-recovery.js';
 import { RefusedScheduleLog } from './refused-schedule-log.js';
-import { buildTaskAppend } from './task-append.js';
+import { taskTurnOpts } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
 import { resolveOccurrence, STALE_SKIP_REASON } from './timing/occurrence.js';
 import { runDeadline, WakeSettle } from './timing/wake-settle.js';
@@ -1502,7 +1502,7 @@ export class TaskSchedulerService {
         permissionMode,
         cwd: effectiveCwd,
         ...(forAgent !== undefined ? { forAgent } : {}),
-        systemPromptAppend: buildTaskAppend(task, run),
+        ...taskTurnOpts(task, run),
         // With the marks of another agent that wrote the task, as a hop carries them (DOR-3938).
         ...withCreatorMarks(this.store, task, execution.settings),
         // The same line as `unattended` above, for approval cards: a timer fire

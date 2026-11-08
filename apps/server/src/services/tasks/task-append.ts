@@ -60,3 +60,17 @@ export function buildTaskAppend(task: Task, run: TaskRun): string {
     '=== END TASK CONTEXT ===',
   ].join('\n');
 }
+
+/**
+ * What a task run's turn adds to its send: the scheduler frame on top of the
+ * agent's own context, and where the turn happens for its context record.
+ *
+ * @param task - The task being run
+ * @param run - This run of it
+ */
+export function taskTurnOpts(
+  task: Task,
+  run: TaskRun
+): { systemPromptAppend: string; contextPlace: 'task' } {
+  return { systemPromptAppend: buildTaskAppend(task, run), contextPlace: 'task' };
+}

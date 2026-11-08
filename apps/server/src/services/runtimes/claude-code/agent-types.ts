@@ -177,6 +177,14 @@ export interface AgentSession {
    * `gatePermissionMode`, never by the launch.
    */
   backgroundPermissionCeiling?: TurnPermissionCeiling;
+  /**
+   * The system-prompt append this session's warm process was launched with,
+   * set by the pump's launcher at the moment it hands it to the SDK. A warm
+   * process keeps it for every later turn, so a turn's context record reads it
+   * here rather than the append the turn resolved. `recorded` is false until a
+   * turn's record has claimed it, which is how that turn says it rode along.
+   */
+  liveSystemAppend?: { text: string; recorded: boolean };
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**

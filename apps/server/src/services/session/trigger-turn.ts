@@ -992,6 +992,10 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
           ? { unattendedApprovals: true }
           : {}),
         ...(opts.unattended === true ? { unattended: true } : {}),
+        // Where the turn happens, for its context record only: a beat's chat and
+        // a to-do's run are named by the client id their launchers dispatch under.
+        ...(clientId === 'heartbeat' ? { contextPlace: 'heartbeat' as const } : {}),
+        ...(clientId === 'todos' ? { contextPlace: 'task' as const } : {}),
         ...settings,
         // After `settings`, and it cannot collide with it: that type has no
         // permission key. See the field's docblock for why it is not in there.

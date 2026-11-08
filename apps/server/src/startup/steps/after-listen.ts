@@ -17,6 +17,7 @@ import { logger, logError } from '../../lib/logger.js';
 import { sharedBackgroundWorkLedger } from '../../services/runtimes/claude-code/messaging/background-work-ledger.js';
 import { wakeChatsCutShort } from '../../services/session/runtime-turns/wake-cut-short-work.js';
 import { sweepOrphanedMessageQueues } from '../../services/session/index.js';
+import { sweepExpiredTurnContext } from '../../services/session/turn-context/record-turn-context.js';
 import { INTERVALS } from '../../config/constants.js';
 import { takeDailySnapshot } from '@dorkos/db';
 import {
@@ -191,6 +192,9 @@ export async function startAfterListen(refs: ServerRefs, built: StartAfterListen
   // 0.35 s for a 131 MB database (DOR-2906). Never rejects.
   refs.dailySnapshotInterval = setInterval(() => {
     void takeDailySnapshot(db, backupsDir, logger);
+    // Turn-context text is kept 30 days at most (Security, Nov 8); the hourly
+    // tick is fine-grained enough for a limit counted in days.
+    sweepExpiredTurnContext();
   }, INTERVALS.DAILY_SNAPSHOT_CHECK_MS);
 
   // Somebody has to own the disk that session images sit on. Once at boot, so a

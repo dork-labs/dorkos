@@ -129,13 +129,26 @@ const SECRET_TEXT: readonly [RegExp, (match: string, ...groups: string[]) => str
  * @param text - The free text to sweep.
  */
 export function redactAuditText(text: string): string {
-  let swept = redactSecretsInText(redactCredentialTokens(text.slice(0, MAX_SWEPT)));
+  const swept = sweepSecretText(text.slice(0, MAX_SWEPT));
+  return swept.length <= MAX_TEXT ? swept : `${swept.slice(0, MAX_TEXT - 1)}…`;
+}
+
+/**
+ * The audit sweep on its own, with no length cap: every credential shape the
+ * audit log recognises, replaced in place. For a caller that must keep the
+ * whole text (the turn-context record) and caps nothing. Every pattern is
+ * linear, so a long text costs a long, not a quadratic, sweep.
+ *
+ * @param text - The free text to sweep.
+ */
+export function sweepSecretText(text: string): string {
+  let swept = redactSecretsInText(redactCredentialTokens(text));
   for (const [pattern, replace] of SECRET_TEXT) swept = swept.replace(pattern, replace);
   // MySQL and MariaDB take a password glued to `-p` (`mysql -pHunter2`). Only
   // on a line that runs one of them: elsewhere `-p…` is an ordinary flag.
   if (MYSQL_CLIENT.test(swept))
     swept = swept.replace(/(?<!\S)-p(?=[^\s"'])[^\s"']+/g, `-p${REDACTED}`);
-  return swept.length <= MAX_TEXT ? swept : `${swept.slice(0, MAX_TEXT - 1)}…`;
+  return swept;
 }
 
 /**

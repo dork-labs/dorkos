@@ -36,6 +36,7 @@ import { DoeApprovals } from './approvals.js';
 import { DoeTurnEvents, doeErrorEvent } from './turn.js';
 import { assembleDoeHost, type DoeHostAssembly } from './tools.js';
 import { assertDoeTurnFits } from './window-fit.js';
+import { doeContextRecorder } from './turn-context-record.js';
 import { resolveDoeInference, freezeDoeInference } from './credentials.js';
 import { chooseDoeCreditsInference } from './auto-model.js';
 import type { DoeRuntimeOptions } from './doe-runtime.js';
@@ -265,8 +266,12 @@ export async function executeDoeTurn(
     controller.signal.throwIfAborted();
     hostState.connected(host);
     const base = host.resources;
+    const loadSystem = async (): Promise<string> =>
+      [await base.load(), ...turn.extraContext].join('\n\n');
+    // What the engine loads is what the model is handed: recorded there, and nowhere earlier.
+    const recordSystem = doeContextRecorder({ sessionId: id, opts, mode, content });
     const resources: Resources = {
-      load: async () => [await base.load(), ...turn.extraContext].join('\n\n'),
+      load: async () => recordSystem(await loadSystem()),
       beforeFile: base.beforeFile.bind(base),
       skills: base.skills.bind(base),
       loadSkill: base.loadSkill.bind(base),
@@ -305,7 +310,7 @@ export async function executeDoeTurn(
       hostState.sessions.message(id, content!, cwd, opts?.title);
       // Say plainly when the first request cannot fit, before the model is called (DOR-2839).
       assertDoeTurnFits({
-        resources: await resources.load(),
+        resources: await loadSystem(),
         tools: host.registry.selected(),
         content: content!,
         window: model,
