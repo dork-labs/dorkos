@@ -1,11 +1,17 @@
 /** Handing the browser to a person and back, with a fake browser and a fake sign-in window. */
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../../lib/logger.js';
 import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
+import { BrowserProfileRemoval } from '../profile-removal/index.js';
+import { prepareProfileFolder } from '../profile-folders.js';
+import { createLocalBrowserProfileStore } from '../profile-store.js';
 import type { SignInWindow } from '../sign-in-window.js';
 
 let dataDirectory: string;
@@ -621,5 +627,35 @@ describe('signing in from the Mac app’s built-in browser', () => {
     const { handoffId } = await handover.ask('chat-1', 'password');
     await expect(handover.signIn({ handoffId })).rejects.toMatchObject({ code: 'unsupported' });
     expect(browser.disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('a handoff waiting on a profile (DOR-3887)', () => {
+  it('keeps that profile from being deleted until the handoff ends', async () => {
+    const { handover, set, setProfile } = setup();
+    const key = randomBytes(32);
+    const profiles = createLocalBrowserProfileStore(createTestDb(), () => key);
+    const { id } = profiles.create('Example work');
+    const folder = await prepareProfileFolder(dataDirectory, id);
+    await writeFile(path.join(folder, 'storage-state.json'), 'made-up-site-session');
+    // Wired as the service wires it: removal is busy while the handover holds the profile.
+    const removal = new BrowserProfileRemoval({
+      dataDirectory: () => dataDirectory,
+      busy: (profileId) => handover.holdsProfile(profileId),
+    });
+    setProfile(id);
+    const { handoffId } = await handover.ask('chat-1', 'wall');
+    // The window has closed, so only the waiting handoff can hold the profile now.
+    set({ ...connected(), status: 'disconnected', sessionId: null });
+    handover.windowClosed();
+    await expect(removal.delete(id, profiles)).rejects.toMatchObject({ code: 'profile_busy' });
+    expect(profiles.get(id)).toBeDefined();
+    expect(await readFile(path.join(folder, 'storage-state.json'), 'utf8')).toBe(
+      'made-up-site-session'
+    );
+    // Once the person hands back, nothing holds it and the delete goes through.
+    await handover.handBack(handoffId);
+    await expect(removal.delete(id, profiles)).resolves.toBeUndefined();
+    expect(profiles.get(id)).toBeUndefined();
   });
 });
