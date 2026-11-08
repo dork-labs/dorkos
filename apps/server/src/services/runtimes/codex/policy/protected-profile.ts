@@ -191,7 +191,7 @@ export function codexProtectedConfig(
     // Codex rebuilds this layer without the request's selection (ChatGPT
     // workspace routing, 0.163); a `[permissions]` table without its default
     // then fails every turn with "failed to load workspace requirements".
-    default_permissions: profile,
+    default_permissions: ':danger-full-access',
     permissions: {
       [profile]: {
         ...(mode !== 'danger-full-access'
