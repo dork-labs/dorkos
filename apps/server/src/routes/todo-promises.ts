@@ -6,8 +6,9 @@
  * - `POST /api/agents/:id/todo-promises` — the owner adds one for an agent. Agents
  *   record their own with `todo_promise_add`, so a caller presenting an agent
  *   identity is refused here.
- * - `PATCH /api/todo-promises/:id` — the promising agent or a person closes one or
- *   moves its date; another agent is refused (`NOT_YOURS`).
+ * - `PATCH /api/todo-promises/:id` — a person closes one or moves its date. Agents
+ *   change their own with `todo_promise_update`, which the permission gate decides,
+ *   so a caller presenting an agent identity is refused here (DOR-3936).
  *
  * Every rule lives in `TodoPromiseService`; this file reads the caller and maps
  * refusals to status codes.
@@ -21,8 +22,6 @@ import {
   ListTodoPromisesQuerySchema,
   UpdateTodoPromiseRequestSchema,
 } from '@dorkos/shared/todo-promise-schemas';
-import { callerAgentId } from '../services/todos/caller.js';
-import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
 import { errorBody, validationFailureBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -46,12 +45,6 @@ export interface TodoPromiseRouterDeps {
    * @param agentId - The Mesh id.
    */
   agentExists(agentId: string): boolean;
-  /**
-   * The Mesh id of the agent living at a home folder, or undefined.
-   *
-   * @param agentPath - The agent's home folder.
-   */
-  agentIdForPath(agentPath: string): string | undefined;
   /**
    * Whether this caller is the person who owns this install. Only the owner
    * sees which chat a promise was made in (`sourceSessionId`): chats are
@@ -92,10 +85,13 @@ function refusal(c: Context<ApiEnv>, err: unknown): Response {
 const NOT_YOUR_AGENT = 'Only the owner of this agent can change its to-dos.';
 
 /**
- * Who is changing a to-do over HTTP: the agent its token names, or a
- * person. A machine whose identity did not verify is never read as a person,
- * and a person must own the agent: every agent on this install belongs to its
- * owner (the team roster's `ownerId` rule), so that is the owner bar.
+ * Who is changing a to-do over HTTP: a person who owns the agent, or a refusal.
+ *
+ * Agents are refused here, verified or not, as on the add route and `/api/todos`: they change
+ * their own promises with `todo_promise_update`, which the permission gate decides. This route
+ * runs no permission check, so letting an agent's token through would let it skip a Blocked
+ * To-dos area (DOR-3936, Security M1). A person must own the agent: every agent on this install
+ * belongs to its owner (the team roster's `ownerId` rule), so that is the owner bar.
  *
  * @returns The actor, or the refusal to answer with.
  */
@@ -104,16 +100,10 @@ function actorOf(
   deps: TodoPromiseRouterDeps
 ): { actor: TodoPromiseActor } | { refused: Response } {
   const facts = honoRequestFacts(c);
-  const caller = callerAgentId(facts.agentIdentity, deps.agentIdForPath);
-  if (caller.ok) {
-    // Over HTTP there is no session to read a level from, so only the agent's running marks travel.
-    const marks = marksOf(undefined, facts.agentIdentity?.agentPath);
-    return { actor: { kind: 'agent', agentId: caller.agentId, marks } };
-  }
   if (presentsAgentIdentity(facts)) {
     return {
       refused: c.json(
-        errorBody('This agent could not be identified, so nothing changed.', 'NO_AGENT'),
+        errorBody('Agents change their own promises with todo_promise_update.', 'NOT_A_PERSON'),
         403
       ),
     };
@@ -125,7 +115,7 @@ function actorOf(
 /**
  * The routes for `/api/todo-promises`: list and change.
  *
- * @param deps - The service and the Mesh lookups.
+ * @param deps - The service, the agent lookup and the owner checks.
  * @returns The routes, to mount at `/api/todo-promises`.
  */
 export function createTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiEnv> {
@@ -161,7 +151,7 @@ export function createTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiE
  * The routes for `/api/agents/:id/todo-promises`: a person adds a promise for an
  * agent. The agents group registers nothing on this path, so it is answered here.
  *
- * @param deps - The service and the Mesh lookups.
+ * @param deps - The service, the agent lookup and the owner checks.
  * @returns The routes, to mount at `/api/agents/:id/todo-promises`.
  */
 export function createAgentTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono<ApiEnv> {

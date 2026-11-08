@@ -333,6 +333,40 @@ describe('individual actions', () => {
     );
   });
 
+  it('says a read lets Ask through, so nobody waits for a card (DOR-3936)', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getPermissions).mockResolvedValue(
+      withActions({
+        id: 'tasks_list',
+        title: 'List schedules',
+        tier: 'observe',
+        resolved: { area: 'tasks', state: 'ask', source: 'preset', layer: 'default' },
+      })
+    );
+    render(<PermissionList scope={{ kind: 'default' }} />, { wrapper });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Show individual actions' }));
+    const row = screen.getByTestId('permission-action-tasks_list');
+    expect(within(row).getByText(/A read: Ask lets it through/)).toBeInTheDocument();
+  });
+
+  it('says nothing about reads on an action that changes something', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getPermissions).mockResolvedValue(
+      withActions({
+        id: 'tasks_create',
+        title: 'Create a schedule',
+        tier: 'act',
+        resolved: { area: 'tasks', state: 'ask', source: 'preset', layer: 'default' },
+      })
+    );
+    render(<PermissionList scope={{ kind: 'default' }} />, { wrapper });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Show individual actions' }));
+    const row = screen.getByTestId('permission-action-tasks_create');
+    expect(within(row).queryByText(/A read/)).toBeNull();
+  });
+
   it('names the extension an action came from on its row (DOR-2685)', async () => {
     // Extension tools sit under one area, so each row says which extension
     // added it; DorkOS's own actions say nothing extra.

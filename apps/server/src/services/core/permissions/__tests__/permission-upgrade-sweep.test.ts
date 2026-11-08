@@ -127,9 +127,10 @@ describe('the permission upgrade', () => {
     expect(onDisk('capped').permissions.areas).toMatchObject({
       rooms: 'blocked',
       extensions: 'blocked',
+      todos: 'blocked',
       reach: 'blocked',
     });
-    expect(Object.keys(onDisk('capped').permissions.areas)).toHaveLength(12);
+    expect(Object.keys(onDisk('capped').permissions.areas)).toHaveLength(13);
     expect(onDisk('capped')).not.toHaveProperty('tierCeiling');
     // An agent that never held a retired field is left exactly as it was.
     expect(onDisk('plain').permissions).toBeUndefined();
@@ -146,7 +147,7 @@ describe('the permission upgrade', () => {
     }
     const capped = world.events.find((e) => e.resourceLabel === 'capped')!;
     expect(capped.metadata).toMatchObject({ note: OBSERVE_CEILING_NOTE });
-    expect((capped.metadata as { changes: unknown[] }).changes).toHaveLength(12);
+    expect((capped.metadata as { changes: unknown[] }).changes).toHaveLength(13);
   });
 
   it('keeps going past an agent whose file cannot be read, and says so', async () => {

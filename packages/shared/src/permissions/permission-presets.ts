@@ -14,7 +14,7 @@ import type { PermissionAreaId, PermissionPreset, PermissionState } from './perm
 
 /** One preset: a state for every area, and the trust stop it sets for files. */
 export interface PermissionPresetTable {
-  /** A state for each of the twelve state areas. */
+  /** A state for each of the thirteen state areas. */
   readonly areas: Readonly<Record<PermissionAreaId, PermissionState>>;
   /** Action-level entries that beat the area entry. */
   readonly actions: Readonly<Record<string, PermissionState>>;
@@ -36,6 +36,7 @@ const CAREFUL: PermissionPresetTable = Object.freeze({
     packages: 'ask',
     extensions: 'ask',
     own_chat: 'allowed',
+    todos: 'allowed',
     settings: 'ask',
     safety: 'ask',
     permissions: 'ask',
@@ -59,6 +60,7 @@ const BALANCED: PermissionPresetTable = Object.freeze({
     packages: 'ask',
     extensions: 'allowed',
     own_chat: 'allowed',
+    todos: 'allowed',
     settings: 'ask',
     safety: 'ask',
     permissions: 'ask',
@@ -83,6 +85,7 @@ const FULL: PermissionPresetTable = Object.freeze({
     packages: 'ask',
     extensions: 'allowed',
     own_chat: 'allowed',
+    todos: 'allowed',
     settings: 'ask',
     safety: 'ask',
     permissions: 'ask',
@@ -110,6 +113,7 @@ const TRUSTED: PermissionPresetTable = Object.freeze({
     packages: 'allowed',
     extensions: 'allowed',
     own_chat: 'allowed',
+    todos: 'allowed',
     settings: 'allowed',
     safety: 'ask',
     permissions: 'allowed',

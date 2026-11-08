@@ -3,10 +3,9 @@
  * next beat, its last beats, how much is held for people, and its measures.
  *
  * - **Any agent may read any agent's**, so a lead reads its reports' the way a
- *   manager reads a colleague's record. Tier `observe`, `area: null`, as
- *   `todo_promises_list`: the record it reads is readable by everyone in the
- *   space, and a switch that blocked it would hide the record without stopping
- *   anything.
+ *   manager reads a colleague's record. Tier `observe`, `area: null`: the
+ *   record it reads is readable by everyone in the space, and a switch that
+ *   blocked it would hide the record without stopping anything.
  * - **Summaries only.** It never returns the words of a held message or which
  *   chat a beat ran in: those are the owner's, in the app. Held messages are a
  *   count.

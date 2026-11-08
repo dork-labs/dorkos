@@ -13,10 +13,10 @@
  *
  * ## Permission
  *
- * All three are `area: null`, as `memory_write` is. They touch nothing but the
- * agent's own record of what it said it would do, and that record is how people
- * see its promises: a switch that blocked it would hide promises from people
- * without stopping any of them being made.
+ * All three are in the To-dos area (`todos`, DOR-3936), which every preset
+ * Allows. Before, they had no area, so a person's Blocked stored for one of them
+ * was read by nothing and the call still ran. Now a Blocked or Ask set for the
+ * area, or for one of the three actions, decides the call like any other area.
  *
  * ## Who sees what
  *
@@ -216,7 +216,7 @@ export const todoPromisesDomain: CapabilityDomain = {
   capabilities: [
     defineCapability({
       id: 'todo_promises.add',
-      title: 'Record a promise',
+      title: 'Add a to-do',
       description:
         'Record something you promised, once you have promised it, so it never lives only in a ' +
         'chat. Everyone on the team can read your list. `what` is the promise in one plain line ' +
@@ -228,8 +228,9 @@ export const todoPromisesDomain: CapabilityDomain = {
         '(a date, a price, a discount) commits other people: ask first, then record it. When you ' +
         'have done it, mark it kept with the promise-update tool.',
       tier: 'act',
-      area: null,
-      areaNote: "the agent's own record of its promises, which people read",
+      area: 'todos',
+      // What a card shows if a person sets this to Ask.
+      approvalDisplayFields: ['what', 'to', 'dueAt'],
       input: z.object({
         what: z
           .string()
@@ -301,7 +302,7 @@ export const todoPromisesDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'todo_promises.update',
-      title: 'Update a promise',
+      title: 'Change a to-do',
       description:
         'Change one of your promises. `state: "kept"` when you have done it, `"dropped"` when it ' +
         'no longer applies (say why in `note`), `"missed"` when you could not make it. To move ' +
@@ -309,8 +310,9 @@ export const todoPromisesDomain: CapabilityDomain = {
         'The same reopens a closed promise. Only the agent that promised, or a person, can ' +
         'change a promise.',
       tier: 'act',
-      area: null,
-      areaNote: "the agent's own record of its promises, which people read",
+      area: 'todos',
+      // What a card shows if a person sets this to Ask.
+      approvalDisplayFields: ['id', 'state', 'dueAt', 'note'],
       input: z.object({
         id: z.string().min(1).max(100).describe('The promise id, from todo_promises_list.'),
         state: TodoStateSchema.describe('kept, dropped, missed, or open to move the date.'),
@@ -355,15 +357,14 @@ export const todoPromisesDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'todo_promises.list',
-      title: 'Read promises',
+      title: 'Read to-dos',
       description:
         "Read what agents have promised: yours, or any agent's. Open promises only by default, " +
         'soonest due first; `overdue` marks one past its date. `state: "all"` adds closed ones, ' +
         'most recently closed first. Filter by `agentId` or `to`. At most `limit` rows (default ' +
         '50); `truncated: true` means more matched, so narrow the filter or raise `limit`.',
       tier: 'observe',
-      area: null,
-      areaNote: 'every promise is readable by everyone in the space',
+      area: 'todos',
       input: z.object({
         agentId: z.string().min(1).max(100).optional().describe("Only this agent's promises."),
         state: z

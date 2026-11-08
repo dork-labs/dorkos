@@ -8,7 +8,7 @@
  */
 import type { PermissionAreaId } from './permission-schemas.js';
 
-/** The id of any row on the permissions page: the twelve state areas plus `files`. */
+/** The id of any row on the permissions page: the thirteen state areas plus `files`. */
 export type PermissionRowAreaId = PermissionAreaId | 'files';
 
 /** One area as a person sees it. */
@@ -80,6 +80,13 @@ export const PERMISSION_AREAS: readonly PermissionArea[] = Object.freeze([
     id: 'own_chat',
     label: 'Own chat',
     description: 'Summarize its own chat when it gets full',
+    floor: false,
+    kind: 'state',
+  },
+  {
+    id: 'todos',
+    label: 'To-dos',
+    description: "Add and change its own to-dos, and read the team's.",
     floor: false,
     kind: 'state',
   },
