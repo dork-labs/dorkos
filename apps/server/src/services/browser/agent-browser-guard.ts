@@ -9,7 +9,9 @@
  *
  * 1. removes every Cloud cookie and Cloud page storage from the session file
  *    it loads (on every load, so a file saved before this fix is cleaned the
- *    first time it is used), and
+ *    first time it is used), and every cookie and page storage for this
+ *    DorkOS's own hosts (DOR-3957: a saved DorkOS session would let any
+ *    agent's browser call this app as its owner once login is on), and
  * 2. starts it blocked from the Cloud origin, with the two layers
  *    `withCloudOriginBlocked` describes.
  *
@@ -29,6 +31,7 @@ import {
   unguardableBrowserReason,
   withCloudOriginBlocked,
 } from '@dorkos/shared/agent-browser';
+import { cookieReachesApp, isAppHostOrigin } from '@dorkos/shared/app-origin';
 import {
   chromeHostResolverRules,
   cookieReachesCloud,
@@ -39,6 +42,7 @@ import {
 import type { Logger } from '@dorkos/shared/logger';
 import { resolveDorkHome } from '../../lib/dork-home.js';
 import { cloudOriginsForThisServer } from '../core/cloud/cloud-api-origin.js';
+import { localBrowserAppHosts } from '../session/local-browser/app-origins.js';
 import {
   agentBrowserStateFile,
   ensureAgentBrowserStateFile,
@@ -64,34 +68,41 @@ function writePrivateFileSync(file: string, content: string): void {
 
 /** What {@link scrubAgentBrowserState} found. */
 export type ScrubOutcome =
-  /** No file, or a file with no Cloud entries: nothing to do. */
+  /** No file, or a file with no Cloud or DorkOS entries: nothing to do. */
   | 'clean'
-  /** Cloud entries were removed and the file rewritten. */
+  /** Cloud or DorkOS entries were removed and the file rewritten. */
   | 'scrubbed'
   /** Not JSON: Playwright cannot load it either, so it signs the browser in to nothing. */
   | 'unreadable'
-  /** It holds Cloud entries that could not be removed: the browser must not start from it. */
+  /** It holds Cloud or DorkOS entries that could not be removed: the browser must not start from it. */
   | 'refused';
 
 /**
  * Remove every Cloud cookie and every Cloud origin's page storage from a
- * saved session file.
+ * saved session file, and every cookie and page storage for this DorkOS's own
+ * hosts, on any port.
  *
  * Read loosely, not through the storage-state schema: Playwright loads any
  * cookie it can, so a file that fails DorkOS's schema is still scrubbed of
  * every entry Playwright would have used. Only THIS DorkOS's own session file
- * is ever rewritten; a file elsewhere that holds Cloud entries is
+ * is ever rewritten; a file elsewhere that holds Cloud or DorkOS entries is
  * `'refused'` rather than edited, because a manifest names that path and it is
  * not ours to change.
  *
  * @param file - The session file a browser loads.
- * @param options - `entries` is the Cloud list; `owned` is whether this file is ours to rewrite.
+ * @param options - `entries` is the Cloud list; `appHosts` is this DorkOS's own hosts;
+ *   `owned` is whether this file is ours to rewrite.
  */
 export function scrubAgentBrowserState(
   file: string,
-  options: { entries?: readonly CloudOriginEntry[]; owned?: boolean } = {}
+  options: {
+    entries?: readonly CloudOriginEntry[];
+    appHosts?: readonly string[];
+    owned?: boolean;
+  } = {}
 ): ScrubOutcome {
   const entries = options.entries ?? cloudOriginsForThisServer();
+  const appHosts = options.appHosts ?? localBrowserAppHosts();
   let raw: string;
   try {
     raw = fs.readFileSync(file, 'utf8');
@@ -110,11 +121,13 @@ export function scrubAgentBrowserState(
   const origins = Array.isArray(record.origins) ? record.origins : [];
   const keptCookies = cookies.filter(
     (cookie: { domain?: unknown }) =>
-      typeof cookie?.domain !== 'string' || !cookieReachesCloud(cookie.domain, entries)
+      typeof cookie?.domain !== 'string' ||
+      (!cookieReachesCloud(cookie.domain, entries) && !cookieReachesApp(cookie.domain, appHosts))
   );
   const keptOrigins = origins.filter(
     (origin: { origin?: unknown }) =>
-      typeof origin?.origin !== 'string' || !isCloudOriginUrl(origin.origin, entries)
+      typeof origin?.origin !== 'string' ||
+      (!isCloudOriginUrl(origin.origin, entries) && !isAppHostOrigin(origin.origin, appHosts))
   );
   if (keptCookies.length === cookies.length && keptOrigins.length === origins.length)
     return 'clean';
@@ -157,7 +170,7 @@ function writeGuardedConfig(dorkHome: string, entries: readonly CloudOriginEntry
  * left out. Servers that are not a Playwright browser pass through untouched.
  *
  * @param servers - The servers about to reach a runtime, by name.
- * @param options - The data directory, the Cloud list and a logger, all defaulted.
+ * @param options - The data directory, the Cloud list, DorkOS's own hosts and a logger, all defaulted.
  */
 export function guardAgentBrowsers<
   T extends {
@@ -171,6 +184,7 @@ export function guardAgentBrowsers<
   options: {
     dorkHome?: string;
     entries?: readonly CloudOriginEntry[];
+    appHosts?: readonly string[];
     logger?: Pick<Logger, 'warn'>;
   } = {}
 ): Record<string, T> {
@@ -178,6 +192,7 @@ export function guardAgentBrowsers<
   if (!Object.values(servers).some(isPlaywrightBrowser)) return servers;
   const dorkHome = options.dorkHome ?? resolveDorkHome();
   const entries = options.entries ?? cloudOriginsForThisServer();
+  const appHosts = options.appHosts ?? localBrowserAppHosts();
   const ownStateFile = path.resolve(agentBrowserStateFile(dorkHome));
   const guarded: Record<string, T> = {};
   for (const [name, connection] of Object.entries(servers)) {
@@ -196,9 +211,9 @@ export function guardAgentBrowsers<
     const stateFile = agentBrowserStateFileOf(connection);
     if (stateFile) {
       const owned = path.resolve(stateFile) === ownStateFile;
-      if (scrubAgentBrowserState(stateFile, { entries, owned }) === 'refused') {
+      if (scrubAgentBrowserState(stateFile, { entries, appHosts, owned }) === 'refused') {
         options.logger?.warn(
-          `[agent-browser] left "${name}" out: its saved session holds DorkOS Cloud sign-ins DorkOS could not remove`
+          `[agent-browser] left "${name}" out: its saved session holds DorkOS or DorkOS Cloud sign-ins DorkOS could not remove`
         );
         continue;
       }

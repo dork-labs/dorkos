@@ -144,9 +144,12 @@ describe.skipIf(!ARMED)('agent browser Cloud block (real Chrome smoke)', () => {
     expect(cloudHits.length).toBeGreaterThan(0);
     cloudHits.length = 0;
 
+    // The local server plays an ordinary site on 127.0.0.1, a name DorkOS itself
+    // answers to, so DorkOS's own hosts are left off here: this smoke is the
+    // Cloud block. Dropping DorkOS's own cookies is agent-browser-guard.test.ts.
     const guarded = guardAgentBrowsers(
       { browser: connection },
-      { dorkHome, entries: cloudOriginEntries() }
+      { dorkHome, entries: cloudOriginEntries(), appHosts: [] }
     );
     expect(fs.readFileSync(stateFile, 'utf8')).not.toContain('cloud_session');
     const guardedArgs = guarded.browser!.args;

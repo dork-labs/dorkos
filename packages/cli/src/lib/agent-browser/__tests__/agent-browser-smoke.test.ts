@@ -19,6 +19,10 @@
  *   DORKOS_BROWSER_SMOKE=1 pnpm vitest run \
  *     packages/cli/src/lib/agent-browser/__tests__/agent-browser-smoke.test.ts
  *
+ * The local site is reached as `site.test`, which a Chrome host rule sends to
+ * it, never as `127.0.0.1`: a saved session holds no cookie for a name DorkOS
+ * itself answers to (DOR-3957), and every loopback name is one.
+ *
  * Every file it touches lives in a temp directory; it never opens the real
  * agent browser profile.
  */
@@ -70,6 +74,10 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
   let root: string;
   let server: http.Server;
   let origin: string;
+  /** Chrome flags that send `site.test` to the local server, over plain http. */
+  let siteArgs: string[];
+  /** A Playwright MCP config passing {@link siteArgs} to the agents' Chrome. */
+  let siteConfig: string;
 
   beforeAll(async () => {
     root = fs.mkdtempSync(path.join(tmpdir(), 'dorkos-agent-browser-smoke-'));
@@ -83,7 +91,17 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
       res.end(whoamiPage(req.headers.cookie ?? ''));
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const port = (server.address() as AddressInfo).port;
+    origin = 'http://site.test';
+    siteArgs = [
+      `--host-resolver-rules=MAP site.test 127.0.0.1:${port}`,
+      '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable',
+    ];
+    siteConfig = path.join(root, 'site-config.json');
+    fs.writeFileSync(
+      siteConfig,
+      JSON.stringify({ browser: { launchOptions: { args: siteArgs } } })
+    );
   });
 
   afterAll(async () => {
@@ -113,6 +131,7 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
       '--no-first-run',
       '--no-default-browser-check',
       '--headless',
+      ...siteArgs,
       `${origin}/sign-in`,
     ]);
     try {
@@ -148,7 +167,7 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
         await client.connect(
           new StdioClientTransport({
             command: connection.command,
-            args: connection.args,
+            args: [...connection.args, '--config', siteConfig],
             stderr: 'ignore',
           })
         );
@@ -179,7 +198,7 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
     await client.connect(
       new StdioClientTransport({
         command: connection.command,
-        args: connection.args,
+        args: [...connection.args, '--config', siteConfig],
         stderr: 'ignore',
       })
     );

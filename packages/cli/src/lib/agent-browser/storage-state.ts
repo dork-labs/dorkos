@@ -7,11 +7,16 @@
  * ever prints a value from it. It never holds a DorkOS Cloud sign-in: every
  * write and every read drops the Cloud origin's cookies and page storage
  * (`@dorkos/shared/cloud-origin`, DOR-3196), because every agent's browser
- * starts from this file.
+ * starts from this file. Nor does it hold a DorkOS sign-in: the same writes and
+ * reads drop every cookie and page storage for this computer's own names
+ * (`@dorkos/shared/app-origin`, DOR-3957), since that cookie would let an
+ * agent's browser call DorkOS as its owner. The server drops its tunnel and
+ * trusted names too, which only it knows, each time a browser loads the file.
  *
  * @module lib/agent-browser/storage-state
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   StorageStateOriginSchema,
@@ -20,6 +25,7 @@ import {
   type StorageStateCookie,
   type StorageStateOrigin,
 } from '@dorkos/shared/agent-browser';
+import { localAppHosts, withoutAppOrigin } from '@dorkos/shared/app-origin';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
 import { cloudOriginEntries, withoutCloudOrigin } from '@dorkos/shared/cloud-origin';
 import { env } from '../../env.js';
@@ -154,16 +160,22 @@ function cliCloudOrigins() {
   });
 }
 
+/** The session with nothing an agent must never start from: no Cloud sign-in, no DorkOS one. */
+function withoutProtectedOrigins(state: StorageState): StorageState {
+  const appHosts = localAppHosts(os.hostname(), os.networkInterfaces());
+  return withoutAppOrigin(withoutCloudOrigin(state, cliCloudOrigins()).state, appHosts).state;
+}
+
 /**
  * Write the saved session: `0600`, atomically, parent folder `0700`, with
- * every Cloud cookie and Cloud page storage left out.
+ * every Cloud and DorkOS cookie and page storage left out.
  *
  * @param file - The storage-state path.
  * @param state - What to save.
- * @returns What was saved, which is `state` without the Cloud origin.
+ * @returns What was saved, which is `state` without the Cloud origin or DorkOS's own.
  */
 export async function writeStorageState(file: string, state: StorageState): Promise<StorageState> {
-  const saved = withoutCloudOrigin(state, cliCloudOrigins()).state;
+  const saved = withoutProtectedOrigins(state);
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   await writeFileAtomic(file, `${JSON.stringify(saved, null, 2)}\n`, { mode: 0o600 });
   return saved;
@@ -181,9 +193,9 @@ export class UnreadableStorageStateError extends Error {
 }
 
 /**
- * Read the saved session, or `null` when there is none yet. A Cloud sign-in
- * saved by an older version is left out of what is returned; the server
- * removes it from the file itself.
+ * Read the saved session, or `null` when there is none yet. A Cloud or DorkOS
+ * sign-in saved by an older version is left out of what is returned; the
+ * server removes it from the file itself.
  *
  * @param file - The storage-state path.
  * @throws {UnreadableStorageStateError} When the file is there but is not a session.
@@ -196,9 +208,11 @@ export function readStorageState(file: string): StorageState | null {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;
   }
+  let state: StorageState;
   try {
-    return withoutCloudOrigin(StorageStateSchema.parse(JSON.parse(raw)), cliCloudOrigins()).state;
+    state = StorageStateSchema.parse(JSON.parse(raw));
   } catch {
     throw new UnreadableStorageStateError(file);
   }
+  return withoutProtectedOrigins(state);
 }
