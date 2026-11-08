@@ -206,18 +206,21 @@ export function ExtensionsSettingsTab() {
 
       <TrustedSourcesSection />
 
-      <div className="flex justify-end">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleReload}
-          disabled={reloadMutation.isPending}
-          data-testid="reload-extensions-button"
-        >
-          <RefreshCw className={cn('mr-2 size-4', reloadMutation.isPending && 'animate-spin')} />
-          Reload extensions
-        </Button>
-      </div>
+      {/* While the list could not be read, Try again above is the one way out. */}
+      {!loadFailed && (
+        <div className="flex justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReload}
+            disabled={reloadMutation.isPending}
+            data-testid="reload-extensions-button"
+          >
+            <RefreshCw className={cn('mr-2 size-4', reloadMutation.isPending && 'animate-spin')} />
+            Reload extensions
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

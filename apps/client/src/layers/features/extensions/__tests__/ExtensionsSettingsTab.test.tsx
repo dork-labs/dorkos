@@ -144,6 +144,8 @@ describe('ExtensionsSettingsTab', () => {
     const line = await screen.findByTestId('extensions-load-failed');
     expect(line).toHaveTextContent('Couldn’t load apps.');
     expect(screen.queryByTestId('no-extensions')).not.toBeInTheDocument();
+    // One way out, not two: Reload waits until there is a list to reload.
+    expect(screen.queryByTestId('reload-extensions-button')).not.toBeInTheDocument();
 
     // Try again asks the server once more, and a working answer draws the list.
     mockFetch({ '/api/extensions': [makeExtension({ id: 'ext-a' })] });
