@@ -17,7 +17,7 @@ import type {
   ApprovalSetResult,
   ExtensionApprovalSet,
 } from '@dorkos/shared/extension-approval-schemas';
-import { Badge, Button, Switch } from '@/layers/shared/ui';
+import { Button, CountPill, Switch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { extensionGroupState, type ExtensionGroup } from '../lib/extension-groups';
 import { extensionPurpose, isExtensionOn, waitsForOk } from '../lib/extension-row-state';
@@ -130,13 +130,13 @@ export function ExtensionGroupRow({
             {state.purpose}
           </span>
           {state.chip && (
-            <Badge
-              tone="warning"
+            <CountPill
+              count={state.needsYouCount}
+              tone="neutral"
+              label={state.chip}
               className="shrink-0 max-sm:col-span-2 max-sm:row-start-3 max-sm:justify-self-start"
               data-testid={`extension-group-chip-${group.plugin}`}
-            >
-              {state.chip}
-            </Badge>
+            />
           )}
           <ChevronDown
             aria-hidden="true"
@@ -208,8 +208,8 @@ export function ExtensionGroupRow({
               </div>
             )
           )}
-          {/* The card already lists every member; the lines return once it is answered. */}
-          {(!shownSet || answered) && (
+          {/* The card is the member list while it is open, answered or not. */}
+          {!shownSet && (
             <ul className="space-y-0.5" aria-label={`${group.name} extensions`}>
               {group.members.map((member) => (
                 <li
@@ -238,10 +238,7 @@ export function ExtensionGroupRow({
               ))}
             </ul>
           )}
-          <p className="text-muted-foreground text-xs">
-            From the {group.plugin} plugin · {state.allowed.length} of {group.members.length}{' '}
-            allowed
-          </p>
+          <p className="text-muted-foreground text-xs">From the {group.plugin} plugin</p>
         </div>
       )}
     </li>

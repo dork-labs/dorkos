@@ -78,7 +78,7 @@ function memberFacts(member: ApprovalSetMemberView): Array<[string, string]> {
   if (permissions.runtime === 'subprocess') {
     return [
       ['Access', 'Runs on its own, apart from DorkOS'],
-      ['Runs as', 'Runs as you'],
+      ['Runs as', 'You'],
       [
         'Network',
         permissions.net.length > 0
@@ -90,14 +90,19 @@ function memberFacts(member: ApprovalSetMemberView): Array<[string, string]> {
   if (!member.runsInServer) {
     return [
       ['Access', 'Its screens run in DorkOS with your access'],
-      ['Runs as', 'Runs as you'],
+      ['Runs as', 'You'],
     ];
   }
   return [
     ['Access', 'Runs inside DorkOS, with full access to this computer'],
-    ['Runs as', 'Runs as you'],
+    ['Runs as', 'You'],
     ['Network', 'Can reach anything this computer can'],
   ];
+}
+
+/** A server sentence read after a colon: its first letter lowercased. */
+function afterColon(reason: string): string {
+  return reason.charAt(0).toLowerCase() + reason.slice(1);
 }
 
 /** One member's line, with its facts behind a disclosure. */
@@ -114,12 +119,14 @@ function MemberLine({
   const status = result
     ? result.ok
       ? 'Allowed'
-      : `Not allowed: ${result.reason ?? 'DorkOS refused it.'}`
+      : `Not allowed: ${afterColon(result.reason ?? 'DorkOS refused it.')}`
     : member.state === 'allowed'
       ? 'Already allowed'
       : member.state === 'skipped'
-        ? `Can’t be allowed: ${member.reason ?? 'DorkOS can’t check it.'}`
+        ? `Can’t be allowed: ${afterColon(member.reason ?? 'DorkOS can’t check it.')}`
         : null;
+  // A refusal is the line: it takes the purpose's place and may wrap.
+  const refused = (result && !result.ok) || member.state === 'skipped';
   return (
     <li data-testid={`approval-set-member-${member.id}`} data-state={member.state}>
       <button
@@ -135,13 +142,16 @@ function MemberLine({
         <span className="w-[160px] shrink-0 truncate font-medium max-sm:w-auto max-sm:min-w-0 max-sm:flex-1 max-sm:shrink">
           {member.name}
         </span>
-        <span className="text-muted-foreground min-w-0 flex-1 truncate max-sm:hidden">
-          {member.purpose}
-        </span>
+        {!refused && (
+          <span className="text-muted-foreground min-w-0 flex-1 truncate max-sm:hidden">
+            {member.purpose}
+          </span>
+        )}
         {status && (
           <span
             className={cn(
-              'shrink-0 text-xs',
+              'text-xs',
+              refused ? 'min-w-0 flex-1 py-1.5 break-words' : 'shrink-0',
               result && !result.ok ? 'text-status-error-fg' : 'text-muted-foreground'
             )}
             data-testid={`approval-set-status-${member.id}`}
@@ -211,7 +221,7 @@ export function ApprovalSetCard({
         data-testid={`approval-set-grant-${set.plugin}`}
       >
         <dt className="text-muted-foreground">Runs as</dt>
-        <dd className="max-sm:mb-1">Runs as you</dd>
+        <dd className="max-sm:mb-1">You</dd>
         {network && (
           <>
             <dt className="text-muted-foreground">Network</dt>

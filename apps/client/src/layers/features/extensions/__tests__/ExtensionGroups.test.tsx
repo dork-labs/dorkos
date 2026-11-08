@@ -251,7 +251,7 @@ describe('the Allow all card', () => {
     const card = screen.getByTestId('approval-set-marketing-suite');
     await waitFor(() =>
       expect(within(card).getByTestId('approval-set-status-writer')).toHaveTextContent(
-        'Not allowed: Its files changed since you saw it.'
+        'Not allowed: its files changed since you saw it.'
       )
     );
     expect(within(card).getByTestId('approval-set-status-social')).toHaveTextContent('Allowed');
@@ -261,5 +261,12 @@ describe('the Allow all card', () => {
       setHash: 'hash-1',
     });
     expect(toast.success).not.toHaveBeenCalled();
+    // The card is the member list: no stale "Needs your OK" line under it,
+    // and the list is read again so every row is true once the card closes.
+    expect(screen.queryByTestId('extension-group-member-writer')).not.toBeInTheDocument();
+    const approvedAt = calls.findIndex((c) => c.url.includes('/approve-set'));
+    await waitFor(() =>
+      expect(calls.slice(approvedAt + 1).some((c) => c.url.endsWith('/extensions'))).toBe(true)
+    );
   });
 });

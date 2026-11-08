@@ -64,7 +64,9 @@ export interface ExtensionGroupState {
   needsYou: boolean;
   /** The one line under the name. */
   purpose: string;
-  /** The chip, when a member needs the person. */
+  /** How many members need the person; the row's count pill. */
+  needsYouCount: number;
+  /** What that pill says to a screen reader ("1 needs you"), or null when none do. */
   chip: string | null;
   /** The switch's answer: some allowed member is on. */
   isOn: boolean;
@@ -89,6 +91,7 @@ export function extensionGroupState(group: ExtensionGroup): ExtensionGroupState 
     allowed,
     needsYou: needsYou > 0,
     purpose,
+    needsYouCount: needsYou,
     chip: needsYou === 0 ? null : needsYou === 1 ? '1 needs you' : `${needsYou} need you`,
     isOn: allowed.some(isExtensionOn),
   };
