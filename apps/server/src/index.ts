@@ -77,6 +77,7 @@ import { wireConnectorServices } from './startup/steps/connector-services.js';
 import { wireDocDelivery } from './startup/steps/doc-delivery.js';
 import { wireMcpTasksAndSkills } from './startup/steps/mcp-tasks-skills.js';
 import { mountCoreRoutes } from './startup/steps/core-routes.js';
+import { repairAgentHomes } from './services/core/agent-home/agent-home-scaffold.js';
 import { pinRegisteredFolderConfigsOnce } from './services/runtimes/claude-code/folder-settings/pin-folder-configs.js';
 import { pinKnownRepoBaselinesOnce } from './services/runtimes/claude-code/repo-settings/pin-repo-baselines.js';
 import { projectRegistry } from './services/projects/project-registry.js';
@@ -278,6 +279,9 @@ async function start() {
   };
   const upToTasks = { ...upToDocDelivery, ...(await wireMcpTasksAndSkills(refs, upToDocDelivery)) };
   const upToCoreRoutes = { ...upToTasks, ...mountCoreRoutes(refs, upToTasks) };
+  // Give every agent home DorkOS owns the `.agents/` and `.mcp.json` Codex
+  // needs before it edits there, before any turn launches (DOR-3914).
+  repairAgentHomes();
   // Pin the agents DorkOS already had, once ever, before any turn launches:
   // only agents seen after this first start wait for a person (DOR-3068).
   await pinRegisteredFolderConfigsOnce(async () => refs.meshCore?.listWithPaths() ?? []);

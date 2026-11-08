@@ -1,5 +1,5 @@
 /**
- * The agent browser's Chrome profile: creating it, giving it a look nobody
+ * The signed-in browser's Chrome profile: creating it, giving it a look nobody
  * mistakes for their everyday browser, and telling whether it is open.
  *
  * ## The theme, and how it was verified
@@ -27,8 +27,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isProcessAlive } from '@dorkos/shared/process-liveness';
 
-/** The name Chrome shows for the agent browser's profile. */
-export const AGENT_BROWSER_PROFILE_NAME = 'DorkOS agent browser';
+/** The name Chrome shows for the signed-in browser's profile. */
+export const AGENT_BROWSER_PROFILE_NAME = 'DorkOS signed-in browser';
 
 /** The theme seed colour, as the signed 32-bit ARGB integer Chrome stores (opaque #FF6B00). */
 export const AGENT_BROWSER_THEME_COLOR = 0xffff6b00 | 0;
@@ -122,7 +122,7 @@ export interface EnsureProfileResult {
 }
 
 /**
- * Make sure the agent browser's profile exists, and give it its look the
+ * Make sure the signed-in browser's profile exists, and give it its look the
  * first time. Call it only while the profile is NOT open: Chrome rewrites its
  * preference files as it quits, so an edit made underneath a running Chrome is
  * lost.

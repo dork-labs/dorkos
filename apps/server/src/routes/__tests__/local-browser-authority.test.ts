@@ -1,5 +1,9 @@
 /** Browser controls must apply real caller facts before reaching the browser service. */
 import type { RequestListener } from 'node:http';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { AuditLog } from '../../services/audit/audit-log.js';
+import { AccountIds } from '../../services/audit/account-ids.js';
+import { initAuditTrail, resetAuditTrail } from '../../services/audit/audit-trail.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
@@ -25,6 +29,8 @@ import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 
 const spies = {
+  forgetProfile: vi.fn(async () => undefined),
+  deleteProfile: vi.fn(async () => undefined),
   capabilities: vi.fn(() => ({})),
   state: vi.fn(async () => ({})),
   open: vi.fn(async () => ({})),
@@ -39,6 +45,7 @@ const spies = {
 };
 // Everything a person does that can move, close or open the browser goes through the handoff.
 const service = {
+  profileRemoval: { forget: spies.forgetProfile, delete: spies.deleteProfile },
   capabilities: spies.capabilities,
   pause: spies.pause,
   handover: {
@@ -58,7 +65,23 @@ let managed = false;
 const listener = honoGroupListener(
   {
     path: '/api/local-browser',
-    routes: createLocalBrowserRoutes(service as unknown as LocalBrowserService),
+    routes: createLocalBrowserRoutes(service as unknown as LocalBrowserService, {
+      profiles: {
+        get: vi.fn(() => ({
+          id: '11111111-1111-4111-8111-111111111111',
+          label: 'Example',
+          createdAt: 'now',
+          agentIds: [],
+        })),
+        list: vi.fn(() => []),
+        create: vi.fn(),
+        isBound: vi.fn(),
+        bind: vi.fn(),
+        unbind: vi.fn(),
+        remove: vi.fn(),
+      },
+      agent: vi.fn(),
+    }),
   },
   {
     before: async (c, next) => {
@@ -73,6 +96,14 @@ const markedListener: RequestListener = (incoming, response) => {
 };
 const server = listeningServer(markedListener);
 const endpoints = [
+  ['post', '/profiles/default/forget-sign-ins', undefined, 'forgetProfile'],
+  [
+    'post',
+    '/profiles/11111111-1111-4111-8111-111111111111/forget-sign-ins',
+    undefined,
+    'forgetProfile',
+  ],
+  ['delete', '/profiles/11111111-1111-4111-8111-111111111111', undefined, 'deleteProfile'],
   ['get', '/capabilities', undefined, 'capabilities'],
   ['get', '/state', undefined, 'state'],
   ['post', '/open', { mode: 'new-window' }, 'open'],
@@ -118,6 +149,8 @@ describe.each(endpoints)('%s %s authority', (method, path, body, effect) => {
 });
 
 describe.each([
+  ['/profiles/default/forget-sign-ins', undefined],
+  ['/profiles/11111111-1111-4111-8111-111111111111/forget-sign-ins', undefined],
   ['/open', { mode: 'new-window' }],
   ['/tabs/tab-1/select', undefined],
   ['/navigate', { url: 'https://example.test/' }],
@@ -138,3 +171,63 @@ describe.each([
     for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
   });
 });
+
+it('refuses an approval token for profile deletion', async () => {
+  const response = await request(server)
+    .delete('/api/local-browser/profiles/11111111-1111-4111-8111-111111111111')
+    .set('Host', 'localhost')
+    .set('X-DorkOS-Approval', 'anything');
+  expect(response.status).toBe(403);
+  expect(spies.deleteProfile).not.toHaveBeenCalled();
+});
+
+it('refuses a one-site option instead of silently forgetting every site', async () => {
+  const response = await request(server)
+    .post('/api/local-browser/profiles/default/forget-sign-ins')
+    .set('Host', 'localhost')
+    .send({ site: 'example.test' });
+  expect(response.status).toBe(400);
+  expect(spies.forgetProfile).not.toHaveBeenCalled();
+});
+
+it('refuses a force-delete option before removing a profile', async () => {
+  const response = await request(server)
+    .delete('/api/local-browser/profiles/11111111-1111-4111-8111-111111111111')
+    .set('Host', 'localhost')
+    .send({ force: true });
+  expect(response.status).toBe(400);
+  expect(spies.deleteProfile).not.toHaveBeenCalled();
+});
+
+it.each(['forget', 'delete'] as const)(
+  'records a person-only profile %s in Activity',
+  async (operation) => {
+    const db = createTestDb();
+    const log = new AuditLog(db);
+    initAuditTrail({
+      log,
+      accounts: new AccountIds({ db, installId: 'test', readOwnerAccount: () => null }),
+    });
+    try {
+      const base = '/api/local-browser/profiles/11111111-1111-4111-8111-111111111111';
+      const response =
+        operation === 'forget'
+          ? await request(server)
+              .post(base + '/forget-sign-ins')
+              .set('Host', 'localhost')
+          : await request(server).delete(base).set('Host', 'localhost');
+      expect(response.status).toBe(200);
+      const action =
+        operation === 'forget' ? 'local_browser.sign_ins.forget' : 'local_browser.profile.delete';
+      expect(log.query({ action, limit: 10 }, { kind: 'owner' }).events).toMatchObject([
+        {
+          outcome: 'ok',
+          source: { surface: 'app' },
+          target: { type: 'browser-profile', id: '11111111-1111-4111-8111-111111111111' },
+        },
+      ]);
+    } finally {
+      resetAuditTrail();
+    }
+  }
+);

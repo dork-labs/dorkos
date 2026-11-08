@@ -28,6 +28,10 @@ import { logger } from '../../lib/logger.js';
 import { resumeAfterMcpSignin } from '../../services/mesh/mcp-signin-resume.js';
 import { AgentMcpServerService } from '../../services/mesh/agent-mcp-server-service.js';
 import { scrubAgentBrowserStateAtStartup } from '../../services/browser/agent-browser-guard.js';
+import {
+  claudeConfigFilesForThisServer,
+  warnRiskyAgentBrowsers,
+} from '../../services/browser/agent-browser-lint.js';
 import { createMcpRevocationWatch } from '../../services/mesh/mcp-revocation.js';
 import { warmMcpOAuthTokens } from '../../services/mesh/warm-mcp-oauth-tokens.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
@@ -180,10 +184,25 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
         void resumeAfterMcpSignin(event).catch(() => {});
       },
     });
-    // A saved browser session from before DOR-3196 loses any Cloud sign-in now,
-    // not only when an agent browser next loads it.
+    // A saved browser session from before DOR-3196 or DOR-3957 loses any Cloud
+    // or DorkOS sign-in now, not only when an agent browser next loads it.
     if (scrubAgentBrowserStateAtStartup() === 'scrubbed')
-      logger.info('[agent-browser] removed DorkOS Cloud sign-ins from the saved browser session');
+      logger.info(
+        '[agent-browser] removed DorkOS and DorkOS Cloud sign-ins from the saved browser session'
+      );
+    // Browser servers Claude Code loads by itself get none of that (DOR-3957): say
+    // so. A warning only, so nothing here may stop the server starting.
+    try {
+      warnRiskyAgentBrowsers(
+        {
+          agentPaths: refs.meshCore.agentRegistry.list().map((agent) => agent.projectPath),
+          claudeConfigFiles: claudeConfigFilesForThisServer(),
+        },
+        logger
+      );
+    } catch {
+      // No account list or registry yet: the mesh scan still warns per folder.
+    }
     refs.agentMcpServerService = new AgentMcpServerService({
       agents: refs.meshCore.agentRegistry,
       logger,

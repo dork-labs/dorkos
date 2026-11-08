@@ -81,6 +81,56 @@ describe('readFolderConfigParts', () => {
     expect(partsMovedBy(() => fs.rmSync(path.join(home, '.mcp.json')))).toEqual(['mcpJson']);
   });
 
+  it('reads the empty .mcp.json DorkOS scaffolds as no file at all (DOR-3914)', () => {
+    // Both run nothing, so adding it to a pinned home asks nobody.
+    expect(partsMovedBy(() => fs.rmSync(path.join(home, '.mcp.json')))).toEqual([]);
+    expect(partsMovedBy(() => write('.mcp.json', '{"mcpServers":{}}'))).toEqual([]);
+    expect(partsMovedBy(() => write('.mcp.json', '{ "mcpServers": {} }\n'))).toEqual([]);
+    // Anything more than the exact empty file is still a change.
+    expect(partsMovedBy(() => write('.mcp.json', { mcpServers: {}, extra: true }))).toEqual([
+      'mcpJson',
+    ]);
+  });
+
+  it.each(['settings.json', 'settings.local.json'])(
+    'reads an exact {} .claude/%s as no file, and nothing else (DOR-3914)',
+    (name) => {
+      const file = path.join(home, '.claude', name);
+      fs.rmSync(file, { force: true });
+      expect(partsMovedBy(() => write(`.claude/${name}`, '{}'))).toEqual([]);
+      expect(partsMovedBy(() => write(`.claude/${name}`, ' { }\n'))).toEqual([]);
+      expect(partsMovedBy(() => fs.rmSync(file))).toEqual([]);
+      // Any key at all is a file, even one that runs nothing: the usual card.
+      expect(partsMovedBy(() => write(`.claude/${name}`, { permissions: { allow: [] } }))).toEqual([
+        'hooks',
+      ]);
+      expect(partsMovedBy(() => fs.rmSync(file))).toEqual(['hooks']);
+      expect(partsMovedBy(() => write(`.claude/${name}`, { hooks: {} }))).toEqual(['hooks']);
+    }
+  );
+
+  it('counts an .mcp.json with an own __proto__ server as a file, and raises the card (DOR-3914)', () => {
+    fs.rmSync(path.join(home, '.mcp.json'));
+    // JSON.parse keeps `__proto__` as a real own key; a key copy would drop it.
+    expect(
+      partsMovedBy(() => write('.mcp.json', '{"mcpServers":{"__proto__":{"command":"x"}}}'))
+    ).toEqual(['mcpJson']);
+    expect(readFolderConfigParts(home).values.mcpJson).not.toBeNull();
+    // An own `__proto__` beside an empty server list is not the scaffolded file either.
+    fs.rmSync(path.join(home, '.mcp.json'));
+    expect(partsMovedBy(() => write('.mcp.json', '{"__proto__":{},"mcpServers":{}}'))).toEqual([
+      'mcpJson',
+    ]);
+    expect(readFolderConfigParts(home).values.mcpJson).not.toBeNull();
+  });
+
+  it('still counts a 0-byte settings file as a file of its own (DOR-3914)', () => {
+    const file = path.join(home, '.claude', 'settings.local.json');
+    expect(partsMovedBy(() => write('.claude/settings.local.json', ''))).toEqual(['hooks']);
+    expect(fs.statSync(file).size).toBe(0);
+    expect(partsMovedBy(() => fs.rmSync(file))).toEqual(['hooks']);
+  });
+
   it('moves only the manifest part for a new server or a new account', () => {
     const other = { ...SERVER, name: 'other', connection: { ...SERVER.connection, command: 'x' } };
     expect(

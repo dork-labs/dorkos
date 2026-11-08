@@ -1,9 +1,18 @@
 ---
 title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.126.1), aged out of the main changelog.
+description: Older DorkOS releases (v0.1.0 – v0.126.2), aged out of the main changelog.
 ---
 
 Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+
+## [0.126.2] - 2026-10-28
+
+> DorkOS 0.126.2 cuts the extra approval prompts. When one of an agent's chats reads a message from outside your team, its other chats no longer fall back to asking you first. And when an agent can't start a chat at a higher level, it now tells you why.
+
+### Fixed
+
+- When an agent can't start a new chat at a higher level, it now says why: it read messages from others, a person set it lower, or DorkOS couldn't find its level. Before, it always said the chat "runs at Default", even when it didn't. (DOR-3386)
+- An agent's message to another chat is held back only when the chat it came from read something from outside your team. Before, when DorkOS had lost track of the sending chat's level (after a restart, say), any other chat of that agent reading a room post could hold it back, and the chat it woke then asked you to approve its commands. (DOR-3386)
 
 ## [0.126.1] - 2026-10-27
 

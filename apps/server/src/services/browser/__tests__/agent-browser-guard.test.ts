@@ -106,6 +106,101 @@ describe('scrubAgentBrowserState', () => {
   });
 });
 
+describe('scrubAgentBrowserState and DorkOS’s own sign-in (DOR-3957)', () => {
+  const appHosts = ['localhost', 'mac.lan', '192.168.1.20', '[2001:db8::1]', 'tunnel.example'];
+
+  /** A made-up DorkOS session on every name DorkOS answers to, beside another site's. */
+  function seedDorkosSession(file = stateFile): void {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        cookies: [
+          ...[
+            'localhost',
+            '127.0.0.1',
+            '[::1]',
+            'mac.lan',
+            '.lan',
+            '192.168.1.20',
+            '[2001:db8::1]',
+            'tunnel.example',
+          ].map((domain) => cookie(domain, 'fake-dorkos-session')),
+          cookie('github.com'),
+        ],
+        origins: [
+          { origin: 'http://localhost:4242', localStorage: [{ name: 't', value: 'fake-dorkos' }] },
+          { origin: 'https://tunnel.example', localStorage: [{ name: 't', value: 'fake-dorkos' }] },
+          { origin: 'https://github.com', localStorage: [{ name: 't', value: 'kept' }] },
+        ],
+      })
+    );
+  }
+
+  it('drops every DorkOS cookie and page storage, on any port, and keeps other sites', () => {
+    seedDorkosSession();
+    expect(scrubAgentBrowserState(stateFile, { entries, appHosts, owned: true })).toBe('scrubbed');
+    const state = readState();
+    expect(state.cookies.map((c) => c.domain)).toEqual(['github.com']);
+    expect(state.origins.map((o) => o.origin)).toEqual(['https://github.com']);
+    expect(fs.readFileSync(stateFile, 'utf8')).not.toContain('fake-dorkos');
+  });
+
+  it('purges a DorkOS session an older version saved, at startup, with this server’s own list', () => {
+    seedDorkosSession();
+    expect(scrubAgentBrowserStateAtStartup(dorkHome)).toBe('scrubbed');
+    const state = readState();
+    expect(state.cookies.map((c) => c.domain)).not.toContain('localhost');
+    expect(state.cookies.map((c) => c.domain)).not.toContain('127.0.0.1');
+    expect(state.cookies.map((c) => c.domain)).toContain('github.com');
+  });
+
+  it('leaves out a browser whose own session file holds a DorkOS sign-in, and never edits it', () => {
+    const elsewhere = path.join(dorkHome, 'elsewhere.json');
+    seedDorkosSession(elsewhere);
+    const before = fs.readFileSync(elsewhere, 'utf8');
+    const warn = vi.fn();
+    const guarded = guardAgentBrowsers(
+      { browser: agentBrowserConnection(elsewhere) },
+      { dorkHome, entries, appHosts, logger: { warn } }
+    );
+    expect(guarded).toEqual({});
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('DorkOS or DorkOS Cloud sign-ins'));
+    expect(fs.readFileSync(elsewhere, 'utf8')).toBe(before);
+  });
+
+  it('strips a DorkOS cookie on its own, with no page storage beside it', () => {
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    fs.writeFileSync(
+      stateFile,
+      JSON.stringify({
+        cookies: [cookie('localhost', 'fake-dorkos-session'), cookie('github.com')],
+        origins: [],
+      })
+    );
+    expect(scrubAgentBrowserState(stateFile, { entries, appHosts, owned: true })).toBe('scrubbed');
+    expect(readState().cookies.map((c) => c.domain)).toEqual(['github.com']);
+    expect(fs.readFileSync(stateFile, 'utf8')).not.toContain('fake-dorkos-session');
+
+    // A file that is not DorkOS's own, with only the cookie, is refused for it.
+    const elsewhere = path.join(dorkHome, 'cookie-only.json');
+    fs.writeFileSync(
+      elsewhere,
+      JSON.stringify({ cookies: [cookie('127.0.0.1', 'fake-dorkos-session')], origins: [] })
+    );
+    expect(scrubAgentBrowserState(elsewhere, { entries, appHosts, owned: false })).toBe('refused');
+  });
+
+  it('cleans the session on every load before the browser starts', () => {
+    seedDorkosSession();
+    guardAgentBrowsers(
+      { browser: agentBrowserConnection(stateFile) },
+      { dorkHome, entries, appHosts }
+    );
+    expect(readState().cookies.map((c) => c.domain)).toEqual(['github.com']);
+  });
+});
+
 describe('guardAgentBrowsers', () => {
   it('blocks the Cloud origin and cleans the session on every load', () => {
     seedOldState();

@@ -15,6 +15,7 @@ import {
   type LocalBrowserService,
 } from '../services/session/local-browser/service.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { mountLocalBrowserProfileRemoval } from './local-browser-profile-removal.js';
 import {
   mountLocalBrowserProfileRoutes,
   type LocalBrowserProfileRouteDeps,
@@ -87,5 +88,6 @@ export function createLocalBrowserRoutes(
   });
   router.post('/disconnect', personOnly, async (c) => c.json(await service.handover.disconnect()));
   if (profiles) mountLocalBrowserProfileRoutes(router, profiles);
+  mountLocalBrowserProfileRemoval(router, service, profiles);
   return router;
 }

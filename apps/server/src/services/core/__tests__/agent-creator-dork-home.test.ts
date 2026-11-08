@@ -36,6 +36,12 @@ vi.mock('../../../lib/logger.js', () => ({
 }));
 
 import { createAgentWorkspace } from '../agent-creator.js';
+import {
+  codexPermissionProfile,
+  codexProtectedConfig,
+} from '../../runtimes/codex/policy/protected-profile.js';
+import { refuseMissingWritableTargets } from '../../runtimes/codex/policy/writable-missing-targets.js';
+import { isProtectedPath } from '../../runtimes/shared/policy/protected-path-check.js';
 import { initBoundary } from '../../../lib/boundary.js';
 import { resolveAgentsDirectory, resolveAgentsHome } from '../../../lib/agents-home.js';
 
@@ -125,6 +131,88 @@ describe('createAgentWorkspace with the shipped default directory', () => {
     // directory, not even the `.dork` parent the old resolution would have made.
     expect(await exists(path.join(fakeHome, '.dork'))).toBe(false);
     expect(await fs.readdir(fakeHome)).toEqual([]);
+  });
+
+  it('gives a fresh agent the .agents folder and empty .mcp.json Codex needs (DOR-3914)', async () => {
+    const result = await createAgentWorkspace({ name: 'fresh-agent' });
+
+    expect((await fs.lstat(path.join(result.path, '.agents'))).isDirectory()).toBe(true);
+    expect(await fs.readFile(path.join(result.path, '.mcp.json'), 'utf8')).toBe(
+      '{"mcpServers":{}}'
+    );
+  });
+
+  /** Codex's Edit policy for a turn in `home`, and the targets it found missing. */
+  function editPolicy(home: string) {
+    const roots = {
+      cwd: home,
+      data: dorkHome,
+      home: fakeHome,
+      accounts: [],
+      agentHomes: [],
+      agentFolders: [home],
+    };
+    const policy = { roots, writable: [home] };
+    const settings = { permissionMode: 'acceptEdits' };
+    const missing: string[] = [];
+    const config = codexProtectedConfig(home, policy, settings, (targets) =>
+      missing.push(...targets)
+    );
+    const profile = (config.permissions as Record<string, { filesystem: Record<string, string> }>)[
+      codexPermissionProfile(settings)
+    ];
+    return { roots, policy, settings, missing, filesystem: profile.filesystem };
+  }
+
+  it('leaves Codex at Edit nothing missing in a fresh agent home (DOR-3914)', async () => {
+    const { path: home } = await createAgentWorkspace({ name: 'codex-edit' });
+    const { missing, settings, policy } = editPolicy(home);
+
+    // Only the home's own targets: this fixture sits under the temp folder, a
+    // writable root at Edit, so its data and person folders show up too.
+    const inHome = missing.filter((target) => target.startsWith(home + path.sep));
+    expect(inHome).toEqual([]);
+    // So the Linux refusal itself stays quiet for this home.
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...platform, value: 'linux' });
+    try {
+      expect(() => refuseMissingWritableTargets(settings, inHome, policy)).not.toThrow();
+      // Proof the check is live here: one missing target in the home refuses.
+      expect(() =>
+        refuseMissingWritableTargets(settings, [path.join(home, '.mcp.json')], policy)
+      ).toThrow();
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+    }
+  });
+
+  it('keeps all six scaffolded targets protected at Edit once they exist (DOR-3914)', async () => {
+    const { path: home } = await createAgentWorkspace({ name: 'still-protected' });
+    const { roots, filesystem } = editPolicy(home);
+
+    for (const rel of [
+      '.agents',
+      '.mcp.json',
+      '.claude/agents',
+      '.claude/commands',
+      '.claude/settings.json',
+      '.claude/settings.local.json',
+    ]) {
+      const target = path.join(home, rel);
+      expect(await exists(target)).toBe(true);
+      // Codex's own sandbox refuses the write…
+      expect(['read', 'deny']).toContain(filesystem[target.split(path.sep).join('/')]);
+      // …and so does DorkOS's runtime-neutral check every file tool goes through.
+      expect(isProtectedPath(target, 'write', roots)).toBe(true);
+    }
+  });
+
+  it('writes no .mcp.json into a folder the person chose (DOR-3914)', async () => {
+    mockConfigGet.mockReturnValue({ defaultDirectory: '~/my-agents', defaultAgent: 'nobody' });
+
+    const result = await createAgentWorkspace({ name: 'their-place' });
+
+    expect(await exists(path.join(result.path, '.mcp.json'))).toBe(false);
   });
 
   it('honours a directory the person configured, tilde and all', async () => {

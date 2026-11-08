@@ -185,6 +185,10 @@
       "types": "./src/cloud-origin.ts",
       "default": "./dist/cloud-origin.js"
     },
+    "./app-origin": {
+      "types": "./src/app-origin.ts",
+      "default": "./dist/app-origin.js"
+    },
     "./browser-schemas": {
       "types": "./src/browser-schemas.ts",
       "default": "./dist/browser-schemas.js"

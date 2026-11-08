@@ -1,7 +1,16 @@
-# Changelog archive: v0.1.0 – v0.126.1
+# Changelog archive: v0.1.0 – v0.126.2
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.126.2] - 2026-10-28
+
+> DorkOS 0.126.2 cuts the extra approval prompts. When one of an agent's chats reads a message from outside your team, its other chats no longer fall back to asking you first. And when an agent can't start a chat at a higher level, it now tells you why.
+
+### Fixed
+
+- When an agent can't start a new chat at a higher level, it now says why: it read messages from others, a person set it lower, or DorkOS couldn't find its level. Before, it always said the chat "runs at Default", even when it didn't. (DOR-3386)
+- An agent's message to another chat is held back only when the chat it came from read something from outside your team. Before, when DorkOS had lost track of the sending chat's level (after a restart, say), any other chat of that agent reading a room post could hold it back, and the chat it woke then asked you to approve its commands. (DOR-3386)
 
 ## [0.126.1] - 2026-10-27
 
@@ -7652,6 +7661,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.126.2]: https://github.com/dork-labs/dorkos/compare/v0.126.1...v0.126.2
 [0.126.0]: https://github.com/dork-labs/dorkos/compare/v0.125.4...v0.126.0
 [0.125.4]: https://github.com/dork-labs/dorkos/compare/v0.125.3...v0.125.4
 [0.125.3]: https://github.com/dork-labs/dorkos/compare/v0.125.2...v0.125.3

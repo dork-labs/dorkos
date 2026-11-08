@@ -53,6 +53,13 @@ export interface PermissionReport {
   addon: boolean;
   /** Whether the child may use WASI (must be `false`). */
   wasi: boolean;
+  /**
+   * Whether `node:sqlite` loads in the child (must be `false`). It ignores
+   * `--permission`, so a child that has it could open and write any SQLite
+   * file, DorkOS's own database included (DOR-3547). The host starts the
+   * child with `--no-experimental-sqlite`; this proves the flag held.
+   */
+  sqlite: boolean;
 }
 
 /** The first message a child sends: what it runs on, and what it may do. */
@@ -559,6 +566,7 @@ export function isChildMessage(value: unknown): value is ChildMessage {
           'worker',
           'addon',
           'wasi',
+          'sqlite',
         ].every((key) => typeof p[key] === 'boolean') &&
         Array.isArray(p.readableAncestors) &&
         p.readableAncestors.every((a) => typeof a === 'string')

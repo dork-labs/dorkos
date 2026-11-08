@@ -12,6 +12,7 @@ import {
   connectorProviderInstances,
   connectorReviewRequests,
   connections,
+  desc,
   eq,
   EVERY_AGENT_GRANT_SUBJECT_ID,
   gt,
@@ -33,10 +34,7 @@ import {
   type ConnectorAgentRequestDecisionInput,
 } from '@dorkos/shared/connector-agent-request-schemas';
 import type { ConnectorAuthenticationFlowState } from '@dorkos/shared/connector-resource-schemas';
-import type {
-  ConnectorEventGrantSelection,
-  ConnectorReceiveScope,
-} from '@dorkos/shared/connector-event-schemas';
+import type { ConnectorReceiveScope } from '@dorkos/shared/connector-event-schemas';
 import {
   ConnectorAgentConnectionRequestInputSchema,
   CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT,
@@ -61,6 +59,12 @@ import type {
   ConnectorServiceDirectory,
 } from './resources/operator-query-service.js';
 import { isSetupReason } from './app-connection-way.js';
+import {
+  emptyEventSelection,
+  parseResolvedEventSelection,
+  parseStringArray,
+  type ResolvedEventSelectionEnvelope,
+} from './resources/agent-request-rows.js';
 import {
   elsewhereMessage,
   grantedVerb,
@@ -254,66 +258,10 @@ function originFromClaims(claims: RuntimeClaims): ConnectorAgentRequestOrigin {
   };
 }
 
-function parseStringArray(value: string | null): string[] {
-  if (!value) return [];
-  const parsed: unknown = JSON.parse(value);
-  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) return [];
-  return parsed;
-}
-
 /** An answer recorded while the updates it chose are still being set up. */
 interface ConnectorAgentResolutionClaim {
   readonly version: 1;
   readonly decision: Extract<ConnectorAgentRequestDecision, { decision: 'current_access' }>;
-}
-
-interface ResolvedEventSelectionEnvelope {
-  readonly version: 1;
-  readonly selections: ConnectorEventGrantSelection[];
-  readonly appliedEventScopeHash?: string;
-}
-
-function emptyEventSelection(): ResolvedEventSelectionEnvelope {
-  return { version: 1, selections: [] };
-}
-
-function parseResolvedEventSelection(value: string | null): ResolvedEventSelectionEnvelope {
-  if (!value) return emptyEventSelection();
-  const parsed: unknown = JSON.parse(value);
-  if (
-    !parsed ||
-    typeof parsed !== 'object' ||
-    !('version' in parsed) ||
-    parsed.version !== 1 ||
-    !('selections' in parsed) ||
-    !Array.isArray(parsed.selections)
-  ) {
-    return emptyEventSelection();
-  }
-  const selections = parsed.selections.filter(
-    (selection): selection is ConnectorEventGrantSelection =>
-      Boolean(
-        selection &&
-        typeof selection === 'object' &&
-        'subscriptionId' in selection &&
-        typeof selection.subscriptionId === 'string' &&
-        'scopeVersion' in selection &&
-        typeof selection.scopeVersion === 'number' &&
-        'definitionId' in selection &&
-        typeof selection.definitionId === 'string' &&
-        'eventScopeHash' in selection &&
-        typeof selection.eventScopeHash === 'string'
-      )
-  );
-  const appliedEventScopeHash =
-    'appliedEventScopeHash' in parsed && typeof parsed.appliedEventScopeHash === 'string'
-      ? parsed.appliedEventScopeHash
-      : undefined;
-  return {
-    version: 1,
-    selections,
-    ...(appliedEventScopeHash && { appliedEventScopeHash }),
-  };
 }
 
 function parseResolutionClaim(value: string | null): ConnectorAgentResolutionClaim | undefined {
@@ -355,7 +303,9 @@ export class ConnectorAgentRequestService {
    * One agent has at most one open request per app (DOR-2497). Asking again
    * reuses it whatever the reason says; asking for more (Read and write after
    * Read, or more events) raises the open request in place rather than opening
-   * a second card. The same app already asked for in another chat is refused
+   * a second card. Once that request is answered, asking for a level its
+   * answer left out opens a new card instead (DOR-3930). The same app already
+   * asked for in another chat is refused
    * with a note, since its answer will cover this chat too. New requests are
    * capped per agent ({@link CONNECTOR_REQUEST_RATE_LIMIT}).
    */
@@ -422,7 +372,10 @@ export class ConnectorAgentRequestService {
         | { kind: 'rate_limited'; retryAt: number }
         | { kind: 'created'; requestId: string } => {
         const open = openAgentRequest(tx, claims.agentId, input.serviceSlug, now.toISOString());
-        if (open) {
+        // An answer that left out what is asked now never stands in for it: the
+        // ask gets a card of its own, and nothing above what the person allowed
+        // is given (DOR-3930). The earlier answer still reaches its chat as it is.
+        if (open && !answerLacks(tx, open.request, input.access)) {
           if (
             open.request.sessionId !== claims.canonicalSessionId ||
             open.request.originRuntime !== claims.runtime ||
@@ -2120,9 +2073,14 @@ function classesFor(access: ConnectorRequestAccess): Array<'read' | 'write'> {
  * (read, write), never by action name (DOR-2503). A class the answer holds no
  * action of is not granted, unless the account offers no action of that class
  * at all: nobody can grant what an app does not have, so that is never
- * reported as a refusal.
+ * reported as a refusal. `asked` defaults to what the request itself asked;
+ * a new ask is measured against the level it names.
  */
-function grantedClasses(db: Db | DbTransaction, request: ConnectorAgentRequest): GrantedClasses {
+function grantedClasses(
+  db: Db | DbTransaction,
+  request: ConnectorAgentRequest,
+  asked: ConnectorRequestAccess = request.requestedAccess
+): GrantedClasses {
   const ids = parseStringArray(request.resolvedOperationRevisionIdsJson);
   const held = new Set(
     ids.length === 0
@@ -2161,13 +2119,25 @@ function grantedClasses(db: Db | DbTransaction, request: ConnectorAgentRequest):
   );
   return {
     held,
-    notGranted: classesFor(request.requestedAccess).filter(
-      (kind) => !held.has(kind) && offered.has(kind)
-    ),
+    notGranted: classesFor(asked).filter((kind) => !held.has(kind) && offered.has(kind)),
     noUpdates:
       parseStringArray(request.requestedEventsJson).length > 0 &&
       !parseResolvedEventSelection(request.resolvedEventsJson).appliedEventScopeHash,
   };
+}
+
+/**
+ * Whether a request's answer leaves out a level the agent asks for now: it
+ * was allowed, and holds no action of a class the account offers and the new
+ * ask needs (Read and write after only Read was given). Unanswered requests
+ * never lack anything; they are raised in place instead.
+ */
+function answerLacks(
+  tx: Db | DbTransaction,
+  request: ConnectorAgentRequest,
+  access: ConnectorRequestAccess
+): boolean {
+  return request.outcome === 'granted' && grantedClasses(tx, request, access).notGranted.length > 0;
 }
 
 /**
@@ -2232,7 +2202,10 @@ function requestNote(request: ConnectorAgentRequest, answer?: GrantedClasses): s
 
 /**
  * One agent's open request for one app: unanswered, or allowed and not yet
- * delivered, and in either case not past its time. Exported for its own test.
+ * delivered, and in either case not past its time. The newest wins: an ask
+ * for more than an answer gave opens a second request while the first one's
+ * answer is still on its way, and the second is the one later asks reach
+ * (DOR-3930). Exported for its own test.
  *
  * @internal
  */
@@ -2276,7 +2249,7 @@ export function openAgentRequest(
         )
       )
     )
-    .orderBy(asc(connectorAgentRequests.createdAt))
+    .orderBy(desc(connectorAgentRequests.createdAt), desc(connectorAgentRequests.id))
     .get();
 }
 
@@ -2299,7 +2272,8 @@ function reviewContext(action: {
  * Raise an unanswered request in place when the agent asks the same app for
  * more: Read and write after Read, or events it had not named. It never
  * lowers what is asked, and the agent's first reason stays: a reworded ask is
- * the same ask. A request already being answered is left alone. Returns
+ * the same ask. A request already being answered is left alone; an ask for
+ * a level its answer left out never reaches here (`answerLacks`). Returns
  * whether anything changed.
  */
 function raiseOpenRequest(

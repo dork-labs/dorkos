@@ -43,7 +43,7 @@ import { createChildProcessShim } from './child-process-shim.js';
 import { createProxyCtx, type ProxyCtx } from './proxy-ctx.js';
 import { createTrackedSend } from './tracked-send.js';
 import { createVirtualServer, type VirtualServer } from './virtual-server.js';
-import { createInjectedRequire, loadBundle } from './load-bundle.js';
+import { createInjectedRequire, ISOLATED_REFUSED_BUILTINS, loadBundle } from './load-bundle.js';
 import { installNetGuard } from './net-guard.js';
 import { installProcessGuard } from './process-guard.js';
 
@@ -125,7 +125,26 @@ function permissionReport(): PermissionReport {
     worker: has('worker'),
     addon: has('addon'),
     wasi: has('wasi'),
+    sqlite: sqliteLoads(),
   };
+}
+
+/**
+ * Whether `node:sqlite` loads in this process. It ignores `--permission`, so
+ * the host starts the child with `--no-experimental-sqlite` and this proves
+ * the flag held (DOR-3547). `getBuiltinModule` answers `undefined` for a
+ * module this Node does not have; without it, or on any other answer, the
+ * report says it loads, so the check fails closed.
+ */
+function sqliteLoads(): boolean {
+  const get = (process as unknown as { getBuiltinModule?: (id: string) => unknown })
+    .getBuiltinModule;
+  if (typeof get !== 'function') return true;
+  try {
+    return get.call(process, 'node:sqlite') !== undefined;
+  } catch (err) {
+    return (err as { code?: unknown }).code !== 'ERR_UNKNOWN_BUILTIN_MODULE';
+  }
 }
 
 /**
@@ -199,7 +218,8 @@ function main(): void {
         child_process: () => shim.module,
         'node:child_process': () => shim.module,
       },
-      __filename
+      __filename,
+      ISOLATED_REFUSED_BUILTINS
     );
     // Extension code shares this process: take the raw channel away from it,
     // so it can only speak through ctx (the bootstrap keeps its own captured

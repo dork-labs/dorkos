@@ -1,5 +1,6 @@
 /** Live addresses of this DorkOS app, kept out of agent browser tools. */
 import { hostname, networkInterfaces } from 'node:os';
+import { appHostKey, localAppHosts } from '@dorkos/shared/app-origin';
 import { env } from '../../../env.js';
 import {
   getStaticLocalOrigins,
@@ -24,18 +25,7 @@ export function localBrowserAppOrigins(): string[] {
   // Loopback names stay port-bound, so an agent's own server on another port still works.
   for (const host of parseTrustedHosts(env.DORKOS_TRUSTED_HOSTS))
     if (!isLoopbackHost(host)) origins.add(anyPortEntry(host));
-  const machine = hostname();
-  const hosts = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0', machine]);
-  // The Bonjour name isn't always what hostname() reports.
-  hosts.add(`${machine.replace(/\..*$/, '')}.local`);
-  for (const addresses of Object.values(networkInterfaces())) {
-    for (const { address, family } of addresses ?? []) {
-      // A link-local scope is not a URL host. Those addresses cannot be used
-      // as browser origins; ordinary IPv6 and IPv4 addresses are included.
-      if (address.includes('%')) continue;
-      hosts.add(family === 'IPv6' ? `[${address}]` : address);
-    }
-  }
+  const hosts = localAppHosts(hostname(), networkInterfaces());
   const ports = getStaticLocalOrigins().map((origin) => {
     const parsed = new URL(origin);
     return parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
@@ -50,26 +40,26 @@ export function localBrowserAppOrigins(): string[] {
   return [...origins];
 }
 
-/** Public DNS names that exist only to point back at this computer. */
-const LOOPBACK_DNS =
-  /^(?:(?:.+\.)?localhost|(?:.+\.)?localtest\.me|(?:.*[.-])?127[.-]\d+[.-]\d+[.-]\d+\.(?:nip|sslip)\.io)$/;
+/**
+ * Every host this DorkOS answers to, on any port: the hosts of
+ * {@link localBrowserAppOrigins}, the list agents' browsers are kept off.
+ * A saved agent-browser session holds no cookie for any of them (DOR-3957).
+ */
+export function localBrowserAppHosts(): string[] {
+  const hosts = new Set<string>();
+  for (const origin of localBrowserAppOrigins()) {
+    try {
+      hosts.add(appHostKey(new URL(origin).hostname));
+    } catch {
+      // A bad dynamic tunnel address must not drop the other hosts.
+    }
+  }
+  return [...hosts];
+}
 
 /** Normalize local aliases without resolving an outside hostname. */
 function originHost(url: URL): string {
-  let host = url.hostname.toLowerCase().replace(/\.+$/, '');
-  const embedded = /^\[::(?:ffff:)?([a-f0-9]{1,4}):([a-f0-9]{1,4})\]$/.exec(host);
-  if (embedded) {
-    const upper = Number.parseInt(embedded[1]!, 16);
-    const lower = Number.parseInt(embedded[2]!, 16);
-    host = `${upper >> 8}.${upper & 255}.${lower >> 8}.${lower & 255}`;
-  }
-  if (
-    /^127\.\d+\.\d+\.\d+$/.test(host) ||
-    ['[::1]', '[::]', '0.0.0.0'].includes(host) ||
-    LOOPBACK_DNS.test(host)
-  )
-    return 'localhost';
-  return host;
+  return appHostKey(url.hostname);
 }
 
 /** The address a tab really shows: `view-source:` and `blob:` wrap the page's own address. */

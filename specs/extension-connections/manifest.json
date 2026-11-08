@@ -1,0 +1,12 @@
+{
+  "id": "261108-022421",
+  "slug": "extension-connections",
+  "title": "Extensions read DorkOS Connections: declared, granted, read-only operations through ctx.connections",
+  "created": "2026-11-08",
+  "status": "specified",
+  "project": "dorkos-connections",
+  "linearIssue": "DOR-3547",
+  "artifacts": {
+    "specification": "02-specification.md"
+  }
+}

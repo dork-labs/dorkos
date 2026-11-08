@@ -29,7 +29,32 @@ vi.mock('node:os', () => ({
   }),
 }));
 
-import { isLocalBrowserAppUrl, localBrowserAppOrigins } from '../app-origins.js';
+import {
+  isLocalBrowserAppUrl,
+  localBrowserAppHosts,
+  localBrowserAppOrigins,
+} from '../app-origins.js';
+
+describe('localBrowserAppHosts', () => {
+  it('names every host of the refusal set, port-free, tunnels and trusted names included (DOR-3957)', () => {
+    const prior = live.env.DORKOS_TRUSTED_HOSTS;
+    try {
+      live.env.DORKOS_TRUSTED_HOSTS = 'mac.example.com';
+      expect(new Set(localBrowserAppHosts())).toEqual(
+        new Set([
+          'localhost',
+          'fixture.local',
+          '192.168.1.20',
+          '[2001:db8::1]',
+          'tunnel.example',
+          'mac.example.com',
+        ])
+      );
+    } finally {
+      live.env.DORKOS_TRUSTED_HOSTS = prior;
+    }
+  });
+});
 
 describe('live DorkOS browser origin refusal set', () => {
   it('includes both listeners, IPv6, local names and network addresses', () => {

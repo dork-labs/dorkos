@@ -208,7 +208,10 @@ function hooksPart(home: string, dorkHome: string): PartValue {
   let verifiable = true;
   const commands: string[] = [];
   for (const name of SETTINGS_FILES) {
-    const read = readJsonFile(path.join(home, '.claude', name));
+    const raw = readJsonFile(path.join(home, '.claude', name));
+    // The exact `{}` DorkOS scaffolds (DOR-3914) reads as no file. Only an
+    // object with zero keys: any key at all, even an empty one, is a file.
+    const read: FileRead = isEmptyObject(raw) ? { kind: 'absent' } : raw;
     if (read.kind === 'unverifiable') verifiable = false;
     const picked = read.kind === 'parsed' ? pick(read.value, CODE_SETTINGS_KEYS) : undefined;
     if (picked !== undefined) collectCommands(picked, commands);
@@ -254,11 +257,41 @@ export function collectCommands(value: unknown, out: string[]): void {
   }
 }
 
-/** The `mcpJson` part: the whole `.mcp.json`. */
+/** Whether a read parsed to a plain object with no keys at all: `{}`. */
+function isEmptyObject(read: FileRead): boolean {
+  return read.kind === 'parsed' && hasOwnKeys(read.value, []);
+}
+
+/**
+ * Whether `value` is a plain object whose own keys are exactly `keys`.
+ * Read with `Reflect.ownKeys`, never through `canonicalJson`: its key copy
+ * drops an own `__proto__`, which `JSON.parse` keeps as a real key.
+ */
+function hasOwnKeys(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const own = Reflect.ownKeys(value);
+  return own.length === keys.length && keys.every((key) => own.includes(key));
+}
+
+/** The exact `{"mcpServers":{}}` DorkOS scaffolds in an agent home (DOR-3914). */
+function isScaffoldedMcpJson(read: FileRead): boolean {
+  return (
+    read.kind === 'parsed' &&
+    hasOwnKeys(read.value, ['mcpServers']) &&
+    hasOwnKeys(read.value.mcpServers, [])
+  );
+}
+
+/**
+ * The `mcpJson` part: the whole `.mcp.json`. The exact empty file DorkOS
+ * scaffolds reads as no file: both run nothing, and adding it to a pinned home
+ * must not count as a change a person has to approve.
+ */
 function mcpJsonPart(home: string): PartValue {
   const read = readJsonFile(path.join(home, '.mcp.json'));
   if (read.kind === 'unverifiable') return { value: { unverifiable: true }, verifiable: false };
   if (read.kind === 'malformed') return { value: malformed(read.text), verifiable: true };
+  if (isScaffoldedMcpJson(read)) return { value: null, verifiable: true };
   return { value: read.kind === 'parsed' ? read.value : null, verifiable: true };
 }
 

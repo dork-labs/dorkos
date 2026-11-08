@@ -46,7 +46,7 @@ const STATUS_USAGE = 'Usage: dorkos browser status [--json]';
 /** One-line usage for `browser forget`. */
 const FORGET_USAGE = 'Usage: dorkos browser forget <site> | --all [--yes] [--chrome <path>]';
 
-/** Where to find the agent browser's files. */
+/** Where to find the signed-in browser's files. */
 export interface AgentBrowserPaths {
   /** `<dorkHome>/browser/profile` — the Chrome profile. */
   profileDir: string;
@@ -55,7 +55,7 @@ export interface AgentBrowserPaths {
 }
 
 /**
- * The agent browser's paths under a DorkOS data directory. The same two paths
+ * The signed-in browser's paths under a DorkOS data directory. The same two paths
  * the first prototype used, so a session saved with it carries over.
  *
  * @param dorkHome - The DorkOS data directory.
@@ -81,10 +81,10 @@ function backgroundFlags(profileDir: string): string[] {
   return [...profileFlags(profileDir), '--headless', '--disable-extensions', 'about:blank'];
 }
 
-/** The page the agent browser opens on when no site is named. */
+/** The page the signed-in browser opens on when no site is named. */
 export const WELCOME_PAGE = `data:text/html;charset=utf-8,${encodeURIComponent(
   [
-    '<!doctype html><title>DorkOS agent browser</title>',
+    '<!doctype html><title>DorkOS signed-in browser</title>',
     '<body style="font:16px/1.5 system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem">',
     '<h1 style="color:#c2410c">Saved sign-ins for older browser tools</h1>',
     '<p>Sign in here to the sites you want your agents to use. Your password manager works as usual.</p>',
@@ -130,7 +130,7 @@ function chromeProblem(err: unknown): string {
   if (err instanceof ChromeNotFoundError) return err.message;
   if (err instanceof ChromeExitedError) {
     return (
-      'Chrome closed straight away. If the agent browser is already open, ' +
+      'Chrome closed straight away. If the signed-in browser is already open, ' +
       'quit it and run this again.'
     );
   }
@@ -186,7 +186,7 @@ async function saveAndReport(
   const sites = summarizeStorageState(saved, deps.now().getTime() / 1000).filter((s) => !s.expired);
   deps.log('');
   if (sites.length === 0) {
-    deps.log('Saved, but no site is signed in yet. Sign in to a site in the agent browser,');
+    deps.log('Saved, but no site is signed in yet. Sign in to a site in the signed-in browser,');
     deps.log('then run this again.');
     return 0;
   }
@@ -201,7 +201,7 @@ async function saveAndReport(
 }
 
 /**
- * Open the agent browser, let the operator sign in, and save the session.
+ * Open the signed-in browser, let the operator sign in, and save the session.
  *
  * Saves when the operator presses Enter, while Chrome is still open: that is
  * the only moment everything is readable. Cookies on disk are encrypted with a
@@ -234,14 +234,14 @@ export async function runBrowserLogin(args: BrowserLoginArgs, deps: BrowserDeps)
   const lock = deps.profileLock(profileDir);
   if (lock.inUse) {
     deps.error(
-      `The agent browser is already open${lock.pid ? ` (process ${lock.pid})` : ''}. ` +
+      `The signed-in browser is already open${lock.pid ? ` (process ${lock.pid})` : ''}. ` +
         'Quit it, then run this again.'
     );
     return 1;
   }
   const profile = ensureAgentProfile(profileDir, deps.now());
   if (profile.themed) {
-    deps.log('Set up the agent browser with an orange frame, so you can always tell it apart.');
+    deps.log('Set up the signed-in browser with an orange frame, so you can always tell it apart.');
   }
 
   const url = loginStartUrl(args.url);
@@ -256,7 +256,7 @@ export async function runBrowserLogin(args: BrowserLoginArgs, deps: BrowserDeps)
     return 1;
   }
 
-  deps.log('The agent browser is open (it has an orange frame).');
+  deps.log('The signed-in browser is open (it has an orange frame).');
   deps.log('');
   deps.log('  1. Sign in to the sites your agents need. Your password manager works as usual.');
   deps.log('  2. Leave those tabs open, come back here, and press Enter to save.');
@@ -266,7 +266,7 @@ export async function runBrowserLogin(args: BrowserLoginArgs, deps: BrowserDeps)
   const action = await deps.waitForOperator(cdp.exited);
   if (action === 'closed') {
     deps.error('');
-    deps.error('The agent browser closed before you pressed Enter, so nothing was saved.');
+    deps.error('The signed-in browser closed before you pressed Enter, so nothing was saved.');
     deps.error(
       'Your earlier sign-ins are unchanged. Run this again and press Enter while it is open.'
     );
@@ -284,7 +284,9 @@ export async function runBrowserLogin(args: BrowserLoginArgs, deps: BrowserDeps)
   } catch (err) {
     await cdp.close();
     if (err instanceof ChromeExitedError) {
-      deps.error('The agent browser closed while saving, so nothing was saved. Run this again.');
+      deps.error(
+        'The signed-in browser closed while saving, so nothing was saved. Run this again.'
+      );
       return 1;
     }
     throw err;
@@ -311,10 +313,10 @@ async function runPlainLogin(
   deps: BrowserDeps
 ): Promise<number> {
   const plain = deps.spawnPlain(chrome, [...profileFlags(profileDir), url]);
-  deps.log('The agent browser is open (it has an orange frame).');
+  deps.log('The signed-in browser is open (it has an orange frame).');
   deps.log('');
   deps.log('  1. Sign in to the sites your agents need. Tick "keep me signed in" where offered.');
-  deps.log('  2. Come back here and press Enter (or quit the agent browser) to save.');
+  deps.log('  2. Come back here and press Enter (or quit the signed-in browser) to save.');
   deps.log('');
   deps.log('Press Ctrl+C to stop without saving.');
 
@@ -482,7 +484,7 @@ export function parseBrowserForgetArgs(rawArgs: string[]): BrowserForgetArgs {
 }
 
 /**
- * Remove the forgotten site from the agent browser's profile too, so the next
+ * Remove the forgotten site from the signed-in browser's profile too, so the next
  * save does not bring it back. Returns a warning to show when that could not
  * happen, or `null`.
  */
@@ -498,8 +500,8 @@ async function cleanProfile(
   const nextSave = 'the next `dorkos browser login` will save it again';
   if (deps.profileLock(profileDir).inUse) {
     return (
-      `The agent browser is open, so ${what} still signed in there, and ${nextSave}. ` +
-      'Sign out in the agent browser, or quit it and run this again.'
+      `The signed-in browser is open, so ${what} still signed in there, and ${nextSave}. ` +
+      'Sign out in the signed-in browser, or quit it and run this again.'
     );
   }
   let cdp: CdpPipe | undefined;
@@ -511,7 +513,7 @@ async function cleanProfile(
   } catch (err) {
     const reason =
       err instanceof ChromeNotFoundError ? 'Chrome was not found' : 'Chrome did not respond';
-    return `${reason}, so ${what} still signed in inside the agent browser, and ${nextSave}.`;
+    return `${reason}, so ${what} still signed in inside the signed-in browser, and ${nextSave}.`;
   } finally {
     await cdp?.close();
   }
@@ -519,7 +521,7 @@ async function cleanProfile(
 
 /**
  * Take one site (or every site) away from agents: out of the saved session
- * first, then out of the agent browser's profile.
+ * first, then out of the signed-in browser's profile.
  *
  * @param args - Parsed arguments.
  * @param deps - The machine.
@@ -539,7 +541,7 @@ export async function runBrowserForget(
         return 1;
       }
       const ok = await deps.confirm(
-        'Forget every saved sign-in, and sign the agent browser out of every site?'
+        'Forget every saved sign-in, and sign the signed-in browser out of every site?'
       );
       if (!ok) {
         deps.log('Nothing changed.');

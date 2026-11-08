@@ -9,6 +9,7 @@ import { STORAGE_KEYS } from '@/layers/shared/lib/constants';
 import { readLocalBrowserChoice } from '@/layers/shared/model/app-store/local-browser-preference';
 
 const transport = vi.hoisted(() => ({
+  listLocalBrowserProfiles: vi.fn().mockResolvedValue({ profiles: [] }),
   getLocalBrowserState: vi.fn(),
   getLocalBrowserCapabilities: vi.fn(),
   openLocalBrowser: vi.fn(),
@@ -81,6 +82,7 @@ function mount(visible = true) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  transport.listLocalBrowserProfiles.mockResolvedValue({ profiles: [] });
   delete window.electronAPI;
   localStorage.clear();
   useAppStore.setState({ localBrowserChoice: null, localBrowserChoiceIssue: null });
@@ -134,6 +136,9 @@ describe('LocalBrowserPanel', () => {
         expect(screen.queryByRole('button', { name })).toBeNull();
       expect(screen.queryByRole('combobox')).toBeNull();
       expect(screen.queryByLabelText('Web address')).toBeNull();
+      // Forget and Delete stay out of reach too: nothing here may change that chat's browser.
+      expect(screen.queryByLabelText('Browser profiles')).toBeNull();
+      expect(transport.listLocalBrowserProfiles).not.toHaveBeenCalled();
     });
     it('keeps the ordinary controls when that handoff has ended', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
@@ -147,6 +152,7 @@ describe('LocalBrowserPanel', () => {
         await screen.findByText('Shared with another chat. Disconnect to use it here.')
       ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
+      expect(await screen.findByLabelText('Browser profiles')).toBeInTheDocument();
     });
     it('keeps the controls in the waiting chat’s own panel', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
@@ -245,7 +251,7 @@ describe('LocalBrowserPanel', () => {
     const open = await screen.findByRole('button', { name: 'Open browser' });
     await waitFor(() => expect(open).toBeEnabled());
     fireEvent.click(open);
-    expect(await screen.findByRole('heading', { name: 'New browser window' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Agent browser' })).toBeInTheDocument();
     expect(await screen.findByLabelText('Shared with Kai')).toHaveValue('one');
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
     expect(await screen.findByRole('button', { name: 'Open browser' })).toBeEnabled();

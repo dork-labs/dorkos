@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ancestorsOf, buildChildEnv, selfCheckPassed } from '../grants.js';
+import { ancestorsOf, buildChildEnv, childExecArgv, selfCheckPassed } from '../grants.js';
 import { isChildMessage, type PermissionReport } from '../ipc-protocol.js';
 import { unpackedPath } from '../child-entry.js';
 
@@ -23,6 +23,7 @@ const PASSING: PermissionReport = {
   worker: false,
   addon: false,
   wasi: false,
+  sqlite: false,
 };
 
 describe('selfCheckPassed', () => {
@@ -43,6 +44,28 @@ describe('selfCheckPassed', () => {
         permission: { ...PASSING, readableAncestors: ['/'] },
       })
     ).toBe(false);
+  });
+});
+
+describe('childExecArgv', () => {
+  // Purpose: the real flags carry the permission model, both grants, the
+  // sqlite switch-off and the heap cap; each seam drops only its own part.
+  it('starts the child with its grants and without node:sqlite', () => {
+    expect(childExecArgv(['/run', '/files'], '/files', 256)).toEqual([
+      '--permission',
+      '--allow-fs-read=/run',
+      '--allow-fs-read=/files',
+      '--allow-fs-write=/files',
+      '--no-experimental-sqlite',
+      '--max-old-space-size=256',
+    ]);
+    expect(childExecArgv(['/run'], '/files', 64, { omitSqliteOff: true })).not.toContain(
+      '--no-experimental-sqlite'
+    );
+    expect(childExecArgv(['/run'], '/files', 64, { omitPermission: true })).toEqual([
+      '--no-experimental-sqlite',
+      '--max-old-space-size=64',
+    ]);
   });
 });
 

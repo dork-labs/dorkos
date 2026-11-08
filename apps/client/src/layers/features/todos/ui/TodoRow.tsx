@@ -184,11 +184,16 @@ export function TodoRow({
     <li
       ref={rowRef}
       style={style}
+      // How the list finds the row to slide it after a Reorder move (`use-row-slide`).
+      data-todo-row-id={todo.id}
       data-slot="todo-row"
       data-state={todo.state}
       data-overdue={todo.overdue || undefined}
       className={cn(
         'group/row flex items-start gap-1 rounded-md py-1 pr-2',
+        // In Reorder mode the row under the pointer or holding focus is tinted, so the eye can
+        // follow from its arrows at the far end back to its title (DOR-3715).
+        trailing !== undefined && 'hover:bg-muted/50 focus-within:bg-muted/50',
         dragging && 'bg-card relative z-10 shadow-sm'
       )}
     >
@@ -216,8 +221,9 @@ export function TodoRow({
         <div className="flex min-w-0 items-start gap-1.5">
           <p
             className={cn(
-              // Up to three lines: the row doesn't open, so a cut-off title could never be read.
-              'line-clamp-3 min-w-0 text-sm break-words',
+              // The row doesn't open, so a cut-off title could never be read: on a phone it wraps
+              // whole, and on a wider screen, where three lines hold far more, it stops at three.
+              'min-w-0 text-sm break-words md:line-clamp-3',
               closed && 'text-muted-foreground',
               todo.state === 'dropped' && 'line-through'
             )}

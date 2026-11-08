@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
@@ -254,6 +254,91 @@ describe('storage state file', () => {
     expect(raw).not.toContain('cloud.dorkos.ai');
     expect(saved.cookies.map((c) => c.domain)).toEqual(['github.com']);
     expect(readStorageState(file)?.origins.map((o) => o.origin)).toEqual(['https://github.com']);
+  });
+
+  it('saves from a browser holding a DorkOS session with no DorkOS sign-in in the file (DOR-3957)', async () => {
+    const file = path.join(root, 'browser', 'storage-state.json');
+    // A made-up DorkOS session, on every name this computer's DorkOS answers to.
+    const machine = hostname();
+    const dorkosDomains = [
+      'localhost',
+      '127.0.0.1',
+      '[::1]',
+      '::1',
+      '127.0.0.2',
+      machine,
+      `${machine.replace(/\..*$/, '')}.local`,
+      '.localhost',
+    ];
+    const cdp = createFakeCdp({
+      'Storage.getCookies': () => ({
+        cookies: [
+          ...dorkosDomains.map((domain) => ({
+            name: 'better-auth.session_token',
+            value: 'fake-dorkos-session',
+            domain,
+            path: '/',
+            expires: 1_900_000_000,
+            httpOnly: true,
+            secure: false,
+          })),
+          {
+            name: 'sid',
+            value: 'kept',
+            domain: 'github.com',
+            path: '/',
+            expires: -1,
+            httpOnly: true,
+            secure: true,
+            session: true,
+          },
+        ],
+      }),
+      'Target.getTargets': () => ({
+        targetInfos: [
+          { targetId: 't1', type: 'page', url: 'http://localhost:4242/session' },
+          { targetId: 't2', type: 'page', url: 'https://github.com/' },
+        ],
+      }),
+      'Target.attachToTarget': (params) => ({ sessionId: `s-${String(params.targetId)}` }),
+      'DOMStorage.getDOMStorageItems': (params) => {
+        const { securityOrigin } = params.storageId as { securityOrigin: string };
+        return {
+          entries: [
+            securityOrigin === 'https://github.com' ? ['t', 'kept'] : ['t', 'fake-dorkos-session'],
+          ],
+        };
+      },
+    });
+    const saved = await writeStorageState(file, await collectStorageState(cdp));
+    const raw = fs.readFileSync(file, 'utf8');
+    expect(raw).not.toContain('fake-dorkos-session');
+    expect(raw).not.toContain('better-auth');
+    expect(saved.cookies.map((c) => c.domain)).toEqual(['github.com']);
+    expect(saved.origins.map((o) => o.origin)).toEqual(['https://github.com']);
+  });
+
+  it('reads an older file without its DorkOS sign-in (DOR-3957)', () => {
+    const file = path.join(root, 'old-dorkos.json');
+    const cookie = (domain: string) => ({
+      name: 'better-auth.session_token',
+      value: 'fake-dorkos-session',
+      domain,
+      path: '/',
+      expires: -1,
+      httpOnly: true,
+      secure: false,
+      sameSite: 'Lax',
+    });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        cookies: [cookie('localhost'), cookie('127.0.0.1'), { ...cookie('a.test'), value: 'v' }],
+        origins: [{ origin: 'http://localhost:6241', localStorage: [{ name: 't', value: 'x' }] }],
+      })
+    );
+    expect(readStorageState(file)?.cookies.map((c) => c.domain)).toEqual(['a.test']);
+    expect(readStorageState(file)?.origins).toEqual([]);
   });
 
   it('reads an older file without its Cloud sign-in', () => {

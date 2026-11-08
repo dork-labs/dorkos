@@ -308,7 +308,9 @@ const requestConnection = defineCapability({
     'owner fixes first. Ask by level, never by action name: access "read" to look at things ' +
     'there, or "read-write" to also change things there; ask for the lowest level the work ' +
     'needs, and say why in reason. Name events only to hear when something new happens there. ' +
-    'Asking again for the same service reuses your open request. The owner chooses the account; ' +
+    'Asking again for the same service reuses your open request; once it is answered, asking ' +
+    'for a level the answer left out opens a new one. If the person chose a lower level, ' +
+    "don't ask again unless the work changed or they tell you to. The owner chooses the account; " +
     'this call never lists accounts or grants access by itself. It waits up to ' +
     `${CONNECTOR_REQUEST_LIVE_HOLD_MS / 60_000} minutes for their answer, except when DorkOS ` +
     'cannot reach the service yet: then it answers at once with the choices to offer the ' +

@@ -22,6 +22,7 @@
  *
  * @module shared/cloud-origin
  */
+import { canonicalCookieHost, cookieDomainOf } from './app-origin.js';
 import { links } from './links.js';
 
 /** The production Cloud origin. Always on the list, whatever is configured. */
@@ -141,6 +142,10 @@ export function isCloudOriginUrl(
  * (`.example`, sent to every subdomain) both count, so a cookie set for a
  * parent domain is treated as a Cloud cookie too.
  *
+ * The `domain` is parsed the way a URL parses a host, so another spelling of
+ * the same address matches, and one that is not a host at all counts as
+ * Cloud's, so it is dropped.
+ *
  * @param domain - The cookie's `domain`, as a storage-state file holds it.
  * @param entries - The list, from {@link cloudOriginEntries}.
  */
@@ -149,8 +154,9 @@ export function cookieReachesCloud(
   entries: readonly CloudOriginEntry[] = cloudOriginEntries()
 ): boolean {
   const isDomainCookie = domain.startsWith('.');
-  const cookieHost = normalizeHost(domain.replace(/^\.+/, ''));
-  if (!cookieHost) return false;
+  const canonical = canonicalCookieHost(domain);
+  if (canonical === null) return true;
+  const cookieHost = normalizeHost(canonical);
   return entries.some((entry) => {
     if (entry.kind === 'origin') return cookieHost === entry.host;
     // Sent to the Cloud host or one of its subdomains...
@@ -162,7 +168,7 @@ export function cookieReachesCloud(
 
 /** The parts of a storage-state file this module reads: cookies by domain, page storage by origin. */
 interface StorageStateLike {
-  cookies: Array<{ domain: string }>;
+  cookies: Array<{ domain?: string; url?: string }>;
   origins: Array<{ origin: string }>;
 }
 
@@ -177,7 +183,11 @@ export function withoutCloudOrigin<S extends StorageStateLike>(
   state: S,
   entries: readonly CloudOriginEntry[] = cloudOriginEntries()
 ): { state: S; removedCookies: number; removedOrigins: number } {
-  const cookies = state.cookies.filter((cookie) => !cookieReachesCloud(cookie.domain, entries));
+  // A cookie with no domain and no url can't be judged, so it goes too.
+  const cookies = state.cookies.filter((cookie) => {
+    const domain = cookieDomainOf(cookie);
+    return domain !== null && !cookieReachesCloud(domain, entries);
+  });
   const origins = state.origins.filter((origin) => !isCloudOriginUrl(origin.origin, entries));
   return {
     state: { ...state, cookies, origins },
