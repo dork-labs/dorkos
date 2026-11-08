@@ -4,6 +4,7 @@ covers:
   - "fix(permissions): a read says Ask lets it through, and to-do actions use the app's words (DOR-3936)"
   - 'fix(todos): agents can no longer change a to-do over HTTP, where no permission was checked (DOR-3936)'
   - "docs(permissions): Blocked on To-dos says what it stops, and the row covers the agent's own to-dos (DOR-3936)"
+  - "fix(permissions): the To-dos row says it reads the team's to-dos too (DOR-3936)"
 ---
 
 ### Fixed
