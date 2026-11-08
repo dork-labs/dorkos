@@ -179,7 +179,7 @@ test.describe('Agent browser handoff card', () => {
       await page.getByRole('button', { name: 'Add view', exact: true }).click();
       await page.getByRole('menuitem', { name: 'Browser', exact: true }).click();
     }
-    const panel = page.getByRole('region', { name: 'Local browser', exact: true });
+    const panel = page.getByRole('region', { name: 'Agent browser', exact: true });
     await expect(
       panel.getByText('Another agent is waiting for a person in this window.')
     ).toBeVisible();

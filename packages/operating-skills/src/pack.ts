@@ -389,8 +389,15 @@ export interface OperatingSkill {
  * - 50: `operating-dorkos` and `working-on-a-heartbeat` name the promise tools by
  *   their new names, `todo_promise_add` and `todo_promise_update` (DOR-3933). An
  *   agent seeded at 49 would call `commitment_add`, which no longer exists.
+ * - 51: `using-the-agent-browser` teaches the person handoff, rejects sign-in
+ *   links from untrusted text, and routes outsider-origin sharing requests to
+ *   the operator (DOR-3218). Agents seeded at 50 would miss those rules.
+ *   Browser guidance also distinguishes the live Agent browser, the older
+ *   signed-in Playwright MCP browser and the private managed engine (DOR-3218).
+ *   Existing commands and saved sign-ins remain available. 51 rather than 50
+ *   because DOR-3933 landed on `main` first and took 50.
  */
-export const OPERATING_SKILLS_VERSION = 50;
+export const OPERATING_SKILLS_VERSION = 51;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
