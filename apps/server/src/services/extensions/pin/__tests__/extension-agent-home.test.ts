@@ -59,6 +59,7 @@ import {
   SCREEN_CHANGED,
 } from '../../extension-approval-queue.js';
 import { testClientExtension } from '../../extension-test-harness.js';
+import { toPublic } from '../../extension-manager-types.js';
 import type { ExtensionCompiler } from '../../extension-compiler.js';
 import type { ExtensionManager } from '../../extension-manager.js';
 import { knownProjectRootsForExtensions } from '../../../projects/extension-scan-roots.js';
@@ -132,6 +133,17 @@ describe('the screen half is always pinned (client digest)', () => {
     expect(mayLoadClientHalf(clientEdit, agentApproval())).toBe(false);
     // Judged on the bytes about to be served, not only the last compile.
     expect(mayLoadClientHalf(copy(), agentApproval(), bundleDigestOf(EDITED_BUNDLE))).toBe(false);
+  });
+
+  it('tells Settings its screens are paused, rather than a silent "allowed"', () => {
+    const clientEdit = copy({ clientDigest: bundleDigestOf(EDITED_BUNDLE) });
+    const paused = toPublic(clientEdit, agentApproval());
+    expect(paused.approvedToRun).toBe(true);
+    expect(paused.bundleReady).toBe(false);
+    expect(paused.screensPaused).toBe(true);
+    expect(toPublic(copy(), agentApproval()).screensPaused).toBe(false);
+    // A copy that may not run at all waits for the plain approval instead.
+    expect(toPublic(copy(), { approvedToRun: [] }).screensPaused).toBe(false);
   });
 
   it('raises a card for it (the queue counts it as waiting)', () => {

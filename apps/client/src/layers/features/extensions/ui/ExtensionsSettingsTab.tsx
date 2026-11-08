@@ -1,8 +1,9 @@
-import { RefreshCw } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Search } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { Button, MoreDetails } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { Button, Chip, Input, Skeleton } from '@/layers/shared/ui';
+import { openLink } from '@/layers/shared/lib';
 import { useDeepLinkScroll, useSettingsDeepLink } from '@/layers/shared/model';
 import {
   useExtensions,
@@ -17,23 +18,54 @@ import {
   permissionViewFromRecord,
   useSeenBeforeStaleStore,
   useStepUpRisks,
+  usePendingExtensionApprovals,
 } from '@/layers/entities/extension';
-import { ExtensionCard } from './ExtensionCard';
+import {
+  isExtensionOff,
+  matchesExtensionSearch,
+  sectionExtensions,
+} from '../lib/extension-row-state';
+import { ExtensionRow } from './ExtensionRow';
 import { TrustedSourcesSection } from './TrustedSourcesSection';
 
-/** Extensions tab in the Settings dialog — manage discovered extensions. */
+/** The list's filters. "Not used in 30 days" waits for last-used data. */
+type ExtensionFilter = 'all' | 'off';
+
+/**
+ * Extensions tab in the Settings dialog: every extension as one line, what
+ * needs the person on top, the rest A–Z, and DorkOS's own folded at the end.
+ */
 export function ExtensionsSettingsTab() {
   const { data, isLoading, isError, isRefetching, refetch } = useExtensions();
-  const extensions = data ?? [];
+  const extensions = useMemo(() => data ?? [], [data]);
   // No answer at all is "couldn't load", never "none installed". A list read
   // once and refused later keeps showing what it had.
   const loadFailed = isError && data === undefined;
   // The mini apps that keep "Confirm it's you" off (DOR-3234).
   const { data: stepUpRisks } = useStepUpRisks();
+  // What changed, and since when, for a row waiting for an OK.
+  const { approvals } = usePendingExtensionApprovals();
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<ExtensionFilter>('all');
+  const [coreOpen, setCoreOpen] = useState(false);
+
+  function setOpen(id: string, open: boolean) {
+    setOpenIds((current) => {
+      const next = new Set(current);
+      if (open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
   // "Where it shows…" in the right panel opens this tab with the mini app's id
-  // as the section: bring its card into view once the list has drawn.
+  // as the section: bring its row into view, open, once the list has drawn.
   const { section } = useSettingsDeepLink();
-  useDeepLinkScroll(isLoading ? null : section);
+  useDeepLinkScroll(isLoading ? null : section, (id) => {
+    setOpen(id, true);
+    if (extensions.some((ext) => ext.id === id && ext.origin === 'core')) setCoreOpen(true);
+  });
   const enableMutation = useEnableExtension();
   const disableMutation = useDisableExtension();
   const reloadMutation = useReloadExtensions();
@@ -57,7 +89,7 @@ export function ExtensionsSettingsTab() {
     const shown = extensions.find((ext) => ext.id === id);
     if (!shown) return;
 
-    // Turning it on echoes the permission set the card lists (DOR-2686).
+    // Turning it on echoes the permission set the panel lists (DOR-2686).
     const permissions = approve ? approvedSetOf(permissionViewFromRecord(shown)) : undefined;
     mutation.mutate(
       {
@@ -65,7 +97,7 @@ export function ExtensionsSettingsTab() {
         version: shown.manifest.version,
         plugin: shown.sourcePlugin ?? null,
         ...(permissions ? { permissions } : {}),
-        // The files this card was drawn for (DOR-3068).
+        // The files this panel was drawn for (DOR-3068).
         ...(approve && shown.digest ? { expectedDigest: shown.digest } : {}),
       },
       {
@@ -78,7 +110,7 @@ export function ExtensionsSettingsTab() {
         },
         onError: (err) => {
           if (err instanceof RunApprovalError && err.stale) {
-            // The redrawn card leads with what this one did not list.
+            // The redrawn panel leads with what this one did not list.
             if (permissions) useSeenBeforeStaleStore.getState().remember(id, permissions);
             toast.error(`${shown.manifest.name} changed since you saw it. Check it again.`);
             return;
@@ -91,21 +123,14 @@ export function ExtensionsSettingsTab() {
     );
   }
 
-  async function handleToggle(id: string, enabled: boolean) {
+  function handleToggle(id: string, enabled: boolean) {
     const mutation = enabled ? enableMutation : disableMutation;
 
     mutation.mutate(id, {
-      // The server broadcasts `extension_reloaded`, so the change applies live
-      // (contributions are hot-loaded/removed via the SSE handler) — no page
-      // reload needed. No success toast either: the card's own Switch already
-      // reads on/off, so a toast beside it would say the same thing twice.
-      // The refusal rides in `description`, never concatenated into the
-      // headline. The hook returns the server's own sentence when there is one —
-      // the person bar's refusal says what DorkOS did not do and who can do it
-      // (DOR-1507) — and an earlier version prefixed it into "Failed to enable
-      // extension: DorkOS changed nothing…", which said the failure twice and
-      // buried the half that tells the reader what to do. Headline plus
-      // description keeps both, in the shape the approval toggle above uses.
+      // The server broadcasts `extension_reloaded`, so the change applies live.
+      // No success toast: the switch already reads on/off. The refusal rides in
+      // `description`, never concatenated into the headline, because the
+      // server's own sentence says what DorkOS did not do and who can (DOR-1507).
       onError: (err) => {
         toast.error(enabled ? 'Couldn’t turn that on.' : 'Couldn’t turn that off.', {
           description: err.message,
@@ -125,20 +150,58 @@ export function ExtensionsSettingsTab() {
     });
   }
 
+  const sections = useMemo(() => sectionExtensions(extensions), [extensions]);
+
   if (isLoading) {
     return (
-      <div className="text-muted-foreground py-8 text-center text-sm">Loading extensions…</div>
+      <div role="status" aria-label="Loading extensions…" className="space-y-1">
+        <span className="sr-only">Loading extensions…</span>
+        {Array.from({ length: 8 }, (_, index) => (
+          <Skeleton key={index} className="h-10 w-full rounded-lg motion-reduce:animate-none" />
+        ))}
+      </div>
     );
   }
 
-  // Partition by origin: first-party "core" extensions vs user-installed ones.
-  const coreExtensions = extensions.filter((e) => e.origin === 'core');
-  const userExtensions = extensions.filter((e) => e.origin === 'user');
+  if (loadFailed) {
+    return (
+      <div role="alert" className="space-y-2 py-8 text-center" data-testid="extensions-load-failed">
+        <p className="text-sm font-semibold">Couldn’t load your extensions</p>
+        <p className="text-muted-foreground text-sm">
+          They’re still installed, and nothing was turned off.
+        </p>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => void refetch()}
+          disabled={isRefetching}
+        >
+          Try again
+        </Button>
+      </div>
+    );
+  }
 
-  const renderCard = (ext: ExtensionRecordPublic) => (
-    <ExtensionCard
+  const installed = extensions.filter((ext) => ext.origin === 'user');
+  const needYouCount = sections.needsYou.length;
+  const offCount = installed.filter(isExtensionOff).length;
+
+  const keep = (ext: ExtensionRecordPublic) =>
+    matchesExtensionSearch(ext, query) && (filter === 'all' || isExtensionOff(ext));
+  const needsYou = sections.needsYou.filter(keep);
+  const everythingElse = sections.everythingElse.filter(keep);
+  // DorkOS's own: folded at the end, and only under All.
+  const core = filter === 'all' ? sections.core.filter(keep) : [];
+  const searching = query.trim().length > 0;
+  const nothingMatches = needsYou.length + everythingElse.length + core.length === 0;
+
+  const renderRow = (ext: ExtensionRecordPublic) => (
+    <ExtensionRow
       key={ext.id}
       extension={ext}
+      pending={approvals.find((approval) => approval.id === ext.id)}
+      open={openIds.has(ext.id)}
+      onOpenChange={(open) => setOpen(ext.id, open)}
       onToggle={handleToggle}
       isToggling={togglingIds.has(ext.id)}
       onSetRunApproval={handleSetRunApproval}
@@ -149,78 +212,133 @@ export function ExtensionsSettingsTab() {
     />
   );
 
+  if (extensions.length === 0) {
+    return (
+      <div className="space-y-2 py-8 text-center" data-testid="no-extensions">
+        <p className="text-sm font-semibold">No extensions yet</p>
+        <p className="text-muted-foreground text-sm">
+          Extensions add screens and tools for agents.
+        </p>
+        <Button size="sm" variant="secondary" onClick={() => void openLink('/marketplace')}>
+          Browse Marketplace
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="text-muted-foreground space-y-1 text-sm">
-        <p>Extensions add new screens and tools to DorkOS.</p>
-        <MoreDetails>
-          <p>Core extensions come with DorkOS.</p>
-          <p>
-            Installed ones live in{' '}
-            <code className="bg-muted rounded px-1">~/.dork/extensions/</code> or your project’s{' '}
-            <code className="bg-muted rounded px-1">.dork/extensions/</code>.
-          </p>
-        </MoreDetails>
+    <div className="space-y-5" data-extension-list="">
+      <p className="text-muted-foreground text-[13px]" data-testid="extensions-count">
+        {installed.length} installed
+        {needYouCount > 0 && (
+          <>
+            {' · '}
+            <span className="text-foreground font-medium">{needYouCount} need you</span>
+          </>
+        )}
+      </p>
+
+      <div className="flex items-center gap-3 max-sm:flex-col max-sm:items-stretch">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            aria-hidden="true"
+            className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+          />
+          <Input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search extensions"
+            aria-label="Search extensions"
+            className="pl-9"
+          />
+        </div>
+        <div className="flex gap-2 overflow-x-auto" role="group" aria-label="Show">
+          <Chip pressed={filter === 'all'} onClick={() => setFilter('all')}>
+            All {installed.length}
+          </Chip>
+          <Chip pressed={filter === 'off'} onClick={() => setFilter('off')}>
+            Off {offCount}
+          </Chip>
+        </div>
       </div>
 
-      {loadFailed ? (
-        <div
-          role="alert"
-          className="text-muted-foreground py-8 text-center text-sm"
-          data-testid="extensions-load-failed"
-        >
-          Couldn’t load apps.{' '}
-          <Button variant="ghost" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
-            Try again
-          </Button>
-        </div>
-      ) : extensions.length === 0 ? (
-        <div className="text-muted-foreground py-8 text-center text-sm" data-testid="no-extensions">
-          <p>No extensions installed.</p>
+      {nothingMatches ? (
+        <div className="space-y-2 py-6 text-center" data-testid="extensions-no-match">
+          <p className="text-sm font-semibold">
+            {searching ? `Nothing matches “${query.trim()}”` : 'Nothing is off'}
+          </p>
+          {searching && (
+            <Button size="sm" variant="ghost" onClick={() => setQuery('')}>
+              Clear search
+            </Button>
+          )}
         </div>
       ) : (
         <>
-          {coreExtensions.length > 0 && (
-            <section className="space-y-3" data-testid="core-extensions-section">
-              <h3 className="text-sm font-semibold">Core extensions</h3>
-              <div className="space-y-3">{coreExtensions.map(renderCard)}</div>
+          {needsYou.length > 0 && (
+            <section aria-labelledby="extensions-needs-you" data-testid="needs-you-section">
+              <h3
+                id="extensions-needs-you"
+                className="text-muted-foreground mb-1 px-3 text-[11px] font-medium"
+              >
+                Needs you
+              </h3>
+              <ul className="space-y-0.5">{needsYou.map(renderRow)}</ul>
             </section>
           )}
 
-          <section className="space-y-3" data-testid="installed-extensions-section">
-            <h3 className="text-sm font-semibold">Installed extensions</h3>
-            {userExtensions.length > 0 ? (
-              <div className="space-y-3">{userExtensions.map(renderCard)}</div>
-            ) : (
-              <div
-                className="text-muted-foreground rounded-xl border border-dashed p-4 text-sm"
-                data-testid="no-installed-extensions"
+          {everythingElse.length > 0 && (
+            <section
+              aria-labelledby="extensions-everything-else"
+              data-testid="installed-extensions-section"
+            >
+              {needsYou.length > 0 && (
+                <h3
+                  id="extensions-everything-else"
+                  className="text-muted-foreground mb-1 px-3 text-[11px] font-medium"
+                >
+                  Everything else
+                </h3>
+              )}
+              <ul className="space-y-0.5">{everythingElse.map(renderRow)}</ul>
+            </section>
+          )}
+
+          {core.length > 0 && (
+            <section data-testid="core-extensions-section">
+              <button
+                type="button"
+                aria-expanded={coreOpen || searching}
+                onClick={() => setCoreOpen((open) => !open)}
+                disabled={searching}
+                className="text-muted-foreground hover:text-foreground focus-ring flex min-h-10 w-full items-center rounded-lg px-3 text-left text-[13px] max-sm:min-h-11"
               >
-                No extensions installed yet. Browse{' '}
-                <span className="text-foreground font-medium">Marketplace</span> to add some.
-              </div>
-            )}
-          </section>
+                Comes with DorkOS · {core.length}
+              </button>
+              {(coreOpen || searching) && <ul className="space-y-0.5">{core.map(renderRow)}</ul>}
+            </section>
+          )}
         </>
       )}
 
       <TrustedSourcesSection />
 
-      {/* While the list could not be read, Try again above is the one way out. */}
-      {!loadFailed && (
-        <div className="flex justify-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleReload}
-            disabled={reloadMutation.isPending}
-            data-testid="reload-extensions-button"
-          >
-            <RefreshCw className={cn('mr-2 size-4', reloadMutation.isPending && 'animate-spin')} />
-            Reload extensions
-          </Button>
-        </div>
-      )}
+      <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 px-3 text-xs">
+        <p>
+          Installed extensions live in <code>~/.dork/extensions/</code> or a project’s{' '}
+          <code>.dork/extensions/</code>.
+        </p>
+        <button
+          type="button"
+          onClick={handleReload}
+          disabled={reloadMutation.isPending}
+          className="hover:text-foreground focus-ring rounded-sm underline underline-offset-2 disabled:opacity-50"
+          data-testid="reload-extensions-button"
+        >
+          Reload extensions
+        </button>
+      </div>
     </div>
   );
 }

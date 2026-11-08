@@ -412,6 +412,12 @@ const ExtensionManifestObjectSchema = z.object({
    * plain and short.
    */
   purpose: z.string().max(120).optional(),
+  /**
+   * One line that says what the extension is for, standing on its own (e.g.
+   * "Tracks spending across your projects."). Settings → Extensions shows it
+   * beside the name; without it, the first sentence of `description` stands in.
+   */
+  summary: z.string().min(1).max(80).optional(),
   /** Author name or identifier. */
   author: z.string().optional(),
   /** Minimum DorkOS version required (semver). If host is older, extension cannot be enabled. */

@@ -521,7 +521,12 @@ export function extensionToolDefinitions(
           .string()
           .regex(EXTENSION_ID_REGEX, 'Use lowercase letters, numbers, and hyphens only')
           .describe('Extension name (kebab-case, e.g. my-dashboard-widget)'),
-        description: z.string().optional().describe('Short description shown in settings UI'),
+        description: z
+          .string()
+          .optional()
+          .describe(
+            'Short description shown in settings UI. Its first sentence is the line beside the name in Settings → Extensions, unless extension.json sets "summary" (one sentence, at most 80 characters).'
+          ),
         template: z
           .enum(['dashboard-card', 'right-panel-tab', 'command', 'settings-panel', 'data-provider'])
           .optional()

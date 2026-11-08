@@ -1,7 +1,7 @@
 /**
- * The Settings card says what an extension gives agents (DOR-2685): one line,
- * "Gives agents 3 tools and 1 skill", that opens to each tool with what its
- * tier means and each skill, with the reason for anything DorkOS left out.
+ * An open Settings row says what an extension gives agents (DOR-2685): one
+ * line, "Gives agents 3 tools and 1 skill", then each tool with what its tier
+ * means and each skill, with the reason for anything DorkOS left out.
  * Purpose: a person can see, after approving, exactly what agents got.
  *
  * @vitest-environment jsdom
@@ -11,7 +11,7 @@ import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { ExtensionCard } from '../ui/ExtensionCard';
+import { ExtensionRow } from '../ui/ExtensionRow';
 
 afterEach(() => {
   cleanup();
@@ -35,19 +35,23 @@ function makeExtension(overrides: Partial<ExtensionRecordPublic> = {}): Extensio
 
 function renderCard(extension: ExtensionRecordPublic) {
   return render(
-    <ExtensionCard
-      extension={extension}
-      onToggle={vi.fn()}
-      isToggling={false}
-      onSetRunApproval={vi.fn()}
-      isSettingApproval={false}
-      onReload={vi.fn()}
-      isReloading={false}
-    />
+    <ul>
+      <ExtensionRow
+        extension={extension}
+        open
+        onOpenChange={vi.fn()}
+        onToggle={vi.fn()}
+        isToggling={false}
+        onSetRunApproval={vi.fn()}
+        isSettingApproval={false}
+        onReload={vi.fn()}
+        isReloading={false}
+      />
+    </ul>
   );
 }
 
-describe('ExtensionCard: what it gives agents', () => {
+describe('ExtensionRow: what it gives agents', () => {
   it('says nothing for an extension that declares no tools or skills', () => {
     renderCard(makeExtension());
 
@@ -64,10 +68,10 @@ describe('ExtensionCard: what it gives agents', () => {
       })
     );
 
-    expect(screen.getByRole('button', { name: 'Gives agents 1 tool' })).toBeInTheDocument();
+    expect(screen.getByText('Gives agents 1 tool')).toBeInTheDocument();
   });
 
-  it('counts many, and opens to each tool with its tier label and each skill', async () => {
+  it('counts many, and lists each tool with its tier label and each skill', () => {
     renderCard(
       makeExtension({
         tools: [
@@ -84,13 +88,7 @@ describe('ExtensionCard: what it gives agents', () => {
       })
     );
 
-    const toggle = screen.getByRole('button', { name: 'Gives agents 3 tools and 1 skill' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('Send an email')).not.toBeInTheDocument();
-
-    await userEvent.click(toggle);
-
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Gives agents 3 tools and 1 skill')).toBeInTheDocument();
     const rows = within(screen.getByTestId('extension-agent-gifts-mail-app')).getAllByRole(
       'listitem'
     );
@@ -102,7 +100,7 @@ describe('ExtensionCard: what it gives agents', () => {
     ]);
   });
 
-  it('lists a refused tool and a dropped skill with their reasons, and never counts them', async () => {
+  it('lists a refused tool and a dropped skill with their reasons, and never counts them', () => {
     renderCard(
       makeExtension({
         tools: [
@@ -121,7 +119,7 @@ describe('ExtensionCard: what it gives agents', () => {
       })
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Gives agents 1 tool' }));
+    expect(screen.getByText('Gives agents 1 tool')).toBeInTheDocument();
 
     expect(screen.getByText('Left out: Its input must list every field.')).toBeInTheDocument();
     expect(screen.getByText('Left out: Its folder is missing from skills/.')).toBeInTheDocument();
@@ -130,8 +128,10 @@ describe('ExtensionCard: what it gives agents', () => {
     expect(screen.queryByText('Take "anything"')).not.toBeInTheDocument();
   });
 
-  it('says what it would give, not what it gives, while the extension does not run', () => {
-    // Off, or waiting for approval: agents have none of it right now.
+  it('says what it would give, not what it gives, while the extension does not run', async () => {
+    // Off, or waiting for approval: agents have none of it right now. A
+    // waiting row keeps its facts behind Details, so this reads a row that is
+    // off and one whose facts are open.
     renderCard(
       makeExtension({
         status: 'disabled',
@@ -140,7 +140,7 @@ describe('ExtensionCard: what it gives agents', () => {
         ],
       })
     );
-    expect(screen.getByRole('button', { name: 'Would give agents 1 tool' })).toBeInTheDocument();
+    expect(screen.getByText('Would give agents 1 tool')).toBeInTheDocument();
     cleanup();
 
     renderCard(
@@ -149,7 +149,8 @@ describe('ExtensionCard: what it gives agents', () => {
         skills: [{ name: 'triage-inbox', status: 'ok' }],
       })
     );
-    expect(screen.getByRole('button', { name: 'Would give agents 1 skill' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Details' }));
+    expect(screen.getByText('Would give agents 1 skill')).toBeInTheDocument();
   });
 
   it('says no tools or skills reach agents when every one was left out', () => {
@@ -159,8 +160,6 @@ describe('ExtensionCard: what it gives agents', () => {
       })
     );
 
-    expect(
-      screen.getByRole('button', { name: 'Gives agents no tools or skills' })
-    ).toBeInTheDocument();
+    expect(screen.getByText('Gives agents no tools or skills')).toBeInTheDocument();
   });
 });

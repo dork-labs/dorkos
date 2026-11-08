@@ -1,8 +1,9 @@
 /**
- * The Settings card explains why the server half of an extension that runs
- * separately stopped or cannot start (DOR-2686): one sentence per
- * `serverError.code`, each with the tab's Reload beside it, and a line while a
- * restart is pending. Purpose: a person knows what happened and what to do.
+ * The Settings row explains why the server half of an extension that runs
+ * separately stopped or cannot start (DOR-2686): a "Not working" chip, and in
+ * the open row one sentence per `serverError.code` with Try again, plus a line
+ * while a restart is pending. Purpose: a person knows what happened and what
+ * to do.
  *
  * @vitest-environment jsdom
  */
@@ -11,7 +12,7 @@ import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { ExtensionCard } from '../ui/ExtensionCard';
+import { ExtensionRow } from '../ui/ExtensionRow';
 
 afterEach(() => {
   cleanup();
@@ -34,17 +35,21 @@ function makeExtension(overrides: Partial<ExtensionRecordPublic> = {}): Extensio
   };
 }
 
-function renderCard(extension: ExtensionRecordPublic, onReload = vi.fn()) {
+function renderRow(extension: ExtensionRecordPublic, { open = true, onReload = vi.fn() } = {}) {
   render(
-    <ExtensionCard
-      extension={extension}
-      onToggle={vi.fn()}
-      isToggling={false}
-      onSetRunApproval={vi.fn()}
-      isSettingApproval={false}
-      onReload={onReload}
-      isReloading={false}
-    />
+    <ul>
+      <ExtensionRow
+        extension={extension}
+        open={open}
+        onOpenChange={vi.fn()}
+        onToggle={vi.fn()}
+        isToggling={false}
+        onSetRunApproval={vi.fn()}
+        isSettingApproval={false}
+        onReload={onReload}
+        isReloading={false}
+      />
+    </ul>
   );
   return onReload;
 }
@@ -58,21 +63,22 @@ const CASES: Array<[string, string]> = [
   ['server_start_timeout', 'Mail took too long to start. Reload it to try again.'],
 ];
 
-describe('ExtensionCard: a stopped server half (DOR-2686)', () => {
+describe('ExtensionRow: a stopped server half (DOR-2686)', () => {
   // Purpose: with no message from the server, each code reads its shared
-  // sentence, with Reload beside it, and never the rebuild sentence.
-  it.each(CASES)('%s reads its line, with Reload', async (code, line) => {
-    const onReload = renderCard(makeExtension({ serverError: { code, message: '' } }));
-    const status = screen.getByTestId('extension-server-status-mail');
-    expect(within(status).getByText(line)).toBeInTheDocument();
+  // sentence, with Try again, and never the rebuild sentence.
+  it.each(CASES)('%s reads its line, with Try again', async (code, line) => {
+    const onReload = renderRow(makeExtension({ serverError: { code, message: '' } }));
+    expect(screen.getByTestId('extension-health-mail')).toHaveTextContent('Not working');
+    const panel = screen.getByTestId('extension-not-working-mail');
+    expect(within(panel).getByText(line)).toBeInTheDocument();
     expect(screen.queryByText(/rebuild its server part/)).not.toBeInTheDocument();
-    await userEvent.click(within(status).getByRole('button', { name: 'Reload' }));
+    await userEvent.click(within(panel).getByRole('button', { name: 'Try again' }));
     expect(onReload).toHaveBeenCalledTimes(1);
   });
 
   // Purpose: the server's own sentence wins when it sent one.
   it('shows the server’s own sentence when it sent one', () => {
-    renderCard(
+    renderRow(
       makeExtension({
         serverError: { code: 'server_crashed', message: 'Mail stopped 3 times today.' },
       })
@@ -80,21 +86,26 @@ describe('ExtensionCard: a stopped server half (DOR-2686)', () => {
     expect(screen.getByText('Mail stopped 3 times today.')).toBeInTheDocument();
   });
 
-  // Purpose: a rebuild failure keeps its own wording and gets no Reload line.
+  // Purpose: a rebuild failure keeps its own wording and is not "Not working".
   it('leaves a rebuild failure in its own words', () => {
-    renderCard(
+    renderRow(
       makeExtension({ serverError: { code: 'compilation_failed', message: 'Syntax error' } })
     );
-    expect(screen.queryByTestId('extension-server-status-mail')).not.toBeInTheDocument();
-    expect(screen.getByText(/Couldn’t rebuild its server part/)).toBeInTheDocument();
+    expect(screen.queryByTestId('extension-health-mail')).not.toBeInTheDocument();
+    expect(screen.getByTestId('extension-server-status-mail')).toHaveTextContent(
+      'Couldn’t rebuild its server part: Syntax error. The last version still runs.'
+    );
   });
 
   // Purpose: a pending restart is announced; nothing is said when none is.
   it('says it is restarting only while a restart is pending', () => {
-    renderCard(makeExtension({ restartingAt: '2026-10-04T12:00:00.000Z' }));
+    renderRow(makeExtension({ restartingAt: '2026-10-04T12:00:00.000Z' }));
     expect(screen.getByRole('status')).toHaveTextContent('Restarting Mail…');
     cleanup();
-    renderCard(makeExtension({ restartingAt: null }));
+    renderRow(makeExtension({ restartingAt: '2026-10-04T12:00:00.000Z' }), { open: false });
+    expect(screen.getByText('Restarting…')).toBeInTheDocument();
+    cleanup();
+    renderRow(makeExtension({ restartingAt: null }));
     expect(screen.queryByText(/Restarting/)).not.toBeInTheDocument();
   });
 });

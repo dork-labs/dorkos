@@ -118,10 +118,19 @@ test.describe('Run a package from a folder', () => {
     // Discovery runs after the link returns, so allow for the list to catch up.
     await settingsPage.open();
     await settingsPage.switchTab('Extensions');
+    const extRow = settingsPage.dialog.getByTestId(`extension-card-${EXT_ID}`);
+    await expect(extRow.getByText('Dev link', { exact: true })).toBeVisible({ timeout: 45_000 });
+    // The path is one click down: open the row, and its facts if they sit
+    // behind Details (a dev link waits for an OK until a person gives one).
+    await extRow.locator('[data-row-button]').click();
+    const details = extRow.getByRole('button', { name: 'Details' });
+    if (await details.isVisible()) await details.click();
     await expect(settingsPage.dialog.getByTestId(`extension-dev-link-${EXT_ID}`)).toContainText(
-      folder,
-      { timeout: 45_000 }
+      folder
     );
+    // The first Escape closes the open row; the second closes Settings.
+    await page.keyboard.press('Escape');
+    await expect(extRow.locator('[data-row-button]')).toHaveAttribute('aria-expanded', 'false');
     await settingsPage.close();
 
     // Unlink from the row. Nothing was installed before, so it is removed.
