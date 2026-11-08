@@ -37,6 +37,7 @@ import { composeCommandDraft } from './palette-command-draft';
 import { runPaletteCommandHandler } from './palette-command-handlers';
 import { REMOTE_ACCESS_PALETTE_ACTIONS } from './palette-remote-access';
 import { settingsTabForAction } from './palette-contributions';
+import { extensionSetFromAction, extensionSetSection } from '@/layers/entities/extension';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 interface PaletteActions {
@@ -331,6 +332,12 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           const settingsTab = settingsTabForAction(action);
           if (settingsTab) {
             openSettings(settingsTab);
+            return;
+          }
+          // A plugin's extensions waiting together: open their row, never approve.
+          const plugin = extensionSetFromAction(action);
+          if (plugin !== null) {
+            openSettings('extensions', extensionSetSection(plugin));
             return;
           }
           runExtensionAction(action);

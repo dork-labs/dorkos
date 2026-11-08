@@ -138,8 +138,12 @@ const mockUseMenuExtensionPages = vi.fn((): ExtensionPageContribution[] => []);
 const hub = vi.hoisted(() => ({ value: false }));
 vi.mock('@/layers/entities/config', () => ({ useIsHub: () => hub.value }));
 // The shell publishes the app list (`usePublishAppCatalog`); here it is set by hand.
+// The "Review {plugin} extensions" rows read the server; none wait here (DOR-3583).
 const snapshotApps = vi.hoisted(() => ({ value: [] as unknown[] }));
-vi.mock('@/layers/entities/extension', () => ({ useAppCatalogSnapshot: () => snapshotApps.value }));
+vi.mock('@/layers/entities/extension', () => ({
+  useAppCatalogSnapshot: () => snapshotApps.value,
+  useExtensionSetPaletteItems: () => [],
+}));
 vi.mock('@/layers/entities/mesh', () => ({
   useMeshAgentPaths: () => mockUseMeshAgentPaths(),
 }));

@@ -20546,6 +20546,221 @@
           "path",
           "plugin"
         ]
+      },
+      "ExtensionApprovalSet": {
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "type": "string",
+            "minLength": 1
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "waiting",
+                    "allowed",
+                    "skipped"
+                  ]
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "runsInServer": {
+                  "type": "boolean"
+                },
+                "reachesInternet": {
+                  "type": "boolean"
+                },
+                "permissions": {
+                  "$ref": "#/components/schemas/ExtensionApprovalPermissions"
+                },
+                "echo": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expectedDigest": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "permissions": {
+                      "type": "object",
+                      "properties": {
+                        "runtime": {
+                          "type": "string",
+                          "enum": [
+                            "in-process",
+                            "subprocess"
+                          ]
+                        },
+                        "net": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 64
+                        },
+                        "run": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 16
+                        },
+                        "agents": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "runtime",
+                        "net",
+                        "run",
+                        "agents"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "version",
+                    "expectedDigest",
+                    "permissions"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "purpose",
+                "version",
+                "state",
+                "runsInServer",
+                "reachesInternet",
+                "permissions"
+              ]
+            }
+          },
+          "setHash": {
+            "type": "string"
+          },
+          "tooMany": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "plugin",
+          "members",
+          "setHash",
+          "tooMany"
+        ]
+      },
+      "ApproveExtensionSetRequest": {
+        "type": "object",
+        "properties": {
+          "plugin": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "expectedDigest": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "permissions": {
+                  "type": "object",
+                  "properties": {
+                    "runtime": {
+                      "type": "string",
+                      "enum": [
+                        "in-process",
+                        "subprocess"
+                      ]
+                    },
+                    "net": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 64
+                    },
+                    "run": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 16
+                    },
+                    "agents": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "runtime",
+                    "net",
+                    "run",
+                    "agents"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "version",
+                "expectedDigest",
+                "permissions"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 64
+          },
+          "setHash": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "plugin",
+          "members",
+          "setHash"
+        ]
       }
     },
     "parameters": {}
@@ -99771,6 +99986,152 @@
           },
           "409": {
             "description": "It is still installed (`installed`): stop it running or remove it instead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/approval-sets": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List plugins whose extensions wait to be allowed together",
+        "description": "One entry per plugin that installed two or more extensions, at least one waiting. A group is the plugin that installed its members, from DorkOS’s own install records: an extension an agent made, a dev link, or a folder added by hand never joins one. Members already allowed and members that can’t be approved are listed with their state.",
+        "responses": {
+          "200": {
+            "description": "The sets, by plugin A–Z",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sets": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ExtensionApprovalSet"
+                      }
+                    }
+                  },
+                  "required": [
+                    "sets"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The sets could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/approve-set": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Allow every waiting extension a plugin installed",
+        "description": "Derives the plugin’s waiting members from DorkOS’s own records and refuses unless the request names exactly those, and unless `setHash` (over each member’s id, version, digest and permission set) matches. Only after every check passes is each member approved, one at a time with its own digest: N approvals and N Activity entries, nothing stored about the group. A member that still fails is reported in `results`. The same person bar as approving one extension applies, and there is no MCP tool for this.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveExtensionSetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Each member’s result; `allAllowed` only when every one was allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "ok": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "ok"
+                        ]
+                      }
+                    },
+                    "allAllowed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "results",
+                    "allAllowed"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not a set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent or another site cannot allow extensions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing was turned on: a member was not installed by this plugin (`not_in_set`), the set or a member’s files or permissions changed (`stale_set`), or more than 10 wait (`too_many_in_set`)",
             "content": {
               "application/json": {
                 "schema": {
