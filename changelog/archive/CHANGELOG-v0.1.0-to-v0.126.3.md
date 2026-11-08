@@ -1,7 +1,28 @@
-# Changelog archive: v0.1.0 – v0.126.2
+# Changelog archive: v0.1.0 – v0.126.3
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.126.3] - 2026-10-29
+
+> DorkOS 0.126.3 stops one outside message from making a whole room of agents ask before almost every command, shows pictures and PDFs an agent puts on a room's canvas to everyone, and gives every agent a short list of what it can do in DorkOS.
+
+### Added
+
+- Spaces can now let an owner's or admin's own DorkOS app manage them, but only after that person types their password. The DorkOS app doesn't ask for this yet, so nothing changes for anyone today (DOR-3005)
+- Making someone an admin, removing a member, and changing who may join a space always happen in the browser, never through an app (DOR-3005)
+- Groundwork for actions that wait for your approval. The app now understands when DorkOS Cloud holds an action until you approve it, and never treats that action as done. Nothing on screen shows it yet (DOR-3265)
+
+### Changed
+
+- Every agent now starts with a short list of what it can do in DorkOS, one line per area: chats, rooms, the canvas, browsers, connected apps, MCP servers, tasks and more. Each line names the permission that controls it. An agent asked "can you use my browser?" or "can you add an MCP server?" now answers from DorkOS, instead of pointing you to a terminal or another tool. Before saying DorkOS can't do something, it searches what DorkOS offers.
+- If your company's network needs its own certificates, and you point `NODE_EXTRA_CA_CERTS` at them, the Mac app keeps trusting them. It now reads that file itself, so its connections keep working on that network.
+
+### Fixed
+
+- An extension can no longer change another extension's saved data, secrets or settings through DorkOS: each write is checked against the extension that made it. With **Require login** on, these writes also need you signed in, or an agent that says who it is, so a program on your computer can't change them with only a key.
+- When an agent puts a picture, PDF or other media file from its own folder on a room's canvas, everyone in the room can now see it. Before, the agent was told it worked, but everyone else saw a card instead of the file. DorkOS now copies the file into the room. A file outside the agent's own folders is refused, and the agent is told why.
+- Agents in a shared room stop asking you to approve their commands after one of them reads an outside message. Before, one message from outside your team could make every agent in the room ask before almost anything, and it never wore off. Now an agent that picked up outside words keeps working at its usual level. It still asks you before shell commands, permission changes, and actions that delete things. The agent that read the outside message directly is still held, as before. (DOR-3390)
 
 ## [0.126.2] - 2026-10-28
 
@@ -7661,6 +7682,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.126.3]: https://github.com/dork-labs/dorkos/compare/v0.126.2...v0.126.3
 [0.126.2]: https://github.com/dork-labs/dorkos/compare/v0.126.1...v0.126.2
 [0.126.0]: https://github.com/dork-labs/dorkos/compare/v0.125.4...v0.126.0
 [0.125.4]: https://github.com/dork-labs/dorkos/compare/v0.125.3...v0.125.4
