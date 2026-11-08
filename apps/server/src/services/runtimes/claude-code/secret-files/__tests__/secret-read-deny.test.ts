@@ -11,6 +11,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { DirectoryGrantError } from '@dorkos/shared/directory-grants';
+import { EXTENSION_SECRETS_FOLDER, HOST_KEY_FILE_NAME } from '@dorkos/shared/extension-secrets';
+import { TOKEN_FILE_NAME } from '../../../../core/auth/mcp-local-token.js';
+import { SECRET_FILE_NAME } from '../../../../core/auth/secret.js';
+import { vapidKeyPath } from '../../../../notifications/channels/web-push.js';
+import { ADAPTER_CONFIG_FILE } from '../../../../relay/adapter-secrets.js';
+import { BROWSER_PROFILES_FOLDER } from '../../../../session/local-browser/profile-folders.js';
 import { secretNameRule } from '../../../../core/secret-file-scan/scan-folder.js';
 import { applySecretReadDeny, secretReadDenyRules } from '../secret-read-deny.js';
 
@@ -122,6 +128,30 @@ describe('every store that holds a live secret', () => {
       const m = /^Read\(\/\/Users\/ana\/\.dork\/(.+)\)$/.exec(rule);
       if (!m) return false;
       // Claude Code's glob: `*` and `**` both cross folders here.
+      const pattern = new RegExp(
+        '^' + m[1]!.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*+/g, '.*') + '$'
+      );
+      return pattern.test(entry);
+    });
+    expect(covered).toBe(true);
+  });
+
+  // Security's stronger form (#3198): the name comes from the module that writes the secret, so
+  // renaming a store fails here instead of quietly leaving it uncovered. A new store still has to
+  // join this list, which is why a new secret-writing module exports its name.
+  it.each([
+    ['the master key', HOST_KEY_FILE_NAME],
+    ['an extension’s secrets', path.join(EXTENSION_SECRETS_FOLDER, 'x.json')],
+    ['the sign-in secret', SECRET_FILE_NAME],
+    ['the local tool token', TOKEN_FILE_NAME],
+    ['the push key', path.relative('/d', vapidKeyPath('/d'))],
+    ['the bot tokens', ADAPTER_CONFIG_FILE],
+    ['a browser profile', path.join(BROWSER_PROFILES_FOLDER, 'default', 'Cookies')],
+  ])('denies %s, by the name its own module writes', (_label, entry) => {
+    const rules = secretReadDenyRules(FOLDERS);
+    const covered = rules.some((rule) => {
+      const m = /^Read\(\/\/Users\/ana\/\.dork\/(.+)\)$/.exec(rule);
+      if (!m) return false;
       const pattern = new RegExp(
         '^' + m[1]!.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*+/g, '.*') + '$'
       );

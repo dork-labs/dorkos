@@ -21,6 +21,7 @@ import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AuditActor } from '@dorkos/shared/audit-schemas';
 import { recordRuntimeToolCall, toolActorOf } from '../../audit/record-tool-use.js';
 import { logger } from '../../../lib/logger.js';
+import type { ShellRefusalRecorder } from './shell-guard/shell-path-guard.js';
 
 /** What the hooks need to know about the turn that launched the process. */
 export interface AuditToolHookOptions {
@@ -78,6 +79,37 @@ export function createAuditToolHook(options: AuditToolHookOptions): HookCallback
       logger.warn('[audit] could not record a helper tool call', { err });
     }
     return {};
+  };
+}
+
+/**
+ * Records a shell write to an agent's setup files that was refused (DOR-3300), main thread and
+ * helper alike: the refusal is the record, whichever route reports the call next finds it settled.
+ *
+ * @param options - The session and the launching turn.
+ */
+export function createShellRefusalRecorder(options: AuditToolHookOptions): ShellRefusalRecorder {
+  return ({ toolName, toolUseId, command, agentId }) => {
+    try {
+      const actor = toolActorOf('claude-code', options.turn);
+      if (!actor) return;
+      recordRuntimeToolCall(
+        {
+          runtime: 'claude-code',
+          sessionId: options.sessionId,
+          toolCallId: toolUseId,
+          name: toolName,
+          input: inputText({ command }),
+          actor,
+          ...(agentId ? { helperId: agentId } : {}),
+        },
+        'refused',
+        'A shell write to an agent’s setup files.'
+      );
+    } catch (err) {
+      // The refusal stands whether or not it could be written down.
+      logger.warn('[audit] could not record a refused shell write', { err });
+    }
   };
 }
 

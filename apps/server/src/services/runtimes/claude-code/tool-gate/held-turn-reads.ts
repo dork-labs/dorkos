@@ -34,6 +34,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { expandTilde } from '../../../../lib/boundary.js';
 
 /** File tools, and the input field each names its path in. */
 const FILE_READ_PATHS: Readonly<Record<string, readonly string[]>> = {
@@ -43,6 +44,52 @@ const FILE_READ_PATHS: Readonly<Record<string, readonly string[]>> = {
   Glob: ['path', 'pattern'],
   LS: ['path'],
 };
+
+/** The agent's folders, as a launch granted them. */
+export interface ReadFolders {
+  /** The working folder, which relative paths resolve against. */
+  cwd: string;
+  /** Every folder a read may stay inside. */
+  roots: readonly string[];
+}
+
+/**
+ * The folders a turn's file reads skip the card inside (DOR-3300): the working folder, the agent's
+ * home (a turn in a room or a worktree still reads its own folder), this turn's grants, and the
+ * skills the CLI loads for the turn, because a skill reads its own files. The deny rules still hold
+ * inside all of them.
+ *
+ * @param turn - What this turn stands on.
+ * @param turn.cwd - The working folder.
+ * @param turn.agentHome - The agent's home, when the turn has one.
+ * @param turn.grants - This turn's folder grants.
+ * @param turn.plugins - The folders of the plugins this launch loaded.
+ * @param turn.accountRoot - The launch's Claude Code account folder.
+ */
+export function turnReadRoots(turn: {
+  cwd: string;
+  agentHome?: string | null;
+  grants: readonly string[];
+  plugins: readonly string[];
+  accountRoot: string;
+}): string[] {
+  return [
+    turn.cwd,
+    ...(turn.agentHome ? [turn.agentHome] : []),
+    ...turn.grants,
+    ...turn.plugins,
+    path.join(turn.accountRoot, 'skills'),
+  ];
+}
+
+/**
+ * Whether a tool reads the file system at a path its input names.
+ *
+ * @param toolName - The tool.
+ */
+export function isFileReadTool(toolName: string): boolean {
+  return Object.hasOwn(FILE_READ_PATHS, toolName);
+}
 
 /** Commands that only read, by their first word. `find` and `git` are narrowed below. */
 const READ_ONLY_COMMANDS: ReadonlySet<string> = new Set([
@@ -105,7 +152,7 @@ function inside(target: string, roots: readonly string[]): boolean {
   const real = realLocation(target);
   return roots.some((root) => {
     const rel = path.relative(realLocation(root), real);
-    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    return rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
   });
 }
 
@@ -130,9 +177,12 @@ export function fileReadStaysInside(
     const value = input[field];
     if (value === undefined) return true;
     if (typeof value !== 'string') return false;
-    // A glob pattern's own wildcards cannot climb out; its literal part can.
+    // A glob pattern's own wildcards cannot climb out; its literal part can, and so can a `..`
+    // past a wildcard or inside braces (`{../..,x}/*`).
+    if (field === 'pattern' && /(^|[/{,])\.\.([/},]|$)/.test(value)) return false;
     const literal = field === 'pattern' ? value.split(/[*?[{]/)[0]! : value;
-    return inside(path.resolve(cwd, literal), roots);
+    // The CLI opens `~` itself, so left as text `~/.ssh/x` would look inside the working folder.
+    return inside(path.resolve(cwd, expandTilde(literal)), roots);
   });
 }
 

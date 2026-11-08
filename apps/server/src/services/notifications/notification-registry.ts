@@ -513,13 +513,13 @@ export type StandingNotificationKind =
   | 'schedule.parked'
   | 'approval.pending'
   | 'session.error'
-  | 'signin.required'
   | 'extension.approval'
-  | 'extension.decision';
+  | 'extension.decision'
+  | RecordedStandingKind;
 
 /**
  * The standing kinds that ALSO write a row the moment they begin — the
- * `standing-recorded` storage rule, which today is one kind.
+ * `standing-recorded` storage rule: a dead sign-in, and a shell check that can't start.
  *
  * Named as its own type rather than folded into the union below because it is
  * the single deliberate hole in an otherwise total split: these are the only
@@ -527,7 +527,7 @@ export type StandingNotificationKind =
  * reviewer can read the exception in one line, and adding a second member is a
  * diff that has to argue for itself.
  */
-export type RecordedStandingKind = 'signin.required';
+export type RecordedStandingKind = 'signin.required' | 'shell.check_down';
 
 /**
  * The kinds that record something that happened — everything that is not

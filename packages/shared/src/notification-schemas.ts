@@ -164,7 +164,25 @@ export const NOTIFICATION_KINDS = [
    * stops picking that folder on its own until the person confirms it.
    */
   'account.signin_review',
+  /**
+   * DorkOS's check on agents' shell commands can't start (DOR-3300), so at Full the shell has
+   * stopped and below it every command asks. Standing until a child starts again; a person can
+   * end it by restarting.
+   */
+  'shell.check_down',
 ] as const;
+
+/** What the app shows about DorkOS's check on agents' shell commands (DOR-3300). */
+export interface ShellCheckStatus {
+  /** The check can't start, and the person has been told. */
+  down: boolean;
+  /** Whether the command that found it down ran at Full. */
+  full: boolean;
+  /** A restart was tried and it is still down, so a person may go on without it. */
+  canContinue: boolean;
+  /** A person chose to go on without it, until restart. */
+  continuing: boolean;
+}
 
 /** Every kind of notification DorkOS can raise. */
 export const NotificationKindSchema = z.enum(NOTIFICATION_KINDS).openapi('NotificationKind');

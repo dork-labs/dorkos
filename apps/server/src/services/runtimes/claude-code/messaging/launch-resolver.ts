@@ -37,10 +37,7 @@
  *
  * @module services/runtimes/claude-code/messaging/launch-resolver
  */
-import {
-  runtimeEnvironment,
-  runtimeInheritedNames,
-} from '../../shared/runtime-environment-config.js';
+import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { ModelOption, StreamEvent } from '@dorkos/shared/types';
@@ -69,7 +66,7 @@ import {
   resolveLaunchAccountRoot,
 } from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
-import { creditsProcessEnv, creditsSettingsEnv } from './credits-launch.js';
+import { creditsSettingsEnv, forCredits } from './credits-launch.js';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
@@ -106,6 +103,8 @@ import type { MessageSenderOpts, ResolvedLaunch } from './message-sender-shared.
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
+import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
+import { shellGuardMatcher } from '../shell-guard/shell-guard-launch.js';
 import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
 import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
@@ -807,7 +806,18 @@ export async function resolveLaunch(args: {
   // anchor the tool server acts as, so a call it waves through is never one the
   // tool then runs as somebody else (DOR-2091).
   const resolveIdentity = createInSessionContextResolver(toolIdentity);
-  sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture, resolveIdentity);
+  const turnGrantPaths = (turnGrants ?? []).map((grant) => grant.path);
+  const heldReadFolders = { cwd: effectiveCwd, roots: [effectiveCwd, ...turnGrantPaths] };
+  sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture, resolveIdentity, {
+    cwd: effectiveCwd,
+    roots: turnReadRoots({
+      cwd: effectiveCwd,
+      agentHome: turnAgentPath,
+      grants: turnGrantPaths,
+      plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
+      accountRoot,
+    }),
+  });
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
   // hooks fire in every mode, before the tool runs. The matcher confines the
@@ -821,22 +831,26 @@ export async function resolveLaunch(args: {
   // backstop holds: `interactive-handlers.ts` auto-denies on abort and on
   // timeout, so a prompt that arrives outside a foreground turn degrades
   // gracefully rather than hanging one.
-  const auditHooks = auditToolHookMatchers({
+  const auditTurn = {
     sessionId,
     turn: { cwd: effectiveCwd, forAgent, roomTurn: messageOpts?.roomTurn },
-  });
+  };
+  const auditHooks = auditToolHookMatchers(auditTurn);
   sdkOptions.hooks = {
     PreToolUse: [
+      // The shell's route to protected files (DOR-3300): reads ask below Full,
+      // writes to any agent's setup files are refused at every level.
+      shellGuardMatcher(session, {
+        cwd: effectiveCwd,
+        accountRoot,
+        env: sdkOptions.env ?? {},
+        registry: opts.meshCore,
+        ...(ownFolder.open && turnAgentPath ? { openHome: turnAgentPath } : {}),
+        audit: auditTurn,
+      }),
       // A held turn (DOR-3204): the folder's allow rules become cards, its deny
       // rules still refuse. Answers nothing on any other turn.
-      {
-        hooks: [
-          createHeldTurnHook(session, resolveIdentity, logger, {
-            cwd: effectiveCwd,
-            roots: [effectiveCwd, ...(turnGrants ?? []).map((g) => g.path)],
-          }),
-        ],
-      },
+      { hooks: [createHeldTurnHook(session, resolveIdentity, logger, heldReadFolders)] },
       // Never ask (DOR-3042): the CLI calls no `canUseTool` under `dontAsk`, so
       // DorkOS's own safe tools are let through here, with the gate's own
       // per-call decision. Answers nothing in any other mode.
@@ -965,22 +979,4 @@ export async function resolveLaunch(args: {
       capabilityResolved: modelCapability !== undefined,
     },
   };
-}
-
-/**
- * A credits turn's process environment is what `creditsProcessEnv` keeps (the
- * baseline, DorkOS's own names and the inherit list, never a name that routes
- * or pays), with the credits pair on top; any other turn's is returned as
- * projected, and carries no credits variable because none was added.
- *
- * @param creditsEnv - The credits pair on a credits turn, else `undefined`.
- * @param env - The projected environment.
- */
-function forCredits(
-  creditsEnv: Record<string, string> | undefined,
-  env: Record<string, string>
-): Record<string, string> {
-  return creditsEnv === undefined
-    ? env
-    : creditsProcessEnv(env, creditsEnv, runtimeInheritedNames('claude-code'));
 }

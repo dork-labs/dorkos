@@ -71,6 +71,7 @@ export const notifications = sqliteTable(
         'web.new_device',
         'agent.secret_files',
         'account.signin_review',
+        'shell.check_down',
       ],
     }).notNull(),
 

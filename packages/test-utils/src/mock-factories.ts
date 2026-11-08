@@ -9,6 +9,7 @@ import { remoteCommunityTransportMocks } from './mock-remote-community.js';
 import { communityConnectionTransportMocks } from './mock-community-connections.js';
 import { remoteAccessTransportMocks } from './mock-remote-access.js';
 import { doeTransportMocks } from './doe-transport-mocks.js';
+import { systemStatusTransportMocks } from './system-status-mocks.js';
 import type {
   Session,
   StreamEvent,
@@ -44,7 +45,6 @@ import type {
 import { canvasSourceKey } from '@dorkos/shared/canvas-source-key';
 import type { WorktreeScanResult } from '@dorkos/shared/workspace';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { BUILTIN_MEMORY_PROVIDER_ID } from '@dorkos/shared/memory-provider';
 import type { RelayAdapter, AdapterStatus } from '@dorkos/relay';
 import type {
   ObservedChat,
@@ -962,12 +962,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       working: { chats: 0, rooms: 0, tasks: 0, waking: false },
       wake: { enabled: false, setup: 'unsupported', nextWakeAt: null, setupCommand: null },
     }),
-    getMemoryProviderStatus: vi.fn().mockResolvedValue({
-      configuredId: BUILTIN_MEMORY_PROVIDER_ID,
-      activeId: BUILTIN_MEMORY_PROVIDER_ID,
-      benched: false,
-      benchReason: null,
-    }),
+    ...systemStatusTransportMocks(),
     provisionRuntime: vi.fn().mockResolvedValue({ ok: true, binaryPath: '/mock/opencode' }),
     // Runtime connect (terminal-free auth)
     ...doeTransportMocks(),

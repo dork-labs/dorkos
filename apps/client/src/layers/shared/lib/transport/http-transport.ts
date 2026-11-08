@@ -18,6 +18,7 @@ import { createMeshMethods } from './mesh-methods';
 import { createSessionMethods } from './session-methods';
 import { createSessionStreamMethods } from './session-stream-methods';
 import { createSystemMethods } from './system-methods';
+import { createShellCheckMethods } from './shell-check-methods';
 import { createRemoteAccessMethods } from './remote-access-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
 import { createHarnessMethods } from './harness-methods';
@@ -76,6 +77,7 @@ export interface HttpTransport
     ReturnType<typeof createSessionMethods>,
     ReturnType<typeof createSessionStreamMethods>,
     ReturnType<typeof createSystemMethods>,
+    ReturnType<typeof createShellCheckMethods>,
     ReturnType<typeof createRemoteAccessMethods>,
     ReturnType<typeof createMarketplaceMethods>,
     ReturnType<typeof createHarnessMethods>,
@@ -137,6 +139,7 @@ export class HttpTransport implements Transport {
       createSessionMethods(baseUrl, () => this.clientId, this.etagCache, this.messageCache),
       createSessionStreamMethods(baseUrl, this),
       createSystemMethods(baseUrl),
+      createShellCheckMethods(baseUrl),
       createRemoteAccessMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
       createHarnessMethods(baseUrl),

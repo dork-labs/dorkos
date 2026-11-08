@@ -471,6 +471,23 @@ async function buildCLI() {
   });
   await assertNoUnexpectedWarnings('extension child', childBundle.warnings);
 
+  // 2.2: The shell guard's child (DOR-3300). The server forks it to read a shell command, so a
+  // command that stalls or crashes the reading can't touch the server. One self-contained file
+  // for the same reason as the one above. Same entry and name in the desktop build;
+  // scripts/__tests__/extension-child-build-entry.test.ts pins both.
+  const guardChildBundle = await build({
+    entryPoints: [
+      path.join(ROOT, 'apps/server/src/services/runtimes/claude-code/shell-guard/guard-child.ts'),
+    ],
+    bundle: true,
+    platform: 'node',
+    target: 'node22.22',
+    format: 'cjs',
+    outfile: path.join(OUT, 'server/shell-guard-child.cjs'),
+    plugins: [dorkosSourcePlugin()],
+  });
+  await assertNoUnexpectedWarnings('shell guard child', guardChildBundle.warnings);
+
   // 2.5: Copy Drizzle migration files alongside bundled server.
   // At runtime, `migrationsFolder()` (packages/db/src/migrations-folder.ts) resolves them via
   // path.join(dirname(fileURLToPath(import.meta.url)), '../drizzle'). In the CLI bundle that

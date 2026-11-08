@@ -98,6 +98,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
   },
   'agent.unreachable': { agentId: 'agent-1', agentName: 'Ana' },
   'signin.required': { runtime: 'claude-code', since: '2026-08-20T03:00:00.000Z' },
+  'shell.check_down': { since: '2026-11-04T03:00:00.000Z', full: true },
   'update.installed': { version: '0.61.0', previousVersion: '0.60.0' },
   'report.daily': {
     date: '2026-08-20',
@@ -225,6 +226,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'dead-letter.created': 'quiet',
   'agent.unreachable': 'quiet',
   'signin.required': 'blocking',
+  'shell.check_down': 'blocking',
   'update.installed': 'quiet',
   'report.daily': 'quiet',
   'account.limited': 'notable',
@@ -272,6 +274,7 @@ const STANDING: NotificationKind[] = [
   'approval.pending',
   'session.error',
   'signin.required',
+  'shell.check_down',
   'extension.approval',
   'extension.decision',
 ];
@@ -356,6 +359,7 @@ describe('notification registry', () => {
       'schedule.armed_by_agent',
       'schedule.parked',
       'session.error',
+      'shell.check_down',
       'signin.required',
       'turn.completed',
       'update.installed',
@@ -373,7 +377,7 @@ describe('notification registry', () => {
     expect([...standing].sort()).toEqual([...STANDING].sort());
   });
 
-  it('lets exactly one kind record its own arrival, and says which', () => {
+  it('lets exactly two kinds record their own arrival, and says which', () => {
     // `standing-recorded` is the deliberate hole in the storage split: a kind
     // that reaches BOTH `notify()` and `resolveStanding()`. It is affordable
     // only for a condition with no durable owner AND wording that never goes
@@ -382,7 +386,7 @@ describe('notification registry', () => {
     const recorded = NOTIFICATION_KINDS.filter(
       (k) => notificationEntry(k).storage === 'standing-recorded'
     );
-    expect(recorded).toEqual(['signin.required']);
+    expect(recorded).toEqual(['signin.required', 'shell.check_down']);
   });
 
   it('words a recorded standing kind so both of its rows stay true', () => {

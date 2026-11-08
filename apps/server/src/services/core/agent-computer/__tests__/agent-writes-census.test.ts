@@ -491,6 +491,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
   [
     'permissions and approvals are a person’s',
     [
+      'POST /api/system/shell-check/continue',
       'PATCH /api/permissions/defaults',
       'POST /api/approvals/:id/ask-again',
       'POST /api/approvals/:id/deny',

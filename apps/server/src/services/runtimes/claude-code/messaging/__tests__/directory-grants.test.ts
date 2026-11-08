@@ -160,13 +160,14 @@ describe('the folders only a person may change', () => {
     }
   });
 
-  it('denies the approved extension snapshots and the bundle cache (DOR-3068)', () => {
+  it('denies approved extension snapshots and both child bundle caches (DOR-3068, DOR-3300)', () => {
     const options: Options = {};
     applyPersonOnlyDataDeny(options, '/Users/ana/.dork');
     const rules = deny(options);
     for (const tool of ['Edit', 'Write', 'NotebookEdit']) {
       expect(rules).toContain(`${tool}(//Users/ana/.dork/extension-snapshots/**)`);
       expect(rules).toContain(`${tool}(//Users/ana/.dork/cache/extensions/**)`);
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/cache/shell-guard/**)`);
       // The installer's records and the trusted package sources (DOR-3068).
       expect(rules).toContain(`${tool}(//Users/ana/.dork/marketplace/**)`);
       expect(rules).toContain(`${tool}(//Users/ana/.dork/marketplaces.json*)`);

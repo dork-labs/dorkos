@@ -25,6 +25,8 @@ import { describe, expect, it } from 'vitest';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BOOTSTRAP = 'apps/server/src/services/extensions/isolation/child/bootstrap.ts';
 const OUTFILE = 'server/extension-child.cjs';
+const GUARD_ENTRY = 'apps/server/src/services/runtimes/claude-code/shell-guard/guard-child.ts';
+const GUARD_OUTFILE = 'server/shell-guard-child.cjs';
 
 /** Read a repo file. */
 function read(relative: string): string {
@@ -36,8 +38,8 @@ function read(relative: string): string {
  *
  * @param source - A build script.
  */
-function childBuildCall(source: string): string | null {
-  const at = source.indexOf(BOOTSTRAP);
+function childBuildCall(source: string, entry: string = BOOTSTRAP): string | null {
+  const at = source.indexOf(entry);
   if (at === -1) return null;
   const start = source.lastIndexOf('await build(', at);
   const end = source.indexOf('});', at);
@@ -76,6 +78,38 @@ describe('extension child build entry', () => {
   it('is unpacked from app.asar', () => {
     const config = read('apps/desktop/electron-builder.yml');
     expect(config).toMatch(/asarUnpack:[\s\S]*- 'dist\/server\/extension-child\.cjs'/);
+  });
+
+  // Purpose: the shell guard's child ships the same way. A build without it stops the shell at
+  // Full on the first command, with nothing to fall back on.
+  it.each([['packages/cli/scripts/build.ts'], ['apps/desktop/scripts/build-guard-child.ts']])(
+    '%s bundles the shell guard child',
+    (script) => {
+      const source = read(script);
+      const call = childBuildCall(source, GUARD_ENTRY);
+      expect(call, `${script} has no build() for ${GUARD_ENTRY}`).not.toBeNull();
+      const region = source.slice(
+        Math.max(0, source.indexOf(call!) - 400),
+        source.indexOf(call!) + call!.length
+      );
+      expect(region).toContain(GUARD_OUTFILE);
+      expect(call).toMatch(/format:\s*'cjs'/);
+      expect(call).toMatch(/bundle:\s*true/);
+      expect(call).toMatch(/platform:\s*'node'/);
+    }
+  );
+
+  it('names the shell guard child as the server resolves it, and unpacks it', () => {
+    expect(read('apps/desktop/scripts/build-server.ts')).toMatch(/await buildGuardChild\(/);
+    const source = read(
+      'apps/server/src/services/runtimes/claude-code/shell-guard/guard-child-file.ts'
+    );
+    expect(source.match(/export const GUARD_CHILD_FILE = '([^']+)'/)?.[1]).toBe(
+      path.basename(GUARD_OUTFILE)
+    );
+    expect(read('apps/desktop/electron-builder.yml')).toMatch(
+      /asarUnpack:[\s\S]*- 'dist\/server\/shell-guard-child\.cjs'/
+    );
   });
 
   // Purpose: run-as-node stays on. The packaged app forks its own binary with
