@@ -14,6 +14,9 @@
 #
 # A purpose is one plain sentence saying what the gate catches or does.
 gates:
+  - id: wf.rel0134-bwrap-scope.linux-evidence
+    source: .github/workflows/rel0134-bwrap-scope.yml
+    purpose: Temporarily verifies six native Codex backup fixtures on the release base, including the known Full access refusal.
   - id: wf.security-approve-tests.acl
     source: .github/workflows/security-approve-tests.yml
     purpose: Tests hardened helper policy and disposable Keychain ACL isolation on a CI macOS user.
