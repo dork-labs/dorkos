@@ -87,6 +87,14 @@ describe('node:sqlite in an isolated child', () => {
       ok: false,
       code: 'ERR_ACCESS_DENIED',
     });
+    // This route has no positive control, and this says why: even unrestricted
+    // Node has no `sqlite` binding (checked on 22.23, 24.14 and Electron's
+    // 24.19). If a future Node adds one, this fails and the refusal above needs
+    // a real control.
+    expect(await runControl(h, 'sqliteBinding')).toMatchObject({
+      ok: false,
+      message: 'No such module: sqlite',
+    });
   });
 
   // Purpose: the attack itself. The control writes one row into a dork.db in
