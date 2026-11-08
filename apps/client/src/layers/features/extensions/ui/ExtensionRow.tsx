@@ -15,7 +15,8 @@ import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import type { StepUpExtensionRisk } from '@dorkos/shared/step-up';
 import { Badge, Button, Switch } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, extensionPageHref, openLink } from '@/layers/shared/lib';
+import { useMenuExtensionPages } from '@/layers/shared/model';
 import { extensionPurpose, extensionRowState, waitsForOk } from '../lib/extension-row-state';
 import { ExtensionNeedPanel } from './ExtensionNeedPanel';
 import { ExtensionRowDetail } from './ExtensionRowDetail';
@@ -133,6 +134,9 @@ export function ExtensionRow({
     onOpenChange(true);
   }
 
+  const pages = useMenuExtensionPages();
+  const ownPages = pages.filter((page) => page.extensionId === extension.id);
+  const homePage = ownPages.find((page) => page.path === '') ?? ownPages[0];
   const showsReview = state.trailing === 'review' && !locked;
   // A row turned off while waiting has no chip, but Review still opens the
   // same approval panel: nothing else turns it on.
@@ -147,7 +151,7 @@ export function ExtensionRow({
       data-need={state.need ?? undefined}
       className={cn(
         'rounded-lg transition-colors duration-150 motion-reduce:transition-none',
-        open ? 'bg-muted dark:bg-white/5' : 'hover:bg-muted dark:hover:bg-white/5'
+        open ? 'bg-muted dark:bg-foreground/5' : 'hover:bg-muted dark:hover:bg-foreground/5'
       )}
     >
       <div className="flex min-h-10 items-center gap-2 pr-2 max-sm:min-h-16">
@@ -251,6 +255,18 @@ export function ExtensionRow({
               aria-labelledby={nameId}
               className="space-y-3.5 px-3 pt-1 pb-4"
             >
+              {/* Open comes first for an app with a page (its home if it has
+                  one), the one way to launch it from here. */}
+              {homePage && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void openLink(extensionPageHref(extension.id, homePage.path))}
+                  data-testid={`extension-open-${extension.id}`}
+                >
+                  Open
+                </Button>
+              )}
               {panelNeed ? (
                 <>
                   <ExtensionNeedPanel

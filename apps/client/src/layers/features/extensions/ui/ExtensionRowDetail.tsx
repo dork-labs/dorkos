@@ -12,8 +12,7 @@ import {
   isExtensionServerErrorCode,
 } from '@dorkos/shared/extension-server-status';
 import { Button, DevLinkPath } from '@/layers/shared/ui';
-import { extensionPageHref, openLink } from '@/layers/shared/lib';
-import { useMenuExtensionPages } from '@/layers/shared/model';
+import { openLink } from '@/layers/shared/lib';
 import {
   ExtensionAgentGifts,
   agentGiftsFromRecord,
@@ -83,8 +82,6 @@ export function ExtensionRowDetail({
 }: ExtensionRowDetailProps) {
   const { manifest, serverError } = extension;
   const isOn = isExtensionOn(extension);
-  const pages = useMenuExtensionPages();
-  const firstPage = pages.find((page) => page.extensionId === extension.id);
   const gifts = agentGiftsFromRecord(extension);
   const access = accessLine(extension);
 
@@ -172,28 +169,17 @@ export function ExtensionRowDetail({
         <ForwardAgentsEditor extensionId={extension.id} name={manifest.name} />
       )}
 
-      {(firstPage || (extension.origin === 'user' && extension.approvedToRun)) && (
+      {extension.origin === 'user' && extension.approvedToRun && (
         <div className="flex flex-wrap items-center gap-2">
-          {firstPage && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => void openLink(extensionPageHref(extension.id, firstPage.path))}
-            >
-              Open
-            </Button>
-          )}
-          {extension.origin === 'user' && extension.approvedToRun && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onStopRunning}
-              disabled={isSettingApproval}
-              data-testid={`extension-stop-running-${extension.id}`}
-            >
-              Stop it running
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onStopRunning}
+            disabled={isSettingApproval}
+            data-testid={`extension-stop-running-${extension.id}`}
+          >
+            Stop it running
+          </Button>
         </div>
       )}
     </div>
