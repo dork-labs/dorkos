@@ -337,6 +337,8 @@ describe('credential-free-build workflow', () => {
   // a store saved on ubuntu-26.04 kills the boot probe on a 24.04 runner
   // (2026-10-30, ledger 261031-012000). test.yml's server suite and the
   // browser suite load node-pty the same way, so they carry the same store.
+  // browser-test.yml installs in four jobs: browser-smoke, browser-shard,
+  // first-run and copy-spec-drift.
   //
   // The image is read in a step, never as `${{ env.ImageOS }}`: the `env`
   // context only holds variables a workflow sets, not the runner's own, so that
@@ -352,7 +354,7 @@ describe('credential-free-build workflow', () => {
     for (const [rel, text, installs] of [
       [WORKFLOW_REL, workflow, 1],
       [TEST_WORKFLOW_REL, testWorkflow, 2],
-      [BROWSER_WORKFLOW_REL, browserWorkflow, 3],
+      [BROWSER_WORKFLOW_REL, browserWorkflow, 4],
     ] as const) {
       expect(
         /^\s+cache:\s*pnpm\s*$/m.test(text),
