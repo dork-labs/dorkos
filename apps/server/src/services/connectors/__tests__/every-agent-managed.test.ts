@@ -7,6 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  connectionGrantExclusions,
   connectionOperationGrants,
   connections,
   connectorManagedAuthorityOutbox,
@@ -259,6 +260,29 @@ describe('every-agent grants through a DorkOS account', () => {
     expect(await refusal(execute('agent-new', revisionId(snapshot, 'gmail.write'), 'write'))).toBe(
       'CONNECTOR_GRANT_REQUIRED'
     );
+  });
+
+  // DOR-3977: the deny is local, so it refuses before any hosted step, and the
+  // hosted every-agent scope is never named for the excluded agent.
+  it('refuses an agent left out of the share before any hosted step, while others keep it', async () => {
+    const snapshot = await shareRead();
+    const read = revisionId(snapshot, 'gmail.read');
+    const commandsBefore = submitted.length;
+    db.insert(connectionGrantExclusions)
+      .values({
+        id: 'exclusion-a',
+        agentId: 'agent-new',
+        connectionId: CONNECTION_ID,
+        createdBy: OWNER.installationId,
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+
+    expect(await refusal(execute('agent-new', read, 'read'))).toBe('CONNECTOR_GRANT_REQUIRED');
+    expect(submitted).toHaveLength(commandsBefore);
+    await expect(execute('agent-a', read, 'read')).resolves.toMatchObject({
+      managedGrantSubject: 'every_agent',
+    });
   });
 
   it("uses the agent's own hosted grant when it has one, and every agent's for the rest", async () => {

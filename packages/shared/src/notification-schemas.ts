@@ -148,6 +148,11 @@ export const NOTIFICATION_KINDS = [
   /** A held connected-app action ran when its cancel window ended. */
   'connector.destructive_executed',
   /**
+   * One agent took another agent's access to a connected app away (spec
+   * `agent-grant-autonomy`, Security G2). The person can undo it in one tap.
+   */
+  'connector.access_narrowed',
+  /**
    * A browser this computer had never seen used chat from the web here, over
    * the owner's hub (spec `everything-is-a-space` step B3). Once per browser.
    */

@@ -7,6 +7,10 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import {
+  ConnectorAccessChangeListQuerySchema,
+  ConnectorAccessChangeListSchema,
+  ConnectorAccessChangeSchema,
+  ConnectorAccessChangeUndoSchema,
   ConnectorGrantExclusionChangeSchema,
   ConnectorGrantExclusionListSchema,
   ConnectorGrantExclusionParamsSchema,
@@ -56,6 +60,65 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
         content: { 'application/json': { schema: ConnectorGrantExclusionChangeSchema } },
       },
       404: notFound,
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/api/connectors/access-changes',
+    tags: ['Connectors'],
+    summary: 'Access changes agents made on your apps',
+    description:
+      "Owner only. Newest first, with each agent's own one-line reason. Show the reason as plain " +
+      "text, attributed to the agent: it is the agent's words, not DorkOS's.",
+    request: { query: ConnectorAccessChangeListQuerySchema },
+    responses: {
+      200: {
+        description: 'The changes',
+        content: { 'application/json': { schema: ConnectorAccessChangeListSchema } },
+      },
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/api/connectors/access-changes/{changeId}',
+    tags: ['Connectors'],
+    summary: "One access change, with the agent's reason",
+    description:
+      'Owner only. What a Needs-you item shows. Show the reason as plain text, attributed to the agent.',
+    request: { params: z.object({ changeId: z.string().min(1) }) },
+    responses: {
+      200: {
+        description: 'The change',
+        content: { 'application/json': { schema: ConnectorAccessChangeSchema } },
+      },
+      404: {
+        description: 'No such change on your apps (`UNDO_NOT_FOUND`)',
+        content: { 'application/json': { schema: ErrorSchema } },
+      },
+    },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/connectors/access-changes/{changeId}/undo',
+    tags: ['Connectors'],
+    summary: "Undo an agent's change to an agent's access",
+    description:
+      'Owner only. Puts back the access the change took away, including letting an agent back ' +
+      'into a share. Refused when access changed since, so a later choice is never overwritten.',
+    request: { params: z.object({ changeId: z.string().min(1) }) },
+    responses: {
+      200: {
+        description: 'Put back',
+        content: { 'application/json': { schema: ConnectorAccessChangeUndoSchema } },
+      },
+      404: {
+        description: 'Nothing to undo under that id (`UNDO_NOT_FOUND`)',
+        content: { 'application/json': { schema: ErrorSchema } },
+      },
+      409: {
+        description: 'Access changed since (`UNDO_STALE`)',
+        content: { 'application/json': { schema: ErrorSchema } },
+      },
     },
   });
   registry.registerPath({

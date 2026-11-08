@@ -1,7 +1,7 @@
 /**
  * Every `/api/connectors` group, in the one order they answer in.
  *
- * Six groups share the prefix, and the order is part of what they answer:
+ * Seven groups share the prefix, and the order is part of what they answer:
  *
  * 1. **Provider keys** (`/providers`), behind their own migration gate.
  * 2. **Notifications** (`/connections/:id/events/*`): any path under one
@@ -14,6 +14,8 @@
  *    exists.
  * 6. **Held actions** (`/holds/:id/cancel`): cancelling an agent's action in
  *    a connected app while it waits out its cancel window.
+ * 7. **Access changes** (`/access-changes`): the person's list of what agents
+ *    took away, and Undo.
  *
  * No route in one group shares a method and path with a route in another, so
  * a `:param` in one never claims a literal path another group answers. The
@@ -42,6 +44,10 @@ import {
   type ConnectorResourcesRouterDeps,
 } from './connector-resources.js';
 import { createConnectorHoldRoutes, type ConnectorHoldRouterDeps } from './connector-holds.js';
+import {
+  createConnectorAccessChangeRoutes,
+  type ConnectorAccessChangeRouterDeps,
+} from './connector-access-changes.js';
 
 /** What the connector groups read, one entry per group. */
 export interface ConnectorRoutesDeps {
@@ -57,6 +63,8 @@ export interface ConnectorRoutesDeps {
   execution?: ConnectorExecutionRouterDeps;
   /** Cancelling an agent's action while it waits out its cancel window (`/holds`). */
   holds?: ConnectorHoldRouterDeps;
+  /** Agent-made access changes: the person's list and Undo (`/access-changes`). */
+  accessChanges?: ConnectorAccessChangeRouterDeps;
 }
 
 /**
@@ -73,5 +81,6 @@ export function createConnectorRoutes(deps: ConnectorRoutesDeps): Hono<ApiEnv> {
   app.route('/', createConnectorResourcesRoutes(deps.resources));
   if (deps.execution) app.route('/', createConnectorExecutionRoutes(deps.execution));
   if (deps.holds) app.route('/', createConnectorHoldRoutes(deps.holds));
+  if (deps.accessChanges) app.route('/', createConnectorAccessChangeRoutes(deps.accessChanges));
   return app;
 }

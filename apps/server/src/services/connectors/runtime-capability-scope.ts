@@ -17,6 +17,9 @@ export const CONNECTOR_RUNTIME_CAPABILITY_IDS = Object.freeze([
   'connectors.list_granted_operations',
   'connectors.request_connection',
   'connectors.get_connection_request',
+  'connectors.narrow_own_access',
+  'connectors.narrow_agent_access',
+  'connectors.list_access_changes',
   ...CONNECTOR_RUNTIME_EXECUTION_CAPABILITY_IDS,
 ] as const);
 

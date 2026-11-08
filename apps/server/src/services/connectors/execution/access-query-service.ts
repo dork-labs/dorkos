@@ -41,7 +41,12 @@ import {
 } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorAgentOwnershipPort } from './authorization-service.js';
-import { everyAgentGrantFor } from '../every-agent-grants.js';
+import {
+  agentGrantRowsSubject,
+  grantRowApplies,
+  turnedOffHere,
+  type SessionGrantOverride,
+} from './agent-grant-scope.js';
 import { managedAgentAccess } from './managed-agent-access.js';
 
 /** Bounded cursor input shared by agent and operator usage views. */
@@ -91,34 +96,6 @@ function ownerColumns(owner: ConnectorOwnerAuthority): {
     : { ownerKind: owner.kind, ownerId: owner.installationId };
 }
 
-/**
- * Grant rows that can speak for one agent: its own named grants (and, with a
- * session, that session's grants), plus every-agent grants (ADR 260926-192625),
- * which count on every connection, including one made through a DorkOS account
- * (DOR-2439), except one the agent was left out of (DOR-3961).
- */
-function agentGrantRows(agentId: string, sessionId?: string) {
-  const named = and(
-    eq(connectionOperationGrants.subjectType, 'agent'),
-    eq(connectionOperationGrants.subjectId, agentId)
-  );
-  return or(
-    and(
-      eq(connectionOperationGrants.agentId, agentId),
-      sessionId
-        ? or(
-            named,
-            and(
-              eq(connectionOperationGrants.subjectType, 'session'),
-              eq(connectionOperationGrants.subjectId, sessionId)
-            )
-          )
-        : named
-    ),
-    everyAgentGrantFor(agentId)
-  );
-}
-
 /** Keep the first row for each exact connection and revision. */
 function uniqueRevisions<T extends { connectionId: string; operationRevisionId: string }>(
   rows: readonly T[]
@@ -148,47 +125,7 @@ function decodeUsageCursor(cursor: string): z.infer<typeof UsageCursorSchema> {
 }
 
 /** One session's access override for one connection. */
-interface SessionOverride {
-  connectionId: string;
-  agentId: string | null;
-  state: 'attached' | 'detached';
-  needsReconciliation: boolean;
-}
-
-/**
- * Whether one grant row gives this agent the connection in this session. The
- * same precedence as `ConnectorExecutionAuthorizationService.hasGrant`: a
- * session override decides alone; without one, named-agent and every-agent
- * grants both count.
- */
-function grantApplies(
-  row: { subjectType: string },
-  override: SessionOverride | undefined,
-  agentId: string
-): boolean {
-  if (!override) return row.subjectType === 'agent' || row.subjectType === 'every_agent';
-  if (
-    override.agentId !== agentId ||
-    override.needsReconciliation ||
-    override.state === 'detached'
-  ) {
-    return false;
-  }
-  return row.subjectType === 'session';
-}
-
-/**
- * True when this chat turned the connection off for its agent: a current
- * override for this agent says detached, so no other grant counts here.
- */
-function turnedOffHere(override: SessionOverride | undefined, agentId: string): boolean {
-  return (
-    override !== undefined &&
-    override.agentId === agentId &&
-    !override.needsReconciliation &&
-    override.state === 'detached'
-  );
-}
+type SessionOverride = SessionGrantOverride & { connectionId: string };
 
 /** SQLite-backed, owner-scoped access and usage query service. */
 export class ConnectorAccessQueryService {
@@ -239,7 +176,7 @@ export class ConnectorAccessQueryService {
       )
       .where(
         and(
-          agentGrantRows(agentId, sessionId),
+          agentGrantRowsSubject(agentId, sessionId),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId)
         )
@@ -281,7 +218,7 @@ export class ConnectorAccessQueryService {
       )
       .where(
         and(
-          agentGrantRows(agentId),
+          agentGrantRowsSubject(agentId),
           isNull(connectionOperationGrants.revokedAt),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
@@ -342,7 +279,7 @@ export class ConnectorAccessQueryService {
         and(
           eq(connections.id, connectionId),
           eq(connections.lifecycleState, 'connected'),
-          agentGrantRows(agentId),
+          agentGrantRowsSubject(agentId),
           isNull(connectionOperationGrants.revokedAt),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId)
@@ -549,7 +486,7 @@ export class ConnectorAccessQueryService {
       .where(
         and(
           isNull(connectionOperationGrants.revokedAt),
-          agentGrantRows(agentId, sessionId),
+          agentGrantRowsSubject(agentId, sessionId),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
           eq(connectorProviderInstances.status, 'available'),
@@ -574,7 +511,7 @@ export class ConnectorAccessQueryService {
       ) {
         return false;
       }
-      if (!grantApplies(row, overrides.get(row.connectionId), agentId)) return false;
+      if (!grantRowApplies(row, overrides.get(row.connectionId), agentId)) return false;
       // Through a DorkOS account, a call needs this agent's access applied at
       // the hosted side, exactly as the execution check reads it.
       return (
@@ -633,7 +570,7 @@ export class ConnectorAccessQueryService {
       .where(
         and(
           isNull(connectionOperationGrants.revokedAt),
-          agentGrantRows(agentId, sessionId),
+          agentGrantRowsSubject(agentId, sessionId),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
           isNull(connections.removedAt),
@@ -663,7 +600,7 @@ export class ConnectorAccessQueryService {
     for (const row of rows) {
       const override = overrides.get(row.connectionId);
       const offHere = turnedOffHere(override, agentId);
-      if (!offHere && !grantApplies(row, override, agentId)) continue;
+      if (!offHere && !grantRowApplies(row, override, agentId)) continue;
       const current = byConnection.get(row.connectionId) ?? {
         row,
         offHere,

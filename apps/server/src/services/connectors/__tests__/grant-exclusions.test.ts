@@ -47,6 +47,7 @@ import { ConnectorExecutionAuthorizationService } from '../execution/authorizati
 import { createServerPrincipal } from '../principal/server-principal.js';
 import { ConnectorReconciliationService } from '../reconciliation-service.js';
 import { ConnectorRegistry } from '../registry.js';
+import { ConnectorManagementReviewContextBuilder } from '../management-review-context.js';
 import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
 import type { EveryAgentActivitySink } from '../every-agent-activity.js';
 
@@ -313,6 +314,34 @@ describe('leaving one agent out of an every-agent share', () => {
       .where(scope.subject)
       .all();
     expect(live).toEqual([]);
+  });
+
+  // DOR-3978: a removal review must not tell the owner a left-out agent keeps the share.
+  it('tells the owner a left-out agent keeps nothing through the share', async () => {
+    const { read } = await shareReadAndWrite();
+    const builder = new ConnectorManagementReviewContextBuilder(db, () => ({
+      displayName: 'flow-snapshot',
+    }));
+    const removal = () =>
+      builder.build(OWNER, {
+        version: 1,
+        kind: 'remove_agent_access',
+        connectionId: CONNECTION_ID,
+        agentId: 'flow-snapshot',
+      });
+    expect(removal()).toMatchObject({
+      keptThroughEveryAgent: expect.arrayContaining([
+        expect.objectContaining({ operationRevisionId: read }),
+      ]),
+    });
+
+    await exclusions.leaveOut(OWNER, CONNECTION_ID, 'flow-snapshot');
+
+    expect(removal()).toMatchObject({ keptThroughEveryAgent: [] });
+    expect(builder.withLiveEveryAgent(removal())).toMatchObject({ keptThroughEveryAgent: [] });
+    expect(
+      builder.build(OWNER, { version: 1, kind: 'disconnect', connectionId: CONNECTION_ID })
+    ).toMatchObject({ everyAgent: true });
   });
 
   it("keeps the excluded agent's own named grants", async () => {

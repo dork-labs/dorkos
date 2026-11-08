@@ -25,6 +25,7 @@ import {
   Puzzle,
   RotateCcw,
   ShieldAlert,
+  ShieldMinus,
   ShieldQuestion,
   Sparkles,
   TriangleAlert,
@@ -113,6 +114,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   // An agent's high-risk action in a connected app, waiting or done.
   'connector.destructive_pending': Hourglass,
   'connector.destructive_executed': CheckCircle2,
+  // One agent took another agent's access to an app away (agent-grant-autonomy).
+  'connector.access_narrowed': ShieldMinus,
   // A browser this computer had never seen used chat from the web (DOR-2946).
   'web.new_device': MonitorSmartphone,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
@@ -353,6 +356,10 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
       return { ...appRoutes.home(), search: { inbox: subject.id } };
     }
     return sessionId === undefined ? null : toSession({ session: sessionId });
+  }
+  if (kind === 'connector.access_narrowed') {
+    // Who can use which app, where the change shows and can be put back.
+    return { ...appRoutes.connections(), search: {} };
   }
   if (kind === 'agent.secret_files') {
     // The agent's own Permissions page, where its rules and the line about
