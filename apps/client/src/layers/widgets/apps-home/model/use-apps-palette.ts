@@ -60,7 +60,7 @@ export function useAppsPalette(): void {
         icon: 'Settings',
         action,
         category: 'feature',
-        keywords: ['app', 'settings', app.name],
+        keywords: ['settings', app.name],
       });
       return () => {
         unregister();

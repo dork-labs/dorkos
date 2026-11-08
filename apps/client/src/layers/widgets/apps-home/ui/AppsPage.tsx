@@ -84,32 +84,35 @@ export function AppsPage() {
   const header = (
     <div className="flex flex-wrap items-center gap-3 max-md:flex-col max-md:items-stretch">
       <h1 className="text-2xl font-[650] tracking-tight max-md:sr-only">Apps</h1>
-      <div className="relative ml-auto w-[280px] max-md:ml-0 max-md:w-full">
-        <Search
-          aria-hidden
-          className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
-        />
-        <Input
-          ref={searchRef}
-          type="search"
-          data-testid="apps-search"
-          aria-label="Search apps"
-          placeholder="Search apps"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && query !== '') {
-              event.stopPropagation();
-              setQuery('');
-            }
-          }}
-          className="pl-8 max-md:h-11 max-md:text-base"
-        />
+      <div className="ml-auto flex items-center gap-2 max-md:ml-0 max-md:w-full">
+        <div className="relative w-[280px] max-md:w-auto max-md:flex-1">
+          <Search
+            aria-hidden
+            className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
+          />
+          <Input
+            ref={searchRef}
+            type="search"
+            data-testid="apps-search"
+            aria-label="Search apps"
+            placeholder="Search apps"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && query !== '') {
+                event.stopPropagation();
+                setQuery('');
+              }
+            }}
+            className="pl-8 max-md:h-11 max-md:text-base [&::-webkit-search-cancel-button]:hidden"
+          />
+        </div>
+        {/* On a phone, the icon alone, at a 44px target (spec §4). */}
+        <Button variant="ghost" size="sm" onClick={getApps} className="max-md:size-11 max-md:px-0">
+          <Store aria-hidden />
+          <span className="max-md:sr-only">Get apps</span>
+        </Button>
       </div>
-      <Button variant="ghost" size="sm" onClick={getApps} className="max-md:hidden">
-        <Store aria-hidden />
-        Get apps
-      </Button>
     </div>
   );
 
