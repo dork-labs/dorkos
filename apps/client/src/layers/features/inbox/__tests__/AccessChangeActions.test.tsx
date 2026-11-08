@@ -91,6 +91,15 @@ describe('Undo on an agent’s access change', () => {
     expect(screen.queryByRole('link')).toBeNull();
   });
 
+  it('reads its title in full at every width, in muted ink rather than an error’s red', () => {
+    renderRow({ getAccessChange: vi.fn(() => new Promise<ConnectorAccessChange>(() => {})) });
+    const title = document.querySelector('[data-slot="inbox-row-title"]')!;
+    expect(title.className).not.toMatch(/truncate|line-clamp/);
+    const glyph = document.querySelector('[data-slot="inbox-row-glyph"] svg')!;
+    expect(glyph.getAttribute('class')).toContain('text-muted-foreground');
+    expect(glyph.getAttribute('class')).not.toContain('text-status-error');
+  });
+
   it('holds the reason line’s height while it loads', () => {
     renderRow({ getAccessChange: vi.fn(() => new Promise<ConnectorAccessChange>(() => {})) });
     expect(document.querySelector('[data-slot="access-change-reason-loading"]')).not.toBeNull();

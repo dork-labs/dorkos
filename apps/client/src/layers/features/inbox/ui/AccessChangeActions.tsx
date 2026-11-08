@@ -150,9 +150,9 @@ export function AccessChangeActions({ changeId, notificationId }: AccessChangeAc
   return (
     <>
       {reason}
-      {/* One group on a phone, so a wrapped Keep stays in line with the text;
+      {/* One row on a phone, side by side and in line with the text;
           from `sm` the buttons join the row beside the notice. */}
-      <div className={`${FIRST_ACTION} flex flex-wrap gap-1 sm:contents`}>
+      <div className={`${FIRST_ACTION} flex gap-1 sm:contents`}>
         <Button
           type="button"
           variant="outline"

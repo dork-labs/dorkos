@@ -211,9 +211,12 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   const twoLineBody = hasAction || notification.kind === 'agent.secret_files';
   // An agent's change to a schedule is the person's only signal of it, so its
   // title and body read in full, never cut (DOR-3703, M6: the mode, the hashes
-  // and who started the turn).
+  // and who started the turn). An agent taking another's access away is the
+  // same: which agent, which app and whose access, never cut at any width.
   const readsInFull =
-    notification.mark === 'refused' || notification.kind === 'schedule.armed_by_agent';
+    notification.mark === 'refused' ||
+    notification.kind === 'schedule.armed_by_agent' ||
+    notification.kind === 'connector.access_narrowed';
   const isScheduleCreation =
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const refusalTitle =
