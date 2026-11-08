@@ -3,7 +3,8 @@
  * runs as the agent it is filed under, so whoever picks its target picks who
  * its runs act as. An agent may file one only under itself or `global`, may
  * change only its own (or a global one no other agent made), and only one
- * filed under itself ever arms without a person, even on a Trusted install.
+ * filed under itself ever arms without a person, even on a Trusted install. A chat at Full
+ * autonomy may also make and change another agent's (DOR-3938, `cross-agent.ts`).
  *
  * Asked by `tasks_create`, `tasks_update`, `POST /api/tasks` and
  * `PATCH /api/tasks/:id`, so the doors cannot drift. A person is never asked.
@@ -22,11 +23,13 @@ import { agentSchedulesArmWithoutAsking } from './agent-trust.js';
 
 /** The refusal for a schedule an agent files under another agent. */
 export const NOT_YOUR_AGENT_MESSAGE =
-  'An agent can schedule a task only for itself. Use your own agent id as the target, or "global".';
+  'An agent can schedule a task only for itself, unless its chat runs at Full autonomy. ' +
+  'Use your own agent id as the target, or "global".';
 
 /** The refusal for a change to another agent's schedule. */
 export const NOT_YOUR_SCHEDULE_MESSAGE =
-  'That scheduled task belongs to another agent. Only that agent or a person can change it.';
+  'That scheduled task belongs to another agent. Only that agent, a person, or a chat at Full ' +
+  'autonomy can change it.';
 
 /** A folder's real path, or its resolved spelling when it cannot be read. */
 function realOr(dir: string): string {

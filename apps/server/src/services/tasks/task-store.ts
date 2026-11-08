@@ -39,6 +39,7 @@ import { lastRunStarts, type ScheduleReliability } from './history/run-history.j
 import { HEALTHY, scheduleHealth } from './history/schedule-health.js';
 import { FINISHED_RUN_STATUSES, isTerminalRunStatus } from './lifecycle/run-statuses.js';
 import { timingColumnWrites, type TimingLandsOn } from './timing/effective-timing.js';
+import { runCreatorColumns } from './approvals/cross-agent.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -458,13 +459,18 @@ export class TaskStore {
    * `null` for the model is a real answer and is stored as one: nothing chose a
    * model, so the runtime picked.
    *
+   * Who made the task is recorded beside it, from the task's own row (DOR-3938, Security's
+   * Must 3): the other agent that last wrote it, else its proposer. Never from the dispatch.
+   *
    * @param id - The run being dispatched.
    * @param execution - The resolved runtime, and the model if one was chosen.
    */
   recordRunExecution(id: string, execution: { runtime: string; model?: string | null }): void {
+    const columns = { resolvedRuntime: execution.runtime, resolvedModel: execution.model ?? null };
+    const task = this.getTask(this.getRun(id)?.scheduleId ?? '');
     this.db
       .update(pulseRuns)
-      .set({ resolvedRuntime: execution.runtime, resolvedModel: execution.model ?? null })
+      .set({ ...columns, ...runCreatorColumns(task, this) })
       .where(eq(pulseRuns.id, id))
       .run();
   }

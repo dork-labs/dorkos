@@ -44,6 +44,8 @@ import {
   REFUSED_PERMISSION_MODE_DESCRIPTION,
   REFUSED_STATUS_DESCRIPTION,
   STATUS_DESCRIPTION,
+  TASKS_CREATE_DESCRIPTION,
+  TASKS_UPDATE_DESCRIPTION,
 } from './task-tool-copy.js';
 import {
   clampSchedulePermissionMode,
@@ -97,6 +99,13 @@ import { updateRunRefusal } from './task-tool-run-refusals.js';
 import { attestNewTask, attestToolWrite, fileStateBefore } from './task-tool-file-cap.js';
 import { marksOf } from '../../../../core/turn-power/turn-levels.js';
 import { marksHold } from '../../../../core/turn-power/turn-marks.js';
+import {
+  capPatch,
+  decideCrossAgent,
+  forWhomOf,
+  isMarkedRefusal,
+  recordOtherEdit,
+} from './task-tool-cross-agent.js';
 
 export {
   createGetRunHistoryHandler,
@@ -198,6 +207,9 @@ export function createCreateScheduleHandler(
     // `agentId` is not a create field — `target` is — and a silent strip is what
     // sent an agent looking for another way to own its own task.
     if (args.agentId !== undefined) return jsonContent(AGENT_ID_ON_CREATE_REFUSAL, true);
+    // For another agent only from a Full, unmarked turn (DOR-3938). Below Full, today's refusal.
+    const forOther = decideCrossAgent(deps, args.target, resolveProvenance, callerAgent);
+    if (isMarkedRefusal(forOther)) return jsonContent(forOther.refusal, true);
 
     // A mode the agent names is decided as `tasks.set_mode` (DOR-3703).
     const caller = agentModeCallerOf(resolveProvenance, callerMarks, callerAgent, deps.taskStore);
@@ -264,6 +276,7 @@ export function createCreateScheduleHandler(
         },
         // An agent files a schedule only under itself or `global` (DOR-3640 R1).
         ...callerAgentPathOf(provenance, callerAgent),
+        ...(forOther.kind === 'allowed' && { forAnotherAgent: true, writerMarks: forOther.marks }),
       }
     );
 
@@ -292,6 +305,8 @@ export function createCreateScheduleHandler(
     // agent" there and no `actorId` is attached.
     const task = outcome.task;
     const armed = outcome.armedPayload;
+    // "Made by X for Y": the quiet line a person reads when one agent schedules for another.
+    const forWhom = forWhomOf(deps, forOther, task);
     await recordToolModeOutcome(deps, mode, null, task, caller);
     // The file it wrote, attested from the start when its own agent made it (M4).
     await attestNewTask(deps, task, caller);
@@ -307,8 +322,8 @@ export function createCreateScheduleHandler(
       resourceId: task.id,
       resourceLabel: task.displayName ?? task.name,
       summary: armed
-        ? `Scheduled task ${task.displayName ?? task.name}, which runs ${armed.cadence}`
-        : `Proposed scheduled task ${task.displayName ?? task.name}, which needs your approval before it runs`,
+        ? `Scheduled task ${task.displayName ?? task.name}${forWhom}, which runs ${armed.cadence}`
+        : `Proposed scheduled task ${task.displayName ?? task.name}${forWhom}, which needs your approval before it runs`,
       linkPath: '/',
       metadata: { status: task.status },
     });
@@ -415,8 +430,10 @@ export function createUpdateScheduleHandler(
       deps.meshCore,
       fields
     );
-    if (edit.refusal && !grantCoversOthersTask(mode.grant, fields)) {
-      return jsonContent(edit.refusal, true);
+    // Another agent's task only from a Full, unmarked turn (DOR-3938).
+    const forOther = decideCrossAgent(deps, existing.agentId, resolveProvenance, callerAgent);
+    if (edit.refusal && forOther.kind !== 'allowed' && !grantCoversOthersTask(mode.grant, fields)) {
+      return jsonContent(isMarkedRefusal(forOther) ? forOther.refusal : edit.refusal, true);
     }
 
     // Naming DorkOS credits, or switching a schedule on them back on, starts
@@ -485,6 +502,8 @@ export function createUpdateScheduleHandler(
       // An approval's mode is written when it is armed, not here (S-C).
       ...(modeOnly(mode) && { permissionMode: mode.grant!.decision.mode }),
     };
+    // Never above the task's own agent's level, Bypass included (DOR-3938, Must 4).
+    await capPatch(deps, forOther, existing, patch);
 
     // A non-trusted caller cannot KEEP an approved task's `bypassPermissions` by
     // rewriting the work it does — the same escalation `PATCH /api/tasks/:id`
@@ -580,14 +599,15 @@ export function createUpdateScheduleHandler(
       {
         trusted: false,
         // Only an agent's own schedule stays live through its edit (DOR-3640 R1).
+        // Its own agent's, or another agent's from a Full, unmarked turn (DOR-3938).
         armsAgentWork:
-          edit.armsAgentWork &&
+          (edit.armsAgentWork || (forOther.kind === 'allowed' && caller.scheduledRun !== true)) &&
           agentEditMayStayLive(existing, deps.taskStore!, vouched) &&
           agentSchedulesArmWithoutAsking(
             resolveProvenance !== undefined && !readOutsiderWords(resolveProvenance())
           ),
-        // Its own agent's prompt edit from an ordinary turn stays live (Nov 3 ruling, M7).
-        ownAgentVouches: vouched && caller.scheduledRun !== true,
+        // Its own agent's, or a Full one's, prompt edit from an ordinary turn stays live (M7).
+        ownAgentVouches: (vouched || forOther.kind === 'allowed') && caller.scheduledRun !== true,
       }
     );
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
@@ -618,6 +638,7 @@ export function createUpdateScheduleHandler(
     broadcastTasksChanged();
     // Which fields changed, and a prompt only by its hashes (DOR-3640).
     auditScheduleUpdate(existing, updated);
+    recordOtherEdit(deps, forOther, updated);
     // A mode change the person could not be told about was put back (condition 4).
     if (!(await recordToolModeOutcome(deps, mode, existing, updated, caller, vouched))) {
       return jsonContent(NOT_TOLD_REFUSAL, true);
@@ -689,9 +710,7 @@ export function getTasksTools(
     ),
     tool(
       'tasks_create',
-      'Create a scheduled task. It is live at once and the person is told, unless DorkOS asks ' +
-        'them first: then it waits at pending_approval and never runs until they approve it. ' +
-        'The schedule returned says which.',
+      TASKS_CREATE_DESCRIPTION,
       {
         name: z.string().describe('Name for the scheduled task'),
         prompt: z.string().describe('The prompt to send to the agent on each run'),
@@ -714,12 +733,7 @@ export function getTasksTools(
     ),
     tool(
       'tasks_update',
-      'Update an existing scheduled task. Only the fields you send are changed. Changing the ' +
-        'prompt or runtime always stops an approved task until the person approves it again. ' +
-        'Timing changes can also need approval. The reply says so with needsReapproval. ' +
-        'A task that came with an installed package ' +
-        'can still be switched on or off and given a new cron or timezone — DorkOS keeps those, ' +
-        "the package is not edited — and resetTiming puts it back on the package's own timing.",
+      TASKS_UPDATE_DESCRIPTION,
       {
         id: z.string().describe('Schedule ID to update'),
         // Bounded to the SKILL.md slug rule, exactly as `UpdateTaskRequest.name`
