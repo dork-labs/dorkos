@@ -170,6 +170,11 @@ describe('requests', () => {
     ],
     ['bwrap: Creating new namespace failed: Operation not permitted', 'sandbox-unavailable'],
     ['bwrap: No permissions to create new namespace', 'sandbox-unavailable'],
+    // The real thread/start text from the native ubuntu row (DOR-3950).
+    [
+      "error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: Can't create file at /tmp/bwrap-scope-WEAkZm/home/.claude/backups/.claude.json.backup.1794126006599: Read-only file system",
+      'sandbox-unavailable',
+    ],
     ['cat: .credentials: Permission denied', 'other'],
     ['bwrap: cannot be safely expanded; use a non-root directory prefix', 'other'],
     ['Not initialized', 'not-initialized'],

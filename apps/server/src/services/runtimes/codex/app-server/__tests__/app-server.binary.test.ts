@@ -29,7 +29,7 @@
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { assertProtectionStarts } from './fixtures/protection-starts.js';
-import { completeHostFixture } from './fixtures/complete-protected-home.js';
+import { completeHostFixture, FIXTURE_BACKUP_NAME } from './fixtures/complete-protected-home.js';
 import { codexProtectedConfig } from '../../policy/protected-profile.js';
 import { reconcileMountTargets } from '../../policy/reconcile-mount-targets.js';
 import fs from 'node:fs';
@@ -829,6 +829,137 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       expect(turn.settings.permissionMode).toBe(mode);
       protectedStarts[mode]++;
       console.info('Codex complete-home protected row started', { mode, freshProject });
+    }
+  );
+
+  // DOR-3949: the fixture plants a Claude Code sign-in backup in the person's
+  // `.claude/backups` and in the account folder's `backups`, both hidden whole.
+  it.skipIf(process.platform !== 'linux')(
+    'starts at Ask with Claude Code sign-in backups on disk',
+    async () => {
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({
+        ...request('backup-ask', undefined, {
+          settings: { permissionMode: 'default', model: 'fake-model' },
+        }),
+        onThreadBound: bound,
+      }))
+        events.push(event);
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(bound).toHaveBeenCalledTimes(1);
+      protectedStarts.default++;
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux').each(['acceptEdits', 'bypassPermissions'] as const)(
+    'hides Claude Code sign-in backups and every other sign-in copy at %s',
+    async (mode) => {
+      const home = path.join(root, 'home');
+      const homeBackups = path.join(home, '.claude', 'backups');
+      const accountBackups = path.join(codexHome, 'backups');
+      // Not a protected folder: its backup is masked by the glob scan alone,
+      // so an unanchored skip (`**/.claude/backups`) would leave it readable.
+      const projectBackups = path.join(home, 'projects', 'p', '.claude', 'backups');
+      fs.mkdirSync(projectBackups, { recursive: true });
+      const canaries = {
+        [path.join(homeBackups, FIXTURE_BACKUP_NAME)]: 'CANARY-home-backup',
+        [path.join(accountBackups, FIXTURE_BACKUP_NAME)]: 'CANARY-account-backup',
+        [path.join(projectBackups, '.claude.json.backup.2')]: 'CANARY-project-backup',
+        [path.join(home, '.claude.json')]: 'CANARY-claude-json',
+      };
+      for (const [file, canary] of Object.entries(canaries)) fs.writeFileSync(file, canary);
+      const quote = (value: string) => JSON.stringify(value);
+      const list = (label: string, dir: string) =>
+        `printf ${label}[; ls -A ${quote(dir)} 2>/dev/null; printf ]`;
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: [
+                'printf PUBLIC-backup-start',
+                ...Object.keys(canaries).map((file) => `cat ${quote(file)} 2>/dev/null`),
+                list('LIST-HOME', homeBackups),
+                list('LIST-ACCOUNT', accountBackups),
+                'printf PUBLIC-backup-done',
+              ].join('; '),
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('backups checked'));
+        }
+      );
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({
+        ...request('backup-scope', undefined, {
+          settings: { permissionMode: mode, model: 'fake-model' },
+        }),
+        onThreadBound: bound,
+      }))
+        events.push(event);
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(bound).toHaveBeenCalledTimes(1);
+      expect(shellControlReturned(returned, 'PUBLIC-backup-done')).toBe(true);
+      for (const canary of Object.values(canaries)) expect(returned).not.toContain(canary);
+      // Hidden whole: the folders list empty, not just their files unreadable.
+      expect(shellControlReturned(returned, 'LIST-HOME[]')).toBe(true);
+      expect(shellControlReturned(returned, 'LIST-ACCOUNT[]')).toBe(true);
+      for (const [file, canary] of Object.entries(canaries))
+        expect(fs.readFileSync(file, 'utf8')).toBe(canary);
+      protectedStarts[mode]++;
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'keeps a linked backups folder’s target unreadable',
+    async () => {
+      const home = path.join(root, 'home');
+      const link = path.join(home, '.claude', 'backups');
+      const target = path.join(root, 'linked-backups');
+      fs.rmSync(link, { recursive: true });
+      fs.mkdirSync(target);
+      const backup = path.join(target, FIXTURE_BACKUP_NAME);
+      fs.writeFileSync(backup, 'CANARY-linked-backup');
+      fs.symlinkSync(target, link, 'dir');
+      const quote = (value: string) => JSON.stringify(value);
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: `cat ${quote(backup)} 2>/dev/null; cat ${quote(path.join(link, FIXTURE_BACKUP_NAME))} 2>/dev/null; printf PUBLIC-linked-done`,
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('linked checked'));
+        }
+      );
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn(
+        request('backup-linked', undefined, {
+          settings: { permissionMode: 'acceptEdits', model: 'fake-model' },
+        })
+      ))
+        events.push(event);
+      const errors = events.filter((event) => event.type === 'error');
+      console.info('Codex linked backups folder', {
+        started: errors.length === 0,
+        errors: JSON.stringify(errors),
+      });
+      // Either outcome holds the line: a start that cannot read the target, or
+      // a refused start. A refusal from the sandbox says so, never "send again".
+      if (errors.length === 0)
+        expect(shellControlReturned(returned, 'PUBLIC-linked-done')).toBe(true);
+      else expect(JSON.stringify(errors)).not.toContain('Send your message again');
+      expect(returned).not.toContain('CANARY-linked-backup');
+      expect(JSON.stringify(events)).not.toContain('CANARY-linked-backup');
+      expect(fs.readFileSync(backup, 'utf8')).toBe('CANARY-linked-backup');
     }
   );
 

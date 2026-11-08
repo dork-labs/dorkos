@@ -14,6 +14,7 @@ import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js'
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 import { readMountTargets, emptyOwnedMountTarget } from './mount-target-ledger.js';
 import { collapseProtectedPaths } from './collapse-protected-paths.js';
+import { keepScansOutOfHiddenFolders } from './hidden-folder-scans.js';
 
 /** Stable reserved names; the profile selection is explicit on every thread load and turn. */
 export function codexPermissionProfile(settings: Pick<SessionSettings, 'permissionMode'>): string {
@@ -159,7 +160,7 @@ function protectedEntries(
     canProtectBlocking
   );
   onMissingTargets?.([...missing]);
-  return collapsed;
+  return keepScansOutOfHiddenFolders(collapsed, [...activeFolders, ...writable.flatMap(spellings)]);
 }
 
 /**
