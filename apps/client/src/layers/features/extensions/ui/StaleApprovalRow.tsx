@@ -9,7 +9,7 @@
  */
 import { useEffect, useId, useRef } from 'react';
 import { Badge, Button } from '@/layers/shared/ui';
-import { cn } from '@/layers/shared/lib';
+import { cn, shortenHomePath } from '@/layers/shared/lib';
 import type { StaleApproval } from '../api/removal-queries';
 
 /** Props for {@link StaleApprovalRow}. */
@@ -73,8 +73,11 @@ export function StaleApprovalRow({
           >
             {approval.id}
           </span>
-          <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs max-sm:basis-full">
-            {approval.path ?? ''}
+          <span
+            title={approval.path ?? undefined}
+            className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs max-sm:basis-full"
+          >
+            {approval.path ? shortenHomePath(approval.path) : ''}
           </span>
           <Badge tone="warning" className="shrink-0">
             Folder missing
@@ -100,9 +103,10 @@ export function StaleApprovalRow({
         <div id={panelId} role="region" aria-labelledby={nameId} className="px-3 pt-1 pb-4">
           <div className="bg-status-warning-bg space-y-3 rounded-lg p-4 dark:bg-[hsl(40_25%_14%)]">
             <p className="text-sm font-semibold">Its folder is gone.</p>
-            <p className="text-muted-foreground text-sm">
-              What you allowed it is still recorded. Forget it so nothing new inherits it.
-            </p>
+            <div className="text-muted-foreground space-y-1 text-sm">
+              <p>What you allowed it is still saved.</p>
+              <p>Forget it so a new copy has to ask again.</p>
+            </div>
             <Button
               ref={forgetRef}
               size="sm"

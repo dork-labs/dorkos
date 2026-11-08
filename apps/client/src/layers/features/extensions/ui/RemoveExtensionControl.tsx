@@ -4,7 +4,7 @@
  *
  * @module features/extensions/ui/RemoveExtensionControl
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { Button } from '@/layers/shared/ui';
 
@@ -42,10 +42,43 @@ export function RemoveExtensionControl({
   isRemoving,
 }: RemoveExtensionControlProps) {
   const [asking, setAsking] = useState(false);
+  const linkRef = useRef<HTMLButtonElement>(null);
+  const groupRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  // Focus returns to the link only after the question was asked, never on mount.
+  const wasAsking = useRef(false);
+
+  useEffect(() => {
+    if (asking) {
+      wasAsking.current = true;
+      // The safe answer takes focus first, so Enter never deletes by accident.
+      cancelRef.current?.focus();
+      return;
+    }
+    if (wasAsking.current) {
+      wasAsking.current = false;
+      linkRef.current?.focus();
+    }
+  }, [asking]);
+
+  // Esc answers "no". A native listener, so it runs before the open row's own
+  // Esc listener (which would close the whole row) and stops it there.
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!asking || !group) return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setAsking(false);
+    };
+    group.addEventListener('keydown', onKeyDown);
+    return () => group.removeEventListener('keydown', onKeyDown);
+  }, [asking]);
 
   if (!asking) {
     return (
       <Button
+        ref={linkRef}
         size="sm"
         variant="ghost"
         className="text-status-error-fg"
@@ -57,14 +90,19 @@ export function RemoveExtensionControl({
   }
 
   return (
-    <div role="group" aria-label={`Remove ${name}?`} className="flex flex-wrap items-center gap-2">
+    <div
+      ref={groupRef}
+      role="group"
+      aria-label={`Remove ${name}?`}
+      className="flex flex-wrap items-center gap-2"
+    >
       <p className="text-sm">
         Remove {name}? Its folder and everything it was allowed are deleted.
       </p>
       <Button size="sm" variant="destructive" onClick={onRemove} disabled={isRemoving}>
         Remove
       </Button>
-      <Button size="sm" variant="secondary" onClick={() => setAsking(false)}>
+      <Button ref={cancelRef} size="sm" variant="secondary" onClick={() => setAsking(false)}>
         Cancel
       </Button>
     </div>

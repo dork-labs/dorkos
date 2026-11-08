@@ -1312,6 +1312,8 @@ describe('Remove (DOR-3541)', () => {
 
     const ask = within(row).getByRole('group', { name: 'Remove Test Extension?' });
     expect(ask).toHaveTextContent('Its folder and everything it was allowed are deleted.');
+    // The safe answer has focus first, so Enter never deletes by accident.
+    await waitFor(() => expect(within(ask).getByRole('button', { name: 'Cancel' })).toHaveFocus());
     expect(vi.mocked(fetch)).not.toHaveBeenCalledWith(
       expect.stringContaining('/remove'),
       expect.anything()
@@ -1325,6 +1327,29 @@ describe('Remove (DOR-3541)', () => {
       )
     );
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Test Extension was removed'));
+  });
+
+  // Purpose: Esc answers "no": the question goes, the row stays open, and focus
+  // goes back to Remove.
+  it('cancels on Esc without closing the row', async () => {
+    mockFetch({ '/api/extensions': [makeExtension({ id: 'ledger' })] });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-ledger');
+    const row = openRow('ledger');
+    fireEvent.click(within(row).getByRole('button', { name: 'Remove' }));
+    const cancel = within(row).getByRole('button', { name: 'Cancel' });
+    await waitFor(() => expect(cancel).toHaveFocus());
+
+    fireEvent.keyDown(cancel, { key: 'Escape' });
+
+    expect(within(row).queryByRole('group', { name: 'Remove Test Extension?' })).toBeNull();
+    const remove = within(row).getByRole('button', { name: 'Remove' });
+    await waitFor(() => expect(remove).toHaveFocus());
+    expect(vi.mocked(fetch)).not.toHaveBeenCalledWith(
+      expect.stringContaining('/remove'),
+      expect.anything()
+    );
   });
 
   it('is not offered for one that came with a plugin, a dev link, or DorkOS itself', async () => {
@@ -1351,7 +1376,9 @@ describe('Folder missing (DOR-3372)', () => {
     mockFetch({
       '/api/extensions': [makeExtension({ id: 'here' })],
       '/api/extensions/stale-approvals': {
-        approvals: [{ id: 'social-queue', path: '/old/social-queue', plugin: null }],
+        approvals: [
+          { id: 'social-queue', path: '/Users/sam/.dork/extensions/social-queue', plugin: null },
+        ],
       },
       '/api/extensions/social-queue/forget': {},
     });
@@ -1362,12 +1389,17 @@ describe('Folder missing (DOR-3372)', () => {
     expect(within(screen.getByTestId('needs-you-section')).getByText('Folder missing')).toBe(
       within(row).getByText('Folder missing')
     );
-    expect(screen.getByTestId('extensions-count')).toHaveTextContent('1 installed · 1 need you');
+    expect(screen.getByTestId('extensions-count')).toHaveTextContent('1 installed · 1 needs you');
+    // The home folder reads as ~, the full path stays on hover.
+    const path = within(row).getByText('~/.dork/extensions/social-queue');
+    expect(path).toHaveAttribute('title', '/Users/sam/.dork/extensions/social-queue');
     fireEvent.click(within(row).getByRole('button', { name: 'Review social-queue' }));
 
     const forget = within(row).getByRole('button', { name: 'Forget it' });
     await waitFor(() => expect(forget).toHaveFocus());
     expect(row).toHaveTextContent('Its folder is gone.');
+    expect(within(row).getByText('What you allowed it is still saved.')).toBeInTheDocument();
+    expect(within(row).getByText('Forget it so a new copy has to ask again.')).toBeInTheDocument();
     fireEvent.click(forget);
 
     await waitFor(() =>
