@@ -298,8 +298,12 @@ export const ManagedConnectorExecutionRequestSchema = z
      * Which grant scope `grantScopeVersion` names. Absent means the named
      * agent's own scope; `every_agent` means the owner-wide scope, and
      * `agentId` is still the agent making the call.
+     *
+     * An agent's call never names the `extension` subject: an extension's
+     * call carries no agent id at all, so it gets a request shape of its own
+     * (DOR-3547) rather than riding this one with an agent id beside it.
      */
-    grantSubject: ConnectionGrantSubjectSchema.optional(),
+    grantSubject: ConnectionGrantSubjectSchema.exclude(['extension']).optional(),
     grantScopeVersion: z.number().int().positive(),
     attribution: ManagedConnectorExecutionAttributionSchema,
     revision: ManagedConnectorOperationSelectorSchema,

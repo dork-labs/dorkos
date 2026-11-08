@@ -172,6 +172,44 @@ describe('managed connector wire schemas', () => {
     ).toBe(false);
   });
 
+  it('never lets an agent call name the extension subject (DOR-3547)', () => {
+    const request = {
+      version: 1,
+      logicalOperationId: 'logical-1',
+      attemptId: 'attempt-1',
+      attemptIndex: 1,
+      managedConnectionId: 'managed-1',
+      agentId: 'agent-1',
+      grantScopeVersion: 4,
+      attribution: { surface: 'mcp', actorKind: 'agent', actorId: 'agent-1' },
+      revision: {
+        hostedRevisionId: '11111111-1111-4111-8111-111111111111',
+        operationSlug: 'LINEAR_LIST_LINEAR_PROJECTS',
+        toolkitVersion: 'v3',
+        schemaHash: 'sha256:a',
+      },
+      arguments: {},
+    };
+    // The owner-wide scope still rides beside the calling agent's id.
+    expect(
+      ManagedConnectorExecutionRequestSchema.safeParse({ ...request, grantSubject: 'every_agent' })
+        .success
+    ).toBe(true);
+    // An extension's grant can't be reached by an agent id plus a subject flag.
+    expect(
+      ManagedConnectorExecutionRequestSchema.safeParse({ ...request, grantSubject: 'extension' })
+        .success
+    ).toBe(false);
+    // Nor by an agent id shaped like one: the scope is named by `grantSubject`
+    // alone, so this is still an agent's call on the agent's own scope.
+    const prefixed = ManagedConnectorExecutionRequestSchema.parse({
+      ...request,
+      agentId: 'extension:flow-owner',
+    });
+    expect(prefixed.grantSubject).toBeUndefined();
+    expect(prefixed.agentId).toBe('extension:flow-owner');
+  });
+
   it('permits a null completion time for an unknown receipt and exposes no provider log id', () => {
     const receipt = {
       version: 1,
