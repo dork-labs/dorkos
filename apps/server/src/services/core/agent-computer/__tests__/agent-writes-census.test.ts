@@ -249,6 +249,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/extensions/:id/remove',
       'POST /api/extensions/:id/revoke',
       'POST /api/extensions/:id/start-work',
+      'POST /api/extensions/approve-set',
       'POST /api/extensions/cwd-changed',
       'POST /api/extensions/reload',
       'POST /api/extensions/trusted-sources',

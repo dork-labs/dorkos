@@ -32,6 +32,7 @@ import { env } from '../../env.js';
 import { registerDomainOpenApi } from './openapi/domains.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import { registerExtensionRemovalOpenApi } from '../extensions/removal/extension-removal-openapi.js';
+import { registerExtensionApprovalSetOpenApi } from '../extensions/groups/extension-approval-set-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -8503,6 +8504,7 @@ registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
 // Extension decisions and per-project settings (spec `flow-multiproject` §7).
 registerExtensionDecisionsOpenApi(registry);
 registerExtensionRemovalOpenApi(registry);
+registerExtensionApprovalSetOpenApi(registry);
 
 // --- Generator ---
 
