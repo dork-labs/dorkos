@@ -152,7 +152,7 @@ export interface ProfileRowsContext {
    * This agent's open promises and how many are overdue, or `null` while
    * unknown. Read for every agent: anyone may read any agent's promises.
    */
-  commitments?: ProfileCommitmentsSummary | null;
+  todoPromises?: ProfileTodosSummary | null;
   /**
    * How this agent wakes on its own, or `null` while unknown. Read for every
    * agent: anyone may read any agent's heartbeat (spec `heartbeats` §7.6).
@@ -179,8 +179,8 @@ export interface ProfileRowsContext {
 /** The rows a DM keeps behind Show sessions: what it runs on, and its chats. */
 const SESSION_DETAIL_ROWS = new Set(['runs-on', 'sessions']);
 
-/** An agent's promises, as the Commitments row wants them. */
-export interface ProfileCommitmentsSummary {
+/** An agent's promises, as the To-dos row wants them. */
+export interface ProfileTodosSummary {
   /** Promises still open. */
   open: number;
   /** Open promises past their due date. */
@@ -339,24 +339,24 @@ function roomsRow(ctx: ProfileRowsContext): ProfileRowModel {
 }
 
 /**
- * The Commitments row: how many promises are open, and how many are overdue.
+ * The To-dos row: how many promises are open, and how many are overdue.
  * Drawn on every agent's profile, because anyone may read any agent's list.
  */
-function commitmentsRow(ctx: ProfileRowsContext): ProfileRowModel {
-  const summary = ctx.commitments;
+function todosRow(ctx: ProfileRowsContext): ProfileRowModel {
+  const summary = ctx.todoPromises;
   return {
-    id: 'commitments',
+    id: 'todos',
     kind: 'nav',
-    label: 'Commitments',
+    label: 'To-dos',
     value: countValue(summary?.open, 'open', 'open'),
     ...(summary && summary.overdue > 0 ? { meta: `${summary.overdue} overdue` } : {}),
-    page: 'commitments',
+    page: 'todos',
   };
 }
 
 /**
  * The Heartbeat row: how this agent wakes, and when it next checks in. Drawn
- * on every agent's profile, like Commitments.
+ * on every agent's profile, like To-dos.
  */
 function heartbeatRow(ctx: ProfileRowsContext): ProfileRowModel {
   const status = ctx.heartbeat;
@@ -404,7 +404,7 @@ function runsOnValue(member: TeamMember): string | null {
  * that says "nothing waiting" is noise on every profile where nothing is.
  */
 function needsYouRows(ctx: ProfileRowsContext): ProfileRowModel[] {
-  const overdue = ctx.commitments?.overdue ?? 0;
+  const overdue = ctx.todoPromises?.overdue ?? 0;
   if (overdue === 0) return [];
   return [
     {
@@ -413,7 +413,7 @@ function needsYouRows(ctx: ProfileRowsContext): ProfileRowModel[] {
       label: 'Needs you',
       value: `${overdue} overdue`,
       tone: 'attention',
-      page: 'commitments',
+      page: 'todos',
     },
   ];
 }
@@ -478,7 +478,7 @@ function workFold(ctx: ProfileRowsContext): ProfileRowGroup {
       page: 'tasks',
     });
   }
-  rows.push(commitmentsRow(ctx));
+  rows.push(todosRow(ctx));
   // Yours only, so it is here and not on someone else's agent: the prompts are private.
   rows.push({
     id: 'work-queue',
@@ -500,7 +500,7 @@ function workFold(ctx: ProfileRowsContext): ProfileRowGroup {
       // count is too.
       ctx.quietSessionDetail ? null : countValue(facts?.sessions?.count, 'chat', 'chats'),
       tasksAvailable ? countValue(facts?.tasks?.count, 'schedule', 'schedules') : null,
-      ctx.commitments ? `${ctx.commitments.open} open` : null,
+      ctx.todoPromises ? `${ctx.todoPromises.open} open` : null,
     ])
   );
 }
@@ -675,8 +675,8 @@ function otherAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRow
     fold(
       'work',
       'Work',
-      [commitmentsRow(ctx), heartbeatRow(ctx)],
-      ctx.commitments ? `${ctx.commitments.open} open` : null
+      [todosRow(ctx), heartbeatRow(ctx)],
+      ctx.todoPromises ? `${ctx.todoPromises.open} open` : null
     ),
   ];
 }

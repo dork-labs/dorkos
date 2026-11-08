@@ -21,7 +21,7 @@
  * @module services/heartbeats/beat-cycle
  */
 import { randomUUID } from 'node:crypto';
-import type { Commitment } from '@dorkos/shared/commitment-schemas';
+import type { TodoPromise } from '@dorkos/shared/todo-promise-schemas';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import {
   BEAT_PACE_MAX_MS,
@@ -90,9 +90,9 @@ export interface BeatCycleDeps {
   hoursFor(agentId: string): ResolvedWorkingHours;
   /** Every gatherer this server runs. */
   gatherers: GathererRegistry;
-  /** Open commitments, for the prompt. */
-  commitments: {
-    list(filter: { agentId: string; state: 'open' }, limit?: number): Commitment[];
+  /** Open to-dos, for the prompt. */
+  todoPromises: {
+    list(filter: { agentId: string; state: 'open' }, limit?: number): TodoPromise[];
     /** The marks the agent's open promises were made under (DOR-3036); absent reads none. */
     openMarks?(agentId: string): TurnMarks;
     /** Every bound the agent's open promises and to-dos carry (DOR-3088); absent reads none. */
@@ -360,7 +360,7 @@ export async function runTurn(
     agentName: agent.name,
     kind: ctx.kind,
     changes: ctx.changes,
-    commitments: deps.commitments.list({ agentId: agent.id, state: 'open' }, 50),
+    todoPromises: deps.todoPromises.list({ agentId: agent.id, state: 'open' }, 50),
     openRaises: deps.outbox.openRaises(agent.id),
     checklist: ctx.plan.checklist,
     newManager: state?.newManager === 1,
@@ -391,11 +391,11 @@ export async function runTurn(
   // A Wi-Fi hold among them rides as a mark (DOR-3561): the beat keeps its level, refused raises.
   const read = ctx.changes.reduce(
     (marks, change) => (change.marks ? mergeMarks(marks, change.marks) : marks),
-    deps.commitments.openMarks?.(agent.id) ?? NO_MARKS
+    deps.todoPromises.openMarks?.(agent.id) ?? NO_MARKS
   );
   // Open to-dos given by others hold the beat to their stored authority too (DOR-3088, Must 4):
   // the beat reads their words, so it runs no stronger than the lowest of them.
-  const owed = deps.commitments.openCeiling?.(agent.id);
+  const owed = deps.todoPromises.openCeiling?.(agent.id);
   const carried = combineCeilings(ceilingCarrying(read), owed);
   const launched = await deps.launcher.launch({
     sessionId: chat.sessionId,

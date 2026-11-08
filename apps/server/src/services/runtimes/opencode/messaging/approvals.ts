@@ -52,6 +52,9 @@ import type { OpenCodePermissionState } from '../events/session-event-mapper.js'
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import type { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
 import { resolveGrantVerdict } from './directory-grants.js';
+import { protectedFileVerdict } from './protected-files.js';
+import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
+import type { ProtectedPathRoots } from '../../shared/policy/protected-path-check.js';
 
 /** How a permission request should be resolved under a DorkOS mode. */
 export type ApprovalDecision = 'ask' | 'auto-approve';
@@ -262,6 +265,8 @@ export interface ApprovalRouting {
    * a `read` one is refused in every mode (`directory-grants.ts`).
    */
   grants?: readonly DirectoryGrant[];
+  /** Native file refusals precede grants and Full mode. */
+  protectedRoots?: ProtectedPathRoots;
   /**
    * The loosest level THIS turn may run at (`MessageOpts.permissionCeiling`).
    * Applied to the live mode on every ask, so the turn runs at the stricter of
@@ -379,6 +384,25 @@ export async function* enforceApprovals(
     // inside a `read` grant has to beat `bypassPermissions`, which would
     // otherwise approve the write below. A refusal that cannot be delivered
     // falls to the person's card, never to the mode's auto-approve.
+    const fileVerdict = protectedFileVerdict(
+      approval,
+      turn.protectedRoots ?? protectedPathRoots(cwd)
+    );
+    if (fileVerdict !== undefined) {
+      if (fileVerdict === 'deny')
+        logger.warn('[ProtectedFiles] Refused an OpenCode native file operation', {
+          sessionId,
+          toolName: approval.toolName,
+        });
+      // Do not turn a failed refusal into an answerable approval card.
+      await respondPermission(
+        deps.provider,
+        { ocSessionId: askedIn, cwd },
+        approval.toolCallId,
+        fileVerdict === 'deny' ? 'reject' : 'once'
+      );
+      return;
+    }
     const grantVerdict = resolveGrantVerdict(approval, turn.grants ?? []);
     if (grantVerdict !== undefined) {
       try {
@@ -397,14 +421,7 @@ export async function* enforceApprovals(
       }
     }
     const liveMode = deps.registry.get(sessionId)?.permissionMode;
-    const mode =
-      liveMode !== undefined && turn.permissionCeiling !== undefined
-        ? clampModeToCeiling(
-            OPENCODE_CAPABILITIES.permissionModes,
-            liveMode,
-            turn.permissionCeiling
-          )
-        : liveMode;
+    const mode = effectiveApprovalMode(liveMode, turn.permissionCeiling);
     if (
       grantVerdict !== 'deny' &&
       resolveApprovalDecision(mode, approval.toolName) === 'auto-approve'
@@ -459,4 +476,14 @@ export async function* enforceApprovals(
     }
   }
   yield event;
+}
+
+/** The live permission mode bounded by this turn's own ceiling, without changing stored settings. */
+export function effectiveApprovalMode(
+  mode: PermissionModeId | undefined,
+  ceiling?: TurnPermissionCeiling
+): PermissionModeId | undefined {
+  return mode !== undefined && ceiling !== undefined
+    ? clampModeToCeiling(OPENCODE_CAPABILITIES.permissionModes, mode, ceiling)
+    : mode;
 }

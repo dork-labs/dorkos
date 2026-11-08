@@ -81,16 +81,15 @@ const DefaultEffortSchema = z.enum(EFFORT_LEVELS).nullable().default(null);
  */
 const RuntimeTrustStopSchema = z.enum(['ask', 'act', 'autonomy']).nullable().default(null);
 
-/** The ways DorkOS can run Codex — see `runtimes.codex.transport`. */
+/** Accepted persisted values; all now resolve to protected app-server. */
 export const CODEX_TRANSPORTS = ['auto', 'app-server', 'exec'] as const;
 
 /** A `runtimes.codex.transport` value. */
 export type CodexTransportSetting = (typeof CODEX_TRANSPORTS)[number];
 
 /**
- * `runtimes.codex.transport` (ADR 261005-113107). `auto` carries no meaning of
- * its own here on purpose: the server resolves it, so DorkOS can change its
- * default without a migration and an explicit choice survives that change.
+ * `exec` remains accepted for existing configuration files, but resolves to
+ * app-server: the pinned exec CLI cannot select a protected permission profile.
  */
 const CodexTransportSchema = z.enum(CODEX_TRANSPORTS).default('auto');
 
@@ -439,12 +438,8 @@ export const RuntimesConfigSchema = z
          */
         defaultTrustStop: RuntimeTrustStopSchema,
         /**
-         * How DorkOS runs Codex (ADR 261005-113107). `auto` follows DorkOS's
-         * own default, resolved in one place (`resolveCodexTransport`), so a
-         * later change of default reaches everyone who never chose; `exec` is
-         * the older one-process-per-reply way; `app-server` is one long-lived
-         * Codex process per home. Read once at startup: a change takes effect
-         * after a restart.
+         * Accepted legacy transport setting. Every value now runs protected
+         * app-server; exec is retained only so existing config files still load.
          */
         transport: CodexTransportSchema,
       })

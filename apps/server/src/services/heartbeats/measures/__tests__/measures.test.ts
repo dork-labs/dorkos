@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   authors,
-  commitments,
+  todos,
   heartbeatBeats,
   heartbeatOutbox,
   roomEntries,
@@ -428,7 +428,7 @@ describe('supporting measures', () => {
     });
     const promise = (id: string, state: string, dueMsAgo: number, closedMsAgo: number | null) =>
       db
-        .insert(commitments)
+        .insert(todos)
         .values({
           id,
           agentId: AGENT,
@@ -456,7 +456,7 @@ describe('supporting measures', () => {
     expect(supporting.beats).toBe(6);
     // A beat with no end_beat is unknown, and one that posted around it spoke.
     expect(supporting.quietBeats).toMatchObject({ part: 3, whole: 5 });
-    expect(supporting.commitmentsOnTime).toMatchObject({ part: 1, whole: 3 });
+    expect(supporting.todosOnTime).toMatchObject({ part: 1, whole: 3 });
     expect(supporting.noEndBeat).toBe(1);
     expect(supporting.triage).toEqual({ checks: 2, tokens: 640 });
     expect(supporting.turns).toEqual({ count: 3, tokensPerTurn: 2000 });

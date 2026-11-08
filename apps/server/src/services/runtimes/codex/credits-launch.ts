@@ -7,54 +7,20 @@
  *
  * Every credits conversation runs with `CODEX_HOME` set to a DorkOS-owned
  * folder, `<dorkHome>/runtimes/codex/credits`, never the person's `~/.codex`.
- * Three things follow, and each is the point:
- *
- * - **The person's own setup is never touched.** Their `config.toml`, their
- *   sign-in (`auth.json`) and their `OPENAI_BASE_URL` are neither read nor
- *   written by a credits turn. Credits are a model provider entry DorkOS hands
- *   the CLI per turn on its command line, not an edit to anything they wrote.
- *   The flip side, said plainly: a credits conversation does not get their own
- *   MCP servers, global `AGENTS.md` or profiles from `~/.codex` either; the
- *   servers DorkOS injects per turn still ride `--config` as on any turn.
- * - **Nothing else can pay.** The folder holds no sign-in, and a credits turn's
- *   environment carries no `OPENAI_*` or `CODEX_*` name of the person's, so
- *   the only credential the CLI can find is the credits token. A turn that lost
- *   the token fails with no request at all (proved against the bundled binary).
- * - **A conversation stays on whatever paid for it.** A Codex thread lives in
- *   the home it started in, the same rule as a Claude Code session's folder
- *   (ADR 260801-204127), so which side a thread is on is read off the disk
- *   ({@link threadRunsOnCredits}) rather than stored. A thread that is in
- *   neither home cannot be resumed anywhere, so a wrong answer fails the turn;
- *   it can never bill the other side.
- *
- * ## The provider entry, and why a folder cannot redirect it
- *
- * The CLI is told `model_provider = "dorkos-credits"` and given that provider
- * (endpoint, `wire_api = "responses"`, `env_key` naming the token's variable)
- * as `--config` overrides, which outrank every config file. Codex also ignores
- * provider and endpoint keys in a project's own `.codex/config.toml`, and loads
- * none of it for a folder the home has not trusted, which the credits home
- * never does. The endpoint is not a secret and rides the command line; the
- * token is, and rides only the environment, named in config by
- * a variable whose name is drawn fresh for every turn
- * (`mintCreditsTokenVar`), so nothing outside DorkOS can ask for it by name.
- *
- * What this does not protect against is the same as for Claude Code: code the
- * turn runs (an MCP server, a command) can read the token from its own
- * environment, exactly as it could read a person's own key.
+ * The person's config and sign-in stay in their own home. Credits threads
+ * select a DorkOS-owned provider over app-server JSON-RPC; it points only at
+ * the loopback credits relay. The relay holds the credits token and adds it
+ * upstream, so neither the token nor a person's model key enters Codex.
+ * Threads never move between homes: an unknown or wrong-home binding refuses
+ * rather than charging a different account. Managed tools still pass through
+ * the same pin and protected-file checks as own-sign-in threads.
  *
  * @module services/runtimes/codex/credits-launch
  */
 import fs from 'node:fs';
-import type { CodexOptions } from '@openai/codex-sdk';
 import { logger } from '../../../lib/logger.js';
 import { creditsCodexHome } from './codex-home.js';
-import {
-  type CreditsLaunch,
-  creditsTokenEnv,
-  isCreditsTokenVar,
-  mintCreditsTokenVar,
-} from '../../core/cloud/credits-protocols.js';
+import { isCreditsTokenVar } from '../../core/cloud/credits-protocols.js';
 import { locateCodexRollout } from './turn-context-usage.js';
 
 /** The model provider id a credits turn selects. Never one a person's config can define for us. */
@@ -97,27 +63,6 @@ const CODEX_ROUTING_OR_PAYING_FAMILY = /^(OPENAI_|CODEX_|AZURE_OPENAI_)/i;
  */
 export function codexRoutesOrPays(name: string): boolean {
   return CODEX_ROUTING_OR_PAYING_FAMILY.test(name);
-}
-
-/**
- * The process environment of a credits turn: the projected environment minus
- * every name that routes or pays (and any older credits token), the credits
- * home, and the token under this turn's own variable.
- *
- * @param projected - The environment `buildCodexOptions` built for the turn.
- * @param launch - The resolved credits launch.
- * @param tokenVar - This turn's token variable.
- */
-export function codexCreditsProcessEnv(
-  projected: Readonly<Record<string, string>>,
-  launch: CreditsLaunch,
-  tokenVar: string
-): Record<string, string> {
-  const kept: Record<string, string> = {};
-  for (const [name, value] of Object.entries(projected)) {
-    if (!codexRoutesOrPays(name) && !isCreditsTokenVar(name)) kept[name] = value;
-  }
-  return { ...kept, CODEX_HOME: creditsCodexHome(), ...creditsTokenEnv(launch, tokenVar) };
 }
 
 /**
@@ -165,61 +110,4 @@ export function codexCreditsThreadConfig(relay: {
     },
     web_search: 'disabled',
   };
-}
-
-/**
- * What a credits turn's config overrides carry: the provider entry that points
- * the turn at the credits endpoint (the base URL, not a secret; the responses
- * wire format; the NAME of the variable the token is in;
- * `requires_openai_auth = false`, so the CLI never looks for a ChatGPT
- * sign-in), and web search switched off.
- *
- * Web search is a tool Codex's own vendor runs and bills per search, so the
- * credits endpoint cannot carry it and refuses any request that offers it:
- * left on, every credits turn would be refused. `web_search = "disabled"`
- * takes it out of the tool list (checked against Codex 0.154). It rides the
- * command line for this turn only; the person's own `config.toml` and their
- * own-sign-in turns are untouched.
- *
- * @param launch - The resolved credits launch.
- * @param tokenVar - This turn's token variable.
- */
-export function codexCreditsConfig(
-  launch: CreditsLaunch,
-  tokenVar: string
-): Record<string, unknown> {
-  return {
-    model_provider: CODEX_CREDITS_PROVIDER_ID,
-    model_providers: {
-      [CODEX_CREDITS_PROVIDER_ID]: {
-        name: 'DorkOS credits',
-        base_url: launch.baseUrl,
-        env_key: tokenVar,
-        wire_api: 'responses',
-        requires_openai_auth: false,
-      },
-    },
-    web_search: 'disabled',
-  };
-}
-
-/**
- * Turn a client's options into a credits turn's: the credits config merged
- * into its config (after everything else, so nothing it carried can override
- * it) and the credits environment in place of its own.
- *
- * @param options - The options `buildCodexOptions` built for the turn.
- * @param launch - The resolved credits launch.
- * @param tokenVar - The token's variable; a fresh one per turn unless a test names it.
- */
-export function withCodexCredits(
-  options: CodexOptions,
-  launch: CreditsLaunch,
-  tokenVar: string = mintCreditsTokenVar()
-): CodexOptions {
-  return {
-    ...options,
-    config: { ...(options.config ?? {}), ...codexCreditsConfig(launch, tokenVar) },
-    env: codexCreditsProcessEnv(options.env ?? {}, launch, tokenVar),
-  } as CodexOptions;
 }

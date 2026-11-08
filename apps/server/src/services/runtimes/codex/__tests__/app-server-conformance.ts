@@ -121,6 +121,7 @@ export function makeAppServerRuntime(
   pools.push(pool);
   const transport = new AppServerCodexTransport({
     pool,
+    mountTargets: false,
     connectorTools: () => undefined,
     creditsRelay: () => relay,
     environment: {
@@ -356,8 +357,36 @@ export async function appServerDirectoryGrantTurns(
 ): Promise<readonly [HandedGrants, HandedGrants]> {
   const { host } = wiringOf(runtime);
   await runtime.updateSession(sessionId, { permissionMode: 'acceptEdits' });
-  const before = host.processes.flatMap((p) => p.requestsOf('turn/start')).length;
+  const handed: HandedGrants[] = [];
   for (const additionalDirectories of grants) {
+    host.home(PERSON_HOME).nextTurn((ctx) => {
+      const load = ctx.server.loaded.get(ctx.turn.threadId)?.loadParams;
+      const profiles = (
+        load?.config as
+          | {
+              permissions?: Record<
+                string,
+                { workspace_roots?: Record<string, boolean>; filesystem?: Record<string, string> }
+              >;
+            }
+          | undefined
+      )?.permissions;
+      const selected =
+        typeof ctx.params.permissions === 'string' ? profiles?.[ctx.params.permissions] : undefined;
+      handed.push({
+        writable: Object.entries(selected?.workspace_roots ?? {})
+          .filter(([, enabled]) => enabled)
+          .map(([folder]) => folder),
+        readOnly: [],
+        readOpen:
+          selected?.filesystem?.[':root'] === 'read'
+            ? additionalDirectories
+                .filter((grant) => grant.access === 'read')
+                .map((grant) => grant.path)
+            : [],
+      });
+      return pongTurn(ctx);
+    });
     await drain(
       runtime.sendMessage(sessionId, 'conformance ping', {
         cwd: projectDir,
@@ -365,19 +394,7 @@ export async function appServerDirectoryGrantTurns(
       })
     );
   }
-  const starts = host.processes.flatMap((p) => p.requestsOf('turn/start')).slice(before);
-  const handedFor = (turn: 0 | 1): HandedGrants => {
-    const policy = starts[turn]?.sandboxPolicy as
-      { type?: string; writableRoots?: string[] } | undefined;
-    return {
-      writable: [...(policy?.writableRoots ?? [])],
-      readOnly: [],
-      readOpen: policy
-        ? grants[turn].filter((grant) => grant.access === 'read').map((g) => g.path)
-        : [],
-    };
-  };
-  return [handedFor(0), handedFor(1)] as const;
+  return [handed[0]!, handed[1]!] as const;
 }
 
 /**

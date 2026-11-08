@@ -24,7 +24,6 @@ import {
   AskForApprovalSchema,
   NOTIFICATION_SCHEMAS,
   OUTBOUND_PARAMS,
-  SandboxModeSchema,
 } from '../protocol/schemas.js';
 import {
   PROTOCOL_SNAPSHOT_FILE,
@@ -50,7 +49,7 @@ const SAMPLES: Record<(typeof CLIENT_REQUEST_METHODS)[number], unknown> = {
     model: 'gpt-x',
     approvalPolicy: 'never',
     approvalsReviewer: 'user',
-    sandbox: 'workspace-write',
+    permissions: 'dorkos-files-workspace-write',
     config: { mcp_servers: {} },
   },
   'thread/resume': {
@@ -59,7 +58,7 @@ const SAMPLES: Record<(typeof CLIENT_REQUEST_METHODS)[number], unknown> = {
     model: 'gpt-x',
     approvalPolicy: 'on-request',
     approvalsReviewer: 'user',
-    sandbox: 'read-only',
+    permissions: 'dorkos-files-read-only',
     config: {},
   },
   'turn/start': {
@@ -68,13 +67,7 @@ const SAMPLES: Record<(typeof CLIENT_REQUEST_METHODS)[number], unknown> = {
     clientUserMessageId: 'm1',
     cwd: '/project',
     approvalPolicy: 'never',
-    sandboxPolicy: {
-      type: 'workspaceWrite',
-      writableRoots: ['/grant'],
-      networkAccess: false,
-      excludeTmpdirEnvVar: false,
-      excludeSlashTmp: false,
-    },
+    permissions: 'dorkos-files-workspace-write',
     model: 'gpt-x',
     effort: 'high',
     summary: 'auto',
@@ -95,7 +88,7 @@ const SAMPLES: Record<(typeof CLIENT_REQUEST_METHODS)[number], unknown> = {
     model: 'gpt-x',
     approvalPolicy: 'never',
     approvalsReviewer: 'user',
-    sandbox: 'read-only',
+    permissions: 'dorkos-files-read-only',
     config: {},
   },
   'thread/unsubscribe': { threadId: 't' },
@@ -167,18 +160,9 @@ describe('outbound params against the binary’s schema', () => {
     }
   );
 
-  it('every sandbox, approval and sandbox-policy literal DorkOS sends is in the binary’s enums', () => {
-    for (const mode of SandboxModeSchema.options) {
-      expect(schemaErrors(mode, { $ref: '#/definitions/SandboxMode' }, defs)).toEqual([]);
-    }
+  it('every approval literal DorkOS sends is in the binary’s enums', () => {
     for (const policy of AskForApprovalSchema.options) {
       expect(schemaErrors(policy, { $ref: '#/definitions/AskForApproval' }, defs)).toEqual([]);
-    }
-    for (const policy of [
-      { type: 'dangerFullAccess' },
-      { type: 'readOnly', networkAccess: false },
-    ]) {
-      expect(schemaErrors(policy, { $ref: '#/definitions/SandboxPolicy' }, defs)).toEqual([]);
     }
     expect(schemaErrors('user', { $ref: '#/definitions/ApprovalsReviewer' }, defs)).toEqual([]);
   });

@@ -4,7 +4,7 @@ import { TOOL_NAME_NOTE } from '../tool-name-note.js';
 /**
  * Teaches an agent how to work a heartbeat: what a beat is, how to end one with
  * `end_beat`, which rung to raise on, what urgent means, pace, resolved,
- * reports and commitments (spec `heartbeats` §8, §9, canon PROACTIVE-AGENTS P3
+ * reports and to-dos (spec `heartbeats` §8, §9, canon PROACTIVE-AGENTS P3
  * to P6).
  */
 export const workingOnAHeartbeat: OperatingSkill = {
@@ -13,7 +13,7 @@ export const workingOnAHeartbeat: OperatingSkill = {
     'Use when a turn says it is a heartbeat, when ending a beat, when deciding whether and how ' +
     'loudly to tell someone what you found or did, when writing your regular report, or when ' +
     "checking on another agent's beats. Covers end_beat (summary, raises, rungs, urgent, pace, " +
-    'resolved, report), commitments during a beat, and heartbeat_status.',
+    'resolved, report), to-dos during a beat, and heartbeat_status.',
   body: `# Working on a heartbeat
 
 ${TOOL_NAME_NOTE}
@@ -108,8 +108,8 @@ with how you report and ask what they would rather see.
 
 ## Promises
 
-Once you promise something, record it with \`commitment_add\`. When a promise
-comes due you are woken for it; mark it kept with \`commitment_update\`, or move
+Once you promise something, record it with \`todo_promise_add\`. When a promise
+comes due you are woken for it; mark it kept with \`todo_promise_update\`, or move
 the date and tell the person. A promise to an outsider (a date, a price, a
 discount) is an ask first.
 

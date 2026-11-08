@@ -12,6 +12,9 @@ import {
   type ThreadLoadInput,
 } from '../thread-loader.js';
 import type { CodexTurnTools } from '../../transport/codex-transport.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const HOME = '/fake/home';
 const NO_TOOLS: CodexTurnTools = {
@@ -101,25 +104,26 @@ describe('the load table (§6)', () => {
     expect(loaded).toMatchObject({ threadId: 't-old', needsBinding: false });
     expect(fake.requestsOf('thread/resume')[0]).toMatchObject({
       threadId: 't-old',
-      sandbox: 'read-only',
+      permissions: 'dorkos-files-read-only',
     });
     await loader.ensureLoaded(input({ boundThreadId: 't-old' }));
     expect(fake.requestsOf('thread/resume')).toHaveLength(1);
     expect(process.stale).toBe(false);
   });
 
-  it('uses a loaded thread as is when the turn wants other config, and marks the process stale', async () => {
+  it('reloads a changed permission profile before the next turn', async () => {
     const { host, loader, fake, input, process } = await setup();
     host.home(HOME).threads.set('t1', { id: 't1', hasRollout: true });
     await loader.ensureLoaded(input({ boundThreadId: 't1' }));
     const loaded = await loader.ensureLoaded(
       input({ boundThreadId: 't1', settings: { permissionMode: 'acceptEdits' } })
     );
-    expect(loaded.threadId).toBe('t1');
-    expect(process.stale).toBe(true);
-    // Nothing was sent: a resume would have been silently ignored anyway.
-    expect(fake.requestsOf('thread/resume')).toHaveLength(1);
-    expect(fake.loaded.get('t1')!.loadParams.sandbox).toBe('read-only');
+    expect(loaded.threadId).not.toBe('t1');
+    expect(process.stale).toBe(false);
+    expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+    expect(fake.loaded.get(loaded.threadId)!.loadParams.permissions).toBe(
+      'dorkos-files-workspace-write'
+    );
   });
 
   // A binding is written at the thread's first `turn/started`, so a bound
@@ -184,7 +188,7 @@ describe('load config (§9)', () => {
       model: 'gpt-x',
       approvalPolicy: 'on-request',
       approvalsReviewer: 'user',
-      sandbox: 'workspace-write',
+      permissions: 'dorkos-files-workspace-write',
     });
     const config = params.config as LoadConfig;
     const authorization = config.mcp_servers.dorkos!.http_headers!.Authorization!;
@@ -287,6 +291,134 @@ describe('thread key lifecycle', () => {
 });
 
 describe('review fixes: fingerprint and identity', () => {
+  it.each(['acceptEdits', 'bypassPermissions'] as const)(
+    'reloads %s when a missing protected parent appears, retaining refusals',
+    async (permissionMode) => {
+      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-policy-reload-')));
+      const own = path.join(root, 'own');
+      const home = path.join(root, 'home');
+      const data = path.join(root, 'data');
+      for (const dir of [own, home, data]) fs.mkdirSync(dir);
+      try {
+        const { host, loader, fake, input } = await setup();
+        host.home(HOME).threads.set('disk-t', { id: 'disk-t', hasRollout: true });
+        const loadInput = input({
+          cwd: own,
+          boundThreadId: 'disk-t',
+          settings: { permissionMode },
+          tools: {
+            ...NO_TOOLS,
+            filePolicy: {
+              roots: { cwd: own, home, data, accounts: [], agentHomes: [own], agentFolders: [own] },
+              writable: [own],
+            },
+          },
+        });
+        const files = (id: string) => {
+          const config = fake.loaded.get(id)!.loadParams.config as {
+            permissions: Record<string, { filesystem: Record<string, string> }>;
+          };
+          return Object.values(config.permissions)[0]!.filesystem;
+        };
+        await loader.ensureLoaded(loadInput);
+        expect(files('disk-t')[path.join(home, '.claude')]).toBe('deny');
+        fs.mkdirSync(path.join(home, '.claude'));
+        const next = await loader.ensureLoaded(loadInput);
+        expect(next.threadId).not.toBe('disk-t');
+        expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+        expect(files(next.threadId)[path.join(home, '.claude')]).toBe('read');
+        expect(files(next.threadId)[path.join(home, '.claude', 'backups')]).toBe('deny');
+        expect(files(next.threadId)[path.join(data, 'host.key')]).toBe('deny');
+        expect(files(next.threadId)[path.join(own, '**', '.env')]).toBe('deny');
+        await loader.ensureLoaded({ ...loadInput, boundThreadId: next.threadId });
+        expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
+  it('refuses a load before RPC when its missing-target ledger cannot persist', async () => {
+    const { process, fake, input } = await setup();
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-record-order-')));
+    fs.mkdirSync(path.join(root, 'home'));
+    fs.mkdirSync(path.join(root, 'data'));
+    const loader = new CodexThreadLoader({
+      threadKeys: () => undefined,
+      recordMissingTargets: (_data, targets) => {
+        expect(targets).toContain(path.join(root, 'home', '.claude'));
+        expect(fake.requestsOf('thread/start')).toHaveLength(0);
+        throw new Error('synthetic ledger write failure');
+      },
+    });
+    try {
+      await expect(
+        loader.ensureLoaded(
+          input({
+            process,
+            cwd: root,
+            tools: {
+              ...NO_TOOLS,
+              filePolicy: {
+                roots: {
+                  cwd: root,
+                  home: path.join(root, 'home'),
+                  data: path.join(root, 'data'),
+                  accounts: [],
+                  agentHomes: [],
+                  agentFolders: [root],
+                },
+                writable: [root],
+              },
+            },
+          })
+        )
+      ).rejects.toThrow('ledger write failure');
+      expect(fake.requestsOf('thread/start')).toHaveLength(0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('forks once when a real agent folder is added between turns', async () => {
+    const { host, process, loader, fake, input } = await setup();
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-new-agent-')));
+    const data = path.join(root, 'data');
+    fs.mkdirSync(path.join(data, 'agents'), { recursive: true });
+    const args = input({
+      cwd: root,
+      settings: { permissionMode: 'bypassPermissions' },
+      tools: {
+        ...NO_TOOLS,
+        filePolicy: {
+          roots: {
+            cwd: root,
+            home: root,
+            data,
+            accounts: [],
+            agentHomes: [],
+            agentFolders: [root],
+          },
+          writable: [root],
+        },
+      },
+    });
+    try {
+      const first = await loader.ensureLoaded(args);
+      // A completed turn has a rollout; the native row checks its actual history.
+      host.home(HOME).threads.get(first.threadId)!.hasRollout = true;
+      loader.markBound(process, first.threadId);
+      fs.mkdirSync(path.join(data, 'agents', 'new'));
+      const next = await loader.ensureLoaded({ ...args, boundThreadId: first.threadId });
+      expect(next.threadId).not.toBe(first.threadId);
+      expect(next.replaces).toBe(first.threadId);
+      expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+      await loader.ensureLoaded({ ...args, boundThreadId: next.threadId });
+      expect(fake.requestsOf('thread/fork')).toHaveLength(1);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   const managedWith = (header: string, value: string): CodexTurnTools['managed'] => ({
     servers: {
       notion: { url: 'https://n.example/mcp', env_http_headers: { [header]: 'DORKOS_MCP_HDR_N' } },
@@ -305,7 +437,7 @@ describe('review fixes: fingerprint and identity', () => {
     );
     expect(process.stale).toBe(false);
     await loader.ensureLoaded(input({ tools: tools(managedWith('X-Other', 'Bearer refreshed')) }));
-    expect(process.stale).toBe(true);
+    expect(process.stale).toBe(false);
     expect(first.needsBinding).toBe(true);
   });
 

@@ -39,6 +39,46 @@ async function http(handler: RequestListener) {
   if (!address || typeof address === 'string') throw new Error('port');
   return `http://127.0.0.1:${address.port}`;
 }
+
+it.each(['instructions', 'metadata', 'body'])(
+  'checks the host read policy before loading aliased %s',
+  async (phase) => {
+    const root = await fixture();
+    const secret = join(root, 'fixture.key');
+    const skill = join(root, 'skill');
+    await mkdir(skill);
+    const text = '---\nname: probe\ndescription: Made-up metadata\n---\nPRIVATE-CANARY';
+    await writeFile(secret, text);
+    const skillFile = join(skill, 'SKILL.md');
+    if (phase === 'instructions') await symlink(secret, join(root, 'AGENTS.md'));
+    else if (phase === 'metadata') await symlink(secret, skillFile);
+    else await writeFile(skillFile, text);
+    const resources = new LocalResources(
+      {
+        ancestorDirectories: [root],
+        skillRoots: phase === 'instructions' ? [] : [{ path: skill }],
+        beforeRead: (file) => {
+          if (file.endsWith('.key')) throw new Error('Host refused this read');
+        },
+      },
+      { readRoots: [root], writeRoots: [root] },
+      root
+    );
+    if (phase === 'body') {
+      expect((await resources.skills()).map((item) => item.name)).toEqual(['probe']);
+      await rm(skillFile);
+      await symlink(secret, skillFile);
+    }
+    const result =
+      phase === 'instructions'
+        ? resources.load()
+        : phase === 'metadata'
+          ? resources.skills()
+          : resources.loadSkill('probe', context(root).signal);
+    await expect(result).rejects.toThrow('Host refused');
+  }
+);
+
 it('rejects canonical escapes for existing and new targets, dangling links, prefix collisions and link/.. traversal', async () => {
   const base = await fixture();
   const root = join(base, 'root');

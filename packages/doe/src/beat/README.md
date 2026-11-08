@@ -2,7 +2,7 @@
 
 Pass `createBeatExtension()` as `config.extensions.runBeat`. The host schedules calls to `doe.runBeat`; the package creates no timer and sends no notifications. A host may supply a cheap `decide` callback to skip work before creating an engine. Skips persist their reason.
 
-Each invocation needs a new nonempty ID. Its durable scope is `beat:<id>`; an ID with prior messages, usage or outcomes is refused. Supply changes, instructions and commitments explicitly. Main dialogue is excluded, while the business profile remains available. Commitments should describe prior raises so the agent can avoid repeating unchanged issues across beats.
+Each invocation needs a new nonempty ID. Its durable scope is `beat:<id>`; an ID with prior messages, usage or outcomes is refused. Supply changes, instructions and to-dos explicitly. Main dialogue is excluded, while the business profile remains available. To-dos should describe prior raises so the agent can avoid repeating unchanged issues across beats.
 
 The temporary `end_beat` tool records either quiet completion or one to eight raises. Each raise contains a message of at most 2,000 characters and a reporting rung: `record`, `report`, `room`, `dm` or `notification`. These are reporting intentions for the host to interpret. Free text is activity, and only explicit host posting tools deliver messages.
 

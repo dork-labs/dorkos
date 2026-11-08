@@ -7,7 +7,7 @@
  * is installed, what is connected and what is scheduled are the hub's to
  * decide, and a deny-list of those routes misses each one added after it was
  * written. So the gate keeps the other list: the writes an agent's own work
- * needs (its sessions, files, documents, rooms, terminal and commitments),
+ * needs (its sessions, files, documents, rooms, terminal and to-dos),
  * each named by its exact method and route with the reason it is open.
  * Reads stay open to agents.
  *
@@ -77,8 +77,8 @@ export const AGENT_COMPUTER_WRITES: ReadonlyMap<string, string> = new Map([
   ['POST /api/terminal', 'opens a terminal'],
   ['DELETE /api/terminal/:id', 'closes a terminal'],
   // An agent's own promises, and stopping one.
-  ['POST /api/agents/:id/commitments', 'records a commitment'],
-  ['PATCH /api/commitments/:id', 'updates a commitment'],
+  ['POST /api/agents/:id/todo-promises', 'records a to-do'],
+  ['PATCH /api/todo-promises/:id', 'updates a to-do'],
   ['POST /api/agents/:id/pause', 'pauses an agent; anyone may stop any agent'],
   // Finding agents, and saying this one is alive.
   ['POST /api/agents/resolve', 'reads agents by path; a read sent as a POST'],

@@ -109,7 +109,7 @@ function configureAndWrap(sqlite: Database.Database) {
   //
   // Safe to turn on for THIS database, and the reason is structural rather than
   // a headcount. The three message-search triggers in migration 0037 write; the
-  // only others, the two `commitments` guards from the To-dos rebuild
+  // only others, the two `todos` guards from the To-dos rebuild
   // (DOR-3088), write nothing and only RAISE. But "there are few triggers" is
   // not the argument, because
   // extensions may declare their own: a manifest migration is the one place

@@ -30,7 +30,7 @@ const MEASURES = computeMeasures(
     agentActions: [],
     spokenRaises: new Map(),
     dmRoomIds: [],
-    commitments: [],
+    todoPromises: [],
   },
   { agentPath: '/agents/otto', isAgent: () => false, windowDays: 7, since: 'x', now: 0 }
 );

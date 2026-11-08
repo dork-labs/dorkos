@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest';
 const order = vi.hoisted(() => [] as string[]);
+const stopCodex = vi.hoisted(() => vi.fn());
 const warn = vi.hoisted(() => vi.fn());
 vi.mock('../computers.js', () => ({
   shutdownComputers: async () => {
@@ -17,7 +18,8 @@ vi.mock('../../services/runtimes/opencode/index.js', () => ({
 }));
 vi.mock('../../services/runtimes/codex/app-server/process-pool.js', () => ({
   codexAppServerPool: {
-    shutdown: async () => {
+    shutdown: async (reason: string) => {
+      stopCodex(reason);
       order.push('codex');
     },
   },
@@ -41,4 +43,9 @@ it('continues host cleanup in existing order without exposing computer errors', 
     reason: 'shutdown',
     code: 'stop-threw',
   });
+});
+
+it('carries reset authority removal to the Codex pool', async () => {
+  await shutdownRuntimes(null, 'authority');
+  expect(stopCodex).toHaveBeenLastCalledWith('authority');
 });
