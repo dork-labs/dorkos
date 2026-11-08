@@ -4,8 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   codexScanRoot,
+  codexVendoredRg,
+  hasPathCopy,
   hiddenFolderExclusions,
   keepScansOutOfHiddenFolders,
+  safeForKeys,
 } from '../policy/hidden-folder-scans.js';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { completeHostFixture } from '../app-server/__tests__/fixtures/complete-protected-home.js';
@@ -185,6 +188,32 @@ describe('keepScansOutOfHiddenFolders', () => {
     expect(result[`${home}/**/.claude.json*`]).toBe('deny');
   });
 
+  it('skips nothing when there is no rg to check for copies', () => {
+    expect(keepScansOutOfHiddenFolders(entries(), [], 'linux', () => null)).toEqual(entries());
+    expect(hasPathCopy(home, backups, null)).toBe(true);
+  });
+
+  it('skips nothing when the hidden path is copied under a scan root', () => {
+    const copy = path.join(home, 'restore', backups.slice(1));
+    fs.mkdirSync(copy, { recursive: true });
+    fs.writeFileSync(path.join(copy, '.claude.json.backup.9'), '{}');
+    expect(keepScansOutOfHiddenFolders(entries(), [], 'linux')).toEqual(entries());
+  });
+
+  it.each([
+    ['/home/u/.claude/backups', true],
+    ['/root/.claude/backups', true],
+    ['/\u{1F600}home/u/backups', false],
+    ['/!home/u/backups', false],
+    ['/^home/u/backups', false],
+    ['/home/u{a,b}/backups', false],
+    ['/home/u,x/backups', true],
+    ['/home/u\\x/backups', false],
+    ['/home/u[x]/backups', false],
+  ])('decides whether %s can go in a key', (dir, safe) => {
+    expect(safeForKeys(dir)).toBe(safe);
+  });
+
   it.each(['darwin', 'win32'] as const)(
     'changes nothing on %s, which masks no scan',
     (platform) => {
@@ -197,6 +226,8 @@ describe('the rendered Linux profile', () => {
   it.each(['default', 'acceptEdits', 'bypassPermissions'])(
     'keeps the backups mask and skips it in each scan at %s',
     (permissionMode) => {
+      // Find this machine's rg before the platform below pretends to be Linux.
+      expect(codexVendoredRg()).not.toBeNull();
       const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
       Object.defineProperty(process, 'platform', { value: 'linux' });
       try {

@@ -30,8 +30,6 @@ beforeEach(() => {
     '.claude/projects/x/backups/.claude.json.backup.2',
     'backups/.claude.json.backup.3',
     'code/some-repo/.claude/backups/.claude.json.backup.4',
-    // A chain that repeats the hidden folder's path below home.
-    `chain${home}/.claude/backups/.claude.json.backup.5`,
   ]) {
     fs.mkdirSync(path.dirname(path.join(home, file)), { recursive: true });
     fs.writeFileSync(path.join(home, file), '{}');
@@ -94,7 +92,6 @@ describe.skipIf(rg === null || !fs.existsSync(rg ?? ''))('the exclusions with Co
       path.join(home, '.claude', 'projects', 'x', 'backups', '.claude.json.backup.2'),
       path.join(home, 'backups', '.claude.json.backup.3'),
       path.join(home, 'code', 'some-repo', '.claude', 'backups', '.claude.json.backup.4'),
-      path.join(home, `chain${home}`, '.claude', 'backups', '.claude.json.backup.5'),
     ];
     // Without the skip, Codex masks the file inside the hidden folder: DOR-3949.
     expect(masked(profile(), cwd())).toContain(hidden);
@@ -113,4 +110,30 @@ describe.skipIf(rg === null || !fs.existsSync(rg ?? ''))('the exclusions with Co
       expect(files).toContain(path.join(home, '.claude', 'backups', '.claude.json.backup.1'));
     }
   );
+
+  // Security's M1 on #3541: from a command folder P, the key relative to `/`
+  // also matches P + the hidden path. A copy of that path under a scan root
+  // (an `rsync -R` backup, an extracted rootfs) keeps every mask instead.
+  describe('with a copy of the home path under home', () => {
+    let copy: string;
+    beforeEach(() => {
+      copy = path.join(home, 'chain', home.slice(1), '.claude', 'backups', '.claude.json.backup.5');
+      fs.mkdirSync(path.dirname(copy), { recursive: true });
+      fs.writeFileSync(copy, '{}');
+    });
+
+    it('adds no exclusion and drops no mask', () => {
+      expect(keepScansOutOfHiddenFolders(profile(), [], 'linux')).toEqual(profile());
+    });
+
+    it.each([
+      ['the copy’s own folder', () => path.join(home, 'chain')],
+      ['the file helper at /', () => '/'],
+      ['a command in a project below home', () => path.join(home, 'code', 'some-repo')],
+    ])('keeps the copy masked from %s', (_label, cwd) => {
+      const files = masked(keepScansOutOfHiddenFolders(profile(), [], 'linux'), cwd());
+      expect(files).toContain(copy);
+      expect(files).toContain(path.join(home, '.claude', 'backups', '.claude.json.backup.1'));
+    });
+  });
 });

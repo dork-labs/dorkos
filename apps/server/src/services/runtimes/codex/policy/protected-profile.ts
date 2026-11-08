@@ -1,5 +1,6 @@
 /** Codex named filesystem policies. Legacy sandbox flags must never accompany these. */
 import fs from 'node:fs';
+import os from 'node:os';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import path from 'node:path';
 import { realPathOf } from '@dorkos/shared/directory-grants';
@@ -160,7 +161,14 @@ function protectedEntries(
     canProtectBlocking
   );
   onMissingTargets?.([...missing]);
-  return keepScansOutOfHiddenFolders(collapsed, [...activeFolders, ...writable.flatMap(spellings)]);
+  // `:workspace` also opens /tmp and $TMPDIR (what os.tmpdir() reads) for
+  // writes, so they count as opened too.
+  const tmp = [...new Set(['/tmp', os.tmpdir()])];
+  return keepScansOutOfHiddenFolders(collapsed, [
+    ...activeFolders,
+    ...writable.flatMap(spellings),
+    ...tmp.flatMap(spellings),
+  ]);
 }
 
 /**

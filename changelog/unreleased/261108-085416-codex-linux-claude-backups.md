@@ -2,6 +2,7 @@
 covers:
   - 'fix(codex): start on Linux when Claude Code sign-in backups exist, and say when the sandbox is the problem (DOR-3949, DOR-3950)'
   - 'fix(codex): skip hidden folders whichever folder rg runs from (DOR-3949)'
+  - "fix(codex): keep every mask when a hidden folder's path is copied elsewhere (DOR-3949)"
 ---
 
 ### Fixed
