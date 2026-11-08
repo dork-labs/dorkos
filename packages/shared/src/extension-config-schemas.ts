@@ -107,6 +107,15 @@ export const ExtensionApprovedSourceSchema = z.object({
    */
   autoApprovedBy: z.literal('create_extension').optional(),
   /**
+   * The digest a person approved by hand, written only by `approveToRun`
+   * (DOR-3547). A copy counts as approved by its files for reading connected
+   * apps only while this equals {@link digest}: any pin DorkOS writes on its
+   * own (an agent-built copy, a path-trust re-pin, an approval from before
+   * this field) leaves it absent or stale, so it fails closed until a person
+   * approves again.
+   */
+  personApprovedDigest: z.string().min(1).optional(),
+  /**
    * Set once, by the `'0.126.1'` config migration, on an approval written
    * before approvals named content (DOR-3068). Only such an approval is pinned
    * to the files the next scan finds; a digest-less approval written since is

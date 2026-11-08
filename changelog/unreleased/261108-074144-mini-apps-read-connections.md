@@ -4,6 +4,7 @@ covers:
   - 'feat(connectors): a mini app reads a connected app through DorkOS, with no token and only what a person approved (DOR-3547)'
   - 'refactor(extensions): the lifecycle wires ctx.connections in one line, inside its size limit'
   - "fix(connectors): a mini app reads only on a person's yes, and gets no answer if its access changed while the app replied"
+  - 'fix(extensions): only files a person approved by hand let a mini app read a connected app'
 ---
 
 ### Added

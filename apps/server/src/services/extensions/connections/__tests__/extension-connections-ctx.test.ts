@@ -28,6 +28,7 @@ import { ExtensionConnectionApprovalStore } from '../../../connectors/extensions
 import { ExtensionConnectionReader } from '../../../connectors/extensions/extension-connection-reader.js';
 import { setExtensionConnectionServices } from '../../../connectors/extensions/extension-connections-seam.js';
 import { createDataProviderContext } from '../../extension-server-api-factory.js';
+import { approvalFor } from '../../pin/extension-content-pin.js';
 import {
   extensionConnectionsFor,
   installOf,
@@ -158,7 +159,13 @@ describe('extension connections, extension side', () => {
       expect(
         originOf(pinned, {
           approvedToRun: ['flow-owner'],
-          approvedSources: { 'flow-owner': { path: folder, digest: 'sha256:files-1' } },
+          approvedSources: {
+            'flow-owner': {
+              path: folder,
+              digest: 'sha256:files-1',
+              personApprovedDigest: 'sha256:files-1',
+            },
+          },
         })
       ).toEqual({ origin: 'digest_pinned' });
     });
@@ -187,7 +194,14 @@ describe('extension connections, extension side', () => {
       const plain = record({ trustedOrigin: undefined });
       const withSource = (source: Record<string, unknown>) => ({
         approvedToRun: ['flow-owner'],
-        approvedSources: { 'flow-owner': { path: folder, digest: 'sha256:files-1', ...source } },
+        approvedSources: {
+          'flow-owner': {
+            path: folder,
+            digest: 'sha256:files-1',
+            personApprovedDigest: 'sha256:files-1',
+            ...source,
+          },
+        },
       });
       // Written by create_extension on a Trusted install, exactly as the scaffold writes it.
       expect(originOf(plain, withSource({ autoApprovedBy: 'create_extension' }))).toEqual({
@@ -197,6 +211,36 @@ describe('extension connections, extension side', () => {
       expect(originOf(plain, withSource({ pinnedOnFirstUse: NOW }))).toEqual({ origin: null });
       // A person's approveToRun rewrites the source without either stamp.
       expect(originOf(plain, withSource({}))).toEqual({ origin: 'digest_pinned' });
+    });
+
+    it("C1: only a person's own pin counts; every pin DorkOS wrote itself fails closed", () => {
+      const plain = record({ trustedOrigin: undefined, currentDigest: 'sha256:files-1' });
+      const copy = { ...plain, realPath: folder };
+      const of = (source: object) =>
+        originOf(plain, {
+          approvedToRun: ['flow-owner'],
+          approvedSources: { 'flow-owner': source as never },
+        });
+      // Security round 2, turned around: a create_extension approval from before
+      // the stamp existed, written exactly as approveNewScaffold wrote it.
+      const legacyScaffold = approvalFor(copy as never, { digest: 'sha256:files-1' })!;
+      expect(legacyScaffold.autoApprovedBy).toBeUndefined();
+      expect(of(legacyScaffold)).toEqual({ origin: null });
+      // A path-trust copy a person approved, then re-pinned by path-trust-edits
+      // to the files the agent last wrote ({ ...source, digest }).
+      const personPathTrust = { path: folder, authorHome: '/agents/ana', grants: 'sha256:g' };
+      expect(of({ ...personPathTrust, digest: 'sha256:files-1' })).toEqual({ origin: null });
+      // A person's pin, then any later re-pin to other files: the old yes doesn't follow.
+      const byPerson = approvalFor(copy as never, { digest: 'sha256:files-1', byPerson: true })!;
+      expect(byPerson.personApprovedDigest).toBe('sha256:files-1');
+      expect(of(byPerson)).toEqual({ origin: 'digest_pinned' });
+      const repinned = { ...byPerson, digest: 'sha256:files-2' };
+      expect(
+        originOf(record({ trustedOrigin: undefined, currentDigest: 'sha256:files-2' }), {
+          approvedToRun: ['flow-owner'],
+          approvedSources: { 'flow-owner': repinned },
+        })
+      ).toEqual({ origin: null });
     });
   });
 
@@ -269,6 +313,27 @@ describe('extension connections, extension side', () => {
     await expect(wired.api!.status()).resolves.toEqual([
       { service: 'linear', granted: true, accountLabel: 'Work Linear' },
     ]);
+  });
+
+  it('a stop signal reaches the reader through extensionConnectionsFor', async () => {
+    const read = vi.fn(async () => ({ status: 'success' as const, data: null }));
+    setExtensionConnectionServices({
+      approvals,
+      reader: { read, status: () => [] } as unknown as ExtensionConnectionReader,
+    });
+    const api = extensionConnectionsFor(
+      record(),
+      () => NO_APPROVALS as never,
+      () => true
+    )!;
+    const stop = new AbortController();
+    await api.read('LINEAR_LIST_LINEAR_PROJECTS', {}, stop.signal);
+    expect(read).toHaveBeenCalledWith(
+      expect.anything(),
+      'LINEAR_LIST_LINEAR_PROJECTS',
+      {},
+      stop.signal
+    );
   });
 
   it('S: a stopped instance reads nothing, and a read in flight is cancelled', async () => {

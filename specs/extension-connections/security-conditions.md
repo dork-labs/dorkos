@@ -53,7 +53,7 @@ Security passed the design (`02-specification.md`, PR #3527) **with conditions**
 
 ## From the #3537 review (phase 4)
 
-- **C1. Only a person's yes is a digest origin.** An approval `create_extension` wrote on its own (`autoApprovedBy: 'create_extension'`), or one DorkOS pinned after an upgrade (`pinnedOnFirstUse`), never makes a copy `digest_pinned`. A person's own approval rewrites the source without either, which lifts it.
+- **C1. Only a person's yes is a digest origin** (round 2: a positive marker that fails closed). `approveToRun` writes `personApprovedDigest`, and a copy is `digest_pinned` only while that equals the digest it is pinned to. Every pin DorkOS writes on its own has none or a stale one: a `create_extension` approval (also stamped `autoApprovedBy`), one written before the marker existed, a path-trust re-pin (`{ ...source, digest }`), and an upgrade pin (`pinnedOnFirstUse`). A person approves again to lift it.
 - **C2. A change while the app answers.** The checks run again when the answer comes back. If access changed meanwhile (a revoke, a stopped child, other files) or the extension was stopped, the answer is kept from the extension and the usage row says `AUTHORITY_CHANGED_AFTER_DISPATCH`. That one request already reached the app; it only reads, so nothing changed there. Stopping the extension also aborts a read in flight.
 
 ## Phase map after the conditions

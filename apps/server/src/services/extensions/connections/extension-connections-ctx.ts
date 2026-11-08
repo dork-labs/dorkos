@@ -50,16 +50,27 @@ export function originOf(record: ExtensionRecord, approvals: ExtensionApprovals)
 }
 
 /**
- * Whether a person gave this digest yes: not `create_extension` on its own
- * (Security C1), and not DorkOS pinning an old path approval to whatever
- * files it found after an upgrade.
+ * Whether a person gave this digest yes by hand (Security C1). Fails closed:
+ * only `approveToRun` writes `personApprovedDigest`, and it must name the very
+ * digest the copy is pinned to now. A pin DorkOS wrote on its own (an
+ * agent-built copy, a path-trust re-pin, an upgrade pin, or any approval from
+ * before the field) has none, or a stale one, until a person approves again.
+ * The two older stamps are refused as well.
  *
  * @param source - The stored approval for the copy.
  */
 function byPerson(
-  source: { autoApprovedBy?: string; pinnedOnFirstUse?: string } | undefined
+  source:
+    | {
+        digest?: string;
+        personApprovedDigest?: string;
+        autoApprovedBy?: string;
+        pinnedOnFirstUse?: string;
+      }
+    | undefined
 ): boolean {
-  return !!source && !source.autoApprovedBy && !source.pinnedOnFirstUse;
+  if (!source?.digest || source.personApprovedDigest !== source.digest) return false;
+  return !source.autoApprovedBy && !source.pinnedOnFirstUse;
 }
 
 /**

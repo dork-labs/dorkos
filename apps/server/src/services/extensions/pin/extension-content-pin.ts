@@ -97,12 +97,16 @@ export async function pinStillHolds(
  * @param options.digest - The copy's files as they are now, read just before.
  * @param options.authorHome - The real path of the creating agent's folder,
  *   when known: from `create_extension`, or kept from the approval it replaces.
+ * @param options.byPerson - A person gave this yes by hand (`approveToRun`):
+ *   the pinned digest is recorded as theirs (`personApprovedDigest`), the one
+ *   thing that lets the copy read connected apps (DOR-3547). Every other writer
+ *   leaves it out, so its pin never counts as a person's.
  * @returns The approval to store, or null when it must be pinned and there is
  *   no digest to pin it to (the folder holds a link or cannot be read).
  */
 export function approvalFor(
   copy: ExtensionDeclaringCopy,
-  options: { digest: string | null; authorHome?: string }
+  options: { digest: string | null; authorHome?: string; byPerson?: boolean }
 ): ExtensionApprovedSource | null {
   const source: ExtensionApprovedSource = {
     ...approvedSourceOf(copy),
@@ -116,7 +120,11 @@ export function approvalFor(
     return source;
   }
   if (!options.digest) return null;
-  return { ...source, digest: options.digest };
+  return {
+    ...source,
+    digest: options.digest,
+    ...(options.byPerson ? { personApprovedDigest: options.digest } : {}),
+  };
 }
 
 /**
