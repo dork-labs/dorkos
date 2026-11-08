@@ -70,14 +70,8 @@ import { readOwnerAccount } from '../../services/core/auth/index.js';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import path from 'path';
 import { setAgentHomeRegistry, canonicalDir } from '../../services/core/agent-identity/index.js';
-import {
-  setAgentSessionSources,
-  getMessageQueueStore,
-  getStagedContextStore,
-  reconcileSessionRows,
-  continueActivity,
-} from '../../services/session/index.js';
-import { getTurnContextStore } from '../../services/session/turn-context/record-turn-context.js';
+import { setAgentSessionSources, continueActivity } from '../../services/session/index.js';
+import { runBootSessionReconcile } from '../../services/session/catalog/boot-session-reconcile.js';
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { wireTeammateSpend } from '../../services/communities/remote/wake/teammate-spend-wiring.js';
@@ -541,40 +535,10 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     // The live sweep only ever sees the sessions a running process watched
     // disappear, so nothing else asks this question. Detached — it reads
     // directories, and startup is not the place to wait on a disk.
-    const queueStore = getMessageQueueStore();
-    const stagedStore = getStagedContextStore();
-    const contextRecords = getTurnContextStore();
-    if (!queueStore || !stagedStore) {
-      // Unreachable in this host — both stores are injected above, right after
-      // `createDb()` — and said out loud anyway, because a reconcile that
-      // silently did not run is the one outcome nobody could tell from a
-      // database with nothing to reclaim.
-      logger.warn('[SessionRows] skipped the boot reconcile: the durable stores are not wired');
-    } else {
-      void reconcileSessionRows({
-        queue: queueStore,
-        staged: stagedStore,
-        // What a vanished chat's turns were sent goes with it (DOR-4002).
-        ...(contextRecords ? { contextRecords } : {}),
-        bindingsFor: (ids) => runtimeRegistry.getSessionBindings(ids),
-        claudeCodeInventory: () => inventorySessionIds(transcripts.getProjectsRootSet()),
-      }).then(
-        (report) => {
-          // Every outcome except the clean, complete, nothing-to-do one. A
-          // partial delete and an unreadable inventory both mean rows are still
-          // there, and a boot that logged nothing for them would read exactly
-          // like a boot with nothing to reclaim.
-          if (report.reaped > 0 || report.failedDeletes > 0 || !report.inventoryComplete) {
-            logger.info('[SessionRows] checked what vanished sessions left behind', { ...report });
-          }
-        },
-        (err: unknown) => {
-          logger.warn('[SessionRows] could not check what vanished sessions left behind', {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      );
-    }
+    void runBootSessionReconcile({
+      bindingsFor: (ids) => runtimeRegistry.getSessionBindings(ids),
+      claudeCodeInventory: () => inventorySessionIds(transcripts.getProjectsRootSet()),
+    });
   }
 
   // Re-seating: a room seat whose account runs out moves to another account and

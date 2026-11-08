@@ -32,7 +32,7 @@ const ALLOWED_IMPORTERS = new Set([
   'apps/server/src/startup/steps/after-listen.ts',
   // Deletion with the session, live and at boot (DOR-4002).
   'apps/server/src/services/session/message-dispatcher/queue-upkeep.ts',
-  'apps/server/src/startup/steps/rooms.ts',
+  'apps/server/src/services/session/catalog/boot-session-reconcile.ts',
   // The four adapters, each at the point it hands the prompt over.
   'apps/server/src/services/runtimes/claude-code/messaging/turn-context/turn-context-record.ts',
   'apps/server/src/services/runtimes/codex/turn-input.ts',

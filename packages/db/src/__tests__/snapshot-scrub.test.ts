@@ -3,7 +3,7 @@
  * `dork.db` snapshot come out with the text gone, byte for byte, and the
  * hashes, sizes and token counts still there.
  */
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -104,5 +104,58 @@ describe('snapshots keep no recorded turn text', () => {
     const reopened = new Database(join(dir, 'store.db'), { readonly: true });
     expect(reopened.prepare('SELECT text FROM notes').all()).toEqual([{ text: 'kept' }]);
     reopened.close();
+  });
+});
+
+describe('nothing around a snapshot keeps the text either', () => {
+  it('leaves no WAL or journal beside it, and no free pages inside it', async () => {
+    const pre = join(dir, 'backups', 'dork-20261108-000000-pre-x.db');
+    snapshotSqlite(db.$client, pre);
+    const daily = (await snapshotDaily(db, {
+      dir: join(dir, 'backups'),
+      now: new Date('2026-11-08T12:00:00Z'),
+    }))!;
+    for (const file of [pre, daily]) {
+      for (const sidecar of ['-wal', '-shm', '-journal', '.partial']) {
+        expect(existsSync(`${file}${sidecar}`), `${file}${sidecar}`).toBe(false);
+      }
+      const copy = new Database(file, { readonly: true });
+      try {
+        expect(copy.pragma('freelist_count', { simple: true })).toBe(0);
+        expect(copy.pragma('journal_mode', { simple: true })).toBe('delete');
+      } finally {
+        copy.close();
+      }
+    }
+  });
+
+  it('removes a copy a process died while emptying, before writing the next snapshot', async () => {
+    const backups = join(dir, 'backups');
+    snapshotSqlite(db.$client, join(backups, 'first.db'));
+    // What a process killed between the copy and the scrub would leave: a
+    // `.partial` that still holds the text, and its journal.
+    const stale = join(backups, 'dork-20261101-000000-pre-y.db.partial');
+    writeFileSync(stale, readFileSync(join(dir, 'dork.db')));
+    writeFileSync(`${stale}-journal`, 'made-up journal');
+
+    await snapshotDaily(db, { dir: backups, now: new Date('2026-11-08T12:00:00Z') });
+    expect(readdirSync(backups).filter((name) => name.includes('.partial'))).toEqual([]);
+
+    writeFileSync(stale, readFileSync(join(dir, 'dork.db')));
+    snapshotSqlite(db.$client, join(backups, 'second.db'));
+    expect(readdirSync(backups).filter((name) => name.includes('.partial'))).toEqual([]);
+    for (const name of readdirSync(backups)) {
+      expect(readFileSync(join(backups, name)).includes(Buffer.from('oat milk only')), name).toBe(
+        false
+      );
+    }
+  });
+
+  it('still refuses to write over an existing snapshot, and leaves it alone', () => {
+    const file = join(dir, 'backups', 'taken.db');
+    snapshotSqlite(db.$client, file);
+    const before = readFileSync(file);
+    expect(() => snapshotSqlite(db.$client, file)).toThrow(/already exists/);
+    expect(readFileSync(file).equals(before)).toBe(true);
   });
 });

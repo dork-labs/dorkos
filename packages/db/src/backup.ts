@@ -149,29 +149,54 @@ function utcStamp(now: Date): string {
  */
 export function snapshotSqlite(sqlite: BetterSqlite3.Database, destPath: string): void {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  // Whether anything was already here decides what cleanup is allowed to touch.
-  // The commonest failure of all is `VACUUM INTO` refusing to overwrite, and
-  // deleting the file it refused to overwrite would destroy a good snapshot to
-  // tidy up after a write that never started.
-  const preexisting = fs.existsSync(destPath);
+  // The refusal `VACUUM INTO` used to make at this name, kept: a snapshot never
+  // writes over another, and nothing here deletes a file it did not write.
+  if (fs.existsSync(destPath)) throw new Error(`Snapshot already exists: ${destPath}`);
+  // Written and emptied of recorded turn text under a name no snapshot pattern
+  // matches, then renamed into place (DOR-4001). A process that dies part way
+  // leaves only a `.partial`, which the next snapshot in this folder removes.
+  removeStalePartials(path.dirname(destPath));
+  const partial = `${destPath}${PARTIAL_SUFFIX}`;
   try {
-    sqlite.prepare('VACUUM INTO ?').run(destPath);
-    // No snapshot keeps recorded turn text (DOR-4001). A copy that could not be
-    // emptied is a failed snapshot, cleaned up below like any other.
-    scrubSnapshot(destPath);
+    sqlite.prepare('VACUUM INTO ?').run(partial);
+    scrubSnapshot(partial);
+    fs.renameSync(partial, destPath);
   } catch (err) {
-    if (!preexisting) {
-      try {
-        fs.rmSync(destPath, { force: true });
-        // SQLite builds the vacuum output in rollback-journal mode, so this is
-        // the one sidecar an interrupted write can leave next to it.
-        fs.rmSync(`${destPath}-journal`, { force: true });
-      } catch {
-        // Cleanup is best-effort and must never replace the error that caused
-        // it — that error is the one naming what the operator has to fix.
-      }
+    try {
+      // SQLite builds the vacuum output in rollback-journal mode, so the
+      // journal is the one sidecar an interrupted write can leave next to it.
+      for (const suffix of ['', '-journal']) fs.rmSync(`${partial}${suffix}`, { force: true });
+    } catch {
+      // Cleanup is best-effort and must never replace the error that caused
+      // it — that error is the one naming what the operator has to fix.
     }
     throw err;
+  }
+}
+
+/** The suffix a snapshot carries while it is being written and emptied. */
+const PARTIAL_SUFFIX = '.partial';
+
+/**
+ * Remove what an earlier snapshot left when its process died part way: a
+ * `.partial` copy, which may still hold recorded turn text, and its sidecars.
+ * Snapshots of one folder are taken one at a time (the pre-migration one at
+ * boot, before anything else runs; the daily one serialized by its own lock),
+ * so no `.partial` here is still being written.
+ *
+ * @param dir - The snapshot folder
+ */
+export function removeStalePartials(dir: string): void {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (/\.db\.partial(?:-journal|-wal|-shm)?$/.test(name)) {
+      fs.rmSync(path.join(dir, name), { force: true });
+    }
   }
 }
 
@@ -205,7 +230,8 @@ export async function snapshotSqliteInSteps(
   // Built under a name no snapshot pattern matches and renamed into place only
   // when whole, so nothing can mistake a copy in progress for wreckage and
   // delete it, or for a snapshot and keep it.
-  const partial = `${destPath}.partial`;
+  removeStalePartials(path.dirname(destPath));
+  const partial = `${destPath}${PARTIAL_SUFFIX}`;
   const removePartial = () => {
     for (const suffix of ['', '-journal', '-wal', '-shm']) {
       fs.rmSync(`${partial}${suffix}`, { force: true });
