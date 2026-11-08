@@ -109,6 +109,21 @@ describe('readFolderConfigParts', () => {
     }
   );
 
+  it('counts an .mcp.json with an own __proto__ server as a file, and raises the card (DOR-3914)', () => {
+    fs.rmSync(path.join(home, '.mcp.json'));
+    // JSON.parse keeps `__proto__` as a real own key; a key copy would drop it.
+    expect(
+      partsMovedBy(() => write('.mcp.json', '{"mcpServers":{"__proto__":{"command":"x"}}}'))
+    ).toEqual(['mcpJson']);
+    expect(readFolderConfigParts(home).values.mcpJson).not.toBeNull();
+    // An own `__proto__` beside an empty server list is not the scaffolded file either.
+    fs.rmSync(path.join(home, '.mcp.json'));
+    expect(partsMovedBy(() => write('.mcp.json', '{"__proto__":{},"mcpServers":{}}'))).toEqual([
+      'mcpJson',
+    ]);
+    expect(readFolderConfigParts(home).values.mcpJson).not.toBeNull();
+  });
+
   it('still counts a 0-byte settings file as a file of its own (DOR-3914)', () => {
     const file = path.join(home, '.claude', 'settings.local.json');
     expect(partsMovedBy(() => write('.claude/settings.local.json', ''))).toEqual(['hooks']);

@@ -159,6 +159,55 @@ describe('scaffoldAgentHome', () => {
     );
   });
 
+  /** Swap the home's `.claude` for a link to `outside` the first time `name` is created. */
+  function swapClaudeOn(
+    method: 'openSync' | 'mkdirSync',
+    home: string,
+    name: string,
+    outside: string
+  ) {
+    const real = fs[method].bind(fs) as (...args: unknown[]) => unknown;
+    let swapped = false;
+    return vi.spyOn(fs, method).mockImplementation(((target: fs.PathLike, ...rest: unknown[]) => {
+      if (!swapped && String(target) === path.join(home, '.claude', name)) {
+        swapped = true;
+        // After every check, before the create: the race Security named.
+        fs.renameSync(path.join(home, '.claude'), path.join(home, '.claude-moved'));
+        fs.symlinkSync(outside, path.join(home, '.claude'));
+      }
+      return real(target, ...rest);
+    }) as never);
+  }
+
+  it.each([
+    ['openSync', 'settings.json'],
+    ['mkdirSync', 'agents'],
+  ] as const)(
+    'refuses a .claude swapped for a link between the check and the %s, landing nothing outside',
+    (method, name) => {
+      const home = agentHome(`race-${name}`);
+      fs.mkdirSync(path.join(home, '.claude'));
+      const outside = path.join(root, `outside-${name}`);
+      fs.mkdirSync(outside);
+      const spy = swapClaudeOn(method, home, name, outside);
+      try {
+        const result = scaffoldAgentHome(home);
+        expect(result).toMatchObject({
+          scaffolded: true,
+          outcomes: { [`.claude/${name}`]: 'refused-link' },
+        });
+      } finally {
+        spy.mockRestore();
+      }
+      // Nothing landed through the link, and the targets after it were refused.
+      expect(fs.readdirSync(outside)).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        '[agents] A folder in an agent home became a link while DorkOS wrote to it',
+        expect.objectContaining({ path: path.join(home, '.claude', name) })
+      );
+    }
+  );
+
   it('writes nothing under a .claude that is a file', () => {
     const home = agentHome('file-claude');
     fs.writeFileSync(path.join(home, '.claude'), 'not a folder');
@@ -229,6 +278,9 @@ describe('repairAgentHomes', () => {
     expect(fs.readFileSync(path.join(own, '.mcp.json'), 'utf8')).toContain('example.invalid');
     expect(fs.readdirSync(path.join(agents, 'not-an-agent'))).toEqual([]);
     expect(fs.readdirSync(outside)).toEqual(['.dork']);
+    expect(warn).toHaveBeenCalledWith('[agents] Left a linked agent home alone', {
+      home: path.join(agents, 'outside-link'),
+    });
 
     const before = snapshot(root);
     expect(repairAgentHomes()).toBe(0);

@@ -101,19 +101,48 @@ function parentsSafe(home: string, rel: string): ScaffoldOutcome | undefined {
   return undefined;
 }
 
+/**
+ * Whether what was just made sits in `parent` itself: a folder above it
+ * swapped for a link between the check and the create sends it elsewhere.
+ */
+function landedIn(target: string, parent: string): boolean {
+  try {
+    return fs.realpathSync(path.dirname(target)) === parent;
+  } catch {
+    return false;
+  }
+}
+
+/** Log a create that landed outside where it was checked. */
+function warnMoved(target: string): void {
+  logger.warn('[agents] A folder in an agent home became a link while DorkOS wrote to it', {
+    path: target,
+  });
+}
+
 /** A folder: a non-recursive mkdir, never over anything already there. */
-function makeFolder(target: string): ScaffoldOutcome {
+function makeFolder(target: string, parent: string): ScaffoldOutcome {
   try {
     fs.mkdirSync(target); // Never follows a leaf link: one there is EEXIST.
-    return 'created';
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     return present(target) ?? 'kept';
   }
+  const made = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (landedIn(target, parent) && made?.isDirectory() && !made.isSymbolicLink()) return 'created';
+  warnMoved(target);
+  // Only the empty folder this call made: rmdir refuses anything with contents,
+  // so no folder holding anything is ever removed.
+  try {
+    if (made?.isDirectory() && !made.isSymbolicLink()) fs.rmdirSync(target);
+  } catch {
+    // Not empty or gone: left where it is, and logged above.
+  }
+  return 'refused-link';
 }
 
 /** A file: exclusive create with no link followed, fixed content. */
-function makeFile(target: string, content: string): ScaffoldOutcome {
+function makeFile(target: string, content: string, parent: string): ScaffoldOutcome {
   let fd: number;
   try {
     // O_NOFOLLOW is undefined on Windows and ORs to 0 there; O_EXCL still
@@ -127,6 +156,17 @@ function makeFile(target: string, content: string): ScaffoldOutcome {
     throw error;
   }
   try {
+    // The file this fd opened must be the one at the checked path, in the
+    // checked folder, before a byte is written.
+    const opened = fs.fstatSync(fd);
+    const atPath = fs.lstatSync(target, { throwIfNoEntry: false });
+    const same = atPath?.dev === opened.dev && atPath?.ino === opened.ino;
+    if (!same || !landedIn(target, parent)) {
+      warnMoved(target);
+      // Unlinked only while the path still names the file this call created.
+      if (same) fs.unlinkSync(target);
+      return 'refused-link';
+    }
     fs.writeSync(fd, content);
   } finally {
     fs.closeSync(fd);
@@ -141,7 +181,8 @@ function scaffoldTarget(home: string, { rel, content }: ScaffoldTarget): Scaffol
   const target = path.join(home, ...rel.split('/'));
   const already = present(target);
   if (already) return already;
-  return content === 'folder' ? makeFolder(target) : makeFile(target, content);
+  const parent = path.dirname(target);
+  return content === 'folder' ? makeFolder(target, parent) : makeFile(target, content, parent);
 }
 
 /**
@@ -160,9 +201,9 @@ export function scaffoldAgentHome(home: string): HomeScaffoldResult {
     if (!agents || (parent !== agents && parent !== path.resolve(resolveAgentsHome())))
       return { scaffolded: false, reason: 'not-owned' };
     // The home's real path first: a linked home, or one whose real path leaves
-    // the agents folder, is never written into. Accepted residual: a folder
-    // swapped for a link between a check and its create could receive an empty
-    // folder or fixed file; nothing is overwritten or read.
+    // the agents folder, is never written into. A folder swapped for a link
+    // between a check and its create is caught after the create: the new entry
+    // is removed while it is still provably this call's, and refused.
     const real = path.join(agents, path.basename(resolved));
     if (fs.lstatSync(real).isSymbolicLink() || fs.realpathSync(real) !== real) {
       logger.warn('[agents] Left a linked agent home alone', { home: resolved });
@@ -219,6 +260,12 @@ export function repairAgentHomes(): number {
   let created = 0;
   for (const entry of entries) {
     // Only real folders that are agents; a link is skipped without following it.
+    if (entry.isSymbolicLink()) {
+      logger.warn('[agents] Left a linked agent home alone', {
+        home: path.join(agents, entry.name),
+      });
+      continue;
+    }
     if (!entry.isDirectory()) continue;
     const home = path.join(agents, entry.name);
     if (!isAgentHome(home)) continue;

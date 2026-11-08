@@ -259,17 +259,28 @@ export function collectCommands(value: unknown, out: string[]): void {
 
 /** Whether a read parsed to a plain object with no keys at all: `{}`. */
 function isEmptyObject(read: FileRead): boolean {
-  return (
-    read.kind === 'parsed' &&
-    read.value !== null &&
-    typeof read.value === 'object' &&
-    !Array.isArray(read.value) &&
-    Object.keys(read.value).length === 0
-  );
+  return read.kind === 'parsed' && hasOwnKeys(read.value, []);
 }
 
-/** The exact `.mcp.json` DorkOS scaffolds in an agent home (DOR-3914), canonical. */
-const SCAFFOLDED_MCP_JSON = canonicalJson({ mcpServers: {} });
+/**
+ * Whether `value` is a plain object whose own keys are exactly `keys`.
+ * Read with `Reflect.ownKeys`, never through `canonicalJson`: its key copy
+ * drops an own `__proto__`, which `JSON.parse` keeps as a real key.
+ */
+function hasOwnKeys(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const own = Reflect.ownKeys(value);
+  return own.length === keys.length && keys.every((key) => own.includes(key));
+}
+
+/** The exact `{"mcpServers":{}}` DorkOS scaffolds in an agent home (DOR-3914). */
+function isScaffoldedMcpJson(read: FileRead): boolean {
+  return (
+    read.kind === 'parsed' &&
+    hasOwnKeys(read.value, ['mcpServers']) &&
+    hasOwnKeys(read.value.mcpServers, [])
+  );
+}
 
 /**
  * The `mcpJson` part: the whole `.mcp.json`. The exact empty file DorkOS
@@ -280,9 +291,7 @@ function mcpJsonPart(home: string): PartValue {
   const read = readJsonFile(path.join(home, '.mcp.json'));
   if (read.kind === 'unverifiable') return { value: { unverifiable: true }, verifiable: false };
   if (read.kind === 'malformed') return { value: malformed(read.text), verifiable: true };
-  if (read.kind === 'parsed' && canonicalJson(read.value) === SCAFFOLDED_MCP_JSON) {
-    return { value: null, verifiable: true };
-  }
+  if (isScaffoldedMcpJson(read)) return { value: null, verifiable: true };
   return { value: read.kind === 'parsed' ? read.value : null, verifiable: true };
 }
 

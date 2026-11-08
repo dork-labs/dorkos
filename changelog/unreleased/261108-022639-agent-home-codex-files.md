@@ -3,6 +3,7 @@ covers:
   - 'fix(codex): agent folders get .agents and .mcp.json so Codex can edit there (DOR-3914)'
   - 'fix(codex): scaffold agent homes before creation reactions, and pin what is still missing (DOR-3914)'
   - 'fix(codex): agent folders get every protected file Codex needs, so it can edit there (DOR-3914)'
+  - 'fix(codex): refuse a scaffold whose folder turns into a link mid-write, and read .mcp.json by its own keys (DOR-3914)'
 ---
 
 ### Fixed
