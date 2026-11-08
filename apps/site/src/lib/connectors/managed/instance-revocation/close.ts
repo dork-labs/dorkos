@@ -103,6 +103,8 @@ async function insertServiceCommand(
   >
 ): Promise<void> {
   const parsed = ManagedConnectorAuthorityCommandSchema.parse(command);
+  // This service never writes an extension grant command (DOR-3980).
+  if (parsed.kind === 'replace_extension_grants') throw new Error('No extension grants here');
   await tx.insert(commands).values({
     tenantId,
     instanceId,

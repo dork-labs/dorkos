@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(connector-providers): DorkOS Cloud can carry a mini app's read-only grant and its reads, with no agent attached (DOR-3980)"
+  - "fix(site): the site's hosted connection service refuses a mini app grant instead of failing to store it"
 ---
 
 ### Changed
