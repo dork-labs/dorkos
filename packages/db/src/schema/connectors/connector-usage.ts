@@ -13,9 +13,11 @@ export const connectorUsageAttempts = sqliteTable(
     attemptId: text('attempt_id').primaryKey(),
     logicalOperationId: text('logical_operation_id').notNull(),
     attemptIndex: integer('attempt_index').notNull(),
-    surface: text('surface', { enum: ['mcp', 'rest', 'cli', 'event'] }).notNull(),
+    /** `extension`: an extension's server code called through `ctx.connections` (DOR-3547). */
+    surface: text('surface', { enum: ['mcp', 'rest', 'cli', 'event', 'extension'] }).notNull(),
+    /** `extension`: `actor_id` is the extension id, and `agent_id` stays null. */
     actorKind: text('actor_kind', {
-      enum: ['operator', 'agent', 'program', 'event', 'runtime'],
+      enum: ['operator', 'agent', 'program', 'event', 'runtime', 'extension'],
     }).notNull(),
     actorId: text('actor_id').notNull(),
     ownerKind: text('owner_kind', { enum: ['user', 'local_install'] }),
@@ -34,6 +36,12 @@ export const connectorUsageAttempts = sqliteTable(
       .notNull()
       .references(() => connectorOperationRevisions.id),
     startedAt: text('started_at').notNull(),
+    /**
+     * A SHA-256 of the call's arguments, never the arguments themselves, so an
+     * audit row can say which call it was (DOR-3547, Security S6). Null on rows
+     * written before it existed.
+     */
+    argumentsHash: text('arguments_hash'),
   },
   (table) => [
     uniqueIndex('connector_usage_logical_attempt_unique').on(

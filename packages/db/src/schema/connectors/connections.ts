@@ -152,21 +152,32 @@ export const connectorOperationRevisions = sqliteTable(
 );
 
 /**
- * Explicit grant of one immutable operation revision to an agent, a session, or
- * every agent the connection's owner has (ADR 260926-192625).
+ * Explicit grant of one immutable operation revision to an agent, a session,
+ * every agent the connection's owner has (ADR 260926-192625), or one
+ * extension's server code (DOR-3547).
  *
  * An `every_agent` row carries the fixed subject id {@link EVERY_AGENT_GRANT_SUBJECT_ID}
  * and a null `agent_id`, so removing one agent (which revokes by `agent_id`)
  * never touches it, while revoking by `connection_id` (disconnect) always does.
+ *
+ * An `extension` row names its extension in the typed `extension_id` column,
+ * never in `agent_id`, and its `subject_id` is that same id. The database
+ * itself refuses a row that breaks this, in either direction, with triggers
+ * the migration adds (SQLite can't add a `CHECK` to an existing table), so a
+ * raw insert can't name an agent into an extension's grant or the reverse.
  */
 export const connectionOperationGrants = sqliteTable(
   'connection_operation_grants',
   {
     id: text('id').primaryKey(),
-    subjectType: text('subject_type', { enum: ['agent', 'session', 'every_agent'] }).notNull(),
+    subjectType: text('subject_type', {
+      enum: ['agent', 'session', 'every_agent', 'extension'],
+    }).notNull(),
     subjectId: text('subject_id').notNull(),
-    /** The one agent a row speaks for; null only on an `every_agent` row. */
+    /** The one agent a row speaks for; null on an `every_agent` or `extension` row. */
     agentId: text('agent_id'),
+    /** The extension an `extension` row covers; null on every other row. */
+    extensionId: text('extension_id'),
     connectionId: text('connection_id')
       .notNull()
       .references(() => connections.id, { onDelete: 'cascade' }),
@@ -185,6 +196,7 @@ export const connectionOperationGrants = sqliteTable(
       table.operationRevisionId
     ),
     index('connection_operation_grants_agent_idx').on(table.agentId),
+    index('connection_operation_grants_extension_idx').on(table.extensionId),
     index('connection_operation_grants_connection_revision_idx').on(
       table.connectionId,
       table.operationRevisionId
