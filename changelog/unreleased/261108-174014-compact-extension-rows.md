@@ -1,3 +1,8 @@
+---
+covers:
+  - 'feat(extensions): one line per extension in Settings, with what needs you on top'
+---
+
 ### Changed
 
 - See every extension at once in Settings → Extensions: each one is a single line with its name, what it is for, and its switch. Ones that need you sit on top with a short label, like "Needs your OK" or "Not working". The rest are A to Z and stay put when you switch one off. Search and an Off filter help in a long list.
