@@ -154,6 +154,18 @@ One kind of write does not have that protection: changing who can use an app —
 
 These controls are boundaries inside DorkOS. They do not isolate other software running as your operating-system user. That software can reach the same local files and credentials that you can. The [threat model](/docs/self-hosting/threat-model#connections-and-account-access) explains token lifetime, runtime settings, and this same-user limit.
 
+## MCP servers for every agent
+
+The **MCP servers** tab on the Connections page holds servers you add once for every agent. Choose **Add server**, then give it a name and either a command or a URL.
+
+- **Choose who gets it.** Every agent gets a new server. You can keep it from some agents, or turn it off for everyone.
+- **Hide a value.** Select the lock next to a setting such as a key. It says **Hide this value** when you point at it. Names that look like keys are hidden for you. A hidden value doesn't show on the page again, but agents that get the server can use it.
+- **Confirm it's you.** Once DorkOS has an owner account, adding a server, turning one on, or giving it to more agents asks for your password.
+- **Change it.** There's no edit. Remove the server and add it again.
+- **When it reaches agents.** Changes reach new chats. Open ones may keep a server until they stop.
+
+A server reached over SSE doesn't reach Codex or OpenCode agents, and its row says so. If an agent has its own server with the same name, the agent's own one is used. Agents can't list or change the servers on this tab.
+
 ## Remove access
 
 Removing an agent's access stops its next action and revokes its notification grants for that connection. Pausing a connection stops local use without deleting it. Disconnecting stops every agent from using the account at once. DorkOS then ends the account's access at the service in the background.
