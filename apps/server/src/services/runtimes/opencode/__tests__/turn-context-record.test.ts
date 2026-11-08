@@ -136,7 +136,7 @@ describe('OpenCode turn-context record', () => {
     await pump.catch(() => undefined);
 
     const sent = promptBodies[0]!;
-    const [record] = store.listForSession(sessionId);
+    const [record] = store.listTurnContextsForSession(sessionId);
     expect(record).toMatchObject({
       runtime: 'opencode',
       place: 'chat',

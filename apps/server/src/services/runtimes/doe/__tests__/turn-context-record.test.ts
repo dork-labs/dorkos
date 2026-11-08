@@ -56,7 +56,7 @@ it('records the exact system channel the engine received, and the words', async 
     })
   );
 
-  const records = store.listForSession(id);
+  const records = store.listTurnContextsForSession(id);
   expect(records).toHaveLength(1);
   const [record] = records;
   expect(record).toMatchObject({

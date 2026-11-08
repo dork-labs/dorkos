@@ -39,6 +39,32 @@ describe('sweepContextBody', () => {
     );
   });
 
+  it('sweeps a PEM private key block, whole, and one cut off before its end', () => {
+    const body = 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7madeUpKey'.repeat(3);
+    const block = `-----BEGIN PRIVATE KEY-----\n${body}\n${body}\n-----END PRIVATE KEY-----`;
+    const whole = sweepContextBody(`before\n${block}\nafter`, []);
+    expect(whole.text).toBe('before\n[redacted]\nafter');
+    const rsa = block.replaceAll('PRIVATE KEY', 'RSA PRIVATE KEY');
+    expect(sweepContextBody(rsa, []).text).toBe('[redacted]');
+    const cut = sweepContextBody(`-----BEGIN OPENSSH PRIVATE KEY-----\n${body}\n${body}`, []);
+    expect(cut.text).not.toContain(body);
+    expect(cut.redacted).toBe(true);
+  });
+
+  it('sweeps an agent token (32 hex), bare and as DORKOS_AGENT_TOKEN, though the server never holds its value', () => {
+    const token = '0123456789abcdef0123456789abcdef';
+    for (const text of [
+      `token ${token} here`,
+      `DORKOS_AGENT_TOKEN=${token}`,
+      `export DORKOS_AGENT_TOKEN="${token}"`,
+      `{"DORKOS_AGENT_TOKEN": "${token}"}`,
+    ]) {
+      const swept = sweepContextBody(text, []);
+      expect(swept.text, text).not.toContain(token);
+      expect(swept.redacted).toBe(true);
+    }
+  });
+
   it('ignores known values too short to be anything but a word', () => {
     expect(sweepContextBody('the cat sat', ['cat']).text).toBe('the cat sat');
   });
@@ -82,6 +108,8 @@ describe('the record never holds a secret (Security, Nov 8)', () => {
     for (const secret of [MCP_TOKEN, PROVIDER_KEY, 'abcDEF0123456789ghiJKL']) {
       expect(everything).not.toContain(secret);
     }
-    expect(store.listForSession('s1')[0]!.parts.every((part) => part.redacted)).toBe(true);
+    expect(store.listTurnContextsForSession('s1')[0]!.parts.every((part) => part.redacted)).toBe(
+      true
+    );
   });
 });

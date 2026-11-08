@@ -187,6 +187,9 @@ import {
   clearTestHomes,
   registerTestHomes,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { setTurnContextStore } from '../../../../session/turn-context/record-turn-context.js';
+import { TurnContextStore } from '../../../../session/turn-context/turn-context-store.js';
 
 const CWD = '/projects/pump';
 const mockedQuery = vi.mocked(query);
@@ -3611,5 +3614,61 @@ describe('a restart that would end background work is held (DOR-2065)', () => {
   it('answers proceed on the first send of a session with no process', async () => {
     const { answers } = await heldTurn(nextSession(), 'first');
     expect(answers).toEqual(['proceed']);
+  });
+});
+
+describe('the turn-context record on a warm process (sealed)', () => {
+  /** Two renders that differ only in memory: not a relaunch pin, so one process serves both. */
+  const STABLE = '<env>made-up agent</env>';
+  const FIRST = { text: `${STABLE}\n<agent_memory>first render</agent_memory>`, stable: STABLE };
+  const SECOND = { text: `${STABLE}\n<agent_memory>second render</agent_memory>`, stable: STABLE };
+
+  let store: TurnContextStore;
+  let db: ReturnType<typeof createTestDb>;
+  beforeEach(() => {
+    optIn.persistentSession = true;
+    db = createTestDb();
+    store = new TurnContextStore(db);
+    setTurnContextStore(store);
+  });
+  afterEach(() => {
+    setTurnContextStore(null);
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue({
+      text: '<env>test</env>',
+      stable: '<env>test</env>',
+    });
+  });
+
+  it('records the append the process was launched with and the exact message pushed into it', async () => {
+    const sessionId = nextSession();
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue(FIRST);
+    await turn(sessionId, 'first words');
+    // Memory changed between turns: this turn RESOLVES a new append, but the warm
+    // process keeps running on the one it was launched with.
+    vi.mocked(buildSystemPromptAppend).mockResolvedValue(SECOND);
+    await turn(sessionId, 'second words');
+
+    expect(cli.launches).toBe(1);
+    const process = cli.processes[0]!;
+    const launched = (process.options.systemPrompt as { append: string }).append;
+    expect(launched).toContain('first render');
+
+    // Whatever id the turns were recorded under (the request id, or the
+    // canonical one a rekey moved them to), there is one session's worth.
+    const ids = db.$client.prepare('SELECT DISTINCT session_id AS id FROM turn_contexts').all() as {
+      id: string;
+    }[];
+    expect(ids).toHaveLength(1);
+    const records = store.listTurnContextsForSession(ids[0]!.id);
+    expect(records).toHaveLength(2);
+    expect(records.map((r) => r.systemSentThisTurn)).toEqual([true, false]);
+    for (const [i, record] of records.entries()) {
+      expect(record.parts.map((p) => p.slot)).toEqual(['system_append', 'prompt']);
+      // Byte-equal to what the fake process was launched with, both turns.
+      expect(record.parts[0]!.body).toBe(launched);
+      // Byte-equal to the message pushed into the process for this turn.
+      expect(record.parts[1]!.body).toBe(process.inbox[i]!.content);
+    }
+    expect(records[1]!.parts[0]!.body).not.toContain('second render');
   });
 });

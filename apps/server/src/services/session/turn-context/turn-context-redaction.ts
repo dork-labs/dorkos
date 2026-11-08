@@ -19,6 +19,14 @@ const REDACTED = '[redacted]';
 /** The local MCP token's shape: a fixed prefix and 64 hex characters. */
 const MCP_LOCAL_TOKEN = /dork_mcp_local_[0-9a-f]{16,}/g;
 
+/**
+ * A PEM private key: the whole block when it ends, else the header and the
+ * base64 lines after it. The body is bounded, so a header with no end costs a
+ * bounded scan, never a quadratic one.
+ */
+const PEM_PRIVATE_KEY =
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[\s\S]{0,16384}?-----END [A-Z0-9 ]*PRIVATE KEY-----|(?:\r?\n[A-Za-z0-9+/=]{16,})*)/g;
+
 /** A value shorter than this is too likely to be an ordinary word to replace everywhere. */
 const MIN_KNOWN_SECRET = 12;
 
@@ -67,6 +75,8 @@ export function sweepContextBody(text: string, knownSecrets: readonly string[]):
   for (const value of values) {
     if (swept.includes(value)) swept = swept.split(value).join(REDACTED);
   }
-  swept = sweepSecretText(swept.replace(MCP_LOCAL_TOKEN, REDACTED));
+  swept = sweepSecretText(
+    swept.replace(PEM_PRIVATE_KEY, REDACTED).replace(MCP_LOCAL_TOKEN, REDACTED)
+  );
   return { text: swept, redacted: swept !== text };
 }

@@ -250,7 +250,7 @@ export class TurnContextStore {
    *
    * @param sessionId - The session.
    */
-  listForSession(sessionId: string): RecordedTurnContext[] {
+  listTurnContextsForSession(sessionId: string): RecordedTurnContext[] {
     const rows = this.db
       .select()
       .from(turnContexts)

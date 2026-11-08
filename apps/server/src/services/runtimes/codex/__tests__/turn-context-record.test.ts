@@ -102,7 +102,7 @@ describe('Codex turn-context record', () => {
       // drain
     }
 
-    const records = store.listForSession('s1');
+    const records = store.listTurnContextsForSession('s1');
     expect(records).toHaveLength(2);
     expect(requests).toHaveLength(2);
     for (const [i, record] of records.entries()) {

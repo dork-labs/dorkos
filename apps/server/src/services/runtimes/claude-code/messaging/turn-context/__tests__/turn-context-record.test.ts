@@ -100,7 +100,7 @@ describe('Claude Code turn-context record', () => {
     const first = await sentPrompt![Symbol.asyncIterator]().next();
     const sentContent = (first.value as { message: { content: string } }).message.content;
 
-    const [record] = store.listForSession('s1');
+    const [record] = store.listTurnContextsForSession('s1');
     expect(record).toMatchObject({
       runtime: 'claude-code',
       place: 'chat',
@@ -146,7 +146,7 @@ describe('Claude Code turn-context record', () => {
       undefined
     );
 
-    const records = store.listForSession('s1');
+    const records = store.listTurnContextsForSession('s1');
     expect(records.map((r) => [r.systemSentThisTurn, r.parts[0]!.body, r.parts[1]!.body])).toEqual([
       [true, 'A1', 'one'],
       [false, 'A1', 'two'],
@@ -180,8 +180,8 @@ describe('Claude Code turn-context record', () => {
       undefined
     );
 
-    await vi.waitFor(() => expect(store.listForSession('s1')[0]!.usage).not.toBeNull());
-    expect(store.listForSession('s1')[0]!.usage).toEqual({
+    await vi.waitFor(() => expect(store.listTurnContextsForSession('s1')[0]!.usage).not.toBeNull());
+    expect(store.listTurnContextsForSession('s1')[0]!.usage).toEqual({
       kind: 'measured',
       at: 'turn_start',
       model: 'claude-made-up',

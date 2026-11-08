@@ -46,7 +46,7 @@ describe('TurnContextStore', () => {
     // Two prompts and one shared append.
     expect(bodies(db)).toHaveLength(3);
 
-    const records = store.listForSession('s1');
+    const records = store.listTurnContextsForSession('s1');
     expect(records).toHaveLength(2);
     expect(records[0]!.parts[0]!.bodyHash).toBe(records[1]!.parts[0]!.bodyHash);
     expect(records.map((r) => r.parts[1]!.body)).toEqual(['first words', 'second words']);
@@ -63,7 +63,7 @@ describe('TurnContextStore', () => {
         systemSentThisTurn: false,
       })
     );
-    const [record] = store.listForSession('s1');
+    const [record] = store.listTurnContextsForSession('s1');
     expect(record).toMatchObject({
       messageId: 'm-1',
       runtime: 'codex',
@@ -83,7 +83,7 @@ describe('TurnContextStore', () => {
 
     expect(store.deleteForSessions(['gone'])).toBe(1);
 
-    expect(store.listForSession('gone')).toEqual([]);
+    expect(store.listTurnContextsForSession('gone')).toEqual([]);
     expect(db.$client.prepare('SELECT count(*) AS n FROM turn_context_parts').get()).toEqual({
       n: 0,
     });
@@ -116,7 +116,7 @@ describe('TurnContextStore', () => {
     expect(store.sweepExpired()).toBe(2);
 
     expect(bodies(db)).toEqual([]);
-    const [record] = store.listForSession('s1');
+    const [record] = store.listTurnContextsForSession('s1');
     expect(record!.parts.map((p) => p.body)).toEqual([null, null]);
     expect(record!.parts[1]).toMatchObject({ bytes: 9, tokensEstimate: 3 });
     expect(record!.parts[1]!.bodyHash).toMatch(/^[0-9a-f]{64}$/);
@@ -137,7 +137,7 @@ describe('TurnContextStore', () => {
         .map((row) => row.body)
         .sort()
     ).toEqual([APPEND, 'new words'].sort());
-    const [oldTurn, newTurn] = store.listForSession('s1');
+    const [oldTurn, newTurn] = store.listTurnContextsForSession('s1');
     expect(oldTurn!.parts[0]!.body).toBeNull();
     expect(newTurn!.parts[0]!.body).toBe(APPEND);
   });
@@ -146,8 +146,8 @@ describe('TurnContextStore', () => {
     const store = new TurnContextStore(createTestDb());
     store.record(turn('request-uuid', 'hi'));
     store.rekeySession('request-uuid', 'canonical');
-    expect(store.listForSession('request-uuid')).toEqual([]);
-    expect(store.listForSession('canonical')).toHaveLength(1);
+    expect(store.listTurnContextsForSession('request-uuid')).toEqual([]);
+    expect(store.listTurnContextsForSession('canonical')).toHaveLength(1);
   });
 
   it('sweeps known secret values and secret shapes before storing, and says so', () => {
@@ -156,7 +156,7 @@ describe('TurnContextStore', () => {
     const store = new TurnContextStore(db, { knownSecrets: () => [liveKey] });
     store.record(turn('s1', `use ${liveKey} please`));
 
-    const [record] = store.listForSession('s1');
+    const [record] = store.listTurnContextsForSession('s1');
     expect(record!.parts[1]!.body).toBe('use [redacted] please');
     expect(record!.parts[1]!.redacted).toBe(true);
     expect(record!.parts[0]!.redacted).toBe(false);

@@ -1,3 +1,8 @@
+-- Context viewer phase 1 (Record): what each turn actually handed its runtime. Three new tables,
+-- no change to any existing one.
+-- A build without this migration ignores these tables, so it never sweeps them: recorded text stays
+-- unswept, with no 30-day limit, until you upgrade again or run the down-migration
+-- (packages/db/src/down/20261108184719_turn_context.down.sql).
 CREATE TABLE `turn_context_bodies` (
 	`hash` text PRIMARY KEY NOT NULL,
 	`body` text NOT NULL,
