@@ -259,16 +259,16 @@ function scanAst(source: string, fileName = 'probe.tsx'): { focus: string[]; atR
 }
 
 /**
- * A decoded string cannot contain either utility prefix when these raw markers
- * are all absent. Escapes and entities always retain the full AST path, even
- * when TypeScript currently leaves their spelling unchanged.
+ * A faint utility needs a slash, an arbitrary value's bracket, or ring-opacity-.
+ * Without decoding, those characters must share a non-whitespace token with
+ * its prefix. Keep every escape and possible entity on the full AST path:
+ * decoding can hide a prefix or join lines. An ordinary && is not an entity.
  */
 function mayContainFaintRing(source: string): boolean {
   return (
-    source.includes('ring-') ||
-    source.includes('outline-') ||
     source.includes('\\') ||
-    source.includes('&')
+    /&(?:#|[a-z])/i.test(source) ||
+    /ring-opacity-|(?:ring|outline)-\S*(?:\/|\[)/.test(source)
   );
 }
 
@@ -400,6 +400,42 @@ describe('faint focus rings', () => {
       name: 'ordinary unrelated source',
       source: 'const label = "Nothing to style here";',
       parse: false,
+      expected: { focus: [], atRest: [] },
+    },
+    {
+      name: 'solid rings and ordinary && expressions',
+      source: 'const c = ready && <div className="focus-visible:ring-ring ring-2 outline-none" />;',
+      parse: false,
+      expected: { focus: [], atRest: [] },
+    },
+    {
+      name: 'an arbitrary alpha without a slash',
+      source: 'const c = "focus-visible:ring-[rgba(0,0,0,.5)]";',
+      parse: true,
+      expected: { focus: ['focus-visible:ring-[rgba(0,0,0,.5)]'], atRest: [] },
+    },
+    {
+      name: 'legacy ring opacity without a slash',
+      source: 'const c = "focus-visible:ring-opacity-50";',
+      parse: true,
+      expected: { focus: ['focus-visible:ring-opacity-50'], atRest: [] },
+    },
+    {
+      name: 'a literal quote inside a class string',
+      source: `const c = "focus-visible:ring-'tone'/50";`,
+      parse: true,
+      expected: { focus: ["focus-visible:ring-'tone'/50"], atRest: [] },
+    },
+    {
+      name: 'a named JSX entity',
+      source: 'const c = <div className="focus-visible:r&inodot;ng-ring/50" />;',
+      parse: true,
+      expected: null,
+    },
+    {
+      name: 'a solid arbitrary width',
+      source: 'const c = "focus-visible:ring-[3px]";',
+      parse: true,
       expected: { focus: [], atRest: [] },
     },
     {
