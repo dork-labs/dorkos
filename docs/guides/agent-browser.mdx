@@ -16,7 +16,12 @@ it cannot pop out into a floating view.
 Some sites open an extra sign-in window. These windows are for you;
 your agent stays on the original page. Finish signing in, then close the extra window.
 
+If your agent stops because a site needs you, a card appears in the chat.
+In the Mac app, the card offers **Sign in**. It opens a plain sign-in window outside the panel,
+and your agent continues in its own window. Every agent that uses the Agent browser can use that sign-in.
+
 **New browser window** opens a visible Chromium window with separate saved sign-ins.
+A window your agent is driving has an orange frame. The sign-in window a card opens for you keeps your normal colours.
 DorkOS keeps those sign-ins when you close and reopen it. Your usual tabs stay separate.
 This is the default when you use the local npm-installed web app.
 
@@ -37,6 +42,7 @@ An uncertain action is never repeated automatically. Check what happened before 
 
 Closing the panel hides the page. **Disconnect** ends sharing.
 Disconnect closes the browser opened by DorkOS. Its saved sign-ins are kept.
+If an agent is waiting on you in the browser, **Disconnect** also ends its task.
 If the browser closes, choose **Reconnect** to open it again.
 
 ## DorkOS Cloud stays yours

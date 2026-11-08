@@ -192,7 +192,7 @@ On Claude Code, an agent can set how its own scheduled task runs, from its own c
 **It asks you first** in any of these cases:
 
 - It's on another runtime, or you chose **Careful**.
-- It's another agent's task.
+- It's another agent's task, unless the rules in [When an agent schedules for another agent](#when-an-agent-schedules-for-another-agent) allow it.
 - The chat works from a linked git worktree and wants a mode above **Ask first**.
 - You lowered the task's mode, or undid an agent's raise, and it wants to go back up.
 - Someone other than you messaged the chat from a device on [your Wi-Fi](/docs/self-hosting/securing-your-instance#on-your-own-wi-fi). On its own task, that chat can't go past Never ask.
@@ -203,7 +203,7 @@ On Claude Code, an agent can set how its own scheduled task runs, from its own c
 
 **When that agent rewrites the prompt of a task running above Never ask,** the same thing happens, but the notice shows a short code for the old prompt and the new one, not the words. A prompt rewrite on a task at Never ask or tighter keeps running with no notice.
 
-**The task waits for you instead** if it runs above Never ask and another agent proposed it, another agent approved it, it was last written by a chat someone other than you messaged from a device on your Wi-Fi, or it now sits above the agent's own level.
+**The task waits for you instead** if it runs above Never ask and another agent proposed it (outside the rules in [When an agent schedules for another agent](#when-an-agent-schedules-for-another-agent)), another agent approved it, it was last written by a chat someone other than you messaged from a device on your Wi-Fi, or it now sits above the agent's own level.
 
 **Scheduled runs and heartbeats can't raise an existing task's mode.** DorkOS refuses it, and the task keeps running as it was. If the mode was within that run's own level, you also get a note saying who asked. A scheduled run can still make a new task, up to its own level.
 
@@ -230,6 +230,15 @@ Turning a task on from its row doesn't approve its file.
 #### Turning this off
 
 Run `dorkos config set tasks.agentModeControl false`. There's no switch in the app. Agents then can't set a task's mode or approve a task. If an agent rewrites its own task's prompt, the task stops and waits for you, with no **Undo**. A task whose file changed stops and waits for you too. Modes they already set stay as they are, except that an agent's edit to a task at **Full autonomy** drops it to Accept edits.
+
+### When an agent schedules for another agent
+
+An agent whose chat runs at **Full autonomy** can schedule and change tasks for your other agents, not only for itself. This works in Claude Code chats. Other runtimes can't do it yet.
+
+- **The task never runs above the other agent's own level.** That limit applies when the task is made and whenever another agent changes it.
+- **Activity says who made it and for whom.**
+- **Some chats can't do it at all:** a chat that DorkOS marked as reached by someone outside your team, such as a guest on your Wi-Fi, and an agent whose Tasks permission is Blocked.
+- **If a scheduled run changes another agent's task, the change waits for you.**
 
 ### Approving can also set how much it may do
 
