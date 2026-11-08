@@ -25,7 +25,6 @@ import {
   Puzzle,
   RotateCcw,
   ShieldAlert,
-  ShieldMinus,
   ShieldQuestion,
   Sparkles,
   TriangleAlert,
@@ -115,7 +114,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'connector.destructive_pending': Hourglass,
   'connector.destructive_executed': CheckCircle2,
   // One agent took another agent's access to an app away (agent-grant-autonomy).
-  'connector.access_narrowed': ShieldMinus,
+  'connector.access_narrowed': Bell,
   // A browser this computer had never seen used chat from the web (DOR-2946).
   'web.new_device': MonitorSmartphone,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
@@ -192,6 +191,9 @@ export function isFailedRun(notification: NotificationDTO): boolean {
  * @param notification - The row.
  */
 export function notificationRowTone(notification: NotificationDTO): NotificationTone {
+  // Waiting on the person, but nothing went wrong: an agent narrowed access on
+  // purpose, and Undo is right there. Muted ink, not an error's red.
+  if (notification.kind === 'connector.access_narrowed') return 'neutral';
   return isFailedRun(notification) ? 'error' : notificationTone(notification);
 }
 

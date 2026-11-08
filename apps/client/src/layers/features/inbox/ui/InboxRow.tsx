@@ -13,6 +13,7 @@ import { Button } from '@/layers/shared/ui/button';
 import { NOTIFICATION_ICONS, notificationRowTone } from '@/layers/entities/notifications';
 import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layers/entities/agent';
 import { UNDO_AGENT_MODE_ACTION_ID, UndoAgentModeAction } from './UndoAgentModeAction';
+import { AccessChangeActions, UNDO_ACCESS_CHANGE_ACTION_ID } from './AccessChangeActions';
 
 /** The entrance each row inherits from its list's stagger container. */
 export const staggerItem = {
@@ -199,15 +200,23 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     onOpen !== undefined &&
     notification.subject.type === 'task' &&
     notification.actions?.some((a) => a.id === UNDO_AGENT_MODE_ACTION_ID) === true;
-  const hasAction = opensSchedule || undoesMode;
+  // One agent took another's access to an app away: Undo or Keep, and its reason (G2).
+  const undoesAccessChange =
+    onOpen !== undefined &&
+    notification.kind === 'connector.access_narrowed' &&
+    notification.actions?.some((a) => a.id === UNDO_ACCESS_CHANGE_ACTION_ID) === true;
+  const hasAction = opensSchedule || undoesMode || undoesAccessChange;
   // The secret-files notice's body is what to do about it, so it gets the same
   // two lines below `sm` rather than being cut mid-sentence (DOR-3292).
   const twoLineBody = hasAction || notification.kind === 'agent.secret_files';
   // An agent's change to a schedule is the person's only signal of it, so its
   // title and body read in full, never cut (DOR-3703, M6: the mode, the hashes
-  // and who started the turn).
+  // and who started the turn). An agent taking another's access away is the
+  // same: which agent, which app and whose access, never cut at any width.
   const readsInFull =
-    notification.mark === 'refused' || notification.kind === 'schedule.armed_by_agent';
+    notification.mark === 'refused' ||
+    notification.kind === 'schedule.armed_by_agent' ||
+    notification.kind === 'connector.access_narrowed';
   const isScheduleCreation =
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const refusalTitle =
@@ -348,7 +357,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
         'flex min-w-0 gap-1',
         // Undo sits compact beside its notice even on a phone; a refused one's
         // reason wraps onto its own full-width line.
-        undoesMode
+        undoesMode || undoesAccessChange
           ? 'flex-wrap items-start sm:items-center'
           : hasAction
             ? 'flex-col sm:flex-row sm:items-center'
@@ -364,7 +373,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           className={cn(
             'hover:bg-accent/50 focus-visible:ring-ring flex min-h-9 min-w-0 gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2',
             readsInFull ? 'items-start sm:items-center' : 'items-center',
-            undoesMode ? 'flex-1' : 'w-full'
+            undoesMode ? 'flex-1' : undoesAccessChange ? 'w-full sm:w-auto sm:flex-1' : 'w-full'
           )}
         >
           {body}
@@ -387,6 +396,9 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
       )}
       {undoesMode && (
         <UndoAgentModeAction taskId={notification.subject.id} notificationId={notification.id} />
+      )}
+      {undoesAccessChange && (
+        <AccessChangeActions changeId={notification.subject.id} notificationId={notification.id} />
       )}
     </motion.div>
   );

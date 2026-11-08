@@ -46,6 +46,10 @@ import type {
   ConnectorUsagePage,
 } from '@dorkos/shared/connector-schemas';
 import type { CancelHeldActionResponse } from '@dorkos/shared/connector-hold-schemas';
+import type {
+  ConnectorAccessChange,
+  ConnectorAccessChangeUndo,
+} from '@dorkos/shared/connector-exclusion-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import type {
   ConnectorAgentConnections,
@@ -463,6 +467,21 @@ export function createConnectorMethods(baseUrl: string) {
       return fetchJSON<CancelHeldActionResponse>(
         baseUrl,
         `/connectors/holds/${encodeURIComponent(holdId)}/cancel`,
+        { method: 'POST', body: '{}' }
+      );
+    },
+
+    getAccessChange(changeId: string): Promise<ConnectorAccessChange> {
+      return fetchJSON<ConnectorAccessChange>(
+        baseUrl,
+        `/connectors/access-changes/${encodeURIComponent(changeId)}`
+      );
+    },
+
+    undoAccessChange(changeId: string): Promise<ConnectorAccessChangeUndo> {
+      return fetchJSON<ConnectorAccessChangeUndo>(
+        baseUrl,
+        `/connectors/access-changes/${encodeURIComponent(changeId)}/undo`,
         { method: 'POST', body: '{}' }
       );
     },

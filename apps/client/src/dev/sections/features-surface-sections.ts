@@ -84,6 +84,13 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['inbox', 'notification', 'row', 'unread', 'read', 'activity', 'history'],
   },
   {
+    id: 'access-change-rows',
+    title: 'Access change rows',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['access', 'undo', 'keep', 'reason', 'narrow', 'needs you'],
+  },
+  {
     id: 'extension-permission-lines',
     title: 'Extension permission lines',
     page: 'home-inbox',

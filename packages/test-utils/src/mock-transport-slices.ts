@@ -32,6 +32,8 @@ type SliceMethods =
   | 'pauseAgent'
   | 'resumeAgent'
   | 'cancelHeldConnectorAction'
+  | 'getAccessChange'
+  | 'undoAccessChange'
   | 'getSignInLanding'
   | 'retrySignIn'
   | 'getCanvasDocRoutes'
@@ -91,6 +93,10 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     cancelHeldConnectorAction: vi
       .fn()
       .mockImplementation(async (holdId: string) => ({ status: 'cancelled', holdId })),
+    getAccessChange: vi.fn().mockRejectedValue(new Error('Nothing to show there.')),
+    undoAccessChange: vi
+      .fn()
+      .mockImplementation(async (changeId: string) => ({ changeId, undoId: 'undo-1' })),
     getSignInLanding: vi.fn().mockRejectedValue(new Error('No such sign-in')),
     retrySignIn: vi.fn().mockResolvedValue({ kind: 'connected' }),
     // No document declares a route, so the header draws no route control.
