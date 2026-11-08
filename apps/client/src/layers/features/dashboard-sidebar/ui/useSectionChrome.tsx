@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ListFilter, Plus } from 'lucide-react';
 import type { SidebarGroup, SmartGroupRules } from '@dorkos/shared/config-schema';
-import { cn } from '@/layers/shared/lib';
+import { cn, requestExtensionRemount } from '@/layers/shared/lib';
 import {
   useInlineEditorSettle,
   useIsMobile,
@@ -65,6 +65,7 @@ import {
 } from './SectionHeaderMenuItems';
 import { SmartGroupRuleDialog } from './SmartGroupRuleDialog';
 import { useSidebarChrome } from './SidebarChrome';
+import { SidebarStatusRow } from './status/SidebarStatusRow';
 
 /** Longest section name the schema accepts (`SidebarGroupSchema.name`). */
 const MAX_GROUP_NAME = 40;
@@ -229,6 +230,20 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         onToggleCollapsed: toggleCollapsed,
       }),
       action: deepLinkAction('new-channel', 'New channel'),
+    };
+  }
+
+  if (section.id === 'addons' && section.loadFailed) {
+    return {
+      ...base,
+      // A failed load must never read as "none installed" (the model keeps the
+      // section for exactly this line). Try again re-runs the full load; if it
+      // fails again, the line simply stays.
+      footer: (
+        <SidebarStatusRow failed onRetry={() => void requestExtensionRemount().catch(() => {})}>
+          Couldn’t load apps.
+        </SidebarStatusRow>
+      ),
     };
   }
 

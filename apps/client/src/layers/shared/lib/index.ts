@@ -344,6 +344,12 @@ export {
 } from './ui-action-dispatcher';
 export { registerExtensionRemount, requestExtensionRemount } from './extension-remount';
 export {
+  getExtensionLoadFailed,
+  setExtensionLoadFailed,
+  subscribeExtensionLoadFailed,
+  useExtensionLoadFailed,
+} from './extension-load-status';
+export {
   composerFileReference,
   registerComposerInsert,
   requestComposerInsert,

@@ -10,14 +10,12 @@ import {
 } from '@/layers/entities/community';
 
 import type { ReactNode } from 'react';
-import { CircleAlert, Hash } from 'lucide-react';
+import { Hash } from 'lucide-react';
 import {
-  Button,
   CountPill,
   SIDEBAR_FACE,
   SIDEBAR_GLYPH_GAP,
   SIDEBAR_GLYPH_SLOT,
-  SIDEBAR_ROW_INSET,
   sidebarRowVariants,
 } from '@/layers/shared/ui';
 import {
@@ -28,6 +26,7 @@ import {
 } from '@/layers/shared/model';
 import { RoomAvatar, RoomTitle } from '@/layers/entities/room';
 import { ROW_GLYPH_CLASS } from './row-glyph';
+import { SidebarStatusRow } from './status/SidebarStatusRow';
 import { directedCountLabel } from './rooms/directed-count-label';
 
 /**
@@ -85,75 +84,22 @@ function SpaceRowLink({
   );
 }
 
-/**
- * One line of a space's state — loading, offline, failed, empty — drawn as one
- * static row of the list it stands in for (Card §7, Phase 4 S13).
- *
- * The row's own height, inset and ink, with the words on the label column, so
- * a space that cannot show its channels still reads as part of the panel
- * rather than as a caption under it. A failure carries the error glyph in the
- * glyph slot and a ghost "Try again" at the end. Nothing here is pressable but
- * that button, and nothing moves.
- */
-function SpaceStatusRow({
-  children,
-  failed = false,
-  onRetry,
-  live = true,
-}: {
-  children: ReactNode;
-  /** Draw the error glyph: something broke, rather than is on its way. */
-  failed?: boolean;
-  /** Offer "Try again" at the row's end. */
-  onRetry?: () => void;
-  /** Say it to a screen reader when it changes. A standing fact is not news. */
-  live?: boolean;
-}) {
-  return (
-    <div
-      {...(live ? { role: 'status' } : {})}
-      data-slot="space-status-row"
-      className={cn(
-        'text-sidebar-foreground/70 text-control flex min-h-7 items-center rounded-md py-1 max-md:min-h-11',
-        SIDEBAR_ROW_INSET
-      )}
-    >
-      <span className={cn('flex shrink-0 items-center', SIDEBAR_GLYPH_SLOT)}>
-        {failed && (
-          <CircleAlert aria-hidden className={cn(ROW_GLYPH_CLASS, 'text-status-error-fg')} />
-        )}
-      </span>
-      <span className={cn('min-w-0 flex-1 truncate', SIDEBAR_GLYPH_GAP)}>{children}</span>
-      {onRetry && (
-        <Button
-          variant="ghost"
-          size="xs"
-          onClick={onRetry}
-          className="text-sidebar-foreground hover:bg-sidebar-accent/70 ml-2 shrink-0"
-        >
-          Try again
-        </Button>
-      )}
-    </div>
-  );
-}
-
 /** Remote channels are grouped by community on the shared desktop and mobile library surface. */
 export function CommunityChannelGroups() {
   const connections = useCommunityConnections(true);
   const search = useSafeSearch() as { community?: string };
   if (!search.community) return null;
-  if (connections.isPending) return <SpaceStatusRow>Loading space…</SpaceStatusRow>;
+  if (connections.isPending) return <SidebarStatusRow>Loading space…</SidebarStatusRow>;
   if (connections.isError)
     return (
-      <SpaceStatusRow failed onRetry={() => void connections.refetch()}>
+      <SidebarStatusRow failed onRetry={() => void connections.refetch()}>
         Spaces could not be loaded.
-      </SpaceStatusRow>
+      </SidebarStatusRow>
     );
   const connection = connections.data?.find(({ ref }) => ref === search.community);
-  if (!connection) return <SpaceStatusRow>This space is no longer connected.</SpaceStatusRow>;
+  if (!connection) return <SidebarStatusRow>This space is no longer connected.</SidebarStatusRow>;
   if (connection.status !== 'connected')
-    return <SpaceStatusRow>Reconnect this space to open its channels.</SpaceStatusRow>;
+    return <SidebarStatusRow>Reconnect this space to open its channels.</SidebarStatusRow>;
   return <CommunityChannels connection={connection} />;
 }
 
@@ -175,20 +121,24 @@ function CommunityChannels({ connection }: { connection: CommunityConnectionDesc
       <h3 className={SPACE_HEADING_CLASS}>{connection.label}</h3>
       {/* At most one of these at a time, each one static row (Card §7). */}
       {!access.cacheReadable && (
-        <SpaceStatusRow>
+        <SidebarStatusRow>
           {connection.status === 'reconnect-required'
             ? 'Reconnect to view channels.'
             : 'Channels aren’t available.'}
-        </SpaceStatusRow>
+        </SidebarStatusRow>
       )}
-      {access.cacheReadable && !access.verified && <SpaceStatusRow>Saved channels</SpaceStatusRow>}
-      {access.verified && rooms.isPending && <SpaceStatusRow>Loading channels…</SpaceStatusRow>}
+      {access.cacheReadable && !access.verified && (
+        <SidebarStatusRow>Saved channels</SidebarStatusRow>
+      )}
+      {access.verified && rooms.isPending && <SidebarStatusRow>Loading channels…</SidebarStatusRow>}
       {access.verified && rooms.isError && (
-        <SpaceStatusRow failed onRetry={() => void rooms.refetch()}>
+        <SidebarStatusRow failed onRetry={() => void rooms.refetch()}>
           Space unavailable.
-        </SpaceStatusRow>
+        </SidebarStatusRow>
       )}
-      {rooms.data?.stale && <SpaceStatusRow live={false}>Saved channels · offline</SpaceStatusRow>}
+      {rooms.data?.stale && (
+        <SidebarStatusRow live={false}>Saved channels · offline</SidebarStatusRow>
+      )}
       {rooms.data?.rooms
         .filter((room) => !room.archived)
         .map((room) => {
@@ -216,7 +166,7 @@ function CommunityChannels({ connection }: { connection: CommunityConnectionDesc
           );
         })}
       {rooms.data?.rooms.length === 0 && (
-        <SpaceStatusRow live={false}>No channels available.</SpaceStatusRow>
+        <SidebarStatusRow live={false}>No channels available.</SidebarStatusRow>
       )}
       {access.verified && <CommunityDms connection={connection} />}
     </section>
@@ -278,7 +228,7 @@ function CommunityDms({ connection }: { connection: CommunityConnectionDescripto
         );
       })}
       {dms.data.incomplete && (
-        <SpaceStatusRow failed>Some direct messages couldn’t load.</SpaceStatusRow>
+        <SidebarStatusRow failed>Some direct messages couldn’t load.</SidebarStatusRow>
       )}
     </section>
   );

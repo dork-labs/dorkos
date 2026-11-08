@@ -39,6 +39,25 @@ describe('the Add-ons section', () => {
     expect(addOns(powerFixture)).toBeUndefined();
   });
 
+  it('stands, empty and marked, when the mini apps failed to load', () => {
+    // A failed load must never read as "no mini apps": the section keeps its
+    // place so it can say so (the sign-in regression on top of DOR-2868).
+    const section = addOns(emptyState({ addOnsLoadFailed: true }));
+    expect(section?.loadFailed).toBe(true);
+    expect(section?.rows).toEqual([]);
+    expect(section?.label).toBe('Add-ons');
+  });
+
+  it('is absent, not marked failed, when the load worked and found no pages', () => {
+    expect(addOns(emptyState({ addOnsLoadFailed: false }))).toBeUndefined();
+  });
+
+  it('lists the pages it has and is not marked failed once any are there', () => {
+    const section = addOns(emptyState({ addOns: [FLOW], addOnsLoadFailed: true }));
+    expect(section?.rows).toHaveLength(1);
+    expect(section?.loadFailed).toBeUndefined();
+  });
+
   it('stands with nothing else but the top items and Direct messages', () => {
     // A fresh install with one mini app: no rooms, no agents, and still a
     // place to put the page.

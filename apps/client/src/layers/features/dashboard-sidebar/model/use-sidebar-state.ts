@@ -22,7 +22,7 @@ import { useCallback, useMemo } from 'react';
 import { useRouterState, useSearch } from '@tanstack/react-router';
 import { useShallow } from 'zustand/shallow';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import { listedPageAt, useRenderSlot } from '@/layers/shared/lib';
+import { listedPageAt, useExtensionLoadFailed, useRenderSlot } from '@/layers/shared/lib';
 import { useMenuExtensionPages, useNow } from '@/layers/shared/model';
 import {
   disambiguateDisplayNames,
@@ -356,6 +356,7 @@ export function useSidebarState(): SidebarState {
     [menuPages]
   );
   const activeTarget = useActiveTarget(roomKindOf, addOns);
+  const addOnsLoadFailed = useExtensionLoadFailed();
 
   // ── The To-dos door (DOR-3088) ──
   // Absent while to-dos are off. Its count is the list answer's own badge, a number, so the memo
@@ -380,6 +381,7 @@ export function useSidebarState(): SidebarState {
       prefs,
       mentions,
       addOns,
+      addOnsLoadFailed,
       todos,
       activeTarget,
     }),
@@ -395,6 +397,7 @@ export function useSidebarState(): SidebarState {
       prefs,
       mentions,
       addOns,
+      addOnsLoadFailed,
       todos,
       activeTarget,
     ]

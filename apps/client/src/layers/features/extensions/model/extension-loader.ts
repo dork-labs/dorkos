@@ -14,14 +14,15 @@ import { runningCopiesOnly } from '@/layers/entities/extension';
 /**
  * Fetch the extension list from the server.
  *
- * Returns an empty array on network or server errors so callers can
- * proceed safely without extensions.
+ * Returns `null` when the server refuses or fails the request, so a caller can
+ * tell "the list could not be read" from "there are no extensions". A network
+ * error still rejects.
  */
-async function fetchExtensions(): Promise<ExtensionRecordPublic[]> {
+async function fetchExtensions(): Promise<ExtensionRecordPublic[] | null> {
   const res = await fetch(extensionApiUrl('/extensions'));
   if (!res.ok) {
     console.error('[extensions] Failed to fetch extension list:', res.status);
-    return [];
+    return null;
   }
   return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);
 }
@@ -139,17 +140,21 @@ export class ExtensionLoader {
   /**
    * Fetch the extension list, import compiled bundles in parallel, and activate.
    *
-   * @returns All discovered extension records and the map of successfully loaded extensions
+   * @returns All discovered extension records, the map of successfully loaded
+   *   extensions, and whether the list itself could not be read (`failed`), so
+   *   the caller never mistakes a refused list for an empty one
    */
   async initialize(): Promise<{
     extensions: ExtensionRecordPublic[];
     loaded: Map<string, LoadedExtension>;
+    failed: boolean;
   }> {
     // Claim this load; any newer load supersedes it.
     const gen = ++this.generation;
 
     const extensions = await fetchExtensions();
-    return this.activateFrom(extensions, gen);
+    if (extensions === null) return { extensions: [], loaded: this.loaded, failed: true };
+    return { ...(await this.activateFrom(extensions, gen)), failed: false };
   }
 
   /**
@@ -370,8 +375,9 @@ export class ExtensionLoader {
       }
     }
 
-    // 2. Fetch updated extension list from server
-    const extensions = await fetchExtensions();
+    // 2. Fetch updated extension list from server. A refused list reloads
+    // nothing; the extensions not being reloaded stay as they are.
+    const extensions = (await fetchExtensions()) ?? [];
 
     // 3. Re-import and reactivate the specified extensions
     for (const id of ids) {
