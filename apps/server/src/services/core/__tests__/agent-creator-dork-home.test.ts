@@ -127,6 +127,23 @@ describe('createAgentWorkspace with the shipped default directory', () => {
     expect(await fs.readdir(fakeHome)).toEqual([]);
   });
 
+  it('gives a fresh agent the .agents folder and empty .mcp.json Codex needs (DOR-3914)', async () => {
+    const result = await createAgentWorkspace({ name: 'fresh-agent' });
+
+    expect((await fs.lstat(path.join(result.path, '.agents'))).isDirectory()).toBe(true);
+    expect(await fs.readFile(path.join(result.path, '.mcp.json'), 'utf8')).toBe(
+      '{"mcpServers":{}}'
+    );
+  });
+
+  it('writes no .mcp.json into a folder the person chose (DOR-3914)', async () => {
+    mockConfigGet.mockReturnValue({ defaultDirectory: '~/my-agents', defaultAgent: 'nobody' });
+
+    const result = await createAgentWorkspace({ name: 'their-place' });
+
+    expect(await exists(path.join(result.path, '.mcp.json'))).toBe(false);
+  });
+
   it('honours a directory the person configured, tilde and all', async () => {
     mockConfigGet.mockReturnValue({
       defaultDirectory: '~/my-agents',

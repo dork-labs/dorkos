@@ -37,6 +37,7 @@ import { dorkbotClaudeMdTemplate } from '@dorkos/shared/dorkbot-templates';
 import { scaffoldInstructions } from '@dorkos/harness';
 import { seedOperatingSkills } from '@dorkos/operating-skills';
 import { projectAgentWorkspace } from '../harness/project-agent-workspace.js';
+import { scaffoldAgentHome } from './agent-home/agent-home-scaffold.js';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import { resolveAgentsDirectory } from '../../lib/agents-home.js';
 import { configManager } from './config-manager.js';
@@ -708,6 +709,9 @@ export async function createAgentWorkspace(
   // then keep `.claude/` from being pruned, stranding a half-built workspace.
   // Nothing past this point can fail, so nothing has to be undone.
   projectAgentWorkspace(resolvedPath);
+  // The two protected targets Codex needs before it edits here (DOR-3914).
+  // Create only, and only in a home DorkOS owns; it never throws.
+  scaffoldAgentHome(resolvedPath);
 
   return result;
 }

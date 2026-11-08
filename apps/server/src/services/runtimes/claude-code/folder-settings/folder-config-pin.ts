@@ -254,11 +254,21 @@ export function collectCommands(value: unknown, out: string[]): void {
   }
 }
 
-/** The `mcpJson` part: the whole `.mcp.json`. */
+/** The exact `.mcp.json` DorkOS scaffolds in an agent home (DOR-3914), canonical. */
+const SCAFFOLDED_MCP_JSON = canonicalJson({ mcpServers: {} });
+
+/**
+ * The `mcpJson` part: the whole `.mcp.json`. The exact empty file DorkOS
+ * scaffolds reads as no file: both run nothing, and adding it to a pinned home
+ * must not count as a change a person has to approve.
+ */
 function mcpJsonPart(home: string): PartValue {
   const read = readJsonFile(path.join(home, '.mcp.json'));
   if (read.kind === 'unverifiable') return { value: { unverifiable: true }, verifiable: false };
   if (read.kind === 'malformed') return { value: malformed(read.text), verifiable: true };
+  if (read.kind === 'parsed' && canonicalJson(read.value) === SCAFFOLDED_MCP_JSON) {
+    return { value: null, verifiable: true };
+  }
   return { value: read.kind === 'parsed' ? read.value : null, verifiable: true };
 }
 

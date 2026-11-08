@@ -81,6 +81,17 @@ describe('readFolderConfigParts', () => {
     expect(partsMovedBy(() => fs.rmSync(path.join(home, '.mcp.json')))).toEqual(['mcpJson']);
   });
 
+  it('reads the empty .mcp.json DorkOS scaffolds as no file at all (DOR-3914)', () => {
+    // Both run nothing, so adding it to a pinned home asks nobody.
+    expect(partsMovedBy(() => fs.rmSync(path.join(home, '.mcp.json')))).toEqual([]);
+    expect(partsMovedBy(() => write('.mcp.json', '{"mcpServers":{}}'))).toEqual([]);
+    expect(partsMovedBy(() => write('.mcp.json', '{ "mcpServers": {} }\n'))).toEqual([]);
+    // Anything more than the exact empty file is still a change.
+    expect(partsMovedBy(() => write('.mcp.json', { mcpServers: {}, extra: true }))).toEqual([
+      'mcpJson',
+    ]);
+  });
+
   it('moves only the manifest part for a new server or a new account', () => {
     const other = { ...SERVER, name: 'other', connection: { ...SERVER.connection, command: 'x' } };
     expect(
