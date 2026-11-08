@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(browser): remove profile sign-ins and delete profiles (DOR-3887)'
+  - "fix(client): the Agent browser panel hides Profiles while another chat's agent waits on a person (DOR-3887)"
 ---
 
 ### Added
