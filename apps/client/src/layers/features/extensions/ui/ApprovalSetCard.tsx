@@ -132,7 +132,9 @@ function MemberLine({
           dim && 'text-muted-foreground'
         )}
       >
-        <span className="w-[160px] shrink-0 truncate font-medium max-sm:w-auto">{member.name}</span>
+        <span className="w-[160px] shrink-0 truncate font-medium max-sm:w-auto max-sm:min-w-0 max-sm:flex-1 max-sm:shrink">
+          {member.name}
+        </span>
         <span className="text-muted-foreground min-w-0 flex-1 truncate max-sm:hidden">
           {member.purpose}
         </span>

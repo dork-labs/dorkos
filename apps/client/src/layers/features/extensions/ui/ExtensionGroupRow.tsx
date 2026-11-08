@@ -208,33 +208,36 @@ export function ExtensionGroupRow({
               </div>
             )
           )}
-          <ul className="space-y-0.5" aria-label={`${group.name} extensions`}>
-            {group.members.map((member) => (
-              <li
-                key={member.id}
-                className="flex min-h-9 items-center gap-3 rounded-md pl-2 text-[13px] max-sm:min-h-11"
-                data-testid={`extension-group-member-${member.id}`}
-              >
-                <span className="w-[160px] shrink-0 truncate font-medium max-sm:w-auto">
-                  {member.manifest.name}
-                </span>
-                <span className="text-muted-foreground min-w-0 flex-1 truncate max-sm:hidden">
-                  {extensionPurpose(member)}
-                </span>
-                {waitsForOk(member) ? (
-                  <span className="text-muted-foreground shrink-0 text-xs">Needs your OK</span>
-                ) : (
-                  <Switch
-                    size="sm"
-                    checked={isExtensionOn(member)}
-                    onCheckedChange={(checked) => onToggle(member.id, checked)}
-                    disabled={togglingIds.has(member.id)}
-                    aria-label={`${member.manifest.name}: ${isExtensionOn(member) ? 'on' : 'off'}`}
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
+          {/* The card already lists every member; the lines return once it is answered. */}
+          {(!shownSet || answered) && (
+            <ul className="space-y-0.5" aria-label={`${group.name} extensions`}>
+              {group.members.map((member) => (
+                <li
+                  key={member.id}
+                  className="flex min-h-9 items-center gap-3 rounded-md pl-2 text-[13px] max-sm:min-h-11"
+                  data-testid={`extension-group-member-${member.id}`}
+                >
+                  <span className="w-[160px] shrink-0 truncate font-medium max-sm:w-auto">
+                    {member.manifest.name}
+                  </span>
+                  <span className="text-muted-foreground min-w-0 flex-1 truncate max-sm:hidden">
+                    {extensionPurpose(member)}
+                  </span>
+                  {waitsForOk(member) ? (
+                    <span className="text-muted-foreground shrink-0 text-xs">Needs your OK</span>
+                  ) : (
+                    <Switch
+                      size="sm"
+                      checked={isExtensionOn(member)}
+                      onCheckedChange={(checked) => onToggle(member.id, checked)}
+                      disabled={togglingIds.has(member.id)}
+                      aria-label={`${member.manifest.name}: ${isExtensionOn(member) ? 'on' : 'off'}`}
+                    />
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="text-muted-foreground text-xs">
             From the {group.plugin} plugin · {state.allowed.length} of {group.members.length}{' '}
             allowed
