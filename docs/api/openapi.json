@@ -2991,6 +2991,118 @@
         ],
         "additionalProperties": false
       },
+      "MiniAppAccessList": {
+        "type": "object",
+        "properties": {
+          "waiting": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MiniAppAccessWaiting"
+            }
+          },
+          "allowed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MiniAppAccessAllowed"
+            }
+          }
+        },
+        "required": [
+          "waiting",
+          "allowed"
+        ]
+      },
+      "MiniAppAccessWaiting": {
+        "type": "object",
+        "properties": {
+          "extensionId": {
+            "type": "string"
+          },
+          "extensionName": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "$ref": "#/components/schemas/MiniAppAccessWaitReason"
+          }
+        },
+        "required": [
+          "extensionId",
+          "extensionName",
+          "service",
+          "operations",
+          "reason"
+        ]
+      },
+      "MiniAppAccessWaitReason": {
+        "type": "string",
+        "enum": [
+          "new",
+          "files_changed",
+          "operations_changed"
+        ]
+      },
+      "MiniAppAccessAllowed": {
+        "type": "object",
+        "properties": {
+          "approvalId": {
+            "type": "string"
+          },
+          "extensionId": {
+            "type": "string"
+          },
+          "extensionName": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "connectionId": {
+            "type": "string"
+          },
+          "connectionLabel": {
+            "type": "string"
+          },
+          "approvedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approvalId",
+          "extensionId",
+          "extensionName",
+          "service",
+          "connectionId",
+          "connectionLabel",
+          "approvedAt"
+        ]
+      },
+      "MiniAppAccessRevokeResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "revoked"
+            ]
+          },
+          "approvalId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "approvalId"
+        ]
+      },
       "MessageDisposition": {
         "type": "string",
         "enum": [
@@ -30666,6 +30778,68 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/connectors/mini-app-access": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "What mini apps wait to read, and what each may read now",
+        "description": "Each connected app a mini app declares and may not read yet (new, files changed or reads changed), and each yes a person gave, with the account. Only the owner at the app. A yes is given on its own page outside the app, never through the API.",
+        "responses": {
+          "200": {
+            "description": "Waiting reads and live yeses.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MiniAppAccessList"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at the app: an agent, a program or another site."
+          }
+        }
+      }
+    },
+    "/api/connectors/mini-app-access/{approvalId}/revoke": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Take back a mini app's access to a connected app",
+        "description": "Revokes one yes and its grants, unless another live yes of the same mini app still covers that account. The mini app's next read is refused. Only the owner at the app.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "approvalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MiniAppAccessRevokeResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner at the app."
+          },
+          "404": {
+            "description": "No live yes under that id (`MINI_APP_ACCESS_NOT_FOUND`)."
           }
         }
       }
