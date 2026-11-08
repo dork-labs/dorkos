@@ -79,6 +79,13 @@ describe('Undo on an agent’s access change', () => {
     expect(line).toHaveTextContent(
       'DorkOS PM’s reason: See [link](https://example.com) and <b>bold</b>'
     );
+    // The agent’s own mark sits beside the name it gave itself, so a name like
+    // "DorkOS" can’t pass as DorkOS’s own words.
+    expect(
+      line
+        .closest('[data-slot="access-change-reason"]')
+        ?.querySelector('[data-slot="access-change-actor"]')
+    ).not.toBeNull();
     // Nothing in it became markup.
     expect(line.querySelector('a, b')).toBeNull();
     expect(screen.queryByRole('link')).toBeNull();
@@ -114,7 +121,7 @@ describe('Undo on an agent’s access change', () => {
     expect(markRead).toHaveBeenCalledWith('01JZR000000000000000000A');
   });
 
-  it('refused because access changed since: says why, and moves focus to its link', async () => {
+  it('refused because access changed since: says so where Undo was, and keeps focus there', async () => {
     renderRow({
       getAccessChange: vi.fn().mockResolvedValue(change('Not used.')),
       undoAccessChange: vi
@@ -127,11 +134,18 @@ describe('Undo on an agent’s access change', () => {
         ),
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-    const status = await screen.findByRole('status');
-    expect(status).toHaveTextContent(
-      'Access has changed since then. Set it on the Connections page instead. Open Connections.'
+    const undoButton = screen.getByRole('button', { name: 'Undo' });
+    undoButton.focus();
+    fireEvent.click(undoButton);
+    const line = await screen.findByText(/Access changed since\./);
+    expect(line).toHaveTextContent('Access changed since. Set it in Connections');
+    expect(line).toHaveAttribute('aria-live', 'polite');
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    // Focus stays where Undo was: on the line, not jumped to the link.
+    expect(line).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'Connections' })).toHaveAttribute(
+      'href',
+      '/connections'
     );
-    expect(screen.getByRole('button', { name: 'Open Connections.' })).toHaveFocus();
   });
 });
