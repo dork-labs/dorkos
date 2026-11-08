@@ -13,6 +13,7 @@ import { Button } from '@/layers/shared/ui/button';
 import { NOTIFICATION_ICONS, notificationRowTone } from '@/layers/entities/notifications';
 import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layers/entities/agent';
 import { UNDO_AGENT_MODE_ACTION_ID, UndoAgentModeAction } from './UndoAgentModeAction';
+import { AccessChangeActions, UNDO_ACCESS_CHANGE_ACTION_ID } from './AccessChangeActions';
 
 /** The entrance each row inherits from its list's stagger container. */
 export const staggerItem = {
@@ -199,7 +200,12 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     onOpen !== undefined &&
     notification.subject.type === 'task' &&
     notification.actions?.some((a) => a.id === UNDO_AGENT_MODE_ACTION_ID) === true;
-  const hasAction = opensSchedule || undoesMode;
+  // One agent took another's access to an app away: Undo or Keep, and its reason (G2).
+  const undoesAccessChange =
+    onOpen !== undefined &&
+    notification.kind === 'connector.access_narrowed' &&
+    notification.actions?.some((a) => a.id === UNDO_ACCESS_CHANGE_ACTION_ID) === true;
+  const hasAction = opensSchedule || undoesMode || undoesAccessChange;
   // The secret-files notice's body is what to do about it, so it gets the same
   // two lines below `sm` rather than being cut mid-sentence (DOR-3292).
   const twoLineBody = hasAction || notification.kind === 'agent.secret_files';
@@ -387,6 +393,9 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
       )}
       {undoesMode && (
         <UndoAgentModeAction taskId={notification.subject.id} notificationId={notification.id} />
+      )}
+      {undoesAccessChange && (
+        <AccessChangeActions changeId={notification.subject.id} notificationId={notification.id} />
       )}
     </motion.div>
   );
