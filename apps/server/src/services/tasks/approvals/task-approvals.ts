@@ -16,6 +16,11 @@
  *
  * @module services/tasks/approvals/task-approvals
  */
+import {
+  crossAgentWriterOf,
+  recordCrossAgentWriter,
+  type CrossAgentWriter,
+} from './cross-agent.js';
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import { fileProvenance } from '../file-sync-gates.js';
@@ -201,6 +206,26 @@ export class TaskApprovals {
    */
   markOrigin(id: string, marks: TurnMarks): boolean {
     return markScheduleOrigin(this.db, id, marks);
+  }
+
+  /**
+   * Keep the other agent that just made or changed this schedule, its chat and its turn's marks
+   * (DOR-3938, `cross-agent.ts`); each run records them and starts with those marks.
+   *
+   * @param id - The schedule.
+   * @param writer - Who wrote it, as the server resolved it.
+   */
+  recordCrossAgentWriter(id: string, writer: CrossAgentWriter): void {
+    recordCrossAgentWriter(this.db, id, writer);
+  }
+
+  /**
+   * The other agent that last made or changed this schedule, or `undefined` (DOR-3938).
+   *
+   * @param id - The schedule.
+   */
+  crossAgentWriterOf(id: string): CrossAgentWriter | undefined {
+    return crossAgentWriterOf(this.db, id);
   }
 
   /**

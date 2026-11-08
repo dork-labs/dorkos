@@ -71,21 +71,24 @@ describe('a run of a task another agent made', () => {
     clearTestHomes();
   });
 
-  /** A task filed under B that `proposer` made, with `marks` kept on it. */
-  function task(proposer: string, marks?: { outsider: true }) {
+  /** A task filed under B that `proposer` made, with `writer` marks kept as another agent's write. */
+  function task(
+    proposer: string,
+    writer?: Parameters<TaskStore['approvals']['recordCrossAgentWriter']>[1]
+  ) {
     const made = store.createTask({
       name: 'b-sweep',
       description: 'b',
       prompt: 'Sweep.',
       agentId: 'agent-b',
-      filePath: `/tmp/tasks/b-sweep-${proposer.length}/SKILL.md`,
+      filePath: '/tmp/tasks/b-sweep/SKILL.md',
     });
     store.recordProposal(made.id, {
       reason: 'asked',
       proposedByAgentPath: proposer,
       proposedBySessionId: 'ses-made',
     });
-    if (marks) store.approvals.markOrigin(made.id, marks);
+    if (writer) store.approvals.recordCrossAgentWriter(made.id, writer);
     return store.getTask(made.id)!;
   }
 
@@ -100,8 +103,12 @@ describe('a run of a task another agent made', () => {
     return run!;
   }
 
-  it('records the creator on the run and starts the turn with its outsider mark', async () => {
-    const made = task(HOME_A, { outsider: true });
+  it('records the writer on the run and starts the turn with its outsider mark', async () => {
+    const made = task(HOME_A, {
+      agentPath: HOME_A,
+      sessionId: 'ses-made',
+      marks: { outsider: true },
+    });
     const run = await runNow(made.id);
     const opts = vi.mocked(manager.sendMessage).mock.calls[0]![2] as Record<string, unknown>;
     expect(opts.carriedMarks).toEqual({ outsider: true });
@@ -112,21 +119,20 @@ describe('a run of a task another agent made', () => {
     });
   });
 
-  it('records an unmarked creator with no marks, and carries none', async () => {
-    const run = await runNow(task(HOME_A).id);
+  it('starts the turn with a teammate chain the writer carried', async () => {
+    const teammate = [{ roomId: 'room-1', authorId: 'author-1' }];
+    const made = task(HOME_A, { agentPath: HOME_A, sessionId: 'ses-made', marks: { teammate } });
+    await runNow(made.id);
     const opts = vi.mocked(manager.sendMessage).mock.calls[0]![2] as Record<string, unknown>;
+    expect(opts.permissionCeiling).toEqual({ asks: 'never', reach: 'everything', teammate });
     expect(opts.carriedMarks).toBeUndefined();
-    expect(creatorOf(run.id)).toEqual({
-      agentPath: HOME_A,
-      sessionId: 'ses-made',
-      marks: {},
-    });
   });
 
-  it('a task its own agent made records its maker, and its own marks are not carried', async () => {
-    const run = await runNow(task(HOME_B, { outsider: true }).id);
+  it('a task no other agent wrote records its proposer and carries no marks', async () => {
+    const run = await runNow(task(HOME_B).id);
     const opts = vi.mocked(manager.sendMessage).mock.calls[0]![2] as Record<string, unknown>;
     expect(opts.carriedMarks).toBeUndefined();
-    expect(creatorOf(run.id)?.agentPath).toBe(HOME_B);
+    expect(opts.permissionCeiling).toBeUndefined();
+    expect(creatorOf(run.id)).toEqual({ agentPath: HOME_B, sessionId: 'ses-made', marks: {} });
   });
 });

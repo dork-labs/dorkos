@@ -167,6 +167,13 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    */
   originMarks: text('origin_marks'),
   /**
+   * The last agent OTHER than the one this schedule runs as that made or changed it (DOR-3938),
+   * as JSON `{ agentPath, sessionId, marks }`: its home, its chat, and the marks that chat's turn
+   * carried (a teammate's chain; an outsider's mark refuses the write). Every run records it and
+   * starts with those marks. NULL for a schedule only its own agent or a person wrote.
+   */
+  crossAgentWriter: text('cross_agent_writer'),
+  /**
    * The agent's runtime, model or effort that changed outside DorkOS since this
    * schedule was approved, while the schedule follows the agent for that part
    * (DOR-2337): JSON `[{ field, from, to }]`, `from` being the value when the

@@ -67,7 +67,7 @@ import {
 } from '../approvals/schedule-owner.js';
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
-import { marksHold, type TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
 
 /**
@@ -620,8 +620,15 @@ export async function createScheduledTask(
     });
     schedule = deps.store.getTask(schedule.id)!;
   }
-  // Who made it, for which agent, and at what mode (DOR-3938).
-  if (forAnother) auditCrossAgentTask(schedule, 'create', callerAgentPath, deps.meshCore);
+  // Who made it, for which agent, and at what mode; its runs start with that turn's marks (DOR-3938).
+  if (forAnother && callerAgentPath !== undefined) {
+    deps.store.approvals.recordCrossAgentWriter(schedule.id, {
+      agentPath: callerAgentPath,
+      sessionId: options.proposal?.sessionId ?? null,
+      marks: options.originMarks ?? NO_MARKS,
+    });
+    auditCrossAgentTask(schedule, 'create', callerAgentPath, deps.meshCore);
+  }
   if (!trusted && !parks) {
     // Armed without asking, so the person is told it exists and can pause it.
     // An event, not a standing condition: nothing waits on them.

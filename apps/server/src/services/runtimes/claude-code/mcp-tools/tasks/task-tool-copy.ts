@@ -126,8 +126,8 @@ export const PARKED_SCHEDULE_SURFACE_HINT =
 export const TARGET_DESCRIPTION =
   'Where this scheduled task lives. Give your own agent id to file it under yourself — it then ' +
   'runs in your folder, with your files — or "global" for a scheduled task that belongs to no ' +
-  'agent and runs in the DorkOS data folder. From a chat at Full autonomy whose turn read nobody ' +
-  "else's messages, another agent's id files it under that agent, at that agent's own level at " +
+  'agent and runs in the DorkOS data folder. From a chat at Full autonomy whose turn read no messages ' +
+  "from outside the team, another agent's id files it under that agent, at that agent's own level at " +
   'most; anywhere else that is refused. Required: DorkOS will not guess, because a scheduled ' +
   'task filed in the wrong place runs against the wrong files.';
 
@@ -281,8 +281,8 @@ export const STATUS_DESCRIPTION =
 export const TASKS_CREATE_DESCRIPTION =
   'Create a scheduled task. It is live at once and the person is told, unless DorkOS asks ' +
   'them first: then it waits at pending_approval and never runs until they approve it. ' +
-  'The schedule returned says which. From a chat at Full autonomy whose turn read nobody ' +
-  "else's messages, target can be another agent: the task runs at that agent's level at most.";
+  'The schedule returned says which. From a chat at Full autonomy whose turn read no messages ' +
+  "from outside the team, target can be another agent: the task runs at that agent's level at most.";
 
 /**
  * What `tasks_update` says it does, including whose task it may change (DOR-3938).
@@ -294,5 +294,5 @@ export const TASKS_UPDATE_DESCRIPTION =
   'A task that came with an installed package ' +
   'can still be switched on or off and given a new cron or timezone — DorkOS keeps those, ' +
   "the package is not edited — and resetTiming puts it back on the package's own timing. " +
-  "Another agent's task can be changed only from a chat at Full autonomy whose turn read " +
-  "nobody else's messages, and never above that agent's own level.";
+  "Another agent's task, its prompt included, can be changed only from a chat at Full autonomy " +
+  "whose turn read no messages from outside the team, and never above that agent's own level.";

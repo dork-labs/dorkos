@@ -1124,7 +1124,7 @@ export class TaskSchedulerService {
         // at. It is NOT why the predicate is optional — an absent predicate
         // takes the v1 reading instead, see {@link V1_RELAY_RUNTIME}.
         const relayVerdict = this.assessRelayDispatch(execution.runtimeType, task.id, run.trigger);
-        const viaRelay = relayVerdict.deliverable && !creatorMarked(task, this.meshCore);
+        const viaRelay = relayVerdict.deliverable && !creatorMarked(this.store, task);
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
         if (!relayVerdict.deliverable) {
           span.setAttr(ATTR.TASK_DISPATCH_REASON, relayVerdict.reason);
@@ -1502,8 +1502,8 @@ export class TaskSchedulerService {
         cwd: effectiveCwd,
         ...(forAgent !== undefined ? { forAgent } : {}),
         systemPromptAppend: buildTaskAppend(task, run),
-        // With the marks of another agent that made the task, as a hop carries them (DOR-3938).
-        ...withCreatorMarks(task, this.meshCore, execution.settings),
+        // With the marks of another agent that wrote the task, as a hop carries them (DOR-3938).
+        ...withCreatorMarks(this.store, task, execution.settings),
         // The same line as `unattended` above, for approval cards: a timer fire
         // does not hold its turn for one, a Run now a person pressed does
         // (spec `agent-permissions` D6).

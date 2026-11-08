@@ -5,9 +5,11 @@
  *
  * 1. Full is read from the server: the level this process recorded for the calling turn, its
  *    ceiling applied (`turn-levels.ts`), never the agent's stored setting or the tool's input.
- * 2. A marked turn is refused: any mark at all, an outsider's or a teammate's.
- * 3. The task keeps who made it (the proposer's agent and chat) and the marks of that turn, and
- *    each run records them and starts with those marks, as a `chat_send` hop does.
+ * 2. A turn with the outsider mark is refused, however it got the mark (a teammate's hop that
+ *    carried one too). A teammate's mark alone does not refuse (PM, Nov 7 19:42 CT).
+ * 3. The task keeps the last other agent that made or changed it, that turn, and its marks
+ *    (`pulse_schedules.cross_agent_writer`); each run records them and starts with those marks,
+ *    as a `chat_send` hop does.
  * 4. Its mode is capped at the target agent's own level, Bypass included, at create and at every
  *    later edit by another agent.
  * 5. Pinned by `__tests__/cross-agent-tasks.test.ts`.
@@ -16,7 +18,8 @@
  */
 import type { MeshCore } from '@dorkos/mesh';
 import type { MessageOpts, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import type { ScheduleOriginMarks } from '@dorkos/shared/schemas';
+import { eq } from 'drizzle-orm';
+import { pulseSchedules, type Db } from '@dorkos/db';
 import type { Task } from '@dorkos/shared/types';
 import {
   clampModeToCeiling,
@@ -29,6 +32,7 @@ import {
   hasMarks,
   marksOfLevel,
   mergeMarks,
+  marksHold,
   NO_MARKS,
   parseStoredMarks,
   type TurnMarks,
@@ -66,14 +70,14 @@ export const CROSS_AGENT_NEEDS_FULL_MESSAGE =
   'Only a chat running at Full autonomy can schedule or change a task for another agent. ' +
   'Use your own agent id as the target, or "global", or ask a person.';
 
-/** The refusal for a Full turn that read words from outside, or a teammate's. */
+/** The refusal for a Full turn that carries the outsider mark. */
 export const CROSS_AGENT_MARKED_MESSAGE =
-  'This chat read messages from others, so it cannot schedule or change a task for another ' +
-  'agent in this turn. A person can, or you can schedule it for yourself.';
+  'This chat read messages from outside your team, so in this turn it cannot schedule or ' +
+  'change a task for another agent. A person can, or you can schedule it for yourself.';
 
 /**
  * Whether the calling turn may schedule for, or change a task of, another agent: it runs at Full
- * autonomy right now and carries no mark. Fails closed: no chat, or a chat this process ran no
+ * autonomy right now and carries no outsider mark. Fails closed: no chat, or a chat this process ran no
  * turn on, is not Full.
  *
  * @param caller - The calling turn, as the server resolved it.
@@ -91,7 +95,7 @@ export function crossAgentRefusal(caller: CrossAgentCaller): CrossAgentRefusal |
   const marks = known
     .map(marksOfLevel)
     .reduce(mergeMarks, marksOf(caller.sessionId, caller.agentPath));
-  if (hasMarks(marks)) {
+  if (marksHold(marks)) {
     return { error: CROSS_AGENT_MARKED_MESSAGE, code: 'cross_agent_marked_turn' };
   }
   return null;
@@ -196,55 +200,94 @@ export function auditCrossAgentTask(
   }
 }
 
-/** Who made a task, as each of its runs records it (Security's Must 3). */
-export interface RunCreator {
-  /** The agent that made the task. */
+/** The other agent that last made or changed a task, as its runs record it (Must 3). */
+export interface CrossAgentWriter {
+  /** That agent's home. */
   agentPath: string;
-  /** The chat it was made from, when known. */
+  /** The chat it wrote from, when known. */
   sessionId: string | null;
-  /** The marks that chat's turn carried, as stored on the task. */
+  /** The marks that chat's turn carried. */
   marks: TurnMarks;
 }
 
-/** The parts of a task its creator is read from. */
-type CreatedTask = Pick<Task, 'agentId' | 'proposedByAgentPath' | 'proposedBySessionId'> & {
-  originMarks?: ScheduleOriginMarks | null;
-};
-
 /**
- * Who made this task, read from its stored record and never from a run's input: the proposing
- * agent, its chat, and the marks kept on the task. `undefined` for a task no agent made.
+ * Keep the agent that just made or changed a task for another agent on the task, with its turn's
+ * marks, so the next run starts with them. Replaces the one before: the latest writer is the one
+ * whose words the run now carries.
  *
- * @param task - The task about to run, or `null`.
+ * @param db - The database the store writes.
+ * @param id - The task.
+ * @param writer - Who wrote it, read by the server.
  */
-export function taskCreatorOf(task: CreatedTask | null | undefined): RunCreator | undefined {
-  const creator = task?.proposedByAgentPath;
-  if (!task || !creator) return undefined;
-  const stored = task.originMarks;
-  const marks: TurnMarks = {
-    ...(stored?.outsider ? { outsider: true as const } : {}),
-    ...(stored?.teammate?.length
-      ? { teammate: stored.teammate.map(({ roomId, authorId }) => ({ roomId, authorId })) }
-      : {}),
-  };
-  return { agentPath: creator, sessionId: task.proposedBySessionId ?? null, marks };
+export function recordCrossAgentWriter(db: Db, id: string, writer: CrossAgentWriter): void {
+  db.update(pulseSchedules)
+    .set({ crossAgentWriter: JSON.stringify({ ...writer, marks: marksOnly(writer.marks) }) })
+    .where(eq(pulseSchedules.id, id))
+    .run();
 }
 
 /**
- * The run columns that record who made the task, for `TaskStore.recordRunExecution`: empty for a
- * task no agent made.
+ * The other agent that last wrote a task, or `undefined` when only its own agent or a person did.
+ *
+ * @param db - The database the store writes.
+ * @param id - The task, or nothing.
+ */
+export function crossAgentWriterOf(
+  db: Db,
+  id: string | null | undefined
+): CrossAgentWriter | undefined {
+  if (!id) return undefined;
+  const row = db
+    .select({ writer: pulseSchedules.crossAgentWriter })
+    .from(pulseSchedules)
+    .where(eq(pulseSchedules.id, id))
+    .get();
+  if (!row?.writer) return undefined;
+  try {
+    const value = JSON.parse(row.writer) as {
+      agentPath?: unknown;
+      sessionId?: unknown;
+      marks?: unknown;
+    };
+    if (typeof value.agentPath !== 'string') return undefined;
+    return {
+      agentPath: value.agentPath,
+      sessionId: typeof value.sessionId === 'string' ? value.sessionId : null,
+      marks: parseStoredMarks(JSON.stringify(value.marks ?? {})),
+    };
+  } catch {
+    // Unreadable: carry an outsider's mark rather than none (fails closed).
+    return { agentPath: 'unknown', sessionId: null, marks: { outsider: true } };
+  }
+}
+
+/** Only the mark fields of a set of marks, for storage. */
+function marksOnly(marks: TurnMarks): TurnMarks {
+  return {
+    ...(marks.outsider ? { outsider: true as const } : {}),
+    ...(marks.teammate !== undefined ? { teammate: marks.teammate } : {}),
+  };
+}
+
+/** The parts of a task a run's creator is read from. */
+type CreatedTask = Pick<Task, 'id' | 'proposedByAgentPath' | 'proposedBySessionId'>;
+
+/**
+ * The run columns that record who made the task: the other agent that last wrote it, else the
+ * agent that proposed it (with no marks carried). Empty for a task no agent made.
  *
  * @param task - The run's task, or `null`.
+ * @param store - The task store, where its cross-agent writer is kept.
  */
-export function runCreatorColumns(task: CreatedTask | null | undefined) {
-  const creator = taskCreatorOf(task);
-  return creator
-    ? {
-        creatorAgentPath: creator.agentPath,
-        creatorSessionId: creator.sessionId,
-        creatorMarks: JSON.stringify(creator.marks),
-      }
-    : {};
+export function runCreatorColumns(task: CreatedTask | null | undefined, store: WriterSource) {
+  const writer = task ? store.approvals.crossAgentWriterOf(task.id) : undefined;
+  const agentPath = writer?.agentPath ?? task?.proposedByAgentPath;
+  if (!agentPath) return {};
+  return {
+    creatorAgentPath: agentPath,
+    creatorSessionId: writer ? writer.sessionId : (task?.proposedBySessionId ?? null),
+    creatorMarks: JSON.stringify(writer?.marks ?? NO_MARKS),
+  };
 }
 
 /**
@@ -260,7 +303,7 @@ export function recordedRunCreator(
         creatorMarks: string | null;
       }
     | undefined
-): RunCreator | null {
+): CrossAgentWriter | null {
   if (!row?.creatorAgentPath) return null;
   return {
     agentPath: row.creatorAgentPath,
@@ -269,56 +312,36 @@ export function recordedRunCreator(
   };
 }
 
+/** What the run helpers read a task's cross-agent writer from: the task store. */
+type WriterSource = { approvals: { crossAgentWriterOf(id: string): CrossAgentWriter | undefined } };
+
 /**
- * The creator whose marks a run of this task starts with: one that is ANOTHER agent than the one
- * the task runs as. `undefined` otherwise.
+ * Whether a run of this task must start with marks another agent's write carried. Such a run
+ * executes in this process rather than over the relay, whose task payload carries no marks, so the
+ * marks always reach the turn.
  *
+ * @param store - The task store.
  * @param task - The task about to run.
- * @param meshCore - Mesh, which names each registered home.
  */
-export function runCreatorOf(task: CreatedTask, meshCore: MeshNames): RunCreator | undefined {
-  const creator = taskCreatorOf(task);
-  // Without Mesh nobody can say whose home the creator's is, and no agent's task exists anyway.
-  if (!meshCore || !creator) return undefined;
-  let another: boolean;
-  try {
-    another = isForAnotherAgent(task.agentId, creator.agentPath, meshCore);
-  } catch (err) {
-    // A run must still start; one whose creator cannot be told apart carries its marks.
-    logger.warn("[tasks] could not tell who made this run's task", logError(err));
-    another = true;
-  }
-  return another ? creator : undefined;
+export function creatorMarked(store: WriterSource, task: Pick<Task, 'id'>): boolean {
+  return hasMarks(store.approvals.crossAgentWriterOf(task.id)?.marks ?? NO_MARKS);
 }
 
 /**
- * Whether a run of this task must start with marks another agent carried when it made the task.
- * Such a run executes in this process rather than over the relay, whose task payload carries no
- * marks, so the marks always reach the turn.
- *
- * @param task - The task about to run.
- * @param meshCore - Mesh, which names each registered home.
- */
-export function creatorMarked(task: CreatedTask, meshCore: MeshNames): boolean {
-  return hasMarks(runCreatorOf(task, meshCore)?.marks ?? NO_MARKS);
-}
-
-/**
- * A run's send settings with the marks of the agent that made its task for it, the way a
+ * A run's send settings with the marks of the other agent that last wrote its task, the way a
  * `chat_send` hop carries the sender's: an outsider's as a carried mark, a teammate's chain as a
- * ceiling that lowers nothing (`ceilingCarrying`). Unchanged for a task its own agent made, or an
- * unmarked creator.
+ * ceiling that lowers nothing (`ceilingCarrying`). Unchanged for a task no other agent wrote.
  *
+ * @param store - The task store.
  * @param task - The task about to run.
- * @param meshCore - Mesh, which names each registered home.
  * @param settings - The run's resolved settings.
  */
 export function withCreatorMarks<T extends object>(
-  task: CreatedTask,
-  meshCore: MeshNames,
+  store: WriterSource,
+  task: Pick<Task, 'id'>,
   settings: T
 ): T & Pick<MessageOpts, 'carriedMarks' | 'permissionCeiling'> {
-  const marks = runCreatorOf(task, meshCore)?.marks ?? NO_MARKS;
+  const marks = store.approvals.crossAgentWriterOf(task.id)?.marks ?? NO_MARKS;
   const ceiling = ceilingCarrying(marks);
   return {
     ...settings,

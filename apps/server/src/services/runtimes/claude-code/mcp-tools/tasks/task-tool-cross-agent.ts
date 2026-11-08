@@ -7,6 +7,7 @@
  */
 import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/types';
 import type { McpToolDeps } from '../types.js';
+import type { TurnMarks } from '../../../../core/turn-power/turn-marks.js';
 import {
   agentNameOf,
   auditCrossAgentTask,
@@ -28,7 +29,7 @@ export type CrossAgentDecision =
   /** The target is the caller, `global`, or the caller is not one this rule can vouch for. */
   | { kind: 'own' }
   /** Another agent, and the calling turn may write for it. */
-  | { kind: 'allowed'; callerAgentPath: string }
+  | { kind: 'allowed'; callerAgentPath: string; sessionId: string }
   /** Another agent, and the calling turn may not. */
   | { kind: 'refused'; refusal: CrossAgentRefusal };
 
@@ -63,7 +64,9 @@ export function decideCrossAgent(
     ...(provenance.turnSessionIds ? { turnSessionIds: provenance.turnSessionIds } : {}),
     agentPath: callerAgentPath,
   });
-  return refusal ? { kind: 'refused', refusal } : { kind: 'allowed', callerAgentPath };
+  return refusal
+    ? { kind: 'refused', refusal }
+    : { kind: 'allowed', callerAgentPath, sessionId: provenance.sessionId };
 }
 
 /**
@@ -139,13 +142,25 @@ export async function capPatch(
 }
 
 /**
- * Audit an edit made for another agent: who changed it, for which agent, at what mode.
+ * Record an edit made for another agent: the editor, its chat and its turn's marks on the task, so
+ * the next run starts with them as it would with a creator's (Security's add), and the audit row.
  *
- * @param deps - The tool dependencies, for Mesh.
+ * @param deps - The tool dependencies.
  * @param decision - The decision.
  * @param updated - The task after the edit.
+ * @param marks - The marks of the editing turn, from its own record.
  */
-export function auditEdit(deps: McpToolDeps, decision: CrossAgentDecision, updated: Task): void {
+export function recordOtherEdit(
+  deps: McpToolDeps,
+  decision: CrossAgentDecision,
+  updated: Task,
+  marks: TurnMarks
+): void {
   if (decision.kind !== 'allowed') return;
+  deps.taskStore!.approvals.recordCrossAgentWriter(updated.id, {
+    agentPath: decision.callerAgentPath,
+    sessionId: decision.sessionId,
+    marks,
+  });
   auditCrossAgentTask(updated, 'modify', decision.callerAgentPath, deps.meshCore);
 }

@@ -459,8 +459,8 @@ export class TaskStore {
    * `null` for the model is a real answer and is stored as one: nothing chose a
    * model, so the runtime picked.
    *
-   * The agent that made the task, when one did, is recorded beside it from the task's own row
-   * (DOR-3938, Security's Must 3): never from the dispatch.
+   * Who made the task is recorded beside it, from the task's own row (DOR-3938, Security's
+   * Must 3): the other agent that last wrote it, else its proposer. Never from the dispatch.
    *
    * @param id - The run being dispatched.
    * @param execution - The resolved runtime, and the model if one was chosen.
@@ -470,7 +470,7 @@ export class TaskStore {
     const task = this.getTask(this.getRun(id)?.scheduleId ?? '');
     this.db
       .update(pulseRuns)
-      .set({ ...columns, ...runCreatorColumns(task) })
+      .set({ ...columns, ...runCreatorColumns(task, this) })
       .where(eq(pulseRuns.id, id))
       .run();
   }

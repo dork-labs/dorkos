@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "77ad887c-62e8-4012-9d93-a69b763bdf1c",
+  "id": "47238941-dc46-43be-a221-8a3f36863dcd",
   "prevId": "cc67b294-82e1-4e62-9fae-cabde147ee70",
   "tables": {
     "a2a_tasks": {
@@ -1849,6 +1849,13 @@
         },
         "origin_marks": {
           "name": "origin_marks",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cross_agent_writer": {
+          "name": "cross_agent_writer",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

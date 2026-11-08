@@ -37,6 +37,7 @@ import { TaskStore } from '../../../../tasks/task-store.js';
 import { getTasksTools } from '../tasks/task-tools.js';
 import type { McpToolDeps } from '../types.js';
 import { recordAudit } from '../../../../audit/audit-trail.js';
+import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 import {
@@ -44,7 +45,6 @@ import {
   creatorMarked,
   recordedRunCreator,
   crossAgentRefusal,
-  runCreatorOf,
   withCreatorMarks,
 } from '../../../../tasks/approvals/cross-agent.js';
 import { eq } from 'drizzle-orm';
@@ -232,7 +232,13 @@ describe('Must 1 and 5: Full creates for another agent; below Full is refused', 
   });
 });
 
-describe('Must 2: a marked Full turn is refused', () => {
+/** A teammate's chain, as a ceiling that lowers nothing (how a room hop carries it). */
+const TEAMMATE = [{ roomId: 'room-1', authorId: 'author-1' }];
+const TEAMMATE_HOP = {
+  permissionCeiling: { asks: 'never', reach: 'everything', teammate: TEAMMATE },
+};
+
+describe('Must 2: only the outsider mark refuses', () => {
   it('refuses tasks_create for another agent from a Full turn that read an outsider', async () => {
     const tools = toolsOfA(
       await ranTurn('bypassPermissions', { carriedMarks: { outsider: true } })
@@ -243,20 +249,7 @@ describe('Must 2: a marked Full turn is refused', () => {
     expect(store.getTasks()).toEqual([]);
   });
 
-  it('refuses a teammate-marked Full turn too', async () => {
-    const sessionId = await ranTurn('bypassPermissions', {
-      permissionCeiling: {
-        asks: 'never',
-        reach: 'everything',
-        teammate: [{ roomId: 'room-1', authorId: 'author-1' }],
-      },
-    });
-    expect(crossAgentRefusal({ sessionId, agentPath: homeA })?.code).toBe(
-      'cross_agent_marked_turn'
-    );
-  });
-
-  it('refuses tasks_update on another agent’s task from a marked Full turn', async () => {
+  it('refuses tasks_update on another agent’s task from a Full turn that read an outsider', async () => {
     const theirs = bTask('acceptEdits');
     const tools = toolsOfA(
       await ranTurn('bypassPermissions', { carriedMarks: { outsider: true } })
@@ -270,14 +263,134 @@ describe('Must 2: a marked Full turn is refused', () => {
     expect(store.getTask(theirs.id)!.prompt).toBe('B’s work.');
   });
 
-  it('still lets a marked Full turn file a task for itself', async () => {
+  it('refuses an outsider mark that came through a teammate hop, on create and on edit', async () => {
+    const both = { ...TEAMMATE_HOP, carriedMarks: { outsider: true } };
+    const create = await call(toolsOfA(await ranTurn('bypassPermissions', both)), 'tasks_create', {
+      ...ARGS,
+      target: 'agent-b',
+    });
+    expect(create.payload.code).toBe('cross_agent_marked_turn');
+    const theirs = bTask('acceptEdits');
+    const edit = await call(toolsOfA(await ranTurn('bypassPermissions', both)), 'tasks_update', {
+      id: theirs.id,
+      prompt: 'Something else.',
+    });
+    expect(edit.payload.code).toBe('cross_agent_marked_turn');
+    expect(store.getTask(theirs.id)!.prompt).toBe('B’s work.');
+  });
+
+  it('lets a teammate-marked Full turn create for another agent, and keeps the mark for its runs', async () => {
+    const sessionId = await ranTurn('bypassPermissions', TEAMMATE_HOP);
+    expect(crossAgentRefusal({ sessionId, agentPath: homeA })).toBeNull();
+    const { isError } = await call(toolsOfA(sessionId), 'tasks_create', {
+      ...ARGS,
+      target: 'agent-b',
+    });
+    expect(isError).toBe(false);
+    const task = store.getTasks()[0]!;
+    expect(store.approvals.crossAgentWriterOf(task.id)).toEqual({
+      agentPath: homeA,
+      sessionId,
+      marks: { teammate: TEAMMATE },
+    });
+    expect(withCreatorMarks(store, task, {}).permissionCeiling).toEqual({
+      asks: 'never',
+      reach: 'everything',
+      teammate: TEAMMATE,
+    });
+  });
+
+  it('lets a teammate-marked Full turn change another agent’s task', async () => {
+    const theirs = bTask('acceptEdits');
+    const tools = toolsOfA(await ranTurn('bypassPermissions', TEAMMATE_HOP));
+    const { isError } = await call(tools, 'tasks_update', { id: theirs.id, cron: '0 7 * * *' });
+    expect(isError).toBe(false);
+    expect(store.getTask(theirs.id)!.cron).toBe('0 7 * * *');
+  });
+
+  it('still lets an outsider-marked Full turn file a task for itself', async () => {
     const tools = toolsOfA(
       await ranTurn('bypassPermissions', { carriedMarks: { outsider: true } })
     );
     const { isError } = await call(tools, 'tasks_create', { ...ARGS, target: 'agent-a' });
     expect(isError).toBe(false);
-    // Its own marked turn's task parks for a person, as it always has (DOR-3036).
+    // Its own outsider-marked task parks for a person, as it always has (DOR-3036).
     expect(store.getTasks()[0]!.status).toBe('pending_approval');
+  });
+});
+
+describe('PM: a prompt edit to another agent’s task', () => {
+  it('stays live from a Full, unmarked turn, as a create does', async () => {
+    const theirs = bTask('acceptEdits');
+    store.approvals.recordApproval(theirs.id);
+    levels.set(homeB, 'acceptEdits');
+    const tools = toolsOfA(await ranTurn('bypassPermissions'));
+    const { isError, payload } = await call(tools, 'tasks_update', {
+      id: theirs.id,
+      prompt: 'A better sweep.',
+    });
+    expect(isError).toBe(false);
+    expect(payload.needsReapproval).toBeUndefined();
+    const after = store.getTask(theirs.id)!;
+    expect(after.prompt).toBe('A better sweep.');
+    expect(after.status).toBe('active');
+  });
+
+  it('below Full is refused, so it stays with a person', async () => {
+    const theirs = bTask('acceptEdits');
+    store.approvals.recordApproval(theirs.id);
+    const tools = toolsOfA(await ranTurn('acceptEdits'));
+    const { isError, payload } = await call(tools, 'tasks_update', {
+      id: theirs.id,
+      prompt: 'A better sweep.',
+    });
+    expect(isError).toBe(true);
+    expect(payload.code).toBe('not_your_schedule');
+    expect(store.getTask(theirs.id)!.prompt).toBe('B’s work.');
+  });
+
+  it('records the editor, its chat and its marks, so the next run starts with them', async () => {
+    const theirs = bTask('acceptEdits');
+    const sessionId = await ranTurn('bypassPermissions', TEAMMATE_HOP);
+    await call(toolsOfA(sessionId), 'tasks_update', { id: theirs.id, prompt: 'A better sweep.' });
+    expect(store.approvals.crossAgentWriterOf(theirs.id)).toEqual({
+      agentPath: homeA,
+      sessionId,
+      marks: { teammate: TEAMMATE },
+    });
+    const run = store.createRun(theirs.id, 'scheduled');
+    store.recordRunExecution(run.id, { runtime: 'claude-code' });
+    expect(creatorOfRun(run.id)).toEqual({
+      agentPath: homeA,
+      sessionId,
+      marks: { teammate: TEAMMATE },
+    });
+  });
+});
+
+describe('Security: every tasks_update path runs the gate, a change of target included', () => {
+  it('refuses moving a task to another agent, from a Full turn, and changes nothing', async () => {
+    const mine = store.createTask({
+      name: 'a-nightly',
+      description: 'a',
+      prompt: 'A’s work.',
+      cron: '0 2 * * *',
+      agentId: 'agent-a',
+      filePath: path.join(scratch, 'none-a', 'SKILL.md'),
+    });
+    const theirs = bTask('acceptEdits');
+    const tools = toolsOfA(await ranTurn('bypassPermissions'));
+    const away = await call(tools, 'tasks_update', { id: mine.id, target: 'agent-b' });
+    const toMe = await call(tools, 'tasks_update', { id: theirs.id, target: 'agent-a' });
+    expect(away.isError).toBe(true);
+    expect(toMe.isError).toBe(true);
+    expect(store.getTask(mine.id)!.agentId).toBe('agent-a');
+    expect(store.getTask(theirs.id)!.agentId).toBe('agent-b');
+  });
+
+  it('keeps both tools in the Tasks permission area, which the tool gate applies first', () => {
+    expect(MCP_TOOL_TIERS.tasks_create.area).toBe('tasks');
+    expect(MCP_TOOL_TIERS.tasks_update.area).toBe('tasks');
   });
 });
 
@@ -336,60 +449,33 @@ describe('Must 4: the mode is capped at the target agent’s level', () => {
 });
 
 describe('Must 3: each run records its creator and starts with its marks', () => {
-  it('reads the creator from the task and carries an outsider mark into the run', () => {
-    const task = {
-      agentId: 'agent-b',
-      proposedByAgentPath: homeA,
-      proposedBySessionId: 'ses-made',
-      originMarks: { outsider: true as const },
-    };
-    expect(runCreatorOf(task, mesh)).toEqual({
+  it('carries an outsider mark kept on the writer into the run', () => {
+    const theirs = bTask('acceptEdits');
+    store.approvals.recordCrossAgentWriter(theirs.id, {
       agentPath: homeA,
       sessionId: 'ses-made',
       marks: { outsider: true },
     });
-    expect(creatorMarked(task, mesh)).toBe(true);
-    expect(withCreatorMarks(task, mesh, { model: 'm' })).toEqual({
+    expect(creatorMarked(store, theirs)).toBe(true);
+    expect(withCreatorMarks(store, theirs, { model: 'm' })).toEqual({
       model: 'm',
       carriedMarks: { outsider: true },
     });
   });
 
-  it('carries a teammate chain as a ceiling that lowers nothing', () => {
-    const teammate = [{ roomId: 'room-1', authorId: 'author-1', name: 'Kai', room: '#ops' }];
-    const made = {
-      agentId: 'agent-b',
-      proposedByAgentPath: homeA,
-      proposedBySessionId: null,
-      originMarks: { teammate },
-    };
-    const send = withCreatorMarks(made, mesh, {});
-    expect(send.permissionCeiling).toEqual({
-      asks: 'never',
-      reach: 'everything',
-      teammate: [{ roomId: 'room-1', authorId: 'author-1' }],
-    });
-    expect(send.carriedMarks).toBeUndefined();
-  });
-
-  it('an unmarked creator carries nothing; a task its own agent made carries nothing', () => {
-    const made = { agentId: 'agent-b', proposedByAgentPath: homeA, proposedBySessionId: 's' };
-    expect(runCreatorOf(made, mesh)?.marks).toEqual({});
-    expect(withCreatorMarks(made, mesh, {})).toEqual({});
-    const own = { ...made, proposedByAgentPath: homeB, originMarks: { outsider: true as const } };
-    expect(runCreatorOf(own, mesh)).toBeUndefined();
-    expect(withCreatorMarks(own, mesh, {})).toEqual({});
-    expect(runCreatorOf(made, undefined)).toBeUndefined();
-  });
-
-  it('the run row keeps the creator, its chat and its marks, read from the task', () => {
+  it('a task no other agent wrote carries nothing', () => {
     const theirs = bTask('acceptEdits');
-    store.recordProposal(theirs.id, {
-      reason: 'asked',
-      proposedByAgentPath: homeA,
-      proposedBySessionId: 'ses-made',
+    expect(creatorMarked(store, theirs)).toBe(false);
+    expect(withCreatorMarks(store, theirs, {})).toEqual({});
+  });
+
+  it('the run row keeps the writer, its chat and its marks; a person’s task records nobody', () => {
+    const theirs = bTask('acceptEdits');
+    store.approvals.recordCrossAgentWriter(theirs.id, {
+      agentPath: homeA,
+      sessionId: 'ses-made',
+      marks: { outsider: true },
     });
-    store.approvals.markOrigin(theirs.id, { outsider: true });
     const run = store.createRun(theirs.id, 'scheduled');
     store.recordRunExecution(run.id, { runtime: 'claude-code' });
     expect(creatorOfRun(run.id)).toEqual({
@@ -408,10 +494,14 @@ describe('Must 3: each run records its creator and starts with its marks', () =>
     expect(creatorOfRun(own.id)).toBeNull();
   });
 
-  it('a task made cross-agent stores the creator its runs read', async () => {
+  it('a task made cross-agent from an unmarked turn records its creator with no marks', async () => {
     const sessionId = await ranTurn('bypassPermissions');
     await call(toolsOfA(sessionId), 'tasks_create', { ...ARGS, target: 'agent-b' });
     const task = store.getTasks()[0]!;
-    expect(runCreatorOf(task, mesh)).toEqual({ agentPath: homeA, sessionId, marks: {} });
+    expect(store.approvals.crossAgentWriterOf(task.id)).toEqual({
+      agentPath: homeA,
+      sessionId,
+      marks: {},
+    });
   });
 });
