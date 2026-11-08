@@ -9,7 +9,7 @@ Dorian, 2026-11-08: an action only a person can do is a platform gap. Agents sho
 
 - **Narrowing** (taking access away) an agent does directly, audited, with one-tap Undo.
 - **Widening** (giving access) any agent can request. A person approves anything. An agent may approve a narrow slice of it (§4).
-- Write access by agent approval waits on the §4.7 tool-read Must and on Dorian's call (§9).
+- Write access by agent approval waits on DOR-3969 (tool and connector reads mark the turn, the §4.7 gap) and on Dorian's call (§12).
 
 ## 2. Security's terms (the baseline, word for word)
 
@@ -147,6 +147,31 @@ Undo restores the row's `before`. It is checked as what it does:
 - If access has changed since (current state ≠ the row's `after`), Undo refuses with `UNDO_STALE` rather than overwrite a later change.
 - A person can always undo, from Activity or the Connections page.
 
+### 4.4 What this can prove before DOR-3969 (Security, 2026-11-08 11:08 CT)
+
+"Refused in a dirty turn" is only provable for turns DorkOS already marks: outsider room or chat text, a Wi-Fi sign-in's hold, and a turn another agent started. Reads through tools and connectors (email, web pages, GitHub, Linear) don't mark a turn until DOR-3969 lands (design: `specs/turn-marks/design-note.md:57-61`).
+
+**So the gate rows and tests prove only the limits that hold without it.** An agent-approved read request is refused:
+
+1. in a turn another agent started;
+2. for self-approval;
+3. on an every-agent share;
+4. above the approver's own access;
+5. for write;
+6. in a marked turn (outsider room or chat text, Wi-Fi).
+
+For narrowing another agent, the rows are 1 and 6 (refused when another agent started the turn, and in a marked turn). An agent narrowing its own grants is allowed in both.
+
+**Wording rule.** The release note, the tool descriptions, the agent-facing context text and the refusal notes never say an agent is "refused after reading outside content", or anything that implies a tool or connector read is caught. They say what is true: an agent can't approve its own request, can't approve write access, can't approve from a turn another agent started, and can't approve in a turn DorkOS marks as having read words it can't vouch for. `GRANT_MARKED_TURN` fires only on a marked turn, so its text (§7) stays accurate. The PR checks this with a grep test over the new tool descriptions and the fragment for the phrases "outside content", "after reading", "external content".
+
+**When DOR-3969 lands,** nothing in this design changes shape: `marksOf` starts returning `outsider` for a turn that read through a tool or connector, and every 4.1 / 4.2 check picks it up. That PR then adds:
+
+- a seventh gate row and test: refused after a connector read (a fake connector result in the turn);
+- the widened wording in the release note and tool text;
+- a re-open of Q2 (narrowing another agent then gets the full protection, not just today's marks).
+
+Write approval by agents still waits on Dorian's call after that (§1).
+
 ## 5. Data model
 
 Two new tables in `packages/db/src/schema/connectors/`, one migration.
@@ -281,12 +306,30 @@ Each phase is its own PR, opened on `hold` for Security, armed only after @secur
 2. **Narrowing + ledger.** `connection_grant_changes`, audit and Activity, `narrow_access`, `list_access_changes`, person Undo, mutants 1-3. Carries DOR-3959's grant half (an agent gives up its own grants, from any turn).
 3. **Read approval by agents.** `approve_request`, `undo_access_change`, the card's "Approved by" state, mutants 4-5.
 4. **DOR-3959's seat half.** Own-seat restart under its three terms. Separate code (room seats, not grants); listed here so the ticket closes with this lane.
-5. **Not in this lane:** write approval by agents. It waits on the §4.7 tool-read Must and on Dorian's decision.
+5. **Not in this lane:** write approval by agents. It waits on DOR-3969 (tool and connector reads mark the turn) and on Dorian's decision.
+
+### 11.1 Build plan for 0.135.0 (cut Mon Nov 10, 18:00 CT)
+
+This is Must 3 of 0.135.0. Phases 1-3 ship in it; phase 4 (seat restart) is a Should and rides along only if green. Times are CT. Every PR opens on `hold`, and stacked ones open as drafts until the one below merges.
+
+| PR                                                                               | Contents                                                                                                                                     | Open by   | Security label by           |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------- | --------------------------- |
+| **A. Exclusions (server)**                                                       | `grantScopeFor` for both callers, `connection_grant_exclusions` + migration, the deny on every X1 path, person routes, X-tests, mutants 6-8  | Sun 20:00 | Mon 10:00                   |
+| **B. Ledger + narrowing (server)**, on A                                         | `connection_grant_changes`, `recordAudit` + Activity events, `narrow_access`, `list_access_changes`, person Undo route, mutants 1-3          | Mon 09:00 | Mon 13:00                   |
+| **C. Read approval (server)**, on B                                              | `approve_request`, `undo_access_change`, the six §4.4 rows as tests, mutants 4-5, the wording grep test, agent-facing tool text              | Mon 11:00 | Mon 15:00                   |
+| **D. Person UI (client)**, on A's routes, B's and C's for Undo and "Approved by" | exclusion chips and picker, Undo on Activity and Connections rows, the card's "Approved by" state, light, dark and 390px shots for @designer | Mon 12:00 | Mon 15:00 (designer OK too) |
+| **E. Changelog fragment** (in C)                                                 | plain words, the wording rule above                                                                                                          | with C    | with C                      |
+
+- **Merge order:** A → B → C, then D. All four green and labelled by Mon 16:00, merged by 17:30, so the cut at 18:00 has them.
+- **If C slips:** A and B still ship (exclusion plus narrowing with Undo). The note then says only that, and approval rides the next release. A alone already unblocks `flow-snapshot`.
+- **If DOR-3969 lands by Mon 15:00:** C adds the seventh row and the wider wording (§4.4). Otherwise the wording stays as §4.4 says.
+- **Load:** one worktree with `node_modules` for A-C in sequence; D in a second. Full suites run in CI only, and the local runs stay targeted (`pnpm vitest run <path>`), after an `uptime` check.
+- **QA gate rows:** "a grant narrowed with Undo" (B + D) and the six §4.4 rows (C), in place of "refused in a dirty turn".
 
 ## 12. Open questions for Security
 
 - **Q1.** Agent-set exclusions: X2 (person-only) as built, or my pick in §2.1?
-- **Q2.** Narrowing another agent is checked against today's marks, and today a connector or tool read doesn't mark the turn (§4.7, `specs/turn-marks/design-note.md:57-61`). So a turn that read a poisoned email can still narrow a teammate. The harm is lost access, visible in Activity and undone by a person in one tap. Ship narrowing-others in phase 2 with that residual named, or hold it behind the §4.7 Must too? My pick: ship, named in the PR.
+- **Q2.** Narrowing another agent is checked against today's marks, and today a connector or tool read doesn't mark the turn (§4.7, `specs/turn-marks/design-note.md:57-61`). So a turn that read a poisoned email can still narrow a teammate. The harm is lost access, visible in Activity and undone by a person in one tap. Ship narrowing-others in phase 2 with that residual named, or hold it behind DOR-3969 too? My pick: ship, named in the PR. Security's 11:08 point already accepts this shape for approval (§4.4); this asks the same for narrowing.
 - **Q3.** Approval counts the approver's access through an every-agent share as "held" (W1 says "already holds"). Acceptable, or named grants only? My pick: both count; the every-agent row itself is never written by an agent.
 
 ## 13. Out of scope
