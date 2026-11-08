@@ -212,12 +212,14 @@ export const MINI_APP_ACCESS_PAGE_STYLES = `:root {
   --bg: #fafafa; --fg: #171717; --muted: #525252; --line: #e5e5e5;
   --card: #ffffff; --primary: #171717; --primary-fg: #fafafa; --warn: #92400e;
   --line-strong: #d4d4d4;
+  --tint: #f5f5f5;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0a0a0a; --fg: #fafafa; --muted: #a3a3a3; --line: #262626;
     --card: #171717; --primary: #fafafa; --primary-fg: #171717; --warn: #fbbf24;
     --line-strong: #525252;
+    --tint: #262626;
   }
 }
 * { box-sizing: border-box; }
@@ -248,6 +250,8 @@ fieldset { border: 0; padding: 0; margin: 0; }
   display: flex; align-items: center; gap: .6rem; min-height: 44px;
   padding: .5rem .75rem; border: 1px solid var(--line); border-radius: 8px; margin-bottom: .5rem;
 }
+/* One account is a fact, not a field: a tint, no border. */
+p.account { border-color: transparent; background: var(--tint); }
 .actions { display: flex; gap: .75rem; justify-content: flex-end; margin-top: 1.25rem; flex-wrap: wrap; }
 button {
   min-height: 44px; min-width: 7rem; padding: 0 1rem; border-radius: 8px;
