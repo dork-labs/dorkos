@@ -48,6 +48,19 @@ describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
       );
     });
 
+    it('names the selected profile as the config default, so a rebuild without the request keeps it', () => {
+      const settings = { permissionMode };
+      const config = codexProtectedConfig(roots.cwd, filePolicy, settings);
+      const load = buildLoadOverrides(
+        { cwd: roots.cwd, settings, tools },
+        { threadKey: undefined, trust: undefined, realCwd: roots.cwd }
+      );
+      expect(config.default_permissions).toBe(codexPermissionProfile(settings));
+      expect(Object.keys(config.permissions as object)).toEqual([config.default_permissions]);
+      expect(load.config.default_permissions).toBe(load.permissions);
+      expect(String(config.default_permissions)).not.toMatch(/^:/);
+    });
+
     it('keeps secret reads and person-only writes refused even at Full', () => {
       const config = codexProtectedConfig(roots.cwd, filePolicy, { permissionMode });
       const profiles = config.permissions as Record<string, { filesystem: Record<string, string> }>;
