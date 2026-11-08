@@ -52,7 +52,6 @@ describe('to-do routes', () => {
       personProven: personProof,
       service,
       agentExists: (id: string) => Object.values(AGENTS).includes(id),
-      agentIdForPath: (agentPath: string) => AGENTS[agentPath],
     };
     const app = honoGroupListener(
       [
@@ -76,18 +75,18 @@ describe('to-do routes', () => {
 
   afterEach(() => service.stop());
 
-  it("marks an agent's own promise when the agent changes it over HTTP, where no turn is readable", async () => {
-    const made = service.create('agent-ana', {
-      what: 'Ship it',
-      originLevel: { asks: 'never', reach: 'everything' },
-    });
-    expect(power(made.id)!.marks).toBe('{}');
+  it("refuses an agent's own token on PATCH, so a Blocked To-dos area can't be skipped (DOR-3936, Security M1)", async () => {
+    // This route runs no permission check: an agent changes its promises with
+    // todo_promise_update, which the gate decides. Its own token, here, changes nothing.
+    const made = service.create('agent-ana', { what: 'Ship it' });
+    const before = service.get(made.id);
     const res = await request(fixtureServer)
       .patch(`/api/todo-promises/${made.id}`)
       .set(AGENT_IDENTITY_HEADER, '/agents/ana')
       .send({ state: 'kept' });
-    expect(res.status).toBe(200);
-    expect(power(made.id)!.marks).toBe('{"outsider":true}');
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('NOT_A_PERSON');
+    expect(service.get(made.id)).toEqual(before);
   });
 
   describe('person authority needs proof (DOR-3088, Security Must for PR 2)', () => {
@@ -153,30 +152,19 @@ describe('to-do routes', () => {
     expect(empty.status).toBe(400);
   });
 
-  it('lets the promising agent and a person change one, and refuses another agent', async () => {
+  it('lets a person change one, and refuses every agent caller', async () => {
     const made = service.create('agent-ana', { what: 'Ship it' });
 
-    const other = await request(fixtureServer)
-      .patch(`/api/todo-promises/${made.id}`)
-      .set(AGENT_IDENTITY_HEADER, '/agents/bo')
-      .send({ state: 'kept' });
-    expect(other.status).toBe(403);
-    expect(other.body.code).toBe('NOT_YOURS');
-
-    const unverified = await request(fixtureServer)
-      .patch(`/api/todo-promises/${made.id}`)
-      .set(AGENT_IDENTITY_HEADER, 'not-a-token')
-      .send({ state: 'kept' });
-    expect(unverified.status).toBe(403);
-    expect(unverified.body.code).toBe('NO_AGENT');
+    for (const header of ['/agents/ana', '/agents/bo', 'not-a-token']) {
+      const res = await request(fixtureServer)
+        .patch(`/api/todo-promises/${made.id}`)
+        .set(AGENT_IDENTITY_HEADER, header)
+        .send({ state: 'open', dueAt: '2099-10-12T09:00:00Z' });
+      expect(res.status, header).toBe(403);
+      expect(res.body.code, header).toBe('NOT_A_PERSON');
+    }
     expect(service.get(made.id)!.state).toBe('open');
-
-    const own = await request(fixtureServer)
-      .patch(`/api/todo-promises/${made.id}`)
-      .set(AGENT_IDENTITY_HEADER, '/agents/ana')
-      .send({ state: 'open', dueAt: '2099-10-12T09:00:00Z' });
-    expect(own.status).toBe(200);
-    expect(own.body.dueAt).toBe('2099-10-12T09:00:00.000Z');
+    expect(service.get(made.id)!.dueAt).toBeNull();
 
     const person = await request(fixtureServer)
       .patch(`/api/todo-promises/${made.id}`)

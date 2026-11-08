@@ -81,7 +81,8 @@ export function registerTodoPromisesOpenApi(registry: OpenAPIRegistry): void {
     summary: 'Close a promise or move its date',
     description:
       'Mark a promise kept, missed or dropped. `state: "open"` moves an open promise to a new ' +
-      '`dueAt`, or reopens a closed one. Only the agent that promised, or a person, may change it.',
+      '`dueAt`, or reopens a closed one. Only a person may change one here: agents change their ' +
+      'own with `todo_promise_update`, so a caller presenting an agent identity is refused.',
     request: {
       params: z.object({ id: z.string() }),
       body: { content: { 'application/json': { schema: UpdateTodoPromiseRequestSchema } } },
@@ -97,7 +98,7 @@ export function registerTodoPromisesOpenApi(registry: OpenAPIRegistry): void {
         content: { 'application/json': { schema: TodoPromiseErrorSchema } },
       },
       403: {
-        description: 'Another agent made it, or the person is not the owner (`NOT_YOURS`)',
+        description: 'The caller is an agent (`NOT_A_PERSON`), or not the owner (`NOT_YOURS`)',
         content: { 'application/json': { schema: TodoPromiseErrorSchema } },
       },
       404: {

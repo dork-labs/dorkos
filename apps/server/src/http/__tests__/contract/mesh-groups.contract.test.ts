@@ -623,14 +623,18 @@ contractSuite('mesh, agent and discovery groups', [
     expect: { status: 400, schema: VALIDATION_FAILED },
   },
   {
-    name: 'PATCH /api/todo-promises/:id refuses an agent that could not be identified',
+    // Every agent caller, verified or not: agents use todo_promise_update (DOR-3936).
+    name: 'PATCH /api/todo-promises/:id refuses an agent caller',
     method: 'PATCH',
     path: '/api/todo-promises/no-such-promise',
     headers: AGENT,
     body: { state: 'kept' },
     expect: {
       status: 403,
-      body: { error: 'This agent could not be identified, so nothing changed.', code: 'NO_AGENT' },
+      body: {
+        error: 'Agents change their own promises with todo_promise_update.',
+        code: 'NOT_A_PERSON',
+      },
     },
   },
   {

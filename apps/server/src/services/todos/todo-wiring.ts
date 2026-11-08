@@ -73,7 +73,6 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
   const routerDeps: TodoPromiseRouterDeps = {
     service,
     agentExists,
-    agentIdForPath,
     // The same owner bar the account routes use: a person, never an agent,
     // and with login on, the install's owner.
     isOwner: (facts) => refuseUnlessAccountOwner(facts) === undefined,
