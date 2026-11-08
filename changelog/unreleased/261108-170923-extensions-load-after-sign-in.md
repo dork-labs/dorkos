@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(extensions): mini apps and their Settings come back after you sign in, and a failed load says so'
+  - 'fix(extensions): a failed list offers one way out, Try again, not Reload beside it'
 ---
 
 ### Fixed
