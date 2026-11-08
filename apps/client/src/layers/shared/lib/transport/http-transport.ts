@@ -37,6 +37,7 @@ import { createApprovalMethods } from './approval-methods';
 import { createPermissionMethods } from './permission-methods';
 import { createTodoPromiseMethods } from './todo-promise-methods';
 import { createTodoMethods } from './todo-methods';
+import { createGlobalMcpMethods } from './global-mcp-methods';
 import { createWorkQueueMethods } from './work-queue-methods';
 import { createHeartbeatMethods } from './heartbeat-methods';
 import { createNotificationMethods } from './notification-methods';
@@ -94,6 +95,7 @@ export interface HttpTransport
     ReturnType<typeof createPermissionMethods>,
     ReturnType<typeof createTodoPromiseMethods>,
     ReturnType<typeof createTodoMethods>,
+    ReturnType<typeof createGlobalMcpMethods>,
     ReturnType<typeof createWorkQueueMethods>,
     ReturnType<typeof createHeartbeatMethods>,
     ReturnType<typeof createNotificationMethods>,
@@ -154,6 +156,7 @@ export class HttpTransport implements Transport {
       createPermissionMethods(baseUrl),
       createTodoPromiseMethods(baseUrl),
       createTodoMethods(baseUrl),
+      createGlobalMcpMethods(baseUrl),
       createWorkQueueMethods(baseUrl),
       createHeartbeatMethods(baseUrl),
       createNotificationMethods(baseUrl),

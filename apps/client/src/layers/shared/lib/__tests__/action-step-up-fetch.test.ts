@@ -104,6 +104,71 @@ describe('personAwareFetch and a held action', () => {
     expect(res.status).toBe(200);
   });
 
+  it('a cancel still answers readably after the caller’s timeout killed the first response', async () => {
+    const first = held('held-1');
+    const base = vi.fn(async () => first);
+    stops.push(answerWith({ kind: 'not-confirmed' }).stop);
+    const res = await personAwareFetch(base, ORIGIN)('/api/x', { method: 'POST', body: '{}' });
+    // What a fired signal leaves behind: the first response's own body can't be read.
+    await first.body?.cancel();
+    expect(res).not.toBe(first);
+    expect(res.status).toBe(428);
+    expect(await res.json()).toMatchObject({ code: STEP_UP_REQUIRED_CODE });
+  });
+
+  it('asks again on a fresh clock: the caller’s timeout fired while the sheet was open', async () => {
+    const signals: Array<AbortSignal | null | undefined> = [];
+    const base = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      signals.push(init?.signal);
+      return signals.length === 1 ? held('held-1') : held('held-2');
+    });
+    const answer = answerWith(
+      { kind: 'ask-again' },
+      { kind: 'confirmed', status: 201, result: { ok: true } }
+    );
+    stops.push(answer.stop);
+    const res = await personAwareFetch(base as typeof fetch, ORIGIN)('/api/x', {
+      method: 'POST',
+      body: '{}',
+      signal: AbortSignal.abort(),
+    });
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+    expect(res.status).toBe(201);
+  });
+
+  it('an expired relay confirm re-asks the same route with the same body, and is held afresh', async () => {
+    const path = '/api/relay/adapters/made-up/confirm-references';
+    const body = '{"fingerprint":"made-up"}';
+    const sent: Array<{ url: string; method?: string; body: unknown; aborted?: boolean }> = [];
+    const base = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push({
+        url: String(input),
+        method: init?.method,
+        body: init?.body,
+        aborted: init?.signal?.aborted,
+      });
+      return sent.length === 1 ? held('held-1') : held('held-2');
+    });
+    const answer = answerWith(
+      { kind: 'ask-again' },
+      { kind: 'confirmed', status: 200, result: { ok: true } }
+    );
+    stops.push(answer.stop);
+    const res = await personAwareFetch(base as typeof fetch, ORIGIN)(path, {
+      method: 'POST',
+      body,
+      signal: AbortSignal.abort(),
+    });
+    // Two sheets, one per hold: a person confirms the new one, never the expired one.
+    expect(answer.asked).toEqual(['held-1', 'held-2']);
+    expect(sent).toEqual([
+      { url: path, method: 'POST', body, aborted: true },
+      { url: path, method: 'POST', body, aborted: false },
+    ]);
+    expect(res.status).toBe(200);
+  });
+
   it('stops asking again after a few tries', async () => {
     let n = 0;
     const base = vi.fn(async () => held(`held-${++n}`));

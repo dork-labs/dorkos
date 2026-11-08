@@ -144,6 +144,8 @@ export const connectionsSearchSchema = mergeDialogSearch(
     // Opens the app's "Who can use it?" on "Only agents you pick" (the trust
     // notice's Choose agents). Anything else lands on the app's own answer.
     who: z.literal('picked').optional().catch(undefined),
+    // Which list the page shows. Absent, or anything else, is Apps.
+    tab: z.literal('mcp').optional().catch(undefined),
   })
 );
 export const activitySearchSchema = mergeDialogSearch(

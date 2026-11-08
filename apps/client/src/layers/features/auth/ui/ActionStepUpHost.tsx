@@ -285,7 +285,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
             )}
             {failure && <FailureLine id={failureId} failure={failure} secondsLeft={secondsLeft} />}
             {/* On a phone: stacked, full width, 44px tall (designer, DOR-3467). */}
-            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button
                 type="button"
                 variant="ghost"
@@ -297,7 +297,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
               </Button>
               <Button
                 type="submit"
-                className="h-11 w-full sm:h-9 sm:flex-1"
+                className="h-11 w-full sm:h-9 sm:w-auto"
                 disabled={pending || waiting || stage.kind === 'loading'}
               >
                 {pending
@@ -397,7 +397,7 @@ function ExtensionRiskBody({
         <p role="status" className="text-sm">
           A mini app has run since you signed in. Sign in again to confirm.
         </p>
-        <div className="flex flex-col-reverse gap-2 sm:flex-row">
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button
             type="button"
             variant="ghost"
@@ -408,7 +408,7 @@ function ExtensionRiskBody({
           </Button>
           <Button
             type="button"
-            className="h-11 w-full sm:h-9 sm:flex-1"
+            className="h-11 w-full sm:h-9 sm:w-auto"
             autoFocus
             onClick={onSignInAgain}
           >
@@ -425,7 +425,7 @@ function ExtensionRiskBody({
           <p key={risk.id}>{extensionRiskLine(risk)}</p>
         ))}
       </div>
-      <div className="flex flex-col-reverse gap-2 sm:flex-row">
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button
           type="button"
           variant="ghost"
@@ -436,7 +436,7 @@ function ExtensionRiskBody({
         </Button>
         <Button
           type="button"
-          className="h-11 w-full sm:h-9 sm:flex-1"
+          className="h-11 w-full sm:h-9 sm:w-auto"
           autoFocus
           onClick={() => {
             onClose();

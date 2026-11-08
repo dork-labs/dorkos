@@ -7,6 +7,7 @@
  */
 import { vi } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';
+import { globalMcpTransportMocks } from './mock-global-mcp.js';
 import { todoPromiseTransportMocks } from './mock-todo-promises.js';
 import { todoTransportMocks } from './mock-todos.js';
 
@@ -50,7 +51,12 @@ function workQueueTransportMocks(): WorkQueueMethods {
   };
 }
 
-/** The promises, to-dos and work queue methods, for `createMockTransport` to spread. */
+/** The promises, to-dos, work queue and global MCP methods, for `createMockTransport` to spread. */
 export function agentWorkTransportMocks() {
-  return { ...todoPromiseTransportMocks(), ...todoTransportMocks(), ...workQueueTransportMocks() };
+  return {
+    ...todoPromiseTransportMocks(),
+    ...todoTransportMocks(),
+    ...workQueueTransportMocks(),
+    ...globalMcpTransportMocks(),
+  };
 }
