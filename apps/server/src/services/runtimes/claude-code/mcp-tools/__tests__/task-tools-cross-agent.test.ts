@@ -45,6 +45,10 @@ import type { McpToolDeps } from '../types.js';
 import { recordAudit } from '../../../../audit/audit-trail.js';
 import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
+import {
+  noteChatTurnStarted,
+  resetChatStartedTurns,
+} from '../../../../session/chat-messages/chat-started-turns.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 import {
   capModeAtAgentLevel,
@@ -93,6 +97,24 @@ async function ranTurn(stored: string, opts?: Record<string, unknown>): Promise<
     () => stored
   );
   for await (const _event of runtime.sendMessage(sessionId, 'hi', opts as never)) {
+    // drain
+  }
+  return sessionId;
+}
+
+/** Run one Full turn under a chosen chat id. */
+async function ranTurnAs(sessionId: string): Promise<string> {
+  const runtime = recordTurnLevels(
+    {
+      type: 'claude-code',
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      async *sendMessage(): AsyncGenerator<StreamEvent> {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    } as unknown as AgentRuntime,
+    () => 'bypassPermissions'
+  );
+  for await (const _event of runtime.sendMessage(sessionId, 'hi')) {
     // drain
   }
   return sessionId;
@@ -380,6 +402,72 @@ describe('PM: a prompt edit to another agent’s task', () => {
       sessionId,
       marks: { teammate: TEAMMATE },
     });
+  });
+});
+
+describe('Security: a scheduled run never keeps another agent’s prompt edit live', () => {
+  /** A chat that IS a scheduled run of one of A's tasks, at Full. */
+  async function scheduledRunChat(): Promise<string> {
+    const own = store.createTask({
+      name: 'a-run',
+      description: 'a',
+      prompt: 'A’s run.',
+      cron: '0 1 * * *',
+      agentId: 'agent-a',
+      filePath: path.join(scratch, 'none-run', 'SKILL.md'),
+    });
+    const sessionId = `ses-run-${++serial}`;
+    const run = store.createRun(own.id, 'scheduled');
+    store.updateRun(run.id, { sessionId });
+    return ranTurnAs(sessionId);
+  }
+
+  afterEach(() => resetChatStartedTurns());
+
+  it('a scheduled run’s prompt edit to another agent’s approved task parks it', async () => {
+    const theirs = bTask('acceptEdits');
+    store.approvals.recordApproval(theirs.id);
+    const { isError } = await call(toolsOfA(await scheduledRunChat()), 'tasks_update', {
+      id: theirs.id,
+      prompt: 'A better sweep.',
+    });
+    expect(isError).toBe(false);
+    expect(store.getTask(theirs.id)!.status).toBe('pending_approval');
+  });
+
+  it('a scheduled run’s timing edit to another agent’s approved task parks it too', async () => {
+    const theirs = bTask('acceptEdits');
+    store.approvals.recordApproval(theirs.id);
+    levels.set(homeB, 'acceptEdits');
+    const { isError } = await call(toolsOfA(await scheduledRunChat()), 'tasks_update', {
+      id: theirs.id,
+      cron: '0 9 * * *',
+    });
+    expect(isError).toBe(false);
+    expect(store.getTask(theirs.id)!.status).toBe('pending_approval');
+  });
+
+  it('so does a chat a scheduled run started', async () => {
+    const theirs = bTask('acceptEdits');
+    store.approvals.recordApproval(theirs.id);
+    const runChat = await scheduledRunChat();
+    const started = await ranTurn('bypassPermissions');
+    noteChatTurnStarted(started, Date.now(), [{ fromSessionId: runChat }]);
+    const { isError } = await call(toolsOfA(started), 'tasks_update', {
+      id: theirs.id,
+      prompt: 'A better sweep.',
+    });
+    expect(isError).toBe(false);
+    expect(store.getTask(theirs.id)!.status).toBe('pending_approval');
+  });
+
+  it('a scheduled run may still create a task for another agent', async () => {
+    const { isError } = await call(toolsOfA(await scheduledRunChat()), 'tasks_create', {
+      ...ARGS,
+      target: 'agent-b',
+    });
+    expect(isError).toBe(false);
+    expect(store.getTasks().find((t) => t.agentId === 'agent-b')).toBeDefined();
   });
 });
 

@@ -14,6 +14,7 @@ import {
   capModeAtAgentLevel,
   CROSS_AGENT_NEEDS_FULL_MESSAGE,
   crossAgentRefusal,
+  turnMarksOf,
   isForAnotherAgent,
   type CrossAgentRefusal,
 } from '../../../../tasks/approvals/cross-agent.js';
@@ -29,7 +30,7 @@ export type CrossAgentDecision =
   /** The target is the caller, `global`, or the caller is not one this rule can vouch for. */
   | { kind: 'own' }
   /** Another agent, and the calling turn may write for it. */
-  | { kind: 'allowed'; callerAgentPath: string; sessionId: string }
+  | { kind: 'allowed'; callerAgentPath: string; sessionId: string; marks: TurnMarks }
   /** Another agent, and the calling turn may not. */
   | { kind: 'refused'; refusal: CrossAgentRefusal };
 
@@ -59,14 +60,21 @@ export function decideCrossAgent(
       refusal: { error: CROSS_AGENT_NEEDS_FULL_MESSAGE, code: 'cross_agent_needs_full' },
     };
   }
-  const refusal = crossAgentRefusal({
+  const turn = {
     sessionId: provenance.sessionId,
     ...(provenance.turnSessionIds ? { turnSessionIds: provenance.turnSessionIds } : {}),
     agentPath: callerAgentPath,
-  });
+  };
+  const refusal = crossAgentRefusal(turn);
   return refusal
     ? { kind: 'refused', refusal }
-    : { kind: 'allowed', callerAgentPath, sessionId: provenance.sessionId };
+    : // The same merged marks the gate checked are the ones the task keeps.
+      {
+        kind: 'allowed',
+        callerAgentPath,
+        sessionId: provenance.sessionId,
+        marks: turnMarksOf(turn),
+      };
 }
 
 /**
@@ -154,19 +162,17 @@ export async function capPatch(
  * @param deps - The tool dependencies.
  * @param decision - The decision.
  * @param updated - The task after the edit.
- * @param marks - The marks of the editing turn, from its own record.
  */
 export function recordOtherEdit(
   deps: McpToolDeps,
   decision: CrossAgentDecision,
-  updated: Task,
-  marks: TurnMarks
+  updated: Task
 ): void {
   if (decision.kind !== 'allowed') return;
   deps.taskStore!.approvals.recordCrossAgentWriter(updated.id, {
     agentPath: decision.callerAgentPath,
     sessionId: decision.sessionId,
-    marks,
+    marks: decision.marks,
   });
   auditCrossAgentTask(updated, 'modify', decision.callerAgentPath, deps.meshCore);
 }

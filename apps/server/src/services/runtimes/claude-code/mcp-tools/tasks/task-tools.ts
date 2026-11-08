@@ -276,7 +276,7 @@ export function createCreateScheduleHandler(
         },
         // An agent files a schedule only under itself or `global` (DOR-3640 R1).
         ...callerAgentPathOf(provenance, callerAgent),
-        ...(forOther.kind === 'allowed' && { forAnotherAgent: true }),
+        ...(forOther.kind === 'allowed' && { forAnotherAgent: true, writerMarks: forOther.marks }),
       }
     );
 
@@ -601,13 +601,13 @@ export function createUpdateScheduleHandler(
         // Only an agent's own schedule stays live through its edit (DOR-3640 R1).
         // Its own agent's, or another agent's from a Full, unmarked turn (DOR-3938).
         armsAgentWork:
-          (edit.armsAgentWork || forOther.kind === 'allowed') &&
+          (edit.armsAgentWork || (forOther.kind === 'allowed' && caller.scheduledRun !== true)) &&
           agentEditMayStayLive(existing, deps.taskStore!, vouched) &&
           agentSchedulesArmWithoutAsking(
             resolveProvenance !== undefined && !readOutsiderWords(resolveProvenance())
           ),
-        // Its own agent's prompt edit from an ordinary turn stays live (Nov 3 ruling, M7).
-        ownAgentVouches: (vouched && caller.scheduledRun !== true) || forOther.kind === 'allowed',
+        // Its own agent's, or a Full one's, prompt edit from an ordinary turn stays live (M7).
+        ownAgentVouches: (vouched || forOther.kind === 'allowed') && caller.scheduledRun !== true,
       }
     );
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
@@ -638,7 +638,7 @@ export function createUpdateScheduleHandler(
     broadcastTasksChanged();
     // Which fields changed, and a prompt only by its hashes (DOR-3640).
     auditScheduleUpdate(existing, updated);
-    recordOtherEdit(deps, forOther, updated, marks);
+    recordOtherEdit(deps, forOther, updated);
     // A mode change the person could not be told about was put back (condition 4).
     if (!(await recordToolModeOutcome(deps, mode, existing, updated, caller, vouched))) {
       return jsonContent(NOT_TOLD_REFUSAL, true);

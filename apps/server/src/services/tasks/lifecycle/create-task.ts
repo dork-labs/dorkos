@@ -161,6 +161,8 @@ export interface CreateScheduledTaskOptions {
    * own level. Never read from the request body.
    */
   forAnotherAgent?: boolean;
+  /** The calling turn's marks the server checked for `forAnotherAgent`, kept for its runs. */
+  writerMarks?: TurnMarks;
   /**
    * The agent's named mode was decided as `tasks.set_mode` and granted
    * (DOR-3703): by a person's card, or by a setting for that action. It lands
@@ -625,7 +627,7 @@ export async function createScheduledTask(
     deps.store.approvals.recordCrossAgentWriter(schedule.id, {
       agentPath: callerAgentPath,
       sessionId: options.proposal?.sessionId ?? null,
-      marks: options.originMarks ?? NO_MARKS,
+      marks: options.writerMarks ?? options.originMarks ?? NO_MARKS,
     });
     auditCrossAgentTask(schedule, 'create', callerAgentPath, deps.meshCore);
   }

@@ -12,7 +12,8 @@
  *    as a `chat_send` hop does.
  * 4. Its mode is capped at the target agent's own level, Bypass included, at create and at every
  *    later edit by another agent.
- * 5. Pinned by `__tests__/cross-agent-tasks.test.ts`.
+ * 5. Pinned by `runtimes/claude-code/mcp-tools/__tests__/task-tools-cross-agent*.test.ts` and
+ *    `tasks/__tests__/cross-agent-run-marks.test.ts`.
  *
  * @module services/tasks/approvals/cross-agent
  */
@@ -84,21 +85,34 @@ export const CROSS_AGENT_MARKED_MESSAGE =
  * @returns `null` when it may, else the refusal.
  */
 export function crossAgentRefusal(caller: CrossAgentCaller): CrossAgentRefusal | null {
-  const ids = [...new Set([caller.sessionId, ...(caller.turnSessionIds ?? [])])].filter(
-    (id): id is string => typeof id === 'string' && id !== ''
-  );
-  const levels = ids.map(lastTurnLevelOf);
+  const levels = turnIdsOf(caller).map(lastTurnLevelOf);
   const known = levels.filter((level) => level !== undefined);
   if (known.length === 0 || !known.every(isFullLevel)) {
     return { error: CROSS_AGENT_NEEDS_FULL_MESSAGE, code: 'cross_agent_needs_full' };
   }
-  const marks = known
-    .map(marksOfLevel)
-    .reduce(mergeMarks, marksOf(caller.sessionId, caller.agentPath));
-  if (marksHold(marks)) {
+  if (marksHold(turnMarksOf(caller))) {
     return { error: CROSS_AGENT_MARKED_MESSAGE, code: 'cross_agent_marked_turn' };
   }
   return null;
+}
+
+/**
+ * The marks of the calling turn, merged over every id its level is kept under and its agent's
+ * running marks: what {@link crossAgentRefusal} checks, and what a cross-agent write keeps.
+ *
+ * @param caller - The calling turn, as the server resolved it.
+ */
+export function turnMarksOf(caller: CrossAgentCaller): TurnMarks {
+  return turnIdsOf(caller)
+    .map((id) => marksOfLevel(lastTurnLevelOf(id)))
+    .reduce(mergeMarks, marksOf(caller.sessionId, caller.agentPath));
+}
+
+/** Every id a calling turn's level may be kept under. */
+function turnIdsOf(caller: CrossAgentCaller): string[] {
+  return [...new Set([caller.sessionId, ...(caller.turnSessionIds ?? [])])].filter(
+    (id): id is string => typeof id === 'string' && id !== ''
+  );
 }
 
 /**
