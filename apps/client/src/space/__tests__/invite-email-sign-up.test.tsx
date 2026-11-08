@@ -66,7 +66,8 @@ async function signUp() {
   const next = screen.getByRole('button', { name: /Continue/u });
   // No key icon: this form has no password.
   expect(next.querySelector('svg')).toBeNull();
-  fireEvent.click(next);
+  // Flush the async submit and its effects, not just the heading's DOM update.
+  await act(async () => fireEvent.click(next));
   await screen.findByRole('heading', { name: 'Check your email' });
   return calls;
 }
