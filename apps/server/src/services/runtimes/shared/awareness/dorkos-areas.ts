@@ -125,7 +125,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     name: 'MCP servers',
     can:
       'add, test, sign in, switch and remove your own MCP servers, or import one on this ' +
-      'computer. A change reaches you next turn, in this chat: no restart.',
+      'computer. A change reaches you next turn, in this chat: no restart. Only a person adds ' +
+      'one for every agent (Connections, MCP servers tab), picks its agents and turns it on or off.',
     covers: ['mcp.'],
     areas: ['packages'],
     gate: 'adding or changing one always asks',
