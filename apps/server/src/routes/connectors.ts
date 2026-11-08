@@ -17,7 +17,8 @@
  * 7. **Access changes** (`/access-changes`): the person's list of what agents
  *    took away, and Undo.
  * 8. **Mini app access** (`/mini-app-access`): what mini apps wait for and
- *    may read, and revoking a yes.
+ *    may read, revoking a yes, and the one page outside the app where a
+ *    person gives one (`routes/mini-app-access-page.ts`).
  *
  * No route in one group shares a method and path with a route in another, so
  * a `:param` in one never claims a literal path another group answers. The
@@ -54,6 +55,7 @@ import {
   createConnectorMiniAppAccessRoutes,
   type ConnectorMiniAppAccessRouterDeps,
 } from './connector-mini-app-access.js';
+import { createMiniAppAccessPageRoutes } from './mini-app-access-page.js';
 
 /** What the connector groups read, one entry per group. */
 export interface ConnectorRoutesDeps {
@@ -90,6 +92,9 @@ export function createConnectorRoutes(deps: ConnectorRoutesDeps): Hono<ApiEnv> {
   if (deps.execution) app.route('/', createConnectorExecutionRoutes(deps.execution));
   if (deps.holds) app.route('/', createConnectorHoldRoutes(deps.holds));
   if (deps.accessChanges) app.route('/', createConnectorAccessChangeRoutes(deps.accessChanges));
-  if (deps.miniAppAccess) app.route('/', createConnectorMiniAppAccessRoutes(deps.miniAppAccess));
+  if (deps.miniAppAccess) {
+    app.route('/', createConnectorMiniAppAccessRoutes(deps.miniAppAccess));
+    app.route('/', createMiniAppAccessPageRoutes(deps.miniAppAccess));
+  }
   return app;
 }

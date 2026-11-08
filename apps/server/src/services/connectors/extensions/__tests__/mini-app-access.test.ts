@@ -233,4 +233,35 @@ describe('mini app access, for the Connections page', () => {
     records = [];
     expect(access.list().allowed).toMatchObject([{ extensionName: 'flow-owner' }]);
   });
+
+  it('describes a waiting read for the decide page, with its accounts and files', () => {
+    expect(access.describe('flow-owner', 'linear')).toEqual({
+      waiting: expect.objectContaining({ extensionId: 'flow-owner', service: 'linear' }),
+      filesDigest: 'sha256:files-1',
+      accounts: [{ connectionId: CONNECTION, label: 'Work Linear' }],
+    });
+    expect(access.describe('flow-owner', 'gmail')).toBeUndefined();
+    expect(access.describe('someone-else', 'linear')).toBeUndefined();
+  });
+
+  it('lists no account reached through a DorkOS account', () => {
+    db.update(connectorProviderInstances).set({ mode: 'managed' }).run();
+    expect(access.describe('flow-owner', 'linear')?.accounts).toEqual([]);
+  });
+
+  it('approves the files the page showed, and refuses once they changed', () => {
+    const input = {
+      extensionId: 'flow-owner',
+      service: 'linear',
+      connectionId: CONNECTION,
+      filesDigest: 'sha256:files-1',
+      approvedBy: 'local',
+    };
+    files = 'sha256:files-2';
+    expect(() => access.approve(input)).toThrow(/changed since the page opened/);
+    files = 'sha256:files-1';
+    expect(access.approve(input).granted).toEqual([LIST, GET]);
+    expect(access.list().waiting).toEqual([]);
+    expect(() => access.approve(input)).toThrow(/Nothing waits/);
+  });
 });
