@@ -413,10 +413,12 @@ export function LocalBrowserPanel({
           )}
         </>
       )}
-      <BrowserProfiles
-        enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
-        disabled={busy || cancelling}
-      />
+      {!waitingElsewhere && (
+        <BrowserProfiles
+          enabled={!!state && !!capabilities && !query.isError && !capabilityQuery.isError}
+          disabled={busy || cancelling}
+        />
+      )}
     </section>
   );
 }

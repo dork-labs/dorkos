@@ -136,6 +136,9 @@ describe('LocalBrowserPanel', () => {
         expect(screen.queryByRole('button', { name })).toBeNull();
       expect(screen.queryByRole('combobox')).toBeNull();
       expect(screen.queryByLabelText('Web address')).toBeNull();
+      // Forget and Delete stay out of reach too: nothing here may change that chat's browser.
+      expect(screen.queryByLabelText('Browser profiles')).toBeNull();
+      expect(transport.listLocalBrowserProfiles).not.toHaveBeenCalled();
     });
     it('keeps the ordinary controls when that handoff has ended', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
@@ -149,6 +152,7 @@ describe('LocalBrowserPanel', () => {
         await screen.findByText('Shared with another chat. Disconnect to use it here.')
       ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
+      expect(await screen.findByLabelText('Browser profiles')).toBeInTheDocument();
     });
     it('keeps the controls in the waiting chat’s own panel', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
