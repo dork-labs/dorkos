@@ -354,7 +354,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
         'flex min-w-0 gap-1',
         // Undo sits compact beside its notice even on a phone; a refused one's
         // reason wraps onto its own full-width line.
-        undoesMode
+        undoesMode || undoesAccessChange
           ? 'flex-wrap items-start sm:items-center'
           : hasAction
             ? 'flex-col sm:flex-row sm:items-center'
@@ -370,7 +370,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           className={cn(
             'hover:bg-accent/50 focus-visible:ring-ring flex min-h-9 min-w-0 gap-2.5 rounded-md px-2 py-1 text-left transition-colors outline-none focus-visible:ring-2',
             readsInFull ? 'items-start sm:items-center' : 'items-center',
-            undoesMode ? 'flex-1' : 'w-full'
+            undoesMode ? 'flex-1' : undoesAccessChange ? 'w-full sm:w-auto sm:flex-1' : 'w-full'
           )}
         >
           {body}

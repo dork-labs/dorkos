@@ -31,9 +31,17 @@ export interface AccessChangeActionsProps {
   notificationId: string;
 }
 
-/** Under the notice's text column: past its dot, its glyph and their gaps. */
+/**
+ * The reason, in line with the notice's text (past its padding, dot, glyph and
+ * their gaps). On a phone it sits between the notice and the buttons, so it is
+ * read before deciding; from `sm` the buttons sit beside the notice and the
+ * reason goes under both. Written out whole: Tailwind only sees literal classes.
+ */
 const UNDER_TEXT =
-  'basis-full pr-2 pb-1 pl-[calc(0.5rem+0.375rem+0.625rem+18px+0.625rem)] text-xs break-words';
+  'sm:order-last basis-full pr-2 pb-1 pl-[calc(0.5rem+0.375rem+0.625rem+18px+0.625rem)] text-xs break-words';
+
+/** The first thing after the reason: on a phone it wraps under the notice, in line with its text. */
+const FIRST_ACTION = 'max-sm:ml-[calc(0.5rem+0.375rem+0.625rem+18px+0.625rem)]';
 
 /** Why Undo was refused: the short line for a stale change, else the server's sentence. */
 function refusalOf(error: Error | null): string {
@@ -107,7 +115,7 @@ export function AccessChangeActions({ changeId, notificationId }: AccessChangeAc
           tabIndex={-1}
           aria-live="polite"
           data-slot="access-change-undo-refused"
-          className="text-muted-foreground shrink-0 self-start px-2 py-1 text-xs outline-none sm:self-center"
+          className={`${FIRST_ACTION} text-muted-foreground self-start px-2 py-1 text-xs outline-none max-sm:pl-0 sm:shrink-0 sm:self-center`}
         >
           {refusalOf(undo.error)} Set it in{' '}
           <a
@@ -132,7 +140,7 @@ export function AccessChangeActions({ changeId, notificationId }: AccessChangeAc
         <span
           role="status"
           data-slot="access-change-settled"
-          className="text-muted-foreground shrink-0 self-start px-2 py-1 text-xs sm:self-center"
+          className={`${FIRST_ACTION} text-muted-foreground shrink-0 self-start px-2 py-1 text-xs max-sm:pl-0 sm:self-center`}
         >
           {undo.isSuccess ? 'Access given back' : 'Kept'}
         </span>
@@ -142,35 +150,39 @@ export function AccessChangeActions({ changeId, notificationId }: AccessChangeAc
   return (
     <>
       {reason}
-      <Button
-        type="button"
-        variant="outline"
-        size="xs"
-        data-slot="access-change-undo"
-        // A 44px target on a phone, compact beside the notice; its own size from `sm`.
-        className="h-11 min-w-11 shrink-0 self-start sm:h-auto sm:min-w-0 sm:self-center"
-        disabled={undo.isPending || keep.isPending}
-        onClick={(event) => {
-          hadFocus.current = document.activeElement === event.currentTarget;
-          undo.mutate(changeId);
-        }}
-      >
-        Undo
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        data-slot="access-change-keep"
-        className="h-11 shrink-0 self-start sm:h-auto sm:self-center"
-        disabled={undo.isPending || keep.isPending}
-        onClick={() => {
-          keep.mutate(notificationId);
-          setKept(true);
-        }}
-      >
-        Keep the change
-      </Button>
+      {/* One group on a phone, so a wrapped Keep stays in line with the text;
+          from `sm` the buttons join the row beside the notice. */}
+      <div className={`${FIRST_ACTION} flex flex-wrap gap-1 sm:contents`}>
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          data-slot="access-change-undo"
+          // A 44px target on a phone, under the notice; compact beside it from `sm`.
+          className="h-11 min-w-11 shrink-0 self-start sm:h-auto sm:min-w-0 sm:self-center"
+          disabled={undo.isPending || keep.isPending}
+          onClick={(event) => {
+            hadFocus.current = document.activeElement === event.currentTarget;
+            undo.mutate(changeId);
+          }}
+        >
+          Undo
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          data-slot="access-change-keep"
+          className="h-11 shrink-0 self-start sm:h-auto sm:self-center"
+          disabled={undo.isPending || keep.isPending}
+          onClick={() => {
+            keep.mutate(notificationId);
+            setKept(true);
+          }}
+        >
+          Keep the change
+        </Button>
+      </div>
     </>
   );
 }
