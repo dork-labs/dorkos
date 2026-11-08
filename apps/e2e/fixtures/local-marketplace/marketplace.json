@@ -1,0 +1,15 @@
+{
+  "name": "e2e-local-marketplace",
+  "owner": { "name": "Orchard Tools" },
+  "plugins": [
+    {
+      "name": "e2e-orchard-workflow",
+      "source": "./plugins/e2e-orchard-workflow",
+      "description": "A local workflow fixture for marketplace browsing and responsive layout checks.",
+      "author": { "name": "Orchard Tools" },
+      "version": "1.0.0",
+      "license": "MIT",
+      "tags": ["e2e", "workflow"]
+    }
+  ]
+}

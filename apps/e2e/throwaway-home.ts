@@ -1,5 +1,6 @@
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 /**
  * A throwaway server's own `HOME` (DOR-3587).
@@ -77,13 +78,34 @@ export function playwrightBrowsersPath(): string {
 }
 
 /**
- * The shell that makes a server's home, and the Claude folder its seed will look
- * in. Run after its `DORK_HOME` exists.
+ * The shell that prepares a server's home and its local marketplace source.
+ * Run after its `DORK_HOME` exists.
+ *
+ * A missing `marketplaces.json` seeds the product's live GitHub sources. Their
+ * two 15-second fetches held `/api/marketplace/packages` for 30 seconds in CI,
+ * past both the connector-card and responsive-layout specs' deadlines. Seed
+ * here so every API leg, including first-run, starts from local disk. Specs
+ * can still register their own sources; a small listing keeps package cards
+ * in the responsive sample without depending on the public registry.
  *
  * @param dorkHome - The server's `DORK_HOME`.
  */
 export function makeThrowawayHome(dorkHome: string): string {
-  return `mkdir -m 700 -p ${join(throwawayHomeOf(dorkHome), '.claude')}`;
+  const marketplaces = JSON.stringify({
+    version: 1,
+    sources: [
+      {
+        name: 'e2e-local-marketplace',
+        source: pathToFileURL(join(import.meta.dirname, 'fixtures', 'local-marketplace')).href,
+        enabled: true,
+        addedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+  }).replace(/[\\"$`]/g, '\\$&');
+  return (
+    `mkdir -m 700 -p ${join(throwawayHomeOf(dorkHome), '.claude')} && ` +
+    `printf "%s\\n" "${marketplaces}" > ${join(dorkHome, 'marketplaces.json')}`
+  );
 }
 
 /**
