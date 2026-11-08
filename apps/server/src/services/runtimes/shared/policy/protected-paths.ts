@@ -103,6 +103,7 @@ export const DATA_FOLDER_SECRET_PATHS = group('data', 'read', [
 export const ACCOUNT_FOLDER_SECRET_PATHS = group('account', 'read', [
   ['.credentials*', 'file'],
   ['.claude.json*', 'file'],
+  ['backups', 'folder'],
 ]);
 
 /**
@@ -133,6 +134,7 @@ export const HOME_SECRET_PATHS: readonly ProtectedPath[] = [
     ['.config/gcloud', 'folder'],
     ['.claude.json*', 'file'],
     ['.claude/.credentials*', 'file'],
+    ['.claude/backups', 'folder'],
   ]),
   ...DATA_FOLDER_SECRET_PATHS.map((entry): ProtectedPath => ({
     ...entry,
