@@ -1,4 +1,8 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -193,6 +197,37 @@ describe('every server runs on a throwaway home', () => {
       expect(command.indexOf(`mkdir -m 700 -p ${dorkHome}/home/.claude`)).toBeLessThan(
         command.indexOf('exec env ')
       );
+    }
+  });
+
+  it('seeds only local marketplace sources before every API leg boots', () => {
+    // Run the real pre-build shell in scratch homes. A missing seed must fail
+    // here: otherwise the server silently restores its live GitHub defaults.
+    const scratch = mkdtempSync(resolve(tmpdir(), 'dorkos-marketplace-seed-'));
+    try {
+      for (const [index, { command, dorkHome }] of legs.entries()) {
+        const script = /sh -c '(.+)'$/s.exec(command)?.[1];
+        expect(script).toBeTruthy();
+        const setup = script!.split(' && turbo run build ')[0]!;
+        expect(setup).not.toBe(script);
+        const home = resolve(scratch, String(index));
+        execFileSync('sh', ['-c', setup.replaceAll(dorkHome, home)]);
+        const seeded = JSON.parse(readFileSync(resolve(home, 'marketplaces.json'), 'utf8'));
+        expect(seeded.version).toBe(1);
+        expect(seeded.sources).toHaveLength(1);
+        for (const source of seeded.sources) {
+          expect(source.enabled).toBe(true);
+          expect(new URL(source.source).protocol).toBe('file:');
+          const listing = JSON.parse(
+            readFileSync(resolve(fileURLToPath(source.source), 'marketplace.json'), 'utf8')
+          );
+          // Keep real cards in the responsive sample, rather than turning it
+          // into coverage of an empty marketplace.
+          expect(listing.plugins.length).toBeGreaterThan(0);
+        }
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
     }
   });
 

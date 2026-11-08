@@ -12,8 +12,8 @@ import { BasePage } from '../../pages/BasePage.js';
  * Deterministic with no network dependence: a `file://` marketplace source
  * (fixtures/connector-marketplace) is registered against the test-mode server
  * for the duration of the suite, carrying one connector adapter and one plain
- * adapter. The default remote sources may degrade freely — the assertions name
- * only the fixture's packages.
+ * adapter. Every API leg starts with a local listing; the assertions name only
+ * this fixture's packages.
  *
  * Runs in the `chromium-connections` project. Safe beside connections.spec.ts:
  * it touches only the marketplace source list, never the connector provider
@@ -47,8 +47,7 @@ test.describe('Marketplace — connector badge and filter', () => {
     await page.goto('/marketplace', { waitUntil: 'domcontentloaded' });
     await new BasePage(page).waitForAppReady();
 
-    // Both fixture adapters render; aggregation over the unreachable default
-    // remote sources degrades to warnings without hiding the local source.
+    // Both fixture adapters render alongside the leg's local baseline listing.
     const connectorCard = page.locator('[data-testid="package-card-e2e-gmail-connector"]');
     const plainCard = page.locator('[data-testid="package-card-e2e-plain-adapter"]');
     await expect(connectorCard).toBeVisible({ timeout: 20_000 });
