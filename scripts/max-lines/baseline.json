@@ -40,7 +40,7 @@
     "apps/server/src/services/communities/remote/pairing-service.ts": 688,
     "apps/server/src/services/communities/remote/remote-community-adapter.ts": 1006,
     "apps/server/src/services/communities/remote/remote-room-subscription-runtime.ts": 527,
-    "apps/server/src/services/connectors/agent-request-service.ts": 2165,
+    "apps/server/src/services/connectors/agent-request-service.ts": 2126,
     "apps/server/src/services/connectors/bootstrap.ts": 704,
     "apps/server/src/services/connectors/connection-store.ts": 821,
     "apps/server/src/services/connectors/events/subscription-store.ts": 560,
