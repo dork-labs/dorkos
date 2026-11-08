@@ -21,9 +21,11 @@ jobs:
     env:
       NODE_OPTIONS: --max-old-space-size=8192
       DORKOS_TEST_RUNTIME: 'true'
-      DORK_HOME: ${{ runner.temp }}/dor3853-dork-home
-      DOR3853_OUT: ${{ runner.temp }}/dor3853-out
     steps:
+      - name: Set isolated CI paths
+        run: |
+          echo "DORK_HOME=$RUNNER_TEMP/dor3853-dork-home" >> "$GITHUB_ENV"
+          echo "DOR3853_OUT=$RUNNER_TEMP/dor3853-out" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
