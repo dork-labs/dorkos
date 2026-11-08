@@ -57,3 +57,38 @@ export const CHOOSABLE_PERMISSION_PRESETS = ['trusted', 'careful'] as const;
 
 /** A capability id (`domain.verb`) or a hand-registered tool name (no dot). */
 export const PERMISSION_ACTION_ID_PATTERN = /^[a-z0-9_]+(\.[a-z0-9_]+)?$/;
+
+/**
+ * Action ids an earlier release used, and the id each one is now. A person's setting stored under
+ * an old id (an agent manifest's `permissions.actions`, or the defaults in `config.json`) must keep
+ * applying to the same action, so a rename can never let a Blocked action fall back to its area or
+ * preset. `commitments.*` became `todo_promises.*` (DOR-3933).
+ */
+export const RENAMED_PERMISSION_ACTIONS: Readonly<Record<string, string>> = {
+  'commitments.add': 'todo_promises.add',
+  'commitments.update': 'todo_promises.update',
+  'commitments.list': 'todo_promises.list',
+};
+
+/**
+ * A per-action settings map with every renamed id moved to its current id, or `null` when the map
+ * names no renamed id. A setting already stored under the current id wins over the old one.
+ *
+ * @param actions - The stored per-action settings, keyed by action id.
+ */
+export function renameRetiredActionIds<T>(
+  actions: Readonly<Record<string, T>>
+): Record<string, T> | null {
+  if (!Object.keys(actions).some((id) => Object.hasOwn(RENAMED_PERMISSION_ACTIONS, id))) {
+    return null;
+  }
+  const out: Record<string, T> = {};
+  for (const [id, state] of Object.entries(actions)) {
+    if (!Object.hasOwn(RENAMED_PERMISSION_ACTIONS, id)) out[id] = state;
+  }
+  for (const [id, state] of Object.entries(actions)) {
+    const current = RENAMED_PERMISSION_ACTIONS[id];
+    if (current !== undefined && !Object.hasOwn(out, current)) out[current] = state;
+  }
+  return out;
+}

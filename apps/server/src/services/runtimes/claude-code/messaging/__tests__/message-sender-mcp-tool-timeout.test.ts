@@ -120,3 +120,25 @@ describe('executeSdkQuery — inherited MCP_TOOL_TIMEOUT', () => {
     expect(forwardedTimeout(await runTurn())).toBeUndefined();
   });
 });
+
+describe('executeSdkQuery keeps servers off the command line (DOR-3882)', () => {
+  it('passes query() no external server, and hands them over stdin', async () => {
+    vi.clearAllMocks();
+    const setMcpServers = vi.fn(async () => ({}));
+    let captured: Options | undefined;
+    vi.mocked(query).mockImplementation((args) => {
+      captured = args.options;
+      return {
+        setMcpServers,
+        [Symbol.asyncIterator]: async function* () {},
+      } as unknown as ReturnType<typeof query>;
+    });
+    const stdio = { type: 'stdio', command: 'node', env: { TOKEN: 'CANARY' } } as never;
+    const opts = makeOpts({ mcpServerFactory: () => ({ stdio }) });
+    for await (const _event of executeSdkQuery('s1', 'hello', makeSession(), opts)) {
+      // drain
+    }
+    expect(JSON.stringify(captured)).not.toContain('CANARY');
+    expect(setMcpServers).toHaveBeenCalledWith(expect.objectContaining({ stdio }));
+  });
+});

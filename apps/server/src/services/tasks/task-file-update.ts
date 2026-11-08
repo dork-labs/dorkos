@@ -708,7 +708,9 @@ async function resolveOrSelf(target: string): Promise<string> {
  * @returns The problem, or `null` when the file's schedule reads.
  */
 export function describeArmBlocker(filePath: string, content: string): string | null {
-  const skill = parseSkillFile(filePath, content, SkillFrontmatterSchema);
+  const skill = parseSkillFile(filePath, content, SkillFrontmatterSchema, {
+    requireNameMatch: false,
+  });
   if (!skill.ok) return null; // Not a readable skill at all; the route's parse gate answers.
 
   const blockProblem = scheduleProblem(skill.definition.meta);

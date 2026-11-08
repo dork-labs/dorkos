@@ -80,7 +80,7 @@ export interface ComposeCapabilitiesInput {
   auditAccounts: WireCoreStoresResult['auditAccounts'];
   agentPauses: WireCoreStoresResult['agentPauses'];
   chatMessaging: WireSessionServicesResult['chatMessaging'];
-  commitments: WireSessionServicesResult['commitments'];
+  todoPromises: WireSessionServicesResult['todoPromises'];
   workQueue: WireSessionServicesResult['workQueue'];
   activityService: WireCoreStoresResult['activityService'];
   roomStore: WireRoomsResult['roomStore'];
@@ -120,7 +120,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     auditAccounts,
     agentPauses,
     chatMessaging,
-    commitments,
+    todoPromises,
     workQueue,
     activityService,
     roomStore,
@@ -236,9 +236,9 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       chatMessageDeps: chatMessaging,
       // What agents promised (spec `heartbeats` §12): an agent records its
       // own, and anyone reads every agent's list.
-      commitmentDeps: commitments.capabilityDeps,
+      todoPromiseDeps: todoPromises.capabilityDeps,
       // To-dos (DOR-3088), behind their flag until v1 is complete.
-      ...(env.DORKOS_TODOS_ENABLED ? { todoDeps: commitments.todoCapabilityDeps } : {}),
+      ...(env.DORKOS_TODOS_ENABLED ? { todoDeps: todoPromises.todoCapabilityDeps } : {}),
       workQueueDeps: workQueue.capabilityDeps,
       sessionCompactionDeps: {
         compaction: new AgentCompactionService({

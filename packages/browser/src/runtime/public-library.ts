@@ -8,9 +8,9 @@ import type { BrowserType, ChromiumBrowser } from 'playwright-core';
 import type { BrowserRuntimeDescriptor } from '../runtime-descriptor.js';
 import { BrowserLifecycleError } from '../lifecycle/errors.js';
 
-// Frozen offline public playwright-core 1.63.0: all 114 package files, sorted relative path + SHA-256.
+// Frozen offline public playwright-core 1.65.0-alpha-2026-10-30: all 116 package files, sorted relative path + SHA-256.
 const PUBLIC_DISTRIBUTION_SHA256 =
-  '6bf8e6d392f411f43046a5688021a5ed083fea9129f2f84dbff5aee88b2de728';
+  'e88b7d6034b38fe0929052e012868755207a931b6348507c477afbc6dd430822';
 
 // An ambiguous close retains the actual original and blocks subsequent admission.
 // Neither a numeric descriptor nor a new open can discharge this original duty.
@@ -215,7 +215,7 @@ async function distributionHash(root: string): Promise<string> {
   };
   await visit(root, 0);
   files.sort();
-  if (files.length !== 114) throw new BrowserLifecycleError('LIBRARY_UNAVAILABLE');
+  if (files.length !== 116) throw new BrowserLifecycleError('LIBRARY_UNAVAILABLE');
   const hash = createHash('sha256');
   for (const file of files)
     hash.update(file + '\0' + (await hashFile(join(root, file), 32 * 1024 * 1024)) + '\n');

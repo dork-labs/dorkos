@@ -19,15 +19,31 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../../task-store.js';
 import type { TaskFileSync } from '../../sync/task-file-sync.js';
-import { createScheduledTask } from '../create-task.js';
+import { clampCreatedScheduleMode, createScheduledTask } from '../create-task.js';
 import { notificationEntry } from '../../../notifications/notification-registry.js';
 
 /** The stored preset, and what the notification seams were handed. */
 const state = vi.hoisted(() => ({
   preset: 'trusted' as 'trusted' | 'careful',
+  defaultMode: 'acceptEdits',
+  useRealCapabilities: false,
   notified: [] as Array<{ kind: string; payload: unknown }>,
   raised: [] as Array<{ kind: string; payload: unknown }>,
 }));
+
+vi.mock('../../scheduled-run-power.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../scheduled-run-power.js')>();
+  const { CLAUDE_CODE_CAPABILITIES } =
+    await import('../../../runtimes/claude-code/runtime-constants.js');
+  return {
+    ...actual,
+    resolveScheduledRunPermissionMode: () => state.defaultMode,
+    capabilitiesForTaskRuntime: (runtime?: string) =>
+      state.useRealCapabilities
+        ? actual.capabilitiesForTaskRuntime(runtime)
+        : CLAUDE_CODE_CAPABILITIES,
+  };
+});
 
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: {
@@ -54,6 +70,8 @@ let dorkHome: string;
 
 beforeEach(async () => {
   state.preset = 'trusted';
+  state.defaultMode = 'acceptEdits';
+  state.useRealCapabilities = false;
   state.notified = [];
   state.raised = [];
   store = new TaskStore(createTestDb());
@@ -132,10 +150,33 @@ describe('an agent schedule on a Trusted install', () => {
 
     const entry = notificationEntry('schedule.armed_by_agent');
     const armed = outcome.armedPayload!;
-    expect(entry.title(armed)).toBe('An agent scheduled nightly-sweep');
-    expect(entry.body?.(armed)).toBe('Runs every day at 3:00 AM as an agent. Pause it any time.');
+    expect(entry.title(armed)).toBe('An agent made a schedule: nightly-sweep');
+    expect(entry.body?.(armed)).toBe(
+      'Runs as: Accept edits\nEdits files without asking.\nSome commands run on their own. Others are refused, because nobody’s there to approve them.'
+    );
     expect(entry.actions?.(armed).map((a) => a.id)).toEqual(['pause', 'open']);
   });
+
+  it.each(['auto', 'bypassPermissions', 'future-mode', 'constructor', '__proto__'])(
+    'caps an inherited %s in the file, row and server notice',
+    async (mode) => {
+      state.defaultMode = mode;
+      const outcome = await agentCreates(true);
+      expect(outcome.parked).toBe(false);
+      expect(store.getTask(outcome.task.id)?.permissionMode).toBe('acceptEdits');
+      const content = await fs.readFile(outcome.task.filePath, 'utf8');
+      expect(content).not.toContain(mode);
+      expect(outcome.armedPayload?.execution?.modeLabel).toBe('Accept edits');
+      expect(state.notified[0]?.payload).toEqual(outcome.armedPayload);
+    }
+  );
+
+  it.each(['plan', 'default', 'dontAsk', 'acceptEdits'] as const)(
+    'preserves the known careful mode %s',
+    (mode) => {
+      expect(clampCreatedScheduleMode(mode)).toBe(mode);
+    }
+  );
 
   it('parks when the caller is not known to be one of our agents', async () => {
     const outcome = await agentCreates(false);
@@ -192,5 +233,41 @@ describe('a schedule that arrives as content', () => {
     expect(task.status).toBe('pending_approval');
     expect(task.origin).toBe('file');
     expect(task.permissionMode).toBe('acceptEdits');
+  });
+});
+
+describe('runtime lookup for an explicitly named mode', () => {
+  beforeEach(() => {
+    state.useRealCapabilities = true;
+  });
+  it.each(['codex', 'not-registered'])(
+    'keeps the requested %s runtime and mode without requiring registration',
+    async (runtime) => {
+      const result = await createScheduledTask(
+        { store, registrar: null, dorkHome, meshCore: agentMesh() },
+        {
+          input: { ...AGENT_REQUEST, runtime, permissionMode: 'plan' },
+          trusted: true,
+        }
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(store.getTask(result.task.id)).toMatchObject({ runtime, permissionMode: 'plan' });
+    }
+  );
+
+  it('does not fail or pin another runtime when the agent manifest cannot be read', async () => {
+    await fs.mkdir(path.join(agentHome(), '.dork'), { recursive: true });
+    await fs.writeFile(path.join(agentHome(), '.dork', 'agent.json'), '{broken');
+    const result = await createScheduledTask(
+      { store, registrar: null, dorkHome, meshCore: agentMesh() },
+      {
+        input: { ...AGENT_REQUEST, permissionMode: 'plan' },
+        trusted: true,
+      }
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(store.getTask(result.task.id)).toMatchObject({ runtime: null, permissionMode: 'plan' });
   });
 });

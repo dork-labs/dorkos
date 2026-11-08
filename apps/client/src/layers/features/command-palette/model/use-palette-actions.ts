@@ -12,8 +12,7 @@ import {
   useOpenConnections,
   useFeedbackDialogStore,
   useTransport,
-  readExperimentEnabled,
-  DM_VIEW_EXPERIMENT,
+  readDmViewEnabled,
 } from '@/layers/shared/model';
 import {
   openLink,
@@ -130,7 +129,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       // other door to it opens (DOR-3074), rather than its newest session.
       // Read at the click, from the config cache, rather than subscribed to:
       // the palette draws nothing differently either way.
-      if (readExperimentEnabled(queryClient, DM_VIEW_EXPERIMENT)) {
+      if (readDmViewEnabled(queryClient)) {
         closePalette();
         void openDirectChat({ agentPath: agent.projectPath }).then((opened) => {
           if (opened) recordAgentOpened(agent.projectPath);

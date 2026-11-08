@@ -168,6 +168,8 @@ export const serverEnvSchema = z.object({
   // To-dos v1 (DOR-3088): the to-do tools and routes, off until v1 is complete. The record, its
   // caps and its turns are built either way; nothing reaches them while this is off.
   DORKOS_TODOS_ENABLED: boolFlag,
+  // Your browser discovery (DOR-3215): hidden and refused until explicitly enabled at boot.
+  DORKOS_YOUR_BROWSER_ENABLED: boolFlag,
   // The official DorkOS space's public link (spec `official-community-space`
   // D4). When set, even to '', it overrules `spaces.official.url` in config;
   // '' turns the exception off. Read through

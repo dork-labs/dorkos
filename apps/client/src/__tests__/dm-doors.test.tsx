@@ -113,10 +113,7 @@ function mountDoors(options: { owner?: boolean } = {}) {
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
-      experiments: [
-        { key: 'ui.dmView', title: '', description: '', enabled: true, lockedByEnv: false },
-      ],
-      ui: { showSessions: false },
+      ui: { dmView: true, showSessions: false },
     }),
     getAgentByPath: vi.fn().mockResolvedValue(null),
     getRoom: vi.fn().mockResolvedValue(ROOM),

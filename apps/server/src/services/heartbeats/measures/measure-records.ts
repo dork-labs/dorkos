@@ -10,7 +10,7 @@
 import { and, eq, gte, inArray, isNotNull, lte, notLike, sql } from 'drizzle-orm';
 import {
   auditEvents,
-  commitments,
+  todos,
   heartbeatBeats,
   heartbeatOutbox,
   type Db,
@@ -99,7 +99,7 @@ export function isRealAction(action: string, summary: string): boolean {
 }
 
 /** A promise that came due in the window. */
-export interface MeasureCommitment {
+export interface MeasureTodo {
   /** Where it stands. */
   state: 'open' | 'kept' | 'missed' | 'dropped';
   /** When it was due (ISO 8601). */
@@ -128,7 +128,7 @@ export interface MeasureRecords {
   /** The direct-message rooms the agent is in, for a muted DM. */
   dmRoomIds: string[];
   /** Its promises that came due in the window. */
-  commitments: MeasureCommitment[];
+  todoPromises: MeasureTodo[];
 }
 
 /**
@@ -376,17 +376,11 @@ export function readMeasureRecords(
     }
   }
   const due = db
-    .select({ state: commitments.state, dueAt: commitments.dueAt, closedAt: commitments.closedAt })
-    .from(commitments)
-    .where(
-      and(
-        eq(commitments.agentId, agentId),
-        gte(commitments.dueAt, since),
-        lte(commitments.dueAt, now)
-      )
-    )
+    .select({ state: todos.state, dueAt: todos.dueAt, closedAt: todos.closedAt })
+    .from(todos)
+    .where(and(eq(todos.agentId, agentId), gte(todos.dueAt, since), lte(todos.dueAt, now)))
     .all()
-    .filter((row): row is MeasureCommitment => row.dueAt !== null);
+    .filter((row): row is MeasureTodo => row.dueAt !== null);
   return {
     beats,
     deliveries: [...delivered, ...held],
@@ -395,6 +389,6 @@ export function readMeasureRecords(
     agentActions,
     spokenRaises,
     dmRoomIds: readDmRooms(db, input.agentPath),
-    commitments: due,
+    todoPromises: due,
   };
 }

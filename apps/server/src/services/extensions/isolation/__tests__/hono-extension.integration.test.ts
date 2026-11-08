@@ -273,7 +273,9 @@ describe.each([
     expect(await res.text()).toBe('ok');
     expect(res.headers.get('set-cookie')).toBeNull();
     expect(res.headers.get('x-ext')).toBe('kept');
-    expect(res.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'");
+    expect(res.headers.get('content-security-policy')).toBe(
+      "sandbox; default-src 'none', frame-ancestors 'none'"
+    );
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
   });
 });

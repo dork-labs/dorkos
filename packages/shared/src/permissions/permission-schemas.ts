@@ -19,6 +19,8 @@ import {
   PERMISSION_AREA_IDS,
   PERMISSION_PRESETS,
   PERMISSION_STATES,
+  RENAMED_PERMISSION_ACTIONS,
+  renameRetiredActionIds,
 } from './permission-ids.js';
 
 extendZodWithOpenApiOnce();
@@ -29,6 +31,8 @@ export {
   PERMISSION_PRESETS,
   CHOOSABLE_PERMISSION_PRESETS,
   PERMISSION_ACTION_ID_PATTERN,
+  RENAMED_PERMISSION_ACTIONS,
+  renameRetiredActionIds,
 };
 
 /** One of {@link PERMISSION_STATES}. */

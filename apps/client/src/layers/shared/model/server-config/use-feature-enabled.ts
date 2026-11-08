@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useTransport } from '../TransportContext';
 import { configKeys, CONFIG_STALE_TIME_MS } from './query-keys';
 
-type Subsystem = 'tasks' | 'relay' | 'todos';
+type Subsystem = 'tasks' | 'relay' | 'todos' | 'yourBrowser';
 
-/** What the config says about one subsystem; `todos` carries only `enabled`. */
+/** What the config says about one subsystem; preview flags carry only `enabled`. */
 interface SubsystemState {
   enabled: boolean;
   initError?: string;

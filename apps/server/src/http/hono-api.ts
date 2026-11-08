@@ -1,3 +1,4 @@
+import { createYourBrowserRoutes } from '../routes/your-browser.js';
 import { createLocalBrowserRoutes } from '../routes/local-browser.js';
 import type { LocalBrowserService } from '../services/session/local-browser/service.js';
 import type { LocalBrowserProfileRouteDeps } from '../routes/local-browser-profiles.js';
@@ -55,10 +56,10 @@ import { createCommunityConnectionsRoutes } from '../routes/community-connection
 import configRoutes from '../routes/config.js';
 import { mountComputerRoutes, type ComputerRoutesService } from '../routes/computers.js';
 import {
-  createAgentCommitmentsRoutes,
-  createCommitmentsRoutes,
-  type CommitmentRouterDeps,
-} from '../routes/commitments.js';
+  createAgentTodoPromisesRoutes,
+  createTodoPromisesRoutes,
+  type TodoPromiseRouterDeps,
+} from '../routes/todo-promises.js';
 import { createTodosRoutes, type TodoRouterDeps } from '../routes/todos.js';
 import {
   createWorkQueueRoutes,
@@ -234,8 +235,8 @@ export interface ComposedGroupDeps {
   discovery?: MeshCore;
   /** Where a managed MCP server's sign-in lands (`/api/agents/mcp-oauth`). */
   mcpOAuth?: AgentMcpOAuthService;
-  /** What agents promised (`/api/commitments`, `/api/agents/:id/commitments`). */
-  commitments?: CommitmentRouterDeps;
+  /** What agents promised (`/api/todo-promises`, `/api/agents/:id/todo-promises`). */
+  todoPromises?: TodoPromiseRouterDeps;
   /** To-dos (`/api/todos`), present only behind `DORKOS_TODOS_ENABLED` (DOR-3088). */
   todos?: TodoRouterDeps;
   /** An agent's work queue, for a person (`/api/agents/:id/work-queue`). */
@@ -360,6 +361,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     },
   });
   app.route('/api/health', createHealthRoutes(deps));
+  app.route('/api/your-browser', createYourBrowserRoutes());
   // Sessions, their messages and the per-session stream. Its WebSocket twin on
   // `/:id/events` is an upgrade, answered before any route
   // (`routes/session-events-socket.ts`).
@@ -502,9 +504,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // What the app's `/signed-in` page reads after any sign-in's callback.
   app.route('/api/sign-in-landings', createSignInLandingRoutes());
   if (deps.todos) app.route('/api/todos', createTodosRoutes(deps.todos));
-  if (deps.commitments) {
-    app.route('/api/commitments', createCommitmentsRoutes(deps.commitments));
-    app.route('/api/agents/:id/commitments', createAgentCommitmentsRoutes(deps.commitments));
+  if (deps.todoPromises) {
+    app.route('/api/todo-promises', createTodoPromisesRoutes(deps.todoPromises));
+    app.route('/api/agents/:id/todo-promises', createAgentTodoPromisesRoutes(deps.todoPromises));
   }
   if (deps.workQueue) {
     app.route('/api/agents/:id/work-queue', createWorkQueueRoutes(deps.workQueue));
@@ -556,7 +558,12 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       '/api/local-browser',
       createLocalBrowserRoutes(deps.localBrowser, deps.localBrowserProfiles)
     );
-  if (deps.mcpServers) app.route('/api/mcp-servers', createMcpServerRoutes(deps.mcpServers));
+  if (deps.mcpServers) {
+    app.route(
+      '/api/mcp-servers',
+      createMcpServerRoutes(deps.mcpServers, (id) => deps.mesh?.meshCore.get(id)?.name)
+    );
+  }
   mountComputerRoutes(app, deps.computers, deps.mesh?.meshCore);
   if (deps.mcp) app.route('/mcp', createMcpRoutes(deps.mcp));
   // Its routes carry their whole paths, two of them outside `/a2a`.

@@ -17,6 +17,12 @@ const transport = vi.hoisted(() => ({
   disconnectLocalBrowser: vi.fn(),
   selectLocalBrowserTab: vi.fn(),
   navigateLocalBrowser: vi.fn(),
+  interruptSession: vi.fn(),
+}));
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock('@tanstack/react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => navigate,
 }));
 vi.mock('@/layers/shared/model', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model')>()),
@@ -50,9 +56,9 @@ const capabilities: LocalBrowserCapabilities = {
   newWindow: true,
   defaultMode: 'new-window',
   platform: 'darwin',
-  managedChromiumVersion: '153.0.8010.12',
+  managedChromiumVersion: '157.0.8103.15',
   unavailableReasons: {},
-  playwrightVersion: '1.63.0',
+  playwrightVersion: '1.65.0-alpha-2026-10-30',
 };
 function holdOpening() {
   let resolve!: (state: LocalBrowserState) => void;
@@ -93,6 +99,138 @@ describe('LocalBrowserPanel', () => {
     mount();
     expect(await screen.findByLabelText('Shared with another chat')).toBeInTheDocument();
     expect(screen.queryByLabelText('Shared with Kai')).not.toBeInTheDocument();
+  });
+  describe('while another chat’s agent waits on a person', () => {
+    const elsewhere = {
+      id: 'h1',
+      sessionId: 'chat-two',
+      agentName: 'Atlas',
+      agentId: null,
+      agentFolder: null,
+      profileId: null,
+      reason: 'wall',
+      site: 'example.com',
+      askedAt: '2026-11-03T00:00:00.000Z',
+      outcome: null,
+    };
+    it.each([
+      ['with its window open', { ...connected, sessionId: 'chat-two', paused: true }],
+      ['with its window closed', { ...disconnected, sessionId: 'chat-two' }],
+    ])('%s, offers only that chat', async (_case, browser) => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...browser,
+        handoff: elsewhere,
+        signIn: null,
+      });
+      mount();
+      expect(
+        await screen.findByText('Another agent is waiting for a person in this window.')
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Open that chat' }));
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ search: expect.objectContaining({ session: 'chat-two' }) })
+      );
+      for (const name of ['Resume agent', 'Pause agent', 'Disconnect', 'Open browser', 'Reconnect'])
+        expect(screen.queryByRole('button', { name })).toBeNull();
+      expect(screen.queryByRole('combobox')).toBeNull();
+      expect(screen.queryByLabelText('Web address')).toBeNull();
+    });
+    it('keeps the ordinary controls when that handoff has ended', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...connected,
+        sessionId: 'chat-two',
+        handoff: { ...elsewhere, outcome: 'stopped' },
+        signIn: null,
+      });
+      mount();
+      expect(
+        await screen.findByText('Shared with another chat. Disconnect to use it here.')
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
+    });
+    it('keeps the controls in the waiting chat’s own panel', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...connected,
+        handoff: { ...elsewhere, sessionId: 'chat-one' },
+        signIn: null,
+      });
+      mount();
+      expect(await screen.findByRole('button', { name: 'Disconnect' })).toBeInTheDocument();
+      expect(
+        screen.queryByText('Another agent is waiting for a person in this window.')
+      ).toBeNull();
+    });
+  });
+  describe('Disconnect during a handoff', () => {
+    const handoff = {
+      id: 'h1',
+      sessionId: 'chat-one',
+      agentName: 'Kai',
+      agentId: null,
+      agentFolder: null,
+      profileId: null,
+      reason: 'wall',
+      site: 'example.com',
+      askedAt: '2026-11-03T00:00:00.000Z',
+      outcome: null,
+    };
+    it('takes the ended handoff from the answer and ends the agent’s turn', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
+      transport.interruptSession.mockResolvedValue(undefined);
+      transport.disconnectLocalBrowser.mockResolvedValue({
+        ...disconnected,
+        handoff: { ...handoff, outcome: 'stopped' },
+        signIn: null,
+      });
+      const view = mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await waitFor(() =>
+        expect(transport.interruptSession).toHaveBeenCalledExactlyOnceWith('chat-one')
+      );
+      expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+        handoff: { outcome: 'stopped' },
+      });
+    });
+    it.each([
+      ['handed back before the answer', { ...handoff, outcome: 'handed-back' }],
+      ['replaced by another handoff', { ...handoff, id: 'h2', outcome: 'stopped' }],
+    ])('leaves the turn alone when the handoff was %s', async (_case, answered) => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
+      transport.disconnectLocalBrowser.mockResolvedValue({
+        ...disconnected,
+        handoff: answered,
+        signIn: null,
+      });
+      const view = mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await waitFor(() =>
+        expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+          handoff: answered,
+        })
+      );
+      await act(async () => {});
+      expect(transport.interruptSession).not.toHaveBeenCalled();
+    });
+    it('leaves the turn alone when the browser wouldn’t close', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({ ...connected, handoff, signIn: null });
+      transport.disconnectLocalBrowser.mockRejectedValue(
+        Object.assign(new Error('closing'), { code: 'busy' })
+      );
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await waitFor(() => expect(transport.disconnectLocalBrowser).toHaveBeenCalledOnce());
+      await screen.findByText(/Browser is busy|Couldn’t reach the browser/);
+      expect(transport.interruptSession).not.toHaveBeenCalled();
+    });
+    it('interrupts nothing with no handoff open', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      transport.disconnectLocalBrowser.mockResolvedValue(disconnected);
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }));
+      await waitFor(() => expect(transport.disconnectLocalBrowser).toHaveBeenCalledOnce());
+      await screen.findByRole('button', { name: 'Open browser' });
+      expect(transport.interruptSession).not.toHaveBeenCalled();
+    });
   });
   it('remembers an owned browser choice through disconnect and remount without reopening', async () => {
     transport.openLocalBrowser.mockImplementation(async () => {

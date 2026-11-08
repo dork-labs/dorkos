@@ -9,13 +9,14 @@ import { registerSessionLocationsOpenApi } from '../../session/resolution/sessio
 import { registerProjectsOpenApi } from '../../projects/projects-openapi.js';
 import { registerAccountEligibilityOpenApi } from '../usage/account-eligibility-openapi.js';
 import { registerKeepAwakeOpenApi } from '../keep-awake/keep-awake-openapi.js';
-import { registerCommitmentsOpenApi } from '../../commitments/commitments-openapi.js';
-import { registerTodosOpenApi } from '../../commitments/todos-openapi.js';
+import { registerTodoPromisesOpenApi } from '../../todos/todo-promises-openapi.js';
+import { registerTodosOpenApi } from '../../todos/todos-openapi.js';
 import { env } from '../../../env.js';
 import { registerWorkQueueOpenApi } from '../../work-queue/work-queue-openapi.js';
 import { registerHeartbeatsOpenApi } from '../../heartbeats/heartbeats-openapi.js';
 import { registerOnboardingOpenApi } from '../onboarding/onboarding-openapi.js';
 import { registerComputerOpenApi } from '../../computers/computer-openapi.js';
+import { registerBrowserScanOpenApi } from '../../browser/profile-scan-openapi.js';
 import { registerLocalBrowserOpenApi } from '../../session/local-browser/openapi.js';
 import { registerConnectorHoldsOpenApi } from '../../connectors/execution/holds-openapi.js';
 import { registerHubComputersOpenApi } from '../hub-relay/hub-computers-openapi.js';
@@ -33,7 +34,7 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerProjectsOpenApi(registry);
   registerAccountEligibilityOpenApi(registry);
   registerKeepAwakeOpenApi(registry);
-  registerCommitmentsOpenApi(registry);
+  registerTodoPromisesOpenApi(registry);
   // To-dos (DOR-3088): documented only where they are mounted, behind their flag.
   if (env.DORKOS_TODOS_ENABLED) registerTodosOpenApi(registry);
   registerWorkQueueOpenApi(registry);
@@ -44,6 +45,7 @@ export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerDocRouteControlsOpenApi(registry);
   registerConnectorHoldsOpenApi(registry);
   registerLocalBrowserOpenApi(registry);
+  registerBrowserScanOpenApi(registry);
   registerHubComputersOpenApi(registry);
   registerHubLinkOpenApi(registry);
   registerSessionRelayOpenApi(registry);

@@ -792,7 +792,7 @@ export class TaskApprovals {
   }
 
   /**
-   * Clear the schedules parked only for an outsider's words: off, and a person can turn them on.
+   * Switch marked schedules off, preserving their marks until a person approves.
    *
    * @returns How many schedules were cleared.
    */

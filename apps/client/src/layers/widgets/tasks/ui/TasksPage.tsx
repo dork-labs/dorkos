@@ -7,6 +7,8 @@ import {
   QueryErrorState,
 } from '@/layers/shared/ui';
 import { icons } from '@dorkos/icons/registry';
+import { appRoutes } from '@/layers/shared/lib';
+import { useSafeNavigate, useSafeSearch } from '@/layers/shared/model';
 import { useTasksEnabled, useTasks, useTaskTemplateDialog } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
@@ -30,11 +32,14 @@ export function TasksPage() {
 
 /** Every state of the `/tasks` page below its heading. */
 function TasksPageBody() {
+  const search = useSafeSearch() as { schedule?: string };
+  const navigate = useSafeNavigate();
   const tasksEnabled = useTasksEnabled();
   const { data: allTasks = [], isLoading, isError, refetch } = useTasks(tasksEnabled);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTask, setEditTask] = useState<Task | undefined>();
   const [appliedPreset, setAppliedPreset] = useState<TaskTemplate | null>(null);
+  const linkedTask = allTasks.find((task) => task.id === search.schedule);
 
   // Fetch registered mesh agents for building the agent map
   const hasAgentIdTasks = allTasks.some((t) => t.agentId);
@@ -82,6 +87,12 @@ function TasksPageBody() {
   const handleDialogOpenChange = (open: boolean) => {
     setDialogOpen(open);
     if (!open) setAppliedPreset(null);
+    if (!open && search.schedule && navigate)
+      void navigate({
+        ...appRoutes.tasks(),
+        search: { ...search, schedule: undefined },
+        replace: true,
+      });
   };
 
   if (!tasksEnabled) {
@@ -148,9 +159,9 @@ function TasksPageBody() {
       )}
 
       <CreateTaskDialog
-        open={dialogOpen}
+        open={dialogOpen || linkedTask !== undefined}
         onOpenChange={handleDialogOpenChange}
-        editTask={editTask}
+        editTask={linkedTask ?? editTask}
         initialPreset={appliedPreset}
       />
     </>

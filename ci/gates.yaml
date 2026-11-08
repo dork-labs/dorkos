@@ -38,6 +38,11 @@ gates:
     source: .github/workflows/browser-native-release-artifact.yml
     purpose: Checks that the Linux CLI build accepts the exact attested Mac browser assets from the same source commit.
 
+  # --- mac-browser-reading.yml ---
+  - id: wf.mac-browser-reading.read
+    source: .github/workflows/mac-browser-reading.yml
+    purpose: On request, reads on macOS whether http pages stay http and what flags both Agent browser windows run with, for one commit's CLI tarball.
+
   # --- browser-test.yml ---
   - id: wf.browser-test.browser-shard
     source: .github/workflows/browser-test.yml
@@ -214,6 +219,9 @@ gates:
     purpose: Runs the marketing site's real next build so a build-time break fails here, not at the Vercel deploy.
 
   # --- test.yml ---
+  - id: wf.test.codex-sandbox
+    source: .github/workflows/test.yml
+    purpose: Runs all Codex binary suites with distro bubblewrap and its scoped AppArmor profile, rejecting skips and requiring readable command controls and the preflighted executable.
   - id: wf.test.community-pg
     source: .github/workflows/test.yml
     purpose: Runs the community service's tests against a real Postgres and a real browser.

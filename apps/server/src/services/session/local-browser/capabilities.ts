@@ -30,6 +30,7 @@ function requireSession(service: LocalBrowserService, context: CapabilityHandler
       error: 'Use the browser from an open agent chat.',
     });
   try {
+    service.handover.refuseStopped(context.sessionId);
     service.requireSharedSession(context.sessionId);
   } catch (error) {
     if (error instanceof LocalBrowserError)
@@ -60,7 +61,10 @@ function scopedAnswer<T>(
   requireSession(service, context);
   const allowed = async () => {
     await answer(() => service.requireProfileAccess(context.sessionId!));
-    if (!handingOver) await answer(() => service.handover.requireAgentMayUse(context.sessionId!));
+    if (!handingOver) {
+      await answer(() => service.handover.requireAgentMayUse(context.sessionId!));
+      await answer(() => service.requireNotFullScreen());
+    }
     requireSession(service, context);
   };
   return (async () => {

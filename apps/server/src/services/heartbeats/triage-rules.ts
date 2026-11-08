@@ -5,7 +5,7 @@
  * - `quiet`: nothing needs the agent — only informational changes, and only
  *   ones that touch nothing serious.
  * - `work`: the agent should work on it now — a local message to it unanswered,
- *   an overdue commitment, a failed or parked run, a lost connection, a failing
+ *   an overdue to-do, a failed or parked run, a lost connection, a failing
  *   check on its own branch, open work gone quiet (DOR-3674).
  * - `undecided`: anything else, including any change with non-empty
  *   `touches`. In PR 3 `undecided` means a turn: unsure goes up to the runtime,

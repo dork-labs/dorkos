@@ -158,6 +158,8 @@ export type DispatchLifecycleEvent =
 
 /** Inputs for {@link dispatchMessage}. */
 export interface DispatchMessageOpts {
+  /** Display-only source of this send, carried through queuing to the runtime. */
+  turnStarter?: MessageOpts['turnStarter'];
   sessionId: string;
   /** Lock identity of whoever is sending; a message waits only behind its own client. */
   clientId: string;
@@ -460,6 +462,7 @@ export interface DispatchPlan {
   /** What the caller passes straight through to the turn. */
   turn: Pick<
     DispatchMessageOpts,
+    | 'turnStarter'
     | 'cwd'
     | 'context'
     | 'roomContext'

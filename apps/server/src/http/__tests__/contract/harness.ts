@@ -20,7 +20,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import { once } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -109,6 +109,9 @@ function serverEnv(
     DORKOS_TELEMETRY_DISABLED: '1',
     DORKOS_UPDATE_CHECK_DISABLED: '1',
     ...extra,
+    // A test-mode boot must not discover the operator's real harness sign-ins.
+    HOME: path.join(dorkHome, 'home'),
+    CLAUDE_CONFIG_DIR: path.join(dorkHome, 'claude'),
   };
 }
 
@@ -182,6 +185,8 @@ async function bootOnce(
 ): Promise<ComposedServer> {
   const port = await freePort();
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-contract-'));
+  await mkdir(path.join(dorkHome, 'home'));
+  await mkdir(path.join(dorkHome, 'claude'));
   // The `r` keeps the tag alphanumeric: eight hex digits that happen to be all
   // numbers with a leading zero are not a valid semver prerelease, and the
   // config store refuses to start on that version.

@@ -211,12 +211,14 @@ describe('X-Content-Type-Options', () => {
     const res = await request(fixtureServer).get('/api/health');
 
     expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
   });
 
   it('rides a 404 too', async () => {
     const res = await request(fixtureServer).get('/api/no-such-route');
 
     expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
   });
 });
 

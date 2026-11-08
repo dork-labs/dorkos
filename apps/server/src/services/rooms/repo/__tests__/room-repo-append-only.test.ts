@@ -158,6 +158,8 @@ describe('a room’s repo is append-only', () => {
       // repo; it starts a fresh session for the agent, and only a person may.
       'reseat_room_agent_options',
       'reseat_room_agent',
+      // It reads how the caller's own hand-off went, and writes nothing (DOR-3778).
+      'room_handoff_status',
     ]);
   });
 });

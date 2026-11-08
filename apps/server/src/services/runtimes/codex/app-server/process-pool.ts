@@ -19,7 +19,7 @@
  *   is not live for 10 minutes is closed; one marked stale is closed as soon as
  *   it is not live. A replaced process is kept in a draining set until then,
  *   so the reaper and shutdown always see it.
- * - **Shutdown.** End stdin, wait 3 s, SIGTERM, wait 3 s, SIGKILL — only ever
+ * - **Shutdown.** Normal shutdown waits 30 s at EOF and SIGTERM; authority removal waits 3 s — only ever
  *   the PID this pool spawned (Hard Rule 7).
  *
  * @module services/runtimes/codex/app-server/process-pool
@@ -59,6 +59,8 @@ export type SpawnAppServer = (
 export interface CodexProcessSpec {
   /** The `codex` binary. */
   readonly binary: string;
+  /** Credits authority must be revoked with the short stop, including on quit. */
+  readonly onCredits?: boolean;
   /** The `CODEX_HOME` it runs on (also its working directory). */
   readonly codexHome: string;
   /** Its complete environment; nothing per turn is layered on it. */
@@ -86,8 +88,10 @@ export interface CodexPoolTiming {
   readonly crashLimit: number;
   /** How long a tripped guard refuses a respawn. */
   readonly crashCooldownMs: number;
-  /** Each shutdown step's wait. */
+  /** Each authority-removal step's short wait. */
   readonly shutdownStepMs: number;
+  /** Normal server shutdown may allow more cleanup time. */
+  readonly normalShutdownStepMs: number;
   /** Bound on `initialize`. */
   readonly initializeMs: number;
 }
@@ -100,6 +104,7 @@ export const CODEX_POOL_TIMING: CodexPoolTiming = {
   crashLimit: 3,
   crashCooldownMs: 30_000,
   shutdownStepMs: 3_000,
+  normalShutdownStepMs: 30_000,
   initializeMs: 15_000,
 };
 
@@ -118,13 +123,15 @@ export function environmentFingerprint(env: Readonly<Record<string, string>>): s
 }
 
 /**
- * A process key: binary, home and environment fingerprint.
+ * A process key: binary, home, billing source and environment fingerprint.
  *
  * @param spec - What the process is for.
  */
 export function processKeyOf(spec: CodexProcessSpec): string {
   return createHash('sha256')
-    .update(`${spec.binary}\u0000${spec.codexHome}\u0000${environmentFingerprint(spec.env)}`)
+    .update(
+      `${spec.binary}\u0000${spec.codexHome}\u0000${spec.onCredits ? 'credits' : 'person'}\u0000${environmentFingerprint(spec.env)}`
+    )
     .digest('hex')
     .slice(0, 32);
 }
@@ -146,6 +153,9 @@ export class CodexAppServerProcess {
   private readonly livenessProbes = new Set<() => Promise<boolean>>();
   private probeFailures = 0;
   private readonly exitedPromise: Promise<void>;
+  private stopping: Promise<void> | undefined;
+  private stopStepMs = Infinity;
+  private wakeStopWait: (() => void) | undefined;
 
   /**
    * Wrap a spawned child.
@@ -170,6 +180,14 @@ export class CodexAppServerProcess {
     this.exitedPromise = new Promise((resolve) => (markExited = resolve));
     child.once('exit', (code: number | null, signal: string | null) => {
       this.exited = true;
+      logger.debug('[CodexAppServer] child exited', {
+        senderPid: process.pid,
+        targetPid: child.pid,
+        atMs: Date.now(),
+        code,
+        signal,
+        exitRequested: this.exitRequested,
+      });
       markExited();
       const detail = `exit code ${code ?? 'none'}${signal ? `, signal ${signal}` : ''}`;
       this.client.close(
@@ -181,7 +199,7 @@ export class CodexAppServerProcess {
     });
     this.client.onClose((close) => {
       // A protocol fault or broken pipe leaves the child running: stop it.
-      if (!this.exited && !this.exitRequested) this.kill('SIGTERM');
+      if (!this.exited && !this.exitRequested) this.kill('SIGTERM', 'connection-close');
       for (const listener of [...this.exitListeners]) listener(close);
       this.exitListeners.clear();
     });
@@ -190,6 +208,16 @@ export class CodexAppServerProcess {
   /** The PID this pool spawned. */
   get pid(): number | undefined {
     return this.child.pid;
+  }
+
+  /** Physical child exit, separate from a closed RPC connection. */
+  get hasExited(): boolean {
+    return this.exited;
+  }
+
+  /** Resolves only on the OS child's exit event, never an RPC close or deadline. */
+  whenExited(): Promise<void> {
+    return this.exitedPromise;
   }
 
   /** Whether the connection is still usable. */
@@ -282,11 +310,21 @@ export class CodexAppServerProcess {
   }
 
   /** Kill by the PID this pool holds. */
-  private kill(signal: NodeJS.Signals): void {
+  private kill(signal: NodeJS.Signals, origin: string): void {
+    const attempt = {
+      senderPid: process.pid,
+      targetPid: this.child.pid,
+      signal,
+      origin,
+      atMs: Date.now(),
+    };
+    logger.debug('[CodexAppServer] signal requested', attempt);
     try {
-      this.child.kill(signal);
+      const sent = this.child.kill(signal);
+      logger.debug('[CodexAppServer] signal', { ...attempt, sent });
     } catch {
-      // Already gone.
+      logger.debug('[CodexAppServer] signal', { ...attempt, sent: false });
+      // Already gone; preserve the existing shutdown behavior.
     }
   }
 
@@ -295,38 +333,64 @@ export class CodexAppServerProcess {
    *
    * @param stepMs - Each wait.
    */
-  async stop(stepMs: number): Promise<void> {
+  stop(stepMs: number): Promise<void> {
+    if (this.stopping) {
+      if (stepMs < this.stopStepMs) {
+        this.stopStepMs = stepMs;
+        this.wakeStopWait?.();
+      }
+      return this.stopping;
+    }
+    this.stopStepMs = stepMs;
+    this.stopping = this.stopOnce().finally(() => {
+      this.stopping = undefined;
+      this.stopStepMs = Infinity;
+    });
+    return this.stopping;
+  }
+
+  private async stopOnce(): Promise<void> {
     this.exitRequested = true;
     this.client.close({ kind: 'requested', detail: 'stopped by DorkOS' });
     if (this.exited) return;
+    logger.debug('[CodexAppServer] shutdown EOF', {
+      senderPid: process.pid,
+      targetPid: this.child.pid,
+      atMs: Date.now(),
+      stepMs: this.stopStepMs,
+    });
     try {
       this.child.stdin.end();
     } catch {
       // A broken pipe is a stopped reader.
     }
-    if (await this.waitForExit(stepMs)) return;
-    this.kill('SIGTERM');
-    if (await this.waitForExit(stepMs)) return;
-    this.kill('SIGKILL');
-    await this.waitForExit(stepMs);
+    if (await this.waitForExit()) return;
+    this.kill('SIGTERM', 'stop-after-eof');
+    if (await this.waitForExit()) return;
+    this.kill('SIGKILL', 'stop-after-sigterm');
+    await this.waitForExit();
   }
 
-  private waitForExit(ms: number): Promise<boolean> {
+  private waitForExit(): Promise<boolean> {
     if (this.exited) return Promise.resolve(true);
     return new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(false), ms);
-      timer.unref?.();
-      void this.exitedPromise.then(() => {
+      const finish = (exited: boolean) => {
         clearTimeout(timer);
-        resolve(true);
-      });
+        if (this.wakeStopWait === wake) this.wakeStopWait = undefined;
+        resolve(exited);
+      };
+      const wake = () => finish(false);
+      const timer = setTimeout(wake, this.stopStepMs);
+      timer.unref?.();
+      this.wakeStopWait = wake;
+      void this.exitedPromise.then(() => finish(true));
     });
   }
 
   /** Mark exited after a failed boot (the child was killed). */
   markBootFailed(): void {
     this.exitRequested = true;
-    this.kill('SIGTERM');
+    this.kill('SIGTERM', 'boot-failure');
   }
 }
 
@@ -349,6 +413,10 @@ export class CodexAppServerPool {
   private readonly now: () => number;
   private readonly timing: CodexPoolTiming;
   private readonly processes = new Map<string, CodexAppServerProcess>();
+  // Connection close and a stop deadline do not prove that the OS child died.
+  // Keep every spawned child, including failed boots, until physical exit.
+  private readonly observed = new Set<CodexAppServerProcess>();
+  private readonly closing = new Map<CodexAppServerProcess, Promise<void>>();
   /**
    * Processes replaced by a newer one for their key or home, kept until
    * nothing in them is live and then closed. Never forgotten: the reaper,
@@ -372,7 +440,14 @@ export class CodexAppServerPool {
   constructor(options: CodexAppServerPoolOptions = {}) {
     this.spawn = options.spawn ?? defaultSpawn;
     this.now = options.now ?? Date.now;
-    this.timing = { ...CODEX_POOL_TIMING, ...options.timing };
+    this.timing = {
+      ...CODEX_POOL_TIMING,
+      ...options.timing,
+      normalShutdownStepMs:
+        options.timing?.normalShutdownStepMs ??
+        options.timing?.shutdownStepMs ??
+        CODEX_POOL_TIMING.normalShutdownStepMs,
+    };
   }
 
   /**
@@ -409,6 +484,8 @@ export class CodexAppServerPool {
     const cwd = fs.existsSync(spec.codexHome) ? spec.codexHome : undefined;
     const child = this.spawn(spec.binary, APP_SERVER_ARGS, { env, cwd });
     const proc = new CodexAppServerProcess(key, spec, child, this.now);
+    this.observed.add(proc);
+    void proc.whenExited().then(() => this.observed.delete(proc));
     proc.onExit((close) => this.onProcessExit(proc, close));
     try {
       proc.version = await initializeCodexClient(proc.client, {
@@ -465,9 +542,9 @@ export class CodexAppServerPool {
     }
   }
 
-  /** Every process this pool holds, current or draining (diagnostics and tests). */
+  /** Every spawned child not yet confirmed exited, including booting/closing children. */
   list(): CodexAppServerProcess[] {
-    return [...this.processes.values(), ...this.draining];
+    return [...this.observed].filter((proc) => !proc.hasExited);
   }
 
   private async closeIfIdle(proc: CodexAppServerProcess): Promise<void> {
@@ -502,19 +579,33 @@ export class CodexAppServerPool {
     );
   }
 
-  private async close(proc: CodexAppServerProcess): Promise<void> {
+  private close(
+    proc: CodexAppServerProcess,
+    reason: 'authority' | 'shutdown' = 'authority'
+  ): Promise<void> {
+    const stepMs =
+      reason === 'shutdown' && !proc.spec.onCredits
+        ? this.timing.normalShutdownStepMs
+        : this.timing.shutdownStepMs;
+    const pending = this.closing.get(proc);
+    if (pending) {
+      void proc.stop(stepMs); // Authority removal shortens an already-running normal stop.
+      return pending;
+    }
     if (this.processes.get(proc.key) === proc) this.processes.delete(proc.key);
     this.draining.delete(proc);
-    await proc.stop(this.timing.shutdownStepMs);
+    const stop = proc.stop(stepMs).finally(() => this.closing.delete(proc));
+    this.closing.set(proc, stop);
+    return stop;
   }
 
   /** Stop every process (server shutdown and admin restart). */
-  async shutdown(): Promise<void> {
+  async shutdown(reason: 'authority' | 'shutdown' = 'shutdown'): Promise<void> {
     this.shutDown = true;
     if (this.reaper) clearInterval(this.reaper);
     this.reaper = undefined;
     await Promise.allSettled([...this.booting.values()]);
-    await Promise.all(this.list().map((proc) => this.close(proc)));
+    await Promise.all(this.list().map((proc) => this.close(proc, reason)));
   }
 
   private ensureReaper(): void {

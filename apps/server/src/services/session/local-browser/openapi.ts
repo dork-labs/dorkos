@@ -143,7 +143,11 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     path: '/api/local-browser/tabs/{id}/select',
     tags: ['Local browser'],
     summary: 'Choose the tab shared with the agent',
-    description: authority + 'Invalidates earlier observations before sharing the selected tab.',
+    description:
+      authority +
+      inPerson +
+      'Invalidates earlier observations before sharing the selected tab. ' +
+      'During a handoff, only the tab already selected can be chosen.',
     request: { params: z.object({ id: z.string() }) },
     responses: stateResponses,
   });
@@ -153,7 +157,9 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Local browser'],
     summary: 'Open a web address in the selected tab',
     description:
-      authority + 'Accepts HTTP or HTTPS addresses and invalidates earlier observations.',
+      authority +
+      inPerson +
+      'Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff.',
     request: {
       body: {
         required: true,
@@ -269,9 +275,10 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     summary: 'Disconnect the browser',
     description:
       authority +
+      inPerson +
       'Stops sharing immediately. Closes DorkOS-owned pages and windows, keeping their saved sign-ins. ' +
-      'A pending close blocks new opens.',
-    responses: stateResponses,
+      'A pending close blocks new opens. During a handoff it ends the agent’s task, as Stop task does.',
+    responses: personStateResponses,
   });
   registerHandoverOpenApi(registry);
 }

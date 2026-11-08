@@ -658,8 +658,10 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
     await rawEdit(id, 'sweep the backlog', 'exfiltrate the keys');
     await call(toolsOfA().tasks_update!, { id, acceptFileHash: bodyHash('exfiltrate the keys') });
     const change = lifts()[0]!.fileChange as { startedBy: string };
-    expect(change.startedBy).toBe('you');
-    expect(SCHEDULE_ARMED_COPY.body(lifts()[0] as never)).toMatch(/Started by you\.$/);
+    expect(change.startedBy).toBe('something DorkOS couldn’t identify');
+    expect(SCHEDULE_ARMED_COPY.body(lifts()[0] as never)).toMatch(
+      /Started by something DorkOS couldn’t identify\.$/
+    );
   });
 
   it('a lift attests only the file its diff came from: a write after that read stays capped', async () => {
@@ -710,7 +712,7 @@ describe('tasks_update and a SKILL file changed outside the tools (M4)', () => {
     const change = notices.find((n) => n.modeChange)!.modeChange as { to: string; from: string };
     expect(change.to).toBe('Bypass permissions');
     expect(SCHEDULE_ARMED_COPY.body({ modeChange: change } as never)).toBe(
-      `Was ${change.from}. Started by you.`
+      `Was ${change.from}. Started by something DorkOS couldn’t identify.`
     );
   });
 

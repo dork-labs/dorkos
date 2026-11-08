@@ -1,9 +1,9 @@
 /**
  * Where the client build is, for the one server that serves it.
  *
- * Serving the client is production-only (`http/client-files.ts`): in
- * development the app is on the Vite dev server and this server answers only
- * its routes. Read by the front door, which serves the build, and by the
+ * Production serves a build by default (`http/client-files.ts`). Development
+ * leaves the app to Vite unless CLIENT_DIST_PATH explicitly names a build,
+ * as the desktop preview does. Read by the front door, which serves the build, and by the
  * sign-in callbacks, which decide whether the app can show their landing page
  * (`http/sign-in-landing-response.ts`).
  *
@@ -23,16 +23,16 @@ const DEFAULT_CLIENT_DIST = path.join(
 
 /**
  * The client build this server serves, or `undefined` when it serves none:
- * in development, and always on an agent computer, which no person browses
+ * in ordinary development, and always on an agent computer, which no person browses
  * (DOR-2940), so neither the app page nor its assets are served there.
  */
 export function clientDistPath(): string | undefined {
   if (isAgentComputer()) return undefined;
-  return env.NODE_ENV === 'production' ? (env.CLIENT_DIST_PATH ?? DEFAULT_CLIENT_DIST) : undefined;
+  return env.CLIENT_DIST_PATH ?? (env.NODE_ENV === 'production' ? DEFAULT_CLIENT_DIST : undefined);
 }
 
 /**
- * Whether a production server has a client build to serve. A headless install
+ * Whether a server has a client build to serve. A headless install
  * can run without one, and then a page in the app is a 404.
  *
  * @param distPath - The build directory {@link clientDistPath} named.

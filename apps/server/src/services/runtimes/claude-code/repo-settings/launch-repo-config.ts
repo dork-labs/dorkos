@@ -473,7 +473,11 @@ export function applyRepoConfigToLaunch(sdkOptions: Options, decision: RepoConfi
 export function applyRepoMcpServers(sdkOptions: Options, decision: RepoConfigLaunch): void {
   if (!decision.mcpServers) return;
   const env = (sdkOptions.env ?? {}) as Record<string, string | undefined>;
-  const repo = expandVariables(decision.mcpServers, env) as Record<string, McpServerConfig>;
+  const expanded = expandVariables(decision.mcpServers, env) as Record<string, McpServerConfig>;
+  // A repo can't declare a server that runs inside this process.
+  const repo = Object.fromEntries(
+    Object.entries(expanded).filter(([, config]) => config.type !== 'sdk')
+  );
   sdkOptions.mcpServers = { ...repo, ...(sdkOptions.mcpServers ?? {}) };
 }
 

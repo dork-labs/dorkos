@@ -2237,21 +2237,22 @@ describe('GET /api/config', () => {
     expect(res.body.ui.trustNoticeSeenAt).toBe(seenAt);
   });
 
-  it('reports Show sessions and the DM view off, and reads both back once set (DOR-3074)', async () => {
-    const dmViewOf = (body: { experiments: { key: string; enabled: boolean }[] }) =>
-      body.experiments.find((experiment) => experiment.key === 'ui.dmView')?.enabled;
+  it('reports the DM view on and Show sessions off, and reads both back once set (DOR-3074)', async () => {
     const before = await request(server).get('/api/config').expect(200);
     expect(before.body.ui.showSessions).toBe(false);
-    expect(dmViewOf(before.body)).toBe(false);
+    expect(before.body.ui.dmView).toBe(true);
+    expect(before.body.experiments.map((entry: { key: string }) => entry.key)).not.toContain(
+      'ui.dmView'
+    );
 
     await request(server)
       .patch('/api/config')
-      .send({ ui: { showSessions: true, dmView: true } })
+      .send({ ui: { showSessions: true, dmView: false } })
       .expect(200);
 
     const after = await request(server).get('/api/config').expect(200);
     expect(after.body.ui.showSessions).toBe(true);
-    expect(dmViewOf(after.body)).toBe(true);
+    expect(after.body.ui.dmView).toBe(false);
   });
 
   // The Full-autonomy acknowledgement is retired (ADR 261006-225605,

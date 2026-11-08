@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { screen, cleanup } from '@testing-library/react';
+import { screen, cleanup, waitFor } from '@testing-library/react';
 import type { ChatMessage } from '@/layers/shared/model';
 import { SessionTranscript } from '../ui/SessionTranscript';
 import { createReadCursorHarness, renderWithTransport } from './session-transcript-test-helpers';
@@ -142,6 +142,48 @@ describe('SessionTranscript as a direct message', () => {
     );
 
     expect(authorNames()[0]).toBe('Dorian');
+  });
+
+  it('holds the conversation unseen until it knows, so nothing moves when the answer lands', async () => {
+    const { rerender } = renderWithTransport(
+      <SessionTranscript
+        sessionId="scout-direct"
+        messages={MESSAGES}
+        directMessage={{ agent: null, humanName: null, settled: false }}
+      />,
+      readState.transport
+    );
+    expect(document.querySelector('.invisible')).not.toBeNull();
+
+    rerender(
+      <SessionTranscript
+        sessionId="scout-direct"
+        messages={MESSAGES}
+        directMessage={{ agent: SCOUT, humanName: 'Dorian', settled: true }}
+      />
+    );
+    await waitFor(() => expect(document.querySelector('.invisible')).toBeNull());
+  });
+
+  it('holds a DM’s conversation until it knows whose words these are', async () => {
+    const { rerender } = renderWithTransport(
+      <SessionTranscript
+        sessionId="scout-direct"
+        messages={MESSAGES}
+        directMessage={{ agent: null, humanName: 'Dorian', settled: true, agentPending: true }}
+      />,
+      readState.transport
+    );
+    expect(document.querySelector('.invisible')).not.toBeNull();
+
+    rerender(
+      <SessionTranscript
+        sessionId="scout-direct"
+        messages={MESSAGES}
+        directMessage={{ agent: SCOUT, humanName: 'Dorian', settled: true, agentPending: false }}
+      />
+    );
+    await waitFor(() => expect(document.querySelector('.invisible')).toBeNull());
   });
 
   it('never invents a time for history: a row without one shows none', () => {

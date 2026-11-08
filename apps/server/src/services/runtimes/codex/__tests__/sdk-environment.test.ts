@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { buildCodexOptions } from '../codex-options.js';
+import { buildCodexOptions } from './fixtures/sdk-options.js';
 
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: () => ({ environment: { inherit: { codex: [] } } }) },

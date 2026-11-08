@@ -98,7 +98,7 @@ describe('requests', () => {
       input: [{ type: 'text', text: 'hi', text_elements: [] }],
       cwd: '/p',
       approvalPolicy: 'never',
-      sandboxPolicy: { type: 'dangerFullAccess' },
+      permissions: 'dorkos-files-danger-full-access',
       summary: 'auto',
     });
     const rejection = expect(pending).rejects.toBeInstanceOf(CodexRpcTimeoutError);
@@ -164,6 +164,14 @@ describe('requests', () => {
   });
 
   it.each([
+    [
+      'error creating thread: bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted',
+      'sandbox-unavailable',
+    ],
+    ['bwrap: Creating new namespace failed: Operation not permitted', 'sandbox-unavailable'],
+    ['bwrap: No permissions to create new namespace', 'sandbox-unavailable'],
+    ['cat: .credentials: Permission denied', 'other'],
+    ['bwrap: cannot be safely expanded; use a non-root directory prefix', 'other'],
     ['Not initialized', 'not-initialized'],
     ['Already initialized', 'already-initialized'],
     ['Invalid request: unknown variant `nope/nope`, expected one of …', 'unknown-method'],

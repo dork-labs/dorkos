@@ -5,6 +5,9 @@ import { createLocalBrowserProfileAccess } from '../../services/session/local-br
 import { loadProfileBindingKey } from '../../services/session/local-browser/profile-folders.js';
 import { createLocalBrowserProfileStore } from '../../services/session/local-browser/profile-store.js';
 import { liveOutsideTurnCheck } from '../../services/session/local-browser/outside-turn.js';
+import { eventFanOut } from '../../services/core/event-fan-out.js';
+import { notify } from '../../services/notifications/notification-service.js';
+import { localBrowserChangedAnnouncer } from '../../services/core/streams/live-change-broadcasts.js';
 /**
  * Managed MCP servers, the external MCP server, the route dependency bag,
  * Tasks, and the skills projection watcher.
@@ -400,6 +403,16 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   localBrowserService.handover.useAgentIdLookup(
     (agentFolder) => refs.meshCore?.getByPath(agentFolder)?.id
   );
+  localBrowserService.handover.useChangeListener(localBrowserChangedAnnouncer(eventFanOut));
+  localBrowserService.handover.useHandoffListener((handoff) => {
+    void notify('browser.handoff', {
+      handoffId: handoff.id,
+      sessionId: handoff.sessionId,
+      site: handoff.site,
+      agentName: handoff.agentName,
+      agentId: handoff.agentId,
+    });
+  });
   const deps: HonoApiDeps = {
     localBrowser: localBrowserService,
     localBrowserProfiles: {

@@ -203,6 +203,7 @@ function notificationsByLens(
 function parkedSchedule(overrides: Partial<Task> = {}): Task {
   return {
     id: 'task-1',
+    approvalRevision: 'a'.repeat(64),
     name: 'nightly-sweep',
     displayName: 'Nightly sweep',
     description: null,
@@ -946,11 +947,13 @@ describe('PinnedTriageHeader', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Nightly sweep' }));
 
-    // The Tasks page's own mutation, unchanged: arming it is a status AND an
-    // enabled flag, and sending only one of them leaves a schedule that is
-    // approved but never fires. This card's prompt is folded, so its yes names no
-    // prompt by its hash (DOR-3703, SC2).
-    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'active' }));
+    // A yes identifies the reviewed work. Without a revision the real card must stay blocked.
+    await waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith('task-1', {
+        status: 'active',
+        expectedApprovalRevision: 'a'.repeat(64),
+      })
+    );
   });
 
   it('rejects a parked schedule into a receipt, sending no delete yet', async () => {

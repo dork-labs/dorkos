@@ -255,9 +255,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/canvas/docs');
     expect(mounts).toContain('/api/audit');
     expect(mounts).toContain('/api/session-locations');
-    // 70 -> 72: `/api/commitments` and `/api/agents/:id/commitments` (spec
+    // 70 -> 72: `/api/todo-promises` and `/api/agents/:id/todo-promises` (spec
     // `heartbeats` §12).
-    expect(mounts).toContain('/api/commitments');
+    expect(mounts).toContain('/api/todo-promises');
     // 72 -> 71: the `/assets` trap is no longer an Express mount; it lives in
     // `http/client-files.ts`, and is asked for by hand below.
     // 71 -> 72: `/api/remote-access`, the remote access report and actions (DOR-2086).
@@ -323,7 +323,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/work-queues');
     // 86 -> 87: to-dos (DOR-3088), mounted only behind `DORKOS_TODOS_ENABLED`.
     expect(mounts).toContain('/api/todos');
-    expect(mounts).toHaveLength(87);
+    // The off-by-default discovery route remains mounted and must meet admission too.
+    expect(mounts).toContain('/api/your-browser');
+    expect(mounts).toHaveLength(88);
     const byHand = [
       '/',
       '/x/fixture',

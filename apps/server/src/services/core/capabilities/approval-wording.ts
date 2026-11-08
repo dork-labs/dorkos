@@ -5,6 +5,7 @@
  *
  * @module services/core/capabilities/approval-wording
  */
+import { INCOMPLETE_APPROVAL_MESSAGE } from '../approvals/approval-completeness.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type {
   ApprovalRequiredPayload,
@@ -157,4 +158,15 @@ export function splitApprovalToken(args: unknown): { approvalToken?: string; inp
   const { [APPROVAL_TOKEN_ARGUMENT]: token, ...rest } = args as Record<string, unknown>;
   if (typeof token !== 'string' || token.length === 0) return { input: rest };
   return { approvalToken: token, input: rest };
+}
+
+/** An unreadable disclosure is distinct from a person refusing a readable action. */
+export function approvalDeclineMessage(result: {
+  outcome: 'denied' | 'incomplete';
+  reason?: string;
+}): string {
+  if (result.outcome === 'incomplete') return INCOMPLETE_APPROVAL_MESSAGE;
+  return result.reason
+    ? `A person refused this: ${result.reason}`
+    : 'A person refused this. Do not try again unless they ask for it.';
 }

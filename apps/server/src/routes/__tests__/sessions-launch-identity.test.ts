@@ -414,3 +414,15 @@ describe('a message waiting in a chat (DOR-3644 S1)', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('UI-action person stamp', () => {
+  it.each([
+    ['owner app', PERSON, 'person'],
+    ['agent tool', AS_A, 'agent'],
+  ] as const)('names the %s caller on the dispatched turn', async (_label, caller, turnStarter) => {
+    fakeRuntime.hasSession.mockReturnValue(true);
+    const res = await post('/ui-action', { actionId: 'sample-action' }, caller);
+    expect(res.status).toBe(202);
+    expect(dispatchMessage).toHaveBeenCalledWith(expect.objectContaining({ turnStarter }));
+  });
+});

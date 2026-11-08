@@ -183,6 +183,7 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
     projector.cwd = cwd;
 
     const result = await dispatchMessage({
+      turnStarter: 'agent',
       sessionId,
       clientId: `mcp-signin-${event.flowId}`,
       content,

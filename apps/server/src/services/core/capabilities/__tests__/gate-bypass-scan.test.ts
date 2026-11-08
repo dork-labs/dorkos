@@ -752,6 +752,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/tasks/task-file-watcher.ts':
         'syncs a file a person (or anything that can write a project file) edited on disk; the frontmatter path is deliberately NOT covered by the DOR-504 policy (see task-write-policy.ts)',
       'services/tasks/task-reconciler.ts': 'the periodic resync of the same files',
+      'services/tasks/execution/misplaced-mode.ts':
+        'the pre-dispatch misplaced-file guard (DOR-3840), only with source: discovery and problem: MISPLACED_SCHEDULE_PERMISSIONS; FileSyncGates parks the row instead of approving it. Timer runs are refused, and the person-only manual path returns Accept edits for that one run, never the misplaced value or a new approval',
       'services/shapes/shape-schedule-service.ts':
         'applies a Shape package that DECLARES a schedule; the mode comes from installed content, not from the caller, and is NOT covered by the DOR-504 policy',
       'services/tasks/legacy-migration.ts':
@@ -766,6 +768,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: "changes a scheduled task's permission mode or approval status",
     call: 'updateTask(',
     allowed: {
+      'services/shapes/shape-schedule-service.ts':
+        "one write after the raw create fallback only: `updateTask(schedule.id, { status: 'pending_approval' })` parks that newly created row before registration (DOR-3861). It changes nothing else, grants no mode and cannot arm a schedule; this entry does not cover any other updateTask write",
       'routes/tasks.ts':
         'the cockpit REST route — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here',
       'services/tasks/lifecycle/create-task.ts':

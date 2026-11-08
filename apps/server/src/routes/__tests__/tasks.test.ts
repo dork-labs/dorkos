@@ -207,6 +207,71 @@ describe('Tasks routes', () => {
     resetAgentIdentityService();
   });
 
+  describe('approval binds to the review', () => {
+    it.each(['prompt', 'permissionMode'] as const)(
+      'refuses a changed %s and arms nothing',
+      async (field) => {
+        const task = store.createTask(taskInput({ name: 'Sample review' }));
+        store.updateTask(task.id, { status: 'pending_approval' });
+        const listed = await request(fixtureServer).get('/api/tasks');
+        const revision = listed.body.find(
+          (item: { id: string }) => item.id === task.id
+        ).approvalRevision;
+        store.updateTask(
+          task.id,
+          field === 'prompt' ? { prompt: 'New instructions' } : { permissionMode: 'dontAsk' }
+        );
+        const response = await request(fixtureServer)
+          .patch(`/api/tasks/${task.id}`)
+          .send({ status: 'active', expectedApprovalRevision: revision });
+        expect(response.status).toBe(409);
+        expect(response.body.code).toBe('schedule_review_changed');
+        expect(store.getTask(task.id)?.status).toBe('pending_approval');
+        expect(scheduler.registerTask).not.toHaveBeenCalled();
+      }
+    );
+    it('refuses a row edit that lands during the file read, before activation', async () => {
+      const task = store.createTask(taskInput({ name: 'Concurrent review' }));
+      store.updateTask(task.id, { status: 'pending_approval' });
+      const listed = await request(fixtureServer).get('/api/tasks');
+      const revision = listed.body.find(
+        (item: { id: string }) => item.id === task.id
+      ).approvalRevision;
+      const fs = await import('node:fs/promises');
+      vi.mocked(fs.default.readFile).mockImplementationOnce(async () => {
+        store.updateTask(task.id, { prompt: 'Instructions changed while approval was checked' });
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      });
+      const response = await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ status: 'active', expectedApprovalRevision: revision });
+      expect(response.status).toBe(409);
+      expect(store.getTask(task.id)?.status).toBe('pending_approval');
+      expect(store.getTask(task.id)?.prompt).toBe(
+        'Instructions changed while approval was checked'
+      );
+      expect(scheduler.registerTask).not.toHaveBeenCalled();
+    });
+
+    it('requires a revision and accepts the unchanged review', async () => {
+      const task = store.createTask(taskInput({ name: 'Sample review' }));
+      store.updateTask(task.id, { status: 'pending_approval' });
+      const missing = await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ status: 'active' });
+      expect(missing.status).toBe(409);
+      const listed = await request(fixtureServer).get('/api/tasks');
+      const revision = listed.body.find(
+        (item: { id: string }) => item.id === task.id
+      ).approvalRevision;
+      const approved = await request(fixtureServer)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ status: 'active', expectedApprovalRevision: revision });
+      expect(approved.status).toBe(200);
+      expect(store.getTask(task.id)?.status).toBe('active');
+    });
+  });
+
   describe('GET /api/tasks', () => {
     it('returns empty array when no schedules', async () => {
       const res = await request(fixtureServer).get('/api/tasks');

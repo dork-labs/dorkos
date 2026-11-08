@@ -13,6 +13,7 @@
  */
 import type { NotificationActionDTO } from '@dorkos/shared/notification-schemas';
 import type { ScheduleSubject } from './emitters/schedule-subject.js';
+import type { ScheduleExecutionCopy } from './schedule-execution-copy.js';
 
 /** What a `schedule.armed_by_agent` notification is told. */
 export interface ScheduleArmedPayload extends ScheduleSubject {
@@ -22,6 +23,8 @@ export interface ScheduleArmedPayload extends ScheduleSubject {
   armedBy: string;
   /** When it runs, as the end of "Runs …", e.g. `every day at 9:00 AM`. */
   cadence: string;
+  /** Saved mode and unattended limits, written by the server on creation. */
+  execution?: ScheduleExecutionCopy;
   /**
    * Set when an agent changed the mode of a running schedule on its own: the
    * modes as a person reads them, who started the turn that did it (M6), and
@@ -110,7 +113,7 @@ export const SCHEDULE_ARMED_COPY = {
           ? `${p.armedBy} rewrote ${p.taskName}`
           : p.modeChange
             ? `${p.armedBy} set ${p.taskName} to ${p.modeChange.to}`
-            : `${p.armedBy} scheduled ${p.taskName}`,
+            : `${p.armedBy} made a schedule: ${p.taskName}`,
   // A second line that never contradicts a refused Undo (designer, round 7).
   body: (p: ScheduleArmedPayload) =>
     p.refusedRaise
@@ -121,7 +124,15 @@ export const SCHEDULE_ARMED_COPY = {
           ? `Prompt changed ${p.promptChange.fromHash} → ${p.promptChange.toHash}. Started by ${p.promptChange.startedBy}.`
           : p.modeChange
             ? `Was ${p.modeChange.from}.${p.modeChange.startedBy ? ` Started by ${p.modeChange.startedBy}.` : ''}`
-            : `Runs ${p.cadence}${p.runsAs ? ` as ${p.runsAs}` : ''}. Pause it any time.`,
+            : p.execution
+              ? [
+                  `Runs as: ${p.execution.modeLabel}`,
+                  p.execution.modeSummary,
+                  p.execution.limitation,
+                ]
+                  .filter(Boolean)
+                  .join('\n')
+              : `Runs ${p.cadence}${p.runsAs ? ` as ${p.runsAs}` : ''}. Pause it any time.`,
   actions: (p: ScheduleArmedPayload) =>
     p.fileChange?.kind === 'capped' || p.refusedRaise
       ? FILE_CAPPED_ACTIONS

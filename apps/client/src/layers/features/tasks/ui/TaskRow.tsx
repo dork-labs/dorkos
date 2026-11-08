@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { hasMisplacedSchedulePermissions } from '@dorkos/shared/schedule-file-problems';
+import { TaskScheduleReview } from './review/TaskScheduleReview';
+import { useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import cronstrue from 'cronstrue';
 import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   isScheduleAwaitingApproval,
+  ScheduleFileProblem,
   useUpdateTask,
   useTriggerTask,
   useDeleteTask,
@@ -195,10 +198,19 @@ export function TaskRow({
   const updateTask = useUpdateTask();
   const triggerTask = useTriggerTask();
   const deleteTask = useDeleteTask();
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewTurnsOn, setReviewTurnsOn] = useState(false);
+  const reviewTrigger = useRef<HTMLElement | null>(null);
+  const openReview = (element: HTMLElement) => {
+    reviewTrigger.current = element;
+    setReviewTurnsOn(false);
+    setReviewOpen(true);
+  };
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const agentVisual = agent ? resolveAgentVisual(agent) : null;
 
   const isMinimal = size === 'minimal';
+  const misplacedMode = hasMisplacedSchedulePermissions(task);
   const awaitingApproval = !isMinimal && isScheduleAwaitingApproval(task);
   const isCompact = size === 'compact';
   const isComfortable = size === 'comfortable';
@@ -255,6 +267,13 @@ export function TaskRow({
 
   return (
     <>
+      <TaskScheduleReview
+        task={task}
+        open={reviewOpen}
+        turnOnApproval={reviewTurnsOn}
+        onOpenChange={setReviewOpen}
+        returnFocus={() => reviewTrigger.current?.focus()}
+      />
       {/* Rounds its first and last child rather than clipping with
           `overflow-hidden` — clipping cut the keyboard focus ring off on
           three of its four sides (batch 06, N1). Rounding the edge children
@@ -371,24 +390,7 @@ export function TaskRow({
                 )}
               </>
             )}
-            {/* Why this one is waiting. A schedule DorkOS found in a file says
-                so here — including what is wrong with the file, when something
-                is — because the row is where a person meets it first and the
-                Approve button is right there. Without this line, a schedule
-                parked over a typo in its cron looks identical to one parked
-                only for a look.
-
-                Gated on ORIGIN, not on status. `reason` means two different
-                things depending on where the row came from: DorkOS's own words
-                on a file-found schedule, and an AGENT'S CASE on one an agent
-                proposed. The second belongs on the approval card, which can say
-                who is making it — printing it here as a bare line would put an
-                agent's argument on screen with nothing attributing it (DOR-1485
-                review, I5). `reasonSource` catches the other half: a schedule a
-                person made themselves whose file has drifted also carries our
-                words, not theirs. Both conditions are needed: a schedule that
-                is already running is not waiting for anything, so whatever
-                `reason` it still carries is history. */}
+            {/* File complaints are server-authored; an agent's case belongs on its card. */}
             {isScheduleAwaitingApproval(task) &&
               (task.origin === 'file' || task.reasonSource === 'dorkos') &&
               task.reason && (
@@ -396,7 +398,7 @@ export function TaskRow({
                   data-slot="task-park-reason"
                   className="text-muted-foreground min-w-0 text-xs break-words"
                 >
-                  {task.reason}
+                  {misplacedMode ? <ScheduleFileProblem /> : task.reason}
                 </div>
               )}
             {/* Names the source on the row itself, not only in the expanded
@@ -434,7 +436,7 @@ export function TaskRow({
           >
             {/* Approving keeps the switch as it is (DOR-3309). */}
             {awaitingApproval ? (
-              <TaskApproveButtons task={task} />
+              <TaskApproveButtons task={task} onReview={openReview} />
             ) : isCompact ? (
               <button
                 className="border-input hover:bg-accent hover:text-accent-foreground inline-flex items-center gap-1 rounded-md border bg-transparent px-2 py-1 text-xs font-medium shadow-xs transition-colors"
@@ -459,7 +461,7 @@ export function TaskRow({
                     // `enabled` says; the switch reads off and cannot be flipped
                     // until the file comes back. A declined one reads off too
                     // (DOR-2097), and flipping it on is approving it, below.
-                    checked={task.enabled && task.status !== 'paused' && !task.declined}
+                    checked={task.enabled && task.status === 'active' && !task.declined}
                     disabled={task.status === 'paused'}
                     onCheckedChange={(checked) => {
                       // A package-shipped schedule that ships off is
@@ -474,12 +476,16 @@ export function TaskRow({
                       // back on needs none of that — `enabled` alone is
                       // agent-writable and reversible.
                       if (checked && task.status === 'pending_approval') {
-                        updateTask.mutate({ id: task.id, status: 'active', enabled: true });
+                        setReviewTurnsOn(true);
+                        setReviewOpen(true);
                         return;
                       }
                       updateTask.mutate({ id: task.id, enabled: checked });
                     }}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      reviewTrigger.current = e.currentTarget;
+                    }}
                     aria-label={`Toggle ${task.name}`}
                   />
                 ) : (

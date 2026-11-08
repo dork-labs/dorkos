@@ -57,12 +57,19 @@ const READY_LINE_PATTERN = /opencode server listening on\s+(https?:\/\/\S+)/;
  * the safety boundary: every edit/bash/webfetch raises a `permission.asked`
  * event that the adapter resolves per the session's DorkOS permission mode
  * (NOTES.md §2). The key names here are the same strings the event's
- * `permission` field carries, live-verified 2026-08-11 against 1.18.15. Reads
- * stay `allow`, mirroring Claude `default` semantics — reads free, mutations
- * gated.
+ * `permission` field carries, live-verified 2026-08-11 against 1.18.15. Reads ask the host too, so protected files are refused before any mode
+ * can auto-approve them. Ordinary reads are answered without a card.
  */
 export const OPENCODE_SIDECAR_CONFIG = {
-  permission: { edit: 'ask', bash: 'ask', webfetch: 'ask' },
+  permission: {
+    // Keep OpenCode's native secret denies; the host may auto-answer ordinary reads.
+    read: { '*': 'ask', '*.env': 'deny', '*.env.*': 'deny', '*.env.example': 'allow' },
+    grep: 'ask',
+    glob: 'ask',
+    edit: 'ask',
+    bash: 'ask',
+    webfetch: 'ask',
+  },
 } as const;
 
 /** @internal Exported for tests — lifecycle timing and backoff constants. */

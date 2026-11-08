@@ -760,6 +760,11 @@ async function launchSessionMessage(
   // moves.
   const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
     dispatchMessage({
+      turnStarter: personTyped
+        ? 'person'
+        : origin.kind === 'chat-message'
+          ? 'agent-message'
+          : 'agent',
       sessionId,
       clientId,
       content,

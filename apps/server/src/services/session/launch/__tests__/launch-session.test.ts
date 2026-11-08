@@ -112,9 +112,32 @@ describe('dispatchSessionMessage', () => {
       expect.objectContaining({ cwd: '/actual' }),
       undefined
     );
-    expect(dispatchMessage).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/actual' }));
+    expect(dispatchMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: '/actual', turnStarter: 'person' })
+    );
     expect(validateBoundaryOrDorkHome).toHaveBeenCalledWith('/actual');
   });
+
+  it.each([
+    ['interactive', 'person'],
+    ['session-relay', 'person'],
+    ['chat-message', 'agent-message'],
+    ['agent-launch', 'agent'],
+    ['extension-start', 'agent'],
+  ] as const)(
+    'stamps the %s send as %s, never borrowing the person label',
+    async (kind, turnStarter) => {
+      await dispatchSessionMessage({
+        sessionId: SESSION,
+        request: { content: 'sample message' },
+        clientId: 'c',
+        meshCore: undefined,
+        roomSessionPlace: undefined,
+        origin: { kind },
+      });
+      expect(dispatchMessage).toHaveBeenCalledWith(expect.objectContaining({ turnStarter }));
+    }
+  );
 
   it('refuses an agent directory Mesh does not know, and starts nothing', async () => {
     const result = await dispatchSessionMessage({

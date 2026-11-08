@@ -155,5 +155,6 @@ describe('a gathered burst mixing a stranger and a person', () => {
     expect(seen[0]!.permissionCeiling).toBeUndefined();
     expect(seen[0]!.untrustedText).toBe(true);
     expect(seen[0]!.externalAuthor).toBe(true);
+    expect(seen[0]!.turnStarter).toBe('room-messages');
   });
 });

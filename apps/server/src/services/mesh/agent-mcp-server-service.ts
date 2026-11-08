@@ -700,8 +700,10 @@ export class AgentMcpServerService {
    * server this name used to point at is never sent to the one it points at now
    * (DOR-986).
    *
-   * WHERE THE HEADER TRAVELS, per runtime (DOR-993, closing the DOR-986
-   * exposure): claude-code and opencode hand it over out of band. Codex used to
+   * WHERE THE HEADER TRAVELS, per runtime (DOR-993, DOR-3882): claude-code hands
+   * it over stdin after launch (`claude-code/sdk/launch-query.ts`), because
+   * the SDK's `mcpServers` option becomes `--mcp-config` on the command line.
+   * Opencode sends it to its sidecar through the sidecar's API. Codex used to
    * be the exception — the header left this process as a `codex exec` config
    * override, which `@openai/codex-sdk` serializes into the subprocess's argv,
    * so the bearer was readable by anything on this machine that could list

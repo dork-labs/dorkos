@@ -18,9 +18,13 @@
  *
  * @module services/tasks/agent-mode/agent-mode-run-origin
  */
+import { activeTurnStarterOf } from '../../session/origin/active-turn-starter.js';
 import type { TaskStore } from '../task-store.js';
 import { getSessionStartedByStore } from '../../session/origin/session-started-by-store.js';
-import { chatTurnSendersOf } from '../../session/chat-messages/chat-started-turns.js';
+import {
+  chatTurnSendersOf,
+  steeredTurnSendersOf,
+} from '../../session/chat-messages/chat-started-turns.js';
 import { activeRunSessionsOf } from '../session/active-run-sessions.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { beatChatsAmong } from './agent-mode-beats.js';
@@ -31,6 +35,10 @@ const MAX_HOPS = 64;
 
 /** Where the walk reads who started a chat and its turn. Injected so a test can fake each. */
 export interface RunOriginSources {
+  /** Display provenance of this running send; never used by the scheduled-run walk. */
+  turnStarter?: (sessionId: string) => string | undefined;
+  /** Only chat messages steered into this active send, excluding room wakers. */
+  steeredSenders?: (sessionId: string) => readonly string[];
   /** The scheduled runs among these chats, as `resolveTaskOrigins` answers. */
   runSessions: (sessionIds: string[]) => ReadonlySet<string>;
   /** The chat that started a chat with `session_start`, or `null`. */
@@ -102,6 +110,8 @@ export function liveRunOriginSources(
     runSessions: (ids) => runSessionsOf(store, ids),
     startedBy: (id) => getSessionStartedByStore()?.get(id)?.startedBySessionId ?? null,
     turnSenders: chatTurnSendersOf,
+    turnStarter: activeTurnStarterOf,
+    steeredSenders: steeredTurnSendersOf,
     beatSessions: (ids) => beatChatsAmong(ids),
     stampOf: stampedOriginOf,
   };
@@ -185,30 +195,28 @@ export function withRunOrigin(caller: AgentModeCaller, sources: RunOriginSources
   return { ...caller, scheduledRun: true, ...(origin === 'heartbeat' ? { heartbeat: true } : {}) };
 }
 
-/** What a started-by record says about the chat at the root of a chain. */
-type StartedByKind = (
-  sessionId: string
-) => { kind: 'extension' | 'chat'; extensionId: string | null } | null;
-
 /**
  * Who started the calling chat's turn, as a person reads it (M6): a heartbeat,
- * a scheduled run, an extension, another chat, or the person themselves.
+ * a scheduled run, the current send’s source, or an unknown source.
  *
  * @param caller - The caller, with {@link withRunOrigin} applied.
  * @param sources - See {@link RunOriginSources}.
- * @param recordOf - The chat's started-by record; the live store by default.
  */
-export function turnStarterOf(
-  caller: AgentModeCaller,
-  sources: RunOriginSources,
-  recordOf: StartedByKind = (id) => getSessionStartedByStore()?.get(id) ?? null
-): string {
+export function turnStarterOf(caller: AgentModeCaller, sources: RunOriginSources): string {
   if (caller.heartbeat) return 'a heartbeat';
   if (caller.scheduledRun) return 'a scheduled run';
-  const sessionId = caller.sessionId;
-  if (!sessionId) return 'an agent DorkOS cannot name';
-  if (sources.turnSenders(sessionId).length > 0) return 'a message from another chat';
-  const record = recordOf(sessionId);
-  if (record?.kind === 'extension') return `the ${record.extensionId ?? 'unnamed'} extension`;
-  return record?.kind === 'chat' ? 'another chat' : 'you';
+  const ids = [caller.sessionId, ...(caller.turnSessionIds ?? [])].filter(
+    (id): id is string => !!id
+  );
+  if (
+    ids.some((id) => sources.turnStarter?.(id) !== undefined && sources.steeredSenders?.(id).length)
+  ) {
+    return 'a message from another agent';
+  }
+  const starters = new Set(
+    ids
+      .map((id) => sources.turnStarter?.(id))
+      .filter((starter): starter is string => starter !== undefined)
+  );
+  return starters.size === 1 ? [...starters][0]! : 'something DorkOS couldn’t identify';
 }

@@ -7,7 +7,7 @@ import { ConnectorThreadKeyRegistry } from '../../../connectors/principal/thread
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { CodexAppServerPool } from '../app-server/process-pool.js';
-import { AppServerCodexTransport } from '../transport/app-server-transport.js';
+import { createCodexTransport, type CodexTransportKind } from '../transport/index.js';
 import type { CodexCompactRequest, CodexTurnRequest } from '../transport/codex-transport.js';
 import { createCodexEventContext } from '../event-mapper.js';
 import { FakeAppServerHost } from './fake-app-server.js';
@@ -19,6 +19,8 @@ export const CREDITS_ENV_HOME = '/fake/credits';
 
 /** Options for {@link makeAppServerHarness}. */
 export interface AppServerHarnessOptions {
+  /** A persisted setting, including the legacy exec value. */
+  setting?: CodexTransportKind;
   /** Wire connector tools (and thread keys). */
   withConnectorTools?: boolean;
   /** Provide a credits relay. */
@@ -51,8 +53,9 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
         isConnectorCapabilityId: () => false,
       } satisfies ConnectorRuntimeTools)
     : undefined;
-  const transport = new AppServerCodexTransport({
+  const transport = createCodexTransport(options.setting ?? 'app-server', {
     pool,
+    mountTargets: false,
     connectorTools: () => tools,
     ...(options.relay ? { creditsRelay: () => options.relay } : {}),
     environment: {

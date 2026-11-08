@@ -73,7 +73,8 @@
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": ["DORKOS_YOUR_BROWSER_ENABLED"]
     },
     "test": {
       "dependsOn": ["^build", "//#heavy-slot"],

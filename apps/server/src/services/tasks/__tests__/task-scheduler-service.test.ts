@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import {
   clearTestHomes,
@@ -21,6 +21,12 @@ import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay'
 import { taskDispatchSubject, TASK_DISPATCH_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from '../task-append.js';
 import { agentApprovalBindingOf } from '../agent-mode/agent-mode-binding.js';
+import { NotificationStore } from '../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../notifications/notification-service.js';
+import { notifyRunCompleted } from '../../notifications/emitters/run-completed.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -843,6 +849,12 @@ describe('TaskSchedulerService', () => {
     });
 
     it('never records an Accept edits schedule that lost Bash as completed (DOR-3123)', async () => {
+      // Reuse the timer-refusal regression to prove its terminal hook reaches
+      // the person's real notification store too (DOR-3839), not only run history.
+      const notifications = new NotificationService(new NotificationStore(db));
+      setNotificationService(notifications);
+      store.setOnRunTerminal((run, task) => void notifyRunCompleted(run, task));
+      onTestFinished(() => setNotificationService(null));
       // QA's census, 2026-10-25: 23 refusals in a day, every one on an Accept
       // edits schedule, and every run row said `completed`.
       vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
@@ -869,6 +881,16 @@ describe('TaskSchedulerService', () => {
       expect(finished.trigger).toBe('scheduled');
       expect(finished.status).toBe('needs_attention');
       expect(finished.refusedTools).toEqual(['Bash']);
+      await vi.waitFor(() =>
+        expect(notifications.list({ limit: 25, unread: false }).notifications).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              title: 'Health check had a command refused',
+              body: 'It may have needed approval. Open the schedule to check its mode.',
+            }),
+          ])
+        )
+      );
       expect(finished.error).toBe(
         'Skipped Bash — nobody was there to approve it on a scheduled run.'
       );
@@ -1040,8 +1062,8 @@ describe('TaskSchedulerService', () => {
       // One entry each: the operator's morning question is WHICH tools, and the
       // run row's own line already answers "were there any".
       expect(refusals.map((event) => event.summary)).toEqual([
-        'Noted could not use Bash — nobody was there to approve it',
-        'Noted could not use control_ui — nobody was there to approve it',
+        'Noted had a Bash command refused',
+        'Noted was refused control_ui',
       ]);
 
       await service.stop();

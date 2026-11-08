@@ -1,7 +1,7 @@
 /**
  * The to-do list a person works from: one view at a time, open ones first in the server's order,
  * each completed in place with a moment to undo it. In "My order" the open ones move: drag one by
- * its grip, or press ⌥↑ / ⌥↓ inside it.
+ * its grip, press ⌥↑ / ⌥↓ inside it, long-press it on a touch screen, or use Reorder mode's ↑ and ↓.
  *
  * @module features/todos/ui/TodoList
  */
@@ -10,7 +10,8 @@ import {
   closestCenter,
   DndContext,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -26,15 +27,15 @@ import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { roomDisplayTitle, useRooms } from '@/layers/entities/room';
 import { useTodos, useUpdateTodo } from '@/layers/entities/todo';
-import { getAgentDisplayName } from '@/layers/shared/lib';
-import { useIsMobile } from '@/layers/shared/model';
+import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { Button, EmptyState, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { assignedByLabel } from '../lib/todo-labels';
 import { useLingeringDone, withLingering } from '../model/use-lingering-done';
 import { useTodoFilters } from '../model/use-todo-filters';
+import { usePrefersLongPress } from '../model/use-prefers-long-press';
 import { useTodoReorder } from '../model/use-todo-reorder';
-import { SortableTodoRow } from './SortableTodoRow';
-import { TodoFilterBar } from './TodoFilterBar';
+import { SortableTodoRow, todoMoveKey } from './SortableTodoRow';
+import { TODO_FILTER_TRIGGER, TodoFilterBar } from './TodoFilterBar';
 
 /** Props for {@link TodoList}. */
 export interface TodoListProps {
@@ -83,41 +84,78 @@ export function TodoList({ onNewTodo }: TodoListProps) {
   const sortable = filters.sort === 'rank' && filters.view === 'mine' && movable.length > 1;
   const reorder = useTodoReorder(query, rows, movable);
   const [announcement, setAnnouncement] = useState('');
-  // The grip that moved keeps focus: a row moving down is re-inserted, which would blur it.
+  // Reorder mode: ↑ and ↓ on each movable row, for anyone who can't drag (DOR-3715). It ends
+  // with Done, Esc, or anything that stops the list from moving.
+  const [reorderMode, setReorderMode] = useState(false);
+  // Ended for good, not paused, so a list that can move again doesn't drop back into it.
+  if (reorderMode && !sortable) setReorderMode(false);
+  const reordering = reorderMode && sortable;
+  // The control that moved keeps focus: a row moving down is re-inserted, which would blur it.
   const refocus = useRef<string | null>(null);
   useEffect(() => {
-    const id = refocus.current;
-    if (!id) return;
+    const target = refocus.current;
+    if (!target) return;
     refocus.current = null;
-    document.querySelector<HTMLElement>(`[data-todo-grip="${CSS.escape(id)}"]`)?.focus();
-  }, [movable]);
-  const isMobile = useIsMobile();
+    focusFirst(target);
+  }, [movable, reordering]);
+  const longPress = usePrefersLongPress();
   const sensors = useSensors(
-    // A few pixels of travel first, so a tap on the grip is not a drag. On a phone, a long press:
-    // a quick sideways swipe on the same row finishes it instead (DOR-3715).
-    useSensor(PointerSensor, {
-      activationConstraint: isMobile ? { delay: 300, tolerance: 8 } : { distance: 4 },
-    }),
+    // A few pixels of travel first, so a click on the grip is not a drag.
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    // A long press: a quick sideways swipe on the same row finishes it instead (DOR-3715).
+    useSensor(TouchSensor, { activationConstraint: { delay: 300, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  function moveTo(id: string, from: number, to: number) {
+  function startReorder() {
+    setReorderMode(true);
+    const first = movable[0];
+    if (first) refocus.current = moveButton(todoMoveKey(first.id, 1));
+  }
+
+  function endReorder() {
+    setReorderMode(false);
+    refocus.current = `[${TODO_FILTER_TRIGGER}]`;
+  }
+
+  // Esc leaves Reorder mode from anywhere on the page.
+  useEffect(() => {
+    if (!reordering) return;
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      setReorderMode(false);
+      refocus.current = `[${TODO_FILTER_TRIGGER}]`;
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [reordering]);
+
+  function moveTo(id: string, from: number, to: number, focus: string) {
     if (!reorder.move(from, to)) return;
-    refocus.current = id;
+    refocus.current = focus;
     setAnnouncement(`Moved to position ${to + 1} of ${movable.length}.`);
   }
 
   function moveBy(todo: Todo, by: -1 | 1) {
     const from = movable.findIndex((row) => row.id === todo.id);
     const to = Math.min(Math.max(from + by, 0), movable.length - 1);
-    if (from !== -1 && to !== from) moveTo(todo.id, from, to);
+    if (from === -1 || to === from) return;
+    // A Reorder button keeps focus, or hands it to its row's other one once it's disabled at an
+    // end; the grip keeps its own.
+    const focus = reordering
+      ? `${moveButton(todoMoveKey(todo.id, by))}:not(:disabled), ${moveButton(todoMoveKey(todo.id, by === -1 ? 1 : -1))}`
+      : `[data-todo-grip="${CSS.escape(todo.id)}"]`;
+    moveTo(todo.id, from, to, focus);
   }
 
   function onDragEnd({ active, over }: DragEndEvent) {
     if (!over || active.id === over.id) return;
     const from = movable.findIndex((row) => row.id === active.id);
     const to = movable.findIndex((row) => row.id === over.id);
-    if (from !== -1 && to !== -1) moveTo(String(active.id), from, to);
+    if (from !== -1 && to !== -1) {
+      moveTo(String(active.id), from, to, `[data-todo-grip="${CSS.escape(String(active.id))}"]`);
+    }
   }
 
   function complete(todo: Todo, index: number) {
@@ -142,7 +180,16 @@ export function TodoList({ onNewTodo }: TodoListProps) {
       <p role="status" className="sr-only">
         {announcement}
       </p>
-      <TodoFilterBar filters={filters} onChange={set} />
+      <TodoFilterBar
+        filters={filters}
+        onChange={set}
+        reorder={{
+          available: sortable,
+          active: reordering,
+          onStart: startReorder,
+          onDone: endReorder,
+        }}
+      />
       {list.isPending && <Skeleton className="h-24 w-full" />}
       {list.isError && (
         <QueryErrorState
@@ -165,7 +212,13 @@ export function TodoList({ onNewTodo }: TodoListProps) {
             strategy={verticalListSortingStrategy}
           >
             <ul
-              className="flex flex-col"
+              className={cn(
+                'flex flex-col',
+                // The check circles line up with the chips' edge on a phone, and a desktop's
+                // grips hang in the gutter rather than leaving an empty column (DOR-3715).
+                'max-md:-ml-2.5',
+                sortable && !longPress && 'md:-ml-8'
+              )}
               aria-label="To-dos"
               aria-busy={reorder.moving || undefined}
             >
@@ -180,6 +233,14 @@ export function TodoList({ onNewTodo }: TodoListProps) {
                     key={todo.id}
                     sortable={sortable && todo.state === 'open' && !held}
                     onMove={(by) => moveBy(todo, by)}
+                    {...(reordering && todo.state === 'open' && !held
+                      ? {
+                          reorder: {
+                            first: movable[0]?.id === todo.id,
+                            last: movable[movable.length - 1]?.id === todo.id,
+                          },
+                        }
+                      : {})}
                     todo={todo}
                     from={assignedByLabel(todo.assignedBy, names.agentName)}
                     {...(agent ? { agent } : {})}
@@ -220,6 +281,22 @@ export function TodoList({ onNewTodo }: TodoListProps) {
       )}
     </div>
   );
+}
+
+/** The selector for one of a row's Reorder buttons, by its `data-todo-move` key. */
+function moveButton(key: string): string {
+  return `[data-todo-move="${CSS.escape(key)}"]`;
+}
+
+/** Focus the first element a selector list finds, in the order the selectors are given. */
+function focusFirst(selectors: string) {
+  for (const selector of selectors.split(', ')) {
+    const target = document.querySelector<HTMLElement>(selector);
+    if (target) {
+      target.focus();
+      return;
+    }
+  }
 }
 
 /**

@@ -3,6 +3,9 @@
  * `codex-app-server-transport` §6–§9): a real pool, loader, mapper, JSON-RPC
  * client and thread-key registry; only the binary is pretend.
  */
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { StreamEventSchema } from '@dorkos/shared/schemas';
@@ -28,7 +31,9 @@ import { APP_SERVER_ARGS } from '../process-pool.js';
 import { CODEX_STOPPED_COPY } from '../notification-mapper.js';
 import { BACKGROUND_WORK_LOST_COPY, type BackgroundWake } from '../background-work.js';
 import { THREAD_STARTS_FRESH_NOTICE } from '../thread-loader.js';
-import { sandboxPolicyFor } from '../turn-parts.js';
+import { codexPermissionProfile } from '../turn-parts.js';
+import { CodexThreadLoader } from '../thread-loader.js';
+import { CodexRpcError } from '../protocol/errors.js';
 import type { CreditsRelay } from '../../../../core/cloud/credits-relay.js';
 
 type Harness = ReturnType<typeof makeAppServerHarness>;
@@ -69,6 +74,159 @@ async function rest(gen: AsyncGenerator<StreamEvent>): Promise<StreamEvent[]> {
 }
 
 describe('a turn', () => {
+  it.each(['.config', '.claude'])(
+    'names the blocking %s file in a default-mode refusal without changing it',
+    async (name) => {
+      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-blocking-file-')));
+      const home = path.join(root, 'home');
+      const data = path.join(root, 'data');
+      const cwd = path.join(root, 'project');
+      for (const dir of [home, data, cwd]) fs.mkdirSync(dir);
+      const blocking = path.join(home, name);
+      fs.writeFileSync(blocking, 'personal contents');
+      try {
+        const h = harness();
+        const base = h.request({ sessionId: 'blocking-file' });
+        const events = await h.run(
+          h.request({
+            sessionId: base.sessionId,
+            cwd,
+            settings: { permissionMode: 'default' },
+            tools: {
+              ...base.tools,
+              filePolicy: {
+                roots: { cwd, home, data, accounts: [], agentHomes: [], agentFolders: [cwd] },
+                writable: [cwd],
+              },
+            },
+          })
+        );
+        expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+        expect(events[0]).toMatchObject({
+          data: {
+            code: 'codex_protected_path_not_directory',
+            message: `Codex needs ${blocking} to be a folder. Rename the file, then retry.`,
+            details: expect.stringContaining('ENOTDIR'),
+          },
+        });
+        expect(h.bindings).toEqual([]);
+        expect(h.host.home(PERSON_HOME).processes[0]!.requestsOf('thread/start')).toEqual([]);
+        expect(fs.readFileSync(blocking, 'utf8')).toBe('personal contents');
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it.each(['default', 'acceptEdits', 'bypassPermissions'] as const)(
+    'explains a Linux namespace refusal at %s without starting an unprotected turn',
+    async (permissionMode) => {
+      const detail = 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted';
+      const load = vi
+        .spyOn(CodexThreadLoader.prototype, 'ensureLoaded')
+        .mockRejectedValueOnce(
+          new CodexRpcError('thread/start', { code: -32600, message: detail })
+        );
+      try {
+        const h = harness();
+        const events = await h.run(
+          h.request({
+            sessionId: 'linux-refusal',
+            settings: { permissionMode },
+          })
+        );
+        expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+        expect(events[0]).toMatchObject({
+          data: {
+            code: 'codex_sandbox_unavailable',
+            message:
+              'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites',
+            details: expect.stringContaining(detail),
+          },
+        });
+        expect(h.bindings).toEqual([]);
+        expect(h.host.home(PERSON_HOME).processes[0]!.requestsOf('turn/start')).toEqual([]);
+        expect(h.host.spawns).toHaveLength(1);
+      } finally {
+        load.mockRestore();
+      }
+    }
+  );
+
+  it('routes the legacy exec setting through app-server with protected files at Full', async () => {
+    // Rendering inspects disk state. These bases must exist independently of
+    // the host's /data, /home and /project layout.
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-legacy-profile-')));
+    const cwd = path.join(root, 'project');
+    const data = path.join(root, 'data');
+    const home = path.join(root, 'home');
+    for (const folder of [cwd, data, home]) fs.mkdirSync(folder);
+    try {
+      const h = harness({ setting: 'exec' });
+      const events = await h.run(
+        h.request({
+          sessionId: 'legacy-exec',
+          cwd,
+          settings: { permissionMode: 'bypassPermissions' },
+          tools: {
+            agentTokenEnv: {},
+            managed: { servers: {}, env: {} },
+            dorkosTools: null,
+            connectorTools: null,
+            filePolicy: {
+              writable: [],
+              roots: {
+                cwd,
+                data,
+                home,
+                accounts: [],
+                agentFolders: [cwd],
+                agentHomes: [],
+              },
+            },
+          },
+        })
+      );
+      expect(h.transport.kind).toBe('app-server');
+      expect(texts(events)).toBe('pong');
+      expect(h.host.spawns).toHaveLength(1);
+      expect(h.host.spawns[0]!.args).toEqual(APP_SERVER_ARGS);
+      const process = h.host.home(PERSON_HOME).processes[0]!;
+      expect(process.requestsOf('thread/start')[0]).toMatchObject({
+        permissions: 'dorkos-files-danger-full-access',
+        config: {
+          permissions: {
+            'dorkos-files-danger-full-access': {
+              filesystem: { ':root': 'write', [path.join(data, 'host.key')]: 'deny' },
+            },
+          },
+        },
+      });
+      expect(process.requestsOf('turn/start')[0]).toMatchObject({
+        permissions: 'dorkos-files-danger-full-access',
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a legacy exec session when app-server cannot start, without a fallback', async () => {
+    const h = harness({ setting: 'exec' });
+    const acquire = vi
+      .spyOn(h.pool, 'acquire')
+      .mockRejectedValue(new Error('synthetic startup failure'));
+    const events = await h.run(h.request({ sessionId: 'legacy-exec-unavailable' }));
+    expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+    expect(events[0]).toMatchObject({
+      data: {
+        code: 'codex_unavailable',
+        message: 'Codex could not start this reply. Send your message again to retry.',
+      },
+    });
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(h.host.spawns).toHaveLength(0);
+  });
+
   it('starts a thread, streams, ends with exactly one done, and binds at turn/started', async () => {
     const h = harness();
     const events = await h.run(
@@ -95,7 +253,7 @@ describe('a turn', () => {
       clientUserMessageId: 'm1',
       cwd: '/project',
       approvalPolicy: 'on-request',
-      sandboxPolicy: { type: 'readOnly', networkAccess: false },
+      permissions: 'dorkos-files-read-only',
       model: 'gpt-x',
       effort: 'xhigh',
       summary: 'auto',
@@ -128,27 +286,13 @@ describe('a turn', () => {
     expect(dones(await rest(first))).toHaveLength(1);
   });
 
-  it('maps a workspace-write turn to the tagged sandbox policy with its grants', () => {
-    expect(
-      sandboxPolicyFor({
-        settings: { permissionMode: 'acceptEdits' },
-        writableDirectories: ['/grant'],
-      })
-    ).toEqual({
-      type: 'workspaceWrite',
-      writableRoots: ['/grant'],
-      networkAccess: false,
-      excludeTmpdirEnvVar: false,
-      excludeSlashTmp: false,
-    });
-    expect(
-      sandboxPolicyFor({
-        settings: { permissionMode: 'bypassPermissions' },
-        writableDirectories: [],
-      })
-    ).toEqual({
-      type: 'dangerFullAccess',
-    });
+  it('selects a named policy at every level, including Full', () => {
+    expect(codexPermissionProfile({ permissionMode: 'acceptEdits' })).toBe(
+      'dorkos-files-workspace-write'
+    );
+    expect(codexPermissionProfile({ permissionMode: 'bypassPermissions' })).toBe(
+      'dorkos-files-danger-full-access'
+    );
   });
 
   it('refuses the requests DorkOS takes no part in, at once, inside an open turn', async () => {
@@ -254,7 +398,7 @@ describe('crashes and cold resume', () => {
     const second = h.host.home(PERSON_HOME).processes[1]!;
     expect(second.requestsOf('thread/resume')[0]).toMatchObject({
       threadId,
-      sandbox: 'workspace-write',
+      permissions: 'dorkos-files-workspace-write',
     });
   });
 
@@ -385,6 +529,7 @@ describe('credits', () => {
     const h = harness({ relay });
     const events = await h.run(h.request({ sessionId: 's1', launch: credits as never }));
     expect(dones(events)).toHaveLength(1);
+    expect(h.pool.list()[0]!.spec.onCredits).toBe(true);
     const fake = h.host.home(CREDITS_ENV_HOME).processes[0]!;
     const config = fake.requestsOf('thread/start')[0]!.config as Record<string, unknown>;
     expect(config).toMatchObject({
@@ -920,3 +1065,85 @@ describe('background work (spec §12)', () => {
     expect(seen).toHaveLength(1);
   });
 });
+
+describe.each(['default', 'acceptEdits', 'bypassPermissions'])(
+  'foreign file refusal isolation at %s',
+  (permissionMode) => {
+    it('starts B with exact read-only files while A receives the named-file refusal', async () => {
+      const root = fs.realpathSync(
+        fs.mkdtempSync(path.join(os.tmpdir(), 'codex-transport-isolation-'))
+      );
+      const data = path.join(root, 'data');
+      const home = path.join(root, 'home');
+      const project = path.join(root, 'project');
+      const a = path.join(data, 'agents', 'a');
+      const b = path.join(data, 'agents', 'b');
+      for (const dir of [home, project, a, b]) fs.mkdirSync(dir, { recursive: true });
+      const files = ['.claude', '.dork'].map((name) => path.join(a, name));
+      for (const file of files) fs.writeFileSync(file, 'PERSON-file-to-preserve', { mode: 0o600 });
+      const before = files.map((file) => fs.lstatSync(file));
+      const h = harness();
+      const base = h.request({ sessionId: 'isolation-base' });
+      const policy = {
+        writable: [project, a],
+        roots: {
+          cwd: project,
+          data,
+          home,
+          accounts: [],
+          agentHomes: [b],
+          agentFolders: [project, b],
+        },
+      };
+      try {
+        const events = await h.run(
+          h.request({
+            sessionId: 'b',
+            cwd: project,
+            settings: { permissionMode },
+            tools: { ...base.tools, filePolicy: policy },
+          })
+        );
+        expect(events.some((event) => event.type === 'error')).toBe(false);
+        expect(h.bindings).toHaveLength(1);
+        const load = h.host.home(PERSON_HOME).processes[0]!.requestsOf('thread/start')[0]!;
+        expect(load.config).toMatchObject({
+          permissions: {
+            [codexPermissionProfile({ permissionMode })]: {
+              filesystem: Object.fromEntries(files.map((file) => [file, 'read'])),
+            },
+          },
+        });
+        const owner = await h.run(
+          h.request({
+            sessionId: 'a',
+            cwd: project,
+            settings: { permissionMode },
+            tools: {
+              ...base.tools,
+              filePolicy: {
+                ...policy,
+                roots: { ...policy.roots, agentHomes: [a], agentFolders: [project, a] },
+              },
+            },
+          })
+        );
+        expect(owner.find((event) => event.type === 'error')).toMatchObject({
+          data: {
+            code: 'codex_protected_path_not_directory',
+            message: `Codex needs ${files[0]} to be a folder. Rename the file, then retry.`,
+          },
+        });
+        expect(h.bindings).toHaveLength(1);
+        for (const [index, file] of files.entries()) {
+          expect(fs.readFileSync(file, 'utf8')).toBe('PERSON-file-to-preserve');
+          expect(fs.lstatSync(file).ino).toBe(before[index]!.ino);
+          expect(fs.lstatSync(file).ctimeMs).toBe(before[index]!.ctimeMs);
+        }
+      } finally {
+        await h.pool.shutdown();
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+);

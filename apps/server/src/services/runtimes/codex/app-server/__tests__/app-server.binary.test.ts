@@ -27,16 +27,23 @@
  * Skipped by name where no vendored binary is installed for this platform.
  */
 import http from 'node:http';
+import { createHash } from 'node:crypto';
+import { assertProtectionStarts } from './fixtures/protection-starts.js';
+import { completeHostFixture } from './fixtures/complete-protected-home.js';
+import { codexProtectedConfig } from '../../policy/protected-profile.js';
+import { reconcileMountTargets } from '../../policy/reconcile-mount-targets.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDb, runMigrations } from '@dorkos/db';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { resolveCodexVendoredBinary } from '../../check-dependencies.js';
 import { CodexAppServerPool, type SpawnAppServer } from '../process-pool.js';
-import { AppServerCodexTransport } from '../../transport/app-server-transport.js';
+import type { AppServerCodexTransport } from '../../transport/app-server-transport.js';
+import { createCodexTransport, type CodexTransportKind } from '../../transport/index.js';
+import * as runtimeEnv from '../../../shared/runtime-environment-config.js';
 import type { BackgroundWake } from '../background-work.js';
 import { createCodexEventContext } from '../../event-mapper.js';
 import { ConnectorThreadKeyRegistry } from '../../../../connectors/principal/thread-keys.js';
@@ -45,6 +52,11 @@ import type { ConnectorRuntimeTools } from '../../../connector-tools.js';
 import type { CodexTurnRequest } from '../../transport/codex-transport.js';
 import type { AppServerTransportOptions } from '../../transport/app-server-transport.js';
 import { spawn as nodeSpawn } from 'node:child_process';
+import {
+  protectedProbe,
+  shellControlReturned,
+  probeParentKinds,
+} from './fixtures/protected-probe.js';
 
 const BINARY = resolveCodexVendoredBinary();
 const IDENTITY_SECRET = 'identity-token-never-real';
@@ -71,6 +83,7 @@ let turnStartedSeen = 0;
 const seen: Seen = { responses: 0, mcpAuthorizations: [], resolvedDuringTurn: [] };
 const pools: CodexAppServerPool[] = [];
 const spawned: Array<{ args: readonly string[]; env: Record<string, string> }> = [];
+const protectedStarts = { default: 0, acceptEdits: 0, bypassPermissions: 0 };
 
 const keys = new ConnectorThreadKeyRegistry();
 const db = createDb(':memory:');
@@ -274,7 +287,9 @@ function handle(req: http.IncomingMessage, res: http.ServerResponse, body: strin
 }
 
 function makeTransport(
-  backgroundWork?: AppServerTransportOptions['backgroundWork']
+  backgroundWork?: AppServerTransportOptions['backgroundWork'],
+  setting: CodexTransportKind = 'app-server',
+  onSpawn?: (child: ReturnType<typeof nodeSpawn>) => void
 ): AppServerCodexTransport {
   const spawn: SpawnAppServer = (binary, args, options) => {
     spawned.push({ args, env: options.env });
@@ -283,6 +298,7 @@ function makeTransport(
       cwd: options.cwd,
       stdio: 'pipe',
     });
+    onSpawn?.(child);
     child.stdout.on('data', (chunk: Buffer) => {
       turnStartedSeen += chunk.toString().split('"method":"turn/started"').length - 1;
     });
@@ -297,7 +313,7 @@ function makeTransport(
     agentToolsUrl: `${base}/mcp`,
     isConnectorCapabilityId: () => false,
   } satisfies ConnectorRuntimeTools;
-  return new AppServerCodexTransport({
+  return createCodexTransport(setting, {
     pool,
     ...(backgroundWork ? { backgroundWork } : {}),
     connectorTools: () => tools,
@@ -321,7 +337,7 @@ function request(
   bindingId: string | undefined,
   overrides: Partial<CodexTurnRequest> = {}
 ): CodexTurnRequest {
-  return {
+  const baseRequest: CodexTurnRequest = {
     binary: BINARY!,
     sessionId,
     boundThreadId: undefined,
@@ -336,23 +352,111 @@ function request(
       dorkosTools: { url: `${base}/mcp`, headers: {} },
       connectorTools: null,
       ...(bindingId ? { connectorBindingId: bindingId } : {}),
+      filePolicy: {
+        roots: {
+          cwd: project,
+          data: path.join(root, 'data'),
+          home: path.join(root, 'home'),
+          accounts: [codexHome],
+          agentFolders: [project],
+          agentHomes: [],
+        },
+        writable: [project],
+      },
     },
     signal: new AbortController().signal,
     events: createCodexEventContext(sessionId),
     onThreadBound: () => {},
-    ...overrides,
   };
+  // Replacing a managed tool must not replace the throwaway file policy
+  // with the parent runner's real HOME/data defaults.
+  const merged = {
+    ...baseRequest,
+    ...overrides,
+    tools: { ...baseRequest.tools, ...overrides.tools },
+  };
+  expect(merged.tools.filePolicy).toBeDefined();
+  expect(merged.tools.filePolicy!.roots.home).toBe(path.join(root, 'home'));
+  expect(merged.tools.filePolicy!.roots.data).toBe(path.join(root, 'data'));
+  return merged;
 }
 
-describe.skipIf(BINARY === null)('the app-server transport against the real Codex binary', () => {
+/** Snapshot every host entry without following links or retaining large file trees. */
+function hostTreeDigest(dir: string, newFolders = new Set<string>()): string {
+  const hash = createHash('sha256');
+  const visit = (file: string): void => {
+    const stat = fs.lstatSync(file);
+    if (!newFolders.has(file))
+      hash.update(
+        JSON.stringify([
+          file,
+          stat.ino,
+          stat.mode,
+          stat.uid,
+          ...(stat.isDirectory() ? [] : [stat.size, stat.mtimeMs, stat.ctimeMs]),
+        ])
+      );
+    if (stat.isDirectory())
+      for (const name of fs.readdirSync(file).sort()) visit(path.join(file, name));
+    else if (stat.isSymbolicLink()) hash.update(fs.readlinkSync(file));
+    else if (stat.isFile()) hash.update(fs.readFileSync(file));
+  };
+  visit(dir);
+  return hash.digest('hex');
+}
+
+function expectedNewFolders(turn: CodexTurnRequest): Set<string> {
+  const roots = turn.tools.filePolicy!.roots;
+  return new Set(
+    [roots.cwd, ...roots.agentFolders]
+      .filter((dir) => dir !== roots.home)
+      .flatMap((dir) => ['.claude', '.dork'].map((name) => path.join(dir, name)))
+      .filter((file) => !fs.existsSync(file))
+  );
+}
+
+/** A specific refusal, never a successful unprotected turn or a generic failure. */
+async function nativeRefusal(
+  turn: CodexTurnRequest,
+  code: string,
+  details: readonly string[],
+  beforeAcquire = false
+) {
+  const count = spawned.length;
+  const starts = turnStartedSeen;
+  const responses = seen.responses;
+  const bound = vi.fn();
+  const events: StreamEvent[] = [];
+  const transport = makeTransport();
+  try {
+    for await (const event of transport.runTurn({ ...turn, onThreadBound: bound }))
+      events.push(event);
+    expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+    expect(events[0]).toMatchObject({ data: { code } });
+    const error = events[0]!;
+    const reason = 'details' in error.data ? String(error.data.details) : '';
+    for (const detail of details) expect(reason).toContain(detail);
+    expect(bound).not.toHaveBeenCalled();
+    expect(turnStartedSeen).toBe(starts);
+    expect(seen.responses).toBe(responses);
+    if (beforeAcquire) expect(spawned).toHaveLength(count);
+    return JSON.stringify(events);
+  } finally {
+    await transport.shutdown();
+  }
+}
+
+function checkHostParents(homes: string[]) {
+  expect(
+    probeParentKinds(homes).filter(({ kind }) => kind !== 'absent' && kind !== 'directory')
+  ).toEqual([]);
+}
+
+// Apply the intended limit during collection; beforeAll is too late.
+const NATIVE_LIMITS = { timeout: 90_000 };
+const nativeSuite = describe.skipIf(BINARY === null);
+nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIMITS, () => {
   beforeAll(async () => {
-    vi.setConfig({ testTimeout: 90_000, hookTimeout: 30_000 });
-    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-app-server-')));
-    codexHome = path.join(root, 'codex-home');
-    project = path.join(root, 'project');
-    fs.mkdirSync(codexHome, { recursive: true });
-    fs.mkdirSync(project, { recursive: true });
-    fs.mkdirSync(path.join(root, 'home'), { recursive: true });
     server = http.createServer((req, res) => {
       let body = '';
       req.on('data', (chunk) => (body += chunk));
@@ -360,11 +464,396 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    await principals.initializeBoot();
+  });
+
+  it.skipIf(process.platform !== 'linux')(
+    'refuses a writable symlink inside the agent home without creating through it',
+    async () => {
+      const turn = request('own-home-writable-link', undefined);
+      const policy = turn.tools.filePolicy!;
+      policy.roots.agentHomes = [project];
+      completeHostFixture(policy, [policy.roots.home, policy.roots.data, project, codexHome]);
+      const target = path.join(root, 'empty-skill-target');
+      fs.mkdirSync(target);
+      // The leaf inside .claude is writable; the existing linked-folder row
+      // separately covers a link replacing .claude itself before acquisition.
+      const link = path.join(project, '.claude', 'skills');
+      fs.rmdirSync(link);
+      fs.symlinkSync(target, link, 'dir');
+      const before = { ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) };
+      const parents = [policy.roots.home, policy.roots.data, project];
+      try {
+        await nativeRefusal(turn, 'codex_unavailable', ['crosses writable symlink', link]);
+        expect({ ino: fs.lstatSync(link).ino, target: fs.readlinkSync(link) }).toEqual(before);
+        expect(fs.readdirSync(target)).toEqual([]);
+      } finally {
+        checkHostParents(parents);
+      }
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux').each(['acceptEdits', 'bypassPermissions'] as const)(
+    'refuses writes into another agent home inside writable cwd at %s',
+    async (mode) => {
+      const other = path.join(project, 'other-agent');
+      fs.mkdirSync(other);
+      const turn = request('other-home-in-cwd', undefined, {
+        settings: { permissionMode: mode, model: 'fake-model' },
+      });
+      turn.tools.filePolicy!.roots.agentHomes = [other];
+      const folders = expectedNewFolders(turn);
+      const before = hostTreeDigest(root, folders);
+      const writes = ['settings.json', 'skills'].map((name) => path.join(other, '.claude', name));
+      try {
+        await nativeRefusal(
+          turn,
+          mode === 'acceptEdits'
+            ? 'codex_writable_missing_protected_targets'
+            : 'codex_full_missing_protected_targets',
+          [path.join(other, '.claude')],
+          true
+        );
+        expect(fs.readdirSync(other)).toEqual([]);
+        for (const file of writes)
+          expect(() => fs.lstatSync(file)).toThrow(expect.objectContaining({ code: 'ENOENT' }));
+        expect(hostTreeDigest(root, folders)).toBe(before);
+        expect(turn.settings.permissionMode).toBe(mode);
+      } finally {
+        checkHostParents([path.join(root, 'home'), path.join(root, 'data'), project, other]);
+      }
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'refuses Edit plainly when cwd is the person home with a missing protected file',
+    async () => {
+      const home = path.join(root, 'home');
+      fs.unlinkSync(path.join(home, '.netrc'));
+      const turn = request('person-home-edit', undefined, { cwd: home });
+      const policy = turn.tools.filePolicy!;
+      policy.roots.cwd = home;
+      policy.roots.agentFolders = [home];
+      policy.writable = [home];
+      const before = hostTreeDigest(root);
+      try {
+        const events = await nativeRefusal(
+          turn,
+          'codex_writable_missing_protected_targets',
+          [path.join(home, '.netrc')],
+          true
+        );
+        expect(events).toContain('Choose Ask, then retry.');
+        expect(hostTreeDigest(root)).toBe(before);
+      } finally {
+        checkHostParents([home, policy.roots.data, project]);
+      }
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'refuses rg-unreadable rather than skipping protected content at Ask',
+    async () => {
+      const home = path.join(root, 'home');
+      const probe = protectedProbe(root, project);
+      const unreadable = path.join(home, 'rg-unreadable');
+      expect(process.getuid?.()).not.toBe(0);
+      fs.mkdirSync(unreadable);
+      fs.writeFileSync(path.join(unreadable, '.env'), 'FAKE-unreadable-canary');
+      fs.chmodSync(unreadable, 0o000);
+      try {
+        const events = await nativeRefusal(
+          request('rg-unreadable', undefined, {
+            settings: { permissionMode: 'default', model: 'fake-model' },
+          }),
+          'codex_unavailable',
+          [
+            'error building bubblewrap command',
+            'ripgrep unreadable glob scan failed',
+            unreadable,
+            'Permission denied (os error 13)',
+          ]
+        );
+        for (const canary of [...probe.canaries, 'FAKE-unreadable-canary'])
+          expect(events).not.toContain(canary);
+      } finally {
+        fs.chmodSync(unreadable, 0o700);
+        expect(fs.readFileSync(path.join(unreadable, '.env'), 'utf8')).toBe(
+          'FAKE-unreadable-canary'
+        );
+        expect(await reconcileMountTargets(path.join(root, 'data'))).toEqual([]);
+        checkHostParents([home, path.join(root, 'data'), project]);
+        probe.cleanup();
+      }
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'preserves host files after SIGKILL mid-turn and protects the next launch',
+    async () => {
+      const turn = request('kill-native', undefined);
+      const policy = turn.tools.filePolicy!;
+      policy.roots.agentHomes = [project];
+      const files = completeHostFixture(policy, [
+        policy.roots.home,
+        policy.roots.data,
+        project,
+        codexHome,
+      ]);
+      const snapshot = () =>
+        [...files].sort().map((file) => [file, fs.readFileSync(file, 'base64')]);
+      const before = snapshot();
+      let child: ReturnType<typeof nodeSpawn> | undefined;
+      let exited: Promise<string | null> | undefined;
+      let ready = false;
+      let killed = false;
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: 'printf PUBLIC-kill-ready; sleep 30',
+              login: false,
+              yield_time_ms: 1000,
+            })
+          ),
+        (res, body) => {
+          ready = shellControlReturned(body, 'PUBLIC-kill-ready');
+          if (ready) killed = child?.kill('SIGKILL') ?? false;
+          res.end(sse('victim stopped'));
+        }
+      );
+      const victim = makeTransport(undefined, 'app-server', (spawnedChild) => {
+        child = spawnedChild;
+        exited = new Promise((resolve) =>
+          spawnedChild.once('exit', (_code, signal) => resolve(signal))
+        );
+      });
+      try {
+        try {
+          for await (const event of victim.runTurn(turn)) void event;
+        } catch (error) {
+          expect(killed, String(error)).toBe(true);
+        }
+        expect(ready).toBe(true);
+        expect(killed).toBe(true);
+        expect(await exited).toBe('SIGKILL');
+        checkHostParents([policy.roots.home, policy.roots.data, project]);
+        expect(snapshot()).toEqual(before);
+      } finally {
+        await victim.shutdown();
+      }
+      scripted.length = 0;
+      expect(await reconcileMountTargets(policy.roots.data)).toEqual([]);
+      const secret = path.join(policy.roots.home, '.ssh', 'authorized_keys');
+      fs.writeFileSync(secret, 'CANARY-after-kill');
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: `cat ${JSON.stringify(secret)}; printf changed >> ${JSON.stringify(secret)}; printf PUBLIC-after-kill`,
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('recovered'));
+        }
+      );
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({
+        ...turn,
+        sessionId: 'after-kill',
+        onThreadBound: bound,
+      }))
+        events.push(event);
+      expect(bound).toHaveBeenCalledTimes(1);
+      expect(events.some((event) => event.type === 'error')).toBe(false);
+      expect(shellControlReturned(returned, 'PUBLIC-after-kill')).toBe(true);
+      expect(returned).not.toContain('CANARY-after-kill');
+      expect(fs.readFileSync(secret, 'utf8')).toBe('CANARY-after-kill');
+      checkHostParents([policy.roots.home, policy.roots.data, project]);
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'refuses a linked active folder without changing its target or starting Codex',
+    async () => {
+      const target = path.join(root, 'link-target');
+      fs.mkdirSync(target);
+      const link = path.join(project, '.claude');
+      fs.symlinkSync(target, link, 'dir');
+      const ino = fs.lstatSync(link).ino;
+      const turn = request('linked-folder-native', undefined);
+      const newFolders = expectedNewFolders(turn);
+      const before = hostTreeDigest(root, newFolders);
+      const count = spawned.length;
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({ ...turn, onThreadBound: bound }))
+        events.push(event);
+      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+      expect(events[0]).toMatchObject({
+        data: {
+          code: 'codex_unavailable',
+          details: 'Codex cannot protect a linked folder. Choose another folder, then retry.',
+        },
+      });
+      expect(bound).not.toHaveBeenCalled();
+      expect(spawned).toHaveLength(count);
+      expect(fs.readlinkSync(link)).toBe(target);
+      expect(fs.lstatSync(link).ino).toBe(ino);
+      expect(fs.readdirSync(target)).toEqual([]);
+      expect(hostTreeDigest(root, newFolders)).toBe(before);
+    }
+  );
+
+  it.skipIf(process.platform !== 'linux')(
+    'refuses Full with missing protected targets before any Codex or bwrap launch',
+    async () => {
+      const spawnCount = spawned.length;
+      const bound = vi.fn();
+      const transport = makeTransport();
+      const full = request('full-missing-native', undefined, {
+        settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
+        onThreadBound: bound,
+      });
+      const newFolders = expectedNewFolders(full);
+      const before = hostTreeDigest(root, newFolders);
+      const events: StreamEvent[] = [];
+      for await (const event of transport.runTurn(full)) events.push(event);
+      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+      expect(events[0]).toMatchObject({
+        data: {
+          code: 'codex_full_missing_protected_targets',
+          message:
+            'Codex can’t use Full access while protected files are missing. Choose Ask, then retry.',
+          details: expect.stringContaining(path.join(root, 'home', '.claude.json')),
+        },
+      });
+      expect(bound).not.toHaveBeenCalled();
+      expect(spawned).toHaveLength(spawnCount);
+      expect(hostTreeDigest(root, newFolders)).toBe(before);
+      for (const folder of newFolders) expect(fs.lstatSync(folder).isDirectory()).toBe(true);
+      expect(full.settings.permissionMode).toBe('bypassPermissions');
+      console.info('Codex Full missing-target refusal proved before native launch', {
+        newProcesses: spawned.length - spawnCount,
+        hostUnchanged: true,
+      });
+    }
+  );
+
+  it
+    .skipIf(process.platform !== 'linux')
+    .each(
+      (['acceptEdits', 'bypassPermissions'] as const).flatMap((mode) =>
+        [false, true].map((freshProject) => ({ mode, freshProject }))
+      )
+    )(
+    'starts protected mode from a complete home ($mode, fresh project: $freshProject)',
+    async ({ mode, freshProject }) => {
+      const turn = request('full-complete-home', undefined, {
+        settings: { permissionMode: mode, model: 'fake-model' },
+      });
+      const policy = turn.tools.filePolicy!;
+      policy.roots.agentHomes = freshProject ? [] : [project];
+      const allBases = [
+        policy.roots.home,
+        policy.roots.data,
+        ...(freshProject ? [] : [project]),
+        codexHome,
+      ];
+      const protectedFiles = completeHostFixture(policy, allBases);
+      const secret = path.join(policy.roots.home, '.ssh', 'authorized_keys');
+      const grant = freshProject
+        ? path.join(policy.roots.home, '.claude.json')
+        : path.join(project, '.dork', 'agent.json');
+      fs.writeFileSync(secret, 'CANARY-complete-home-secret');
+      protectedFiles.add(secret);
+      const snapshot = () =>
+        [...protectedFiles].sort().map((file) => {
+          const stat = fs.lstatSync(file);
+          return {
+            file,
+            ino: stat.ino,
+            mode: stat.mode,
+            contents: fs.readFileSync(file, 'base64'),
+          };
+        });
+      const before = snapshot();
+      const homes = [policy.roots.home, policy.roots.data, project];
+      const newFolders = expectedNewFolders(turn);
+      const parents = probeParentKinds(homes);
+      expect(parents.filter(({ kind }) => kind !== 'absent' && kind !== 'directory')).toEqual([]);
+      let missing: string[] = [];
+      codexProtectedConfig(turn.cwd, policy, turn.settings, (targets) => {
+        missing = targets;
+      });
+      expect(missing).toEqual([]);
+      const quote = (value: string) => JSON.stringify(value);
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: `printf PUBLIC-complete-full; cat ${quote(secret)}; printf unsafe >> ${quote(secret)}; printf unsafe > ${quote(grant)}; printf PUBLIC-complete-attempts`,
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('complete Full finished'));
+        }
+      );
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({ ...turn, onThreadBound: bound }))
+        events.push(event);
+      expect(bound).toHaveBeenCalledTimes(1);
+      expect(events.some((event) => event.type === 'error')).toBe(false);
+      expect(shellControlReturned(returned, 'PUBLIC-complete-full')).toBe(true);
+      expect(shellControlReturned(returned, 'PUBLIC-complete-attempts')).toBe(true);
+      expect(returned).not.toContain('CANARY-complete-home-secret');
+      await Promise.all(pools.map((pool) => pool.shutdown()));
+      expect(snapshot()).toEqual(before);
+      for (const folder of newFolders) expect(fs.lstatSync(folder).isDirectory()).toBe(true);
+      expect(probeParentKinds(homes)).toEqual(
+        parents.map((entry) =>
+          newFolders.has(entry.file) ? { ...entry, kind: 'directory' } : entry
+        )
+      );
+      expect(
+        probeParentKinds(homes).filter(({ kind }) => kind !== 'absent' && kind !== 'directory')
+      ).toEqual([]);
+      expect(turn.settings.permissionMode).toBe(mode);
+      protectedStarts[mode]++;
+      console.info('Codex complete-home protected row started', { mode, freshProject });
+    }
+  );
+
+  beforeEach(() => {
+    scripted.length = 0;
+    stallNext = false;
+    seen.responses = 0;
+    seen.mcpAuthorizations.length = 0;
+    seen.resolvedDuringTurn.length = 0;
+    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-app-server-')));
+    codexHome = path.join(root, 'codex-home');
+    project = path.join(root, 'project');
+    for (const folder of [codexHome, project, path.join(root, 'home'), path.join(root, 'data')])
+      fs.mkdirSync(folder, { recursive: true });
     // The throwaway home's provider is the local fake. No key anywhere.
     fs.writeFileSync(
       path.join(codexHome, 'config.toml'),
       [
         'model_provider = "fake"',
+        'cli_auth_credentials_store = "file"',
+        'mcp_oauth_credentials_store = "file"',
+        // Keep the fake-server fixture local: Codex's optional remote plugin
+        // sync mutates its own clone during our intentionally unbounded scan.
+        // File-policy plugin canaries, MCP and .agents skill controls stay on.
+        'features.plugins = false',
         '[model_providers.fake]',
         'name = "fake"',
         `base_url = "${base}/v1"`,
@@ -374,23 +863,37 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
         'stream_max_retries = 0',
       ].join('\n') + '\n'
     );
-    await principals.initializeBoot();
+    const name = expect.getState().currentTestName ?? '';
+    if (
+      !/protects fake secrets|refuses Full with missing|starts protected mode from a complete home/.test(
+        name
+      )
+    ) {
+      const policy = request('complete-fixture', undefined).tools.filePolicy!;
+      completeHostFixture(policy, [policy.roots.home, policy.roots.data, codexHome]);
+    }
   });
 
+  afterEach(async () => {
+    try {
+      await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
+      scripted.length = 0;
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
+  }, 120_000);
+
   afterAll(async () => {
+    console.info('Codex native suite teardown requested', {
+      senderPid: process.pid,
+      atMs: Date.now(),
+      poolCount: pools.length,
+    });
     await Promise.all(pools.splice(0).map((pool) => pool.shutdown()));
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    // Codex may still be finishing a background write into the throwaway home
-    // (its plugin cache) as it exits; a leftover temp dir is not a failure.
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      try {
-        fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-        break;
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    }
+    console.info('Codex started protection rows by mode', protectedStarts);
+    assertProtectionStarts(protectedStarts);
   }, 60_000);
 
   it('streams a turn, binds the thread key to it only while it is open, and leaks nothing', async () => {
@@ -597,46 +1100,122 @@ describe.skipIf(BINARY === null)('the app-server transport against the real Code
     });
   });
 
-  // DOR-3292's standing canary for Codex: what a secret file inside the
-  // agent's folder is worth today. At Ask first, Codex's most careful level
-  // (it offers no Never ask), a folder-wide search is a read-only command its
-  // sandbox runs without asking, so it prints the secret. Expected, and the
-  // point: it documents the limit the warning and the copy describe.
-  it('prints a secret in the folder from a folder-wide search at Ask first (today’s limit)', async (ctx) => {
-    const env = path.join(project, ['', 'env'].join('.'));
-    const canary = 'CANARY-dor3292-codex';
-    fs.writeFileSync(env, `X_API_KEY=${canary}\n`);
-    let result = '';
-    scripted.push(
-      (res) => res.end(sseCall({ cmd: 'grep -r CANARY-dor3292 .', login: false })),
-      (res, body) => {
-        result = body;
-        res.end(sse('done'));
+  it.for(['app-server', 'exec'] as const)(
+    'protects fake secrets through %s despite a loaded legacy Full setting',
+    { timeout: 180_000 },
+    async (kind) => {
+      const control = 'PUBLIC-control-dor3595';
+      const skillControl = 'PUBLIC-skill-control-dor3595';
+      const agentHome = path.join(root, 'data', 'agents', 'probe');
+      fs.mkdirSync(agentHome, { recursive: true });
+      const policy = request('complete-protected-probe', undefined).tools.filePolicy!;
+      policy.roots.agentHomes = [project, agentHome];
+      policy.roots.agentFolders = [project, agentHome];
+      const protectedFiles = completeHostFixture(policy, [
+        policy.roots.home,
+        policy.roots.data,
+        project,
+        agentHome,
+        codexHome,
+      ]);
+      const skills = path.join(agentHome, '.agents', 'skills', 'probe');
+      fs.mkdirSync(skills, { recursive: true });
+      fs.writeFileSync(path.join(skills, 'SKILL.md'), skillControl);
+      const readable = path.join(project, 'readable.txt');
+      fs.writeFileSync(readable, control);
+      const probe = protectedProbe(root, project);
+      const ownAgentsWrite = path.join(agentHome, '.agents', 'write-probe');
+      const configFile = path.join(codexHome, 'config.toml');
+      const previous = fs.readFileSync(configFile, 'utf8');
+      fs.writeFileSync(configFile, `sandbox_mode = "danger-full-access"\n${previous}`);
+      const env = vi.spyOn(runtimeEnv, 'runtimeEnvironment').mockImplementation(() => ({
+        PATH: process.env.PATH ?? '',
+        HOME: policy.roots.home,
+        CODEX_HOME: codexHome,
+        HTTP_PROXY: 'http://127.0.0.1:9',
+        HTTPS_PROXY: 'http://127.0.0.1:9',
+        NO_PROXY: '127.0.0.1,localhost',
+      }));
+      try {
+        for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) {
+          probe.resetLate();
+          const snapshot = () =>
+            [...protectedFiles].sort().map((file) => ({
+              file,
+              contents: fs.readFileSync(file, 'base64'),
+              mode: fs.lstatSync(file).mode,
+            }));
+          const before = snapshot();
+          let result = '';
+          scripted.push(
+            (res) => {
+              probe.createLate();
+              res.end(
+                sseCall({
+                  cmd: `${probe.command}; printf PUBLIC-own-agents-write-attempt; printf changed > ${JSON.stringify(ownAgentsWrite)}`,
+                  login: false,
+                })
+              );
+            },
+            (res, body) => {
+              result = body;
+              res.end(sse('done'));
+            }
+          );
+          const transport = makeTransport(undefined, kind);
+          const bound = vi.fn();
+          const events: StreamEvent[] = [];
+          try {
+            for await (const event of transport.runTurn(
+              request(`protected-${kind}-${mode}`, undefined, {
+                settings: { permissionMode: mode, model: 'fake-model' },
+                onThreadBound: bound,
+                tools: {
+                  agentTokenEnv: {},
+                  managed: { servers: {}, env: {} },
+                  dorkosTools: null,
+                  connectorTools: null,
+                  filePolicy: policy,
+                },
+              })
+            ))
+              events.push(event);
+            expect(bound).toHaveBeenCalledTimes(1);
+            expect(events.some((event) => event.type === 'error')).toBe(false);
+            expect(result).toContain(control);
+            expect(result).toContain(skillControl);
+            for (const marker of probe.attemptMarkers) expect(result).toContain(marker);
+            for (const canary of probe.canaries) expect(result).not.toContain(canary);
+            expect(fs.readFileSync(probe.plugin, 'utf8')).toBe('original-plugin');
+            expect(fs.readFileSync(probe.latePlugin, 'utf8')).toBe('original-late-plugin');
+            expect(snapshot()).toEqual(before);
+            expect(result).toMatch(/denied|not permitted/i);
+            expect(fs.existsSync(ownAgentsWrite)).toBe(false);
+            expect(shellControlReturned(result, 'PUBLIC-own-agents-write-attempt')).toBe(true);
+            expect(fs.readFileSync(probe.gitWrite, 'utf8')).toBe(
+              mode === 'bypassPermissions' ? 'changed-by-full-probe' : 'original-git-control'
+            );
+            protectedStarts[mode]++;
+            console.info('Codex protected thread bound', { kind, mode });
+          } finally {
+            await transport.shutdown();
+            expect(await reconcileMountTargets(policy.roots.data)).toEqual([]);
+            expect(
+              probeParentKinds([policy.roots.home, policy.roots.data, agentHome, project]).filter(
+                ({ kind }) => kind !== 'absent' && kind !== 'directory'
+              )
+            ).toEqual([]);
+          }
+        }
+      } finally {
+        scripted.length = 0;
+        env.mockRestore();
+        fs.writeFileSync(configFile, previous);
+        fs.rmSync(readable, { force: true });
+        probe.cleanup();
       }
-    );
-    try {
-      const transport = makeTransport();
-      const events: StreamEvent[] = [];
-      for await (const event of transport.runTurn(
-        request('canary-1', undefined, {
-          settings: { permissionMode: 'default', model: 'fake-model' },
-        })
-      )) {
-        events.push(event);
-      }
-      expect(
-        events.some((e) => e.type === 'approval_required'),
-        'a read-only search asked nobody'
-      ).toBe(false);
-      // A Linux CI runner can't start Codex's sandbox at all (bubblewrap is
-      // refused a network namespace), so no command runs there and this
-      // records nothing either way. Skipped, never passed, in that case.
-      if (/bwrap: /.test(result)) ctx.skip();
-      expect(result).toContain(canary);
-    } finally {
-      fs.rmSync(env, { force: true });
     }
-  }, 90_000);
+  );
 
   describe('approvals and steer (spec §10, §11)', () => {
     const made = () => path.join(project, 'approved.txt');

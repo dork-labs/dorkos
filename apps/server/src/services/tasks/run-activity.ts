@@ -26,18 +26,12 @@ const TERMINAL_EVENT_TYPE = {
   needs_attention: 'tasks.run_needs_attention',
 } as const satisfies Record<RunActivityStatus, string>;
 
-/**
- * What the feed says the run did, in the person's words.
- *
- * The needs-attention line names the remedy by naming the cause: there was
- * nobody to approve a tool, so the fix is to stop needing one
- * (`writing-for-humans`).
- */
+/** Terminal wording; refusals name their tools separately below. */
 const TERMINAL_VERB = {
   completed: 'ran successfully',
   failed: 'failed',
   cancelled: 'was cancelled',
-  needs_attention: 'needs attention: a tool was refused because nobody was there to approve it',
+  needs_attention: 'was refused a tool',
 } as const satisfies Record<RunActivityStatus, string>;
 
 /**
@@ -97,8 +91,13 @@ export function emitRunActivity(
     resourceType: 'schedule',
     resourceId: run.scheduleId,
     resourceLabel: task.name,
-    summary: `${task.name} ${verb}${duration}`,
-    linkPath: '/',
+    summary:
+      status === 'needs_attention'
+        ? run.refusedTools?.includes('Bash')
+          ? `${task.name} had a Bash command refused`
+          : `${task.name} was refused ${readableToolName(run.refusedTools?.[0] ?? 'a tool')}`
+        : `${task.name} ${verb}${duration}`,
+    linkPath: `/tasks?schedule=${encodeURIComponent(run.scheduleId)}`,
     metadata: error ? { error } : null,
   });
 }
@@ -218,10 +217,11 @@ export function emitRefusedAskActivity(
     resourceType: 'schedule',
     resourceId: run.scheduleId,
     resourceLabel: task.name,
-    summary: refused.neverAsk
-      ? `${task.name} could not use ${toolLabel} — it is set to Never ask`
-      : `${task.name} could not use ${toolLabel} — nobody was there to approve it`,
-    linkPath: '/',
+    summary:
+      refused.toolName === 'Bash'
+        ? `${task.name} had a Bash command refused`
+        : `${task.name} was refused ${toolLabel}`,
+    linkPath: `/tasks?schedule=${encodeURIComponent(run.scheduleId)}`,
     metadata: {
       runId: run.id,
       toolName: refused.toolName,
@@ -266,7 +266,7 @@ export function emitUnregisteredAccountActivity(
     summary:
       `${task.name} ran on the usual Claude account, because the account "${account}" ` +
       `it names is not set up in DorkOS`,
-    linkPath: '/',
+    linkPath: `/tasks?schedule=${encodeURIComponent(run.scheduleId)}`,
     metadata: { runId: run.id, account },
   });
 }

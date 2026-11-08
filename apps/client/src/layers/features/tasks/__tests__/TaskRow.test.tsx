@@ -9,6 +9,10 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import {
+  MISPLACED_SCHEDULE_PERMISSIONS,
+  MISPLACED_PERMISSIONS_RUN_ONCE,
+} from '@dorkos/shared/schedule-file-problems';
 import type { Task } from '@dorkos/shared/types';
 
 vi.mock('cronstrue', () => ({
@@ -163,6 +167,26 @@ function renderScheduleRow(
 // ---------------------------------------------------------------------------
 
 describe('ScheduleRow', () => {
+  it.each([false, true])(
+    'reviews misplaced-mode instructions before any trial (file capped: %s)',
+    (fileCapNext) => {
+      renderScheduleRow({
+        ...pendingSchedule,
+        origin: 'file',
+        reasonSource: 'dorkos',
+        reason: MISPLACED_SCHEDULE_PERMISSIONS,
+        fileCapNext,
+        enabled: false,
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent('permissions is in the wrong place');
+      expect(screen.getByRole('alert')).toHaveClass('text-status-warning-fg');
+      expect(screen.getByRole('button', { name: /^Review / })).toBeEnabled();
+      expect(screen.queryByRole('button', { name: 'Run once' })).not.toBeInTheDocument();
+      expect(screen.queryByText(MISPLACED_PERMISSIONS_RUN_ONCE)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Approve/ })).not.toBeInTheDocument();
+    }
+  );
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -333,11 +357,12 @@ describe('ScheduleRow', () => {
     });
   });
 
-  it('shows Approve and Reject buttons for pending_approval schedules', () => {
+  it('offers review before approval for pending schedules', () => {
     renderScheduleRow(pendingSchedule);
 
-    expect(screen.getByText('Approve')).toBeTruthy();
-    expect(screen.getByText('Reject')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Review Pending Task' })).toBeTruthy();
+    expect(screen.queryByText('Approve')).toBeNull();
+    expect(screen.queryByText('Reject')).toBeNull();
   });
 
   it('does not show Switch for pending_approval schedules', () => {
@@ -461,29 +486,11 @@ describe('ScheduleRow', () => {
       renderScheduleRow(agentHidOwnProposal);
 
       // Off, so approving keeps it off unless the person asks (DOR-3309).
-      expect(screen.getByText('Approve')).toBeTruthy();
-      expect(screen.getByText('Approve and turn on')).toBeTruthy();
-      expect(screen.getByText('Reject')).toBeTruthy();
+      expect(
+        screen.getByRole('button', { name: 'Review Agent Proposal Switched Off' })
+      ).toBeTruthy();
+      expect(screen.queryByText('Approve')).toBeNull();
       expect(screen.queryByRole('switch')).toBeNull();
-    });
-
-    it('approving it keeps it off; "Approve and turn on" turns it on (DOR-3309)', async () => {
-      const updateTask = vi.fn().mockResolvedValue(agentHidOwnProposal);
-      const transport = createMockTransport({ updateTask });
-      renderScheduleRow(agentHidOwnProposal, {}, transport);
-
-      await act(async () => {
-        fireEvent.click(screen.getByText('Approve'));
-      });
-      expect(updateTask).toHaveBeenLastCalledWith(agentHidOwnProposal.id, { status: 'active' });
-
-      await act(async () => {
-        fireEvent.click(screen.getByText('Approve and turn on'));
-      });
-      expect(updateTask).toHaveBeenLastCalledWith(agentHidOwnProposal.id, {
-        status: 'active',
-        enabled: true,
-      });
     });
 
     it('names no source, unlike a genuinely file-discovered schedule', () => {
@@ -506,7 +513,11 @@ describe('ScheduleRow', () => {
       // every PATCH regardless of which fields it carries, so sending `status`
       // here is what turns this specific write into the first approval this
       // schedule has ever had, rather than an ordinary agent-writable toggle.
-      expect(updateTask).toHaveBeenCalledWith('sched-4', { status: 'active', enabled: true });
+      expect(updateTask).not.toHaveBeenCalled();
+      expect(screen.getByText('Review schedule')).toBeTruthy();
+      expect(screen.getByRole('switch', { hidden: true }).getAttribute('data-state')).toBe(
+        'unchecked'
+      );
     });
 
     it('switching an already-approved schedule off and back on sends only `enabled`', async () => {

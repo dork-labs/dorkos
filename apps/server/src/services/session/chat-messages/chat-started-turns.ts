@@ -31,6 +31,19 @@ const turns = new Map<string, number>();
  */
 const senders = new Map<string, readonly string[]>();
 
+/** Only messages steered into the current send; room wakers never enter this map. */
+const steered = new Map<string, readonly string[]>();
+
+/** Read current-send steering separately from remembered chat and room senders. */
+export function steeredTurnSendersOf(sessionId: string): readonly string[] {
+  return steered.get(primaryOf(sessionId)) ?? [];
+}
+
+/** Forget steering when the send begins or ends. */
+export function clearTurnSteering(sessionId: string): void {
+  steered.delete(primaryOf(sessionId));
+}
+
 /**
  * The chats whose messages started the chat's running turn, or none when
  * nothing but a person or a schedule started it.
@@ -59,6 +72,8 @@ const wakers = new Map<string, readonly string[]>();
  */
 export function noteSteeredInto(sessionId: string, fromSessionIds: readonly string[]): void {
   const key = primaryOf(sessionId);
+  const current = steered.get(key) ?? [];
+  steered.set(key, [...new Set([...current, ...fromSessionIds])]);
   const known = senders.get(key) ?? [];
   senders.set(key, [...known, ...fromSessionIds.filter((id) => !known.includes(id))]);
 }
@@ -141,6 +156,7 @@ export function noteOtherTurnStarted(sessionId: string): void {
  * @internal Exported for testing only — the map outlives one test.
  */
 export function resetChatStartedTurns(): void {
+  steered.clear();
   turns.clear();
   senders.clear();
   wakers.clear();

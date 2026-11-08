@@ -23,6 +23,7 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CodexRuntime } from '../codex-runtime.js';
+import { ScriptedCodexTransport } from './fixtures/scripted-transport.js';
 import { CodexThreadMap } from '../thread-map.js';
 import { codexSimpleTurn, makeMockThread } from './codex-scenarios.js';
 import {
@@ -40,6 +41,11 @@ vi.mock('../enumerate-mcp-servers.js', () => ({
   enumerateCodexMcpServers: vi.fn(async () => null),
 }));
 vi.mock('../scan-skill-commands.js', () => ({ scanSkillCommands: vi.fn(() => []) }));
+// These header-delivery cases start with approved content. The real consent
+// guard is exercised by folder-settings/__tests__/folder-config-launch.test.ts.
+vi.mock('../../shared/policy/managed-config.js', () => ({
+  managedConfigHeld: vi.fn(async () => false),
+}));
 
 /** Records every `Codex` construction, which is what these tests read. */
 const sdkMocks = vi.hoisted(() => ({
@@ -78,7 +84,7 @@ async function turnWith(servers: Record<string, McpAppServerConnection>): Promis
   mcpServers: Record<string, Record<string, unknown>>;
 }> {
   const runtime = new CodexRuntime({
-    transport: 'exec',
+    transport: new ScriptedCodexTransport(),
     threadMap: new CodexThreadMap(createTestDb()),
     resolveBinary: async () => '/bin/codex',
     defaultCwd: CWD,

@@ -20,6 +20,7 @@
  *
  * @module services/runtimes/claude-code/sessions/launch-live-settings
  */
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { logger } from '../../../../lib/logger.js';
 import {
   awaitControlAck,
@@ -121,6 +122,8 @@ export interface LiveChangeOptions {
    * it. Reporting the hold is how it joins one.
    */
   readonly onPluginReloadHeld?: (impact: PluginReloadCacheImpact) => void;
+  /** Told when the process did not take its new MCP servers, so the chat can say so. */
+  readonly onMcpServersNotTaken?: () => void;
 }
 
 /** What {@link applyLiveChanges} managed to do to a warm process. */
@@ -138,6 +141,17 @@ export interface LiveChangeOutcome {
    */
   readonly fingerprint: LaunchFingerprint;
 }
+
+/**
+ * What a process holds after a server swap nobody answered: not known. The CLI
+ * may still finish the request, so neither the old list nor the new one is true.
+ * No server can have this name, so the next dispatch never reads as "no change"
+ * and always sends its list, even an empty one, which is what lets a Remove reach
+ * a server that landed late (DOR-3882).
+ */
+export const MCP_SERVERS_UNKNOWN: Readonly<Record<string, McpServerConfig>> = {
+  '<unknown>': { type: 'stdio', command: '' },
+};
 
 /** How one pin's setter came out: an ack, or a reason it stayed put. */
 type PinOutcome = ControlAck | UnappliedReason;
@@ -226,6 +240,9 @@ function fingerprintAfter(
   // process) instead of riding a mode it cannot name.
   if (unapplied.some(({ pin, ack }) => pin === 'permissionMode' && ack === 'unacked')) {
     live.permissionMode = undefined;
+  }
+  if (unapplied.some(({ pin, ack }) => pin === 'mcpServers' && ack === 'unacked')) {
+    live.mcpServers = MCP_SERVERS_UNKNOWN;
   }
   return { ...decision.to, live };
 }
@@ -319,6 +336,7 @@ export async function applyLiveChanges(
   // it would train a reader to ignore the line that means a setter really did
   // go missing.
   const failures = unapplied.filter((u) => u.ack !== 'held');
+  if (failures.some((u) => u.pin === 'mcpServers')) options?.onMcpServersNotTaken?.();
   if (failures.length > 0) {
     logger.warn('[launch-fingerprint] a warm process did not take every new setting', {
       applied,

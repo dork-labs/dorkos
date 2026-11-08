@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme, screen, shell } from 'electron';
+import { BrowserWindow, nativeTheme, screen, shell } from 'electron';
 import type {
   HandlerDetails,
   Event,
@@ -21,7 +21,7 @@ import {
 } from './window-state';
 
 /**
- * How the cockpit's windows are made: their web preferences, what they are
+ * How the app's windows are made: their web preferences, what they are
  * allowed to navigate to, and what happens when the page asks for a second one.
  *
  * Geometry lives next door in `window-state.ts`; what a page may ask the machine
@@ -29,7 +29,7 @@ import {
  * window below.
  */
 
-/** Minimum size below which the cockpit's layout stops working. */
+/** Minimum size below which the app's layout stops working. */
 const MIN_WINDOW_SIZE = { width: 800, height: 600 };
 
 /** Diagonal offset of a second window from the one that opened it, so it doesn't land exactly on top. */
@@ -40,7 +40,7 @@ const CASCADE_OFFSET_PX = 32;
  * anyway.
  *
  * The window is created hidden and revealed on `ready-to-show` so nobody sees
- * an empty white rectangle before the dark cockpit paints. That event does not
+ * an empty white rectangle before the dark app paints. That event does not
  * fire if the page fails to load — and a window that never appears is far worse
  * than a brief flash — so this is the floor under it.
  */
@@ -81,21 +81,20 @@ export interface CreateWindowOptions {
  *
  * Three cases, checked in order:
  * 1. The dev server (`ELECTRON_RENDERER_URL`, set by electron-vite for HMR).
- * 2. `rendererUrl` — in a packaged build, the bundled server's own
+ * 2. `rendererUrl` — the running server's own
  *    `http://localhost:<port>` origin (see {@link createWindow}), which
  *    serves the built renderer directly: the packaged app loads via the
  *    server, not `file://`, so the server's CORS allowlist sees a real
  *    origin instead of `null` (see ADR `260712-005315`).
  * 3. A `file://` URL inside the app's own `renderer/` bundle — kept as a
- *    fallback for `electron-vite preview` (no server, no dev URL), which
- *    still loads the built renderer straight off disk.
+ *    fallback when no HTTP renderer is available.
  *
  * Only those count: an arbitrary `file://` link (e.g. from agent-generated
  * markdown clicked without `target="_blank"`) must NOT pass — it would
  * steer the app window itself onto a raw local file with no way back to
  * the SPA.
  *
- * Used by both link guards in {@link createWindow} to tell the cockpit apart
+ * Used by both link guards in {@link createWindow} to tell the app apart
  * from a stray link that belongs in the system browser.
  *
  * @param url - The URL a navigation or `window.open` is about to load.
@@ -170,11 +169,11 @@ export function isWebLink(url: string): boolean {
 }
 
 /**
- * The paint colour behind the renderer, matching the cockpit's own background
+ * The paint colour behind the renderer, matching the app's own background
  * (`--background` in `apps/client/src/index.css`) for the current OS theme.
  *
  * Without it every launch flashed Chromium's default white before the dark
- * cockpit painted. The OS theme is the best proxy the main process has for the
+ * app painted. The OS theme is the best proxy the main process has for the
  * app's theme; combined with the hidden-until-`ready-to-show` window below it
  * is only ever seen during a resize repaint.
  */
@@ -239,10 +238,10 @@ function applyLinkPolicy(win: BrowserWindow, options: CreateWindowOptions): void
   // `target="_blank"` and `window.open()` — chat links, gen-ui widgets,
   // marketplace cards, the command palette's "Open in New Tab".
   //
-  // Our own origin becomes a real second cockpit window. It used to be handed
+  // Our own origin becomes a real second app window. It used to be handed
   // to the system browser along with everything else, because this handler
   // looked only at the scheme: asking for a new tab on an agent sent the
-  // cockpit to Chrome. The window is built here rather than returned as
+  // app to Chrome. The window is built here rather than returned as
   // `{ action: 'allow' }` so it gets the same preload, the same sandboxing and
   // the same guards as the window that opened it — Electron's own path would
   // produce a popup shaped by whatever `features` string the page passed.
@@ -281,8 +280,8 @@ function applyLinkPolicy(win: BrowserWindow, options: CreateWindowOptions): void
  * `CLIENT_DIST_PATH` so the server serves it) rather than `file://` — the
  * server's CORS allowlist and Better Auth's trusted-origins check both need a
  * real origin, not `null`, and this makes the renderer's fetches same-origin
- * besides. `electron-vite preview` (no server, no dev URL) falls back to the
- * built index.html straight off disk.
+ * besides. `electron-vite preview` uses its running server too. A caller
+ * without either HTTP origin falls back to the built index.html off disk.
  *
  * A second window overrides all of that with the exact URL that was asked for
  * — it is already an own-origin absolute URL, verified by the window-open
@@ -290,7 +289,7 @@ function applyLinkPolicy(win: BrowserWindow, options: CreateWindowOptions): void
  *
  * Exported for `renderer-health/`, which has to put the app back on
  * screen after its recovery page has been showing. Resolving the entry a
- * second time over there would be a second answer to "where does the cockpit
+ * second time over there would be a second answer to "where does the app
  * live", and the two would drift the first time this one changed.
  *
  * @param win - The window to load.
@@ -309,7 +308,7 @@ export function loadRenderer(win: BrowserWindow, options: CreateWindowOptions): 
 }
 
 /**
- * Create a cockpit window. On macOS it uses the hidden-inset title bar
+ * Create an app window. On macOS it uses the hidden-inset title bar
  * (traffic-light styling); on Windows/Linux it falls back to the native window
  * frame with standard min/max/close controls.
  *
@@ -377,8 +376,9 @@ export function createWindow(options: CreateWindowOptions = {}): BrowserWindow {
 
 /**
  * The app's own origin right now, or `undefined` when the renderer was never
- * served from one (dev, or before the server has ever had a port).
+ * served from one (before the server has ever had a port).
  *
+ * Used by packaged builds and preview; Vite's dev URL takes precedence in dev.
  * Shared by `index.ts` and passed into every window as
  * {@link CreateWindowOptions.getRendererUrl}.
  *
@@ -400,7 +400,6 @@ export function makeRendererUrlAccessor(
 ): () => string | undefined {
   let lastServed: string | undefined;
   return () => {
-    if (!app.isPackaged) return undefined;
     const port = getServerPort();
     if (port) lastServed = `http://localhost:${port}`;
     return lastServed;

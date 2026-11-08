@@ -22,6 +22,9 @@ import {
   useSearch,
 } from '@tanstack/react-router';
 import { zodValidator } from '@tanstack/zod-adapter';
+import { agentAuthorRef } from '@dorkos/shared/room-schemas';
+import { useAppStore } from '@/layers/shared/model';
+import { roomKeys } from '@/layers/entities/room';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -60,6 +63,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   working.current = false;
+  useAppStore.setState({ selectedCwd: null });
 });
 
 const SESSION = 'scout-direct';
@@ -101,36 +105,51 @@ function channel(id: string, member = true): RoomSummary {
 /** Mount the bar on a real `/session` route at `at`. */
 function mountBar(
   at: string,
-  options: { dmView?: boolean; showSessions?: boolean; lookupPending?: boolean } = {}
+  options: {
+    dmView?: boolean;
+    showSessions?: boolean;
+    lookupPending?: boolean;
+    lookupError?: Error;
+    keptName?: string | null;
+    keptRoomTitle?: string;
+    configPending?: boolean;
+    agentPending?: boolean;
+    noManifest?: boolean;
+    manifestFails?: boolean;
+    lastKnown?: string;
+  } = {}
 ) {
   const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue({
-      version: '1.0.0',
-      experiments: [
-        {
-          key: 'ui.dmView',
-          title: 'Chats with one agent read like a DM',
-          description: '',
-          enabled: options.dmView ?? true,
-          lockedByEnv: false,
-        },
-      ],
-      ui: { showSessions: options.showSessions ?? false },
-    }),
-    findDirectChat: options.lookupPending
+    getConfig: options.configPending
       ? vi.fn().mockReturnValue(new Promise(() => {}))
       : vi.fn().mockResolvedValue({
-          sessionId: SESSION,
-          sessionIds: [SESSION],
-          roomId: 'dm-scout',
-          agentPath: SCOUT_PATH,
+          version: '1.0.0',
+          ui: { dmView: options.dmView ?? true, showSessions: options.showSessions ?? false },
         }),
-    getAgentByPath: vi.fn().mockResolvedValue({
-      id: 'scout-manifest',
-      name: 'scout',
-      displayName: 'Scout',
-      description: 'Reviews pull requests',
-    }),
+    findDirectChat: options.lookupError
+      ? vi.fn().mockRejectedValue(options.lookupError)
+      : options.lookupPending
+        ? vi.fn().mockReturnValue(new Promise(() => {}))
+        : vi.fn().mockResolvedValue({
+            sessionId: SESSION,
+            sessionIds: [SESSION],
+            roomId: 'dm-scout',
+            agentPath: SCOUT_PATH,
+          }),
+    getAgentByPath: options.agentPending
+      ? vi.fn().mockReturnValue(new Promise(() => {}))
+      : options.manifestFails
+        ? vi.fn().mockRejectedValue(new Error('500'))
+        : vi.fn().mockResolvedValue(
+            options.noManifest
+              ? null
+              : {
+                  id: 'scout-manifest',
+                  name: 'scout',
+                  displayName: 'Scout',
+                  description: 'Reviews pull requests',
+                }
+          ),
     getTeamRoster: vi.fn().mockResolvedValue({ members: [SCOUT_MEMBER] }),
     listMemberRooms: vi.fn().mockResolvedValue({
       rooms: ['launch', 'design', 'ops', 'growth', 'private'].map((id) => ({
@@ -141,22 +160,51 @@ function mountBar(
         memberCount: 3,
       })),
     }),
-    listRooms: vi
-      .fn()
-      .mockResolvedValue([
-        channel('launch'),
-        channel('design'),
-        channel('ops'),
-        channel('growth'),
-        channel('private', false),
-      ]),
+    listRooms: vi.fn().mockResolvedValue([
+      channel('launch'),
+      channel('design'),
+      channel('ops'),
+      channel('growth'),
+      channel('private', false),
+      {
+        ...channel('dm-scout'),
+        kind: 'dm',
+        participants: options.lastKnown
+          ? [{ id: 'author-scout', kind: 'agent', displayName: options.lastKnown }]
+          : [],
+      } as RoomSummary,
+    ]),
   });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  if (options.keptRoomTitle) {
+    useAppStore.setState({ selectedCwd: SCOUT_PATH });
+    queryClient.setQueryData(roomKeys.list(), [
+      {
+        id: 'dm-scout',
+        kind: 'dm',
+        title: options.keptRoomTitle,
+        archived: false,
+        participants: [
+          { id: 'me', kind: 'human', displayName: 'You' },
+          {
+            id: 'scout',
+            kind: 'agent',
+            displayName: options.keptRoomTitle,
+            agentRef: agentAuthorRef(SCOUT_PATH),
+          },
+        ],
+      },
+    ]);
+  }
 
   function Bar() {
     const search = useSearch({ strict: false }) as { session?: string };
     return (
-      <BarHarness sessionId={search.session} agentName="Scout">
+      <BarHarness
+        sessionId={search.session}
+        agentName={options.keptName === null ? undefined : (options.keptName ?? 'Scout')}
+      >
         <SessionRouteHeader />
       </BarHarness>
     );
@@ -191,7 +239,7 @@ function mountBar(
       <RouterProvider router={router} />
     </Wrapper>
   );
-  return { router, transport };
+  return { router, transport, queryClient };
 }
 
 describe('SessionRouteHeader', () => {
@@ -214,6 +262,54 @@ describe('SessionRouteHeader', () => {
     expect(screen.queryByTestId('dm-header-identity')).not.toBeInTheDocument();
   });
 
+  it.each([
+    [new Error('500'), 'Tern'],
+    [new Error('500'), null],
+    [new TypeError('Failed to fetch'), 'Tern'],
+    [new TypeError('Failed to fetch'), null],
+  ])('keeps the hung lookup bar after %s, kept name %s', async (lookupError, keptName) => {
+    const { transport, queryClient } = mountBar(`/session?session=${SESSION}`, {
+      lookupError: lookupError as Error,
+      keptName,
+    });
+    await waitFor(() => expect(transport.findDirectChat).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(queryClient.getQueryState(['direct-chat', SESSION])?.status).toBe('error')
+    );
+    expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
+    const bar = await screen.findByTestId('session-bar-pending');
+    expect(bar.textContent).toBe(keptName ?? '');
+    expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
+  });
+
+  it.each(['500', 'never'] as const)(
+    'keeps a room-only name in the neutral bar with lookup %s',
+    async (lookup) => {
+      const { queryClient } = mountBar(`/session?session=${SESSION}`, {
+        keptName: null,
+        keptRoomTitle: 'Tern',
+        noManifest: true,
+        ...(lookup === '500' ? { lookupError: new Error('500') } : { lookupPending: true }),
+      });
+      if (lookup === '500')
+        await waitFor(() =>
+          expect(queryClient.getQueryState(['direct-chat', SESSION])?.status).toBe('error')
+        );
+      expect(await screen.findByTestId('session-bar-pending')).toHaveTextContent('Tern');
+      expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
+    }
+  );
+
+  it('draws the same neutral bar, not the session bar, until the setting is known', async () => {
+    const { transport } = mountBar(`/session?session=${SESSION}`, { configPending: true });
+
+    expect(await screen.findByTestId('session-bar-pending')).toHaveTextContent('Scout');
+    expect(screen.queryByTestId('session-title')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
+    expect(transport.findDirectChat).not.toHaveBeenCalled();
+  });
+
   it('draws the agent, its role and the channels you share on its Direct chat', async () => {
     mountBar(`/session?session=${SESSION}`);
 
@@ -228,6 +324,35 @@ describe('SessionRouteHeader', () => {
     // The machinery stays behind Show sessions.
     expect(screen.queryByTestId('dm-session-chip')).not.toBeInTheDocument();
     expect(screen.queryByTestId('account-badge')).not.toBeInTheDocument();
+  });
+
+  it('names nobody while the agent’s name is on its way', async () => {
+    mountBar(`/session?session=${SESSION}`, { agentPending: true });
+
+    const identity = await screen.findByTestId('dm-header-identity');
+    expect(identity).toHaveTextContent(/^$/);
+  });
+
+  it('keeps the DM’s last known name when the manifest is gone', async () => {
+    mountBar(`/session?session=${SESSION}`, { noManifest: true, lastKnown: 'Scout' });
+
+    const identity = await screen.findByTestId('dm-header-identity');
+    await waitFor(() => expect(identity).toHaveTextContent('Scout'));
+    expect(identity).not.toHaveTextContent('Unknown agent');
+  });
+
+  it('says "Unknown agent" when no record keeps a name, never "Agent"', async () => {
+    mountBar(`/session?session=${SESSION}`, { noManifest: true });
+
+    const identity = await screen.findByTestId('dm-header-identity');
+    await waitFor(() => expect(identity).toHaveTextContent('Unknown agent'));
+  });
+
+  it('says the same when the manifest cannot be read', async () => {
+    mountBar(`/session?session=${SESSION}`, { manifestFails: true });
+
+    const identity = await screen.findByTestId('dm-header-identity');
+    await waitFor(() => expect(identity).toHaveTextContent('Unknown agent'));
   });
 
   it('says the agent is working while it works', async () => {

@@ -241,6 +241,7 @@ router.get('/', async (c) => {
     // To-dos (DOR-3088) sit behind an environment flag until v1 ships, read once at boot like the
     // routes it mounts, so the client hides the page and the sidebar door when it is off.
     todos: { enabled: env.DORKOS_TODOS_ENABLED },
+    yourBrowser: { enabled: env.DORKOS_YOUR_BROWSER_ENABLED },
     // Read from the schema rather than re-typed here, which is the same idiom
     // `agents`, `rooms` and `welcomeBack` already use above and below. It used to
     // be a hand-written copy, and a hand-written copy of a default is a fourth
@@ -403,6 +404,9 @@ router.get('/', async (c) => {
       // notice (ADR 261006-225605). The app decides from it whether to show
       // the notice at all. `?? null` covers the pre-migration read window only.
       trustNoticeSeenAt: configManager.get('ui')?.trustNoticeSeenAt ?? null,
+      // Whether a chat with one agent reads like a direct message (DOR-3074).
+      // `?? true` covers the pre-migration read window only.
+      dmView: configManager.get('ui')?.dmView ?? true,
       // Whether the working session behind a chat can be opened
       // (DOR-3074): Settings shows it back as a switch and the chat header
       // reads it. `?? false` covers the pre-migration read window only.

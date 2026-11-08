@@ -182,6 +182,8 @@ export interface ComposerInputProps {
    * when another surface already states the reason.
    */
   canSubmitReason?: string;
+  /** The way out of that reason, when a press can clear it. Drawn on the same line. */
+  canSubmitAction?: { label: string; onClick: () => void };
   /**
    * Identifies the draft this composer holds — the session/cwd pair for the chat
    * composer, omitted by hosts that have neither. Only the pending
@@ -284,6 +286,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       queueHasItems = false,
       canSubmit = true,
       canSubmitReason,
+      canSubmitAction,
       richText = false,
       mentionSubjects,
     },
@@ -434,8 +437,27 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
           Enter and nothing happened", which a screen-reader user gets no other
           signal for at all. */}
         {!canSubmit && canSubmitReason && (
-          <div role="status" className="text-muted-foreground px-1 text-xs">
-            {canSubmitReason}
+          <div
+            role={canSubmitAction ? undefined : 'status'}
+            className={cn(
+              'text-muted-foreground px-1 text-xs',
+              canSubmitAction && 'flex items-baseline gap-1.5'
+            )}
+          >
+            {canSubmitAction ? (
+              <>
+                <span role="status">{canSubmitReason}</span>
+                <button
+                  type="button"
+                  onClick={canSubmitAction.onClick}
+                  className="focus-ring text-foreground/80 hover:text-foreground rounded-sm underline underline-offset-4"
+                >
+                  {canSubmitAction.label}
+                </button>
+              </>
+            ) : (
+              canSubmitReason
+            )}
           </div>
         )}
         {editingQueueItem && (

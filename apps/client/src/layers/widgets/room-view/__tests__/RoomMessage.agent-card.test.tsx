@@ -135,9 +135,7 @@ function renderRow(author: RosterAuthor, dmView: boolean, text?: string) {
   const transport = createMockTransport({
     getConfig: vi.fn().mockResolvedValue({
       version: '1.0.0',
-      experiments: [
-        { key: 'ui.dmView', title: '', description: '', enabled: dmView, lockedByEnv: false },
-      ],
+      ui: { dmView },
     }),
     listMeshAgentPaths: vi
       .fn()
@@ -301,9 +299,7 @@ describe('useRoomAgentCard', () => {
     const transport = createMockTransport({
       getConfig: vi.fn().mockResolvedValue({
         version: '1.0.0',
-        experiments: [
-          { key: 'ui.dmView', title: '', description: '', enabled: true, lockedByEnv: false },
-        ],
+        ui: { dmView: true },
       }),
       listMeshAgentPaths: vi
         .fn()

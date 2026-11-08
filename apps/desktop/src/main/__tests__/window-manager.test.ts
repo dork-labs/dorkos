@@ -106,7 +106,7 @@ describe('createWindow — first paint (M5)', () => {
 });
 
 describe('createWindow — renderer loading', () => {
-  it('loads the built renderer via file:// when no dev server or rendererUrl is available (electron-vite preview)', () => {
+  it('loads the built renderer via file:// when no dev server or rendererUrl is available', () => {
     vi.stubEnv('ELECTRON_RENDERER_URL', '');
 
     const win = createWindow() as unknown as MockBrowserWindow;
@@ -373,9 +373,14 @@ describe('createWindow — will-navigate guard', () => {
 });
 
 describe('makeRendererUrlAccessor', () => {
-  it('is undefined in dev, where electron-vite serves the renderer', () => {
+  it('loads preview over its running HTTP server, even though the app is unpackaged', () => {
     app.isPackaged = false;
-    expect(makeRendererUrlAccessor(() => 4242)()).toBeUndefined();
+    vi.stubEnv('ELECTRON_RENDERER_URL', '');
+    const getRendererUrl = makeRendererUrlAccessor(() => 4242);
+    const win = createWindow({ getRendererUrl }) as unknown as MockBrowserWindow;
+
+    expect(win.loadURL).toHaveBeenCalledWith('http://localhost:4242');
+    expect(win.loadFile).not.toHaveBeenCalled();
   });
 
   it('is undefined while no server is running', () => {

@@ -23,10 +23,10 @@ fail=0
 
 # Build a synthetic workspace.
 #   $1 — root to build under
-# Creates two ordinary specs, the opt-in auth spec, the grep-filtered
+# Creates two ordinary specs, the opt-in auth specs, the grep-filtered
 # @integration specs, and EVERY registered module (plain .ts files a spec imports
 # — see REGISTERED_MODULES in the subject). The report has both ordinary specs
-# and the modules running, the auth spec skipped, and the @integration specs
+# and the modules running, the auth specs skipped, and the @integration specs
 # absent entirely (grepInvert drops them from collection, so they never reach the
 # report). That is the known-good run every case below bends exactly one thing
 # about.
@@ -43,6 +43,7 @@ make_workspace() {
   : >"$root/apps/e2e/tests/alpha.spec.ts"
   : >"$root/apps/e2e/tests/beta.spec.ts"
   : >"$root/apps/e2e/tests/settings/auth-login.spec.ts"
+  : >"$root/apps/e2e/tests/settings/boot-cache-sign-out.spec.ts"
   : >"$root/apps/e2e/tests/chat/codex-session.spec.ts"
   : >"$root/apps/e2e/tests/chat/send-message.spec.ts"
   : >"$root/apps/e2e/tests/chat/compaction.ts"
@@ -126,10 +127,14 @@ make_workspace() {
     { "title": "settings", "file": "settings/auth-login.spec.ts", "specs": [],
       "suites": [ { "title": "Auth", "file": "settings/auth-login.spec.ts",
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
+                                 "tests": [ { "status": "skipped" } ] } ] } ] },
+    { "title": "settings", "file": "settings/boot-cache-sign-out.spec.ts", "specs": [],
+      "suites": [ { "title": "Boot cache sign-out", "file": "settings/boot-cache-sign-out.spec.ts",
+                    "specs": [ { "title": "sign-out forgets boot data", "file": "settings/boot-cache-sign-out.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
   "config": { "shard": null },
-  "stats": { "expected": 19, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 19, "unexpected": 0, "flaky": 0, "skipped": 2 }
 }
 JSON
 }
@@ -254,6 +259,20 @@ d['stats'] = {"expected": 4, "unexpected": 0, "flaky": 0, "skipped": 0}
 json.dump(d, open(p, 'w'))
 PY
 check 'a stale OPT_IN exemption is named' "$tmp/stale" 1 'OPT_IN_SPECS'
+
+make_workspace "$tmp/staleBootCache"
+python3 - "$tmp/staleBootCache/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+for s in d['suites']:
+    if s['file'] == 'settings/boot-cache-sign-out.spec.ts':
+        s['suites'][0]['specs'][0]['tests'][0]['status'] = 'expected'
+d['stats']['expected'] += 1
+d['stats']['skipped'] -= 1
+json.dump(d, open(p, 'w'))
+PY
+check 'a stale boot-cache auth exemption is named' "$tmp/staleBootCache" 1 'OPT_IN_SPECS'
 
 # An @integration spec appears in the report — either E2E_INTEGRATION leaked
 # into CI (spending real account credit per run) or the file gained an untagged

@@ -764,54 +764,57 @@ export function AppShell() {
                         </>
                       )}
                       {isMobile && <MobileCommunityContextSwitcher />}
-                      {/* ── The route's bar, cross-faded on route change.
+                      {/* ── The route's bar, faded in on route change.
                             ONLY the route's own half fades: identity, chips and
                             page actions are what differ between routes, so they
-                            are what animates. ── */}
-                      <AnimatePresence mode="wait" initial={false}>
-                        {routeHeader && (
-                          <motion.div
-                            key={routeHeader.key}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            transition={{ duration: 0.1 }}
-                            // `self-stretch` so the row's full height is available
-                            // to a bar that wants it. The header centres its
-                            // children, which left this wrapper only as tall as
-                            // its text — and a tab strip asking for `h-full`
-                            // inside it got 24px, so every home tab was a 24px
-                            // target in a 36px row (DOR-1401). Stretched, the
-                            // tabs measure 35px: the header's 36 less the 1px
-                            // that is its bottom hairline. Children still centre
-                            // themselves (`items-center`); only the box they
-                            // measure against changed.
-                            //
-                            // The row's gaps are 4px below `lg`, 8px from it: a
-                            // phone or tablet header has no width to spend on
-                            // air, and the bell showing a number was enough to
-                            // push the bar past its own box (DOR-2524).
-                            //
-                            // `basis-24` is the width a phone's identity keeps
-                            // before the actions wrap. The four actions take 188,
-                            // the space switcher about 34 and the row's gaps 12,
-                            // so at 375px (359 inside the padding) 8rem did NOT
-                            // fit and a chat's actions fell to a second row; 6rem
-                            // stays on one row from 375 up with the bell showing.
-                            // It is a floor, not a width: `grow` hands the
-                            // identity everything left over (a chat's two-line
-                            // identity gets about 125px at 375, 140 at 390). A
-                            // bar with a tab strip needs the row to itself beside
-                            // the switcher, or its tabs and chips paint over the
-                            // actions, so there they wrap.
-                            className="flex h-11 min-w-0 grow basis-24 items-center gap-1 has-[[data-slot=bar-tab-strip]]:basis-[calc(100%-2.5rem)] md:h-auto md:flex-1 md:self-stretch md:has-[[data-slot=bar-tab-strip]]:basis-0 lg:gap-2"
-                          >
-                            <OneBarProvider value={oneBarState}>
-                              <routeHeader.Header />
-                            </OneBarProvider>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                            are what animates.
+
+                            **Enter only, no exit, and no `AnimatePresence`**, like
+                            the page below. With one here, on a production build
+                            the exit of the bar a page loaded with never started,
+                            so that bar stayed up after a click away, until a
+                            reload (DOR-3796 has what is known of why). ── */}
+                      {routeHeader && (
+                        <motion.div
+                          key={routeHeader.key}
+                          initial={fadesRoute ? { opacity: 0 } : false}
+                          animate={{ opacity: 1 }}
+                          transition={fadesRoute ? { duration: 0.1 } : { duration: 0 }}
+                          // `self-stretch` so the row's full height is available
+                          // to a bar that wants it. The header centres its
+                          // children, which left this wrapper only as tall as
+                          // its text — and a tab strip asking for `h-full`
+                          // inside it got 24px, so every home tab was a 24px
+                          // target in a 36px row (DOR-1401). Stretched, the
+                          // tabs measure 35px: the header's 36 less the 1px
+                          // that is its bottom hairline. Children still centre
+                          // themselves (`items-center`); only the box they
+                          // measure against changed.
+                          //
+                          // The row's gaps are 4px below `lg`, 8px from it: a
+                          // phone or tablet header has no width to spend on
+                          // air, and the bell showing a number was enough to
+                          // push the bar past its own box (DOR-2524).
+                          //
+                          // `basis-24` is the width a phone's identity keeps
+                          // before the actions wrap. The four actions take 188,
+                          // the space switcher about 34 and the row's gaps 12,
+                          // so at 375px (359 inside the padding) 8rem did NOT
+                          // fit and a chat's actions fell to a second row; 6rem
+                          // stays on one row from 375 up with the bell showing.
+                          // It is a floor, not a width: `grow` hands the
+                          // identity everything left over (a chat's two-line
+                          // identity gets about 125px at 375, 140 at 390). A
+                          // bar with a tab strip needs the row to itself beside
+                          // the switcher, or its tabs and chips paint over the
+                          // actions, so there they wrap.
+                          className="flex h-11 min-w-0 grow basis-24 items-center gap-1 has-[[data-slot=bar-tab-strip]]:basis-[calc(100%-2.5rem)] md:h-auto md:flex-1 md:self-stretch md:has-[[data-slot=bar-tab-strip]]:basis-0 lg:gap-2"
+                        >
+                          <OneBarProvider value={oneBarState}>
+                            <routeHeader.Header />
+                          </OneBarProvider>
+                        </motion.div>
+                      )}
                       {/* Phone actions share the identity's row while they fit,
                             each a 44px target, and wrap to their own row only when
                             a beacon needs the room. From `md` the header no longer

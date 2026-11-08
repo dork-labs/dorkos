@@ -47,8 +47,8 @@ import { hookPackagesToAskAbout, raisePassiveHookRows } from '../ask-withheld-ho
 import {
   _internal as approvalInternal,
   describeHookProjectionCapability,
-  summariseHookProjection,
 } from '../hook-approval.js';
+import { describeHookProjection } from '../hook-card.js';
 import { describeHookScriptPins } from '../hook-script-pins.js';
 import {
   hookApprovalEntry,
@@ -225,13 +225,13 @@ describe('a yes to package hooks is pinned to the files they run (DOR-3403)', ()
     expect(wouldAsk()).toBe(false);
   });
 
-  it('the card names the file and a short fingerprint of it', () => {
+  it('the detail names the file and its whole fingerprint', () => {
     writePackage(pluginDir());
     const req = request();
     const hash = req.scripts?.[0]?.[1] ?? '';
-    expect(summariseHookProjection(req)).toContain(
-      `.dork/plugins/acme/hooks/loop.mjs (fingerprint ${hash.slice(0, 12)})`
-    );
+    const detail = describeHookProjection(req);
+    expect(detail).toContain('File: ".dork/plugins/acme/hooks/loop.mjs"');
+    expect(detail).toContain(`Fingerprint: "${hash}"`);
   });
 
   it('says the other states in words, never a raw marker (DOR-3340)', () => {
@@ -326,9 +326,9 @@ describe('on Full, a yes covers exactly the files it names (DOR-3433)', () => {
     return withheld;
   }
 
-  /** The short hash the row shows for the script as it is now. */
+  /** The whole hash the detail shows for the script as it is now. */
   function currentHash(): string {
-    return (request().scripts?.[0]?.[1] ?? '').slice(0, 12);
+    return request().scripts?.[0]?.[1] ?? '';
   }
 
   beforeEach(() => {
@@ -364,7 +364,7 @@ describe('on Full, a yes covers exactly the files it names (DOR-3433)', () => {
     const pending = approvals.listPending();
     expect(pending).toHaveLength(1);
     expect(pending[0]?.expiresAt).toBe(PASSIVE_APPROVAL_EXPIRES_AT);
-    expect(pending[0]?.summary).toContain(currentHash());
+    expect(pending[0]?.detail).toContain(currentHash());
     expect(arm).not.toHaveBeenCalled();
     // Closing the older rows recorded no refusal.
     expect(config.harness.refusedHooks).toEqual([]);
@@ -383,7 +383,7 @@ describe('on Full, a yes covers exactly the files it names (DOR-3433)', () => {
     expect(withheld).toMatchObject([{ reason: 'unasked', notInstalledByDorkos: true }]);
     const pending = approvals.listPending();
     expect(pending).toHaveLength(1);
-    expect(pending[0]?.summary).toContain(currentHash());
+    expect(pending[0]?.detail).toContain(currentHash());
     expect(arm).not.toHaveBeenCalled();
   });
 
@@ -401,7 +401,7 @@ describe('on Full, a yes covers exactly the files it names (DOR-3433)', () => {
     });
     const [row] = approvals.listPending();
     expect(row?.expiresAt).toBe(PASSIVE_APPROVAL_EXPIRES_AT);
-    expect(row?.summary).toContain(currentHash());
+    expect(row?.detail).toContain(currentHash());
     expect((await plan()).withheld).toMatchObject([{ notInstalledByDorkos: true }]);
     expect(arm).not.toHaveBeenCalled();
   });

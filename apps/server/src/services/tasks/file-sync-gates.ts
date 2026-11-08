@@ -17,6 +17,7 @@
  * @module services/tasks/file-sync-gates
  */
 import type { PermissionMode } from '@dorkos/shared/schemas';
+import { MISPLACED_SCHEDULE_PERMISSIONS } from '@dorkos/shared/schedule-file-problems';
 import type { TaskDefinition } from '@dorkos/skills/types';
 import type { pulseSchedules } from '@dorkos/db';
 import { parseDuration } from '@dorkos/skills/duration';
@@ -214,13 +215,11 @@ export class FileSyncGates {
     existing: typeof pulseSchedules.$inferSelect | undefined,
     options?: FileSyncSource
   ): FileSyncVerdict {
+    const misplaced = Object.hasOwn(def.meta, 'permissions');
+    if (misplaced)
+      options = { ...options, source: 'discovery', problem: MISPLACED_SCHEDULE_PERMISSIONS };
     const fileCron = def.meta.schedule.cron ?? '';
-    // Both gates compare what will RUN, not what the file says (DOR-2302). A
-    // package's schedule can carry a person's own cron on its row, which the
-    // sync never overwrites — so the incoming content runs on that cron, and a
-    // package update that changes only its default timing is not new work to
-    // approve. A changed prompt still is. An override this sync drops runs no
-    // longer, so it is not part of what arrives.
+    // Both gates compare effective timing, including a person's package override.
     const dropsTimingOverride = this.dropsTimingOverride(existing, options);
     // The timezone is part of what runs, and of the approval, since DOR-2307;
     // the settings since DOR-2323 (`ScheduleSettings`).
@@ -269,7 +268,11 @@ export class FileSyncGates {
     const capsAtDispatch =
       verdict !== null &&
       keepsLiveForFileCap(verdict, existing, incoming, def.meta.schedule, options);
-    const permissionMode = capsAtDispatch ? def.meta.schedule.permissions : fileMode;
+    const permissionMode = misplaced
+      ? 'acceptEdits'
+      : capsAtDispatch
+        ? def.meta.schedule.permissions
+        : fileMode;
     const arm = capsAtDispatch
       ? { status: 'active' as const, reason: null }
       : verdict && options && this.keepsParkReason(verdict, existing, incoming, options)
@@ -399,9 +402,10 @@ export class FileSyncGates {
    * and cron are still the ones the person approved.** A row being re-parked is
    * a row whose content changed under it, and a person's "yes, run this" does
    * not carry over to work they have not read; the package's own switch governs
-   * again until they approve the new content. A parked row never keeps its
-   * switch, so switching a package schedule on without approving it arms
-   * nothing and is undone by the next sweep (DOR-607).
+   * again until they approve the new content. An OFF switch survives while
+   * its file already said on (DOR-3860). A parked row never keeps an ON switch,
+   * so switching a package schedule on without
+   * approving it arms nothing and is undone by the next sweep (DOR-607).
    *
    * A row coming back from `paused` is NOT an exception. A package update is an
    * unlink and a reappearance; `markRemovedByFilePath` only pauses and leaves
@@ -441,7 +445,13 @@ export class FileSyncGates {
       return existing.enabled === false || arm?.status === 'active';
     }
     if (existing === undefined || options?.packageOwned === undefined) return false;
-    if (options.packageOwned !== null) return arm?.status === 'active';
+    if (options.packageOwned !== null) {
+      // Preserve a row held off while its package already said on (DOR-3860).
+      // A package changing from off to on still makes its first approval offer.
+      return (
+        (existing.enabled === false && existing.fileEnabled === true) || arm?.status === 'active'
+      );
+    }
     if (existing.packageOwned === null) return false;
     // A row older than the column (`unknown`) may have been the person's all
     // along, whose file then says what they last chose; only an OFF row is kept
@@ -513,6 +523,11 @@ export function fileProvenance(
   arm: { reason: string | null }
 ): { reason?: string | null; origin?: 'file'; reasonSource?: 'dorkos' | null } {
   const source = arm.reason === null ? null : ('dorkos' as const);
+  if (
+    arm.reason === MISPLACED_SCHEDULE_PERMISSIONS ||
+    existing.reason === MISPLACED_SCHEDULE_PERMISSIONS
+  )
+    return { reason: arm.reason, reasonSource: source };
   if (existing.origin === 'file')
     return { reason: arm.reason, origin: 'file', reasonSource: source };
   if (existing.reason === null) return { reason: arm.reason, reasonSource: source };

@@ -95,7 +95,7 @@ describe('UserConfigSchema', () => {
         panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
         trustNoticeSeenAt: null,
-        dmView: false,
+        dmView: true,
         showSessions: false,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
@@ -532,7 +532,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         panelTabs: [],
         communityNavigation: { version: 1, owners: [] },
         trustNoticeSeenAt: null,
-        dmView: false,
+        dmView: true,
         showSessions: false,
       },
       // How loud DorkOS may be. The knock and the all-clear ship ON; the
@@ -910,9 +910,9 @@ describe('per-field and section-literal defaults agree', () => {
     expect(fromFields.ui.trustNoticeSeenAt).toBeNull();
   });
 
-  it('ui.dmView and ui.showSessions are off either way (DOR-3074)', () => {
+  it('ui.dmView is on and ui.showSessions off either way (DOR-3074)', () => {
     for (const config of [fromFactory, fromFields]) {
-      expect(config.ui.dmView).toBe(false);
+      expect(config.ui.dmView).toBe(true);
       expect(config.ui.showSessions).toBe(false);
     }
   });

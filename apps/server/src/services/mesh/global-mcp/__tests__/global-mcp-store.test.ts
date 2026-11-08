@@ -61,7 +61,7 @@ describe('GlobalMcpStore', () => {
     expect(JSON.stringify(store.list())).not.toContain('ghp_real_secret');
     expect(view.env).toEqual([
       { name: 'GITHUB_TOKEN', secret: true },
-      { name: 'LOG_LEVEL', secret: false, value: 'info' },
+      { name: 'LOG_LEVEL', secret: false },
     ]);
   });
 
@@ -124,6 +124,52 @@ describe('GlobalMcpStore', () => {
     expect(store.has('linear')).toBe(false);
     await store.remove('github');
     expect(store.has('github')).toBe(false);
+  });
+
+  it('shows no setting value at all, secret-named or not, and masks the address', async () => {
+    const store = new GlobalMcpStore(home, secrets);
+    const view = await store.add({
+      name: 'remote',
+      enabled: true,
+      secretNames: [],
+      excludedAgents: [],
+      connection: {
+        transport: 'http',
+        url: 'https://mcp.example.test/made-up-key/mcp?x=1',
+        headers: { 'X-Plain': 'made-up-plain' },
+      },
+    });
+    expect(view.url).toBe('https://mcp.example.test/•••?•••');
+    expect(view.headers).toEqual([{ name: 'X-Plain', secret: false }]);
+    expect(JSON.stringify(store.list())).not.toContain('made-up');
+    expect(store.injectableFor('agent-a').remote).toMatchObject({
+      url: 'https://mcp.example.test/made-up-key/mcp?x=1',
+      headers: { 'X-Plain': 'made-up-plain' },
+    });
+  });
+
+  it('keeps running a value saved before its name counted as secret', async () => {
+    const dir = path.join(home, 'mcp');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, 'global-servers.json'),
+      JSON.stringify({
+        version: 1,
+        servers: [
+          {
+            name: 'older',
+            enabled: true,
+            connection: { transport: 'stdio', command: 'npx', args: [], env: { DB_PASS: 'plain' } },
+            secretNames: [],
+            excludedAgents: [],
+            addedAt: '2026-11-01T00:00:00.000Z',
+          },
+        ],
+      })
+    );
+    const store = new GlobalMcpStore(home, secrets);
+    await store.load();
+    expect(store.injectableFor('agent-a').older).toMatchObject({ env: { DB_PASS: 'plain' } });
   });
 
   it('removes the stored secrets with the server', async () => {

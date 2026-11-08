@@ -9,7 +9,7 @@
  * @module features/todos/ui/NewTodoDialog
  */
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
-import { COMMITMENT_WHAT_MAX } from '@dorkos/shared/commitment-schemas';
+import { TODO_WHAT_MAX } from '@dorkos/shared/todo-promise-schemas';
 import type { CreateTodoRequest, TodoAssignee } from '@dorkos/shared/todo-schemas';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCreateTodo } from '@/layers/entities/todo';
@@ -65,7 +65,7 @@ export interface TodoMessageSource {
  */
 export function titleFromMessage(text: string): string {
   const line = (text.split('\n').find((part) => part.trim().length > 0) ?? '').trim();
-  const cut = line.slice(0, COMMITMENT_WHAT_MAX);
+  const cut = line.slice(0, TODO_WHAT_MAX);
   // Never end on half an emoji: drop a lone high surrogate the cut left behind.
   return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
 }
@@ -137,7 +137,7 @@ function TitleField({
       id={id}
       rows={1}
       value={value}
-      maxLength={COMMITMENT_WHAT_MAX}
+      maxLength={TODO_WHAT_MAX}
       required
       autoFocus
       placeholder="Send the March invoice"
@@ -218,7 +218,9 @@ function NewTodoForm({ onDone, source }: { onDone: () => void; source?: TodoMess
 export function NewTodoDialog({ open, onOpenChange, source }: NewTodoDialogProps) {
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="max-w-md">
+      {/* Sized to its three fields: the dialog's default half-screen height left a gap above
+          the buttons (DOR-3715). */}
+      <ResponsiveDialogContent className="min-h-0 max-w-md">
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>{source ? 'Make a to-do' : 'New to-do'}</ResponsiveDialogTitle>
           <ResponsiveDialogDescription className={source ? undefined : 'sr-only'}>

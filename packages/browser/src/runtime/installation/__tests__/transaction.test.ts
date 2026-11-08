@@ -88,8 +88,8 @@ const candidate = (installationId: string): CandidateSnapshot => {
 };
 const statusCommon = {
   schemaVersion: 1 as const,
-  pinnedPackageVersion: '1.63.0' as const,
-  chromiumRevision: '1243' as const,
+  pinnedPackageVersion: '1.65.0-alpha-2026-10-30' as const,
+  chromiumRevision: '1252' as const,
   platform: 'darwin' as const,
   arch: 'arm64' as const,
   observation: 'files-only' as const,
@@ -110,8 +110,8 @@ function oldInstallation(): ExistingInstallation {
     executableIdentity: identity,
     libraryDistributionSHA256: INSTALLATION_TARGET.libraryDistributionSHA256,
     sourceManifestSHA256: hash,
-    observedVersion: '153.0.8010.12',
-    chromiumRevision: '1243',
+    observedVersion: '157.0.8103.15',
+    chromiumRevision: '1252',
     platform: 'darwin',
     arch: 'arm64',
     machOCPU: 16777228,
@@ -132,10 +132,10 @@ function oldInstallation(): ExistingInstallation {
     schemaVersion: 1,
     installationId: oldBinding.installationId,
     packageName: 'playwright-core',
-    packageVersion: '1.63.0',
+    packageVersion: '1.65.0-alpha-2026-10-30',
     libraryDistributionSHA256: INSTALLATION_TARGET.libraryDistributionSHA256,
-    chromiumRevision: '1243',
-    observedVersion: '153.0.8010.12',
+    chromiumRevision: '1252',
+    observedVersion: '157.0.8103.15',
     platform: 'darwin',
     arch: 'arm64',
     executablePath: INSTALLATION_TARGET.executablePath,
@@ -383,8 +383,8 @@ function harness(existing: ExistingInstallation | null = null) {
         executableIdentity: request.request.executableIdentity,
         libraryDistributionSHA256: request.request.libraryDistributionSHA256,
         sourceManifestSHA256: request.request.sourceVintage.sourceManifestSHA256,
-        observedVersion: '153.0.8010.12',
-        chromiumRevision: '1243',
+        observedVersion: '157.0.8103.15',
+        chromiumRevision: '1252',
         platform: 'darwin',
         arch: 'arm64',
         machOCPU: 16777228,
@@ -442,14 +442,14 @@ function harness(existing: ExistingInstallation | null = null) {
 describe('installation transaction semantic ordering (physical acceptance UNRUN)', () => {
   it('parses the exact official Darwin product branding and version output', () => {
     expect(
-      parsePinnedVersionOutput(Buffer.from('Google Chrome for Testing 153.0.8010.12 \n'))
-    ).toBe('153.0.8010.12');
+      parsePinnedVersionOutput(Buffer.from('Google Chrome for Testing 157.0.8103.15 \n'))
+    ).toBe('157.0.8103.15');
   });
 
   it.each([
-    'Chromium 153.0.8010.12\n',
+    'Chromium 157.0.8103.15\n',
     'Google Chrome for Testing 153.0.8010.13 \n',
-    'Google Chrome for Testing 153.0.8010.12 \nextra\n',
+    'Google Chrome for Testing 157.0.8103.15 \nextra\n',
   ])('rejects substituted branding, version or extra output: %s', (output) => {
     expect(() => parsePinnedVersionOutput(Buffer.from(output))).toThrow('VERSION_MISMATCH');
   });
@@ -533,7 +533,7 @@ describe('installation transaction semantic ordering (physical acceptance UNRUN)
     expect(canonicalDigest(old)).toBe(before);
     const historical = h.inspect().status;
     expect(historical.state === 'installed-files' && historical.lastFreshVerifiedVersion).toBe(
-      '153.0.8010.12'
+      '157.0.8103.15'
     );
   });
 

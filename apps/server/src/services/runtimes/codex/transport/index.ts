@@ -13,7 +13,10 @@ export type {
   CodexTurnTools,
   CodexLaunch,
 } from './codex-transport.js';
-export { ExecCodexTransport } from './exec-transport.js';
+import {
+  createAppServerTransport,
+  type AppServerTransportOptions,
+} from './app-server-transport.js';
 export {
   AppServerCodexTransport,
   createAppServerTransport,
@@ -24,24 +27,19 @@ export {
 export type CodexTransportKind = 'exec' | 'app-server';
 
 /**
- * Resolve `runtimes.codex.transport` to the transport this server runs.
- *
- * `auto` is DorkOS's own default and lives HERE and nowhere else: app-server
- * since spec phase P3 (exec before it). The flip was a change to this function
- * only — no migration, no seeded value — so a person who chose `exec`
- * explicitly keeps it, and it stays honoured.
- *
- * @param setting - The configured value; absent reads as `auto`.
+ * The legacy exec setting now selects app-server too: the pinned CLI cannot
+ * explicitly select a protected permission profile on exec. Never fall back
+ * to exec when app-server startup fails.
  */
-export function resolveCodexTransport(
-  setting: CodexTransportSetting | undefined
-): CodexTransportKind {
-  switch (setting) {
-    case 'exec':
-      return 'exec';
-    case 'app-server':
-      return 'app-server';
-    default:
-      return 'app-server';
-  }
+export function resolveCodexTransport(_setting: CodexTransportSetting | undefined): 'app-server' {
+  return 'app-server';
+}
+
+/** The only production launch path, including callers with a legacy exec value. */
+export function createCodexTransport(
+  choice: CodexTransportKind,
+  options: AppServerTransportOptions
+) {
+  resolveCodexTransport(choice);
+  return createAppServerTransport(options);
 }

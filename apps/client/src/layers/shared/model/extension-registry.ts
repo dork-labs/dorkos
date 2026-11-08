@@ -288,7 +288,7 @@ export interface RightPanelContribution extends BaseContribution {
      * null beside anything else: a chat with one agent (`one-to-one`) or a
      * group DM (`group`), and whether Show sessions is on.
      */
-    directMessage?: { kind: 'one-to-one' | 'group'; showSessions: boolean } | null;
+    directMessage?: { kind: 'pending' | 'one-to-one' | 'group'; showSessions: boolean } | null;
   }) => boolean;
 }
 

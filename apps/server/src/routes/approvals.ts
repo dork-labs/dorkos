@@ -98,6 +98,8 @@
  *
  * @module routes/approvals
  */
+import { registerHookReviewRoutes } from './hook-review-routes.js';
+import { INCOMPLETE_APPROVAL_MESSAGE } from '../services/core/approvals/approval-completeness.js';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
@@ -155,6 +157,8 @@ import { WIFI_DENY_REASON_REFUSAL } from './session-answer-wifi.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
 export interface ApprovalsRouterOptions {
+  /** Data folder for rebuilding a person-requested hook review. */
+  dorkHome?: string;
   /**
    * Activity feed writer. Every answer is recorded with its posture, which is
    * the only mitigation available in the `local-trust` posture: DorkOS cannot
@@ -249,6 +253,11 @@ function decisionFailureResponse(failure: ApprovalDecisionFailure): {
   body: { error: string; code: string };
 } {
   switch (failure) {
+    case 'incomplete':
+      return {
+        status: 409,
+        body: { error: INCOMPLETE_APPROVAL_MESSAGE, code: 'APPROVAL_INCOMPLETE' },
+      };
     case 'unknown':
       return {
         status: 404,
@@ -460,6 +469,7 @@ export function createApprovalsRoutes(
   ): Promise<Response> => {
     const scope = approvals.answerScope(approvalId);
     if (!scope) return failed(c, 'unknown');
+    if (approvals.getPending(approvalId)?.cannotAllow) return failed(c, 'incomplete');
 
     /** What an Always allow wrote, so a refused yes can put it back. */
     let alwaysWrite: { agentId: string; changes: PermissionChange[] } | undefined;
@@ -668,8 +678,13 @@ export function createApprovalsRoutes(
     const failure = approvals.deny(id, parsed.data.reason);
     if (failure) return failed(c, failure);
     if (scope) auditAnswer(id, scope, 'deny', authority);
-    return c.json({ ok: true, approvalId: id, outcome: 'denied' });
+    return c.json({
+      ok: true,
+      approvalId: id,
+      outcome: approvals.declineKind(id) === 'incomplete' ? 'incomplete' : 'denied',
+    });
   });
 
+  registerHookReviewRoutes(router, approvals, personOrRefuse, options.dorkHome);
   return router;
 }
