@@ -80,6 +80,8 @@ function scaffoldMcpJson(target: string): ScaffoldOutcome {
   if (already) return already;
   let fd: number;
   try {
+    // O_NOFOLLOW is undefined on Windows and ORs to 0 there; O_EXCL still
+    // refuses any existing entry, links included, and the lstat above ran first.
     const { O_CREAT, O_EXCL, O_NOFOLLOW, O_WRONLY } = fs.constants;
     fd = fs.openSync(target, O_CREAT | O_EXCL | O_NOFOLLOW | O_WRONLY, 0o644);
   } catch (error) {
@@ -111,7 +113,9 @@ export function scaffoldAgentHome(home: string): HomeScaffoldResult {
     if (!agents || (parent !== agents && parent !== path.resolve(resolveAgentsHome())))
       return { scaffolded: false, reason: 'not-owned' };
     // The home's real path first: a linked home, or one whose real path leaves
-    // the agents folder, is never written into.
+    // the agents folder, is never written into. Accepted residual: a home swapped
+    // for a link between this check and the create could receive an empty
+    // `.agents/` or the fixed `.mcp.json`; nothing is overwritten or read.
     const real = path.join(agents, path.basename(resolved));
     if (fs.lstatSync(real).isSymbolicLink() || fs.realpathSync(real) !== real) {
       logger.warn('[agents] Left a linked agent home alone', { home: resolved });

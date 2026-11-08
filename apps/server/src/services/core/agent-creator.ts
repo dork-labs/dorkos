@@ -626,6 +626,15 @@ export async function createAgentWorkspace(
       logger.warn('[agents] Failed to seed Operating DorkOS skill pack: %s', String(err));
     }
 
+    // The two protected targets Codex needs before it edits here (DOR-3914),
+    // before any reaction below can start a turn. Create only, only in a home
+    // DorkOS owns, and it never throws; what it made comes off on a rollback.
+    const homeScaffold = scaffoldAgentHome(resolvedPath);
+    if (homeScaffold.scaffolded) {
+      if (homeScaffold.agents === 'created') ledger.noteDirTree(path.join(resolvedPath, '.agents'));
+      if (homeScaffold.mcpJson === 'created') ledger.noteFile(path.join(resolvedPath, '.mcp.json'));
+    }
+
     // A marketplace install is an explicit act by the person, like registering
     // a folder, so it lifts a denial on its own folder (DOR-2245).
     // Mesh stores a denial under the folder's real path, so compare real paths.
@@ -709,9 +718,6 @@ export async function createAgentWorkspace(
   // then keep `.claude/` from being pruned, stranding a half-built workspace.
   // Nothing past this point can fail, so nothing has to be undone.
   projectAgentWorkspace(resolvedPath);
-  // The two protected targets Codex needs before it edits here (DOR-3914).
-  // Create only, and only in a home DorkOS owns; it never throws.
-  scaffoldAgentHome(resolvedPath);
 
   return result;
 }

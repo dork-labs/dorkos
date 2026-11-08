@@ -36,6 +36,7 @@ vi.mock('../../../lib/logger.js', () => ({
 }));
 
 import { createAgentWorkspace } from '../agent-creator.js';
+import { codexProtectedConfig } from '../../runtimes/codex/policy/protected-profile.js';
 import { initBoundary } from '../../../lib/boundary.js';
 import { resolveAgentsDirectory, resolveAgentsHome } from '../../../lib/agents-home.js';
 
@@ -134,6 +135,43 @@ describe('createAgentWorkspace with the shipped default directory', () => {
     expect(await fs.readFile(path.join(result.path, '.mcp.json'), 'utf8')).toBe(
       '{"mcpServers":{}}'
     );
+  });
+
+  it('leaves Codex at Edit no missing .agents or .mcp.json in a fresh agent home (DOR-3914)', async () => {
+    const result = await createAgentWorkspace({ name: 'codex-edit' });
+    const home = result.path;
+    const missing: string[] = [];
+    codexProtectedConfig(
+      home,
+      {
+        roots: {
+          cwd: home,
+          data: dorkHome,
+          home: fakeHome,
+          accounts: [],
+          agentHomes: [],
+          agentFolders: [home],
+        },
+        writable: [home],
+      },
+      { permissionMode: 'acceptEdits' },
+      (targets) => missing.push(...targets)
+    );
+    const inHome = missing
+      .filter((target) => target.startsWith(home + path.sep))
+      .map((target) => path.relative(home, target))
+      .sort();
+    expect(inHome).not.toContain('.agents');
+    expect(inHome).not.toContain('.mcp.json');
+    // Still missing, so Codex at Edit still refuses here: these four are outside
+    // the scope Security approved for DOR-3914 and wait on a follow-up. When it
+    // lands, this list goes empty.
+    expect(inHome).toEqual([
+      '.claude/agents',
+      '.claude/commands',
+      '.claude/settings.json',
+      '.claude/settings.local.json',
+    ]);
   });
 
   it('writes no .mcp.json into a folder the person chose (DOR-3914)', async () => {
