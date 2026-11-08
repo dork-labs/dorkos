@@ -86,7 +86,7 @@ How that holds in today's code (`apps/server/src/services/extensions/isolation/`
 
 Why in-process can't work: an in-process server half shares the DorkOS server's memory with no boundary. It could import the broker or forge any agent, so "extension:flow" would mean nothing there.
 
-**Flow today runs in-process** (flow-owner 0.1.0 sets no `runtime`). Moving it to `runtime: "subprocess"` is the first step of Flow's side (§8.2, phase 6).
+**Flow today runs in-process** (flow-owner 0.1.0 sets no `runtime`). Moving it to `runtime: "subprocess"` is the first step of Flow's side (§8.2, phase 7).
 
 ## 3. Grant model
 
