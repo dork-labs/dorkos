@@ -166,6 +166,15 @@ export function hasPathCopy(root: string, dir: string, rg: string | null): boole
     .some((file) => !file.startsWith(`${dir}/`));
 }
 
+/** A finder that throws counts as no `rg`, so nothing is skipped. */
+function findRg(finder: () => string | null): string | null {
+  try {
+    return finder();
+  } catch {
+    return null;
+  }
+}
+
 function realPathOrSelf(dir: string): string {
   try {
     return fs.realpathSync.native(dir);
@@ -232,7 +241,7 @@ export function keepScansOutOfHiddenFolders(
           ? `${root}${dir.slice(real.length)}`
           : undefined;
       if (seen === undefined || !safeForKeys(seen)) continue;
-      if (hasPathCopy(root, seen, (rgPath ??= finder()))) {
+      if (hasPathCopy(root, seen, (rgPath ??= findRg(finder)))) {
         copied = true;
         break;
       }

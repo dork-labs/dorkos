@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -193,6 +193,27 @@ describe('keepScansOutOfHiddenFolders', () => {
     expect(hasPathCopy(home, backups, null)).toBe(true);
   });
 
+  it('skips nothing when the copy check itself fails', () => {
+    // rg that cannot start, and a finder that throws: both keep every mask.
+    const missing = path.join(root, 'no-such-rg');
+    expect(hasPathCopy(home, backups, missing)).toBe(true);
+    expect(keepScansOutOfHiddenFolders(entries(), [], 'linux', () => missing)).toEqual(entries());
+    const throws = () => {
+      throw new Error('finder failed');
+    };
+    expect(keepScansOutOfHiddenFolders(entries(), [], 'linux', throws)).toEqual(entries());
+  });
+
+  it('adds no key through a linked scan root whose name has glob characters', () => {
+    const linked = path.join(root, 'link{a,b}');
+    fs.symlinkSync(home, linked, 'dir');
+    const before = { ...entries(), [`${linked}/**/.claude.json*`]: 'deny' as const };
+    const result = keepScansOutOfHiddenFolders(before, [], 'linux');
+    expect(Object.keys(result).filter((key) => key.startsWith(`${linked}/![`))).toEqual([]);
+    // The real spelling is still skipped; the linked scan keeps its masks.
+    expect(skips(result, home, backups)).toBe(true);
+  });
+
   it('skips nothing when the hidden path is copied under a scan root', () => {
     const copy = path.join(home, 'restore', backups.slice(1));
     fs.mkdirSync(copy, { recursive: true });
@@ -271,4 +292,45 @@ describe('the rendered Linux profile', () => {
       }
     }
   );
+
+  // `:workspace` opens the temp folder for writes; one inside a hidden folder
+  // would bring that folder's contents back, so it is never skipped.
+  it('skips nothing for a hidden folder that holds the temp folder', () => {
+    expect(codexVendoredRg()).not.toBeNull();
+    const account = path.join(root, 'claude-work');
+    const tmp = path.join(account, 'backups', 'tmp');
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    try {
+      const policy = {
+        roots: {
+          cwd: path.join(root, 'project'),
+          data: path.join(root, 'data'),
+          home,
+          accounts: [account],
+          agentFolders: [path.join(root, 'project')],
+          agentHomes: [path.join(root, 'project')],
+        },
+        writable: [path.join(root, 'project')],
+      };
+      completeHostFixture(policy, [home, policy.roots.data, policy.roots.cwd, account]);
+      fs.mkdirSync(tmp);
+      vi.stubEnv('TMPDIR', tmp);
+      expect(os.tmpdir()).toBe(tmp);
+      const config = codexProtectedConfig(policy.roots.cwd, policy, {
+        permissionMode: 'acceptEdits',
+      });
+      const files = (config.permissions as Record<string, { filesystem: Record<string, string> }>)[
+        codexPermissionProfile({ permissionMode: 'acceptEdits' })
+      ]!.filesystem;
+      expect(files[path.join(account, 'backups')]).toBe('deny');
+      expect(
+        hiddenFolderExclusions(account, path.join(account, 'backups')).some((key) => key in files)
+      ).toBe(false);
+      expect(skips(files, home, backups)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      Object.defineProperty(process, 'platform', platform);
+    }
+  });
 });
