@@ -31,7 +31,7 @@ import {
   unguardableBrowserReason,
   withCloudOriginBlocked,
 } from '@dorkos/shared/agent-browser';
-import { cookieReachesApp, isAppHostOrigin } from '@dorkos/shared/app-origin';
+import { cookieDomainOf, cookieReachesApp, isAppHostOrigin } from '@dorkos/shared/app-origin';
 import {
   chromeHostResolverRules,
   cookieReachesCloud,
@@ -119,11 +119,15 @@ export function scrubAgentBrowserState(
   const record = state as { cookies?: unknown; origins?: unknown };
   const cookies = Array.isArray(record.cookies) ? record.cookies : [];
   const origins = Array.isArray(record.origins) ? record.origins : [];
-  const keptCookies = cookies.filter(
-    (cookie: { domain?: unknown }) =>
-      typeof cookie?.domain !== 'string' ||
-      (!cookieReachesCloud(cookie.domain, entries) && !cookieReachesApp(cookie.domain, appHosts))
-  );
+  // Judged by where the browser sends it: its domain, or the url it was set by.
+  // One with neither, or not an object, can't be judged, so it isn't kept.
+  const keptCookies = cookies.filter((cookie: unknown) => {
+    if (!cookie || typeof cookie !== 'object') return false;
+    const domain = cookieDomainOf(cookie);
+    return (
+      domain !== null && !cookieReachesCloud(domain, entries) && !cookieReachesApp(domain, appHosts)
+    );
+  });
   const keptOrigins = origins.filter(
     (origin: { origin?: unknown }) =>
       typeof origin?.origin !== 'string' ||

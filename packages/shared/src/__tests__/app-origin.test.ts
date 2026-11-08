@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   appHostKey,
+  cookieDomainOf,
   cookieReachesApp,
   isAppHostOrigin,
   localAppHosts,
@@ -62,7 +63,18 @@ describe('cookieReachesApp', () => {
     expect(cookieReachesApp(domain, hosts)).toBe(true);
   });
 
-  it.each(['github.com', '.github.com', 'other.lan', 'lan', '192.168.1.21', ''])(
+  it.each(['127.1', '2130706433', '0x7f.0.0.1', '0177.0.0.1', '[::ffff:127.0.0.1]', 'LocalHost.'])(
+    'drops %s, which a browser reads as this computer (DOR-3957)',
+    (domain) => {
+      expect(cookieReachesApp(domain, hosts)).toBe(true);
+    }
+  );
+
+  it.each(['', '.', 'not a host'])('drops a cookie whose domain is not a host (%s)', (domain) => {
+    expect(cookieReachesApp(domain, hosts)).toBe(true);
+  });
+
+  it.each(['github.com', '.github.com', 'other.lan', 'lan', '192.168.1.21'])(
     'keeps a cookie on %s',
     (domain) => {
       expect(cookieReachesApp(domain, hosts)).toBe(false);
@@ -81,7 +93,28 @@ describe('isAppHostOrigin', () => {
   });
 });
 
+describe('cookieDomainOf', () => {
+  it('reads the domain, else the url a cookie was set by, else nothing', () => {
+    expect(cookieDomainOf({ domain: '.a.test', url: 'http://localhost/' })).toBe('.a.test');
+    expect(cookieDomainOf({ url: 'http://127.0.0.1:4242/' })).toBe('127.0.0.1');
+    expect(cookieDomainOf({ url: 'http://[::1]:4242/' })).toBe('[::1]');
+    expect(cookieDomainOf({ url: 'not a url' })).toBeNull();
+    expect(cookieDomainOf({})).toBeNull();
+  });
+});
+
 describe('withoutAppOrigin', () => {
+  it('drops a url-only DorkOS cookie and a cookie with neither domain nor url', () => {
+    const result = withoutAppOrigin(
+      {
+        cookies: [{ url: 'http://localhost:4242/' }, {}, { domain: 'github.com' }],
+        origins: [],
+      },
+      hosts
+    );
+    expect(result.state.cookies).toEqual([{ domain: 'github.com' }]);
+  });
+
   it('removes DorkOS’s cookies and page storage, keeps the rest, and counts both', () => {
     const result = withoutAppOrigin(
       {

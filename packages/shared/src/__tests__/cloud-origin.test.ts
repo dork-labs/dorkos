@@ -99,10 +99,24 @@ describe('cookieReachesCloud', () => {
     expect(cookieReachesCloud(domain)).toBe(true);
   });
 
-  it.each(['github.com', '.github.com', 'notdorkos.ai', 'dorkos.ai.example.com', ''])(
+  it.each(['github.com', '.github.com', 'notdorkos.ai', 'dorkos.ai.example.com'])(
     'keeps a cookie for %s',
     (domain) => {
       expect(cookieReachesCloud(domain)).toBe(false);
+    }
+  );
+
+  it.each(['CLOUD.DORKOS.AI.', 'cloud.dorkos.ai..'])(
+    'reads %s the way a browser does, as Cloud',
+    (domain) => {
+      expect(cookieReachesCloud(domain)).toBe(true);
+    }
+  );
+
+  it.each(['', '.', 'not a host', 'a b.dorkos.ai'])(
+    'drops a cookie whose domain is not a host (%s), rather than guess (DOR-3957)',
+    (domain) => {
+      expect(cookieReachesCloud(domain)).toBe(true);
     }
   );
 });

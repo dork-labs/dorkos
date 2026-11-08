@@ -80,6 +80,48 @@ export function localAppHosts(
   return [...hosts];
 }
 
+/**
+ * A cookie host as the browser reads it, or `null` when it is not a host at
+ * all. Chromium accepts other spellings of an address (`127.1`, `2130706433`,
+ * `0x7f.0.0.1`, Unicode names), so a host is parsed the way a URL parses it,
+ * never compared as raw text. Lower case, no leading or trailing dots, IPv6 in
+ * brackets, Unicode in its punycode form.
+ *
+ * @param host - A cookie's `domain`, or a URL's host name.
+ */
+export function canonicalCookieHost(host: string): string | null {
+  const bare = host.replace(/^\.+/, '');
+  if (!bare) return null;
+  const literal = bare.includes(':') && !bare.startsWith('[') ? `[${bare}]` : bare;
+  let hostname: string;
+  try {
+    hostname = new URL(`http://${literal}`).hostname;
+  } catch {
+    return null;
+  }
+  let end = hostname.length;
+  while (end > 0 && hostname[end - 1] === '.') end -= 1;
+  return hostname.slice(0, end) || null;
+}
+
+/**
+ * The `domain` a saved cookie is sent to, as a storage-state file holds it: its
+ * own `domain`, or for a cookie set only by `url`, that URL's host (a host-only
+ * cookie). `null` when it has neither, or the URL won't parse, so a caller
+ * drops it rather than guessing.
+ *
+ * @param cookie - One cookie, read loosely.
+ */
+export function cookieDomainOf(cookie: { domain?: unknown; url?: unknown }): string | null {
+  if (typeof cookie.domain === 'string' && cookie.domain) return cookie.domain;
+  if (typeof cookie.url !== 'string') return null;
+  try {
+    return new URL(cookie.url).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
 function isUnder(host: string, parent: string): boolean {
   return host === parent || host.endsWith(`.${parent}`);
 }
@@ -87,16 +129,18 @@ function isUnder(host: string, parent: string): boolean {
 /**
  * Whether a browser would send a cookie with this `domain` to DorkOS: set for
  * one of its hosts, or for a parent domain of one (`.lan` reaches `mac.lan`).
+ * A `domain` that is not a host at all counts as DorkOS's, so it is dropped.
  *
  * @param domain - The cookie's `domain`, as a storage-state file holds it.
  * @param hosts - DorkOS's hosts, from {@link localAppHosts} plus the server's own.
  */
 export function cookieReachesApp(domain: string, hosts: readonly string[]): boolean {
   const isDomainCookie = domain.startsWith('.');
-  const cookieHost = appHostKey(domain.replace(/^\.+/, ''));
-  if (!cookieHost) return false;
+  const canonical = canonicalCookieHost(domain);
+  if (canonical === null) return true;
+  const cookieHost = appHostKey(canonical);
   return hosts.some((host) => {
-    const appHost = appHostKey(host);
+    const appHost = appHostKey(canonicalCookieHost(host) ?? host);
     return cookieHost === appHost || (isDomainCookie && isUnder(appHost, cookieHost));
   });
 }
@@ -121,7 +165,7 @@ export function isAppHostOrigin(origin: string, hosts: readonly string[]): boole
 
 /** The parts of a storage-state file this module reads. */
 interface StorageStateLike {
-  cookies: Array<{ domain: string }>;
+  cookies: Array<{ domain?: string; url?: string }>;
   origins: Array<{ origin: string }>;
 }
 
@@ -136,7 +180,11 @@ export function withoutAppOrigin<S extends StorageStateLike>(
   state: S,
   hosts: readonly string[]
 ): { state: S; removedCookies: number; removedOrigins: number } {
-  const cookies = state.cookies.filter((cookie) => !cookieReachesApp(cookie.domain, hosts));
+  // A cookie with no domain and no url can't be judged, so it goes too.
+  const cookies = state.cookies.filter((cookie) => {
+    const domain = cookieDomainOf(cookie);
+    return domain !== null && !cookieReachesApp(domain, hosts);
+  });
   const origins = state.origins.filter((origin) => !isAppHostOrigin(origin.origin, hosts));
   return {
     state: { ...state, cookies, origins },
