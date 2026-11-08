@@ -44,11 +44,8 @@ Security passed the design (`02-specification.md`, PR #3527) **with conditions**
 - **S2.** The broker refuses an extension principal unless that child's `hello` said sqlite can't load. Then the order of phases 2 and 4 can't slip at merge time.
 - **S3.** Linear text reaches agents through Flow's tools, `ctx.agent`, posts and files with no outsider mark, and lets an agent with no Linear grant read Linear. The card says so, and it gets a ticket.
 - **S4.** "It can't change anything" relies on the provider's `read` label. v1 either keeps to slugs we've audited or softens the copy.
-- **S5.** Extension cards are decided only on the owner route, with a test.
-  - The decision goes through `resolveConnectorOperator` (`routes/connector-owner-boundary.ts`), like every other account decision: no machine signal, no `Authorization` header, a trusted origin, and the owner's own sign-in when login is on. No agent, program or extension principal can decide one.
-  - **The extension's own page is not the owner.** It runs on DorkOS's own origin with the person's cookie, so a request from it would pass the checks above. The owner route refuses a decision on an extension's card when the request comes from that extension's page, its frame, its `/api/ext` routes or its server half. **Test:** the extension's own page tries to approve its own card and is refused, and the grant never appears.
-  - **The card names the author:** who made the extension, and the source its trusted copy came from, so the person sees whose code they are trusting.
-  - _Reconstructed by dorkos-code from Security's summary (the full wording is in Security's review notes). Security confirms or corrects it._
+- **S5.** `requester_kind = 'extension'` reviews are decided only through `resolveConnectorOperator`, with a test that an agent header or the extension's own page can't approve its card. Show the author on the card when an agent made the extension.
+  - Because the extension's page runs with the person's cookie, the decide route must refuse a request coming from that extension's own page or bundle on its own; a person check alone is not enough.
 - **S6.** Audit rows carry the connection id, the operation revision and a hash of the arguments.
 - **S7.** Contract tests refuse `extension` with `every_agent`, and `extension` with a write. **Only the schema half landed in phase 1** (`packages/cloud-api/src/__tests__/contract.test.ts`, "extension grants"). Nothing on the Cloud side uses `ConnectionGrantCoverageSchema` yet, so **the Cloud-side refusal test is still owed in phase 6.**
 
