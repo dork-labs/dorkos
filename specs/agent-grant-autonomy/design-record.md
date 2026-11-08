@@ -241,6 +241,8 @@ Managed connections: an exclusion is a local deny, so the local check refuses im
 | `connectors.undo_access_change`  | `{ changeId }`                                                                                                                                                       | act; area `permissions`                                                         | checked as 4.3                                             |
 | `connectors.list_access_changes` | `{ connectionId?, agentId?, limit? }`                                                                                                                                | observe                                                                         | the ledger, so an agent can find a `changeId`              |
 
+**Required reason (designer, 2026-11-08).** `narrow_access` on _another_ agent, in any form including `leaveOutOfShare`, takes a required `reason`: one line, at most 15 words, in the agent's own words. It is stored on the ledger row and shown as the quieter second line of the Needs-you item and the Activity row. A missing, empty, multi-line or over-long reason refuses with `GRANT_REASON_REQUIRED` before any other check writes anything. On the agent's own grants the reason is optional.
+
 `list_granted_connections` already reflects narrowings and exclusions, since it reads through the same helper.
 
 Every result carries `changeId` and a plain `note` saying what changed and that a person can undo it. Codex and OpenCode reach these over external `/mcp` with no session (`registry.ts:330`): own narrowing works, everything that needs the turn's marks refuses with `GRANT_MARKS_UNREADABLE`.
@@ -269,6 +271,7 @@ Codes are stable; the text is what the agent sees and can quote.
 | `GRANT_SHARE_PERSON_ONLY`                                             | Only a person can change an every-agent share. You can leave one agent out of it.                     |
 | `EXCLUSION_PERSON_ONLY`                                               | Only a person can let an agent back into a share.                                                     |
 | `GRANT_NARROW_RATE`                                                   | You've lowered other agents' access 3 times this hour. Ask a person for more.                         |
+| `GRANT_REASON_REQUIRED`                                               | Say why in one line, 15 words at most. The person sees it.                                            |
 | `GRANT_DISCONNECT_PERSON_ONLY`                                        | Only a person can disconnect an account. You can narrow access instead.                               |
 | `APPROVE_SELF`                                                        | You can't approve your own request. A person or another agent has to.                                 |
 | `APPROVE_NOT_READ`                                                    | Agents can approve read access only. A person approves write access.                                  |
@@ -285,20 +288,20 @@ Each refusal is also an audit row (§8), so a refused attempt is as visible as a
 
 - **Audit:** every ledger write and every refusal calls `recordAudit` with the actor shape, the target, the connection, the code, and the session. This replaces the bare route-only row the fallback writes today.
 - **Activity** (category `permissions`, next to `connectors.every_agent_changed`):
-  - `connectors.access_narrowed`: "DorkOS PM took PostHog access away from flow-snapshot." Undo.
+  - `connectors.access_narrowed`: "DorkOS PM took PostHog access away from flow-snapshot." with the reason as a quieter second line (_"It wasn't using it."_). Undo.
   - `connectors.access_approved`: "DorkOS PM gave flow-snapshot Read on Linear." Undo.
   - `connectors.agent_left_out`: "You left flow-snapshot out of the PostHog share." Undo.
   - `connectors.access_change_undone`: "Dorian undid DorkOS PM's change to flow-snapshot's Linear access."
   - Own narrowing: "flow-snapshot gave up its PostHog access." Undo (a person's).
-- **Needs-you (G2):** every narrowing of _another_ agent, and every exclusion an agent sets on another agent, raises one Needs-you item: "DorkOS PM took PostHog access away from flow-snapshot." with **Undo** and **Keep it**. Keep it clears the item; Undo is the person route. An agent's own narrowing raises none.
-- **Undo is one tap** on the Activity row, the Needs-you item and the Connections page row. It calls the person route; no confirm dialog, because the undo itself is undoable.
+- **Needs-you (G2):** every narrowing of _another_ agent, and every exclusion an agent sets on another agent, raises one Needs-you item: "DorkOS PM took PostHog access away from flow-snapshot." with **Undo** and **Keep the change**, and under it, in a quieter second line, the agent's own reason in its words (_"It wasn't using it."_). Keep the change clears the item; Undo is the person route. An agent's own narrowing raises none.
+- **Undo is one tap** on the Activity row, the Needs-you item and the Connections page row. It calls the person route; no confirm dialog, because the undo itself is undoable. Its result shows in place on the row ("Access given back"), never as a toast.
 
 ## 9. What the person sees
 
 - **Request card** (`AgentRequestCard.tsx`): an agent-approved request shows "Approved by DorkOS PM · Read only" with Undo. A read-write request an agent can't approve stays on the card as today, with the line "Write access needs you."
 - **Connections page, a shared connection:** "Every agent, except flow-snapshot." Each left-out agent is a chip with "Let back in". "Leave an agent out" opens the agent picker.
 - **Connections page, an agent's row:** a narrowed level shows "Lowered by DorkOS PM" until a person changes it.
-- **Needs you:** a narrowing of another agent shows as an item with Undo and Keep it (§8, G2). An agent's own narrowing doesn't. A read request an agent approved leaves Needs you, and shows in Activity with Undo.
+- **Needs you:** a narrowing of another agent shows as an item with Undo and Keep the change, plus the agent's reason (§8, G2). An agent's own narrowing doesn't. A read request an agent approved leaves Needs you, and shows in Activity with Undo.
 
 All copy fits the 15-word cap and the `writing-app-copy` rules; the exact strings land with the client PR.
 
@@ -309,6 +312,7 @@ One test per refusal in §7, at the capability handler, with a real DB (`package
 - **Narrowing:** own in a marked turn allowed; own from an agent-started turn allowed; another in a marked turn refused; another from a `chat_send` turn, a spin-off report, an `agent-dm`, an agent's room post and an agent-made schedule refused; another with no session refused; widening dressed as narrowing refused; a write to an every-agent row refused with `GRANT_SHARE_PERSON_ONLY`; `leaveOutOfShare` on itself allowed from a marked and from an agent-started turn; on another allowed in a clean turn and refused in a marked or agent-started turn; no agent path lifts an exclusion (narrow, undo, approve → `EXCLUSION_PERSON_ONLY` / `APPROVE_EXCLUDED`); no path removes a connection.
 - **Rate limit (G1):** the 4th narrowing of another agent in an hour refused with `GRANT_NARROW_RATE` and a ledger row; own narrowings don't count; the window rolls after 60 minutes; a count that fails refuses.
 - **Needs-you (G2):** a narrowing of another agent, and an agent-set exclusion on another, raise exactly one item with Undo; an own narrowing raises none; Undo on the item restores `before`.
+- **Reason:** `narrow_access` on another agent with no reason, an empty one, a multi-line one and a 16-word one each refuse with `GRANT_REASON_REQUIRED` and change nothing; a 15-word one works; the reason appears on the ledger row, the Needs-you item and the Activity row; own narrowing works without one.
 - **Area gate:** `narrow_access` on another agent, `approve_request` and `undo_access_change` each ask a person when the caller's `permissions` area isn't Allowed, and proceed when it is.
 - **Approval:** self refused; read-write refused; marked and agent-started refused; approver without the connection refused; approver at read asked for revisions it lacks refused; every-agent refused; excluded target refused; an approver that is itself excluded gets an empty `held` and `APPROVE_NOT_HELD` (Q3); a person's approval unaffected by any of these.
 - **Undo:** an agent undoing its own narrowing refused; an agent undoing another's narrowing follows 4.2; undo of an approval follows 4.1; stale refused; a person's undo works.
@@ -328,13 +332,14 @@ One test per refusal in §7, at the capability handler, with a real DB (`package
 9. The rate check removed (G1).
 10. The Needs-you raise removed from narrowing another agent (G2).
 11. The `permissions`-area gate skipped for `approve_request` and `undo_access_change`.
+12. The reason check dropped from `narrow_access` on another agent.
 
 ## 11. Phases
 
 Each phase is its own PR, opened on `hold` for Security, armed only after @security-auditor's labels.
 
 1. **DOR-3961.** One `grantScopeFor` helper for both callers, the exclusions table, the deny on every path, person routes and the Connections page UI, X-tests and mutants 6-8. This alone lets Dorian keep `flow-snapshot` to Linear without turning PostHog's share off.
-2. **Narrowing + ledger.** `connection_grant_changes`, audit and Activity, `narrow_access`, `list_access_changes`, `leaveOutOfShare` (own from any turn, another under 4.1), the G1 rate limit, the G2 Needs-you item, person Undo, mutants 1-3, 9-10. Carries DOR-3959's grant half (an agent gives up its own grants, from any turn).
+2. **Narrowing + ledger.** `connection_grant_changes`, audit and Activity, `narrow_access`, `list_access_changes`, `leaveOutOfShare` (own from any turn, another under 4.1), the G1 rate limit, the G2 Needs-you item, the required reason, person Undo, mutants 1-3, 9-10, 12. Carries DOR-3959's grant half (an agent gives up its own grants, from any turn).
 3. **Read approval by agents.** `approve_request`, `undo_access_change`, the card's "Approved by" state, the area-gate test, mutants 4-5, 11.
 4. **DOR-3959's seat half.** Own-seat restart under its three terms. Separate code (room seats, not grants); listed here so the ticket closes with this lane.
 5. **Not in this lane:** write approval by agents. It waits on DOR-3969 (tool and connector reads mark the turn) and on Dorian's decision.
@@ -343,13 +348,13 @@ Each phase is its own PR, opened on `hold` for Security, armed only after @secur
 
 This is Must 3 of 0.135.0. No code starts before Security's ruling on this design. Phase 1 (DOR-3961) goes first, as its own PR. Phases 1-3 ship in it; phase 4 (seat restart) is a Should and rides along only if green. Times are CT. Every PR opens on `hold`, and stacked ones open as drafts until the one below merges.
 
-| PR                                                                               | Contents                                                                                                                                                                                       | Open by   | Security label by           |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | --------------------------- |
-| **A. Exclusions (server)**                                                       | `grantScopeFor` for both callers, `connection_grant_exclusions` + migration, the deny on every X1 path, person routes, X-tests, mutants 6-8                                                    | Sun 20:00 | Mon 10:00                   |
-| **B. Ledger + narrowing (server)**, on A                                         | `connection_grant_changes`, `recordAudit` + Activity events, `narrow_access`, `list_access_changes`, `leaveOutOfShare`, G1 rate limit, G2 Needs-you item, person Undo route, mutants 1-3, 9-10 | Mon 09:00 | Mon 13:00                   |
-| **C. Read approval (server)**, on B                                              | `approve_request`, `undo_access_change`, the six §4.4 rows as tests, area-gate test, mutants 4-5, 11, the wording grep test, agent-facing tool text                                            | Mon 11:00 | Mon 15:00                   |
-| **D. Person UI (client)**, on A's routes, B's and C's for Undo and "Approved by" | exclusion chips and picker, Undo on Activity and Connections rows, the card's "Approved by" state, light, dark and 390px shots for @designer                                                   | Mon 12:00 | Mon 15:00 (designer OK too) |
-| **E. Changelog fragment** (in C)                                                 | plain words, the wording rule above                                                                                                                                                            | with C    | with C                      |
+| PR                                                                               | Contents                                                                                                                                                                                                            | Open by   | Security label by           |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | --------------------------- |
+| **A. Exclusions (server)**                                                       | `grantScopeFor` for both callers, `connection_grant_exclusions` + migration, the deny on every X1 path, person routes, X-tests, mutants 6-8                                                                         | Sun 20:00 | Mon 10:00                   |
+| **B. Ledger + narrowing (server)**, on A                                         | `connection_grant_changes`, `recordAudit` + Activity events, `narrow_access`, `list_access_changes`, `leaveOutOfShare`, G1 rate limit, G2 Needs-you item, required reason, person Undo route, mutants 1-3, 9-10, 12 | Mon 09:00 | Mon 13:00                   |
+| **C. Read approval (server)**, on B                                              | `approve_request`, `undo_access_change`, the six §4.4 rows as tests, area-gate test, mutants 4-5, 11, the wording grep test, agent-facing tool text                                                                 | Mon 11:00 | Mon 15:00                   |
+| **D. Person UI (client)**, on A's routes, B's and C's for Undo and "Approved by" | exclusion chips and picker, Undo on Activity and Connections rows, the card's "Approved by" state, Undo result shown in place ("Access given back", no toast), light, dark and 390px shots to @designer on the PR   | Mon 12:00 | Mon 15:00 (designer OK too) |
+| **E. Changelog fragment** (in C)                                                 | plain words, the wording rule above                                                                                                                                                                                 | with C    | with C                      |
 
 - **Merge order:** A → B → C, then D. All four green and labelled by Mon 16:00, merged by 17:30, so the cut at 18:00 has them.
 - **If C slips:** A and B still ship (exclusion plus narrowing with Undo). The note then says only that, and approval rides the next release. A alone already unblocks `flow-snapshot`.
