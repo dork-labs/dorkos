@@ -7,6 +7,8 @@ import {
   validateBoundaryOrDorkHome,
   BoundaryError,
 } from '../../../../lib/boundary.js';
+import { logger } from '../../../../lib/logger.js';
+import { createScanBrowserWarner } from '../../../browser/agent-browser-lint.js';
 import { notifyAgentCreated } from '../../../core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../../../mesh/normalize-agent-identity.js';
 import { currentCreatorAccountId } from '../../../heartbeats/reports-to.js';
@@ -68,13 +70,17 @@ export function createMeshDiscoverHandler(deps: McpToolDeps) {
     try {
       const candidates = [];
       const autoImported = [];
+      // A folder the scan finds may hold a browser server outside DorkOS's guard (DOR-3957).
+      const warnBrowsers = createScanBrowserWarner(logger);
       for await (const event of deps.meshCore!.discover(validatedRoots, {
         maxDepth: args.maxDepth,
       })) {
         if (event.type === 'candidate') {
           candidates.push(event.data);
-        } else if (event.type === 'auto-import' && args.includeRegistered) {
-          autoImported.push(event.data);
+          warnBrowsers(event.data.path);
+        } else if (event.type === 'auto-import') {
+          warnBrowsers(event.data.path);
+          if (args.includeRegistered) autoImported.push(event.data);
         }
       }
       return jsonContent({

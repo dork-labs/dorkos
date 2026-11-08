@@ -12,12 +12,19 @@
  * sign-in page cannot plant page storage for another origin.
  *
  * It needs the system Chrome and `npx` (it runs the pinned `@playwright/mcp`,
- * which is fetched on first use), so it never runs in CI or in `pnpm test`: it is
- * armed only by `DORKOS_BROWSER_SMOKE=1`, which no task passes through. Run it
- * by hand on a machine with Chrome:
+ * which is fetched on first use), so it never runs in `pnpm test`: it is armed
+ * only by `DORKOS_BROWSER_SMOKE=1`, which no task passes through.
+ * CI only: it also needs `CI=true`, so it never launches Chrome on a
+ * developer's computer, where a system Chrome can raise a Keychain prompt in
+ * the person's session (DOR-3957). No CI job sets the flag yet, so today it
+ * runs nowhere. A CI runner arms it with:
  *
- *   DORKOS_BROWSER_SMOKE=1 pnpm vitest run \
+ *   CI=true DORKOS_BROWSER_SMOKE=1 pnpm vitest run \
  *     packages/cli/src/lib/agent-browser/__tests__/agent-browser-smoke.test.ts
+ *
+ * The local site is reached as `site.test`, which a Chrome host rule sends to
+ * it, never as `127.0.0.1`: a saved session holds no cookie for a name DorkOS
+ * itself answers to (DOR-3957), and every loopback name is one.
  *
  * Every file it touches lives in a temp directory; it never opens the real
  * agent browser profile.
@@ -42,7 +49,7 @@ import { collectStorageState, writeStorageState } from '../storage-state.js';
  * test-only arming flag, so it is deliberately not in the CLI's env schema.
  */
 // eslint-disable-next-line no-restricted-syntax -- test-only arming flag, see above
-const ARMED = process.env.DORKOS_BROWSER_SMOKE === '1';
+const ARMED = process.env.DORKOS_BROWSER_SMOKE === '1' && process.env.CI === 'true';
 
 /**
  * The page an operator "signs in" on: it sets a cookie and page storage, then
@@ -70,6 +77,10 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
   let root: string;
   let server: http.Server;
   let origin: string;
+  /** Chrome flags that send `site.test` to the local server, over plain http. */
+  let siteArgs: string[];
+  /** A Playwright MCP config passing {@link siteArgs} to the agents' Chrome. */
+  let siteConfig: string;
 
   beforeAll(async () => {
     root = fs.mkdtempSync(path.join(tmpdir(), 'dorkos-agent-browser-smoke-'));
@@ -83,7 +94,17 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
       res.end(whoamiPage(req.headers.cookie ?? ''));
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const port = (server.address() as AddressInfo).port;
+    origin = 'http://site.test';
+    siteArgs = [
+      `--host-resolver-rules=MAP site.test 127.0.0.1:${port}`,
+      '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable',
+    ];
+    siteConfig = path.join(root, 'site-config.json');
+    fs.writeFileSync(
+      siteConfig,
+      JSON.stringify({ browser: { launchOptions: { args: siteArgs } } })
+    );
   });
 
   afterAll(async () => {
@@ -113,6 +134,7 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
       '--no-first-run',
       '--no-default-browser-check',
       '--headless',
+      ...siteArgs,
       `${origin}/sign-in`,
     ]);
     try {
@@ -148,7 +170,7 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
         await client.connect(
           new StdioClientTransport({
             command: connection.command,
-            args: connection.args,
+            args: [...connection.args, '--config', siteConfig],
             stderr: 'ignore',
           })
         );
@@ -179,7 +201,7 @@ describe.skipIf(!ARMED)('agent browser sessions (real Chrome smoke)', () => {
     await client.connect(
       new StdioClientTransport({
         command: connection.command,
-        args: connection.args,
+        args: [...connection.args, '--config', siteConfig],
         stderr: 'ignore',
       })
     );

@@ -44,6 +44,7 @@ import {
 import { removeDorkDirectory, probeManifest } from '@dorkos/shared/manifest';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import { createScanBrowserWarner } from '../services/browser/agent-browser-lint.js';
 import { logOrphanedInstalls } from '../services/mesh/orphaned-installs.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
@@ -121,9 +122,12 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
       const MAX_CANDIDATES = 1000;
       const candidates = [];
       const options = result.data.maxDepth ? { maxDepth: result.data.maxDepth } : undefined;
+      // A folder the scan finds may hold a browser server outside DorkOS's guard (DOR-3957).
+      const warnBrowsers = createScanBrowserWarner(logger);
       for await (const event of meshCore.discover(validatedRoots, options)) {
         if (event.type === 'candidate') {
           candidates.push(event.data);
+          warnBrowsers(event.data.path);
         }
         if (candidates.length >= MAX_CANDIDATES) break;
       }

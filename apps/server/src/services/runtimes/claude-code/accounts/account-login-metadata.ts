@@ -20,15 +20,22 @@ const MetadataSchema = z.object({
   }),
 });
 
+/**
+ * The `.claude.json` the Claude CLI reads for one account folder. Mirrors the
+ * env the login uses: an explicitly pinned folder keeps its own `.claude.json`;
+ * the CLI's unset default uses the sibling `~/.claude.json`.
+ *
+ * @param root - A Claude account folder.
+ */
+export function claudeUserConfigFile(root: string): string {
+  const pinned = claudeConfigDirEnv(root).CLAUDE_CONFIG_DIR;
+  return pinned ? path.join(pinned, '.claude.json') : path.join(path.dirname(root), '.claude.json');
+}
+
 /** Only non-secret CLI metadata, never a credential store or a vendor process. */
 export function readAccountLoginMetadata(root: string): LoginIdentity | null {
   if (isNeverUseClaudeFolder(root)) return null;
-  // Mirror the env the login uses: an explicitly pinned folder keeps its
-  // own .claude.json; the CLI's unset default uses the sibling ~/.claude.json.
-  const pinned = claudeConfigDirEnv(root).CLAUDE_CONFIG_DIR;
-  const metadata = pinned
-    ? path.join(pinned, '.claude.json')
-    : path.join(path.dirname(root), '.claude.json');
+  const metadata = claudeUserConfigFile(root);
   try {
     // Refuse symlinks instead of following one to a credential file or a
     // different account. No fallback to another folder when this is missing.
