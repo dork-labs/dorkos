@@ -1,5 +1,6 @@
 /** Codex named filesystem policies. Legacy sandbox flags must never accompany these. */
 import fs from 'node:fs';
+import os from 'node:os';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import path from 'node:path';
 import { realPathOf } from '@dorkos/shared/directory-grants';
@@ -14,6 +15,7 @@ import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js'
 import { MODE_TO_SANDBOX } from '../turn-input.js';
 import { readMountTargets, emptyOwnedMountTarget } from './mount-target-ledger.js';
 import { collapseProtectedPaths } from './collapse-protected-paths.js';
+import { keepScansOutOfHiddenFolders } from './hidden-folder-scans.js';
 
 /** Stable reserved names; the profile selection is explicit on every thread load and turn. */
 export function codexPermissionProfile(settings: Pick<SessionSettings, 'permissionMode'>): string {
@@ -159,7 +161,14 @@ function protectedEntries(
     canProtectBlocking
   );
   onMissingTargets?.([...missing]);
-  return collapsed;
+  // `:workspace` also opens /tmp and $TMPDIR (what os.tmpdir() reads) for
+  // writes, so they count as opened too.
+  const tmp = [...new Set(['/tmp', os.tmpdir()])];
+  return keepScansOutOfHiddenFolders(collapsed, [
+    ...activeFolders,
+    ...writable.flatMap(spellings),
+    ...tmp.flatMap(spellings),
+  ]);
 }
 
 /**

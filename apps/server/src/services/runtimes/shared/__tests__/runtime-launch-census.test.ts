@@ -20,6 +20,9 @@ const expected: Record<string, number> = {
   'codex/app-server/protocol/snapshot.ts': 2,
   'codex/provision.ts': 1,
   'codex/policy/mount-target-guard.ts': 1,
+  // hasPathCopy only: Codex's vendored rg via execFileSync, no shell, fixed
+  // `--files --hidden --no-ignore --glob` flags; DorkOS sets the root and glob.
+  'codex/policy/hidden-folder-scans.ts': 1,
   'connect/delegated-login.ts': 2,
   'opencode/server-manager.ts': 1,
   'opencode/providers/provision.ts': 1,
@@ -133,6 +136,14 @@ describe('runtime launch adoption census', () => {
     const projection = "env: runtimeEnvironment('codex', 'process-inspection'),";
     expect(source).toContain(projection);
     expect(census(source.replace(projection, ''), name).unprojected).toEqual(['spawn']);
+  });
+
+  it('rejects a hidden-folder copy check that drops its inspection projection', () => {
+    const name = 'codex/policy/hidden-folder-scans.ts';
+    const source = readFileSync(path.join(root, name), 'utf8');
+    const projection = "env: runtimeEnvironment('codex', 'process-inspection'),";
+    expect(source).toContain(projection);
+    expect(census(source.replace(projection, ''), name).unprojected).toEqual(['execFileSync']);
   });
 
   it('rejects a Codex model probe that drops projection or restores ambient inheritance', () => {

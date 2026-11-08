@@ -29,7 +29,7 @@
 import http from 'node:http';
 import { createHash } from 'node:crypto';
 import { assertProtectionStarts } from './fixtures/protection-starts.js';
-import { completeHostFixture } from './fixtures/complete-protected-home.js';
+import { completeHostFixture, FIXTURE_BACKUP_NAME } from './fixtures/complete-protected-home.js';
 import { codexProtectedConfig } from '../../policy/protected-profile.js';
 import { reconcileMountTargets } from '../../policy/reconcile-mount-targets.js';
 import fs from 'node:fs';
@@ -70,6 +70,8 @@ interface Seen {
 
 let root: string;
 let codexHome: string;
+/** The Claude account folder: never the Codex home, as in production. */
+let claudeAccount: string;
 let project: string;
 let server: http.Server;
 let base: string;
@@ -84,6 +86,20 @@ const seen: Seen = { responses: 0, mcpAuthorizations: [], resolvedDuringTurn: []
 const pools: CodexAppServerPool[] = [];
 const spawned: Array<{ args: readonly string[]; env: Record<string, string> }> = [];
 const protectedStarts = { default: 0, acceptEdits: 0, bypassPermissions: 0 };
+/**
+ * Rows that must start a turn at Full. Codex 0.163 on Linux refuses Full while
+ * a Claude Code backup sits in a hidden folder (DOR-3965), so these opt out
+ * of the planted backups; the pinned refusal rows below cover that home.
+ */
+const STARTS_AT_FULL = [
+  'asks again after a person lowers Full to Ask and the thread resumes cold',
+  'raises a card for a command that needs approval, and runs it once approved',
+  'wakes the chat exactly once when a command finishes after its turn completed',
+  'never wakes for a command that never ends, and Stop terminates it without a model turn',
+  'stops a never-ending command once at the ceiling, and still wakes no model turn',
+  // The refusal rows plant their one backup themselves.
+  'refuses Full while a Claude Code backup sits in',
+];
 
 const keys = new ConnectorThreadKeyRegistry();
 const db = createDb(':memory:');
@@ -357,7 +373,7 @@ function request(
           cwd: project,
           data: path.join(root, 'data'),
           home: path.join(root, 'home'),
-          accounts: [codexHome],
+          accounts: [claudeAccount],
           agentFolders: [project],
           agentHomes: [],
         },
@@ -446,6 +462,38 @@ async function nativeRefusal(
   }
 }
 
+/**
+ * Run one turn and keep everything it printed: its events, this process's
+ * stdout and stderr (the DorkOS logs), and every Codex child's output.
+ */
+async function capturedTurn(turn: CodexTurnRequest) {
+  const printed: string[] = [];
+  const keep = (chunk: unknown) => printed.push(String(chunk));
+  const spies = [
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => (keep(chunk), true)),
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => (keep(chunk), true)),
+    ...(['log', 'info', 'warn', 'error', 'debug'] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        keep(args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' '));
+      })
+    ),
+  ];
+  const bound = vi.fn();
+  const events: StreamEvent[] = [];
+  const transport = makeTransport(undefined, 'app-server', (child) => {
+    child.stdout?.on('data', keep);
+    child.stderr?.on('data', keep);
+  });
+  try {
+    for await (const event of transport.runTurn({ ...turn, onThreadBound: bound }))
+      events.push(event);
+  } finally {
+    await transport.shutdown();
+    for (const spy of spies) spy.mockRestore();
+  }
+  return { events, bound, printed: printed.join('') };
+}
+
 function checkHostParents(homes: string[]) {
   expect(
     probeParentKinds(homes).filter(({ kind }) => kind !== 'absent' && kind !== 'directory')
@@ -473,7 +521,13 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       const turn = request('own-home-writable-link', undefined);
       const policy = turn.tools.filePolicy!;
       policy.roots.agentHomes = [project];
-      completeHostFixture(policy, [policy.roots.home, policy.roots.data, project, codexHome]);
+      completeHostFixture(policy, [
+        policy.roots.home,
+        policy.roots.data,
+        project,
+        codexHome,
+        claudeAccount,
+      ]);
       const target = path.join(root, 'empty-skill-target');
       fs.mkdirSync(target);
       // The leaf inside .claude is writable; the existing linked-folder row
@@ -599,6 +653,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         policy.roots.data,
         project,
         codexHome,
+        claudeAccount,
       ]);
       const snapshot = () =>
         [...files].sort().map((file) => [file, fs.readFileSync(file, 'base64')]);
@@ -763,8 +818,13 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         policy.roots.data,
         ...(freshProject ? [] : [project]),
         codexHome,
+        claudeAccount,
       ];
-      const protectedFiles = completeHostFixture(policy, allBases);
+      // Full cannot start beside a Claude Code backup on Linux (DOR-3965);
+      // the pinned refusal rows cover that home.
+      const protectedFiles = completeHostFixture(policy, allBases, {
+        withoutClaudeBackups: mode === 'bypassPermissions',
+      });
       const secret = path.join(policy.roots.home, '.ssh', 'authorized_keys');
       const grant = freshProject
         ? path.join(policy.roots.home, '.claude.json')
@@ -832,6 +892,241 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }
   );
 
+  // DOR-3949: the fixture plants a Claude Code sign-in backup in the person's
+  // `.claude/backups` and in the account folder's `backups`, both hidden whole.
+  it.skipIf(process.platform !== 'linux')(
+    'starts at Ask with Claude Code sign-in backups on disk',
+    async () => {
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({
+        ...request('backup-ask', undefined, {
+          settings: { permissionMode: 'default', model: 'fake-model' },
+        }),
+        onThreadBound: bound,
+      }))
+        events.push(event);
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(bound).toHaveBeenCalledTimes(1);
+      protectedStarts.default++;
+    }
+  );
+
+  // Codex reads AGENTS.md through a helper that runs from `/`, so the skip
+  // holds even when the chat's folder sits above the hidden backups folder.
+  it.skipIf(process.platform !== 'linux')(
+    'starts at Ask in the person home with Claude Code sign-in backups on disk',
+    async () => {
+      const home = path.join(root, 'home');
+      const turn = request('backup-ask-home', undefined, {
+        cwd: home,
+        settings: { permissionMode: 'default', model: 'fake-model' },
+      });
+      const policy = turn.tools.filePolicy!;
+      policy.roots.cwd = home;
+      policy.roots.agentFolders = [home];
+      policy.writable = [];
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({ ...turn, onThreadBound: bound }))
+        events.push(event);
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(bound).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  // Full is the pinned refusal below (DOR-3965), so this starts at Edit only.
+  it.skipIf(process.platform !== 'linux').each(['acceptEdits'] as const)(
+    'hides Claude Code sign-in backups and every other sign-in copy at %s',
+    async (mode) => {
+      const home = path.join(root, 'home');
+      const homeBackups = path.join(home, '.claude', 'backups');
+      const accountBackups = path.join(claudeAccount, 'backups');
+      // Not a protected folder: its backup is masked by the glob scan alone,
+      // so an unanchored skip (`**/.claude/backups`) would leave it readable.
+      const projectBackups = path.join(home, 'projects', 'p', '.claude', 'backups');
+      fs.mkdirSync(projectBackups, { recursive: true });
+      const canaries = {
+        [path.join(homeBackups, FIXTURE_BACKUP_NAME)]: 'CANARY-home-backup',
+        [path.join(accountBackups, FIXTURE_BACKUP_NAME)]: 'CANARY-account-backup',
+        [path.join(projectBackups, '.claude.json.backup.2')]: 'CANARY-project-backup',
+        [path.join(home, '.claude.json')]: 'CANARY-claude-json',
+      };
+      for (const [file, canary] of Object.entries(canaries)) fs.writeFileSync(file, canary);
+      const quote = (value: string) => JSON.stringify(value);
+      const list = (label: string, dir: string) =>
+        `printf ${label}[; ls -A ${quote(dir)} 2>/dev/null; printf ]`;
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: [
+                'printf PUBLIC-backup-start',
+                ...Object.keys(canaries).map((file) => `cat ${quote(file)} 2>/dev/null`),
+                list('LIST-HOME', homeBackups),
+                list('LIST-ACCOUNT', accountBackups),
+                'printf PUBLIC-backup-done',
+              ].join('; '),
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('backups checked'));
+        }
+      );
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({
+        ...request('backup-scope', undefined, {
+          settings: { permissionMode: mode, model: 'fake-model' },
+        }),
+        onThreadBound: bound,
+      }))
+        events.push(event);
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(bound).toHaveBeenCalledTimes(1);
+      expect(shellControlReturned(returned, 'PUBLIC-backup-done')).toBe(true);
+      for (const canary of Object.values(canaries)) expect(returned).not.toContain(canary);
+      // Hidden whole: the folders list empty, not just their files unreadable.
+      expect(shellControlReturned(returned, 'LIST-HOME[]')).toBe(true);
+      expect(shellControlReturned(returned, 'LIST-ACCOUNT[]')).toBe(true);
+      for (const [file, canary] of Object.entries(canaries))
+        expect(fs.readFileSync(file, 'utf8')).toBe(canary);
+      protectedStarts[mode]++;
+    }
+  );
+
+  // The residual Security pinned on #3541: Codex scans from the app-server's
+  // own folder (the Codex home) at Full, so a hidden folder under it is not
+  // skipped. That must stay a refused start with the sandbox copy, and the
+  // hidden file must never surface.
+  it.skipIf(process.platform !== 'linux')(
+    'refuses Full with the sandbox copy when a hidden folder sits in the Codex home',
+    async () => {
+      const turn = request('codex-home-hidden', undefined, {
+        settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
+      });
+      const policy = turn.tools.filePolicy!;
+      policy.roots.accounts = [claudeAccount, codexHome];
+      completeHostFixture(policy, [
+        policy.roots.home,
+        policy.roots.data,
+        project,
+        codexHome,
+        claudeAccount,
+      ]);
+      const hidden = path.join(codexHome, 'backups', FIXTURE_BACKUP_NAME);
+      fs.writeFileSync(hidden, 'CANARY-codex-home-backup');
+      const starts = turnStartedSeen;
+      const responses = seen.responses;
+      const { events, bound, printed } = await capturedTurn(turn);
+      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+      expect(events[0]).toMatchObject({
+        data: {
+          code: 'codex_sandbox_unavailable',
+          message: expect.stringContaining('This computer blocks Codex’s sandbox.'),
+        },
+      });
+      expect(bound).not.toHaveBeenCalled();
+      expect(turnStartedSeen).toBe(starts);
+      expect(seen.responses).toBe(responses);
+      expect(JSON.stringify(events)).not.toContain('CANARY-codex-home-backup');
+      expect(printed).not.toContain('CANARY-codex-home-backup');
+      expect(fs.readFileSync(hidden, 'utf8')).toBe('CANARY-codex-home-backup');
+    }
+  );
+
+  // DOR-3965, pinned: at Full, Codex 0.163 refuses any rg the user can change,
+  // so its fallback walker ignores the hidden-folder skips and bwrap cannot
+  // build the backup's mask. The start must stay refused, with the sandbox
+  // copy, and each place's backup must never surface.
+  it.skipIf(process.platform !== 'linux').each([
+    { place: 'the home .claude/backups', canary: 'CANARY-full-home-claude' },
+    { place: 'the Claude account backups', canary: 'CANARY-full-claude-account' },
+    { place: 'the data folder backups', canary: 'CANARY-full-data' },
+    { place: 'the home .dork/backups', canary: 'CANARY-full-home-dork' },
+  ])('refuses Full while a Claude Code backup sits in $place', async ({ place, canary }) => {
+    const home = path.join(root, 'home');
+    const folder = {
+      'the home .claude/backups': path.join(home, '.claude', 'backups'),
+      'the Claude account backups': path.join(claudeAccount, 'backups'),
+      'the data folder backups': path.join(root, 'data', 'backups'),
+      'the home .dork/backups': path.join(home, '.dork', 'backups'),
+    }[place]!;
+    const backup = path.join(folder, FIXTURE_BACKUP_NAME);
+    fs.writeFileSync(backup, canary);
+    // A missing file would make this pass for the wrong reason.
+    expect(fs.readFileSync(backup, 'utf8')).toBe(canary);
+    const starts = turnStartedSeen;
+    const responses = seen.responses;
+    const { events, bound, printed } = await capturedTurn(
+      request('full-backup', undefined, {
+        settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
+      })
+    );
+    expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+    expect(events[0]).toMatchObject({
+      data: {
+        code: 'codex_sandbox_unavailable',
+        message: expect.stringContaining('This computer blocks Codex’s sandbox.'),
+        details: expect.stringContaining(backup),
+      },
+    });
+    expect(JSON.stringify(events)).not.toContain('Send your message again');
+    expect(bound).not.toHaveBeenCalled();
+    expect(turnStartedSeen).toBe(starts);
+    expect(seen.responses).toBe(responses);
+    expect(JSON.stringify(events)).not.toContain(canary);
+    expect(printed).not.toContain(canary);
+    expect(fs.readFileSync(backup, 'utf8')).toBe(canary);
+  });
+
+  it.skipIf(process.platform !== 'linux')(
+    'keeps a linked backups folder’s target unreadable',
+    async () => {
+      const home = path.join(root, 'home');
+      const link = path.join(home, '.claude', 'backups');
+      const target = path.join(root, 'linked-backups');
+      fs.rmSync(link, { recursive: true });
+      fs.mkdirSync(target);
+      const backup = path.join(target, FIXTURE_BACKUP_NAME);
+      fs.writeFileSync(backup, 'CANARY-linked-backup');
+      fs.symlinkSync(target, link, 'dir');
+      const quote = (value: string) => JSON.stringify(value);
+      let returned = '';
+      scripted.push(
+        (res) =>
+          res.end(
+            sseCall({
+              cmd: `cat ${quote(backup)} 2>/dev/null; cat ${quote(path.join(link, FIXTURE_BACKUP_NAME))} 2>/dev/null; printf PUBLIC-linked-done`,
+              login: false,
+            })
+          ),
+        (res, body) => {
+          returned = body;
+          res.end(sse('linked checked'));
+        }
+      );
+      const responses = seen.responses;
+      const { events, bound, printed } = await capturedTurn(
+        request('backup-linked', undefined, {
+          settings: { permissionMode: 'acceptEdits', model: 'fake-model' },
+        })
+      );
+      // Codex refuses a deny path that crosses a link (its own copy, kept as
+      // is). No turn starts, and the target is never read or echoed anywhere.
+      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+      expect(bound).not.toHaveBeenCalled();
+      expect(seen.responses).toBe(responses);
+      expect(returned).toBe('');
+      expect(JSON.stringify(events)).not.toContain('CANARY-linked-backup');
+      expect(printed).not.toContain('CANARY-linked-backup');
+      expect(fs.readFileSync(backup, 'utf8')).toBe('CANARY-linked-backup');
+    }
+  );
+
   beforeEach(() => {
     scripted.length = 0;
     stallNext = false;
@@ -840,8 +1135,15 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     seen.resolvedDuringTurn.length = 0;
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-app-server-')));
     codexHome = path.join(root, 'codex-home');
+    claudeAccount = path.join(root, 'claude-account');
     project = path.join(root, 'project');
-    for (const folder of [codexHome, project, path.join(root, 'home'), path.join(root, 'data')])
+    for (const folder of [
+      codexHome,
+      claudeAccount,
+      project,
+      path.join(root, 'home'),
+      path.join(root, 'data'),
+    ])
       fs.mkdirSync(folder, { recursive: true });
     // The throwaway home's provider is the local fake. No key anywhere.
     fs.writeFileSync(
@@ -870,7 +1172,13 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       )
     ) {
       const policy = request('complete-fixture', undefined).tools.filePolicy!;
-      completeHostFixture(policy, [policy.roots.home, policy.roots.data, codexHome]);
+      completeHostFixture(
+        policy,
+        [policy.roots.home, policy.roots.data, codexHome, claudeAccount],
+        {
+          withoutClaudeBackups: STARTS_AT_FULL.some((title) => name.includes(title)),
+        }
+      );
     }
   });
 
@@ -1111,13 +1419,13 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       const policy = request('complete-protected-probe', undefined).tools.filePolicy!;
       policy.roots.agentHomes = [project, agentHome];
       policy.roots.agentFolders = [project, agentHome];
-      const protectedFiles = completeHostFixture(policy, [
-        policy.roots.home,
-        policy.roots.data,
-        project,
-        agentHome,
-        codexHome,
-      ]);
+      // This row walks every level up to Full, which cannot start beside a
+      // Claude Code backup on Linux (DOR-3965); the pinned refusal rows cover it.
+      const protectedFiles = completeHostFixture(
+        policy,
+        [policy.roots.home, policy.roots.data, project, agentHome, codexHome, claudeAccount],
+        { withoutClaudeBackups: true }
+      );
       const skills = path.join(agentHome, '.agents', 'skills', 'probe');
       fs.mkdirSync(skills, { recursive: true });
       fs.writeFileSync(path.join(skills, 'SKILL.md'), skillControl);

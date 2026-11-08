@@ -118,10 +118,24 @@ describe('a turn', () => {
     }
   );
 
-  it.each(['default', 'acceptEdits', 'bypassPermissions'] as const)(
-    'explains a Linux namespace refusal at %s without starting an unprotected turn',
-    async (permissionMode) => {
-      const detail = 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted';
+  it.each(
+    (['default', 'acceptEdits', 'bypassPermissions'] as const).flatMap((permissionMode) => [
+      {
+        permissionMode,
+        refusal: 'namespace',
+        detail: 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted',
+      },
+      {
+        permissionMode,
+        refusal: 'mask',
+        // The native ubuntu row's real thread/start text (DOR-3950).
+        detail:
+          "error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: Can't create file at /tmp/bwrap-scope-WEAkZm/home/.claude/backups/.claude.json.backup.1794126006599: Read-only file system",
+      },
+    ])
+  )(
+    'explains a Linux $refusal refusal at $permissionMode without starting an unprotected turn',
+    async ({ permissionMode, detail }) => {
       const load = vi
         .spyOn(CodexThreadLoader.prototype, 'ensureLoaded')
         .mockRejectedValueOnce(
