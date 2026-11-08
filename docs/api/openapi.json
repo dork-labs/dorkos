@@ -29948,7 +29948,7 @@
           "Local browser"
         ],
         "summary": "Forget every site in a browser profile",
-        "description": "Only the owner, in person, can call this route: no agent, API key or approval token. Refused while a window, sign-in, handoff or unfinished close holds the profile. Removes all cookies and site storage. The profile and its agent bindings remain. The default profile also clears the embedded browser and older CLI state and source profile.",
+        "description": "Only the owner, in person, can call this route: no agent, API key or approval token. Refused while a window, sign-in, handoff or unfinished close holds the profile. Removes all cookies and site storage. The profile and its agent bindings remain. The default profile also clears the embedded browser and older CLI state and source profile. This can’t be undone.",
         "parameters": [
           {
             "schema": {
@@ -30111,7 +30111,7 @@
           "Local browser"
         ],
         "summary": "Delete a browser profile",
-        "description": "Only the owner, in person, can call this route: no agent, API key or approval token. Refused while a window, sign-in, handoff or unfinished close holds the profile. Removes the whole profile folder and all its agent bindings before dropping its record.",
+        "description": "Only the owner, in person, can call this route: no agent, API key or approval token. Refused while a window, sign-in, handoff or unfinished close holds the profile. Removes the whole profile folder and all its agent bindings before dropping its record. This can’t be undone.",
         "parameters": [
           {
             "schema": {

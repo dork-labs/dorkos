@@ -140,21 +140,12 @@ export function BrowserProfiles({
             <AlertDialogTitle className="break-words">
               {deleting
                 ? `Delete ${selection?.label}?`
-                : `Forget every sign-in in ${selection?.label}?`}
+                : `Forget sign-ins for ${selection?.label}?`}
             </AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-2">
-                <p>
-                  {deleting
-                    ? 'This removes the profile and every site’s sign-in in it.'
-                    : 'This removes every site’s sign-in in this profile.'}
-                </p>
-                <p>
-                  {deleting
-                    ? 'Agents using it lose access to this profile.'
-                    : 'Agents using it will have to sign in again.'}
-                </p>
-              </div>
+            <AlertDialogDescription>
+              {deleting
+                ? 'Agents using it lose access to it. This can’t be undone.'
+                : 'Every site in this profile will be signed out. This can’t be undone.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {error && (
