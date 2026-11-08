@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   codexScanRoot,
-  hiddenFolderExclusion,
+  hiddenFolderExclusions,
   keepScansOutOfHiddenFolders,
 } from '../policy/hidden-folder-scans.js';
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
@@ -36,17 +36,30 @@ function entries(): Record<string, 'read' | 'deny'> {
   };
 }
 
+/** Whether every scan of `scanRoot` is told to skip `dir`. */
+function skips(files: Record<string, string>, scanRoot: string, dir: string): boolean {
+  return hiddenFolderExclusions(scanRoot, dir).every((key) => files[key] === 'deny');
+}
+
 describe('keepScansOutOfHiddenFolders', () => {
   it('excludes a whole-hidden folder from every scan above it, anchored to its full path', () => {
     const result = keepScansOutOfHiddenFolders(entries(), [], 'linux');
-    const rel = backups.slice(1);
+    const whole = `![/]${backups.slice(1)}`;
+    const fromRoot = `![${backups[1]}]${backups.slice(2)}`;
     expect(result).toEqual({
       ...entries(),
-      [`${home}/![/]${rel}`]: 'deny',
-      [`${home}/.claude/![/]${rel}`]: 'deny',
+      [`${home}/${whole}`]: 'deny',
+      [`${home}/${fromRoot}`]: 'deny',
+      [`${home}/.claude/${whole}`]: 'deny',
+      [`${home}/.claude/${fromRoot}`]: 'deny',
     });
-    // Never the unanchored form, which would also skip other backups folders.
-    expect(Object.keys(result).some((key) => key.includes('!**'))).toBe(false);
+    // Never an unanchored or folder-relative form: both would also skip other
+    // backups folders, depending on where rg runs.
+    const exclusions = Object.keys(result).filter((key) => !(key in entries()));
+    for (const key of exclusions) {
+      expect(key).not.toContain('!**');
+      expect(key.endsWith(backups.slice(2))).toBe(true);
+    }
   });
 
   it('keeps every .claude.json* mask outside the hidden folder', () => {
@@ -68,10 +81,22 @@ describe('keepScansOutOfHiddenFolders', () => {
     expect(result[beside]).toBe('deny');
   });
 
-  it('gives the exclusion its scan root back the way Codex splits keys', () => {
-    const key = hiddenFolderExclusion(home, backups);
-    expect(codexScanRoot(key)).toBe(home);
-    expect(key.slice(home.length + 1)).toBe(`![/]${backups.slice(1)}`);
+  it('gives each exclusion its scan root back the way Codex splits keys', () => {
+    const keys = hiddenFolderExclusions(home, backups);
+    expect(keys.map(codexScanRoot)).toEqual([home, home]);
+    expect(keys.map((key) => key.slice(home.length + 1))).toEqual([
+      `![/]${backups.slice(1)}`,
+      `![${backups[1]}]${backups.slice(2)}`,
+    ]);
+  });
+
+  it('spells the exclusion the way rg sees it under a linked scan root', () => {
+    const linked = path.join(root, 'linked-home');
+    fs.symlinkSync(home, linked, 'dir');
+    const before = { ...entries(), [`${linked}/**/.claude.json*`]: 'deny' as const };
+    const result = keepScansOutOfHiddenFolders(before, [], 'linux');
+    for (const key of hiddenFolderExclusions(linked, path.join(linked, '.claude', 'backups')))
+      expect(result[key]).toBe('deny');
   });
 
   it('skips nothing under a write-only folder, which still shows its contents', () => {
@@ -129,8 +154,8 @@ describe('keepScansOutOfHiddenFolders', () => {
     fs.mkdirSync(inner);
     const result = keepScansOutOfHiddenFolders({ ...entries(), [inner]: 'deny' }, [], 'linux');
     expect(result).not.toHaveProperty(inner);
-    expect(result).not.toHaveProperty(hiddenFolderExclusion(home, inner));
-    expect(result[hiddenFolderExclusion(home, backups)]).toBe('deny');
+    expect(skips(result, home, inner)).toBe(false);
+    expect(skips(result, home, backups)).toBe(true);
   });
 
   it('skips nothing when Codex opens a folder back up inside the hidden one', () => {
@@ -143,7 +168,7 @@ describe('keepScansOutOfHiddenFolders', () => {
   it('keeps every mask for an opened folder beside the hidden one', () => {
     const project = path.join(home, 'project');
     const result = keepScansOutOfHiddenFolders(entries(), [project], 'linux');
-    expect(result[hiddenFolderExclusion(home, backups)]).toBe('deny');
+    expect(skips(result, home, backups)).toBe(true);
   });
 
   it('drops a glob that only scans inside the hidden folder', () => {
@@ -156,7 +181,7 @@ describe('keepScansOutOfHiddenFolders', () => {
     );
     expect(result).not.toHaveProperty(scanInside);
     expect(result).not.toHaveProperty(scanHidden);
-    expect(result).not.toHaveProperty(hiddenFolderExclusion(backups, backups));
+    expect(skips(result, backups, backups)).toBe(false);
     expect(result[`${home}/**/.claude.json*`]).toBe('deny');
   });
 
@@ -201,14 +226,14 @@ describe('the rendered Linux profile', () => {
         expect(files[`${home}/.claude.json*`]).toBe('deny');
         expect(files[`${account}/.claude.json*`]).toBe('deny');
         // Each scan above a hidden backups folder skips exactly that folder.
-        expect(files[hiddenFolderExclusion(home, backups)]).toBe('deny');
-        expect(files[hiddenFolderExclusion(account, path.join(account, 'backups'))]).toBe('deny');
+        expect(skips(files, home, backups)).toBe(true);
+        expect(skips(files, account, path.join(account, 'backups'))).toBe(true);
         // Every skip names a folder the same profile hides with a read deny.
-        const exclusions = Object.keys(files).filter((key) => key.includes('/![/]'));
+        const exclusions = Object.keys(files).filter((key) => key.includes('/!['));
+        expect(exclusions.length).toBeGreaterThan(0);
         for (const key of exclusions) {
-          const folder = `/${key.slice(key.indexOf('/![/]') + '/![/]'.length)}`;
-          expect(files[folder]).toBe('deny');
-          expect(fs.lstatSync(folder).isDirectory()).toBe(true);
+          const [, first, rest] = key.match(/\/!\[(.)\](.*)$/)!;
+          expect(files[first === '/' ? `/${rest}` : `/${first}${rest}`]).toBe('deny');
         }
       } finally {
         Object.defineProperty(process, 'platform', platform);

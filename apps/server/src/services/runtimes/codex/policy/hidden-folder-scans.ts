@@ -36,15 +36,25 @@ export function codexScanRoot(pattern: string): string | undefined {
 }
 
 /**
- * The profile key that keeps scan root `root` out of hidden folder `dir`. The
- * `[/]` class matches the path's leading slash and is the key's first glob
- * character, so Codex keeps `root` as the search folder.
+ * The profile keys that keep scan root `root` out of folder `dir`, as `rg`
+ * sees it under that root.
+ *
+ * `rg` matches a glob against the path relative to the folder it runs in when
+ * that folder is above the path, and against the whole path otherwise. Codex
+ * runs it from `/` for its file helper (the AGENTS.md read at thread start)
+ * and from the command's folder for a shell command. So there are two keys:
+ * - `![/]home/u/.claude/backups` matches the whole absolute path;
+ * - `![h]ome/u/.claude/backups` matches the same path relative to `/`.
+ * Each holds a slash, so `rg` anchors it, and neither matches any other
+ * folder. In each, the class right after `!` is the key's first glob
+ * character, so Codex keeps `root` as the search folder. From any other
+ * folder above `dir`, neither matches and the start fails closed.
  *
  * @param root - A glob scan root above `dir`.
- * @param dir - An absolute, real folder path with no glob characters.
+ * @param dir - An absolute folder path under `root`, with no glob characters.
  */
-export function hiddenFolderExclusion(root: string, dir: string): string {
-  return `${root}/![/]${dir.slice(1)}`;
+export function hiddenFolderExclusions(root: string, dir: string): string[] {
+  return [`${root}/![/]${dir.slice(1)}`, `${root}/![${dir[1]}]${dir.slice(2)}`];
 }
 
 /**
@@ -53,7 +63,8 @@ export function hiddenFolderExclusion(root: string, dir: string): string {
  * Anything unproven keeps every mask, so a failure stays a refused start.
  */
 function hiddenWhole(dir: string): boolean {
-  if (/[*?[\]{}\\]/.test(dir)) return false;
+  // `[!…]` and `[^…]` would negate the class the second key starts with.
+  if (/[*?[\]{}\\]/.test(dir) || /^\/[!^]/.test(dir)) return false;
   try {
     if (!fs.lstatSync(dir).isDirectory() || fs.realpathSync.native(dir) !== dir) return false;
     const pending = [dir];
@@ -73,17 +84,24 @@ function hiddenWhole(dir: string): boolean {
   }
 }
 
+function realPathOrSelf(dir: string): string {
+  try {
+    return fs.realpathSync.native(dir);
+  } catch {
+    return dir;
+  }
+}
+
 /**
  * Drop masks bwrap cannot build inside a folder it hides whole, and tell
  * Codex's scanner to skip that folder. Every other key stays as it is.
  *
  * For each literal `deny` folder D that is hidden whole, each glob scan root R
- * above D gets one extra deny key, `R/![/]` + D without its leading slash.
- * Codex splits that key at its first `[`, so `rg` gets `--glob '![/]…'`: an
- * exclusion anchored to D's whole absolute path, whatever folder `rg` runs
- * in. It prunes D and nothing else; another `.claude/backups` elsewhere, even
- * one whose path ends in D's, is still scanned and masked. Literal keys inside
- * D are removed, and so are globs that only scan inside D. A folder that holds
+ * above D gets the exclusions from {@link hiddenFolderExclusions}, spelled the
+ * way `rg` sees D under R (R may be a link to D's real parent, such as a
+ * linked `/home`). They prune D and nothing else; another `.claude/backups`
+ * elsewhere is still scanned and masked. Literal keys inside D are removed,
+ * and so are globs that only scan inside D. A folder that holds
  * one of `opened` keeps every mask: Codex opens that folder back up inside
  * the tmpfs, so its contents are not hidden. Linux only: macOS and Windows
  * build no masks from a scan.
@@ -124,8 +142,17 @@ export function keepScansOutOfHiddenFolders(
   const roots = new Set(
     keys.filter((key) => GLOB.test(key)).flatMap((key) => codexScanRoot(key) ?? [])
   );
-  for (const root of roots)
-    for (const dir of outermost)
-      if (dir.startsWith(`${root}/`)) result[hiddenFolderExclusion(root, dir)] = 'deny';
+  for (const root of roots) {
+    const real = realPathOrSelf(root);
+    for (const dir of outermost) {
+      const seen = dir.startsWith(`${root}/`)
+        ? dir
+        : dir.startsWith(`${real}/`)
+          ? `${root}${dir.slice(real.length)}`
+          : undefined;
+      if (seen === undefined || /^\/[!^]/.test(seen)) continue;
+      for (const key of hiddenFolderExclusions(root, seen)) result[key] = 'deny';
+    }
+  }
   return result;
 }

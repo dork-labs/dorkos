@@ -852,6 +852,29 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }
   );
 
+  // Codex reads AGENTS.md through a helper that runs from `/`, so the skip
+  // holds even when the chat's folder sits above the hidden backups folder.
+  it.skipIf(process.platform !== 'linux')(
+    'starts at Ask in the person home with Claude Code sign-in backups on disk',
+    async () => {
+      const home = path.join(root, 'home');
+      const turn = request('backup-ask-home', undefined, {
+        cwd: home,
+        settings: { permissionMode: 'default', model: 'fake-model' },
+      });
+      const policy = turn.tools.filePolicy!;
+      policy.roots.cwd = home;
+      policy.roots.agentFolders = [home];
+      policy.writable = [];
+      const bound = vi.fn();
+      const events: StreamEvent[] = [];
+      for await (const event of makeTransport().runTurn({ ...turn, onThreadBound: bound }))
+        events.push(event);
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(bound).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it.skipIf(process.platform !== 'linux').each(['acceptEdits', 'bypassPermissions'] as const)(
     'hides Claude Code sign-in backups and every other sign-in copy at %s',
     async (mode) => {
