@@ -77,7 +77,10 @@ it.each([
           mode === 'bypassPermissions'
             ? 'codex_full_missing_protected_targets'
             : 'codex_writable_missing_protected_targets',
-        message: expect.stringContaining('protected files are missing'),
+        message:
+          mode === 'bypassPermissions'
+            ? expect.stringContaining('protected files are missing')
+            : expect.stringContaining(path.join(person, '.claude.json')),
         details: expect.stringContaining(path.join(person, '.claude.json')),
       },
     });
@@ -122,6 +125,40 @@ it('sorts exact missing targets and refuses writable modes only on Linux', () =>
   expect(() =>
     refuseMissingWritableTargets({ permissionMode: 'bypassPermissions' }, ['/missing'])
   ).not.toThrow();
+});
+
+it('names only the missing paths at Edit, with the fix for an agent folder', () => {
+  const edit = (paths: string[]) =>
+    new CodexWritableMissingTargetsError(paths, 'acceptEdits').message;
+  expect(edit(['/a/.mcp.json'])).toBe(
+    'Codex can’t edit until you add /a/.mcp.json with the text {"mcpServers":{}}. Or choose Ask, then retry.'
+  );
+  expect(edit(['/a/.agents'])).toBe(
+    'Codex can’t edit until you add the folder /a/.agents. Or choose Ask, then retry.'
+  );
+  expect(edit(['/a/.agents', '/a/.mcp.json'])).toBe(
+    'Codex can’t edit until you add the folder /a/.agents and /a/.mcp.json with the text {"mcpServers":{}}. Or choose Ask, then retry.'
+  );
+  expect(edit(['/a/.claude/commands', '/a/.claude/settings.local.json'])).toBe(
+    'Codex can’t edit until you add the folder /a/.claude/commands and /a/.claude/settings.local.json with the text {}. Or choose Ask, then retry.'
+  );
+  // Only under .claude: a stray `settings.json` or `agents` elsewhere gets Ask only.
+  expect(edit(['/a/agents'])).toBe(
+    'Codex can’t edit while /a/agents is missing. Choose Ask, then retry.'
+  );
+  // A target with no safe way to add it gets Ask only, never "create it".
+  expect(edit(['/a/.git'])).toBe(
+    'Codex can’t edit while /a/.git is missing. Choose Ask, then retry.'
+  );
+  expect(edit(['/a/.agents', '/a/.git'])).toBe(
+    'Codex can’t edit while /a/.agents, /a/.git are missing. Choose Ask, then retry.'
+  );
+  // Nothing beyond the missing paths: no other protected name reaches the copy.
+  for (const name of ['.claude', '.dork', '.codex', '.netrc', '.aws'])
+    expect(edit(['/a/.mcp.json'])).not.toContain(name);
+  expect(new CodexWritableMissingTargetsError(['/a/.mcp.json']).message).toBe(
+    'Codex can’t use Full access while protected files are missing. Choose Ask, then retry.'
+  );
 });
 
 it('checks cwd, grants and native temporary binds, while read-only targets stay masked', () => {
