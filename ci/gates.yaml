@@ -44,6 +44,9 @@ gates:
     purpose: On request, reads on macOS whether http pages stay http and what flags both Agent browser windows run with, for one commit's CLI tarball.
 
   # --- browser-test.yml ---
+  - id: wf.browser-test.browser-smoke
+    source: .github/workflows/browser-test.yml
+    purpose: Runs @smoke browser tests on four PR shards before queue entry.
   - id: wf.browser-test.browser-shard
     source: .github/workflows/browser-test.yml
     purpose: Runs one sixth of the Playwright browser suite against the merge queue's combined tree.
@@ -52,7 +55,7 @@ gates:
     purpose: Times a never-onboarded install from Welcome to DorkBot's first reply on both first-run paths; the browser-test fan-in fails unless it passed.
   - id: wf.browser-test.browser-test
     source: .github/workflows/browser-test.yml
-    purpose: The required browser-test check; fails the queue build unless every shard passed and the suite provably executed, and passes through on PRs.
+    purpose: The required browser-test check; requires successful smoke shards on PRs, or the full shards and first-run journey with execution proof off PRs.
   - id: wf.browser-test.copy-spec-drift
     source: .github/workflows/browser-test.yml
     purpose: Warns when a copy change will break a browser spec's expected text, so it is fixed before the queue finds it.

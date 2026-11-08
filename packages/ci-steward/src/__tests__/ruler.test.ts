@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { emptySnapshot, SnapshotSchema, type Snapshot } from '../data.ts';
 import { floorValues } from '../floors.ts';
 import { gateMapper } from '../gatemap.ts';
@@ -18,6 +19,11 @@ import { loadWorkflows } from '../workflows.ts';
 const REPO = path.resolve(import.meta.dirname, '..', '..', '..', '..');
 const { files } = loadHandFiles(REPO);
 const slos = files!.slos!;
+
+/** Read the full-suite matrix, independent of any other job's order or shard count. */
+function browserShards(workflow: string): number[] {
+  return parseYaml(workflow).jobs['browser-shard'].strategy.matrix.shard;
+}
 
 function reading(id: string, snapshots: Snapshot[], extra: Partial<SloInputs> = {}) {
   return computeSlos({ slos: slos.slos.filter((s) => s.id === id) }, floorValues(slos, null), {
@@ -194,7 +200,7 @@ describe('the ruler files agree with what they restate', () => {
     const cfg = readFileSync(path.join(REPO, 'apps/e2e/playwright.config.ts'), 'utf8');
     const num = (name: string) => Number(new RegExp(`const ${name} = ([\\d.]+);`).exec(cfg)![1]);
     const wf = readFileSync(path.join(REPO, '.github/workflows/browser-test.yml'), 'utf8');
-    const shards = /shard: \[([\d, ]+)\]/.exec(wf)![1]!.split(',').length;
+    const shards = browserShards(wf).length;
     const boot = num('LEG_BOOT_MINUTES');
     const healthy = boot + (num('UNSHARDED_SUITE_MINUTES') - boot) / shards;
     const minutes = Math.ceil((healthy * num('GLOBAL_TIMEOUT_HEADROOM')) / 5) * 5;
@@ -213,15 +219,24 @@ describe('the ruler files agree with what they restate', () => {
     );
   });
 
+  it('ignores the smoke matrix when reading the full browser suite matrix', () => {
+    const wf = parseYaml(
+      readFileSync(path.join(REPO, '.github/workflows/browser-test.yml'), 'utf8')
+    );
+    // Smoke comes first in the real workflow. An unrelated count must not
+    // shadow the full suite's deadline or the check names it maps below.
+    wf.jobs['browser-smoke'].strategy.matrix.shard = [99];
+    expect(browserShards(stringifyYaml(wf))).toEqual(
+      wf.jobs['browser-shard'].strategy.matrix.shard
+    );
+  });
+
   it("maps every browser shard's check name to the one gate its deadline, flakes and ejections are keyed on", () => {
     // headroom, flaky-test-runs and repeat-ejection all read
     // wf.browser-test.browser-shard. A matrix resize or a renamed job must not
     // scatter the shards across gate ids the collector does not know.
     const wf = readFileSync(path.join(REPO, '.github/workflows/browser-test.yml'), 'utf8');
-    const shards = /shard: \[([\d, ]+)\]/
-      .exec(wf)![1]!
-      .split(',')
-      .map((s) => Number(s.trim()));
+    const shards = browserShards(wf);
     const mapper = gateMapper(
       loadWorkflows(REPO, '.github/workflows', (file, message) => {
         throw new Error(`${file}: ${message}`);
