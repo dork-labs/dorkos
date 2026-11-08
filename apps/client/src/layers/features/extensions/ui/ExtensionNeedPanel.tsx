@@ -79,7 +79,7 @@ function namedFacts(permissions: ExtensionPermissionView): Array<[string, string
     facts.push([
       'Access',
       permissions.hasServer === false
-        ? 'Its screens run in DorkOS with your access'
+        ? 'Screens run inside DorkOS, with your access'
         : 'Runs inside DorkOS, with full access to this computer',
     ]);
   } else {

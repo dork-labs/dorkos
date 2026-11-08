@@ -53,7 +53,7 @@ function accessLine(extension: ExtensionRecordPublic): string | null {
       : 'Runs on its own. Reaches nothing on the internet';
   }
   return permissions.hasServer === false
-    ? 'Its screens run in DorkOS with your access'
+    ? 'Screens run inside DorkOS, with your access'
     : 'Runs inside DorkOS, with full access to this computer';
 }
 
@@ -174,6 +174,8 @@ export function ExtensionRowDetail({
           <Button
             size="sm"
             variant="ghost"
+            // Pulled left by its own padding, so its words line up with the facts.
+            className="-ml-3"
             onClick={onStopRunning}
             disabled={isSettingApproval}
             data-testid={`extension-stop-running-${extension.id}`}

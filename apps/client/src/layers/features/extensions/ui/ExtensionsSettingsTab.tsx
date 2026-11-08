@@ -166,7 +166,7 @@ export function ExtensionsSettingsTab() {
   if (loadFailed) {
     return (
       <div role="alert" className="space-y-2 py-8 text-center" data-testid="extensions-load-failed">
-        <p className="text-sm font-semibold">Couldn’t load your extensions</p>
+        <p className="text-sm font-semibold">Couldn’t load your extensions.</p>
         <p className="text-muted-foreground text-sm">
           They’re still installed, and nothing was turned off.
         </p>
@@ -185,13 +185,15 @@ export function ExtensionsSettingsTab() {
   const installed = extensions.filter((ext) => ext.origin === 'user');
   const needYouCount = sections.needsYou.length;
   const offCount = installed.filter(isExtensionOff).length;
+  // A pill with nothing behind it is hidden, so its filter falls back to All.
+  const shown: ExtensionFilter = offCount === 0 ? 'all' : filter;
 
   const keep = (ext: ExtensionRecordPublic) =>
-    matchesExtensionSearch(ext, query) && (filter === 'all' || isExtensionOff(ext));
+    matchesExtensionSearch(ext, query) && (shown === 'all' || isExtensionOff(ext));
   const needsYou = sections.needsYou.filter(keep);
   const everythingElse = sections.everythingElse.filter(keep);
   // DorkOS's own: folded at the end, and only under All.
-  const core = filter === 'all' ? sections.core.filter(keep) : [];
+  const core = shown === 'all' ? sections.core.filter(keep) : [];
   const searching = query.trim().length > 0;
   const nothingMatches = needsYou.length + everythingElse.length + core.length === 0;
 
@@ -233,7 +235,9 @@ export function ExtensionsSettingsTab() {
         {needYouCount > 0 && (
           <>
             {' · '}
-            <span className="text-foreground font-medium">{needYouCount} need you</span>
+            <span className="text-foreground font-medium">
+              {needYouCount === 1 ? '1 needs you' : `${needYouCount} need you`}
+            </span>
           </>
         )}
       </p>
@@ -253,14 +257,18 @@ export function ExtensionsSettingsTab() {
             className="pl-9"
           />
         </div>
-        <div className="flex gap-2 overflow-x-auto" role="group" aria-label="Show">
-          <Chip pressed={filter === 'all'} onClick={() => setFilter('all')}>
-            All {installed.length}
-          </Chip>
-          <Chip pressed={filter === 'off'} onClick={() => setFilter('off')}>
-            Off {offCount}
-          </Chip>
-        </div>
+        {installed.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto" role="group" aria-label="Show">
+            <Chip pressed={shown === 'all'} onClick={() => setFilter('all')}>
+              All {installed.length}
+            </Chip>
+            {offCount > 0 && (
+              <Chip pressed={shown === 'off'} onClick={() => setFilter('off')}>
+                Off {offCount}
+              </Chip>
+            )}
+          </div>
+        )}
       </div>
 
       {nothingMatches ? (
@@ -280,7 +288,7 @@ export function ExtensionsSettingsTab() {
             <section aria-labelledby="extensions-needs-you" data-testid="needs-you-section">
               <h3
                 id="extensions-needs-you"
-                className="text-muted-foreground mb-1 px-3 text-[11px] font-medium"
+                className="text-muted-foreground mb-1 px-3 text-[11px] font-medium max-sm:text-[13px]"
               >
                 Needs you
               </h3>
@@ -296,7 +304,7 @@ export function ExtensionsSettingsTab() {
               {needsYou.length > 0 && (
                 <h3
                   id="extensions-everything-else"
-                  className="text-muted-foreground mb-1 px-3 text-[11px] font-medium"
+                  className="text-muted-foreground mb-1 px-3 text-[11px] font-medium max-sm:text-[13px]"
                 >
                   Everything else
                 </h3>

@@ -179,8 +179,11 @@ describe('ExtensionsSettingsTab', () => {
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Couldn’t load your extensions');
-    expect(alert).toHaveTextContent('They’re still installed, and nothing was turned off.');
+    // The two sentences, word for word: a bold title, then the line under it.
+    expect(within(alert).getByText('Couldn’t load your extensions.')).toBeInTheDocument();
+    expect(
+      within(alert).getByText('They’re still installed, and nothing was turned off.')
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('no-extensions')).not.toBeInTheDocument();
     // One way out, not two: Reload waits until there is a list to reload.
     expect(screen.queryByTestId('reload-extensions-button')).not.toBeInTheDocument();
@@ -213,7 +216,23 @@ describe('ExtensionsSettingsTab', () => {
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
     expect(await screen.findByTestId('extensions-count')).toHaveTextContent(
-      '2 installed · 1 need you'
+      '2 installed · 1 needs you'
+    );
+  });
+
+  // Purpose: the count agrees with its number: one needs, several need.
+  it('says "need you" for more than one', async () => {
+    mockFetch({
+      '/api/extensions': [
+        named('a', 'Alpha', { approvedToRun: false }),
+        named('b', 'Beta', { approvedToRun: false }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    expect(await screen.findByTestId('extensions-count')).toHaveTextContent(
+      '2 installed · 2 need you'
     );
   });
 
@@ -467,6 +486,16 @@ describe('ExtensionsSettingsTab', () => {
       expect(screen.getByTestId('extension-card-off')).toBeInTheDocument();
       // No last-used data yet, so no "Not used in 30 days" filter.
       expect(screen.queryByText(/Not used/)).not.toBeInTheDocument();
+    });
+
+    // Purpose: a filter with nothing behind it is not offered.
+    it('hides the Off filter when nothing is off', async () => {
+      mockFetch({ '/api/extensions': [named('on', 'On one')] });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      await screen.findByTestId('extension-card-on');
+      expect(screen.getByRole('button', { name: 'All 1' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Off/ })).not.toBeInTheDocument();
     });
   });
 
