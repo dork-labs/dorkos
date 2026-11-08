@@ -6,14 +6,18 @@ import { realPathOf } from '@dorkos/shared/directory-grants';
 import type { CodexFilePolicy } from './protected-profile.js';
 
 /**
- * How a person adds one missing target, for the two an agent folder usually
- * lacks (DOR-3914). Any other target gets no advice beyond Ask: creating, say,
- * an empty `.git` would do harm.
+ * How a person adds one missing target, for the six DorkOS scaffolds in an
+ * agent folder (DOR-3914), with the same empty content. Any other target gets
+ * no advice beyond Ask: creating, say, an empty `.git` would do harm.
  */
 function addPhrase(target: string): string | undefined {
   const name = path.basename(target);
-  if (name === '.agents') return `the folder ${target}`;
+  const inClaude = path.basename(path.dirname(target)) === '.claude';
+  if (name === '.agents' || (inClaude && (name === 'agents' || name === 'commands')))
+    return `the folder ${target}`;
   if (name === '.mcp.json') return `${target} with the text {"mcpServers":{}}`;
+  if (inClaude && (name === 'settings.json' || name === 'settings.local.json'))
+    return `${target} with the text {}`;
   return undefined;
 }
 

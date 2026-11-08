@@ -1,8 +1,9 @@
 /**
- * The `.agents/` and `.mcp.json` scaffold for agent homes DorkOS owns
- * (DOR-3914), against Security's four tests: a fresh home, an existing file
- * left byte-identical, a link at the path left untouched, and a repair run
- * twice that changes nothing the second time. Real files in a temp tree.
+ * The scaffold of Codex's protected targets in agent homes DorkOS owns
+ * (DOR-3914), against Security's tests: a fresh home, an existing file left
+ * byte-identical (even empty), a link at the path or above it left untouched,
+ * and a repair run twice that changes nothing the second time. Real files in a
+ * temp tree.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
@@ -19,7 +20,13 @@ vi.mock('../../../../lib/logger.js', () => ({
   },
 }));
 
-import { EMPTY_MCP_JSON, repairAgentHomes, scaffoldAgentHome } from '../agent-home-scaffold.js';
+import {
+  EMPTY_MCP_JSON,
+  EMPTY_SETTINGS_JSON,
+  SCAFFOLD_TARGETS,
+  repairAgentHomes,
+  scaffoldAgentHome,
+} from '../agent-home-scaffold.js';
 
 let root: string;
 let agents: string;
@@ -51,6 +58,11 @@ function snapshot(dir: string): Record<string, string> {
   return out;
 }
 
+/** Every target with the same outcome. */
+function all(outcome: string): Record<string, string> {
+  return Object.fromEntries(SCAFFOLD_TARGETS.map(({ rel }) => [rel, outcome]));
+}
+
 beforeEach(() => {
   warn.mockClear();
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-home-scaffold-')));
@@ -67,52 +79,95 @@ afterEach(() => {
 });
 
 describe('scaffoldAgentHome', () => {
-  it('adds an empty .agents folder and the fixed .mcp.json to a fresh home', () => {
+  it('adds the empty folders and the fixed files to a fresh home', () => {
     const home = agentHome('fresh');
 
-    expect(scaffoldAgentHome(home)).toEqual({
-      scaffolded: true,
-      agents: 'created',
-      mcpJson: 'created',
-    });
-    expect(fs.readdirSync(path.join(home, '.agents'))).toEqual([]);
-    expect(fs.readFileSync(path.join(home, '.mcp.json'), 'utf8')).toBe(EMPTY_MCP_JSON);
-    expect(EMPTY_MCP_JSON).toBe('{"mcpServers":{}}');
+    expect(scaffoldAgentHome(home)).toEqual({ scaffolded: true, outcomes: all('created') });
+    for (const dir of ['.agents', '.claude/agents', '.claude/commands'])
+      expect(fs.readdirSync(path.join(home, dir))).toEqual([]);
+    expect(fs.readFileSync(path.join(home, '.mcp.json'), 'utf8')).toBe('{"mcpServers":{}}');
+    for (const file of ['.claude/settings.json', '.claude/settings.local.json'])
+      expect(fs.readFileSync(path.join(home, file), 'utf8')).toBe('{}');
+    expect([EMPTY_MCP_JSON, EMPTY_SETTINGS_JSON]).toEqual(['{"mcpServers":{}}', '{}']);
   });
 
-  it('leaves an existing .mcp.json and .agents byte-identical', () => {
+  it('leaves every existing target byte-identical, an empty or malformed file included', () => {
     const home = agentHome('kept');
     const servers = '{ "mcpServers": { "x": { "command": "made-up" } } }\n';
     fs.writeFileSync(path.join(home, '.mcp.json'), servers);
     fs.mkdirSync(path.join(home, '.agents', 'skills'), { recursive: true });
     fs.writeFileSync(path.join(home, '.agents', 'skills', 'note.md'), 'mine');
+    fs.mkdirSync(path.join(home, '.claude', 'agents'), { recursive: true });
+    fs.mkdirSync(path.join(home, '.claude', 'commands'));
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{ not json');
+    // A 0-byte file is somebody's file too: it stays 0 bytes.
+    fs.writeFileSync(path.join(home, '.claude', 'settings.local.json'), '');
     const before = snapshot(home);
 
-    expect(scaffoldAgentHome(home)).toEqual({ scaffolded: true, agents: 'kept', mcpJson: 'kept' });
+    expect(scaffoldAgentHome(home)).toEqual({ scaffolded: true, outcomes: all('kept') });
     expect(snapshot(home)).toEqual(before);
-    expect(fs.readFileSync(path.join(home, '.mcp.json'), 'utf8')).toBe(servers);
+    expect(fs.statSync(path.join(home, '.claude', 'settings.local.json')).size).toBe(0);
   });
 
-  it('leaves a link at either path untouched, never writing through it, and logs it', () => {
+  it('leaves a link at any target untouched, never writing through it, and logs it', () => {
     const home = agentHome('linked-targets');
     const outside = path.join(root, 'outside');
     fs.mkdirSync(outside);
-    fs.symlinkSync(path.join(outside, 'target.json'), path.join(home, '.mcp.json'));
-    fs.symlinkSync(path.join(outside, 'agents-dir'), path.join(home, '.agents'));
+    fs.mkdirSync(path.join(home, '.claude'));
+    for (const { rel } of SCAFFOLD_TARGETS.filter(({ rel }) => rel !== '.claude'))
+      fs.symlinkSync(path.join(outside, rel.replace('/', '-')), path.join(home, rel));
     const before = snapshot(home);
 
-    expect(scaffoldAgentHome(home)).toEqual({
+    const result = scaffoldAgentHome(home);
+    expect(result).toEqual({
       scaffolded: true,
-      agents: 'refused-link',
-      mcpJson: 'refused-link',
+      outcomes: { ...all('refused-link'), '.claude': 'kept' },
     });
     expect(snapshot(home)).toEqual(before);
     // Dangling links stay dangling: nothing was created at their targets.
     expect(fs.readdirSync(outside)).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
       '[agents] Left a link in an agent home alone',
-      expect.objectContaining({ path: path.join(home, '.mcp.json') })
+      expect.objectContaining({ path: path.join(home, '.claude', 'settings.json') })
     );
+  });
+
+  it('never writes through a linked .claude, even to a folder that exists', () => {
+    const home = agentHome('linked-claude');
+    const outside = path.join(root, 'their-claude');
+    fs.mkdirSync(outside);
+    fs.symlinkSync(outside, path.join(home, '.claude'));
+
+    const result = scaffoldAgentHome(home);
+    expect(result).toMatchObject({
+      scaffolded: true,
+      outcomes: {
+        '.agents': 'created',
+        '.mcp.json': 'created',
+        '.claude': 'refused-link',
+        '.claude/agents': 'refused-link',
+        '.claude/commands': 'refused-link',
+        '.claude/settings.json': 'refused-link',
+        '.claude/settings.local.json': 'refused-link',
+      },
+    });
+    expect(fs.readdirSync(outside)).toEqual([]);
+    expect(fs.readlinkSync(path.join(home, '.claude'))).toBe(outside);
+    expect(warn).toHaveBeenCalledWith(
+      '[agents] Left a link in an agent home alone',
+      expect.objectContaining({ path: path.join(home, '.claude') })
+    );
+  });
+
+  it('writes nothing under a .claude that is a file', () => {
+    const home = agentHome('file-claude');
+    fs.writeFileSync(path.join(home, '.claude'), 'not a folder');
+
+    expect(scaffoldAgentHome(home)).toMatchObject({
+      scaffolded: true,
+      outcomes: { '.claude': 'kept', '.claude/settings.json': 'blocked' },
+    });
+    expect(fs.readFileSync(path.join(home, '.claude'), 'utf8')).toBe('not a folder');
   });
 
   it('skips a home that is itself a link to somewhere else', () => {
@@ -148,10 +203,11 @@ describe('scaffoldAgentHome', () => {
 });
 
 describe('repairAgentHomes', () => {
-  it('scaffolds the agent homes that lack them, and a second run changes nothing', () => {
+  it('scaffolds the agent homes that lack targets, and a second run changes nothing', () => {
     const bare = agentHome('bare');
     const half = agentHome('half');
     fs.mkdirSync(path.join(half, '.agents'));
+    fs.mkdirSync(path.join(half, '.claude', 'commands'), { recursive: true });
     const own = agentHome('own-mcp');
     fs.writeFileSync(
       path.join(own, '.mcp.json'),
@@ -165,11 +221,10 @@ describe('repairAgentHomes', () => {
     fs.writeFileSync(path.join(outside, '.dork', 'agent.json'), '{}');
     fs.symlinkSync(outside, path.join(agents, 'outside-link'));
 
-    expect(repairAgentHomes()).toBe(4);
-    for (const home of [bare, half, own]) {
-      expect(fs.lstatSync(path.join(home, '.agents')).isDirectory()).toBe(true);
-    }
-    expect(fs.readFileSync(path.join(bare, '.mcp.json'), 'utf8')).toBe(EMPTY_MCP_JSON);
+    // bare: all 7; half: 7 minus .agents, .claude, .claude/commands; own: 7 minus .mcp.json.
+    expect(repairAgentHomes()).toBe(7 + 4 + 6);
+    for (const home of [bare, half, own])
+      expect(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8')).toBe('{}');
     expect(fs.readFileSync(path.join(half, '.mcp.json'), 'utf8')).toBe(EMPTY_MCP_JSON);
     expect(fs.readFileSync(path.join(own, '.mcp.json'), 'utf8')).toContain('example.invalid');
     expect(fs.readdirSync(path.join(agents, 'not-an-agent'))).toEqual([]);

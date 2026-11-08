@@ -208,7 +208,10 @@ function hooksPart(home: string, dorkHome: string): PartValue {
   let verifiable = true;
   const commands: string[] = [];
   for (const name of SETTINGS_FILES) {
-    const read = readJsonFile(path.join(home, '.claude', name));
+    const raw = readJsonFile(path.join(home, '.claude', name));
+    // The exact `{}` DorkOS scaffolds (DOR-3914) reads as no file. Only an
+    // object with zero keys: any key at all, even an empty one, is a file.
+    const read: FileRead = isEmptyObject(raw) ? { kind: 'absent' } : raw;
     if (read.kind === 'unverifiable') verifiable = false;
     const picked = read.kind === 'parsed' ? pick(read.value, CODE_SETTINGS_KEYS) : undefined;
     if (picked !== undefined) collectCommands(picked, commands);
@@ -252,6 +255,17 @@ export function collectCommands(value: unknown, out: string[]): void {
       collectCommands(child, out);
     }
   }
+}
+
+/** Whether a read parsed to a plain object with no keys at all: `{}`. */
+function isEmptyObject(read: FileRead): boolean {
+  return (
+    read.kind === 'parsed' &&
+    read.value !== null &&
+    typeof read.value === 'object' &&
+    !Array.isArray(read.value) &&
+    Object.keys(read.value).length === 0
+  );
 }
 
 /** The exact `.mcp.json` DorkOS scaffolds in an agent home (DOR-3914), canonical. */

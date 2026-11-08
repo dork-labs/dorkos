@@ -139,6 +139,13 @@ it('names only the missing paths at Edit, with the fix for an agent folder', () 
   expect(edit(['/a/.agents', '/a/.mcp.json'])).toBe(
     'Codex can’t edit until you add the folder /a/.agents and /a/.mcp.json with the text {"mcpServers":{}}. Or choose Ask, then retry.'
   );
+  expect(edit(['/a/.claude/commands', '/a/.claude/settings.local.json'])).toBe(
+    'Codex can’t edit until you add the folder /a/.claude/commands and /a/.claude/settings.local.json with the text {}. Or choose Ask, then retry.'
+  );
+  // Only under .claude: a stray `settings.json` or `agents` elsewhere gets Ask only.
+  expect(edit(['/a/agents'])).toBe(
+    'Codex can’t edit while /a/agents is missing. Choose Ask, then retry.'
+  );
   // A target with no safe way to add it gets Ask only, never "create it".
   expect(edit(['/a/.git'])).toBe(
     'Codex can’t edit while /a/.git is missing. Choose Ask, then retry.'

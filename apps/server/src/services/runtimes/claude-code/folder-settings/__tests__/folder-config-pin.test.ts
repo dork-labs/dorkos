@@ -92,6 +92,30 @@ describe('readFolderConfigParts', () => {
     ]);
   });
 
+  it.each(['settings.json', 'settings.local.json'])(
+    'reads an exact {} .claude/%s as no file, and nothing else (DOR-3914)',
+    (name) => {
+      const file = path.join(home, '.claude', name);
+      fs.rmSync(file, { force: true });
+      expect(partsMovedBy(() => write(`.claude/${name}`, '{}'))).toEqual([]);
+      expect(partsMovedBy(() => write(`.claude/${name}`, ' { }\n'))).toEqual([]);
+      expect(partsMovedBy(() => fs.rmSync(file))).toEqual([]);
+      // Any key at all is a file, even one that runs nothing: the usual card.
+      expect(partsMovedBy(() => write(`.claude/${name}`, { permissions: { allow: [] } }))).toEqual([
+        'hooks',
+      ]);
+      expect(partsMovedBy(() => fs.rmSync(file))).toEqual(['hooks']);
+      expect(partsMovedBy(() => write(`.claude/${name}`, { hooks: {} }))).toEqual(['hooks']);
+    }
+  );
+
+  it('still counts a 0-byte settings file as a file of its own (DOR-3914)', () => {
+    const file = path.join(home, '.claude', 'settings.local.json');
+    expect(partsMovedBy(() => write('.claude/settings.local.json', ''))).toEqual(['hooks']);
+    expect(fs.statSync(file).size).toBe(0);
+    expect(partsMovedBy(() => fs.rmSync(file))).toEqual(['hooks']);
+  });
+
   it('moves only the manifest part for a new server or a new account', () => {
     const other = { ...SERVER, name: 'other', connection: { ...SERVER.connection, command: 'x' } };
     expect(
