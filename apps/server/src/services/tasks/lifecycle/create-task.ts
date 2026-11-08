@@ -68,6 +68,7 @@ import {
 import { scheduleAccountRefusal, scheduleRunFolder } from './schedule-account-eligibility.js';
 import { scheduleCreditsModelRefusal } from './schedule-credits-model.js';
 import { marksHold, type TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
 
 /**
  * An ungranted agent create may preserve only these known modes. In particular,
@@ -154,6 +155,12 @@ export interface CreateScheduledTaskOptions {
    * arms without a person. Never read from the request body.
    */
   callerAgentPath?: string;
+  /**
+   * The server found the calling turn at Full autonomy and unmarked, so it may file this under
+   * another agent (DOR-3938, `approvals/cross-agent.ts`). Its mode is then capped at that agent's
+   * own level. Never read from the request body.
+   */
+  forAnotherAgent?: boolean;
   /**
    * The agent's named mode was decided as `tasks.set_mode` and granted
    * (DOR-3703): by a person's card, or by a setting for that action. It lands
@@ -330,14 +337,21 @@ export async function createScheduledTask(
   const callerAgentPath = options.callerAgentPath ?? options.proposal?.agentPath ?? undefined;
   const callerId =
     callerAgentPath !== undefined ? agentIdOfHome(deps.meshCore, callerAgentPath) : undefined;
-  if (!trusted && callerAgentPath !== undefined && !mayTarget(data.target, callerId)) {
+  // A Full, unmarked turn may file one under another agent (DOR-3938).
+  const forAnother = !trusted && options.forAnotherAgent === true && data.target !== 'global';
+  if (
+    !trusted &&
+    !forAnother &&
+    callerAgentPath !== undefined &&
+    !mayTarget(data.target, callerId)
+  ) {
     return { ok: false, status: 403, error: NOT_YOUR_AGENT_MESSAGE, code: 'not_your_agent' };
   }
   const parks =
     !trusted &&
     (marked ||
       options.parkForPerson === true ||
-      !runsAsItsCreator(data.target, callerId) ||
+      (!forAnother && !runsAsItsCreator(data.target, callerId)) ||
       !agentSchedulesArmWithoutAsking(options.callerIsOurAgent === true));
 
   // Asked before ANY write, because the file is written first and never
@@ -373,9 +387,11 @@ export async function createScheduledTask(
   // which path runs depends on whether the file we just wrote parses back, and a
   // caller could choose that (DOR-1432).
   const unclamped = trusted || options.modeGranted === true;
-  const effectivePermissionMode = unclamped
-    ? permissionMode
-    : clampCreatedScheduleMode(permissionMode);
+  const ownCap = unclamped ? permissionMode : clampCreatedScheduleMode(permissionMode);
+  // Never above the target agent's own level, Bypass included (DOR-3938, Security's Must 4).
+  const effectivePermissionMode = forAnother
+    ? await capModeAtAgentLevel(ownCap, deps.meshCore?.getProjectPath(data.target), capabilities)
+    : ownCap;
 
   // An agent's schedule has to make its own case (DOR-1394), whether it parks
   // or is armed: the person reads the reason on the approval card, or on the
@@ -570,7 +586,7 @@ export async function createScheduledTask(
 
   // The ONE un-clamp, after BOTH branches, because both need the same patch and
   // two copies of a security exception are two chances to fix only one of them.
-  if (unclamped && permissionMode === 'bypassPermissions') {
+  if (unclamped && effectivePermissionMode === 'bypassPermissions') {
     schedule = deps.store.updateTask(schedule.id, { permissionMode: 'bypassPermissions' })!;
   }
 
@@ -604,6 +620,8 @@ export async function createScheduledTask(
     });
     schedule = deps.store.getTask(schedule.id)!;
   }
+  // Who made it, for which agent, and at what mode (DOR-3938).
+  if (forAnother) auditCrossAgentTask(schedule, 'create', callerAgentPath, deps.meshCore);
   if (!trusted && !parks) {
     // Armed without asking, so the person is told it exists and can pause it.
     // An event, not a standing condition: nothing waits on them.

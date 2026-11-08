@@ -356,6 +356,20 @@ export const pulseRuns = sqliteTable(
      * agent runs, and on every run older than the column.
      */
     missedTicks: integer('missed_ticks'),
+    /**
+     * The agent that made this run's task, read from the task when the run was dispatched
+     * (DOR-3938): its home folder. NULL for a task a person (or a file) made, and on every run
+     * older than the column. When it is another agent than the one the task runs as, the run
+     * started with the marks below.
+     */
+    creatorAgentPath: text('creator_agent_path'),
+    /** The chat that agent made the task from, beside `creator_agent_path`; NULL when unknown. */
+    creatorSessionId: text('creator_session_id'),
+    /**
+     * The marks that chat's turn carried, as JSON `{ outsider?: true, teammate?: [...] }`, which the
+     * run started with (DOR-3938). `{}` for an unmarked creator; NULL beside a NULL creator.
+     */
+    creatorMarks: text('creator_marks'),
     trigger: text('trigger', {
       enum: ['scheduled', 'manual', 'agent'],
     })

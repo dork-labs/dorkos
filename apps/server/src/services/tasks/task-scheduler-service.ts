@@ -49,6 +49,7 @@ import { parkIfAgentApprovalStale } from './agent-mode/agent-mode-record.js';
 import { V1_RELAY_RUNTIME } from './execution/relay-runtime.js';
 import { checkMisplacedMode } from './execution/misplaced-mode.js';
 import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
+import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
@@ -1123,7 +1124,7 @@ export class TaskSchedulerService {
         // at. It is NOT why the predicate is optional — an absent predicate
         // takes the v1 reading instead, see {@link V1_RELAY_RUNTIME}.
         const relayVerdict = this.assessRelayDispatch(execution.runtimeType, task.id, run.trigger);
-        const viaRelay = relayVerdict.deliverable;
+        const viaRelay = relayVerdict.deliverable && !creatorMarked(task, this.meshCore);
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
         if (!relayVerdict.deliverable) {
           span.setAttr(ATTR.TASK_DISPATCH_REASON, relayVerdict.reason);
@@ -1496,13 +1497,13 @@ export class TaskSchedulerService {
         unattended: !attended,
       });
 
-      const taskAppend = buildTaskAppend(task, run);
       const stream = agentManager.sendMessage(sessionId, task.prompt, {
         permissionMode,
         cwd: effectiveCwd,
         ...(forAgent !== undefined ? { forAgent } : {}),
-        systemPromptAppend: taskAppend,
-        ...execution.settings,
+        systemPromptAppend: buildTaskAppend(task, run),
+        // With the marks of another agent that made the task, as a hop carries them (DOR-3938).
+        ...withCreatorMarks(task, this.meshCore, execution.settings),
         // The same line as `unattended` above, for approval cards: a timer fire
         // does not hold its turn for one, a Run now a person pressed does
         // (spec `agent-permissions` D6).
