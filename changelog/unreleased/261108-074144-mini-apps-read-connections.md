@@ -6,6 +6,9 @@ covers:
   - "fix(connectors): a mini app reads only on a person's yes, and gets no answer if its access changed while the app replied"
   - 'fix(extensions): only files a person approved by hand let a mini app read a connected app'
   - 'feat(connectors): a mini app reads a connected app through DorkOS, with no token and only what a person approved (#3537)'
+  - 'feat(connectors): the Connections page lists what mini apps wait for and may read, and can take a yes back'
+  - 'feat(connections): a mini app waiting to read an app shows in Needs you as a link, and each account lists the mini apps that can read it'
+  - 'feat(connectors): a person lets a mini app read an app only on its own page, outside the app'
 ---
 
 ### Added

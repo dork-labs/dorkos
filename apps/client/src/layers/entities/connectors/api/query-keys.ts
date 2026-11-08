@@ -46,6 +46,8 @@ export const connectorKeys = {
     [...connectorKeys.agentRequests(), 'session', sessionId] as const,
   agentRequest: (requestId: string) =>
     [...connectorKeys.agentRequests(), 'detail', requestId] as const,
+  miniAppAccess: () => [...connectorKeys.all, 'mini-app-access'] as const,
+
   agentRequestAuthentication: (requestId: string, flowId: string) =>
     [...connectorKeys.agentRequest(requestId), 'authentication-flow', flowId] as const,
 };

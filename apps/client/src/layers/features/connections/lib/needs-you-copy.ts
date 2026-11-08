@@ -7,6 +7,10 @@
  */
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorManagementReviewItem } from '@dorkos/shared/connector-schemas';
+import type {
+  MiniAppAccessWaitReason,
+  MiniAppAccessWaiting,
+} from '@dorkos/shared/mini-app-access-schemas';
 import { accountAppName } from './app-list';
 
 /** One line pair for the strip. */
@@ -137,4 +141,25 @@ export function unsettledReviewLine(
     };
   }
   return null;
+}
+
+/** Why a mini app's read waits, in the person's words. */
+const MINI_APP_WAIT_DETAIL: Record<MiniAppAccessWaitReason, string> = {
+  new: 'It could only read, never change anything.',
+  files_changed: 'Its code changed since you said yes. Look again.',
+  operations_changed: 'It now asks for different reads than you approved.',
+};
+
+/**
+ * The line for a mini app waiting to read an app (DOR-3547): "Flow wants to
+ * read Linear".
+ *
+ * @param item - The waiting read.
+ * @param services - Catalog services by id, for the app's name.
+ */
+export function miniAppWaitingLine(item: MiniAppAccessWaiting, services: Services): NeedsYouLine {
+  return {
+    title: `${item.extensionName} wants to read ${accountAppName(item.service, services)}`,
+    detail: MINI_APP_WAIT_DETAIL[item.reason],
+  };
 }

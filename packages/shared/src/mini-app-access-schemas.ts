@@ -15,6 +15,14 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 extendZodWithOpenApiOnce();
 
 /**
+ * Where a person decides, under the API base: a page the server renders on
+ * its own, outside the app, so no mini app code is ever on it. A card
+ * elsewhere links here with only the mini app and the app it reads; the page
+ * asks the server what is waiting and waits for a click.
+ */
+export const MINI_APP_ACCESS_PAGE_PATH = '/connectors/mini-app-access/page';
+
+/**
  * Why a declared app waits for a person.
  *
  * - `new`: nobody has said yes yet.

@@ -34,6 +34,7 @@ import { retryLine, tryItPrompts, usageLine } from '../../lib/app-panel-copy';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
 import { LoadFailedState } from '../LoadFailedState';
 import { AccountPanelMore } from './AccountPanelMore';
+import { MiniAppReaders } from './MiniAppReaders';
 import { PanelFix, PanelSection } from './panel-parts';
 
 /** How many recent actions show before "See all". */
@@ -156,6 +157,8 @@ function AccountPanelBody({
           }}
         />
       )}
+
+      <MiniAppReaders connectionId={connectionId} />
 
       <Recently detail={detail} />
 
