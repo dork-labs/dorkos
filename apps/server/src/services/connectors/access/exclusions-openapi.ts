@@ -9,6 +9,7 @@ import { z } from 'zod';
 import {
   ConnectorAccessChangeListQuerySchema,
   ConnectorAccessChangeListSchema,
+  ConnectorAccessChangeSchema,
   ConnectorAccessChangeUndoSchema,
   ConnectorGrantExclusionChangeSchema,
   ConnectorGrantExclusionListSchema,
@@ -74,6 +75,25 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
       200: {
         description: 'The changes',
         content: { 'application/json': { schema: ConnectorAccessChangeListSchema } },
+      },
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/api/connectors/access-changes/{changeId}',
+    tags: ['Connectors'],
+    summary: "One access change, with the agent's reason",
+    description:
+      'Owner only. What a Needs-you item shows. Show the reason as plain text, attributed to the agent.',
+    request: { params: z.object({ changeId: z.string().min(1) }) },
+    responses: {
+      200: {
+        description: 'The change',
+        content: { 'application/json': { schema: ConnectorAccessChangeSchema } },
+      },
+      404: {
+        description: 'No such change on your apps (`UNDO_NOT_FOUND`)',
+        content: { 'application/json': { schema: ErrorSchema } },
       },
     },
   });

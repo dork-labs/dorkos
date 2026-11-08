@@ -30116,6 +30116,60 @@
         }
       }
     },
+    "/api/connectors/access-changes/{changeId}": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "One access change, with the agent's reason",
+        "description": "Owner only. What a Needs-you item shows. Show the reason as plain text, attributed to the agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "changeId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorAccessChange"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such change on your apps (`UNDO_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connectors/access-changes/{changeId}/undo": {
       "post": {
         "tags": [

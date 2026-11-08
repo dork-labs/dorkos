@@ -14,12 +14,16 @@ import type { Db } from '@dorkos/db';
 import {
   ConnectorAccessChangeListQuerySchema,
   ConnectorAccessChangeListSchema,
+  ConnectorAccessChangeSchema,
   ConnectorAccessChangeUndoSchema,
 } from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import { validationFailureBody } from '../lib/route-utils.js';
-import { listAccessChangesForOwner } from '../services/connectors/access/access-change-ledger.js';
+import {
+  findAccessChangeForOwner,
+  listAccessChangesForOwner,
+} from '../services/connectors/access/access-change-ledger.js';
 import {
   AccessNarrowingError,
   type AccessNarrowingService,
@@ -58,6 +62,18 @@ export function createConnectorAccessChangeRoutes(
         changes: listAccessChangesForOwner(deps.db, owner, query.data),
       })
     );
+  });
+
+  // One change, for the Needs-you item: it reads the agent's reason here,
+  // never from the notification, which agents can read too.
+  router.get('/access-changes/:changeId', (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const change = findAccessChangeForOwner(deps.db, owner, c.req.param('changeId'));
+    if (!change) {
+      return c.json({ error: 'Nothing to show there.', code: 'UNDO_NOT_FOUND' }, 404);
+    }
+    return c.json(ConnectorAccessChangeSchema.parse(change));
   });
 
   router.post('/access-changes/:changeId/undo', async (c) => {

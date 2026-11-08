@@ -58,6 +58,7 @@ describe('access-change routes', () => {
   it.each([
     ['get', '/api/connectors/access-changes'],
     ['post', '/api/connectors/access-changes/change-a/undo'],
+    ['get', '/api/connectors/access-changes/change-a'],
   ] as const)(
     'refuses an agent, an approval token and a foreign page on %s %s',
     async (method, url) => {
@@ -93,6 +94,12 @@ describe('access-change routes', () => {
       .post('/api/connectors/access-changes/change-a/undo')
       .expect(200, { changeId: 'change-a', undoId: 'undo-a' });
     expect(narrowing.undo).toHaveBeenCalledWith(OWNER, 'change-a');
+  });
+
+  it('answers one change the owner does not have with 404', async () => {
+    await request(fixtureTarget.mount(buildApp()))
+      .get('/api/connectors/access-changes/change-z')
+      .expect(404, { error: 'Nothing to show there.', code: 'UNDO_NOT_FOUND' });
   });
 
   it('answers a stale Undo with 409 and an unknown one with 404', async () => {

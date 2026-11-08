@@ -150,6 +150,7 @@
     "GET /api/community-connections/navigation/:ref/destination",
     "GET /api/config",
     "GET /api/connectors/access-changes",
+    "GET /api/connectors/access-changes/:changeId",
     "GET /api/connectors/accessible",
     "GET /api/connectors/accessible/:connectionId/operations",
     "GET /api/connectors/accessible/subscriptions",

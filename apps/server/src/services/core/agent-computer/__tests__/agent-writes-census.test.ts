@@ -544,6 +544,10 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/connectors/connections/:connectionId/exclusions/:agentId',
     ],
   ],
+  [
+    'person-only Undo of an agent’s access change (spec agent-grant-autonomy); it can re-widen access',
+    ['POST /api/connectors/access-changes/:changeId/undo'],
+  ],
 ];
 
 /** The write methods an `ALL` route answers. */

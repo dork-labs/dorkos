@@ -29,7 +29,10 @@ import {
   type NarrowCaller,
 } from '../access/access-narrowing.js';
 import type { AccessChangeEvents, DescribedAccessChange } from '../access/access-change-events.js';
-import { listAccessChangesForOwner } from '../access/access-change-ledger.js';
+import {
+  findAccessChangeForOwner,
+  listAccessChangesForOwner,
+} from '../access/access-change-ledger.js';
 import type { TurnGateRefusal } from '../access/turn-gate.js';
 import { ConnectorExecutionAuthorizationService } from '../execution/authorization-service.js';
 import { createServerPrincipal } from '../principal/server-principal.js';
@@ -398,7 +401,7 @@ describe('agents taking access away', () => {
 
     it('gives the person every change with the reason exactly as written', async () => {
       const written = 'See [link](https://example.com) and <b>bold</b>';
-      await narrowing.narrow(caller('pm'), {
+      const made = await narrowing.narrow(caller('pm'), {
         targetAgentId: 'agent-b',
         connectionId: CONNECTION_ID,
         change: { kind: 'level', to: 'read' },
@@ -407,6 +410,16 @@ describe('agents taking access away', () => {
       expect(listAccessChangesForOwner(db, OWNER)).toEqual([
         expect.objectContaining({ actorId: 'pm', targetAgentId: 'agent-b', reason: written }),
       ]);
+      expect(findAccessChangeForOwner(db, OWNER, made.changeId!)).toMatchObject({
+        reason: written,
+      });
+      expect(
+        findAccessChangeForOwner(
+          db,
+          { kind: 'local_install', installationId: 'other' },
+          made.changeId!
+        )
+      ).toBeUndefined();
       expect(
         listAccessChangesForOwner(db, { kind: 'local_install', installationId: 'other' })
       ).toEqual([]);

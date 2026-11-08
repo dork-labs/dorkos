@@ -29,7 +29,7 @@ import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 export function listAccessChangesForOwner(
   db: Db,
   owner: ConnectorOwnerAuthority,
-  filters: { connectionId?: string; agentId?: string; limit?: number } = {}
+  filters: { connectionId?: string; agentId?: string; limit?: number; changeId?: string } = {}
 ): ConnectorAccessChange[] {
   const ownerKind = owner.kind;
   const ownerId = owner.kind === 'user' ? owner.userId : owner.installationId;
@@ -48,6 +48,7 @@ export function listAccessChangesForOwner(
         filters.connectionId
           ? eq(connectionGrantChanges.connectionId, filters.connectionId)
           : undefined,
+        filters.changeId ? eq(connectionGrantChanges.id, filters.changeId) : undefined,
         filters.agentId
           ? or(
               eq(connectionGrantChanges.actorId, filters.agentId),
@@ -73,4 +74,20 @@ export function listAccessChangesForOwner(
       undoneBy: change.undoneBy,
       createdAt: change.createdAt,
     }));
+}
+
+/**
+ * One of the owner's access changes, or `undefined` when there is no such
+ * change on the owner's apps.
+ *
+ * @param db - Canonical connector database.
+ * @param owner - The verified owner.
+ * @param changeId - The ledger row.
+ */
+export function findAccessChangeForOwner(
+  db: Db,
+  owner: ConnectorOwnerAuthority,
+  changeId: string
+): ConnectorAccessChange | undefined {
+  return listAccessChangesForOwner(db, owner, { changeId, limit: 1 })[0];
 }
