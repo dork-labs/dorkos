@@ -319,6 +319,10 @@ gates:
     source: .claude/settings.json
     purpose: Prints short nags at session start about ADR drift, backlog and stale state, and fast-forwards the main checkout's clean main to origin/main on startup.
 
+  - id: wf.dor3853-macos.macos-evidence
+    source: .github/workflows/dor3853-macos.yml
+    purpose: Temporary never-merged macOS evidence for unreadable homes and own-agent skill access at every permission mode.
+
   # --- ruleset 19893973 "main: merge queue" ---
   - id: ruleset.merge_queue
     source: github:ruleset/19893973
