@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(db): an extension can hold a connection grant, by a typed id the database enforces (DOR-3547)'
+  - "feat(db): the extension grant guard reads the subject, never an id's shape (DOR-3547)"
 ---
 
 ### Added
