@@ -1,4 +1,4 @@
-/** Bash collating symbols and equivalence classes cannot hide a setup-file write (N2). */
+/** Collating symbols, equivalence classes and ranges ending in `[` cannot hide a setup-file write (N2, R1). */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -20,6 +20,13 @@ const cases = [
   ['.cl[[.a.]]ude/settings.json', '.claude/settings.json'],
   ['.claude/settings.js[[=o=]]n', '.claude/settings.json'],
 ];
+// A range that ends in `[` (R1): bash and zsh read `,-[` as one range, and it holds `.`.
+const rangeEnds = ['[,-[]', '[+-[]', '[--[]'];
+const rangeCases = [
+  ...rangeEnds.map((form) => [`.mcp${form}json`, '.mcp.json']),
+  ...rangeEnds.map((form) => [`.claude/settings${form}json`, '.claude/settings.json']),
+];
+const shells = ['/bin/bash', '/bin/zsh'];
 
 beforeAll(() => {
   root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'shell-brackets-')));
@@ -116,6 +123,59 @@ describe('Bash bracket forms', () => {
         expect(shellWriteVerdict(command, roots)).toBe('writes');
       }
     );
+  }
+
+  it.each(rangeCases)('refuses the setup write through a range ending in [: %s', (pattern) => {
+    expect(shellWriteVerdict(`printf x > ${agent}/${pattern}`, roots)).toBe('writes');
+    expect(shellWriteVerdict(`cp /dev/null ${agent}/${pattern}`, roots)).toBe('writes');
+  });
+
+  it.each(rangeCases)(
+    'the real child and hook refuse a range ending in [ at Full: %s',
+    async (pattern) => {
+      const recordRefusal = vi.fn();
+      const hook = createShellPathGuardHook({ permissionMode: 'bypassPermissions' } as never, {
+        check: host.check,
+        roots: () => roots,
+        recordRefusal,
+        log: { info: () => {}, warn: () => {} },
+      });
+      const result = await hook(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: `printf '{"hooks":1}' > ${agent}/${pattern}` },
+          tool_use_id: 'range-proof',
+        } as never,
+        undefined,
+        { signal: new AbortController().signal }
+      );
+      expect(result).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
+      expect(recordRefusal).toHaveBeenCalledOnce();
+    }
+  );
+
+  for (const shell of shells) {
+    for (const locale of ['C', 'en_US.UTF-8']) {
+      it.runIf(process.platform === 'darwin').each(rangeCases)(
+        `matches the real ${shell} write under ${locale}: %s`,
+        (pattern, file) => {
+          const command = `printf range-proof > ${agent}/${pattern}`;
+          const result = spawnSync(shell, ['-c', command], {
+            cwd: agent,
+            env: {
+              LC_ALL: locale,
+              HOME: roots.home,
+              DORK_HOME: roots.dorkHome,
+              CLAUDE_CONFIG_DIR: path.join(root, 'claude'),
+            },
+          });
+          expect(result.status, result.stderr.toString()).toBe(0);
+          expect(readFileSync(path.join(agent, file!), 'utf8')).toBe('range-proof');
+          expect(shellWriteVerdict(command, roots)).toBe('writes');
+        }
+      );
+    }
   }
 
   it.runIf(process.platform === 'darwin')(

@@ -195,6 +195,9 @@ function characterSet(
       at = close + 2;
       continue;
     }
+    // Bash and zsh read `,-[` as a range, which holds `.`; skipping it as one here would need the
+    // shell's rule for where the set then ends. Matching more only refuses.
+    if (segment[at + 1] === '-' && segment[at + 2] === '[') anything = true;
     if (
       segment[at + 1] === '-' &&
       at + 2 < segment.length &&
