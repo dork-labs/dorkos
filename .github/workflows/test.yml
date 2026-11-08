@@ -1318,7 +1318,7 @@ jobs:
       - name: Run the real Codex binary and protected-file controls
         timeout-minutes: 20
         run: |
-          pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
+          pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/app-server.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/protocol-snapshot.binary.test.ts apps/server/src/services/runtimes/codex/app-server/__tests__/default-permissions.binary.test.ts apps/server/src/services/runtimes/codex/__tests__/credits-provider.binary.test.ts --reporter=default --reporter=json --outputFile=vitest-shard-report.json
       - name: Require both protected probes and reject missing binaries or skipped tests
         run: |
           node --input-type=module <<'NODE'
@@ -1331,6 +1331,7 @@ jobs:
           for (const file of [
             'app-server/__tests__/app-server.binary.test.ts',
             'app-server/__tests__/protocol-snapshot.binary.test.ts',
+            'app-server/__tests__/default-permissions.binary.test.ts',
             '__tests__/credits-provider.binary.test.ts',
           ]) {
             assert(report.testResults.some(suite =>

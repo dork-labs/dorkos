@@ -186,9 +186,14 @@ export function codexProtectedConfig(
 ): NonNullable<CodexOptions['config']> {
   const protectedFiles = protectedEntries(policy, onMissingTargets);
   const mode = MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only';
+  const profile = codexPermissionProfile(settings);
   return {
+    // Codex rebuilds this layer without the request's selection (ChatGPT
+    // workspace routing, 0.163); a `[permissions]` table without its default
+    // then fails every turn with "failed to load workspace requirements".
+    default_permissions: profile,
     permissions: {
-      [codexPermissionProfile(settings)]: {
+      [profile]: {
         ...(mode !== 'danger-full-access'
           ? { extends: mode === 'workspace-write' ? ':workspace' : ':read-only' }
           : {}),
