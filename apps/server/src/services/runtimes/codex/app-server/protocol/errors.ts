@@ -42,7 +42,6 @@ const MESSAGE_PATTERNS: ReadonlyArray<readonly [RegExp, CodexRpcErrorKind]> = [
   ],
   // bwrap could not build one of the masks while it set the sandbox up
   // (DOR-3950). The turn stays refused; only the person's copy changes.
-  [/bwrap: Can't create (?:file|directory) at /i, 'sandbox-unavailable'],
   [/^Not initialized/i, 'not-initialized'],
   [/^Already initialized/i, 'already-initialized'],
   [/unknown variant/i, 'unknown-method'],
