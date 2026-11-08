@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_PINNED_APPS, SidebarPrefsSchema } from '../config-schema';
+import { MAX_PINNED_APPS, SidebarPrefsSchema } from '../config-schema.js';
 
 /** Whether these pins would be stored. */
 function accepts(pinnedApps: unknown): boolean {
