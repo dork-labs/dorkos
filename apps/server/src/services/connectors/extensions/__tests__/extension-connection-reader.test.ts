@@ -263,6 +263,17 @@ describe('extension connections, host side', () => {
     ).rejects.toMatchObject({ code: 'EXTENSION_CONNECTION_NOT_GRANTED' });
   });
 
+  it('an operation a later manifest adds stays refused until a person approves it', async () => {
+    approve(
+      installOf({ declarations: [{ service: 'linear', access: 'read', operations: [LIST] }] })
+    );
+    await expect(reader.read(installOf(), GET, {})).rejects.toMatchObject({
+      code: 'EXTENSION_CONNECTION_NOT_GRANTED',
+    });
+    await expect(reader.read(installOf(), LIST, {})).resolves.toMatchObject({ status: 'success' });
+    expect(provider.commands).toHaveLength(1);
+  });
+
   it('N2: a same-id copy elsewhere, or with another origin, gets nothing', async () => {
     approve();
     for (const other of [
