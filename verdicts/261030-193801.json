@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "id": "261030-193801",
- "verdict": "pending",
- "reason": "The after-window runs to 2026-11-07T08:22:09Z; the verdict is computed on 2026-11-08.",
- "computed_at": "2026-11-07T11:37:54.966Z",
+ "verdict": "verified",
+ "reason": "tracked.job-minutes-per-merged-pr reached 1100.1 against a target of 1140 (baseline 1458).",
+ "computed_at": "2026-11-08T11:49:47.690Z",
  "hypothesis_hash": "890f1e51f3bc252e",
  "metric": "tracked.job-minutes-per-merged-pr",
  "anchor": "2026-10-31T08:22:09Z",
