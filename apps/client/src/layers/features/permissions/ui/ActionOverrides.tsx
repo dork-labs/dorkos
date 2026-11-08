@@ -96,6 +96,9 @@ function ActionRow({
       : action.resolved.destructiveAsk
         ? 'Always asks unless you set it here'
         : `Follows ${area.label}`;
+  // Ask never raises a card for a read: only Blocked stops one (`tier-enforcement.ts`).
+  // Said on every read, so nobody sets Ask and waits for a card that never comes.
+  const readNote = action.tier === 'observe' ? 'A read: Ask lets it through' : null;
   const preview =
     scope.kind === 'default' && affected !== undefined ? describeAffectedAgents(affected) : null;
   return (
@@ -108,6 +111,7 @@ function ActionRow({
         <p className="text-muted-foreground text-xs">
           {action.source ? <span>From {action.source.name} · </span> : null}
           <span>{hint}</span>
+          {readNote ? <span> · {readNote}</span> : null}
           {preview ? <span> · {preview}</span> : null} ·{' '}
           <ActionWhy action={action} preset={preset} {...(agentName ? { agentName } : {})} />
         </p>

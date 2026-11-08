@@ -86,7 +86,7 @@ export const PERMISSION_AREAS: readonly PermissionArea[] = Object.freeze([
   {
     id: 'todos',
     label: 'To-dos',
-    description: 'Make, change, and read to-dos',
+    description: 'Add, change, and read to-dos',
     floor: false,
     kind: 'state',
   },

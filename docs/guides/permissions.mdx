@@ -43,7 +43,7 @@ Permissions come in areas, so you decide about a kind of work rather than about 
 | **Tools & packages**  | Install or remove packages, add or change MCP servers, build extensions       |
 | **Extension tools**   | Use tools that installed extensions add                                       |
 | **Own chat**          | Summarize its own chat when it gets full                                      |
-| **To-dos**            | Make, change, and read to-dos                                                 |
+| **To-dos**            | Add, change, and read to-dos                                                  |
 | **DorkOS settings**   | Change your everyday settings, like notifications and the sidebar             |
 | **Safety limits**     | Change reply limits, message caps, and an agent's safety boundaries           |
 | **Permissions**       | Change what any agent is allowed to do                                        |
@@ -68,6 +68,8 @@ Each area is made of actions, like "Delete a schedule" inside Tasks & schedules.
 A few actions always show you exactly what they would change, before and after, such as changing which model an agent runs on. Those always ask: their cards never offer **Always allow**, and they can't be set to Allowed.
 
 An action that deletes or removes something asks even when its area is Allowed. Its line says **"Always asks unless you set it here"**: it runs without asking only if you set that one action to Allowed yourself.
+
+An action that only reads, like listing schedules, says **"A read: Ask lets it through"**. Ask never stops a read. Only Blocked does.
 
 ### Files & commands
 

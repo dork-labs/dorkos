@@ -216,7 +216,7 @@ export const todoPromisesDomain: CapabilityDomain = {
   capabilities: [
     defineCapability({
       id: 'todo_promises.add',
-      title: 'Record a promise',
+      title: 'Add a to-do',
       description:
         'Record something you promised, once you have promised it, so it never lives only in a ' +
         'chat. Everyone on the team can read your list. `what` is the promise in one plain line ' +
@@ -302,7 +302,7 @@ export const todoPromisesDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'todo_promises.update',
-      title: 'Update a promise',
+      title: 'Change a to-do',
       description:
         'Change one of your promises. `state: "kept"` when you have done it, `"dropped"` when it ' +
         'no longer applies (say why in `note`), `"missed"` when you could not make it. To move ' +
@@ -357,7 +357,7 @@ export const todoPromisesDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'todo_promises.list',
-      title: 'Read promises',
+      title: 'Read to-dos',
       description:
         "Read what agents have promised: yours, or any agent's. Open promises only by default, " +
         'soonest due first; `overdue` marks one past its date. `state: "all"` adds closed ones, ' +
