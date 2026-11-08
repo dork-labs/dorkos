@@ -12,6 +12,7 @@ import {
   type ExtensionPermissionTone,
   type ExtensionPermissionView,
 } from '../lib/permission-lines';
+import { extensionAccessFacts } from '../lib/access-facts';
 
 /** Props for {@link ExtensionPermissionLines}. */
 export interface ExtensionPermissionLinesProps {
@@ -19,6 +20,8 @@ export interface ExtensionPermissionLinesProps {
   permissions: ExtensionPermissionView | null | undefined;
   /** What its last approval did not cover. A re-ask leads with these. */
   added?: ExtensionPermissionAdditions | null;
+  /** Line keys to leave out, because something beside the list says them. */
+  omit?: ReadonlySet<string>;
   /** Test id for the list. */
   'data-testid'?: string;
   /** Chrome for the list. */
@@ -43,11 +46,13 @@ const TONE_CLASS: Record<ExtensionPermissionTone, string> = {
 export function ExtensionPermissionLines({
   permissions,
   added,
+  omit,
   'data-testid': testId,
   className,
 }: ExtensionPermissionLinesProps) {
   if (!permissions) return null;
-  const lines = extensionPermissionLines(permissions, added);
+  const lines = extensionPermissionLines(permissions, added).filter((line) => !omit?.has(line.key));
+  if (lines.length === 0) return null;
   return (
     <ul
       className={cn('space-y-1 text-xs', className)}
@@ -87,5 +92,60 @@ export function ExtensionPermissionLines({
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Props for {@link ExtensionAccessFacts}. */
+export interface ExtensionAccessFactsProps {
+  /** What it declares. */
+  permissions: ExtensionPermissionView;
+  /** Test id for the list. */
+  'data-testid'?: string;
+  /** Chrome for the list. */
+  className?: string;
+}
+
+/**
+ * Access, runs as, and network, one line each (Security's words, Nov 8).
+ * Hosts are listed in full and isolated, like every other permission line.
+ *
+ * @param props - What it declares.
+ */
+export function ExtensionAccessFacts({
+  permissions,
+  'data-testid': testId,
+  className,
+}: ExtensionAccessFactsProps) {
+  return (
+    <dl
+      className={cn(
+        'grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs max-sm:grid-cols-1',
+        className
+      )}
+      data-slot="extension-access-facts"
+      data-testid={testId}
+    >
+      {extensionAccessFacts(permissions).map((fact) => (
+        <div key={fact.label} className="contents">
+          <dt className="text-muted-foreground">{fact.label}</dt>
+          <dd className="min-w-0 break-words max-sm:mb-1">
+            {fact.value}
+            {fact.hosts && (
+              <>
+                {' '}
+                <span className="font-mono break-all">
+                  {fact.hosts.map((host, index) => (
+                    <span key={`${index}:${host}`}>
+                      {index > 0 && ', '}
+                      <bdi>{host}</bdi>
+                    </span>
+                  ))}
+                </span>
+              </>
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }

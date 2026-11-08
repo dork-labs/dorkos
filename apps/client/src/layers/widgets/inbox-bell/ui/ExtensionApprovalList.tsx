@@ -6,13 +6,17 @@
 import { Puzzle } from 'lucide-react';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
+  ACCESS_FACT_LINE_KEYS,
   EXTENSION_TRUST_COPY,
+  ExtensionAccessFacts,
   ExtensionAgentGifts,
   ExtensionPermissionLines,
   agentGiftsFromApproval,
+  approvalChangeLine,
   agentGiftsLine,
   approvedSetOf,
   extensionConsentCopy,
+  isChangedSinceAllowed,
   permissionViewFromApproval,
   useAddedSinceSeen,
   useExtensionApprovalActions,
@@ -60,17 +64,36 @@ function approvalOf(approval: PendingExtensionApproval): ApproveExtensionInput {
  * person's last approval (the server's `added`), or, on a first ask whose yes
  * was just refused as stale, since the card they saw (DOR-2686).
  *
- * @param props - The waiting extension.
+ * A first run leads with Access, Runs as and Network, one line each, and the
+ * list under them leaves out what those three already said.
+ *
+ * @param props - The waiting extension, and whether to lead with the facts.
  */
-function ApprovalPermissionLines({ approval }: { approval: PendingExtensionApproval }) {
+function ApprovalPermissionLines({
+  approval,
+  withFacts,
+}: {
+  approval: PendingExtensionApproval;
+  withFacts: boolean;
+}) {
   const view = permissionViewFromApproval(approval);
   const sinceSeen = useAddedSinceSeen(approval.id, approvedSetOf(view));
+  if (!view) return null;
   return (
-    <ExtensionPermissionLines
-      permissions={view}
-      added={approval.added ?? sinceSeen}
-      data-testid={`extension-permissions-${approval.id}`}
-    />
+    <div className="space-y-1.5">
+      {withFacts && (
+        <ExtensionAccessFacts
+          permissions={view}
+          data-testid={`extension-access-facts-${approval.id}`}
+        />
+      )}
+      <ExtensionPermissionLines
+        permissions={view}
+        added={approval.added ?? sinceSeen}
+        {...(withFacts ? { omit: ACCESS_FACT_LINE_KEYS } : {})}
+        data-testid={`extension-permissions-${approval.id}`}
+      />
+    </div>
   );
 }
 
@@ -91,26 +114,38 @@ export interface ExtensionApprovalListProps {
 }
 
 /**
- * The row's question: an update names both versions, any other change to an
- * approved copy says it changed, and a first ask offers to turn it on.
+ * The row's words, as Security wrote them (Nov 8). A copy allowed before whose
+ * files changed says so, with what changed and when; a first run asks to run.
  *
  * @param approval - The waiting copy.
  */
-function titleOf(approval: PendingExtensionApproval): string {
-  if (approval.updatedFrom) {
-    return `Update ${approval.name} from ${approval.updatedFrom} to ${approval.version}?`;
+function wordsOf(approval: PendingExtensionApproval) {
+  if (isChangedSinceAllowed(approval)) {
+    return {
+      changed: true,
+      title: `${approval.name}’s files changed since you allowed it. Its screens are paused until you look.`,
+      why: approvalChangeLine(approval),
+      approveLabel: 'Allow the new version',
+      rejectLabel: 'Keep paused',
+    };
   }
-  return approval.changedFiles
-    ? `${approval.name} has changed. Run the new code?`
-    : `Turn on ${approval.name}?`;
+  return {
+    changed: false,
+    title: `${approval.name} wants to run on this computer.`,
+    why: approval.why,
+    approveLabel: 'Allow',
+    rejectLabel: 'Not now',
+  };
 }
 
 /**
- * One row per extension waiting to be turned on: "Turn on Flow?", the line
- * that says why, where it came from, and ⓘ 👎 👍.
+ * One row per extension waiting to run: "Flow wants to run on this computer.",
+ * Access, Runs as and Network, where it came from, and ⓘ 👎 👍. A copy whose
+ * files changed since it was allowed says so instead, with what changed and
+ * when, and asks to allow the new version.
  *
- * 👍 "Turn it on" is the same person-only approval the Settings card makes,
- * and the extension's tab appears with no reload. 👎 "Not now" removes,
+ * 👍 "Allow" is the same person-only approval the Settings card makes, and
+ * the extension's tab appears with no reload. 👎 "Not now" removes,
  * disables and revokes nothing; the inbox just stops asking until the
  * extension's source or version changes. ⓘ opens the same consent sentence
  * the Settings card shows, and the way there.
@@ -131,6 +166,13 @@ export function ExtensionApprovalList({
       {approvals.map((approval) => {
         const gifts = agentGiftsFromApproval(approval);
         const giftsLine = agentGiftsLine(gifts);
+        const words = wordsOf(approval);
+        // A changed copy leads with what changed; its reach moves behind ⓘ
+        // unless it reaches further than before, which is read before the yes.
+        const reachUpFront = !words.changed || approval.added !== null;
+        const reach = approval.permissions ? (
+          <ApprovalPermissionLines approval={approval} withFacts={!words.changed} />
+        ) : null;
         return (
           <DecisionFrame
             key={`${approval.id}:${approval.path}:${approval.version}`}
@@ -142,22 +184,19 @@ export function ExtensionApprovalList({
               <InboxDecisionRow
                 titleId={titleId}
                 icon={Puzzle}
-                title={titleOf(approval)}
-                why={approval.why}
+                title={words.title}
+                why={words.why}
                 // What it gives agents, on the row itself, so it is read before the
                 // yes; each tool and its tier is in the ⓘ panel (DOR-2685).
                 {...(giftsLine ? { meta: giftsLine } : {})}
                 // Where it runs and what it may reach, on the row itself, so the
                 // yes is given to what it lists; a re-ask leads with what is new.
                 // Nothing extra when the server sent no set (one version behind).
-                {...(approval.permissions
-                  ? {
-                      details: <ApprovalPermissionLines approval={approval} />,
-                    }
-                  : {})}
+                {...(reach && reachUpFront ? { details: reach } : {})}
                 sourceLine={approval.sourceLabel}
                 more={
                   <>
+                    {reach && !reachUpFront && reach}
                     <ExtensionAgentGifts gifts={gifts} variant="list" />
                     <p>
                       {extensionConsentCopy(
@@ -179,8 +218,8 @@ export function ExtensionApprovalList({
                 }
                 actions={{
                   kind: 'yes-no',
-                  approveLabel: 'Turn it on',
-                  rejectLabel: 'Not now',
+                  approveLabel: words.approveLabel,
+                  rejectLabel: words.rejectLabel,
                   onApprove: () => approve(approvalOf(approval)),
                   onReject: () => dismiss(copyOf(approval)),
                 }}
