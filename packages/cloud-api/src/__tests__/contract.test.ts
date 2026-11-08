@@ -676,12 +676,88 @@ describe('the seat reconciliation additions', () => {
     ).toBe(true);
   });
 
-  it('names exactly two hosted grant subjects: one agent, or every agent of the owner', () => {
-    expect(contract.ConnectionGrantSubjectSchema.options).toEqual(['agent', 'every_agent']);
+  it('names exactly three hosted grant subjects: one agent, every agent, or one extension', () => {
+    expect(contract.ConnectionGrantSubjectSchema.options).toEqual([
+      'agent',
+      'every_agent',
+      'extension',
+    ]);
     expect(contract.ConnectionGrantSubjectSchema.safeParse('every_agent').success).toBe(true);
+    expect(contract.ConnectionGrantSubjectSchema.safeParse('extension').success).toBe(true);
     // No wildcard or owner-chosen subject: anything else is refused.
     expect(contract.ConnectionGrantSubjectSchema.safeParse('*').success).toBe(false);
     expect(contract.ConnectionGrantSubjectSchema.safeParse('owner').success).toBe(false);
+  });
+
+  describe('extension grants (DOR-3547)', () => {
+    const ref = contract.ConnectionGrantSubjectRefSchema;
+    const coverage = contract.ConnectionGrantCoverageSchema;
+
+    it('carries the extension id in a typed field of its own', () => {
+      expect(ref.safeParse({ subject: 'extension', extensionId: 'flow-owner' }).success).toBe(true);
+      expect(ref.safeParse({ subject: 'extension' }).success).toBe(false);
+      // Never the agent-id field, in either direction.
+      expect(ref.safeParse({ subject: 'extension', agentId: 'flow-owner' }).success).toBe(false);
+      expect(
+        ref.safeParse({ subject: 'extension', extensionId: 'flow-owner', agentId: 'agent-1' })
+          .success
+      ).toBe(false);
+      expect(ref.safeParse({ subject: 'agent', extensionId: 'flow-owner' }).success).toBe(false);
+    });
+
+    it('refuses a prefixed string standing for an extension', () => {
+      expect(ref.safeParse({ subject: 'agent', agentId: 'extension:flow-owner' }).success).toBe(
+        false
+      );
+      expect(ref.safeParse({ subject: 'agent', agentId: 'Extension:flow-owner' }).success).toBe(
+        false
+      );
+      expect(
+        ref.safeParse({ subject: 'extension', extensionId: 'extension:flow-owner' }).success
+      ).toBe(false);
+      expect(ref.safeParse({ subject: 'extension', extensionId: 'Flow' }).success).toBe(false);
+      expect(ref.safeParse({ subject: 'agent', agentId: 'agent-1' }).success).toBe(true);
+    });
+
+    it('never lets every_agent cover an extension, or an extension hold every_agent', () => {
+      expect(ref.safeParse({ subject: 'every_agent' }).success).toBe(true);
+      expect(ref.safeParse({ subject: 'every_agent', extensionId: 'flow-owner' }).success).toBe(
+        false
+      );
+      expect(ref.safeParse({ subject: 'every_agent', agentId: 'agent-1' }).success).toBe(false);
+      expect(
+        coverage.safeParse({
+          grantee: { subject: 'every_agent', extensionId: 'flow-owner' },
+          classification: 'read',
+        }).success
+      ).toBe(false);
+    });
+
+    it('refuses an extension grant on a write or destructive operation', () => {
+      const extension = { subject: 'extension', extensionId: 'flow-owner' } as const;
+      expect(coverage.safeParse({ grantee: extension, classification: 'read' }).success).toBe(true);
+      expect(coverage.safeParse({ grantee: extension, classification: 'write' }).success).toBe(
+        false
+      );
+      expect(
+        coverage.safeParse({ grantee: extension, classification: 'destructive' }).success
+      ).toBe(false);
+      expect(contract.grantSubjectMayHold('extension', 'write')).toBe(false);
+      expect(contract.grantSubjectMayHold('extension', 'destructive')).toBe(false);
+      expect(contract.grantSubjectMayHold('extension', 'read')).toBe(true);
+    });
+
+    it('leaves agent and every_agent grants on every classification', () => {
+      for (const classification of ['read', 'write', 'destructive'] as const) {
+        expect(
+          coverage.safeParse({ grantee: { subject: 'agent', agentId: 'agent-1' }, classification })
+            .success
+        ).toBe(true);
+        expect(
+          coverage.safeParse({ grantee: { subject: 'every_agent' }, classification }).success
+        ).toBe(true);
+      }
+    });
   });
 
   it('lets a grant list say what zero rows resolves to', () => {
