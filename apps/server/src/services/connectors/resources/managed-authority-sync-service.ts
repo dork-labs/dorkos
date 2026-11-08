@@ -1673,7 +1673,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
                 .where(eq(connectorEventBindings.id, subscription.bindingId))
                 .run();
           }
-        } else if (command.lifecycle === 'active') {
+        } else if ('lifecycle' in command && command.lifecycle === 'active') {
           tx.update(connections)
             .set({ enabled: true, pausedBy: null, updatedAt: now })
             .where(eq(connections.id, row.connectionId))
@@ -1936,7 +1936,8 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         binding.authenticationStatus === 'active'
       );
     }
-    if (command.kind === 'replace_agent_grants' || command.kind === 'replace_every_agent_grants') {
+    // Every grant command (agent, every agent, extension) needs a live, turned-on account.
+    if (command.kind !== 'set_connection_lifecycle') {
       return binding.lifecycleState === 'connected' && binding.enabled;
     }
     if (command.lifecycle === 'disconnected')

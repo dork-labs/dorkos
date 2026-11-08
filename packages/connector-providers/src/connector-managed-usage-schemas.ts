@@ -7,7 +7,12 @@
  * @module connector-providers/connector-managed-usage-schemas
  */
 import { z } from 'zod';
-import { ManagedConnectorExecutionReceiptSchema } from './connector-managed-schemas.js';
+import { ConnectionGrantExtensionIdSchema } from '@dork-labs/cloud-api';
+import {
+  ManagedConnectorActorKindSchema,
+  ManagedConnectorExecutionReceiptSchema,
+  ManagedConnectorSurfaceSchema,
+} from './connector-managed-schemas.js';
 
 const ManagedUsageIdSchema = z.string().min(1).max(200);
 
@@ -17,6 +22,8 @@ export const ManagedConnectorUsageRequestSchema = z
     version: z.literal(1),
     managedConnectionId: ManagedUsageIdSchema.optional(),
     agentId: ManagedUsageIdSchema.optional(),
+    /** Only one extension's reads (DOR-3980). */
+    extensionId: ConnectionGrantExtensionIdSchema.optional(),
     cursor: z.string().min(1).max(500).optional(),
     limit: z.number().int().min(1).max(100).default(50),
   })
@@ -29,7 +36,10 @@ const ManagedUsageItemBaseShape = {
   logicalOperationId: ManagedUsageIdSchema,
   attemptIndex: z.number().int().positive(),
   managedConnectionId: ManagedUsageIdSchema,
-  agentId: ManagedUsageIdSchema,
+  /** The agent that called; absent only on an extension's read. */
+  agentId: ManagedUsageIdSchema.optional(),
+  /** The extension that read (DOR-3980); present only on an extension's read. */
+  extensionId: ConnectionGrantExtensionIdSchema.optional(),
   revision: z
     .object({
       operationSlug: ManagedUsageIdSchema,
@@ -39,8 +49,8 @@ const ManagedUsageItemBaseShape = {
     .strict(),
   toolkit: ManagedUsageIdSchema,
   payer: z.literal('dorkos_managed'),
-  surface: z.enum(['mcp', 'rest', 'cli', 'event']),
-  actorKind: z.enum(['operator', 'agent', 'program', 'event', 'runtime']),
+  surface: ManagedConnectorSurfaceSchema,
+  actorKind: ManagedConnectorActorKindSchema,
   startedAt: z.string().datetime(),
 };
 
@@ -57,6 +67,21 @@ export const ManagedConnectorUsageItemSchema = z
       .strict(),
   ])
   .superRefine((item, context) => {
+    // An extension's read names the extension and no agent; every other row
+    // names its agent and no extension.
+    const byExtension = item.actorKind === 'extension';
+    if (
+      byExtension !== (item.surface === 'extension') ||
+      byExtension !== (item.extensionId !== undefined) ||
+      byExtension === (item.agentId !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          "An extension's read names the extension and no agent; any other row names its agent.",
+        path: ['actorKind'],
+      });
+    }
     if (
       item.state === 'recorded' &&
       (item.receipt.attemptId !== item.attemptId ||
