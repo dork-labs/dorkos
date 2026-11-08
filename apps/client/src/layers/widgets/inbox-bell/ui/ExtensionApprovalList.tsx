@@ -113,6 +113,9 @@ export interface ExtensionApprovalListProps {
   onFocusSpent?: () => void;
 }
 
+/** The sentence the server ends every why line with. */
+const RUNS_AS_YOU_TAIL = / ?It runs as you\.$/;
+
 /**
  * The row's words, as Security wrote them (Nov 8). A copy allowed before whose
  * files changed says so, with what changed and when; a first run asks to run.
@@ -132,7 +135,9 @@ function wordsOf(approval: PendingExtensionApproval) {
   return {
     changed: false,
     title: `${approval.name} wants to run on this computer.`,
-    why: approval.why,
+    // The server ends every why line with "It runs as you."; the Runs as line
+    // already says so, so the card does not say it twice.
+    why: approval.permissions ? approval.why.replace(RUNS_AS_YOU_TAIL, '') : approval.why,
     approveLabel: 'Allow',
     rejectLabel: 'Not now',
   };
@@ -218,6 +223,8 @@ export function ExtensionApprovalList({
                 }
                 actions={{
                   kind: 'yes-no',
+                  // Worded buttons under the card, like the Settings rows.
+                  words: true,
                   approveLabel: words.approveLabel,
                   rejectLabel: words.rejectLabel,
                   onApprove: () => approve(approvalOf(approval)),

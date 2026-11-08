@@ -51,7 +51,7 @@ export function extensionAccessFacts(permissions: ExtensionPermissionView): Exte
   } else {
     facts.push({ label: 'Access', value: 'Runs on its own, apart from DorkOS' });
   }
-  facts.push({ label: 'Runs as', value: 'Runs as you' });
+  facts.push({ label: 'Runs as', value: 'You' });
   if (permissions.runtime === 'subprocess') {
     facts.push(
       permissions.net.length > 0

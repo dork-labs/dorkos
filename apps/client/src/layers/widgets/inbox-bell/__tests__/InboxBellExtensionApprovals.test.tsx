@@ -195,13 +195,22 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     renderBell();
     const { row } = await openRow();
 
-    expect(within(row).getByText(FLOW.why)).toBeInTheDocument();
+    // The Runs as line says it, so the second line does not end "It runs as you."
+    expect(
+      within(row).getByText(
+        'You installed the flow plugin. This adds a Flow tab that shows what your agents are working on.'
+      )
+    ).toBeInTheDocument();
     expect(within(row).getByText('flow plugin · dork-labs/marketplace')).toBeInTheDocument();
     expect(
       within(row)
         .getAllByRole('button')
-        .map((button) => button.getAttribute('aria-label'))
-    ).toEqual(['More about this', 'Not now', 'Allow']);
+        .map((button) => button.getAttribute('aria-label') ?? button.textContent)
+    ).toEqual(['Allow', 'Not now', 'More about this']);
+    // The answers are words on buttons; ⓘ is the only icon.
+    expect(row.querySelector('[data-slot="inbox-answer-buttons"]')).toHaveTextContent(
+      'AllowNot now'
+    );
     expect(
       screen.getByText("Flow is waiting to be turned on. It won't run until you decide.")
     ).toBeInTheDocument();
@@ -235,8 +244,8 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(
       within(row)
         .getAllByRole('button')
-        .map((button) => button.getAttribute('aria-label'))
-    ).toEqual(['More about this', 'Keep paused', 'Allow the new version']);
+        .map((button) => button.getAttribute('aria-label') ?? button.textContent)
+    ).toEqual(['Allow the new version', 'Keep paused', 'More about this']);
   });
 
   it('says a changed copy that was not updated changed too, and Keep paused only defers', async () => {
@@ -451,7 +460,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       expect(facts).toHaveTextContent(
         'AccessRuns inside DorkOS, with full access to this computer'
       );
-      expect(facts).toHaveTextContent('Runs asRuns as you');
+      expect(facts).toHaveTextContent('Runs asYou');
       expect(facts).toHaveTextContent('NetworkCan reach anything this computer can');
       // Said once, by the facts, not again in a list under them.
       expect(within(row).queryByTestId('extension-permissions-flow')).not.toBeInTheDocument();
@@ -466,7 +475,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       // Said before the yes, first: where it runs, as whom, and what it reaches.
       const facts = within(row).getByTestId('extension-access-facts-flow');
       expect(facts).toHaveTextContent('AccessRuns on its own, apart from DorkOS');
-      expect(facts).toHaveTextContent('Runs asRuns as you');
+      expect(facts).toHaveTextContent('Runs asYou');
       expect(facts).toHaveTextContent('NetworkCan reach imap.fastmail.com, smtp.fastmail.com');
       // The rest, without saying those three again.
       const lines = within(row).getByTestId('extension-permissions-flow');

@@ -14,7 +14,7 @@ describe('extensionAccessFacts', () => {
   it('says full access and any network for one that runs inside DorkOS', () => {
     expect(extensionAccessFacts(BASE)).toEqual([
       { label: 'Access', value: 'Runs inside DorkOS, with full access to this computer' },
-      { label: 'Runs as', value: 'Runs as you' },
+      { label: 'Runs as', value: 'You' },
       { label: 'Network', value: 'Can reach anything this computer can' },
     ]);
   });
@@ -22,7 +22,7 @@ describe('extensionAccessFacts', () => {
   it('says screens only, and no network line, for one with no server half', () => {
     expect(extensionAccessFacts({ ...BASE, hasServer: false })).toEqual([
       { label: 'Access', value: 'Screens run inside DorkOS, with your access' },
-      { label: 'Runs as', value: 'Runs as you' },
+      { label: 'Runs as', value: 'You' },
     ]);
   });
 

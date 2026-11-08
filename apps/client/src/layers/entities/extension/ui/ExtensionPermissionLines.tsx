@@ -133,11 +133,24 @@ export function ExtensionAccessFacts({
             {fact.hosts && (
               <>
                 {' '}
-                <span className="font-mono break-all">
+                {/* On a phone the hosts take their own line, and a host only
+                    ever wraps at a dot, never mid-word. */}
+                <span className="font-mono max-sm:block">
                   {fact.hosts.map((host, index) => (
                     <span key={`${index}:${host}`}>
                       {index > 0 && ', '}
-                      <bdi>{host}</bdi>
+                      <bdi>
+                        {host.split('.').map((label, part) => (
+                          <span key={part}>
+                            {part > 0 && (
+                              <>
+                                .<wbr />
+                              </>
+                            )}
+                            {label}
+                          </span>
+                        ))}
+                      </bdi>
                     </span>
                   ))}
                 </span>
