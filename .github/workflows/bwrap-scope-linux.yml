@@ -1,0 +1,97 @@
+name: Native Linux bwrap backup scope
+
+# Temporary evidence only. Held draft; never merge. No secrets or login.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/bwrap-scope-linux.yml
+      - apps/server/src/services/runtimes/codex/app-server/__tests__/bwrap-scope.binary.test.ts
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  linux-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+      DORKOS_TEST_RUNTIME: 'true'
+    steps:
+      - name: Isolate evidence and DorkOS home
+        run: |
+          echo "DORK_HOME=$RUNNER_TEMP/bwrap-scope-dork-home" >> "$GITHUB_ENV"
+          echo "BWRAP_SCOPE_OUT=$RUNNER_TEMP/bwrap-scope-out" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Check the optional workflow and its ledger in CI
+        run: |
+          node packages/ci-steward/src/cli.ts census
+          node packages/ci-steward/src/cli.ts ledger-check
+          node packages/ci-steward/src/cli.ts ledger-check --coverage --base d9990d136bb710a58ee564987433232d867f6f6a
+      - name: Install distro bubblewrap and load its scoped AppArmor profile
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap apparmor-profiles apparmor-utils strace
+          sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          test "$(readlink -f /usr/bin/bwrap)" = /usr/bin/bwrap
+          dpkg-query -S /usr/bin/bwrap
+          /usr/bin/bwrap --version
+          /usr/bin/bwrap --unshare-user --unshare-net --ro-bind / / --proc /proc --dev /dev -- /bin/true
+          mkdir -p "$BWRAP_SCOPE_OUT"
+          uname -a > "$BWRAP_SCOPE_OUT/platform.txt"
+          cat /etc/os-release >> "$BWRAP_SCOPE_OUT/platform.txt"
+      - name: Build workspace dependencies in CI only
+        run: pnpm exec turbo run build --filter='@dorkos/server^...'
+      - name: Native untraced six-row comparison
+        id: native
+        continue-on-error: true
+        run: pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/bwrap-scope.binary.test.ts --reporter=default --reporter=json --outputFile=${{ runner.temp }}/bwrap-scope-out/native-report.json
+      - name: Diagnostic repeat recording actual execve and bwrap arguments
+        id: traced
+        continue-on-error: true
+        env:
+          BWRAP_SCOPE_TRACE: '1'
+        run: pnpm vitest run apps/server/src/services/runtimes/codex/app-server/__tests__/bwrap-scope.binary.test.ts --reporter=default --reporter=json --outputFile=${{ runner.temp }}/bwrap-scope-out/traced-report.json
+      - name: Require all six untraced rows to execute and discriminate
+        if: always()
+        env:
+          NATIVE: ${{ steps.native.outcome }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          assert.equal(process.env.NATIVE, 'success');
+          const report = JSON.parse(fs.readFileSync(`${process.env.BWRAP_SCOPE_OUT}/native-report.json`, 'utf8'));
+          const tests = report.testResults.flatMap(s => s.assertionResults);
+          assert.equal(tests.length, 6);
+          assert(tests.every(t => t.status === 'passed'));
+          for (const mode of ['default', 'acceptEdits', 'bypassPermissions']) {
+            for (const variant of ['A', 'B']) {
+              const row = JSON.parse(fs.readFileSync(`${process.env.BWRAP_SCOPE_OUT}/native/${variant}-${mode}.json`, 'utf8'));
+              assert.equal(row.traced, false);
+              assert.equal(row.mode, mode);
+              assert.equal(row.variant, variant);
+            }
+          }
+          NODE
+      - name: Preserve receipts and exact errors even after failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bwrap-scope-linux
+          path: ${{ runner.temp }}/bwrap-scope-out
+          if-no-files-found: error
+          retention-days: 14
