@@ -29794,7 +29794,7 @@
             }
           },
           "404": {
-            "description": "Connection absent or owned by someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -29857,7 +29857,7 @@
             }
           },
           "404": {
-            "description": "Connection absent or owned by someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -29918,7 +29918,7 @@
             }
           },
           "404": {
-            "description": "Connection absent or owned by someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
             "content": {
               "application/json": {
                 "schema": {

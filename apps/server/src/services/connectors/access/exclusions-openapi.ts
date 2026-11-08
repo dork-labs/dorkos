@@ -16,7 +16,7 @@ const ErrorSchema = z.object({ error: z.string(), code: z.string() });
 
 const notFound = {
   description:
-    'Connection absent or owned by someone else (`connection_not_found`), or no such agent (`agent_not_found`)',
+    'No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)',
   content: { 'application/json': { schema: ErrorSchema } },
 };
 
