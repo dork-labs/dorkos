@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): backups and vanished chats keep no recorded turn text (DOR-4001, DOR-4002, DOR-4006)'
+  - 'fix(db): no backup keeps recorded turn text after a crash, a reuse or a stale copy'
 ---
 
 ### Fixed

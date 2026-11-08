@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDb, runMigrations, type Db } from '../index.js';
-import { snapshotDaily, snapshotSqlite } from '../backup.js';
+import { snapshotBeforeMigrations, snapshotDaily, snapshotSqlite } from '../backup.js';
 import { scrubSnapshot } from '../snapshot-scrub.js';
 
 /** Made-up memory, long enough to find in raw file bytes. */
@@ -149,6 +149,42 @@ describe('nothing around a snapshot keeps the text either', () => {
         false
       );
     }
+  });
+
+  it('empties an existing snapshot it reuses: one written before the scrub, or by a process that died before it', async () => {
+    const backups = join(dir, 'backups');
+    const today = join(backups, 'dork-20261108-daily.db');
+    // An unscrubbed copy already at today's name, as an older build would leave.
+    snapshotSqlite(db.$client, join(backups, 'scratch.db'));
+    db.$client.prepare('VACUUM INTO ?').run(today);
+    expect(readFileSync(today).includes(Buffer.from('oat milk only'))).toBe(true);
+
+    const written = await snapshotDaily(db, {
+      dir: backups,
+      now: new Date('2026-11-08T12:00:00Z'),
+    });
+
+    expect(written).toBeNull();
+    expect(readSnapshot(today)).toEqual({
+      bodies: 0,
+      parts: [{ body_hash: HASH, bytes: 64, tokens_estimate: 16 }],
+      rawHasText: false,
+    });
+  });
+
+  it('removes a stale .partial at boot even when no new snapshot is written that day', async () => {
+    const backups = join(dir, 'backups');
+    const now = new Date('2026-11-08T12:00:00Z');
+    await snapshotDaily(db, { dir: backups, now });
+    // A crashed earlier day's copy, still holding the text.
+    const stale = join(backups, 'dork-20261101-daily.db.partial');
+    writeFileSync(stale, readFileSync(join(dir, 'dork.db')));
+
+    // Today's snapshot exists, so this writes nothing: only the boot sweep can remove it.
+    expect(await snapshotDaily(db, { dir: backups, now })).toBeNull();
+    expect(snapshotBeforeMigrations(db, { dir: backups })).toBeNull();
+
+    expect(readdirSync(backups).filter((name) => name.includes('.partial'))).toEqual([]);
   });
 
   it('still refuses to write over an existing snapshot, and leaves it alone', () => {

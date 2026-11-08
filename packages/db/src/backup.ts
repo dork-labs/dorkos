@@ -498,6 +498,9 @@ export interface SnapshotOptions {
  * @throws {SnapshotFailedError} When the snapshot cannot be written.
  */
 export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): string | null {
+  // Every boot passes here, whether or not a migration is pending: the moment to
+  // remove a `.partial` a process that died mid-snapshot left (DOR-4001).
+  removeStalePartials(options.dir);
   const { pending, fresh } = readMigrationState(db);
   if (fresh || pending.length === 0) return null;
 
@@ -511,12 +514,13 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
   // collision into a server that will not start. Wreckage at this name is
   // cleared instead, because trusting it would mean migrating unprotected while
   // logging that a snapshot was taken.
-  if (!reuseOrClear(dest, DRIZZLE_MIGRATIONS_TABLE)) {
-    try {
-      snapshotSqlite(db.$client, dest);
-    } catch (err) {
-      throw new SnapshotFailedError(options.dir, err);
-    }
+  try {
+    // A reused snapshot is emptied of recorded turn text too: it may predate
+    // the scrub, or have been written by a process that died before it (DOR-4001).
+    if (reuseOrClear(dest, DRIZZLE_MIGRATIONS_TABLE)) scrubSnapshot(dest);
+    else snapshotSqlite(db.$client, dest);
+  } catch (err) {
+    throw new SnapshotFailedError(options.dir, err);
   }
   pruneSnapshots(options.dir, PRE_MIGRATION_PATTERN, SNAPSHOT_RETENTION.preMigration);
   return dest;
@@ -543,7 +547,17 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
 export async function snapshotDaily(db: Db, options: SnapshotOptions): Promise<string | null> {
   const now = options.now ?? new Date();
   const dest = path.join(options.dir, `dork-${utcDay(now)}-daily.db`);
-  if (reuseOrClear(dest)) return null;
+  // Runs at boot and on the hourly tick, so it is where a stale `.partial` from
+  // a crashed snapshot is found even on a day nothing new is written (DOR-4001).
+  removeStalePartials(options.dir);
+  if (reuseOrClear(dest)) {
+    try {
+      scrubSnapshot(dest);
+    } catch (err) {
+      throw new SnapshotFailedError(options.dir, err);
+    }
+    return null;
+  }
 
   try {
     await snapshotSqliteInSteps(db.$client, dest);

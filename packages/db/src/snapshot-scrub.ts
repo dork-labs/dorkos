@@ -34,6 +34,10 @@ export function scrubSnapshot(snapshotPath: string): void {
       .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
       .get(RECORDED_TEXT_TABLE);
     if (present === undefined) return;
+    // Nothing to empty: leave the file as it is. This is what keeps a re-check
+    // of an existing snapshot (the reuse path) cheap.
+    const held = copy.prepare(`SELECT 1 FROM ${RECORDED_TEXT_TABLE} LIMIT 1`).get();
+    if (held === undefined) return;
     copy.pragma('secure_delete = ON');
     copy.exec(`DELETE FROM ${RECORDED_TEXT_TABLE}`);
     copy.exec('VACUUM');
