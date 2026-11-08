@@ -13,11 +13,14 @@
  * page fetch. Fake Cloud must see none of them, while the ordinary site still
  * loads with its saved cookie.
  *
- * It needs the system Chrome and `npx`, so it never runs in CI or in
- * `pnpm test`: it is armed only by `DORKOS_BROWSER_SMOKE=1`, which no task
- * passes through. Run it by hand:
+ * It needs the system Chrome and `npx`, so it never runs in `pnpm test`: it
+ * is armed only by `DORKOS_BROWSER_SMOKE=1`, which no task passes through.
+ * CI only: it also needs `CI=true`, so it never launches Chrome on a
+ * developer's computer, where a system Chrome can raise a Keychain prompt in
+ * the person's session (DOR-3957). No CI job sets the flag yet, so today it
+ * runs nowhere. A CI runner arms it with:
  *
- *   DORKOS_BROWSER_SMOKE=1 pnpm vitest run \
+ *   CI=true DORKOS_BROWSER_SMOKE=1 pnpm vitest run \
  *     apps/server/src/services/browser/__tests__/agent-browser-guard-smoke.test.ts
  *
  * Every file it touches lives in a temp directory.
@@ -38,7 +41,7 @@ import { guardAgentBrowsers } from '../agent-browser-guard.js';
  * Read once at module scope, so no other file's env stubbing can blank it. A
  * test-only arming flag, so it is deliberately not in the server's env schema.
  */
-const ARMED = process.env.DORKOS_BROWSER_SMOKE === '1';
+const ARMED = process.env.DORKOS_BROWSER_SMOKE === '1' && process.env.CI === 'true';
 
 type Browser = {
   call: (name: string, args: Record<string, unknown>) => Promise<string>;

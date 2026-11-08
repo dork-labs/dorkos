@@ -12,11 +12,14 @@
  * sign-in page cannot plant page storage for another origin.
  *
  * It needs the system Chrome and `npx` (it runs the pinned `@playwright/mcp`,
- * which is fetched on first use), so it never runs in CI or in `pnpm test`: it is
- * armed only by `DORKOS_BROWSER_SMOKE=1`, which no task passes through. Run it
- * by hand on a machine with Chrome:
+ * which is fetched on first use), so it never runs in `pnpm test`: it is armed
+ * only by `DORKOS_BROWSER_SMOKE=1`, which no task passes through.
+ * CI only: it also needs `CI=true`, so it never launches Chrome on a
+ * developer's computer, where a system Chrome can raise a Keychain prompt in
+ * the person's session (DOR-3957). No CI job sets the flag yet, so today it
+ * runs nowhere. A CI runner arms it with:
  *
- *   DORKOS_BROWSER_SMOKE=1 pnpm vitest run \
+ *   CI=true DORKOS_BROWSER_SMOKE=1 pnpm vitest run \
  *     packages/cli/src/lib/agent-browser/__tests__/agent-browser-smoke.test.ts
  *
  * The local site is reached as `site.test`, which a Chrome host rule sends to
@@ -46,7 +49,7 @@ import { collectStorageState, writeStorageState } from '../storage-state.js';
  * test-only arming flag, so it is deliberately not in the CLI's env schema.
  */
 // eslint-disable-next-line no-restricted-syntax -- test-only arming flag, see above
-const ARMED = process.env.DORKOS_BROWSER_SMOKE === '1';
+const ARMED = process.env.DORKOS_BROWSER_SMOKE === '1' && process.env.CI === 'true';
 
 /**
  * The page an operator "signs in" on: it sets a cookie and page storage, then

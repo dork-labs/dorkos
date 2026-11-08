@@ -169,6 +169,28 @@ describe('scrubAgentBrowserState and DorkOS’s own sign-in (DOR-3957)', () => {
     expect(fs.readFileSync(elsewhere, 'utf8')).toBe(before);
   });
 
+  it('strips a DorkOS cookie on its own, with no page storage beside it', () => {
+    fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+    fs.writeFileSync(
+      stateFile,
+      JSON.stringify({
+        cookies: [cookie('localhost', 'fake-dorkos-session'), cookie('github.com')],
+        origins: [],
+      })
+    );
+    expect(scrubAgentBrowserState(stateFile, { entries, appHosts, owned: true })).toBe('scrubbed');
+    expect(readState().cookies.map((c) => c.domain)).toEqual(['github.com']);
+    expect(fs.readFileSync(stateFile, 'utf8')).not.toContain('fake-dorkos-session');
+
+    // A file that is not DorkOS's own, with only the cookie, is refused for it.
+    const elsewhere = path.join(dorkHome, 'cookie-only.json');
+    fs.writeFileSync(
+      elsewhere,
+      JSON.stringify({ cookies: [cookie('127.0.0.1', 'fake-dorkos-session')], origins: [] })
+    );
+    expect(scrubAgentBrowserState(elsewhere, { entries, appHosts, owned: false })).toBe('refused');
+  });
+
   it('cleans the session on every load before the browser starts', () => {
     seedDorkosSession();
     guardAgentBrowsers(
