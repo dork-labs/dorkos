@@ -59,25 +59,19 @@ export const ConnectionGrantExtensionIdSchema = z
   .describe('The id of the extension a grant covers, in the manifest id grammar.');
 
 /**
- * An agent id as a grant names it. It refuses an `extension:`-prefixed string,
- * so an extension can never be named into an agent's grant by a prefix.
- */
-const ConnectionGrantAgentIdSchema = z
-  .string()
-  .min(1)
-  .max(200)
-  .refine((id) => !/^extension:/i.test(id), 'An agent id never names an extension');
-
-/**
  * Who one hosted grant covers, with the subject's id in a field of its own
  * kind. Each variant is strict: an `every_agent` subject carries no id, an
  * `agent` subject carries only `agentId` and an `extension` subject carries
  * only `extensionId`. So an extension can never hold an `every_agent` grant,
  * and an agent can't be named into an extension's grant, or the reverse.
+ *
+ * What a subject is comes from `subject` alone, never from the shape of an id:
+ * an agent id that happens to read `extension:flow` is still only an agent's,
+ * and no string in `agentId` can ever stand for an extension.
  */
 export const ConnectionGrantSubjectRefSchema = z
   .discriminatedUnion('subject', [
-    z.object({ subject: z.literal('agent'), agentId: ConnectionGrantAgentIdSchema }).strict(),
+    z.object({ subject: z.literal('agent'), agentId: z.string().min(1).max(200) }).strict(),
     z.object({ subject: z.literal('every_agent') }).strict(),
     z
       .object({ subject: z.literal('extension'), extensionId: ConnectionGrantExtensionIdSchema })

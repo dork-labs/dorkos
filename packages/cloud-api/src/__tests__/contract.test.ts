@@ -705,18 +705,25 @@ describe('the seat reconciliation additions', () => {
       expect(ref.safeParse({ subject: 'agent', extensionId: 'flow-owner' }).success).toBe(false);
     });
 
-    it('refuses a prefixed string standing for an extension', () => {
-      expect(ref.safeParse({ subject: 'agent', agentId: 'extension:flow-owner' }).success).toBe(
-        false
-      );
-      expect(ref.safeParse({ subject: 'agent', agentId: 'Extension:flow-owner' }).success).toBe(
-        false
-      );
+    it('never lets a prefixed string stand for an extension', () => {
+      // The extension id grammar has no ':' and no capitals.
       expect(
         ref.safeParse({ subject: 'extension', extensionId: 'extension:flow-owner' }).success
       ).toBe(false);
       expect(ref.safeParse({ subject: 'extension', extensionId: 'Flow' }).success).toBe(false);
-      expect(ref.safeParse({ subject: 'agent', agentId: 'agent-1' }).success).toBe(true);
+      // An agent id is not policed by shape: what a subject is comes from
+      // `subject`, never from its id. An agent id that reads like a prefixed
+      // extension is still only an agent's, so it can't widen an extension's
+      // grant, and it keeps the agent's own rules (a write stays possible).
+      for (const agentId of ['extension:flow-owner', ' extension:flow-owner', 'agent-1']) {
+        const parsed = ref.parse({ subject: 'agent', agentId });
+        expect(parsed).toEqual({ subject: 'agent', agentId });
+        expect(contract.grantSubjectMayHold(parsed.subject, 'write')).toBe(true);
+        expect(
+          coverage.safeParse({ grantee: { subject: 'extension', agentId }, classification: 'read' })
+            .success
+        ).toBe(false);
+      }
     });
 
     it('never lets every_agent cover an extension, or an extension hold every_agent', () => {

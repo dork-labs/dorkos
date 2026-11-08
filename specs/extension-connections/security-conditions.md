@@ -20,11 +20,13 @@ Security passed the design (`02-specification.md`, PR #3527) **with conditions**
 - **N1. No grant for code that can change without a person.** A path-trust copy (agent-written, local, subprocess) can rewrite `server.js` with nobody clicking anything, so no "update" ever fires and the Q1 notice never shows.
   - Add `connections` to `grantsDigestOf` (`extension-path-trust.ts`).
   - Honour extension grants only on a trusted-origin or digest-pinned copy whose **live** digest equals `approved_files_digest`.
+  - **A path-trust copy that declares `connections` never gets a card.**
   - **Test:** edit `server.js`, and the next read is refused.
 - **N2. Grants key on the approved install, not the bare id.** Once the global copy's run approval is gone without an uninstall, a project copy with the same id could take over its grant (`extension-discovery.ts`), and `create_extension` copies are approved automatically.
   - Key `extension_connection_approvals` on **scope, real path, origin and digest**, and check the match on every call.
   - **Test:** a same-id project copy gets nothing (with Q2).
 - **N3. A change of runtime, install or approval revokes the grants**, rather than only refusing them.
+  - **Test:** a grant-holding subprocess copy is replaced by an in-process one, and **both** its grant rows **and** its approval rows get `revoked_at`.
 
 ## Open questions, decided
 
@@ -33,8 +35,8 @@ Security passed the design (`02-specification.md`, PR #3527) **with conditions**
 - **Q3. Disable keeps grants:** yes, but only for the same install (N2, N3).
 - **Q4. `--no-experimental-sqlite`:** Security ran it on Node 24.14.1 and 22.23.3. It blocks `require`, `import()` and `getBuiltinModule`. `NODE_OPTIONS` can't turn it back on, and `process.binding` is already denied under `--permission`, so no loader hook is needed. **Phase 2 still owes the proof on 24.19, in CI.**
 - **Q5. Result size:** cap reads at 8 MB and refuse anything bigger with a typed error. Never truncate.
-- **Q6. Network:** no `allow.net` ban, but the card names **every** place the data can go: `allow.net`, the extension's agent tools, `allow.agents`, the data proxy and its routes.
-- **Q7. Whose extensions:** v1 grants only to core or trusted-source copies, or digest-pinned copies a person approved. Never to path-trust, dev-link or `create_extension` copies. Only a person can set the flag that widens this, never `config_patch`.
+- **Q6. Network:** no `allow.net` ban, but the card names **every** place the data can go: `allow.net`, the extension's agent tools, `allow.agents`, its data proxy, and its HTTP routes.
+- **Q7. Whose extensions:** v1 grants only to core or trusted-source copies, or digest-pinned copies a person approved. Never to path-trust, dev-link or `create_extension` copies. Only a person can set the flag that widens this, never `config_patch` or any agent capability.
 
 ## Shoulds
 
@@ -43,15 +45,19 @@ Security passed the design (`02-specification.md`, PR #3527) **with conditions**
 - **S3.** Linear text reaches agents through Flow's tools, `ctx.agent`, posts and files with no outsider mark, and lets an agent with no Linear grant read Linear. The card says so, and it gets a ticket.
 - **S4.** "It can't change anything" relies on the provider's `read` label. v1 either keeps to slugs we've audited or softens the copy.
 - **S5.** Extension cards are decided only on the owner route, with a test.
+  - The decision goes through `resolveConnectorOperator` (`routes/connector-owner-boundary.ts`), like every other account decision: no machine signal, no `Authorization` header, a trusted origin, and the owner's own sign-in when login is on. No agent, program or extension principal can decide one.
+  - **The extension's own page is not the owner.** It runs on DorkOS's own origin with the person's cookie, so a request from it would pass the checks above. The owner route refuses a decision on an extension's card when the request comes from that extension's page, its frame, its `/api/ext` routes or its server half. **Test:** the extension's own page tries to approve its own card and is refused, and the grant never appears.
+  - **The card names the author:** who made the extension, and the source its trusted copy came from, so the person sees whose code they are trusting.
+  - _Reconstructed by dorkos-code from Security's summary (the full wording is in Security's review notes). Security confirms or corrects it._
 - **S6.** Audit rows carry the connection id, the operation revision and a hash of the arguments.
-- **S7.** Contract tests refuse `extension` with `every_agent`, and `extension` with a write. **Landed in phase 1** (`packages/cloud-api/src/__tests__/contract.test.ts`, "extension grants").
+- **S7.** Contract tests refuse `extension` with `every_agent`, and `extension` with a write. **Only the schema half landed in phase 1** (`packages/cloud-api/src/__tests__/contract.test.ts`, "extension grants"). Nothing on the Cloud side uses `ConnectionGrantCoverageSchema` yet, so **the Cloud-side refusal test is still owed in phase 6.**
 
 ## Phase map after the conditions
 
-1. **Contract** (`cloud-api`): the `extension` subject, a typed subject reference, the read-only rule, S7's tests. An agent's hosted call can't name `extension`.
+1. **Contract** (`cloud-api`): the `extension` subject, a typed subject reference, the read-only rule, S7's schema tests. An agent's hosted call can't name `extension`.
 2. **Sandbox guard:** `--no-experimental-sqlite`, the require guard, the self-check, the M3 fixture, Q4's proof on 24.19 in CI.
 3. **Local grant subject + migration**, alone in its PR, with M4's trigger or rebuild and the raw-insert test.
-4. **Broker + ctx**, after N1 to N3, with S2, S5, S6 and Q5.
+4. **Broker + ctx**, after N1 to N3 (with their tests, the N3 replace-in-process one included), with S2, S5, S6, Q5 and **Q7** (who can hold a grant, and only a person sets the flag).
 5. **Card and UX**, with Q6, S3 and S4.
-6. **Cloud deploy.**
+6. **Cloud deploy**, with **S7's Cloud-side refusal test**.
 7. **Flow switches.**
