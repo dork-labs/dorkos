@@ -466,6 +466,7 @@ describe('DOR-3853 macOS real-turn controls', { timeout: 180_000 }, () => {
     const readable = path.join(project, 'readable.txt');
     fs.writeFileSync(readable, 'PUBLIC-control-dor3595');
     const probe = protectedProbe(root, project);
+    probe.resetLate();
     const ownWrite = path.join(agentHome, '.agents', 'write-probe');
     const blocked = path.join(policy.roots.home, 'rg-unreadable');
     fs.mkdirSync(blocked);
