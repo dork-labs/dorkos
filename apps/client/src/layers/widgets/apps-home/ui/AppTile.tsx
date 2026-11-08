@@ -28,7 +28,7 @@ import {
   useAppTrying,
   type AppEntry,
 } from '@/layers/entities/extension';
-import { cn } from '@/layers/shared/lib';
+import { cn, SPRING } from '@/layers/shared/lib';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import {
   ContributedIcon,
@@ -97,7 +97,7 @@ export function AppTile({ app, pinned, asRow }: AppTileProps) {
   return (
     <motion.div
       layout={reducedMotion ? false : 'position'}
-      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      transition={SPRING.snap}
       className="group/tile relative"
     >
       <motion.button

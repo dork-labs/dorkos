@@ -128,6 +128,9 @@ interface MockRouterState {
   matches: MockRouteMatch[];
 }
 
+// The palette's app commands read the extension queries and their live
+// events; the shell's slots here do not depend on them.
+vi.mock('@/layers/widgets/apps-home', () => ({ useAppsPalette: () => {}, AppsPage: () => null }));
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useRouterState: ({ select }: { select: (s: MockRouterState) => unknown }) =>

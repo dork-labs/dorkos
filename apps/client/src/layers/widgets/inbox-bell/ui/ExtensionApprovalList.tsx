@@ -138,8 +138,9 @@ export function ExtensionApprovalList({
             focused={approval.id === focusId}
             {...(onFocusSpent ? { onFocusSpent } : {})}
           >
-            {() => (
+            {(titleId) => (
               <InboxDecisionRow
+                titleId={titleId}
                 icon={Puzzle}
                 title={titleOf(approval)}
                 why={approval.why}

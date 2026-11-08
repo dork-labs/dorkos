@@ -7,6 +7,7 @@
  * @module shared/config-schema/sidebar
  */
 import { z } from 'zod';
+import { EXTENSION_ID_REGEX } from '../extension-id.js';
 
 /** How many apps the sidebar's Apps door holds pinned under it (DOR-3970). */
 export const MAX_PINNED_APPS = 5;
@@ -290,7 +291,12 @@ export const SidebarPrefsSchema = z.object({
    * no server migration can do that seeding, and a default of `[]` would make
    * "seeded, then emptied" and "never seeded" the same thing.
    */
-  pinnedApps: z.array(z.string().min(1)).max(MAX_PINNED_APPS).optional(),
+  // Agents can write this field (it is agent-writable layout), so every id
+  // must be a real extension id shape, never a path or a free string.
+  pinnedApps: z
+    .array(z.string().max(128).regex(EXTENSION_ID_REGEX))
+    .max(MAX_PINNED_APPS)
+    .optional(),
   /**
    * **Retired** (DOR-3092): the Getting started list left the sidebar, and
    * nothing reads or writes this any more. It was the list's memory of which
