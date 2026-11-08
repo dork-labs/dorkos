@@ -15,7 +15,7 @@
 export const PERMISSION_STATES = ['blocked', 'ask', 'allowed'] as const;
 
 /**
- * The twelve areas that take a state. `files` is separate: it takes a trust stop.
+ * The thirteen areas that take a state. `files` is separate: it takes a trust stop.
  *
  * `extensions` holds every tool a running extension adds (DOR-2685). It has no
  * static member: its actions join the live registry while their extension runs.
@@ -25,6 +25,10 @@ export const PERMISSION_STATES = ['blocked', 'ask', 'allowed'] as const;
  * neighbour because an area-level setting elsewhere — Other agents set to Ask
  * or Blocked — must not quietly decide it: only a setting for THIS area (per
  * agent, or for everyone) does.
+ *
+ * `todos` holds an agent's to-do promise tools (DOR-3936). It is its own area
+ * for the same reason: Allowed in every preset, so only a person's setting for
+ * this area or one of its actions makes them ask or blocks them.
  */
 export const PERMISSION_AREA_IDS = [
   'rooms',
@@ -35,6 +39,7 @@ export const PERMISSION_AREA_IDS = [
   'packages',
   'extensions',
   'own_chat',
+  'todos',
   'settings',
   'safety',
   'permissions',

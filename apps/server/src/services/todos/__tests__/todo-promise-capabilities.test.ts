@@ -126,15 +126,14 @@ describe('to-dos domain', () => {
 
   afterEach(() => service.stop());
 
-  it('declares the three tools with no area, each with a written reason', () => {
+  it('declares the three tools in the To-dos area (DOR-3936)', () => {
     expect(
       todoPromisesDomain.capabilities.map((c) => [c.id, c.surfaces.mcp?.toolName, c.tier, c.area])
     ).toEqual([
-      ['todo_promises.add', 'todo_promise_add', 'act', null],
-      ['todo_promises.update', 'todo_promise_update', 'act', null],
-      ['todo_promises.list', 'todo_promises_list', 'observe', null],
+      ['todo_promises.add', 'todo_promise_add', 'act', 'todos'],
+      ['todo_promises.update', 'todo_promise_update', 'act', 'todos'],
+      ['todo_promises.list', 'todo_promises_list', 'observe', 'todos'],
     ]);
-    for (const c of todoPromisesDomain.capabilities) expect(c.areaNote).toBeTruthy();
   });
 
   it('tells an agent it is woken when a promise comes due: its beat does that (DOR-2788 PR 3)', () => {

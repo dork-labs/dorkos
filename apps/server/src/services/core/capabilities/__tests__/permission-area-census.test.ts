@@ -86,6 +86,8 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
   ],
   // One action, an agent summarizing its own conversation (DOR-2732).
   own_chat: ['session.compact'],
+  // An agent's to-do promises (DOR-3936); before, they had no area.
+  todos: ['todo_promises.add', 'todo_promises.list', 'todo_promises.update'],
   // Chats messaging chats (spec `spin-off-chats`); the relay send, inbox and
   // endpoint tools retired for them.
   messages: [

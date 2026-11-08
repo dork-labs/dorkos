@@ -10,7 +10,8 @@
  * default.
  *
  * The table below is the pre-rename truth, written out by hand on purpose: it must not be derived
- * from the code it checks.
+ * from the code it checks. One column moved on purpose after the rename: `area`, which was `null`
+ * for all three until DOR-3936 put them in the To-dos area, so a person's Blocked applies.
  */
 import { describe, expect, it } from 'vitest';
 import { foldLegacyPermissionFields } from '@dorkos/shared/mesh-schemas';
@@ -26,7 +27,7 @@ const RENAMED = [
     id: 'todo_promises.add',
     tool: 'todo_promise_add',
     tier: 'act',
-    area: null,
+    area: 'todos',
     servers: ['in-session', 'external'],
     annotations: { idempotentHint: false },
   },
@@ -36,7 +37,7 @@ const RENAMED = [
     id: 'todo_promises.update',
     tool: 'todo_promise_update',
     tier: 'act',
-    area: null,
+    area: 'todos',
     servers: ['in-session', 'external'],
     annotations: { idempotentHint: true },
   },
@@ -46,7 +47,7 @@ const RENAMED = [
     id: 'todo_promises.list',
     tool: 'todo_promises_list',
     tier: 'observe',
-    area: null,
+    area: 'todos',
     servers: ['in-session', 'external'],
     annotations: { idempotentHint: true },
   },
@@ -105,9 +106,10 @@ describe('the promise tools rename (DOR-3933)', () => {
     });
   });
 
-  it('files the new ids in the same area of the agent awareness block the old ones were', () => {
-    const memory = DORKOS_AREAS.find((area) => area.name === 'Memory');
-    expect(memory?.covers).toContain('todo_promises.');
+  it('files the new ids on the To-dos line of the agent awareness block (DOR-3936)', () => {
+    const line = DORKOS_AREAS.find((area) => area.name === 'To-dos');
+    expect(line?.covers).toContain('todo_promises.');
+    expect(line?.areas).toEqual(['todos']);
     expect(DORKOS_AREAS.some((area) => area.covers.includes('commitments.'))).toBe(false);
   });
 });

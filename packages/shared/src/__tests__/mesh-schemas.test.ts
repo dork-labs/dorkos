@@ -404,6 +404,8 @@ describe('AgentManifestFileSchema — the read-time fold of retired permission f
     extensions: 'blocked',
     // Own chat (DOR-2732) is an act-tier action, which an observe ceiling never allowed.
     own_chat: 'blocked',
+    // To-dos (DOR-3936): an observe ceiling never allowed making or changing one.
+    todos: 'blocked',
     settings: 'blocked',
     safety: 'blocked',
     permissions: 'blocked',

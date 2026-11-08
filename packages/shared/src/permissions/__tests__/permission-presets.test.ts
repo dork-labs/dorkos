@@ -22,6 +22,7 @@ describe('shipped preset tables', () => {
         extensions: 'ask',
         // Own chat (DOR-2732): an agent summarizing its own chat, Allowed everywhere.
         own_chat: 'allowed',
+        todos: 'allowed',
         settings: 'ask',
         safety: 'ask',
         permissions: 'ask',
@@ -44,6 +45,7 @@ describe('shipped preset tables', () => {
         extensions: 'allowed',
         // Own chat (DOR-2732): an agent summarizing its own chat, Allowed everywhere.
         own_chat: 'allowed',
+        todos: 'allowed',
         settings: 'ask',
         safety: 'ask',
         permissions: 'ask',
@@ -66,6 +68,7 @@ describe('shipped preset tables', () => {
         extensions: 'allowed',
         // Own chat (DOR-2732): an agent summarizing its own chat, Allowed everywhere.
         own_chat: 'allowed',
+        todos: 'allowed',
         settings: 'ask',
         safety: 'ask',
         permissions: 'ask',
@@ -87,6 +90,7 @@ describe('shipped preset tables', () => {
         packages: 'allowed',
         extensions: 'allowed',
         own_chat: 'allowed',
+        todos: 'allowed',
         settings: 'allowed',
         // Loop-guard settings stay a person's call until DOR-2745.
         safety: 'ask',
@@ -120,7 +124,7 @@ describe('shipped preset tables', () => {
 });
 
 describe('area registry', () => {
-  it('lists the twelve state areas plus files, with exactly two floors', () => {
+  it('lists the thirteen state areas plus files, with exactly two floors', () => {
     // Permissions stopped being a floor with ADR 261006-225605: an agent may
     // change permissions as a person may, and every change is recorded.
     expect(PERMISSION_AREAS.map((a) => a.id)).toEqual([...PERMISSION_AREA_IDS, 'files']);

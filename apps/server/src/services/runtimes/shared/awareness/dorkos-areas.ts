@@ -176,10 +176,16 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Memory',
-    can: 'save notes your other sessions read, and record and close the promises you make.',
-    covers: ['memory.', 'todo_promises.'],
+    can: 'save notes your other sessions read.',
+    covers: ['memory.'],
     areas: [],
     gate: 'always on',
+  },
+  {
+    name: 'To-dos',
+    can: 'record the promises you make, read the team list, and mark yours kept or dropped.',
+    covers: ['todo_promises.'],
+    areas: ['todos'],
   },
   {
     name: 'Activity',
