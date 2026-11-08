@@ -5,7 +5,7 @@
  *
  * @module features/todos/ui/TodoList
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   closestCenter,
   DndContext,
@@ -33,6 +33,7 @@ import { assignedByLabel } from '../lib/todo-labels';
 import { useLingeringDone, withLingering } from '../model/use-lingering-done';
 import { useTodoFilters } from '../model/use-todo-filters';
 import { usePrefersLongPress } from '../model/use-prefers-long-press';
+import { useRowSlide } from '../model/use-row-slide';
 import { useTodoReorder } from '../model/use-todo-reorder';
 import { SortableTodoRow, todoMoveKey } from './SortableTodoRow';
 import { TODO_FILTER_TRIGGER, TodoFilterBar } from './TodoFilterBar';
@@ -91,14 +92,17 @@ export function TodoList({ onNewTodo }: TodoListProps) {
   if (reorderMode && !sortable) setReorderMode(false);
   const reordering = reorderMode && sortable;
   // The control that moved keeps focus: a row moving down is re-inserted, which would blur it.
+  // Put back before the browser paints, so the focus ring never blinks out (DOR-3715).
   const refocus = useRef<string | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const target = refocus.current;
     if (!target) return;
     refocus.current = null;
     focusFirst(target);
   }, [movable, reordering]);
   const longPress = usePrefersLongPress();
+  // A Reorder button's move slides; a drag already does.
+  const slide = useRowSlide(movable);
   const sensors = useSensors(
     // A few pixels of travel first, so a click on the grip is not a drag.
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
@@ -133,6 +137,8 @@ export function TodoList({ onNewTodo }: TodoListProps) {
 
   function moveTo(id: string, from: number, to: number, focus: string) {
     if (!reorder.move(from, to)) return;
+    // The new order lands on a later render, so this still measures the old one.
+    if (reordering) slide.measure();
     refocus.current = focus;
     setAnnouncement(`Moved to position ${to + 1} of ${movable.length}.`);
   }
