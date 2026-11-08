@@ -13,7 +13,15 @@ import {
   ConnectorReconciliationApplyRequestSchema,
   ConnectorReconciliationPreviewRequestSchema,
 } from '@dorkos/shared/connector-schemas';
+import {
+  ConnectorGrantExclusionChangeSchema,
+  ConnectorGrantExclusionListSchema,
+} from '@dorkos/shared/connector-exclusion-schemas';
 import type { ApiEnv } from '../http/api-chain.js';
+import {
+  ConnectorGrantExclusionError,
+  type ConnectorGrantExclusionService,
+} from '../services/connectors/access/grant-exclusions.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
 import { validationFailureBody } from '../lib/route-utils.js';
@@ -72,6 +80,8 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
     ConnectorReconciliationService,
     'preview' | 'apply' | 'revokeEveryAgent'
   >;
+  /** Agents left out of a connection's every-agent share (DOR-3961). */
+  readonly exclusions: Pick<ConnectorGrantExclusionService, 'list' | 'leaveOut' | 'letBackIn'>;
   /** Owner-only review and resolution for requests raised by runtime agents. */
   readonly agentRequests?: Pick<
     ConnectorAgentRequestService,
@@ -181,6 +191,9 @@ function managementErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
     const status =
       error.code === 'review_not_found' || error.code === 'target_not_found' ? 404 : 409;
     return c.json({ error: error.message, code: error.code }, status);
+  }
+  if (error instanceof ConnectorGrantExclusionError) {
+    return c.json({ error: error.message, code: error.code }, 404);
   }
   if (error instanceof ConnectorReconciliationError) {
     const status =
@@ -392,6 +405,57 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
       return c.json(
         ConnectorEveryAgentRevokeResponseSchema.parse(
           await deps.reconciliation.revokeEveryAgent(owner, c.req.param('connectionId'))
+        )
+      );
+    } catch (error) {
+      return managementErrorResponse(c, error);
+    }
+  });
+
+  // Leave one agent out of a connection's every-agent share, or let it back in
+  // (DOR-3961). Owner-only, like every grant change: an agent or program is
+  // refused by `resolveConnectorOperator` before the service is reached.
+  router.get('/connections/:connectionId/exclusions', (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    const connectionId = c.req.param('connectionId');
+    try {
+      return c.json(
+        ConnectorGrantExclusionListSchema.parse({
+          connectionId,
+          exclusions: deps.exclusions.list(owner, connectionId),
+        })
+      );
+    } catch (error) {
+      return managementErrorResponse(c, error);
+    }
+  });
+
+  router.put('/connections/:connectionId/exclusions/:agentId', async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    try {
+      return c.json(
+        ConnectorGrantExclusionChangeSchema.parse(
+          await deps.exclusions.leaveOut(owner, c.req.param('connectionId'), c.req.param('agentId'))
+        )
+      );
+    } catch (error) {
+      return managementErrorResponse(c, error);
+    }
+  });
+
+  router.delete('/connections/:connectionId/exclusions/:agentId', async (c) => {
+    const owner = resolveConnectorOperator(c, deps);
+    if (owner instanceof Response) return owner;
+    try {
+      return c.json(
+        ConnectorGrantExclusionChangeSchema.parse(
+          await deps.exclusions.letBackIn(
+            owner,
+            c.req.param('connectionId'),
+            c.req.param('agentId')
+          )
         )
       );
     } catch (error) {

@@ -10,6 +10,8 @@
  *   classify actions differently.
  * - {@link TrustedConnectionSharing} shares a connected app with every agent on
  *   a Trusted install (spec `trusted-by-default-flip` §5.6).
+ * - {@link ConnectorGrantExclusionService} leaves one agent out of that share
+ *   (DOR-3961).
  *
  * @module services/connectors/access/connector-access
  */
@@ -20,6 +22,8 @@ import {
   type ConnectorReconciliationServiceOptions,
 } from '../reconciliation-service.js';
 import { LevelFollower } from '../resources/level-follower.js';
+import type { EveryAgentChangeWriter } from '../every-agent-activity.js';
+import { ConnectorGrantExclusionService } from './grant-exclusions.js';
 import { TrustedConnectionSharing } from './trusted-sharing.js';
 
 /** What {@link createConnectorAccess} needs from the server. */
@@ -41,6 +45,8 @@ export interface ConnectorAccess {
   readonly levels: LevelFollower;
   /** Shares connected apps with every agent on a Trusted install. */
   readonly sharing: TrustedConnectionSharing;
+  /** Leaves one agent out of an every-agent share (DOR-3961). */
+  readonly exclusions: ConnectorGrantExclusionService;
 }
 
 /**
@@ -49,6 +55,12 @@ export interface ConnectorAccess {
  * @param deps - The connector database, registry, agents, Activity and config.
  */
 export function createConnectorAccess(deps: ConnectorAccessDeps): ConnectorAccess {
+  // With login off DorkOS cannot tell the app from a program on this
+  // computer, so the trail says exactly that rather than "You".
+  const writer = (): EveryAgentChangeWriter =>
+    deps.config.get('auth')?.enabled === true
+      ? { actorType: 'user', actorLabel: 'Your signed-in account' }
+      : { actorType: 'user', actorLabel: 'Someone on this computer' };
   const reconciliation = new ConnectorReconciliationService({
     db: deps.db,
     registry: deps.registry,
@@ -60,14 +72,15 @@ export function createConnectorAccess(deps: ConnectorAccessDeps): ConnectorAcces
       })),
     managedAuthority: deps.managedAuthority,
     activity: deps.activity,
-    // With login off DorkOS cannot tell the app from a program on this
-    // computer, so the trail says exactly that rather than "You".
-    writer: () =>
-      deps.config.get('auth')?.enabled === true
-        ? { actorType: 'user', actorLabel: 'Your signed-in account' }
-        : { actorType: 'user', actorLabel: 'Someone on this computer' },
+    writer,
   });
   return {
+    exclusions: new ConnectorGrantExclusionService({
+      db: deps.db,
+      agents: deps.agents,
+      activity: deps.activity,
+      writer,
+    }),
     reconciliation,
     levels: new LevelFollower({ reconciliation, appVersion: SERVER_VERSION }),
     sharing: new TrustedConnectionSharing({

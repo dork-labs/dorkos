@@ -119,7 +119,11 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
     activity: activityService,
     config: configManager,
   });
-  const { reconciliation: connectorReconciliation, levels: connectorLevels } = grantAccess;
+  const {
+    reconciliation: connectorReconciliation,
+    levels: connectorLevels,
+    exclusions: connectorGrantExclusions,
+  } = grantAccess;
   const connectorAuthenticationFlows = new ConnectorAuthenticationFlowService({
     db,
     registry: connectorRegistry,
@@ -382,6 +386,7 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
   return {
     connectorSignIns,
     connectorReconciliation,
+    connectorGrantExclusions,
     connectorAuthenticationFlows,
     connectorLifecycle,
     connectorManagementReviews,

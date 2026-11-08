@@ -536,6 +536,13 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/runtimes/claude-code/signins/organizations',
     ],
   ],
+  [
+    'person-only grant policy (DOR-3961); an agent must never set or lift an exclusion',
+    [
+      'DELETE /api/connectors/connections/:connectionId/exclusions/:agentId',
+      'PUT /api/connectors/connections/:connectionId/exclusions/:agentId',
+    ],
+  ],
 ];
 
 /** The write methods an `ALL` route answers. */

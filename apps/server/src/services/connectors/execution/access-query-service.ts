@@ -41,7 +41,7 @@ import {
 } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorAgentOwnershipPort } from './authorization-service.js';
-import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { everyAgentGrantFor } from '../every-agent-grants.js';
 import { managedAgentAccess } from './managed-agent-access.js';
 
 /** Bounded cursor input shared by agent and operator usage views. */
@@ -95,7 +95,7 @@ function ownerColumns(owner: ConnectorOwnerAuthority): {
  * Grant rows that can speak for one agent: its own named grants (and, with a
  * session, that session's grants), plus every-agent grants (ADR 260926-192625),
  * which count on every connection, including one made through a DorkOS account
- * (DOR-2439).
+ * (DOR-2439), except one the agent was left out of (DOR-3961).
  */
 function agentGrantRows(agentId: string, sessionId?: string) {
   const named = and(
@@ -115,7 +115,7 @@ function agentGrantRows(agentId: string, sessionId?: string) {
           )
         : named
     ),
-    everyAgentGrantSubject()
+    everyAgentGrantFor(agentId)
   );
 }
 

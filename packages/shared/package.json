@@ -21,6 +21,10 @@
       "types": "./src/connector-hold-schemas.ts",
       "default": "./dist/connector-hold-schemas.js"
     },
+    "./connector-exclusion-schemas": {
+      "types": "./src/connector-exclusion-schemas.ts",
+      "default": "./dist/connector-exclusion-schemas.js"
+    },
     "./approval-schemas": {
       "types": "./src/approval-schemas.ts",
       "default": "./dist/approval-schemas.js"
