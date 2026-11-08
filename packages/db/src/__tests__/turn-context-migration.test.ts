@@ -60,7 +60,7 @@ describe('turn_context tables', () => {
 
 describe('turn_context down-migration', () => {
   const DOWN = fileURLToPath(
-    new URL('../down/20261108184719_turn_context.down.sql', import.meta.url)
+    new URL('../down/20261108212802_turn_context.down.sql', import.meta.url)
   );
   const TABLES = ['turn_context_bodies', 'turn_context_parts', 'turn_contexts'];
   let db: Db;
@@ -92,7 +92,7 @@ describe('turn_context down-migration', () => {
   function ledger(): number {
     return (
       db.$client
-        .prepare('SELECT count(*) AS n FROM __drizzle_migrations WHERE created_at = 1794163639386')
+        .prepare('SELECT count(*) AS n FROM __drizzle_migrations WHERE created_at = 1794173282231')
         .get() as { n: number }
     ).n;
   }
