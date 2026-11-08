@@ -15,6 +15,7 @@ import { cn } from '@/layers/shared/lib';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import {
   ContributedIcon,
+  CORNER_COUNT_CAP,
   CountPill,
   SidebarRow,
   STATUS_TONE_DOT,
@@ -47,7 +48,8 @@ function TrailingMark({ row }: { row: SidebarRowModel }) {
     return <CircleAlert aria-hidden className={cn(ROW_GLYPH_CLASS, 'text-status-error-fg')} />;
   }
   if (row.count !== undefined) {
-    return <CountPill count={row.count} tone="warning" label="" />;
+    // An app's own count is news, not a warning: neutral ink, capped at 9+ (DOR-3077).
+    return <CountPill count={row.count} tone="neutral" cap={CORNER_COUNT_CAP} label="" />;
   }
   return null;
 }

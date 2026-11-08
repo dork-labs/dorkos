@@ -162,6 +162,19 @@ describe('AppsPage', () => {
     expect(screen.getByTestId('apps-tile-plain')).toHaveTextContent(/^Plain$/);
   });
 
+  // Purpose: an app's own count is news, not a warning: the neutral pill,
+  // capped at 9+ (DOR-3077).
+  it('draws an app’s count as a neutral pill, capped at 9+', () => {
+    given([app('ts', 'Timesheet', { count: 2 }), app('mail', 'Mail', { count: 14 })]);
+    render(<AppsPage />);
+    const two = screen.getByTestId('apps-tile-ts').querySelector('[data-slot="count-pill"]');
+    expect(two).toHaveAttribute('data-tone', 'neutral');
+    expect(two).toHaveTextContent('2');
+    const many = screen.getByTestId('apps-tile-mail').querySelector('[data-slot="count-pill"]');
+    expect(many).toHaveAttribute('data-tone', 'neutral');
+    expect(many).toHaveTextContent('9+');
+  });
+
   it('says it couldn’t load, never "no apps", and tries again', async () => {
     given([], ['alpha'], 'failed');
     render(<AppsPage />);

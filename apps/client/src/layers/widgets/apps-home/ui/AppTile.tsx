@@ -32,6 +32,7 @@ import { cn, SPRING } from '@/layers/shared/lib';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import {
   ContributedIcon,
+  CORNER_COUNT_CAP,
   CountPill,
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuContent,
@@ -162,7 +163,8 @@ export function AppTile({ app, pinned, asRow }: AppTileProps) {
                 'transition-opacity group-focus-within/tile:opacity-0 group-hover/tile:opacity-0'
             )}
           >
-            <CountPill count={app.count} tone="warning" label="" />
+            {/* The same neutral pill as the sidebar row, capped at 9+ (DOR-3077). */}
+            <CountPill count={app.count} tone="neutral" cap={CORNER_COUNT_CAP} label="" />
           </span>
         )}
       </motion.button>

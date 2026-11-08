@@ -1006,6 +1006,17 @@ describe('DashboardSidebar', () => {
       await waitFor(() => expect(pinnedNames()).toEqual(['Zeta Board', 'Alpha Notes']));
     });
 
+    // Purpose: a pinned app's count is the neutral pill, capped at 9+ (DOR-3077).
+    it('draws a pinned app’s count as a neutral pill, capped at 9+', async () => {
+      const mail = app('mail', 'Mail', { count: 14 });
+      appCatalog.value = { status: 'ready', apps: [mail], pinned: [mail], pins: ['mail'] };
+      renderWithProviders(<DashboardSidebar />);
+      const row = await waitFor(() => screen.getByTestId('apps-pinned-mail'));
+      const pill = row.querySelector('[data-slot="count-pill"]');
+      expect(pill).toHaveAttribute('data-tone', 'neutral');
+      expect(pill).toHaveTextContent('9+');
+    });
+
     it('opens a pinned app’s first page when its row is pressed', async () => {
       const board = app('board', 'Board', { path: 'today' });
       appCatalog.value = { status: 'ready', apps: [board], pinned: [board], pins: ['board'] };
