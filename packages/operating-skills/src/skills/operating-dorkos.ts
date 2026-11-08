@@ -50,12 +50,12 @@ Use the supplied current CLI invocation for CLI examples below, never a PATH loo
 ## Connections: one list of apps
 
 One list of apps you act on (Gmail) and chat apps people reach you in (Slack, Telegram).
+Its MCP servers tab holds servers a person added for every agent. Only a person changes them; you get the ones on for you.
 Use injected tools ending in \`connectors.list_granted_connections\` (OpenCode:
 \`connectors_list_granted_connections\`) to discover your current account access.
 Then call \`list_granted_operations\` with its returned \`connectionId\`; choose the
 exact operation, immutable revision, input schema, and execution classification.
-A profile lookup cannot list messages. Do not invent filters or describe errors as results.
-Access can change between turns: consult the fresh account context and re-list before use.
+A profile lookup cannot list messages. Do not invent filters or describe errors as results. Access can change between turns: consult the fresh account context and re-list before use.
 If access is missing, get the service's exact name from \`connector_list_toolkits\`, then
 \`request_connection\` asks the owner; \`get_connection_request\` checks your request.
 A shell CLI sign-in grants DorkOS nothing. Never inspect shell config or credentials.

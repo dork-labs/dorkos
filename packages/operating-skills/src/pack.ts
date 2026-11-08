@@ -396,8 +396,13 @@ export interface OperatingSkill {
  *   signed-in Playwright MCP browser and the private managed engine (DOR-3218).
  *   Existing commands and saved sign-ins remain available. 51 rather than 50
  *   because DOR-3933 landed on `main` first and took 50.
+ * - 52: `operating-dorkos` says the Connections page's MCP servers tab holds
+ *   servers a person added for every agent, that only a person changes them,
+ *   and that the agent gets the ones turned on for it (DOR-3213). An agent seeded
+ *   at 51 would not know where an unexplained server came from, or would offer
+ *   to add one for every agent itself.
  */
-export const OPERATING_SKILLS_VERSION = 51;
+export const OPERATING_SKILLS_VERSION = 52;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

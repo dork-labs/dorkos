@@ -91,7 +91,9 @@ export const mcpDomain: CapabilityDomain = {
         'List the MCP servers DorkOS manages for an agent, each with its transport, enabled ' +
         'state, audit record, and — for a remote server — whether DorkOS holds a live sign-in ' +
         'for it (authStatus). A free read — use it before add/update/remove to see what is ' +
-        'already configured.',
+        'already configured. It lists only the agent’s own servers: servers a person added for ' +
+        'every agent on the Connections page also reach the agent, but are not listed here and ' +
+        'only a person can change them.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',
