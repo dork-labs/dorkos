@@ -128,6 +128,34 @@ describe('ExtensionsSettingsTab', () => {
     expect(screen.getByText('No extensions installed.')).toBeInTheDocument();
   });
 
+  it('says the list failed to load, never "none installed", and tries again', async () => {
+    // Refused, as a signed-out window's request is.
+    const listFetch = vi.fn((url: string) =>
+      Promise.resolve(
+        url.endsWith('/api/extensions')
+          ? { ok: false, status: 401, json: () => Promise.resolve({ code: 'AUTH_REQUIRED' }) }
+          : { ok: true, json: () => Promise.resolve([]) }
+      )
+    );
+    vi.stubGlobal('fetch', listFetch);
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    const line = await screen.findByTestId('extensions-load-failed');
+    expect(line).toHaveTextContent('Couldn’t load apps.');
+    expect(screen.queryByTestId('no-extensions')).not.toBeInTheDocument();
+    // One way out, not two: Reload waits until there is a list to reload.
+    expect(screen.queryByTestId('reload-extensions-button')).not.toBeInTheDocument();
+
+    // Try again asks the server once more, and a working answer draws the list.
+    mockFetch({ '/api/extensions': [makeExtension({ id: 'ext-a' })] });
+    fireEvent.click(within(line).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('extensions-load-failed')).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('installed-extensions-section')).toBeInTheDocument();
+  });
+
   it('renders a card for each discovered extension', async () => {
     const extensions = [makeExtension({ id: 'ext-a' }), makeExtension({ id: 'ext-b' })];
     mockFetch({ '/api/extensions': extensions });

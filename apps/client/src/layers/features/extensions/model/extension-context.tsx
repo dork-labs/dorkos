@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
-import { registerExtensionRemount } from '@/layers/shared/lib';
+import { registerExtensionRemount, setExtensionLoadFailed } from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import { useSyncRequireLogin } from './use-sync-require-login';
 import { useSyncCurrentAgentId, useReconcileExplicitAgentPath } from '@/layers/entities/agent';
@@ -17,6 +17,7 @@ import { useCurrentProjectSync } from '@/layers/entities/project';
 import type { LoadedExtension, ExtensionAPIDeps } from './types.js';
 import { ExtensionLoader } from './extension-loader.js';
 import { useCwdExtensionSync } from './use-cwd-extension-sync.js';
+import { useReloadAfterSignIn } from './use-reload-after-sign-in.js';
 import { extensionKeys } from '../api/queries.js';
 
 /** Context value exposed to the app tree. */
@@ -79,6 +80,8 @@ interface ExtensionProviderProps {
 export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
   const [state, setState] = useState<ExtensionContextValue>(defaultContextValue);
   const loaderRef = useRef<ExtensionLoader | null>(null);
+  // How many full reloads have started, so the first load can tell it was overtaken.
+  const reloadsStarted = useRef(0);
   const queryClient = useQueryClient();
 
   // Live-remount every extension slot for the new working directory's set.
@@ -91,10 +94,12 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
     const loader = loaderRef.current;
     if (!loader) return;
 
+    reloadsStarted.current += 1;
     setState((prev) => ({ ...prev, settling: true }));
     try {
       const { extensions, loaded } = await loader.reloadAll();
       setState({ extensions, loaded, ready: true, settling: false });
+      setExtensionLoadFailed(false);
     } catch (err) {
       setState((prev) => ({ ...prev, settling: false }));
       throw err;
@@ -106,6 +111,10 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
 
   // Watch for CWD changes and live-remount the extension slots if the set differs.
   useCwdExtensionSync(reloadAllExtensions);
+
+  // The first load runs before sign-in, so with login on it is refused and
+  // finds nothing. Load again once the person signs in.
+  useReloadAfterSignIn(reloadAllExtensions);
 
   // Expose the same fetch-then-swap remount to non-React callers (the Shape
   // apply flow enables extensions server-side, then requests a remount so the
@@ -133,14 +142,22 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
     const loader = new ExtensionLoader(deps);
     loaderRef.current = loader;
 
+    // A reload that started while this first load was in flight (a sign-in, a
+    // retry) owns the answer: this load's late result must not undo it.
+    const supersededBy = reloadsStarted.current;
+    const isCurrent = () => reloadsStarted.current === supersededBy;
     loader
       .initialize()
-      .then(({ extensions, loaded }) => {
+      .then(({ extensions, loaded, failed }) => {
+        if (!isCurrent()) return;
         setState({ extensions, loaded, ready: true, settling: false });
+        setExtensionLoadFailed(failed);
       })
       .catch((err: unknown) => {
         console.error('[extensions] Failed to initialize:', err);
+        if (!isCurrent()) return;
         setState((prev) => ({ ...prev, ready: true }));
+        setExtensionLoadFailed(true);
       });
 
     return () => {

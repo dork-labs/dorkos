@@ -238,6 +238,12 @@ export interface SidebarSectionModel {
   options?: { sortMode?: 'manual' | 'name' | 'recent'; displayFilter?: SidebarDisplayFilter };
   /** The rows it holds. */
   rows: SidebarRowModel[];
+  /**
+   * Set when what fills it could not be read — today only Add-ons, when the mini
+   * apps failed to load. The section stands, empty, and says so with a way to
+   * try again, so a failed load never reads as "none installed".
+   */
+  loadFailed?: true;
   /** Provenance. */
   reason: string;
 }

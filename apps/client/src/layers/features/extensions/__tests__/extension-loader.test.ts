@@ -309,22 +309,24 @@ describe('ExtensionLoader', () => {
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     const loader = new ExtensionLoader(makeDeps());
-    await loader.initialize();
+    const { failed } = await loader.initialize();
 
     expect(consoleSpy).toHaveBeenCalledWith('[extensions] No extensions to load');
+    expect(failed).toBe(false);
     consoleSpy.mockRestore();
   });
 
-  // 10. Fetch failure: returns empty list gracefully when server is down
-  it('returns empty extensions when fetch fails', async () => {
+  // 10. Fetch failure: loads nothing, and says the list failed rather than came back empty
+  it('reports a failed list, not an empty one, when fetch fails', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const loader = new ExtensionLoader(makeDeps());
-    const { extensions, loaded } = await loader.initialize();
+    const { extensions, loaded, failed } = await loader.initialize();
 
     expect(extensions).toHaveLength(0);
     expect(loaded.size).toBe(0);
+    expect(failed).toBe(true);
     expect(consoleSpy).toHaveBeenCalledWith('[extensions] Failed to fetch extension list:', 500);
 
     consoleSpy.mockRestore();

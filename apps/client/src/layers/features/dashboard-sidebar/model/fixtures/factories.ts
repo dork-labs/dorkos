@@ -198,6 +198,7 @@ export function emptyState(overrides: Partial<SidebarState> = {}): SidebarState 
     prefs: prefs(),
     mentions: {},
     addOns: [],
+    addOnsLoadFailed: false,
     todos: null,
     activeTarget: null,
     ...overrides,

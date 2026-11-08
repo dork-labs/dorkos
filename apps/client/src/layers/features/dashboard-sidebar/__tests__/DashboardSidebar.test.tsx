@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { getPrefersReducedMotion } from '@/test-setup';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { createInitialSlots, TransportProvider, useExtensionRegistry } from '@/layers/shared/model';
+import { registerExtensionRemount, setExtensionLoadFailed } from '@/layers/shared/lib';
 import { useCreateFlowStore } from '../model/create-flow-store';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
@@ -967,6 +968,28 @@ describe('DashboardSidebar', () => {
       renderWithProviders(<DashboardSidebar />);
       await waitFor(() => expect(headings()).toContain('Channels'));
       expect(headings()).not.toContain('Add-ons');
+    });
+
+    it('says the mini apps couldn’t load, and tries again, instead of vanishing', async () => {
+      const remount = vi.fn(() => Promise.resolve());
+      const unregister = registerExtensionRemount(remount);
+      setExtensionLoadFailed(true);
+      try {
+        renderWithProviders(<DashboardSidebar />);
+
+        await waitFor(() => expect(headings()).toContain('Add-ons'));
+        const body = within(sectionBody('addons'));
+        expect(body.getByText('Couldn’t load apps.')).toBeInTheDocument();
+        await userEvent.click(body.getByRole('button', { name: 'Try again' }));
+        expect(remount).toHaveBeenCalledTimes(1);
+
+        // A working load takes the line and the empty section away again.
+        act(() => setExtensionLoadFailed(false));
+        await waitFor(() => expect(headings()).not.toContain('Add-ons'));
+      } finally {
+        setExtensionLoadFailed(false);
+        unregister();
+      }
     });
 
     it('lists every listed page last, by its own title', async () => {

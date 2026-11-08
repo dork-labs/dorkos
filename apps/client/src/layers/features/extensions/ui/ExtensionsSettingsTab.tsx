@@ -23,7 +23,11 @@ import { TrustedSourcesSection } from './TrustedSourcesSection';
 
 /** Extensions tab in the Settings dialog — manage discovered extensions. */
 export function ExtensionsSettingsTab() {
-  const { data: extensions = [], isLoading } = useExtensions();
+  const { data, isLoading, isError, isRefetching, refetch } = useExtensions();
+  const extensions = data ?? [];
+  // No answer at all is "couldn't load", never "none installed". A list read
+  // once and refused later keeps showing what it had.
+  const loadFailed = isError && data === undefined;
   // The mini apps that keep "Confirm it's you" off (DOR-3234).
   const { data: stepUpRisks } = useStepUpRisks();
   // "Where it shows…" in the right panel opens this tab with the mini app's id
@@ -159,7 +163,18 @@ export function ExtensionsSettingsTab() {
         </MoreDetails>
       </div>
 
-      {extensions.length === 0 ? (
+      {loadFailed ? (
+        <div
+          role="alert"
+          className="text-muted-foreground py-8 text-center text-sm"
+          data-testid="extensions-load-failed"
+        >
+          Couldn’t load apps.{' '}
+          <Button variant="ghost" size="sm" onClick={() => void refetch()} disabled={isRefetching}>
+            Try again
+          </Button>
+        </div>
+      ) : extensions.length === 0 ? (
         <div className="text-muted-foreground py-8 text-center text-sm" data-testid="no-extensions">
           <p>No extensions installed.</p>
         </div>
@@ -191,18 +206,21 @@ export function ExtensionsSettingsTab() {
 
       <TrustedSourcesSection />
 
-      <div className="flex justify-end">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleReload}
-          disabled={reloadMutation.isPending}
-          data-testid="reload-extensions-button"
-        >
-          <RefreshCw className={cn('mr-2 size-4', reloadMutation.isPending && 'animate-spin')} />
-          Reload extensions
-        </Button>
-      </div>
+      {/* While the list could not be read, Try again above is the one way out. */}
+      {!loadFailed && (
+        <div className="flex justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReload}
+            disabled={reloadMutation.isPending}
+            data-testid="reload-extensions-button"
+          >
+            <RefreshCw className={cn('mr-2 size-4', reloadMutation.isPending && 'animate-spin')} />
+            Reload extensions
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

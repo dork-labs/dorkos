@@ -137,6 +137,11 @@ export interface SidebarState {
    * extension added one, and then the section is absent.
    */
   addOns: readonly SidebarAddOnPage[];
+  /**
+   * Whether the mini apps failed to load. Then an empty {@link addOns} means
+   * "couldn't tell", never "none", and the Add-ons section stands to say so.
+   */
+  addOnsLoadFailed: boolean;
   /** The To-dos door, or `null` while to-dos are off and the door is absent. */
   todos: SidebarTodosDoor | null;
   /** What the operator has open right now, from the router. `null` off-route. */

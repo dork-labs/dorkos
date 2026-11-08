@@ -623,10 +623,16 @@ export function buildSections(state: SidebarState): SidebarSectionModel[] {
   return [
     topSection(state.todos),
     ...groupSections,
-    ...SIDEBAR_SECTION_IDS.map((id) =>
-      id === 'dms'
-        ? directMessagesSection(state, dmRows, isWorking)
-        : section(id, content[id].label, content[id].rows, state, content[id].reason, isWorking)
-    ).filter((entry): entry is SidebarSectionModel => entry !== null),
+    ...SIDEBAR_SECTION_IDS.map((id) => {
+      if (id === 'dms') return directMessagesSection(state, dmRows, isWorking);
+      const { label, rows, reason } = content[id];
+      // **A failed load is not "no mini apps"** (DOR-2868 regression): with
+      // nothing to list because the list could not be read, Add-ons still
+      // stands, so it can say so and offer to try again.
+      if (id === 'addons' && rows.length === 0 && state.addOnsLoadFailed) {
+        return { ...fixedSection(id, label, rows, state, reason, isWorking), loadFailed: true };
+      }
+      return section(id, label, rows, state, reason, isWorking);
+    }).filter((entry): entry is SidebarSectionModel => entry !== null),
   ];
 }
