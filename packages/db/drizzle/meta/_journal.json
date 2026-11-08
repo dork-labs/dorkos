@@ -1324,6 +1324,13 @@
       "when": 1794158642583,
       "tag": "20261108172402_connection_grant_exclusions",
       "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "6",
+      "when": 1794161380838,
+      "tag": "20261108180940_connection_grant_changes",
+      "breakpoints": true
     }
   ]
 }

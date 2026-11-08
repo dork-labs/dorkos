@@ -17,7 +17,7 @@ import {
   type ConnectorManagementReviewAction,
   type ConnectorManagementReviewContext,
 } from '@dorkos/shared/connector-schemas';
-import { everyAgentGrantSubject } from './every-agent-grants.js';
+import { everyAgentGrantFor, everyAgentGrantSubject } from './every-agent-grants.js';
 import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
 
 /** Resolve one verified owner agent into stable presentation data. */
@@ -125,7 +125,7 @@ export class ConnectorManagementReviewContextBuilder {
           [...new Set(grants.map((grant) => grant.operationRevisionId))].sort()
         ),
         keptThroughEveryAgent: this.readOperationContext(
-          this.everyAgentRevisionIds(action.connectionId)
+          this.everyAgentRevisionIds(action.connectionId, action.agentId)
         ),
       };
     }
@@ -176,14 +176,25 @@ export class ConnectorManagementReviewContextBuilder {
    */
   withLiveEveryAgent(context: ConnectorManagementReviewContext): ConnectorManagementReviewContext {
     if (context.kind !== 'remove_agent_access' && context.kind !== 'disconnect') return context;
-    const shared = this.everyAgentRevisionIds(context.connection.connectionId);
     return context.kind === 'disconnect'
-      ? { ...context, everyAgent: shared.length > 0 }
-      : { ...context, keptThroughEveryAgent: this.readOperationContext(shared) };
+      ? {
+          ...context,
+          everyAgent: this.everyAgentRevisionIds(context.connection.connectionId).length > 0,
+        }
+      : {
+          ...context,
+          keptThroughEveryAgent: this.readOperationContext(
+            this.everyAgentRevisionIds(context.connection.connectionId, context.agent.agentId)
+          ),
+        };
   }
 
-  /** Live revisions the connection shares with every agent, sorted. */
-  private everyAgentRevisionIds(connectionId: string): string[] {
+  /**
+   * Live revisions the connection shares with every agent, sorted. Given an
+   * agent, only what the share still gives THAT agent: nothing, when it was
+   * left out of the share (DOR-3961, DOR-3978).
+   */
+  private everyAgentRevisionIds(connectionId: string, agentId?: string): string[] {
     return [
       ...new Set(
         this.db
@@ -192,7 +203,7 @@ export class ConnectorManagementReviewContextBuilder {
           .where(
             and(
               eq(connectionOperationGrants.connectionId, connectionId),
-              everyAgentGrantSubject(),
+              agentId === undefined ? everyAgentGrantSubject() : everyAgentGrantFor(agentId),
               isNull(connectionOperationGrants.revokedAt)
             )
           )

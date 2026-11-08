@@ -2862,6 +2862,127 @@
         ],
         "additionalProperties": false
       },
+      "ConnectorAccessChangeList": {
+        "type": "object",
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorAccessChange"
+            }
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorAccessChange": {
+        "type": "object",
+        "properties": {
+          "changeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "narrow_own",
+              "narrow_other",
+              "exclude_own",
+              "exclude_other",
+              "undo"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "refused"
+            ]
+          },
+          "refusalCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actorKind": {
+            "type": "string",
+            "enum": [
+              "person",
+              "agent"
+            ]
+          },
+          "actorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "targetAgentId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "connectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "undoOf": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "undoneBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "changeId",
+          "kind",
+          "outcome",
+          "refusalCode",
+          "actorKind",
+          "actorId",
+          "targetAgentId",
+          "connectionId",
+          "reason",
+          "undoOf",
+          "undoneBy",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorAccessChangeUndo": {
+        "type": "object",
+        "properties": {
+          "changeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "undoId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "changeId",
+          "undoId"
+        ],
+        "additionalProperties": false
+      },
       "MessageDisposition": {
         "type": "string",
         "enum": [
@@ -18959,6 +19080,7 @@
           "heartbeat.credits-offer",
           "connector.destructive_pending",
           "connector.destructive_executed",
+          "connector.access_narrowed",
           "web.new_device",
           "agent.secret_files",
           "account.signin_review",
@@ -29920,6 +30042,133 @@
           },
           "404": {
             "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/access-changes": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Access changes agents made on your apps",
+        "description": "Owner only. Newest first, with each agent's own one-line reason. Show the reason as plain text, attributed to the agent: it is the agent's words, not DorkOS's.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "connectionId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The changes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorAccessChangeList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/access-changes/{changeId}/undo": {
+      "post": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Undo an agent's change to an agent's access",
+        "description": "Owner only. Puts back the access the change took away, including letting an agent back into a share. Refused when access changed since, so a later choice is never overwritten.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "changeId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Put back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorAccessChangeUndo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nothing to undo under that id (`UNDO_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Access changed since (`UNDO_STALE`)",
             "content": {
               "application/json": {
                 "schema": {

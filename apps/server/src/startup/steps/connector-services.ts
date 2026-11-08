@@ -9,6 +9,8 @@
  */
 import { SignInRefresher } from '../../services/connectors/resources/sign-in-refresh.js';
 import { createConnectorAccess } from '../../services/connectors/access/connector-access.js';
+import { AccessNarrowingService } from '../../services/connectors/access/access-narrowing.js';
+import { createAccessChangeEvents } from '../../services/connectors/access/access-change-events.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { ConnectorAuthenticationFlowService } from '../../services/connectors/resources/authentication-flow-service.js';
 import { logger } from '../../lib/logger.js';
@@ -205,6 +207,19 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
     owner.kind === 'local_install' &&
     owner.installationId === connectorOwner.installationId &&
     refs.meshCore?.getProjectPath(agentId) !== undefined;
+  // Agents taking connection access away (spec `agent-grant-autonomy` phase 2).
+  const connectorAccessNarrowing = new AccessNarrowingService({
+    db,
+    ownsAgent: connectorOwnsAgent,
+    ...(managedConnectorAuthority && { managedAuthority: managedConnectorAuthority }),
+    events: createAccessChangeEvents({
+      activity: activityService,
+      agentName: (agentId) => {
+        const agent = refs.meshCore?.list().find((candidate) => candidate.id === agentId);
+        return agent ? (agent.displayName ?? agent.name) : agentId;
+      },
+    }),
+  });
   const connectorEventDestinations = {
     authorize: (
       owner: ConnectorOwnerAuthority,
@@ -387,6 +402,7 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
     connectorSignIns,
     connectorReconciliation,
     connectorGrantExclusions,
+    connectorAccessNarrowing,
     connectorAuthenticationFlows,
     connectorLifecycle,
     connectorManagementReviews,

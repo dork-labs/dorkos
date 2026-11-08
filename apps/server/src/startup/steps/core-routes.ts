@@ -95,6 +95,7 @@ export interface MountCoreRoutesInput {
   db: OpenConfigAndDatabaseResult['db'];
   sessionConnectorAttachmentStore: WireCoreStoresResult['sessionConnectorAttachmentStore'];
   connectorHolds: WireDocDeliveryResult['connectorHolds'];
+  connectorAccessNarrowing: WireConnectorServicesResult['connectorAccessNarrowing'];
   deps: WireMcpTasksAndSkillsResult['deps'];
   mountedRouters: string[];
   relayEnabled: StartSearchRelayAndMeshResult['relayEnabled'];
@@ -144,6 +145,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     db,
     sessionConnectorAttachmentStore,
     connectorHolds,
+    connectorAccessNarrowing,
     deps,
     mountedRouters,
     relayEnabled,
@@ -205,6 +207,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
       ...connectorOwnerBoundary,
     },
     holds: { holds: connectorHolds },
+    accessChanges: { ...connectorOwnerBoundary, narrowing: connectorAccessNarrowing, db },
   };
   deps.connectors = connectorRoutes;
   mountedRouters.push('connectors');

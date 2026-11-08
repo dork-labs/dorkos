@@ -182,8 +182,11 @@ function operationIdentity(operation: DiscoveredOperation): string {
 /**
  * The hosted selectors of the chosen local revisions, paired positionally with
  * their local ids, in selection order.
+ *
+ * @param tx - The open connector transaction.
+ * @param operationRevisionIds - The local revisions, in the order to send them.
  */
-function managedSelectors(
+export function managedSelectors(
   tx: DbTransaction,
   operationRevisionIds: readonly string[]
 ): {

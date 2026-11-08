@@ -56,6 +56,7 @@ import type { WireConnectorEventsAndApprovalsResult } from './connector-events-a
 import type { MountCoreRoutesResult } from './core-routes.js';
 import type { WireCoreStoresResult } from './core-stores.js';
 import type { WireConnectorServicesResult } from './connector-services.js';
+import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { WireDocDeliveryResult } from './doc-delivery.js';
 import type { WireRoomsResult } from './rooms.js';
 import type { WireSessionServicesResult } from './session-services.js';
@@ -92,6 +93,8 @@ export interface ComposeCapabilitiesInput {
   connectorProgramPrincipals: WireConnectorServicesResult['connectorProgramPrincipals'];
   connectorEventSubscriptions: WireConnectorEventsAndApprovalsResult['connectorEventSubscriptions'];
   connectorOwnsAgent: WireConnectorServicesResult['connectorOwnsAgent'];
+  connectorAccessNarrowing: WireConnectorServicesResult['connectorAccessNarrowing'];
+  db: OpenConfigAndDatabaseResult['db'];
   managedEventConsent: WireConnectorServicesResult['managedEventConsent'];
   connectorOwnerBoundary: MountCoreRoutesResult['connectorOwnerBoundary'];
 }
@@ -132,6 +135,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     connectorProgramPrincipals,
     connectorEventSubscriptions,
     connectorOwnsAgent,
+    connectorAccessNarrowing,
+    db,
     managedEventConsent,
     connectorOwnerBoundary,
   } = built;
@@ -211,6 +216,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
         ...(refs.connectorAgentRequests && { requests: refs.connectorAgentRequests }),
         holds: connectorHolds,
       },
+      // Agents taking connection access away (spec `agent-grant-autonomy` phase 2).
+      accessChangeDeps: { narrowing: connectorAccessNarrowing, db },
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
       ...(mcpDeps && { mcpDeps }),

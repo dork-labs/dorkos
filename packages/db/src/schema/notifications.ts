@@ -68,6 +68,7 @@ export const notifications = sqliteTable(
         'browser.handoff',
         'connector.destructive_pending',
         'connector.destructive_executed',
+        'connector.access_narrowed',
         'web.new_device',
         'agent.secret_files',
         'account.signin_review',

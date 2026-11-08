@@ -116,9 +116,9 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Connected apps',
-    can: 'read and change things in apps a person connected for you, or ask for one.',
+    can: 'read and change things in apps a person connected for you, ask for one, or take access away.',
     covers: ['connector.', 'connectors.'],
-    areas: [],
+    areas: ['permissions'],
     gate: 'each app grant',
   },
   {

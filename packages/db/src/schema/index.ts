@@ -36,6 +36,7 @@ export * from './connectors/connector-execution-state.js';
 export * from './connectors/connector-local-state.js';
 export * from './connectors/extension-connection-approvals.js';
 export * from './connectors/connection-grant-exclusions.js';
+export * from './connectors/connection-grant-changes.js';
 export * from './rooms.js';
 export * from './room-coordination.js';
 export * from './read-cursors.js';

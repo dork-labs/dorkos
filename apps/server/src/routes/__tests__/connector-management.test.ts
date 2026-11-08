@@ -669,6 +669,21 @@ describe('connector management routes', () => {
     expect(reviews.list).not.toHaveBeenCalled();
   });
 
+  // DOR-3979: the person-only exclusion routes refuse a page on another origin,
+  // both the chain's CORS (foreign) and the routes' own origin bar (CORS-only).
+  it.each([
+    ['get', '/api/connectors/connections/connection-a/exclusions'],
+    ['put', '/api/connectors/connections/connection-a/exclusions/agent-a'],
+    ['delete', '/api/connectors/connections/connection-a/exclusions/agent-a'],
+  ] as const)('refuses an untrusted Origin on %s %s', async (method, url) => {
+    for (const origin of ['https://evil.example', CORS_ONLY_ORIGIN]) {
+      await request(fixtureTarget.mount(buildApp()))[method](url).set('Origin', origin).expect(403);
+    }
+    expect(exclusions.list).not.toHaveBeenCalled();
+    expect(exclusions.leaveOut).not.toHaveBeenCalled();
+    expect(exclusions.letBackIn).not.toHaveBeenCalled();
+  });
+
   it('refuses invalid bearer and approval-token signals before creating a review', async () => {
     const body = {
       action: { version: 1, kind: 'pause', connectionId: 'connection-a' },

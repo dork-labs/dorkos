@@ -37,6 +37,7 @@ import {
   ConnectorAgentRequestError,
   type ConnectorAgentRequestService,
 } from '../agent-request-service.js';
+import { ACCESS_CHANGE_CAPABILITIES } from '../access/access-change-capabilities.js';
 
 /** Service handles required by the connector execution capability domain. */
 export interface ConnectorExecutionCapabilityDeps {
@@ -377,6 +378,7 @@ export const connectorExecutionDomain: CapabilityDomain = {
     listGrantedOperations,
     requestConnection,
     getConnectionRequest,
+    ...ACCESS_CHANGE_CAPABILITIES,
     executionCapability('connectors.execute_read', 'read'),
     executionCapability('connectors.execute_write', 'write'),
     executionCapability('connectors.execute_destructive', 'destructive'),

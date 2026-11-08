@@ -63,3 +63,54 @@ export const ConnectorGrantExclusionChangeSchema = z
   .openapi('ConnectorGrantExclusionChange');
 /** What leaving an agent out, or letting it back in, did. */
 export type ConnectorGrantExclusionChange = z.infer<typeof ConnectorGrantExclusionChangeSchema>;
+
+/**
+ * One access change an agent made, or a person's undo of one, as the person
+ * sees it (spec `agent-grant-autonomy` §6.2). `reason` is the agent's own
+ * words: show it as plain text, attributed to the agent, never as markup.
+ */
+export const ConnectorAccessChangeSchema = z
+  .object({
+    changeId: z.string().min(1),
+    kind: z.enum(['narrow_own', 'narrow_other', 'exclude_own', 'exclude_other', 'undo']),
+    outcome: z.enum(['applied', 'refused']),
+    refusalCode: z.string().nullable(),
+    actorKind: z.enum(['person', 'agent']),
+    actorId: z.string().min(1),
+    targetAgentId: z.string().min(1),
+    connectionId: z.string().min(1),
+    reason: z.string().nullable(),
+    undoOf: z.string().nullable(),
+    undoneBy: z.string().nullable(),
+    createdAt: z.string().datetime(),
+  })
+  .strict()
+  .openapi('ConnectorAccessChange');
+/** One access change, as the person sees it. */
+export type ConnectorAccessChange = z.infer<typeof ConnectorAccessChangeSchema>;
+
+/** Access changes, newest first. */
+export const ConnectorAccessChangeListSchema = z
+  .object({ changes: z.array(ConnectorAccessChangeSchema) })
+  .strict()
+  .openapi('ConnectorAccessChangeList');
+/** Access changes, newest first. */
+export type ConnectorAccessChangeList = z.infer<typeof ConnectorAccessChangeListSchema>;
+
+/** Filters for the person's list of access changes. */
+export const ConnectorAccessChangeListQuerySchema = z
+  .object({
+    connectionId: z.string().min(1).optional(),
+    agentId: z.string().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+  })
+  .strict()
+  .openapi('ConnectorAccessChangeListQuery');
+
+/** What a person's Undo did. */
+export const ConnectorAccessChangeUndoSchema = z
+  .object({ changeId: z.string().min(1), undoId: z.string().min(1) })
+  .strict()
+  .openapi('ConnectorAccessChangeUndo');
+/** What a person's Undo did. */
+export type ConnectorAccessChangeUndo = z.infer<typeof ConnectorAccessChangeUndoSchema>;

@@ -133,7 +133,7 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
   extensions: [],
   settings: ['operator.config_patch'],
   safety: ['operator.update_agent_boundaries'],
-  permissions: ['permissions.change'],
+  permissions: ['connectors.narrow_agent_access', 'permissions.change'],
   reach: [],
 };
 

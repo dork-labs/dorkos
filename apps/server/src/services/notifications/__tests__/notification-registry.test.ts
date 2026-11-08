@@ -183,6 +183,13 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     serviceName: 'Gmail',
     outcome: 'success',
   },
+  'connector.access_narrowed': {
+    changeId: 'change-1',
+    connectionId: 'connection-1',
+    actorAgentId: 'agent-1',
+    targetAgentId: 'agent-2',
+    title: 'Scout took Gmail (Work) access away from Bea',
+  },
   'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
   'agent.secret_files': {
     agentId: 'agent-1',
@@ -252,6 +259,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'connector.destructive_pending': 'notable',
   // News: it ran (spec trusted-by-default-flip §5.6).
   'connector.destructive_executed': 'quiet',
+  // One agent took another's access away: the person sees it now (Security G2).
+  'connector.access_narrowed': 'blocking',
   'web.new_device': 'notable',
   'agent.secret_files': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
@@ -345,6 +354,7 @@ describe('notification registry', () => {
       'community.owner-replacement',
       'community.teammate-limit',
       'community.teammate-limits-reset',
+      'connector.access_narrowed',
       'connector.destructive_executed',
       'connector.destructive_pending',
       'credits.refused',

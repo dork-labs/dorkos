@@ -41,6 +41,7 @@ export default defineConfig({
     './src/schema/connectors/connector-local-state.ts',
     './src/schema/connectors/extension-connection-approvals.ts',
     './src/schema/connectors/connection-grant-exclusions.ts',
+    './src/schema/connectors/connection-grant-changes.ts',
     './src/schema/rooms.ts',
     './src/schema/canvas/channel.ts',
     './src/schema/canvas/file-save-intents.ts',
