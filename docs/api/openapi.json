@@ -86129,7 +86129,8 @@
                               "mcp",
                               "rest",
                               "cli",
-                              "event"
+                              "event",
+                              "extension"
                             ]
                           },
                           "actorKind": {
@@ -86139,7 +86140,8 @@
                               "agent",
                               "program",
                               "event",
-                              "runtime"
+                              "runtime",
+                              "extension"
                             ]
                           },
                           "agentId": {
@@ -86286,7 +86288,8 @@
                               "mcp",
                               "rest",
                               "cli",
-                              "event"
+                              "event",
+                              "extension"
                             ]
                           },
                           "actorKind": {
@@ -86296,7 +86299,8 @@
                               "agent",
                               "program",
                               "event",
-                              "runtime"
+                              "runtime",
+                              "extension"
                             ]
                           },
                           "agentId": {

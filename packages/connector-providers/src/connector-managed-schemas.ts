@@ -8,7 +8,10 @@
  * @module connector-providers/connector-managed-schemas
  */
 import { createHash } from 'node:crypto';
-import { ConnectionGrantSubjectSchema } from '@dork-labs/cloud-api';
+import {
+  ConnectionGrantExtensionIdSchema,
+  ConnectionGrantSubjectSchema,
+} from '@dork-labs/cloud-api';
 import { z } from 'zod';
 import { stableStringify } from './stable-stringify.js';
 import { ConnectorEventDestinationSchema } from './connector-event-schemas.js';
@@ -190,6 +193,19 @@ export const ManagedConnectorAuthorityCommandSchema = z.discriminatedUnion('kind
       .array(ManagedConnectorOperationSelectorSchema)
       .max(CONNECTOR_OPERATION_SELECTION_LIMIT),
   }).strict(),
+  // One installed extension's server code (DOR-3547, DOR-3980): the complete
+  // set of exact reviewed revisions that extension may read on this
+  // connection. It names no agent and never covers one, and `access` is
+  // `read` only: the service refuses any revision whose classification is
+  // not `read`, and an empty set ends the grant.
+  ManagedAuthorityCommandBaseSchema.extend({
+    kind: z.literal('replace_extension_grants'),
+    extensionId: ConnectionGrantExtensionIdSchema,
+    access: z.literal('read'),
+    revisions: z
+      .array(ManagedConnectorOperationSelectorSchema)
+      .max(CONNECTOR_OPERATION_SELECTION_LIMIT),
+  }).strict(),
   ManagedAuthorityCommandBaseSchema.extend({
     kind: z.literal('set_event_subscription'),
     subscriptionId: z.string().min(1).max(256),
@@ -263,11 +279,33 @@ export const ManagedConnectorTurnMarkSchema = z.enum(['outsider', 'tool_read', '
 /** One mark a calling turn carries. */
 export type ManagedConnectorTurnMark = z.infer<typeof ManagedConnectorTurnMarkSchema>;
 
+/**
+ * Where a managed execution came from. `extension` is an installed
+ * extension's server code reading through DorkOS (DOR-3547); it rides only
+ * the extension request shape.
+ */
+export const ManagedConnectorSurfaceSchema = z.enum(['mcp', 'rest', 'cli', 'event', 'extension']);
+/** Where a managed execution came from. */
+export type ManagedConnectorSurface = z.infer<typeof ManagedConnectorSurfaceSchema>;
+
+/** Who made a managed execution. `extension` pairs with the `extension` surface. */
+export const ManagedConnectorActorKindSchema = z.enum([
+  'operator',
+  'agent',
+  'program',
+  'event',
+  'runtime',
+  'extension',
+]);
+/** Who made a managed execution. */
+export type ManagedConnectorActorKind = z.infer<typeof ManagedConnectorActorKindSchema>;
+
 /** Trusted execution provenance derived by the linked instance broker. */
 export const ManagedConnectorExecutionAttributionSchema = z
   .object({
-    surface: z.enum(['mcp', 'rest', 'cli', 'event']),
-    actorKind: z.enum(['operator', 'agent', 'program', 'event', 'runtime']),
+    // Never `extension`: an extension's read rides its own request shape.
+    surface: ManagedConnectorSurfaceSchema.exclude(['extension']),
+    actorKind: ManagedConnectorActorKindSchema.exclude(['extension']),
     actorId: z.string().min(1).max(200),
     sessionId: z.string().min(1).max(200).optional(),
     /**
@@ -313,6 +351,69 @@ export const ManagedConnectorExecutionRequestSchema = z
 /** One exact managed execution request derived by the trusted local broker. */
 export type ManagedConnectorExecutionRequest = z.infer<
   typeof ManagedConnectorExecutionRequestSchema
+>;
+
+/**
+ * The provenance of an extension's read: always the `extension` surface and
+ * actor, named by the extension's own id. No session and no turn marks: an
+ * extension's server code is not a chat turn.
+ */
+export const ManagedConnectorExtensionAttributionSchema = z
+  .object({
+    surface: z.literal('extension'),
+    actorKind: z.literal('extension'),
+    actorId: ConnectionGrantExtensionIdSchema,
+  })
+  .strict();
+/** The provenance of an extension's read. */
+export type ManagedConnectorExtensionAttribution = z.infer<
+  typeof ManagedConnectorExtensionAttributionSchema
+>;
+
+/**
+ * One exact managed read made for an installed extension's server code
+ * (DOR-3547, DOR-3980), derived by the trusted local broker. It is a shape of
+ * its own so the agent request above stays exactly as it was: there is no
+ * `agentId`, `grantSubject` is always `extension`, and the attribution names
+ * the same extension. The service runs it only under a live
+ * `replace_extension_grants` scope, and only for a `read` revision.
+ */
+export const ManagedConnectorExtensionExecutionRequestSchema = z
+  .object({
+    version: z.literal(1),
+    logicalOperationId: z.string().min(1).max(200),
+    attemptId: z.string().min(1).max(200),
+    attemptIndex: z.number().int().positive(),
+    managedConnectionId: z.string().min(1).max(200),
+    grantSubject: z.literal('extension'),
+    extensionId: ConnectionGrantExtensionIdSchema,
+    grantScopeVersion: z.number().int().positive(),
+    attribution: ManagedConnectorExtensionAttributionSchema,
+    revision: ManagedConnectorOperationSelectorSchema,
+    arguments: ConnectorJsonObjectSchema,
+  })
+  .strict()
+  .refine((request) => request.attribution.actorId === request.extensionId, {
+    message: 'The attribution must name the same extension',
+    path: ['attribution', 'actorId'],
+  });
+/** One exact managed read made for an installed extension's server code. */
+export type ManagedConnectorExtensionExecutionRequest = z.infer<
+  typeof ManagedConnectorExtensionExecutionRequestSchema
+>;
+
+/**
+ * Either execution request, as the service reads it. The two never overlap:
+ * an agent's has `agentId` and never `grantSubject: 'extension'`, an
+ * extension's has `extensionId` and always does, and both are strict.
+ */
+export const ManagedConnectorAnyExecutionRequestSchema = z.union([
+  ManagedConnectorExecutionRequestSchema,
+  ManagedConnectorExtensionExecutionRequestSchema,
+]);
+/** Either execution request. */
+export type ManagedConnectorAnyExecutionRequest = z.infer<
+  typeof ManagedConnectorAnyExecutionRequestSchema
 >;
 
 /**

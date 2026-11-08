@@ -661,8 +661,8 @@ export const ConnectorUsageItemSchema = z
   .object({
     logicalOperationId: z.string().min(1),
     attemptIndex: z.number().int().positive(),
-    surface: z.enum(['mcp', 'rest', 'cli', 'event']),
-    actorKind: z.enum(['operator', 'agent', 'program', 'event', 'runtime']),
+    surface: z.enum(['mcp', 'rest', 'cli', 'event', 'extension']),
+    actorKind: z.enum(['operator', 'agent', 'program', 'event', 'runtime', 'extension']),
     agentId: z.string().min(1).optional(),
     connectionId: ConnectionIdSchema,
     toolkit: z.string().min(1),

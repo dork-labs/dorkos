@@ -183,7 +183,7 @@ export function grantRowAgentId(request: {
 function authorityScopeKey(
   command: Exclude<
     ReturnType<typeof ManagedConnectorAuthorityCommandSchema.parse>,
-    { kind: 'set_event_subscription' }
+    { kind: 'set_event_subscription' | 'replace_extension_grants' }
   >
 ): string {
   if (command.kind === 'replace_agent_grants') return `agent:${command.agentId}`;
@@ -566,6 +566,21 @@ export async function applyManagedAuthorityCommand(
   const command = ManagedConnectorAuthorityCommandSchema.parse(rawCommand);
   if (command.kind === 'set_event_subscription')
     return applyManagedEventAuthorityCommand(db, principal, command, provider, eventPolicy);
+  // This service holds no extension grants (DOR-3980): it refuses one before storing anything.
+  if (command.kind === 'replace_extension_grants') {
+    const { version, commandId, managedConnectionId, scopeVersion } = command;
+    return {
+      status: {
+        version,
+        commandId,
+        managedConnectionId,
+        scopeVersion,
+        state: 'rejected',
+        rejectionCode: 'revision_unavailable',
+      },
+      conflict: false,
+    };
+  }
   const requestHash = managedRequestHash(command);
   const claimed = await db.transaction(async (tx) => {
     await lockLiveAuthorityPrincipal(tx, principal);

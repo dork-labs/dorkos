@@ -127,4 +127,37 @@ describe('managed connector usage wire', () => {
       })
     ).toThrow();
   });
+
+  it("records an extension's read under the extension, with no agent (DOR-3980)", () => {
+    const { agentId: _agentId, ...withoutAgent } = item;
+    const extensionRead = {
+      ...withoutAgent,
+      extensionId: 'flow-owner',
+      surface: 'extension' as const,
+      actorKind: 'extension' as const,
+      state: 'pending' as const,
+    };
+    const page = (items: object[]) =>
+      ManagedConnectorUsageResponseSchema.safeParse({
+        version: 1,
+        status: 'available',
+        counts: { logicalOperationCount: items.length, attemptCount: items.length },
+        items,
+      });
+    expect(page([extensionRead, { ...item, state: 'pending' }]).success).toBe(true);
+    expect(
+      ManagedConnectorUsageRequestSchema.parse({ version: 1, extensionId: 'flow-owner' })
+    ).toMatchObject({ extensionId: 'flow-owner' });
+    for (const bad of [
+      { ...extensionRead, agentId: 'agent-a' },
+      { ...extensionRead, extensionId: undefined },
+      { ...extensionRead, surface: 'mcp' },
+      { ...extensionRead, extensionId: 'extension:flow-owner' },
+      { ...item, state: 'pending', extensionId: 'flow-owner' },
+      { ...item, state: 'pending', actorKind: 'extension' },
+      { ...withoutAgent, state: 'pending' },
+    ]) {
+      expect(page([bad]).success).toBe(false);
+    }
+  });
 });
