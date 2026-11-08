@@ -26,6 +26,8 @@ import {
   sectionExtensions,
 } from '../lib/extension-row-state';
 import { ExtensionRow } from './ExtensionRow';
+import { StaleApprovalRow } from './StaleApprovalRow';
+import { useForgetApproval, useRemoveExtension, useStaleApprovals } from '../api/removal-queries';
 import { TrustedSourcesSection } from './TrustedSourcesSection';
 
 /** The list's filters. "Not used in 30 days" waits for last-used data. */
@@ -43,6 +45,10 @@ export function ExtensionsSettingsTab() {
   const loadFailed = isError && data === undefined;
   // The mini apps that keep "Confirm it's you" off (DOR-3234).
   const { data: stepUpRisks } = useStepUpRisks();
+  // Approvals whose extension is gone (DOR-3372), and the two answers to them.
+  const { data: staleApprovals = [] } = useStaleApprovals();
+  const removeMutation = useRemoveExtension();
+  const forgetMutation = useForgetApproval();
   // What changed, and since when, for a row waiting for an OK.
   const { approvals } = usePendingExtensionApprovals();
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -150,6 +156,21 @@ export function ExtensionsSettingsTab() {
     });
   }
 
+  function handleRemove(id: string) {
+    const name = extensions.find((ext) => ext.id === id)?.manifest.name ?? id;
+    removeMutation.mutate(id, {
+      onSuccess: () => toast.success(`${name} was removed`),
+      onError: (err) => toast.error(`Couldn’t remove ${name}.`, { description: err.message }),
+    });
+  }
+
+  function handleForget(id: string) {
+    forgetMutation.mutate(id, {
+      onSuccess: () => toast.success(`Forgot what ${id} was allowed`),
+      onError: (err) => toast.error(`Couldn’t forget ${id}.`, { description: err.message }),
+    });
+  }
+
   const sections = useMemo(() => sectionExtensions(extensions), [extensions]);
 
   if (isLoading) {
@@ -183,7 +204,7 @@ export function ExtensionsSettingsTab() {
   }
 
   const installed = extensions.filter((ext) => ext.origin === 'user');
-  const needYouCount = sections.needsYou.length;
+  const needYouCount = sections.needsYou.length + staleApprovals.length;
   const offCount = installed.filter(isExtensionOff).length;
   // A pill with nothing behind it is hidden, so its filter falls back to All.
   const shown: ExtensionFilter = offCount === 0 ? 'all' : filter;
@@ -195,7 +216,14 @@ export function ExtensionsSettingsTab() {
   // DorkOS's own: folded at the end, and only under All.
   const core = shown === 'all' ? sections.core.filter(keep) : [];
   const searching = query.trim().length > 0;
-  const nothingMatches = needsYou.length + everythingElse.length + core.length === 0;
+  // An approval left behind has no record, so it matches on its id alone.
+  const stale =
+    filter === 'all'
+      ? staleApprovals.filter((approval) =>
+          approval.id.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
+        )
+      : [];
+  const nothingMatches = needsYou.length + stale.length + everythingElse.length + core.length === 0;
 
   const renderRow = (ext: ExtensionRecordPublic) => (
     <ExtensionRow
@@ -211,10 +239,12 @@ export function ExtensionsSettingsTab() {
       onReload={handleReload}
       isReloading={reloadMutation.isPending}
       stepUpRisk={stepUpRisks?.find((risk) => risk.id === ext.id)}
+      onRemove={handleRemove}
+      isRemoving={removeMutation.isPending && removeMutation.variables === ext.id}
     />
   );
 
-  if (extensions.length === 0) {
+  if (extensions.length === 0 && staleApprovals.length === 0) {
     return (
       <div className="space-y-2 py-8 text-center" data-testid="no-extensions">
         <p className="text-sm font-semibold">No extensions yet</p>
@@ -284,7 +314,7 @@ export function ExtensionsSettingsTab() {
         </div>
       ) : (
         <>
-          {needsYou.length > 0 && (
+          {needsYou.length + stale.length > 0 && (
             <section aria-labelledby="extensions-needs-you" data-testid="needs-you-section">
               <h3
                 id="extensions-needs-you"
@@ -292,7 +322,21 @@ export function ExtensionsSettingsTab() {
               >
                 Needs you
               </h3>
-              <ul className="space-y-0.5">{needsYou.map(renderRow)}</ul>
+              <ul className="space-y-0.5">
+                {needsYou.map(renderRow)}
+                {stale.map((approval) => (
+                  <StaleApprovalRow
+                    key={`stale:${approval.id}`}
+                    approval={approval}
+                    open={openIds.has(`stale:${approval.id}`)}
+                    onOpenChange={(open) => setOpen(`stale:${approval.id}`, open)}
+                    onForget={handleForget}
+                    isForgetting={
+                      forgetMutation.isPending && forgetMutation.variables === approval.id
+                    }
+                  />
+                ))}
+              </ul>
             </section>
           )}
 
@@ -301,7 +345,7 @@ export function ExtensionsSettingsTab() {
               aria-labelledby="extensions-everything-else"
               data-testid="installed-extensions-section"
             >
-              {needsYou.length > 0 && (
+              {needsYou.length + stale.length > 0 && (
                 <h3
                   id="extensions-everything-else"
                   className="text-muted-foreground mb-1 px-3 text-[11px] font-medium max-sm:text-[13px]"

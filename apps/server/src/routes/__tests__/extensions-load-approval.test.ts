@@ -182,6 +182,7 @@ describe('POST /api/extensions/:id/approve', () => {
     get: ReturnType<typeof vi.fn>;
     approveToRun: ReturnType<typeof vi.fn>;
     revokeRunApproval: ReturnType<typeof vi.fn>;
+    listRecords?: ReturnType<typeof vi.fn>;
     listPublic: ReturnType<typeof vi.fn>;
     listShadowedPublic: ReturnType<typeof vi.fn>;
     requestRefresh: ReturnType<typeof vi.fn>;
@@ -397,6 +398,55 @@ describe('POST /api/extensions/:id/approve', () => {
    * has happened. So the routes require a trusted `Origin` whenever a browser sends
    * one.
    */
+  /**
+   * Remove and Forget (DOR-3541, DOR-3372) answer the same kind of question as
+   * approving, so they carry the same bar: an agent could otherwise delete the
+   * record of what it was allowed, or take another extension off the computer.
+   */
+  describe('remove and forget', () => {
+    it.each(['remove', 'forget'])('refuses an agent on /%s and changes nothing', async (verb) => {
+      state.extensions = { ...state.extensions, approvedToRun: ['my-ext'] };
+
+      const res = await request(fixtureServer)
+        .post(`/api/extensions/my-ext/${verb}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(state.extensions.approvedToRun).toEqual(['my-ext']);
+    });
+
+    it.each(['remove', 'forget'])('refuses another site on /%s', async (verb) => {
+      const res = await request(fixtureServer)
+        .post(`/api/extensions/my-ext/${verb}`)
+        .set('origin', 'https://evil.example')
+        .send({});
+
+      expect(res.status).toBe(403);
+    });
+
+    it('will not forget an extension that is still installed', async () => {
+      manager.listRecords = vi.fn().mockReturnValue([stubRecord()]);
+      state.extensions = { ...state.extensions, approvedToRun: ['my-ext'] };
+
+      const res = await request(fixtureServer).post('/api/extensions/my-ext/forget').send({});
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('installed');
+      expect(state.extensions.approvedToRun).toEqual(['my-ext']);
+    });
+
+    it('lists an approval whose extension is installed nowhere', async () => {
+      manager.listRecords = vi.fn().mockReturnValue([]);
+      state.extensions = { ...state.extensions, approvedToRun: ['gone'] };
+
+      const res = await request(fixtureServer).get('/api/extensions/stale-approvals');
+
+      expect(res.status).toBe(200);
+      expect(res.body.approvals).toEqual([{ id: 'gone', path: null, plugin: null }]);
+    });
+  });
+
   describe('a page on another site, posting through the person browser', () => {
     it('is refused, and nothing is written', async () => {
       const res = await request(fixtureServer)

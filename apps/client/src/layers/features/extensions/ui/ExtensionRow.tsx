@@ -45,6 +45,10 @@ export interface ExtensionRowProps {
   isReloading: boolean;
   /** Why it keeps "Confirm it's you" off, when it does (DOR-3234). */
   stepUpRisk?: StepUpExtensionRisk;
+  /** Remove it (DOR-3541). Absent where the list offers no Remove. */
+  onRemove?: (id: string) => void;
+  /** Whether a remove is in flight. */
+  isRemoving?: boolean;
 }
 
 /** Open: 200ms ease-out. Close: 150ms ease-in. Instant under reduced motion. */
@@ -81,6 +85,8 @@ export function ExtensionRow({
   onReload,
   isReloading,
   stepUpRisk,
+  onRemove,
+  isRemoving,
 }: ExtensionRowProps) {
   const { manifest } = extension;
   const state = extensionRowState(extension);
@@ -317,6 +323,8 @@ export function ExtensionRow({
                   onTurnOff={() => onToggle(extension.id, false)}
                   isToggling={isToggling}
                   stepUpRisk={stepUpRisk}
+                  onRemove={onRemove ? () => onRemove(extension.id) : undefined}
+                  isRemoving={isRemoving}
                 />
               )}
             </div>

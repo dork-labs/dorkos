@@ -29,14 +29,14 @@
  * a broken install), a dev link by unlinking it, and DorkOS's own extensions
  * not at all.
  *
- * @module services/extensions/extension-removal
+ * @module services/extensions/removal/extension-removal
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { configManager } from '../core/config-manager.js';
-import { logConfigWrite } from '../core/operator/config-write.js';
-import { logger } from '../../lib/logger.js';
-import type { ExtensionManager } from './extension-manager.js';
+import { configManager } from '../../core/config-manager.js';
+import { logConfigWrite } from '../../core/operator/config-write.js';
+import { logger } from '../../../lib/logger.js';
+import type { ExtensionManager } from '../extension-manager.js';
 
 /** The part of the extension manager removal reads and drives. */
 export type RemovalManager = Pick<

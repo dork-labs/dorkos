@@ -20518,6 +20518,34 @@
           "title",
           "reason"
         ]
+      },
+      "StaleExtensionApproval": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The extension id the approval names."
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The folder the approval was given to; null for a caller that is not the person."
+          },
+          "plugin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The plugin that carried it, when it came inside one."
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "plugin"
+        ]
       }
     },
     "parameters": {}
@@ -99542,6 +99570,211 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StartWorkErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/stale-approvals": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "List approvals whose extension is no longer installed",
+        "description": "Every extension id that still has a run approval, approved source or permission set recorded although no copy of it is installed anywhere. Settings shows each as \"Folder missing\" with Forget. Paths are only sent to the person.",
+        "responses": {
+          "200": {
+            "description": "The approvals left behind, A–Z",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "approvals": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/StaleExtensionApproval"
+                      }
+                    }
+                  },
+                  "required": [
+                    "approvals"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The list could not be read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/remove": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Remove an installed extension",
+        "description": "Forgets every approval and choice recorded for this copy, then deletes its folder and rescans. Only a folder DorkOS puts extensions in is deleted (`<data dir>/extensions/<id>` or `.dork/extensions/<id>`, with no symbolic link): a plugin-carried copy is removed by uninstalling the plugin, a dev link by unlinking it, and a DorkOS extension not at all. The same person bar as approving applies: a caller naming itself an agent is refused in every posture, another site is refused, and a signed-in person is required when login is on. There is no MCP tool for this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "removed": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "removed"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid extension id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent or another site cannot remove an extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It ships with DorkOS (`core`), came with a plugin (`plugin`), runs from a dev link (`dev_link`), or its folder is not one DorkOS would delete (`unexpected_folder`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/forget": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Forget the approval of an extension that is gone",
+        "description": "Clears the run approval, approved source, permission set and \"Not now\" recorded for an extension id that is installed nowhere, so a folder put back at that path asks again. The same person bar as approving applies: a caller naming itself an agent is refused in every posture, another site is refused, and a signed-in person is required when login is on. There is no MCP tool for this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Forgotten"
+          },
+          "400": {
+            "description": "Invalid extension id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent or another site cannot forget an approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No approval is left for this id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "It is still installed (`installed`): stop it running or remove it instead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

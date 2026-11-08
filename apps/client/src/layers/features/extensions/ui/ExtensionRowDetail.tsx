@@ -23,6 +23,7 @@ import { RoomAccessEditor } from './RoomAccessEditor';
 import { ForwardAgentsEditor } from './ForwardAgentsEditor';
 import { StepUpRiskRow } from './StepUpRiskRow';
 import { isExtensionOn } from '../lib/extension-row-state';
+import { RemoveExtensionControl, canRemoveHere } from './RemoveExtensionControl';
 
 /** Where a dev link is switched or unlinked: the Marketplace's Installed list (DOR-2696). */
 const INSTALLED_LINK = '/marketplace?view=installed';
@@ -41,6 +42,10 @@ export interface ExtensionRowDetailProps {
   isToggling: boolean;
   /** Why it keeps "Confirm it's you" off, when it does (DOR-3234). */
   stepUpRisk?: StepUpExtensionRisk;
+  /** Remove it (DOR-3541), when the list can. */
+  onRemove?: () => void;
+  /** Whether a remove is in flight. */
+  isRemoving?: boolean;
 }
 
 /** Its access, in one line (the approval panel says it in full). */
@@ -79,8 +84,12 @@ export function ExtensionRowDetail({
   onTurnOff,
   isToggling,
   stepUpRisk,
+  onRemove,
+  isRemoving = false,
 }: ExtensionRowDetailProps) {
   const { manifest, serverError } = extension;
+  const canStop = extension.origin === 'user' && extension.approvedToRun;
+  const removable = onRemove !== undefined && canRemoveHere(extension);
   const isOn = isExtensionOn(extension);
   const gifts = agentGiftsFromRecord(extension);
   const access = accessLine(extension);
@@ -169,19 +178,29 @@ export function ExtensionRowDetail({
         <ForwardAgentsEditor extensionId={extension.id} name={manifest.name} />
       )}
 
-      {extension.origin === 'user' && extension.approvedToRun && (
+      {(canStop || removable) && (
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            // Pulled left by its own padding, so its words line up with the facts.
-            className="-ml-3"
-            onClick={onStopRunning}
-            disabled={isSettingApproval}
-            data-testid={`extension-stop-running-${extension.id}`}
-          >
-            Stop it running
-          </Button>
+          {canStop && (
+            <Button
+              size="sm"
+              variant="ghost"
+              // Pulled left by its own padding, so its words line up with the facts.
+              className="-ml-3"
+              onClick={onStopRunning}
+              disabled={isSettingApproval}
+              data-testid={`extension-stop-running-${extension.id}`}
+            >
+              Stop it running
+            </Button>
+          )}
+          {/* Always last, and never beside an Allow. */}
+          {removable && (
+            <RemoveExtensionControl
+              name={manifest.name}
+              onRemove={onRemove}
+              isRemoving={isRemoving}
+            />
+          )}
         </div>
       )}
     </div>

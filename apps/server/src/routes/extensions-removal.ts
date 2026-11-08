@@ -1,7 +1,7 @@
 /**
  * The routes a PERSON uses to remove an installed extension, and to forget the
  * approval of one that is gone (DOR-3541, DOR-3372). The work itself is in
- * {@link module:services/extensions/extension-removal}.
+ * {@link module:services/extensions/removal/extension-removal}.
  *
  * Both carry the same person bar as approving: removing takes code off this
  * computer and forgetting withdraws a security decision, and an agent that
@@ -17,7 +17,7 @@ import {
   listStaleApprovals,
   removeExtension,
   type RemoveRefusal,
-} from '../services/extensions/extension-removal.js';
+} from '../services/extensions/removal/extension-removal.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
