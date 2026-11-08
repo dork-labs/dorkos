@@ -34,6 +34,7 @@ export * from './connectors/connector-review-requests.js';
 export * from './connectors/connector-usage.js';
 export * from './connectors/connector-execution-state.js';
 export * from './connectors/connector-local-state.js';
+export * from './connectors/extension-connection-approvals.js';
 export * from './rooms.js';
 export * from './room-coordination.js';
 export * from './read-cursors.js';

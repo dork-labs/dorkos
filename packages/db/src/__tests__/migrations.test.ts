@@ -236,6 +236,7 @@ describe('Database Migrations', () => {
       // message it sent with ctx.agent.send (DOR-2683).
       'extension_agent_chats',
       'extension_agent_sends',
+      'extension_connection_approvals',
       // Decisions an extension raised in the inbox (spec flow-multiproject
       // §7.2, migration 0131).
       'extension_decisions',

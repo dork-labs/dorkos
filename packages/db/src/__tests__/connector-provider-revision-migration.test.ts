@@ -58,7 +58,11 @@ it('preserves populated revision/grant rows, permits fresh provider identities, 
       ...before,
       provider_revision_ref: '',
     });
-    expect(sqlite.prepare('SELECT * FROM connection_operation_grants').get()).toEqual(grant);
+    expect(sqlite.prepare('SELECT * FROM connection_operation_grants').get()).toEqual({
+      ...(grant as Record<string, unknown>),
+      // Added later by the extension grant subject (DOR-3547); old rows read null.
+      extension_id: null,
+    });
     sqlite
       .prepare(
         `INSERT INTO connector_operation_revisions (id, provider_instance_id, toolkit, operation_slug, toolkit_version, schema_hash, capability_classification, input_schema_json, discovered_at, provider_revision_ref) VALUES ('new-revision', 'provider', 'gmail', 'read', 'v1', 'hash', 'read', '{}', 'now', 'hosted-generation-2')`
@@ -75,7 +79,9 @@ it('preserves populated revision/grant rows, permits fresh provider identities, 
     expect(
       sqlite.prepare('SELECT COUNT(*) AS count FROM connector_operation_revisions').get()
     ).toEqual({ count: 2 });
-    expect(sqlite.prepare('SELECT * FROM connection_operation_grants').all()).toEqual([grant]);
+    expect(sqlite.prepare('SELECT * FROM connection_operation_grants').all()).toEqual([
+      { ...(grant as Record<string, unknown>), extension_id: null },
+    ]);
     expect(sqlite.pragma('foreign_key_check')).toEqual([]);
   } finally {
     sqlite.close();
