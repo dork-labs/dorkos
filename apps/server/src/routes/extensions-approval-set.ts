@@ -63,13 +63,12 @@ export function registerExtensionApprovalSetRoutes(
         return c.json({ error: 'Send the plugin and the extensions you were shown' }, 400);
       }
 
-      const outcome = await approveExtensionSet(extensionManager, body.data);
-      if (!outcome.ok) return c.json({ error: outcome.error, code: outcome.code }, 409);
-
-      const allowed = outcome.results.filter((result) => result.ok);
-      for (const result of allowed) {
+      // Each member's Activity entry is written the moment it is allowed, so
+      // nothing that runs is ever missing from the record (Security, Nov 8, M2).
+      const actor = readActivityActor(honoRequestFacts(c));
+      const outcome = await approveExtensionSet(extensionManager, body.data, async (result) => {
         await activity?.emit({
-          ...readActivityActor(honoRequestFacts(c)),
+          ...actor,
           category: 'config',
           eventType: 'config.extension_updated',
           resourceType: 'extension',
@@ -77,7 +76,10 @@ export function registerExtensionApprovalSetRoutes(
           resourceLabel: result.name,
           summary: `Allowed ${result.name} to run code inside DorkOS, with ${body.data.plugin}`,
         });
-      }
+      });
+      if (!outcome.ok) return c.json({ error: outcome.error, code: outcome.code }, 409);
+
+      const allowed = outcome.results.filter((result) => result.ok);
       if (allowed.length > 0) broadcastExtensionReloaded(allowed.map((result) => result.id));
       return c.json({ results: outcome.results, allAllowed: outcome.allAllowed });
     } catch (err) {

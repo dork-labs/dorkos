@@ -30,10 +30,11 @@ export function registerExtensionApprovalSetOpenApi(registry: OpenAPIRegistry): 
     tags: ['Extensions'],
     summary: 'List plugins whose extensions wait to be allowed together',
     description:
-      'One entry per plugin that installed two or more extensions, at least one waiting. A group ' +
-      'is the plugin that installed its members, from DorkOS’s own install records: an extension ' +
-      'an agent made, a dev link, or a folder added by hand never joins one. Members already ' +
-      'allowed and members that can’t be approved are listed with their state.',
+      'One entry per plugin with two or more extensions waiting for a first OK. A member joins ' +
+      'only when the plugin’s installed-files record lists its manifest with matching bytes: an ' +
+      'extension an agent made, a dev link, or a folder added to the plugin later never joins. ' +
+      'A member allowed before keeps its own card. `grant` is the waiting members’ combined ' +
+      'grant, from the same members `setHash` binds.',
     responses: {
       200: {
         description: 'The sets, by plugin A–Z',
@@ -55,7 +56,8 @@ export function registerExtensionApprovalSetOpenApi(registry: OpenAPIRegistry): 
       'request names exactly those, and unless `setHash` (over each member’s id, version, ' +
       'digest and permission set) matches. Only after every check passes is each member ' +
       'approved, one at a time with its own digest: N approvals and N Activity entries, nothing ' +
-      'stored about the group. A member that still fails is reported in `results`. The same ' +
+      'stored about the group; each Activity entry is written as its member is allowed. A ' +
+      'member that fails for any reason is reported in `results`, and the rest go on. The same ' +
       'person bar as approving one extension applies, and there is no MCP tool for this.',
     request: {
       body: { content: { 'application/json': { schema: ApproveExtensionSetRequestSchema } } },

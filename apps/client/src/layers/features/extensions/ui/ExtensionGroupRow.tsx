@@ -98,7 +98,12 @@ export function ExtensionGroupRow({
   }
 
   const shownSet = answered?.set ?? (set && !set.tooMany ? set : undefined);
-  const waitingMembers = group.members.filter(waitsForOk);
+  // Waiting members the set card does not ask about (a re-ask, or every one
+  // when there is no set) ask on their own cards, under it.
+  const inSet = new Set(
+    (shownSet?.members ?? []).filter((m) => m.state === 'waiting').map((m) => m.id)
+  );
+  const ownCards = group.members.filter((member) => waitsForOk(member) && !inSet.has(member.id));
 
   return (
     <li
@@ -183,7 +188,7 @@ export function ExtensionGroupRow({
           aria-labelledby={nameId}
           className="space-y-3.5 px-3 pt-1 pb-4"
         >
-          {shownSet ? (
+          {shownSet && (
             <ApprovalSetCard
               set={shownSet}
               pluginName={group.name}
@@ -196,17 +201,16 @@ export function ExtensionGroupRow({
               results={answered?.results}
               primaryRef={primaryRef}
             />
-          ) : (
-            waitingMembers.length > 0 && (
-              <div className="space-y-2" data-testid={`approval-set-one-by-one-${group.plugin}`}>
-                {set?.tooMany && (
-                  <p className="text-sm font-semibold">
-                    {waitingMembers.length} are waiting. Allow them one at a time.
-                  </p>
-                )}
-                <ul className="space-y-0.5">{waitingMembers.map(renderMember)}</ul>
-              </div>
-            )
+          )}
+          {ownCards.length > 0 && (
+            <div className="space-y-2" data-testid={`approval-set-one-by-one-${group.plugin}`}>
+              {set?.tooMany && (
+                <p className="text-sm font-semibold">
+                  {ownCards.length} are waiting. Allow them one at a time.
+                </p>
+              )}
+              <ul className="space-y-0.5">{ownCards.map(renderMember)}</ul>
+            </div>
           )}
           {/* The card is the member list while it is open, answered or not. */}
           {!shownSet && (

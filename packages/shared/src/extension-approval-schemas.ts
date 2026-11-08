@@ -484,12 +484,33 @@ export const ApprovalSetMemberViewSchema = z.object({
 /** One member of a plugin's set, as the card lists it. */
 export type ApprovalSetMemberView = z.infer<typeof ApprovalSetMemberViewSchema>;
 
+/**
+ * Everything the waiting members of a set may do together, derived by the
+ * server from the same members it hashes, so the card never shows less than
+ * "Allow all" approves (Security, Nov 8).
+ */
+export const ApprovalSetGrantSchema = z.object({
+  /** Names of members that would run inside DorkOS with full access to this computer. */
+  fullAccess: z.array(z.string()),
+  /** Every program a member may start, A–Z, without repeats. */
+  programs: z.array(z.string()),
+  /** Every tool a member would give agents, by title, A–Z, without repeats. */
+  agentTools: z.array(z.string()),
+  /** What they may reach: anything (a full-access member), or these hosts. */
+  network: z.object({ anything: z.boolean(), hosts: z.array(z.string()) }),
+});
+
+/** Everything the waiting members of a set may do together. */
+export type ApprovalSetGrant = z.infer<typeof ApprovalSetGrantSchema>;
+
 /** One plugin's extensions waiting to be allowed together (DOR-3583). */
 export const ExtensionApprovalSetSchema = z
   .object({
     /** The plugin that installed them: the group. */
     plugin: z.string().min(1),
     members: z.array(ApprovalSetMemberViewSchema),
+    /** The waiting members' combined grant, the card's total. */
+    grant: ApprovalSetGrantSchema,
     /** {@link approvalSetHash} of the waiting members' echoes. */
     setHash: z.string(),
     /** More than {@link APPROVAL_SET_MAX_MEMBERS} wait: approve them one by one. */

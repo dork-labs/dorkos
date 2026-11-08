@@ -3,19 +3,30 @@
  * be asked about, and the one "Allow all" that answers a set.
  *
  * A group is the plugin that installed its members (`sourcePlugin`), never a
- * field an extension writes about itself. Only copies DorkOS's installer put
- * there join: an agent-made folder, a dev link, or a folder dropped into a
- * plugin by hand has no install record, so it is never part of a set and
- * keeps asking on its own (Security, Nov 8, Must 1).
+ * field an extension writes about itself. Location alone is not enough: a
+ * member joins only when the plugin's installed-files record (written by the
+ * installer at install, `.dork/installed-files.json`) lists its manifest and
+ * the bytes on disk still match. A folder an agent or a person drops into an
+ * installed plugin later is in no such record, so it never joins a set and
+ * keeps its own card (Security, Nov 8, Must 1). The residual, named: the
+ * record sits in the plugin's folder, so code that can rewrite the record
+ * with matching hashes can still forge membership; it cannot forge the
+ * per-member digest the person approves.
+ *
+ * Only first asks join. A member the person allowed before (its files or
+ * permissions moved since) keeps its own card, which says what changed
+ * (Security, Nov 8, M3).
  *
  * "Allow all" is N approvals, never one. Each member is approved with its own
  * digest and permission set, through the same `approveToRun` a single card
- * uses, so each writes its own pin, its own audit row and its own Activity
- * entry. Nothing is stored about the group (Must 3).
+ * uses, so each writes its own pin and its own config-change record, and the
+ * caller records each Activity entry the moment that member is allowed.
+ * Nothing is stored about the group (Must 3).
  *
  * @module services/extensions/groups/extension-approval-set
  */
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import {
   APPROVAL_SET_MAX_MEMBERS,
@@ -23,6 +34,7 @@ import {
   STALE_SET_CODE,
   TOO_MANY_IN_SET_CODE,
   approvalSetHash,
+  type ApprovalSetGrant,
   type ApprovalSetMember,
   type ApprovalSetMemberView,
   type ApprovalSetResult,
@@ -30,11 +42,19 @@ import {
   type ExtensionApprovalSet,
 } from '@dorkos/shared/extension-approval-schemas';
 import { configManager } from '../../core/config-manager.js';
+import { logger } from '../../../lib/logger.js';
 import type { ExtensionManager } from '../extension-manager.js';
 import { isPendingApproval, permissionsOf, provenanceOf } from '../extension-approval-queue.js';
 import { mayLoadClientHalf } from '../extension-load-policy.js';
 import { declaredSet } from '../isolation/permission-coverage.js';
 import { ApprovalRefusedError, liveDigestOf } from '../pin/extension-content-pin.js';
+import {
+  isProvenPackageFile,
+  readInstalledFiles,
+} from '../../marketplace/lib/records/installed-files.js';
+
+/** A set needs at least this many first asks; one waiting member asks on its own card. */
+const MIN_WAITING = 2;
 
 /** The part of the extension manager a set reads and approves through. */
 export type ApprovalSetSource = Pick<ExtensionManager, 'listRecords' | 'dorkHome'> & {
@@ -59,8 +79,26 @@ function purposeOf(record: ExtensionRecord): string {
 }
 
 /**
+ * Whether the plugin's installed-files record proves the installer put this
+ * copy there: its manifest is listed, reached through real folders, with the
+ * bytes the installer recorded.
+ *
+ * @param record - The extension record.
+ */
+async function isCarriedByInstall(record: ExtensionRecord): Promise<boolean> {
+  const installRoot = path.resolve(record.path, '..', '..', '..');
+  const installed = await readInstalledFiles(installRoot);
+  if (!installed || installed.inferred) return false;
+  const relDir = path.relative(installRoot, path.resolve(record.path));
+  if (relDir.startsWith('..') || path.isAbsolute(relDir)) return false;
+  const manifest = [...relDir.split(path.sep), 'extension.json'].join('/');
+  return isProvenPackageFile(installRoot, manifest, installed);
+}
+
+/**
  * Whether this copy belongs to `plugin`'s set: carried by that plugin, not a
- * dev link, and recorded by DorkOS's installer.
+ * dev link, recorded by DorkOS's installer, and listed in what that install
+ * put on disk.
  *
  * @param record - The extension record.
  * @param plugin - The plugin.
@@ -72,7 +110,52 @@ async function isInstalledBy(
   dorkHome: string
 ): Promise<boolean> {
   if (record.origin !== 'user' || record.devLink || record.sourcePlugin !== plugin) return false;
-  return (await provenanceOf(record, dorkHome)).kind === 'installer';
+  if ((await provenanceOf(record, dorkHome)).kind !== 'installer') return false;
+  return isCarriedByInstall(record);
+}
+
+/**
+ * Whether the person allowed this id before: a waiting copy of it is a
+ * re-ask, which its own card explains.
+ *
+ * @param id - The extension id.
+ * @param extensions - `config.extensions`.
+ */
+function wasAllowedBefore(
+  id: string,
+  extensions: { approvedToRun?: string[]; approvedSources?: Record<string, unknown> }
+): boolean {
+  return (
+    (extensions.approvedToRun ?? []).includes(id) || extensions.approvedSources?.[id] !== undefined
+  );
+}
+
+/**
+ * The waiting members' combined grant: the card's total, from the same
+ * members the hash binds.
+ *
+ * @param waiting - The members "Allow all" would approve.
+ */
+function combinedGrant(waiting: readonly WaitingMember[]): ApprovalSetGrant {
+  const fullAccess: string[] = [];
+  const programs = new Set<string>();
+  const tools = new Set<string>();
+  const hosts = new Set<string>();
+  for (const { record, echo } of waiting) {
+    const runsServer = record.hasServerEntry || record.hasDataProxy;
+    if (echo.permissions.runtime === 'in-process' && runsServer)
+      fullAccess.push(record.manifest.name);
+    for (const program of echo.permissions.run) programs.add(program);
+    for (const host of echo.permissions.net) hosts.add(host);
+    for (const check of record.toolChecks ?? []) if (check.ok) tools.add(check.title || check.name);
+  }
+  const sorted = (values: Set<string>) => [...values].sort((a, b) => a.localeCompare(b));
+  return {
+    fullAccess,
+    programs: sorted(programs),
+    agentTools: sorted(tools),
+    network: { anything: fullAccess.length > 0, hosts: sorted(hosts) },
+  };
 }
 
 /** A member the set would approve, with what it was checked against. */
@@ -124,6 +207,8 @@ async function readSet(
       continue;
     }
     if (!isPendingApproval(record, extensions)) continue;
+    // A re-ask keeps its own card, which says what changed.
+    if (wasAllowedBefore(record.id, extensions)) continue;
     const digest = await liveDigestOf(record);
     if (!digest) {
       views.push({ ...view, state: 'skipped', reason: 'DorkOS can’t read its folder.' });
@@ -142,9 +227,8 @@ async function readSet(
 }
 
 /**
- * Every plugin with two or more installed extensions, at least one of them
- * waiting, as the card asks about it. A plugin that carries one extension asks
- * through that extension's own card.
+ * Every plugin with two or more first asks waiting, as the card asks about
+ * it. One waiting member asks through its own card.
  *
  * @param source - The extension manager.
  */
@@ -155,10 +239,11 @@ export async function listApprovalSets(source: ApprovalSetSource): Promise<Exten
   const sets: ExtensionApprovalSet[] = [];
   for (const plugin of plugins) {
     const { waiting, views } = await readSet(source, plugin);
-    if (waiting.length === 0 || views.length < 2) continue;
+    if (waiting.length < MIN_WAITING) continue;
     sets.push({
       plugin,
       members: views,
+      grant: combinedGrant(waiting),
       setHash: await approvalSetHash(
         waiting.map((member) => member.echo),
         sha256
@@ -205,14 +290,19 @@ const STALE: ApprovalSetRefusal = {
  * own records and must match the request exactly (Must 1), and the hash over
  * every member's id, version, digest and permission set must match the one
  * the card was drawn with (Must 2). Only then does the first approval run.
- * A member that still fails at its own approval is reported, never hidden.
+ * A member that still fails at its own approval, for any reason, is reported
+ * and the loop goes on: the answer always says exactly which ones are now
+ * allowed (Security, Nov 8, M2).
  *
  * @param source - The extension manager.
  * @param request - The plugin, the members the card showed, and their hash.
+ * @param onAllowed - Called right after each member is allowed, before the
+ *   next one starts, so its Activity entry exists even if the loop is cut short.
  */
 export async function approveExtensionSet(
   source: ApprovalSetSource,
-  request: ApproveExtensionSetRequest
+  request: ApproveExtensionSetRequest,
+  onAllowed: (result: ApprovalSetResult) => Promise<void> = async () => {}
 ): Promise<ApprovalSetRefusal | ApprovalSetOutcome> {
   const records = new Map(source.listRecords().map((record) => [record.id, record]));
   for (const member of request.members) {
@@ -231,6 +321,7 @@ export async function approveExtensionSet(
   }
 
   const { waiting } = await readSet(source, request.plugin);
+  if (waiting.length < MIN_WAITING) return STALE;
   if (waiting.length > APPROVAL_SET_MAX_MEMBERS) {
     return {
       ok: false,
@@ -253,14 +344,24 @@ export async function approveExtensionSet(
       const approved = await source.approveToRun(record.id, {
         expectedDigest: echo.expectedDigest,
       });
-      results.push(
-        approved
-          ? { id: record.id, name, ok: true }
-          : { id: record.id, name, ok: false, reason: 'It’s no longer installed.' }
+      if (!approved) {
+        results.push({ id: record.id, name, ok: false, reason: 'It’s no longer installed.' });
+        continue;
+      }
+      const result = { id: record.id, name, ok: true };
+      results.push(result);
+      // It is allowed whatever happens next; a failed record of it must not
+      // turn this member's answer into a refusal.
+      await onAllowed(result).catch((err: unknown) =>
+        logger.warn(`[Extensions] Couldn’t record that ${record.id} was allowed`, err)
       );
     } catch (err) {
-      if (!(err instanceof ApprovalRefusedError)) throw err;
-      results.push({ id: record.id, name, ok: false, reason: err.message });
+      results.push({
+        id: record.id,
+        name,
+        ok: false,
+        reason: err instanceof ApprovalRefusedError ? err.message : 'DorkOS couldn’t turn it on.',
+      });
     }
   }
   return { ok: true, results, allAllowed: results.every((result) => result.ok) };

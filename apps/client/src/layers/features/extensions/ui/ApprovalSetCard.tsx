@@ -12,6 +12,7 @@
 import { useId, useState, type Ref } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type {
+  ApprovalSetGrant,
   ApprovalSetMemberView,
   ApprovalSetResult,
   ExtensionApprovalSet,
@@ -56,20 +57,28 @@ export function approvalSetSummary(waiting: readonly ApprovalSetMemberView[]): s
 }
 
 /**
- * Everything the waiting members may reach, together (Security's Must 4):
- * every host a separate one may reach, or anything at all when one runs
- * inside DorkOS.
+ * The set's combined grant as key and value lines, in the designer's order,
+ * leaving out any with nothing to show. Drawn from the server's `grant`, which
+ * it derives from the same members it hashes, so the card never shows less
+ * than "Allow all" approves (Security, Nov 8).
  *
- * @param waiting - The members waiting.
+ * @param grant - The set's combined grant.
  */
-function combinedNetwork(waiting: readonly ApprovalSetMemberView[]): string | null {
-  if (
-    waiting.some((member) => member.permissions.runtime === 'in-process' && member.runsInServer)
-  ) {
-    return 'Can reach anything this computer can';
+export function grantLines(grant: ApprovalSetGrant): Array<[string, string]> {
+  const lines: Array<[string, string]> = [['Runs as', 'You']];
+  if (grant.programs.length > 0) lines.push(['Programs', grant.programs.join(', ')]);
+  if (grant.agentTools.length > 0) {
+    const n = grant.agentTools.length;
+    lines.push([
+      'Agent tools',
+      `${n} new ${n === 1 ? 'tool' : 'tools'} agents can use: ${grant.agentTools.join(', ')}`,
+    ]);
   }
-  const hosts = [...new Set(waiting.flatMap((member) => member.permissions.net))];
-  return hosts.length > 0 ? `Can reach ${hosts.join(', ')}` : null;
+  if (grant.network.anything) lines.push(['Network', 'Can reach anything this computer can']);
+  else if (grant.network.hosts.length > 0) {
+    lines.push(['Network', `Can reach ${grant.network.hosts.join(', ')}`]);
+  }
+  return lines;
 }
 
 /** Access, runs as, and network for one member, as a single approval card says them. */
@@ -79,6 +88,14 @@ function memberFacts(member: ApprovalSetMemberView): Array<[string, string]> {
     return [
       ['Access', 'Runs on its own, apart from DorkOS'],
       ['Runs as', 'You'],
+      ...(permissions.run.length > 0
+        ? [
+            ['Programs', permissions.run.map((program) => program.name).join(', ')] as [
+              string,
+              string,
+            ],
+          ]
+        : []),
       [
         'Network',
         permissions.net.length > 0
@@ -201,7 +218,6 @@ export function ApprovalSetCard({
   const waiting = set.members.filter((member) => member.state === 'waiting');
   const title = `${pluginName} wants to run ${waiting.length} extensions on this computer.`;
   const summary = approvalSetSummary(waiting);
-  const network = combinedNetwork(waiting);
   const answered = results !== undefined;
   return (
     <div
@@ -216,19 +232,21 @@ export function ApprovalSetCard({
           {summary}
         </p>
       )}
-      <dl
-        className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm max-sm:grid-cols-1"
-        data-testid={`approval-set-grant-${set.plugin}`}
-      >
-        <dt className="text-muted-foreground">Runs as</dt>
-        <dd className="max-sm:mb-1">You</dd>
-        {network && (
-          <>
-            <dt className="text-muted-foreground">Network</dt>
-            <dd className="min-w-0 break-words">{network}</dd>
-          </>
-        )}
-      </dl>
+      <div className="space-y-1" data-testid={`approval-set-grant-${set.plugin}`}>
+        {set.grant.fullAccess.map((name) => (
+          <p key={name} className="text-sm font-semibold">
+            {name} gets full access to this computer.
+          </p>
+        ))}
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm max-sm:grid-cols-1">
+          {grantLines(set.grant).map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 break-words max-sm:mb-1">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
       <ul className="border-border/60 space-y-0.5 border-t pt-2">
         {set.members.map((member) => (
           <MemberLine
@@ -238,6 +256,11 @@ export function ApprovalSetCard({
           />
         ))}
       </ul>
+      {!answered && (
+        <p className="text-muted-foreground text-sm">
+          Each is checked again when you allow. Any that changed stay off.
+        </p>
+      )}
       {!answered && (
         <div className="flex flex-wrap gap-2">
           <Button

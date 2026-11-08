@@ -78,6 +78,8 @@ const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
   // Removing an extension and forgetting what it was allowed (DOR-3541, DOR-3372).
   ['host', 'POST', '/api/extensions/x1/remove'],
   ['host', 'POST', '/api/extensions/x1/forget'],
+  // Allowing a plugin's extensions as one set (DOR-3583).
+  ['host', 'POST', '/api/extensions/approve-set'],
   ['host', 'PUT', '/api/extensions/x1/secrets/token'],
   ['host', 'PUT', '/api/extensions/x1/settings/mode'],
   ['host', 'POST', '/api/marketplace/packages/p1/install'],

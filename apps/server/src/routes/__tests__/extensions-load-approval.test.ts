@@ -486,6 +486,17 @@ describe('POST /api/extensions/:id/approve', () => {
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
 
+    it('refuses a caller with no session cookie once login is on', async () => {
+      state.authEnabled = true;
+      signedInUser = undefined;
+
+      const res = await request(fixtureServer).post('/api/extensions/approve-set').send(body);
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_cookie_required');
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+    });
+
     it('refuses a set naming an extension no plugin installed', async () => {
       manager.listRecords = vi.fn().mockReturnValue([stubRecord()]);
 

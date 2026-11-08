@@ -203,6 +203,12 @@ describe('the Allow all card', () => {
     ],
     setHash: 'hash-1',
     tooMany: false,
+    grant: {
+      fullAccess: [],
+      programs: [],
+      agentTools: [],
+      network: { anything: false, hosts: ['api.example.com'] },
+    },
   };
   const extensions = [
     ext('cockpit'),
@@ -229,11 +235,48 @@ describe('the Allow all card', () => {
       'Already allowed'
     );
     expect(within(card).getByRole('button', { name: 'Allow all 2' })).toHaveFocus();
+    expect(
+      within(card).getByText('Each is checked again when you allow. Any that changed stay off.')
+    ).toBeInTheDocument();
 
     // Each member's facts open from its own line.
     const writer = within(card).getByTestId('approval-set-member-writer');
     fireEvent.click(within(writer).getByRole('button'));
     expect(within(writer).getByText('Can reach api.example.com')).toBeInTheDocument();
+  });
+
+  // The total is the server's, from the members it hashes: never less than the click allows.
+  it('shows the server’s combined grant, even what no member line on screen says', async () => {
+    const withGrant: ExtensionApprovalSet = {
+      ...set,
+      grant: {
+        fullAccess: ['Writer'],
+        programs: ['ffmpeg', 'git'],
+        agentTools: ['Cut video', 'Draft post'],
+        network: { anything: true, hosts: [] },
+      },
+    };
+    serve(extensions, [withGrant]);
+    render(<ExtensionsSettingsTab />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: 'Review Marketing suite' }));
+    const grant = await screen.findByTestId('approval-set-grant-marketing-suite');
+
+    expect(grant).toHaveTextContent('Writer gets full access to this computer.');
+    expect(grant).toHaveTextContent('Programsffmpeg, git');
+    expect(grant).toHaveTextContent('Agent tools2 new tools agents can use: Cut video, Draft post');
+    expect(grant).toHaveTextContent('NetworkCan reach anything this computer can');
+  });
+
+  // A re-ask is not in the set: it keeps its own card, under the set's.
+  it('shows a waiting member the set leaves out on its own card, under the set card', async () => {
+    serve([...extensions, ext('studio', { approvedToRun: false })], [set]);
+    render(<ExtensionsSettingsTab />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: 'Review Marketing suite' }));
+    await screen.findByTestId('approval-set-marketing-suite');
+
+    const own = screen.getByTestId('approval-set-one-by-one-marketing-suite');
+    expect(within(own).getByTestId('extension-card-studio')).toBeInTheDocument();
+    expect(within(own).queryByTestId('extension-card-writer')).not.toBeInTheDocument();
   });
 
   it('echoes the set it showed, and on a partial answer says which were allowed', async () => {
