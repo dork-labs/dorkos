@@ -7,5 +7,9 @@ covers:
 
 ### Fixed
 
-- Codex chats start again on Linux computers that also use Claude Code. Claude Code's saved sign-in copies stay hidden from Codex (DOR-3949).
+- Codex chats start again at Ask and Edit on Linux computers that also use Claude Code. Claude Code's saved sign-in copies stay hidden from Codex (DOR-3949).
 - When Codex's sandbox can't start on Linux, DorkOS now says so and points to the setup guide. It no longer tells you to send your message again (DOR-3950).
+
+### Note for people upgrading
+
+- On Linux, Codex at Full autonomy doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask or Edit there for now. We're fixing it (DOR-3965).
