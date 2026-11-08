@@ -23,6 +23,7 @@ import { getExtensionConnectionServices } from '../../connectors/extensions/exte
 import type { LiveExtensionInstall } from '../../connectors/extensions/live-extension-install.js';
 import { isApprovedByDigest, type ExtensionApprovals } from '../extension-load-policy.js';
 import { logger } from '../../../lib/logger.js';
+import { configManager } from '../../core/config-manager.js';
 
 /** Why a copy's code may be trusted, or `null` when it may hold no grant. */
 export interface CopyOrigin {
@@ -147,11 +148,11 @@ export interface IsolatedConnections {
  * `ctx.connections`, bound to the host that will run it.
  *
  * @param record - The copy being started.
- * @param config - Reads `config.extensions` now.
+ * @param config - Reads `config.extensions` now (the live config by default).
  */
 export function isolatedConnectionsFor(
   record: ExtensionRecord,
-  config: () => ExtensionsConfig
+  config: () => ExtensionsConfig = () => configManager.get('extensions')
 ): IsolatedConnections {
   settleApprovals(record, config(), true);
   let host: { readonly sqliteRefused: boolean } | undefined;

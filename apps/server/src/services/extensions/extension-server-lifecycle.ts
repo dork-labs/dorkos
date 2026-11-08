@@ -50,10 +50,7 @@ import {
   type IsolatedStartErrorCode,
 } from './isolation/isolated-host.js';
 import { resolveChildEntry } from './isolation/child-entry.js';
-import {
-  isolatedConnectionsFor,
-  settleApprovals,
-} from './connections/extension-connections-ctx.js';
+import * as extensionConnections from './connections/extension-connections-ctx.js';
 import { settleWithin } from './settle-within.js';
 import { loadInProcessBundle } from './server-bundle/load-in-process.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
@@ -429,7 +426,7 @@ export class ExtensionServerLifecycle {
 
     if (runsSeparately(record)) return this.startIsolated(id, record, tempFile, sourceKey);
     // Running inside DorkOS now: any connection it held is revoked (DOR-3547, N3).
-    settleApprovals(record, configManager.get('extensions'), false);
+    extensionConnections.settleApprovals(record, configManager.get('extensions'), false);
 
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
@@ -670,7 +667,7 @@ export class ExtensionServerLifecycle {
     // Starting again lifts the stop on its messages (DOR-2683).
     getAgentSendService()?.extensionStarted(id);
     const toolChecks = checkDeclaredTools(record.manifest);
-    const connections = isolatedConnectionsFor(record, () => configManager.get('extensions'));
+    const connections = extensionConnections.isolatedConnectionsFor(record);
     const built = createDataProviderContext({
       extensionId: id,
       extensionDir: record.runPath ?? record.path,
