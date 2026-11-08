@@ -70,6 +70,8 @@ interface Seen {
 
 let root: string;
 let codexHome: string;
+/** The Claude account folder: never the Codex home, as in production. */
+let claudeAccount: string;
 let project: string;
 let server: http.Server;
 let base: string;
@@ -357,7 +359,7 @@ function request(
           cwd: project,
           data: path.join(root, 'data'),
           home: path.join(root, 'home'),
-          accounts: [codexHome],
+          accounts: [claudeAccount],
           agentFolders: [project],
           agentHomes: [],
         },
@@ -446,6 +448,38 @@ async function nativeRefusal(
   }
 }
 
+/**
+ * Run one turn and keep everything it printed: its events, this process's
+ * stdout and stderr (the DorkOS logs), and every Codex child's output.
+ */
+async function capturedTurn(turn: CodexTurnRequest) {
+  const printed: string[] = [];
+  const keep = (chunk: unknown) => printed.push(String(chunk));
+  const spies = [
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => (keep(chunk), true)),
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => (keep(chunk), true)),
+    ...(['log', 'info', 'warn', 'error', 'debug'] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+        keep(args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' '));
+      })
+    ),
+  ];
+  const bound = vi.fn();
+  const events: StreamEvent[] = [];
+  const transport = makeTransport(undefined, 'app-server', (child) => {
+    child.stdout?.on('data', keep);
+    child.stderr?.on('data', keep);
+  });
+  try {
+    for await (const event of transport.runTurn({ ...turn, onThreadBound: bound }))
+      events.push(event);
+  } finally {
+    await transport.shutdown();
+    for (const spy of spies) spy.mockRestore();
+  }
+  return { events, bound, printed: printed.join('') };
+}
+
 function checkHostParents(homes: string[]) {
   expect(
     probeParentKinds(homes).filter(({ kind }) => kind !== 'absent' && kind !== 'directory')
@@ -473,7 +507,13 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       const turn = request('own-home-writable-link', undefined);
       const policy = turn.tools.filePolicy!;
       policy.roots.agentHomes = [project];
-      completeHostFixture(policy, [policy.roots.home, policy.roots.data, project, codexHome]);
+      completeHostFixture(policy, [
+        policy.roots.home,
+        policy.roots.data,
+        project,
+        codexHome,
+        claudeAccount,
+      ]);
       const target = path.join(root, 'empty-skill-target');
       fs.mkdirSync(target);
       // The leaf inside .claude is writable; the existing linked-folder row
@@ -599,6 +639,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         policy.roots.data,
         project,
         codexHome,
+        claudeAccount,
       ]);
       const snapshot = () =>
         [...files].sort().map((file) => [file, fs.readFileSync(file, 'base64')]);
@@ -763,6 +804,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         policy.roots.data,
         ...(freshProject ? [] : [project]),
         codexHome,
+        claudeAccount,
       ];
       const protectedFiles = completeHostFixture(policy, allBases);
       const secret = path.join(policy.roots.home, '.ssh', 'authorized_keys');
@@ -880,7 +922,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     async (mode) => {
       const home = path.join(root, 'home');
       const homeBackups = path.join(home, '.claude', 'backups');
-      const accountBackups = path.join(codexHome, 'backups');
+      const accountBackups = path.join(claudeAccount, 'backups');
       // Not a protected folder: its backup is masked by the glob scan alone,
       // so an unanchored skip (`**/.claude/backups`) would leave it readable.
       const projectBackups = path.join(home, 'projects', 'p', '.claude', 'backups');
@@ -937,6 +979,46 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     }
   );
 
+  // The residual Security pinned on #3541: Codex scans from the app-server's
+  // own folder (the Codex home) at Full, so a hidden folder under it is not
+  // skipped. That must stay a refused start with the sandbox copy, and the
+  // hidden file must never surface.
+  it.skipIf(process.platform !== 'linux')(
+    'refuses Full with the sandbox copy when a hidden folder sits in the Codex home',
+    async () => {
+      const turn = request('codex-home-hidden', undefined, {
+        settings: { permissionMode: 'bypassPermissions', model: 'fake-model' },
+      });
+      const policy = turn.tools.filePolicy!;
+      policy.roots.accounts = [claudeAccount, codexHome];
+      completeHostFixture(policy, [
+        policy.roots.home,
+        policy.roots.data,
+        project,
+        codexHome,
+        claudeAccount,
+      ]);
+      const hidden = path.join(codexHome, 'backups', FIXTURE_BACKUP_NAME);
+      fs.writeFileSync(hidden, 'CANARY-codex-home-backup');
+      const starts = turnStartedSeen;
+      const responses = seen.responses;
+      const { events, bound, printed } = await capturedTurn(turn);
+      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+      expect(events[0]).toMatchObject({
+        data: {
+          code: 'codex_sandbox_unavailable',
+          message: expect.stringContaining('This computer blocks Codex’s sandbox.'),
+        },
+      });
+      expect(bound).not.toHaveBeenCalled();
+      expect(turnStartedSeen).toBe(starts);
+      expect(seen.responses).toBe(responses);
+      expect(JSON.stringify(events)).not.toContain('CANARY-codex-home-backup');
+      expect(printed).not.toContain('CANARY-codex-home-backup');
+      expect(fs.readFileSync(hidden, 'utf8')).toBe('CANARY-codex-home-backup');
+    }
+  );
+
   it.skipIf(process.platform !== 'linux')(
     'keeps a linked backups folder’s target unreadable',
     async () => {
@@ -963,25 +1045,20 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
           res.end(sse('linked checked'));
         }
       );
-      const events: StreamEvent[] = [];
-      for await (const event of makeTransport().runTurn(
+      const responses = seen.responses;
+      const { events, bound, printed } = await capturedTurn(
         request('backup-linked', undefined, {
           settings: { permissionMode: 'acceptEdits', model: 'fake-model' },
         })
-      ))
-        events.push(event);
-      const errors = events.filter((event) => event.type === 'error');
-      console.info('Codex linked backups folder', {
-        started: errors.length === 0,
-        errors: JSON.stringify(errors),
-      });
-      // Either outcome holds the line: a start that cannot read the target, or
-      // a refused start. A refusal from the sandbox says so, never "send again".
-      if (errors.length === 0)
-        expect(shellControlReturned(returned, 'PUBLIC-linked-done')).toBe(true);
-      else expect(JSON.stringify(errors)).not.toContain('Send your message again');
-      expect(returned).not.toContain('CANARY-linked-backup');
+      );
+      // Codex refuses a deny path that crosses a link (its own copy, kept as
+      // is). No turn starts, and the target is never read or echoed anywhere.
+      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+      expect(bound).not.toHaveBeenCalled();
+      expect(seen.responses).toBe(responses);
+      expect(returned).toBe('');
       expect(JSON.stringify(events)).not.toContain('CANARY-linked-backup');
+      expect(printed).not.toContain('CANARY-linked-backup');
       expect(fs.readFileSync(backup, 'utf8')).toBe('CANARY-linked-backup');
     }
   );
@@ -994,8 +1071,15 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
     seen.resolvedDuringTurn.length = 0;
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-app-server-')));
     codexHome = path.join(root, 'codex-home');
+    claudeAccount = path.join(root, 'claude-account');
     project = path.join(root, 'project');
-    for (const folder of [codexHome, project, path.join(root, 'home'), path.join(root, 'data')])
+    for (const folder of [
+      codexHome,
+      claudeAccount,
+      project,
+      path.join(root, 'home'),
+      path.join(root, 'data'),
+    ])
       fs.mkdirSync(folder, { recursive: true });
     // The throwaway home's provider is the local fake. No key anywhere.
     fs.writeFileSync(
@@ -1024,7 +1108,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
       )
     ) {
       const policy = request('complete-fixture', undefined).tools.filePolicy!;
-      completeHostFixture(policy, [policy.roots.home, policy.roots.data, codexHome]);
+      completeHostFixture(policy, [policy.roots.home, policy.roots.data, codexHome, claudeAccount]);
     }
   });
 
@@ -1271,6 +1355,7 @@ nativeSuite('the app-server transport against the real Codex binary', NATIVE_LIM
         project,
         agentHome,
         codexHome,
+        claudeAccount,
       ]);
       const skills = path.join(agentHome, '.agents', 'skills', 'probe');
       fs.mkdirSync(skills, { recursive: true });
