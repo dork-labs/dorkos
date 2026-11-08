@@ -90,6 +90,8 @@ export function atCapSkipReason(cap: number): string {
 /** The live runs of one scheduler, across both dispatch paths. */
 export class RunAccounting {
   private runs = new Map<string, ActiveRun>();
+  /** Manual runs owned here while asynchronous preparation has no runner yet. */
+  private preparing = new Set<string>();
   /** Relay runs nothing received yet, waiting to be offered once more (DOR-3033). */
   private awaitingRetry = new Set<string>();
 
@@ -100,6 +102,16 @@ export class RunAccounting {
    */
   constructor(private readonly store: Pick<TaskStore, 'getRun'>) {}
 
+  /** Keep a manual run stoppable until a dispatch path takes ownership, including failed preparation. */
+  async prepare(runId: string, work: () => Promise<void>): Promise<void> {
+    this.preparing.add(runId);
+    try {
+      await work();
+    } finally {
+      this.preparing.delete(runId);
+    }
+  }
+
   /**
    * Record a run this process is executing itself.
    *
@@ -107,6 +119,7 @@ export class RunAccounting {
    * @param controller - Aborting it ends the turn.
    */
   addDirect(runId: string, controller: AbortController): void {
+    this.preparing.delete(runId);
     this.runs.set(runId, { kind: 'direct', controller });
   }
 
@@ -121,6 +134,7 @@ export class RunAccounting {
    * @param maxRuntimeMs - The task's own deadline, when it has one.
    */
   addRelay(runId: string, maxRuntimeMs?: number | null): void {
+    this.preparing.delete(runId);
     // The grace on both branches: the relay awaits a task's delivery until its
     // deadline plus a grace (DOR-3033), and the slot must last as long.
     const ttl = (maxRuntimeMs || RELAY_SLOT_DEFAULT_TTL_MS) + RELAY_SLOT_GRACE_MS;
@@ -130,6 +144,7 @@ export class RunAccounting {
   /** Give back a run's slot. */
   release(runId: string): void {
     this.runs.delete(runId);
+    this.preparing.delete(runId);
     this.awaitingRetry.delete(runId);
   }
 
@@ -149,8 +164,9 @@ export class RunAccounting {
   /**
    * End a run without the bus when this process can: one it drives itself is
    * aborted, and a relay run nothing has received yet, waiting to be offered
-   * once more, is ended outright, so its retry sees a finished run and stands
-   * down (DOR-3033 review). Anything else needs a stop request on the bus.
+   * once more, is ended outright. A manual run still preparing ends the same
+   * way: dispatch must check its terminal row before starting anything. Anything
+   * else needs a stop request on the bus.
    *
    * @param runId - The run to stop.
    * @param store - Where the run's ending is written.
@@ -167,7 +183,7 @@ export class RunAccounting {
       controller.abort(reason);
       return { state: 'stopping' };
     }
-    if (!this.isAwaitingRetry(runId)) return undefined;
+    if (!this.preparing.has(runId) && !this.isAwaitingRetry(runId)) return undefined;
     this.release(runId);
     store.updateRun(runId, {
       status: 'cancelled',

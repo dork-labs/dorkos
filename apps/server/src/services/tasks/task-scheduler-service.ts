@@ -650,9 +650,11 @@ export class TaskSchedulerService {
     const paused = this.pauseHold.pausedAgentOf(task.agentId);
     if (paused) return this.store.updateRun(run.id, this.pauseHold.skipManualRun(paused, run.id));
     // Fire and forget — executeRun handles its own error handling
-    this.executeRun(task, run).catch((err) => {
-      logger.error(`manual run error for ${task.name}:`, err);
-    });
+    this.runs
+      .prepare(run.id, () => this.executeRun(task, run))
+      .catch((err) => {
+        logger.error(`manual run error for ${task.name}:`, err);
+      });
     return run;
   }
 
@@ -1039,9 +1041,8 @@ export class TaskSchedulerService {
     // one, so that turn counts as this task and not also as a chat.
     const awake = this.keepAwake?.holdTask(run.id);
     // The run's chats stop counting as a run here too, however it ends (DOR-3703, M-A).
-    await this.executeRunHeld(task, run, checkedAgent, awake).finally(() =>
-      endRunSessions(run.id, awake)
-    );
+    const work = this.executeRunHeld(task, run, checkedAgent, awake);
+    await work.finally(() => endRunSessions(run.id, awake));
   }
 
   /**
@@ -1087,8 +1088,7 @@ export class TaskSchedulerService {
           task = await capRunIfFileChanged(task, run, this.store, this.meshCore, execution);
         } catch (err) {
           this.failRun(run, err);
-          recordDispatchEnd(dispatchId, 'failed');
-          return;
+          return recordDispatchEnd(dispatchId, 'failed');
         }
         span.setAttr(ATTR.RUNTIME, execution.runtimeType);
         // What actually ran, on the run row, before anything runs — see
@@ -1105,9 +1105,11 @@ export class TaskSchedulerService {
         const accountRefusal = await this.refusedRunAccount(task, execution, placement);
         if (accountRefusal) {
           this.failRun(run, accountRefusal);
-          recordDispatchEnd(dispatchId, 'failed');
-          return;
+          return recordDispatchEnd(dispatchId, 'failed');
         }
+        // A Stop during preparation ended this run before a runtime owned it.
+        if (this.store.getRun(run.id)?.status !== 'running')
+          return recordDispatchEnd(dispatchId, 'halted');
 
         // **Only a runtime the relay can actually drive, right now** (DOR-1614,
         // DOR-1636). This read `execution.runtimeType === 'claude-code'` while
@@ -1133,8 +1135,8 @@ export class TaskSchedulerService {
           );
         }
         try {
-          const result = viaRelay
-            ? await dispatchRunViaRelay(
+          await (viaRelay
+            ? dispatchRunViaRelay(
                 {
                   store: this.store,
                   relay: this.relay!,
@@ -1148,16 +1150,15 @@ export class TaskSchedulerService {
                 run,
                 execution
               )
-            : await this.executeRunDirect(
+            : this.executeRunDirect(
                 task,
                 run,
                 execution,
                 placement.cwd,
                 placement.agentPath,
                 onSession
-              );
+              ));
           recordDispatchEnd(dispatchId, 'answered');
-          return result;
         } catch (err) {
           recordDispatchEnd(dispatchId, 'failed');
           throw err;
