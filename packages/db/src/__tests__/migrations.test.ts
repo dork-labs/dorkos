@@ -380,6 +380,11 @@ describe('Database Migrations', () => {
       // Every to-do, an agent's own promises included (spec heartbeats §12, DOR-3088); named
       // `commitments` until DOR-3933.
       'todos',
+      // What each turn actually handed its runtime: bodies stored once by hash,
+      // a row per turn and its ordered parts (context viewer phase 1).
+      'turn_context_bodies',
+      'turn_context_parts',
+      'turn_contexts',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,
       // migration 0048).
