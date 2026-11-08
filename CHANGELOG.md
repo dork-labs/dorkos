@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.134.1] - 2026-11-08
+
+> DorkOS 0.134.1 gets Codex chats starting again for people signed in to Codex with ChatGPT, and shows your mini apps as soon as you sign in.
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+
+### Fixed
+
+- Codex chats start again for people signed in to Codex with ChatGPT. They broke in 0.133.0: each message failed, usually with an error about "failed to load workspace requirements".
+- Your apps and extension Settings show after you sign in, without reloading. With login on, your mini apps appear in the sidebar's Add-ons section, and their tabs appear in Settings, as soon as you sign in. Before, they stayed missing until you reloaded the window.
+- When your mini apps can't be loaded, the sidebar and Settings → Extensions now say "Couldn’t load apps." with a **Try again** button. Before, it looked as if you had none installed.
+
+### Going back
+
+This release doesn't change the database. To go back, install 0.134.0.
+
 ## [0.134.0] - 2026-11-08
 
 > DorkOS 0.134.0 gets Codex chats starting again on Linux computers that also use Claude Code, and keeps the signed-in browser DorkOS gives an agent signed out of DorkOS itself. Blocked and Ask on agents' to-dos now apply, and Connections gets an MCP servers tab.
@@ -518,31 +536,10 @@ This release adds five tables and three columns to DorkOS's own database, and a 
 - When a Claude account starts using a different sign-in, you get one note in your inbox and one line in Activity. Your agents keep working. Until you keep the new sign-in in Settings → Runtimes, DorkOS won't pick that account for you on its own.
 - Add a Never use list in Settings → Runtimes. Put a Claude account folder or an organization on it, and DorkOS won't run Claude there, even at Full. The list starts empty, and only you can change it.
 
-## [0.126.4] - 2026-10-29
+Older releases (v0.1.0 – v0.126.4) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.126.4.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.126.4.md).
 
-> DorkOS 0.126.4 stops agents set to Full from asking you anything, tells agents which DorkOS app they run in, and lets you add a tool server once for every agent.
-
-### Added
-
-- Agents know which DorkOS app they're running in: the Mac app, the Windows app, npm, Docker or a copy of the code. The update steps they give you now match your setup.
-- Add an MCP server (a tool add-on for agents) once, and every agent gets it, on Claude Code, Codex and OpenCode. Codex and OpenCode skip servers that only use an older connection type (SSE). You can leave an agent out, and an agent's own server with the same name wins for that agent. Tokens and keys you enter are encrypted and never shown again, to you or to agents. Only you can change the list, and only from this computer.
-
-### Fixed
-
-- An agent set to Full never stops to ask you anything, including on schedules and heartbeats. Careful still asks before destructive connector actions at Full. Activity records each message a Full agent sends, and each setting it changes, after it has read words from outside your team.
-- Below Full, a run with nobody there to answer stops and says why, instead of waiting for an answer that never comes.
-- Below Full, after reading words from outside your team, an agent asks before it sends email, changes calendar events, edits its own instructions or git settings, installs a package or MCP server, links a chat to an agent, or changes a setting.
-- Room updates reach only that room's members.
-- A paused connection's row in Needs you says in two lines what was held back and where it was going. The ⓘ button explains the rest.
-
-### Security
-
-- A connection can use only the secrets saved for it. Changing a webhook's address asks for its secrets again, and removing a connection removes only its own secrets.
-- After this update, connections that read a secret from an environment variable or the Keychain are paused until you confirm them, on the connection or in Needs you. Nothing is sent while a connection is paused.
-
-Older releases (v0.1.0 – v0.126.3) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.126.3.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.126.3.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.134.0...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.134.1...HEAD
+[0.134.1]: https://github.com/dork-labs/dorkos/compare/v0.134.0...v0.134.1
 [0.134.0]: https://github.com/dork-labs/dorkos/compare/v0.133.0...v0.134.0
 [0.133.0]: https://github.com/dork-labs/dorkos/compare/v0.132.0...v0.133.0
 [0.131.0]: https://github.com/dork-labs/dorkos/compare/v0.130.0...v0.131.0
@@ -551,5 +548,4 @@ Older releases (v0.1.0 – v0.126.3) are archived in [changelog/archive/CHANGELO
 [0.128.0]: https://github.com/dork-labs/dorkos/compare/v0.127.1...v0.128.0
 [0.127.1]: https://github.com/dork-labs/dorkos/compare/v0.127.0...v0.127.1
 [0.127.0]: https://github.com/dork-labs/dorkos/compare/v0.126.4...v0.127.0
-[0.126.4]: https://github.com/dork-labs/dorkos/compare/v0.126.3...v0.126.4
 [0.132.0]: https://github.com/dork-labs/dorkos/compare/v0.131.0...v0.132.0
