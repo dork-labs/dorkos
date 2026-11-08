@@ -81,6 +81,7 @@ import { CHILD_ENTRY_FILE } from './child-entry.js';
 import {
   ancestorsOf,
   buildChildEnv,
+  childExecArgv,
   findEscapingLink,
   isolatedFilesDir,
   isolatedRunDir,
@@ -184,10 +185,11 @@ export interface IsolatedHostOptions {
   timings?: Partial<IsolatedHostTimings>;
   /**
    * Test seams. `omitPermission` starts the child without the permission model
-   * (and its grants) to prove the self-check refuses; `probes` lets the host
-   * call the bundle's exported probes.
+   * (and its grants) to prove the self-check refuses; `omitSqliteOff` starts
+   * it without `--no-experimental-sqlite` to prove the same for `node:sqlite`;
+   * `probes` lets the host call the bundle's exported probes.
    */
-  testSeams?: { omitPermission?: boolean; probes?: boolean };
+  testSeams?: { omitPermission?: boolean; omitSqliteOff?: boolean; probes?: boolean };
 }
 
 /** The default timings (spec §9). */
@@ -376,19 +378,12 @@ export class IsolatedExtensionHost {
       );
       return unavailable;
     }
-    // The omitPermission seam drops the model and its grants together (a grant
-    // without --permission is a startup error, which would never reach the
-    // self-check the seam exists to prove).
-    const execArgv = [
-      ...(this.options.testSeams?.omitPermission
-        ? []
-        : [
-            '--permission',
-            ...reads.map((p) => `--allow-fs-read=${p}`),
-            `--allow-fs-write=${filesReal}`,
-          ]),
-      `--max-old-space-size=${this.options.isolation.memoryMb}`,
-    ];
+    const execArgv = childExecArgv(
+      reads,
+      filesReal,
+      this.options.isolation.memoryMb,
+      this.options.testSeams
+    );
 
     // 4. Fork with a scrubbed environment.
     const env = buildChildEnv(

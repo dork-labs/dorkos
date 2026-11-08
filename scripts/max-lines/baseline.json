@@ -62,7 +62,7 @@
     "apps/server/src/services/extensions/extension-manager.ts": 823,
     "apps/server/src/services/extensions/extension-server-lifecycle.ts": 543,
     "apps/server/src/services/extensions/inbox/extension-inbox.ts": 1033,
-    "apps/server/src/services/extensions/isolation/isolated-host.ts": 677,
+    "apps/server/src/services/extensions/isolation/isolated-host.ts": 674,
     "apps/server/src/services/harness/status.ts": 518,
     "apps/server/src/services/marketplace/dev-links/dev-link-service.ts": 767,
     "apps/server/src/services/notifications/notification-registry.ts": 532,

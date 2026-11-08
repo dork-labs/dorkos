@@ -105,6 +105,17 @@ describe.skipIf(!electron.path)('isolation on Electron run-as-node', () => {
       code: 'ERR_EXTENSION_NET_DENIED',
     });
     expect(server.count()).toBe(0);
+    // node:sqlite ignores --permission (DOR-3547); --no-experimental-sqlite
+    // has to hold on Electron's own Node too.
+    console.info(`[electron-run-as-node] child Node ${(versions.value as { node: string }).node}`);
+    expect(await probe(host, 'sqliteGetBuiltin')).toMatchObject({
+      ok: false,
+      code: 'ERR_UNKNOWN_BUILTIN_MODULE',
+    });
+    expect(await probe(host, 'sqliteMainModule')).toMatchObject({ ok: false });
+    expect(await probe(host, 'sqliteWrite', path.join(h.dorkHome, 'dork.db'))).toMatchObject({
+      ok: false,
+    });
   }, 30_000);
 
   // Purpose: the fail-closed path on Electron too — without the model, refused.
