@@ -421,7 +421,7 @@ describe('ConnectorAgentRequestService', () => {
       expect(refusal.message).not.toContain('you can use Gmail in this chat too');
     });
 
-    it('says an allowed Read in another chat does not cover changing things here', async () => {
+    it('opens a new card here when an allowed Read in another chat lacks write (DOR-3930)', async () => {
       const requests = service();
       const created = await requests.create(principal(), INPUT);
       grantLive(['revision-read']);
@@ -429,10 +429,24 @@ describe('ConnectorAgentRequestService', () => {
         decision: 'current_access',
         connectionId: CONNECTION_ID,
       });
-      await expect(
-        requests.create(principal({ canonicalSessionId: 'session-2' }), READ_WRITE)
-      ).rejects.toMatchObject({
-        message: expect.stringContaining("That doesn't cover changing things there."),
+      clock = new Date(NOW.getTime() + 1_000);
+
+      const here = await requests.create(
+        principal({ canonicalSessionId: 'session-2' }),
+        READ_WRITE
+      );
+
+      expect(here).toMatchObject({ status: 'awaiting_owner', access: 'read-write' });
+      expect(here.requestId).not.toBe(created.requestId);
+      // The first chat's answer is untouched and still on its way there.
+      expect(requests.getForOwner(OWNER, created.requestId)).toMatchObject({
+        status: 'granted',
+        access: 'read',
+      });
+      // The first chat now meets the newer, unanswered ask as the open one.
+      await expect(requests.create(principal(), READ_WRITE)).rejects.toMatchObject({
+        code: 'request_open_elsewhere',
+        message: expect.stringContaining("the person hasn't answered yet"),
       });
     });
 
@@ -455,6 +469,178 @@ describe('ConnectorAgentRequestService', () => {
       const again = await requests.create(principal(), INPUT);
       expect(again.requestId).not.toBe(created.requestId);
       expect(again.status).toBe('awaiting_owner');
+    });
+
+    describe('asking for more than an answer gave (DOR-3930)', () => {
+      /** Ask for Read, and have the person allow exactly Read. */
+      async function allowedRead(requests: ConnectorAgentRequestService) {
+        const created = await requests.create(principal(), INPUT);
+        grantLive(['revision-read']);
+        await requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        });
+        clock = new Date(NOW.getTime() + 1_000);
+        return created;
+      }
+
+      it('opens a new read-write card instead of reporting the Read answer as granted', async () => {
+        const onChanged = vi.fn();
+        const requests = service({ onChanged });
+        const first = await allowedRead(requests);
+        const calls = onChanged.mock.calls.length;
+
+        const more = await requests.create(principal(), READ_WRITE);
+
+        expect(more).toMatchObject({ status: 'awaiting_owner', access: 'read-write' });
+        expect(more.requestId).not.toBe(first.requestId);
+        expect(more).not.toHaveProperty('grantedOperationRevisionIds');
+        expect(onChanged.mock.calls.length).toBe(calls + 1);
+        const review = db
+          .select()
+          .from(connectorReviewRequests)
+          .where(eq(connectorReviewRequests.state, 'pending'))
+          .get()!;
+        expect(JSON.parse(review.actionPayloadJson)).toMatchObject({ access: 'read-write' });
+        // The Read answer still reaches the chat as it was, and gives nothing more.
+        expect(requests.getForOwner(OWNER, first.requestId)).toMatchObject({
+          status: 'granted',
+          access: 'read',
+          grantedOperationRevisionIds: ['revision-read'],
+        });
+        // Asking again reaches the new card, never a third one.
+        await expect(requests.create(principal(), READ_WRITE)).resolves.toMatchObject({
+          requestId: more.requestId,
+          status: 'awaiting_owner',
+        });
+        expect(db.select().from(connectorAgentRequests).all()).toHaveLength(2);
+      });
+
+      it('adds the write actions once the person allows the new card', async () => {
+        const requests = service();
+        await allowedRead(requests);
+        const more = await requests.create(principal(), READ_WRITE);
+        // The person picks Read and write on the card, which saves the grant.
+        grantLive(['revision-draft']);
+
+        const answered = await requests.resolve(OWNER, more.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        });
+
+        expect(answered).toMatchObject({
+          status: 'granted',
+          access: 'read-write',
+          grantedOperationRevisionIds: ['revision-draft', 'revision-read'],
+          notGranted: [],
+        });
+        await expect(requests.getForRuntime(principal(), more.requestId)).resolves.toMatchObject({
+          status: 'granted',
+          grantedOperationRevisionIds: ['revision-draft', 'revision-read'],
+        });
+      });
+
+      it('says write is missing when the person allows the new card with Read only', async () => {
+        const requests = service();
+        await allowedRead(requests);
+        const more = await requests.create(principal(), READ_WRITE);
+
+        const answered = await requests.resolve(OWNER, more.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        });
+
+        expect(answered).toMatchObject({
+          status: 'granted',
+          grantedOperationRevisionIds: ['revision-read'],
+          notGranted: ['write'],
+          note: expect.stringContaining("The person didn't allow you to change anything in Gmail."),
+        });
+      });
+
+      it('reuses an answer that already covers the ask', async () => {
+        const requests = service();
+        const created = await requests.create(principal(), READ_WRITE);
+        grantLive(['revision-read', 'revision-draft']);
+        await requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        });
+
+        for (const input of [INPUT, READ_WRITE]) {
+          await expect(requests.create(principal(), input)).resolves.toMatchObject({
+            requestId: created.requestId,
+            status: 'granted',
+            notGranted: [],
+          });
+        }
+        expect(db.select().from(connectorAgentRequests).all()).toHaveLength(1);
+      });
+
+      it('opens no card for a level the account has no actions of', async () => {
+        // A second account whose route offers reading only.
+        const stamp = NOW.toISOString();
+        db.insert(connectorProviderInstances)
+          .values({
+            id: 'provider-2',
+            type: 'test',
+            mode: 'byo',
+            displayName: 'Read-only provider',
+            custody: 'self-host',
+            capabilityJson: '{}',
+            executionConfigGeneration: 1,
+            ownerKind: 'local_install',
+            ownerId: OWNER.installationId,
+            status: 'available',
+            createdAt: stamp,
+            updatedAt: stamp,
+          })
+          .run();
+        db.insert(connections)
+          .values({
+            id: 'connection-2',
+            providerInstanceId: 'provider-2',
+            externalAccountRef: 'private-account-ref-2',
+            toolkit: 'gmail',
+            label: 'Read-only mail',
+            status: 'active',
+            lifecycleState: 'connected',
+            enabled: true,
+            grantReconciliationStatus: 'ready',
+            createdAt: stamp,
+            updatedAt: stamp,
+          })
+          .run();
+        db.insert(connectorOperationRevisions)
+          .values({
+            id: 'revision-read-only',
+            providerInstanceId: 'provider-2',
+            toolkit: 'gmail',
+            operationSlug: 'gmail.read',
+            toolkitVersion: '1',
+            schemaHash: 'hash-read-only',
+            capabilityClassification: 'read',
+            retryPolicy: 'never',
+            providerRevisionRef: 'hosted-read-only',
+            inputSchemaJson: '{}',
+            discoveredAt: stamp,
+          })
+          .run();
+        const requests = service();
+        const first = await requests.create(principal(), INPUT);
+        grantLive(['revision-read-only'], 'connection-2');
+        await requests.resolve(OWNER, first.requestId, {
+          decision: 'current_access',
+          connectionId: 'connection-2' as ConnectionId,
+        });
+
+        await expect(requests.create(principal(), READ_WRITE)).resolves.toMatchObject({
+          requestId: first.requestId,
+          status: 'granted',
+          notGranted: [],
+        });
+        expect(db.select().from(connectorAgentRequests).all()).toHaveLength(1);
+      });
     });
 
     it('caps new requests per agent with a refusal the agent can pass on', async () => {
@@ -2623,7 +2809,7 @@ describe('ConnectorAgentRequestService', () => {
       });
     });
 
-    it('never raises a request once it has been answered', async () => {
+    it('never raises a request once it has been answered: more access is a new card', async () => {
       const onChanged = vi.fn();
       const requests = service({
         eventGrants: eventPort(() => 'pending'),
@@ -2640,21 +2826,46 @@ describe('ConnectorAgentRequestService', () => {
         connectionId: CONNECTION_ID,
         eventScopes: [eventScope],
       });
-      const before = {
-        request: db.select().from(connectorAgentRequests).get(),
-        review: db.select().from(connectorReviewRequests).get(),
-      };
+      const answered = () => ({
+        request: db
+          .select()
+          .from(connectorAgentRequests)
+          .where(eq(connectorAgentRequests.id, created.requestId))
+          .get(),
+        review: db
+          .select()
+          .from(connectorReviewRequests)
+          .where(eq(connectorReviewRequests.id, 'id-2'))
+          .get(),
+      });
+      const before = answered();
+      expect(before.review).toBeDefined();
       const calls = onChanged.mock.calls.length;
 
+      // More updates alone, at a level the answer covers: the answer stands.
       await expect(
         requests.create(principal(), {
-          ...READ_WRITE,
+          ...INPUT,
           requestedEvents: ['gmail.message_received', 'gmail.label_added'],
         })
       ).resolves.toMatchObject({ requestId: created.requestId, access: 'read' });
-      expect(db.select().from(connectorAgentRequests).get()).toEqual(before.request);
-      expect(db.select().from(connectorReviewRequests).get()).toEqual(before.review);
+      expect(answered()).toEqual(before);
       expect(onChanged.mock.calls.length).toBe(calls);
+
+      // A level the answer left out: a new card, and the answer is left as it was.
+      clock = new Date(NOW.getTime() + 1_000);
+      const more = await requests.create(principal(), {
+        ...READ_WRITE,
+        requestedEvents: ['gmail.message_received', 'gmail.label_added'],
+      });
+      expect(more).toMatchObject({
+        status: 'awaiting_owner',
+        access: 'read-write',
+        requestedEvents: ['gmail.message_received', 'gmail.label_added'],
+      });
+      expect(more.requestId).not.toBe(created.requestId);
+      expect(answered()).toEqual(before);
+      expect(onChanged.mock.calls.length).toBe(calls + 1);
     });
   });
   describe('taking back an answer stops its updates (fix round 2)', () => {
