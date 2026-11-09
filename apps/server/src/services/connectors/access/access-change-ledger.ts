@@ -17,6 +17,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import type { ConnectorAccessChange } from '@dorkos/shared/connector-exclusion-schemas';
+import type { ConnectorAgentApproval } from '@dorkos/shared/connector-schemas';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 
 /**
@@ -91,4 +92,77 @@ export function findAccessChangeForOwner(
   changeId: string
 ): ConnectorAccessChange | undefined {
   return listAccessChangesForOwner(db, owner, { changeId, limit: 1 })[0];
+}
+
+/**
+ * Another agent's approval of one request for Read, as the request's owner sees it on the card:
+ * the approver as it looked then, when, and when the person undid it. Read by the request's own
+ * id through its index, never through a window of recent rows, so no number of other rows (a
+ * flood of refusals, say) can hide it (Security M1 on #3575). The caller has already read the
+ * request as its owner's.
+ *
+ * @param db - Canonical connector database.
+ * @param requestId - The request.
+ */
+export function agentApprovalOf(db: Db, requestId: string): ConnectorAgentApproval | undefined {
+  const row = db
+    .select()
+    .from(connectionGrantChanges)
+    .where(
+      and(
+        eq(connectionGrantChanges.requestId, requestId),
+        eq(connectionGrantChanges.kind, 'approve_read'),
+        eq(connectionGrantChanges.outcome, 'applied'),
+        eq(connectionGrantChanges.actorKind, 'agent')
+      )
+    )
+    .orderBy(desc(connectionGrantChanges.createdAt))
+    .limit(1)
+    .get();
+  if (!row) return undefined;
+  const snapshot = parseSnapshot(row.actorSnapshotJson);
+  const undo = row.undoneBy
+    ? db
+        .select({ createdAt: connectionGrantChanges.createdAt })
+        .from(connectionGrantChanges)
+        .where(eq(connectionGrantChanges.id, row.undoneBy))
+        .get()
+    : undefined;
+  return {
+    agentId: row.actorId,
+    displayName: snapshot?.displayName ?? null,
+    ...(snapshot?.color ? { color: snapshot.color } : {}),
+    ...(snapshot?.icon ? { icon: snapshot.icon } : {}),
+    approvedAt: row.createdAt,
+    ...(undo ? { undoneAt: undo.createdAt } : {}),
+  };
+}
+
+/** A stored approver snapshot, or `undefined` for none or one that doesn't read. */
+function parseSnapshot(
+  json: string | null
+): { displayName?: string; color?: string; icon?: string } | undefined {
+  if (!json) return undefined;
+  try {
+    const value = JSON.parse(json) as Record<string, unknown>;
+    const text = (key: string) =>
+      typeof value[key] === 'string' && value[key] !== '' ? (value[key] as string) : undefined;
+    return { displayName: text('displayName'), color: text('color'), icon: text('icon') };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * {@link agentApprovalOf} as the field a request item spreads in: `{ approvedBy }`, or nothing.
+ *
+ * @param db - Canonical connector database.
+ * @param requestId - The request.
+ */
+export function approvedByField(
+  db: Db,
+  requestId: string
+): { approvedBy?: ConnectorAgentApproval } {
+  const approvedBy = agentApprovalOf(db, requestId);
+  return approvedBy ? { approvedBy } : {};
 }

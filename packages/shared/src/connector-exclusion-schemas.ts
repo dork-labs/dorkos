@@ -123,3 +123,26 @@ export const ConnectorAccessChangeUndoSchema = z
   .openapi('ConnectorAccessChangeUndo');
 /** What a person's Undo did. */
 export type ConnectorAccessChangeUndo = z.infer<typeof ConnectorAccessChangeUndoSchema>;
+
+/**
+ * Another agent's approval of a request for Read, as the request's owner sees it on the card
+ * (Security M1 on #3575): the approver as it looked when it approved (name and avatar, never read
+ * live), when, and when the person undid it, if they did. Read from the approval's own ledger row
+ * by the request's id, so no number of other ledger rows can hide it. Owner-only: never in what
+ * the asking agent reads.
+ */
+export const ConnectorAgentApprovalSchema = z
+  .object({
+    agentId: z.string().min(1),
+    /** The approver's name when it approved, or `null` when the registry didn't know it then. */
+    displayName: z.string().min(1).nullable(),
+    color: z.string().min(1).optional(),
+    icon: z.string().min(1).optional(),
+    approvedAt: z.string().datetime(),
+    /** When the person undid it, if they did. */
+    undoneAt: z.string().datetime().optional(),
+  })
+  .strict()
+  .openapi('ConnectorAgentApproval');
+/** Another agent's approval of a request for Read, as the request's owner sees it. */
+export type ConnectorAgentApproval = z.infer<typeof ConnectorAgentApprovalSchema>;

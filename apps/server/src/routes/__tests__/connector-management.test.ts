@@ -127,6 +127,8 @@ describe('connector management routes', () => {
       ownerUnavailable?: boolean;
       /** The account that owns this install; `user-a` unless a test says otherwise. */
       ownerUserId?: string;
+      /** Who approved which request, as the ledger answers by request. */
+      agentApprovals?: (requestId: string) => { approvedBy?: never };
     } = {}
   ) {
     return honoGroupListener(
@@ -143,6 +145,7 @@ describe('connector management routes', () => {
           reconciliation,
           exclusions,
           agentRequests,
+          ...(options.agentApprovals ? { agentApprovals: options.agentApprovals } : {}),
           resolveOwner: () => (options.ownerUnavailable ? undefined : OWNER),
           loginEnabled: () => options.loginEnabled ?? false,
           trustedOrigins: () => ['http://localhost:4242'],
@@ -182,6 +185,28 @@ describe('connector management routes', () => {
       .set('Authorization', 'Bearer machine')
       .expect(403);
     expect(agentRequests.listForOwner).toHaveBeenCalledTimes(1);
+  });
+
+  // Security M1 on #3575: the owner's request items carry who approved them, read by request.
+  it('adds who approved each request to the owner’s list and to one request', async () => {
+    const approvedBy = {
+      agentId: 'pm',
+      displayName: 'DorkOS PM',
+      approvedAt: '2026-11-09T01:00:00.000Z',
+    };
+    agentRequests.listForOwner.mockReturnValue([{ requestId: 'request-a' }, { requestId: 'b' }]);
+    const app = fixtureTarget.mount(
+      buildApp({
+        agentApprovals: (requestId) =>
+          (requestId === 'request-a' ? { approvedBy } : {}) as { approvedBy?: never },
+      })
+    );
+    await request(app)
+      .get('/api/connectors/agent-requests')
+      .expect(200, { requests: [{ requestId: 'request-a', approvedBy }, { requestId: 'b' }] });
+    await request(app)
+      .get('/api/connectors/agent-requests/request-a')
+      .expect(200, { requestId: 'request-a', approvedBy });
   });
 
   it("narrows agent requests to one conversation's session for its chat cards", async () => {

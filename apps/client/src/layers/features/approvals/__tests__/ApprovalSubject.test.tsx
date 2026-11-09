@@ -17,8 +17,12 @@ function renderSubject(subject: Parameters<typeof ApprovalSubject>[0]['subject']
       requestId: 'request-01KX',
       agent: { id: 'agent-newbie', displayName: 'Flow Snapshot' },
     } as ConnectorAgentRequestItem),
+    // Two agents with the same name: only the face tells them apart.
     listMeshAgents: vi.fn().mockResolvedValue({
-      agents: [{ id: 'agent-newbie', name: 'newbie', displayName: 'Flow Snapshot' }],
+      agents: [
+        { id: 'agent-twin', name: 'twin', displayName: 'Flow Snapshot', icon: '🦊' },
+        { id: 'agent-newbie', name: 'newbie', displayName: 'Flow Snapshot', icon: '📸' },
+      ],
     }),
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -33,6 +37,18 @@ function renderSubject(subject: Parameters<typeof ApprovalSubject>[0]['subject']
 }
 
 describe('ApprovalSubject', () => {
+  // Security S2 on #3575: the face is what tells two same-named agents apart, so it must be the
+  // asking agent's own.
+  it('draws the asking agent’s own avatar, never a same-named agent’s', async () => {
+    renderSubject({ kind: 'agent_request', label: 'Flow Snapshot · Linear', id: 'request-01KX' });
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="approval-subject-agent"]')).not.toBeNull()
+    );
+    const avatar = document.querySelector('[data-slot="approval-subject-agent"]')!;
+    expect(avatar).toHaveTextContent('📸');
+    expect(avatar).not.toHaveTextContent('🦊');
+  });
+
   it('names another agent’s request by who asked and the app, with their avatar; the id waits behind ⓘ', async () => {
     const user = userEvent.setup();
     renderSubject({ kind: 'agent_request', label: 'Flow Snapshot · Linear', id: 'request-01KX' });

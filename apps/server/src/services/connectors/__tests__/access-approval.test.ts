@@ -4,7 +4,8 @@
  * The six limits DorkOS can prove before DOR-3969 (§4.4) each have a test by
  * name, as do Security's Q3 and every refusal in §7 this path can give.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { agentApprovalOf } from '../access/access-change-ledger.js';
 import {
   connectionAccessLevels,
   connectionGrantChanges,
@@ -24,6 +25,7 @@ import { FakeConnectorProvider } from '@dorkos/test-utils';
 import {
   AccessApprovalError,
   AccessApprovalService,
+  type ApproverSnapshot,
   type PendingAgentRequest,
 } from '../access/access-approval.js';
 import {
@@ -72,6 +74,10 @@ describe('agents approving read requests', () => {
   };
   let approval: AccessApprovalService;
   let narrowing: AccessNarrowingService;
+  /** The registry's names, as the approver snapshot reads them; tests rename agents in it. */
+  const names = new Map<string, ApproverSnapshot>([
+    ['pm', { displayName: 'DorkOS PM', color: '#7c5cff', icon: '🧭' }],
+  ]);
   let authorization: ConnectorExecutionAuthorizationService;
   let provider: FakeConnectorProvider;
   let reconciliation: ConnectorReconciliationService;
@@ -145,6 +151,7 @@ describe('agents approving read requests', () => {
       },
       events: recorder,
       turnGate: () => gate,
+      approverSnapshot: (agentId) => names.get(agentId),
       now: () => START,
       createId: () => `change-${++nextId}`,
     });
@@ -255,6 +262,61 @@ describe('agents approving read requests', () => {
     expect(events.changed[0]!.summary((id) => id)).toBe(
       "pm approved newbie's read access to Gmail"
     );
+  });
+
+  // Security M1 on #3575: what the person's card reads, on the request itself.
+  describe('the approval the person’s card shows', () => {
+    afterEach(() => names.set('pm', { displayName: 'DorkOS PM', color: '#7c5cff', icon: '🧭' }));
+
+    it('keeps the approver as it looked then, through a rename', async () => {
+      await approval.approve(caller('pm'), { requestId: 'request-newbie' });
+      names.set('pm', { displayName: 'Definitely Dorian' });
+
+      expect(agentApprovalOf(db, 'request-newbie')).toEqual({
+        agentId: 'pm',
+        displayName: 'DorkOS PM',
+        color: '#7c5cff',
+        icon: '🧭',
+        approvedAt: START.toISOString(),
+      });
+    });
+
+    it('is still found under a flood of 250 refused approvals (the M1 proof)', async () => {
+      await approval.approve(caller('pm'), { requestId: 'request-newbie' });
+      for (let i = 0; i < 250; i++) {
+        await code(approval.approve(caller('pm'), { requestId: 'request-pm' }));
+      }
+      expect(ledger().filter((row) => row.outcome === 'refused')).toHaveLength(250);
+      expect(agentApprovalOf(db, 'request-newbie')).toMatchObject({ agentId: 'pm' });
+    });
+
+    it('says when the person undid it', async () => {
+      const { changeId } = await approval.approve(caller('pm'), { requestId: 'request-newbie' });
+      await narrowing.undo(OWNER, changeId!);
+
+      expect(agentApprovalOf(db, 'request-newbie')).toMatchObject({
+        agentId: 'pm',
+        undoneAt: START.toISOString(),
+      });
+    });
+
+    it('is nothing for a request no agent approved, or only tried to', async () => {
+      await code(approval.approve(caller('pm'), { requestId: 'request-pm' }));
+      expect(agentApprovalOf(db, 'request-pm')).toBeUndefined();
+      expect(agentApprovalOf(db, 'request-newbie')).toBeUndefined();
+    });
+
+    it('belongs to its own request only, and only to an agent’s approval', async () => {
+      await approval.approve(caller('pm'), { requestId: 'request-newbie' });
+      expect(agentApprovalOf(db, 'request-outsider')).toBeUndefined();
+
+      // A row a person wrote is never shown as an agent's approval.
+      db.update(connectionGrantChanges)
+        .set({ actorKind: 'person' })
+        .where(eq(connectionGrantChanges.requestId, 'request-newbie'))
+        .run();
+      expect(agentApprovalOf(db, 'request-newbie')).toBeUndefined();
+    });
   });
 
   describe('the six limits DorkOS can prove today (§4.4)', () => {

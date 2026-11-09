@@ -605,6 +605,24 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
     expect(value).toHaveClass('break-words', 'min-w-0');
   });
 
+  // The designer on #3575: approving another agent's read request gives Read, nothing more.
+  it('puts no “Changes things” badge on another agent’s read request, and keeps it elsewhere', () => {
+    renderCard(
+      buildApproval({
+        capabilityId: 'connectors.approve_request',
+        capabilityTitle: 'Approve another agent’s request for Read',
+        tier: 'act',
+        subject: { kind: 'agent_request', label: 'Flow Snapshot · Linear', id: 'request-1' },
+      })
+    );
+    expect(screen.getByText('Flow Snapshot · Linear')).toBeInTheDocument();
+    expect(screen.queryByText('Changes things')).not.toBeInTheDocument();
+    cleanup();
+
+    renderCard(buildApproval({ tier: 'act', subject: { kind: 'agent', label: 'Bo', id: 'a-1' } }));
+    expect(screen.getByText('Changes things')).toBeInTheDocument();
+  });
+
   it('does not claim a change is permanent when the tier says otherwise', () => {
     renderCard({ ...connectorApproval(GMAIL_DELETE), tier: 'act' });
     expect(screen.queryByText(/high-risk action/u)).not.toBeInTheDocument();

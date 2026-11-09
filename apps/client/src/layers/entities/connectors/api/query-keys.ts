@@ -46,12 +46,6 @@ export const connectorKeys = {
     [...connectorKeys.agentRequests(), 'session', sessionId] as const,
   agentRequest: (requestId: string) =>
     [...connectorKeys.agentRequests(), 'detail', requestId] as const,
-  /**
-   * Which requests an agent approved, read from the access-change ledger. Kept
-   * under the requests' prefix on purpose: the event that retires a request
-   * card also refreshes who approved it, in the same refetch.
-   */
-  agentRequestApprovals: () => [...connectorKeys.agentRequests(), 'agent-approvals'] as const,
   agentRequestAuthentication: (requestId: string, flowId: string) =>
     [...connectorKeys.agentRequest(requestId), 'authentication-flow', flowId] as const,
 };

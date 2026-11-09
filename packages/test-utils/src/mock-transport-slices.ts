@@ -32,7 +32,6 @@ type SliceMethods =
   | 'pauseAgent'
   | 'resumeAgent'
   | 'cancelHeldConnectorAction'
-  | 'listAccessChanges'
   | 'getAccessChange'
   | 'undoAccessChange'
   | 'getSignInLanding'
@@ -94,8 +93,6 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     cancelHeldConnectorAction: vi
       .fn()
       .mockImplementation(async (holdId: string) => ({ status: 'cancelled', holdId })),
-    // No agent changed anyone's access.
-    listAccessChanges: vi.fn().mockResolvedValue([]),
     getAccessChange: vi.fn().mockRejectedValue(new Error('Nothing to show there.')),
     undoAccessChange: vi
       .fn()

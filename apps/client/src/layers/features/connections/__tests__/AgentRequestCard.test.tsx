@@ -617,13 +617,14 @@ describe('AgentRequestCard — an account exists', () => {
     expect(screen.getByRole('radio', { name: 'Read' })).toBeChecked();
   });
 
-  it('says write access needs the person, under the buttons it keeps, and only for write', async () => {
+  it('says write access needs the person, inside the card just above its buttons, and only for write', async () => {
     const transport = transportWith([account('connection-1')]);
     renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
-    expect(await screen.findByTestId('agent-request-write-note')).toHaveTextContent(
-      'Write access needs you.'
-    );
-    expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument();
+    const note = await screen.findByTestId('agent-request-write-note');
+    expect(note).toHaveTextContent('Write access needs you.');
+    const allow = screen.getByRole('button', { name: 'Allow' });
+    // The note comes right before the buttons' row, in the same card.
+    expect(note.nextElementSibling).toContainElement(allow);
     cleanup();
 
     renderWith(transportWith([account('connection-1')]), <AgentRequestCard request={REQUEST} />);
@@ -641,67 +642,62 @@ describe('AgentRequestCard — approved by another agent (DOR-3959)', () => {
     grantedEvents: [],
     notGranted: [],
   } as never as ConnectorAgentRequestItem;
-  const change = (extra: object = {}) => ({
-    changeId: 'change-1',
-    kind: 'approve_read' as const,
-    outcome: 'applied' as const,
-    refusalCode: null,
-    actorKind: 'agent' as const,
-    actorId: 'agent-pm',
-    targetAgentId: 'agent-bo',
-    connectionId: 'c',
-    reason: null,
-    requestId: 'request-1',
-    undoOf: null,
-    undoneBy: null,
-    createdAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+  /** Who approved, as the server puts it on the request (Security M1 on #3575). */
+  const approvedBy = (extra: object = {}) => ({
+    agentId: 'agent-pm',
+    displayName: 'DorkOS PM',
+    approvedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
     ...extra,
   });
-  const withLedger = (changes: ReturnType<typeof change>[]) => {
-    const transport = transportWith([]);
-    vi.mocked(transport.listAccessChanges).mockResolvedValue(changes);
-    vi.mocked(transport.listMeshAgents).mockResolvedValue({
-      agents: [{ id: 'agent-pm', name: 'pm', displayName: 'DorkOS PM' }],
-    } as never);
-    return transport;
-  };
+  const approved = (extra: object = {}) =>
+    ({ ...grantedRequest, approvedBy: approvedBy(extra) }) as ConnectorAgentRequestItem;
 
-  it('resolves in place to who approved it, Read only, with their avatar and a muted time', async () => {
-    renderWith(withLedger([change()]), <AgentRequestCard request={grantedRequest} />);
+  it('resolves in place: the request’s header stays, and who approved goes under it', async () => {
+    renderWith(transportWith([]), <AgentRequestCard request={approved()} />);
     const receipt = await screen.findByTestId('agent-request-receipt');
-    await waitFor(() => expect(receipt).toHaveAttribute('data-approved-by', 'agent'));
+    expect(receipt).toHaveAttribute('data-approved-by', 'agent');
+    expect(within(receipt).getByText('Bo · Gmail')).toBeInTheDocument();
+    expect(receipt.querySelector('[data-slot="agent-request-asker"]')).not.toBeNull();
     expect(receipt).toHaveTextContent('Approved by DorkOS PM · Read only');
+    expect(receipt.querySelector('[data-slot="agent-approval-approver"]')).not.toBeNull();
     expect(within(receipt).getByText('2m').tagName).toBe('TIME');
-    await waitFor(() =>
-      expect(receipt.querySelector('[data-slot="agent-approval-approver"]')).not.toBeNull()
-    );
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
-  it('keeps the plain receipt for a person’s answer, a refused approval, or a person’s row', async () => {
-    for (const changes of [
-      [],
-      [change({ outcome: 'refused', refusalCode: 'APPROVE_NOT_HELD' })],
-      [change({ actorKind: 'person', actorId: 'owner' })],
-      [change({ requestId: 'request-other' })],
-    ]) {
-      const transport = withLedger(changes);
-      renderWith(transport, <AgentRequestCard request={grantedRequest} />);
-      await waitFor(() => expect(transport.listAccessChanges).toHaveBeenCalled());
-      expect(await screen.findByTestId('agent-request-receipt')).toHaveTextContent(
-        'Allowed Bo to use Gmail'
-      );
-      cleanup();
-    }
+  it('says it is an agent, read only and when, in words a screen reader reads', async () => {
+    renderWith(transportWith([]), <AgentRequestCard request={approved()} />);
+    expect(
+      await screen.findByText('Approved by DorkOS PM, an agent, read only, 2 minutes ago')
+    ).toHaveClass('sr-only');
   });
 
-  it('never reads the ledger for a request that wasn’t granted', async () => {
-    const transport = withLedger([change()]);
-    renderWith(transport, <AgentRequestCard request={{ ...REQUEST, status: 'denied' } as never} />);
-    expect(await screen.findByTestId('agent-request-receipt')).toHaveTextContent(
-      'Bo wasn’t given Gmail'
+  it('shows the approver kept at approval, not a name read later', async () => {
+    const transport = transportWith([]);
+    vi.mocked(transport.listMeshAgents).mockResolvedValue({
+      agents: [{ id: 'agent-pm', name: 'pm', displayName: 'Renamed Later' }],
+    } as never);
+    renderWith(transport, <AgentRequestCard request={approved()} />);
+    const receipt = await screen.findByTestId('agent-request-receipt');
+    expect(receipt).toHaveTextContent('Approved by DorkOS PM · Read only');
+    expect(receipt).not.toHaveTextContent('Renamed Later');
+  });
+
+  it('reads “Undone by you” once the person undid it, never “Approved by…”', async () => {
+    renderWith(
+      transportWith([]),
+      <AgentRequestCard request={approved({ undoneAt: new Date().toISOString() })} />
     );
-    expect(transport.listAccessChanges).not.toHaveBeenCalled();
+    const receipt = await screen.findByTestId('agent-request-receipt');
+    expect(within(receipt).getByText('Bo · Gmail')).toBeInTheDocument();
+    expect(receipt).toHaveTextContent('Undone by you');
+    expect(receipt).not.toHaveTextContent('Approved by');
+  });
+
+  it('keeps the plain receipt for a request no agent approved', async () => {
+    renderWith(transportWith([]), <AgentRequestCard request={grantedRequest} />);
+    expect(await screen.findByTestId('agent-request-receipt')).toHaveTextContent(
+      'Allowed Bo to use Gmail'
+    );
   });
 });
 

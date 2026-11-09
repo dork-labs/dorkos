@@ -13,14 +13,6 @@ import type {
 /** Read and undo one agent-made access change. */
 export interface ConnectorAccessChangeTransport {
   /**
-   * The newest access changes on the person's own connections, newest first
-   * (`GET /api/connectors/access-changes`, at most 200). A person's read only:
-   * the server refuses agents.
-   *
-   * @param limit - How many to read; the server's default is 50.
-   */
-  listAccessChanges(limit?: number): Promise<ConnectorAccessChange[]>;
-  /**
    * One change, with the agent's own reason (`GET /api/connectors/access-changes/:id`).
    * A person's read only: the server refuses agents. Show the reason as plain
    * text, attributed to the agent.

@@ -122,8 +122,20 @@ export interface AccessApprovalServiceOptions {
   readonly managedAuthority?: AccessManagedAuthority;
   /** The turn gate; the live one by default. Injected for tests. */
   readonly turnGate?: (caller: NarrowCaller) => TurnGateRefusal | null;
+  /**
+   * The approving agent as the registry knows it now, kept on its approval so the person's card
+   * shows who approved even after a rename (Security M1 on #3575). `undefined` keeps none.
+   */
+  readonly approverSnapshot?: (agentId: string) => ApproverSnapshot | undefined;
   readonly now?: () => Date;
   readonly createId?: () => string;
+}
+
+/** The approving agent as it looked when it approved: its name and avatar. */
+export interface ApproverSnapshot {
+  readonly displayName: string;
+  readonly color?: string;
+  readonly icon?: string;
 }
 
 /** Approves read requests for agents, and runs an agent's Undo. */
@@ -197,6 +209,7 @@ export class AccessApprovalService {
         before,
         after,
         requestId: input.requestId,
+        actorSnapshot: this.options.approverSnapshot?.(caller.agentId),
         now,
       });
       return { binding, before, after, changeId, commandId };
@@ -477,6 +490,7 @@ export class AccessApprovalService {
       before: AccessState;
       after: AccessState;
       requestId?: string;
+      actorSnapshot?: ApproverSnapshot;
       undoOf?: string;
       reason?: string | null;
       now: string;
@@ -496,6 +510,7 @@ export class AccessApprovalService {
         afterJson: JSON.stringify(input.after),
         reason: input.reason ?? null,
         requestId: input.requestId ?? null,
+        actorSnapshotJson: input.actorSnapshot ? JSON.stringify(input.actorSnapshot) : null,
         undoOf: input.undoOf ?? null,
         createdAt: input.now,
       })

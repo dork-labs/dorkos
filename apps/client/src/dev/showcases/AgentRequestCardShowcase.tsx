@@ -33,6 +33,18 @@ const REQUEST = {
   agent: { id: 'dorkbot', displayName: 'DorkBot' },
 } as ConnectorAgentRequestItem;
 
+/**
+ * Another agent, DorkOS PM, approved the request for Read two minutes before the page loaded, as
+ * the server puts it on the request. Frozen at load: a showcase's times don't move per render.
+ */
+const AGENT_APPROVAL = {
+  agentId: 'agent-pm',
+  displayName: 'DorkOS PM',
+  color: '#7c5cff',
+  icon: '🧭',
+  approvedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+};
+
 const GMAIL: ConnectorCatalogService = {
   serviceSlug: 'gmail',
   displayName: 'Gmail',
@@ -126,35 +138,9 @@ function preview(connectionId: string): ConnectorReconciliationPreview {
  */
 function requestTransport(
   accounts: ConnectorConnectionSummary[],
-  appConnections?: ConnectorAppConnections,
-  approvedByAgent = false
+  appConnections?: ConnectorAppConnections
 ): Transport {
   const base = createPlaygroundTransport();
-  // Another agent, DorkOS PM, approved the request for Read two minutes ago.
-  const agentApproval = {
-    listAccessChanges: async () => [
-      {
-        changeId: 'change-1',
-        kind: 'approve_read',
-        outcome: 'applied',
-        refusalCode: null,
-        actorKind: 'agent',
-        actorId: 'agent-pm',
-        targetAgentId: 'dorkbot',
-        connectionId: 'gmail-work',
-        reason: null,
-        requestId: REQUEST.requestId,
-        undoOf: null,
-        undoneBy: null,
-        createdAt: new Date(Date.now() - 2 * 60_000).toISOString(),
-      },
-    ],
-    listMeshAgents: async () => ({
-      agents: [
-        { id: 'agent-pm', name: 'pm', displayName: 'DorkOS PM', color: '#7c5cff', icon: '🧭' },
-      ],
-    }),
-  };
   const pendingFlow = {
     flowId: 'flow-1',
     providerInstanceId: 'composio-1',
@@ -198,7 +184,6 @@ function requestTransport(
     }),
     startConnectorAgentRequestAuthentication: async () => pendingFlow,
     pollConnectorAgentRequestAuthentication: async () => pendingFlow,
-    ...(approvedByAgent && agentApproval),
   };
   return new Proxy(base, {
     get: (target, prop, receiver) =>
@@ -212,16 +197,13 @@ function CardDemo({
   accounts,
   request = REQUEST,
   appConnections,
-  approvedByAgent,
 }: {
   accounts: ConnectorConnectionSummary[];
   request?: ConnectorAgentRequestItem;
   /** Set to show the card while no way reaches the app. */
   appConnections?: ConnectorAppConnections;
-  /** Set when another agent approved the request, so the record names it. */
-  approvedByAgent?: boolean;
 }) {
-  const [transport] = useState(() => requestTransport(accounts, appConnections, approvedByAgent));
+  const [transport] = useState(() => requestTransport(accounts, appConnections));
   const [client] = useState(
     () =>
       new QueryClient({
@@ -303,7 +285,6 @@ export function AgentRequestCardShowcase() {
       <ShowcaseDemo responsive>
         <CardDemo
           accounts={[]}
-          approvedByAgent
           request={
             {
               ...REQUEST,
@@ -311,6 +292,8 @@ export function AgentRequestCardShowcase() {
               connectionId: 'gmail-work' as never,
               grantedOperationRevisionIds: ['list-messages'],
               grantedEvents: [],
+              notGranted: [],
+              approvedBy: AGENT_APPROVAL,
             } as ConnectorAgentRequestItem
           }
         />

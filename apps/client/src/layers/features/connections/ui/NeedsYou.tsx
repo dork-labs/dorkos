@@ -4,7 +4,6 @@ import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-
 import type { ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
 import { CONNECTOR_AUTHENTICATION_FLOW_TTL_MS } from '@dorkos/shared/connector-schemas';
 import {
-  useAgentApprovals,
   useConnectorAgentRequests,
   useConnectorManagementReviews,
 } from '@/layers/entities/connectors';
@@ -61,7 +60,6 @@ interface NeedsYouProps {
 export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProps) {
   const requests = useConnectorAgentRequests('pending');
   const answered = useConnectorAgentRequests('resolved');
-  const approvals = useAgentApprovals();
   const pending = useConnectorManagementReviews('pending');
   const resolved = useConnectorManagementReviews('resolved');
 
@@ -71,15 +69,16 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
   // person already undid is dealt with, so it leaves at once. The pending list
   // also holds granted requests whose agent hasn't picked the answer up yet,
   // so both lists are read, and an approved one never shows as still asking.
+  // Who approved is on the request itself (Security M1 on #3575).
   const agentApproved = (request: ConnectorAgentRequestItem) =>
-    request.status === 'granted' ? approvals.data?.get(request.requestId) : undefined;
+    request.status === 'granted' ? request.approvedBy : undefined;
   const waiting = (requests.data ?? []).filter((request) => !agentApproved(request));
   const approvedByAgents = [...(requests.data ?? []), ...(answered.data ?? [])].flatMap(
     (request) => {
       const approval = agentApproved(request);
       return approval &&
-        approval.undoneBy === null &&
-        now - Date.parse(approval.createdAt) < AGENT_APPROVAL_WINDOW_MS
+        approval.undoneAt === undefined &&
+        now - Date.parse(approval.approvedAt) < AGENT_APPROVAL_WINDOW_MS
         ? [{ request, approval }]
         : [];
     }
@@ -96,7 +95,9 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
 
   const hasItems =
     waiting.length + (pending.data?.length ?? 0) + unsettled.length + approvedByAgents.length > 0;
-  if (!hasItems && failed.length === 0) return null;
+  // Answered requests are where agents' approvals show: a failed read says so, never a gap.
+  const approvalsFailed = answered.isError;
+  if (!hasItems && failed.length === 0 && !approvalsFailed) return null;
 
   return (
     <section
@@ -150,7 +151,7 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
             <span className="text-muted-foreground line-clamp-2 block text-sm sm:line-clamp-1">
               {`${request.agent.displayName} asked to use ${accountAppName(request.serviceSlug, services)}`}
             </span>
-            <AgentApprovalLine approval={approval} className="text-xs" />
+            <AgentApprovalLine approval={approval} className="text-foreground text-xs" />
           </li>
         ))}
       </ul>
@@ -162,6 +163,22 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
             size="xs"
             className="h-auto p-0"
             onClick={() => failed.forEach((query) => void query.refetch())}
+          >
+            Try again
+          </Button>
+        </p>
+      )}
+      {approvalsFailed && (
+        <p
+          data-testid="needs-you-approvals-failed"
+          className="text-muted-foreground flex flex-wrap items-center gap-x-2 px-2.5 pb-1.5 text-xs"
+        >
+          Couldn’t load agent approvals.
+          <Button
+            variant="link"
+            size="xs"
+            className="h-auto p-0"
+            onClick={() => void answered.refetch()}
           >
             Try again
           </Button>
