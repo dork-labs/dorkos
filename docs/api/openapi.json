@@ -4246,6 +4246,14 @@
           "progressOutput": {
             "type": "string"
           },
+          "startedAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endedAt": {
+            "type": "integer",
+            "minimum": 0
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -4380,6 +4388,14 @@
           },
           "progressOutput": {
             "type": "string"
+          },
+          "startedAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endedAt": {
+            "type": "integer",
+            "minimum": 0
           },
           "status": {
             "type": "string",
@@ -4524,9 +4540,6 @@
                 "stderr"
               ]
             }
-          },
-          "startedAt": {
-            "type": "number"
           },
           "completedAt": {
             "type": "number"
@@ -5513,6 +5526,14 @@
       "CompactMetadata": {
         "type": "object",
         "properties": {
+          "startedAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "endedAt": {
+            "type": "integer",
+            "minimum": 0
+          },
           "trigger": {
             "type": "string",
             "enum": [
@@ -5847,6 +5868,14 @@
               "result": {
                 "type": "string"
               },
+              "startedAt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "endedAt": {
+                "type": "integer",
+                "minimum": 0
+              },
               "status": {
                 "type": "string",
                 "enum": [
@@ -5878,6 +5907,61 @@
               "type": {
                 "type": "string",
                 "enum": [
+                  "model_request"
+                ]
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "start",
+                  "first_token",
+                  "end",
+                  "usage"
+                ]
+              },
+              "startedAt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "endedAt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "firstTokenAt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "inputTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "outputTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "phase"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
                   "tool_result"
                 ]
               },
@@ -5892,6 +5976,14 @@
               },
               "result": {
                 "type": "string"
+              },
+              "startedAt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "endedAt": {
+                "type": "integer",
+                "minimum": 0
               },
               "status": {
                 "type": "string",
@@ -6438,6 +6530,14 @@
                 "enum": [
                   "compact_boundary"
                 ]
+              },
+              "startedAt": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "endedAt": {
+                "type": "integer",
+                "minimum": 0
               },
               "trigger": {
                 "type": "string",
@@ -40429,6 +40529,14 @@
                         "result": {
                           "type": "string"
                         },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "endedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
                         "status": {
                           "type": "string",
                           "enum": [
@@ -40460,6 +40568,61 @@
                         "type": {
                           "type": "string",
                           "enum": [
+                            "model_request"
+                          ]
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string",
+                          "enum": [
+                            "start",
+                            "first_token",
+                            "end",
+                            "usage"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "endedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "firstTokenAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "inputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "outputTokens": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "model": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "phase"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
                             "tool_result"
                           ]
                         },
@@ -40474,6 +40637,14 @@
                         },
                         "result": {
                           "type": "string"
+                        },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "endedAt": {
+                          "type": "integer",
+                          "minimum": 0
                         },
                         "status": {
                           "type": "string",
@@ -41020,6 +41191,14 @@
                           "enum": [
                             "compact_boundary"
                           ]
+                        },
+                        "startedAt": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "endedAt": {
+                          "type": "integer",
+                          "minimum": 0
                         },
                         "trigger": {
                           "type": "string",

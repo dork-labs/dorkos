@@ -20,7 +20,10 @@
  *
  * @module services/runtimes/codex/app-server/notification-mapper
  */
-import type { StreamEvent, TaskItem } from '@dorkos/shared/types';
+import { mapPlan } from './plan-events.js';
+import { timeRuntimeEvents } from '../../shared/timing/runtime-timing.js';
+import { codexRequestUsage, codexNotificationTime } from './request-timing.js';
+import type { StreamEvent } from '@dorkos/shared/types';
 import {
   PATCH_TOOL_NAME,
   SHELL_TOOL_NAME,
@@ -128,6 +131,16 @@ export class AppServerTurnMapper {
    */
   map(notification: ServerNotification): StreamEvent[] {
     if (this.finished) return [];
+    return [
+      ...codexRequestUsage(this, notification),
+      ...timeRuntimeEvents(this, this.mapNotification(notification), {
+        observeStart: notification.method === 'item/started',
+        now: codexNotificationTime(notification, this.ctx.now),
+      }),
+    ];
+  }
+
+  private mapNotification(notification: ServerNotification): StreamEvent[] {
     const params = (notification.params ?? {}) as Record<string, unknown>;
     switch (notification.method) {
       case 'item/agentMessage/delta': {
@@ -158,7 +171,7 @@ export class AppServerTurnMapper {
       case 'item/completed':
         return this.mapItem(params.item as Item, 'completed', params);
       case 'turn/plan/updated':
-        return this.mapPlan(params.plan as Array<{ step: string; status: string }>);
+        return mapPlan(params.plan as Array<{ step: string; status: string }>);
       case 'thread/tokenUsage/updated': {
         const usage = params.tokenUsage as {
           last: { totalTokens: number };
@@ -461,32 +474,6 @@ export class AppServerTurnMapper {
     // Held, and said once before `done` (turn/completed usually repeats it).
     this.heldError = { message: error.message };
     return [];
-  }
-
-  private mapPlan(plan: Array<{ step: string; status: string }>): StreamEvent[] {
-    const tasks: TaskItem[] = plan.map((step, index) => ({
-      id: String(index + 1),
-      subject: step.step,
-      status:
-        step.status === 'completed'
-          ? 'completed'
-          : step.status === 'inProgress'
-            ? 'in_progress'
-            : 'pending',
-    }));
-    if (tasks.length === 0) {
-      return [
-        {
-          type: 'task_update',
-          data: {
-            action: 'snapshot',
-            task: { id: '0', subject: '', status: 'pending' },
-            tasks: [],
-          },
-        },
-      ];
-    }
-    return [{ type: 'task_update', data: { action: 'snapshot', task: tasks[0]!, tasks } }];
   }
 
   private mapItem(item: Item, phase: Phase, params: Record<string, unknown>): StreamEvent[] {

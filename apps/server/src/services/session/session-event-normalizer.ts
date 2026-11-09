@@ -26,6 +26,8 @@
  *
  * @module services/session/session-event-normalizer
  */
+import { toToolPayload } from './turn-stream/tool-payload.js';
+import { timingPayload, modelRequestPayload } from './turn-stream/timing-events.js';
 import { isNonFatalErrorCode, readStopWasRequested } from '@dorkos/shared/run-outcome';
 import { isRefusedAskKind } from '@dorkos/shared/run-refusals';
 import { AlwaysAllowScopeSchema, type ErrorCategory } from '@dorkos/shared/schemas';
@@ -70,6 +72,8 @@ export type TurnOrigin = NonNullable<RawOf<'turn_start'>['origin']>;
 export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
   const data = (event.data ?? {}) as StreamData;
   switch (event.type) {
+    case 'model_request':
+      return modelRequestPayload(event.data);
     case 'text_delta': {
       const delta: RawOf<'text_delta'> = { type: 'text_delta', text: String(data.text ?? '') };
       return delta;
@@ -266,6 +270,7 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     case 'compact_boundary': {
       const boundary: RawOf<'compact_boundary'> = {
         type: 'compact_boundary',
+        ...timingPayload(data),
         ...(data.trigger !== undefined
           ? { trigger: data.trigger as RawOf<'compact_boundary'>['trigger'] }
           : {}),
@@ -525,23 +530,6 @@ function mapHookOutcome(outcome: unknown): 'success' | 'error' | 'cancelled' {
   if (outcome === 'error') return 'error';
   if (outcome === 'cancelled') return 'cancelled';
   return 'success';
-}
-
-/**
- * Extract the shared ToolCallEvent payload fields from a `StreamEvent`'s data.
- * Both `tool_call` and `tool_result` members share this body (minus `type`).
- */
-function toToolPayload(data: StreamData): Omit<RawOf<'tool_call'>, 'type'> {
-  return {
-    toolCallId: String(data.toolCallId ?? ''),
-    toolName: String(data.toolName ?? ''),
-    status: (data.status as RawOf<'tool_call'>['status']) ?? 'running',
-    ...(data.input !== undefined ? { input: String(data.input) } : {}),
-    ...(data.result !== undefined ? { result: String(data.result) } : {}),
-    // MCP App reference (SEP-1865) passes through structurally when present —
-    // only claude-code tool_result events populate it (spec mcp-apps-host §2.2).
-    ...(data.ui !== undefined ? { ui: data.ui as RawOf<'tool_call'>['ui'] } : {}),
-  };
 }
 
 /**

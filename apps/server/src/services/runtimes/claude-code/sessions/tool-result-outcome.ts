@@ -346,6 +346,11 @@ function resolveToolCall(
 export function applyToolResult(app: ToolResultApplication): void {
   const outcome = classifyToolResult(app.resultText, app.isError);
   if (app.tc) resolveToolCall(app.tc, outcome, app);
+  for (const target of [app.tc, app.tcPart]) {
+    if (!target) continue;
+    if (app.startedAt !== undefined) target.startedAt = app.startedAt;
+    if (app.resolvedAt !== undefined) target.endedAt = app.resolvedAt;
+  }
   if (app.tcPart) {
     resolveToolCall(app.tcPart, outcome, app);
     // `interactiveType` is what marks the part as a permission prompt at all —

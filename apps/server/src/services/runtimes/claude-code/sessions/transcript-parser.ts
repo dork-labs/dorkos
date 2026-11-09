@@ -1,3 +1,4 @@
+import { epochMs } from './transcripts/transcript-timing.js';
 import type {
   HistoryMessage,
   MessagePart,
@@ -307,12 +308,6 @@ export function isPersonAuthoredUserRecord(line: TranscriptLine): boolean {
  */
 function carriesToolUse(content: string | ContentBlock[]): boolean {
   return Array.isArray(content) && content.some((block) => block.type === 'tool_use');
-}
-
-function epochMs(timestamp: string | undefined): number | undefined {
-  if (!timestamp) return undefined;
-  const ms = Date.parse(timestamp);
-  return Number.isNaN(ms) ? undefined : ms;
 }
 
 /**
@@ -721,7 +716,10 @@ export function createTranscriptParser(): TranscriptParser {
           toolCalls.push(tc);
           toolCallMap.set(block.id, tc);
           const startedAt = epochMs(parsed.timestamp);
-          if (startedAt !== undefined) toolCallStartedAt.set(block.id, startedAt);
+          if (startedAt !== undefined) {
+            toolCallStartedAt.set(block.id, startedAt);
+            tc.startedAt = startedAt;
+          }
 
           const toolCallPart: ToolCallPart = {
             type: 'tool_call',
@@ -745,7 +743,10 @@ export function createTranscriptParser(): TranscriptParser {
               : {}),
           };
           parts.push(toolCallPart);
-          toolCallPartMap.set(block.id, toolCallPart);
+          toolCallPartMap.set(
+            block.id,
+            Object.assign(toolCallPart, startedAt === undefined ? {} : { startedAt })
+          );
         } else if (block.type === 'error') {
           // Error blocks → ErrorPart (snake_case SDK fields → camelCase client fields)
           parts.push({

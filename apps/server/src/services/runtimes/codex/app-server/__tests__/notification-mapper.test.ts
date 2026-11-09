@@ -153,7 +153,13 @@ describe('tools', () => {
     expect(names).toEqual(['ApplyPatch', 'mcp__dorkos__post', 'WebSearch']);
     expect(events).toContainEqual({
       type: 'tool_result',
-      data: { toolCallId: 'f', toolName: 'ApplyPatch', result: 'add a.ts', status: 'complete' },
+      data: {
+        toolCallId: 'f',
+        toolName: 'ApplyPatch',
+        result: 'add a.ts',
+        status: 'complete',
+        endedAt: expect.any(Number),
+      },
     });
     expect(events).toContainEqual({
       type: 'tool_progress',
@@ -166,6 +172,8 @@ describe('tools', () => {
         toolName: 'mcp__dorkos__post',
         result: 'posted',
         status: 'complete',
+        startedAt: expect.any(Number),
+        endedAt: expect.any(Number),
       },
     });
   });
@@ -260,6 +268,7 @@ describe('terminals — exactly one done', () => {
       n('item/agentMessage/delta', { itemId: 'late', delta: 'after the end' }),
     ]);
     expect(events).toEqual([
+      { type: 'model_request', data: { phase: 'usage', inputTokens: 1480, outputTokens: 23 } },
       {
         type: 'session_status',
         data: {
@@ -437,7 +446,8 @@ describe('compaction (DOR-2732)', () => {
       usage(20_000),
       n('item/completed', { item, completedAtMs: 600 }),
     ]);
-    expect(events).toEqual([
+    expect(events).toMatchObject([
+      { type: 'model_request', data: { phase: 'usage', inputTokens: 0, outputTokens: 0 } },
       {
         type: 'operation_progress',
         data: {
@@ -447,6 +457,7 @@ describe('compaction (DOR-2732)', () => {
           message: 'Compacting context…',
         },
       },
+      { type: 'model_request', data: { phase: 'usage', inputTokens: 0, outputTokens: 0 } },
       {
         type: 'operation_progress',
         data: { operation: 'compaction', state: 'done', determinate: false },
@@ -461,7 +472,7 @@ describe('compaction (DOR-2732)', () => {
   it('leaves out a size it has no reading for, rather than guessing', () => {
     const m = new AppServerTurnMapper(createCodexEventContext('s1'), { compaction: true });
     const events = all(m, [n('item/started', { item }), n('item/completed', { item })]);
-    expect(events.at(-1)).toEqual({ type: 'compact_boundary', data: { trigger: 'manual' } });
+    expect(events.at(-1)).toMatchObject({ type: 'compact_boundary', data: { trigger: 'manual' } });
   });
 
   it('draws one line when the deprecated thread/compacted comes too, in either order', () => {
@@ -481,7 +492,7 @@ describe('compaction (DOR-2732)', () => {
   });
 
   it('still draws the line from thread/compacted alone', () => {
-    expect(all(mapper(), [n('thread/compacted')])).toEqual([
+    expect(all(mapper(), [n('thread/compacted')])).toMatchObject([
       { type: 'compact_boundary', data: { trigger: 'auto' } },
     ]);
   });

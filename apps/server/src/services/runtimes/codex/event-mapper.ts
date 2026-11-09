@@ -26,6 +26,7 @@
  *
  * @module services/runtimes/codex/event-mapper
  */
+import { timeRuntimeEvents } from '../shared/timing/runtime-timing.js';
 import type {
   AgentMessageItem,
   CommandExecutionItem,
@@ -196,6 +197,17 @@ export function mapCodexEvent(
   event: ThreadEvent,
   ctx: CodexEventContext,
   turnContextUsage: CodexTurnContextUsage | null = null
+): StreamEvent[] {
+  return timeRuntimeEvents(ctx, mapEvent(event, ctx, turnContextUsage), {
+    observeStart: event.type === 'item.started',
+    now: ctx.now(),
+  });
+}
+
+function mapEvent(
+  event: ThreadEvent,
+  ctx: CodexEventContext,
+  turnContextUsage: CodexTurnContextUsage | null
 ): StreamEvent[] {
   switch (event.type) {
     case 'thread.started':

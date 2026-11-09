@@ -1,3 +1,4 @@
+import { timeRuntimeEvents } from '../shared/timing/runtime-timing.js';
 import type {
   DoeEvent,
   ModelDescriptor,
@@ -47,10 +48,14 @@ export class DoeTurnEvents {
   constructor(
     private readonly sessionId: string,
     private readonly model: ModelDescriptor,
-    private readonly emit: (event: StreamEvent) => void,
+    private readonly emitEvent: (event: StreamEvent) => void,
     private readonly compactionTrigger: 'manual' | 'auto' = 'auto',
     private readonly cumulativeCost?: () => number | undefined
   ) {}
+
+  private emit(event: StreamEvent): void {
+    for (const timed of timeRuntimeEvents(this, [event])) this.emitEvent(timed);
+  }
 
   /** Correlate the real child scope before any child callback reaches the display stream. */
   childStarted = (scope: ContextScope, parentCallId: string): void => {
@@ -178,6 +183,20 @@ export class DoeTurnEvents {
         break;
       case 'usage':
         this.usages.push(event.usage);
+        if (parent)
+          this.emit({
+            type: 'model_request',
+            data: {
+              phase: event.usage.endedAt === undefined ? 'usage' : 'end',
+              requestId: event.usage.requestId,
+              model: event.usage.modelId,
+              startedAt: event.usage.startedAt,
+              firstTokenAt: event.usage.firstTokenAt,
+              endedAt: event.usage.endedAt,
+              inputTokens: event.usage.inputTokens,
+              outputTokens: event.usage.outputTokens,
+            },
+          });
         // A child/summary's input size is not the main conversation's window reading.
         if (parent)
           this.emit({
