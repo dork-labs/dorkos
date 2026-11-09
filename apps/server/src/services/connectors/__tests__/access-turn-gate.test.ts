@@ -87,19 +87,23 @@ describe('what the narrowing tools say about their limits', () => {
     const { ACCESS_CHANGE_CAPABILITIES } = await import('../access/access-change-capabilities.js');
     const { NARROWING_MESSAGES } = await import('../access/access-narrowing.js');
     const { APPROVAL_MESSAGES } = await import('../access/access-approval.js');
-    const { readFileSync } = await import('node:fs');
-    const fragment = readFileSync(
-      new URL(
-        '../../../../../../changelog/unreleased/261109-000501-agents-approve-read-requests.md',
-        import.meta.url
-      ),
+    const { existsSync, readFileSync } = await import('node:fs');
+    const fragmentUrl = new URL(
+      '../../../../../../changelog/unreleased/261109-000501-agents-approve-read-requests.md',
+      import.meta.url
+    );
+    // Releases consume the fragment; keep checking the caveat in the shipped text.
+    const releaseNotes = readFileSync(
+      existsSync(fragmentUrl)
+        ? fragmentUrl
+        : new URL('../../../../../../CHANGELOG.md', import.meta.url),
       'utf8'
     );
     const texts = [
       ...ACCESS_CHANGE_CAPABILITIES.map((capability) => capability.description),
       ...Object.values(NARROWING_MESSAGES),
       ...Object.values(APPROVAL_MESSAGES),
-      fragment,
+      releaseNotes,
     ];
     for (const text of texts) {
       for (const pattern of BANNED) expect(text).not.toMatch(pattern);
@@ -112,7 +116,7 @@ describe('what the narrowing tools say about their limits', () => {
       const tool = ACCESS_CHANGE_CAPABILITIES.find((capability) => capability.id === id);
       expect(tool?.description).toContain('these limits don’t cover that case');
     }
-    expect(fragment).toMatch(/these limits don['’]t cover that case/);
+    expect(releaseNotes).toMatch(/these limits don['’]t cover (?:that case|those cases)/);
   });
 });
 
