@@ -496,6 +496,8 @@ export const ApprovalSetGrantSchema = z.object({
   programs: z.array(z.string()),
   /** Every tool a member would give agents, by title, A–Z, without repeats. */
   agentTools: z.array(z.string()),
+  /** Names of members that may message your agents and start chats (`allow.agents`). */
+  agents: z.array(z.string()),
   /** What they may reach: anything (a full-access member), or these hosts. */
   network: z.object({ anything: z.boolean(), hosts: z.array(z.string()) }),
 });

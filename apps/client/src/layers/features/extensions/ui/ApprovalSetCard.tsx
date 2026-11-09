@@ -74,6 +74,9 @@ export function grantLines(grant: ApprovalSetGrant): Array<[string, string]> {
       `${n} new ${n === 1 ? 'tool' : 'tools'} agents can use: ${grant.agentTools.join(', ')}`,
     ]);
   }
+  if (grant.agents.length > 0) {
+    lines.push(['Agents', `${grant.agents.join(', ')} can message your agents and start chats`]);
+  }
   if (grant.network.anything) lines.push(['Network', 'Can reach anything this computer can']);
   else if (grant.network.hosts.length > 0) {
     lines.push(['Network', `Can reach ${grant.network.hosts.join(', ')}`]);
@@ -88,6 +91,9 @@ function memberFacts(member: ApprovalSetMemberView): Array<[string, string]> {
     return [
       ['Access', 'Runs on its own, apart from DorkOS'],
       ['Runs as', 'You'],
+      ...(permissions.agents
+        ? [['Agents', 'Can message your agents and start chats'] as [string, string]]
+        : []),
       ...(permissions.run.length > 0
         ? [
             ['Programs', permissions.run.map((program) => program.name).join(', ')] as [

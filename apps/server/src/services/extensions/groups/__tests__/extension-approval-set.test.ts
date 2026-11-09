@@ -116,6 +116,7 @@ interface ExtOptions {
   run?: string[];
   runtime?: 'subprocess' | 'in-process';
   tools?: string[];
+  agents?: boolean;
 }
 
 /** The discovery record for a folder in a plugin. */
@@ -131,7 +132,10 @@ function ext(id: string, plugin: string | undefined, options: ExtOptions = {}): 
       summary: `${id} things`,
       serverCapabilities:
         runtime === 'subprocess'
-          ? { runtime, allow: { net: options.net ?? [], run: options.run ?? [] } }
+          ? {
+              runtime,
+              allow: { net: options.net ?? [], run: options.run ?? [], agents: options.agents },
+            }
           : undefined,
     },
     status: 'compiled',
@@ -217,6 +221,29 @@ describe('listApprovalSets', () => {
     expect(set.members.map((member) => member.id)).toEqual(['social', 'writer']);
   });
 
+  // Fails closed: with no record to prove what the install put there, or one
+  // rebuilt by guessing (`inferred`), nothing joins a set.
+  it.each([
+    [
+      'missing',
+      async () => fs.rm(path.join(pluginRoot('marketing'), '.dork', 'installed-files.json')),
+    ],
+    [
+      'inferred',
+      async () => {
+        const file = path.join(pluginRoot('marketing'), '.dork', 'installed-files.json');
+        const record = JSON.parse(await fs.readFile(file, 'utf-8'));
+        await fs.writeFile(file, JSON.stringify({ ...record, inferred: true }));
+      },
+    ],
+  ])('keeps every member out when the install record is %s', async (_how, spoil) => {
+    await install('marketing', ['writer', 'social']);
+    await spoil();
+    const { source } = sourceOf([ext('writer', 'marketing'), ext('social', 'marketing')]);
+
+    expect(await listApprovalSets(source)).toEqual([]);
+  });
+
   it('leaves out a member whose manifest changed since the install', async () => {
     await install('marketing', ['writer', 'social', 'cockpit']);
     await fs.writeFile(
@@ -259,7 +286,11 @@ describe('listApprovalSets', () => {
         run: ['ffmpeg'],
         tools: ['Draft post'],
       }),
-      ext('social', 'marketing', { net: ['cdn.example.com', 'api.example.com'], run: ['git'] }),
+      ext('social', 'marketing', {
+        net: ['cdn.example.com', 'api.example.com'],
+        run: ['git'],
+        agents: true,
+      }),
       ext('studio', 'marketing', { runtime: 'in-process', tools: ['Cut video'] }),
       ext('cockpit', 'marketing', { run: ['bash'], tools: ['Hidden'] }),
     ]);
@@ -270,6 +301,7 @@ describe('listApprovalSets', () => {
       fullAccess: ['STUDIO'],
       programs: ['ffmpeg', 'git'],
       agentTools: ['Cut video', 'Draft post'],
+      agents: ['SOCIAL'],
       network: { anything: true, hosts: ['api.example.com', 'cdn.example.com'] },
     });
   });

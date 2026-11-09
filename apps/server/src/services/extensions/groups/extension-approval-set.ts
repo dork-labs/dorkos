@@ -138,6 +138,7 @@ function wasAllowedBefore(
  */
 function combinedGrant(waiting: readonly WaitingMember[]): ApprovalSetGrant {
   const fullAccess: string[] = [];
+  const agents: string[] = [];
   const programs = new Set<string>();
   const tools = new Set<string>();
   const hosts = new Set<string>();
@@ -145,6 +146,7 @@ function combinedGrant(waiting: readonly WaitingMember[]): ApprovalSetGrant {
     const runsServer = record.hasServerEntry || record.hasDataProxy;
     if (echo.permissions.runtime === 'in-process' && runsServer)
       fullAccess.push(record.manifest.name);
+    if (echo.permissions.agents) agents.push(record.manifest.name);
     for (const program of echo.permissions.run) programs.add(program);
     for (const host of echo.permissions.net) hosts.add(host);
     for (const check of record.toolChecks ?? []) if (check.ok) tools.add(check.title || check.name);
@@ -154,6 +156,7 @@ function combinedGrant(waiting: readonly WaitingMember[]): ApprovalSetGrant {
     fullAccess,
     programs: sorted(programs),
     agentTools: sorted(tools),
+    agents,
     network: { anything: fullAccess.length > 0, hosts: sorted(hosts) },
   };
 }

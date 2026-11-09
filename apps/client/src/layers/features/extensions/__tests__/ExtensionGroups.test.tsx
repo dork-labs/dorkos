@@ -207,6 +207,7 @@ describe('the Allow all card', () => {
       fullAccess: [],
       programs: [],
       agentTools: [],
+      agents: [],
       network: { anything: false, hosts: ['api.example.com'] },
     },
   };
@@ -253,6 +254,7 @@ describe('the Allow all card', () => {
         fullAccess: ['Writer'],
         programs: ['ffmpeg', 'git'],
         agentTools: ['Cut video', 'Draft post'],
+        agents: ['Social'],
         network: { anything: true, hosts: [] },
       },
     };
@@ -264,6 +266,7 @@ describe('the Allow all card', () => {
     expect(grant).toHaveTextContent('Writer gets full access to this computer.');
     expect(grant).toHaveTextContent('Programsffmpeg, git');
     expect(grant).toHaveTextContent('Agent tools2 new tools agents can use: Cut video, Draft post');
+    expect(grant).toHaveTextContent('AgentsSocial can message your agents and start chats');
     expect(grant).toHaveTextContent('NetworkCan reach anything this computer can');
   });
 

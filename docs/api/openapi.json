@@ -20686,6 +20686,12 @@
                   "type": "string"
                 }
               },
+              "agents": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "network": {
                 "type": "object",
                 "properties": {
@@ -20709,6 +20715,7 @@
               "fullAccess",
               "programs",
               "agentTools",
+              "agents",
               "network"
             ]
           },
