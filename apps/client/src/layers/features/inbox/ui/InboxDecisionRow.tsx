@@ -10,6 +10,7 @@ import { Info, ThumbsDown, ThumbsUp, type LucideIcon } from 'lucide-react';
 import { Button, Textarea, TooltipProvider } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { IconAction } from './IconAction';
+import { InboxAnswerButtons } from './InboxAnswerButtons';
 import { InboxWordButton } from './InboxWordButton';
 
 /**
@@ -32,6 +33,12 @@ export interface InboxDecisionYesNo {
    * with the answer. It never closes anything by itself.
    */
   rejectNote?: { onSubmit(note: string): InboxAnswerSent };
+  /**
+   * Draw the two answers as worded buttons under the body (yes filled, no
+   * quiet) instead of 👍 and 👎, the way the Settings rows ask. ⓘ stays the
+   * only icon.
+   */
+  words?: boolean;
 }
 
 /** One small text button, for an answer that is not yes or no ("Answer", "Reconnect"). */
@@ -381,11 +388,22 @@ export function InboxDecisionRow({
           {watchLine && <p className="text-2xs mt-0.5">{watchLine}</p>}
           {sourceLine && (
             <p
-              className="text-muted-foreground text-2xs mt-0.5 truncate font-mono"
+              className="text-muted-foreground text-2xs mt-0.5 font-mono break-words sm:truncate"
               title={sourceTitle ?? sourceLine}
             >
               {sourceLine}
             </p>
+          )}
+          {actions?.kind === 'yes-no' && actions.words && (
+            <InboxAnswerButtons
+              approveLabel={actions.approveLabel}
+              rejectLabel={actions.rejectLabel}
+              onApprove={actions.onApprove}
+              onReject={actions.rejectNote ? () => setAnswering('note') : actions.onReject}
+              disabled={busy}
+              rejectRef={rejectRef}
+              {...(actions.rejectNote ? { rejectExpanded: answering === 'note' } : {})}
+            />
           )}
           {actions?.kind === 'word' && actions.block && (
             <InboxWordButton
@@ -493,7 +511,7 @@ export function InboxDecisionRow({
                   controls={expanded ? panelId : undefined}
                 />
               )}
-              {actions.kind === 'yes-no' && (
+              {actions.kind === 'yes-no' && !actions.words && (
                 <>
                   <IconAction
                     label={actions.rejectLabel}

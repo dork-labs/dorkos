@@ -42,7 +42,16 @@ export {
 } from './lib/permission-lines';
 export { useSeenBeforeStaleStore, useAddedSinceSeen } from './model/seen-before-stale-store';
 export {
+  ACCESS_FACT_LINE_KEYS,
+  approvalChangeLine,
+  extensionAccessFacts,
+  isChangedSinceAllowed,
+  type ExtensionAccessFact,
+} from './lib/access-facts';
+export {
+  ExtensionAccessFacts,
   ExtensionPermissionLines,
+  type ExtensionAccessFactsProps,
   type ExtensionPermissionLinesProps,
 } from './ui/ExtensionPermissionLines';
 export {

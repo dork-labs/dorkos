@@ -132,7 +132,7 @@ async function openRow() {
   const user = userEvent.setup();
   const bell = await screen.findByTestId('inbox-bell');
   await user.click(bell);
-  const title = await screen.findByText('Turn on Flow?');
+  const title = await screen.findByText('Flow wants to run on this computer.');
   const row = title.closest('[data-slot="inbox-decision-row"]') as HTMLElement;
   return { user, bell, row };
 }
@@ -174,7 +174,9 @@ describe('InboxBell — an extension waiting to be turned on', () => {
 
     act(() => requestInbox(undefined, { focus: 'flow' }));
 
-    const frame = (await screen.findByText('Turn on Flow?')).closest('[data-decision-id]');
+    const frame = (await screen.findByText('Flow wants to run on this computer.')).closest(
+      '[data-decision-id]'
+    );
     expect(frame).not.toBeNull();
     await waitFor(() => expect(frame).toHaveFocus());
     expect(frame).toHaveAttribute('data-focused', 'true');
@@ -193,19 +195,33 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     renderBell();
     const { row } = await openRow();
 
-    expect(within(row).getByText(FLOW.why)).toBeInTheDocument();
+    // The Runs as line says it, so the second line does not end "It runs as you."
+    expect(
+      within(row).getByText(
+        'You installed the flow plugin. This adds a Flow tab that shows what your agents are working on.'
+      )
+    ).toBeInTheDocument();
     expect(within(row).getByText('flow plugin · dork-labs/marketplace')).toBeInTheDocument();
     expect(
       within(row)
         .getAllByRole('button')
-        .map((button) => button.getAttribute('aria-label'))
-    ).toEqual(['More about this', 'Not now', 'Turn it on']);
+        .map((button) => button.getAttribute('aria-label') ?? button.textContent)
+    ).toEqual(['Allow', 'Not now', 'More about this']);
+    // The answers are words on buttons; ⓘ is the only icon.
+    expect(row.querySelector('[data-slot="inbox-answer-buttons"]')).toHaveTextContent(
+      'AllowNot now'
+    );
     expect(
       screen.getByText("Flow is waiting to be turned on. It won't run until you decide.")
     ).toBeInTheDocument();
   });
 
-  it('names a marketplace update by both versions (DOR-3068)', async () => {
+  // Purpose: Security's words for a copy allowed before whose files changed:
+  // the sentence, what changed and when, and its own two answers (Nov 8).
+  const PAUSED_TITLE =
+    'Flow’s files changed since you allowed it. Its screens are paused until you look.';
+
+  it('says an update’s files changed, with both versions and when, and asks to allow it', async () => {
     waiting = [
       {
         ...FLOW,
@@ -219,18 +235,62 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('inbox-bell'));
 
-    expect(await screen.findByText('Update Flow from 1.2.0 to 1.3.0?')).toBeInTheDocument();
-    expect(screen.queryByText('Turn on Flow?')).not.toBeInTheDocument();
-    expect(screen.queryByText('Flow has changed. Run the new code?')).not.toBeInTheDocument();
+    const title = await screen.findByText(PAUSED_TITLE);
+    const row = title.closest('[data-slot="inbox-decision-row"]') as HTMLElement;
+    expect(
+      within(row).getByText(/^Version 1\.2\.0 → 1\.3\.0 · index\.ts · Noticed /)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/was updated from/)).not.toBeInTheDocument();
+    expect(
+      within(row)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label') ?? button.textContent)
+    ).toEqual(['Allow the new version', 'Keep paused', 'More about this']);
   });
 
-  it('asks to run a changed copy that was not updated', async () => {
-    waiting = [{ ...FLOW, changedFiles: ['index.ts'] }];
+  it('says a changed copy that was not updated changed too, and Keep paused only defers', async () => {
+    waiting = [{ ...FLOW, changedFiles: ['index.ts', 'a.js', 'b.js', 'c.js', 'd.js'] }];
     renderBell();
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('inbox-bell'));
 
-    expect(await screen.findByText('Flow has changed. Run the new code?')).toBeInTheDocument();
+    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+      '[data-slot="inbox-decision-row"]'
+    ) as HTMLElement;
+    expect(
+      within(row).getByText(/^index\.ts, a\.js, b\.js and 2 more files · Noticed /)
+    ).toBeInTheDocument();
+    // Its reach did not widen, so it waits behind ⓘ rather than on the row.
+    expect(within(row).queryByTestId('extension-permissions-flow')).not.toBeInTheDocument();
+
+    await user.click(within(row).getByRole('button', { name: 'Keep paused' }));
+    await waitFor(() => expect(screen.queryByText(PAUSED_TITLE)).not.toBeInTheDocument());
+    expect(posts).toEqual([
+      {
+        url: '/api/extensions/flow/dismiss-approval',
+        body: { path: FLOW.path, version: '1.2.0', plugin: 'flow' },
+      },
+    ]);
+  });
+
+  it('puts what a changed copy newly reaches on the row, before the yes', async () => {
+    waiting = [
+      {
+        ...FLOW,
+        changedFiles: ['index.ts'],
+        added: { net: ['api.example.com'], run: [], agents: false, runtime: false },
+      },
+    ];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+      '[data-slot="inbox-decision-row"]'
+    ) as HTMLElement;
+    expect(
+      within(row).getByTestId('extension-permissions-flow').querySelector('li')
+    ).toHaveTextContent('Now also wants to connect to: api.example.com');
   });
 
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {
@@ -308,9 +368,11 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     renderBell();
     const { user, row } = await openRow();
 
-    await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+    await user.click(within(row).getByRole('button', { name: 'Allow' }));
 
-    await waitFor(() => expect(screen.queryByText('Turn on Flow?')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText('Flow wants to run on this computer.')).not.toBeInTheDocument()
+    );
     // The exact copy the row showed, so the server can refuse any other.
     expect(posts).toEqual([
       {
@@ -332,7 +394,9 @@ describe('InboxBell — an extension waiting to be turned on', () => {
 
     await user.click(within(row).getByRole('button', { name: 'Not now' }));
 
-    await waitFor(() => expect(screen.queryByText('Turn on Flow?')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText('Flow wants to run on this computer.')).not.toBeInTheDocument()
+    );
     expect(posts).toEqual([
       {
         url: '/api/extensions/flow/dismiss-approval',
@@ -346,14 +410,14 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     renderBell();
     const { user, row } = await openRow();
 
-    await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+    await user.click(within(row).getByRole('button', { name: 'Allow' }));
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('Couldn’t turn on Flow. Try again.', {
         description: 'Nope',
       })
     );
-    expect(await screen.findByText('Turn on Flow?')).toBeInTheDocument();
+    expect(await screen.findByText('Flow wants to run on this computer.')).toBeInTheDocument();
   });
 
   it('says plainly, without “try again”, when DorkOS cannot check the copy (DOR-3068)', async () => {
@@ -361,7 +425,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     renderBell();
     const { user, row } = await openRow();
 
-    await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+    await user.click(within(row).getByRole('button', { name: 'Allow' }));
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('Flow can’t be turned on yet.', {
@@ -392,9 +456,14 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     it('states full access for an extension that runs inside DorkOS', async () => {
       renderBell();
       const { row } = await openRow();
-      expect(
-        within(row).getByText('Runs inside DorkOS with full access to this computer.')
-      ).toBeInTheDocument();
+      const facts = within(row).getByTestId('extension-access-facts-flow');
+      expect(facts).toHaveTextContent(
+        'AccessRuns inside DorkOS, with full access to this computer'
+      );
+      expect(facts).toHaveTextContent('Runs asYou');
+      expect(facts).toHaveTextContent('NetworkCan reach anything this computer can');
+      // Said once, by the facts, not again in a list under them.
+      expect(within(row).queryByTestId('extension-permissions-flow')).not.toBeInTheDocument();
     });
 
     // Purpose: an isolated extension lists its hosts on the row, not behind ⓘ,
@@ -403,12 +472,17 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       waiting = [MAIL];
       renderBell();
       const { user, row } = await openRow();
+      // Said before the yes, first: where it runs, as whom, and what it reaches.
+      const facts = within(row).getByTestId('extension-access-facts-flow');
+      expect(facts).toHaveTextContent('AccessRuns on its own, apart from DorkOS');
+      expect(facts).toHaveTextContent('Runs asYou');
+      expect(facts).toHaveTextContent('NetworkCan reach imap.fastmail.com, smtp.fastmail.com');
+      // The rest, without saying those three again.
       const lines = within(row).getByTestId('extension-permissions-flow');
-      // Said before the yes, first: where it runs.
-      expect(lines.querySelector('li')).toHaveTextContent('Runs separately from DorkOS.');
-      expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com, smtp.fastmail.com');
+      expect(lines).toHaveTextContent('Can run: git');
+      expect(lines).not.toHaveTextContent('Can connect to');
 
-      await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+      await user.click(within(row).getByRole('button', { name: 'Allow' }));
       await waitFor(() => expect(posts).toHaveLength(1));
       expect((posts[0]!.body as { permissions: unknown }).permissions).toEqual({
         runtime: 'subprocess',
@@ -442,7 +516,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       renderBell();
       const { user, row } = await openRow();
 
-      await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+      await user.click(within(row).getByRole('button', { name: 'Allow' }));
 
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith('Flow changed since you saw it. Check it again.')
@@ -454,8 +528,8 @@ describe('InboxBell — an extension waiting to be turned on', () => {
           screen.getByTestId('extension-permissions-flow').querySelector('li')
         ).toHaveTextContent('Now also wants to connect to: api.example.com')
       );
-      expect(screen.getByTestId('extension-permissions-flow')).toHaveTextContent(
-        'Can connect to: imap.fastmail.com, smtp.fastmail.com, api.example.com'
+      expect(screen.getByTestId('extension-access-facts-flow')).toHaveTextContent(
+        'NetworkCan reach imap.fastmail.com, smtp.fastmail.com, api.example.com'
       );
     });
 
@@ -466,7 +540,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       renderBell();
       const { user, row } = await openRow();
       expect(within(row).queryByText(/Runs (inside|separately)/)).not.toBeInTheDocument();
-      await user.click(within(row).getByRole('button', { name: 'Turn it on' }));
+      await user.click(within(row).getByRole('button', { name: 'Allow' }));
       await waitFor(() => expect(posts).toHaveLength(1));
       expect(posts[0]!.body).not.toHaveProperty('permissions');
     });

@@ -76,21 +76,26 @@ test.describe('An extension waiting to run asks in the inbox', () => {
     });
 
     await page.getByTestId('inbox-bell').click();
-    await expect(page.getByText('Turn on Flow?')).toBeVisible();
+    await expect(page.getByText('Flow wants to run on this computer.')).toBeVisible();
     await expect(
       page.getByText(
         `You installed the ${PLUGIN_NAME} plugin from dorkos/e2e-fixtures. This adds a Flow ` +
-          'tab that shows a fixture panel for the browser tests. It runs as you.'
+          'tab that shows a fixture panel for the browser tests.',
+        { exact: true }
       )
     ).toBeVisible();
-    // The row states the access level before the yes (DOR-2686), and the yes
-    // echoes that set, which the server compares before turning it on. The
-    // fixture has screens and no server half, so it never claims full access.
-    await expect(page.getByText('Its screens run in DorkOS with your access.')).toBeVisible();
+    // The row states the access level before the yes (DOR-2686), in Security's
+    // words, and the yes echoes that set, which the server compares before
+    // turning it on. The fixture has screens and no server half, so it never
+    // claims full access.
+    await expect(
+      page.getByText('Screens run inside DorkOS, with your access', { exact: true })
+    ).toBeVisible();
+    await expect(page.getByTestId(`extension-access-facts-${EXT_ID}`)).toContainText('Runs asYou');
     await expect(page.getByText(/full access to this computer/)).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Turn it on' }).click();
-    await expect(page.getByText('Turn on Flow?')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Allow', exact: true }).click();
+    await expect(page.getByText('Flow wants to run on this computer.')).toHaveCount(0);
 
     await page.keyboard.press('Escape');
     await rightPanel.open();

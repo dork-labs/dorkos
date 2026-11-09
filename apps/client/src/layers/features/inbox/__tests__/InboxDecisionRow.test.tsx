@@ -58,6 +58,46 @@ describe('InboxDecisionRow', () => {
     expect(names).toEqual(['More about this', 'Not now', 'Turn it on']);
   });
 
+  // Purpose: with `words`, the answers are worded buttons under the body (yes
+  // first and filled, no quiet), and ⓘ is the only icon.
+  it('draws worded answers under the body when asked, with ⓘ the only icon', () => {
+    renderRow({
+      actions: {
+        kind: 'yes-no',
+        words: true,
+        approveLabel: 'Allow',
+        rejectLabel: 'Not now',
+        onApprove: vi.fn(),
+        onReject: vi.fn(),
+      },
+    });
+    const names = screen
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent);
+    expect(names).toEqual(['Allow', 'Not now', 'More about this']);
+    expect(screen.queryByRole('button', { name: 'Turn it on' })).toBeNull();
+  });
+
+  it('calls each worded answer once', async () => {
+    const approve = vi.fn();
+    const reject = vi.fn();
+    renderRow({
+      actions: {
+        kind: 'yes-no',
+        words: true,
+        approveLabel: 'Allow',
+        rejectLabel: 'Not now',
+        onApprove: approve,
+        onReject: reject,
+      },
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Allow' }));
+    await user.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(approve).toHaveBeenCalledTimes(1);
+    expect(reject).toHaveBeenCalledTimes(1);
+  });
+
   it('grows in place when ⓘ is pressed, and keeps focus on ⓘ', async () => {
     const user = userEvent.setup();
     renderRow();
