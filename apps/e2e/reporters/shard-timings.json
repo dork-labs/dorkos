@@ -1,155 +1,195 @@
 {
   "source": {
-    "generated": "2026-10-13",
+    "generated": "2026-11-09",
     "runs": [
-      "38384734810",
-      "38382167421",
-      "38372347060",
-      "38371296896",
-      "38370893872",
-      "38351570061",
-      "38345004349"
+      "42580187607",
+      "42575342661",
+      "42572296607",
+      "42572294712",
+      "42569132532",
+      "42569130897",
+      "42569130086"
     ]
   },
   "units": {
     "chromium-bridge|relay/bridged-channel.spec.ts": {
-      "seconds": 5.3,
+      "seconds": 4.9,
       "tests": 1
     },
     "chromium-browser-driving|workbench/browser-driving.spec.ts": {
-      "seconds": 68.7,
-      "tests": 5
+      "seconds": 163,
+      "tests": 15
     },
     "chromium-browser-driving|workbench/browser-recording.spec.ts": {
-      "seconds": 14.8,
+      "seconds": 13.5,
       "tests": 2
     },
     "chromium-browser-driving|workbench/session-canvas-sync.spec.ts": {
-      "seconds": 90.4,
+      "seconds": 87.6,
       "tests": 6
     },
+    "chromium-browser-driving|workbench/session-doc-routes.spec.ts": {
+      "seconds": 30.5,
+      "tests": 2
+    },
+    "chromium-browser-driving|workbench/session-file-save-receipts.spec.ts": {
+      "seconds": 20.2,
+      "tests": 3
+    },
+    "chromium-browser-driving|workbench/session-file-save-recovery.spec.ts": {
+      "seconds": 67.9,
+      "tests": 6
+    },
+    "chromium-connections|connections/browser-handoff.spec.ts": {
+      "seconds": 165.5,
+      "tests": 10
+    },
     "chromium-connections|connections/community-channel-view.spec.ts": {
-      "seconds": 45.3,
+      "seconds": 42.2,
       "tests": 7
     },
     "chromium-connections|connections/community-gone.spec.ts": {
-      "seconds": 22.8,
+      "seconds": 21.5,
       "tests": 4
     },
     "chromium-connections|connections/community-member-conduct.spec.ts": {
-      "seconds": 17.1,
+      "seconds": 16.6,
       "tests": 2
     },
     "chromium-connections|connections/community-membership-access.spec.ts": {
-      "seconds": 60.8,
+      "seconds": 38.4,
       "tests": 4
     },
     "chromium-connections|connections/community-switcher-access.spec.ts": {
-      "seconds": 55.8,
+      "seconds": 47.9,
       "tests": 7
     },
     "chromium-connections|connections/community-switcher.spec.ts": {
-      "seconds": 79.3,
+      "seconds": 74.6,
       "tests": 8
     },
     "chromium-connections|connections/community-switching-proof.spec.ts": {
-      "seconds": 12.5,
+      "seconds": 10.6,
+      "tests": 2
+    },
+    "chromium-connections|connections/computer-panel.spec.ts": {
+      "seconds": 20.4,
       "tests": 2
     },
     "chromium-connections|connections/connections.spec.ts": {
-      "seconds": 259.6,
-      "tests": 18
+      "seconds": 203.3,
+      "tests": 20
     },
     "chromium-connections|connections/marketplace-connectors.spec.ts": {
-      "seconds": 5.7,
+      "seconds": 4.5,
       "tests": 1
     },
     "chromium-connections|connections/mcp-oauth-signin.spec.ts": {
-      "seconds": 7.8,
+      "seconds": 6.5,
       "tests": 1
     },
     "chromium-connections|connections/official-space.spec.ts": {
-      "seconds": 16.2,
+      "seconds": 14.3,
       "tests": 2
     },
     "chromium-extension-seams|extensions/extension-seams.spec.ts": {
-      "seconds": 36.9,
+      "seconds": 36.1,
       "tests": 5
     },
     "chromium-extension-seams|extensions/mini-app-tab-placement.spec.ts": {
-      "seconds": 20.1,
-      "tests": 3
+      "seconds": 29.7,
+      "tests": 6
     },
     "chromium-extension-seams|extensions/start-work.spec.ts": {
-      "seconds": 10.7,
+      "seconds": 10.8,
       "tests": 1
     },
     "chromium-mock|chat-mock.spec.ts": {
-      "seconds": 566.7,
-      "tests": 64
+      "seconds": 404.6,
+      "tests": 61
+    },
+    "chromium-production|production/dm-bar.spec.ts": {
+      "seconds": 11.6,
+      "tests": 4
+    },
+    "chromium-production|production/route-bar-swaps.spec.ts": {
+      "seconds": 7.4,
+      "tests": 3
     },
     "chromium-production|production/shipped-shell.spec.ts": {
-      "seconds": 10.1,
+      "seconds": 8.9,
       "tests": 3
     },
     "chromium-rooms-agents|permissions/agent-permissions.spec.ts": {
-      "seconds": 15.3,
+      "seconds": 11,
       "tests": 5
     },
+    "chromium-rooms-agents|permissions/hook-review.spec.ts": {
+      "seconds": 6.8,
+      "tests": 1
+    },
     "chromium-rooms-agents|permissions/permission-delight.spec.ts": {
-      "seconds": 21.2,
+      "seconds": 17.3,
       "tests": 2
     },
     "chromium-rooms-agents|permissions/request-card.spec.ts": {
-      "seconds": 30.5,
-      "tests": 5
+      "seconds": 25.5,
+      "tests": 6
+    },
+    "chromium-rooms-agents|permissions/task-row-review.spec.ts": {
+      "seconds": 64.2,
+      "tests": 7
     },
     "chromium-rooms-agents|rooms/agent-reactions.spec.ts": {
-      "seconds": 5,
+      "seconds": 5.2,
       "tests": 1
     },
     "chromium-rooms-agents|rooms/attachments/agent-attachment.spec.ts": {
-      "seconds": 6.2,
+      "seconds": 4.7,
       "tests": 1
     },
+    "chromium-rooms-agents|rooms/canvas/new-channel-room-md.spec.ts": {
+      "seconds": 16.4,
+      "tests": 3
+    },
     "chromium-rooms-agents|rooms/canvas/room-canvas-thread.spec.ts": {
-      "seconds": 16.7,
+      "seconds": 15.8,
       "tests": 2
     },
     "chromium-rooms-agents|rooms/canvas/room-canvas.spec.ts": {
-      "seconds": 48.6,
+      "seconds": 47.1,
       "tests": 5
     },
     "chromium-rooms-agents|rooms/canvas/room-follow.spec.ts": {
-      "seconds": 38.2,
+      "seconds": 32.1,
       "tests": 4
     },
     "chromium-rooms-agents|rooms/canvas/room-merge-from-diff.spec.ts": {
-      "seconds": 8.7,
+      "seconds": 7.4,
       "tests": 1
     },
     "chromium-rooms-agents|rooms/room-autonomy.spec.ts": {
-      "seconds": 77.5,
+      "seconds": 71.1,
       "tests": 7
     },
     "chromium-rooms-agents|rooms/room-tool-only-replies.spec.ts": {
-      "seconds": 17.8,
+      "seconds": 13.7,
       "tests": 3
     },
     "chromium-streams|streams/live-agent-list.spec.ts": {
-      "seconds": 13,
+      "seconds": 10.9,
       "tests": 1
     },
     "chromium-streams|streams/multi-window.spec.ts": {
-      "seconds": 19.5,
+      "seconds": 16.8,
       "tests": 1
     },
     "chromium-streams|streams/session-queue.spec.ts": {
-      "seconds": 34.9,
+      "seconds": 33.9,
       "tests": 2
     },
     "chromium-streams|streams/session-routing.spec.ts": {
-      "seconds": 45.1,
+      "seconds": 32.7,
       "tests": 5
     },
     "chromium-streams|streams/sse-contract.spec.ts": {
@@ -157,43 +197,43 @@
       "tests": 2
     },
     "chromium-team-room|home-surface/team-room.spec.ts": {
-      "seconds": 80,
+      "seconds": 50.9,
       "tests": 11
     },
     "chromium|account-ui/account-eligibility.spec.ts": {
-      "seconds": 6.7,
+      "seconds": 6.4,
       "tests": 2
     },
     "chromium|account-ui/account-ui-showcase.spec.ts": {
-      "seconds": 159.7,
+      "seconds": 168.2,
       "tests": 2
     },
     "chromium|account-ui/credits-runs-on.spec.ts": {
-      "seconds": 15.4,
+      "seconds": 15.8,
       "tests": 2
     },
     "chromium|account-ui/default-first.spec.ts": {
-      "seconds": 44.9,
+      "seconds": 45.7,
       "tests": 4
     },
     "chromium|chat/codex-agent-creation.spec.ts": {
-      "seconds": 11.2,
+      "seconds": 10.1,
       "tests": 1
     },
     "chromium|chat/status-line-fit.spec.ts": {
-      "seconds": 41.6,
+      "seconds": 31.7,
       "tests": 7
     },
     "chromium|control-center/control-center.spec.ts": {
-      "seconds": 42.5,
+      "seconds": 31.9,
       "tests": 6
     },
     "chromium|conversation/lane-no-shift.spec.ts": {
-      "seconds": 7.5,
+      "seconds": 5.3,
       "tests": 1
     },
     "chromium|conversation/peek.spec.ts": {
-      "seconds": 6.8,
+      "seconds": 6.6,
       "tests": 1
     },
     "chromium|dashboard-sidebar/boot-stability.spec.ts": {
@@ -201,87 +241,99 @@
       "tests": 1
     },
     "chromium|dashboard-sidebar/mobile-sidebar-navigation.spec.ts": {
-      "seconds": 63.5,
-      "tests": 11
+      "seconds": 55.2,
+      "tests": 10
     },
     "chromium|dashboard-sidebar/mobile-touch.spec.ts": {
-      "seconds": 48.3,
+      "seconds": 38,
       "tests": 8
     },
     "chromium|dashboard-sidebar/session-switcher.spec.ts": {
-      "seconds": 65.8,
+      "seconds": 59.9,
       "tests": 8
     },
     "chromium|dashboard-sidebar/sidebar-bottom-slot.spec.ts": {
-      "seconds": 9.7,
+      "seconds": 11,
       "tests": 1
     },
+    "chromium|dashboard-sidebar/sidebar-collapse.spec.ts": {
+      "seconds": 20.1,
+      "tests": 4
+    },
     "chromium|dashboard-sidebar/sidebar-groups.spec.ts": {
-      "seconds": 85.2,
+      "seconds": 83.2,
       "tests": 11
     },
     "chromium|dashboard-sidebar/sidebar-model-showcase.spec.ts": {
-      "seconds": 47.6,
-      "tests": 9
+      "seconds": 26.4,
+      "tests": 6
     },
     "chromium|dashboard-sidebar/sidebar-row-gutter.spec.ts": {
-      "seconds": 67,
-      "tests": 12
+      "seconds": 77.2,
+      "tests": 14
     },
-    "chromium|dashboard-sidebar/sidebar-today.spec.ts": {
-      "seconds": 32.3,
-      "tests": 5
+    "chromium|dashboard-sidebar/sidebar-shape.spec.ts": {
+      "seconds": 22.5,
+      "tests": 4
     },
     "chromium|dev-playground/blintz.spec.ts": {
-      "seconds": 38.2,
+      "seconds": 40.5,
       "tests": 7
     },
     "chromium|dev-playground/feedback-capture-focus.spec.ts": {
-      "seconds": 16.6,
+      "seconds": 15.2,
       "tests": 1
     },
     "chromium|dev-playground/feedback-point-at-element.spec.ts": {
-      "seconds": 23.3,
+      "seconds": 19.9,
       "tests": 2
     },
+    "chromium|dev-playground/list-rows-390.spec.ts": {
+      "seconds": 14.1,
+      "tests": 4
+    },
     "chromium|dev-playground/project-import-error.spec.ts": {
-      "seconds": 7.1,
+      "seconds": 6.7,
       "tests": 1
     },
     "chromium|dev-playground/pulse-attention.spec.ts": {
-      "seconds": 5.2,
+      "seconds": 3.4,
       "tests": 1
     },
     "chromium|dev-playground/timeline-capture.spec.ts": {
-      "seconds": 17.8,
+      "seconds": 15.2,
       "tests": 2
     },
     "chromium|dialog-deep-link.spec.ts": {
-      "seconds": 50.5,
+      "seconds": 38.6,
       "tests": 9
     },
     "chromium|extensions/approval-inbox.spec.ts": {
-      "seconds": 4.9,
+      "seconds": 3.9,
       "tests": 1
     },
     "chromium|extensions/dev-link.spec.ts": {
-      "seconds": 7.9,
+      "seconds": 6.2,
       "tests": 1
     },
+    "chromium|extensions/extension-rows.spec.ts": {
+      "seconds": 34.2,
+      "tests": 5
+    },
     "chromium|extensions/inbox-decisions.spec.ts": {
-      "seconds": 4.6,
+      "seconds": 4.5,
       "tests": 1
     },
     "chromium|features.spec.ts": {
-      "seconds": 12.4,
+      "seconds": 11.8,
       "tests": 3
     },
     "chromium|flow/verify-proof-pipeline.spec.ts": {
-      "seconds": 0.4,
+      "seconds": 0.3,
       "tests": 2
     },
     "chromium|gen-ui/channel-widgets.spec.ts": {
-      "seconds": 38.6,
+      "seconds": 34.8,
       "tests": 8
     },
     "chromium|harness/skills-page.spec.ts": {
@@ -289,55 +341,67 @@
       "tests": 3
     },
     "chromium|home-surface/home-shell.spec.ts": {
-      "seconds": 50.5,
+      "seconds": 45.4,
       "tests": 10
     },
     "chromium|home-surface/jump-back-in.spec.ts": {
-      "seconds": 23.5,
+      "seconds": 24.7,
       "tests": 5
     },
     "chromium|marketplace.spec.ts": {
-      "seconds": 9.5,
+      "seconds": 8.8,
       "tests": 3
     },
     "chromium|one-bar/bar-tab-strip-floor.spec.ts": {
-      "seconds": 4.9,
+      "seconds": 3.7,
       "tests": 1
     },
+    "chromium|overlays/overlay-surfaces.spec.ts": {
+      "seconds": 33.5,
+      "tests": 8
+    },
     "chromium|pip/mobile-pip-dock.spec.ts": {
-      "seconds": 16,
-      "tests": 3
+      "seconds": 22.3,
+      "tests": 4
     },
     "chromium|profile/profile-pushin.spec.ts": {
-      "seconds": 13.7,
+      "seconds": 11.9,
+      "tests": 2
+    },
+    "chromium|pulse/blintz-heading-selection.spec.ts": {
+      "seconds": 2.2,
       "tests": 2
     },
     "chromium|pulse/pulse-panel.spec.ts": {
-      "seconds": 21.2,
+      "seconds": 20.4,
       "tests": 4
     },
     "chromium|pulse/right-panel-tab-strip.spec.ts": {
-      "seconds": 10.9,
+      "seconds": 16.7,
       "tests": 2
     },
+    "chromium|pulse/terminal-resource-lifecycle.spec.ts": {
+      "seconds": 29.9,
+      "tests": 4
+    },
     "chromium|relay/adapter-wizard-fields.spec.ts": {
-      "seconds": 52,
+      "seconds": 39.1,
       "tests": 8
     },
     "chromium|relay/connections-page.spec.ts": {
-      "seconds": 65.9,
-      "tests": 9
+      "seconds": 53.5,
+      "tests": 10
     },
     "chromium|responsive/no-horizontal-scroll.spec.ts": {
-      "seconds": 264.3,
+      "seconds": 255.2,
       "tests": 34
     },
     "chromium|responsive/touch-reach.spec.ts": {
-      "seconds": 22.3,
+      "seconds": 17.5,
       "tests": 3
     },
     "chromium|rooms/archived-in-palette.spec.ts": {
-      "seconds": 10.4,
+      "seconds": 8.6,
       "tests": 2
     },
     "chromium|rooms/attachments/human-attachments.spec.ts": {
@@ -345,143 +409,155 @@
       "tests": 1
     },
     "chromium|rooms/direct-messages.spec.ts": {
-      "seconds": 29.8,
+      "seconds": 25.2,
       "tests": 4
     },
     "chromium|rooms/mention-picker.spec.ts": {
-      "seconds": 36,
+      "seconds": 26.5,
       "tests": 4
     },
     "chromium|rooms/owner-sees-every-room.spec.ts": {
-      "seconds": 5.8,
+      "seconds": 4.3,
       "tests": 1
     },
     "chromium|rooms/palette-scope-chips.spec.ts": {
-      "seconds": 10.1,
+      "seconds": 8,
       "tests": 2
     },
     "chromium|rooms/read-state-cross-device.spec.ts": {
-      "seconds": 19.4,
+      "seconds": 15.1,
       "tests": 2
     },
     "chromium|rooms/room-conversation.spec.ts": {
-      "seconds": 68.8,
+      "seconds": 67.3,
       "tests": 10
     },
     "chromium|rooms/room-entry-actions.spec.ts": {
-      "seconds": 121.3,
-      "tests": 19
+      "seconds": 92.9,
+      "tests": 20
     },
     "chromium|rooms/room-files-changes.spec.ts": {
-      "seconds": 99.4,
+      "seconds": 95.8,
       "tests": 9
     },
     "chromium|rooms/room-files.spec.ts": {
-      "seconds": 42.3,
+      "seconds": 38.7,
       "tests": 4
     },
     "chromium|rooms/room-identity.spec.ts": {
-      "seconds": 31,
+      "seconds": 23.8,
       "tests": 4
     },
     "chromium|rooms/room-presence-sidebar.spec.ts": {
-      "seconds": 5.2,
+      "seconds": 3.8,
       "tests": 1
     },
     "chromium|rooms/room-presence.spec.ts": {
-      "seconds": 22.8,
+      "seconds": 22.2,
       "tests": 2
     },
     "chromium|rooms/room-reactions.spec.ts": {
-      "seconds": 47.5,
+      "seconds": 37,
       "tests": 7
     },
     "chromium|rooms/room-row-menu.spec.ts": {
-      "seconds": 16.3,
+      "seconds": 12.4,
       "tests": 2
     },
     "chromium|rooms/room-sheet-phone.spec.ts": {
-      "seconds": 56.8,
+      "seconds": 54.2,
       "tests": 6
     },
     "chromium|rooms/room-sheet.spec.ts": {
-      "seconds": 77,
+      "seconds": 59.7,
       "tests": 8
     },
     "chromium|rooms/rooms-in-palette.spec.ts": {
-      "seconds": 26.3,
+      "seconds": 20,
       "tests": 3
+    },
+    "chromium|rooms/threads/phone-thread-sheet.spec.ts": {
+      "seconds": 19.1,
+      "tests": 4
     },
     "chromium|rooms/threads/thread-across-the-page.spec.ts": {
       "seconds": 6,
       "tests": 1
     },
     "chromium|rooms/threads/thread-width.spec.ts": {
-      "seconds": 9.7,
+      "seconds": 7.3,
       "tests": 1
     },
+    "chromium|rooms/threads/threads-page.spec.ts": {
+      "seconds": 9.1,
+      "tests": 2
+    },
     "chromium|search/message-search-deeplink.spec.ts": {
-      "seconds": 25.3,
+      "seconds": 22.8,
       "tests": 3
     },
     "chromium|search/message-search.spec.ts": {
-      "seconds": 11.6,
+      "seconds": 8.7,
       "tests": 2
     },
     "chromium|settings/auth-login.spec.ts": {
       "seconds": 0,
-      "tests": 4
+      "tests": 5
+    },
+    "chromium|settings/boot-cache-sign-out.spec.ts": {
+      "seconds": 0,
+      "tests": 2
     },
     "chromium|settings/doe-model-setup.spec.ts": {
-      "seconds": 19.7,
+      "seconds": 15.3,
       "tests": 1
     },
     "chromium|settings/runtimes-tab.spec.ts": {
-      "seconds": 40.4,
+      "seconds": 41,
       "tests": 6
     },
     "chromium|settings/select-reopen.spec.ts": {
-      "seconds": 5.6,
+      "seconds": 4.8,
       "tests": 1
     },
     "chromium|settings/settings-advanced-fold.spec.ts": {
-      "seconds": 26.6,
+      "seconds": 25.5,
       "tests": 4
     },
     "chromium|settings/settings-dialog.spec.ts": {
-      "seconds": 64.9,
+      "seconds": 64.3,
       "tests": 9
     },
     "chromium|settings/settings-tab-panels.spec.ts": {
-      "seconds": 5.9,
+      "seconds": 4.8,
       "tests": 1
     },
     "chromium|shapes/shape-switcher-focus.spec.ts": {
-      "seconds": 7.3,
+      "seconds": 5.3,
       "tests": 1
     },
     "chromium|smoke/app-loads.spec.ts": {
-      "seconds": 21.5,
+      "seconds": 14.8,
       "tests": 4
     },
     "chromium|tasks/task-scheduler.spec.ts": {
-      "seconds": 51.6,
+      "seconds": 50.6,
       "tests": 7
     },
     "chromium|team/team-page.spec.ts": {
-      "seconds": 135.6,
-      "tests": 18
+      "seconds": 132.9,
+      "tests": 19
     },
     "chromium|trust-notice.spec.ts": {
-      "seconds": 27.6,
+      "seconds": 17.1,
       "tests": 2
     },
     "chromium|workbench/dev-server-preview.spec.ts": {
-      "seconds": 32.9,
+      "seconds": 32.5,
       "tests": 4
     },
     "chromium|workbench/served-document-isolation.spec.ts": {
-      "seconds": 2.9,
+      "seconds": 2.8,
       "tests": 5
     }
   }
