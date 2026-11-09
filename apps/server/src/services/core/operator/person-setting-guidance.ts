@@ -1,7 +1,7 @@
 /** Honest next steps for settings an agent cannot change. */
 const SCHEDULED_WAKE_SETTING = 'keepAwake.wakeForScheduledTasks';
 export const SCHEDULED_WAKE_GUIDANCE =
-  "DorkOS can't wake this computer for scheduled tasks yet. To keep them running, turn on Keep this computer awake in Settings → Tools → Sleep.";
+  "DorkOS can't wake this computer for scheduled tasks yet. They only run while it's awake.";
 
 /** Match the exact setting path, including the Full gate's quoted path with its area label. */
 export function isScheduledWake(setting: string): boolean {

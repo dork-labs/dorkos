@@ -4,7 +4,7 @@ import { fullPersonSettingRefusal } from '../../capabilities/person-setting-refu
 import { findOperatorOnlyPaths, CONFIG_WRITE_POLICY } from '../config-write-policy.js';
 
 const REFUSAL =
-  "DorkOS can't wake this computer for scheduled tasks yet. To keep them running, turn on Keep this computer awake in Settings → Tools → Sleep.";
+  "DorkOS can't wake this computer for scheduled tasks yet. They only run while it's awake.";
 
 describe('scheduled waking guidance for an agent', () => {
   it('gives the exact approved refusal and the existing keep-awake path', () => {

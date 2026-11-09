@@ -86,9 +86,7 @@ describe('SleepSettings', () => {
     renderWith(status({}));
     await toggle();
     expect(
-      screen.getByText(
-        "Scheduled tasks can't run while it sleeps. Keep it awake to run them on time."
-      )
+      screen.getByText("Scheduled tasks can't run while it sleeps, even with this on.")
     ).toBeInTheDocument();
     expect(screen.getAllByRole('switch')).toHaveLength(1);
     expect(screen.queryByText('Wake for scheduled tasks')).not.toBeInTheDocument();

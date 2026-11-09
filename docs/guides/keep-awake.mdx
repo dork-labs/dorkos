@@ -51,10 +51,10 @@ The change takes effect at once. If agents are working when you switch it back o
 ## Scheduled tasks while the computer sleeps
 
 DorkOS cannot wake a sleeping computer for a scheduled task yet. There is no wake switch.
-To keep tasks running, turn on **Keep this computer awake while agents work** in **Settings → Tools → Sleep**.
-This keeps the computer awake during work; it can still sleep between runs.
+Scheduled tasks only run while the computer is awake.
+**Keep this computer awake while agents work** doesn't change that: it keeps the computer awake while a task runs, not while it waits for the next one.
 
-If the computer sleeps, a task may run late or be skipped. See [Late and missed runs](/docs/guides/task-scheduler#late-and-missed-runs).
+If the computer is asleep when a task is due, the task may run late or be skipped. See [Late and missed runs](/docs/guides/task-scheduler#late-and-missed-runs).
 
 ## Where it works
 

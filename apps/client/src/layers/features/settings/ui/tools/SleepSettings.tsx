@@ -63,9 +63,7 @@ export function SleepSettings() {
               <span className="flex flex-col gap-1">
                 <span>Stays awake during chats, rooms and tasks. Sleeps as usual when idle.</span>
                 <span data-testid="sleep-settings-note">{unsupported ?? KEEP_AWAKE_CAVEAT}</span>
-                <span>
-                  {"Scheduled tasks can't run while it sleeps. Keep it awake to run them on time."}
-                </span>
+                <span>{"Scheduled tasks can't run while it sleeps, even with this on."}</span>
               </span>
             }
             checked={status.enabled}
