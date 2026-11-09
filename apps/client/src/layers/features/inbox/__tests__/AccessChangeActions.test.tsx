@@ -45,6 +45,7 @@ function change(reason: string | null): ConnectorAccessChange {
     targetAgentId: 'agent-flow',
     connectionId: 'connection-a',
     reason,
+    requestId: null,
     undoOf: null,
     undoneBy: null,
     createdAt: new Date().toISOString(),

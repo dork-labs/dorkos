@@ -57,6 +57,7 @@ function change(changeId: string): ConnectorAccessChange {
     targetAgentId: 'agent-inbox-helper',
     connectionId: 'connection-sample-mail',
     reason: 'It hasn’t used Sample Mail in 30 days.',
+    requestId: null,
     undoOf: null,
     undoneBy: null,
     createdAt: new Date(Date.UTC(2026, 10, 8, 18, 0)).toISOString(),
