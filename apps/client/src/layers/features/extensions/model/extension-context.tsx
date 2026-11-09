@@ -80,9 +80,26 @@ interface ExtensionProviderProps {
 export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
   const [state, setState] = useState<ExtensionContextValue>(defaultContextValue);
   const loaderRef = useRef<ExtensionLoader | null>(null);
-  // How many full reloads have started, so the first load can tell it was overtaken.
+  // How many reloads (full or hot) have started, so the first load can tell it
+  // was overtaken.
   const reloadsStarted = useRef(0);
+  // How many reloads are running now. `settling` holds until the last one ends,
+  // whichever load finishes first.
+  const reloadsRunning = useRef(0);
   const queryClient = useQueryClient();
+
+  /** Start one reload: it supersedes the first load, and settling holds. */
+  const beginReload = useCallback(() => {
+    reloadsStarted.current += 1;
+    reloadsRunning.current += 1;
+    setState((prev) => ({ ...prev, settling: true }));
+  }, []);
+
+  /** End one reload; answers whether another is still running. */
+  const endReload = useCallback(() => {
+    reloadsRunning.current -= 1;
+    return reloadsRunning.current > 0;
+  }, []);
 
   // Live-remount every extension slot for the new working directory's set.
   // reloadAll() is fetch-then-swap: it resolves the new set before tearing the
@@ -95,23 +112,23 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
       const loader = loaderRef.current;
       if (!loader) return;
 
-      reloadsStarted.current += 1;
-      setState((prev) => ({ ...prev, settling: true }));
+      beginReload();
       try {
         const { extensions, loaded } = await (ids
           ? loader.reloadExtensions(ids)
           : loader.reloadAll());
-        setState({ extensions, loaded, ready: true, settling: false });
+        setState({ extensions, loaded, ready: true, settling: endReload() });
         setExtensionLoadFailed(false);
       } catch (err) {
-        setState((prev) => ({ ...prev, settling: false }));
+        const settling = endReload();
+        setState((prev) => ({ ...prev, settling }));
         throw err;
       }
       // Sync TanStack Query so UI consumers of the extension list reflect the
       // cwd-scoped set immediately, not on the next poll interval.
       queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
     },
-    [queryClient]
+    [beginReload, endReload, queryClient]
   );
 
   // Watch for CWD changes and live-remount the extension slots if the set differs.
@@ -148,19 +165,28 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
     loaderRef.current = loader;
 
     // A reload that started while this first load was in flight (a sign-in, a
-    // retry) owns the answer: this load's late result must not undo it.
+    // retry, a hot reload) owns the answer: this load's late result must not
+    // undo it. It may only end the first wait, if nothing newer has landed —
+    // and `settling` still holds while that reload runs.
     const supersededBy = reloadsStarted.current;
     const isCurrent = () => reloadsStarted.current === supersededBy;
     loader
       .initialize()
       .then(({ extensions, loaded, failed }) => {
-        if (!isCurrent()) return;
-        setState({ extensions, loaded, ready: true, settling: false });
+        const settling = reloadsRunning.current > 0;
+        if (!isCurrent()) {
+          setState((prev) => (prev.ready ? prev : { extensions, loaded, ready: true, settling }));
+          return;
+        }
+        setState({ extensions, loaded, ready: true, settling });
         setExtensionLoadFailed(failed);
       })
       .catch((err: unknown) => {
         console.error('[extensions] Failed to initialize:', err);
-        if (!isCurrent()) return;
+        if (!isCurrent()) {
+          setState((prev) => (prev.ready ? prev : { ...prev, ready: true }));
+          return;
+        }
         setState((prev) => ({ ...prev, ready: true }));
         setExtensionLoadFailed(true);
       });
@@ -185,15 +211,19 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
     const data = raw as { extensionIds: string[]; timestamp: number };
 
     void (async () => {
-      setState((prev) => ({ ...prev, settling: true }));
+      // A hot reload during the first load is a newer answer too: without
+      // this, the first load's late result ended `settling` while the reload
+      // was still importing, and put back the list it read before the change.
+      beginReload();
       try {
         const { extensions, loaded } = await loader.reloadExtensions(data.extensionIds);
-        setState({ extensions, loaded, ready: true, settling: false });
+        setState({ extensions, loaded, ready: true, settling: endReload() });
         // Keep TanStack Query in sync so UI consumers of useExtensions() reflect
         // the refreshed status without waiting for the next poll interval.
         queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
       } catch (err) {
-        setState((prev) => ({ ...prev, settling: false }));
+        const settling = endReload();
+        setState((prev) => ({ ...prev, settling }));
         console.error('[extensions] Hot reload failed:', err);
       }
     })();

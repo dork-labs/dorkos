@@ -4,12 +4,14 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { AlertTriangle, PackageX, Puzzle } from 'lucide-react';
 import { useExtensionPageAtPath } from '@/layers/shared/model';
 import { openLink } from '@/layers/shared/lib';
-import { EmptyState, PageContainer, Skeleton } from '@/layers/shared/ui';
+import { useExtensionClientStates } from '@/layers/shared/lib/extension-client-state';
+import { EmptyState, PageContainer } from '@/layers/shared/ui';
 import { useExtensions } from '@/layers/features/extensions';
 import { extensionPageState, type ExtensionPageState } from '../model/extension-page-state';
 import { createPageSearchWriter, pageSearchFrom } from '../model/page-search';
 import { useSettledPageState } from '../model/use-settled-page-state';
 import { DevLinkStrip } from './DevLinkStrip';
+import { ExtensionPageNotWorking, ExtensionPageStarting } from './ExtensionPageStatus';
 
 /** The answer for `/x/Not_An_Id`: no extension could have that id. */
 const NOT_AN_EXTENSION: ExtensionPageState = { kind: 'not-installed', name: 'This add-on' };
@@ -23,16 +25,18 @@ const EXTENSIONS_SETTINGS_LINK = '?settings=extensions';
  *
  * Matches the address against the pages that extension registered and renders
  * the one that answers, with its params and a `setSearch` that writes the URL,
- * so a page's own state (`?project=dorkos`) is bookmarkable. Before extensions
- * have loaded it draws a skeleton — a deep link on reload arrives before the
- * extension has activated and registered anything — and after, a plain empty
- * state that says which of three things is true.
+ * so a page's own state (`?project=dorkos`) is bookmarkable. While the app is
+ * still loading it says "Starting…" — a deep link on reload arrives before the
+ * extension has activated and registered anything — and if its load never
+ * finishes, that it isn't working, with Try again. Only once it has loaded does
+ * a plain empty state say why there is no page.
  */
 export function ExtensionPageRoute() {
   const location = useLocation();
   const router = useRouter();
   const at = useExtensionPageAtPath(location.pathname);
   const { extensions, ready, settling } = useExtensions();
+  const clientStates = useExtensionClientStates();
 
   const search = useMemo(() => pageSearchFrom(location.searchStr), [location.searchStr]);
   // One writer per router: it remembers what it last wrote, so two calls in a
@@ -45,9 +49,10 @@ export function ExtensionPageRoute() {
 
   // The router only mounts this component on `/x/…`, so `at` is null only for
   // an id no extension could have (`/x/Not_An_Id`) — nothing is installed there.
-  const state = useSettledPageState(
-    at ? extensionPageState(at, extensions, ready, settling) : NOT_AN_EXTENSION
-  );
+  const current = at
+    ? extensionPageState(at, extensions, ready, settling, clientStates[at.extensionId])
+    : NOT_AN_EXTENSION;
+  const state = useSettledPageState(current);
 
   if (state.kind === 'page') {
     const { page, params } = state.at.match;
@@ -72,26 +77,13 @@ export function ExtensionPageRoute() {
     );
   }
 
-  if (state.kind === 'loading') return <PageSkeleton />;
+  // A held-back answer is already known, so it waits without saying "Starting…".
+  if (state.kind === 'loading') return <ExtensionPageStarting quiet={current.kind !== 'loading'} />;
+  if (state.kind === 'not-working') return <ExtensionPageNotWorking {...state} />;
 
   return (
     <PageContainer width="reading">
       <UnavailablePage state={state} />
-    </PageContainer>
-  );
-}
-
-/** The page's shape while its extension loads: a heading and a few lines. */
-function PageSkeleton() {
-  return (
-    <PageContainer width="wide">
-      <div data-testid="extension-page-skeleton" aria-busy="true" className="space-y-4">
-        <span className="sr-only">Loading this page</span>
-        <Skeleton className="h-6 w-40" />
-        <Skeleton className="h-4 w-full max-w-md" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
-      </div>
     </PageContainer>
   );
 }
@@ -116,7 +108,10 @@ function PageFailed({ name }: { name: string }) {
 function UnavailablePage({
   state,
 }: {
-  state: Exclude<ExtensionPageState, { kind: 'page' } | { kind: 'loading' }>;
+  state: Exclude<
+    ExtensionPageState,
+    { kind: 'page' } | { kind: 'loading' } | { kind: 'not-working' }
+  >;
 }) {
   const openExtensions = { onClick: () => void openLink(EXTENSIONS_SETTINGS_LINK) };
   switch (state.kind) {
