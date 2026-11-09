@@ -151,7 +151,7 @@ describe('the recorded week 2026-09-12..18 under the new ruler', () => {
   const readings = computeSlos(slos, floorValues(slos, null), {
     ...sloRuler(files!.config),
     // The deadline this week's three-shard runs actually ran under. Today's
-    // config says 25 (six shards since 2026-09-27, ledger 260919-175503), and
+    // config says 35 (DOR-4045, ledger 261109-095000), and
     // readers apply it to every day, so a recorded three-shard week read
     // against it says 1.172: the transient ci/config.yaml's `deadlines:` warns
     // about, not what this block pins.
@@ -217,6 +217,19 @@ describe('the ruler files agree with what they restate', () => {
     expect(files!.config.deadlines).toContainEqual(
       expect.objectContaining({ gate: 'wf.browser-test.browser-shard', minutes })
     );
+
+    // DOR-4045: Playwright must get time to flush its reports before the step
+    // kills it, and setup/uploads must fit outside that step inside the job.
+    // Read the actual YAML so a timeout on another job cannot satisfy this.
+    const workflow = parseYaml(wf);
+    const job = workflow.jobs['browser-shard'];
+    const suite = job.steps.find((step: { id?: string }) => step.id === 'suite');
+    expect(shards).toBe(6);
+    expect(minutes).toBe(35);
+    expect(suite['timeout-minutes']).toBe(45);
+    expect(job['timeout-minutes']).toBe(60);
+    expect(suite['timeout-minutes']).toBeGreaterThan(minutes);
+    expect(job['timeout-minutes']).toBeGreaterThan(suite['timeout-minutes']);
   });
 
   it('ignores the smoke matrix when reading the full browser suite matrix', () => {

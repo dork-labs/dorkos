@@ -316,34 +316,22 @@ jobs:
     # when one product change broke 21 specs at once and the attempt was
     # cancelled with ZERO Playwright output, costing a whole extra debug cycle.
     #
-    # So the deadlines are staggered, innermost first, and each rung below this
-    # one leaves output behind when it fires. The numbers are per SHARD, derived
-    # from the measurements above:
+    # DOR-4045, re-measured 2026-11-09: latest 30 merge-group browser runs,
+    # 29 completed (seven failed), one still running. Suite-step nearest-rank
+    # p95 by shard: 25.03 / 24.88 / 23.98 / 23.73 / 22.80 / 23.65 minutes.
+    # The old 25-minute clock censors several samples, so these understate the
+    # runtime needed. The ~79-minute suite now derives a 35-minute deadline.
+    # Keep six shards under the 60-job pool cap and raise every rung together:
     #
-    #  ~14m  a healthy shard's suite step (DERIVED: ~4.5m of boot + a sixth of
-    #         ~53m of tests; ~16m at p95, ~19m for the whole job at p95). At
-    #         three shards the measured step was p50 25.3m, p95 27.4m, which is
-    #         what put this ladder's first rung within reach of healthy runs.
-    #    25m  playwright.config.ts `globalTimeout` — Playwright stops itself and
-    #         flushes every reporter, so the job fails WITH a named report. It is
-    #         derived from the shard count rather than typed in; see that file.
-    #    35m  the suite step's own `timeout-minutes` — a hung Playwright that
-    #         never reached its own deadline still fails the STEP, which leaves
-    #         the upload steps below free to run
-    #    45m  this — the backstop, reachable only if both rungs above failed
+    #    35m  Playwright globalTimeout; stops itself and flushes reporters
+    #    45m  suite step timeout; ten minutes for shutdown/report flushing
+    #    60m  job backstop; fifteen more minutes for setup and uploads
     #
-    # The old unsharded ladder had drifted dangerously: it claimed "~30m healthy"
-    # from a measurement taken on 2026-08-12 and set `globalTimeout` to 45m, but
-    # by 2026-08-19 a healthy suite took 40m33s to 43m11s. That is under two
-    # minutes of headroom on a bad day — the innermost rung was one slow runner
-    # away from firing on a perfectly healthy suite. Sharding restores the
-    # margin, and deriving `globalTimeout` from the shard count is what stops it
-    # silently going stale again the next time this matrix changes size. It
-    # does NOT stop it going stale as the suite grows: the derivation's two
-    # inputs are measurements, and by September 2026 they were 41 and 4 against
-    # a real 58 and 5. Re-measure them whenever this matrix changes (the
-    # method is on the constants in playwright.config.ts).
-    timeout-minutes: 45
+    # Each rung must stay strictly above the one it contains. Source runs,
+    # sample limits and the seven-day zero-clock-ejection target are recorded
+    # in ci/ledger/261109-095000-browser-timeout-ladder.md. Re-measure when the
+    # suite grows, not only when the shard count changes.
+    timeout-minutes: 60
     env:
       # Belt and braces on where the server keeps data. Both Express legs now
       # name their OWN throwaway DORK_HOME in playwright.config.ts — port-keyed,
@@ -606,8 +594,8 @@ jobs:
       #
       # `timeout-minutes` here is the middle rung of the ladder described on the
       # job's own timeout (DOR-1110). It sits ABOVE playwright.config.ts's
-      # `globalTimeout` (25m per shard at six shards) so Playwright normally stops itself first
-      # and flushes its reporters, and BELOW the job's ceiling (45m) so that a
+      # `globalTimeout` (35m per shard at six shards) so Playwright normally stops itself first
+      # and flushes its reporters, and BELOW the job's ceiling (60m) so that a
       # Playwright which somehow hangs without honouring its own deadline fails
       # this STEP rather than cancelling the JOB — the difference being that a
       # failed step still lets the uploads below run, and a cancelled job does
@@ -652,7 +640,7 @@ jobs:
       # gate as an input.
       - name: Run the browser suite
         id: suite
-        timeout-minutes: 35
+        timeout-minutes: 45
         run: |
           set +e
           pnpm --filter @dorkos/e2e run e2e --shard=${{ matrix.shard }}/${{ strategy.job-total }}

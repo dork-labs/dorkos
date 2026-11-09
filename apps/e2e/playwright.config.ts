@@ -48,7 +48,7 @@ const CI = !!process.env.CI;
  * Defaults to 1, which is the truth everywhere else — a local run, or any CI
  * invocation that does not shard, really is running the whole suite. The cost of
  * that default being wrong is a loose deadline, never a tight one: a CI run that
- * DOES shard while forgetting this variable gets the unsharded 75-minute budget,
+ * DOES shard while forgetting this variable gets the unsharded 140-minute budget,
  * so a hung shard sits past its job ceiling and is cancelled without a report
  * instead of failing with one. That is the DOR-1110 failure mode, which is why
  * the workflow sets it from the same `shard:` list the `--shard` flag comes from
@@ -68,7 +68,7 @@ const SHARD_TOTAL = shardTotal();
 // The two measured numbers `globalTimeout` is derived from, and its multiplier.
 // The full argument — what was measured, on which runs, and why the deadline is
 // computed instead of typed in — is on `globalTimeout` below.
-const UNSHARDED_SUITE_MINUTES = 58;
+const UNSHARDED_SUITE_MINUTES = 79;
 const LEG_BOOT_MINUTES = 5;
 const GLOBAL_TIMEOUT_HEADROOM = 1.75;
 
@@ -404,27 +404,28 @@ export default defineConfig({
   // Re-measure both whenever the shard count changes: the deadline follows
   // the count, but only from inputs that are still true.
   //
-  // So a healthy shard is `boot + (suite − boot) / shards` — about 13m50s at
-  // six shards — and the deadline is 1.75× that, rounded up to the next five
-  // minutes: 25 minutes. The 1.75 is deliberately looser than the 1.5 the flat
-  // number was originally set at, because `--shard` then divided by TEST COUNT
-  // and not by duration. That turned out to matter: the count cut put every
-  // test-mode project on shard 3, which ran at 92% of this deadline in
-  // September 2026. The cut is now by measured duration
-  // (`reporters/balanced-shard-reporter.ts`); the multiplier is unchanged, and
-  // whether it can come down is a separate experiment.
+  // RE-MEASURED 2026-11-09 (DOR-4045). The suite is now about 79 minutes
+  // including boot. Keep the measured 5-minute boot allowance and 1.75x
+  // multiplier: at six shards, (5 + (79 - 5) / 6) * 1.75 = 30.33 minutes,
+  // rounded up to 35. The shard count stays at six under the 60-job pool cap.
+  //
+  // Cross-check against the latest 30 merge-group browser workflow runs,
+  // 42524426046..42594332134 (2026-11-08 21:17Z..11-09 09:33Z): 29 completed
+  // runs, including seven failures; one still running was excluded. Nearest-
+  // rank suite-step p95 by shard: 25.03 / 24.88 / 23.98 / 23.73 / 22.80 /
+  // 23.65 minutes. Several observations stop at the old 25-minute ceiling,
+  // so these are censored lower bounds, not healthy completion estimates.
+  // The new 35-minute deadline is about 40% above the largest observed p95;
+  // confirm zero clock ejections over seven days before calling it sufficient.
+  // Ledger: ci/ledger/261109-095000-browser-timeout-ladder.md.
   //
   // The ladder this sits in is on the job in .github/workflows/browser-test.yml:
-  // shard ~14m (healthy) → Playwright gives up at 25m → the step is killed at
-  // 35m → the job at 45m. Each rung above the one below it, and the FIRST rung
-  // to fire is the one that leaves output behind — when this one fires,
-  // Playwright stops the run itself, gracefully, through its own shutdown path,
-  // so every reporter still flushes: the HTML report, the JSON the gate job
-  // reads, and the `github` annotations. The job then fails on a non-zero exit
-  // WITH output, instead of vanishing.
-  //
-  // If this ever fires on a genuinely healthy suite, the fix is another shard,
-  // not a bigger multiplier.
+  // observed shard p95 <=25.03m (censored) -> Playwright gives up at 35m ->
+  // the step is killed at 45m -> the job at 60m. Playwright stops through its
+  // own shutdown path first so reporters can flush HTML, JSON and annotations.
+  // The step leaves ten minutes for that shutdown; the job leaves another
+  // fifteen for setup and uploads. Re-measure from failed as well as green
+  // queue runs when the suite grows, even if the shard count stays unchanged.
   //
   // Unset locally: a developer's machine has no job ceiling to lose a report
   // to, and a debugging session paused on a breakpoint must not be shot.
