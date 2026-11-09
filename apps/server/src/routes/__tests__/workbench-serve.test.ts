@@ -539,3 +539,24 @@ describe('POST /api/workbench/bridge — why a served page has no frame scripts 
     expect(res.status).toBe(400);
   });
 });
+
+describe('GET /api/workbench/serve never serves a protected file (DOR-4060)', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('refuses the data folder’s host.key in a served folder, and still serves a page', async () => {
+    // The served folder stands in for the data folder: a fixture with a dummy value.
+    vi.stubEnv('DORK_HOME', root);
+    await fs.writeFile(path.join(root, 'host.key'), 'TOKEN=dor-4060-dummy-canary');
+    const sign = await request(testServer)
+      .post('/api/workbench/sign')
+      .send({ kind: 'serve', cwd: root });
+    const servePath = sign.body.url.slice(sign.body.url.indexOf('/api/'));
+
+    const refused = await request(testServer).get(servePath.replace(/index\.html$/, 'host.key'));
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('PROTECTED_FILE');
+    expect(refused.text).not.toContain('dor-4060-dummy-canary');
+
+    expect((await request(testServer).get(servePath)).status).toBe(200);
+  });
+});

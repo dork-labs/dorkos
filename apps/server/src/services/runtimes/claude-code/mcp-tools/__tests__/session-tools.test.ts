@@ -2103,3 +2103,29 @@ describe('session_start refuses a protected folder (DOR-4060, QA row A)', () => 
     });
   });
 });
+
+describe('isProtectedLaunchFolder inside and around the data folder (DOR-4060)', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('refuses anything inside the data folder but an agent’s home or a managed workspace', () => {
+    vi.stubEnv('HOME', '/work/fixture-home');
+    vi.stubEnv('DORK_HOME', '/work/fixture-home/.dork');
+    const own = '/work/fixture-home/.dork/agents/scout';
+    for (const cwd of ['relay', 'mcp', 'browser', 'agents', 'workspaces', 'rooms/r1']) {
+      expect(isProtectedLaunchFolder(`/work/fixture-home/.dork/${cwd}`, own)).toBe(true);
+    }
+    expect(isProtectedLaunchFolder(own, own)).toBe(false);
+    expect(isProtectedLaunchFolder('/work/fixture-home/.dork/workspaces/repo/main', own)).toBe(
+      false
+    );
+  });
+
+  it('lets an agent work inside its own folder when the data folder sits in it, as in dev', () => {
+    vi.stubEnv('HOME', '/work/fixture-home');
+    vi.stubEnv('DORK_HOME', '/work/repo/apps/server/.temp/.dork');
+    expect(isProtectedLaunchFolder('/work/repo/apps/server', '/work/repo')).toBe(false);
+    expect(isProtectedLaunchFolder('/work/repo/apps/server', '/work/other')).toBe(true);
+    expect(isProtectedLaunchFolder('/work', '/work/repo')).toBe(true);
+    expect(isProtectedLaunchFolder('/work/repo/apps/server/.temp/.dork', '/work/repo')).toBe(true);
+  });
+});

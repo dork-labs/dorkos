@@ -34,11 +34,23 @@ export function registerRoomPreGateChecks(): void {
     return null;
   });
 
-  registerPreGateRefusal('rooms.read_canvas', (input) => {
+  registerPreGateRefusal('rooms.read_canvas', (input, caller) => {
     const roomId = field(input, 'roomId');
     const documentId = field(input, 'documentId');
     if (typeof roomId !== 'string' || typeof documentId !== 'string') return null;
-    const canvas = getRoomService().canvas;
+    if (caller.agentPath === undefined) return null;
+    const rooms = getRoomService();
+    // Only for a member: anyone else gets the handler's own not-found, which names no file.
+    const member = rooms.authorRegistry.agentRowsAt(caller.agentPath).some((author) => {
+      try {
+        rooms.requireMembership(roomId, author.id);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (!member) return null;
+    const canvas = rooms.canvas;
     const document = canvas.get(roomId, documentId);
     const source = document ? canvasSourcePath(document.content) : null;
     const tree = canvas.resolvedTreeOf(roomId, documentId);

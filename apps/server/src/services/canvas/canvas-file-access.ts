@@ -46,6 +46,19 @@ function localMediaSource(content: UiCanvasContent): string | null {
 }
 
 /**
+ * A browser or url document's address when it names a local file rather than a
+ * web page: a bare path, or a `file:` address.
+ *
+ * @param content - The content about to be written.
+ */
+function localBrowserSource(content: UiCanvasContent): string | null {
+  if (content.type !== 'browser' && content.type !== 'url') return null;
+  const url = content.url;
+  if (url.startsWith('file://')) return decodeURIComponent(new URL(url).pathname);
+  return url.length === 0 || /^[a-z][a-z0-9+.-]*:/i.test(url) ? null : url;
+}
+
+/**
  * Why a canvas command may not name its file, or `null` when it names none or
  * may. Asked before the command reaches any canvas, session or room.
  *
@@ -73,7 +86,8 @@ export function canvasContentRefusal(
   content: UiCanvasContent,
   cwd: string | undefined
 ): ProtectedFileRefusal | null {
-  const source = canvasSourcePath(content) ?? localMediaSource(content);
+  const source =
+    canvasSourcePath(content) ?? localMediaSource(content) ?? localBrowserSource(content);
   if (source === null) return null;
   // With no folder, only an absolute path names a file at all; check it from its own.
   const base = cwd ?? (path.isAbsolute(source) ? path.dirname(source) : undefined);

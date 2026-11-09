@@ -25,8 +25,11 @@ const GUARDED: Readonly<Record<string, string>> = {
 
 /** Where the turn stands, read once at launch. */
 export interface ProtectedFileHookTurn {
-  /** The DorkOS session the turn belongs to. */
-  sessionId: string;
+  /**
+   * The session id the tool server acts under, read at call time: a new
+   * session is rekeyed mid-first-turn, and the canvas follows the new id.
+   */
+  sessionId: () => string;
   /** The folder the turn stands in. */
   cwd: string;
   /** The agent's own home, when the turn is an agent's. */
@@ -48,7 +51,7 @@ export function createProtectedFileHook(turn: ProtectedFileHookTurn): HookCallba
     const id = name === null ? undefined : GUARDED[name];
     if (id === undefined) return {};
     const message = preGateMessage(id, hookInput.tool_input, {
-      sessionId: turn.sessionId,
+      sessionId: turn.sessionId(),
       cwd: turn.cwd,
       ...(turn.agentPath ? { agentPath: turn.agentPath } : {}),
     });

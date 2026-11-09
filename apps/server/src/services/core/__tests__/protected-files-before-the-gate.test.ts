@@ -194,6 +194,14 @@ describe('at Ask, a protected file is refused with no card', () => {
       'open_canvas csv',
       (src: string) => ({ action: 'open_canvas', content: { type: 'csv', src } }),
     ],
+    ['browser_navigate', (src: string) => ({ action: 'browser_navigate', url: src })],
+    [
+      'open_canvas url',
+      (src: string) => ({
+        action: 'open_canvas',
+        content: { type: 'url', url: `file://${path.join(agent, src)}` },
+      }),
+    ],
   ])('control_ui %s of a hard link in the agent’s own folder', async (_n, input) => {
     fs.linkSync(path.join(dork, 'host.key'), path.join(agent, 'hk-link.txt'));
     expectRefusedBeforeTheGate(
@@ -263,6 +271,28 @@ describe('at Ask, a protected file is refused with no card', () => {
   });
 });
 
+describe('read_canvas for a room the caller is not in', () => {
+  it('leaves the answer to the handler, which names no file', async () => {
+    const roomId = harness.service.createRoom(
+      { kind: 'channel', title: 'other', members: [], agentPaths: [] },
+      harness.human
+    ).id;
+    harness.service.canvas.apply({
+      roomId,
+      authorId: harness.human,
+      turnId: 't',
+      command: { action: 'open_file', sourcePath: 'notes.md' },
+      cwd: agent,
+    });
+    const [document] = harness.service.canvas.list(roomId);
+    fs.rmSync(path.join(agent, 'notes.md'));
+    fs.linkSync(path.join(dork, 'host.key'), path.join(agent, 'notes.md'));
+    const outcome = await invoke('rooms.read_canvas', { roomId, documentId: document!.id }, agent);
+    expect(outcome.error?.decision).toBeUndefined();
+    expect(JSON.stringify(outcome)).not.toMatch(/protected file|hard link/);
+  });
+});
+
 describe('session_start through the hand-registered gate, at Ask', () => {
   let ran: number;
   const startTool = (): SdkMcpTool => ({
@@ -300,7 +330,8 @@ describe('session_start through the hand-registered gate, at Ask', () => {
 });
 
 describe("Claude Code's PreToolUse hook answers first, so no card and no saved Always allow reach it", () => {
-  const hook = () => createProtectedFileHook({ sessionId: SESSION, cwd: agent, agentPath: agent });
+  const hook = () =>
+    createProtectedFileHook({ sessionId: () => SESSION, cwd: agent, agentPath: agent });
   const ask = (tool: string, input: Record<string, unknown>) =>
     hook()(
       {

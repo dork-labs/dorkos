@@ -277,9 +277,7 @@ describe('the audit read capabilities', () => {
     ).resolves.toMatchObject({ total: 1 });
   });
 
-  // QA row D (DOR-4060): an id is never a path, for any reader. Before this, an
-  // agent was refused only as TRANSCRIPT_PRIVATE, and the owner's read reached the
-  // runtime's path build with the id as given.
+  // QA row D (DOR-4060): a session id is a plain name, never a path, for every reader.
   it.each([
     '../../../../host.key',
     '../../host',

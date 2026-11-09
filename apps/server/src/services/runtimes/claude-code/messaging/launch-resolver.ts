@@ -841,7 +841,7 @@ export async function resolveLaunch(args: {
     PreToolUse: [
       // DorkOS's own tools and protected files (DOR-4060): refused before any card.
       protectedFileMatcher({
-        sessionId,
+        sessionId: () => session.sdkSessionId || sessionId,
         cwd: effectiveCwd,
         ...(turnAgentPath ? { agentPath: turnAgentPath } : {}),
       }),

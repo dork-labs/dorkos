@@ -152,9 +152,14 @@ export function isAnyAgentsFolder(
 
 /**
  * Whether a caller other than the person may not start a NEW chat in `cwd`
- * (DOR-4060): a folder on the protected-files list, DorkOS's data folder or the
- * home folder, or any folder above either, since every file tool trusts a
- * chat's own folder. The caller's own folder is the one exception, and never for a protected folder.
+ * (DOR-4060), since every file tool trusts a chat's own folder:
+ *
+ * - a folder on the protected-files list, always;
+ * - DorkOS's data folder, or anything inside it but an agent's home or a
+ *   managed workspace;
+ * - the home folder, or any folder above it or the data folder, unless it is
+ *   the caller's own folder or inside it (a dev data folder sits in its repo).
+ *
  * Every spelling is real-pathed, so a symlink to one of them is that folder.
  *
  * @param cwd - The folder the new chat would stand in.
@@ -165,8 +170,14 @@ export function isProtectedLaunchFolder(cwd: string, ownFolder?: string): boolea
   try {
     const roots = protectedPathRoots(target);
     if (isProtectedPath(target, 'read', roots)) return true;
-    if (ownFolder !== undefined && realOr(ownFolder) === target) return false;
-    return isWithin(target, realOr(roots.data)) || isWithin(target, realOr(roots.home));
+    const data = realOr(roots.data);
+    if (isWithin(data, target)) {
+      return !['agents', 'workspaces'].some(
+        (place) => isWithin(path.join(data, place), target) && target !== path.join(data, place)
+      );
+    }
+    if (!isWithin(target, data) && !isWithin(target, realOr(roots.home))) return false;
+    return ownFolder === undefined || !isWithin(realOr(ownFolder), target);
   } catch {
     // A folder that cannot be checked is not a folder to start in.
     return true;
