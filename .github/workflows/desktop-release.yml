@@ -62,6 +62,20 @@ name: Desktop Release
 # `workflow_dispatch` builds and verifies both apps without attaching or
 # publishing: off a tag (or with `dry_run`), the publish step rehearses (waits
 # for build-windows, then says what it would publish) and changes nothing.
+#
+# RELEASE SECRETS AND MAIN (DOR-4030). The signing and notarization secrets
+# live only in the `release` environment, which needs a person's approval and
+# deploys only `v*` tags; build-macos names it, build-windows needs none. The
+# first job, tag-is-on-main, refuses a commit that is not on main, and every
+# other job needs it. That check is a backstop, not the lock: a pushed tag runs
+# its own commit's copy of this file, so the environment's approval is what
+# keeps the secrets from an unreviewed commit.
+#
+# THE LANE TEST PATH. `workflow_dispatch` with `sign` off builds and verifies
+# an unsigned app from any ref, publishes nothing, and names no environment, so
+# it reads no release secret and waits for nobody. With `sign` on (the
+# default), a manual run is signed, needs the environment, and so runs only from
+# a `v*` tag.
 
 on:
   push:
@@ -73,6 +87,10 @@ on:
         description: 'Dry run (build but do not publish)'
         type: boolean
         default: false
+      sign:
+        description: 'Sign and notarize (off: an unsigned test build that publishes nothing, from any ref)'
+        type: boolean
+        default: true
 
 # Opt into Node 24 for every JavaScript-based action (checkout, setup-node,
 # upload-artifact, action-gh-release, etc.) ahead of GitHub's Sept 2026 hard
@@ -82,8 +100,43 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  # DOR-4030: nothing is signed or published from a commit that is not on main.
+  # Only the commit graph is fetched (tree:0), anonymously, so this job reads no
+  # secret and holds no token. An unsigned lane test build skips the check: it
+  # publishes nothing and reads no release secret.
+  tag-is-on-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Fail unless this commit is on main
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          UNSIGNED_TEST: ${{ github.event_name == 'workflow_dispatch' && !inputs.sign }}
+        run: |
+          set -euo pipefail
+          if [ "$UNSIGNED_TEST" = "true" ]; then
+            echo "Unsigned test build: it publishes nothing, so it may run from any commit."
+            exit 0
+          fi
+          git init -q "$RUNNER_TEMP/main-check"
+          git -C "$RUNNER_TEMP/main-check" remote add origin "$REPO_URL"
+          git -C "$RUNNER_TEMP/main-check" fetch -q --no-tags --filter=tree:0 origin \
+            "+refs/heads/main:refs/remotes/origin/main" "$GITHUB_SHA"
+          if ! git -C "$RUNNER_TEMP/main-check" merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::${GITHUB_SHA} (${GITHUB_REF}) is not on main. Releases are cut only from commits on main; nothing was signed or published."
+            exit 1
+          fi
+          echo "${GITHUB_SHA} is on main."
+
   build-macos:
+    needs: tag-is-on-main
     runs-on: macos-latest
+    # The signing secrets live only in the `release` environment (DOR-4030),
+    # which needs a person's approval and deploys only `v*` tags. An unsigned
+    # lane test build names no environment: an empty name means none.
+    environment: ${{ (github.event_name != 'workflow_dispatch' || inputs.sign) && 'release' || '' }}
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 9 completed
     # runs over 2026-08-22..09-14, p95 18.38 min, max 18.38. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
@@ -93,6 +146,10 @@ jobs:
       # The publish step reads this run's own jobs list to wait for
       # build-windows to finish.
       actions: read
+    env:
+      # 'true' on a tag push and on a manual run with `sign` on; 'false' on the
+      # unsigned lane test build, which signs, attaches and publishes nothing.
+      SIGN: ${{ github.event_name != 'workflow_dispatch' || inputs.sign }}
     steps:
       # The publish step's wait budget is measured from here: see its comment.
       - name: Record job start
@@ -132,8 +189,10 @@ jobs:
       - name: Rebuild native modules for Electron
         run: pnpm --filter @dorkos/desktop exec tsx scripts/rebuild-natives.ts
 
+      # Exactly one of these two package steps runs: signed only when this run
+      # signs and the Apple credentials are configured.
       - name: Package DMG (unsigned)
-        if: ${{ !vars.APPLE_DEVELOPER_CONFIGURED }}
+        if: ${{ env.SIGN != 'true' || vars.APPLE_DEVELOPER_CONFIGURED != 'true' }}
         run: |
           cd apps/desktop
           CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac --arm64 --config electron-builder.yml --publish never
@@ -141,7 +200,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Package DMG (signed + notarized)
-        if: ${{ vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
+        if: ${{ env.SIGN == 'true' && vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
         run: |
           cd apps/desktop
           npx electron-builder --mac --arm64 --config electron-builder.yml --publish never
@@ -159,8 +218,9 @@ jobs:
       # .dmg that fails it is never attached to the release.
       - name: Verify the macOS app bundle
         # spctl's Gatekeeper assessment only makes sense for a real Developer ID
-        # signature, so it is gated on the SAME repo variable that chooses the
-        # signed vs unsigned package step above (APPLE_DEVELOPER_CONFIGURED).
+        # signature, so it is gated on the SAME condition that chooses the
+        # signed vs unsigned package step above (SIGN and the repo variable
+        # APPLE_DEVELOPER_CONFIGURED).
         # codesign --verify runs unconditionally: electron-builder ad-hoc-signs
         # the arm64 app even when unsigned (arm64 binaries must carry at least an
         # ad-hoc signature to run), and --verify checks structural integrity, not
@@ -170,7 +230,7 @@ jobs:
         # notarization ticket, so this runner gives the same answer a clean one
         # would.
         env:
-          APPLE_DEVELOPER_CONFIGURED: ${{ vars.APPLE_DEVELOPER_CONFIGURED }}
+          SIGNED: ${{ env.SIGN == 'true' && vars.APPLE_DEVELOPER_CONFIGURED == 'true' }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -200,14 +260,14 @@ jobs:
             exit 1
           fi
 
-          if [ "${APPLE_DEVELOPER_CONFIGURED:-}" = "true" ]; then
+          if [ "${SIGNED:-}" = "true" ]; then
             echo "Signed build — asserting Gatekeeper acceptance…"
             if ! spctl --assess --type execute --verbose=4 "$app"; then
               echo "::error::spctl --assess rejected ${app}; a signed build must pass Gatekeeper." >&2
               exit 1
             fi
           else
-            echo "Unsigned build (APPLE_DEVELOPER_CONFIGURED != true) — skipping spctl Gatekeeper assessment."
+            echo "Unsigned build — skipping spctl Gatekeeper assessment."
           fi
           echo "macOS artifact verification passed."
 
@@ -247,7 +307,7 @@ jobs:
       # and falls back to a full download every time (confirmed in a real
       # user's log).
       - name: Attach macOS artifacts to the release
-        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run && env.SIGN == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -306,12 +366,12 @@ jobs:
       # --draft=false`) rather than re-running this job: a re-run repeats the
       # whole build and notarization.
       #
-      # Off a tag, or with dry_run, it does the wait and stops before changing
-      # anything, so a workflow_dispatch run rehearses the whole path.
+      # Off a tag, with dry_run, or unsigned, it does the wait and stops before
+      # changing anything, so a workflow_dispatch run rehearses the whole path.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PUBLISH: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.dry_run }}
+          PUBLISH: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.dry_run && env.SIGN == 'true' }}
         run: |
           set -euo pipefail
           jobs_api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs"
@@ -345,7 +405,7 @@ jobs:
 
           tag="${GITHUB_REF_NAME}"
           if [ "$PUBLISH" != "true" ]; then
-            echo "Rehearsal (not a tag push, or dry_run): would publish release '${tag}'. Changed nothing."
+            echo "Rehearsal (not a tag push, dry_run, or unsigned): would publish release '${tag}'. Changed nothing."
             exit 0
           fi
           if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -364,6 +424,7 @@ jobs:
     # are attached first; continue-on-error keeps a failure here from turning
     # the run red in a way that reads as a failed release.
     continue-on-error: true
+    needs: tag-is-on-main
     # build-macos's publish step finds this job by the name the jobs API
     # reports, which is this id while no `name:` is set. Keep it that way, or
     # change that lookup with it.
@@ -382,6 +443,10 @@ jobs:
     timeout-minutes: 39
     permissions:
       contents: write
+    env:
+      # As in build-macos: 'false' on the unsigned lane test build, which
+      # attaches nothing.
+      SIGN: ${{ github.event_name != 'workflow_dispatch' || inputs.sign }}
     steps:
       - uses: actions/checkout@v7
 
@@ -514,7 +579,7 @@ jobs:
       # installer. The .blockmap enables differential (delta) downloads for
       # NSIS auto-updates.
       - name: Attach Windows artifacts to the release
-        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run && env.SIGN == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -14,7 +14,39 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  # DOR-4030: no image is pushed from a commit that is not on main, and a
+  # manual run pushes only from main itself (any other ref is refused, not
+  # built). Only the commit graph is fetched (tree:0), anonymously, so this job
+  # reads no secret and holds no token. It is a backstop: a pushed tag runs its
+  # own commit's copy of this file, so the Docker Hub token's real lock is the
+  # `release` environment on mirror-docker-hub.
+  tag-is-on-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Fail unless this commit is on main
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::A manual run pushes images only from main, not ${GITHUB_REF}. Nothing was built or pushed."
+            exit 1
+          fi
+          git init -q "$RUNNER_TEMP/main-check"
+          git -C "$RUNNER_TEMP/main-check" remote add origin "$REPO_URL"
+          git -C "$RUNNER_TEMP/main-check" fetch -q --no-tags --filter=tree:0 origin \
+            "+refs/heads/main:refs/remotes/origin/main" "$GITHUB_SHA"
+          if ! git -C "$RUNNER_TEMP/main-check" merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::${GITHUB_SHA} (${GITHUB_REF}) is not on main. Images are published only from commits on main; nothing was pushed."
+            exit 1
+          fi
+          echo "${GITHUB_SHA} is on main."
+
   build-and-push:
+    needs: tag-is-on-main
     runs-on: ubuntu-latest
     # 75 = up to 30 minutes waiting for the just-published npm package to
     # become fetchable (scripts/wait-for-npm.sh, DOR-1606) plus the same 45
@@ -96,6 +128,7 @@ jobs:
   # `latest` tag: the version, and the commit for tracing. Signed with a build
   # attestation that is verified before the job passes.
   build-and-push-hub:
+    needs: tag-is-on-main
     runs-on: ubuntu-latest
     # Same build and the same npm wait as build-and-push above.
     timeout-minutes: 75
@@ -187,7 +220,9 @@ jobs:
   # simply skips it. To enable:
   #   1. Set repository variable DOCKERHUB_MIRROR = true
   #   2. Add secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (a Docker Hub access
-  #      token with write scope on the destination repo)
+  #      token with write scope on the destination repo) to the `release`
+  #      environment, never at repository level (the CI Steward goes red if
+  #      DOCKERHUB_TOKEN is ever at repository level)
   #   3. Optionally set repository variable DOCKERHUB_IMAGE to override the
   #      destination image (default: dorkai/dorkos)
   #
@@ -198,9 +233,13 @@ jobs:
   # docker/metadata-action against the Docker Hub image name. Designed for the
   # `v*` tag-push path, like build-and-push above.
   mirror-docker-hub:
-    needs: build-and-push
+    needs: [tag-is-on-main, build-and-push]
     if: vars.DOCKERHUB_MIRROR == 'true'
     runs-on: ubuntu-latest
+    # DOCKERHUB_TOKEN lives only in the `release` environment (DOR-4030), which
+    # needs a person's approval and deploys only `v*` tags, so a manual run
+    # from main stops here and pushes nothing to Docker Hub.
+    environment: release
     # A manifest copy normally finishes in under 2 minutes; this is headroom,
     # not an expected duration.
     timeout-minutes: 15

@@ -192,6 +192,20 @@ export const ConfigSchema = z
       })
       .strict(),
     data_ruleset_id: z.number().int().positive(),
+    /**
+     * The deployment environment that alone holds the release secrets
+     * (DOR-4030). The collector checks it daily: none of `secrets` is back at
+     * repository level, and the environment still needs a reviewer and still
+     * deploys only tags matching `tag_pattern`. Absent: nothing is checked.
+     */
+    release_environment: z
+      .object({
+        name: z.string().min(1),
+        tag_pattern: z.string().min(1),
+        secrets: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/, 'a secret name')).min(1),
+      })
+      .strict()
+      .optional(),
     hand_files: z
       .object({
         required_checks: RepoPath,

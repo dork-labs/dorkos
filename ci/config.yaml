@@ -33,6 +33,21 @@ github_repo: dork-labs/dorkos
 data_tag_prefix: ci-steward-data/
 data_tag_ruleset_id: 23705388
 
+# The release secrets live only in this deployment environment, which needs a
+# reviewer and deploys only `v*` tags (DOR-4030). The collector goes red when
+# one of these names is back at repository level, or the environment loses its
+# reviewer or its tag policy. It reads names and settings only, never values.
+release_environment:
+  name: release
+  tag_pattern: v*
+  secrets:
+    - CSC_LINK
+    - CSC_KEY_PASSWORD
+    - APPLE_ID
+    - APPLE_APP_SPECIFIC_PASSWORD
+    - HOMEBREW_TAP_TOKEN
+    - DOCKERHUB_TOKEN
+
 # The "main: merge queue" ruleset: the only source of required checks since
 # classic branch protection was deleted on 2026-09-19. `rules` names the rule
 # and setting gates recorded as `ruleset.<rule>` in ci/gates.yaml; the

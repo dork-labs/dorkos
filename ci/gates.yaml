@@ -121,6 +121,9 @@ gates:
     purpose: Restores the pnpm overrides block Dependabot drops from pnpm-lock.yaml, so its PRs can install at all.
 
   # --- desktop-release.yml ---
+  - id: wf.desktop-release.tag-is-on-main
+    source: .github/workflows/desktop-release.yml
+    purpose: Refuses to sign or publish the desktop apps from a commit that is not on main; an unsigned manual test build skips it.
   - id: wf.desktop-release.build-macos
     source: .github/workflows/desktop-release.yml
     purpose: Builds, signs and notarizes the macOS desktop app on a release tag, checks its signature and Gatekeeper, attaches it, and publishes the draft release.
@@ -177,6 +180,9 @@ gates:
     purpose: Fails a change to the seeded skill pack unless its version is strictly higher than the base branch's.
 
   # --- publish-docker.yml ---
+  - id: wf.publish-docker.tag-is-on-main
+    source: .github/workflows/publish-docker.yml
+    purpose: Refuses to push any image from a commit that is not on main, and refuses a manual run from any ref but main.
   - id: wf.publish-docker.build-and-push
     source: .github/workflows/publish-docker.yml
     purpose: Builds the multi-arch Docker image from the published npm package on a release tag and pushes it to GHCR.
@@ -188,6 +194,9 @@ gates:
     purpose: Mirrors the released image to Docker Hub when the mirror is switched on.
 
   # --- publish-community.yml ---
+  - id: wf.publish-community.tag-is-on-main
+    source: .github/workflows/publish-community.yml
+    purpose: Refuses to publish the Community image and manifest from a commit that is not on main.
   - id: wf.publish-community.build-and-publish
     source: .github/workflows/publish-community.yml
     purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
@@ -236,6 +245,9 @@ gates:
     purpose: Full-monorepo typecheck, plus the policy gates (retired words, boundary, the 500-line ratchet, NUL bytes, dead doc paths, one-shot browser routes) and the CI Steward census and ledger checks.
 
   # --- update-homebrew.yml ---
+  - id: wf.update-homebrew.tag-is-on-main
+    source: .github/workflows/update-homebrew.yml
+    purpose: Refuses to update the Homebrew tap for a commit that is not on main.
   - id: wf.update-homebrew.update-formula
     source: .github/workflows/update-homebrew.yml
     purpose: Updates the Homebrew formula to the newly released npm version.
