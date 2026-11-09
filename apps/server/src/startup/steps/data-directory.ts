@@ -10,6 +10,7 @@ import { resolveDorkHome } from '../../lib/dork-home.js';
 import { env } from '../../env.js';
 import { initLogger, logger } from '../../lib/logger.js';
 import path from 'path';
+import fs from 'node:fs/promises';
 import { acquireInstanceLock, isInstanceLockEnabled } from '../../lib/instance-lock.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import {
@@ -56,6 +57,34 @@ export async function claimDataDirectory(refs: ServerRefs, built: ClaimDataDirec
     process.exit(1);
   }
   refs.releaseInstanceLock = lock.release;
+
+  // Packaged builds need this protected target too, before any runtime launches.
+  // Never trust an existing link or another user's folder for executable guard state.
+  const shellGuardDir = path.join(dorkHome, 'cache', 'shell-guard');
+  try {
+    await fs.mkdir(shellGuardDir, { recursive: true, mode: 0o700 });
+    const stat = await fs.lstat(shellGuardDir);
+    if (!stat.isDirectory() || (process.getuid && stat.uid !== process.getuid()))
+      throw new Error('Expected a real directory owned by the server user.');
+    const expected = path.join(await fs.realpath(dorkHome), 'cache', 'shell-guard');
+    if ((await fs.realpath(shellGuardDir)) !== expected)
+      throw new Error(
+        'Expected shell-check folder inside the data directory, without linked parents.'
+      );
+    if (process.platform !== 'win32' && (stat.mode & 0o7777) !== 0o700) {
+      await fs.chmod(shellGuardDir, 0o700);
+      const tightened = await fs.lstat(shellGuardDir);
+      if (
+        !tightened.isDirectory() ||
+        tightened.uid !== stat.uid ||
+        (tightened.mode & 0o7777) !== 0o700
+      )
+        throw new Error('Expected directory permissions 0700.');
+    }
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(`Could not secure shell-check folder: ${shellGuardDir}: ${reason}`, { cause });
+  }
 
   // End the warm agent processes a previous run of THIS data directory left
   // behind (DOR-1310). Deliberately here: after the instance lock, so no live
