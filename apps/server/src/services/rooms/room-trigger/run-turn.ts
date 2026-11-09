@@ -15,6 +15,7 @@ import { logger } from '../../../lib/logger.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome, type TriggerTarget } from '../room-claims.js';
 import {
+  answersOutsideWords,
   answersUntrustedText,
   ceilingForEntries,
   isEntryAuthorExternal,
@@ -131,6 +132,10 @@ export async function runOneInDispatch(
       ...ceilingForEntries(self.deps.authors, answered, inSpaceRoom, room.id),
       ...(answersUntrustedText(self.deps.authors, answered, room.id)
         ? { untrustedText: true as const }
+        : {}),
+      // A mini app's post or forward counts here as a stranger's does (DOR-4023).
+      ...(answersOutsideWords(self.deps.authors, answered, room.id)
+        ? { outsideWords: true as const }
         : {}),
       // And whether any of them is a teammate's — a space member who is not
       // the owner — which takes away asking and every room but this one

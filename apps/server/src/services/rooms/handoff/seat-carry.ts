@@ -15,7 +15,7 @@ import {
   type TurnMarks,
 } from '../../core/turn-power/turn-marks.js';
 import { teammateOf } from '../limits/space-teammates.js';
-import { ceilingForEntries, isEntryAuthorExternal } from '../limits/turn-ceiling.js';
+import { answersOutsideWords, ceilingForEntries } from '../limits/turn-ceiling.js';
 import { STALE_POST_SHOWN_MAX } from '../messages/room-freshness.js';
 import type { AsideCarry } from '../room-trigger/aside.js';
 import type { RoomCore } from '../service/room-core.js';
@@ -52,9 +52,8 @@ export function withRoomMarks(
   );
   const teammate = carried.teammate ?? teammateOf(authors, read, inSpaceRoom, room.id).teammate;
   return {
-    externalAuthor:
-      carried.externalAuthor ||
-      read.some((entry) => isEntryAuthorExternal(authors, entry.authorId)),
+    // A mini app's post among them reaches the seat as a stranger's does (DOR-4023).
+    externalAuthor: carried.externalAuthor || answersOutsideWords(authors, read, room.id),
     ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
     ...(teammate ? { teammate: true } : {}),
     ...(carried.outsider ? { outsider: true } : {}),

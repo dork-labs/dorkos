@@ -16,6 +16,7 @@
  */
 import { marksOf, lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
 import { roomTurnReadOutsideWords } from '../../core/turn-power/outside-words.js';
+import { choseFullAutonomy, recordMarkedFullAction } from '../../core/turn-power/full-autonomy.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
   chatTurnSendersOf,
@@ -91,6 +92,33 @@ export const LIVE_TURN_GATE_SOURCES: TurnGateSources = {
   ],
   launchOrigin: (sessionId) => runtimeRegistry.getSessionLaunchOrigin(sessionId),
 };
+
+/**
+ * Write the one Activity line for a marked turn refused here in a chat set to Full autonomy
+ * (DOR-3412, DOR-4023): Full asks nobody, so the line is the person's only record of the attempt.
+ * Below Full, the refusal's own ledger row and audit line are the record. Never throws.
+ *
+ * @param caller - The calling session and agent, from the verified principal.
+ * @param action - The tool that was refused, by its capability id and title.
+ */
+export function noteMarkedTurnRefusal(
+  caller: { readonly sessionId?: string; readonly agentPath?: string },
+  action: { readonly id: string; readonly title: string }
+): void {
+  try {
+    if (!caller.sessionId || !choseFullAutonomy(caller.sessionId)) return;
+    recordMarkedFullAction({
+      actionId: action.id,
+      title: action.title,
+      refused: true,
+      marked: true,
+      sessionId: caller.sessionId,
+      ...(caller.agentPath ? { agentPath: caller.agentPath } : {}),
+    });
+  } catch {
+    // A missing line must never turn a refusal into a failed call.
+  }
+}
 
 /**
  * Decide whether the calling turn may change another agent's access. Any

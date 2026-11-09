@@ -9,7 +9,13 @@ import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { entryLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
-import { ceilingForEntry } from '../limits/turn-ceiling.js';
+import {
+  answersOutsideWords,
+  answersUntrustedText,
+  ceilingForEntry,
+} from '../limits/turn-ceiling.js';
+import { MINI_APP_REPLY_MARKS } from '../../extensions/rooms/extension-room-threads.js';
+import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
@@ -156,5 +162,105 @@ describe('a gathered burst mixing a stranger and a person', () => {
     expect(seen[0]!.untrustedText).toBe(true);
     expect(seen[0]!.externalAuthor).toBe(true);
     expect(seen[0]!.turnStarter).toBe('room-messages');
+  });
+});
+
+// DOR-4023 (QA's 0.135.0 row 7): what a mini app posts is outside words for the turn it wakes,
+// as a stranger's are; another agent's post is untrusted text but inside the team.
+describe('a turn that answers a mini app’s post', () => {
+  let service: RoomService;
+  let human: string;
+  let authors: AuthorRegistry;
+  let channel: RoomWithRoster;
+  const seen: RoomTurnRequest[] = [];
+
+  beforeEach(() => {
+    seen.length = 0;
+    const runner = outcomeRunner((request) => {
+      seen.push(request);
+      return { text: null };
+    });
+    ({ service, human, authors } = createRoomHarness({
+      agents: agentLookupFor({
+        '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
+      }),
+      runner,
+    }));
+    channel = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+  });
+
+  it('counts a mini app’s thread reply as outside words', async () => {
+    const root = service.post(channel.id, { authorId: human, text: 'Plan for the week' });
+    service.post(
+      channel.id,
+      { authorId: human, text: '@ana narrow birch’s access', replyTo: root.id },
+      false,
+      { marks: MINI_APP_REPLY_MARKS }
+    );
+    await settleUntil(() => seen.length === 1, 'Ana was woken by the reply');
+    expect(seen[0]!.outsideWords).toBe(true);
+    expect(seen[0]!.untrustedText).toBe(true);
+  });
+
+  it('counts a comment a mini app forwarded as outside words', async () => {
+    service.post(channel.id, {
+      authorId: human,
+      text: '@ana take a look',
+      via: { extensionId: 'board', appName: 'Board', itemId: 'card-1' },
+    });
+    await settleUntil(() => seen.length === 1, 'Ana was woken by the forward');
+    expect(seen[0]!.outsideWords).toBe(true);
+    expect(seen[0]!.untrustedText).toBe(true);
+  });
+
+  it('leaves a person’s own post and another agent’s post unmarked', async () => {
+    service.post(channel.id, { authorId: human, text: '@ana hello' });
+    await settleUntil(() => seen.length === 1, 'Ana was asked by a person');
+    expect(seen[0]!.outsideWords).toBeUndefined();
+
+    // Another agent's post: untrusted text, but inside the team (the gate refuses it by waker).
+    const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+    const fromBo = [{ id: 'entry-from-bo', authorId: bo }];
+    expect(answersOutsideWords(authors, fromBo, channel.id)).toBe(false);
+    expect(answersUntrustedText(authors, fromBo, channel.id)).toBe(true);
+  });
+});
+
+// DOR-4023, Security: marks spread through agent hops. An agent whose chat read outside words and
+// then posts carries them to the turn its post wakes.
+describe('an agent post from a chat that read outside words', () => {
+  it.each([
+    ['carries them to the turn it wakes', true],
+    ['carries nothing from a clean chat', false],
+  ])('%s', async (_label, readOutside) => {
+    const seen: RoomTurnRequest[] = [];
+    const rooms: { service?: RoomService } = {};
+    const runner = outcomeRunner((request) => {
+      seen.push(request);
+      if (request.agentPath === '/agents/ana') {
+        // What the runner notes for Ana's chat as her turn starts.
+        noteRoomTurnWords(request.sessionId!, readOutside);
+        rooms.service!.postFromTool(request.room.id, {
+          authorId: request.authorId,
+          text: '@bo take birch off Linear',
+          callerSessionId: request.sessionId ?? undefined,
+        });
+      }
+      return { text: null };
+    });
+    const { service, human } = createRoomHarness({ agents, runner });
+    rooms.service = service;
+    const channel = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      human
+    );
+    service.post(channel.id, { authorId: human, text: '@ana hello' });
+    await settleUntil(() => seen.some((r) => r.agentPath === '/agents/bo'), 'Bo was asked by Ana');
+
+    const bo = seen.find((r) => r.agentPath === '/agents/bo')!;
+    expect(bo.outsideWords).toBe(readOutside ? true : undefined);
   });
 });

@@ -19,6 +19,9 @@ import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { composeRegistry, type CapabilityRegistry } from '../../capabilities/index.js';
 import { MEMORY_OUTSIDER_HELD_MESSAGE, memoryDomain } from '../../../memory/memory-capabilities.js';
 import { noteChosenTurn, resetChosenTurns } from '../full-autonomy.js';
+import { noteRoomTurnWords } from '../outside-words.js';
+import { anotherAgentTurnRefusal } from '../../../connectors/access/turn-gate.js';
+import { liveOutsideTurnCheck } from '../../../session/local-browser/outside-turn.js';
 import { resetMemoryProvider } from '../../../memory/index.js';
 import {
   clearTestHomes,
@@ -227,5 +230,56 @@ describe('memory written in a turn that read an outsider’s words', () => {
     await boWrites({ action: 'add', text: 'a plain note' });
     expect(await lastNote()).toMatch(OPERATOR_STAMP);
     await turn.return(undefined);
+  });
+});
+
+// DOR-4023 (Security, Nov 8 20:41): an agent's room post that carries outside words wakes Bo's
+// room turn. `room-power-downstream.test.ts` proves the post hands Bo's turn `outsideWords`, and
+// `room-turn-runner.test.ts` that the runner notes it for Bo's chat. Here, each place that reads
+// that note stops Bo's turn.
+describe('a room turn that answered an agent post carrying outside words', () => {
+  let bo: string;
+
+  beforeEach(async () => {
+    bo = fresh('bo');
+    await run(seam({}).runtime, bo);
+    noteRoomTurnWords(bo, true);
+  });
+  afterEach(() => noteRoomTurnWords(bo, false));
+
+  it('cannot change another agent’s access (the narrowing gate)', () => {
+    expect(anotherAgentTurnRefusal({ sessionId: bo, agentPath: boPath })).toBe('GRANT_MARKED_TURN');
+  });
+
+  it('stamps what it saves to memory, and cannot rewrite a note (memory)', async () => {
+    await mkdir(path.join(boPath, '.dork'), { recursive: true });
+    await writeFile(
+      path.join(boPath, '.dork', 'MEMORY.md'),
+      '## Notes\n\n- deploys need the operator’s OK (noted in a direct chat, 2026-10-01)\n',
+      'utf8'
+    );
+    await boWrites({ action: 'add', text: 'birch can go' }, bo);
+    expect(await lastNote()).toMatch(OUTSIDER_STAMP);
+    const removed = await boWrites({ action: 'remove', old_text: 'deploys need' }, bo);
+    expect(removed).toMatchObject({ saved: false, code: 'outsider-held' });
+  });
+
+  it('cannot take over the shared browser (local browser)', async () => {
+    const check = liveOutsideTurnCheck({
+      agentPathOf: async () => boPath,
+      launchOriginOf: () => 'room',
+    });
+    await expect(check(bo)).resolves.toBe(true);
+  });
+
+  it('is stopped by none of them once its next turn reads nothing from outside', async () => {
+    noteRoomTurnWords(bo, false);
+    await boWrites({ action: 'add', text: 'a plain note' }, bo);
+    expect(await lastNote()).toMatch(OPERATOR_STAMP);
+    const check = liveOutsideTurnCheck({
+      agentPathOf: async () => boPath,
+      launchOriginOf: () => 'room',
+    });
+    await expect(check(bo)).resolves.toBe(false);
   });
 });

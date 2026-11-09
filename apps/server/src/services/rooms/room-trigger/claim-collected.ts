@@ -183,6 +183,8 @@ export function claimCollected(
       // The conversation each was written from, whose mode a person may have
       // set below the poster's own (DOR-3107).
       sessionId: held.entry.sessionId,
+      // A comment a mini app forwarded is outside words for the turn (DOR-4023).
+      ...(held.entry.body.via ? { body: { via: held.entry.body.via } } : {}),
     })),
   };
 

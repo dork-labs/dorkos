@@ -824,8 +824,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // thrown: a `SQLITE_BUSY` on this one bookkeeping row must never fail a
       // turn or escape `run` (see the late write below for why).
       let mintedRowAtLaunch = false;
-      // A stamp on what this turn saves, not a limit on what it does (`outside-words.ts`).
-      noteRoomTurnWords(sessionId, request.externalAuthor === true);
+      // A stamp, not a limit (`outside-words.ts`): a stranger's or a mini app's words (DOR-4023).
+      noteRoomTurnWords(sessionId, Boolean(request.externalAuthor || request.outsideWords));
       const recordSessionOwner = async (ownedId: string): Promise<boolean> => {
         try {
           return await runtimeRegistry.persistSessionRuntime(

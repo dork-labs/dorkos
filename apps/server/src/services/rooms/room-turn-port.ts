@@ -188,6 +188,14 @@ export interface RoomTurnRequest {
    */
   untrustedText?: true;
   /**
+   * Whether a message this turn answers came from outside the team (`answersOutsideWords`): a
+   * stranger on a bridged chat, a mini app's post, or a comment a mini app forwarded. The runner
+   * notes it for the chat (`outside-words.ts`), which a narrowing of another agent's access, a
+   * memory note and the shared browser read (DOR-4023). Another agent's post is not outside
+   * words: the gate refuses it by who woke the turn instead.
+   */
+  outsideWords?: true;
+  /**
    * Set when a message this turn answers is a TEAMMATE's: a space member who is
    * not this install's owner (DOR-2955, `limits/space-teammates.ts`). A record for
    * the space's monthly limit; it lowers nothing (`limits/teammate-turn.ts`).

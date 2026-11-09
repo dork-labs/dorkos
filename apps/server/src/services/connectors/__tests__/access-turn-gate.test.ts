@@ -4,7 +4,12 @@
  * every turn another agent started, and every turn it can't read.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { anotherAgentTurnRefusal, type TurnGateSources } from '../access/turn-gate.js';
+import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
+import {
+  anotherAgentTurnRefusal,
+  LIVE_TURN_GATE_SOURCES,
+  type TurnGateSources,
+} from '../access/turn-gate.js';
 
 const CLEAN: TurnGateSources = {
   hasTurnRecord: () => true,
@@ -130,5 +135,15 @@ describe('narrow_own_access only ever reaches the caller', () => {
     expect(narrow).toHaveBeenCalledTimes(1);
     expect(narrow.mock.calls[0]![0]).toMatchObject({ agentId: 'agent-a' });
     expect(narrow.mock.calls[0]![1]).toMatchObject({ targetAgentId: 'agent-a' });
+  });
+});
+
+// Security on DOR-4023 (Nov 8 20:08): the live source the gate reads, on both paths that set it.
+describe('the live gate source', () => {
+  it('reads a room turn that answered outside words as marked, and the next clean one as not', () => {
+    noteRoomTurnWords('session-live', true);
+    expect(LIVE_TURN_GATE_SOURCES.marked('session-live', undefined)).toBe(true);
+    noteRoomTurnWords('session-live', false);
+    expect(LIVE_TURN_GATE_SOURCES.marked('session-live', undefined)).toBe(false);
   });
 });

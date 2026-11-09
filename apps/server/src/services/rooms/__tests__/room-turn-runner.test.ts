@@ -16,6 +16,7 @@
  */
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { roomTurnReadOutsideWords } from '../../core/turn-power/outside-words.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { InterruptReceipt } from '@dorkos/shared/types';
@@ -2826,6 +2827,20 @@ describe('what power a room turn runs at (DOR-1917)', () => {
     await createSessionRoomTurnRunner().run(request());
 
     expect(triggered[0].permissionCeiling).toBeUndefined();
+  });
+
+  // DOR-4023: a mini app's words are noted for the chat as a stranger's are, so the gate on
+  // another agent's access, a memory note's stamp and the shared browser all read them.
+  it.each([
+    ['a mini app’s post', { outsideWords: true as const }, true],
+    ['a stranger’s message', { externalAuthor: true }, true],
+    ['a person’s own message', {}, false],
+  ])('notes %s as outside words for the chat', async (_label, extra, outside) => {
+    await createSessionRoomTurnRunner().run(
+      request({ sessionId: 'room-session-outside-words', ...extra })
+    );
+
+    expect(roomTurnReadOutsideWords('room-session-outside-words')).toBe(outside);
   });
 
   // A space member who is not the owner (DOR-2955): the turn runs like any other
