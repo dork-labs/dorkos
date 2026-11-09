@@ -109,6 +109,18 @@ describe('shell-check folder at startup', () => {
     expect((await fs.stat(outside)).mode & 0o777).toBe(0o755);
   });
 
+  it('refuses a linked cache parent outside the data directory', async () => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'shell-guard-outside-'));
+    try {
+      await fs.symlink(outside, path.join(home, 'cache'), 'dir');
+      await expect(boot()).rejects.toThrow(
+        `Could not secure shell-check folder: ${target}: Expected shell-check folder inside the data directory, without linked parents.`
+      );
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
   it.skipIf(!process.getuid)('refuses a foreign-owned folder', async () => {
     await fs.mkdir(target, { recursive: true, mode: 0o700 });
     const lstat = fs.lstat.bind(fs);

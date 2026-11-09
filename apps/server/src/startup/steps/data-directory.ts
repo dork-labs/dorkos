@@ -66,6 +66,11 @@ export async function claimDataDirectory(refs: ServerRefs, built: ClaimDataDirec
     const stat = await fs.lstat(shellGuardDir);
     if (!stat.isDirectory() || (process.getuid && stat.uid !== process.getuid()))
       throw new Error('Expected a real directory owned by the server user.');
+    const expected = path.join(await fs.realpath(dorkHome), 'cache', 'shell-guard');
+    if ((await fs.realpath(shellGuardDir)) !== expected)
+      throw new Error(
+        'Expected shell-check folder inside the data directory, without linked parents.'
+      );
     if (process.platform !== 'win32' && (stat.mode & 0o7777) !== 0o700) {
       await fs.chmod(shellGuardDir, 0o700);
       const tightened = await fs.lstat(shellGuardDir);
@@ -77,7 +82,8 @@ export async function claimDataDirectory(refs: ServerRefs, built: ClaimDataDirec
         throw new Error('Expected directory permissions 0700.');
     }
   } catch (cause) {
-    throw new Error(`Could not secure shell-check folder: ${shellGuardDir}`, { cause });
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(`Could not secure shell-check folder: ${shellGuardDir}: ${reason}`, { cause });
   }
 
   // End the warm agent processes a previous run of THIS data directory left
