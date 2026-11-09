@@ -8,6 +8,7 @@ const lists = {
   pattern: '^(apps/server/src/(http|services/tasks)/|\\.github/)',
   deepPattern: '^apps/server/src/services/tasks/',
   botUserId: '0',
+  labellerId: '1001',
 };
 const SENSITIVE = 'apps/server/src/http/gate.ts';
 const DEEP = 'apps/server/src/services/tasks/create-task.ts';
@@ -22,11 +23,17 @@ const group = {
   merge_group: { base_ref: 'refs/heads/main', base_sha: 'base', head_sha: 'group1' },
 };
 
+/** Security (whose id `lists.labellerId` names), an agent's machine account, or a bot. */
+const ACTORS = {
+  User: { login: 'security', id: 1001, type: 'User' },
+  Machine: { login: 'dorkos-agent', id: 2002, type: 'User' },
+  Bot: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+};
 const labelled = (at, name = 'security-reviewed', type = 'User') => ({
   event: 'labeled',
   label: { name },
   created_at: at,
-  actor: { login: 'someone', type },
+  actor: ACTORS[type],
 });
 const push = (at) => ({ after: SHA, ref: `refs/heads/${REF}`, timestamp: at });
 
@@ -147,7 +154,27 @@ describe('the base-copy verdict on a pull request', () => {
     const gh = fakeGitHub({ timeline: [labelled(LATE, 'security-reviewed', 'Bot')] });
     await verdictForPullRequest(gh.api, event, lists);
     assert.equal(verdictOf(gh.written).state, 'failure');
-    assert.match(verdictOf(gh.written).description, /not from a person/);
+    assert.match(verdictOf(gh.written).description, /label not applied by Security/);
+  });
+
+  test('a label a machine account added is failure', async () => {
+    const gh = fakeGitHub({ timeline: [labelled(LATE, 'security-reviewed', 'Machine')] });
+    await verdictForPullRequest(gh.api, event, lists);
+    assert.equal(verdictOf(gh.written).state, 'failure');
+    assert.match(verdictOf(gh.written).description, /label not applied by Security/);
+  });
+
+  test('an unset or invalid SECURITY_LABELLER_ID is failure, on the PR and in the queue', async () => {
+    for (const labellerId of [undefined, '', '0', 'abc']) {
+      const gh = fakeGitHub();
+      await verdictForPullRequest(gh.api, event, { ...lists, labellerId });
+      assert.equal(verdictOf(gh.written).state, 'failure', String(labellerId));
+      assert.match(verdictOf(gh.written).description, /label not applied by Security/);
+      const queue = fakeGitHub();
+      await verdictForMergeGroup(queue.api, group, { ...lists, labellerId });
+      assert.equal(verdictOf(queue.written).state, 'failure', String(labellerId));
+      assert.match(verdictOf(queue.written).description, /label not applied by Security/);
+    }
   });
 
   test('hold is failure, even with a fresh label', async () => {

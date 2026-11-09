@@ -9,7 +9,7 @@ import {
   githubApi,
   VERDICT_POLL,
 } from './security-gate.mjs';
-import { approvalMode, labelAtHead } from './security-label-at-head.mjs';
+import { approvalMode, labelAtHead, labellerIdOf } from './security-label-at-head.mjs';
 
 const pattern = '^apps/server/src/(http|services/tasks)/';
 const deepPattern = '^apps/server/src/services/tasks/';
@@ -26,11 +26,19 @@ const group = {
   merge_group: { base_ref: 'refs/heads/main', base_sha: 'base', head_sha: 'group1' },
 };
 
-const labelled = (at, type = 'User', name = 'security-reviewed') => ({
+/** The Security account's numeric id, as the SECURITY_LABELLER_ID repo variable holds it. */
+const SECURITY_ID = '1001';
+/** Who put a label on: Security, an agent's own machine account (also a User), or a bot. */
+const ACTORS = {
+  User: { login: 'security', id: 1001, type: 'User' },
+  Machine: { login: 'dorkos-agent', id: 2002, type: 'User' },
+  Bot: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+};
+const labelled = (at, who = 'User', name = 'security-reviewed') => ({
   event: 'labeled',
   label: { name },
   created_at: at,
-  actor: { login: 'someone', type },
+  actor: ACTORS[who],
 });
 const push = (at, after = SHA, ref = `refs/heads/${REF}`) => ({ after, ref, timestamp: at });
 const review = (state, at = VERDICT, extra = {}) => ({
@@ -106,10 +114,10 @@ const fastPoll = (onSleep = () => {}) => {
   };
   return poll;
 };
-const check = (api, botUserId = '0', poll = fastPoll()) =>
-  checkPullRequest(api, event, pattern, { botUserId, deepPattern, poll });
-const queued = (api, botUserId = '0') =>
-  checkMergeGroup(api, group, pattern, botUserId, deepPattern);
+const check = (api, botUserId = '0', poll = fastPoll(), labellerId = SECURITY_ID) =>
+  checkPullRequest(api, event, pattern, { botUserId, labellerId, deepPattern, poll });
+const queued = (api, botUserId = '0', labellerId = SECURITY_ID) =>
+  checkMergeGroup(api, group, pattern, botUserId, deepPattern, { labellerId });
 
 test('label then push fails: a new push voids the label', async () => {
   const api = gate({ timeline: [labelled(EARLY)], activity: [push(LATE)] });
@@ -191,6 +199,7 @@ test('a bot cannot label a PR through', () => {
     labels: [{ name: 'security-reviewed' }],
     timeline: [labelled(LATE, 'Bot')],
     activity: [push(EARLY)],
+    labellerId: SECURITY_ID,
   });
   assert.equal(verdict.passed, false);
 });
@@ -206,9 +215,10 @@ test('a bot cannot bring back a label a person removed', () => {
       labelled('2026-10-30T11:30:00Z', 'Bot'),
     ],
     activity: [push(EARLY)],
+    labellerId: SECURITY_ID,
   });
   assert.equal(verdict.passed, false);
-  assert.match(verdict.reason, /newest security-reviewed event is not from a person/);
+  assert.match(verdict.reason, /security-reviewed: label not applied by Security/);
 });
 
 test('the newest label event and the newest push decide', () => {
@@ -219,6 +229,7 @@ test('the newest label event and the newest push decide', () => {
       labels: [{ name: 'security-reviewed' }],
       timeline,
       activity,
+      labellerId: SECURITY_ID,
     }).passed;
   // Removed and added again after the push: covered, whatever order GitHub lists them in.
   assert.equal(run([labelled(LATE), labelled(EARLY)], [push(EARLY)]), true);
@@ -295,14 +306,14 @@ describe('security-deep-reviewed on a P0 identity path (#dorkos, 2026-11-02)', (
     );
   });
 
-  test('only a person can add it', async () => {
+  test('only Security can add it', async () => {
     const api = gate({
       files: [DEEP],
       labels: ['security-reviewed', DEEP_LABEL],
       timeline: [labelled(LATE), labelled(LATE, 'Bot', DEEP_LABEL)],
       activity: [push(EARLY)],
     });
-    await assert.rejects(check(api), /newest security-deep-reviewed event is not from a person/);
+    await assert.rejects(check(api), /security-deep-reviewed: label not applied by Security/);
   });
 
   test('the deep label never stands in for security-reviewed, and hold still wins', async () => {
@@ -342,11 +353,11 @@ describe('security-deep-reviewed on a P0 identity path (#dorkos, 2026-11-02)', (
   test('a missing P0 list refuses a sensitive diff rather than reading it as none', async () => {
     const api = gate({ files: [SENSITIVE], timeline: [labelled(LATE)], activity: [push(EARLY)] });
     await assert.rejects(
-      checkPullRequest(api, event, pattern, { botUserId: '0' }),
+      checkPullRequest(api, event, pattern, { botUserId: '0', labellerId: SECURITY_ID }),
       /deep-review path list missing/
     );
     await assert.rejects(
-      checkMergeGroup(api, group, pattern, '0'),
+      checkMergeGroup(api, group, pattern, '0', undefined, { labellerId: SECURITY_ID }),
       /deep-review path list missing/
     );
   });
@@ -365,7 +376,7 @@ describe('an unlabelled PR waits; anything wrong still fails (Security, step 4)'
 
   test('a label a bot added fails', async () => {
     const api = gate({ timeline: [labelled(LATE, 'Bot')], activity: [push(EARLY)] });
-    await assert.rejects(check(api), /not from a person/);
+    await assert.rejects(check(api), /label not applied by Security/);
   });
 
   test('hold fails, with or without the label', async () => {
@@ -452,7 +463,12 @@ describe("main's failure for any reason but a missing label still fails (Securit
       activity: [push(EARLY)],
     });
     await assert.rejects(
-      checkPullRequest(api, event, withGithub, { botUserId: '0', deepPattern, poll: fastPoll() }),
+      checkPullRequest(api, event, withGithub, {
+        botUserId: '0',
+        labellerId: SECURITY_ID,
+        deepPattern,
+        poll: fastPoll(),
+      }),
       /security-review is failure/
     );
   });
@@ -685,7 +701,12 @@ describe("DOR-3710 second look: other bases, newer pending, the event's time, on
     });
     const lagging = { pull_request: { ...event.pull_request, updated_at: '2026-10-30T11:30:00Z' } };
     assert.equal(
-      await checkPullRequest(api, lagging, pattern, { botUserId: '0', deepPattern, poll }),
+      await checkPullRequest(api, lagging, pattern, {
+        botUserId: '0',
+        labellerId: SECURITY_ID,
+        deepPattern,
+        poll,
+      }),
       'Security status verified'
     );
     assert.equal(api.statusReads, 3);
@@ -696,7 +717,12 @@ describe("DOR-3710 second look: other bases, newer pending, the event's time, on
       const api = gate(covered);
       const bare = { pull_request: { ...event.pull_request, updated_at } };
       await assert.rejects(
-        checkPullRequest(api, bare, pattern, { botUserId: '0', deepPattern, poll: fastPoll() }),
+        checkPullRequest(api, bare, pattern, {
+          botUserId: '0',
+          labellerId: SECURITY_ID,
+          deepPattern,
+          poll: fastPoll(),
+        }),
         /cannot read when head1's labels or push last changed/
       );
     }
@@ -720,5 +746,127 @@ describe("DOR-3710 second look: other bases, newer pending, the event's time, on
     });
     await assert.rejects(check(moving, '0', always), /base kept moving/);
     assert.equal(always.slept, 90_000);
+  });
+});
+
+describe('only the Security account can label (SECURITY_LABELLER_ID, Security 2026-11-08)', () => {
+  const NOT_SECURITY = /label not applied by Security/;
+  // Straight calls, so an unset id stays unset rather than taking a helper's default.
+  const checkAs = (api, labellerId, botUserId = '0') =>
+    checkPullRequest(api, event, pattern, { botUserId, labellerId, deepPattern, poll: fastPoll() });
+  const queuedAs = (api, labellerId, botUserId = '0') =>
+    checkMergeGroup(api, group, pattern, botUserId, deepPattern, { labellerId });
+
+  test('a label a machine account added fails, though it is a User', async () => {
+    const api = gate({ timeline: [labelled(LATE, 'Machine')], activity: [push(EARLY)] });
+    await assert.rejects(check(api), NOT_SECURITY);
+    await assert.rejects(queued(api), NOT_SECURITY);
+    const deep = gate({
+      files: [DEEP],
+      labels: ['security-reviewed', DEEP_LABEL],
+      timeline: [labelled(LATE), labelled(LATE, 'Machine', DEEP_LABEL)],
+      activity: [push(EARLY)],
+    });
+    await assert.rejects(check(deep), /security-deep-reviewed: label not applied by Security/);
+    await assert.rejects(queued(deep), /security-deep-reviewed: label not applied by Security/);
+  });
+
+  test('the id decides, never the login', async () => {
+    const lookalike = { ...labelled(LATE), actor: { login: 'security', id: 2002, type: 'User' } };
+    await assert.rejects(
+      check(gate({ timeline: [lookalike], activity: [push(EARLY)] })),
+      NOT_SECURITY
+    );
+    const noId = { ...labelled(LATE), actor: { login: 'security', type: 'User' } };
+    await assert.rejects(check(gate({ timeline: [noId], activity: [push(EARLY)] })), NOT_SECURITY);
+    const textId = { ...labelled(LATE), actor: { ...ACTORS.User, id: SECURITY_ID } };
+    await assert.rejects(
+      check(gate({ timeline: [textId], activity: [push(EARLY)] })),
+      NOT_SECURITY
+    );
+  });
+
+  test("Security's label at the head passes", async () => {
+    const api = gate({ timeline: [labelled(LATE)], activity: [push(EARLY)] });
+    assert.equal(await check(api), 'Security status verified');
+    assert.match(await queued(api), /Security status verified/);
+  });
+
+  test("Security's label older than the head fails", async () => {
+    const api = gate({ timeline: [labelled(EARLY)], activity: [push(LATE)] });
+    await assert.rejects(check(api), /older than the last push/);
+    await assert.rejects(queued(api), /older than the last push/);
+  });
+
+  test('removed and added again by another account fails: the newest labeled event decides', async () => {
+    const timeline = [
+      labelled(EARLY),
+      { event: 'unlabeled', label: { name: 'security-reviewed' }, created_at: LATE },
+      labelled('2026-10-30T11:30:00Z', 'Machine'),
+    ];
+    const api = gate({ timeline, activity: [push('2026-10-30T09:00:00Z')] });
+    await assert.rejects(check(api), NOT_SECURITY);
+    await assert.rejects(queued(api), NOT_SECURITY);
+    // In the same second, one event by anyone else is enough to refuse.
+    const tied = gate({
+      timeline: [labelled(LATE), labelled(LATE, 'Machine')],
+      activity: [push(EARLY)],
+    });
+    await assert.rejects(check(tied), NOT_SECURITY);
+  });
+
+  test('an unset, empty, 0 or non-numeric variable fails, with the label on', async () => {
+    for (const id of [
+      undefined,
+      null,
+      '',
+      '0',
+      0,
+      '-1',
+      '01',
+      '1001.0',
+      ' 1001',
+      'abc',
+      '1e3',
+      '99999999999999999999',
+    ]) {
+      const api = gate({ timeline: [labelled(LATE)], activity: [push(EARLY)] });
+      await assert.rejects(checkAs(api, id), NOT_SECURITY, String(id));
+      await assert.rejects(queuedAs(api, id), NOT_SECURITY, String(id));
+    }
+    assert.equal(labellerIdOf('1001'), 1001);
+    assert.equal(labellerIdOf(1001), 1001);
+    assert.ok(Number.isNaN(labellerIdOf('0')));
+  });
+
+  test('a timeline read that throws fails closed', async () => {
+    for (const run of [check, queued]) {
+      const api = gate({ timeline: [labelled(LATE)], activity: [push(EARLY)] });
+      api.timeline = async () => {
+        throw new Error('GitHub API 502 at /issues/1/timeline');
+      };
+      await assert.rejects(run(api), /502/);
+    }
+  });
+
+  test('App mode never reads the variable: its status passes with none set', async () => {
+    const botUserId = '424242';
+    const statuses = [
+      { context: 'security-review', state: 'success', creator: { id: Number(botUserId) } },
+    ];
+    const api = gate({ labels: [], statuses });
+    assert.equal(await checkAs(api, undefined, botUserId), 'Security status verified');
+    assert.match(await queuedAs(api, undefined, botUserId), /Security status verified/);
+  });
+
+  test('every workflow that runs the gate passes the repo variable', () => {
+    for (const name of ['security-gate.yml', 'security-review-initialize.yml']) {
+      const yaml = readFileSync(new URL(`../workflows/${name}`, import.meta.url), 'utf8');
+      const runs = yaml.match(/run: node \.github\/scripts\/security-(gate|verdict)\.mjs/g) ?? [];
+      const passes =
+        yaml.match(/SECURITY_LABELLER_ID: \$\{\{ vars\.SECURITY_LABELLER_ID \}\}/g) ?? [];
+      assert.ok(runs.length > 0, name);
+      assert.equal(passes.length, runs.length, name);
+    }
   });
 });

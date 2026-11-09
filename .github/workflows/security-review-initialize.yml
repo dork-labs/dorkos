@@ -63,6 +63,9 @@ jobs:
       - name: Write the verdict from main's code
         env:
           GH_TOKEN: ${{ github.token }}
+          # The Security account's numeric user id (repo variable). A Security label
+          # counts only when this account added it; unset or invalid refuses.
+          SECURITY_LABELLER_ID: ${{ vars.SECURITY_LABELLER_ID }}
         run: node .github/scripts/security-verdict.mjs
 
   merge-group:
@@ -91,4 +94,7 @@ jobs:
       - name: Write the queue verdict from trusted base code
         env:
           GH_TOKEN: ${{ github.token }}
+          # The Security account's numeric user id (repo variable). A Security label
+          # counts only when this account added it; unset or invalid refuses.
+          SECURITY_LABELLER_ID: ${{ vars.SECURITY_LABELLER_ID }}
         run: node .github/scripts/security-verdict.mjs

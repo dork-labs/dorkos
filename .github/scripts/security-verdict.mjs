@@ -16,7 +16,9 @@
  *   initializer always has);
  * - a security head in label-at-head mode: `success` when `security-reviewed`
  *   (and `security-deep-reviewed` on a P0 path) is newer than the last push,
- *   from a person, with no `hold`; otherwise `failure`, naming why;
+ *   its newest `labeled` event is from the account `SECURITY_LABELLER_ID`
+ *   names (by numeric id), and there is no `hold`; otherwise `failure`, naming
+ *   why. An unset or invalid variable fails every security head;
  * - in App mode: the initializer's `pending` only. The App writes the verdict.
  *
  * Until the Security App exists, any workflow file the PR adds, changes, renames
@@ -55,7 +57,11 @@ import {
   touchesSecurity,
   trustedBotUserId,
 } from './security-gate.mjs';
-import { approvalMode, labelAtHead, labelNewerThanHead } from './security-label-at-head.mjs';
+import {
+  approvalMode,
+  labelAtHead,
+  securityLabelNewerThanHead,
+} from './security-label-at-head.mjs';
 
 /** The one branch this gate judges PRs into. */
 const MAIN = 'main';
@@ -105,9 +111,10 @@ export function judgeFiles(files) {
  * @param {object} api The GitHub client.
  * @param {object} pr The PR, as `GET /pulls/{n}` returns it.
  * @param {object[]} files The PR's changed files.
- * @param {{pattern: string, deepPattern: string, botUserId: string}} lists Main's lists.
+ * @param {{pattern: string, deepPattern: string, botUserId: string, labellerId?: string}} lists
+ *   Main's lists, and the `SECURITY_LABELLER_ID` repo variable.
  */
-export async function headVerdict(api, pr, files, { pattern, deepPattern, botUserId }) {
+export async function headVerdict(api, pr, files, { pattern, deepPattern, botUserId, labellerId }) {
   if (!deepPattern) throw new Error('Security deep-review path list missing');
   const sha = pr.head.sha;
   const workflows = workflowFiles(files);
@@ -117,10 +124,10 @@ export async function headVerdict(api, pr, files, { pattern, deepPattern, botUse
   if (approvalMode(botUserId) !== 'label-at-head') return null;
   const timeline = await api.timeline(pr.number);
   const activity = await api.activity(pr.head.ref);
-  const input = { sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity };
+  const input = { sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity, labellerId };
   let verdict = labelAtHead(input);
   const deep = touchesSecurity(files, deepPattern) || workflows.length > 0 || judges.length > 0;
-  if (verdict.passed && deep) verdict = labelNewerThanHead({ ...input, name: DEEP_LABEL });
+  if (verdict.passed && deep) verdict = securityLabelNewerThanHead({ ...input, name: DEEP_LABEL });
   if (verdict.passed) return { state: 'success', description: 'Security label covers this SHA' };
   const notes = [];
   if (judges.length) notes.push(`${judges.join(', ')} judges this PR`);
@@ -208,7 +215,9 @@ export async function verdictForMergeGroup(api, event, lists) {
   let state = 'success';
   let description = 'Security label covers every queued PR';
   try {
-    await checkMergeGroup(api, event, lists.pattern, lists.botUserId, lists.deepPattern);
+    await checkMergeGroup(api, event, lists.pattern, lists.botUserId, lists.deepPattern, {
+      labellerId: lists.labellerId,
+    });
     for (const entry of groupMembers(await api.queue(group.base_ref), group)) {
       const { number, headRefOid } = entry.pullRequest;
       const pr = await api.pr(number);
@@ -243,7 +252,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.env.GH_TOKEN,
       process.env.GITHUB_API_URL
     );
-    const lists = trustedLists();
+    // The Security account's id is a repo variable, not a line in a file, so it
+    // comes from this workflow's env (`vars.SECURITY_LABELLER_ID`). On
+    // `pull_request_target` that env is main's copy of the workflow; a PR cannot
+    // set it. Unset or invalid refuses every Security label.
+    const lists = { ...trustedLists(), labellerId: process.env.SECURITY_LABELLER_ID };
     if (process.env.GITHUB_EVENT_NAME === 'pull_request_target') {
       console.log(await verdictForPullRequest(api, event, lists));
     } else if (process.env.GITHUB_EVENT_NAME === 'merge_group') {

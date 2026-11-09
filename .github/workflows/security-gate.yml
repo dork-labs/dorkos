@@ -24,7 +24,8 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # '0' means no App is set, so the gate runs label-at-head. A real numeric bot user ID
-  # means App mode. Anything else refuses.
+  # means App mode. Anything else refuses. This is the App route only; the label route's
+  # account is the repo variable SECURITY_LABELLER_ID, passed to the step below.
   SECURITY_APPROVAL_BOT_USER_ID: '0'
   # Security's list (#dorkos, 2026-10-22 04:56), widened for DOR-3640 (tasks, session
   # launch, agent identity, external MCP, session and task tools), and on 2026-11-02 for
@@ -69,4 +70,7 @@ jobs:
       - name: Check approval on each exact PR head
         env:
           GH_TOKEN: ${{ github.token }}
+          # The Security account's numeric user id. In label-at-head mode a Security
+          # label counts only when this account added it; unset or invalid refuses.
+          SECURITY_LABELLER_ID: ${{ vars.SECURITY_LABELLER_ID }}
         run: node .github/scripts/security-gate.mjs

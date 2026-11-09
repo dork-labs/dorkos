@@ -6,7 +6,7 @@ import {
   REVIEW_LABEL,
   approvalMode,
   labelAtHead,
-  labelNewerThanHead,
+  securityLabelNewerThanHead,
 } from './security-label-at-head.mjs';
 
 const CONTEXT = 'security-review';
@@ -176,7 +176,7 @@ export function verdictDue({ sha, ref, timeline, activity }, floor) {
  */
 async function judgeFreshReview(api, sha, input, deep, wait) {
   let verdict = labelAtHead(input);
-  if (verdict.passed && deep) verdict = labelNewerThanHead({ ...input, name: DEEP_LABEL });
+  if (verdict.passed && deep) verdict = securityLabelNewerThanHead({ ...input, name: DEEP_LABEL });
   if (!verdict.passed) return verdict;
   const due = verdictDue(input, wait.eventTime);
   if (Number.isNaN(due))
@@ -220,6 +220,8 @@ function labelAfterMerge(pr, timeline) {
  * `{ passed: true, waiting }`, and one into main whose labels cover it waits for
  * main's fresh verdict (`wait`, see {@link VERDICT_POLL}). A PR into any other base
  * gets no verdict to wait for and keeps the old lines; the merge queue never sets it.
+ * `labellerId` is the `SECURITY_LABELLER_ID` repo variable: in label-at-head mode a
+ * Security label counts only when that account added it. App mode never reads it.
  */
 async function verifyApproval(
   api,
@@ -227,7 +229,7 @@ async function verifyApproval(
   sha,
   review,
   sensitive,
-  botUserId,
+  { botUserId, labellerId },
   deep = false,
   waitForReview = false,
   wait = undefined
@@ -239,7 +241,7 @@ async function verifyApproval(
   const timeline = await api.timeline(number);
   const pr = await api.pr(number);
   const activity = await api.activity(pr.head.ref);
-  const input = { sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity };
+  const input = { sha, ref: pr.head.ref, labels: pr.labels ?? [], timeline, activity, labellerId };
   const late = labelAfterMerge(pr, timeline);
   if (late) return { passed: false, reason: late };
   const waiting = waitForReview && awaitingReview(pr, input, deep);
@@ -253,7 +255,7 @@ async function verifyApproval(
     return { passed: false, reason: `security-review is ${review.state}` };
   const verdict = labelAtHead(input);
   if (!verdict.passed || !deep) return verdict;
-  return labelNewerThanHead({ ...input, name: DEEP_LABEL });
+  return securityLabelNewerThanHead({ ...input, name: DEEP_LABEL });
 }
 
 /** Whether a diff touches a P0 identity path. No list refuses, never reads as none. */
@@ -311,8 +313,9 @@ const BASE_MOVE_RUNS = 3;
  * @param {object} api The GitHub client.
  * @param {object} event The `pull_request` or `pull_request_target` event.
  * @param {string} pattern The security path list.
- * @param {object} [options] `write`, `requireApproval`, `botUserId`, `deepPattern`, and
- *   `poll` to override {@link VERDICT_POLL}.
+ * @param {object} [options] `write`, `requireApproval`, `botUserId`, `labellerId` (the
+ *   `SECURITY_LABELLER_ID` repo variable), `deepPattern`, and `poll` to override
+ *   {@link VERDICT_POLL}.
  */
 export async function checkPullRequest(api, event, pattern, options = {}) {
   // One deadline for every run below, so restarts never stack their waits.
@@ -330,7 +333,7 @@ async function checkPullRequestOnce(
   api,
   event,
   pattern,
-  { write = false, requireApproval = true, botUserId, deepPattern, wait }
+  { write = false, requireApproval = true, botUserId, labellerId, deepPattern, wait }
 ) {
   const number = event.pull_request.number;
   const sha = event.pull_request.head.sha;
@@ -366,7 +369,7 @@ async function checkPullRequestOnce(
           sha,
           review,
           sensitive,
-          botUserId,
+          { botUserId, labellerId },
           sensitive && touchesDeep(files, deepPattern),
           true,
           wait
@@ -420,7 +423,7 @@ async function audit(api, number, sha, review, botUserId) {
   if (previous?.body.includes(marker)) return;
   const rule =
     approvalMode(botUserId) === 'label-at-head'
-      ? `No Security App is set: sensitive approvals require a security-reviewed label newer than the last push, with no hold label. A P0 identity path also needs ${DEEP_LABEL}, newer than the last push.`
+      ? `No Security App is set: sensitive approvals require a security-reviewed label added by the Security account, newer than the last push, with no hold label. A P0 identity path also needs ${DEEP_LABEL}, added the same way.`
       : 'Sensitive approvals require the configured Security App as status creator. The security-reviewed label is a human signal only.';
   await api.comment(
     number,
@@ -482,7 +485,7 @@ export async function checkMergeGroup(api, event, pattern, botUserId, deepPatter
           sha,
           review,
           sensitive,
-          botUserId,
+          { botUserId, labellerId: options.labellerId },
           sensitive && touchesDeep(files, deepPattern)
         );
     if (!verdict.passed)
@@ -605,6 +608,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       console.log(
         await checkPullRequest(api, event, process.env.SECURITY_PATH_PATTERN, {
           botUserId: process.env.SECURITY_APPROVAL_BOT_USER_ID,
+          labellerId: process.env.SECURITY_LABELLER_ID,
           deepPattern: process.env.SECURITY_DEEP_PATH_PATTERN,
         })
       );
@@ -619,7 +623,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           event,
           process.env.SECURITY_PATH_PATTERN,
           process.env.SECURITY_APPROVAL_BOT_USER_ID,
-          process.env.SECURITY_DEEP_PATH_PATTERN
+          process.env.SECURITY_DEEP_PATH_PATTERN,
+          { labellerId: process.env.SECURITY_LABELLER_ID }
         )
       );
     } else {
