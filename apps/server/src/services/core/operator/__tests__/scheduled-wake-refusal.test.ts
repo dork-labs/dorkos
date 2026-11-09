@@ -7,9 +7,12 @@ const REFUSAL =
   "DorkOS can't wake this computer for scheduled tasks yet. They only run while it's awake.";
 
 describe('scheduled waking guidance for an agent', () => {
-  it('gives the exact approved refusal and the existing keep-awake path', () => {
+  it('gives the approved refusal in place of "ask the person", and keeps the stake clause', () => {
     const message = describeOperatorOnlyRefusal(['keepAwake.wakeForScheduledTasks']);
-    expect(message).toBe(REFUSAL);
+    expect(message).toContain(REFUSAL);
+    expect(message).toContain('DorkOS changed nothing.');
+    expect(message).toContain(': keepAwake.wakeForScheduledTasks.');
+    expect(message).not.toContain('Ask the person to change them in DorkOS Settings.');
   });
 
   it('keeps guidance for the other settings in a mixed patch', () => {
