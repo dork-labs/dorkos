@@ -141,9 +141,9 @@ collect:
 # Deadlines that end a job before its own `timeout-minutes` does. `headroom`
 # (the SLO and trigger rule 8) reads each gate against the smaller of the two,
 # because that is the deadline that actually fires. A browser shard's
-# timeout-minutes is 45, the outermost rung of browser-test.yml's ladder, which
+# timeout-minutes is 60, the outermost rung of browser-test.yml's ladder, which
 # is built never to fire; Playwright's own globalTimeout stops the suite first
-# (25 minutes at six shards; it was 30 at three). Measured against 45, a
+# (35 minutes at six shards after DOR-4045). Historically, against 45, a
 # three-way shard at 29 minutes read as 65% used when it was 97%.
 #
 # Playwright's clock starts at the suite step, after checkout, install, the
@@ -168,7 +168,7 @@ collect:
 # regression.
 deadlines:
   - gate: wf.browser-test.browser-shard
-    minutes: 25
+    minutes: 35
     lead_minutes: 2.5
     source: apps/e2e/playwright.config.ts globalTimeout in CI, derived per shard from E2E_SHARD_TOTAL
 
