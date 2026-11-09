@@ -3,6 +3,7 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
+import { AgentRequestApprovalShowcase } from './AgentRequestApprovalShowcase';
 import { INSTALL_SUMMARY, UPDATE_SUMMARY } from './marketplace-summary-samples';
 
 /**
@@ -296,6 +297,14 @@ export function ApprovalCardShowcase() {
             }),
           ]}
         />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        One agent approving another’s request: who asked, with their avatar, and the app; the id
+        behind ⓘ
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <AgentRequestApprovalShowcase />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Who asked, and how long is left</ShowcaseLabel>

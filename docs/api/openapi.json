@@ -5113,7 +5113,8 @@
             "enum": [
               "agent",
               "task",
-              "room"
+              "room",
+              "agent_request"
             ]
           },
           "label": {

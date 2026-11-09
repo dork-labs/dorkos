@@ -294,6 +294,8 @@ const approveRequest = defineCapability({
   tier: 'act',
   area: 'permissions',
   approvalDisplayFields: ['requestId', 'connectionId'],
+  // The card names the agent that asked and the app, not the request's id.
+  approvalSubject: { field: 'requestId', kind: 'agent_request' },
   input: z
     .object({
       requestId: z

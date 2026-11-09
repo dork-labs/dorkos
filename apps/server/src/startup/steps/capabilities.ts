@@ -43,6 +43,7 @@ import {
   connectorRuntimeHeaders,
 } from '../../services/runtimes/connector-tools.js';
 import { connectorThreadKeys } from '../../services/connectors/principal/thread-keys.js';
+import { agentRequestSubjectName } from '../../services/connectors/access/approval-requests.js';
 import { isConnectorRuntimeCapabilityId } from '../../services/connectors/runtime-capability-scope.js';
 import { env } from '../../env.js';
 import { createDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-probe.js';
@@ -310,6 +311,11 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       if (!room) return undefined;
       return room.kind === 'channel' && room.slug ? `#${room.slug}` : room.title;
     },
+    // The agent that asked and the app, for one agent approving another's request.
+    agent_request: agentRequestSubjectName(db, (agentId) => {
+      const agent = refs.meshCore?.get(agentId);
+      return agent ? (agent.displayName ?? agent.name) : undefined;
+    }),
   });
   initCapabilityTierGate({
     approvals: approvalService,

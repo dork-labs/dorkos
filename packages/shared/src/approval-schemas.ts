@@ -64,11 +64,13 @@ export const APPROVAL_SUBJECT_LABEL_MAX_LENGTH = 60;
  * an id, which is the exact defect this field exists to fix.
  *
  * So adding one is two edits, not one: the name here AND its resolver at boot.
- * Rooms are wired (spec `agent-permissions`). A connected app's action is not a
- * subject kind: it needs the app, the account, the action and its arguments,
- * which {@link ApprovalServiceActionSchema} carries instead.
+ * Rooms are wired (spec `agent-permissions`). So is another agent's request for
+ * an app, which one agent can approve for another (spec `agent-grant-autonomy`):
+ * its label names the agent that asked and the app. A connected app's action is
+ * not a subject kind: it needs the app, the account, the action and its
+ * arguments, which {@link ApprovalServiceActionSchema} carries instead.
  */
-export const APPROVAL_SUBJECT_KINDS = ['agent', 'task', 'room'] as const;
+export const APPROVAL_SUBJECT_KINDS = ['agent', 'task', 'room', 'agent_request'] as const;
 
 /** What kind of thing an approval acts on. */
 export type ApprovalSubjectKind = (typeof APPROVAL_SUBJECT_KINDS)[number];
