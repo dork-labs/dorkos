@@ -6,6 +6,11 @@
  * @module services/core/operator/operator-only-refusal
  */
 import { OPERATOR_ONLY_STAKES } from './operator-only-stakes.js';
+import {
+  isScheduledWake,
+  personSettingGuidance,
+  SCHEDULED_WAKE_GUIDANCE,
+} from './person-setting-guidance.js';
 
 /**
  * The clause for a refused path with no stake on file. Deliberately says only
@@ -28,6 +33,7 @@ const OPERATOR_ONLY_FALLBACK_DESCRIPTION = 'Settings the person keeps for themse
  * @returns One paragraph written for the model.
  */
 export function describeOperatorOnlyRefusal(paths: readonly string[]): string {
+  if (paths.length > 0 && paths.every(isScheduledWake)) return SCHEDULED_WAKE_GUIDANCE;
   const remaining = new Set(paths);
   const clauses: string[] = [];
 
@@ -46,7 +52,7 @@ export function describeOperatorOnlyRefusal(paths: readonly string[]): string {
     'DorkOS changed nothing.',
     "These settings are the person's to choose, not yours.",
     ...clauses,
-    'Ask the person to change them in DorkOS Settings.',
+    personSettingGuidance(paths, 'Ask the person to change them in DorkOS Settings.'),
     'If your patch also had ordinary settings in it, send those again on their own and they will go through.',
   ].join(' ');
 }
