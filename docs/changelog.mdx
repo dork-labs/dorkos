@@ -5,6 +5,70 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.135.0] - 2026-11-08
+
+> DorkOS 0.135.0 gives your apps a home in the sidebar, lets an agent give up app access or take it from another agent, and shows each extension on one line in Settings. When one agent takes another's access away, you can Undo it in Needs you. This release changes the database, so read Going back before downgrading.
+
+### Note for people upgrading
+
+- This release changes the database. Read Going back below before downgrading.
+- The Add-ons section at the bottom of the sidebar is gone. Its apps are now under the new **Apps** door, and up to 5 of them, A to Z, start out pinned.
+- Below Full, Claude Code agents now ask before they read files outside their own folders. In runs nobody is watching, like scheduled tasks, heartbeats, to-dos and queued work, those reads are refused instead. (DOR-3300)
+- Claude Code now refuses a shell command too big or tangled to check, at every level, even Full. Split it into smaller commands. (DOR-3300)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+
+### Security
+
+The first six checks are for Claude Code agents. They read a command's text, so they stop a slip, not an agent set on getting past them. (DOR-3300)
+
+- Below Full, Claude Code asks before it reads a file outside its own folders, in every kind of turn. A link that points to an outside file asks too. At Never ask, and in runs nobody is watching, these reads are refused instead.
+- Below Full, a shell command that reaches a secret file asks first, also when it's chained after another command. At Never ask, and in runs nobody is watching, it's refused.
+- At every level, a shell command that plainly writes an agent's setup files is refused, and the attempt is recorded in the audit log. That includes paths written with wildcards.
+- A shell command too big or tangled to check is refused at every level, even Full.
+- If DorkOS can't start this check, shell commands stop at Full. Below Full, commands that name setup files are refused and others ask first. If phone notices are on, you get one there too.
+- If a restart doesn't bring the check back, you can choose, at the computer DorkOS runs on, to go on without it at Full. That choice ends when you restart, and it's recorded in the audit log.
+- On Claude Code, agents' file tools can't open the file that stores the MCP servers you added for every agent. This stops a slip, not a program set on reading it. (DOR-3826)
+- An MCP server you add for every agent must now have an address that starts with `https://` or `http://`. A secret written as `--token:value`, `"--token value"` or JSON in its arguments is now hidden wherever it's shown. (DOR-3826)
+
+### Added
+
+- **Your apps have a home.** The sidebar now has an **Apps** door, between Threads and Directory. It opens an Apps page with every app you have, a search box, and your pinned apps first. (DOR-3970)
+- Pin up to 5 apps to keep them right under the Apps door. A pinned app waiting for your OK keeps its place and shows a dot; on the Apps page it says "Needs your OK". Clicking it opens its card in the Inbox. An app that stopped working shows an alert, or "Not working" on the Apps page, and clicking it tries again. (DOR-3970)
+- Cmd+K finds every app, and offers "Open Apps" and each app's settings. (DOR-3970)
+- **An agent can give up access to an app it no longer needs.** It can lower its own access to Read, remove some actions, remove all of it, or leave itself out of an app shared with every agent. Only a person can give access back.
+- **An agent can take another agent's access to an app away, and you hear about it right away.** It has to say why in one line. It can do this at most 3 times an hour, and only in a turn a person started. It can't in a heartbeat, a scheduled run, a turn another agent started, or a turn DorkOS marks as having read words it can't vouch for. DorkOS doesn't yet notice when a turn reads an email or web page through a connected app, so these limits don't cover that case. An agent left out of an app can't use it directly, but it could still ask another agent to.
+- **Undo an agent's access change from Needs you.** When one agent takes another agent's access away, Needs you shows the reason in the words of the agent that made the change, beside its avatar, with **Undo** and **Keep the change**. Undo gives the access back and says so right there. If the access has changed since, it tells you it can't.
+- **Leave one agent out when you share an app with every agent.** That agent keeps only the access you gave it by name. If you share that app with every agent again later, it still doesn't reach that agent, and you can let it back in at any time. Only a person can do this, not an agent. For now it's done through the DorkOS API (`PUT` and `DELETE` on `/api/connectors/connections/{id}/exclusions/{agentId}`); the Connections page doesn't show it yet.
+
+### Changed
+
+- **Settings → Extensions shows each extension on one line**, with its name, what it's for, and its switch. Ones that need you sit on top with a short label, like "Needs your OK" or "Not working". The rest are A to Z and stay put when you switch one off. A search box helps in a long list, and an Off filter shows when something is off.
+- Click an extension's row to open it in place. An app with a page shows Open first. The one decision comes first, with the version, author, access and tools under Details.
+- An extension waiting for your OK shows **Review** instead of a switch, so turning it on always goes through the question first. An extension whose screens were paused after its files changed now says so, and shows what changed.
+- Extension authors can set a one-line `summary`, up to 80 characters, in `extension.json`. Without it, Settings shows the first sentence of the description.
+- When you add an MCP server for every agent, DorkOS warns you if its arguments look like they hold a secret, so you can use a hidden field instead. The warning never stops you adding it. A server can have at most 100 arguments, each up to 4,096 characters and 16,384 in all. (DOR-3826)
+- "Confirm it's you" for an MCP server now opens with what will happen, shows warnings in warning colour, and names each setting and header once. When an agent calls itself something other than its real name, you see both. (DOR-3826)
+- Forgetting a browser profile's sign-ins, or deleting a profile, now says plainly that it can't be undone before you confirm. (DOR-3966)
+- Groundwork: DorkOS Cloud can now carry a mini app's read-only access to an account you connected through your DorkOS account, and record each read under the mini app's name. Nothing changes yet; the app starts using it once DorkOS Cloud supports it. (DOR-3980)
+
+### Fixed
+
+- You can stop a task right after **Run now**, before its agent starts working.
+- When your extensions can't be loaded, Settings → Extensions says so and offers **Try again**, instead of saying none are installed.
+- Agents are now told that tools for all your agents live in the MCP servers tab on the Connections page, where only you can add, share or switch one off. (DOR-3213)
+
+### Going back
+
+0.135.0 adds two tables to the database, and 0.134.1 starts on it as it is. To go back, install 0.134.1.
+
+If you go back to 0.134 or earlier, every agent exclusion on a connection is lifted, whether you set it or an agent narrowed its own or another agent's access. Agents get back the access they had before.
+
+Access an agent lowered in other ways, to Read, to fewer actions or to none, stays lowered on 0.134.1, and there's no Undo for it there. To give it back, change that agent's access on the Connections page. The sidebar shows the Add-ons section again, and your pinned apps may not be kept.
+
+On 0.134.1, Needs you may not load if, while you were on 0.135.0, an agent took another agent's access away or DorkOS couldn't start its shell check. If that happens, restore the backup below.
+
+DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.134.1, it's named `dork-<date>-<time>-pre-20261108172402_connection_grant_exclusions.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.134.1. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
+
 ## [0.134.1] - 2026-11-08
 
 > DorkOS 0.134.1 gets Codex chats starting again for people signed in to Codex with ChatGPT, and shows your mini apps as soon as you sign in.
@@ -497,35 +561,4 @@ This release adds five tables and three columns to DorkOS's own database, and a 
 - A chat an extension starts, like one from a comment on an "Only you can do these" list, can still show cards at Full autonomy. That ends in the next release.
 - At Full autonomy, an agent that has read outside words and tries to loosen a permission is told no. Without outside words, and below Full, you get a card and you decide. In the next release it's refused at Full in every turn.
 
-## [0.127.0] - 2026-10-30
-
-> DorkOS 0.127.0 makes agents better teammates in a shared room, and keeps more of what agents change waiting for your OK.
-
-### Changed
-
-- In a channel, the first @name in a message, and any names right after it ("@ana @bo" or "@ana and @bo"), ask those agents to answer. A name later in the message is a copy: that agent takes no turn, and it sees the message the next time it reads the room. Copied names show as grey chips, and while you type the composer shows a line like "Asks @ana · cc @bo". Direct messages work as before.
-- An agent no longer posts over messages it hasn't read. If another member wrote in the room since the agent last looked, its message waits and the agent sees what's new first. It can then send the message as it was, change it, or say nothing.
-- In a channel, an agent waits until the room has been quiet for about 20 seconds before it answers. Several quick messages get one answer, not one per message. It never waits more than a minute from the first message. Direct messages are not delayed.
-- Agents in a room are now told four working rules. Speak only when asked or when you have something new, and react instead of repeating. Read the room again before you post. Name who does what, and by when. When you approve something, say exactly which version. These are instructions to the agent, not checks the app enforces.
-- Your agents can have at most 8 chats they started on their own running at once. That number is now a setting, `runtimes.maxAgentChats` (1 to 64), so a computer with room to spare can allow more: `dorkos config set runtimes.maxAgentChats 12`. When the limit is full, the message an agent gets names the setting. Only a person can change it, never an agent.
-- Your own messages from Wi-Fi now run at the agent's own permission level, not a stricter default. When you're signed in as the owner over Wi-Fi, a message, room post, answer or button press counts as yours, the same as at your computer. Anyone else on Wi-Fi is still held back, as before. From Wi-Fi you still can't raise an agent's permissions or change how DorkOS is reached. While Wi-Fi access is on, an agent below Full asks you first before an action in a connected app that can't be undone, like sending an email, and the card says why. You can't say yes to it from Wi-Fi. A chat set to Full autonomy never asks: its action waits 60 seconds that anyone else can cancel, as it does with Wi-Fi off.
-- If your company's network uses its own certificates, choose the certificate file in **Settings → Server → Network**, then restart. The Mac app adds that file's certificates to the ones it already trusts, and shows how many. It no longer reads `NODE_EXTRA_CA_CERTS` or `SSL_CERT_FILE` from your computer, and neither reaches your agents. Agents that run on Node get the file you chose instead.
-
-### Fixed
-
-- An agent set to Full autonomy keeps working after it reads something from outside your team, like a web page or an email. It can make a promise and edit agent files such as SOUL.md and HEARTBEAT.md, and in Claude Code chats it can check account usage. Each of these adds a line to Activity, and so does starting a chat. Changing permissions, rewriting NOPE.md or MEMORY.md, and showing keys DorkOS keeps for you stay blocked.
-- When you lower an agent's level, for example from Full autonomy to Ask first, its open chats follow right away.
-- At Full autonomy, an agent that has read outside words and then tries to loosen a permission, or change a setting only you may change, is now told no, and Activity records it. Before, you got a card.
-- When you let an installed package run commands automatically, your yes now covers the script files those commands name, not just the command. The card lists each file with a short fingerprint. If one of those files changes later, DorkOS asks you again. On the Full setting it doesn't ask, as before.
-- In Claude Code chats, changes an agent makes to a project's settings wait for your OK before they take effect. A change to the local settings file that isn't checked in, like new hooks or allowed commands, keeps that file from loading until you approve it. A change to the project's checked-in hooks, the scripts they run, or the hooks a subagent or skill sets keeps all of the project's own settings from loading in that worktree until you approve it. Your own settings and hooks still run. A newly added command that the checked-in settings allow without asking still asks first. If `.mcp.json` changes, only DorkOS's own MCP servers and the ones from the default branch start. When DorkOS can read the change, an approval card shows it to you, and Activity notes what changed. Approve a change once and it runs in every worktree that has it. A project DorkOS hasn't seen before waits for your yes once, and so does a default branch that changes its hooks; projects you already had are trusted as they were. Undo the change and things go back to normal on their own. A chat set to Full autonomy has none of these limits: the project's settings load as they are, no card appears, and Activity notes what would have waited.
-- In Claude Code chats, an agent's file tools can't change DorkOS's settings file, where your approvals are kept, at any permission level. Below Full, they also can't change the settings, MCP servers, agent file, skills, commands or subagents of any agent in DorkOS's data folder. A chat set to Full autonomy can change those agent files, and the Activity page notes it. Agents can still edit their own instructions, and skills in a project's own folders.
-- When an agent goes quiet for 10 minutes, DorkOS stops its turn. In Claude Code chats, that stop used to look like a person's: the chat showed "[Request interrupted by user]", and a tool that was running read as declined. Now the chat says "DorkOS stopped this turn after 10 minutes with no activity," and the agent's next turn is told that no person stopped it.
-- A connection paused until you confirm a setting no longer says "Stopped working" on the Connections page. It says "Paused", then the connection's own name, so two paused webhooks are easy to tell apart, with a Review button. In Needs you, its Confirm button is now full width and easy to tap on a phone.
-- On Linux and in Docker, a new file you open in the canvas no longer shows editing turned off just because a different file, saved earlier, used the same file number. This needs a system that records when each file was created, which most do. Edits to the same file, or to another name for it, still wait until that save is resolved.
-
-### Security
-
-- When a Claude account starts using a different sign-in, you get one note in your inbox and one line in Activity. Your agents keep working. Until you keep the new sign-in in Settings → Runtimes, DorkOS won't pick that account for you on its own.
-- Add a Never use list in Settings → Runtimes. Put a Claude account folder or an organization on it, and DorkOS won't run Claude there, even at Full. The list starts empty, and only you can change it.
-
-Older releases (v0.1.0 – v0.126.4) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.127.0) live in the [Changelog archive](/changelog-archive).
