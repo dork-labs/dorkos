@@ -9,14 +9,17 @@ name: queue-repeat-guard
 # pull request enqueues at once, so the rule bound nobody else: over
 # 2026-10-16..10-30, 7 of 85 failed-checks ejections were a third or later try
 # of an unchanged head, and each of those builds also took down every build
-# stacked behind it. `merge_group` is the one event every queue entry raises,
-# whoever queued it. The decision is scripts/queue-repeat-guard.sh (fixtures:
+# stacked behind it. Every queue entry runs changelog-fragment-check, whoever
+# queued it, so its finished run is the door (see WHY `workflow_run` below).
+# The decision is scripts/queue-repeat-guard.sh (fixtures:
 # scripts/test-queue-repeat-guard.sh), which reads the same jq rule merge-tail's
 # gate does. Ledger: ci/ledger/261030-221104-queue-repeat-guard.md.
 #
-# Not a required check, and it must stay GREEN whatever happens: a red run on
-# the merge-group commit would be listed among that build's failed checks, and
-# merge-tail's gate counts every failed check, required or not. So every
+# Not a required check, and it stays GREEN whatever happens: it used to run on
+# the merge-group commit, where a red run would be listed among that build's
+# failed checks and merge-tail's gate counts every failed check, required or
+# not. It now runs on main's commit, but a red run there would read as main
+# being broken, so the rule holds. So every
 # failure here is a `::warning::`, never an exit code. It acts only on proof:
 # unreadable answers or unknown history keep the entry in the queue.
 #
@@ -28,11 +31,25 @@ name: queue-repeat-guard
 #
 # WHOSE KEY: the `dorkos-merge-tail` GitHub App, as in merge-tail.yml. Its
 # pull-requests and contents write cover dequeueing, commenting and removing a
-# spent `requeue-ok` label; it has no Administration permission.
+# spent `requeue-ok` label; it has no Administration permission. The key lives
+# only in the `automation` environment, which deploys only `main` (DOR-4030).
+#
+# WHY `workflow_run`, NOT `merge_group` (DOR-4030): a `merge_group` run uses
+# the queue ref's copy of this file, which is the pull request's own copy, so
+# a pull request could rewrite this job while the App key was in reach. A
+# `workflow_run` run always uses main's copy, on main's ref, so it can enter
+# `automation`. It fires when changelog-fragment-check finishes on a queue
+# entry: a required check that takes seconds, so the entry is judged seconds
+# after it is queued, while the builds behind it have barely begun, which is
+# the window where taking it out still saves them. This job never checks out,
+# downloads or runs anything from the pull request or its queue run: only
+# main's tree, and the queue ref's name, validated before use. If the entry
+# has already left the queue by the time it runs, it does nothing.
 
 on:
-  merge_group:
-    types: [checks_requested]
+  workflow_run:
+    workflows: [changelog-fragment-check]
+    types: [completed]
 
 permissions:
   contents: read
@@ -42,20 +59,21 @@ env:
 
 jobs:
   door:
+    # Only a queue entry's run; the same workflow also runs on pull requests.
+    if: github.event.workflow_run.event == 'merge_group'
     runs-on: ubuntu-latest
+    environment: automation
     # Four GitHub reads and at most three writes; a minute is generous.
     timeout-minutes: 5
     # Every step is `continue-on-error`: a failed step still shows as failed in
-    # the log, but the job, and so the check run on the merge-group commit,
-    # stays green (see the header for why it must).
+    # the log, but the run stays green (see the header for why it must).
     steps:
-      # The queue's base, not this entry's own tree: the scripts below run with
-      # a write token, so they must not be the ones the pull request being
-      # judged could have edited. Same reason as security-gate.yml.
+      # Main's own tree, the default for `workflow_run`: no `ref:` from the
+      # triggering run, whose tree the pull request being judged could have
+      # edited. The scripts below run with a write token.
       - uses: actions/checkout@v7
         continue-on-error: true
         with:
-          ref: ${{ github.event.merge_group.base_sha }}
           persist-credentials: false
 
       - name: Mint the merge-tail app token
@@ -79,14 +97,19 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
-          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          # The queue ref the triggering run ran on, e.g.
+          # gh-readonly-queue/main/pr-123-<40 hex>. Through env, never `${{ }}`
+          # in the script, and validated before any use.
+          HEAD_REF: ${{ github.event.workflow_run.head_branch }}
         run: |
           # Not -e (GitHub's default shell sets it): every failure is handled.
           set +e -uo pipefail
           warn() { echo "::warning::queue-repeat-guard: $*"; exit 0; }
+          [[ $HEAD_REF =~ ^gh-readonly-queue/main/pr-[0-9]+-[0-9a-f]{40}$ ]] \
+            || warn "not a main queue ref; nothing to judge"
           [[ -n "$GH_TOKEN" ]] || warn "no app token; the rule is not enforced on this entry"
           [[ -f scripts/queue-repeat-guard.sh ]] \
-            || warn "the queue base has no scripts/queue-repeat-guard.sh; the rule is not enforced on this entry"
+            || warn "main has no scripts/queue-repeat-guard.sh; the rule is not enforced on this entry"
 
           pr=$(bash scripts/queue-repeat-guard.sh pr-from-ref "$HEAD_REF") \
             || warn "not a queue ref: $HEAD_REF"
@@ -136,6 +159,11 @@ jobs:
           head_sha=$(jq -r '.headRefOid // ""' "$work/meta.json")
 
           [[ "$verdict" == "DEQUEUE" ]] || exit 0
+          # This runs after the triggering run, so the entry may have left the
+          # queue since (merged, ejected, or taken out by hand): then there is
+          # nothing to take out, and no note to post.
+          queued=$(jq -r '.data.repository.pullRequest.mergeQueueEntry.state // ""' "$work/gql.json")
+          [[ -n "$queued" ]] || { echo "PR #$pr -> no longer in the queue; nothing to do"; exit 0; }
 
           tail -n +2 "$work/verdict.txt" > "$work/repeats.txt"
           node_id=$(jq -r '.data.repository.pullRequest.id // ""' "$work/gql.json")

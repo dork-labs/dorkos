@@ -12,8 +12,9 @@ on:
   #     actually lands. The formula steps re-run too; the commit step is
   #     idempotent, so an unchanged formula is a logged no-op.
   #
-  # `workflow_dispatch` works for manual runs started from a `v*` tag: the
-  # `release` environment deploys only those (DOR-4030).
+  # `workflow_dispatch` works only for manual runs started from a `v*` tag:
+  # the `release-publish` environment deploys nothing else, main included
+  # (DOR-4030).
   push:
     tags: ['v*']
   release:
@@ -35,7 +36,7 @@ jobs:
   # event GITHUB_SHA is the release tag's commit; on a manual run it is the
   # chosen ref's head. Only the commit graph is fetched (tree:0), anonymously,
   # so this job reads no secret and holds no token. It is a backstop: the tap
-  # token's real lock is the `release` environment on update-formula.
+  # token's real lock is the `release-publish` environment on update-formula.
   tag-is-on-main:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -60,12 +61,15 @@ jobs:
   update-formula:
     needs: tag-is-on-main
     runs-on: ubuntu-latest
-    # HOMEBREW_TAP_TOKEN lives only in the `release` environment (DOR-4030),
-    # which needs a person's approval and deploys only `v*` tags. A healthy
-    # release runs this job twice (tag push, then release published), so it
-    # asks for approval twice. A manual run must start from a `v*` tag, not
-    # from main.
-    environment: release
+    # HOMEBREW_TAP_TOKEN lives only in the `release-publish` environment
+    # (DOR-4030), which needs Dorian's approval and deploys only `v*` tags. A
+    # healthy release runs this job twice (tag push, then release published),
+    # so it asks for approval twice. A manual run must start from a `v*` tag.
+    environment: release-publish
+    # Read-only: the tap push uses HOMEBREW_TAP_TOKEN, and this token only
+    # reads this repository's releases for the cask step.
+    permissions:
+      contents: read
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 10 completed
     # runs over 2026-08-22..09-14, p95 30.38 min, max 30.38. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.

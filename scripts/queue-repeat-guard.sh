@@ -12,8 +12,9 @@
 # five times on one commit on 10-20, each try within a minute of the last
 # ejection). Every one of those builds was red, and so was each build stacked
 # behind it, because a merge-group build carries every pull request ahead of it.
-# .github/workflows/queue-repeat-guard.yml runs on `merge_group`, so it sees
-# every entry, and this script is the decision it makes.
+# .github/workflows/queue-repeat-guard.yml runs when every entry's
+# changelog-fragment-check finishes, so it sees every entry, and this script is
+# the decision it makes.
 #
 # The rule is the one merge-tail uses, read from the same jq definition
 # (`should-arm-automerge.sh --repeat-failure`), so the two cannot disagree about

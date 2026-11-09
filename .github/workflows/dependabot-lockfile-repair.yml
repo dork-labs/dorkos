@@ -75,7 +75,7 @@ name: dependabot-lockfile-repair
 #     safety control rather than a scoping convenience. Widen the actor gate
 #     and this bullet stops being true, flags unchanged.
 #
-#     That matters because THIS job holds the merge-tail app key; lint.yml's `pull_request` job
+#     That matters because THIS job can mint the merge-tail app key; lint.yml's `pull_request` job
 #     does run a real `pnpm install --frozen-lockfile` against the same
 #     untrusted lockfile, but only ever holds the secret-less, read-only
 #     Dependabot token — see above.
@@ -85,12 +85,23 @@ name: dependabot-lockfile-repair
 #     against a human-authored (and therefore adversarial-fork-capable) PR.
 #
 # WHY THE ACTOR GATE: `pull_request_target` fires for every PR touching
-# `pnpm-lock.yaml`, not just Dependabot's. Scoping to
-# `github.event.pull_request.user.login == 'dependabot[bot]'` keeps the
-# elevated-permission path exclusive to the one PR author this job trusts.
-# (`dependabot[bot]`'s login can't be spoofed by an external contributor.) It
-# is also what bounds where the resolver may go — see the `.npmrc`/`git+` note
-# in the bullet above before widening it.
+# `pnpm-lock.yaml`, not just Dependabot's. Scoping to Dependabot as both the
+# PR's author AND the event's sender keeps the elevated-permission path
+# exclusive to the one actor this job trusts; the author alone is not enough,
+# since anyone who can push to the branch raises the next `synchronize`
+# (DOR-4030). (`dependabot[bot]`'s login can't be spoofed by an external
+# contributor.) It is also what bounds where the resolver may go — see the
+# `.npmrc`/`git+` note in the bullet above before widening it.
+#
+# AND THE FILE GATE, before any checkout (DOR-4030): the PR may change only
+# package.json files and `pnpm-lock.yaml`. pnpm reads more than the manifests
+# from the checkout (`.npmrc`, `.pnpmfile.cjs`, `pnpm-workspace.yaml`, and the
+# `packageManager` field that picks the pnpm binary), so none of those may come
+# from the PR: the file gate keeps the first three as main has them,
+# `--ignore-pnpmfile` skips the hook file regardless, and pnpm's version is
+# pinned in this workflow, with a PR that changes `packageManager` refused.
+# The checkout keeps no credential, and the App token is minted only after
+# pnpm has exited, for the push alone.
 #
 # WHY THE MERGE-TAIL APP TOKEN, NOT `github.token`, FOR THE PUSH: this is
 # not a style choice, it changes whether the fix actually un-blocks the PR.
@@ -133,40 +144,83 @@ concurrency:
   group: dependabot-lockfile-repair-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+# Read-only for GITHUB_TOKEN: the one write, the push, uses the merge-tail
+# App token, minted only after pnpm has exited (DOR-4030).
 permissions:
-  contents: write
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   repair-lockfile:
-    # Elevated-permission gate: only Dependabot's own PRs reach a job that
-    # holds `contents: write` + the merge-tail app key under `pull_request_target`.
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    # Elevated-permission gate: only Dependabot's own PRs, pushed by
+    # Dependabot itself, reach a job that holds the merge-tail app key under
+    # `pull_request_target`. The author alone is not enough (DOR-4030): anyone
+    # who can push to the branch would otherwise run here as "Dependabot's PR".
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.sender.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    # The App key lives only in the `automation` environment (DOR-4030), which
+    # deploys only `main`. A `pull_request_target` run runs on the base branch,
+    # so its ref is main.
+    environment: automation
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # the changed-file list, before anything is checked out
     steps:
-      # Fails the job when the app key is missing, which is the point: see
-      # the header on why a GITHUB_TOKEN push would look like a fix and isn't.
-      - name: Mint the merge-tail app token
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          # The client id is a secret, not a variable, on purpose: repo secrets
-          # are proven to reach Dependabot's pull_request_target runs; vars.* there is not.
-          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
-          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+      # Before any checkout (DOR-4030): every file the PR changes must be a
+      # package.json or the lockfile. Those are the only files Dependabot's npm
+      # updates write, so an `.npmrc`, `.pnpmfile.cjs`, `pnpm-workspace.yaml`
+      # or anything else from the PR never reaches the runner. GitHub lists up
+      # to 3,000 files; a longer list is refused.
+      - name: Refuse unless the PR changes only package.json files and the lockfile
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          files="$RUNNER_TEMP/changed-files.txt"
+          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' > "$files"
+          count=$(wc -l < "$files" | tr -d ' ')
+          if [ "$count" -eq 0 ] || [ "$count" -ge 3000 ]; then
+            echo "::error::PR #$PR lists $count changed files; refusing to repair it."
+            exit 1
+          fi
+          if bad=$(grep -vxE '(.+/)?package\.json|pnpm-lock\.yaml' "$files"); then
+            echo "::error::PR #$PR changes files other than package.json and pnpm-lock.yaml; refusing to run pnpm on it:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "PR #$PR changes only package.json files and pnpm-lock.yaml ($count files)."
 
-      # Check out the PR's exact head commit (a SHA, not the floating
-      # branch) with the app token so the later push is pre-authenticated.
+      # Check out the PR's exact head commit (a SHA, not the floating branch),
+      # with no credential left in .git/config while pnpm runs (DOR-4030).
       # Nothing from this checkout is ever executed; see the header comment.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
 
+      # Pinned here, not read from the PR's package.json `packageManager`
+      # (DOR-4030): the PR must not choose which pnpm runs. The step after
+      # refuses a PR that changes it.
       - uses: pnpm/action-setup@v6
+        with:
+          version: 10.28.2
+
+      - name: Refuse a PR that changes the pinned pnpm
+        run: |
+          set -euo pipefail
+          want="pnpm@10.28.2"
+          got=$(jq -r '.packageManager // ""' package.json)
+          if [ "$got" != "$want" ]; then
+            echo "::error::package.json asks for '${got}', not ${want}; refusing to run pnpm on it. Update the pin in this workflow on main first."
+            exit 1
+          fi
 
       - uses: actions/setup-node@v7.1.0
         with:
@@ -182,22 +236,20 @@ jobs:
       # that holds the merge-tail app key. Read the threat-model section of the header
       # before touching this line. `--no-frozen-lockfile` is required because
       # pnpm freezes by default under CI, and a frozen lockfile is precisely the
-      # thing being repaired.
+      # thing being repaired. `--ignore-pnpmfile` (DOR-4030): no `.pnpmfile.cjs`
+      # hook runs, whatever the checkout holds.
       - name: Restore pnpm config in pnpm-lock.yaml
-        run: pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts
+        run: pnpm install --lockfile-only --no-frozen-lockfile --ignore-scripts --ignore-pnpmfile
 
-      - name: Commit and push if changed
-        env:
-          # Routed through an env var rather than interpolated directly into
-          # the script (actionlint flags the direct form): a branch name is
-          # PR-author-influenced text and, unquoted in an inline expression,
-          # is a script-injection vector. `head.ref` is trustworthy here
-          # (Dependabot branch names, and this job already gates on
-          # `dependabot[bot]` authorship) but the indirection costs nothing.
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      # pnpm has exited. Commit locally first; the App token is minted only
+      # if there is something to push.
+      - name: Commit if changed
+        id: commit
         run: |
+          set -euo pipefail
           if git diff --quiet -- pnpm-lock.yaml; then
             echo "pnpm-lock.yaml already carries its pnpm config — nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -209,6 +261,43 @@ jobs:
           git commit \
             -m "chore: repair pnpm-lock.yaml for Dependabot" \
             -m "Dependabot cannot speak pnpm: it drops the root package.json's pnpm.overrides block from the lockfile, after which every job dies at pnpm install --frozen-lockfile with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH (DOR-1644). Repaired automatically by .github/workflows/dependabot-lockfile-repair.yml."
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # Fails the job when the app key is missing, which is the point: see
+      # the header on why a GITHUB_TOKEN push would look like a fix and isn't.
+      # Minted only now, after pnpm has exited (DOR-4030), and scoped to the
+      # one permission the push needs.
+      - name: Mint the merge-tail app token
+        if: steps.commit.outputs.changed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          # The client id is a secret, not a variable, on purpose: repo secrets
+          # are proven to reach Dependabot's pull_request_target runs; vars.* there is not.
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Push the repair
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          # Routed through an env var rather than interpolated directly into
+          # the script (actionlint flags the direct form): a branch name is
+          # PR-author-influenced text and, unquoted in an inline expression,
+          # is a script-injection vector. `head.ref` is trustworthy here
+          # (Dependabot branch names, and this job already gates on
+          # `dependabot[bot]` authorship) but the indirection costs nothing.
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # The token reaches git for this one push as an HTTP header in the
+          # environment, never in .git/config or a remote URL.
+          auth=$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::$auth"
           # Push to the PR's actual branch name, not the detached HEAD this
           # job checked out (see the checkout step: we checked out a SHA).
-          git push origin "HEAD:${HEAD_REF}"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+            git push origin "HEAD:${HEAD_REF}"

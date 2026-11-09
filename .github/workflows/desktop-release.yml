@@ -64,18 +64,20 @@ name: Desktop Release
 # for build-windows, then says what it would publish) and changes nothing.
 #
 # RELEASE SECRETS AND MAIN (DOR-4030). The signing and notarization secrets
-# live only in the `release` environment, which needs a person's approval and
-# deploys only `v*` tags; build-macos names it, build-windows needs none. The
-# first job, tag-is-on-main, refuses a commit that is not on main, and every
-# other job needs it. That check is a backstop, not the lock: a pushed tag runs
-# its own commit's copy of this file, so the environment's approval is what
-# keeps the secrets from an unreviewed commit.
+# live only in the `release` environment, which needs Dorian's approval and
+# deploys only `v*` tags and `release/*` branches; build-macos names it,
+# build-windows needs none. The first job, tag-is-on-main, refuses a tag on a
+# commit that is not on main, and every other job needs it. That check is a
+# backstop, not the lock: a pushed tag runs its own commit's copy of this file,
+# so the environment's approval is what keeps the secrets from an unreviewed
+# commit.
 #
-# THE LANE TEST PATH. `workflow_dispatch` with `sign` off builds and verifies
-# an unsigned app from any ref, publishes nothing, and names no environment, so
-# it reads no release secret and waits for nobody. With `sign` on (the
-# default), a manual run is signed, needs the environment, and so runs only from
-# a `v*` tag.
+# WHO SIGNS (Security, Nov 9). Only a run on a `v*` tag or a `release/*` branch
+# signs, and so names `release`; every other run builds unsigned, names no
+# environment and reads no release secret. The `sign` input can only turn
+# signing OFF. Only a tag run attaches or publishes, so a `release/*` run is a
+# signed rehearsal (Dorian still approves it) and a lane branch run is an
+# unsigned test build that publishes nothing and waits for nobody.
 
 on:
   push:
@@ -88,7 +90,7 @@ on:
         type: boolean
         default: false
       sign:
-        description: 'Sign and notarize (off: an unsigned test build that publishes nothing, from any ref)'
+        description: 'Sign and notarize; only a v* tag or release/* branch can (off: an unsigned build that publishes nothing)'
         type: boolean
         default: true
 
@@ -100,10 +102,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  # DOR-4030: nothing is signed or published from a commit that is not on main.
+  # DOR-4030: nothing is published from a tag on a commit that is not on main.
   # Only the commit graph is fetched (tree:0), anonymously, so this job reads no
-  # secret and holds no token. An unsigned lane test build skips the check: it
-  # publishes nothing and reads no release secret.
+  # secret and holds no token. A run that is not on a tag skips the check: only
+  # tag runs attach or publish (see "WHO SIGNS" above).
   tag-is-on-main:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -113,11 +115,10 @@ jobs:
       - name: Fail unless this commit is on main
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
-          UNSIGNED_TEST: ${{ github.event_name == 'workflow_dispatch' && !inputs.sign }}
         run: |
           set -euo pipefail
-          if [ "$UNSIGNED_TEST" = "true" ]; then
-            echo "Unsigned test build: it publishes nothing, so it may run from any commit."
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "Not a tag run (${GITHUB_REF}): it attaches and publishes nothing, so the check does not apply."
             exit 0
           fi
           git init -q "$RUNNER_TEMP/main-check"
@@ -133,10 +134,10 @@ jobs:
   build-macos:
     needs: tag-is-on-main
     runs-on: macos-latest
-    # The signing secrets live only in the `release` environment (DOR-4030),
-    # which needs a person's approval and deploys only `v*` tags. An unsigned
-    # lane test build names no environment: an empty name means none.
-    environment: ${{ (github.event_name != 'workflow_dispatch' || inputs.sign) && 'release' || '' }}
+    # The signing secrets live only in the `release` environment (DOR-4030).
+    # The same condition as SIGN below: an unsigned run names no environment
+    # (an empty name means none), so it never asks to enter `release`.
+    environment: ${{ ((startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/')) && (github.event_name != 'workflow_dispatch' || inputs.sign)) && 'release' || '' }}
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 9 completed
     # runs over 2026-08-22..09-14, p95 18.38 min, max 18.38. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
@@ -147,9 +148,9 @@ jobs:
       # build-windows to finish.
       actions: read
     env:
-      # 'true' on a tag push and on a manual run with `sign` on; 'false' on the
-      # unsigned lane test build, which signs, attaches and publishes nothing.
-      SIGN: ${{ github.event_name != 'workflow_dispatch' || inputs.sign }}
+      # 'true' only on a `v*` tag or a `release/*` branch, unless a manual run
+      # turned `sign` off. 'false' signs, attaches and publishes nothing.
+      SIGN: ${{ (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/')) && (github.event_name != 'workflow_dispatch' || inputs.sign) }}
     steps:
       # The publish step's wait budget is measured from here: see its comment.
       - name: Record job start
@@ -444,9 +445,9 @@ jobs:
     permissions:
       contents: write
     env:
-      # As in build-macos: 'false' on the unsigned lane test build, which
-      # attaches nothing.
-      SIGN: ${{ github.event_name != 'workflow_dispatch' || inputs.sign }}
+      # The same as build-macos's SIGN: 'false' attaches nothing. Windows is
+      # never signed; this only decides whether the run may attach.
+      SIGN: ${{ (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/')) && (github.event_name != 'workflow_dispatch' || inputs.sign) }}
     steps:
       - uses: actions/checkout@v7
 

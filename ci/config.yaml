@@ -33,20 +33,42 @@ github_repo: dork-labs/dorkos
 data_tag_prefix: ci-steward-data/
 data_tag_ruleset_id: 23705388
 
-# The release secrets live only in this deployment environment, which needs a
-# reviewer and deploys only `v*` tags (DOR-4030). The collector goes red when
-# one of these names is back at repository level, or the environment loses its
-# reviewer or its tag policy. It reads names and settings only, never values.
-release_environment:
-  name: release
-  tag_pattern: v*
-  secrets:
-    - CSC_LINK
-    - CSC_KEY_PASSWORD
-    - APPLE_ID
-    - APPLE_APP_SPECIFIC_PASSWORD
-    - HOMEBREW_TAP_TOKEN
-    - DOCKERHUB_TOKEN
+# Secrets that live only in a deployment environment (DOR-4030), so a workflow
+# on any other ref cannot read them. The collector goes red when one of these
+# names is back at repository level, or an environment is gone, loses its
+# required reviewer, or deploys any ref other than exactly `refs`. It reads
+# names and settings only, never values.
+secret_environments:
+  # Signing: tag runs and signed rehearsals on release branches.
+  - name: release
+    reviewer: true
+    refs:
+      - { name: v*, type: tag }
+      - { name: release/*, type: branch }
+    secrets:
+      - CSC_LINK
+      - CSC_KEY_PASSWORD
+      - APPLE_ID
+      - APPLE_APP_SPECIFIC_PASSWORD
+  # Publishing to Docker Hub and the Homebrew tap: tag runs only.
+  - name: release-publish
+    reviewer: true
+    refs:
+      - { name: v*, type: tag }
+    secrets:
+      - HOMEBREW_TAP_TOKEN
+      - DOCKERHUB_TOKEN
+      - DOCKERHUB_USERNAME
+  # The merge-tail App key and the Neon key: main's own workflow copy only,
+  # never a merge-queue ref (that holds the pull request's copy).
+  - name: automation
+    reviewer: false
+    refs:
+      - { name: main, type: branch }
+    secrets:
+      - MERGE_TAIL_APP_CLIENT_ID
+      - MERGE_TAIL_APP_PRIVATE_KEY
+      - NEON_API_KEY
 
 # The "main: merge queue" ruleset: the only source of required checks since
 # classic branch protection was deleted on 2026-09-19. `rules` names the rule

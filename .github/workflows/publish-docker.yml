@@ -15,24 +15,25 @@ env:
 
 jobs:
   # DOR-4030: no image is pushed from a commit that is not on main, and a
-  # manual run pushes only from main itself (any other ref is refused, not
-  # built). Only the commit graph is fetched (tree:0), anonymously, so this job
-  # reads no secret and holds no token. It is a backstop: a pushed tag runs its
-  # own commit's copy of this file, so the Docker Hub token's real lock is the
-  # `release` environment on mirror-docker-hub.
+  # manual run publishes only from a `v*` tag ref, like a tag push (any other
+  # ref, main included, is refused before anything is built). Only the commit
+  # graph is fetched (tree:0), anonymously, so this job reads no secret and
+  # holds no token. It is a backstop: a pushed tag runs its own commit's copy of
+  # this file, so the Docker Hub token's real lock is the `release-publish`
+  # environment on mirror-docker-hub.
   tag-is-on-main:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
-      - name: Fail unless this commit is on main
+      - name: Fail unless this is a tag on main
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
         run: |
           set -euo pipefail
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::A manual run pushes images only from main, not ${GITHUB_REF}. Nothing was built or pushed."
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            echo "::error::Images are published only from a v* tag, not ${GITHUB_REF}. Start a manual run from the release tag. Nothing was built or pushed."
             exit 1
           fi
           git init -q "$RUNNER_TEMP/main-check"
@@ -220,9 +221,9 @@ jobs:
   # simply skips it. To enable:
   #   1. Set repository variable DOCKERHUB_MIRROR = true
   #   2. Add secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (a Docker Hub access
-  #      token with write scope on the destination repo) to the `release`
-  #      environment, never at repository level (the CI Steward goes red if
-  #      DOCKERHUB_TOKEN is ever at repository level)
+  #      token with write scope on the destination repo) to the
+  #      `release-publish` environment, never at repository level (the CI
+  #      Steward goes red if either is ever at repository level)
   #   3. Optionally set repository variable DOCKERHUB_IMAGE to override the
   #      destination image (default: dorkai/dorkos)
   #
@@ -236,10 +237,10 @@ jobs:
     needs: [tag-is-on-main, build-and-push]
     if: vars.DOCKERHUB_MIRROR == 'true'
     runs-on: ubuntu-latest
-    # DOCKERHUB_TOKEN lives only in the `release` environment (DOR-4030), which
-    # needs a person's approval and deploys only `v*` tags, so a manual run
-    # from main stops here and pushes nothing to Docker Hub.
-    environment: release
+    # DOCKERHUB_USERNAME and DOCKERHUB_TOKEN live only in the `release-publish`
+    # environment (DOR-4030), which needs Dorian's approval and deploys only
+    # `v*` tags: never a branch, not even `release/*`.
+    environment: release-publish
     # A manifest copy normally finishes in under 2 minutes; this is headroom,
     # not an expected duration.
     timeout-minutes: 15

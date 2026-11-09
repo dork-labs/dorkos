@@ -123,7 +123,7 @@ gates:
   # --- desktop-release.yml ---
   - id: wf.desktop-release.tag-is-on-main
     source: .github/workflows/desktop-release.yml
-    purpose: Refuses to sign or publish the desktop apps from a commit that is not on main; an unsigned manual test build skips it.
+    purpose: Refuses to publish the desktop apps from a tag on a commit that is not on main; a run that is not on a tag publishes nothing and skips it.
   - id: wf.desktop-release.build-macos
     source: .github/workflows/desktop-release.yml
     purpose: Builds, signs and notarizes the macOS desktop app on a release tag, checks its signature and Gatekeeper, attaches it, and publishes the draft release.
@@ -182,7 +182,7 @@ gates:
   # --- publish-docker.yml ---
   - id: wf.publish-docker.tag-is-on-main
     source: .github/workflows/publish-docker.yml
-    purpose: Refuses to push any image from a commit that is not on main, and refuses a manual run from any ref but main.
+    purpose: Refuses to push any image unless the run is on a v* tag whose commit is on main, manual runs included.
   - id: wf.publish-docker.build-and-push
     source: .github/workflows/publish-docker.yml
     purpose: Builds the multi-arch Docker image from the published npm package on a release tag and pushes it to GHCR.
@@ -204,7 +204,7 @@ gates:
   # --- queue-repeat-guard.yml ---
   - id: wf.queue-repeat-guard.door
     source: .github/workflows/queue-repeat-guard.yml
-    purpose: On every merge-queue entry, takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
+    purpose: Seconds after every merge-queue entry (when its changelog-fragment-check finishes), runs from main and takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
 
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures
