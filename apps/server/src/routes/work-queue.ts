@@ -61,6 +61,8 @@ const STATUS: Record<WorkQueueErrorCode, ContentfulStatusCode> = {
   NOT_ENDED: 409,
   FULL: 409,
   BAD_CWD: 400,
+  CAP_CEILING: 409,
+  STALE_QUEUE: 409,
 };
 
 /** Answer a {@link WorkQueueError} with its status, or rethrow. */

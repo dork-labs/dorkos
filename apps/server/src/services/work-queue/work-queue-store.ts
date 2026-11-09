@@ -15,6 +15,7 @@ import {
   inArray,
   sql,
   workQueueControl,
+  workQueueItemAuthority,
   type AgentWorkItemRow,
   type AgentWorkQueueRow,
   type Db,
@@ -25,6 +26,7 @@ const DEFAULT_SETTINGS = {
   enabled: false,
   target: 1,
   dailyStartCap: 20,
+  dailyCapCeiling: 20,
   startsDay: null,
   startsToday: 0,
 } as const;
@@ -41,12 +43,12 @@ const ACTIVE = ['starting', 'running'] as const;
 /** How one queue runs. */
 export type QueueSettings = Pick<
   AgentWorkQueueRow,
-  'enabled' | 'target' | 'dailyStartCap' | 'startsDay' | 'startsToday'
+  'enabled' | 'target' | 'dailyStartCap' | 'dailyCapCeiling' | 'startsDay' | 'startsToday'
 >;
 
 /** What a person may change about a queue. */
 export type QueueSettingsPatch = Partial<
-  Pick<AgentWorkQueueRow, 'enabled' | 'target' | 'dailyStartCap'>
+  Pick<AgentWorkQueueRow, 'enabled' | 'target' | 'dailyStartCap' | 'dailyCapCeiling'>
 >;
 
 /** The fields an item is created with. */
@@ -63,6 +65,34 @@ export class WorkQueueStore {
    * @param db - The DorkOS database.
    */
   constructor(private readonly db: Db) {}
+
+  /** Read an item's durable author and bounds, including after a restart. */
+  authority(itemId: string) {
+    return this.db
+      .select()
+      .from(workQueueItemAuthority)
+      .where(eq(workQueueItemAuthority.itemId, itemId))
+      .get();
+  }
+
+  /** Save the author once; neither requeue nor a later requester replaces it. */
+  recordAuthority(row: typeof workQueueItemAuthority.$inferInsert): void {
+    this.db.insert(workQueueItemAuthority).values(row).onConflictDoNothing().run();
+  }
+
+  /** Pin the first attempted start's ceiling before dispatch can launch anything. */
+  pinFirstRunLevel(itemId: string, level: string): void {
+    this.db
+      .update(workQueueItemAuthority)
+      .set({ firstRunLevel: level })
+      .where(
+        and(
+          eq(workQueueItemAuthority.itemId, itemId),
+          sql`${workQueueItemAuthority.firstRunLevel} IS NULL`
+        )
+      )
+      .run();
+  }
 
   /**
    * How one agent's queue runs, or the defaults.

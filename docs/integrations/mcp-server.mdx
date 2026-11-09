@@ -111,30 +111,30 @@ Cursor and Windsurf use the same `url` + `headers` shape under their own config 
 
 ### What it exposes
 
-Connecting gives a client DorkOS's full external tool surface: 74 tools in total, covering sessions, account usage, scheduled tasks, Relay delivery and tracing, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent promises, agent work queues, agent heartbeats, agent permissions, what agents are told, document events and live state, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
+Connecting gives a client DorkOS's full external tool surface: 78 tools in total, covering sessions, account usage, scheduled tasks, Relay delivery and tracing, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent promises, agent work queues, agent heartbeats, agent permissions, what agents are told, document events and live state, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
 
-| Domain              | Tools | Examples                                                                              |
-| ------------------- | ----- | ------------------------------------------------------------------------------------- |
-| Core                | 4     | `ping`, `get_server_info`, `get_session_count`, `get_agent`                           |
-| Accounts            | 2     | `accounts_usage`, `accounts_probe`                                                    |
-| Sessions            | 1     | `session_start`                                                                       |
-| Scheduled tasks     | 5     | `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_get_run_history` |
-| Relay               | 7     | `relay_list_endpoints`, `relay_list_adapters`, `relay_get_trace`, `relay_get_metrics` |
-| Bindings            | 3     | `binding_list`, `binding_create`, `binding_delete`                                    |
-| Mesh (discovery)    | 8     | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`   |
-| Agents & extensions | 7     | `create_agent`, `list_extensions`, `create_extension`, `test_extension`               |
-| Operator            | 11    | `activity_list`, `config_get`, `config_patch`, `check_update`, `feedback_draft`       |
-| Memory              | 2     | `memory_write`, `memory_read`                                                         |
-| To-dos              | 3     | `todo_promise_add`, `todo_promise_update`, `todo_promises_list`                       |
-| Work queue          | 3     | `work_queue_add`, `work_queue_list`, `work_queue_remove`                              |
-| Heartbeats          | 1     | `heartbeat_status`                                                                    |
-| Permissions         | 3     | `request_permission`, `list_my_permissions`, `change_permission`                      |
-| Self-description    | 1     | `list_capabilities`                                                                   |
-| Instructions        | 1     | `agent_instructions`                                                                  |
-| Document events     | 2     | `canvas_send`, `canvas_patch_state`                                                   |
-| Marketplace         | 10    | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_link` |
+| Domain              | Tools | Examples                                                                                                                                              |
+| ------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core                | 4     | `ping`, `get_server_info`, `get_session_count`, `get_agent`                                                                                           |
+| Accounts            | 2     | `accounts_usage`, `accounts_probe`                                                                                                                    |
+| Sessions            | 1     | `session_start`                                                                                                                                       |
+| Scheduled tasks     | 5     | `tasks_list`, `tasks_create`, `tasks_update`, `tasks_delete`, `tasks_get_run_history`                                                                 |
+| Relay               | 7     | `relay_list_endpoints`, `relay_list_adapters`, `relay_get_trace`, `relay_get_metrics`                                                                 |
+| Bindings            | 3     | `binding_list`, `binding_create`, `binding_delete`                                                                                                    |
+| Mesh (discovery)    | 8     | `mesh_discover`, `mesh_register`, `mesh_list`, `mesh_status`, `mesh_query_topology`                                                                   |
+| Agents & extensions | 7     | `create_agent`, `list_extensions`, `create_extension`, `test_extension`                                                                               |
+| Operator            | 11    | `activity_list`, `config_get`, `config_patch`, `check_update`, `feedback_draft`                                                                       |
+| Memory              | 2     | `memory_write`, `memory_read`                                                                                                                         |
+| To-dos              | 3     | `todo_promise_add`, `todo_promise_update`, `todo_promises_list`                                                                                       |
+| Work queue          | 7     | `work_queue_add`, `work_queue_list`, `work_queue_remove`, `work_queue_read_agent`, `work_queue_configure`, `work_queue_reorder`, `work_queue_requeue` |
+| Heartbeats          | 1     | `heartbeat_status`                                                                                                                                    |
+| Permissions         | 3     | `request_permission`, `list_my_permissions`, `change_permission`                                                                                      |
+| Self-description    | 1     | `list_capabilities`                                                                                                                                   |
+| Instructions        | 1     | `agent_instructions`                                                                                                                                  |
+| Document events     | 2     | `canvas_send`, `canvas_patch_state`                                                                                                                   |
+| Marketplace         | 10    | `marketplace_search`, `marketplace_install`, `marketplace_update`, `marketplace_link`                                                                 |
 
-The last ten rows (operator, memory, to-dos, work queue, heartbeats, permissions, self-description, instructions, document events, marketplace: 37 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 37 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
+The last ten rows (operator, memory, to-dos, work queue, heartbeats, permissions, self-description, instructions, document events, marketplace: 41 tools) are generated from the Capability Registry, so they are reachable by id through `dorkos call`. The other 37 are registered directly on this server and are not. `list_capabilities` says which is which, so a client never has to infer it.
 
 Being off the registry does not mean running unchecked. All 37 of them carry a permission tier too, and the same approval gate reads it: `tasks_delete` and `mesh_unregister` are `destructive`. On a **Trusted** install (the default), a registered agent's own token runs them and DorkOS records it, the same as any other in-circle destructive action with an Allowed area; on **Careful**, or from a caller DorkOS cannot verify as one of its own agents, each answers with a pending approval instead of doing the work. A destructive tool advertises an `approvalToken` argument, so a client can tell one from its own schema without asking.
 
@@ -275,3 +275,7 @@ app event. Until that correlation is installed and verified, consumers must keep
 those inputs unacknowledged rather than report them handled or automatically
 repeat the effect. Ordinary downstream sends and state patches do not settle
 app inputs or start a new turn.
+
+Agents can ask to change a queue or add work for another agent. Each increase needs a person's approval, even at Full. Turning a queue off, lowering its limits, removing work and reordering waiting items need no Ask.
+
+The daily cap a person last set on the agent's Work queue page is its ceiling. Agents can lower the cap and ask to raise it back, but cannot exceed that ceiling. Work passed to another agent keeps its author's marks and level. Requeue keeps those bounds and never exceeds the first run's level. Cross-agent changes are refused from marked, agent-started, scheduled and heartbeat turns.

@@ -892,7 +892,7 @@ export function composeRegistry(
         // What would change, read from what is there now, for the card and for
         // the approval's binding (DOR-2328, `describeApprovalChange`).
         const change = capability.describeApprovalChange
-          ? await capability.describeApprovalChange(deps, parsed)
+          ? await capability.describeApprovalChange(deps, parsed, supplied)
           : undefined;
         const decision = enforceCapabilityTier({
           action: capability,

@@ -250,6 +250,8 @@ export type PermissionGatedAction = Pick<
 > & {
   /** Whether one call always asks a person, from its input (DOR-3107). */
   alwaysAsksForInput?: (input: unknown) => boolean;
+  /** An exact, state-checked directional control. */
+  permissionDirectionForInput?: (input: unknown) => 'narrow' | 'widen';
   /** The person-only settings one call raises, named (DOR-3426, `config_patch`). */
   personSettingsRaisedForInput?: (input: unknown) => readonly string[];
   /** The permission area, or `null` for an action that is always allowed on its tier. */
@@ -344,7 +346,11 @@ export const POWER_GRANTING_ACTION_IDS: ReadonlySet<string> = new Set([
  * @param input - The call's parsed input.
  */
 export function callRaisesPermissions(action: PermissionGatedAction, input: unknown): boolean {
-  if (POWER_GRANTING_ACTION_IDS.has(action.id)) return true;
+  if (
+    POWER_GRANTING_ACTION_IDS.has(action.id) ||
+    action.permissionDirectionForInput?.(input) === 'widen'
+  )
+    return true;
   return areasForCall(action, input).some((area) => PERMISSION_RAISING_AREAS.has(area));
 }
 
@@ -566,7 +572,9 @@ export async function resolveCallPermission(request: {
       // asks, whatever the preset: Trusted allows Permissions for our agents'
       // own changes, never for a person's settings.
       ...((index === 0 &&
-        (action.describeApprovalChange ||
+        (action.permissionDirectionForInput?.(request.input) === 'widen' ||
+          (action.describeApprovalChange &&
+            action.permissionDirectionForInput?.(request.input) !== 'narrow') ||
           isAlwaysAskingExtensionTool(action) ||
           action.alwaysAsksForInput?.(request.input) === true ||
           (strangerTurn && HELD_IN_A_MARKED_TURN.has(action.id)))) ||
@@ -587,6 +595,8 @@ export async function resolveCallPermission(request: {
     })
   );
   const resolved = reached.reduce(stricter, own!);
+  if (resolved.state === 'ask' && action.permissionDirectionForInput?.(request.input) === 'narrow')
+    resolved.state = 'allowed';
   noteIfUnasked(resolved.state);
   return resolved;
 }

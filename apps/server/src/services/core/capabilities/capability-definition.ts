@@ -145,6 +145,12 @@ export interface CapabilityDefinition<
    */
   alwaysAsksForInput?: (input: unknown) => boolean;
   /**
+   * Directional controls in a declared area: narrowing skips Ask; widening asks even at Full.
+   * A narrowing classification based on caller-supplied before-values MUST check those values
+   * against live state before changing anything. Blocked and inactive identities still refuse.
+   */
+  permissionDirectionForInput?: (input: unknown) => 'narrow' | 'widen';
+  /**
    * The settings only a person may change that one call RAISES, named for a refusal (DOR-3426):
    * `config_patch` names each operator-only key it writes that is not its strictest value. At Full
    * such a call is refused with these names; an empty list with {@link areasForInput} still
@@ -262,7 +268,8 @@ export interface CapabilityDefinition<
    */
   describeApprovalChange?: (
     deps: CapabilityDeps,
-    input: z.infer<In>
+    input: z.infer<In>,
+    context: CapabilityInvocationContext
   ) => Promise<string | undefined>;
   /**
    * Draw an inline CARD in the conversation this capability was called from

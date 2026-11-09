@@ -10,6 +10,15 @@
  * @module services/work-queue/work-queue-wiring
  */
 import type { AgentWorkItemRow, Db } from '@dorkos/db';
+import type { TurnPermissionLevel } from '@dorkos/shared/agent-runtime';
+import {
+  clampModeToCeiling,
+  levelOfMode,
+  READ_ONLY_LEVEL,
+  resolveStopMode,
+} from '@dorkos/shared/permission-semantics';
+import { chatlessCallerStop } from '../runtimes/claude-code/mcp-tools/session-start-permission.js';
+import { queuedWorkLevel } from './work-queue-authority.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { refuseUnlessAccountOwner } from '../../lib/caller-authority.js';
 import { logError, logger } from '../../lib/logger.js';
@@ -85,8 +94,8 @@ export interface WorkQueueWiring {
  *
  * @param agentPath - The agent's folder.
  */
-export function queuedChatCaller(agentPath: string) {
-  return () => ({ agentPath, unattended: true });
+export function queuedChatCaller(agentPath: string, permissionCeiling?: TurnPermissionLevel) {
+  return () => ({ agentPath, unattended: true, permissionCeiling });
 }
 
 /** What a finished chat's status says about how its item ended. */
@@ -145,6 +154,16 @@ export function wireWorkQueue(deps: WorkQueueWiringDeps): WorkQueueWiring {
   const startChat = async (agent: QueueAgent, item: AgentWorkItemRow): Promise<StartResult> => {
     const cwd = item.cwd ?? agent.agentPath;
     const runtimeType = await resolveRuntimeTypeForNewSession({ agentPath: agent.agentPath, cwd });
+    const runtime = runtimeRegistry.get(runtimeType);
+    const modes = runtime.getCapabilities().permissionModes;
+    if (!modes?.supported)
+      return { kind: 'refused', message: 'This agent cannot keep queued work within its level.' };
+    const stop = await chatlessCallerStop(null, runtime, agent.agentPath);
+    const targetMode = resolveStopMode(stop, modes.values) ?? modes.default;
+    if (!targetMode)
+      return { kind: 'refused', message: 'This agent has no level for queued work.' };
+    const ceiling = queuedWorkLevel(store, item, levelOfMode(modes, targetMode) ?? READ_ONLY_LEVEL);
+    const permissionMode = clampModeToCeiling(modes, targetMode, ceiling);
     let accountId: string | null = null;
     if (
       runtimeRegistry.has(runtimeType) &&
@@ -160,10 +179,11 @@ export function wireWorkQueue(deps: WorkQueueWiringDeps): WorkQueueWiring {
     }
     const handler = createSessionStartHandler(
       { meshCore: deps.meshCore(), activityService: deps.activityService },
-      queuedChatCaller(agent.agentPath),
+      queuedChatCaller(agent.agentPath, ceiling),
       async () => ({ allowed: true })
     );
     const answer = await handler({
+      permissionMode,
       prompt: item.prompt,
       title: item.title,
       cwd,
@@ -238,7 +258,7 @@ export function wireWorkQueue(deps: WorkQueueWiringDeps): WorkQueueWiring {
 
   const agentIdForPath = (agentPath: string) => deps.meshCore()?.getByPath(agentPath)?.id;
   return {
-    capabilityDeps: { service, agentIdForPath },
+    capabilityDeps: { service, agentIdForPath, agentName: (id) => agentOf(id)?.label },
     routeDeps: {
       service,
       agentExists: (agentId) => deps.meshCore()?.get(agentId) !== undefined,

@@ -3,8 +3,9 @@ import { check, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-cor
 
 /**
  * How an agent's work queue runs (DOR-3462). No row means the defaults, and the
- * default is off: nothing starts on its own until a person turns it on. Every
- * column but the day's count is a person's to set; no agent tool writes them.
+ * default is off: nothing starts until the queue is enabled. Any
+ * widening asks a person; agents can narrow settings without asking. The daily
+ * ceiling is set only by a person.
  */
 export const agentWorkQueues = sqliteTable('agent_work_queues', {
   /** The Mesh id of the agent. */
@@ -15,6 +16,8 @@ export const agentWorkQueues = sqliteTable('agent_work_queues', {
   target: integer('target').notNull().default(1),
   /** The most chats the queue may start in one UTC day. */
   dailyStartCap: integer('daily_start_cap').notNull().default(20),
+  /** The highest cap a person authorized in queue Settings. */
+  dailyCapCeiling: integer('daily_cap_ceiling').notNull().default(20),
   /** The UTC day {@link startsToday} counts (`YYYY-MM-DD`), or NULL before the first start. */
   startsDay: text('starts_day'),
   /** How many chats the queue started on {@link startsDay}. */
@@ -100,3 +103,16 @@ export const agentWorkItems = sqliteTable(
 
 /** A row of {@link agentWorkItems}. */
 export type AgentWorkItemRow = typeof agentWorkItems.$inferSelect;
+
+/** Durable authorship and permission bounds; requeue never replaces this row. */
+export const workQueueItemAuthority = sqliteTable('work_queue_item_authority', {
+  itemId: text('item_id')
+    .primaryKey()
+    .references(() => agentWorkItems.id, { onDelete: 'cascade' }),
+  authorAgentId: text('author_agent_id'),
+  authorSessionId: text('author_session_id'),
+  /** JSON permission level recorded when the work was added; null for a person. */
+  requestedLevel: text('requested_level'),
+  /** JSON intersection of the first start's target level and the requester's level. */
+  firstRunLevel: text('first_run_level'),
+});

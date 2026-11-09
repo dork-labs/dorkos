@@ -930,6 +930,13 @@ describe('session_start records who started the new session (spec flow-multiproj
       });
     });
 
+    it('carries a queued Careful requester’s durable marks and level into the launched turn', async () => {
+      const bound = { asks: 'always', reach: 'everything', outsider: true } as const;
+      const handler = createSessionStartHandler(withRun(), queuedChatCaller(AGENT_HOME, bound));
+      await handler(BASE);
+      expect(vi.mocked(dispatchMessage).mock.calls[0]![0].permissionCeiling).toEqual(bound);
+    });
+
     it('writes no row for a call from outside any chat that is not the queue', async () => {
       const handler = createSessionStartHandler(withRun(), () => ({ agentPath: AGENT_HOME }));
       const { sessionId } = payloadOf(await handler(BASE)) as { sessionId: string };
@@ -1829,8 +1836,6 @@ describe('a start from a chat a hold bound (DOR-3440)', () => {
     }));
 
   const sent = (n: number) => vi.mocked(dispatchMessage).mock.calls[n]![0];
-  const saved = (n: number) =>
-    vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[n]![1].permissionMode;
 
   const markedLines = vi.fn(async () => undefined);
   beforeEach(() => {

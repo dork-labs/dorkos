@@ -55,6 +55,7 @@ export function isAlwaysOffered(row: {
     !(row.capabilityId === 'operator.config_patch' && row.area !== 'settings') &&
     // An agent's permission change asks on every call that could loosen
     // anything (DOR-3107), so an Always allow on its card would change nothing.
-    row.capabilityId !== 'permissions.change'
+    row.capabilityId !== 'permissions.change' &&
+    !row.capabilityId.startsWith('work-queue.')
   );
 }

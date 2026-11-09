@@ -63,7 +63,7 @@ import {
 } from '@dorkos/shared/account-usage';
 import { chatMarkdownLink, sessionPath } from '@dorkos/shared/session-link';
 import { START_WORK_LIMITS } from '@dorkos/shared/extension-decision-schemas';
-import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
+import type { EffortLevel } from '@dorkos/shared/types';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
 import { isInsideRoomsDir } from '../../../core/agent-identity/index.js';
 import {
@@ -141,6 +141,8 @@ export type SessionStartCallerResolver = () =>
       chosenFull?: boolean;
       /** DorkOS starts this chat with nobody there: the work queue (DOR-3703, MUST-G). */
       unattended?: boolean;
+      /** Durable queued-work bound, never read from tool arguments. */
+      permissionCeiling?: import('@dorkos/shared/agent-runtime').TurnPermissionLevel;
     }
   | undefined;
 
@@ -227,7 +229,7 @@ export interface SessionStartArgs {
   runtime?: string;
   model?: string;
   effort?: EffortLevel;
-  permissionMode?: PermissionMode;
+  permissionMode?: string;
   seedContext?: string;
   agentPath?: string;
   reason?: string;
@@ -282,7 +284,13 @@ interface CallerAgent {
 function callerOf(
   deps: Pick<McpToolDeps, 'meshCore'>,
   resolveCaller: SessionStartCallerResolver | undefined
-): (CallerAgent & { chat: CallingChat | null; unattended: boolean }) | null {
+):
+  | (CallerAgent & {
+      chat: CallingChat | null;
+      unattended: boolean;
+      permissionCeiling?: import('@dorkos/shared/agent-runtime').TurnPermissionLevel;
+    })
+  | null {
   const resolved = resolveCaller?.();
   const agentPath = resolved?.agentPath;
   if (!agentPath) return null;
@@ -300,6 +308,7 @@ function callerOf(
     name: agent.name,
     ...(agent.displayName ? { displayName: agent.displayName } : {}),
     unattended: resolved.unattended === true,
+    permissionCeiling: resolved.permissionCeiling,
     chat: inChat
       ? {
           sessionId: resolved.sessionId ?? null,
@@ -563,6 +572,7 @@ export function createSessionStartHandler(
         // session's turn is recorded as one that read them too (spec
         // `trusted-by-default-flip` §4.7). Its power is already the granted mode.
         ...markedCeiling,
+        ...(caller.permissionCeiling ? { permissionCeiling: caller.permissionCeiling } : {}),
         meshCore: deps.meshCore,
         // A session minted here is in no room.
         roomSessionPlace: undefined,
