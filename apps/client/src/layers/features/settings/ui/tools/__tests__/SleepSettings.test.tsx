@@ -87,7 +87,7 @@ describe('SleepSettings', () => {
     await toggle();
     expect(
       screen.getByText(
-        "Scheduled tasks can't run while this computer sleeps. Keep it awake to run them on time."
+        "Scheduled tasks can't run while it sleeps. Keep it awake to run them on time."
       )
     ).toBeInTheDocument();
     expect(screen.getAllByRole('switch')).toHaveLength(1);

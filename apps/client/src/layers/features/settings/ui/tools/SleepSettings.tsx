@@ -64,8 +64,7 @@ export function SleepSettings() {
                 <span>Stays awake during chats, rooms and tasks. Sleeps as usual when idle.</span>
                 <span data-testid="sleep-settings-note">{unsupported ?? KEEP_AWAKE_CAVEAT}</span>
                 <span>
-                  Scheduled tasks can&apos;t run while this computer sleeps. Keep it awake to run
-                  them on time.
+                  {"Scheduled tasks can't run while it sleeps. Keep it awake to run them on time."}
                 </span>
               </span>
             }
