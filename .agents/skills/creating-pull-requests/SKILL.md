@@ -247,6 +247,8 @@ the ticket.** A PR that advances a ticket without finishing it keeps the bare
 identifier out of the title _and_ the branch name, and refers to it from the body in
 a form that does not close: a bare id, or `Refs DOR-634`.
 
+**A PR that does one part of a multi-part ticket says `Refs DOR-…`, never `Fixes`/`Closes`, so Linear doesn't close open work.**
+
 **The body is not automatically safe, and this repo's own habit is the trap.** House
 style for a PR body is a closing magic word — 15 of the last 60 merged PRs use one,
 including #589, whose body opens `Closes DOR-661.` So an author who dutifully moves
