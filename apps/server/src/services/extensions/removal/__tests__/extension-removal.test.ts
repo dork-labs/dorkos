@@ -30,6 +30,8 @@ import {
   removeExtension,
   type RemovalManager,
 } from '../extension-removal.js';
+import { mayRunExtensionCode, type ExtensionApprovals } from '../../extension-load-policy.js';
+import { isEnabled, type ExtensionsConfig } from '../../extension-enable-resolution.js';
 
 let home: string;
 
@@ -189,6 +191,57 @@ describe('stale approvals', () => {
     expect(await forgetStaleApproval(manager, 'gone')).toEqual({ ok: true });
     expect(listStaleApprovals(manager)).toEqual([]);
     expect((stored.extensions as { dismissedApprovals: object }).dismissedApprovals).toEqual({});
+  });
+
+  // Purpose (Security Must, Nov 9): clearing a stored "off" never turns
+  // anything on. A gone extension that was switched off, forgotten, and put
+  // back at the same folder waits for approval and stays off.
+  it('brings a forgotten, switched-off extension back waiting, not running', async () => {
+    const extensionsDir = path.join(home, 'extensions');
+    approve('gone');
+    const ext = stored.extensions as {
+      approvedSources: Record<string, unknown>;
+      approvedPermissions: Record<string, unknown>;
+      disabled: string[];
+    };
+    ext.approvedSources = { gone: { path: path.join(extensionsDir, 'gone'), digest: 'd1' } };
+    ext.approvedPermissions = {
+      gone: { runtime: 'in-process', net: [], run: [], agents: false },
+    };
+    ext.disabled = ['gone'];
+    const config = () => stored.extensions as unknown as ExtensionsConfig & ExtensionApprovals;
+
+    // Control: the approved copy, while it is there, may run. So the "waiting"
+    // below comes from the forget, not from a copy that never qualified.
+    const before = { ...(await copyAt(extensionsDir, 'gone')), currentDigest: 'd1' };
+    expect(mayRunExtensionCode(before, config())).toBe(true);
+    await fs.rm(before.path, { recursive: true });
+
+    expect(await forgetStaleApproval(managerOf([]), 'gone')).toEqual({ ok: true });
+
+    // The same folder and files, put back.
+    const back = { ...(await copyAt(extensionsDir, 'gone')), currentDigest: 'd1' };
+    expect(mayRunExtensionCode(back, config())).toBe(false);
+    expect(isEnabled('gone', config(), new Map())).toBe(false);
+  });
+
+  // Purpose: on/off is kept per id, not per copy. Even if another copy of the
+  // same id kept its approval, clearing the choice resolves to off, never on:
+  // only a core extension defaults on, and Remove and Forget refuse core ones.
+  it('never resolves a cleared choice to on, even with an approval left for another copy', async () => {
+    approve('notes');
+    const project = path.join(home, 'project', '.dork', 'extensions');
+    const record = await copyAt(project, 'notes');
+    (stored.extensions as { disabled: string[]; enabled: string[] }).disabled = ['notes'];
+    const manager = managerOf([record]);
+    // Keep the approval, as a copy elsewhere that inherits it would.
+    manager.forgetRunApproval = vi.fn(async () => {});
+
+    expect(await removeExtension(manager, 'notes')).toMatchObject({ ok: true });
+
+    const config = stored.extensions as unknown as ExtensionsConfig;
+    expect(config.disabled).toEqual([]);
+    expect(isEnabled('notes', config, new Map())).toBe(false);
   });
 
   it('refuses to forget one that is still installed', async () => {
