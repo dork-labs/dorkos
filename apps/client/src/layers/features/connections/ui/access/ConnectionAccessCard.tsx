@@ -343,6 +343,13 @@ function AccessStep(
         />
       ) : null}
 
+      {/* Another agent can approve Read, never more, so a request for write access is always the
+          person's to answer: said once, quietly, just above the buttons it is about (DOR-3959). */}
+      {props.mode === 'agent' && props.request?.access === 'read-write' && preview && !outcome && (
+        <p data-testid="agent-request-write-note" className="text-muted-foreground text-xs">
+          Write access needs you.
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-end gap-2">
         {access.needsReconciliation ? (
           <Button variant="secondary" onClick={access.refresh}>

@@ -298,9 +298,11 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             </span>
             {/* A connected-app action the service marks high risk says so once, in a
                 sentence naming the app (`ApprovalServiceAction`), so the badge
-                would only repeat it. */}
+                would only repeat it. Approving another agent's read request gives Read and
+                nothing more, so "Changes things" would only alarm (DOR-3959). */}
             {!approval.cannotAllow &&
-              !(approval.serviceAction && approval.tier === 'destructive') && (
+              !(approval.serviceAction && approval.tier === 'destructive') &&
+              approval.subject?.kind !== 'agent_request' && (
                 <Badge
                   size="xs"
                   variant="outline"

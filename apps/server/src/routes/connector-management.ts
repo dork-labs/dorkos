@@ -12,6 +12,8 @@ import {
   ConnectorManagementReviewDecisionSchema,
   ConnectorReconciliationApplyRequestSchema,
   ConnectorReconciliationPreviewRequestSchema,
+  type ConnectorAgentApproval,
+  type ConnectorAgentRequestItem,
 } from '@dorkos/shared/connector-schemas';
 import {
   ConnectorGrantExclusionChangeSchema,
@@ -87,6 +89,12 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
     ConnectorAgentRequestService,
     'listForOwner' | 'getForOwner' | 'resolve' | 'startAuthentication' | 'pollAuthentication'
   >;
+  /**
+   * Another agent's approval of a request, as the field the owner's item spreads in
+   * (`approvedBy`): read by the request's own id, so a card never depends on a window of recent
+   * ledger rows (Security M1 on #3575).
+   */
+  readonly agentApprovals?: (requestId: string) => { approvedBy?: ConnectorAgentApproval };
   /** Request verifier used when login-off middleware did not populate an API-key user. */
   readonly verifyUser?: (
     req: Pick<RequestFacts, 'headers' | 'peerAddress' | 'ingress'>
@@ -217,6 +225,11 @@ function managementErrorResponse(c: Context<ApiEnv>, error: unknown): Response {
  */
 export function createConnectorManagementRoutes(deps: ConnectorManagementRouterDeps): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
+  /** An owner's request item, with who approved it when another agent did. */
+  const withApproval = (item: ConnectorAgentRequestItem): ConnectorAgentRequestItem => ({
+    ...item,
+    ...deps.agentApprovals?.(item.requestId),
+  });
   const requireAgentRequests = (c: Context<ApiEnv>) =>
     deps.agentRequests ??
     c.json(
@@ -308,7 +321,9 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     if (!query.success) return c.json(validationFailureBody(query.error), 400);
     try {
       return c.json({
-        requests: requests.listForOwner(owner, query.data.state, query.data.sessionId),
+        requests: requests
+          .listForOwner(owner, query.data.state, query.data.sessionId)
+          .map(withApproval),
       });
     } catch (error) {
       return managementErrorResponse(c, error);
@@ -321,7 +336,7 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     const requests = requireAgentRequests(c);
     if (requests instanceof Response) return requests;
     try {
-      return c.json(requests.getForOwner(owner, c.req.param('requestId')));
+      return c.json(withApproval(requests.getForOwner(owner, c.req.param('requestId'))));
     } catch (error) {
       return managementErrorResponse(c, error);
     }

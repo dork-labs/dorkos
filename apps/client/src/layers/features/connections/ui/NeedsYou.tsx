@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
+import type { ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
 import { CONNECTOR_AUTHENTICATION_FLOW_TTL_MS } from '@dorkos/shared/connector-schemas';
 import {
   useConnectorAgentRequests,
   useConnectorManagementReviews,
 } from '@/layers/entities/connectors';
 import { Button } from '@/layers/shared/ui';
+import { AgentApprovalLine } from './agent-request/AgentApprovalLine';
 import { accountAppName } from '../lib/app-list';
 import { pendingReviewLine, unsettledReviewLine, type NeedsYouLine } from '../lib/needs-you-copy';
 
@@ -16,6 +18,12 @@ import { pendingReviewLine, unsettledReviewLine, type NeedsYouLine } from '../li
  * still reachable by its link, and no longer pressing.
  */
 const UNKNOWN_OUTCOME_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * How long a request another agent approved stays here as a done item: a
+ * day, by design (DOR-3959), so it never just vanishes. Activity keeps it after.
+ */
+const AGENT_APPROVAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * How long an approved connect keeps asking the person to finish signing in:
@@ -42,7 +50,8 @@ interface NeedsYouProps {
  * an app, tools or programs asking to change a connection, and two decided
  * requests that still need the person (an approved connect whose sign-in
  * may still be open, and an approved change DorkOS could not confirm). Each opens its
- * own dialog.
+ * own dialog. Below them, for a day, requests another agent approved: done
+ * items with nothing to press, so an agent's answer is seen, not silent.
  *
  * Renders nothing when nothing waits, so the page's first line is only ever
  * spent on something the person has to do. A read that failed says so in one
@@ -50,10 +59,30 @@ interface NeedsYouProps {
  */
 export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProps) {
   const requests = useConnectorAgentRequests('pending');
+  const answered = useConnectorAgentRequests('resolved');
   const pending = useConnectorManagementReviews('pending');
   const resolved = useConnectorManagementReviews('resolved');
 
   const now = useMinuteClock();
+  // A request another agent approved stays here for a day as a done item, so
+  // the person sees it was answered and by whom; then Activity has it. One the
+  // person already undid is dealt with, so it leaves at once. The pending list
+  // also holds granted requests whose agent hasn't picked the answer up yet,
+  // so both lists are read, and an approved one never shows as still asking.
+  // Who approved is on the request itself (Security M1 on #3575).
+  const agentApproved = (request: ConnectorAgentRequestItem) =>
+    request.status === 'granted' ? request.approvedBy : undefined;
+  const waiting = (requests.data ?? []).filter((request) => !agentApproved(request));
+  const approvedByAgents = [...(requests.data ?? []), ...(answered.data ?? [])].flatMap(
+    (request) => {
+      const approval = agentApproved(request);
+      return approval &&
+        approval.undoneAt === undefined &&
+        now - Date.parse(approval.approvedAt) < AGENT_APPROVAL_WINDOW_MS
+        ? [{ request, approval }]
+        : [];
+    }
+  );
   const unsettled = (resolved.data ?? []).filter(
     (review) =>
       review.state === 'approved' &&
@@ -65,8 +94,10 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
   const failed = [requests, pending, resolved].filter((query) => query.isError);
 
   const hasItems =
-    (requests.data?.length ?? 0) + (pending.data?.length ?? 0) + unsettled.length > 0;
-  if (!hasItems && failed.length === 0) return null;
+    waiting.length + (pending.data?.length ?? 0) + unsettled.length + approvedByAgents.length > 0;
+  // Answered requests are where agents' approvals show: a failed read says so, never a gap.
+  const approvalsFailed = answered.isError;
+  if (!hasItems && failed.length === 0 && !approvalsFailed) return null;
 
   return (
     <section
@@ -81,7 +112,7 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
         Needs you
       </h2>
       <ul>
-        {(requests.data ?? []).map((request) => (
+        {waiting.map((request) => (
           <NeedsYouRow
             key={`request-${request.requestId}`}
             testId={`needs-you-request-${request.requestId}`}
@@ -111,6 +142,18 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
             />
           ) : null;
         })}
+        {approvedByAgents.map(({ request, approval }) => (
+          <li
+            key={`approved-${request.requestId}`}
+            data-testid={`needs-you-approved-${request.requestId}`}
+            className="flex min-h-12 flex-col justify-center gap-0.5 px-2.5 py-2"
+          >
+            <span className="text-muted-foreground line-clamp-2 block text-sm sm:line-clamp-1">
+              {`${request.agent.displayName} asked to use ${accountAppName(request.serviceSlug, services)}`}
+            </span>
+            <AgentApprovalLine approval={approval} className="text-foreground text-xs" />
+          </li>
+        ))}
       </ul>
       {failed.length > 0 && (
         <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 px-2.5 pb-1.5 text-xs">
@@ -120,6 +163,22 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
             size="xs"
             className="h-auto p-0"
             onClick={() => failed.forEach((query) => void query.refetch())}
+          >
+            Try again
+          </Button>
+        </p>
+      )}
+      {approvalsFailed && (
+        <p
+          data-testid="needs-you-approvals-failed"
+          className="text-muted-foreground flex flex-wrap items-center gap-x-2 px-2.5 pb-1.5 text-xs"
+        >
+          Couldn’t load agent approvals.
+          <Button
+            variant="link"
+            size="xs"
+            className="h-auto p-0"
+            onClick={() => void answered.refetch()}
           >
             Try again
           </Button>

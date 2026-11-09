@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -104,7 +104,9 @@ describe('NeedsYou', () => {
 
     expect(await screen.findByText('Couldn’t check for waiting requests.')).toBeInTheDocument();
     vi.mocked(transport.getConnectorAgentRequests).mockResolvedValue([REQUEST]);
-    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    // The waiting-requests line's own retry (agents' approvals have a line of their own).
+    const waitingLine = screen.getByText('Couldn’t check for waiting requests.');
+    await user.click(within(waitingLine).getByRole('button', { name: 'Try again' }));
     expect(
       await screen.findByRole('button', { name: /Researcher wants to use Gmail/ })
     ).toBeInTheDocument();
@@ -227,6 +229,91 @@ describe('NeedsYou', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('a request another agent approved (DOR-3959)', () => {
+    /** A granted request, with who approved it as the server puts it on the item. */
+    const granted = (requestId: string, hoursAgo?: number, extra: object = {}) =>
+      ({
+        ...REQUEST,
+        requestId,
+        status: 'granted',
+        ...(hoursAgo !== undefined && {
+          approvedBy: {
+            agentId: 'agent-pm',
+            displayName: 'DorkOS PM',
+            approvedAt: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+            ...extra,
+          },
+        }),
+      }) as ConnectorAgentRequestItem;
+    const transportWith = (lists: {
+      pending?: ConnectorAgentRequestItem[];
+      resolved?: ConnectorAgentRequestItem[] | Error;
+    }) =>
+      createMockTransport({
+        getConnectorAgentRequests: vi.fn(async (state) => {
+          if (state !== 'resolved') return lists.pending ?? [];
+          if (lists.resolved instanceof Error) throw lists.resolved;
+          return lists.resolved ?? [];
+        }),
+        getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
+      });
+
+    it('stays as a done item for the day, with who approved it and nothing to press', async () => {
+      renderStrip(transportWith({ resolved: [granted('request-2', 2)] }));
+
+      const row = await screen.findByTestId('needs-you-approved-request-2');
+      expect(row).toHaveTextContent('Researcher asked to use Gmail');
+      expect(row).toHaveTextContent('Approved by DorkOS PM · Read only');
+      expect(row.querySelector('time')).toHaveTextContent('2h');
+      expect(row.querySelector('button')).toBeNull();
+    });
+
+    it('never shows an approved request as still asking, while its agent picks the answer up', async () => {
+      renderStrip(transportWith({ pending: [granted('request-3', 0)] }));
+
+      expect(await screen.findByTestId('needs-you-approved-request-3')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /wants to use Gmail/ })).not.toBeInTheDocument();
+    });
+
+    it('drops it after a day, or as soon as the person undid it', async () => {
+      renderStrip(
+        transportWith({
+          resolved: [
+            granted('fresh', 23),
+            granted('old', 25),
+            granted('undone', 1, { undoneAt: new Date().toISOString() }),
+          ],
+        })
+      );
+
+      // The fresh one proves the reads landed; the other two are gone beside it.
+      expect(await screen.findByTestId('needs-you-approved-fresh')).toBeInTheDocument();
+      expect(screen.queryByTestId('needs-you-approved-old')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('needs-you-approved-undone')).not.toBeInTheDocument();
+    });
+
+    it('keeps a granted request no agent approved off the done list', async () => {
+      renderStrip(transportWith({ pending: [REQUEST], resolved: [granted('by-person')] }));
+
+      expect(
+        await screen.findByRole('button', { name: /Researcher wants to use Gmail/ })
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('needs-you-approved-by-person')).not.toBeInTheDocument();
+    });
+
+    it('says so when it can’t load agents’ approvals, rather than leaving a gap', async () => {
+      const user = userEvent.setup();
+      const transport = transportWith({ resolved: new Error('offline') });
+      renderStrip(transport);
+
+      const line = await screen.findByTestId('needs-you-approvals-failed');
+      expect(line).toHaveTextContent('Couldn’t load agent approvals.');
+      vi.mocked(transport.getConnectorAgentRequests).mockResolvedValue([granted('later', 1)]);
+      await user.click(within(line).getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByTestId('needs-you-approved-later')).toBeInTheDocument();
+    });
   });
 
   it('stops asking about an unconfirmed change after a week', async () => {

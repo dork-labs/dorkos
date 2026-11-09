@@ -33,6 +33,18 @@ const REQUEST = {
   agent: { id: 'dorkbot', displayName: 'DorkBot' },
 } as ConnectorAgentRequestItem;
 
+/**
+ * Another agent, DorkOS PM, approved the request for Read two minutes before the page loaded, as
+ * the server puts it on the request. Frozen at load: a showcase's times don't move per render.
+ */
+const AGENT_APPROVAL = {
+  agentId: 'agent-pm',
+  displayName: 'DorkOS PM',
+  color: '#7c5cff',
+  icon: '🧭',
+  approvedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+};
+
 const GMAIL: ConnectorCatalogService = {
   serviceSlug: 'gmail',
   displayName: 'Gmail',
@@ -256,6 +268,34 @@ export function AgentRequestCardShowcase() {
               readiness: MOCK_READINESS.unlinked,
             },
           ]}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Write access asked for: the person’s buttons stay, and no agent can answer it
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <CardDemo
+          accounts={[account('gmail-work', 'work')]}
+          request={{ ...REQUEST, access: 'read-write' }}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Approved by another agent: who, Read only, and when</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <CardDemo
+          accounts={[]}
+          request={
+            {
+              ...REQUEST,
+              status: 'granted',
+              connectionId: 'gmail-work' as never,
+              grantedOperationRevisionIds: ['list-messages'],
+              grantedEvents: [],
+              notGranted: [],
+              approvedBy: AGENT_APPROVAL,
+            } as ConnectorAgentRequestItem
+          }
         />
       </ShowcaseDemo>
 

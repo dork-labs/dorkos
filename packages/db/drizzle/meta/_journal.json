@@ -1338,6 +1338,13 @@
       "when": 1794182661601,
       "tag": "20261109000421_connection_grant_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "6",
+      "when": 1794193195696,
+      "tag": "20261109025955_connection_grant_approver_snapshot",
+      "breakpoints": true
     }
   ]
 }

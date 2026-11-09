@@ -9,6 +9,7 @@
  */
 import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
+import { approvedByField } from '../../services/connectors/access/access-change-ledger.js';
 import path from 'node:path';
 import { setStepUpExtensionRiskInputs } from '../../services/extensions/step-up/step-up-extension-risk.js';
 import { useStepUpRiskLedgerFile } from '../../services/extensions/step-up/step-up-risk-ledger.js';
@@ -191,6 +192,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
       exclusions: connectorGrantExclusions,
       ...connectorOwnerBoundary,
       ...(refs.connectorAgentRequests && { agentRequests: refs.connectorAgentRequests }),
+      agentApprovals: (requestId: string) => approvedByField(db, requestId),
     },
     resources: {
       query: connectorOperatorQueries,

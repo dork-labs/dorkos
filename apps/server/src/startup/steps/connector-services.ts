@@ -230,6 +230,16 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
     requests: createApprovalRequests(db, () => refs.connectorAgentRequests),
     ...(managedConnectorAuthority && { managedAuthority: managedConnectorAuthority }),
     events: accessChangeEvents,
+    // Who approved, as the person's card shows it: the name and avatar at approval time.
+    approverSnapshot: (agentId) => {
+      const agent = refs.meshCore?.get(agentId);
+      if (!agent) return undefined;
+      return {
+        displayName: agent.displayName ?? agent.name,
+        ...(agent.color ? { color: agent.color } : {}),
+        ...(agent.icon ? { icon: agent.icon } : {}),
+      };
+    },
   });
   const connectorEventDestinations = {
     authorize: (

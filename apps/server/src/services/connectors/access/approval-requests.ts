@@ -16,9 +16,53 @@ import {
   type Db,
 } from '@dorkos/db';
 import type { ConnectorAgentRequestService } from '../agent-request-service.js';
+import { serviceName } from '../every-agent-activity.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ApprovalRequests } from './access-approval.js';
 import { ownerColumns } from './access-writes.js';
+
+/**
+ * Name a still-waiting request for the approval card a person sees before an
+ * agent approves it (Security S6 on #3572): "Flow Snapshot · Linear", the agent
+ * that asked and the app, so the card never shows only ids. The person's card
+ * draws that agent's avatar from its own owner-scoped read of the request.
+ *
+ * Only a waiting request is named: an answered one can't be approved, and the
+ * call it heads is refused anyway, so the card keeps the raw id. The names come
+ * from the request row and the agent registry, never from the caller.
+ *
+ * @param db - Canonical connector database.
+ * @param agentName - The agent registry's name for an agent id, if it has one.
+ */
+export function agentRequestSubjectName(
+  db: Db,
+  agentName: (agentId: string) => string | undefined
+): (requestId: string) => string | undefined {
+  return (requestId) => {
+    const row = db
+      .select({
+        agentId: connectorAgentRequests.agentId,
+        serviceSlug: connectorAgentRequests.serviceSlug,
+      })
+      .from(connectorAgentRequests)
+      .innerJoin(
+        connectorReviewRequests,
+        eq(connectorReviewRequests.id, connectorAgentRequests.reviewRequestId)
+      )
+      .where(
+        and(
+          eq(connectorAgentRequests.id, requestId),
+          eq(connectorReviewRequests.state, 'pending'),
+          isNull(connectorAgentRequests.outcome)
+        )
+      )
+      .get();
+    if (!row) return undefined;
+    const asker = agentName(row.agentId);
+    if (!asker) return undefined;
+    return `${asker} · ${serviceName(row.serviceSlug)}`;
+  };
+}
 
 /**
  * Requests over the live tables and the request service.

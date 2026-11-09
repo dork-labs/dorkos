@@ -63,6 +63,12 @@ export const connectionGrantChanges = sqliteTable(
     reason: text('reason'),
     /** On an `approve_read` row, the agent's request it answered. */
     requestId: text('request_id'),
+    /**
+     * On an applied `approve_read` row, the approving agent as it looked then: `{ displayName,
+     * color?, icon? }` as JSON. The person's card shows this, so a later rename doesn't rewrite
+     * who approved (Security M1 on #3575).
+     */
+    actorSnapshotJson: text('actor_snapshot_json'),
     /** On an `undo` row, the change it undid. */
     undoOf: text('undo_of'),
     /** On a change that was undone, the undo row. */
@@ -73,6 +79,8 @@ export const connectionGrantChanges = sqliteTable(
   (table) => [
     index('connection_grant_changes_actor_idx').on(table.actorId, table.createdAt),
     index('connection_grant_changes_connection_idx').on(table.connectionId, table.createdAt),
+    // A request card finds its approval by the request, never through a window of recent rows.
+    index('connection_grant_changes_request_idx').on(table.requestId),
     check('connection_grant_changes_kind', sql`${table.kind} IN (${inList(GRANT_CHANGE_KINDS)})`),
     check(
       'connection_grant_changes_outcome',
