@@ -488,7 +488,7 @@ describe('SettingsDialog — one heading per panel', () => {
 /**
  * DOR-2629 — the power-user tabs fold into one Advanced group at the bottom.
  *
- * What a person sees by default is the eleven everyday tabs; the other five
+ * What a person sees by default is the twelve everyday tabs; the other five
  * are one quiet disclosure away, and every link into them still lands.
  */
 describe('SettingsDialog — Advanced fold', () => {
@@ -500,6 +500,7 @@ describe('SettingsDialog — Advanced fold', () => {
     'Notifications',
     'Runtimes',
     'Permissions',
+    'Agent instructions',
     'Connections',
     'Login & security',
     'Remote access',
@@ -507,7 +508,7 @@ describe('SettingsDialog — Advanced fold', () => {
   ];
   const ADVANCED = ['Server', 'Tools', 'Room limits', 'Experiments', 'Danger zone'];
 
-  it('shows the eleven everyday tabs in group order, with Advanced folded', () => {
+  it('shows the twelve everyday tabs in group order, with Advanced folded', () => {
     render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
     expect(tabLabels()).toEqual(VISIBLE);
     expect(advancedToggle()).toHaveAttribute('aria-expanded', 'false');
@@ -545,6 +546,7 @@ describe('SettingsDialog — Advanced fold', () => {
     ['notifications', 'Notifications'],
     ['runtimes', 'Runtimes'],
     ['permissions', 'Permissions'],
+    ['instructions', 'Agent instructions'],
     ['connections', 'Connections'],
     ['security', 'Login & security'],
     ['remote-access', 'Remote access'],

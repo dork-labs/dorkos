@@ -197,11 +197,12 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Settings',
-    can: 'change everyday settings, see your permissions, and ask for one you lack.',
+    can: 'change everyday settings, see your permissions and instructions, and ask for one you lack.',
     covers: [
       'operator.config_',
       'operator.check_update',
       'permissions.',
+      'instructions.',
       'capabilities.list',
       'operator.feedback_draft',
     ],

@@ -450,6 +450,7 @@ describe('the rows', () => {
       'instructions',
       'boundaries',
       'memory',
+      'told',
     ]);
   });
 

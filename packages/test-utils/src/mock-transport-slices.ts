@@ -15,6 +15,7 @@
  *
  * @module test-utils/mock-transport-slices
  */
+import type { InstructionsView } from '@dorkos/shared/agent-instructions-schemas';
 import { vi } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockComputerTransport } from './mock-computer-transport.js';
@@ -52,11 +53,28 @@ type SliceMethods =
   | 'setAccountNoAutoMove'
   | 'getFrameBridgeStatus'
   | 'getAgentLevel'
+  | 'getAgentInstructionsTemplate'
+  | 'getAgentInstructionsPreview'
   | 'undoAgentTaskMode'
   | 'approveTaskFile'
   | 'sendFeedback'
   | 'listMyFeedback'
   | 'previewRoomTranscript';
+
+/** An instructions view with no blocks, for tests that never open the viewer. */
+const EMPTY_INSTRUCTIONS_VIEW: InstructionsView = {
+  mode: 'template',
+  runtime: 'claude-code',
+  place: 'direct',
+  level: 'act',
+  agentId: null,
+  runtimeNotes: [],
+  levelNote: '',
+  blocks: [],
+  notIncluded: [],
+  variables: [],
+  tokens: 0,
+};
 
 /** Mocks for every method of the split-out `Transport` slices. */
 export function transportSliceMocks(): Pick<Transport, SliceMethods> &
@@ -119,6 +137,8 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     // DorkOS has served no page into a frame, so the canvas says nothing.
     getFrameBridgeStatus: vi.fn().mockResolvedValue({ bridge: 'unknown' }),
     confirmRelayAdapterReferences: vi.fn().mockResolvedValue({ ok: true }),
+    getAgentInstructionsTemplate: vi.fn().mockResolvedValue(EMPTY_INSTRUCTIONS_VIEW),
+    getAgentInstructionsPreview: vi.fn().mockResolvedValue(EMPTY_INSTRUCTIONS_VIEW),
     getAgentLevel: vi.fn().mockResolvedValue({
       effective: 'autonomy',
       effectiveMode: 'bypassPermissions',

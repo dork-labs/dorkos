@@ -579,8 +579,10 @@ describe('in-session tool exposure', () => {
     // an agent may move its own seat; no prompt block names it. Its options list stays external.
     // 143 -> 144 total, 131 -> 132 deferred: `room_handoff_status` (DOR-3778), a read a chat makes
     // only after a post of its own was handed off; no prompt block names it.
-    expect(tools).toHaveLength(144);
-    expect(deferred).toHaveLength(132);
+    // 144 -> 145 total, 132 -> 133 deferred: `agent_instructions` (spec `context-viewer`
+    // phase 3), a read an agent makes when asked what it is told; no prompt block names it.
+    expect(tools).toHaveLength(145);
+    expect(deferred).toHaveLength(133);
     for (const name of [
       'local_browser_ask_person',
       'local_browser_state',

@@ -134,15 +134,10 @@ import {
 import type { CreditsRelay } from '../../core/cloud/credits-relay.js';
 import { CodexModelCatalog } from './model-catalog.js';
 import { dorkosToolsPosture } from '../shared/dorkos-mcp-injection.js';
-import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
-import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
-import {
-  renderBlockedAreaLines,
-  resolveToolVisibilityFor,
-} from '../shared/permission-tool-filter.js';
 import { resolveCodexLaunchTools } from './mcp-server-config.js';
 import { codexTurnPrompt, grantedWritableDirectories } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
+import { buildCodexAgentContext } from './agent-context.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
 import type { ConnectorRuntimeMcpInjection, ConnectorRuntimeTools } from '../connector-tools.js';
@@ -971,30 +966,13 @@ export class CodexRuntime implements AgentRuntime {
         await buildAgentContextAppend(agentPath, cwd)
       );
 
-      // The room verbs, and ONLY when this turn actually carries them — gated on
-      // the resolved injection itself, not on a second guess at it, so the prose
-      // and the wiring cannot disagree (spec `tool-only-room-replies` §D11).
-      // Named under codex's own MCP prefix, never claude-code's: a bare or
-      // wrongly-prefixed name is uncallable, which is the DOR-1292 defect.
-      //
-      // Outside the context gate, and deliberately: whether this session HAS the
-      // room tools is answered per turn, so a menu written in the wrong tense must
-      // never survive into a turn where it is false.
-      //
-      // Beside it, one line per Blocked permission area (spec `agent-permissions`
-      // D15), resolved per turn like the menu: the runtime listener hides the
-      // same area's tools from this turn's list.
-      const agentContext = dorkosTools
-        ? [
-            selection.text,
-            buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
-            // The agent's own Blocked areas, read where its manifest lives —
-            // the listener hides the same areas keyed on the same anchor.
-            renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath)).blockedAreas),
-          ]
-            .filter(Boolean)
-            .join('\n\n')
-        : selection.text;
+      // The room verbs and the Blocked-area lines ride outside the gate, per
+      // turn (`agent-context.ts`).
+      const agentContext = await buildCodexAgentContext(
+        selection.text,
+        Boolean(dorkosTools),
+        agentPath
+      );
 
       const accessContext =
         connectorTools && this.connectorRuntimeTools && meshAgent

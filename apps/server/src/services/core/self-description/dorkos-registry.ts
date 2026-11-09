@@ -46,6 +46,7 @@ import { workQueueDomain } from '../../work-queue/work-queue-capabilities.js';
 import { heartbeatDomain } from '../../heartbeats/heartbeat-capabilities.js';
 import { uiDomain } from '../../session/browser-seat/ui-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
+import { instructionsDomain } from '../../runtimes/context-preview/instructions-capability.js';
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
 import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
@@ -95,6 +96,9 @@ export function composeDorkOsCapabilityRegistry(
   // session has a window, and the canvas it reads is resolved per call.
   domains.push(uiDomain);
   domains.push(capabilitiesDomain);
+  // Unconditional too: every agent already receives the text it reads, and the
+  // builders it reaches need no service handle (spec `context-viewer` phase 3).
+  domains.push(instructionsDomain);
   // Unconditional too: every agent may read its own permissions and ask past a
   // Blocked one (spec `agent-permissions` D8, D9). The request tool reaches the
   // action it asks for through `deps.registry`, back-written below.
@@ -163,6 +167,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     memoryDomain,
     uiDomain,
     capabilitiesDomain,
+    instructionsDomain,
     permissionsDomain,
     heartbeatDomain,
   ];

@@ -180,6 +180,7 @@ export type BuiltInSettingsTab =
   | 'rooms'
   | 'connections'
   | 'permissions'
+  | 'instructions'
   | 'privacy'
   | 'danger'
   | 'experiments';
@@ -208,7 +209,7 @@ export interface SettingsTabEntry {
  * the command palette both read, so a tab cannot be renamed in one and not the
  * other.
  *
- * You, Agents and This computer are the eleven everyday tabs. Advanced folds
+ * You, Agents and This computer are the twelve everyday tabs. Advanced folds
  * away the five most people set once or never; folding is not hiding, since
  * every one keeps its id and so its links.
  */
@@ -225,6 +226,8 @@ export const SETTINGS_TAB_DIRECTORY: readonly SettingsTabEntry[] = [
   { id: 'runtimes', label: 'Runtimes', group: 'Agents', onHub: false },
   // What agents may do, for everyone — the answer to "why did my agent ask".
   { id: 'permissions', label: 'Permissions', group: 'Agents' },
+  // What every agent is told, as a template (spec `context-viewer`). Read only.
+  { id: 'instructions', label: 'Agent instructions', group: 'Agents' },
   // How DorkOS reaches your apps; the Connections page is for the apps.
   { id: 'connections', label: 'Connections', group: 'Agents' },
   // The local half of what was the Access tab (DOR-2628).

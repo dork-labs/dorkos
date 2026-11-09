@@ -37,6 +37,7 @@ import type { DocLinksTransport } from './transport-doc-links.js';
 import type { AccountAutoMoveTransport } from './transport-account-auto-move.js';
 import type { FrameBridgeTransport } from './transport-frame-bridge.js';
 import type { AgentLevelTransport } from './transport-agent-level.js';
+import type { AgentInstructionsTransport } from './transport-agent-instructions.js';
 import type { ApprovalTransport } from './transport-approvals.js';
 import type { TaskModeUndoTransport } from './transport-task-mode.js';
 import type { GlobalMcpTransport } from './transport-global-mcp.js';
@@ -74,6 +75,7 @@ export interface TransportSlices
     AccountAutoMoveTransport,
     FrameBridgeTransport,
     AgentLevelTransport,
+    AgentInstructionsTransport,
     TaskModeUndoTransport,
     GlobalMcpTransport,
     ShellCheckTransport {}

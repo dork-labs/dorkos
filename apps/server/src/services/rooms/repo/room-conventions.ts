@@ -198,10 +198,13 @@ export class RoomConventions {
     // Over cap: the framing preamble goes too. Its three lines are precedence
     // rules ABOUT conventions, and stating how to weigh rules that were not sent
     // is noise in a place that costs tokens on every message.
-    const inside =
-      overCapBytes !== null
-        ? overCapNotice(overCapBytes, this.deps.maxRoomMdBytes())
-        : `${CONVENTIONS_PREAMBLE}\n${defuseSystemTags(body ?? '', DEFUSED_TAGS)}`;
+    if (overCapBytes !== null) {
+      return wrapConventions(
+        room.title,
+        commit.slice(0, 7),
+        overCapNotice(overCapBytes, this.deps.maxRoomMdBytes())
+      );
+    }
     // **Renaming a room relaunches every member agent's warm process**, on that
     // agent's next turn there. The title is in the append, the append is a
     // `relaunch` pin for claude-code (`launch-fingerprint.ts`), so a changed one
@@ -211,11 +214,7 @@ export class RoomConventions {
     // is rare and deliberate, the cost is one process boot per agent, and the
     // alternative — a block that names the room's old title until its files
     // next change — is a room telling its agents something untrue.
-    return [
-      `<${ROOM_CONVENTIONS_TAG} room="${attributeValue(room.title)}" commit="${commit.slice(0, 7)}">`,
-      inside,
-      `</${ROOM_CONVENTIONS_TAG}>`,
-    ].join('\n');
+    return renderRoomConventions(room.title, commit.slice(0, 7), body ?? '');
   }
 
   /**
@@ -326,6 +325,41 @@ export class RoomConventions {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/**
+ * The block one `ROOM.md` body becomes: the framing preamble, then the body
+ * with its structural tags defused, inside the block's own marker.
+ *
+ * Exported for the context viewer, which writes the template through this same
+ * function with `{{room.conventions}}` as the body (spec `context-viewer`
+ * phase 3), so the template cannot drift from what a room turn carries.
+ *
+ * @param title - The room's title, rendered into the block's label.
+ * @param commit - The short commit the body was read at.
+ * @param body - `ROOM.md` as read from that commit.
+ */
+export function renderRoomConventions(title: string, commit: string, body: string): string {
+  return wrapConventions(
+    title,
+    commit,
+    `${CONVENTIONS_PREAMBLE}\n${defuseSystemTags(body, DEFUSED_TAGS)}`
+  );
+}
+
+/**
+ * Put text inside the block's marker.
+ *
+ * @param title - The room's title.
+ * @param commit - The short commit.
+ * @param inside - What the block carries.
+ */
+function wrapConventions(title: string, commit: string, inside: string): string {
+  return [
+    `<${ROOM_CONVENTIONS_TAG} room="${attributeValue(title)}" commit="${commit}">`,
+    inside,
+    `</${ROOM_CONVENTIONS_TAG}>`,
+  ].join('\n');
 }
 
 /**
