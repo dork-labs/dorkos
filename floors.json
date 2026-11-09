@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "updated_at": "2026-11-02T13:19:45.580Z",
+ "updated_at": "2026-11-09T13:45:01.231Z",
  "slos": {
   "headroom": {
    "floor": {
@@ -34,6 +34,10 @@
     {
      "week": "2026-W44",
      "status": "breach"
+    },
+    {
+     "week": "2026-W45",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -70,6 +74,10 @@
     {
      "week": "2026-W44",
      "status": "breach"
+    },
+    {
+     "week": "2026-W45",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -106,6 +114,10 @@
     {
      "week": "2026-W44",
      "status": "ok"
+    },
+    {
+     "week": "2026-W45",
+     "status": "breach"
     }
    ],
    "moved": [
@@ -148,6 +160,10 @@
     {
      "week": "2026-W44",
      "status": "unmeasured"
+    },
+    {
+     "week": "2026-W45",
+     "status": "unmeasured"
     }
    ],
    "moved": []
@@ -184,6 +200,10 @@
     {
      "week": "2026-W44",
      "status": "breach"
+    },
+    {
+     "week": "2026-W45",
+     "status": "breach"
     }
    ],
    "moved": []
@@ -219,6 +239,10 @@
     },
     {
      "week": "2026-W44",
+     "status": "ok"
+    },
+    {
+     "week": "2026-W45",
      "status": "ok"
     }
    ],
@@ -264,6 +288,10 @@
     {
      "week": "2026-W44",
      "status": "insufficient"
+    },
+    {
+     "week": "2026-W45",
+     "status": "insufficient"
     }
    ],
    "moved": []
@@ -299,6 +327,10 @@
     },
     {
      "week": "2026-W44",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W45",
      "status": "breach"
     }
    ],
@@ -344,6 +376,10 @@
     {
      "week": "2026-W44",
      "status": "breach"
+    },
+    {
+     "week": "2026-W45",
+     "status": "ok"
     }
    ],
    "moved": []
@@ -379,6 +415,10 @@
     },
     {
      "week": "2026-W44",
+     "status": "breach"
+    },
+    {
+     "week": "2026-W45",
      "status": "breach"
     }
    ],
@@ -416,6 +456,10 @@
     {
      "week": "2026-W44",
      "status": "breach"
+    },
+    {
+     "week": "2026-W45",
+     "status": "ok"
     }
    ],
    "moved": [
@@ -460,6 +504,10 @@
     },
     {
      "week": "2026-W44",
+     "status": "met"
+    },
+    {
+     "week": "2026-W45",
      "status": "met"
     }
    ],
