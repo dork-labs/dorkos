@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(server): DorkOS's own protected files are refused by the canvas, attachments and agent launches (DOR-4060)"
+  - 'fix(server): the canvas browser, folders inside the data folder and room reads follow the same rule (DOR-4060)'
 ---
 
 ### Fixed
