@@ -104,6 +104,7 @@ describe('useAppActions', () => {
     const { result } = setup([broken]);
     await act(() => result.current.tryAgain('w'));
     expect(remount).toHaveBeenCalledTimes(1);
+    expect(remount).toHaveBeenCalledWith(['w']);
     expect(openSettings).toHaveBeenCalledWith('extensions', 'w');
 
     const fixed = setup([{ ...broken, status: 'active' }]);

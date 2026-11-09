@@ -55,6 +55,7 @@ export interface AppTileProps {
 
 /** The line under the name, and how it reads. */
 function stateLine(app: AppEntry, trying: boolean): { text: string; tone: string } | null {
+  if (app.state === 'starting') return { text: 'Starting…', tone: 'text-muted-foreground' };
   if (trying) return { text: 'Trying…', tone: 'text-muted-foreground' };
   if (app.state === 'held') return { text: 'Needs your OK', tone: 'text-brand-text font-[550]' };
   if (app.state === 'error')
@@ -106,7 +107,7 @@ export function AppTile({ app, pinned, asRow }: AppTileProps) {
         data-testid={`apps-tile-${app.id}`}
         data-state={app.state}
         aria-label={trying ? `${app.name}, trying again` : appAccessibleName(app)}
-        aria-busy={trying || undefined}
+        aria-busy={trying || app.state === 'starting' || undefined}
         disabled={trying}
         whileTap={reducedMotion ? undefined : { scale: 0.985 }}
         transition={{ duration: 0.1 }}

@@ -76,9 +76,29 @@ describe('buildAppCatalog', () => {
       input({
         extensions: [ext('z', 'Zeta'), ext('a', 'alpha'), ext('tools', 'Tools only')],
         pages: [page('z', '', 'Zeta home'), page('a', '', 'Alpha home')],
+        clientStates: { tools: 'ready' },
       })
     );
     expect(catalog.apps.map((app) => app.name)).toEqual(['alpha', 'Zeta']);
+  });
+
+  it('shows discovered apps before pages register, including failed first loads', () => {
+    const records = [ext('garden', 'Garden'), ext('pond', 'Pond')];
+    expect(buildAppCatalog(input({ extensions: records })).apps.map((app) => app.state)).toEqual([
+      'starting',
+      'starting',
+    ]);
+    expect(
+      buildAppCatalog(
+        input({
+          extensions: records,
+          clientStates: { garden: 'starting', pond: 'error' },
+        })
+      ).apps.map((app) => [app.id, app.state])
+    ).toEqual([
+      ['garden', 'starting'],
+      ['pond', 'error'],
+    ]);
   });
 
   it('opens an app on its home page, else its first listed page', () => {

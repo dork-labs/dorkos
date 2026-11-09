@@ -9,6 +9,9 @@ import type { ExtensionAPIDeps, LoadedExtension } from './types';
 import { createElement } from 'react';
 import { ManifestSettingsPanel, ManifestSettingsIcon } from '../ui/ManifestSettingsPanel';
 import { extensionApiUrl } from './extension-api-url';
+import { setExtensionClientState } from '@/layers/shared/lib/extension-client-state';
+import { ExtensionLoadFailure } from '../ui/ExtensionLoadFailure';
+import { importExtensionModule } from './extension-bundle-import';
 import { runningCopiesOnly } from '@/layers/entities/extension';
 
 /**
@@ -43,19 +46,32 @@ async function fetchExtensionsOrThrow(): Promise<ExtensionRecordPublic[]> {
   return runningCopiesOnly((await res.json()) as ExtensionRecordPublic[]);
 }
 
-/**
- * Dynamically import a compiled extension bundle from the server.
- *
- * Returns `null` on import failure so the caller can skip and report the error.
- */
-async function importBundle(id: string): Promise<ExtensionModule | null> {
+/** Maximum wait for one local bundle, including a cold load of a large app. */
+export const EXTENSION_IMPORT_TIMEOUT_MS = 15_000;
+
+/** Import one bundle, returning null on failure or timeout. */
+async function importBundle(id: string, cacheBust: boolean): Promise<ExtensionModule | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return (await import(
-      /* @vite-ignore */ extensionApiUrl(`/extensions/${id}/bundle`)
-    )) as ExtensionModule;
+    // Local bundles can be large; 15 seconds allows a cold load without letting
+    // a top-level await hold the app forever. Import cannot be cancelled: the
+    // race discards late results, and only this settled result may activate.
+    return await Promise.race([
+      importExtensionModule(
+        extensionApiUrl(`/extensions/${id}/bundle${cacheBust ? `?t=${Date.now()}` : ''}`)
+      ),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Bundle import timed out')),
+          EXTENSION_IMPORT_TIMEOUT_MS
+        );
+      }),
+    ]);
   } catch (err) {
-    console.error(`[extensions] Failed to import ${id}:`, err);
+    console.error(`[extensions] Failed to ${cacheBust ? 'hot-reload' : 'import'} ${id}:`, err);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -101,12 +117,6 @@ async function initServerExtension(rec: ExtensionRecordPublic): Promise<void> {
   }
 }
 
-/** Result of a single bundle load attempt. */
-interface BundleResult {
-  rec: ExtensionRecordPublic;
-  module: ExtensionModule | null;
-}
-
 /**
  * Handles the client-side extension lifecycle: fetch the extension list,
  * dynamically import compiled bundles, activate extensions with their API
@@ -119,17 +129,18 @@ interface BundleResult {
 export class ExtensionLoader {
   private loaded: Map<string, LoadedExtension> = new Map();
   private readonly deps: ExtensionAPIDeps;
+  private failedSettings = new Map<string, () => void>();
+  private attempts = new Map<string, number>();
+  private nextAttempt = 0;
   /**
    * Set by {@link deactivateAll} to prevent a stale loader from completing
    * async work after React StrictMode unmounts the owning component.
    */
   private disposed = false;
   /**
-   * Monotonic load token. Every load path — {@link initialize},
-   * {@link reloadAll}, and {@link reloadExtensions} — claims the current value
-   * on entry by incrementing it, so starting any load supersedes all older
-   * in-flight loads. A superseded load stops activating instead of registering
-   * contributions that a newer load (e.g. a cwd switch) has made stale.
+   * Full loads increment this token, so a cwd switch supersedes every old
+   * import. Targeted reloads use per-app attempt tokens instead: retrying one
+   * app must not strand another app that is still loading.
    */
   private generation = 0;
 
@@ -167,100 +178,86 @@ export class ExtensionLoader {
    * @param extensions - The extension records to load from
    * @param gen - The generation this load claimed on entry; activation stops
    *   if a newer load has claimed a later generation in the meantime
+   * @param cacheBust - Import a fresh URL when retrying.
+   * @param requestedAttempts - Tokens of the individual apps being retried.
    * @returns The provided extension list and the map of loaded extensions
    */
   private async activateFrom(
     extensions: ExtensionRecordPublic[],
-    gen: number
-  ): Promise<{
-    extensions: ExtensionRecordPublic[];
-    loaded: Map<string, LoadedExtension>;
-  }> {
-    // Only load extensions that have been compiled, have a ready bundle, and that
-    // the person allowed to run (DOR-516). The server withholds the bundle either
-    // way — that is the actual guarantee, and it lives at
-    // `ExtensionManager.readBundle` so a hand-written request cannot skip it. This
-    // filter is here so the cockpit does not fire a request it knows will be
-    // refused and log a console error for every extension awaiting a decision.
+    gen: number,
+    cacheBust = false,
+    requestedAttempts?: ReadonlyMap<string, number>
+  ): Promise<{ extensions: ExtensionRecordPublic[]; loaded: Map<string, LoadedExtension> }> {
+    if (this.disposed || gen !== this.generation) return { extensions, loaded: this.loaded };
+    // Retry uses exactly the same readiness and approval check as first load.
+    // The server still verifies the exact bytes before serving any bundle.
     const ready = extensions.filter(
       (ext) => ext.status === 'compiled' && ext.bundleReady && ext.approvedToRun
     );
-
     if (ready.length === 0) {
       console.log('[extensions] No extensions to load');
       return { extensions, loaded: this.loaded };
     }
-
-    // Load all bundles in parallel to minimise startup time.
-    const bundleResults: BundleResult[] = await Promise.all(
-      ready.map(async (rec): Promise<BundleResult> => ({
-        rec,
-        module: await importBundle(rec.id),
-      }))
-    );
-
     const activated: string[] = [];
-
-    const serverInits: Promise<void>[] = [];
-
-    for (const { rec, module } of bundleResults) {
-      // Stop activating if this load was torn down (deactivateAll on a
-      // StrictMode unmount) or superseded by a newer load (reloadAll on a rapid
-      // CWD switch) while the async work was in flight — otherwise we would
-      // register stale contributions from a previous working directory.
-      if (this.disposed || gen !== this.generation) break;
-
-      if (!module) {
-        // importBundle already logged the error; nothing more to do here.
-        continue;
-      }
-
-      const { api, cleanups } = createExtensionAPI(
-        rec.id,
-        this.deps,
-        rec.manifest.capabilities?.events ?? []
-      );
-      try {
-        const deactivateFn = module.activate(api);
-
-        // Auto-register a secrets settings tab from the manifest if the
-        // extension didn't register one itself. This gives extension authors
-        // a polished settings UI for free — zero code required.
-        this.autoRegisterConfigTab(rec, cleanups);
-
-        const loaded: LoadedExtension = {
-          id: rec.id,
-          manifest: rec.manifest,
-          module,
-          api,
-          cleanups,
-          deactivate: typeof deactivateFn === 'function' ? deactivateFn : undefined,
-        };
-
-        this.loaded.set(rec.id, loaded);
-        activated.push(`${rec.manifest.name} v${rec.manifest.version}`);
-
-        // After client-side activation succeeds, signal the server to
-        // initialize its side. Non-blocking — failures are logged only.
-        serverInits.push(initServerExtension(rec));
-      } catch (err) {
-        console.error(`[extensions] Failed to activate ${rec.id}:`, err);
-        runCleanups(rec.id, cleanups);
-      }
-    }
-
-    await Promise.all(serverInits);
-
-    if (activated.length > 0) {
-      console.log(`[extensions] Activated: ${activated.join(', ')}`);
-    }
-
-    // If this load was superseded mid-flight, `extensions` reflects the fetch
-    // this load performed, not necessarily the newest one — the returned list is
-    // best-effort context state; the TanStack extension-list query (invalidated
-    // by every reload caller) is the source of truth for list consumers. The
-    // `loaded` map is the loader's single live instance, so it is always current.
+    await Promise.all(
+      ready.map(async (rec) => {
+        const attempt = requestedAttempts?.get(rec.id) ?? ++this.nextAttempt;
+        if (requestedAttempts && this.attempts.get(rec.id) !== attempt) return;
+        this.attempts.set(rec.id, attempt);
+        setExtensionClientState(rec.id, 'starting');
+        const module = await importBundle(rec.id, cacheBust);
+        if (this.disposed || gen !== this.generation || this.attempts.get(rec.id) !== attempt)
+          return;
+        this.failedSettings.get(rec.id)?.();
+        this.failedSettings.delete(rec.id);
+        if (!module) {
+          this.markFailed(rec);
+          return;
+        }
+        const { api, cleanups } = createExtensionAPI(
+          rec.id,
+          this.deps,
+          rec.manifest.capabilities?.events ?? []
+        );
+        try {
+          const deactivate = module.activate(api);
+          this.autoRegisterConfigTab(rec, cleanups);
+          this.loaded.set(rec.id, {
+            id: rec.id,
+            manifest: rec.manifest,
+            module,
+            api,
+            cleanups,
+            deactivate: typeof deactivate === 'function' ? deactivate : undefined,
+          });
+          setExtensionClientState(rec.id, 'ready');
+          activated.push(rec.manifest.name + ' v' + rec.manifest.version);
+          // A coordination signal, never a reason to hold back registered screens.
+          void initServerExtension(rec);
+        } catch (err) {
+          console.error(`[extensions] Failed to activate ${rec.id}:`, err);
+          runCleanups(rec.id, cleanups);
+          this.markFailed(rec);
+        }
+      })
+    );
+    if (activated.length > 0) console.log('[extensions] Activated: ' + activated.join(', '));
     return { extensions, loaded: this.loaded };
+  }
+
+  /** Keep a failed app visible in its own Settings section, with a bounded retry. */
+  private markFailed(rec: ExtensionRecordPublic): void {
+    setExtensionClientState(rec.id, 'error');
+    const unsubscribe = this.deps.registry.register('settings.tabs', {
+      id: `${rec.id}:load-error`,
+      label: rec.manifest.name,
+      group: 'Apps',
+      component: () =>
+        createElement(ExtensionLoadFailure, {
+          retry: () => this.reloadExtensions([rec.id]),
+        }),
+    });
+    this.failedSettings.set(rec.id, unsubscribe);
   }
 
   /**
@@ -336,6 +333,10 @@ export class ExtensionLoader {
     }
 
     this.loaded.clear();
+    for (const cleanup of this.failedSettings.values()) cleanup();
+    this.failedSettings.clear();
+    for (const id of this.attempts.keys()) setExtensionClientState(id, undefined);
+    this.attempts.clear();
   }
 
   /**
@@ -353,11 +354,16 @@ export class ExtensionLoader {
     extensions: ExtensionRecordPublic[];
     loaded: Map<string, LoadedExtension>;
   }> {
-    // Claim this load; any newer load supersedes it. Without this, an
-    // SSE-triggered reload that was awaiting its fetch when a cwd-switch
-    // reloadAll() ran would resurrect the pre-switch extensions into the
-    // fresh set.
-    const gen = ++this.generation;
+    // A retry supersedes only its own apps. A full cwd swap still invalidates
+    // this load through generation, including while its list fetch is pending.
+    const gen = this.generation;
+    const requestedAttempts = new Map(
+      ids.map((id) => {
+        const attempt = ++this.nextAttempt;
+        this.attempts.set(id, attempt);
+        return [id, attempt] as const;
+      })
+    );
 
     // 1. Deactivate only the specified extensions
     for (const id of ids) {
@@ -375,63 +381,20 @@ export class ExtensionLoader {
       }
     }
 
-    // 2. Fetch updated extension list from server. A refused list reloads
-    // nothing; the extensions not being reloaded stay as they are.
+    // Fetch before importing: a retry never reuses an earlier approval answer.
     const extensions = (await fetchExtensions()) ?? [];
-
-    // 3. Re-import and reactivate the specified extensions
+    if (this.disposed || gen !== this.generation) return { extensions, loaded: this.loaded };
     for (const id of ids) {
-      // Stop reactivating if a newer load (cwd-switch reloadAll, unmount) has
-      // superseded this one — it owns the loaded map now.
-      if (this.disposed || gen !== this.generation) break;
-
-      const rec = extensions.find((e) => e.id === id);
-      if (!rec || rec.status !== 'compiled' || !rec.bundleReady) {
-        continue;
-      }
-
-      try {
-        // Cache-bust: append timestamp to force fresh ESM module evaluation.
-        // The browser's module registry keys by URL, so a new query string
-        // yields a new module instance distinct from the pre-reload one.
-        const module = (await import(
-          /* @vite-ignore */ extensionApiUrl(`/extensions/${id}/bundle?t=${Date.now()}`)
-        )) as ExtensionModule;
-
-        // Re-check after the import await — a newer load may have started
-        // while the bundle was in flight.
-        if (this.disposed || gen !== this.generation) break;
-
-        const { api, cleanups } = createExtensionAPI(id, this.deps);
-        let deactivateFn: ReturnType<ExtensionModule['activate']>;
-        try {
-          deactivateFn = module.activate(api);
-        } catch (err) {
-          // Whatever it registered before throwing comes out again.
-          runCleanups(id, cleanups);
-          throw err;
-        }
-
-        this.autoRegisterConfigTab(rec, cleanups);
-
-        this.loaded.set(id, {
-          id,
-          manifest: rec.manifest,
-          module,
-          api,
-          cleanups,
-          deactivate: typeof deactivateFn === 'function' ? deactivateFn : undefined,
-        });
-
-        // Signal server init after successful client-side reactivation.
-        await initServerExtension(rec);
-
-        console.log(`[extensions] Hot-reloaded: ${rec.manifest.name} v${rec.manifest.version}`);
-      } catch (err) {
-        console.error(`[extensions] Failed to hot-reload ${id}:`, err);
-      }
+      if (this.attempts.get(id) !== requestedAttempts.get(id)) continue;
+      this.failedSettings.get(id)?.();
+      this.failedSettings.delete(id);
     }
-
+    await this.activateFrom(
+      extensions.filter((record) => ids.includes(record.id)),
+      gen,
+      true,
+      requestedAttempts
+    );
     return { extensions, loaded: this.loaded };
   }
 

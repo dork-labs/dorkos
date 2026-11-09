@@ -90,24 +90,29 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
   // extensions still live — the rejection propagates to the cwd sync hook,
   // which owns the success/error toasts. Slot hosts watch the reactive
   // registry, so components remount cleanly without a page reload.
-  const reloadAllExtensions = useCallback(async () => {
-    const loader = loaderRef.current;
-    if (!loader) return;
+  const reloadAllExtensions = useCallback(
+    async (ids?: string[]) => {
+      const loader = loaderRef.current;
+      if (!loader) return;
 
-    reloadsStarted.current += 1;
-    setState((prev) => ({ ...prev, settling: true }));
-    try {
-      const { extensions, loaded } = await loader.reloadAll();
-      setState({ extensions, loaded, ready: true, settling: false });
-      setExtensionLoadFailed(false);
-    } catch (err) {
-      setState((prev) => ({ ...prev, settling: false }));
-      throw err;
-    }
-    // Sync TanStack Query so UI consumers of the extension list reflect the
-    // cwd-scoped set immediately, not on the next poll interval.
-    queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
-  }, [queryClient]);
+      reloadsStarted.current += 1;
+      setState((prev) => ({ ...prev, settling: true }));
+      try {
+        const { extensions, loaded } = await (ids
+          ? loader.reloadExtensions(ids)
+          : loader.reloadAll());
+        setState({ extensions, loaded, ready: true, settling: false });
+        setExtensionLoadFailed(false);
+      } catch (err) {
+        setState((prev) => ({ ...prev, settling: false }));
+        throw err;
+      }
+      // Sync TanStack Query so UI consumers of the extension list reflect the
+      // cwd-scoped set immediately, not on the next poll interval.
+      queryClient.invalidateQueries({ queryKey: extensionKeys.lists() });
+    },
+    [queryClient]
+  );
 
   // Watch for CWD changes and live-remount the extension slots if the set differs.
   useCwdExtensionSync(reloadAllExtensions);

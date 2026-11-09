@@ -214,7 +214,7 @@ export interface SidebarRowApp {
    * `ok` opens it; `held` opens its approval card (never approves); `error`
    * retries. An `off` app is never pinned in the panel.
    */
-  state: 'ok' | 'held' | 'error';
+  state: 'starting' | 'ok' | 'held' | 'error';
   /** The name with its state in words, for screen readers. */
   accessibleName: string;
 }

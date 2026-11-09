@@ -152,6 +152,26 @@ describe('AppsPage', () => {
     expect(broken).toHaveTextContent('Not working');
   });
 
+  it('keeps working apps visible beside one that is starting or not working', () => {
+    given([
+      app('garden', 'Garden'),
+      app('orchard', 'Orchard'),
+      app('pond', 'Pond', { state: 'starting' }),
+    ]);
+    const { rerender } = render(<AppsPage />);
+    expect(tilesIn('All apps')).toEqual(['garden', 'orchard', 'pond']);
+    expect(screen.getByTestId('apps-tile-pond')).toHaveTextContent('Starting…');
+    expect(screen.queryByText('No apps yet')).not.toBeInTheDocument();
+    given([
+      app('garden', 'Garden'),
+      app('orchard', 'Orchard'),
+      app('pond', 'Pond', { state: 'error' }),
+    ]);
+    rerender(<AppsPage />);
+    expect(tilesIn('All apps')).toEqual(['garden', 'orchard', 'pond']);
+    expect(screen.getByTestId('apps-tile-pond')).toHaveTextContent('Not working');
+  });
+
   it('shows the live line or nothing, never a description', () => {
     given([
       app('ts', 'Timesheet', { line: '2 entries to check', summary: 'Tracks hours you work.' }),

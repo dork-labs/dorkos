@@ -3,8 +3,7 @@
  * one answer the sidebar's Apps door, the Apps page and ⌘K all draw from
  * (DOR-3970).
  *
- * **An app is an extension that adds a page.** A running one proves it by
- * registering one. One that is not running (held, broken or off) registers
+ * Discovered extensions appear before their pages finish registering. One that is not running (held, broken or off) registers
  * nothing, so it is known from the last time it did ({@link KnownApps}) or from
  * a pin, and keeps its place instead of vanishing.
  *
@@ -12,11 +11,13 @@
  *
  * @module entities/extension/lib/app-catalog
  */
+import type { ExtensionClientState } from '@/layers/shared/lib/extension-client-state';
 import type { ExtensionPageBadge, ExtensionRecordPublic } from '@dorkos/extension-api';
 
 /**
  * What one app is doing, as a tile, a pinned row and ⌘K all show it.
  *
+ * - `starting` — its screens are still loading.
  * - `ok` — running; opens.
  * - `held` — waiting on a person: never allowed, or its files changed since
  *   (“Needs your OK”). Opens its approval card, never approves.
@@ -24,7 +25,7 @@ import type { ExtensionPageBadge, ExtensionRecordPublic } from '@dorkos/extensio
  *   (“Not working”). Pressing it retries.
  * - `off` — a person turned it off. Opens its Settings row.
  */
-export type AppState = 'ok' | 'held' | 'error' | 'off';
+export type AppState = 'starting' | 'ok' | 'held' | 'error' | 'off';
 
 /** One app, ready to draw. */
 export interface AppEntry {
@@ -88,6 +89,8 @@ export interface AppCatalogInput {
   known: KnownApps;
   /** Pinned app ids. A pinned id is an app even when nothing else says so. */
   pins: readonly string[];
+  /** Per-app browser loading state, separate from the server half. */
+  clientStates?: Readonly<Record<string, ExtensionClientState>>;
 }
 
 /** Statuses of an extension a person turned off. */
@@ -143,14 +146,33 @@ export function buildAppCatalog(input: AppCatalogInput): AppCatalog {
   for (const ext of input.extensions) {
     const page = first.get(ext.id);
     const known = input.known[ext.id];
-    if (page === undefined && known === undefined && !input.pins.includes(ext.id)) continue;
+    const clientState = input.clientStates?.[ext.id];
+    // Keep a discovered bundle visible until it can register its pages, or
+    // explain why it could not. A successfully loaded extension without pages
+    // is still a tool or section, rather than an app.
+    const awaitingPages =
+      clientState !== 'ready' &&
+      (ext.bundleReady ||
+        clientState === 'starting' ||
+        clientState === 'error' ||
+        ERROR_STATUSES.has(ext.status));
+    if (!page && !known && !input.pins.includes(ext.id) && !awaitingPages) continue;
     if (SETTINGS_ONLY_STATUSES.has(ext.status)) continue;
+    const serverState = appState(ext, input.waitingIds.has(ext.id));
+    const state =
+      serverState !== 'ok'
+        ? serverState
+        : clientState === 'error'
+          ? 'error'
+          : clientState === 'starting' || (!page && clientState !== 'ready')
+            ? 'starting'
+            : 'ok';
     const badge = page ? input.badges[page.id] : undefined;
     apps.push({
       id: ext.id,
       name: ext.manifest.name || page?.title || known?.name || ext.id,
       summary: ext.manifest.purpose ?? ext.manifest.description ?? '',
-      state: appState(ext, input.waitingIds.has(ext.id)),
+      state,
       path: page?.path ?? known?.path ?? '',
       pageId: page?.id ?? null,
       count: badge?.count ?? 0,
@@ -199,6 +221,7 @@ export function matchesAppSearch(app: AppEntry, query: string): boolean {
  * @param app - The app.
  */
 export function appAccessibleName(app: AppEntry): string {
+  if (app.state === 'starting') return `${app.name}, starting`;
   if (app.state === 'held') return `${app.name}, needs your OK`;
   if (app.state === 'error') return `${app.name}, not working. Try again`;
   if (app.state === 'off') return `${app.name}, off`;
