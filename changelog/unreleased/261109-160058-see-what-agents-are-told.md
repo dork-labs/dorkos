@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat: see what agents are told, from the builders that write it (context viewer phase 3)'
+  - 'fix(server): agent_instructions joins the guarded read-only tools on the external MCP server'
 ---
 
 ### Added

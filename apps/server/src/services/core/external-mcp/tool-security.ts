@@ -204,6 +204,11 @@ export const GUARDED_READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set<string>
   // It answers only for a caller with an agent identity anyway; this keeps a
   // tokenless one from asking at all.
   'memory_read',
+  // What every agent is told, as a template (spec `context-viewer` phase 3).
+  // No values and no other agent's details, but it is the install's working
+  // rules and tool guidance, and `my_next_turn` answers for a caller's own
+  // agent. A tokenless health check has no need of either.
+  'agent_instructions',
 ]);
 
 export const READ_ONLY_MCP_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
