@@ -52,6 +52,7 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { broadcastExtensionReloaded } from './extensions.js';
 import { listPendingExtensionApprovals } from '../services/extensions/extension-approval-queue.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { registerExtensionRemovalRoutes } from './extensions-removal.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
   EXTENSION_NOT_APPROVED_ERROR,
@@ -321,4 +322,8 @@ export function registerExtensionApprovalRoutes(
       return c.json({ error: 'Failed to revoke extension approval' }, 500);
     }
   });
+
+  // Remove and Forget answer the same kind of question, behind the same bar
+  // (DOR-3541, DOR-3372). Mounted from here so `extensions.ts` does not grow.
+  registerExtensionRemovalRoutes(router, extensionManager, safeExtId, activity);
 }

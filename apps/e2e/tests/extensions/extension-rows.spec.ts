@@ -53,7 +53,11 @@ const LIST = [
   ext('dork-core', 'Core Thing', { origin: 'core', manifest: { summary: 'Comes with DorkOS.' } }),
 ];
 
-/** Serve the list (or refuse it), and an empty approval queue. */
+/**
+ * Serve the list (or refuse it), an empty approval queue, and no approvals left
+ * behind. The last is not optional: the server is shared, and a spec that
+ * deletes a linked folder (dev-link) leaves a real "Folder missing" row here.
+ */
 async function serveList(page: Page, answer: () => { status: number; body: unknown }) {
   await page.route(
     (url) => url.pathname === '/api/extensions',
@@ -65,6 +69,10 @@ async function serveList(page: Page, answer: () => { status: number; body: unkno
   );
   await page.route(
     (url) => url.pathname === '/api/extensions/pending-approvals',
+    (route: Route) => route.fulfill({ json: { approvals: [] } })
+  );
+  await page.route(
+    (url) => url.pathname === '/api/extensions/stale-approvals',
     (route: Route) => route.fulfill({ json: { approvals: [] } })
   );
 }

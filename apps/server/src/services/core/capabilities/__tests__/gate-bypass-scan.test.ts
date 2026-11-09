@@ -131,6 +131,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'replaces a whole config section with no policy and no consent door, which is why every writer that does it owes its own gate and an audit line',
     call: 'configManager.set(',
     allowed: {
+      'services/extensions/removal/extension-removal.ts':
+        'drops the "Not now" and on/off choice recorded for one extension id, only from removeExtension and forgetStaleApproval, whose only callers are POST /api/extensions/:id/remove and /:id/forget in routes/extensions-removal.ts: both run the id check and refusedNotAPerson (agents 403, other sites refused, pinned in extensions-load-approval.test.ts) before it, and each leaves a config.extension_updated Activity row; it only ever forgets (logConfigWrite: "removing an extension" / "forgetting the approval of an extension that is gone")',
       'services/extensions/pin/path-trust-edits.ts':
         'pins or unpins one path-trust approval from what the scan read, never from a caller: only the digest moves, on a copy already approved, and it follows the agent’s own level (logConfigWrite: "an extension following its agent")',
       'services/core/operator/config-patch.ts':
