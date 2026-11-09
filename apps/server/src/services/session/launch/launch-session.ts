@@ -455,7 +455,7 @@ async function launchSessionMessage(
   // A workspace is made from `cwd`, else the default folder, so that is asked too.
   const namedCwd = cwd ?? (workspaceKey ? DEFAULT_CWD : undefined);
   const named = refusedPlace(opts, {
-    ...(namedCwd !== undefined ? { cwd: namedCwd } : {}),
+    ...(namedCwd !== undefined ? { cwd: namedCwd, defaulted: cwd === undefined } : {}),
     ...(agentPath !== undefined ? { agentPath } : {}),
   });
   if (named) return named;
@@ -605,6 +605,7 @@ async function launchSessionMessage(
   // agent's chat is refused here rather than run as that agent.
   const resolvedPlace = refusedPlace(opts, {
     cwd: effectiveCwd ?? DEFAULT_CWD,
+    defaulted: effectiveCwd === undefined,
     chatAgent: roomPlace.forAgent ?? (existing?.bound ? recordedAgent : undefined),
   });
   if (resolvedPlace) return resolvedPlace;

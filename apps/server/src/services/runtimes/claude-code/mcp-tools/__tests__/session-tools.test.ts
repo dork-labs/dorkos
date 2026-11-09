@@ -162,6 +162,7 @@ import {
   isProtectedLaunchFolder,
   NOT_THE_CALLER_MESSAGE,
   OTHER_AGENTS_HOME_MESSAGE,
+  PROTECTED_DEFAULT_FOLDER_MESSAGE,
   PROTECTED_FOLDER_MESSAGE,
 } from '../../../../session/launch/launch-caller.js';
 import {
@@ -175,6 +176,7 @@ import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
 import type { AgentIdentity } from '../../../../core/agent-identity/index.js';
 import { registerSessionTools } from '../../../../core/external-mcp/session-tools.js';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { DEFAULT_CWD } from '../../../../../lib/resolve-root.js';
 import {
   SessionStartedByStore,
   setSessionStartedByStore,
@@ -2127,5 +2129,55 @@ describe('isProtectedLaunchFolder inside and around the data folder (DOR-4060)',
     expect(isProtectedLaunchFolder('/work/repo/apps/server', '/work/other')).toBe(true);
     expect(isProtectedLaunchFolder('/work', '/work/repo')).toBe(true);
     expect(isProtectedLaunchFolder('/work/repo/apps/server/.temp/.dork', '/work/repo')).toBe(true);
+  });
+});
+
+/**
+ * A launch that names no folder (DOR-4060). The server's default folder is
+ * often the person's home (a CLI started from `~`, the desktop app's default),
+ * so these run with the fixture home AS that default: a launch that resolves to
+ * it is refused with a hint to name a folder, and a person is unchanged.
+ */
+describe('a launch that names no folder, when the default folder is home (DOR-4060)', () => {
+  beforeEach(() => {
+    // The default folder stands in for home; nothing is written there.
+    vi.stubEnv('HOME', DEFAULT_CWD);
+    vi.stubEnv('DORK_HOME', `${DEFAULT_CWD}/.dork-fixture-4060`);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', `${DEFAULT_CWD}/.claude-fixture-4060`);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  const launch = (launcher: Parameters<typeof dispatchSessionMessage>[0]['launcher']) =>
+    dispatchSessionMessage({
+      origin: { kind: 'agent-launch' },
+      ...(launcher ? { launcher } : {}),
+      sessionId: '00000000-0000-4000-8000-000000004061',
+      request: { content: 'x' },
+      clientId: 'http',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+    });
+
+  it('an agent whose own folder DorkOS cannot place is refused, with a hint to name one', async () => {
+    // The folder chain is stubbed to answer nothing, as for a home Mesh does not list.
+    const result = await launch({ kind: 'agent', agentPath: AGENT_HOME });
+    expect(isSessionLaunchRefusal(result) ? result.message : null).toBe(
+      PROTECTED_DEFAULT_FOLDER_MESSAGE
+    );
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('an unidentified caller is refused with the hint, and nothing starts', async () => {
+    const result = await launch({ kind: 'unidentified' });
+    expect(isSessionLaunchRefusal(result) ? result.launcherRefused : null).toBe('PROTECTED_FOLDER');
+    expect(isSessionLaunchRefusal(result) ? result.message : null).toBe(
+      PROTECTED_DEFAULT_FOLDER_MESSAGE
+    );
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('a person is unchanged, at the default folder', async () => {
+    const result = await launch({ kind: 'person' });
+    expect(isSessionLaunchRefusal(result)).toBe(false);
   });
 });

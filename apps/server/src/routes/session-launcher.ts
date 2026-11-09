@@ -6,12 +6,16 @@
  * @module routes/session-launcher
  */
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
-import type { RequestFacts } from '../http/request-facts.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { isPersonTurn } from '../lib/caller-authority.js';
 import { wifiTurnCeiling } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { carriedHoldOf, markedBoundOf } from '../services/core/turn-power/turn-levels.js';
 import type { MeshCore } from '@dorkos/mesh';
 import { boundaryRefusal, errorBody } from '../lib/route-utils.js';
+import { DEFAULT_CWD } from '../lib/resolve-root.js';
+import type { Context } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
+import { readQuery } from '../http/request-query.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { auditRefusedLaunch } from '../services/session/launch/launch-audit.js';
 import { getDirectChats } from '../services/rooms/direct-chat/index.js';
@@ -98,6 +102,19 @@ export function httpLaunchOf(
 }
 
 /**
+ * Where a fork that names no folder runs (DOR-4060): a verified agent's own
+ * folder, never the server's default, which is often the person's home folder.
+ * Anyone else keeps the default, and the place rule then decides.
+ *
+ * @param facts - The request's facts.
+ * @param fallback - The server's default folder.
+ */
+function forkDefaultCwd(facts: RequestFacts, fallback: string): string {
+  const launcher = sessionLauncherOf(facts);
+  return launcher.kind === 'agent' ? launcher.agentPath : fallback;
+}
+
+/**
  * Why this caller may not fork a chat into `cwd`, as the `403` body, or
  * `undefined` when it may: outside the boundary, or a place the caller may not
  * run a chat, by the same rule a new chat's folder meets (the fork runs there).
@@ -105,20 +122,23 @@ export function httpLaunchOf(
  * @param facts - The request's facts.
  * @param meshCore - Mesh, which lists the registered homes.
  * @param cwd - Where the fork would run.
+ * @param sessionId - The chat being forked, for the audit record.
+ * @param defaulted - True when the request named no folder.
  */
-export async function forkPlaceRefusal(
+async function forkPlaceRefusal(
   facts: RequestFacts,
   meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
   cwd: string,
-  sessionId: string
+  sessionId: string,
+  defaulted = false
 ): Promise<object | undefined> {
   const outside = await boundaryRefusal(cwd, { allowDorkHome: true });
   if (outside) return outside;
   const launcher = sessionLauncherOf(facts);
-  const place = launchPlaceRefusal(meshCore, launcher, { cwd });
+  const place = launchPlaceRefusal(meshCore, launcher, { cwd, defaulted });
   if (!place) return undefined;
   auditRefusedLaunch(sessionId, place, launchedByOf(meshCore, launcher), { cwd }, 'session.fork');
-  return errorBody(place.message, 'DESK_NOT_OWN');
+  return errorBody(place.message, place.code === 'PROTECTED_FOLDER' ? place.code : 'DESK_NOT_OWN');
 }
 
 /**
@@ -154,4 +174,26 @@ export async function chatPlaceRefusal(
     );
   }
   return refusal;
+}
+
+/**
+ * Where a fork runs, and why it may not, as the route answers it: the folder
+ * the request names, else (DOR-4060) a verified agent's own folder, else the
+ * server's default, and the place rule's `403` body when it refuses.
+ *
+ * @param c - The request, for its facts and its `cwd` query.
+ * @param meshCore - Mesh, which lists the registered homes.
+ * @param sessionId - The chat being forked.
+ */
+export async function forkPlace(
+  c: Context<ApiEnv>,
+  meshCore: Pick<MeshCore, 'listWithPaths'> | undefined,
+  sessionId: string
+): Promise<{ cwd: string; refused?: object }> {
+  const facts = honoRequestFacts(c);
+  const query = readQuery(c).cwd;
+  const named = typeof query === 'string' && query !== '' ? query : undefined;
+  const cwd = named ?? forkDefaultCwd(facts, DEFAULT_CWD);
+  const refused = await forkPlaceRefusal(facts, meshCore, cwd, sessionId, named === undefined);
+  return refused ? { cwd, refused } : { cwd };
 }

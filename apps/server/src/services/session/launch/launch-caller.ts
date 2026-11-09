@@ -72,6 +72,10 @@ export const UNIDENTIFIED_LAUNCHER_MESSAGE =
 export const PROTECTED_FOLDER_MESSAGE =
   "That folder holds DorkOS's private files, so no agent can start a chat there. Use your own folder.";
 
+/** The same refusal when the caller named no folder and the default is one of them. */
+export const PROTECTED_DEFAULT_FOLDER_MESSAGE =
+  'No folder was named, and the default holds private files. Name a folder with `cwd`.';
+
 /** Where the launch would run, as far as the caller named it. */
 export interface LaunchPlace {
   /** The folder the turn would stand in. */
@@ -80,6 +84,8 @@ export interface LaunchPlace {
   agentPath?: string;
   /** The agent an existing chat already runs as. */
   chatAgent?: string | null;
+  /** True when the caller named no folder and `cwd` is the server's default. */
+  defaulted?: boolean;
 }
 
 /** Whether `dir` is `root` or inside it. */
@@ -206,7 +212,10 @@ export function launchPlaceRefusal(
     place.chatAgent === undefined &&
     isProtectedLaunchFolder(place.cwd, ownFolder)
   ) {
-    return { code: 'PROTECTED_FOLDER', message: PROTECTED_FOLDER_MESSAGE };
+    return {
+      code: 'PROTECTED_FOLDER',
+      message: place.defaulted ? PROTECTED_DEFAULT_FOLDER_MESSAGE : PROTECTED_FOLDER_MESSAGE,
+    };
   }
   if (launcher.kind === 'unidentified') {
     const agents =
