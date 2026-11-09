@@ -100,8 +100,8 @@ export function describeAccessChange(input: {
         case 'exclude_other':
           return `${actor} left ${target} out of sharing ${appName} with every agent`;
         case 'approve_read':
-          // The designer's words, which the request card keeps when it ships.
-          return `Read access to ${serviceName(input.app.toolkit)} approved by ${actor}`;
+          // The designer's and Security's words (19:07): names only, never ids.
+          return `${actor} approved ${target}'s read access to ${serviceName(input.app.toolkit)}`;
         case 'narrow_own':
           return lowered
             ? `${actor} lowered its own ${appName} access to Read`

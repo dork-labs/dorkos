@@ -2,6 +2,7 @@
 covers:
   - "feat(db): the access-change ledger records an agent's read approval and the request it answered"
   - "feat(connectors): an agent approves another agent's read request, and an agent's Undo is checked as what it does"
+  - "fix(connectors): no agent reverses a person's access change, and the Activity line names who got Read"
 ---
 
 ### Added

@@ -252,7 +252,9 @@ describe('agents approving read requests', () => {
       }),
     ]);
     expect(events.changed[0]).toMatchObject({ kind: 'approve_read', needsYou: false });
-    expect(events.changed[0]!.summary((id) => id)).toBe('Read access to Gmail approved by pm');
+    expect(events.changed[0]!.summary((id) => id)).toBe(
+      "pm approved newbie's read access to Gmail"
+    );
   });
 
   describe('the six limits DorkOS can prove today (§4.4)', () => {
@@ -490,6 +492,45 @@ describe('agents approving read requests', () => {
       );
       expect(reads).toBe(2);
       expect(readAccessState(db, 'newbie', CONNECTION_ID).level).toBeNull();
+    });
+  });
+
+  describe('Security’s proofs from the PR C review', () => {
+    it('M1 (P1): no agent reverses a person’s Undo, the approver included', async () => {
+      const approved = await approval.approve(caller('pm'), { requestId: 'request-newbie' });
+      const personUndo = await narrowing.undo(OWNER, approved.changeId!);
+      expect(readAccessState(db, 'newbie', CONNECTION_ID).level).toBeNull();
+      for (const agent of ['pm', 'agent-b']) {
+        expect(await code(approval.undo(caller(agent), { changeId: personUndo.undoId }))).toBe(
+          'UNDO_PERSON_ONLY'
+        );
+      }
+      expect(readAccessState(db, 'newbie', CONNECTION_ID).level).toBeNull();
+      expect(ledger().at(-1)).toMatchObject({
+        kind: 'undo',
+        outcome: 'refused',
+        refusalCode: 'UNDO_PERSON_ONLY',
+        undoOf: personUndo.undoId,
+      });
+    });
+
+    it('P2: two approvals racing on one request apply once', async () => {
+      const results = await Promise.allSettled([
+        approval.approve(caller('pm'), { requestId: 'request-newbie' }),
+        approval.approve(caller('agent-b'), { requestId: 'request-newbie' }),
+      ]);
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      expect(
+        ledger().filter((row) => row.kind === 'approve_read' && row.outcome === 'applied')
+      ).toHaveLength(1);
+    });
+
+    it('S1 (P3): a read-write approver gives Read only: never its level, never a write action', async () => {
+      await approval.approve(caller('agent-b'), { requestId: 'request-newbie' });
+      const given = readAccessState(db, 'newbie', CONNECTION_ID);
+      expect(given.level).toBe('read');
+      expect(given.revisionIds).toEqual([read]);
+      expect(given.revisionIds).not.toContain(write);
     });
   });
 

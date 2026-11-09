@@ -64,6 +64,7 @@ export const APPROVAL_MESSAGES = {
     'You can use more than one account for that service. Say which one with connectionId.',
   APPROVE_NOT_FOUND: 'No request like that is waiting here.',
   EXCLUSION_PERSON_ONLY: 'Only a person can let an agent back into a share.',
+  UNDO_PERSON_ONLY: 'A person made that change. Only a person can change it back.',
 } as const;
 
 /** A refusal code. */
@@ -263,6 +264,9 @@ export class AccessApprovalService {
       connectionId: plan.change.connectionId,
       undoOf: plan.change.id,
     };
+    // A person's change is final to agents, as it is to the person's own Undo:
+    // no agent may reverse what a person decided (Security, PR C review M1).
+    if (plan.change.actorKind === 'person') this.refuse(caller, row, 'UNDO_PERSON_ONLY');
     if (plan.after.excluded && !plan.before.excluded) {
       this.refuse(caller, row, 'EXCLUSION_PERSON_ONLY');
     }
