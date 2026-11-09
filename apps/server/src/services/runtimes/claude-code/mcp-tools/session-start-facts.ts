@@ -18,6 +18,7 @@ import { gatedActionForMcpTool } from '../../../core/mcp-tool-tiers.js';
 import { isKept } from '../../../core/permissions/existing-chats-raise.js';
 import { resolveUnattendedDefaultStop } from '../../../session/resolution/resolve-session-defaults.js';
 import { carriedHoldOf, markedBoundOf } from '../../../core/turn-power/turn-levels.js';
+import { chatReadOutsideWords } from '../../../core/turn-power/chat-outside-words.js';
 import type { CallingChat, StartLevelFacts } from './session-start-permission.js';
 
 /** The calling agent, as `session_start` resolved it. */
@@ -58,6 +59,17 @@ export function outsiderStartCeiling(caller: Pick<StartCaller, 'agentPath' | 'ch
   const bound = markedBoundOf(caller.chat?.sessionId, caller.agentPath);
   const carried = carriedHoldOf(caller.chat?.sessionId, caller.agentPath);
   return bound === undefined ? carried : { permissionCeiling: bound, ...carried };
+}
+
+/**
+ * Whether the started session's turn is noted as one that read outside words, because its
+ * starter's chat had read some (DOR-4029): marks spread through agent hops, so memory, the browser
+ * and the narrowing gate hold the spin-off back as they would its starter. A record, never a cap.
+ *
+ * @param caller - Who is starting it: the calling chat, or only the agent.
+ */
+export function startCarriesWords(caller: Pick<StartCaller, 'agentPath' | 'chat'>): boolean {
+  return chatReadOutsideWords(caller.chat?.sessionId, caller.agentPath);
 }
 
 /**

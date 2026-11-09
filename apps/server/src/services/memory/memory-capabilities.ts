@@ -36,15 +36,7 @@ import type { CapabilityDomain } from '../core/capabilities/index.js';
 import type { CapabilityHandlerContext } from '../core/capabilities/registry.js';
 import { getMemoryProvider } from './index.js';
 import { marksOf } from '../core/turn-power/turn-levels.js';
-import { roomTurnReadOutsideWords } from '../core/turn-power/outside-words.js';
-import { runtimeRegistry } from '../core/runtime-registry.js';
-
-/** The launch origins of a chat somebody from off this machine started. */
-const OUTSIDE_LAUNCH_ORIGINS: ReadonlySet<string> = new Set([
-  'relay-binding',
-  'outside-sender',
-  'connector-event',
-]);
+import { chatReadOutsideWords } from '../core/turn-power/chat-outside-words.js';
 import { MEMORY_READ_TOOL_NAME, MEMORY_WRITE_TOOL_NAME } from './tool-names.js';
 
 // The tool names live in a leaf module so the tool lists can import them
@@ -150,15 +142,8 @@ function provenanceFor(deps: CapabilityDeps, context: CapabilityHandlerContext):
  */
 function readsOutsiderWords(context: CapabilityHandlerContext): boolean {
   if (marksOf(context.sessionId, context.identity?.agentPath).outsider === true) return true;
-  if (!context.sessionId) return false;
-  if (roomTurnReadOutsideWords(context.sessionId)) return true;
-  try {
-    return OUTSIDE_LAUNCH_ORIGINS.has(
-      runtimeRegistry.getSessionLaunchOrigin(context.sessionId) ?? ''
-    );
-  } catch {
-    return false;
-  }
+  // The same reading a chat's words carry on with (DOR-4029), so the two cannot drift apart.
+  return chatReadOutsideWords(context.sessionId, context.identity?.agentPath);
 }
 
 /**

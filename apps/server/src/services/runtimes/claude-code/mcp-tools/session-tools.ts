@@ -94,7 +94,8 @@ import {
   type CallingChat,
   type SessionStartPermission,
 } from './session-start-permission.js';
-import { outsiderStartCeiling, startLevelFacts } from './session-start-facts.js';
+import { outsiderStartCeiling, startCarriesWords, startLevelFacts } from './session-start-facts.js';
+import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
 import { launchPlaceRefusal } from '../../../session/launch/launch-caller.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
 import { jsonContent, type McpToolDeps } from './types.js';
@@ -523,6 +524,12 @@ export function createSessionStartHandler(
     const title = startedChatTitle(args.title, args.reason, caller.label);
     let lastTitleTry: (() => void) | null = null;
 
+    // A starter whose chat read outside words hands them on (DOR-4029): the new chat's turn is
+    // noted as one that read them before it runs, so memory, the browser and the narrowing gate
+    // hold it back as they would the starter. Read once, from server-bound state.
+    const carriesWords = startCarriesWords(caller);
+    if (carriesWords) noteRoomTurnWords(sessionId, true);
+
     let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
     try {
       result = await dispatchSessionMessage({
@@ -599,6 +606,8 @@ export function createSessionStartHandler(
     }
 
     const canonicalId = result.canonicalId ?? sessionId;
+    // Under the id the chat settled on too; a later rename is carried by `aliasTurnLevel`.
+    if (carriesWords && canonicalId !== sessionId) noteRoomTurnWords(canonicalId, true);
     settleStamp(canonicalId);
     if (canonicalId !== sessionId) reservation?.rekey(canonicalId);
     lastTitleTry = nameStartedChat({

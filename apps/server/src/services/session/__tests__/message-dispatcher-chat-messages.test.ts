@@ -31,7 +31,12 @@ import {
   resetMessageDispatcher,
   setQueuedChatCeilingResolver,
   setQueuedChatHoldResolver,
+  setQueuedChatWordsResolver,
 } from '../message-dispatcher.js';
+import {
+  noteRoomTurnWords,
+  roomTurnReadOutsideWords,
+} from '../../core/turn-power/outside-words.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { getOrCreateProjector, disposeProjector } from '../session-state-projector.js';
 
@@ -277,6 +282,45 @@ describe('the Wi-Fi hold a row another chat sent carries on (DOR-3561)', () => {
     expect(resolver).toHaveBeenCalledTimes(1);
     expect(carriedOfCall(0)).toBeUndefined();
     expect(carriedOfCall(1)).toBeUndefined();
+  });
+});
+
+describe('the outside words a row another chat sent carries on (DOR-4029)', () => {
+  afterEach(() => {
+    setQueuedChatWordsResolver(undefined);
+    noteRoomTurnWords(session, false);
+  });
+
+  /** A turn that records whether its chat read as noted when it was sent. */
+  function noting(seen: boolean[]) {
+    return async function* (): AsyncGenerator<StreamEvent> {
+      seen.push(roomTurnReadOutsideWords(session));
+      yield { type: 'done', data: {} } as StreamEvent;
+    };
+  }
+
+  it('notes the chat before the turn runs when the resolver says a sender carried them', async () => {
+    const resolver = vi.fn(() => true);
+    setQueuedChatWordsResolver(resolver);
+    const seen: boolean[] = [];
+    runtime.withScenarios([noting(seen)]);
+    const result = await send('from a marked chat', CHAT_A);
+    await settle();
+    expect(resolver).toHaveBeenCalledWith(result.outcome.messageId);
+    expect(seen).toEqual([true]);
+  });
+
+  it('notes nothing for a clean sender, and never asks about a person’s row', async () => {
+    const resolver = vi.fn((id: string) => id === 'never');
+    setQueuedChatWordsResolver(resolver);
+    const seen: boolean[] = [];
+    runtime.withScenarios([noting(seen), noting(seen)]);
+    await send('from a clean chat', CHAT_A);
+    await settle();
+    await send('the person', PERSON);
+    await settle();
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([false, false]);
   });
 });
 

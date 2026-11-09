@@ -31,6 +31,15 @@ import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../../../core/turn-power/live-outsider-turns.js';
 import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
+import {
+  noteRoomTurnWords,
+  roomTurnReadOutsideWords,
+} from '../../../../core/turn-power/outside-words.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { composeRegistry } from '../../../../core/capabilities/index.js';
+import { memoryDomain } from '../../../../memory/memory-capabilities.js';
+import { resetMemoryProvider } from '../../../../memory/index.js';
+import { liveOutsideTurnCheck } from '../../../../session/local-browser/outside-turn.js';
 
 const runtimes = vi.hoisted(() => new Map<string, unknown>());
 /** The folders the mocked boundary lets through. */
@@ -1740,6 +1749,99 @@ describe('a start from a chat a hold bound (DOR-3440)', () => {
     const result = await fromChat('held-parent', 'acceptEdits')(BASE);
     expect(result.isError).toBeUndefined();
     expect(sent(0).permissionCeiling).toBeUndefined();
+  });
+});
+
+// DOR-4029 (Security S3 on #3576): marks spread through agent hops. A starter whose chat read
+// outside words hands them to the chat it starts, noted before its first turn runs, so memory and
+// the browser hold the spin-off back as they would the starter. The clean start is the control.
+describe('a start from a chat that read outside words (DOR-4029)', () => {
+  const starter = 'words-parent';
+  let home: string;
+  /** Whether the new chat read as having read outside words when its first turn was sent. */
+  let notedAtDispatch: boolean[];
+
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-start-words-'));
+    fs.mkdirSync(path.join(home, '.dork'), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, '.dork', 'MEMORY.md'),
+      '## Notes\n\n- deploys need the operator’s OK (noted in a direct chat, 2026-10-01)\n'
+    );
+    registerTestHomes([AGENT_HOME, OTHER_HOME, home], { roomsDir: ROOMS_DIR });
+    resetMemoryProvider();
+    notedAtDispatch = [];
+    vi.mocked(dispatchMessage).mockImplementationOnce(async (opts) => {
+      notedAtDispatch.push(roomTurnReadOutsideWords(opts.sessionId));
+      return {
+        accepted: true,
+        canonicalId: `canon-${opts.sessionId}`,
+        outcome: { kind: 'started', messageId: 'm-1' },
+        queued: false,
+        queuePosition: 0,
+      } as never;
+    });
+  });
+  afterEach(() => {
+    noteRoomTurnWords(starter, false);
+    for (const [opts] of vi.mocked(dispatchMessage).mock.calls) {
+      noteRoomTurnWords(opts.sessionId, false);
+      noteRoomTurnWords(`canon-${opts.sessionId}`, false);
+    }
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  /** Start a chat from the starter's chat; the started chat's canonical id. */
+  async function start(): Promise<string> {
+    const result = await createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId: starter,
+      runtime: 'claude-code',
+      permissionMode: 'acceptEdits',
+    }))(BASE);
+    expect(result.isError).toBeUndefined();
+    return (JSON.parse(result.content[0]!.text) as { sessionId: string }).sessionId;
+  }
+
+  /** The started chat's agent changes its memory from that chat. */
+  function writesFrom(sessionId: string, input: Record<string, string>) {
+    const memory = composeRegistry([memoryDomain], {
+      logger: noopLogger,
+      memoryDeps: { roomLabelForSession: () => null },
+    });
+    return memory.invoke('memory.write', input, {
+      identity: { agentPath: home, displayName: 'Scout', createdAt: '2026-10-10T00:00:00.000Z' },
+      sessionId,
+    }) as Promise<{ saved: boolean; code?: string }>;
+  }
+
+  const browserRefuses = (sessionId: string) =>
+    liveOutsideTurnCheck({ agentPathOf: async () => home, launchOriginOf: () => 'agent-launch' })(
+      sessionId
+    );
+
+  it('notes the new chat before its turn runs; memory and the browser refuse it', async () => {
+    noteRoomTurnWords(starter, true);
+    const started = await start();
+    expect(notedAtDispatch).toEqual([true]);
+    const replaced = await writesFrom(started, {
+      action: 'replace',
+      old_text: 'deploys need the operator’s OK',
+      text: 'deploy freely',
+    });
+    const removed = await writesFrom(started, { action: 'remove', old_text: 'deploys need' });
+    expect(replaced).toMatchObject({ saved: false, code: 'outsider-held' });
+    expect(removed).toMatchObject({ saved: false, code: 'outsider-held' });
+    await expect(browserRefuses(started)).resolves.toBe(true);
+  });
+
+  it('from a clean chat, notes nothing: memory and the browser still work', async () => {
+    const started = await start();
+    expect(notedAtDispatch).toEqual([false]);
+    expect((await writesFrom(started, { action: 'remove', old_text: 'deploys need' })).saved).toBe(
+      true
+    );
+    await expect(browserRefuses(started)).resolves.toBe(false);
   });
 });
 

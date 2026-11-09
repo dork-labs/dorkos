@@ -18,6 +18,7 @@ import { ChatReportBack, REPORT_SETTLE_MS } from '../../session/chat-messages/ch
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { resolveOwnFolderOpen } from '../../runtimes/claude-code/folder-settings/own-folder-open.js';
 import { turnBoundsOf } from '../limits/teammate-turn.js';
@@ -109,6 +110,7 @@ function asyncRunner(script: Script): ScriptedTurnRunner & { maxLive: () => numb
           ? { permissionCeiling: request.permissionCeiling }
           : {}),
         ...(request.carriedOutsider ? { carriedOutsider: request.carriedOutsider } : {}),
+        ...(request.outsideWords ? { outsideWords: request.outsideWords } : {}),
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
@@ -464,6 +466,27 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
     expect(await seatMayRaise(turn, 'seat-marked')).toBe(false);
     const { carriedOutsider: _dropped, ...unmarked } = turn;
     expect(await seatMayRaise(unmarked, 'seat-mark-dropped')).toBe(true);
+  });
+
+  // DOR-4029 (review of the fix): a spin-off that read outside words (a stranger's chat_send
+  // reached it) carries them into the seat, so the runner notes the seat's turn and memory and
+  // the browser hold it back. Without this, the seat's clean turn would clear its own note.
+  it.each([
+    ['a spin-off that read outside words wakes the seat noted', true],
+    ['a clean spin-off wakes the seat with none', false],
+  ])('%s (DOR-4029)', async (_label, readOutside) => {
+    const seatId = await seat();
+    noteRoomTurnWords('spin-off-1', readOutside);
+    try {
+      service.handoffs.reports.deliver(seatId, report('read a stranger’s message'));
+      await settle();
+    } finally {
+      noteRoomTurnWords('spin-off-1', false);
+    }
+    const turn = reportTurns()[0]!;
+    expect(turn.outsideWords).toBe(readOutside ? true : undefined);
+    // Words, not a mark: the seat keeps its level and may still raise.
+    expect(turn.carriedOutsider).toBeUndefined();
   });
 
   it('a clean spin-off wakes the seat unmarked, and it may raise', async () => {

@@ -37,6 +37,11 @@ export interface AsideCarry {
    * seat's turn is marked too, so it is refused a raise, and keeps its level (DOR-3561).
    */
   outsider?: true;
+  /**
+   * Set when that chat had read words from outside the team (`chatReadOutsideWords`, DOR-4029):
+   * the runner notes the seat's turn as one that read them, as it does a room turn answering one.
+   */
+  outsideWords?: true;
 }
 
 /** One aside: the agent, the room, the entry it is about, and what it is asked. */
@@ -264,6 +269,7 @@ export async function runAsideInDispatch(
         : {}),
       ...(input.carried?.teammate ? { teammate: true as const } : {}),
       ...(input.carried?.outsider ? { carriedOutsider: true as const } : {}),
+      ...(input.carried?.outsideWords ? { outsideWords: true as const } : {}),
       prompt: input.prompt,
       roomContext: turnContext.context,
       attachmentProjection: turnContext.projection,

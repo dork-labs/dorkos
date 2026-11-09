@@ -9,6 +9,7 @@ import { getMessageQueueStore, setQueuedWaitingOn } from '../message-queue-store
 import { triggerTurn, type TriggerTurnResult } from '../trigger-turn.js';
 import { emitQueueUpdate } from '../queue-stream-events.js';
 import { TURN_NO_ANSWER } from '../launch/turn-not-started.js';
+import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
 import {
   getPrivateSessionMessageAcceptanceService,
   PrivateSessionMessageRefusalError,
@@ -17,6 +18,7 @@ import {
   emitLifecycle,
   inFlight,
   launchCarriesHold,
+  launchCarriesWords,
   launchCeiling,
   launching,
   pending,
@@ -101,6 +103,12 @@ export function launchDispatchInner(
     schedulePump(sessionKey);
   };
   const { turn } = plan;
+  // A sender's outside words go with its message into the turn it starts (DOR-4029), noted
+  // before the turn runs so memory, the browser and the narrowing gate read them on its first
+  // call. Only ever adds: a refused launch leaves the chat noted, the stricter reading.
+  if (launchCarriesWords(clientId, messageId)) {
+    for (const id of new Set([plan.sessionId, sessionKey])) noteRoomTurnWords(id, true);
+  }
   let started: Promise<TriggerTurnResult>;
   try {
     started = triggerTurn({
