@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { RequestListener } from 'node:http';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
-import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { createDb, runMigrations, eq, sql, notifications, type Db } from '@dorkos/db';
+import { logger } from '../../lib/logger.js';
 import type { RequestUser } from '../../services/core/auth/index.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { NotificationStore } from '../../services/notifications/notification-store.js';
@@ -69,6 +70,86 @@ afterEach(() => {
 });
 
 describe('GET /api/notifications', () => {
+  it('skips stored unknown kinds and still returns the known notices', async () => {
+    const ids = await seed(3);
+    db.update(notifications)
+      .set({ kind: sql`${'future.notice'}` })
+      .where(eq(notifications.id, ids[1]))
+      .run();
+
+    const res = await request(fixtureTarget.mount(buildApp())).get('/api/notifications');
+
+    expect(res.status).toBe(200);
+    expect(res.body.notifications.map((n: { id: string }) => n.id)).toEqual([ids[2], ids[0]]);
+    expect(res.body.nextCursor).toBeNull();
+    expect(db.select().from(notifications).all()).toHaveLength(3);
+  });
+
+  it('logs each unknown kind once across repeated rows and list requests', async () => {
+    const ids = await seed(4);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    for (const [i, kind] of ['future.notice', 'future.notice', 'future.alert'].entries()) {
+      db.update(notifications)
+        .set({ kind: sql`${kind}` })
+        .where(eq(notifications.id, ids[i]))
+        .run();
+    }
+
+    const app = fixtureTarget.mount(buildApp());
+    for (let i = 0; i < 2; i += 1) {
+      const res = await request(app).get('/api/notifications');
+      expect(res.status).toBe(200);
+      expect(res.body.notifications.map((n: { id: string }) => n.id)).toEqual([ids[3]]);
+    }
+
+    expect(warn.mock.calls).toEqual([
+      ['[Notifications] Skipping a stored notice with an unknown kind', { kind: 'future.alert' }],
+      ['[Notifications] Skipping a stored notice with an unknown kind', { kind: 'future.notice' }],
+    ]);
+  });
+
+  it('fills pages with known notices past newer unknown kinds', async () => {
+    const ids = await seed(5);
+    for (const id of ids.slice(2)) {
+      db.update(notifications)
+        .set({ kind: sql`${'future.notice'}` })
+        .where(eq(notifications.id, id))
+        .run();
+    }
+
+    const app = fixtureTarget.mount(buildApp());
+    const first = await request(app).get('/api/notifications').query({ limit: 1 });
+    expect(first.status).toBe(200);
+    expect(first.body.notifications.map((n: { id: string }) => n.id)).toEqual([ids[1]]);
+    expect(first.body.nextCursor).toBe(ids[1]);
+
+    const second = await request(app)
+      .get('/api/notifications')
+      .query({ limit: 1, before: first.body.nextCursor });
+    expect(second.status).toBe(200);
+    expect(second.body.notifications.map((n: { id: string }) => n.id)).toEqual([ids[0]]);
+    expect(second.body.nextCursor).toBeNull();
+  });
+
+  it('keeps a known notice with malformed payload JSON, without its action buttons', async () => {
+    const result = await service.resolveStanding(
+      'schedule.parked',
+      { taskId: 'task-1', taskName: 'Nightly digest', proposedBy: 'An agent' },
+      { outcome: 'approved' }
+    );
+    expect(result.notification?.actions?.map((action) => action.id)).toEqual(['approve', 'reject']);
+    db.update(notifications)
+      .set({ dataJson: '{' })
+      .where(eq(notifications.id, result.notification!.id))
+      .run();
+
+    const res = await request(fixtureTarget.mount(buildApp())).get('/api/notifications');
+    expect(res.status).toBe(200);
+    expect(res.body.notifications).toHaveLength(1);
+    expect(res.body.notifications[0].id).toBe(result.notification!.id);
+    expect(res.body.notifications[0].actions).toBeUndefined();
+  });
+
   it('lists the newest first, with the unread count', async () => {
     const ids = await seed(3);
     const res = await request(fixtureTarget.mount(buildApp())).get('/api/notifications');

@@ -5,7 +5,13 @@
  *
  * @module services/notifications/stored-dto-parts
  */
-import type { NotificationDTO, NotificationKind } from '@dorkos/shared/notification-schemas';
+import type {
+  NotificationDTO,
+  NotificationKind,
+  NotificationTier,
+  NotificationSubjectType,
+  NotificationOutcome,
+} from '@dorkos/shared/notification-schemas';
 import { notificationEntry, type NotificationPayload } from './notification-registry.js';
 import { logger } from '../../lib/logger.js';
 import { runCompletedMark } from './run-completed-copy.js';
@@ -84,7 +90,7 @@ function buildDecision(
  * @param kind - The row's notification kind.
  * @param dataJson - The row's stored payload.
  */
-export function buildPayloadFacts(
+function buildPayloadFacts(
   kind: NotificationKind,
   dataJson: string | null
 ): Pick<NotificationDTO, 'decision' | 'mark' | 'meta'> {
@@ -101,7 +107,7 @@ export function buildPayloadFacts(
  * Returns a spreadable fragment rather than an array so the caller never puts an
  * `actions: undefined` key on a DTO that has none.
  */
-export function buildActions(
+function buildActions(
   kind: NotificationKind,
   dataJson: string | null
 ): { actions: NotificationDTO['actions'] } | undefined {
@@ -118,3 +124,48 @@ export function buildActions(
 
 // Read back by id for a notice's own action (DOR-3703); its own module, re-exported here.
 export { readStoredPayload, type StoredPayload } from './stored-payload.js';
+
+/**
+ * Turn a stored row into the shape every surface reads.
+ *
+ * Actions are rebuilt from the registry rather than stored, so a label or an
+ * intent corrected today is corrected on every row already written. A payload
+ * the registry can no longer read (an entry whose shape changed) yields a row
+ * with no buttons rather than a throw — history stays readable either way.
+ */
+export function storedNotificationDto(row: {
+  id: string;
+  kind: string;
+  tier: string;
+  subjectType: string;
+  subjectId: string;
+  agentId: string | null;
+  sessionId: string | null;
+  roomId: string | null;
+  title: string;
+  body: string | null;
+  dataJson: string | null;
+  createdAt: string;
+  readAt: string | null;
+  resolvedAt: string | null;
+  outcome: string | null;
+}): NotificationDTO {
+  const kind = row.kind as NotificationKind;
+  return {
+    id: row.id,
+    kind,
+    tier: row.tier as NotificationTier,
+    subject: { type: row.subjectType as NotificationSubjectType, id: row.subjectId },
+    ...(row.agentId ? { agentId: row.agentId } : {}),
+    ...(row.sessionId ? { sessionId: row.sessionId } : {}),
+    ...(row.roomId ? { roomId: row.roomId } : {}),
+    title: row.title,
+    ...(row.body ? { body: row.body } : {}),
+    ...(buildActions(kind, row.dataJson) ?? {}),
+    createdAt: row.createdAt,
+    ...(row.readAt ? { readAt: row.readAt } : {}),
+    ...(row.resolvedAt ? { resolvedAt: row.resolvedAt } : {}),
+    ...(row.outcome ? { outcome: row.outcome as NotificationOutcome } : {}),
+    ...buildPayloadFacts(kind, row.dataJson),
+  };
+}

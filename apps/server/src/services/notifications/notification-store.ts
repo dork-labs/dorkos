@@ -25,6 +25,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { sql, type SQL } from 'drizzle-orm';
+import { NotificationKindSchema } from '@dorkos/shared/notification-schemas';
 import type {
   ListNotificationsQuery,
   NotificationChannel,
@@ -35,7 +36,7 @@ import type {
   NotificationTier,
 } from '@dorkos/shared/notification-schemas';
 import { logger } from '../../lib/logger.js';
-import { buildActions, buildPayloadFacts, readStoredPayload } from './stored-dto-parts.js';
+import { readStoredPayload, storedNotificationDto } from './stored-dto-parts.js';
 
 /**
  * Ids that keep increasing even inside one millisecond.
@@ -138,6 +139,7 @@ export interface NotificationStoreLimits {
 
 /** The `notifications` table, and the ledger that hangs off it. */
 export class NotificationStore {
+  private readonly unknownKinds = new Set<string>();
   private readonly maxRows: number;
   private readonly retentionDays: number;
 
@@ -210,7 +212,7 @@ export class NotificationStore {
 
     this.prune();
 
-    return this.toDto({
+    return storedNotificationDto({
       id,
       kind: input.kind,
       tier: input.tier,
@@ -384,13 +386,15 @@ export class NotificationStore {
       .from(notifications)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(notifications.id))
-      .limit(query.limit + 1)
       .all();
 
-    const hasMore = rows.length > query.limit;
-    const page = rows.slice(0, query.limit);
+    // The table is capped at maxRows. Filter before paging so newer unknown
+    // kinds cannot leave an empty page hiding older readable history.
+    const readableRows = rows.filter((row) => this.isKnownKind(row.kind));
+    const hasMore = readableRows.length > query.limit;
+    const page = readableRows.slice(0, query.limit);
     return {
-      notifications: page.map((row) => this.toDto(row)),
+      notifications: page.map((row) => storedNotificationDto(row)),
       nextCursor: hasMore && page.length > 0 ? page[page.length - 1].id : null,
     };
   }
@@ -771,52 +775,17 @@ export class NotificationStore {
       .from(notifications)
       .where(inArray(notifications.id, ids))
       .all()
-      .map((row) => this.toDto(row));
+      .map((row) => storedNotificationDto(row));
   }
 
-  /**
-   * Turn a stored row into the shape every surface reads.
-   *
-   * Actions are rebuilt from the registry rather than stored, so a label or an
-   * intent corrected today is corrected on every row already written. A payload
-   * the registry can no longer read (an entry whose shape changed) yields a row
-   * with no buttons rather than a throw — history stays readable either way.
-   */
-  private toDto(row: {
-    id: string;
-    kind: string;
-    tier: string;
-    subjectType: string;
-    subjectId: string;
-    agentId: string | null;
-    sessionId: string | null;
-    roomId: string | null;
-    title: string;
-    body: string | null;
-    dataJson: string | null;
-    createdAt: string;
-    readAt: string | null;
-    resolvedAt: string | null;
-    outcome: string | null;
-  }): NotificationDTO {
-    const kind = row.kind as NotificationKind;
-    return {
-      id: row.id,
-      kind,
-      tier: row.tier as NotificationTier,
-      subject: { type: row.subjectType as NotificationSubjectType, id: row.subjectId },
-      ...(row.agentId ? { agentId: row.agentId } : {}),
-      ...(row.sessionId ? { sessionId: row.sessionId } : {}),
-      ...(row.roomId ? { roomId: row.roomId } : {}),
-      title: row.title,
-      ...(row.body ? { body: row.body } : {}),
-      ...(buildActions(kind, row.dataJson) ?? {}),
-      createdAt: row.createdAt,
-      ...(row.readAt ? { readAt: row.readAt } : {}),
-      ...(row.resolvedAt ? { resolvedAt: row.resolvedAt } : {}),
-      ...(row.outcome ? { outcome: row.outcome as NotificationOutcome } : {}),
-      ...buildPayloadFacts(kind, row.dataJson),
-    };
+  /** Skip kinds written by a newer version, warning once per kind for this store's lifetime. */
+  private isKnownKind(kind: string): boolean {
+    if (NotificationKindSchema.safeParse(kind).success) return true;
+    if (!this.unknownKinds.has(kind)) {
+      this.unknownKinds.add(kind);
+      logger.warn('[Notifications] Skipping a stored notice with an unknown kind', { kind });
+    }
+    return false;
   }
 }
 
