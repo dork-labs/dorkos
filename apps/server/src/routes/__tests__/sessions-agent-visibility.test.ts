@@ -311,7 +311,8 @@ describe('the guard in front of every session route', () => {
     const fresh = await request(server)
       .post(`/api/sessions/${NEW}/messages`)
       .set(AGENT)
-      .send({ content: 'hello', create: true });
+      // An ordinary project folder: the default one can hold the data folder (DOR-4060).
+      .send({ content: 'hello', create: true, cwd: '/mock/home/project' });
     expect(fresh.body.code).not.toBe('SESSION_NOT_FOUND');
     // Its own work, not a person's chat, so it can read what it started.
     expect(vi.mocked(runtimeRegistry.persistSessionRuntime)).toHaveBeenCalledWith(
