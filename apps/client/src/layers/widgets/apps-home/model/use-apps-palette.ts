@@ -16,7 +16,7 @@ import {
   unregisterPaletteCommandHandler,
 } from '@/layers/features/command-palette';
 import { appRoutes } from '@/layers/shared/lib';
-import { useExtensionRegistry } from '@/layers/shared/model';
+import { useExtensionRegistry, type CommandPaletteContribution } from '@/layers/shared/model';
 
 /** The palette action Open Apps runs. */
 const OPEN_APPS_ACTION = 'openApps';
@@ -24,6 +24,30 @@ const OPEN_APPS_ACTION = 'openApps';
 /** The palette action one app's settings row runs. */
 function appSettingsAction(id: string): string {
   return `appSettings:${id}`;
+}
+
+/**
+ * One app's "{App} settings" palette row.
+ *
+ * No "settings" keyword: that word belongs to the plain Settings row. With
+ * it, every app's row tied that one for "settings", the tie went to the
+ * lower id, and ⌘K, "settings", Enter opened the first app's Settings row.
+ * The label still carries the word, so the rows come up, just below it.
+ *
+ * @param app - The app's id and name.
+ * @internal Exported for testing only.
+ */
+export function appSettingsPaletteRow(app: {
+  id: string;
+  name: string;
+}): CommandPaletteContribution {
+  return {
+    id: `app-settings:${app.id}`,
+    label: `${app.name} settings`,
+    icon: 'Settings',
+    action: appSettingsAction(app.id),
+    category: 'feature',
+  };
 }
 
 /** Keep the palette's Open Apps and per-app settings rows registered. */
@@ -52,16 +76,10 @@ export function useAppsPalette(): void {
 
   useEffect(() => {
     const cleanups = apps.map((app) => {
-      const action = appSettingsAction(app.id);
+      const row = appSettingsPaletteRow(app);
+      const action = row.action;
       registerPaletteCommandHandler(action, () => openSettings(app.id));
-      const unregister = useExtensionRegistry.getState().register('command-palette.items', {
-        id: `app-settings:${app.id}`,
-        label: `${app.name} settings`,
-        icon: 'Settings',
-        action,
-        category: 'feature',
-        keywords: ['settings', app.name],
-      });
+      const unregister = useExtensionRegistry.getState().register('command-palette.items', row);
       return () => {
         unregister();
         unregisterPaletteCommandHandler(action);
