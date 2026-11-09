@@ -386,6 +386,8 @@ const SELF = 'scripts/__tests__/code-only.test.ts';
 const OWN_STRIPPER_ALLOWLIST: Record<string, string> = {
   'apps/client/src/__tests__/border-color-layering.test.ts':
     'strips CSS comments out of index.css — the shared stripper is a TS/JS lexer and does not parse CSS',
+  'apps/client/src/__tests__/overlay-no-drag.test.tsx':
+    'strips CSS comments out of index.css — the shared stripper is a TS/JS lexer and does not parse CSS',
 };
 
 /** Directories with nothing authored in them. */
