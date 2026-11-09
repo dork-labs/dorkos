@@ -43,6 +43,9 @@ function refusedAsOffHere(error: Error | null): boolean {
   return (error as { code?: string } | null)?.code === 'session_access_off';
 }
 
+/** Under a request for write access: no agent can answer it, only the person. */
+const WRITE_NEEDS_YOU = 'Write access needs you.';
+
 /** Why turning the app back on for this chat did not land. */
 const TURN_ON_FAILED = 'Couldn’t turn it on for this chat. Nothing changed. Try again.';
 
@@ -273,6 +276,13 @@ export function AgentRequestCard({
       {DECLINE_FAILED}
     </p>
   );
+  // Another agent can approve Read, never more, so a request for write access
+  // is always the person's to answer. Said once, quietly, under the buttons.
+  const writeNote = request.access === 'read-write' && (
+    <p data-testid="agent-request-write-note" className="text-muted-foreground px-1 text-xs">
+      {WRITE_NEEDS_YOU}
+    </p>
+  );
 
   // Access is saved; the request also asked to hear about new activity there.
   if (updatesFor) {
@@ -326,6 +336,7 @@ export function AgentRequestCard({
           {...(connected.length > 0 ? { onBack: () => setConnectingNew(false) } : {})}
           deciding={resolve.isPending}
         />
+        {writeNote}
         {declineFailure}
       </div>
     );
@@ -345,6 +356,7 @@ export function AgentRequestCard({
           deciding={resolve.isPending}
           onConnectAgain={() => setConnectingNew(true)}
         />
+        {writeNote}
         {declineFailure}
       </div>
     );
@@ -365,6 +377,7 @@ export function AgentRequestCard({
           onSkip={decline}
           onAllowed={allowed}
         />
+        {writeNote}
         {/* The agent may need an account that isn't connected yet, so the
             existing ones are never the only answer besides "Not now". Hidden
             once this card signed one in (that account is the answer) and

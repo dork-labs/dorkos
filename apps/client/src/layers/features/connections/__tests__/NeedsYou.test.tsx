@@ -229,6 +229,87 @@ describe('NeedsYou', () => {
     }
   });
 
+  describe('a request another agent approved (DOR-3959)', () => {
+    const granted = (requestId: string) =>
+      ({ ...REQUEST, requestId, status: 'granted' }) as ConnectorAgentRequestItem;
+    const approval = (requestId: string, hoursAgo: number, extra: object = {}) =>
+      ({
+        changeId: `change-${requestId}`,
+        kind: 'approve_read',
+        outcome: 'applied',
+        refusalCode: null,
+        actorKind: 'agent',
+        actorId: 'agent-pm',
+        targetAgentId: 'agent-1',
+        connectionId: 'c-1',
+        reason: null,
+        requestId,
+        undoOf: null,
+        undoneBy: null,
+        createdAt: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+        ...extra,
+      }) as const;
+    const transportWith = (
+      lists: { pending?: ConnectorAgentRequestItem[]; resolved?: ConnectorAgentRequestItem[] },
+      changes: ReturnType<typeof approval>[]
+    ) =>
+      createMockTransport({
+        getConnectorAgentRequests: vi.fn(async (state) =>
+          state === 'resolved' ? (lists.resolved ?? []) : (lists.pending ?? [])
+        ),
+        getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
+        listAccessChanges: vi.fn().mockResolvedValue(changes),
+        listMeshAgents: vi.fn().mockResolvedValue({
+          agents: [{ id: 'agent-pm', name: 'pm', displayName: 'DorkOS PM' }],
+        }),
+      });
+
+    it('stays as a done item for the day, with who approved it and nothing to press', async () => {
+      renderStrip(transportWith({ resolved: [granted('request-2')] }, [approval('request-2', 2)]));
+
+      const row = await screen.findByTestId('needs-you-approved-request-2');
+      expect(row).toHaveTextContent('Researcher asked to use Gmail');
+      expect(await screen.findByText('Approved by DorkOS PM · Read only')).toBeInTheDocument();
+      expect(row.querySelector('time')).toHaveTextContent('2h');
+      expect(row.querySelector('button')).toBeNull();
+    });
+
+    it('never shows an approved request as still asking, while its agent picks the answer up', async () => {
+      renderStrip(transportWith({ pending: [granted('request-3')] }, [approval('request-3', 0)]));
+
+      expect(await screen.findByTestId('needs-you-approved-request-3')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /wants to use Gmail/ })).not.toBeInTheDocument();
+    });
+
+    it('drops it after a day, or as soon as the person undid it', async () => {
+      renderStrip(
+        transportWith({ resolved: [granted('fresh'), granted('old'), granted('undone')] }, [
+          approval('fresh', 23),
+          approval('old', 25),
+          approval('undone', 1, { undoneBy: 'undo-1' }),
+        ])
+      );
+
+      // The fresh one proves the reads landed; the other two are gone beside it.
+      expect(await screen.findByTestId('needs-you-approved-fresh')).toBeInTheDocument();
+      expect(screen.queryByTestId('needs-you-approved-old')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('needs-you-approved-undone')).not.toBeInTheDocument();
+    });
+
+    it('keeps a request whose approval was refused waiting on the person', async () => {
+      renderStrip(
+        transportWith({ pending: [REQUEST] }, [
+          approval('request-1', 0, { outcome: 'refused', refusalCode: 'APPROVE_NOT_HELD' }),
+        ])
+      );
+
+      expect(
+        await screen.findByRole('button', { name: /Researcher wants to use Gmail/ })
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('needs-you-approved-request-1')).not.toBeInTheDocument();
+    });
+  });
+
   it('stops asking about an unconfirmed change after a week', async () => {
     const decided = (days: number, id: string) =>
       ({

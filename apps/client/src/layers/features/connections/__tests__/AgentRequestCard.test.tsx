@@ -616,6 +616,93 @@ describe('AgentRequestCard — an account exists', () => {
     );
     expect(screen.getByRole('radio', { name: 'Read' })).toBeChecked();
   });
+
+  it('says write access needs the person, under the buttons it keeps, and only for write', async () => {
+    const transport = transportWith([account('connection-1')]);
+    renderWith(transport, <AgentRequestCard request={{ ...REQUEST, access: 'read-write' }} />);
+    expect(await screen.findByTestId('agent-request-write-note')).toHaveTextContent(
+      'Write access needs you.'
+    );
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeInTheDocument();
+    cleanup();
+
+    renderWith(transportWith([account('connection-1')]), <AgentRequestCard request={REQUEST} />);
+    await screen.findByTestId('requested-access');
+    expect(screen.queryByTestId('agent-request-write-note')).not.toBeInTheDocument();
+  });
+});
+
+describe('AgentRequestCard — approved by another agent (DOR-3959)', () => {
+  const grantedRequest = {
+    ...REQUEST,
+    status: 'granted',
+    connectionId: 'c',
+    grantedOperationRevisionIds: [],
+    grantedEvents: [],
+    notGranted: [],
+  } as never as ConnectorAgentRequestItem;
+  const change = (extra: object = {}) => ({
+    changeId: 'change-1',
+    kind: 'approve_read' as const,
+    outcome: 'applied' as const,
+    refusalCode: null,
+    actorKind: 'agent' as const,
+    actorId: 'agent-pm',
+    targetAgentId: 'agent-bo',
+    connectionId: 'c',
+    reason: null,
+    requestId: 'request-1',
+    undoOf: null,
+    undoneBy: null,
+    createdAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+    ...extra,
+  });
+  const withLedger = (changes: ReturnType<typeof change>[]) => {
+    const transport = transportWith([]);
+    vi.mocked(transport.listAccessChanges).mockResolvedValue(changes);
+    vi.mocked(transport.listMeshAgents).mockResolvedValue({
+      agents: [{ id: 'agent-pm', name: 'pm', displayName: 'DorkOS PM' }],
+    } as never);
+    return transport;
+  };
+
+  it('resolves in place to who approved it, Read only, with their avatar and a muted time', async () => {
+    renderWith(withLedger([change()]), <AgentRequestCard request={grantedRequest} />);
+    const receipt = await screen.findByTestId('agent-request-receipt');
+    await waitFor(() => expect(receipt).toHaveAttribute('data-approved-by', 'agent'));
+    expect(receipt).toHaveTextContent('Approved by DorkOS PM · Read only');
+    expect(within(receipt).getByText('2m').tagName).toBe('TIME');
+    await waitFor(() =>
+      expect(receipt.querySelector('[data-slot="agent-approval-approver"]')).not.toBeNull()
+    );
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('keeps the plain receipt for a person’s answer, a refused approval, or a person’s row', async () => {
+    for (const changes of [
+      [],
+      [change({ outcome: 'refused', refusalCode: 'APPROVE_NOT_HELD' })],
+      [change({ actorKind: 'person', actorId: 'owner' })],
+      [change({ requestId: 'request-other' })],
+    ]) {
+      const transport = withLedger(changes);
+      renderWith(transport, <AgentRequestCard request={grantedRequest} />);
+      await waitFor(() => expect(transport.listAccessChanges).toHaveBeenCalled());
+      expect(await screen.findByTestId('agent-request-receipt')).toHaveTextContent(
+        'Allowed Bo to use Gmail'
+      );
+      cleanup();
+    }
+  });
+
+  it('never reads the ledger for a request that wasn’t granted', async () => {
+    const transport = withLedger([change()]);
+    renderWith(transport, <AgentRequestCard request={{ ...REQUEST, status: 'denied' } as never} />);
+    expect(await screen.findByTestId('agent-request-receipt')).toHaveTextContent(
+      'Bo wasn’t given Gmail'
+    );
+    expect(transport.listAccessChanges).not.toHaveBeenCalled();
+  });
 });
 
 describe('AgentRequestCard — answered', () => {

@@ -66,6 +66,7 @@ export {
 } from './model/use-connector-management';
 export { useConnectorAgentRequestsSync } from './model/use-connector-agent-requests-sync';
 export { accessChangeKey, useAccessChange, useUndoAccessChange } from './model/use-access-changes';
+export { useAgentApprovals, type AgentApproval } from './model/use-agent-approvals';
 
 // --- Shared DTO types, re-exported for feature layers ---
 export type {

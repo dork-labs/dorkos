@@ -1,6 +1,8 @@
 import { Check, Clock3, ShieldOff } from 'lucide-react';
 import type { ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
+import { useAgentApprovals } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
+import { AgentApprovalLine } from './AgentApprovalLine';
 
 /** What one answered request reads as, once it stops asking anything. */
 function receiptLine(request: ConnectorAgentRequestItem, serviceName: string): string {
@@ -28,7 +30,9 @@ function receiptLine(request: ConnectorAgentRequestItem, serviceName: string): s
 /**
  * The one-line record an answered request leaves where it was asked: what was
  * decided, in the server's words, and nothing to press. It says "connected"
- * only once the server reports the access granted.
+ * only once the server reports the access granted. A request another agent
+ * approved says so, with that agent's avatar: the person didn't answer it,
+ * so the receipt never reads as if they had.
  */
 export function RequestReceipt({
   request,
@@ -41,6 +45,21 @@ export function RequestReceipt({
 }) {
   const granted = request.status === 'granted';
   const pending = request.status === 'access_pending';
+  const approvals = useAgentApprovals(granted);
+  const approval = granted ? approvals.data?.get(request.requestId) : undefined;
+  if (approval) {
+    return (
+      <p
+        role="status"
+        data-testid="agent-request-receipt"
+        data-status={request.status}
+        data-approved-by="agent"
+        className={cn('bg-muted/40 rounded-lg px-3 py-2 text-sm', className)}
+      >
+        <AgentApprovalLine approval={approval} />
+      </p>
+    );
+  }
   const Icon = granted ? Check : pending ? Clock3 : ShieldOff;
   return (
     <p

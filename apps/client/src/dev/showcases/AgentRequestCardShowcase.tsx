@@ -126,9 +126,35 @@ function preview(connectionId: string): ConnectorReconciliationPreview {
  */
 function requestTransport(
   accounts: ConnectorConnectionSummary[],
-  appConnections?: ConnectorAppConnections
+  appConnections?: ConnectorAppConnections,
+  approvedByAgent = false
 ): Transport {
   const base = createPlaygroundTransport();
+  // Another agent, DorkOS PM, approved the request for Read two minutes ago.
+  const agentApproval = {
+    listAccessChanges: async () => [
+      {
+        changeId: 'change-1',
+        kind: 'approve_read',
+        outcome: 'applied',
+        refusalCode: null,
+        actorKind: 'agent',
+        actorId: 'agent-pm',
+        targetAgentId: 'dorkbot',
+        connectionId: 'gmail-work',
+        reason: null,
+        requestId: REQUEST.requestId,
+        undoOf: null,
+        undoneBy: null,
+        createdAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+      },
+    ],
+    listMeshAgents: async () => ({
+      agents: [
+        { id: 'agent-pm', name: 'pm', displayName: 'DorkOS PM', color: '#7c5cff', icon: '🧭' },
+      ],
+    }),
+  };
   const pendingFlow = {
     flowId: 'flow-1',
     providerInstanceId: 'composio-1',
@@ -172,6 +198,7 @@ function requestTransport(
     }),
     startConnectorAgentRequestAuthentication: async () => pendingFlow,
     pollConnectorAgentRequestAuthentication: async () => pendingFlow,
+    ...(approvedByAgent && agentApproval),
   };
   return new Proxy(base, {
     get: (target, prop, receiver) =>
@@ -185,13 +212,16 @@ function CardDemo({
   accounts,
   request = REQUEST,
   appConnections,
+  approvedByAgent,
 }: {
   accounts: ConnectorConnectionSummary[];
   request?: ConnectorAgentRequestItem;
   /** Set to show the card while no way reaches the app. */
   appConnections?: ConnectorAppConnections;
+  /** Set when another agent approved the request, so the record names it. */
+  approvedByAgent?: boolean;
 }) {
-  const [transport] = useState(() => requestTransport(accounts, appConnections));
+  const [transport] = useState(() => requestTransport(accounts, appConnections, approvedByAgent));
   const [client] = useState(
     () =>
       new QueryClient({
@@ -256,6 +286,33 @@ export function AgentRequestCardShowcase() {
               readiness: MOCK_READINESS.unlinked,
             },
           ]}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Write access asked for: the person’s buttons stay, and no agent can answer it
+      </ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <CardDemo
+          accounts={[account('gmail-work', 'work')]}
+          request={{ ...REQUEST, access: 'read-write' }}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Approved by another agent: who, Read only, and when</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <CardDemo
+          accounts={[]}
+          approvedByAgent
+          request={
+            {
+              ...REQUEST,
+              status: 'granted',
+              connectionId: 'gmail-work' as never,
+              grantedOperationRevisionIds: ['list-messages'],
+              grantedEvents: [],
+            } as ConnectorAgentRequestItem
+          }
         />
       </ShowcaseDemo>
 
