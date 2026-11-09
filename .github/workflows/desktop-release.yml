@@ -31,8 +31,8 @@ name: Desktop Release
 # v0.98.0, during a GitHub runner-assignment incident, a separate
 # publish-release job never got a runner. Security's ruling for DOR-4030 needs
 # the write token in structure, not in step `if:`s: the build jobs hold only
-# `contents: read`, so a `release/*` rehearsal or a branch run can build and
-# sign but never write to a release, and only `publish`, a job that runs on a
+# `contents: read`, so a signed rehearsal from main can build and sign but
+# never write to a release, and only `publish`, a job that runs on a
 # `v*` tag alone, holds `contents: write`. That brings back one ubuntu runner
 # assignment per release, the risk DOR-2728 removed. If it stalls, publish by
 # hand (`gh release edit vX.Y.Z --draft=false` after attaching the artifacts
@@ -61,21 +61,23 @@ name: Desktop Release
 #
 # RELEASE SECRETS AND MAIN (DOR-4030). The signing and notarization secrets
 # live only in the `release` environment, which needs Dorian's approval and
-# deploys only `v*` tags and `release/*` branches; build-macos names it,
-# nothing else here does. The first job, tag-is-on-main, refuses a commit that
-# is not on main, and every other job needs it. That check is a backstop, not
-# the lock: a pushed tag runs its own commit's copy of this file, so the
-# environment's approval is what keeps the secrets from an unreviewed commit.
+# deploys only `v*` tags and `main`; build-macos names it, nothing else here
+# does. The first job, tag-is-on-main, refuses any commit that is not on main,
+# and every other job needs it, so the signing job only ever runs reviewed
+# code: `pnpm install` and electron-builder run in the same job that holds the
+# certificate, and an unmerged branch must never reach it (Security, Nov 9).
+# Against an agent that holds Dorian's token, that check and the branch rules
+# are the bound, not the click: the click stops lanes and accidents.
 #
 # WHO DOES WHAT, BY REF (Security, Nov 9). Keyed on the ref alone:
 #   - a `v*` tag: tag-is-on-main must pass; build-macos signs (unless a manual
 #     run turned `sign` off); publish attaches and publishes.
-#   - a `release/*` branch: tag-is-on-main is skipped (a release branch's
-#     commit is not on main yet); build-macos signs, behind Dorian's click;
-#     publish never runs. A signed rehearsal: artifacts only. With `sign` off it
-#     is an unsigned test build that waits for nobody, the lane test path.
-#   - any other ref: tag-is-on-main must pass (main does); the builds run
-#     unsigned, name no environment, and publish never runs.
+#   - `main` (a manual run): build-macos signs, behind Dorian's click, unless
+#     `sign` is off; publish never runs. A signed rehearsal of reviewed code:
+#     artifacts only. With `sign` off it is an unsigned build that waits for
+#     nobody.
+#   - any other ref: tag-is-on-main fails unless the commit is on main, and
+#     nothing runs. A lane's change is built here only once it is on main.
 # The `sign` input can only turn signing OFF.
 
 on:
@@ -89,7 +91,7 @@ on:
         type: boolean
         default: false
       sign:
-        description: 'Sign and notarize; only a v* tag or release/* branch can (off: an unsigned build that publishes nothing)'
+        description: 'Sign and notarize; only a v* tag or main can (off: an unsigned build that publishes nothing)'
         type: boolean
         default: true
 
@@ -101,11 +103,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  # DOR-4030: nothing runs for a commit that is not on main, except a
-  # `release/*` branch rehearsal, which can never reach publish (see "WHO DOES
-  # WHAT" above). The skip is keyed on the ref alone. Only the commit graph is
-  # fetched (tree:0), anonymously, so this job reads no secret and holds no
-  # token.
+  # DOR-4030: nothing runs for a commit that is not on main, with no
+  # exception: the signing job runs the commit's own code. Only the commit
+  # graph is fetched (tree:0), anonymously, so this job reads no secret and
+  # holds no token.
   tag-is-on-main:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -115,19 +116,14 @@ jobs:
       - name: Fail unless this commit is on main
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
-          REHEARSAL: ${{ github.ref_type == 'branch' && startsWith(github.ref, 'refs/heads/release/') }}
         run: |
           set -euo pipefail
-          if [ "$REHEARSAL" = "true" ]; then
-            echo "A release/* rehearsal (${GITHUB_REF}): it can sign, behind Dorian's approval, but never publish. Check skipped."
-            exit 0
-          fi
           git init -q "$RUNNER_TEMP/main-check"
           git -C "$RUNNER_TEMP/main-check" remote add origin "$REPO_URL"
           git -C "$RUNNER_TEMP/main-check" fetch -q --no-tags --filter=tree:0 origin \
             "+refs/heads/main:refs/remotes/origin/main" "$GITHUB_SHA"
           if ! git -C "$RUNNER_TEMP/main-check" merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::${GITHUB_SHA} (${GITHUB_REF}) is not on main. Desktop builds run only for commits on main, or from a release/* branch; nothing was built, signed or published."
+            echo "::error::${GITHUB_SHA} (${GITHUB_REF}) is not on main. Desktop builds run only for commits on main; nothing was built, signed or published."
             exit 1
           fi
           echo "${GITHUB_SHA} is on main."
@@ -138,7 +134,7 @@ jobs:
     # The signing secrets live only in the `release` environment (DOR-4030).
     # The same condition as SIGN below: an unsigned run names no environment
     # (an empty name means none), so it never asks to enter `release`.
-    environment: ${{ ((startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/')) && (github.event_name != 'workflow_dispatch' || inputs.sign)) && 'release' || '' }}
+    environment: ${{ ((startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') && (github.event_name != 'workflow_dispatch' || inputs.sign)) && 'release' || '' }}
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 9 completed
     # runs over 2026-08-22..09-14, p95 18.38 min, max 18.38. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
@@ -148,9 +144,9 @@ jobs:
     permissions:
       contents: read
     env:
-      # 'true' only on a `v*` tag or a `release/*` branch, unless a manual run
+      # 'true' only on a `v*` tag or `main`, unless a manual run
       # turned `sign` off.
-      SIGN: ${{ (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/')) && (github.event_name != 'workflow_dispatch' || inputs.sign) }}
+      SIGN: ${{ (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main') && (github.event_name != 'workflow_dispatch' || inputs.sign) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -436,7 +432,7 @@ jobs:
 
   # The one job that writes to the release, and it runs only on a `v*` tag
   # (DOR-4030): its job-level `if:` opens with the tag condition, which the
-  # census's tag gate checks, so a `release/*` rehearsal or a branch run never
+  # census's tag gate checks, so a signed rehearsal from main never
   # reaches the write token. It also skips a dry run and an unsigned run.
   # Attach-only: `gh release upload` never creates a release, touches the
   # draft flag or regenerates notes, so the human-written notes always survive.

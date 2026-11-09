@@ -123,10 +123,10 @@ gates:
   # --- desktop-release.yml ---
   - id: wf.desktop-release.tag-is-on-main
     source: .github/workflows/desktop-release.yml
-    purpose: Refuses any desktop run for a commit that is not on main, except a release/* branch rehearsal, which can never reach publish.
+    purpose: Refuses any desktop run for a commit that is not on main, so the signing job only ever runs reviewed code.
   - id: wf.desktop-release.build-macos
     source: .github/workflows/desktop-release.yml
-    purpose: Builds the macOS desktop app, signs and notarizes it on a v* tag or release/* branch, checks its signature and Gatekeeper, and uploads it for publish.
+    purpose: Builds the macOS desktop app, signs and notarizes it on a v* tag or main, checks its signature and Gatekeeper, and uploads it for publish.
   - id: wf.desktop-release.build-windows
     source: .github/workflows/desktop-release.yml
     purpose: Builds the unsigned Windows installer, silent-installs it, and uploads it for publish, without blocking the release.

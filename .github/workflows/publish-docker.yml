@@ -81,12 +81,24 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # The tag name reaches shells and image tags below, and a git ref may hold
+      # `; | $ ( ) "`, so it must be a plain release version or nothing runs
+      # (DOR-4030). Later steps read it from `env:`, never `${{ }}` in a script.
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} is not a release version (vX.Y.Z or vX.Y.Z-pre); nothing was built or pushed."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Wait for npm package availability
-        run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/wait-for-npm.sh "$VERSION"
 
       - name: Extract Docker metadata
         id: meta
@@ -161,12 +173,24 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      # The tag name reaches shells and image tags below, and a git ref may hold
+      # `; | $ ( ) "`, so it must be a plain release version or nothing runs
+      # (DOR-4030). Later steps read it from `env:`, never `${{ }}` in a script.
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} is not a release version (vX.Y.Z or vX.Y.Z-pre); nothing was built or pushed."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Wait for npm package availability
-        run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/wait-for-npm.sh "$VERSION"
 
       - name: Extract Docker metadata
         id: meta
@@ -206,6 +230,7 @@ jobs:
       - name: Verify the attestation, and name the digest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           image="${REGISTRY}/${HUB_IMAGE_NAME}@${{ steps.push.outputs.digest }}"
@@ -213,7 +238,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml" \
             --source-ref "$GITHUB_REF"
-          echo "Hub image ${{ steps.version.outputs.version }}: \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Hub image ${VERSION}: \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
 
   # Mirror the just-pushed GHCR multi-arch image to Docker Hub. GHCR is and
   # stays the canonical registry; this job is a best-effort mirror purely for
@@ -272,9 +297,19 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # The tag name reaches shells and image tags below, and a git ref may hold
+      # `; | $ ( ) "`, so it must be a plain release version or nothing runs
+      # (DOR-4030). Later steps read it from `env:`, never `${{ }}` in a script.
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} is not a release version (vX.Y.Z or vX.Y.Z-pre); nothing was built or pushed."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Compute Docker Hub tags
         id: meta
@@ -289,9 +324,11 @@ jobs:
             latest=auto
 
       - name: Mirror manifests from GHCR to Docker Hub
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          source="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
+          source="${REGISTRY}/${IMAGE_NAME}:${VERSION}"
           echo "Mirroring ${source} to Docker Hub:"
           echo "${DOCKER_METADATA_OUTPUT_TAGS}"
           tag_args=()

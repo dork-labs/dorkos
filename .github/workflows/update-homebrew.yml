@@ -75,11 +75,16 @@ jobs:
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 92
     steps:
+      # The version reaches shells and sed replacements below, and a git ref or
+      # an input may hold `; | $ ( ) "`, so it must be a plain release version
+      # or nothing runs (DOR-4030). Later steps read it from `env:`, never
+      # `${{ }}` in a script.
       - name: Get version
         id: version
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
+          set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             # Tag run: derive the version from the pushed tag (strip the `v`).
             VERSION="${GITHUB_REF_NAME#v}"
@@ -87,6 +92,10 @@ jobs:
             VERSION="$INPUT_VERSION"
           else
             VERSION=$(npm view dorkos version)
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'${VERSION}' is not a release version (X.Y.Z or X.Y.Z-pre); the tap was not touched."
+            exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Updating Homebrew formula to v$VERSION"
@@ -107,7 +116,9 @@ jobs:
 
       - name: Wait for npm package availability
         if: github.event_name == 'push'
-        run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/wait-for-npm.sh "$VERSION"
 
       - name: Compute SHA256
         id: sha

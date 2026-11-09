@@ -196,15 +196,16 @@ export const ConfigSchema = z
      * The deployment environments that alone hold the secrets a workflow
      * outside its own ref must never read (DOR-4030). The collector checks them
      * daily: none of an environment's `secrets` is back at repository level,
-     * and the environment exists, needs a reviewer when `reviewer` says so, and
-     * deploys exactly `refs`, no more and no fewer. Empty: nothing is checked.
+     * and the environment exists, still requires every one of `reviewers`
+     * (GitHub logins), and deploys exactly `refs`, no more and no fewer.
+     * Empty: nothing is checked.
      */
     secret_environments: z
       .array(
         z
           .object({
             name: z.string().min(1),
-            reviewer: z.boolean(),
+            reviewers: z.array(z.string().min(1)),
             refs: z
               .array(
                 z.object({ name: z.string().min(1), type: z.enum(['branch', 'tag']) }).strict()

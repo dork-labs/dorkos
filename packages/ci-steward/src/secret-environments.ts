@@ -67,12 +67,16 @@ function environmentProblems(gh: Gh, repo: string, want: Want): string[] | 'forb
   if (env === null) return ['it does not exist'];
   if (!isObj(env)) throw new Error(`Malformed environment ${want.name}`);
   const problems: string[] = [];
-  if (want.reviewer) {
-    const reviewers = (Array.isArray(env.protection_rules) ? env.protection_rules : [])
+  if (want.reviewers.length > 0) {
+    const logins = (Array.isArray(env.protection_rules) ? env.protection_rules : [])
       .filter(isObj)
       .filter((r) => r.type === 'required_reviewers')
-      .flatMap((r) => (Array.isArray(r.reviewers) ? r.reviewers : []));
-    if (reviewers.length === 0) problems.push('it no longer needs a reviewer');
+      .flatMap((r) => (Array.isArray(r.reviewers) ? r.reviewers : []))
+      .filter(isObj)
+      .filter((r) => r.type === 'User' && isObj(r.reviewer))
+      .map((r) => String((r.reviewer as Obj).login).toLowerCase());
+    const missing = want.reviewers.filter((l) => !logins.includes(l.toLowerCase()));
+    if (missing.length) problems.push(`it no longer needs ${missing.join(', ')} to approve`);
   }
   const policy = isObj(env.deployment_branch_policy) ? env.deployment_branch_policy : null;
   if (!policy || policy.custom_branch_policies !== true) {

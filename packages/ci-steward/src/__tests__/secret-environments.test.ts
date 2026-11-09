@@ -23,16 +23,16 @@ function files(withEnvironments = true): HandFiles {
     f.config.secret_environments = [
       {
         name: 'release',
-        reviewer: true,
+        reviewers: ['doriancollier'],
         refs: [
           { name: 'v*', type: 'tag' },
-          { name: 'release/*', type: 'branch' },
+          { name: 'main', type: 'branch' },
         ],
         secrets: ['CSC_LINK'],
       },
       {
         name: 'automation',
-        reviewer: false,
+        reviewers: [],
         refs: [{ name: 'main', type: 'branch' }],
         secrets: ['MERGE_TAIL_APP_PRIVATE_KEY'],
       },
@@ -48,7 +48,7 @@ const httpError = (status: number, text: string) =>
 
 const reviewerRule = {
   type: 'required_reviewers',
-  reviewers: [{ type: 'User', reviewer: { login: 'd' } }],
+  reviewers: [{ type: 'User', reviewer: { login: 'DorianCollier' } }],
 };
 const custom = { protected_branches: false, custom_branch_policies: true };
 
@@ -65,7 +65,7 @@ function healthy(): Recording['rest'] {
       total_count: 2,
       branch_policies: [
         { id: 1, name: 'v*', type: 'tag' },
-        { id: 2, name: 'release/*', type: 'branch' },
+        { id: 2, name: 'main', type: 'branch' },
       ],
     },
     [env('automation')]: {
@@ -133,7 +133,26 @@ describe('checkSecretEnvironments', () => {
     (rest[env('release')] as { protection_rules: unknown[] }).protection_rules = [
       { type: 'branch_policy' },
     ];
-    expect(run(rest).failures[0]).toContain('it no longer needs a reviewer');
+    expect(run(rest).failures[0]).toContain('it no longer needs doriancollier to approve');
+  });
+
+  it('goes red when the required reviewer is someone other than Dorian', () => {
+    const rest = healthy();
+    (rest[env('release')] as { protection_rules: unknown[] }).protection_rules = [
+      { type: 'required_reviewers', reviewers: [{ type: 'User', reviewer: { login: 'bot' } }] },
+    ];
+    expect(run(rest).failures[0]).toContain('it no longer needs doriancollier to approve');
+  });
+
+  it('does not count a team reviewer as the named person', () => {
+    const rest = healthy();
+    (rest[env('release')] as { protection_rules: unknown[] }).protection_rules = [
+      {
+        type: 'required_reviewers',
+        reviewers: [{ type: 'Team', reviewer: { login: 'doriancollier', slug: 'x' } }],
+      },
+    ];
+    expect(run(rest).failures[0]).toContain('it no longer needs doriancollier to approve');
   });
 
   it('does not ask for a reviewer where ci/config.yaml says none', () => {
@@ -153,7 +172,7 @@ describe('checkSecretEnvironments', () => {
       total_count: 2,
       branch_policies: [
         { id: 1, name: 'v*', type: 'branch' },
-        { id: 2, name: 'release/*', type: 'branch' },
+        { id: 2, name: 'main', type: 'branch' },
       ],
     };
     const f = run(rest).failures[0]!;

@@ -20,18 +20,25 @@ What changed:
 
 - Each of the four release workflows starts with a `tag-is-on-main` job that
   every other job needs. It fetches only main's commit graph, anonymously, and
-  fails a tag whose commit is not on main. It is a backstop: a pushed tag runs
-  its own commit's copy of the workflow, so it can delete the check.
-- The real locks are the environments. `release` (signing; Dorian approves;
-  `v*` tags and `release/*` branches): desktop `build-macos`.
+  fails a commit that is not on main, with no exception. It is a backstop: a
+  pushed tag runs its own commit's copy of the workflow, so it can delete the
+  check.
+- The environments hold the secrets. `release` (signing; Dorian approves;
+  `v*` tags and `main`): desktop `build-macos`.
   `release-publish` (Docker Hub and the Homebrew tap; Dorian approves; `v*`
   tags only): docker `mirror-docker-hub`, homebrew `update-formula`.
   `automation` (the merge-tail App key and the Neon key; `main` only):
   merge-tail `arm`, the queue guard, the Dependabot lockfile repair and the
   Neon sweep.
-- Desktop signs only on a `v*` tag or a `release/*` branch; a `sign` input can
-  only turn it off. `tag-is-on-main` is skipped only for a `release/*` branch
-  (keyed on the ref alone); every other ref must be on main.
+- Desktop signs only on a `v*` tag or `main`; a `sign` input can only turn it
+  off. The signing job runs the commit's own code (`pnpm install`,
+  electron-builder), so only code on main may reach the certificate. Against
+  an agent that holds Dorian's token, that and the branch rules are the bound;
+  the approval click stops lanes and accidents.
+- A version taken from a tag or an input must be a plain release version
+  (X.Y.Z or X.Y.Z-pre) before any step uses it, and later steps read it from
+  `env:`, never from an expression inside a script (publish-docker,
+  update-homebrew).
 - Publishing is gated in structure: in the four release workflows, every job
   that names `release-publish` or holds `contents: write`/`packages: write`
   has a job-level `if:` opening with `startsWith(github.ref, 'refs/tags/v')`,
@@ -53,9 +60,10 @@ What changed:
   skips the pnpmfile; keeps no credential in the checkout; and mints the App
   token only after pnpm has exited.
 - The daily collector goes red when a listed secret is back at repository
-  level, or an environment is gone, loses its reviewer, or deploys any ref but
-  its own (`secret_environments` in `ci/config.yaml`). A token that may not
-  read them is a warning: CI's own token cannot list repository secrets.
+  level, or an environment is gone, no longer requires its named reviewer, or
+  deploys any ref but its own (`secret_environments` in `ci/config.yaml`). A
+  token that may not read them is a warning: CI's own token cannot list
+  repository secrets.
 
 This is a hygiene change: it claims no speed or flake improvement, and no
 required check changes. The queue guard fires seconds later than before, which
