@@ -4,6 +4,7 @@
  *
  * @module entities/extension/model/use-app-catalog
  */
+import { useExtensionClientStates } from '@/layers/shared/lib/extension-client-state';
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 import { useQueryClient } from '@tanstack/react-query';
@@ -59,6 +60,7 @@ export function useAppCatalog(): AppCatalogState {
   const pages = useMenuExtensionPages();
   const badges = useExtensionRegistry((state) => state.pageBadges);
   const loadFailed = useExtensionLoadFailed();
+  const clientStates = useExtensionClientStates();
   const pins = useSidebarPrefs().pinnedApps ?? NO_PINS;
   const known = useSyncExternalStore(subscribeKnownApps, getKnownApps, getKnownApps);
 
@@ -87,9 +89,10 @@ export function useAppCatalog(): AppCatalogState {
       badges,
       known,
       pins,
+      clientStates,
     });
     return { ...catalog, pinned: pinnedApps(catalog.apps, pins), pins };
-  }, [list.data, list.isError, loadFailed, waitingIds, pages, badges, known, pins]);
+  }, [list.data, list.isError, loadFailed, waitingIds, pages, badges, known, pins, clientStates]);
 }
 
 /** What {@link useAppPins} answers with. */
@@ -141,14 +144,17 @@ export function useAppPins(): AppPinActions {
  * Try loading the apps again: reload every extension and re-read the list.
  * Resolves once both are done, whatever they found.
  */
-export function useRetryApps(): () => Promise<void> {
+export function useRetryApps(): (ids?: string[]) => Promise<void> {
   const queryClient = useQueryClient();
-  return useCallback(async () => {
-    await Promise.allSettled([
-      requestExtensionRemount(),
-      queryClient.refetchQueries({ queryKey: extensionQueryKeys.list() }),
-    ]);
-  }, [queryClient]);
+  return useCallback(
+    async (ids?: string[]) => {
+      await Promise.allSettled([
+        requestExtensionRemount(ids),
+        queryClient.refetchQueries({ queryKey: extensionQueryKeys.list() }),
+      ]);
+    },
+    [queryClient]
+  );
 }
 
 /** What {@link useAppCatalogSnapshot} holds before anything published. */

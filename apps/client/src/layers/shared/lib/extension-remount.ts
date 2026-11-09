@@ -14,7 +14,7 @@
  */
 
 /** The currently-registered remount handler, or null when no provider is mounted. */
-let remountHandler: (() => Promise<void>) | null = null;
+let remountHandler: ((ids?: string[]) => Promise<void>) | null = null;
 
 /**
  * Register the live-remount handler. Called once by `ExtensionProvider` on mount;
@@ -24,7 +24,7 @@ let remountHandler: (() => Promise<void>) | null = null;
  * @param handler - Fetch-then-swap reload of every extension slot.
  * @returns An unregister function (idempotent; only clears its own handler).
  */
-export function registerExtensionRemount(handler: () => Promise<void>): () => void {
+export function registerExtensionRemount(handler: (ids?: string[]) => Promise<void>): () => void {
   remountHandler = handler;
   return () => {
     if (remountHandler === handler) remountHandler = null;
@@ -35,8 +35,9 @@ export function registerExtensionRemount(handler: () => Promise<void>): () => vo
  * Request a live re-mount of the extension slots. A no-op (resolves immediately)
  * when no provider is mounted, so callers can fire it unconditionally.
  *
+ * @param ids - Retry only these apps with fresh imports; absent remounts the whole set.
  * @returns A promise that settles when the remount completes (or immediately when unwired).
  */
-export function requestExtensionRemount(): Promise<void> {
-  return remountHandler ? remountHandler() : Promise.resolve();
+export function requestExtensionRemount(ids?: string[]): Promise<void> {
+  return remountHandler ? remountHandler(ids) : Promise.resolve();
 }

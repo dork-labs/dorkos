@@ -11,6 +11,7 @@
  *
  * @module entities/extension/model/use-app-actions
  */
+import { getExtensionClientStates } from '@/layers/shared/lib/extension-client-state';
 import { useCallback, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -87,7 +88,7 @@ export function useAppActions(): AppActions {
       if (trying.has(id)) return;
       setTrying(new Set([...trying, id]));
       try {
-        await retry();
+        await retry([id]);
       } finally {
         setTrying(new Set([...trying].filter((other) => other !== id)));
       }
@@ -95,7 +96,12 @@ export function useAppActions(): AppActions {
       const ext = list?.find((entry) => entry.id === id);
       // Still broken after a second try: the person needs the details, which
       // live on its Settings row.
-      if (ext === undefined || appState(ext, false) === 'error') openSettings(id);
+      if (
+        ext === undefined ||
+        appState(ext, false) === 'error' ||
+        getExtensionClientStates()[id] === 'error'
+      )
+        openSettings(id);
     },
     [openSettings, queryClient, retry]
   );
@@ -103,6 +109,8 @@ export function useAppActions(): AppActions {
   const open = useCallback(
     (app: AppTarget) => {
       switch (app.state) {
+        case 'starting':
+          return;
         case 'ok':
           void router.navigate({ href: extensionPageHref(app.id, app.path) });
           return;

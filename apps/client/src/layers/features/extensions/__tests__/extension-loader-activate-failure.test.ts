@@ -103,7 +103,10 @@ describe('ExtensionLoader when activate() throws', () => {
 
     const { loaded } = await new ExtensionLoader(deps).reloadExtensions(['thrower']);
 
-    expect(deps.registry.register).toHaveBeenCalledTimes(1);
+    expect(deps.registry.register).toHaveBeenCalledWith(
+      'settings.tabs',
+      expect.objectContaining({ id: 'thrower:load-error' })
+    );
     expect(loaded.has('thrower')).toBe(false);
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
