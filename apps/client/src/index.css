@@ -893,6 +893,44 @@
   -webkit-app-region: no-drag;
 }
 
+/* No-drag for anything that floats over a drag region. The rule above only
+   reaches DESCENDANTS of `.app-drag-region`, but dialogs, sheets, drawers,
+   popovers and menus portal to `<body>`, so they are never descendants. macOS
+   still treats the pixels under them as window chrome: a drawer that opens
+   over the header (the settings dialog becomes a bottom drawer in a narrow
+   window, with its back and Close buttons at the very top) drags the window
+   instead of taking the click. Electron subtracts a no-drag box from any drag
+   box it overlaps, so marking each floating surface no-drag carves it out.
+
+   - `[role='dialog'|'alertdialog']`: Radix Dialog and AlertDialog content,
+     the vaul Drawer (built on Radix Dialog) and Radix Popover content.
+   - `[role='menu'|'listbox']`: dropdown and context menus, Select.
+   - `[data-radix-popper-content-wrapper]`: the positioned box Radix wraps
+     every popper in (popover, dropdown, select, hover card, tooltip).
+   - The `*-overlay` slots: the dimmed backdrop, so a click on it closes the
+     surface instead of dragging the window.
+   - `pip-sheet`, `pip-minibar`, `floating-panel`: our own body portals, which
+     carry `role='complementary'` rather than a dialog role.
+
+   The header itself is untouched, so its empty space still drags the window. */
+.desktop-darwin
+  :is(
+    [role='dialog'],
+    [role='alertdialog'],
+    [role='menu'],
+    [role='listbox'],
+    [data-radix-popper-content-wrapper],
+    [data-slot='dialog-overlay'],
+    [data-slot='alert-dialog-overlay'],
+    [data-slot='sheet-overlay'],
+    [data-slot='drawer-overlay'],
+    [data-slot='pip-sheet'],
+    [data-slot='pip-minibar'],
+    [data-slot='floating-panel']
+  ) {
+  -webkit-app-region: no-drag;
+}
+
 /* Desktop chrome defaults to non-selectable text (it reads like an app, not
    a document) — content surfaces opt back in explicitly below. `user-select`
    is inherited, so the re-enables must be as explicit as the disable.
