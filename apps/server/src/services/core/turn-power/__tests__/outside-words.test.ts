@@ -1,6 +1,7 @@
 /** The note stamp's record of a room turn that answered someone from outside (DOR-3440). */
 import { describe, expect, it, vi } from 'vitest';
 import { noteRoomTurnWords, roomTurnReadOutsideWords } from '../outside-words.js';
+import { aliasTurnLevel, carryTurnLevel } from '../turn-levels.js';
 import {
   onPermissionsChanged,
   recordPermissionChange,
@@ -12,6 +13,20 @@ describe('a room turn’s words', () => {
     expect(roomTurnReadOutsideWords('seat')).toBe(true);
     noteRoomTurnWords('seat', false);
     expect(roomTurnReadOutsideWords('seat')).toBe(false);
+  });
+
+  // Security M1 on #3576: every rename the turn's level follows, its outside words follow too.
+  it('goes with the session to a renamed id (the projector’s alias) and a moved seat', () => {
+    noteRoomTurnWords('first-turn', true);
+    aliasTurnLevel('first-turn', 'first-turn-canonical');
+    expect(roomTurnReadOutsideWords('first-turn-canonical')).toBe(true);
+
+    noteRoomTurnWords('old-seat', true);
+    carryTurnLevel('old-seat', 'new-seat');
+    expect(roomTurnReadOutsideWords('new-seat')).toBe(true);
+
+    aliasTurnLevel('clean-turn', 'clean-turn-canonical');
+    expect(roomTurnReadOutsideWords('clean-turn-canonical')).toBe(false);
   });
 });
 

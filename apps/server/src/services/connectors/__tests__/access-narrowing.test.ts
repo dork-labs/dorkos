@@ -4,7 +4,13 @@
  * needs a reason, an allowed turn and the hourly budget, raises a Needs-you
  * item, and a person can undo it. One test per refusal (§7, E3).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
+import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
+import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { resetChosenTurns, setMarkedFullActivity } from '../../core/turn-power/full-autonomy.js';
 import {
   connectionGrantChanges,
   connectionGrantExclusions,
@@ -541,4 +547,93 @@ describe('agents taking access away', () => {
       expect(validReason(undefined)).toBeNull();
     });
   });
+
+  // QA's 0.135.0 row 7 (DOR-4023), on the live gate: a mini app's post woke a room turn in a
+  // chat set to Full, and the runner noted its words as outside words (`run-turn.ts` sets
+  // `outsideWords`, `room-turn-runner.ts` notes it; both have their own tests).
+  describe('a room turn that answered a mini app’s post (DOR-4023)', () => {
+    const emit = vi.fn(async (_event: unknown) => undefined);
+    const pm = caller('pm');
+
+    function liveNarrowing() {
+      return new AccessNarrowingService({
+        db,
+        ownsAgent: (_owner, agentId) => AGENTS.has(agentId),
+        events: {
+          changed: (change) => events.changed.push(change),
+          refused: (input) => events.refused.push(input.code),
+          undone: (input) => events.undone.push(input.changeId),
+        },
+        now: () => clock,
+        createId: () => `change-${++nextId}`,
+      });
+    }
+
+    beforeEach(() => {
+      emit.mockClear();
+      setMarkedFullActivity({ emit });
+    });
+    afterEach(() => {
+      setMarkedFullActivity(undefined);
+      resetChosenTurns();
+      noteRoomTurnWords(pm.sessionId!, false);
+    });
+
+    const narrowFlowSnapshot = () =>
+      liveNarrowing().narrow(pm, {
+        targetAgentId: 'flow-snapshot',
+        connectionId: CONNECTION_ID,
+        change: { kind: 'level', to: 'read' },
+        reason: REASON,
+      });
+
+    it('refuses taking another agent’s access, and writes the Full line', async () => {
+      await ranAt(pm.sessionId!, 'bypassPermissions');
+      noteRoomTurnWords(pm.sessionId!, true);
+
+      expect(await code(narrowFlowSnapshot())).toBe('GRANT_MARKED_TURN');
+      expect(ledger().at(-1)).toMatchObject({ kind: 'narrow_other', outcome: 'refused' });
+      // Nothing was taken: flow-snapshot can still write.
+      await expect(execute('flow-snapshot', write, 'write')).resolves.toBeDefined();
+      expect(emit).toHaveBeenCalledTimes(1);
+      expect(emit.mock.calls[0]![0]).toMatchObject({
+        eventType: 'agent.marked_full_action',
+        resourceId: 'connectors.narrow_agent_access',
+        metadata: { refused: true, marked: true, sessionId: pm.sessionId },
+      });
+    });
+
+    it('refuses below Full too, where the ledger row is the record', async () => {
+      await ranAt(pm.sessionId!, 'default');
+      noteRoomTurnWords(pm.sessionId!, true);
+
+      expect(await code(narrowFlowSnapshot())).toBe('GRANT_MARKED_TURN');
+      expect(emit).not.toHaveBeenCalled();
+    });
+
+    it('writes no Full line for a refusal that isn’t about outside words', async () => {
+      await ranAt(pm.sessionId!, 'bypassPermissions');
+
+      // Unmarked, the gate still refuses: this test process records no launch origin.
+      expect(await code(narrowFlowSnapshot())).toBe('GRANT_MARKS_UNREADABLE');
+      expect(emit).not.toHaveBeenCalled();
+    });
+  });
 });
+
+/** Record a turn on `sessionId` at `mode`, as the registry's wrapper does for every send. */
+async function ranAt(sessionId: string, mode: string): Promise<void> {
+  const runtime = recordTurnLevels(
+    {
+      type: 'claude-code',
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      async *sendMessage(): AsyncGenerator<StreamEvent> {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    } as unknown as AgentRuntime,
+    () => mode
+  );
+  for await (const _event of runtime.sendMessage(sessionId, 'hi')) {
+    // drain
+  }
+}

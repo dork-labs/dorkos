@@ -10,6 +10,7 @@ import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { entryHeldToDefault, entryMarksOf } from '../../core/turn-power/turn-levels.js';
 import { ceilingCarrying } from '../../core/turn-power/turn-marks.js';
+import { roomPostCarriesOutsideWords } from '../../core/turn-power/outside-words.js';
 import { authorOrigin, type AuthorRegistry } from '../author-registry.js';
 import { isTeammateEntry, isUnknownSpaceAgentPost } from './space-teammates.js';
 
@@ -84,10 +85,42 @@ export function ceilingForEntries(
   return { permissionCeiling: bounds.length === 1 ? bounds[0]! : bounds };
 }
 
+/** A message a turn answers, with what says where its words came from. */
+type AnsweredEntry = Pick<RoomEntry, 'id' | 'authorId'> & {
+  body?: Pick<RoomEntry['body'], 'via'>;
+};
+
 /**
- * Whether any message a turn answers was written by anyone but a person on this machine: a stranger,
- * a teammate, another agent, or a person's line a mini app posted. Not about level: it keeps the
- * runtime from running those words as a command or expanding a file reference in them.
+ * Whether any message a turn answers came from outside the team (DOR-4023): a stranger on a bridged
+ * chat (or an author nobody can resolve), a mini app's post (kept with the outsider mark), a
+ * comment a mini app forwarded (`via`: its page wrote the request), or a post held to the default
+ * for who was calling (a Wi-Fi sign-in). Another agent's own post is not: it is inside the team.
+ * But one it wrote from a chat that had read outside words carries them on (marks spread through
+ * agent hops), so the turn it wakes counts them too.
+ *
+ * @param authors - The registry holding the stored author records.
+ * @param entries - Every message the turn answers.
+ * @param roomId - The room, to read a post's kept marks.
+ */
+export function answersOutsideWords(
+  authors: AuthorRegistry,
+  entries: readonly AnsweredEntry[],
+  roomId?: string
+): boolean {
+  return entries.some(
+    (entry) =>
+      isEntryAuthorExternal(authors, entry.authorId) ||
+      entry.body?.via !== undefined ||
+      entryMarksOf(entry.id, roomId)?.outsider === true ||
+      entryHeldToDefault(entry.id, roomId) ||
+      roomPostCarriesOutsideWords(entry.id)
+  );
+}
+
+/**
+ * Whether any message a turn answers was written by anyone but a person on this machine: anything
+ * from outside the team ({@link answersOutsideWords}), or another agent's post. Not about level: it
+ * keeps the runtime from running those words as a command or expanding a file reference in them.
  *
  * @param authors - The registry holding the stored author records.
  * @param entries - Every message the turn answers.
@@ -95,16 +128,11 @@ export function ceilingForEntries(
  */
 export function answersUntrustedText(
   authors: AuthorRegistry,
-  entries: readonly Pick<RoomEntry, 'id' | 'authorId'>[],
+  entries: readonly AnsweredEntry[],
   roomId?: string
 ): boolean {
-  return entries.some((entry) => {
-    if (isEntryAuthorExternal(authors, entry.authorId)) return true;
-    const kind = authors.getMany([entry.authorId]).get(entry.authorId)?.kind;
-    if (kind === 'agent') return true;
-    if (kind !== 'human') return false;
-    return (
-      entryHeldToDefault(entry.id, roomId) || entryMarksOf(entry.id, roomId)?.outsider === true
-    );
-  });
+  return (
+    answersOutsideWords(authors, entries, roomId) ||
+    entries.some((entry) => authors.getMany([entry.authorId]).get(entry.authorId)?.kind === 'agent')
+  );
 }

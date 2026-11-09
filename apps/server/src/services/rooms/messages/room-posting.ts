@@ -120,7 +120,12 @@ export class RoomPosting {
    * @returns The committed entry, carrying what writing it asked of the room —
    *   see {@link PostedEntry}.
    */
-  post(roomId: string, input: RoomPostInput, authorLevel?: PostAuthorBound): PostedEntry {
+  post(
+    roomId: string,
+    input: RoomPostInput,
+    authorLevel?: PostAuthorBound,
+    carryWordsFrom?: readonly (string | null | undefined)[]
+  ): PostedEntry {
     const room = this.visibility.requireVisibleRoom(roomId, input.authorId);
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
     // Seeing a room is not being in it. The owner can see every room but still
@@ -134,6 +139,7 @@ export class RoomPosting {
     const attachmentIds = attachments.map((file) => file.id);
     return this.writer.writePost(room, input, undefined, {
       ...(authorLevel !== undefined ? { authorLevel } : {}),
+      ...(carryWordsFrom ? { carryWordsFrom } : {}),
       bind: (entryId, tx) => {
         const bound = this.attachments.bind(roomId, attachmentIds, entryId, tx);
         // **Asserted, not assumed.** `bind` re-checks `entry_id IS NULL`, so a
@@ -308,7 +314,9 @@ export class RoomPosting {
             }
           : {}),
       },
-      authorLevel
+      authorLevel,
+      // Outside words this agent's chats had read go on with the post (DOR-4023).
+      vouching
     );
     this.triggers.noteDeliberatePost(roomId, input.authorId);
     return entry;

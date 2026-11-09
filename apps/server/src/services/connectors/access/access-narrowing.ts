@@ -43,7 +43,18 @@ import { recordAccessLevel, replaceNamedAgentGrants } from '../execution/access-
 import { managedSelectors } from '../reconciliation-service.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ManagedAuthoritySyncService } from '../resources/managed-authority-sync-service.js';
-import { anotherAgentTurnRefusal, TURN_GATE_MESSAGES, type TurnGateRefusal } from './turn-gate.js';
+import {
+  anotherAgentTurnRefusal,
+  noteMarkedTurnRefusal,
+  TURN_GATE_MESSAGES,
+  type TurnGateRefusal,
+} from './turn-gate.js';
+
+/** The tool a marked turn's refused narrowing names on its Activity line. */
+const NARROW_AGENT_ACTION = {
+  id: 'connectors.narrow_agent_access',
+  title: "Take away another agent's access to a connected app",
+} as const;
 import { describeAccessChange, type AccessChangeEvents } from './access-change-events.js';
 import {
   isNarrowing,
@@ -209,6 +220,7 @@ export class AccessNarrowingService {
           : 'narrow_own';
     if (other) {
       const gate = (this.options.turnGate ?? anotherAgentTurnRefusal)(caller);
+      if (gate === 'GRANT_MARKED_TURN') noteMarkedTurnRefusal(caller, NARROW_AGENT_ACTION);
       if (gate) this.refuse(caller, input, kind, gate);
       if (this.recentOtherNarrowings(caller.agentId) >= NARROW_OTHERS_PER_HOUR) {
         this.refuse(caller, input, kind, 'GRANT_NARROW_RATE');

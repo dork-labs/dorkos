@@ -35,10 +35,9 @@
  * @module server/services/rooms/room-turn-runner
  */
 import { armLateReplyCeiling } from './turn-guards/late-reply-ceiling.js';
-import { aliasTurnLevel } from '../core/turn-power/turn-levels.js';
+import { aliasTurnLevel, noteRoomTurnWords } from '../core/turn-power/turn-levels.js';
 import { roomTurnMarksOf, turnBoundsOf } from './limits/teammate-turn.js';
 import { randomUUID } from 'node:crypto';
-import { noteRoomTurnWords } from '../core/turn-power/outside-words.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
@@ -824,8 +823,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // thrown: a `SQLITE_BUSY` on this one bookkeeping row must never fail a
       // turn or escape `run` (see the late write below for why).
       let mintedRowAtLaunch = false;
-      // A stamp on what this turn saves, not a limit on what it does (`outside-words.ts`).
-      noteRoomTurnWords(sessionId, request.externalAuthor === true);
+      // A stamp, not a limit (`outside-words.ts`): a stranger's or a mini app's words (DOR-4023).
+      // Noted before the turn can read them; a clean turn clears it only once it is accepted, so
+      // one refused as busy never wipes a marked turn still running (Security S1 on #3576).
+      if (request.externalAuthor || request.outsideWords) noteRoomTurnWords(sessionId, true);
       const recordSessionOwner = async (ownedId: string): Promise<boolean> => {
         try {
           return await runtimeRegistry.persistSessionRuntime(
@@ -1035,6 +1036,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       }
 
       const canonicalId = result.canonicalId ?? sessionId;
+      if (!request.externalAuthor && !request.outsideWords) noteRoomTurnWords(sessionId, false);
       // The runtime renamed the session, so the stop path has a second name to
       // find this turn under: the room asks with the placeholder until
       // `rebindRoomSession` runs and with the canonical id afterwards, and a

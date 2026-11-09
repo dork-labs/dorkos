@@ -15,6 +15,7 @@ import {
   noteEntryLevel,
   noteEntryMarks,
 } from '../../core/turn-power/turn-levels.js';
+import { carryRoomPostWords } from '../../core/turn-power/outside-words.js';
 import { NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { ulid } from 'ulidx';
 import { roomEntries, type DbTransaction } from '@dorkos/db';
@@ -295,6 +296,12 @@ export class RoomEntryWriter {
        * runtime's default: a person's post from Wi-Fi (DOR-3037).
        */
       authorLevel?: PostAuthorBound;
+      /**
+       * The verified chats that wrote a tool post: when one had read outside words, the post
+       * carries them to the turn it wakes (DOR-4023). Never `input.sessionId`, for the reason
+       * above.
+       */
+      carryWordsFrom?: readonly (string | null | undefined)[];
     }
   ): PostedEntry {
     const roomId = room.id;
@@ -442,6 +449,7 @@ export class RoomEntryWriter {
     if (held) noteEntryHeldToDefault(entry.id);
     if (keptMarks) noteEntryMarks(entry.id, keptMarks, roomId);
     else if (!held) noteEntryLevel(entry.id, kept as TurnPermissionLevel | undefined, roomId);
+    if (opts?.carryWordsFrom) carryRoomPostWords(entry.id, opts.carryWordsFrom);
     this.publisher.publishEntry(entry, opts?.attachments ?? []);
     // Never on the transaction, never before the entry is durable: a
     // notification is the least important thing this write does, and it must
