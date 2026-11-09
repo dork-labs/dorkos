@@ -303,6 +303,13 @@ export interface ExtensionRecordPublic {
    */
   approvedToRun: boolean;
   /**
+   * Its screens are held back until a person looks again (DOR-3068): it may
+   * run, but its client bundle is not the one approved, so `bundleReady` is
+   * `false` and it has no pages, sidebar rows or settings tabs. Settings shows
+   * it as waiting for an OK. Absent from an older server.
+   */
+  screensPaused?: boolean;
+  /**
    * The path of the newer copy that runs instead of this one, or `null` when
    * this is the copy that runs (spec `flow-multiproject` §9.2). Informational:
    * when the same extension is installed in several projects from one trusted

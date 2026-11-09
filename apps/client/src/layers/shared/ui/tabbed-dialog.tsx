@@ -259,6 +259,15 @@ export function TabbedDialog<T extends string>({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
         data-testid={testId}
+        // Radix hears Escape first (a capture listener on the document), so a
+        // part of a tab that closes on Escape itself, like an open row in
+        // Settings → Extensions, marks itself `data-keeps-escape` and the
+        // dialog stays open while focus is inside it.
+        onEscapeKeyDown={(event) => {
+          if (event.target instanceof Element && event.target.closest('[data-keeps-escape]')) {
+            event.preventDefault();
+          }
+        }}
         className={cn(
           'max-h-[85vh] gap-0 p-0',
           maxWidth,

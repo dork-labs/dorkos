@@ -25,7 +25,6 @@
       "apps/client/src/layers/features/chat/ui/tasks/TaskRow.tsx": 2,
       "apps/client/src/layers/features/dashboard-sidebar/ui/bottom-slot/UpdatePill.tsx": 4,
       "apps/client/src/layers/features/diff-review/ui/diff-chrome.tsx": 3,
-      "apps/client/src/layers/features/extensions/ui/ExtensionCard.tsx": 3,
       "apps/client/src/layers/features/feature-promos/ui/dialogs/PromoDialogLayout.tsx": 6,
       "apps/client/src/layers/features/feedback-requests/ui/FeedbackRequestsPanel.tsx": 6,
       "apps/client/src/layers/features/file-explorer/ui/FileExplorer.tsx": 2,

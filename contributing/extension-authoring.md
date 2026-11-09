@@ -73,6 +73,7 @@ my-extension/
   "name": "My Extension",
   "version": "1.0.0",
   "description": "What this extension does",
+  "summary": "One line on what it is for",
   "author": "Your Name",
   "minHostVersion": "0.1.0",
   "contributions": {
@@ -83,23 +84,24 @@ my-extension/
 }
 ```
 
-| Field                | Required | Description                                                                                                                                                                                                        |
-| -------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                 | Yes      | Unique kebab-case identifier. Must match the directory name.                                                                                                                                                       |
-| `name`               | Yes      | Display name shown in Settings.                                                                                                                                                                                    |
-| `version`            | Yes      | Semver string (e.g. `1.0.0`).                                                                                                                                                                                      |
-| `description`        | No       | Short description for the settings UI.                                                                                                                                                                             |
-| `author`             | No       | Author name or identifier.                                                                                                                                                                                         |
-| `minHostVersion`     | No       | Minimum DorkOS version. Extension won't load on older hosts; a development build (`0.0.0`) loads it regardless.                                                                                                    |
-| `contributions`      | No       | Declares which UI slots the extension contributes to (informational).                                                                                                                                              |
-| `permissions`        | No       | Reserved for future use.                                                                                                                                                                                           |
-| `capabilities`       | No       | Client-side capability declarations. Today: `capabilities.events` — the host events this extension may subscribe to. See [Events](#events).                                                                        |
-| `defaultEnabled`     | No       | **Core extensions only.** Whether the extension ships enabled. Omitted or `true` = ships on; `false` = ships off (user opts in). Ignored for user/marketplace extensions. See [Core Extensions](#core-extensions). |
-| `canDisable`         | No       | **Core extensions only.** Defaults to `true`. `false` = always on, renders no toggle ("Required"). Reserved — no core extension uses `false` today. See [Core Extensions](#core-extensions).                       |
-| `serverCapabilities` | No       | Server-side declarations: entry point, external hosts, secrets, settings. See [Secrets](#secrets) and [Settings Declaration](#settings-declaration).                                                               |
-| `dataProxy`          | No       | Declarative API proxy config. See [Declarative Proxy](#declarative-proxy).                                                                                                                                         |
-| `tools`              | No       | Tools the extension gives the person's agents while it runs. Needs `serverCapabilities`. See [`ctx.tools`](#ctxtools).                                                                                             |
-| `skills`             | No       | Skill folder names under `<extension>/skills/`. See [Shipping skills](#shipping-skills).                                                                                                                           |
+| Field                | Required | Description                                                                                                                                                                                                         |
+| -------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | Yes      | Unique kebab-case identifier. Must match the directory name.                                                                                                                                                        |
+| `name`               | Yes      | Display name shown in Settings.                                                                                                                                                                                     |
+| `version`            | Yes      | Semver string (e.g. `1.0.0`).                                                                                                                                                                                       |
+| `description`        | No       | Short description for the settings UI. Shown in full when a person opens the extension's row in Settings → Extensions.                                                                                              |
+| `summary`            | No       | One line, at most 80 characters, that says what it is for on its own ("Tracks spending across your projects."). Shown beside the name in Settings → Extensions; without it, the first sentence of `description` is. |
+| `author`             | No       | Author name or identifier.                                                                                                                                                                                          |
+| `minHostVersion`     | No       | Minimum DorkOS version. Extension won't load on older hosts; a development build (`0.0.0`) loads it regardless.                                                                                                     |
+| `contributions`      | No       | Declares which UI slots the extension contributes to (informational).                                                                                                                                               |
+| `permissions`        | No       | Reserved for future use.                                                                                                                                                                                            |
+| `capabilities`       | No       | Client-side capability declarations. Today: `capabilities.events` — the host events this extension may subscribe to. See [Events](#events).                                                                         |
+| `defaultEnabled`     | No       | **Core extensions only.** Whether the extension ships enabled. Omitted or `true` = ships on; `false` = ships off (user opts in). Ignored for user/marketplace extensions. See [Core Extensions](#core-extensions).  |
+| `canDisable`         | No       | **Core extensions only.** Defaults to `true`. `false` = always on, renders no toggle ("Required"). Reserved — no core extension uses `false` today. See [Core Extensions](#core-extensions).                        |
+| `serverCapabilities` | No       | Server-side declarations: entry point, external hosts, secrets, settings. See [Secrets](#secrets) and [Settings Declaration](#settings-declaration).                                                                |
+| `dataProxy`          | No       | Declarative API proxy config. See [Declarative Proxy](#declarative-proxy).                                                                                                                                          |
+| `tools`              | No       | Tools the extension gives the person's agents while it runs. Needs `serverCapabilities`. See [`ctx.tools`](#ctxtools).                                                                                              |
+| `skills`             | No       | Skill folder names under `<extension>/skills/`. See [Shipping skills](#shipping-skills).                                                                                                                            |
 
 ## Entry Point (`activate`)
 

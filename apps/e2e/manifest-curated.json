@@ -6,7 +6,7 @@
         "apps/client/src/layers/features/marketplace/ui/LinkFolderDialog.tsx",
         "apps/client/src/layers/features/marketplace/ui/UnlinkDialog.tsx",
         "apps/client/src/layers/features/marketplace/ui/DevLinkRow.tsx",
-        "apps/client/src/layers/features/extensions/ui/ExtensionCard.tsx",
+        "apps/client/src/layers/features/extensions/ui/ExtensionRowDetail.tsx",
         "apps/server/src/routes/marketplace/dev-links.ts",
         "apps/server/src/services/marketplace/dev-links/dev-link-service.ts"
       ],

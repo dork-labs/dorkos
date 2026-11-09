@@ -163,6 +163,7 @@ export function toPublic(
   approvals: ExtensionApprovals,
   tools?: ExtensionToolStatus[]
 ): ExtensionRecordPublic {
+  const screensPaused = isScreenHalfWithheld(record, approvals);
   return {
     id: record.id,
     manifest: record.manifest,
@@ -173,11 +174,13 @@ export function toPublic(
     error: record.error,
     serverError: record.serverError,
     restartingAt: record.restartingAt ?? null,
-    // A screen half waiting for a person (DOR-3068) is not offered to the app.
-    bundleReady: record.bundleReady && !isScreenHalfWithheld(record, approvals),
+    // A screen half waiting for a person (DOR-3068) is not offered to the app,
+    // and Settings says so rather than showing a silent "allowed".
+    bundleReady: record.bundleReady && !screensPaused,
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,
     approvedToRun: mayRunExtensionCode(record, approvals),
+    screensPaused,
     shadowedBy: record.shadowedBy ?? null,
     ...(record.originProblem ? { originProblem: record.originProblem } : {}),
     ...(record.devLink ? { devLink: { path: record.devLink.path } } : {}),

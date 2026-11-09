@@ -16,6 +16,13 @@ vi.mock('sonner', () => ({
   },
 }));
 
+// The approval queue's hook rides the global `/api/events` fan-out, which needs
+// the app-level `EventStreamProvider`. Nothing here is about that stream.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return { ...actual, useEventSubscription: () => {} };
+});
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -74,6 +81,15 @@ function makeExtension(overrides: Partial<ExtensionRecordPublic> = {}): Extensio
   };
 }
 
+/** A named extension, for the order and search tests. */
+function named(id: string, name: string, overrides: Partial<ExtensionRecordPublic> = {}) {
+  return makeExtension({
+    id,
+    ...overrides,
+    manifest: { id, name, version: '1.0.0', ...overrides.manifest },
+  });
+}
+
 function mockFetch(responses: Record<string, unknown>) {
   vi.stubGlobal(
     'fetch',
@@ -98,6 +114,22 @@ function mockFetch(responses: Record<string, unknown>) {
   );
 }
 
+/** Open one extension's row, as a click on its name does. */
+function openRow(id: string) {
+  const row = screen.getByTestId(`extension-card-${id}`);
+  const button = row.querySelector<HTMLButtonElement>('[data-row-button]');
+  if (!button) throw new Error(`no row button for ${id}`);
+  fireEvent.click(button);
+  return row;
+}
+
+/** The names of the rows inside one section, top to bottom. */
+function rowNames(section: HTMLElement): string[] {
+  return Array.from(section.querySelectorAll('[data-row-button] > span:first-child')).map(
+    (span) => span.textContent ?? ''
+  );
+}
+
 // --- Tests ---
 
 describe('ExtensionsSettingsTab', () => {
@@ -114,49 +146,53 @@ describe('ExtensionsSettingsTab', () => {
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    expect(screen.getByText('Loading extensions…')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading extensions…' })).toBeInTheDocument();
   });
 
-  it('shows empty state when no extensions are installed', async () => {
+  it('shows empty state only after a load that found none', async () => {
     mockFetch({ '/api/extensions': [] });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('no-extensions')).toBeInTheDocument();
-    });
-    expect(screen.getByText('No extensions installed.')).toBeInTheDocument();
+    expect(await screen.findByTestId('no-extensions')).toHaveTextContent('No extensions yet');
+    expect(screen.getByRole('button', { name: 'Browse Marketplace' })).toBeInTheDocument();
   });
 
-  it('says the list failed to load, never "none installed", and tries again', async () => {
-    // Refused, as a signed-out window's request is.
-    const listFetch = vi.fn((url: string) =>
-      Promise.resolve(
-        url.endsWith('/api/extensions')
-          ? { ok: false, status: 401, json: () => Promise.resolve({ code: 'AUTH_REQUIRED' }) }
-          : { ok: true, json: () => Promise.resolve([]) }
-      )
+  // Purpose: a refused or failed list is never shown as "none installed", and
+  // Try again reads it again (the sign-in bug, Nov 8).
+  it('says it couldn’t load, never "none installed", and tries again', async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.endsWith('/api/extensions')) {
+          attempts += 1;
+          if (attempts === 1) {
+            return Promise.resolve({ ok: false, status: 401, json: () => Promise.resolve({}) });
+          }
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([makeExtension()]) });
+        }
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+      })
     );
-    vi.stubGlobal('fetch', listFetch);
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    const line = await screen.findByTestId('extensions-load-failed');
-    expect(line).toHaveTextContent('Couldn’t load apps.');
+    const alert = await screen.findByRole('alert');
+    // The two sentences, word for word: a bold title, then the line under it.
+    expect(within(alert).getByText('Couldn’t load your extensions.')).toBeInTheDocument();
+    expect(
+      within(alert).getByText('They’re still installed, and nothing was turned off.')
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('no-extensions')).not.toBeInTheDocument();
     // One way out, not two: Reload waits until there is a list to reload.
     expect(screen.queryByTestId('reload-extensions-button')).not.toBeInTheDocument();
 
-    // Try again asks the server once more, and a working answer draws the list.
-    mockFetch({ '/api/extensions': [makeExtension({ id: 'ext-a' })] });
-    fireEvent.click(within(line).getByRole('button', { name: 'Try again' }));
-    await waitFor(() => {
-      expect(screen.queryByTestId('extensions-load-failed')).not.toBeInTheDocument();
-    });
-    expect(screen.getByTestId('installed-extensions-section')).toBeInTheDocument();
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByTestId('extension-card-test-ext')).toBeInTheDocument();
   });
 
-  it('renders a card for each discovered extension', async () => {
+  it('renders a row for each discovered extension', async () => {
     const extensions = [makeExtension({ id: 'ext-a' }), makeExtension({ id: 'ext-b' })];
     mockFetch({ '/api/extensions': extensions });
 
@@ -168,86 +204,341 @@ describe('ExtensionsSettingsTab', () => {
     expect(screen.getByTestId('extension-card-ext-b')).toBeInTheDocument();
   });
 
-  it('says plainly when a project copy changed after DorkOS installed it', async () => {
+  it('counts what is installed and what needs you', async () => {
     mockFetch({
       '/api/extensions': [
-        makeExtension({ scope: 'local', approvedToRun: false, originProblem: 'changed' }),
+        named('a', 'Alpha'),
+        named('b', 'Beta', { approvedToRun: false }),
+        named('c', 'Core', { origin: 'core' }),
       ],
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    expect(await screen.findByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
-      'Its files changed after install'
+    expect(await screen.findByTestId('extensions-count')).toHaveTextContent(
+      '2 installed · 1 needs you'
     );
   });
 
-  it('says plainly when a plugin holds a shortcut to files elsewhere', async () => {
-    mockFetch({
-      '/api/extensions': [makeExtension({ approvedToRun: false, originProblem: 'linked' })],
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    expect(await screen.findByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
-      'links to files elsewhere'
-    );
-  });
-
-  it('badges a dev-linked extension with its folder, and links to where it is switched', async () => {
-    // Purpose: Settings shows the dev link tag and path (DOR-2696), whether or not it is approved.
+  // Purpose: the count agrees with its number: one needs, several need.
+  it('says "need you" for more than one', async () => {
     mockFetch({
       '/api/extensions': [
-        makeExtension({
-          approvedToRun: true,
-          originProblem: 'dev-link',
-          devLink: { path: '/work/flow' },
-          sourcePlugin: 'flow',
-        }),
+        named('a', 'Alpha', { approvedToRun: false }),
+        named('b', 'Beta', { approvedToRun: false }),
       ],
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    const devLink = await screen.findByTestId('extension-dev-link-test-ext');
-    expect(devLink).toHaveTextContent('Dev link: /work/flow');
-    expect(within(devLink).getByRole('button', { name: 'Unlink or switch' })).toBeInTheDocument();
-    expect(screen.getByText('Dev link')).toBeInTheDocument();
-  });
-
-  it('says a waiting dev-linked extension runs from your folder, not from a shortcut', async () => {
-    mockFetch({
-      '/api/extensions': [
-        makeExtension({ approvedToRun: false, originProblem: 'dev-link', devLink: { path: '/w' } }),
-      ],
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    expect(await screen.findByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
-      'It runs from your folder'
+    expect(await screen.findByTestId('extensions-count')).toHaveTextContent(
+      '2 installed · 2 need you'
     );
   });
 
-  it('tells a person who approved a changed copy that any further change asks again', async () => {
-    mockFetch({
-      '/api/extensions': [makeExtension({ approvedToRun: true, originProblem: 'changed' })],
+  describe('the row', () => {
+    // Purpose: the purpose line is the manifest's summary, else the first
+    // sentence of the description, never the whole paragraph.
+    it('shows the summary, else the first sentence of the description', async () => {
+      mockFetch({
+        '/api/extensions': [
+          named('s', 'With summary', {
+            manifest: {
+              id: 's',
+              name: 'With summary',
+              version: '1.0.0',
+              summary: 'Tracks spending.',
+              description: 'A long paragraph. With two sentences.',
+            },
+          }),
+          named('d', 'Description only', {
+            manifest: {
+              id: 'd',
+              name: 'Description only',
+              version: '1.0.0',
+              description: 'Captures notes. Then files them.',
+            },
+          }),
+        ],
+      });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+      const withSummary = await screen.findByTestId('extension-card-s');
+      expect(withSummary).toHaveTextContent('Tracks spending.');
+      expect(withSummary).not.toHaveTextContent('A long paragraph');
+      expect(screen.getByTestId('extension-card-d')).toHaveTextContent('Captures notes.');
+      expect(screen.getByTestId('extension-card-d')).not.toHaveTextContent('Then files them');
     });
 
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    // Purpose: a long name truncates inside its own column, with the full name
+    // kept for hover, so it never pushes the purpose line out of line.
+    it('keeps a long name inside the name column', async () => {
+      const name = 'Customer Interview Synthesizer For Product Discovery';
+      mockFetch({ '/api/extensions': [named('long', name)] });
 
-    expect(await screen.findByTestId('extension-run-allowed-test-ext')).toHaveTextContent(
-      'Any further change asks again'
-    );
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+      const row = await screen.findByTestId('extension-card-long');
+      const nameSpan = row.querySelector('[data-row-button] > span:first-child');
+      expect(nameSpan).toHaveAttribute('title', name);
+      expect(nameSpan).toHaveClass('truncate', 'w-[200px]', 'shrink-0');
+    });
+
+    it('opens in place, and shows the facts of a healthy extension', async () => {
+      mockFetch({ '/api/extensions': [makeExtension({ scope: 'local' })] });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      await screen.findByTestId('extension-card-test-ext');
+      const row = openRow('test-ext');
+
+      expect(row.querySelector('[data-row-button]')).toHaveAttribute('aria-expanded', 'true');
+      const region = within(row).getByRole('region', { name: 'Test Extension' });
+      expect(region).toHaveTextContent('A test extension');
+      expect(region).toHaveTextContent('Version1.0.0');
+      expect(region).toHaveTextContent('ByTester');
+      expect(region).toHaveTextContent('ForThis project only');
+    });
+
+    it('closes on Escape and gives focus back to the row', async () => {
+      mockFetch({ '/api/extensions': [makeExtension()] });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      await screen.findByTestId('extension-card-test-ext');
+      const row = openRow('test-ext');
+      const region = within(row).getByRole('region');
+      fireEvent.keyDown(region, { key: 'Escape' });
+
+      const button = row.querySelector('[data-row-button]');
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+      expect(button).toHaveFocus();
+    });
+
+    // Purpose: Esc with focus on the open row's own button closes the row, not
+    // Settings. The button keeps Escape (`data-keeps-escape`, which TabbedDialog
+    // honors) only while the row is open. The queue caught this (dev-link.spec).
+    it('closes on Escape from its own button, and keeps Escape from Settings only while open', async () => {
+      mockFetch({ '/api/extensions': [makeExtension()] });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      await screen.findByTestId('extension-card-test-ext');
+      const row = openRow('test-ext');
+      const button = row.querySelector('[data-row-button]') as HTMLElement;
+      expect(button).toHaveAttribute('data-keeps-escape');
+
+      fireEvent.keyDown(button, { key: 'Escape' });
+
+      expect(button).toHaveAttribute('aria-expanded', 'false');
+      expect(button).not.toHaveAttribute('data-keeps-escape');
+    });
+
+    it('moves between rows with the arrow keys', async () => {
+      mockFetch({ '/api/extensions': [named('a', 'Alpha'), named('b', 'Beta')] });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      const first = (await screen.findByTestId('extension-card-a')).querySelector<HTMLElement>(
+        '[data-row-button]'
+      )!;
+      first.focus();
+      fireEvent.keyDown(first, { key: 'ArrowDown' });
+
+      expect(
+        screen.getByTestId('extension-card-b').querySelector('[data-row-button]')
+      ).toHaveFocus();
+    });
+
+    it('badges a dev-linked extension, and links to where it is switched', async () => {
+      // Purpose: Settings shows the dev link and its path (DOR-2696).
+      mockFetch({
+        '/api/extensions': [
+          makeExtension({
+            approvedToRun: true,
+            originProblem: 'dev-link',
+            devLink: { path: '/work/flow' },
+            sourcePlugin: 'flow',
+          }),
+        ],
+      });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      const row = await screen.findByTestId('extension-card-test-ext');
+      expect(within(row).getByText('Dev link')).toBeInTheDocument();
+      openRow('test-ext');
+
+      const devLink = screen.getByTestId('extension-dev-link-test-ext');
+      expect(devLink).toHaveTextContent('Dev link: /work/flow');
+      expect(within(devLink).getByRole('button', { name: 'Unlink or switch' })).toBeInTheDocument();
+    });
+
+    it('tells a person who approved a changed copy that any further change asks again', async () => {
+      mockFetch({
+        '/api/extensions': [makeExtension({ approvedToRun: true, originProblem: 'changed' })],
+      });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      await screen.findByTestId('extension-card-test-ext');
+      openRow('test-ext');
+
+      expect(screen.getByTestId('extension-run-allowed-test-ext')).toHaveTextContent(
+        'Any further change asks again'
+      );
+    });
   });
 
-  it('shows scope badge on each card', async () => {
-    mockFetch({ '/api/extensions': [makeExtension({ scope: 'local' })] });
+  describe('order', () => {
+    // Purpose: what needs you sits on top by need then A–Z; the rest is A–Z
+    // whatever the case; DorkOS's own is folded at the end.
+    it('puts what needs you first, the rest A–Z, and DorkOS’s own folded last', async () => {
+      mockFetch({
+        '/api/extensions': [
+          named('zed', 'zed'),
+          named('broken', 'Broken', {
+            status: 'compile_error',
+            error: { code: 'COMPILE_ERROR', message: 'boom' },
+          }),
+          named('apple', 'Apple'),
+          named('waiting', 'Waiting', { approvedToRun: false }),
+          named('banana', 'banana', { status: 'disabled' }),
+          named('core-a', 'Core A', { origin: 'core' }),
+        ],
+      });
 
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    await waitFor(() => {
-      expect(screen.getByText('local')).toBeInTheDocument();
+      const needsYou = await screen.findByTestId('needs-you-section');
+      expect(rowNames(needsYou)).toEqual(['Waiting', 'Broken']);
+      expect(rowNames(screen.getByTestId('installed-extensions-section'))).toEqual([
+        'Apple',
+        'banana',
+        'zed',
+      ]);
+      const core = screen.getByTestId('core-extensions-section');
+      expect(within(core).getByRole('button', { name: 'Comes with DorkOS · 1' })).toHaveAttribute(
+        'aria-expanded',
+        'false'
+      );
+      expect(within(core).queryByTestId('extension-card-core-a')).not.toBeInTheDocument();
+      fireEvent.click(within(core).getByRole('button', { name: 'Comes with DorkOS · 1' }));
+      expect(within(core).getByTestId('extension-card-core-a')).toBeInTheDocument();
+    });
+
+    // Purpose: the fold's chevron is decoration: the button's name stays
+    // exactly "Comes with DorkOS · N", and the chevron turns when it opens.
+    it('names the fold by its words alone, with a chevron that turns open', async () => {
+      mockFetch({
+        '/api/extensions': [
+          named('core-a', 'Files', { origin: 'core' }),
+          named('core-b', 'Terminal', { origin: 'core' }),
+        ],
+      });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+      const fold = await screen.findByRole('button', { name: 'Comes with DorkOS · 2' });
+      const chevron = fold.querySelector('svg');
+      expect(chevron).not.toBeNull();
+      expect(chevron).toHaveAttribute('aria-hidden', 'true');
+      expect(chevron).not.toHaveClass('rotate-90');
+      fireEvent.click(fold);
+      expect(screen.getByRole('button', { name: 'Comes with DorkOS · 2' })).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      );
+      expect(chevron).toHaveClass('rotate-90');
+    });
+
+    // Purpose: flipping a switch never moves a row.
+    it('keeps a row in place when it is turned off', async () => {
+      const list = [named('a', 'Alpha'), named('b', 'Beta'), named('c', 'Gamma')];
+      mockFetch({
+        '/api/extensions': list,
+        '/api/extensions/b/disable': {
+          extension: { ...list[1], status: 'disabled' },
+          reloadRequired: false,
+        },
+      });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      const section = await screen.findByTestId('installed-extensions-section');
+      fireEvent.click(screen.getByRole('switch', { name: 'Beta: on' }));
+      mockFetch({ '/api/extensions': [list[0], { ...list[1], status: 'disabled' }, list[2]] });
+
+      await waitFor(() =>
+        expect(screen.getByRole('switch', { name: 'Beta: off' })).toBeInTheDocument()
+      );
+      expect(rowNames(section)).toEqual(['Alpha', 'Beta', 'Gamma']);
+    });
+  });
+
+  describe('search and filters', () => {
+    it('finds by name, purpose, author and tool name', async () => {
+      mockFetch({
+        '/api/extensions': [
+          named('ledger', 'Ledger', {
+            manifest: {
+              id: 'ledger',
+              name: 'Ledger',
+              version: '1.0.0',
+              summary: 'Tracks spending.',
+            },
+          }),
+          named('mail', 'Mail', {
+            tools: [
+              { name: 'send_message', title: 'Send an email', tier: 'act', status: 'active' },
+            ],
+          }),
+        ],
+      });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      const search = await screen.findByRole('searchbox', { name: 'Search extensions' });
+
+      fireEvent.change(search, { target: { value: 'spending' } });
+      expect(screen.getByTestId('extension-card-ledger')).toBeInTheDocument();
+      expect(screen.queryByTestId('extension-card-mail')).not.toBeInTheDocument();
+
+      fireEvent.change(search, { target: { value: 'send_message' } });
+      expect(screen.getByTestId('extension-card-mail')).toBeInTheDocument();
+      expect(screen.queryByTestId('extension-card-ledger')).not.toBeInTheDocument();
+    });
+
+    it('says when nothing matches, and clears the search', async () => {
+      mockFetch({ '/api/extensions': [makeExtension()] });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      fireEvent.change(await screen.findByRole('searchbox'), { target: { value: 'zebra' } });
+
+      expect(screen.getByTestId('extensions-no-match')).toHaveTextContent(
+        'Nothing matches “zebra”'
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+      expect(screen.getByTestId('extension-card-test-ext')).toBeInTheDocument();
+    });
+
+    it('shows only what is off under Off, with counts on each filter', async () => {
+      mockFetch({
+        '/api/extensions': [named('on', 'On one'), named('off', 'Off one', { status: 'disabled' })],
+      });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      await screen.findByTestId('extension-card-on');
+      expect(screen.getByRole('button', { name: 'All 2' })).toHaveAttribute('aria-pressed', 'true');
+      fireEvent.click(screen.getByRole('button', { name: 'Off 1' }));
+
+      expect(screen.queryByTestId('extension-card-on')).not.toBeInTheDocument();
+      expect(screen.getByTestId('extension-card-off')).toBeInTheDocument();
+      // No last-used data yet, so no "Not used in 30 days" filter.
+      expect(screen.queryByText(/Not used/)).not.toBeInTheDocument();
+    });
+
+    // Purpose: a filter with nothing behind it is not offered.
+    it('hides the Off filter when nothing is off', async () => {
+      mockFetch({ '/api/extensions': [named('on', 'On one')] });
+
+      render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+      await screen.findByTestId('extension-card-on');
+      expect(screen.getByRole('button', { name: 'All 1' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Off/ })).not.toBeInTheDocument();
     });
   });
 
@@ -263,12 +554,7 @@ describe('ExtensionsSettingsTab', () => {
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-my-ext')).toBeInTheDocument();
-    });
-
-    const toggle = screen.getByRole('switch', { name: /enable test extension/i });
-    fireEvent.click(toggle);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Test Extension: off' }));
 
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
@@ -305,18 +591,13 @@ describe('ExtensionsSettingsTab', () => {
 
     async function toggleAndCatchToast() {
       render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-      await waitFor(() => {
-        expect(screen.getByTestId('extension-card-my-ext')).toBeInTheDocument();
-      });
-      fireEvent.click(screen.getByRole('switch', { name: /enable test extension/i }));
+      fireEvent.click(await screen.findByRole('switch', { name: 'Test Extension: off' }));
       await waitFor(() => {
         expect(vi.mocked(toast.error)).toHaveBeenCalled();
       });
       // The refusal rides in `description`; the first argument is the short
       // headline. Reading the description is what pins "the server's sentence
-      // reaches the person INTACT" — a prefix concatenated into the headline
-      // would leave this assertion passing only if the sentence were also
-      // whole, which is the property under test.
+      // reaches the person INTACT".
       const [headline, options] = vi.mocked(toast.error).mock.calls[0] ?? [];
       return { headline, description: (options as { description?: string })?.description };
     }
@@ -332,9 +613,6 @@ describe('ExtensionsSettingsTab', () => {
       });
 
       const { headline, description } = await toggleAndCatchToast();
-      // Byte-for-byte, and in the description rather than glued onto the
-      // headline — the double-wrapped "Couldn’t turn that on.: DorkOS changed
-      // nothing…" is exactly what this refuses to accept.
       expect(description).toBe(refusal);
       expect(headline).toBe('Couldn’t turn that on.');
     });
@@ -383,12 +661,7 @@ describe('ExtensionsSettingsTab', () => {
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-my-ext')).toBeInTheDocument();
-    });
-
-    const toggle = screen.getByRole('switch', { name: /disable test extension/i });
-    fireEvent.click(toggle);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Test Extension: on' }));
 
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
@@ -410,12 +683,7 @@ describe('ExtensionsSettingsTab', () => {
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-my-ext')).toBeInTheDocument();
-    });
-
-    const toggle = screen.getByRole('switch', { name: /enable test extension/i });
-    fireEvent.click(toggle);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Test Extension: off' }));
 
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
@@ -423,11 +691,9 @@ describe('ExtensionsSettingsTab', () => {
         expect.objectContaining({ method: 'POST' })
       );
     });
-    // The switch itself is the confirmation — a toast saying the same thing
-    // on top of it would be redundant.
+    // The switch itself is the confirmation.
     expect(toast.success).not.toHaveBeenCalled();
-    // The change applies live via the SSE `extension_reloaded` handler, so the
-    // user is never asked to reload the page.
+    // The change applies live via the SSE `extension_reloaded` handler.
     expect(toast.info).not.toHaveBeenCalled();
   });
 
@@ -440,11 +706,7 @@ describe('ExtensionsSettingsTab', () => {
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('reload-extensions-button')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByTestId('reload-extensions-button'));
+    fireEvent.click(await screen.findByTestId('reload-extensions-button'));
 
     await waitFor(() => {
       expect(vi.mocked(fetch)).toHaveBeenCalledWith(
@@ -458,7 +720,7 @@ describe('ExtensionsSettingsTab', () => {
     });
   });
 
-  it('disables the toggle for incompatible extensions', async () => {
+  it('disables the switch and says why for an extension that needs a newer DorkOS', async () => {
     const ext = makeExtension({
       id: 'incompat-ext',
       status: 'incompatible',
@@ -473,36 +735,17 @@ describe('ExtensionsSettingsTab', () => {
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-incompat-ext')).toBeInTheDocument();
-    });
-
-    // The switch for an incompatible extension must be disabled
-    const toggle = screen.getByRole('switch');
-    expect(toggle).toBeDisabled();
+    expect(await screen.findByRole('switch')).toBeDisabled();
+    expect(screen.getByTestId('extension-health-incompat-ext')).toHaveTextContent(
+      'Needs newer DorkOS'
+    );
+    // A neutral chip: it is not counted as needing you.
+    expect(screen.queryByTestId('needs-you-section')).not.toBeInTheDocument();
+    openRow('incompat-ext');
+    expect(screen.getByText(/needs dorkos 99\.0\.0 or newer/i)).toBeInTheDocument();
   });
 
-  it('shows version requirement message for incompatible extensions', async () => {
-    const ext = makeExtension({
-      id: 'incompat-ext',
-      status: 'incompatible',
-      manifest: {
-        id: 'incompat-ext',
-        name: 'Incompat Extension',
-        version: '1.0.0',
-        minHostVersion: '99.0.0',
-      },
-    });
-    mockFetch({ '/api/extensions': [ext] });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByText(/needs dorkos 99\.0\.0 or newer/i)).toBeInTheDocument();
-    });
-  });
-
-  it('shows warning icon and error message for compile_error extensions', async () => {
+  it('says it is not working, and why, for a compile error', async () => {
     const ext = makeExtension({
       id: 'broken-ext',
       status: 'compile_error',
@@ -512,12 +755,13 @@ describe('ExtensionsSettingsTab', () => {
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-broken-ext')).toBeInTheDocument();
-    });
-
-    expect(screen.getByText(/couldn’t build/i)).toBeInTheDocument();
-    expect(screen.getByText(/unexpected token/i)).toBeInTheDocument();
+    expect(await screen.findByTestId('extension-health-broken-ext')).toHaveTextContent(
+      'Not working'
+    );
+    // Health chip AND switch are both present (not conflated).
+    expect(screen.getByRole('switch')).toBeInTheDocument();
+    openRow('broken-ext');
+    expect(screen.getByText('Couldn’t build: Unexpected token')).toBeInTheDocument();
   });
 
   /**
@@ -539,14 +783,12 @@ describe('ExtensionsSettingsTab', () => {
     mockFetch({ '/api/extensions': [ext] });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-stale-srv')).toBeInTheDocument();
-    });
+    await screen.findByTestId('extension-card-stale-srv');
+    expect(screen.queryByTestId('extension-health-stale-srv')).not.toBeInTheDocument();
+    openRow('stale-srv');
 
     expect(screen.getByText(/couldn’t rebuild its server part/i)).toBeInTheDocument();
     expect(screen.getByText(/last version still runs/i)).toBeInTheDocument();
-    // Not dressed up as a compile failure of the whole extension.
     expect(screen.queryByText(/couldn’t build:/i)).not.toBeInTheDocument();
   });
 
@@ -568,74 +810,18 @@ describe('ExtensionsSettingsTab', () => {
     mockFetch({ '/api/extensions': [ext] });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-iso-ext');
+    openRow('iso-ext');
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-iso-ext')).toBeInTheDocument();
-    });
     const line = screen.getByText('Mail stopped unexpectedly 3 times. Reload it to try again.');
     expect(line.textContent).not.toMatch(/\.\./);
     expect(screen.queryByText(/last version still runs/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/couldn’t rebuild/i)).not.toBeInTheDocument();
   });
-
-  it('shows global badge for global-scoped extensions', async () => {
-    mockFetch({ '/api/extensions': [makeExtension({ scope: 'global' })] });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByText('global')).toBeInTheDocument();
-    });
-  });
 });
 
-describe('ExtensionsSettingsTab — Core / Installed partition', () => {
-  it('renders Core and Installed sections partitioned by origin', async () => {
-    mockFetch({
-      '/api/extensions': [
-        makeExtension({
-          id: 'marketplace',
-          origin: 'core',
-          manifest: { id: 'marketplace', name: 'Marketplace', version: '1.0.0' },
-        }),
-        makeExtension({
-          id: 'user-ext',
-          origin: 'user',
-          manifest: { id: 'user-ext', name: 'User Ext', version: '1.0.0' },
-        }),
-      ],
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('core-extensions-section')).toBeInTheDocument();
-    });
-    expect(screen.getByText('Core extensions')).toBeInTheDocument();
-    expect(screen.getByText('Installed extensions')).toBeInTheDocument();
-
-    const coreSection = screen.getByTestId('core-extensions-section');
-    expect(within(coreSection).getByTestId('extension-card-marketplace')).toBeInTheDocument();
-    expect(within(coreSection).queryByTestId('extension-card-user-ext')).not.toBeInTheDocument();
-
-    const installedSection = screen.getByTestId('installed-extensions-section');
-    expect(within(installedSection).getByTestId('extension-card-user-ext')).toBeInTheDocument();
-  });
-
-  it('shows the Installed empty-state with a Marketplace pointer when no user extensions exist', async () => {
-    mockFetch({
-      '/api/extensions': [makeExtension({ id: 'marketplace', origin: 'core' })],
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('no-installed-extensions')).toBeInTheDocument();
-    });
-    expect(screen.getByText(/Marketplace/)).toBeInTheDocument();
-  });
-
-  it('locks the toggle with a "Required" hint for canDisable:false extensions', async () => {
+describe('ExtensionsSettingsTab — what comes with DorkOS', () => {
+  it('locks the switch with "Always on" for canDisable:false extensions', async () => {
     mockFetch({
       '/api/extensions': [
         makeExtension({
@@ -648,19 +834,14 @@ describe('ExtensionsSettingsTab — Core / Installed partition', () => {
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    fireEvent.click(await screen.findByRole('button', { name: 'Comes with DorkOS · 1' }));
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-locked')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('extension-required-locked')).toBeInTheDocument();
-    // A locked extension renders no interactive switch.
+    expect(screen.getByTestId('extension-required-locked')).toHaveTextContent('Always on');
     expect(screen.queryByRole('switch')).not.toBeInTheDocument();
   });
 
   it('ignores canDisable:false on a user extension (lock applies to core only)', async () => {
-    // The lock is origin-gated to match the server guard (ADR-0271): a
-    // user/marketplace extension is always disableable even if its manifest
-    // declares canDisable:false, so it must still render an interactive switch.
+    // The lock is origin-gated to match the server guard (ADR-0271).
     mockFetch({
       '/api/extensions': [
         makeExtension({
@@ -674,103 +855,166 @@ describe('ExtensionsSettingsTab — Core / Installed partition', () => {
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-user-locked')).toBeInTheDocument();
-    });
-    expect(screen.getByRole('switch')).toBeInTheDocument();
+    expect(await screen.findByRole('switch')).toBeInTheDocument();
     expect(screen.queryByTestId('extension-required-user-locked')).not.toBeInTheDocument();
   });
 
-  it('renders a normal interactive toggle when canDisable is omitted', async () => {
-    mockFetch({
-      '/api/extensions': [makeExtension({ id: 'normal', origin: 'core', status: 'active' })],
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-normal')).toBeInTheDocument();
-    });
-    expect(screen.getByRole('switch')).toBeInTheDocument();
-    expect(screen.queryByTestId('extension-required-normal')).not.toBeInTheDocument();
-  });
-
-  it('renders the health badge distinctly from the on/off toggle for errored extensions', async () => {
+  it('never asks about a core extension, which ships inside DorkOS', async () => {
     mockFetch({
       '/api/extensions': [
         makeExtension({
-          id: 'broken',
-          origin: 'user',
-          status: 'compile_error',
-          error: { code: 'COMPILE_ERROR', message: 'boom' },
+          id: 'linear-issues',
+          origin: 'core',
+          hasServerEntry: true,
+          // Even if the server said false, origin decides — DorkOS must not ask a
+          // person for permission to run itself.
+          approvedToRun: false,
         }),
       ],
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    fireEvent.click(await screen.findByRole('button', { name: 'Comes with DorkOS · 1' }));
+    openRow('linear-issues');
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-broken')).toBeInTheDocument();
-    });
-    // Health badge AND toggle are both present (not conflated).
-    expect(screen.getByTestId('extension-health-broken')).toBeInTheDocument();
+    expect(screen.queryByTestId('extension-needs-approval-linear-issues')).not.toBeInTheDocument();
+    expect(screen.queryByText('Review')).not.toBeInTheDocument();
     expect(screen.getByRole('switch')).toBeInTheDocument();
   });
 });
 
 describe('permission to run code inside DorkOS (DOR-516)', () => {
-  it('asks the person about an unapproved extension that carries server code', async () => {
+  // Purpose: the switch never approves. A row waiting for an OK shows Review in
+  // its place, so no click on the list can turn it on without the panel.
+  it('replaces the switch with Review, which opens the panel and focuses Allow', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({ id: 'full-stack', hasServerEntry: true, approvedToRun: false }),
+      ],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    const row = await screen.findByTestId('extension-card-full-stack');
+    expect(within(row).queryByRole('switch')).not.toBeInTheDocument();
+    expect(screen.getByTestId('extension-health-full-stack')).toHaveTextContent('Needs your OK');
+    fireEvent.click(within(row).getByRole('button', { name: 'Review Test Extension' }));
+
+    const allow = await screen.findByTestId('extension-approve-run-full-stack');
+    await waitFor(() => expect(allow).toHaveFocus());
+    // Review hides while the row is open.
+    expect(
+      within(row).queryByRole('button', { name: 'Review Test Extension' })
+    ).not.toBeInTheDocument();
+    // Nothing was approved by opening it.
+    expect(vi.mocked(fetch)).not.toHaveBeenCalledWith(
+      expect.stringContaining('/approve'),
+      expect.anything()
+    );
+  });
+
+  // Purpose: one a person turned off still never offers a switch that would
+  // run it unseen.
+  it('offers Review, not a switch, for an unapproved extension that is off', async () => {
+    mockFetch({
+      '/api/extensions': [makeExtension({ id: 'off', status: 'disabled', approvedToRun: false })],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    const row = await screen.findByTestId('extension-card-off');
+    expect(within(row).queryByRole('switch')).not.toBeInTheDocument();
+    fireEvent.click(within(row).getByRole('button', { name: 'Review Test Extension' }));
+    expect(await screen.findByTestId('extension-approve-run-off')).toBeInTheDocument();
+  });
+
+  it('asks in Security’s words, with one line each for access, runs as and network', async () => {
     mockFetch({
       '/api/extensions': [
         makeExtension({
           id: 'full-stack',
-          origin: 'user',
           hasServerEntry: true,
           approvedToRun: false,
+          isolation: null,
         }),
       ],
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-full-stack');
+    openRow('full-stack');
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-needs-approval-full-stack')).toBeInTheDocument();
-    });
-    // The copy has to say what the person is deciding, in their terms — not
-    // "unapproved extension" and not a status code.
-    expect(screen.getByText(/waiting for you/i)).toBeInTheDocument();
-    expect(screen.getByText(/anything DorkOS can/i)).toBeInTheDocument();
-    // And it has to be TRUE. Nothing of an unapproved extension has run, in the
-    // server or on this page, so the card says exactly that.
-    expect(screen.getByText(/None of it has run yet/i)).toBeInTheDocument();
-    expect(screen.getByText('Turn it on only if you trust its source.')).toBeInTheDocument();
+    const box = screen.getByTestId('extension-needs-approval-full-stack');
+    expect(box).toHaveTextContent('Test Extension wants to run on this computer.');
+    const facts = within(box).getByTestId('extension-permissions-full-stack');
+    expect(facts).toHaveTextContent('AccessRuns inside DorkOS, with full access to this computer');
+    expect(facts).toHaveTextContent('Runs asRuns as you');
+    expect(within(box).getByRole('button', { name: 'Allow' })).toBeInTheDocument();
+    expect(within(box).getByRole('button', { name: 'Not now' })).toBeInTheDocument();
   });
 
-  it('tells the truth about a client-only extension, which also has not run', async () => {
-    // This card used to read "DorkOS has not run this extension here" and describe
-    // the risk in the conditional. Both were false: the bundle was served and
-    // activated in the browser the moment the page loaded, on the very screen the
-    // person opens to decide. The server now withholds the bundle until they do.
+  it('changes nothing on Not now, and leaves the chip in place', async () => {
+    mockFetch({
+      '/api/extensions': [makeExtension({ id: 'w', approvedToRun: false })],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-w');
+    const row = openRow('w');
+    fireEvent.click(within(row).getByRole('button', { name: 'Not now' }));
+
+    expect(row.querySelector('[data-row-button]')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('extension-health-w')).toHaveTextContent('Needs your OK');
+    expect(vi.mocked(fetch)).not.toHaveBeenCalledWith(
+      expect.stringContaining('/w/'),
+      expect.objectContaining({ method: 'POST' })
+    );
+  });
+
+  it('says plainly when a project copy changed after DorkOS installed it', async () => {
     mockFetch({
       '/api/extensions': [
-        makeExtension({
-          id: 'client-only',
-          origin: 'user',
-          hasServerEntry: false,
-          hasDataProxy: false,
-          approvedToRun: false,
-        }),
+        makeExtension({ scope: 'local', approvedToRun: false, originProblem: 'changed' }),
       ],
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-test-ext');
+    openRow('test-ext');
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-needs-approval-client-only')).toBeInTheDocument();
+    expect(screen.getByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
+      'Its files changed after install'
+    );
+  });
+
+  it('says a waiting dev-linked extension runs from your folder, not from a shortcut', async () => {
+    mockFetch({
+      '/api/extensions': [
+        makeExtension({ approvedToRun: false, originProblem: 'dev-link', devLink: { path: '/w' } }),
+      ],
     });
-    expect(screen.getByText(/None of it has run yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/act as you in DorkOS/i)).toBeInTheDocument();
-    expect(screen.queryByText(/has not run this extension here/i)).not.toBeInTheDocument();
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-test-ext');
+    openRow('test-ext');
+
+    expect(screen.getByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
+      'It runs from your folder'
+    );
+  });
+
+  it('says plainly when a plugin holds a shortcut to files elsewhere', async () => {
+    mockFetch({
+      '/api/extensions': [makeExtension({ approvedToRun: false, originProblem: 'linked' })],
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-test-ext');
+    openRow('test-ext');
+
+    expect(screen.getByTestId('extension-origin-problem-test-ext')).toHaveTextContent(
+      'links to files elsewhere'
+    );
   });
 
   it('sends the approval and confirms it, so one click is the whole job', async () => {
@@ -791,10 +1035,8 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-approve-run-full-stack')).toBeInTheDocument();
-    });
+    await screen.findByTestId('extension-card-full-stack');
+    openRow('full-stack');
     fireEvent.click(screen.getByTestId('extension-approve-run-full-stack'));
 
     await waitFor(() => {
@@ -802,16 +1044,10 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
         expect.stringContaining('can now run inside DorkOS')
       );
     });
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      expect.stringContaining('/api/extensions/full-stack/approve'),
-      expect.objectContaining({ method: 'POST' })
-    );
-    // It binds the copy the card shows, so a copy that took its place since
-    // the card was drawn is refused rather than approved (DOR-2517).
+    // It binds the copy the panel shows, and the files it was drawn for (DOR-3068).
     const approveCall = vi
       .mocked(fetch)
       .mock.calls.find(([url]) => String(url).endsWith('/api/extensions/full-stack/approve'));
-    // And the files it was drawn for (DOR-3068), which the server requires.
     expect(JSON.parse(String((approveCall?.[1] as RequestInit | undefined)?.body))).toEqual({
       version: '1.0.0',
       plugin: null,
@@ -819,48 +1055,19 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
     });
   });
 
-  it('shows an approved extension as allowed, with a way to stop it', async () => {
+  it('shows an approved extension with a way to stop it running', async () => {
     mockFetch({
       '/api/extensions': [
-        makeExtension({
-          id: 'full-stack',
-          origin: 'user',
-          hasServerEntry: true,
-          approvedToRun: true,
-        }),
+        makeExtension({ id: 'full-stack', hasServerEntry: true, approvedToRun: true }),
       ],
     });
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-full-stack');
+    openRow('full-stack');
 
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-run-allowed-full-stack')).toBeInTheDocument();
-    });
     expect(screen.queryByTestId('extension-needs-approval-full-stack')).not.toBeInTheDocument();
-    expect(screen.getByText('Stop it')).toBeInTheDocument();
-  });
-
-  it('never asks about a core extension, which ships inside DorkOS', async () => {
-    mockFetch({
-      '/api/extensions': [
-        makeExtension({
-          id: 'linear-issues',
-          origin: 'core',
-          hasServerEntry: true,
-          // Even if the server said false, origin decides — DorkOS must not ask a
-          // person for permission to run itself.
-          approvedToRun: false,
-        }),
-      ],
-    });
-
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-card-linear-issues')).toBeInTheDocument();
-    });
-    expect(screen.queryByTestId('extension-needs-approval-linear-issues')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('extension-run-allowed-linear-issues')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop it running' })).toBeInTheDocument();
   });
 
   it('surfaces the server refusal verbatim when the caller is not allowed to approve', async () => {
@@ -881,22 +1088,15 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
           ok: true,
           json: () =>
             Promise.resolve([
-              makeExtension({
-                id: 'full-stack',
-                origin: 'user',
-                hasServerEntry: true,
-                approvedToRun: false,
-              }),
+              makeExtension({ id: 'full-stack', hasServerEntry: true, approvedToRun: false }),
             ]),
         });
       })
     );
 
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('extension-approve-run-full-stack')).toBeInTheDocument();
-    });
+    await screen.findByTestId('extension-card-full-stack');
+    openRow('full-stack');
     fireEvent.click(screen.getByTestId('extension-approve-run-full-stack'));
 
     await waitFor(() => {
@@ -910,7 +1110,72 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
   });
 });
 
-describe('what an extension can reach, on its card (DOR-2686)', () => {
+describe('screens paused (DOR-3068)', () => {
+  // Purpose: an extension allowed to run whose screen code changed is never a
+  // silent "allowed": it says so, in Security's words, with what changed.
+  it('asks again in Security’s words, says what changed, and allows the new version', async () => {
+    const digest = `sha256:${'c'.repeat(64)}`;
+    const paused = makeExtension({
+      id: 'ledger',
+      manifest: { id: 'ledger', name: 'Ledger', version: '2.3.0' },
+      approvedToRun: true,
+      screensPaused: true,
+      bundleReady: false,
+      digest,
+    });
+    mockFetch({
+      '/api/extensions': [paused],
+      '/api/extensions/pending-approvals': {
+        approvals: [
+          {
+            id: 'ledger',
+            name: 'Ledger',
+            version: '2.3.0',
+            plugin: null,
+            sourceLabel: '',
+            runsInServer: false,
+            adds: null,
+            since: new Date().toISOString(),
+            why: '',
+            changedFiles: ['client.js'],
+            updatedFrom: '2.2.1',
+          },
+        ],
+      },
+      '/api/extensions/ledger/approve': { extension: { ...paused, screensPaused: false } },
+    });
+
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+
+    const row = await screen.findByTestId('extension-card-ledger');
+    expect(within(row).getByTestId('extension-health-ledger')).toHaveTextContent('Needs your OK');
+    expect(within(row).queryByRole('switch')).not.toBeInTheDocument();
+    openRow('ledger');
+
+    const panel = screen.getByTestId('extension-screens-paused-ledger');
+    expect(panel).toHaveTextContent(
+      'Ledger’s files changed since you allowed it. Its screens are paused until you look.'
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('extension-changed-ledger')).toHaveTextContent(
+        'Version 2.2.1 → 2.3.0 · client.js · Noticed'
+      )
+    );
+    expect(within(panel).getByRole('button', { name: 'Keep paused' })).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('button', { name: 'Allow the new version' }));
+
+    await waitFor(() => {
+      const call = vi
+        .mocked(fetch)
+        .mock.calls.find(([url]) => String(url).endsWith('/api/extensions/ledger/approve'));
+      expect(JSON.parse(String((call?.[1] as RequestInit).body))).toMatchObject({
+        expectedDigest: digest,
+      });
+    });
+  });
+});
+
+describe('what an extension can reach (DOR-2686)', () => {
   const ISOLATION: NonNullable<ExtensionRecordPublic['isolation']> = {
     runtime: 'subprocess',
     net: ['imap.fastmail.com'],
@@ -924,7 +1189,7 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
   };
 
   // Purpose: a waiting isolated extension lists what it can reach above the
-  // yes, makes no "anything DorkOS can" claim, and warns about an interpreter.
+  // yes, makes no "full access" claim, and warns about an interpreter.
   it('lists what a waiting isolated extension can reach', async () => {
     mockFetch({
       '/api/extensions': [
@@ -938,30 +1203,20 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
       ],
     });
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-    const box = await screen.findByTestId('extension-needs-approval-mail');
-    const lines = within(box).getByTestId('extension-permissions-mail');
-    expect(lines).toHaveTextContent('Runs separately from DorkOS.');
-    expect(lines).not.toHaveTextContent('Will run separately');
-    expect(lines).toHaveTextContent('Can connect to: imap.fastmail.com');
-    expect(lines).toHaveTextContent('Can run bash, which can run any program.');
-    expect(within(box).queryByText(/anything DorkOS can/)).not.toBeInTheDocument();
+    await screen.findByTestId('extension-card-mail');
+    openRow('mail');
+
+    const box = screen.getByTestId('extension-needs-approval-mail');
+    const facts = within(box).getByTestId('extension-permissions-mail');
+    expect(facts).toHaveTextContent('AccessRuns on its own, apart from DorkOS');
+    expect(facts).toHaveTextContent('NetworkCan reach imap.fastmail.com');
+    const extras = within(box).getByTestId('extension-permission-extras-mail');
+    expect(extras).toHaveTextContent('Can run: git');
+    expect(extras).toHaveTextContent('Can run bash, which can run any program.');
+    expect(within(box).queryByText(/full access/)).not.toBeInTheDocument();
   });
 
-  // Purpose: an in-process waiting extension states full access.
-  it('states full access for a waiting extension that runs inside DorkOS', async () => {
-    mockFetch({
-      '/api/extensions': [
-        makeExtension({ id: 'plain', hasServerEntry: true, approvedToRun: false, isolation: null }),
-      ],
-    });
-    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-    const box = await screen.findByTestId('extension-needs-approval-plain');
-    expect(
-      within(box).getByText('Runs inside DorkOS with full access to this computer.')
-    ).toBeInTheDocument();
-  });
-
-  // Purpose: "Turn it on" echoes the set the card listed.
+  // Purpose: "Allow" echoes the set the panel listed.
   it('sends the listed set with the yes', async () => {
     mockFetch({
       '/api/extensions': [
@@ -977,7 +1232,9 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
       },
     });
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-    fireEvent.click(await screen.findByTestId('extension-approve-run-mail'));
+    await screen.findByTestId('extension-card-mail');
+    openRow('mail');
+    fireEvent.click(screen.getByTestId('extension-approve-run-mail'));
     await waitFor(() =>
       expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Test Extension can now run')
     );
@@ -996,14 +1253,15 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
     });
   });
 
-  // Purpose: a stale yes says so in plain words, not the server's sentence.
-  it('says plainly when the extension changed since the card was drawn', async () => {
+  // Purpose: a stale yes says so in plain words, and the redrawn panel leads
+  // with what the refused one did not list.
+  it('says plainly when the extension changed since the panel was drawn', async () => {
     let current = ISOLATION;
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) => {
         if (url.includes('/approve')) {
-          // It widened while the card was on screen.
+          // It widened while the panel was on screen.
           current = { ...ISOLATION, net: [...ISOLATION.net, 'api.example.com'] };
           return Promise.resolve({
             ok: false,
@@ -1022,17 +1280,17 @@ describe('what an extension can reach, on its card (DOR-2686)', () => {
       })
     );
     render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
-    fireEvent.click(await screen.findByTestId('extension-approve-run-mail'));
+    await screen.findByTestId('extension-card-mail');
+    openRow('mail');
+    fireEvent.click(screen.getByTestId('extension-approve-run-mail'));
     await waitFor(() =>
       expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
         'Test Extension changed since you saw it. Check it again.'
       )
     );
-    // The list is read again, so the card redraws with what it asks for now,
-    // leading with the host the refused card did not list.
     await waitFor(() =>
       expect(
-        screen.getByTestId('extension-permissions-mail').querySelector('li')
+        screen.getByTestId('extension-permission-extras-mail').querySelector('li')
       ).toHaveTextContent('Now also wants to connect to: api.example.com')
     );
   });

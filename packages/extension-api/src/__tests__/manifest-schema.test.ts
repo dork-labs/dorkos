@@ -28,6 +28,17 @@ describe('ExtensionManifestSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('takes a one-line summary of at most 80 characters', () => {
+    const base = { id: 'ledger', name: 'Ledger', version: '1.0.0' };
+    expect(
+      ExtensionManifestSchema.safeParse({ ...base, summary: 'Tracks spending.' }).success
+    ).toBe(true);
+    expect(ExtensionManifestSchema.safeParse({ ...base, summary: 'x'.repeat(81) }).success).toBe(
+      false
+    );
+    expect(ExtensionManifestSchema.safeParse({ ...base, summary: '' }).success).toBe(false);
+  });
+
   it('parses an id with numbers', () => {
     const result = ExtensionManifestSchema.safeParse({
       id: 'my-plugin-v2',
