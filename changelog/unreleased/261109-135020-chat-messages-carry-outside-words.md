@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(chat): a chat message or a started chat carries the outside words its sender read'
+  - 'fix(chat): the carried words reach a chat renamed on an earlier turn'
 ---
 
 ### Fixed

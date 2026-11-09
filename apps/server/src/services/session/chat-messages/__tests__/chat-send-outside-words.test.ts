@@ -34,7 +34,12 @@ import {
   setQueuedChatWordsResolver,
 } from '../../message-dispatcher.js';
 import { MessageQueueStore, setMessageQueueStore } from '../../message-queue-store.js';
-import { getOrCreateProjector, disposeProjector } from '../../session-state-projector.js';
+import {
+  getOrCreateProjector,
+  disposeProjector,
+  rekeyProjector,
+} from '../../session-state-projector.js';
+import { linkSessionId, resetSessionKeys } from '../../resolution/session-key-registry.js';
 import { ChatMessageStore } from '../chat-message-store.js';
 import { ChatMessageService, type ChatMessageServiceDeps } from '../chat-message-service.js';
 import { rowsCarryWords } from '../chat-message-ceiling.js';
@@ -276,6 +281,45 @@ describe('a chat_send steered into a running turn', () => {
     expect(receipt.status === 'steered').toBe(!readOutside);
     expect(steerInto).toHaveBeenCalledTimes(readOutside ? 0 : 1);
     expect(notedAtSend).toEqual(readOutside ? [true] : []);
+  });
+});
+
+// Security M1 on #3587 (its probe P5c): Bo's chat was renamed on an earlier turn, so its projector
+// already lives under the new id and no rename runs on this one. Ana sends to Bo's born id; the
+// woken turn's tool calls carry the new id, and that is the id memory and the browser read.
+describe('a chat_send to a chat renamed on an earlier turn, by its born id', () => {
+  it('notes the id the turn runs under: memory refuses there', async () => {
+    const renamed = `00000000-0000-4000-8000-bce${String(counter).padStart(9, '0')}`;
+    getOrCreateProjector(bo);
+    rekeyProjector(bo, renamed);
+    linkSessionId(bo, renamed);
+    runtime.getInternalSessionId.mockImplementation((id: string) =>
+      id === bo || id === renamed ? renamed : undefined
+    );
+    const during: boolean[] = [];
+    runtime.sendMessage.mockImplementation(async function* () {
+      yield { type: 'text_delta', data: { text: 'x' } } as StreamEvent;
+      during.push(roomTurnReadOutsideWords(renamed));
+      yield { type: 'done', data: {} } as StreamEvent;
+    });
+    noteRoomTurnWords(ana, true);
+    try {
+      await anaSendsBo();
+      const removed = (await memory.invoke(
+        'memory.write',
+        { action: 'remove', old_text: 'deploys need' },
+        {
+          identity: { agentPath: boPath, displayName: 'Bo', createdAt: '2026-10-10T00:00:00.000Z' },
+          sessionId: renamed,
+        }
+      )) as { saved: boolean; code?: string };
+      expect(during).toEqual([true]);
+      expect(removed).toMatchObject({ saved: false, code: 'outsider-held' });
+    } finally {
+      resetSessionKeys();
+      disposeProjector(renamed);
+      noteRoomTurnWords(renamed, false);
+    }
   });
 });
 
