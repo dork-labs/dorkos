@@ -216,12 +216,13 @@ dorkos auth enable --email you@example.com --password '<secret>'
 
 <Callout type="error">
   Anyone who can drive agents on an instance effectively has the server process's filesystem access
-  and spends the owner's Claude quota. Agents' shells on this computer can read DorkOS's stored
-  secrets. Separating them is planned. That is why registration is **owner-only**: the first account
+  and spends the owner's Claude quota. That is why registration is **owner-only**: the first account
   is the owner, and further sign-ups are closed. There is no second account today: sharing access
   means sharing the owner login itself. A viewer/operator role model that safely admits more people
   is a planned fast-follow; until it exists, only share the owner login with people you trust with
-  your machine and your Claude account.
+  your machine and your Claude account. On macOS, DorkOS keeps the key that protects your saved
+  secrets in a file (`~/.dork/host.key`) that any program running as you can read, including your
+  agents' shell commands. Moving it into the Keychain is planned, after two hardening steps.
 </Callout>
 
 ## Next Steps

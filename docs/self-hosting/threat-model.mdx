@@ -200,7 +200,7 @@ What DorkOS does not do yet: it does not verify a package signature or pin it to
 
 Gaps DorkOS knows about and plans to close, named here so you can plan around them:
 
-- **Agents can read your stored secrets.** Agents' shells on this computer can read DorkOS's stored secrets. Separating them is planned.
+- **Where your saved secrets' key lives on macOS.** On macOS, DorkOS keeps the key that protects your saved secrets in a file (`~/.dork/host.key`) that any program running as you can read, including your agents' shell commands. Moving it into the Keychain is planned, after two hardening steps.
 
 ## What is out of scope
 
