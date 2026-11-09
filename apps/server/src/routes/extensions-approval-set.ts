@@ -65,10 +65,9 @@ export function registerExtensionApprovalSetRoutes(
 
       // Each member's Activity entry is written the moment it is allowed, so
       // nothing that runs is ever missing from the record (Security, Nov 8, M2).
-      const actor = readActivityActor(honoRequestFacts(c));
       const outcome = await approveExtensionSet(extensionManager, body.data, async (result) => {
         await activity?.emit({
-          ...actor,
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'config',
           eventType: 'config.extension_updated',
           resourceType: 'extension',
