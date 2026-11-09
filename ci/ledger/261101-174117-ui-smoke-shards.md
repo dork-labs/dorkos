@@ -2,7 +2,7 @@
 id: 261101-174117
 title: ui-smoke runs in three balanced shards behind one fan-in, so the set can finish
 kind: hygiene
-status: proposed
+status: reverted
 actor: agent
 gates: [wf.ui-smoke.scope, wf.ui-smoke.ui-smoke-shard, wf.ui-smoke.ui-smoke]
 prs: []
@@ -25,3 +25,8 @@ Not yet measured on a runner. browser-test.yml's estimate of 5 minutes of boot
 plus 1.25x the test share at p95 puts a shard near 23.4 of its 25 minutes, so
 this is tight. Add a fourth shard if `--global-timeout` fires on a healthy set,
 and revert if the set still cannot finish.
+
+Closed on 2026-11-08 by 261108-170022: `ui-smoke.yml` is removed. Measured on a
+runner it was as tight as feared: on #3505, run 42483997472 shard 2/3 hit the
+1500s global timeout on both attempts with zero failed tests. `browser-smoke`
+(261107-203000) runs the same set in four shards.
