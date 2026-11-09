@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
+import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
   clearTestHomes,
   registerTestHomes,
@@ -122,6 +123,8 @@ class RemapFakeAgent {
       ranAs = `sdk-${++this.counter}`;
       this.transcripts.add(ranAs);
     }
+    // The real runtime moves the durable runtime/owner binding with its SDK id.
+    await runtimeRegistry.rekeySessionSettings(sessionId, ranAs);
     this.live.set(sessionId, ranAs);
     this.turns.push({
       key: sessionId,
@@ -269,6 +272,7 @@ describe('TaskSchedulerService', () => {
 
   beforeEach(async () => {
     db = createTestDb();
+    runtimeRegistry.setDb(db);
     store = new TaskStore(db);
     mockAgent = createMockAgentManager();
     // The agent-cwd chain (`services/workspace/resolve-session-cwd.ts`) refuses a
@@ -1682,6 +1686,13 @@ describe('TaskSchedulerService', () => {
       // (a UUID it minted), not the key it was handed — only the run row knows
       // how a relay run ends.
       const realId = 'sdk-real-uuid-1';
+      await runtimeRegistry.persistSessionRuntime(
+        firstPayload.sessionId!,
+        firstPayload.runtime ?? 'claude-code',
+        { kind: 'schedule' },
+        firstPayload.forAgent
+      );
+      await runtimeRegistry.rekeySessionSettings(firstPayload.sessionId!, realId);
       store.updateRun(first!.id, {
         status: 'completed',
         finishedAt: new Date().toISOString(),
@@ -3057,6 +3068,7 @@ describe('agent CWD resolution (via triggerManualRun)', () => {
 
   beforeEach(async () => {
     db = createTestDb();
+    runtimeRegistry.setDb(db);
     store = new TaskStore(db);
     mockAgent = createMockAgentManager();
     vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
@@ -3277,6 +3289,7 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
 
   beforeEach(async () => {
     db = createTestDb();
+    runtimeRegistry.setDb(db);
     store = new TaskStore(db);
     managers = {};
     await initBoundary('/');
