@@ -6,6 +6,8 @@
 import { isExtensionCapabilityId } from '@dorkos/shared/capabilities';
 import { isFloorArea } from '@dorkos/shared/permissions';
 
+const WORK_QUEUE_CAPABILITY = /^work-queue\./;
+
 /**
  * Whether a card may offer "Always allow" (spec `agent-permissions` D7): DorkOS
  * knows which agent asked, the action has an area, that area is not a floor
@@ -56,6 +58,8 @@ export function isAlwaysOffered(row: {
     // An agent's permission change asks on every call that could loosen
     // anything (DOR-3107), so an Always allow on its card would change nothing.
     row.capabilityId !== 'permissions.change' &&
-    !row.capabilityId.startsWith('work-queue.')
+    // Work-queue cards bind one exact change, so a standing yes would skip the
+    // person on the next one. A regex, because a caller may omit the id.
+    !WORK_QUEUE_CAPABILITY.test(row.capabilityId)
   );
 }

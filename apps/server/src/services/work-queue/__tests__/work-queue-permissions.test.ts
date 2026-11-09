@@ -22,9 +22,10 @@ import { workQueueDomain } from '../work-queue-capabilities.js';
 import { WorkQueueStore } from '../work-queue-store.js';
 import { WorkQueueService } from '../work-queue-service.js';
 
-const turn = vi.hoisted(() => ({ refusal: null as string | null }));
+const turn = vi.hoisted(() => ({ refusal: null as string | null, noted: [] as unknown[][] }));
 vi.mock('../../connectors/access/turn-gate.js', () => ({
   anotherAgentTurnRefusal: () => turn.refusal,
+  noteMarkedTurnRefusal: (...args: unknown[]) => turn.noted.push(args),
 }));
 vi.mock('../../core/turn-power/turn-levels.js', async (original) => ({
   ...(await original<typeof import('../../core/turn-power/turn-levels.js')>()),
@@ -47,6 +48,7 @@ let preset: 'full' | 'careful' = 'full';
 
 beforeEach(() => {
   turn.refusal = null;
+  turn.noted = [];
   preset = 'full';
   db = createTestDb();
   initAuditTrail({
@@ -187,6 +189,17 @@ it.each(['GRANT_MARKED_TURN', 'GRANT_MARKS_UNREADABLE', 'GRANT_AGENT_STARTED'])(
     ).rejects.toMatchObject({ payload: { code } });
     expect(approvals.listPending()).toHaveLength(0);
     expect(service.read('atlas').items).toHaveLength(0);
+    // DOR-4023: only a marked turn leaves the Full-autonomy Activity line.
+    expect(turn.noted).toEqual(
+      code === 'GRANT_MARKED_TURN'
+        ? [
+            [
+              { sessionId: 'scout-chat', agentPath: '/agents/scout' },
+              { id: 'work-queue.other_agent', title: "Change another agent's work queue" },
+            ],
+          ]
+        : []
+    );
   }
 );
 

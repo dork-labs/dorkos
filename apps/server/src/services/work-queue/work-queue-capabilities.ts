@@ -16,7 +16,7 @@ import {
 import { CapabilityToolError } from '../core/capabilities/mcp-envelope.js';
 import { lastTurnLevelOf, marksOf } from '../core/turn-power/turn-levels.js';
 import { isServerPrincipal } from '../connectors/principal/server-principal.js';
-import { anotherAgentTurnRefusal } from '../connectors/access/turn-gate.js';
+import { anotherAgentTurnRefusal, noteMarkedTurnRefusal } from '../connectors/access/turn-gate.js';
 import { WorkQueueError, type WorkQueueService } from './work-queue-service.js';
 
 declare module '../core/capabilities/capability-definition.js' {
@@ -68,6 +68,12 @@ function sessionOf(
     : context.sessionId;
 }
 
+/** What a marked turn's refused cross-agent queue change names on its Activity line (DOR-4023). */
+const OTHER_QUEUE_ACTION = {
+  id: 'work-queue.other_agent',
+  title: "Change another agent's work queue",
+};
+
 /** Resolve both agents from server identity, refusing unsafe cross-agent turns before asking. */
 function targetOf(
   deps: CapabilityDeps,
@@ -89,10 +95,9 @@ function targetOf(
   if (!name)
     throw new CapabilityToolError({ code: 'NOT_FOUND', error: 'The target agent was not found.' });
   if (target !== requester) {
-    const refusal = anotherAgentTurnRefusal({
-      sessionId: sessionOf(context),
-      agentPath: identity.agentPath,
-    });
+    const caller = { sessionId: sessionOf(context), agentPath: identity.agentPath };
+    const refusal = anotherAgentTurnRefusal(caller);
+    if (refusal === 'GRANT_MARKED_TURN') noteMarkedTurnRefusal(caller, OTHER_QUEUE_ACTION);
     if (refusal)
       throw new CapabilityToolError({
         code: refusal,
