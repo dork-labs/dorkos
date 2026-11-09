@@ -65,4 +65,9 @@ describe('app settings rows in the palette', () => {
   it('put an app first when you type its name', () => {
     expect(ranked('board')[0]).toBe('Board settings');
   });
+
+  it('find an app by its full row title', () => {
+    expect(ranked('board settings')[0]).toBe('Board settings');
+    expect(ranked('Agent Notes settings')[0]).toBe('Agent Notes settings');
+  });
 });

@@ -141,18 +141,9 @@ test.describe('Settings → Extensions rows', () => {
   }) => {
     await serveList(page, () => ({ status: 200, body: LIST }));
     await page.goto('/');
-    // The way a person opens it: ⌘K, "settings", Enter. An app with a page
-    // also gets a "{App} settings" row, and when one of those won this,
-    // Settings opened on that app's row. The fixture's apps have no pages, so
-    // the ranking itself is pinned in `apps-palette-rows.test.ts`.
-    await page.getByRole('button', { name: 'Open command palette' }).click();
-    const search = page.getByTestId('command-palette-input');
-    await search.fill('settings');
-    await search.press('Enter');
-    const dialog = settingsPage.dialog;
-    await dialog.waitFor({ state: 'visible' });
-    expect(new URL(page.url()).searchParams.get('settingsSection')).toBeNull();
+    await settingsPage.open();
     await settingsPage.switchTab('Extensions');
+    const dialog = settingsPage.dialog;
 
     await expect(dialog.getByTestId('extension-card-orbit-calendar')).toBeVisible();
     // Long enough for a deep-link scroll's frame and the URL write before it.
@@ -168,6 +159,21 @@ test.describe('Settings → Extensions rows', () => {
     await expect(
       settingsPage.dialog.locator('[data-row-button][aria-expanded="true"]')
     ).toHaveCount(1);
+  });
+
+  test('⌘K, "settings", Enter opens Settings with no section', async ({ page, settingsPage }) => {
+    await serveList(page, () => ({ status: 200, body: LIST }));
+    await page.goto('/');
+    // An app with a page also gets a "{App} settings" row, and when one of
+    // those won this, Settings opened on that app's row. The fixture's apps
+    // have no pages, so the ranking itself is pinned in
+    // `apps-palette-rows.test.ts`.
+    await page.getByRole('button', { name: 'Open command palette' }).click();
+    const search = page.getByTestId('command-palette-input');
+    await search.fill('settings');
+    await search.press('Enter');
+    await settingsPage.dialog.waitFor({ state: 'visible' });
+    expect(new URL(page.url()).searchParams.get('settingsSection')).toBeNull();
   });
 
   test('says it couldn’t load, never "none installed", and tries again', async ({
