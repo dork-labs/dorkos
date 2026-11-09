@@ -62,6 +62,21 @@ name: Desktop Release
 # `workflow_dispatch` builds and verifies both apps without attaching or
 # publishing: off a tag (or with `dry_run`), the publish step rehearses (waits
 # for build-windows, then says what it would publish) and changes nothing.
+#
+# `workflow_dispatch` with a `tag` input (e.g. `v0.135.0`) re-runs a release
+# with THIS workflow file and THAT tag's code. A plain re-run of a tag-push run
+# uses the tag's own copy of this file, so a fix to the workflow can never reach
+# a release already tagged, and a tag cannot be moved once npm has the version.
+# With `tag` set, each job first checks the tag (exactly vX.Y.Z, an existing
+# tag, its commit already on main, a DRAFT Release waiting for it) and fails
+# before building anything if one is not so. It then checks out
+# `refs/tags/<tag>`, builds and verifies as usual, and attaches to that draft
+# with stricter rules than a tag push: never an asset that is already there
+# (no --clobber), and never publishing. The release stays a draft until a
+# person publishes it by hand after checking the installers. `dry_run` still
+# rehearses instead. It never creates a release, rewrites its notes, or moves a
+# tag. RELEASE_TAG below is the one place that says which release a run
+# targets; every attach and publish step reads it.
 
 on:
   push:
@@ -73,13 +88,20 @@ on:
         description: 'Dry run (build but do not publish)'
         type: boolean
         default: false
+      tag:
+        description: 'Existing release tag to build and attach to, e.g. v0.135.0 (empty: no release)'
+        type: string
+        default: ''
 
-# Opt into Node 24 for every JavaScript-based action (checkout, setup-node,
-# upload-artifact, action-gh-release, etc.) ahead of GitHub's Sept 2026 hard
-# cutoff for Node 20 runtime. See
-# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 env:
+  # Opt into Node 24 for every JavaScript-based action (checkout, setup-node,
+  # upload-artifact, action-gh-release, etc.) ahead of GitHub's Sept 2026 hard
+  # cutoff for Node 20 runtime. See
+  # https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # The release this run attaches to and publishes: the `tag` input when given,
+  # else the pushed tag, else empty (a branch dispatch, which only rehearses).
+  RELEASE_TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '') }}
 
 jobs:
   build-macos:
@@ -98,7 +120,62 @@ jobs:
       - name: Record job start
         run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
 
+      # A `tag` dispatch only: refuse anything but an existing vX.Y.Z tag whose
+      # commit is already on main, with a draft Release waiting for it. Runs
+      # first, so a bad input fails before anything is built or signed. The
+      # input reaches the shell through env, never inlined into the script.
+      - name: Check the release tag
+        id: release-tag
+        if: inputs.tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag must look like v1.2.3 exactly." >&2
+            exit 1
+          fi
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null; then
+            echo "::error::No tag ${TAG} in ${GITHUB_REPOSITORY}." >&2
+            exit 1
+          fi
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${TAG}" --jq .sha)"
+          on_main="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${sha}...main" --jq .status)"
+          case "$on_main" in
+            ahead | identical) ;;
+            *)
+              echo "::error::${TAG} (${sha}) is not on main (compare says '${on_main}')." >&2
+              exit 1
+              ;;
+          esac
+          if ! is_draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"; then
+            echo "::error::Release ${TAG} does not exist. This run attaches to an existing draft and never creates one." >&2
+            exit 1
+          fi
+          if [ "$is_draft" != "true" ]; then
+            echo "::error::Release ${TAG} is already published. A tag dispatch only attaches to a draft." >&2
+            exit 1
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Release tag: \`${TAG}\` at \`${sha}\` (draft release, commit on main)." >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
+          persist-credentials: false
+
+      - name: Confirm the checkout is the checked tag
+        if: inputs.tag
+        env:
+          EXPECTED_SHA: ${{ steps.release-tag.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "::error::Checked out ${actual}, but the tag pointed at ${EXPECTED_SHA} when it was checked." >&2
+            exit 1
+          fi
 
       - uses: pnpm/action-setup@v6
 
@@ -131,6 +208,43 @@ jobs:
       # poisons the shared pnpm store for plain-Node vitest monorepo-wide.
       - name: Rebuild native modules for Electron
         run: pnpm --filter @dorkos/desktop exec tsx scripts/rebuild-natives.ts
+
+      # electron-builder fetches its icon toolset from a GitHub release
+      # download URL while packaging, and on v0.135.0 that URL answered 504
+      # until the job failed. `gh release download` reaches the same asset
+      # through the API. The hash is checked BEFORE extracting, and electron-
+      # builder is pointed at the result through the variable it reads first
+      # (ELECTRON_BUILDER_ICONS_TOOLSET_DIR). The pin must match the one in the
+      # installed electron-builder, so a version bump that moves it fails here
+      # instead of packaging with the wrong toolset. build-windows has the same
+      # step; change both together.
+      - name: Fetch the icons toolset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ICONS_RELEASE: icons@1.2.3
+          ICONS_SHA256: 4e5bb546c9d3ab0c2bbacc22857467bf415f742a34c2be9dd138779d2fc066f9
+        run: |
+          set -euo pipefail
+          icons_js="$(cd apps/desktop && node -p "require.resolve('app-builder-lib/out/toolsets/icons.js', { paths: [require.resolve('electron-builder/package.json')] })")"
+          if ! grep -qF "\"${ICONS_RELEASE}\"" "$icons_js" || ! grep -qF "\"${ICONS_SHA256}\"" "$icons_js"; then
+            echo "::error::electron-builder no longer pins ${ICONS_RELEASE} with this hash (${icons_js}). Update ICONS_RELEASE and ICONS_SHA256 here and in build-windows." >&2
+            exit 1
+          fi
+          dir="${RUNNER_TEMP}/icons-toolset"
+          rm -rf "$dir"
+          mkdir -p "$dir"
+          gh release download "$ICONS_RELEASE" --repo electron-userland/electron-builder-binaries --pattern icons-bundle.tar.gz --dir "$dir"
+          cd "$dir"
+          if ! echo "${ICONS_SHA256}  icons-bundle.tar.gz" | shasum -a 256 -c; then
+            echo "::error::icons-bundle.tar.gz does not match the pinned SHA-256." >&2
+            exit 1
+          fi
+          tar -xzf icons-bundle.tar.gz
+          if [ ! -f icons-bundle/icon-tool.js ]; then
+            echo "::error::icons-bundle.tar.gz has no icons-bundle/icon-tool.js." >&2
+            exit 1
+          fi
+          echo "ELECTRON_BUILDER_ICONS_TOOLSET_DIR=${dir}/icons-bundle" >> "$GITHUB_ENV"
 
       - name: Package DMG (unsigned)
         if: ${{ !vars.APPLE_DEVELOPER_CONFIGURED }}
@@ -246,18 +360,45 @@ jobs:
       # them electron-updater logs "Cannot download differentially… status 404"
       # and falls back to a full download every time (confirmed in a real
       # user's log).
+      #
+      # A `tag` dispatch is stricter than a tag push: the release must still be
+      # a draft, and it never replaces an asset (no --clobber). If one of these
+      # files is already attached, it fails and names it; delete that asset by
+      # hand first if replacing it is really what you want.
       - name: Attach macOS artifacts to the release
-        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+        if: env.RELEASE_TAG && !inputs.dry_run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          tag="${RELEASE_TAG}"
+          files=(
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml
+          )
+          if [ -n "${DISPATCH_TAG:-}" ]; then
+            if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "::error::Release $tag is no longer a draft. A tag dispatch only attaches to a draft." >&2
+              exit 1
+            fi
+            existing="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+            for f in "${files[@]}"; do
+              if grep -qxF "$(basename "$f")" <<<"$existing"; then
+                echo "::error::Release $tag already has $(basename "$f"). A tag dispatch never replaces an asset." >&2
+                exit 1
+              fi
+            done
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "${files[@]}"
+            exit 0
+          fi
           # Wait up to ~10 min for the release (created in /system:release
           # Phase 6.11) to exist. Never create it here.
           found=""
           for attempt in $(seq 1 30); do
-            if gh release view "$tag" >/dev/null 2>&1; then
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               found=1
               break
             fi
@@ -268,12 +409,7 @@ jobs:
             echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create the GitHub Release before the desktop build can attach to it; this workflow will not mint a bare release (it would drop the human-written notes)." >&2
             exit 1
           fi
-          gh release upload "$tag" \
-            apps/desktop/release/*.dmg \
-            apps/desktop/release/*.zip \
-            apps/desktop/release/*.blockmap \
-            apps/desktop/release/latest-mac.yml \
-            --clobber
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "${files[@]}" --clobber
 
       # Flip the draft release (created by /system:release Phase 6.11 with
       # --draft) to published. This is what closes the auto-update window
@@ -308,10 +444,14 @@ jobs:
       #
       # Off a tag, or with dry_run, it does the wait and stops before changing
       # anything, so a workflow_dispatch run rehearses the whole path.
+      #
+      # A `tag` dispatch never publishes: it leaves the release a draft, and a
+      # person publishes it by hand once the attached installers are checked.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PUBLISH: ${{ startsWith(github.ref, 'refs/tags/') && !inputs.dry_run }}
+          PUBLISH: ${{ env.RELEASE_TAG != '' && !inputs.tag && !inputs.dry_run }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           jobs_api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs"
@@ -343,7 +483,11 @@ jobs:
             sleep 20
           done
 
-          tag="${GITHUB_REF_NAME}"
+          tag="${RELEASE_TAG:-$GITHUB_REF_NAME}"
+          if [ -n "${DISPATCH_TAG:-}" ]; then
+            echo "Tag dispatch: release '${tag}' stays a draft. Publish it by hand once the installers are checked: gh release edit ${tag} --draft=false"
+            exit 0
+          fi
           if [ "$PUBLISH" != "true" ]; then
             echo "Rehearsal (not a tag push, or dry_run): would publish release '${tag}'. Changed nothing."
             exit 0
@@ -383,7 +527,62 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The same gate as build-macos's "Check the release tag": this job runs
+      # in parallel, so it checks for itself rather than trusting the other.
+      - name: Check the release tag
+        id: release-tag
+        if: inputs.tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag must look like v1.2.3 exactly." >&2
+            exit 1
+          fi
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null; then
+            echo "::error::No tag ${TAG} in ${GITHUB_REPOSITORY}." >&2
+            exit 1
+          fi
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${TAG}" --jq .sha)"
+          on_main="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${sha}...main" --jq .status)"
+          case "$on_main" in
+            ahead | identical) ;;
+            *)
+              echo "::error::${TAG} (${sha}) is not on main (compare says '${on_main}')." >&2
+              exit 1
+              ;;
+          esac
+          if ! is_draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"; then
+            echo "::error::Release ${TAG} does not exist. This run attaches to an existing draft and never creates one." >&2
+            exit 1
+          fi
+          if [ "$is_draft" != "true" ]; then
+            echo "::error::Release ${TAG} is already published. A tag dispatch only attaches to a draft." >&2
+            exit 1
+          fi
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Release tag: \`${TAG}\` at \`${sha}\` (draft release, commit on main)." >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
+          persist-credentials: false
+
+      - name: Confirm the checkout is the checked tag
+        if: inputs.tag
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.release-tag.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "::error::Checked out ${actual}, but the tag pointed at ${EXPECTED_SHA} when it was checked." >&2
+            exit 1
+          fi
 
       - uses: pnpm/action-setup@v6
 
@@ -416,6 +615,38 @@ jobs:
       # poisons the shared pnpm store for plain-Node vitest monorepo-wide.
       - name: Rebuild native modules for Electron
         run: pnpm --filter @dorkos/desktop exec tsx scripts/rebuild-natives.ts
+
+      # The same step as build-macos's "Fetch the icons toolset" (see its
+      # comment); only the hash tool differs. Change both together.
+      - name: Fetch the icons toolset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ICONS_RELEASE: icons@1.2.3
+          ICONS_SHA256: 4e5bb546c9d3ab0c2bbacc22857467bf415f742a34c2be9dd138779d2fc066f9
+        run: |
+          set -euo pipefail
+          icons_js="$(cd apps/desktop && node -p "require.resolve('app-builder-lib/out/toolsets/icons.js', { paths: [require.resolve('electron-builder/package.json')] })")"
+          icons_js="${icons_js//\\//}"
+          if ! grep -qF "\"${ICONS_RELEASE}\"" "$icons_js" || ! grep -qF "\"${ICONS_SHA256}\"" "$icons_js"; then
+            echo "::error::electron-builder no longer pins ${ICONS_RELEASE} with this hash (${icons_js}). Update ICONS_RELEASE and ICONS_SHA256 here and in build-macos." >&2
+            exit 1
+          fi
+          dir="${RUNNER_TEMP}/icons-toolset"
+          rm -rf "$dir"
+          mkdir -p "$dir"
+          gh release download "$ICONS_RELEASE" --repo electron-userland/electron-builder-binaries --pattern icons-bundle.tar.gz --dir "$dir"
+          cd "$dir"
+          if ! echo "${ICONS_SHA256}  icons-bundle.tar.gz" | sha256sum -c; then
+            echo "::error::icons-bundle.tar.gz does not match the pinned SHA-256." >&2
+            exit 1
+          fi
+          tar -xzf icons-bundle.tar.gz
+          if [ ! -f icons-bundle/icon-tool.js ]; then
+            echo "::error::icons-bundle.tar.gz has no icons-bundle/icon-tool.js." >&2
+            exit 1
+          fi
+          echo "ELECTRON_BUILDER_ICONS_TOOLSET_DIR=${dir}/icons-bundle" >> "$GITHUB_ENV"
 
       # windows-latest's default `run:` shell is pwsh; the multi-line
       # `cd && npx …` scripts below use POSIX syntax, so pin bash explicitly
@@ -514,18 +745,39 @@ jobs:
       # installer. The .blockmap enables differential (delta) downloads for
       # NSIS auto-updates.
       - name: Attach Windows artifacts to the release
-        if: startsWith(github.ref, 'refs/tags/') && !inputs.dry_run
+        if: env.RELEASE_TAG && !inputs.dry_run
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          tag="${RELEASE_TAG}"
+          files=(
+            apps/desktop/release/*.exe
+            apps/desktop/release/latest.yml
+            apps/desktop/release/*.blockmap
+          )
+          if [ -n "${DISPATCH_TAG:-}" ]; then
+            if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" != "true" ]; then
+              echo "::error::Release $tag is no longer a draft. A tag dispatch only attaches to a draft." >&2
+              exit 1
+            fi
+            existing="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+            for f in "${files[@]}"; do
+              if grep -qxF "$(basename "$f")" <<<"$existing"; then
+                echo "::error::Release $tag already has $(basename "$f"). A tag dispatch never replaces an asset." >&2
+                exit 1
+              fi
+            done
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "${files[@]}"
+            exit 0
+          fi
           # Wait up to ~10 min for the release (created in /system:release
           # Phase 6.11) to exist. Never create it here.
           found=""
           for attempt in $(seq 1 30); do
-            if gh release view "$tag" >/dev/null 2>&1; then
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               found=1
               break
             fi
@@ -536,8 +788,4 @@ jobs:
             echo "::error::Release $tag does not exist. /system:release Phase 6.11 must create the GitHub Release before the desktop build can attach to it; this workflow will not mint a bare release (it would drop the human-written notes)." >&2
             exit 1
           fi
-          gh release upload "$tag" \
-            apps/desktop/release/*.exe \
-            apps/desktop/release/latest.yml \
-            apps/desktop/release/*.blockmap \
-            --clobber
+          gh release upload "$tag" --repo "$GITHUB_REPOSITORY" "${files[@]}" --clobber
