@@ -97,11 +97,11 @@ function freshSession(): RunSession {
  *
  * **The prior runtime comes off the RUN ROW**, `pulse_runs.resolved_runtime`,
  * which the scheduler stamps on every dispatch. It used to be read from
- * `session_metadata` through the runtime registry — but only an interactive
- * session ever calls `persistSessionRuntime`, so a scheduled run's session has
- * no binding there and the answer was `null` for every scheduled run ever made.
+ * `session_metadata` through the runtime registry — but scheduled runs used to
+ * record no binding there, so the answer was `null` for every scheduled run.
  * The rule parsed, tested green against an injected stub, and did nothing in
- * production (DOR-1615 review).
+ * production (DOR-1615 review). Runs record one now (DOR-4027), but rows from
+ * before that still have none, so the run row stays the authority.
  *
  * @param lookup - The resume-target lookup (the task store).
  * @param task - The task being dispatched.

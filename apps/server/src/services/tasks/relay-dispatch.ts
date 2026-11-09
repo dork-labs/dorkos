@@ -19,6 +19,7 @@ import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/relay-schemas';
 import { buildTaskAppend } from './task-append.js';
 import { resolveRunSession } from './session/sticky-session.js';
+import { recordRunSession } from './session/record-run-session.js';
 import type { RunExecution } from './execution/resolve-run-execution.js';
 import type { TaskStore } from './task-store.js';
 import { isTerminalRunStatus } from './lifecycle/run-statuses.js';
@@ -189,6 +190,7 @@ export async function dispatchRunViaRelay(
   const { sessionId, hasStarted } = resolveRunSession(deps.store, task, {
     runtimeType: execution.runtimeType,
   });
+  await recordRunSession(sessionId, execution.runtimeType, deps.forAgent);
   deps.onSession?.(sessionId);
 
   const payload: TaskDispatchPayload = {

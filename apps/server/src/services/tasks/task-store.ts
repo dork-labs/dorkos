@@ -659,12 +659,12 @@ export class TaskStore {
    * DOR-1615): a session belongs to one runtime and the id names a transcript in
    * that program's store.
    *
-   * The run row is the authority on that, not `session_metadata`. Only an
-   * interactive session ever calls `persistSessionRuntime`, so a scheduled run's
-   * session has no binding recorded — asking the registry answered `null` for
-   * every scheduled run ever made, which made the rule inert in production
-   * (DOR-1615 review). `resolved_runtime` is stamped by the scheduler on every
-   * dispatch, so it is the one place the answer actually exists.
+   * The run row is the authority on that, not `session_metadata`. Scheduled
+   * runs used to record no binding there, so asking the registry answered
+   * `null` for every scheduled run, which made the rule inert in production
+   * (DOR-1615 review). Runs record one now (DOR-4027), but older sessions still
+   * have none; `resolved_runtime` is stamped by the scheduler on every
+   * dispatch, so it is the one place the answer exists for every run.
    *
    * One query rather than two, so the id and the runtime cannot come from
    * different runs.

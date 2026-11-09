@@ -52,6 +52,7 @@ import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
 import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
+import { recordRunSession } from './session/record-run-session.js';
 import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { assertOwnDesk, deskBindingFor } from '../core/agent-identity/index.js';
 import { resolveRunExecution, type RunExecution } from './execution/resolve-run-execution.js';
@@ -60,7 +61,6 @@ import {
   type SchedulerAgentManager,
   type SchedulerRuntimes,
 } from './execution/scheduler-runtimes.js';
-import { runtimeRegistry } from '../core/runtime-registry.js';
 import type { AgentExecutionDefaults } from '../session/resolution/resolve-session-defaults.js';
 import type { AccountNotAllowedError } from '../core/usage/account-eligibility.js';
 import type { TaskAwakeHold, TaskAwakeHolds } from '../core/keep-awake/index.js';
@@ -1406,25 +1406,8 @@ export class TaskSchedulerService {
       agentManager.getInternalSessionId(sessionId) ?? sessionId;
 
     try {
+      await recordRunSession(sessionId, execution.runtimeType, forAgent);
       if (attended) {
-        // So `POST /api/sessions/:id/approve` resolves the runtime this run is
-        // actually on rather than the server default — a codex or opencode task
-        // whose card is answered from the app must reach its own runtime. Filed
-        // under the id the turn starts on; the claude-code store moves the row
-        // itself when it renames the session (`rekeySessionSettings`), on the
-        // same rename this run follows below, so the two stay together.
-        // Best-effort: a binding that could not be written is not a reason to
-        // refuse the run, and an unbound session still falls back to the default.
-        //
-        // The origin seeds no permission mode, which is what this call has
-        // always done: a run's power comes off `pulse_schedules.permission_mode`
-        // and reaches the runtime through `ensureSession`/`sendMessage` below,
-        // never through this row (DOR-2105; changing that is DOR-2100).
-        await runtimeRegistry
-          .persistSessionRuntime(sessionId, execution.runtimeType, { kind: 'schedule' })
-          .catch((err: unknown) => {
-            logger.warn(`run ${run.id}: could not bind its session to a runtime`, logError(err));
-          });
         // Opened BEFORE the turn, so an approval raised by the very first tool
         // call already has a projector behind its session. Resolves only once
         // the run may safely write to the session — a sticky task whose session
