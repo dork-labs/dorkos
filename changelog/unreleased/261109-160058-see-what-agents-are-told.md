@@ -1,7 +1,6 @@
 ---
 covers:
-  - "feat(server): show what agents are told, written by the same code that writes a real chat's instructions"
-  - "feat(client): Settings › Agent instructions and the profile's What this agent is told"
+  - 'feat: see what agents are told, from the builders that write it (context viewer phase 3)'
 ---
 
 ### Added
