@@ -53,6 +53,11 @@ export interface StickySessionLookup {
   latestStickyRun(taskId: string): { sessionId: string; runtime: string | null } | null;
 }
 
+/** Dispatch also reads the durable owner before resuming any history. */
+interface RunSessionLookup extends StickySessionLookup {
+  getRunSessionAgentPath(sessionId: string): string | null;
+}
+
 /** Which session a run runs on, and whether it resumes existing history. */
 export interface RunSession {
   /**
@@ -106,12 +111,13 @@ function freshSession(): RunSession {
  * @param lookup - The resume-target lookup (the task store).
  * @param task - The task being dispatched.
  * @param opts.runtimeType - The runtime THIS run resolved to.
+ * @param opts.agentPath - The verified agent this run may use, absent for an agent-less run.
  * @returns The session id and whether to resume it.
  */
 export function resolveRunSession(
-  lookup: StickySessionLookup,
+  lookup: RunSessionLookup,
   task: Pick<Task, 'id' | 'sticky'>,
-  opts: { runtimeType: string }
+  opts: { runtimeType: string; agentPath?: string }
 ): RunSession {
   if (!task.sticky) return freshSession();
   const previous = lookup.latestStickyRun(task.id);
@@ -123,6 +129,12 @@ export function resolveRunSession(
   // sticky task older than this change and throw away the history sticky exists
   // to carry. Only a recorded runtime that DISAGREES starts over.
   if (previous.runtime !== null && previous.runtime !== opts.runtimeType) {
+    return freshSession();
+  }
+  // History belongs to its recorded owner. Reassignment, removing an agent,
+  // and an old unrecorded conversation acquiring an agent all start fresh;
+  // otherwise recordRunSession could grant apps to unverified prior history.
+  if (lookup.getRunSessionAgentPath(previous.sessionId) !== (opts.agentPath ?? null)) {
     return freshSession();
   }
   return { sessionId: previous.sessionId, hasStarted: true };
@@ -153,8 +165,7 @@ export const STICKY_ACCOUNT_LOCKED_MESSAGE =
  * `account` never runs for it again, so a new account on such a schedule would
  * be stored and never used.
  *
- * Judged on the schedule AFTER the write, through {@link resolveRunSession}
- * itself, so it cannot disagree with the runner: a request that turns sticky ON
+ * Judged on the schedule AFTER the write: a request that turns sticky ON
  * for a task that has already run is locked too (its next run resumes that
  * run's conversation), one that turns sticky off is not, and one that moves
  * the task to a runtime its last run did not use starts fresh and is not. A
@@ -164,7 +175,7 @@ export const STICKY_ACCOUNT_LOCKED_MESSAGE =
  * @param lookup - The resume-target lookup (the task store).
  * @param taskId - The schedule being changed.
  * @param change - The account it has now, and the account, sticky switch and
- *   runtime it would have after the write.
+ *   runtime it would have after the write. Owner changes are checked at dispatch.
  * @returns True when the change must be refused.
  */
 export function stickyAccountLocked(
@@ -183,7 +194,7 @@ export function stickyAccountLocked(
   // A prior run with no runtime on record resumes whatever it is asked, so any
   // string answers "same runtime" there.
   const runtimeType = change.runtime ?? previous.runtime ?? 'claude-code';
-  return resolveRunSession(lookup, { id: taskId, sticky: true }, { runtimeType }).hasStarted;
+  return previous.runtime === null || previous.runtime === runtimeType;
 }
 
 /**

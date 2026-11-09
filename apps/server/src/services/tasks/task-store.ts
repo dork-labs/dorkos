@@ -1,17 +1,5 @@
 import { refusedToolsColumnOf, type RunCap } from './history/run-cap-column.js';
-import {
-  eq,
-  ne,
-  desc,
-  and,
-  count,
-  inArray,
-  notInArray,
-  lt,
-  isNull,
-  isNotNull,
-  sql,
-} from 'drizzle-orm';
+import { eq, ne, desc, and, count, inArray, notInArray, lt, isNull, sql } from 'drizzle-orm';
 import {
   pulseSchedules,
   pulseRuns,
@@ -32,6 +20,7 @@ import type {
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
 import { TaskApprovals } from './approvals/task-approvals.js';
+import { RunSessionStore } from './session/run-session-store.js';
 import { TaskFileSync } from './sync/task-file-sync.js';
 import { scheduleContentKey } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
@@ -150,6 +139,7 @@ export type RunTerminalListener = (run: TaskRun, task: Task | null) => void;
  */
 export class TaskStore {
   private db: Db;
+  private readonly runSessions: RunSessionStore;
   /** Optional listener fired once per run's terminal transition (DOR-240). */
   private onRunTerminal: RunTerminalListener | null = null;
   /**
@@ -167,6 +157,7 @@ export class TaskStore {
 
   constructor(db: Db) {
     this.db = db;
+    this.runSessions = new RunSessionStore(db);
     this.approvals = new TaskApprovals(db);
     this.fileSync = new TaskFileSync(db, (id) => this.getTask(id), this);
   }
@@ -675,19 +666,12 @@ export class TaskStore {
    *   which reads as "no owner on record" and never as a mismatch.
    */
   latestStickyRun(taskId: string): { sessionId: string; runtime: string | null } | null {
-    const row = this.db
-      .select({ sessionId: pulseRuns.sessionId, runtime: pulseRuns.resolvedRuntime })
-      .from(pulseRuns)
-      .where(and(eq(pulseRuns.scheduleId, taskId), isNotNull(pulseRuns.sessionId)))
-      // `created_at` is an ISO string at millisecond resolution with no
-      // tiebreaker, so two runs written in the same millisecond order
-      // arbitrarily (the same hazard `pruneRuns` documents). Here the tie would
-      // resume the WRONG session, so `rowid` — strict insertion order — breaks
-      // it deterministically toward the run written last.
-      .orderBy(desc(pulseRuns.createdAt), sql`rowid DESC`)
-      .limit(1)
-      .get();
-    return row?.sessionId ? { sessionId: row.sessionId, runtime: row.runtime ?? null } : null;
+    return this.runSessions.latestStickyRun(taskId);
+  }
+
+  /** Read the durable owner of a prior run's conversation, never inferred from cwd. */
+  getRunSessionAgentPath(sessionId: string): string | null {
+    return this.runSessions.getRunSessionAgentPath(sessionId);
   }
 
   /** Count total runs, optionally filtered by task. */

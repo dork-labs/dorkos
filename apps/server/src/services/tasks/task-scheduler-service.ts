@@ -29,12 +29,8 @@ import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
 import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
 import { atCapSkipReason, RunAccounting } from './run-accounting.js';
-import {
-  emitRefusedAskActivity,
-  emitRunActivity,
-  emitUnregisteredAccountActivity,
-} from './run-activity.js';
-import { isRegisteredClaudeAccount } from '../runtimes/claude-code/claude-config-dir.js';
+import { emitRefusedAskActivity, emitRunActivity } from './run-activity.js';
+import { checkRunAccount } from './session/run-account.js';
 import { dispatchRunViaRelay } from './relay-dispatch.js';
 import { pruneRunHistory, PRUNE_INTERVAL_MS } from './run-retention.js';
 import { sweepInterruptedRuns } from './crash-recovery.js';
@@ -62,9 +58,7 @@ import {
   type SchedulerRuntimes,
 } from './execution/scheduler-runtimes.js';
 import type { AgentExecutionDefaults } from '../session/resolution/resolve-session-defaults.js';
-import type { AccountNotAllowedError } from '../core/usage/account-eligibility.js';
 import type { TaskAwakeHold, TaskAwakeHolds } from '../core/keep-awake/index.js';
-import { scheduleAccountRefusal } from './lifecycle/schedule-account-eligibility.js';
 import {
   AGENT_PAUSED_SKIP_REASON,
   TaskPauseHold,
@@ -1097,12 +1091,18 @@ export class TaskSchedulerService {
           runtime: execution.runtimeType,
           model: execution.settings.model ?? null,
         });
-        this.reportUnregisteredAccount(task, run, execution);
         // The account rule (spec `flow-multiproject` §8.4): a run that would
         // start a conversation on an account that may not work in this folder's
         // project fails here with the plain sentence, before either dispatch
         // path starts anything, so direct and relay runs say the same thing.
-        const accountRefusal = await this.refusedRunAccount(task, execution, placement);
+        const accountRefusal = await checkRunAccount({
+          store: this.store,
+          task,
+          run,
+          execution,
+          placement,
+          activityService: this.activityService,
+        });
         if (accountRefusal) {
           this.failRun(run, accountRefusal);
           return recordDispatchEnd(dispatchId, 'failed');
@@ -1165,57 +1165,6 @@ export class TaskSchedulerService {
         }
       })
     );
-  }
-
-  /**
-   * The refusal for a run whose schedule names a Claude account that may not
-   * work in the folder the run starts in (spec `flow-multiproject` §8.4), or
-   * null. Only where the account would actually be read: a claude-code run
-   * that starts a conversation.
-   *
-   * @param task - The task being dispatched.
-   * @param execution - What the run resolved to.
-   * @param placement - Where the run starts.
-   */
-  private async refusedRunAccount(
-    task: Task,
-    execution: RunExecution,
-    placement: RunPlacement
-  ): Promise<AccountNotAllowedError | null> {
-    const account = execution.settings.accountHint;
-    if (!account || execution.runtimeType !== 'claude-code') return null;
-    const { hasStarted } = resolveRunSession(this.store, task, {
-      runtimeType: execution.runtimeType,
-    });
-    // A sticky run resuming its conversation stays on that conversation's
-    // account: the rule applies when an account is picked, never mid-conversation.
-    if (hasStarted) return null;
-    return scheduleAccountRefusal({ account, runtime: 'claude-code', folder: placement.cwd });
-  }
-
-  /**
-   * Say in the Activity feed when this run will not start on the account its
-   * schedule names, because no registered account has that id (DOR-2384).
-   *
-   * Asked once, before either dispatch path, so the direct and relay runs say
-   * the same thing. Only where the account would actually be read: a
-   * claude-code run that starts a conversation. A sticky run resuming one stays
-   * on that conversation's account whatever the schedule says, and a registry
-   * nobody can read says nothing rather than something that may be false.
-   *
-   * @param task - The task being dispatched.
-   * @param run - The run being dispatched.
-   * @param execution - What the run resolved to.
-   */
-  private reportUnregisteredAccount(task: Task, run: TaskRun, execution: RunExecution): void {
-    const account = execution.settings.accountHint;
-    if (!account || execution.runtimeType !== 'claude-code') return;
-    const { hasStarted } = resolveRunSession(this.store, task, {
-      runtimeType: execution.runtimeType,
-    });
-    if (hasStarted) return;
-    if (isRegisteredClaudeAccount(account) !== false) return;
-    emitUnregisteredAccountActivity(this.activityService, task, run, account);
   }
 
   /**
@@ -1375,6 +1324,7 @@ export class TaskSchedulerService {
     // (ADR-0255), so there is nothing there to resume (DOR-1615).
     const { sessionId, hasStarted } = resolveRunSession(this.store, task, {
       runtimeType: execution.runtimeType,
+      agentPath: forAgent,
     });
     onSession(sessionId);
 
@@ -1406,7 +1356,10 @@ export class TaskSchedulerService {
       agentManager.getInternalSessionId(sessionId) ?? sessionId;
 
     try {
-      await recordRunSession(sessionId, execution.runtimeType, forAgent);
+      // A raw file edit must not inherit the agent's connected apps. Keep its
+      // identity for the turn, but leave the fresh session without app authority.
+      const connectedAgent = this.store.getRun(run.id)?.cappedAt ? undefined : forAgent;
+      await recordRunSession(sessionId, execution.runtimeType, connectedAgent);
       if (attended) {
         // Opened BEFORE the turn, so an approval raised by the very first tool
         // call already has a projector behind its session. Resolves only once

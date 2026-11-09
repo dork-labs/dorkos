@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import type { Db } from '@dorkos/db';
+import { sessionMetadata, type Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../../task-store.js';
 import { resolveRunSession } from '../sticky-session.js';
@@ -69,6 +69,51 @@ function openRun(taskId: string) {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe('resolveRunSession', () => {
+  it.each([undefined, '/agents/b'])(
+    'starts fresh when the prior owner differs from %s',
+    (agentPath) => {
+      const t = task();
+      completedRun(t.id, 'sess-agent-a', 'codex');
+      db.insert(sessionMetadata)
+        .values({
+          sessionId: 'sess-agent-a',
+          runtime: 'codex',
+          agentPath: '/agents/a',
+          createdAt: new Date().toISOString(),
+        })
+        .run();
+
+      const resolved = resolveRunSession(store, t, { runtimeType: 'codex', agentPath });
+      expect(resolved.hasStarted).toBe(false);
+      expect(resolved.sessionId).toMatch(UUID);
+    }
+  );
+
+  it('starts fresh rather than granting an agent to an unrecorded prior conversation', () => {
+    const t = task();
+    completedRun(t.id, 'sess-legacy', 'codex');
+    expect(
+      resolveRunSession(store, t, { runtimeType: 'codex', agentPath: '/agents/a' }).hasStarted
+    ).toBe(false);
+  });
+
+  it('resumes a prior conversation owned by the same agent', () => {
+    const t = task();
+    completedRun(t.id, 'sess-agent-a', 'codex');
+    db.insert(sessionMetadata)
+      .values({
+        sessionId: 'sess-agent-a',
+        runtime: 'codex',
+        agentPath: '/agents/a',
+        createdAt: new Date().toISOString(),
+      })
+      .run();
+    expect(resolveRunSession(store, t, { runtimeType: 'codex', agentPath: '/agents/a' })).toEqual({
+      sessionId: 'sess-agent-a',
+      hasStarted: true,
+    });
+  });
+
   it('gives a non-sticky run a session of its own and no resume', () => {
     const t = task(false);
     completedRun(t.id, 'sess-old', 'claude-code');
@@ -103,7 +148,7 @@ describe('resolveRunSession', () => {
   it('resumes the prior session when the runtime has not changed', () => {
     const t = task();
     completedRun(t.id, 'sess-old', 'claude-code');
-    const run = openRun(t.id);
+    openRun(t.id);
 
     expect(resolveRunSession(store, t, { runtimeType: 'claude-code' })).toEqual({
       sessionId: 'sess-old',
@@ -131,7 +176,7 @@ describe('resolveRunSession', () => {
     // to carry.
     const t = task();
     completedRun(t.id, 'sess-ancient', null);
-    const run = openRun(t.id);
+    openRun(t.id);
 
     expect(resolveRunSession(store, t, { runtimeType: 'claude-code' })).toEqual({
       sessionId: 'sess-ancient',

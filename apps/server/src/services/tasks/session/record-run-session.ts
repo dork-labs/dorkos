@@ -7,6 +7,7 @@ const logger = createTaggedLogger('Tasks');
  * Record a run's runtime and verified agent before either dispatch path starts.
  *
  * `agentPath` comes from the schedule's Mesh link, never its working directory.
+ * File-capped runs omit it so their changed content gets no connected apps.
  * The registry's first authoritative write wins, so a sticky run cannot replace
  * a recorded owner. A failed write leaves connected apps unavailable: their
  * authority resolver still requires the exact durable runtime and agent path.

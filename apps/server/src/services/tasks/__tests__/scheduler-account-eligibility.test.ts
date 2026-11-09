@@ -30,6 +30,7 @@ vi.mock('../../runtimes/claude-code/claude-config-dir.js', async (importOriginal
 
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RelayCore } from '@dorkos/relay';
+import type { MeshCore } from '@dorkos/mesh';
 import type { TaskRun } from '@dorkos/shared/types';
 import { initBoundary } from '../../../lib/boundary.js';
 import { isRelayEnabled } from '../../relay/relay-state.js';
@@ -40,6 +41,7 @@ import {
 } from '../task-scheduler-service.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
+import { runtimeRegistry } from '../../core/runtime-registry.js';
 
 const SENTENCE =
   "Client Work can't be used in project. It's set to work only in client-app. Pick another account, or change this in Settings → Runtimes.";
@@ -58,14 +60,14 @@ function taskInput(overrides: Partial<CreateTaskStoreInput> & { name: string }) 
   } as CreateTaskStoreInput;
 }
 
-function scheduler(relay: RelayCore | null = null): TaskSchedulerService {
+function scheduler(relay: RelayCore | null = null, meshCore?: MeshCore): TaskSchedulerService {
   const runtimes: SchedulerRuntimes = {
     has: (type) => type === 'claude-code',
     getDefaultType: () => 'claude-code',
     getAllCapabilities: () => ({}),
     get: () => agent,
   };
-  return new TaskSchedulerService({ store, runtimes, config: { ...CONFIG }, relay });
+  return new TaskSchedulerService({ store, runtimes, config: { ...CONFIG }, relay, meshCore });
 }
 
 async function runToCompletion(service: TaskSchedulerService, taskId: string): Promise<TaskRun> {
@@ -88,7 +90,9 @@ beforeEach(async () => {
     defaultAccountOnlyProjects: null,
     projectAccounts: {},
   };
-  store = new TaskStore(createTestDb());
+  const db = createTestDb();
+  store = new TaskStore(db);
+  runtimeRegistry.setDb(db);
   agent = {
     ensureSession: vi.fn(),
     sendMessage: vi.fn().mockImplementation(async function* () {}),
@@ -106,6 +110,37 @@ afterEach(() => {
 });
 
 describe('a run on an account that may not work where it starts', () => {
+  it('rechecks account eligibility when a sticky owner change starts a replacement conversation', async () => {
+    const task = store.createTask(
+      taskInput({
+        name: 'Reassigned sweep',
+        account: 'client',
+        sticky: true,
+        agentId: 'agent-b',
+      })
+    );
+    const prior = store.createRun(task.id, 'scheduled');
+    store.recordRunExecution(prior.id, { runtime: 'claude-code' });
+    store.updateRun(prior.id, { status: 'completed', sessionId: 'prior-agent-a' });
+    await runtimeRegistry.persistSessionRuntime(
+      'prior-agent-a',
+      'claude-code',
+      { kind: 'schedule' },
+      '/agents/a'
+    );
+    const service = scheduler(null, {
+      getProjectPath: () => '/work/project',
+    } as unknown as MeshCore);
+    try {
+      const run = await runToCompletion(service, task.id);
+      expect(run.status).toBe('failed');
+      expect(run.error).toBe(SENTENCE);
+      expect(agent.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      await service.stop();
+    }
+  });
+
   it('fails with the sentence and starts no turn (direct path)', async () => {
     const task = store.createTask(taskInput({ name: 'Client sweep', account: 'client' }));
     const service = scheduler();

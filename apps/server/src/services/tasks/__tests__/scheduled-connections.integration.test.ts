@@ -37,6 +37,12 @@ import { TaskStore } from '../task-store.js';
 import { singleRuntimeSource, TaskSchedulerService } from '../task-scheduler-service.js';
 
 vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => false) }));
+const fileCap = vi.hoisted(() => ({ on: false }));
+vi.mock('../../core/config-manager.js', () => ({
+  configManager: {
+    get: (key: string) => (key === 'tasks' ? { agentModeControl: fileCap.on } : undefined),
+  },
+}));
 
 const OWNER = { kind: 'local_install', installationId: 'scheduled-test' } as const;
 const CONFIG = {
@@ -72,6 +78,7 @@ describe.each(['direct', 'relay'] as const)('%s scheduled connected apps', (disp
     otherAgentHome = path.join(root, 'agent-b');
     await mkdir(otherAgentHome);
     runClaim = {};
+    fileCap.on = false;
     await initBoundary('/');
     db = createTestDb();
     store = new TaskStore(db);
@@ -227,7 +234,8 @@ describe.each(['direct', 'relay'] as const)('%s scheduled connected apps', (disp
   async function fire(
     agentId: string | null,
     trigger: 'scheduled' | 'manual' = 'scheduled',
-    prompt = 'Read the granted mailbox'
+    prompt = 'Read the granted mailbox',
+    previousAgent?: string
   ): Promise<void> {
     const task = store.createTask({
       name: 'Read scheduled mail',
@@ -236,7 +244,19 @@ describe.each(['direct', 'relay'] as const)('%s scheduled connected apps', (disp
       filePath: path.join(root, 'read-mail', 'SKILL.md'),
       runtime: 'codex',
       agentId,
+      sticky: previousAgent !== undefined,
     });
+    if (previousAgent !== undefined) {
+      const prior = store.createRun(task.id, 'scheduled');
+      store.recordRunExecution(prior.id, { runtime: 'codex' });
+      store.updateRun(prior.id, { status: 'completed', sessionId: 'previous-owner-session' });
+      await runtimeRegistry.persistSessionRuntime(
+        'previous-owner-session',
+        'codex',
+        { kind: 'schedule' },
+        previousAgent
+      );
+    }
     runtime.sendMessage.mockImplementation(
       async function* (sessionId, _content, opts): AsyncGenerator<StreamEvent> {
         await callGrantedTool(sessionId, opts?.cwd ?? root, opts?.forAgent);
@@ -277,6 +297,36 @@ describe.each(['direct', 'relay'] as const)('%s scheduled connected apps', (disp
     expect(turnError).toBeUndefined();
     expect(toolResult?.isError).not.toBe(true);
     expect(provider.execute).toHaveBeenCalledOnce();
+  });
+
+  it('replaces sticky history when the schedule moves to another agent', async () => {
+    grant('agent-a');
+    await fire('agent-a', 'scheduled', 'Read the granted mailbox', otherAgentHome);
+    expect(turnSessionId).not.toBe('previous-owner-session');
+    expect(await runtimeRegistry.getSessionAgentPath('previous-owner-session')).toBe(
+      otherAgentHome
+    );
+    expect(await runtimeRegistry.getSessionAgentPath(turnSessionId!)).toBe(agentHome);
+    expect(turnError).toBeUndefined();
+    expect(provider.execute).toHaveBeenCalledOnce();
+  });
+
+  it('removing a sticky agent cannot retain its connected apps', async () => {
+    grant('agent-a');
+    await fire(null, 'scheduled', 'Read the granted mailbox', agentHome);
+    expect(turnSessionId).not.toBe('previous-owner-session');
+    expect(await runtimeRegistry.getSessionAgentPath(turnSessionId!)).toBeNull();
+    expect(turnError).toMatchObject({ code: 'agent_unrecorded' });
+    expect(provider.execute).not.toHaveBeenCalled();
+  });
+
+  it('a file-capped run records no agent and cannot use connected apps', async () => {
+    grant('agent-a');
+    fileCap.on = true;
+    await fire('agent-a');
+    expect(await runtimeRegistry.getSessionAgentPath(turnSessionId!)).toBeNull();
+    expect(turnError).toMatchObject({ code: 'agent_unrecorded' });
+    expect(provider.execute).not.toHaveBeenCalled();
   });
 
   it('keeps the plain refusal for a run with no agent', async () => {

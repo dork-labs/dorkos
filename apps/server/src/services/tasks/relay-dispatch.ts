@@ -189,8 +189,11 @@ export async function dispatchRunViaRelay(
   // the id written on its row linked to a 400.
   const { sessionId, hasStarted } = resolveRunSession(deps.store, task, {
     runtimeType: execution.runtimeType,
+    agentPath: deps.forAgent,
   });
-  await recordRunSession(sessionId, execution.runtimeType, deps.forAgent);
+  // Match direct dispatch: file-capped history carries no connected-app authority.
+  const connectedAgent = deps.store.getRun(run.id)?.cappedAt ? undefined : deps.forAgent;
+  await recordRunSession(sessionId, execution.runtimeType, connectedAgent);
   deps.onSession?.(sessionId);
 
   const payload: TaskDispatchPayload = {
