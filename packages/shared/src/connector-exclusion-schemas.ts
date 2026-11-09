@@ -72,7 +72,14 @@ export type ConnectorGrantExclusionChange = z.infer<typeof ConnectorGrantExclusi
 export const ConnectorAccessChangeSchema = z
   .object({
     changeId: z.string().min(1),
-    kind: z.enum(['narrow_own', 'narrow_other', 'exclude_own', 'exclude_other', 'undo']),
+    kind: z.enum([
+      'narrow_own',
+      'narrow_other',
+      'exclude_own',
+      'exclude_other',
+      'approve_read',
+      'undo',
+    ]),
     outcome: z.enum(['applied', 'refused']),
     refusalCode: z.string().nullable(),
     actorKind: z.enum(['person', 'agent']),
@@ -80,6 +87,8 @@ export const ConnectorAccessChangeSchema = z
     targetAgentId: z.string().min(1),
     connectionId: z.string().min(1),
     reason: z.string().nullable(),
+    /** On an `approve_read` row, the agent request it answered. */
+    requestId: z.string().nullable(),
     undoOf: z.string().nullable(),
     undoneBy: z.string().nullable(),
     createdAt: z.string().datetime(),

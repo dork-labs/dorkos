@@ -22,27 +22,18 @@ import { ulid } from 'ulidx';
 import {
   and,
   connectionGrantChanges,
-  connectionGrantExclusions,
-  connections,
   connectorOperationRevisions,
-  connectorProviderInstances,
   count,
   eq,
   gt,
   inArray,
-  isNull,
+  ne,
+  or,
   type Db,
   type DbTransaction,
   type GrantChangeKind,
 } from '@dorkos/db';
-import {
-  ConnectionIdSchema,
-  ConnectorProviderInstanceIdSchema,
-} from '@dorkos/shared/connector-schemas';
-import { recordAccessLevel, replaceNamedAgentGrants } from '../execution/access-levels.js';
-import { managedSelectors } from '../reconciliation-service.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
-import type { ManagedAuthoritySyncService } from '../resources/managed-authority-sync-service.js';
 import {
   anotherAgentTurnRefusal,
   noteMarkedTurnRefusal,
@@ -56,13 +47,14 @@ const NARROW_AGENT_ACTION = {
   title: "Take away another agent's access to a connected app",
 } as const;
 import { describeAccessChange, type AccessChangeEvents } from './access-change-events.js';
+import { isNarrowing, sameState, readAccessState, type AccessState } from './access-state.js';
 import {
-  isNarrowing,
-  sameIds,
-  sameState,
-  readAccessState,
-  type AccessState,
-} from './access-state.js';
+  findBinding,
+  ownerColumns,
+  writeAccessState,
+  type AccessBinding,
+  type AccessManagedAuthority,
+} from './access-writes.js';
 
 export { isNarrowing, readAccessState, type AccessState } from './access-state.js';
 
@@ -132,32 +124,13 @@ export interface AccessNarrowingServiceOptions {
   /** Whether the owner has this agent. */
   readonly ownsAgent: (owner: ConnectorOwnerAuthority, agentId: string) => boolean;
   /** Hosted authority, for apps connected through a DorkOS account. */
-  readonly managedAuthority?: Pick<
-    ManagedAuthoritySyncService,
-    'stageAgentGrantReplacement' | 'deliverAgentGrantReplacement'
-  >;
+  readonly managedAuthority?: AccessManagedAuthority;
   /** Activity, audit and Needs-you. */
   readonly events: AccessChangeEvents;
   /** The turn gate; the live one by default. Injected for tests. */
   readonly turnGate?: (caller: NarrowCaller) => TurnGateRefusal | null;
   readonly now?: () => Date;
   readonly createId?: () => string;
-}
-
-interface Binding {
-  readonly id: string;
-  readonly toolkit: string;
-  readonly label: string;
-  readonly managed: boolean;
-  readonly managedConnectionId: string;
-  readonly providerInstanceId: string;
-  readonly executionConfigGeneration: number;
-}
-
-function ownerColumns(owner: ConnectorOwnerAuthority) {
-  return owner.kind === 'user'
-    ? { ownerKind: owner.kind, ownerId: owner.userId }
-    : { ownerKind: owner.kind, ownerId: owner.installationId };
 }
 
 /**
@@ -307,7 +280,9 @@ export class AccessNarrowingService {
         .from(connectionGrantChanges)
         .where(eq(connectionGrantChanges.id, changeId))
         .get();
-      if (!row || row.outcome !== 'applied' || row.kind === 'undo' || row.undoneBy) {
+      // A person's own Undo is final here; an agent's Undo a person can put back.
+      const personsUndo = row?.kind === 'undo' && row.actorKind === 'person';
+      if (!row || row.outcome !== 'applied' || personsUndo || row.undoneBy) {
         throw new AccessNarrowingError('UNDO_NOT_FOUND');
       }
       const binding = this.requireBinding(tx, owner, row.connectionId);
@@ -365,20 +340,7 @@ export class AccessNarrowingService {
 
   /** How many other-agent narrowings the caller made in the last hour. */
   private recentOtherNarrowings(agentId: string): number {
-    const since = new Date(this.now().getTime() - 60 * 60_000).toISOString();
-    const row = this.db
-      .select({ n: count() })
-      .from(connectionGrantChanges)
-      .where(
-        and(
-          eq(connectionGrantChanges.actorId, agentId),
-          eq(connectionGrantChanges.outcome, 'applied'),
-          inArray(connectionGrantChanges.kind, ['narrow_other', 'exclude_other']),
-          gt(connectionGrantChanges.createdAt, since)
-        )
-      )
-      .get();
-    return row?.n ?? NARROW_OTHERS_PER_HOUR;
+    return otherNarrowingsInLastHour(this.db, agentId, this.now());
   }
 
   /** Record a refusal in the ledger and the audit trail, then throw it. */
@@ -452,11 +414,11 @@ export class AccessNarrowingService {
     };
   }
 
-  /** Write one agent's access from `from` to `to`; returns a hosted command to deliver, if any. */
+  /** Write one agent's access from `before` to `after`; returns a hosted command to deliver, if any. */
   private writeState(
     tx: DbTransaction,
     input: {
-      binding: Binding;
+      binding: AccessBinding;
       owner: ConnectorOwnerAuthority;
       agentId: string;
       before: AccessState;
@@ -465,103 +427,58 @@ export class AccessNarrowingService {
       now: string;
     }
   ): string | undefined {
-    const { binding, after, before } = input;
-    let commandId: string | undefined;
-    const grantsChanged =
-      before.level !== after.level || !sameIds(before.revisionIds, after.revisionIds);
-    if (grantsChanged) {
-      recordAccessLevel(tx, {
-        connectionId: binding.id,
-        subject: { kind: 'agent', agentId: input.agentId },
-        level: after.level ?? undefined,
-        createdBy: input.author,
-        now: input.now,
-      });
-      if (binding.managed) {
-        if (!this.options.managedAuthority)
-          throw new AccessNarrowingError('GRANT_MANAGED_UNAVAILABLE');
-        commandId = this.options.managedAuthority.stageAgentGrantReplacement(tx, {
-          connectionId: ConnectionIdSchema.parse(binding.id),
-          managedConnectionId: binding.managedConnectionId,
-          agentId: input.agentId,
-          ...managedSelectors(tx, after.revisionIds),
-          providerInstanceId: ConnectorProviderInstanceIdSchema.parse(binding.providerInstanceId),
-          executionConfigGeneration: binding.executionConfigGeneration,
-          owner: input.owner,
-        });
-      } else {
-        replaceNamedAgentGrants(tx, {
-          connectionId: binding.id,
-          agentId: input.agentId,
-          operationRevisionIds: after.revisionIds,
-          createdBy: input.author,
-          now: input.now,
-          createId: this.createId,
-        });
-      }
-    }
-    if (!before.excluded && after.excluded) {
-      tx.insert(connectionGrantExclusions)
-        .values({
-          id: this.createId(),
-          agentId: input.agentId,
-          connectionId: binding.id,
-          createdBy: input.author,
-          createdAt: input.now,
-        })
-        .run();
-    }
-    if (before.excluded && !after.excluded) {
-      tx.update(connectionGrantExclusions)
-        .set({ revokedAt: input.now, revokedBy: input.author })
-        .where(
-          and(
-            eq(connectionGrantExclusions.agentId, input.agentId),
-            eq(connectionGrantExclusions.connectionId, binding.id),
-            isNull(connectionGrantExclusions.revokedAt)
-          )
-        )
-        .run();
-    }
-    return commandId;
+    return writeAccessState(tx, {
+      ...input,
+      managedAuthority: this.options.managedAuthority,
+      createId: this.createId,
+      onManagedUnavailable: () => {
+        throw new AccessNarrowingError('GRANT_MANAGED_UNAVAILABLE');
+      },
+    });
   }
 
   private requireBinding(
     tx: DbTransaction,
     owner: ConnectorOwnerAuthority,
     connectionId: string
-  ): Binding {
-    const expected = ownerColumns(owner);
-    const row = tx
-      .select({
-        id: connections.id,
-        toolkit: connections.toolkit,
-        label: connections.label,
-        managedConnectionId: connections.externalAccountRef,
-        ownerKind: connectorProviderInstances.ownerKind,
-        ownerId: connectorProviderInstances.ownerId,
-        mode: connectorProviderInstances.mode,
-        providerInstanceId: connectorProviderInstances.id,
-        executionConfigGeneration: connectorProviderInstances.executionConfigGeneration,
-      })
-      .from(connections)
-      .innerJoin(
-        connectorProviderInstances,
-        eq(connectorProviderInstances.id, connections.providerInstanceId)
-      )
-      .where(and(eq(connections.id, connectionId), isNull(connections.removedAt)))
-      .get();
-    if (!row || row.ownerKind !== expected.ownerKind || row.ownerId !== expected.ownerId) {
-      throw new AccessNarrowingError('GRANT_NOT_FOUND');
-    }
-    return {
-      id: row.id,
-      toolkit: row.toolkit,
-      label: row.label,
-      managed: row.mode === 'managed',
-      managedConnectionId: row.managedConnectionId,
-      providerInstanceId: row.providerInstanceId,
-      executionConfigGeneration: row.executionConfigGeneration,
-    };
+  ): AccessBinding {
+    const binding = findBinding(tx, owner, connectionId);
+    if (!binding) throw new AccessNarrowingError('GRANT_NOT_FOUND');
+    return binding;
   }
+}
+
+/**
+ * How many times one agent took access from OTHER agents in the hour before
+ * `now` (G1): its narrowings and exclusions of other agents, and every Undo it
+ * made of another agent's access. An Undo is counted whichever way it went, so
+ * the budget errs toward fewer changes. A count that can't be read reads as the
+ * limit, so the next one is refused.
+ *
+ * @param db - The database.
+ * @param agentId - The calling agent.
+ * @param now - The clock.
+ */
+export function otherNarrowingsInLastHour(db: Db, agentId: string, now: Date): number {
+  const since = new Date(now.getTime() - 60 * 60_000).toISOString();
+  const row = db
+    .select({ n: count() })
+    .from(connectionGrantChanges)
+    .where(
+      and(
+        eq(connectionGrantChanges.actorId, agentId),
+        eq(connectionGrantChanges.actorKind, 'agent'),
+        eq(connectionGrantChanges.outcome, 'applied'),
+        or(
+          inArray(connectionGrantChanges.kind, ['narrow_other', 'exclude_other']),
+          and(
+            eq(connectionGrantChanges.kind, 'undo'),
+            ne(connectionGrantChanges.targetAgentId, agentId)
+          )
+        ),
+        gt(connectionGrantChanges.createdAt, since)
+      )
+    )
+    .get();
+  return row?.n ?? NARROW_OTHERS_PER_HOUR;
 }

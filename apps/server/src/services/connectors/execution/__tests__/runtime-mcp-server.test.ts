@@ -79,6 +79,8 @@ describe('createConnectorRuntimeMcpServer', () => {
         { name: 'connectors.get_connection_request' },
         { name: 'connectors.narrow_own_access' },
         { name: 'connectors.narrow_agent_access' },
+        { name: 'connectors.approve_request' },
+        { name: 'connectors.undo_access_change' },
         { name: 'connectors.list_access_changes' },
         { name: 'connectors.execute_read' },
         { name: 'connectors.execute_write' },

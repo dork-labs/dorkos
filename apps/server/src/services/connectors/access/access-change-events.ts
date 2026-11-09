@@ -44,13 +44,17 @@ export interface DescribedAccessChange {
 export interface AccessChangeEvents {
   /** A change was applied. */
   changed(change: DescribedAccessChange): void;
-  /** A person undid one. */
+  /** Someone undid one: a person, or an agent (`by`). */
   undone(input: {
     changeId: string;
     undoId: string;
     actorAgentId: string;
     targetAgentId: string;
     app: { id: string; toolkit: string; label: string };
+    /** The agent that undid it; absent for a person. */
+    by?: { agentId: string };
+    /** An agent's Undo took another agent's access: the person hears now (G2). */
+    needsYou?: boolean;
   }): void;
   /** A change was refused (written to the ledger already). */
   refused(input: {
@@ -58,6 +62,8 @@ export interface AccessChangeEvents {
     actorAgentId: string;
     targetAgentId: string;
     connectionId: string;
+    /** What was refused, when it was not a narrowing. */
+    kind?: 'approve_read' | 'undo';
   }): void;
 }
 
@@ -93,6 +99,9 @@ export function describeAccessChange(input: {
           return `${actor} left itself out of sharing ${appName} with every agent`;
         case 'exclude_other':
           return `${actor} left ${target} out of sharing ${appName} with every agent`;
+        case 'approve_read':
+          // The designer's words, which the request card keeps when it ships.
+          return `Read access to ${serviceName(input.app.toolkit)} approved by ${actor}`;
         case 'narrow_own':
           return lowered
             ? `${actor} lowered its own ${appName} access to Read`
@@ -119,7 +128,8 @@ export function createAccessChangeEvents(deps: {
     changed(change) {
       const summary = change.summary(deps.agentName);
       recordAudit({
-        action: 'connectors.access_narrow',
+        action:
+          change.kind === 'approve_read' ? 'connectors.access_approve' : 'connectors.access_narrow',
         operation: 'modify',
         target: { type: 'connection', id: change.connectionId, name: change.appName },
         outcome: 'ok',
@@ -159,7 +169,11 @@ export function createAccessChangeEvents(deps: {
     },
     undone(input) {
       const appName = `${serviceName(input.app.toolkit)} (${input.app.label})`;
-      const summary = `Put back ${deps.agentName(input.targetAgentId)}'s ${appName} access, changed by ${deps.agentName(input.actorAgentId)}`;
+      const target = deps.agentName(input.targetAgentId);
+      const changedBy = deps.agentName(input.actorAgentId);
+      const summary = input.by
+        ? `${deps.agentName(input.by.agentId)} undid ${changedBy}'s change to ${target}'s ${appName} access`
+        : `Put back ${target}'s ${appName} access, changed by ${changedBy}`;
       recordAudit({
         action: 'connectors.access_undo',
         operation: 'modify',
@@ -172,8 +186,13 @@ export function createAccessChangeEvents(deps: {
         summary,
       });
       void deps.activity?.emit({
-        actorType: 'user',
-        actorLabel: 'You',
+        ...(input.by
+          ? {
+              actorType: 'agent' as const,
+              actorLabel: deps.agentName(input.by.agentId),
+              actorId: input.by.agentId,
+            }
+          : { actorType: 'user' as const, actorLabel: 'You' }),
         category: 'permissions',
         eventType: ACCESS_CHANGE_EVENT,
         resourceType: 'connection',
@@ -181,12 +200,34 @@ export function createAccessChangeEvents(deps: {
         resourceLabel: appName,
         summary,
         linkPath: everyAgentActivityLink(input.app.id),
-        metadata: { changeId: input.changeId, undoId: input.undoId, kind: 'undo' },
+        metadata: {
+          changeId: input.changeId,
+          undoId: input.undoId,
+          kind: 'undo',
+          targetAgentId: input.targetAgentId,
+        },
       });
+      if (input.by && input.needsYou) {
+        // An agent's Undo took another agent's access: a narrowing, so the
+        // person hears now, and can put it back (G2). The Undo here is the
+        // person's, on the Undo row itself.
+        void notify('connector.access_narrowed', {
+          changeId: input.undoId,
+          connectionId: input.app.id,
+          actorAgentId: input.by.agentId,
+          targetAgentId: input.targetAgentId,
+          title: summary,
+        });
+      }
     },
     refused(input) {
       recordAudit({
-        action: 'connectors.access_narrow',
+        action:
+          input.kind === 'approve_read'
+            ? 'connectors.access_approve'
+            : input.kind === 'undo'
+              ? 'connectors.access_undo'
+              : 'connectors.access_narrow',
         operation: 'modify',
         target: { type: 'connection', id: input.connectionId },
         outcome: 'refused',

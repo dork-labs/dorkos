@@ -70,6 +70,7 @@ export function listAccessChangesForOwner(
       targetAgentId: change.targetAgentId,
       connectionId: change.connectionId,
       reason: change.reason,
+      requestId: change.requestId,
       undoOf: change.undoOf,
       undoneBy: change.undoneBy,
       createdAt: change.createdAt,
