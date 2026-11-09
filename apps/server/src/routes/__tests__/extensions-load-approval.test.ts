@@ -447,6 +447,67 @@ describe('POST /api/extensions/:id/approve', () => {
     });
   });
 
+  /**
+   * "Allow all" (DOR-3583) approves several extensions at once, so an agent
+   * reaching it would be an agent allowing a whole plugin's code (Security,
+   * Nov 8). Same bar as approving one; no MCP tool.
+   */
+  describe('approve-set', () => {
+    const body = {
+      plugin: 'marketing',
+      members: [
+        {
+          id: 'my-ext',
+          version: '1.0.0',
+          expectedDigest: 'digest',
+          permissions: { runtime: 'in-process', net: [], run: [], agents: false },
+        },
+      ],
+      setHash: 'hash',
+    };
+
+    it('refuses an agent and approves nothing', async () => {
+      const res = await request(fixtureServer)
+        .post('/api/extensions/approve-set')
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send(body);
+
+      expect(res.status).toBe(403);
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+    });
+
+    it('refuses another site', async () => {
+      const res = await request(fixtureServer)
+        .post('/api/extensions/approve-set')
+        .set('origin', 'https://evil.example')
+        .send(body);
+
+      expect(res.status).toBe(403);
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+    });
+
+    it('refuses a caller with no session cookie once login is on', async () => {
+      state.authEnabled = true;
+      signedInUser = undefined;
+
+      const res = await request(fixtureServer).post('/api/extensions/approve-set').send(body);
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_cookie_required');
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+    });
+
+    it('refuses a set naming an extension no plugin installed', async () => {
+      manager.listRecords = vi.fn().mockReturnValue([stubRecord()]);
+
+      const res = await request(fixtureServer).post('/api/extensions/approve-set').send(body);
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('not_in_set');
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+    });
+  });
+
   describe('a page on another site, posting through the person browser', () => {
     it('is refused, and nothing is written', async () => {
       const res = await request(fixtureServer)

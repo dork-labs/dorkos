@@ -21,6 +21,7 @@ import { paletteSessionKeywords, type PaletteSessionItem } from './palette-sessi
 import type { PaletteRecentEntry } from './palette-recent';
 import type { SearchableItem } from './use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+import { useExtensionSetPaletteItems } from '@/layers/entities/extension';
 
 /** Quick actions that look through this computer's folders, which a hub has none of. */
 const HUB_HIDDEN_ACTIONS: ReadonlySet<string> = new Set(['discover', 'browse']);
@@ -233,6 +234,8 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
   // A hub has no remote access of its own to turn on or off.
   const remoteAccessRows = useRemoteAccessPaletteItems();
   const remoteAccessActions = isHub ? NO_ROWS : remoteAccessRows;
+  // "Review {plugin} extensions" opens the Allow all card (DOR-3583).
+  const extensionSetRows = useExtensionSetPaletteItems();
 
   const quickActions = useMemo(
     () => [
@@ -240,8 +243,9 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
         (item) => item.category === 'quick-action' && !(isHub && HUB_HIDDEN_ACTIONS.has(item.id))
       ),
       ...remoteAccessActions,
+      ...extensionSetRows,
     ],
-    [allPaletteItems, remoteAccessActions, isHub]
+    [allPaletteItems, remoteAccessActions, extensionSetRows, isHub]
   );
 
   const newActions = useMemo(

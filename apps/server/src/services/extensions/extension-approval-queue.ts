@@ -207,7 +207,7 @@ function contributedNouns(name: string, record: ExtensionRecord): string[] {
  * `create_extension`, or one somebody copied in by hand. DorkOS cannot tell
  * those apart, so the row says only that it was added, not who added it.
  */
-type Provenance = { kind: 'installer'; from: string } | { kind: 'added'; place: string };
+export type Provenance = { kind: 'installer'; from: string } | { kind: 'added'; place: string };
 
 /**
  * The folder a project-scoped path belongs to, as a short name.
@@ -224,7 +224,7 @@ function projectName(projectRoot: string): string {
  * @param record - The extension record.
  * @param dorkHome - DorkOS's data directory.
  */
-async function provenanceOf(record: ExtensionRecord, dorkHome: string): Promise<Provenance> {
+export async function provenanceOf(record: ExtensionRecord, dorkHome: string): Promise<Provenance> {
   const copyPath = path.resolve(record.path);
   // `<root>/.dork/extensions/<id>` for a project copy; `<root>/.dork/plugins/
   // <plugin>/.dork/extensions/<id>` for a project plugin's.
@@ -504,7 +504,9 @@ function agentGiftsOf(
  *
  * @param record - The extension record.
  */
-async function permissionsOf(record: ExtensionRecord): Promise<ExtensionApprovalPermissions> {
+export async function permissionsOf(
+  record: ExtensionRecord
+): Promise<ExtensionApprovalPermissions> {
   const hasPage = await hasClientEntry(record.runPath ?? record.path);
   const isolation = record.isolation;
   if (!isolation) return { runtime: 'in-process', net: [], run: [], agents: false, hasPage };

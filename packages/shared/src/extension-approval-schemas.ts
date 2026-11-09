@@ -382,3 +382,155 @@ export const TrustedSourcesResponseSchema = z
 
 /** Response of `GET /api/extensions/trusted-sources`. */
 export type TrustedSourcesResponse = z.infer<typeof TrustedSourcesResponseSchema>;
+
+/** The most extensions one "Allow all" may cover; a bigger set is approved one by one. */
+export const APPROVAL_SET_MAX_MEMBERS = 10;
+
+/** The code a set whose members, files or permissions moved since the card is refused with. */
+export const STALE_SET_CODE = 'stale_set';
+
+/** The code a set naming an extension its plugin did not install is refused with. */
+export const NOT_IN_SET_CODE = 'not_in_set';
+
+/** The code a set over {@link APPROVAL_SET_MAX_MEMBERS} is refused with. */
+export const TOO_MANY_IN_SET_CODE = 'too_many_in_set';
+
+/** The permission set one member was shown with: the same four facts a single approval echoes. */
+export const ApprovalSetPermissionsSchema = z.object({
+  runtime: z.enum(['in-process', 'subprocess']),
+  net: z.array(z.string()).max(64),
+  run: z.array(z.string()).max(16),
+  agents: z.boolean(),
+});
+
+/** The permission set one member was shown with. */
+export type ApprovalSetPermissions = z.infer<typeof ApprovalSetPermissionsSchema>;
+
+/** One member of a set as the card showed it, and as `POST /api/extensions/approve-set` echoes it. */
+export const ApprovalSetMemberSchema = z.object({
+  id: z.string().min(1),
+  version: z.string().min(1),
+  /** The digest of its files the card showed. */
+  expectedDigest: z.string().min(1),
+  permissions: ApprovalSetPermissionsSchema,
+});
+
+/** One member of a set as the card showed it. */
+export type ApprovalSetMember = z.infer<typeof ApprovalSetMemberSchema>;
+
+/**
+ * Body of `POST /api/extensions/approve-set` (DOR-3583): the plugin, every
+ * waiting member the card showed, and the hash that binds them. The server
+ * derives the set itself and refuses unless this matches it exactly.
+ */
+export const ApproveExtensionSetRequestSchema = z
+  .object({
+    plugin: z.string().min(1).max(200),
+    members: z.array(ApprovalSetMemberSchema).min(1).max(64),
+    setHash: z.string().min(1).max(128),
+  })
+  .openapi('ApproveExtensionSetRequest');
+
+/** Body of `POST /api/extensions/approve-set`. */
+export type ApproveExtensionSetRequest = z.infer<typeof ApproveExtensionSetRequestSchema>;
+
+/**
+ * The text a set's hash is taken over: one line per member,
+ * `id:version:digest:permissions-hash`, sorted. `sha256` is passed in so the
+ * server (node) and the app (Web Crypto) hash the same text the same way.
+ *
+ * @param members - The members.
+ * @param sha256 - Hex SHA-256 of a string.
+ */
+export async function approvalSetHash(
+  members: readonly ApprovalSetMember[],
+  sha256: (text: string) => Promise<string> | string
+): Promise<string> {
+  const lines = await Promise.all(
+    members.map(async ({ id, version, expectedDigest, permissions }) => {
+      const canonical = JSON.stringify({
+        runtime: permissions.runtime,
+        net: [...permissions.net].sort(),
+        run: [...permissions.run].sort(),
+        agents: permissions.agents,
+      });
+      return `${id}:${version}:${expectedDigest}:${await sha256(canonical)}`;
+    })
+  );
+  return sha256(lines.sort().join('\n'));
+}
+
+/** One member of a plugin's set, as the "Allow all" card lists it. */
+export const ApprovalSetMemberViewSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  /** One line on what it is for, or empty. */
+  purpose: z.string(),
+  version: z.string().min(1),
+  /** `waiting` is in the set; `allowed` is shown dimmed and untouched; `skipped` says why. */
+  state: z.enum(['waiting', 'allowed', 'skipped']),
+  /** Why a skipped member can't be approved, in a plain sentence. */
+  reason: z.string().optional(),
+  /** Whether it runs code inside DorkOS's server. */
+  runsInServer: z.boolean(),
+  /** Whether it can reach the internet. */
+  reachesInternet: z.boolean(),
+  /** What the card shows: where it runs and what it may reach. */
+  permissions: ExtensionApprovalPermissionsSchema,
+  /** The member as the request echoes it; only for a waiting one. */
+  echo: ApprovalSetMemberSchema.optional(),
+});
+
+/** One member of a plugin's set, as the card lists it. */
+export type ApprovalSetMemberView = z.infer<typeof ApprovalSetMemberViewSchema>;
+
+/**
+ * Everything the waiting members of a set may do together, derived by the
+ * server from the same members it hashes, so the card never shows less than
+ * "Allow all" approves (Security, Nov 8).
+ */
+export const ApprovalSetGrantSchema = z.object({
+  /** Names of members that would run inside DorkOS with full access to this computer. */
+  fullAccess: z.array(z.string()),
+  /** Every program a member may start, A–Z, without repeats. */
+  programs: z.array(z.string()),
+  /** Every tool a member would give agents, by title, A–Z, without repeats. */
+  agentTools: z.array(z.string()),
+  /** Names of members that may message your agents and start chats (`allow.agents`). */
+  agents: z.array(z.string()),
+  /** What they may reach: anything (a full-access member), or these hosts. */
+  network: z.object({ anything: z.boolean(), hosts: z.array(z.string()) }),
+});
+
+/** Everything the waiting members of a set may do together. */
+export type ApprovalSetGrant = z.infer<typeof ApprovalSetGrantSchema>;
+
+/** One plugin's extensions waiting to be allowed together (DOR-3583). */
+export const ExtensionApprovalSetSchema = z
+  .object({
+    /** The plugin that installed them: the group. */
+    plugin: z.string().min(1),
+    members: z.array(ApprovalSetMemberViewSchema),
+    /** The waiting members' combined grant, the card's total. */
+    grant: ApprovalSetGrantSchema,
+    /** {@link approvalSetHash} of the waiting members' echoes. */
+    setHash: z.string(),
+    /** More than {@link APPROVAL_SET_MAX_MEMBERS} wait: approve them one by one. */
+    tooMany: z.boolean(),
+  })
+  .openapi('ExtensionApprovalSet');
+
+/** One plugin's extensions waiting to be allowed together. */
+export type ExtensionApprovalSet = z.infer<typeof ExtensionApprovalSetSchema>;
+
+/** One member's answer from `POST /api/extensions/approve-set`. */
+export const ApprovalSetResultSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  ok: z.boolean(),
+  /** Why it was not allowed, in a plain sentence. */
+  reason: z.string().optional(),
+});
+
+/** One member's answer from `POST /api/extensions/approve-set`. */
+export type ApprovalSetResult = z.infer<typeof ApprovalSetResultSchema>;

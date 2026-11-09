@@ -19,13 +19,16 @@ import {
   useSeenBeforeStaleStore,
   useStepUpRisks,
   usePendingExtensionApprovals,
+  useApprovalSets,
 } from '@/layers/entities/extension';
 import {
   isExtensionOff,
   matchesExtensionSearch,
   sectionExtensions,
 } from '../lib/extension-row-state';
+import { extensionGroupState, groupExtensions, type ExtensionGroup } from '../lib/extension-groups';
 import { ExtensionRow } from './ExtensionRow';
+import { ExtensionGroupRow } from './ExtensionGroupRow';
 import { StaleApprovalRow } from './StaleApprovalRow';
 import { useForgetApproval, useRemoveExtension, useStaleApprovals } from '../api/removal-queries';
 import { TrustedSourcesSection } from './TrustedSourcesSection';
@@ -51,6 +54,8 @@ export function ExtensionsSettingsTab() {
   const forgetMutation = useForgetApproval();
   // What changed, and since when, for a row waiting for an OK.
   const { approvals } = usePendingExtensionApprovals();
+  // A plugin's extensions waiting to be allowed together (DOR-3583).
+  const { data: approvalSets = [] } = useApprovalSets();
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ExtensionFilter>('all');
@@ -171,7 +176,9 @@ export function ExtensionsSettingsTab() {
     });
   }
 
-  const sections = useMemo(() => sectionExtensions(extensions), [extensions]);
+  // A plugin's extensions are one row; everything else keeps its own.
+  const { groups, loose } = useMemo(() => groupExtensions(extensions), [extensions]);
+  const sections = useMemo(() => sectionExtensions(loose), [loose]);
 
   if (isLoading) {
     return (
@@ -204,7 +211,9 @@ export function ExtensionsSettingsTab() {
   }
 
   const installed = extensions.filter((ext) => ext.origin === 'user');
-  const needYouCount = sections.needsYou.length + staleApprovals.length;
+  const groupNeedsYou = (group: ExtensionGroup) => extensionGroupState(group).needsYou;
+  const needYouCount =
+    sections.needsYou.length + groups.filter(groupNeedsYou).length + staleApprovals.length;
   const offCount = installed.filter(isExtensionOff).length;
   // A pill with nothing behind it is hidden, so its filter falls back to All.
   const shown: ExtensionFilter = offCount === 0 ? 'all' : filter;
@@ -223,10 +232,21 @@ export function ExtensionsSettingsTab() {
           approval.id.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
         )
       : [];
-  const nothingMatches = needsYou.length + stale.length + everythingElse.length + core.length === 0;
+  const keptGroups = groups.filter(
+    (group) =>
+      group.members.some(keep) ||
+      (filter === 'all' &&
+        group.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  );
+  const needsYouGroups = keptGroups.filter(groupNeedsYou);
+  const otherGroups = keptGroups.filter((group) => !groupNeedsYou(group));
+  const needsYouCount = needsYou.length + needsYouGroups.length + stale.length;
+  const nothingMatches =
+    needsYouCount + otherGroups.length + everythingElse.length + core.length === 0;
 
-  const renderRow = (ext: ExtensionRecordPublic) => (
+  const rowFor = (ext: ExtensionRecordPublic, inGroup: boolean) => (
     <ExtensionRow
+      quietChip={inGroup}
       key={ext.id}
       extension={ext}
       pending={approvals.find((approval) => approval.id === ext.id)}
@@ -241,6 +261,20 @@ export function ExtensionsSettingsTab() {
       stepUpRisk={stepUpRisks?.find((risk) => risk.id === ext.id)}
       onRemove={handleRemove}
       isRemoving={removeMutation.isPending && removeMutation.variables === ext.id}
+    />
+  );
+  const renderRow = (ext: ExtensionRecordPublic) => rowFor(ext, false);
+
+  const renderGroup = (group: ExtensionGroup) => (
+    <ExtensionGroupRow
+      key={`group:${group.plugin}`}
+      group={group}
+      set={approvalSets.find((set) => set.plugin === group.plugin)}
+      open={openIds.has(`group:${group.plugin}`)}
+      onOpenChange={(open) => setOpen(`group:${group.plugin}`, open)}
+      onToggle={handleToggle}
+      togglingIds={togglingIds}
+      renderMember={(ext) => rowFor(ext, true)}
     />
   );
 
@@ -314,7 +348,7 @@ export function ExtensionsSettingsTab() {
         </div>
       ) : (
         <>
-          {needsYou.length + stale.length > 0 && (
+          {needsYouCount > 0 && (
             <section aria-labelledby="extensions-needs-you" data-testid="needs-you-section">
               <h3
                 id="extensions-needs-you"
@@ -323,6 +357,7 @@ export function ExtensionsSettingsTab() {
                 Needs you
               </h3>
               <ul className="space-y-0.5">
+                {needsYouGroups.map(renderGroup)}
                 {needsYou.map(renderRow)}
                 {stale.map((approval) => (
                   <StaleApprovalRow
@@ -340,12 +375,12 @@ export function ExtensionsSettingsTab() {
             </section>
           )}
 
-          {everythingElse.length > 0 && (
+          {otherGroups.length + everythingElse.length > 0 && (
             <section
               aria-labelledby="extensions-everything-else"
               data-testid="installed-extensions-section"
             >
-              {needsYou.length + stale.length > 0 && (
+              {needsYouCount > 0 && (
                 <h3
                   id="extensions-everything-else"
                   className="text-muted-foreground mb-1 px-3 text-[11px] font-medium max-sm:text-[13px]"
@@ -353,7 +388,10 @@ export function ExtensionsSettingsTab() {
                   Everything else
                 </h3>
               )}
-              <ul className="space-y-0.5">{everythingElse.map(renderRow)}</ul>
+              <ul className="space-y-0.5">
+                {otherGroups.map(renderGroup)}
+                {everythingElse.map(renderRow)}
+              </ul>
             </section>
           )}
 
