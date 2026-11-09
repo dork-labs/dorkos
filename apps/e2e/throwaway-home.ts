@@ -1,6 +1,7 @@
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { boundaryRootFor, mainCheckoutOf, widenedOutOfReach } from './boundary-root';
 
 /**
  * A throwaway server's own `HOME` (DOR-3587).
@@ -33,6 +34,20 @@ import { pathToFileURL } from 'node:url';
  * legitimately reaches falls outside it.
  */
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
+
+const MAIN_CHECKOUT = mainCheckoutOf(REPO_ROOT);
+
+/** The boundary itself: the checkout, widened only in a linked worktree (see `boundary-root.ts`). */
+const BOUNDARY_ROOT = boundaryRootFor(REPO_ROOT, MAIN_CHECKOUT);
+
+// Say once, up front, why project lookups will be refused, so a red spec isn't a mystery.
+if (widenedOutOfReach(REPO_ROOT, MAIN_CHECKOUT)) {
+  console.warn(
+    `[e2e] This worktree's main checkout (${MAIN_CHECKOUT}) is outside it, and reaching it would ` +
+      'put your home folder inside the test server boundary, so project lookups will be refused. ' +
+      'Run from a checkout or from a worktree inside it (for example .temp/worktrees/).'
+  );
+}
 
 /**
  * The environment that gives a server a home of its own: `HOME`, and every
@@ -122,7 +137,7 @@ export function bootServerOnThrowawayHome(dorkHome: string): string {
   const assignments = Object.entries({
     ...isolatedHomeEnv(throwawayHomeOf(dorkHome)),
     PLAYWRIGHT_BROWSERS_PATH: playwrightBrowsersPath(),
-    DORKOS_BOUNDARY: REPO_ROOT,
+    DORKOS_BOUNDARY: BOUNDARY_ROOT,
   })
     // Double quotes: this lands inside the leg's single-quoted `sh -c`.
     .map(([key, value]) => `${key}="${value}"`)

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -242,14 +242,35 @@ describe('every server runs on a throwaway home', () => {
     // with a 403 about a root nothing changed. Worked out here rather than taken
     // from `throwaway-home.ts`, so a wrong constant there fails too.
     const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
+    // In a linked worktree the boundary also holds the main checkout, or every
+    // project lookup is refused (`boundary-root.ts`), unless that would cover
+    // the home folder; then it stays the checkout. In a plain checkout, as in
+    // CI, it is exactly the checkout.
+    const mainCheckout = resolve(
+      execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      }).trim(),
+      '..'
+    );
+    const holds = (outer: string, inner: string) =>
+      inner === outer || inner.startsWith(`${outer}/`);
     const moved = legs.filter(({ command }) => /\sHOME="/.test(command));
     // Without this the loop below passes vacuously if HOME's spelling changes.
     expect(moved).toHaveLength(legs.length);
     for (const { command, dorkHome } of moved) {
-      expect({ dorkHome, boundary: /\bDORKOS_BOUNDARY="?([^"\s]+)/.exec(command)?.[1] }).toEqual({
-        dorkHome,
-        boundary: repoRoot,
-      });
+      const boundary = /\bDORKOS_BOUNDARY="?([^"\s]+)/.exec(command)?.[1] ?? '';
+      if (mainCheckout === repoRoot) {
+        expect({ dorkHome, boundary }).toEqual({ dorkHome, boundary: repoRoot });
+      } else {
+        const coversHome = holds(boundary, homedir());
+        expect({
+          dorkHome,
+          holdsCheckout: holds(boundary, repoRoot),
+          coversHome,
+          holdsMainOrStaysPut: holds(boundary, mainCheckout) || boundary === repoRoot,
+        }).toEqual({ dorkHome, holdsCheckout: true, coversHome: false, holdsMainOrStaysPut: true });
+      }
     }
   });
 });
