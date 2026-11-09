@@ -5,6 +5,57 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.135.1] - 2026-11-09
+
+> DorkOS 0.135.1 lets an agent give another agent the Read access it asked for, lets you remove an extension, and asks about all of a plugin's extensions on one card. A mini app's post in a room now counts as words DorkOS can't vouch for. This release changes the database, so read Going back before downgrading.
+
+### Note for people upgrading
+
+- This release changes the database. Read Going back below before downgrading.
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+
+### Security
+
+- **A mini app's post now counts as words from outside your team.** That includes a thread reply a mini app posts and a comment it passes on to an agent. Before, an agent that read one could still take another agent's access away. Now it can't, just as with a message from Telegram or Slack. Notes the agent saves in that turn are marked as having read outside words, and it can't use your shared browser. An agent that read outside words passes that on when it posts in a room, so the agent it wakes is held the same way. (DOR-4023)
+- **At Full autonomy, a refused attempt to take another agent's access shows in Activity** when the turn had read outside words. Full never asks, so that line is your record of it. Other refusals are kept in the audit log.
+
+DorkOS now counts a mini app's post in a room as words it can't vouch for. It doesn't yet count an email or web page read through a connected app, so these limits don't cover those cases. And when such a room turn starts or messages another chat, that chat's memory notes and agent-browser actions aren't yet limited the same way; access changes there are still refused.
+
+### Added
+
+- **An agent can approve another agent's request for Read on an app.** It can give only Read, and only on an app it holds itself, never more than it holds. It can't approve its own request, approve write access, or approve from a turn another agent started or one DorkOS marks as having read words it can't vouch for. You see each approval in Activity and can undo it.
+- **An agent can undo an access change, under the same rules.** Putting access back counts as approving it. Taking it away counts as narrowing it, so it needs a one-line reason and you hear about it in Needs you. When you Undo a change, that's final: no agent can reverse it. Only you can let an agent back into an app it was left out of.
+- **Remove an extension** from Settings → Extensions. Open its row and choose Remove. It asks first, with Cancel ready, and Esc backs out. Its folder and everything it was allowed are deleted, so nothing put back there later can reuse your old yes. Extensions that came with a plugin are removed by uninstalling the plugin. (DOR-3541)
+- **A plugin's extensions show as one row** in Settings → Extensions, with one switch for the ones you already allowed. Open it to see each one and turn them on or off on their own. (DOR-3583)
+- **One card asks about all of a plugin's waiting extensions:** what they can do together, then each one. **Allow all** still allows each one on its own, with its own check of its files. If one can't be allowed, the card says which. An extension added to the plugin later, or one whose files changed since you allowed it, still asks on its own card. ⌘K offers "Review … extensions" to open it. (DOR-3583)
+
+### Changed
+
+- **A request another agent approved says so.** The card still shows who asked and for which app. Under that it reads "Approved by DorkOS PM · Read only", with that agent's picture and the time. It stays in Needs you for a day, then you'll find it in Activity.
+- It shows the agent as it was when it approved. If the agent changes its name later, the card doesn't change. If you undo the approval, it leaves Needs you, and the request in the chat says "Undone by you".
+- A request for write access says "Write access needs you." above the buttons. Agents can only approve Read, so only you can answer it.
+- When an agent asks to approve another agent's request, you see names, not codes. The card shows which agent asked, with its picture, and which app. The request's code is behind the ⓘ button.
+- In the Inbox, an extension that wants to run now says so plainly: "Flow wants to run on this computer." It lists what it can reach on three short lines, Access, Runs as and Network, and you answer with an Allow or Not now button right on the card.
+- An extension whose files changed after you allowed it now says its screens are paused until you look. It shows what changed and when, and you answer with Allow the new version or Keep paused.
+
+### Fixed
+
+- **Your apps show up again.** On 0.135.0, one app that never finished loading left the Apps page empty and hid app settings. Now each app loads on its own, and one that's stuck says "Not working" with Try again.
+- An extension whose folder is gone no longer keeps its approval out of sight. It shows under "Needs you" as "Folder missing", with Forget it to clear what it was allowed. (DOR-3372)
+- Typing "settings" in the command palette and pressing Enter opens Settings again. It had been opening Settings → Extensions with the first app's row already open.
+
+### Going back
+
+0.135.1 changes one table in the database, and 0.135.0 starts on it as it is. To go back, install 0.135.0.
+
+Read access one agent approved for another stays on 0.135.0. To take it away there, change that agent's access on the Connections page.
+
+If an agent was waiting for your OK to approve another agent's request, that card still shows on 0.135.0, without a label, but answering it does nothing. Answer the other agent's request yourself instead.
+
+If an agent undid a change and took another agent's access away while you were on 0.135.1, Undo in Needs you says "Nothing to undo there." on 0.135.0. Change that agent's access on the Connections page instead.
+
+DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.135.0, it's named `dork-<date>-<time>-pre-20261109000421_connection_grant_approvals.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.135.0. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
+
 ## [0.135.0] - 2026-11-08
 
 > DorkOS 0.135.0 gives your apps a home in the sidebar, lets an agent give up app access or take it from another agent, and shows each extension on one line in Settings. When one agent takes another's access away, you can Undo it in Needs you. This release changes the database, so read Going back before downgrading.
@@ -534,32 +585,4 @@ This release adds five tables and three columns to DorkOS's own database, and a 
 - At Full autonomy, a chat an extension starts, like one from a comment on an "Only you can do these" list, can still stop and show you a card.
 - At Full autonomy, an agent that tries to loosen a permission is told no only if it has read outside words. Otherwise you get a card and you decide, the same as below Full.
 
-## [0.127.1] - 2026-10-30
-
-> DorkOS 0.127.1 asks you to confirm it's you before things only you can do, gives each agent one voice in each room, and cuts more waits at Full autonomy.
-
-### Changed
-
-- Each agent now has one voice in each room. If another of its chats tries to post there, the draft goes to the agent's own chat in that room. That chat is told to read the room first, then post the draft, reword it, or say why not. Posts through DorkOS's external MCP server aren't affected.
-- A message passed on this way says where it came from, like "Shared from #team-product at Dorian's request". The room or chat it came from hears whether it was shared.
-- An agent that isn't in a room can't post there, and DorkOS won't add it for you. From a DorkOS chat, it's told to ask the person who runs DorkOS.
-- A package installed for all projects can now mark a scheduled task as project-only. It no longer shows up as a global schedule, or asks for approval there. Each project with the file the package names gets its own copy on its Schedules page, switched off. Turn it on where you want it. If a project drops that file, a copy you once switched on stays, and a change to the package's task can still pause it.
-
-### Fixed
-
-- Before DorkOS reads a git repository for you, it checks the repository's own settings. If it finds anything outside a short list of ordinary settings, it skips the read. The same check runs before DorkOS makes or removes a workspace. A chat set to Full autonomy still gets its workspace made, and Activity notes it. These reads don't use the network, your saved git logins or your own git settings.
-- At Full autonomy, an agent that tries to open up a setting only you may change, like remote access or which hooks may run, is now told no, and Activity gets a line. Before, it put a card in front of you and waited. Many of these can still be turned off without asking, like switching the tunnel off, which also adds a line to Activity. Below Full, the agent still asks you when you're there to answer.
-- A Claude Code agent set to Full autonomy no longer waits on a Needs you ticket because of settings in its folder. They now load, and Activity says so. This doesn't count as your approval: move the agent below Full and DorkOS holds any settings you haven't approved and asks you.
-
-### Security
-
-- Some things only you can do in DorkOS, like approving what an agent asked for, now need you to confirm it's you. In a browser on the computer DorkOS runs on, that means entering your DorkOS password once, and it stays confirmed for about a month after you last use it, unless you sign out. The desktop app confirms you by itself, and on other devices your normal sign-in counts. Most browsing doesn't ask, and nothing changes until you have an owner account.
-- The DorkOS app now ignores `NODE_OPTIONS` (a setting that loads extra code into Node) and won't start with debugging switches like `--inspect`. It also won't start if its main app file changed after it was built.
-
-### Known issues
-
-- At Full autonomy, a package that wants to run its own commands can still put a card in front of you, including a package DorkOS didn't install. A later release changes this.
-- A chat an extension starts, like one from a comment on an "Only you can do these" list, can still show cards at Full autonomy. That ends in the next release.
-- At Full autonomy, an agent that has read outside words and tries to loosen a permission is told no. Without outside words, and below Full, you get a card and you decide. In the next release it's refused at Full in every turn.
-
-Older releases (v0.1.0 – v0.127.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.127.1) live in the [Changelog archive](/changelog-archive).
