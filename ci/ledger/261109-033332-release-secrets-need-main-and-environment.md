@@ -30,10 +30,20 @@ What changed:
   merge-tail `arm`, the queue guard, the Dependabot lockfile repair and the
   Neon sweep.
 - Desktop signs only on a `v*` tag or a `release/*` branch; a `sign` input can
-  only turn it off. Any other run builds unsigned, names no environment and
-  publishes nothing: the lane test path.
+  only turn it off. `tag-is-on-main` is skipped only for a `release/*` branch
+  (keyed on the ref alone); every other ref must be on main.
+- Publishing is gated in structure: in the four release workflows, every job
+  that names `release-publish` or holds `contents: write`/`packages: write`
+  has a job-level `if:` opening with `startsWith(github.ref, 'refs/tags/v')`,
+  and the census's new `tag-gate` check (`tag_gate` in `ci/config.yaml`)
+  refuses one that does not. Desktop's builds drop to `contents: read`, and a
+  new tag-only `publish` job attaches and publishes. That adds back one ubuntu
+  runner assignment per release, the risk DOR-2728 removed.
 - `publish-docker` refuses any run that is not on a `v*` tag, manual runs
   included.
+- `update-homebrew` drops `release: published`, which never fired (the release
+  is published with GITHUB_TOKEN, which starts no workflow), so each release
+  asks for one Homebrew approval, not two.
 - `queue-repeat-guard` moves from `merge_group` (the pull request's own copy of
   the workflow) to `workflow_run` on changelog-fragment-check (main's copy), so
   it can enter `automation`. It checks out main only and validates the queue

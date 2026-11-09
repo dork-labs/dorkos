@@ -15,6 +15,7 @@ import type { Finding } from './finding.ts';
 import { CONFIG_PATH, loadHandFiles, type HandFiles } from './load.ts';
 import { checkRequiredContexts, checkTimeouts } from './required.ts';
 import { checkWorkflowIntent } from './required-workflows.ts';
+import { checkTagGate } from './tag-gate.ts';
 import { loadWorkflows, type WorkflowModel } from './workflows.ts';
 
 /** Inputs to one census run. */
@@ -368,6 +369,7 @@ export function runCensus(opts: CensusOptions): CensusResult {
   if (files.allowlist) findings.push(...allow.leftovers());
   findings.push(...checkCrossFile(opts.root, files));
   findings.push(...checkCanary(files, workflows));
+  findings.push(...checkTagGate(files, workflows));
   findings.push(...checkDocBlocks(opts.root, files, opts.fix === true, fixed));
   return { findings, fixed };
 }

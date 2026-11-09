@@ -33,6 +33,21 @@ github_repo: dork-labs/dorkos
 data_tag_prefix: ci-steward-data/
 data_tag_ruleset_id: 23705388
 
+# Publishing only on a release tag, in structure (DOR-4030): in these
+# workflows, every job that names a publishing environment, or whose
+# GITHUB_TOKEN may write contents or packages, must open its job-level `if:`
+# with `condition`. The census refuses one that does not. A `release/*`
+# rehearsal or a branch run then reaches no job that can publish.
+tag_gate:
+  workflows:
+    - desktop-release.yml
+    - publish-docker.yml
+    - publish-community.yml
+    - update-homebrew.yml
+  environments:
+    - release-publish
+  condition: startsWith(github.ref, 'refs/tags/v')
+
 # Secrets that live only in a deployment environment (DOR-4030), so a workflow
 # on any other ref cannot read them. The collector goes red when one of these
 # names is back at repository level, or an environment is gone, loses its

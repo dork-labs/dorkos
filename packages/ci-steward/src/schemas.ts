@@ -215,6 +215,21 @@ export const ConfigSchema = z
           .strict()
       )
       .default([]),
+    /**
+     * Publishing only on a release tag, in structure (DOR-4030). In each of
+     * `workflows`, every job that names one of `environments`, or whose
+     * GITHUB_TOKEN may write contents or packages, must open its job-level
+     * `if:` with `condition`, with no top-level `||` after it. Absent: nothing
+     * is checked.
+     */
+    tag_gate: z
+      .object({
+        workflows: z.array(z.string().regex(/^[\w.-]+\.ya?ml$/, 'a workflow file name')).min(1),
+        environments: z.array(z.string().min(1)),
+        condition: z.string().min(1),
+      })
+      .strict()
+      .optional(),
     hand_files: z
       .object({
         required_checks: RepoPath,

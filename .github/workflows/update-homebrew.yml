@@ -1,24 +1,24 @@
 name: Update Homebrew Formula
 
 on:
-  # Two automatic triggers per release, on purpose:
+  # One automatic trigger per release: the tag push (`v*`), which updates the
+  # CLI formula once npm has the version. The dmg is NOT attached yet at this
+  # point (desktop-release.yml spends 5-15+ min signing and notarizing), so
+  # the cask step skips on this run.
   #
-  #   - Tag push (`v*`): updates the CLI formula ASAP. The dmg is NOT attached
-  #     yet at this point — desktop-release.yml spends 5-15+ min on macOS
-  #     sign+notarize and only flips the draft release to published after its
-  #     verify jobs pass — so the cask step gracefully skips on this run.
-  #   - Release published: updates the desktop cask. By publish time the dmg is
-  #     attached AND verified (and npm is long since live), so the cask bump
-  #     actually lands. The formula steps re-run too; the commit step is
-  #     idempotent, so an unchanged formula is a logged no-op.
+  # There used to be a second, `release: published`, meant to land the cask
+  # bump. It never fired: desktop-release.yml publishes the release with
+  # GITHUB_TOKEN, and GitHub starts no workflow for an event that token
+  # caused. Every run on record (checked 2026-11-09) is a tag push. Under
+  # DOR-4030 each run also asks Dorian to approve `release-publish`, so a
+  # second trigger would only add a click; it was removed. The cask bump is
+  # a manual run from the release tag once the dmg is attached.
   #
   # `workflow_dispatch` works only for manual runs started from a `v*` tag:
   # the `release-publish` environment deploys nothing else, main included
   # (DOR-4030).
   push:
     tags: ['v*']
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -32,9 +32,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
-  # DOR-4030: the tap is updated only for a commit on main. On a release
-  # event GITHUB_SHA is the release tag's commit; on a manual run it is the
-  # chosen ref's head. Only the commit graph is fetched (tree:0), anonymously,
+  # DOR-4030: the tap is updated only for a commit on main. GITHUB_SHA is the
+  # tag's commit, on a tag push or a manual run from the tag. Only the commit graph is fetched (tree:0), anonymously,
   # so this job reads no secret and holds no token. It is a backstop: the tap
   # token's real lock is the `release-publish` environment on update-formula.
   tag-is-on-main:
@@ -60,11 +59,12 @@ jobs:
 
   update-formula:
     needs: tag-is-on-main
+    # Publishes, so it runs only on a `v*` tag (DOR-4030; the census's tag gate checks this line).
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # HOMEBREW_TAP_TOKEN lives only in the `release-publish` environment
     # (DOR-4030), which needs Dorian's approval and deploys only `v*` tags. A
-    # healthy release runs this job twice (tag push, then release published),
-    # so it asks for approval twice. A manual run must start from a `v*` tag.
+    # manual run must start from a `v*` tag.
     environment: release-publish
     # Read-only: the tap push uses HOMEBREW_TAP_TOKEN, and this token only
     # reads this repository's releases for the cask step.
@@ -79,14 +79,10 @@ jobs:
         id: version
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             # Tag run: derive the version from the pushed tag (strip the `v`).
             VERSION="${GITHUB_REF_NAME#v}"
-          elif [ "$GITHUB_EVENT_NAME" = "release" ]; then
-            # Release-published run: derive it from the release's tag.
-            VERSION="${RELEASE_TAG#v}"
           elif [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
           else
@@ -97,22 +93,20 @@ jobs:
 
       # On a tag run the tag is pushed before npm publish finishes, so wait for
       # the exact version to land on npm before computing its tarball SHA (the
-      # tarball 404s until then). Also runs on release-published events — cheap,
-      # since npm is live long before publish and the wait exits on first hit.
-      # Skipped for workflow_dispatch, which either names an already-published
-      # version or reads npm's current latest — keeping manual runs
+      # tarball 404s until then). Skipped for workflow_dispatch, which either
+      # names an already-published version or reads npm's current latest — keeping manual runs
       # byte-for-byte as before. Shares scripts/wait-for-npm.sh with
       # publish-docker.yml's "Wait for npm package availability" step
       # (DOR-1606) rather than carrying its own copy of the loop.
       - name: Checkout for the shared npm-wait script
-        if: github.event_name == 'push' || github.event_name == 'release'
+        if: github.event_name == 'push'
         uses: actions/checkout@v7
         with:
           sparse-checkout: |
             scripts/wait-for-npm.sh
 
       - name: Wait for npm package availability
-        if: github.event_name == 'push' || github.event_name == 'release'
+        if: github.event_name == 'push'
         run: bash scripts/wait-for-npm.sh "${{ steps.version.outputs.version }}"
 
       - name: Compute SHA256
@@ -147,8 +141,8 @@ jobs:
       # the tap OR the GitHub release for this version has no macOS .dmg asset
       # yet — the CLI formula update still lands on its own. On the tag-push
       # run the dmg is never attached yet (see the trigger comment up top), so
-      # the skip path is expected there; the release-published run is the one
-      # that lands the cask bump.
+      # the skip path is expected there; a manual run from the tag, once the
+      # dmg is attached, is the one that lands the cask bump.
       #
       # When both are present: download the dmg, compute its sha256, and rewrite
       # the cask's `version` + `sha256` fields (the cask's `url` interpolates
@@ -200,10 +194,9 @@ jobs:
           if [ -f Casks/dorkos-desktop.rb ]; then
             git add Casks/dorkos-desktop.rb
           fi
-          # Idempotent: a healthy release runs this job twice (tag push, then
-          # release published). If this run changed nothing — e.g. the formula
-          # was already bumped by the tag-push run and the cask is unchanged —
-          # log and exit cleanly instead of letting `git commit` fail.
+          # Idempotent: a manual re-run after the tag push may change nothing
+          # (the formula is already bumped and the cask unchanged), so log and
+          # exit cleanly instead of letting `git commit` fail.
           if git diff --cached --quiet; then
             echo "Nothing to update — tap already at ${PKG_VERSION}."
             exit 0

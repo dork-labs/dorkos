@@ -48,6 +48,8 @@ jobs:
 
   build-and-push:
     needs: tag-is-on-main
+    # Publishes, so it runs only on a `v*` tag (DOR-4030; the census's tag gate checks this line).
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # 75 = up to 30 minutes waiting for the just-published npm package to
     # become fetchable (scripts/wait-for-npm.sh, DOR-1606) plus the same 45
@@ -130,6 +132,8 @@ jobs:
   # attestation that is verified before the job passes.
   build-and-push-hub:
     needs: tag-is-on-main
+    # Publishes, so it runs only on a `v*` tag (DOR-4030; the census's tag gate checks this line).
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # Same build and the same npm wait as build-and-push above.
     timeout-minutes: 75
@@ -235,7 +239,8 @@ jobs:
   # `v*` tag-push path, like build-and-push above.
   mirror-docker-hub:
     needs: [tag-is-on-main, build-and-push]
-    if: vars.DOCKERHUB_MIRROR == 'true'
+    # Publishes, so it runs only on a `v*` tag (DOR-4030; the census's tag gate checks this line).
+    if: startsWith(github.ref, 'refs/tags/v') && vars.DOCKERHUB_MIRROR == 'true'
     runs-on: ubuntu-latest
     # DOCKERHUB_USERNAME and DOCKERHUB_TOKEN live only in the `release-publish`
     # environment (DOR-4030), which needs Dorian's approval and deploys only

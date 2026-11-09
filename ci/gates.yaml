@@ -123,13 +123,16 @@ gates:
   # --- desktop-release.yml ---
   - id: wf.desktop-release.tag-is-on-main
     source: .github/workflows/desktop-release.yml
-    purpose: Refuses to publish the desktop apps from a tag on a commit that is not on main; a run that is not on a tag publishes nothing and skips it.
+    purpose: Refuses any desktop run for a commit that is not on main, except a release/* branch rehearsal, which can never reach publish.
   - id: wf.desktop-release.build-macos
     source: .github/workflows/desktop-release.yml
-    purpose: Builds, signs and notarizes the macOS desktop app on a release tag, checks its signature and Gatekeeper, attaches it, and publishes the draft release.
+    purpose: Builds the macOS desktop app, signs and notarizes it on a v* tag or release/* branch, checks its signature and Gatekeeper, and uploads it for publish.
   - id: wf.desktop-release.build-windows
     source: .github/workflows/desktop-release.yml
-    purpose: Builds the unsigned Windows installer on a release tag, silent-installs it, and attaches it, without blocking the release.
+    purpose: Builds the unsigned Windows installer, silent-installs it, and uploads it for publish, without blocking the release.
+  - id: wf.desktop-release.publish
+    source: .github/workflows/desktop-release.yml
+    purpose: On a v* tag only, attaches the verified macOS and Windows artifacts to the draft release and publishes it; the one job here that may write to a release.
 
   # --- desktop-renderer.yml ---
   - id: wf.desktop-renderer.renderer-defines

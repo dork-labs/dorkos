@@ -39,6 +39,10 @@ export interface JobModel {
   needs: string[];
   timeoutMinutes?: unknown;
   continueOnError?: unknown;
+  /** The deployment environment's name as written (`environment:` or `environment.name`). */
+  environment?: string;
+  /** `permissions:` as written: a mapping, a `read-all`/`write-all` string, or absent. */
+  permissions?: unknown;
   steps: StepModel[];
 }
 
@@ -66,6 +70,8 @@ export interface WorkflowModel {
   /** Repo-relative path. */
   path: string;
   triggers: Map<string, TriggerModel>;
+  /** The workflow-level `permissions:` as written, which a job without its own inherits. */
+  permissions?: unknown;
   jobs: JobModel[];
 }
 
@@ -141,6 +147,13 @@ function parseWorkflow(file: string, relPath: string, text: string): WorkflowMod
       needs: asStrings(job.needs) ?? [],
       timeoutMinutes: job['timeout-minutes'],
       continueOnError: job['continue-on-error'],
+      environment:
+        typeof job.environment === 'string'
+          ? job.environment
+          : isObj(job.environment) && typeof job.environment.name === 'string'
+            ? job.environment.name
+            : undefined,
+      permissions: job.permissions,
       steps,
     });
   }
@@ -149,6 +162,7 @@ function parseWorkflow(file: string, relPath: string, text: string): WorkflowMod
     stem: file.replace(/\.ya?ml$/, ''),
     path: relPath,
     triggers: parseTriggers(doc.on),
+    permissions: doc.permissions,
     jobs,
   };
 }
