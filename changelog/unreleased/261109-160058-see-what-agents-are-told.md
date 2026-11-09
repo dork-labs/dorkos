@@ -2,6 +2,7 @@
 covers:
   - 'feat: see what agents are told, from the builders that write it (context viewer phase 3)'
   - 'fix(server): agent_instructions joins the guarded read-only tools on the external MCP server'
+  - 'fix(client): a long agent name truncates in the profile page header and stays clear of the close button'
 ---
 
 ### Added
@@ -15,3 +16,4 @@ covers:
 ### Changed
 
 - **The small preview under the Instructions and Boundaries editors is gone.** It rebuilt part of the instructions in the app and could fall out of step. The new page is written by the same code a real chat uses.
+- **A long agent name no longer runs into the close button on a phone.** The name shortens with "…", and its status gets its own line.
