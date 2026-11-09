@@ -20,7 +20,7 @@ import type {
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
 import { TaskApprovals } from './approvals/task-approvals.js';
-import { RunSessionStore } from './session/run-session-store.js';
+import { RunSessionStore, type RunSessionBinding } from './session/run-session-store.js';
 import { TaskFileSync } from './sync/task-file-sync.js';
 import { scheduleContentKey } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
@@ -669,9 +669,9 @@ export class TaskStore {
     return this.runSessions.latestStickyRun(taskId);
   }
 
-  /** Read the durable owner of a prior run's conversation, never inferred from cwd. */
-  getRunSessionAgentPath(sessionId: string): string | null {
-    return this.runSessions.getRunSessionAgentPath(sessionId);
+  /** Read a prior conversation's durable runtime and owner, never inferred from cwd. */
+  getRunSessionBinding(sessionId: string): RunSessionBinding | null {
+    return this.runSessions.getRunSessionBinding(sessionId);
   }
 
   /** Count total runs, optionally filtered by task. */

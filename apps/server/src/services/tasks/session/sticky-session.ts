@@ -43,6 +43,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { Task } from '@dorkos/shared/types';
+import type { RunSessionBinding } from './run-session-store.js';
 
 /** The store method {@link resolveRunSession} needs — the resume-target lookup. */
 export interface StickySessionLookup {
@@ -55,7 +56,7 @@ export interface StickySessionLookup {
 
 /** Dispatch also reads the durable owner before resuming any history. */
 interface RunSessionLookup extends StickySessionLookup {
-  getRunSessionAgentPath(sessionId: string): string | null;
+  getRunSessionBinding(sessionId: string): RunSessionBinding | null;
 }
 
 /** Which session a run runs on, and whether it resumes existing history. */
@@ -123,18 +124,16 @@ export function resolveRunSession(
   const previous = lookup.latestStickyRun(task.id);
   if (!previous) return freshSession();
 
-  // A prior run with no runtime on record — one written before the column
-  // existed — is resumed exactly as it always was. "Unknown" and "different"
-  // must not collapse: guessing here would manufacture a mismatch for every
-  // sticky task older than this change and throw away the history sticky exists
-  // to carry. Only a recorded runtime that DISAGREES starts over.
+  // A run predating resolved_runtime may still have a durable binding. Check
+  // that below rather than inferring ownership or backfilling old history.
   if (previous.runtime !== null && previous.runtime !== opts.runtimeType) {
     return freshSession();
   }
   // History belongs to its recorded owner. Reassignment, removing an agent,
   // and an old unrecorded conversation acquiring an agent all start fresh;
   // otherwise recordRunSession could grant apps to unverified prior history.
-  if (lookup.getRunSessionAgentPath(previous.sessionId) !== (opts.agentPath ?? null)) {
+  const binding = lookup.getRunSessionBinding(previous.sessionId);
+  if (binding?.runtime !== opts.runtimeType || binding.agentPath !== (opts.agentPath ?? null)) {
     return freshSession();
   }
   return { sessionId: previous.sessionId, hasStarted: true };
@@ -191,8 +190,8 @@ export function stickyAccountLocked(
   if (change.toAccount === change.fromAccount || !change.sticky) return false;
   const previous = lookup.latestStickyRun(taskId);
   if (!previous) return false;
-  // A prior run with no runtime on record resumes whatever it is asked, so any
-  // string answers "same runtime" there.
+  // Keep the account lock conservative when its runtime is unknown. Dispatch
+  // separately requires an exact durable runtime and agent before any resume.
   const runtimeType = change.runtime ?? previous.runtime ?? 'claude-code';
   return previous.runtime === null || previous.runtime === runtimeType;
 }

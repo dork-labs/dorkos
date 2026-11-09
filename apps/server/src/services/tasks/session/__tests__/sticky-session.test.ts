@@ -65,10 +65,44 @@ function openRun(taskId: string) {
   return store.createRun(taskId, 'scheduled');
 }
 
+/** An agent-less session whose runtime was durably recorded before this run. */
+function recordSession(sessionId: string, runtime: string): void {
+  db.insert(sessionMetadata)
+    .values({
+      sessionId,
+      runtime,
+      agentPath: null,
+      createdAt: new Date().toISOString(),
+    })
+    .run();
+}
+
 /** What every session route's `parseSessionId` will accept. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe('resolveRunSession', () => {
+  it('starts fresh when the durable runtime disagrees even though the recorded agent matches', () => {
+    const t = task();
+    completedRun(t.id, 'sess-runtime-mismatch', 'codex');
+    db.insert(sessionMetadata)
+      .values({
+        sessionId: 'sess-runtime-mismatch',
+        runtime: 'claude-code',
+        agentPath: '/agents/a',
+        createdAt: new Date().toISOString(),
+      })
+      .run();
+    expect(
+      resolveRunSession(store, t, { runtimeType: 'codex', agentPath: '/agents/a' }).hasStarted
+    ).toBe(false);
+  });
+
+  it('starts fresh for unrecorded history even when the run has no agent', () => {
+    const t = task();
+    completedRun(t.id, 'sess-unrecorded', 'claude-code');
+    expect(resolveRunSession(store, t, { runtimeType: 'claude-code' }).hasStarted).toBe(false);
+  });
+
   it.each([undefined, '/agents/b'])(
     'starts fresh when the prior owner differs from %s',
     (agentPath) => {
@@ -148,6 +182,7 @@ describe('resolveRunSession', () => {
   it('resumes the prior session when the runtime has not changed', () => {
     const t = task();
     completedRun(t.id, 'sess-old', 'claude-code');
+    recordSession('sess-old', 'claude-code');
     openRun(t.id);
 
     expect(resolveRunSession(store, t, { runtimeType: 'claude-code' })).toEqual({
@@ -169,13 +204,10 @@ describe('resolveRunSession', () => {
     expect(resolved.sessionId).toMatch(UUID);
   });
 
-  it('still resumes a prior run with NO runtime on record', () => {
-    // The discriminating case. "Unknown" and "different" must not collapse: a
-    // guess would manufacture a mismatch for every sticky task whose earlier
-    // runs predate `resolved_runtime`, throwing away the history sticky exists
-    // to carry.
+  it('resumes a prior run without resolved_runtime only when durable ownership matches', () => {
     const t = task();
     completedRun(t.id, 'sess-ancient', null);
+    recordSession('sess-ancient', 'claude-code');
     openRun(t.id);
 
     expect(resolveRunSession(store, t, { runtimeType: 'claude-code' })).toEqual({
@@ -191,6 +223,7 @@ describe('resolveRunSession', () => {
     const t = task();
     completedRun(t.id, 'sess-first', 'claude-code');
     completedRun(t.id, 'sess-second', 'codex');
+    recordSession('sess-second', 'codex');
 
     expect(resolveRunSession(store, t, { runtimeType: 'claude-code' }).hasStarted).toBe(false);
     expect(resolveRunSession(store, t, { runtimeType: 'codex' })).toEqual({

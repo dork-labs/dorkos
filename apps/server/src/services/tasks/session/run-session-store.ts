@@ -1,6 +1,12 @@
 /** Durable history and ownership reads for scheduled conversations. */
 import { and, desc, eq, isNotNull, pulseRuns, sessionMetadata, sql, type Db } from '@dorkos/db';
 
+/** Authoritative ownership, read together from one session metadata row. */
+export interface RunSessionBinding {
+  runtime: string | null;
+  agentPath: string | null;
+}
+
 /** The run and session tables behind sticky-session decisions. */
 export class RunSessionStore {
   constructor(private readonly db: Db) {}
@@ -20,13 +26,13 @@ export class RunSessionStore {
   }
 
   /** Read only recorded ownership: a working directory confers no authority. */
-  getRunSessionAgentPath(sessionId: string): string | null {
+  getRunSessionBinding(sessionId: string): RunSessionBinding | null {
     return (
       this.db
-        .select({ agentPath: sessionMetadata.agentPath })
+        .select({ runtime: sessionMetadata.runtime, agentPath: sessionMetadata.agentPath })
         .from(sessionMetadata)
         .where(eq(sessionMetadata.sessionId, sessionId))
-        .get()?.agentPath ?? null
+        .get() ?? null
     );
   }
 }
