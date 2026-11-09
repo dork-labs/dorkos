@@ -10,6 +10,8 @@
 import { SignInRefresher } from '../../services/connectors/resources/sign-in-refresh.js';
 import { createConnectorAccess } from '../../services/connectors/access/connector-access.js';
 import { AccessNarrowingService } from '../../services/connectors/access/access-narrowing.js';
+import { AccessApprovalService } from '../../services/connectors/access/access-approval.js';
+import { createApprovalRequests } from '../../services/connectors/access/approval-requests.js';
 import { createAccessChangeEvents } from '../../services/connectors/access/access-change-events.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { ConnectorAuthenticationFlowService } from '../../services/connectors/resources/authentication-flow-service.js';
@@ -207,18 +209,27 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
     owner.kind === 'local_install' &&
     owner.installationId === connectorOwner.installationId &&
     refs.meshCore?.getProjectPath(agentId) !== undefined;
-  // Agents taking connection access away (spec `agent-grant-autonomy` phase 2).
+  // Agents changing connection access (spec `agent-grant-autonomy`): taking it
+  // away (phase 2), and approving another agent's read request (phase 3).
+  const accessChangeEvents = createAccessChangeEvents({
+    activity: activityService,
+    agentName: (agentId) => {
+      const agent = refs.meshCore?.list().find((candidate) => candidate.id === agentId);
+      return agent ? (agent.displayName ?? agent.name) : agentId;
+    },
+  });
   const connectorAccessNarrowing = new AccessNarrowingService({
     db,
     ownsAgent: connectorOwnsAgent,
     ...(managedConnectorAuthority && { managedAuthority: managedConnectorAuthority }),
-    events: createAccessChangeEvents({
-      activity: activityService,
-      agentName: (agentId) => {
-        const agent = refs.meshCore?.list().find((candidate) => candidate.id === agentId);
-        return agent ? (agent.displayName ?? agent.name) : agentId;
-      },
-    }),
+    events: accessChangeEvents,
+  });
+  // The request service is built in a later step; the approval reaches it then.
+  const connectorAccessApproval = new AccessApprovalService({
+    db,
+    requests: createApprovalRequests(db, () => refs.connectorAgentRequests),
+    ...(managedConnectorAuthority && { managedAuthority: managedConnectorAuthority }),
+    events: accessChangeEvents,
   });
   const connectorEventDestinations = {
     authorize: (
@@ -403,6 +414,7 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
     connectorReconciliation,
     connectorGrantExclusions,
     connectorAccessNarrowing,
+    connectorAccessApproval,
     connectorAuthenticationFlows,
     connectorLifecycle,
     connectorManagementReviews,

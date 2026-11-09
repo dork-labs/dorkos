@@ -86,17 +86,33 @@ describe('what the narrowing tools say about their limits', () => {
   it('never claims to catch a read through a connected app, and says so plainly', async () => {
     const { ACCESS_CHANGE_CAPABILITIES } = await import('../access/access-change-capabilities.js');
     const { NARROWING_MESSAGES } = await import('../access/access-narrowing.js');
+    const { APPROVAL_MESSAGES } = await import('../access/access-approval.js');
+    const { readFileSync } = await import('node:fs');
+    const fragment = readFileSync(
+      new URL(
+        '../../../../../../changelog/unreleased/261109-000501-agents-approve-read-requests.md',
+        import.meta.url
+      ),
+      'utf8'
+    );
     const texts = [
       ...ACCESS_CHANGE_CAPABILITIES.map((capability) => capability.description),
       ...Object.values(NARROWING_MESSAGES),
+      ...Object.values(APPROVAL_MESSAGES),
+      fragment,
     ];
     for (const text of texts) {
       for (const pattern of BANNED) expect(text).not.toMatch(pattern);
     }
-    const other = ACCESS_CHANGE_CAPABILITIES.find(
-      (capability) => capability.id === 'connectors.narrow_agent_access'
-    );
-    expect(other?.description).toContain('these limits don’t cover that case');
+    for (const id of [
+      'connectors.narrow_agent_access',
+      'connectors.approve_request',
+      'connectors.undo_access_change',
+    ]) {
+      const tool = ACCESS_CHANGE_CAPABILITIES.find((capability) => capability.id === id);
+      expect(tool?.description).toContain('these limits don’t cover that case');
+    }
+    expect(fragment).toMatch(/these limits don['’]t cover that case/);
   });
 });
 

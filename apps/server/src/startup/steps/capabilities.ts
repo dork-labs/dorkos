@@ -94,6 +94,7 @@ export interface ComposeCapabilitiesInput {
   connectorEventSubscriptions: WireConnectorEventsAndApprovalsResult['connectorEventSubscriptions'];
   connectorOwnsAgent: WireConnectorServicesResult['connectorOwnsAgent'];
   connectorAccessNarrowing: WireConnectorServicesResult['connectorAccessNarrowing'];
+  connectorAccessApproval: WireConnectorServicesResult['connectorAccessApproval'];
   db: OpenConfigAndDatabaseResult['db'];
   managedEventConsent: WireConnectorServicesResult['managedEventConsent'];
   connectorOwnerBoundary: MountCoreRoutesResult['connectorOwnerBoundary'];
@@ -136,6 +137,7 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     connectorEventSubscriptions,
     connectorOwnsAgent,
     connectorAccessNarrowing,
+    connectorAccessApproval,
     db,
     managedEventConsent,
     connectorOwnerBoundary,
@@ -216,8 +218,12 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
         ...(refs.connectorAgentRequests && { requests: refs.connectorAgentRequests }),
         holds: connectorHolds,
       },
-      // Agents taking connection access away (spec `agent-grant-autonomy` phase 2).
-      accessChangeDeps: { narrowing: connectorAccessNarrowing, db },
+      // Agents changing connection access (spec `agent-grant-autonomy` phases 2-3).
+      accessChangeDeps: {
+        narrowing: connectorAccessNarrowing,
+        approval: connectorAccessApproval,
+        db,
+      },
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
       ...(mcpDeps && { mcpDeps }),

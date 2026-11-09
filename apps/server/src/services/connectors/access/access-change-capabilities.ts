@@ -23,6 +23,7 @@ import type {
 } from '../../core/capabilities/index.js';
 import { CapabilityToolError } from '../../core/capabilities/mcp-envelope.js';
 import { isServerPrincipal } from '../principal/server-principal.js';
+import { AccessApprovalError, type AccessApprovalService } from './access-approval.js';
 import {
   AccessNarrowingError,
   REASON_MAX_WORDS,
@@ -34,6 +35,7 @@ import {
 /** What the tools need. */
 export interface AccessChangeCapabilityDeps {
   readonly narrowing: AccessNarrowingService;
+  readonly approval: AccessApprovalService;
   readonly db: Db;
 }
 
@@ -72,7 +74,7 @@ function callerOf(context: CapabilityInvocationContext | CapabilityHandlerContex
 }
 
 function narrowingError(error: unknown): never {
-  if (error instanceof AccessNarrowingError) {
+  if (error instanceof AccessNarrowingError || error instanceof AccessApprovalError) {
     throw new CapabilityToolError({ error: error.message, code: error.code });
   }
   throw error;
@@ -277,5 +279,106 @@ const listAccessChanges = defineCapability({
   },
 });
 
-/** The three tools, added to the connector runtime domain. */
-export const ACCESS_CHANGE_CAPABILITIES = [narrowOwnAccess, narrowAgentAccess, listAccessChanges];
+const approveRequest = defineCapability({
+  id: 'connectors.approve_request',
+  title: "Approve another agent's request for Read on an app",
+  description:
+    'Answer another agent’s request_connection for Read access by giving it Read on an app you ' +
+    'hold yourself at a level, never more than you hold. Read only: a person approves write ' +
+    'access. Refused for your own request, in a turn another agent’s message started, in a turn ' +
+    'DorkOS marks as having read words it can’t vouch for, when DorkOS can’t tell either (a ' +
+    'scheduled run or a heartbeat counts), and for an agent a person left out of the app. ' +
+    'connectionId is needed only when you can use more than one account for that service. ' +
+    'DorkOS doesn’t yet notice when a turn reads an email or web page through a connected app, ' +
+    'so these limits don’t cover that case. The person sees it and can undo it.',
+  tier: 'act',
+  area: 'permissions',
+  approvalDisplayFields: ['requestId', 'connectionId'],
+  input: z
+    .object({
+      requestId: z
+        .string()
+        .min(1)
+        .describe('The request, from the person’s Needs-you or your chat.'),
+      connectionId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Which account, when you can use more than one for that service.'),
+    })
+    .strict(),
+  output: z.object({
+    changeId: z.string().nullable(),
+    connectionId: z.string(),
+    requestAnswered: z.boolean(),
+    note: z.string(),
+  }),
+  surfaces: {},
+  invoke: async (deps, input, context) => {
+    const { approval } = requireDeps(deps);
+    const caller = callerOf(context);
+    try {
+      const result = await approval.approve(caller, {
+        requestId: input.requestId,
+        ...(input.connectionId !== undefined ? { connectionId: input.connectionId } : {}),
+      });
+      return {
+        ...result,
+        note: result.requestAnswered
+          ? 'Done. That agent has Read now. The person can undo it.'
+          : 'That agent has Read now, but its request is still open for a person. The person can undo it.',
+      };
+    } catch (error) {
+      return narrowingError(error);
+    }
+  },
+});
+
+const undoAccessChange = defineCapability({
+  id: 'connectors.undo_access_change',
+  title: 'Undo an access change',
+  description:
+    'Undo one access change, by changeId from list_access_changes. Putting access back follows ' +
+    'the approval rules: Read only, never your own, never from a turn another agent started or ' +
+    'DorkOS marks. Taking another agent’s access away follows the narrowing rules, and needs a ' +
+    `reason: one line, at most ${REASON_MAX_WORDS} words, shown to the person and not sent to the ` +
+    'other agent. Only a person can let an agent back into a share. Refused when access changed ' +
+    'since. DorkOS doesn’t yet notice when a turn reads an email or web page through a connected ' +
+    'app, so these limits don’t cover that case.',
+  tier: 'act',
+  area: 'permissions',
+  approvalDisplayFields: ['changeId', 'reason'],
+  input: z
+    .object({
+      changeId: z.string().min(1).describe('The change to undo.'),
+      reason: z
+        .string()
+        .optional()
+        .describe('Why, in one line, when the Undo takes another agent’s access away.'),
+    })
+    .strict(),
+  output: z.object({ undoId: z.string(), note: z.string() }),
+  surfaces: {},
+  invoke: async (deps, input, context) => {
+    const { approval } = requireDeps(deps);
+    const caller = callerOf(context);
+    try {
+      const result = await approval.undo(caller, {
+        changeId: input.changeId,
+        ...(input.reason !== undefined ? { reason: input.reason } : {}),
+      });
+      return { undoId: result.undoId, note: 'Undone. The person sees it and can put it back.' };
+    } catch (error) {
+      return narrowingError(error);
+    }
+  },
+});
+
+/** The agent tools for access changes, added to the connector runtime domain. */
+export const ACCESS_CHANGE_CAPABILITIES = [
+  narrowOwnAccess,
+  narrowAgentAccess,
+  approveRequest,
+  undoAccessChange,
+  listAccessChanges,
+];

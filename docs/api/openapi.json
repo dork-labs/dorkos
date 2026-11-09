@@ -2891,6 +2891,7 @@
               "narrow_other",
               "exclude_own",
               "exclude_other",
+              "approve_read",
               "undo"
             ]
           },
@@ -2932,6 +2933,12 @@
               "null"
             ]
           },
+          "requestId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "undoOf": {
             "type": [
               "string",
@@ -2959,6 +2966,7 @@
           "targetAgentId",
           "connectionId",
           "reason",
+          "requestId",
           "undoOf",
           "undoneBy",
           "createdAt"

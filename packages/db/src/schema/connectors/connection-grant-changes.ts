@@ -8,6 +8,7 @@ export const GRANT_CHANGE_KINDS = [
   'narrow_other',
   'exclude_own',
   'exclude_other',
+  'approve_read',
   'undo',
 ] as const;
 
@@ -60,6 +61,8 @@ export const connectionGrantChanges = sqliteTable(
     afterJson: text('after_json'),
     /** The agent's own one-line reason. */
     reason: text('reason'),
+    /** On an `approve_read` row, the agent's request it answered. */
+    requestId: text('request_id'),
     /** On an `undo` row, the change it undid. */
     undoOf: text('undo_of'),
     /** On a change that was undone, the undo row. */
