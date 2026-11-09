@@ -177,14 +177,10 @@
  * @module server/services/rooms/room-capabilities
  */
 import { z } from 'zod';
-import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { canvasSourcePath } from '../canvas/index.js';
+import { canvasSourcePath, readCanvasFileText, type CanvasFileText } from '../canvas/index.js';
 import type { CanvasDocument } from '@dorkos/shared/room-schemas';
-import { FILE_LIMITS } from '../../config/constants.js';
-import { resolveWithinCwd } from '../../lib/file-route-guards.js';
-import { logger } from '../../lib/logger.js';
 import {
   directMessageTitle,
   MERGE_SUMMARY_MAX_CHARS,
@@ -209,6 +205,7 @@ import {
 import { configManager } from '../core/config-manager.js';
 import type { AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
+import { registerRoomPreGateChecks } from './attachments/protected-file-checks.js';
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
 import { projectEntry, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
 import { projectDetail } from './service/room-detail-projection.js';
@@ -306,6 +303,8 @@ const historyScope = {
     .optional()
     .describe('Narrow to one thread: the entryId the thread hangs off.'),
 };
+
+registerRoomPreGateChecks();
 
 /**
  * The rooms domain: the affirmative posting verb, the reaction, the two ways to
@@ -1495,14 +1494,11 @@ async function readRoomCanvas(
 }
 
 /**
- * Read a file-backed canvas document's CURRENT bytes, through the same guard the
- * file route uses.
- *
- * Three refusals, each handed back as a sentence rather than thrown: the
- * document's tree was never recorded (an older row), the file is gone, and the
- * file is too big or is not text. None of them is a failure of the tool — they
- * are all true things about a file — so each answers with the metadata beside a
- * `content: null` and says which one it was.
+ * Read a file-backed room canvas document's CURRENT text, in the directory the
+ * ROW recorded, never one derived here: the boundary the check ran against at
+ * open time is the one it runs against now. A `session:` document cannot reach
+ * this path, since `read_canvas` resolves its room first, so a null room id is a
+ * wiring fault answered as a plain sentence.
  *
  * @param rooms - The rooms service, for the directory the row recorded.
  * @param document - The document.
@@ -1513,44 +1509,10 @@ async function readFileBacked(
   rooms: RoomService,
   document: CanvasDocument,
   filePath: string
-): Promise<{ content: string | null; reason?: string }> {
-  // The directory the ROW recorded, never one derived here: the same boundary
-  // the check ran against at open time is the one it runs against now. A
-  // `session:` document cannot reach this path — `read_canvas` resolves its room
-  // first — so a null room id is a wiring fault answered as a plain sentence.
+): Promise<CanvasFileText> {
   const cwd =
     document.roomId === null ? null : rooms.canvas.resolvedTreeOf(document.roomId, document.id);
-  if (cwd === null) {
-    return {
-      content: null,
-      reason: 'This document does not record which folder its file is in, so it cannot be read.',
-    };
-  }
-  try {
-    const { resolved } = await resolveWithinCwd(cwd, filePath);
-    const stat = await fs.stat(resolved);
-    if (!stat.isFile()) return { content: null, reason: 'That path is not a file.' };
-    if (stat.size > FILE_LIMITS.MAX_TEXT_FILE_BYTES) {
-      return { content: null, reason: 'That file is too large to read as text.' };
-    }
-    const buffer = await fs.readFile(resolved);
-    // The standard binary heuristic, and git's: a NUL byte anywhere.
-    if (buffer.includes(0)) {
-      return { content: null, reason: 'That file is not text, so there is nothing to read out.' };
-    }
-    return { content: buffer.toString('utf8') };
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') {
-      return { content: null, reason: 'That file is not there any more.' };
-    }
-    logger.warn('[rooms] could not read a canvas document’s file', {
-      roomId: document.roomId,
-      documentId: document.id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { content: null, reason: 'That file could not be read just now.' };
-  }
+  return readCanvasFileText(cwd, filePath, { roomId: document.roomId, documentId: document.id });
 }
 
 /**

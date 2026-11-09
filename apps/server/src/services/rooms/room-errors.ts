@@ -424,6 +424,8 @@ export type RoomErrorCode =
    * which the message says.
    */
   | 'ATTACHMENT_PATH_REFUSED'
+  /** A canvas document named a protected file, or one with more than one hard link (DOR-4060). */
+  | 'CANVAS_PROTECTED_FILE'
   /** An agent named a path that is missing, is a folder, or is a kind of file this install does not accept. */
   | 'ATTACHMENT_UNREADABLE'
   /** An agent named a file bigger than `uploads.maxFileSize`. */

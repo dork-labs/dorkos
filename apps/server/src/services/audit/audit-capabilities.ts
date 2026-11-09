@@ -44,6 +44,7 @@ import {
 import { listRunningChats } from '../session/running-chats/running-chats.js';
 import type { AuditLog } from './audit-log.js';
 import type { AccountIds } from './account-ids.js';
+import { isPlainSessionId } from './plain-session-id.js';
 import { OWNER_READER, type AuditReader } from './visibility.js';
 import { canReadSession, type SessionVisibility } from './session-visibility.js';
 import {
@@ -268,6 +269,13 @@ export const auditDomain: CapabilityDomain = {
       },
       invoke: async (deps, input, context) => {
         const audit = requireAuditDeps(deps);
+        // Before the privacy check, so no reader, the owner included, puts a path in the id.
+        if (!isPlainSessionId(input.sessionId)) {
+          throw new CapabilityToolError({
+            error: 'That is not a session id. Use the id of a chat, with no slashes or dots.',
+            code: 'NOT_FOUND',
+          });
+        }
         if (!mayReadSession(audit, readerFor(audit, context), input.sessionId)) {
           throw new CapabilityToolError({
             error:

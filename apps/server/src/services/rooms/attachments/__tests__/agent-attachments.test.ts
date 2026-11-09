@@ -40,7 +40,7 @@ import { setRoomAttachmentStores } from '../attachment-stores.js';
 import { projectRoomAttachments } from '../attachment-projection.js';
 import { projectedAttachmentPath } from '../attachment-paths.js';
 import type { RoomAttachmentStore } from '../room-attachment-store.js';
-import { discardStagedAttachments } from '../agent-attachments.js';
+import { discardStagedAttachments, readOwnFile } from '../agent-attachments.js';
 
 const ANA_PATH = '/agents/ana';
 const KAI_PATH = '/agents/kai';
@@ -567,5 +567,117 @@ describe('an agent attaches from its own copy of a room`s files (spec `agent-hom
       };
       expect(result.attached, named).toBe(1);
     }
+  });
+});
+
+/**
+ * QA rows B and C (DOR-4060): a chat standing in the data folder or the home
+ * folder cannot attach a protected file by its bare name, and a hard link to
+ * one inside the agent's own folder is refused by its link count. A fixture
+ * home with a dummy value only; HOME, DORK_HOME and CLAUDE_CONFIG_DIR stay in it.
+ */
+describe('an agent cannot attach a protected file (DOR-4060)', () => {
+  const CANARY = 'TOKEN=dor-4060-dummy-canary';
+  let home: string;
+  let dork: string;
+
+  /** Invoke `rooms.post` as Ana, standing in `cwd`. */
+  function postFrom(cwd: string, input: Record<string, unknown>): Promise<unknown> {
+    return registry.invoke('rooms.post', input, {
+      identity: { agentPath: ANA_PATH, displayName: 'Ana' },
+      cwd,
+    } as Parameters<CapabilityRegistry['invoke']>[2]);
+  }
+
+  beforeEach(async () => {
+    home = path.join(root, 'home');
+    dork = path.join(home, '.dork');
+    await fs.mkdir(path.join(dork, 'extension-secrets'), { recursive: true });
+    await fs.writeFile(path.join(dork, 'host.key'), CANARY);
+    await fs.writeFile(path.join(dork, 'config.json'), `{"x":"${CANARY}"}`);
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('DORK_HOME', dork);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(root, 'claude-fixture'));
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  /** A refusal from before the permission gate: nothing to approve, at any level. */
+  const earlyRefusal = (message: RegExp) => ({
+    decision: {
+      outcome: 'denied',
+      payload: {
+        approvable: false,
+        reason: 'permission_blocked',
+        message: expect.stringMatching(message),
+      },
+    },
+  });
+
+  it.each([
+    ['the data folder', () => dork, 'host.key'],
+    ['the data folder', () => dork, 'config.json'],
+    ['the home folder', () => home, '.dork/host.key'],
+  ])('row B: from a chat in %s, %s is refused and nothing is written', async (_n, cwd, name) => {
+    await expect(
+      postFrom(cwd(), { roomId, text: 'qa m1', attachments: [name] })
+    ).rejects.toMatchObject(earlyRefusal(/is a protected file/));
+    await nothingWasWritten();
+  });
+
+  it('row C: a hard link to host.key in the agent’s own folder is refused', async () => {
+    await fs.link(path.join(dork, 'host.key'), path.join(anaCwd, 'hk-link.txt'));
+    await expect(
+      post({ roomId, text: 'qa m1', attachments: ['hk-link.txt'] })
+    ).rejects.toMatchObject(earlyRefusal(/more than one hard link/));
+    await nothingWasWritten();
+  });
+
+  it('control: a plain file in the agent’s own folder still attaches', async () => {
+    await fs.writeFile(path.join(anaCwd, 'notes.txt'), 'notes ok');
+    const result = (await post({ roomId, text: 'notes', attachments: ['notes.txt'] })) as {
+      attached: number;
+    };
+    expect(result.attached).toBe(1);
+  });
+});
+
+/**
+ * The second wall (DOR-4060): `readOwnFile` itself, behind the early check, so a
+ * path that reaches it some other way (room canvas media, a later caller) is
+ * refused the same.
+ */
+describe('readOwnFile refuses protected and hard-linked files on its own (DOR-4060)', () => {
+  let dork: string;
+
+  beforeEach(async () => {
+    const home = path.join(root, 'home');
+    dork = path.join(home, '.dork');
+    await fs.mkdir(dork, { recursive: true });
+    await fs.writeFile(path.join(dork, 'host.key'), 'TOKEN=dor-4060-dummy-canary');
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('DORK_HOME', dork);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(root, 'claude-fixture'));
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('refuses host.key named from the data folder', async () => {
+    await expect(readOwnFile({ cwd: dork, ownCopies: [] }, 'host.key')).rejects.toMatchObject({
+      code: 'ATTACHMENT_PATH_REFUSED',
+      message: expect.stringMatching(/is a protected file/),
+    });
+  });
+
+  it('refuses a hard link in the agent’s own folder', async () => {
+    await fs.link(path.join(dork, 'host.key'), path.join(anaCwd, 'hk-link.txt'));
+    await expect(readOwnFile({ cwd: anaCwd, ownCopies: [] }, 'hk-link.txt')).rejects.toMatchObject({
+      code: 'ATTACHMENT_PATH_REFUSED',
+      message: expect.stringMatching(/more than one hard link/),
+    });
+  });
+
+  it('control: reads a plain file', async () => {
+    await fs.writeFile(path.join(anaCwd, 'notes.txt'), 'notes ok');
+    const read = await readOwnFile({ cwd: anaCwd, ownCopies: [] }, 'notes.txt');
+    expect(read.bytes.toString()).toBe('notes ok');
   });
 });

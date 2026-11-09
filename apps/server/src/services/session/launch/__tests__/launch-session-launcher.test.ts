@@ -8,6 +8,8 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import type { MeshCore } from '@dorkos/mesh';
 
 vi.mock('../../../../lib/boundary.js', () => ({
+  // The protected-folder rule finds the home folder through this (DOR-4060).
+  expandTilde: (p: string) => (p === '~' ? (process.env.HOME ?? '/') : p),
   validateBoundaryOrDorkHome: vi.fn(async () => {}),
 }));
 

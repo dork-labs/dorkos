@@ -20,6 +20,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import { resolveAgentHome } from '../../core/agent-identity/index.js';
+import { isProtectedPath } from '../../runtimes/shared/policy/protected-path-check.js';
+import { protectedPathRoots } from '../../runtimes/shared/policy/protected-path-roots.js';
 
 /**
  * Who chose where a chat runs. `person`: the person, at the app. `agent`: an
@@ -36,7 +38,11 @@ export type SessionLauncher =
 
 /** Why {@link launchPlaceRefusal} refused, kept apart so `session_start` can keep its codes. */
 export type LaunchPlaceRefusalCode =
-  'NOT_THE_CALLER' | 'OTHER_AGENTS_FOLDER' | 'OTHER_AGENTS_CHAT' | 'UNIDENTIFIED_LAUNCHER';
+  | 'NOT_THE_CALLER'
+  | 'OTHER_AGENTS_FOLDER'
+  | 'OTHER_AGENTS_CHAT'
+  | 'UNIDENTIFIED_LAUNCHER'
+  | 'PROTECTED_FOLDER';
 
 /** A refused place, with the sentence the caller shows as-is. */
 export interface LaunchPlaceRefusal {
@@ -61,6 +67,10 @@ export const OTHER_AGENTS_CHAT_MESSAGE =
 /** The refusal for a caller DorkOS cannot name, asking for an agent's folder or chat. */
 export const UNIDENTIFIED_LAUNCHER_MESSAGE =
   "DorkOS can't tell which agent is asking, so it can't start work in an agent's folder or chat.";
+
+/** The refusal for a new chat in DorkOS's data folder, the home folder, or above either. */
+export const PROTECTED_FOLDER_MESSAGE =
+  "That folder holds DorkOS's private files, so no agent can start a chat there. Use your own folder.";
 
 /** Where the launch would run, as far as the caller named it. */
 export interface LaunchPlace {
@@ -141,8 +151,33 @@ export function isAnyAgentsFolder(
 }
 
 /**
+ * Whether a caller other than the person may not start a NEW chat in `cwd`
+ * (DOR-4060): a folder on the protected-files list, DorkOS's data folder or the
+ * home folder, or any folder above either, since every file tool trusts a
+ * chat's own folder. The caller's own folder is the one exception, and never for a protected folder.
+ * Every spelling is real-pathed, so a symlink to one of them is that folder.
+ *
+ * @param cwd - The folder the new chat would stand in.
+ * @param ownFolder - The calling agent's own home, when DorkOS knows it.
+ */
+export function isProtectedLaunchFolder(cwd: string, ownFolder?: string): boolean {
+  const target = realOr(cwd);
+  try {
+    const roots = protectedPathRoots(target);
+    if (isProtectedPath(target, 'read', roots)) return true;
+    if (ownFolder !== undefined && realOr(ownFolder) === target) return false;
+    return isWithin(target, realOr(roots.data)) || isWithin(target, realOr(roots.home));
+  } catch {
+    // A folder that cannot be checked is not a folder to start in.
+    return true;
+  }
+}
+
+/**
  * Why this caller may not run a chat at this place, or `null` when it may.
- * A person is never refused here.
+ * A person is never refused here. The protected-folder rule asks only of a new
+ * chat (no `chatAgent`), so a message into a chat that already stands in such a
+ * folder, like a schedule's, still reaches it.
  *
  * @param meshCore - Mesh, which lists the registered homes.
  * @param launcher - Who chose the place.
@@ -154,6 +189,14 @@ export function launchPlaceRefusal(
   place: LaunchPlace
 ): LaunchPlaceRefusal | null {
   if (launcher.kind === 'person') return null;
+  const ownFolder = launcher.kind === 'agent' ? launcher.agentPath : undefined;
+  if (
+    place.cwd !== undefined &&
+    place.chatAgent === undefined &&
+    isProtectedLaunchFolder(place.cwd, ownFolder)
+  ) {
+    return { code: 'PROTECTED_FOLDER', message: PROTECTED_FOLDER_MESSAGE };
+  }
   if (launcher.kind === 'unidentified') {
     const agents =
       place.agentPath !== undefined ||

@@ -12,6 +12,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 
 vi.mock('../../lib/boundary.js', () => ({
+  // The protected-folder rule finds the home folder through this (DOR-4060).
+  expandTilde: (p: string) => (p === '~' ? (process.env.HOME ?? '/') : p),
   validateBoundary: vi.fn(async (p: string) => p),
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/mock/home'),

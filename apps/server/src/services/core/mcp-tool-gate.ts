@@ -112,6 +112,7 @@ import type { ApprovalOrigin, ApprovalSubject } from '@dorkos/shared/approval-sc
 import type { AgentIdentity } from './agent-identity/agent-identity-service.js';
 import { resolveApprovalSubject, type ApprovalRequestingSession } from './approvals/index.js';
 import { agentComputerActionRefusal } from './agent-computer/hub-owned.js';
+import { preGateRefusal } from './capabilities/pre-gate-refusals.js';
 import {
   approvalNoLongerValid,
   awaitCapabilityApproval,
@@ -244,6 +245,16 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
   if (sealed) {
     const decision = { outcome: 'denied', payload: sealed } as const;
     return { allowed: false, result: textResult(sealed), decision, input: args };
+  }
+  // Before the gate, so no level, card or saved "Always allow" reaches it (DOR-4060).
+  const early = preGateRefusal(action, args, {
+    ...(requestingSession ? { sessionId: requestingSession.sessionId } : {}),
+    ...(requestingSession?.cwd ? { cwd: requestingSession.cwd } : {}),
+    ...(identity ? { agentPath: identity.agentPath } : {}),
+  });
+  if (early) {
+    const decision = { outcome: 'denied', payload: early } as const;
+    return { allowed: false, result: textResult(early), decision, input: args };
   }
   // Only a tool that can raise a card advertises `approvalToken`, so only such a
   // call has one to lift off. Anything else passes its arguments through

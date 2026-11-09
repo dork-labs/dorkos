@@ -5,6 +5,7 @@ import type {
   ElicitationResult,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { QuestionItem } from '@dorkos/shared/types';
+import { canvasDocumentFilePath } from '../../../canvas/canvas-document-subject.js';
 import { QuestionItemSchema } from '@dorkos/shared/schemas';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import {
@@ -621,6 +622,27 @@ export function createCanUseTool(
 }
 
 /**
+ * The file a `read_canvas_document` call would read, so its card names it rather
+ * than an opaque document id (DOR-4060). `undefined` for any other tool, or a
+ * document that names no file.
+ *
+ * @param toolName - The tool being asked about.
+ * @param input - Its arguments.
+ * @param sessionId - The chat whose canvas the document is on.
+ */
+function canvasReadTarget(
+  toolName: string,
+  input: Record<string, unknown>,
+  sessionId: string | undefined
+): string | undefined {
+  if (toolName !== `${IN_SESSION_TOOL_PREFIX}read_canvas_document` || sessionId === undefined)
+    return undefined;
+  return typeof input.documentId === 'string'
+    ? canvasDocumentFilePath(sessionId, input.documentId)
+    : undefined;
+}
+
+/**
  * Handle tool approval — pause and wait for a person.
  *
  * Reached for every mode except `bypassPermissions` (see
@@ -668,7 +690,7 @@ export function handleToolApproval(
       title: context.title,
       displayName: context.displayName,
       description: context.description,
-      blockedPath: context.blockedPath,
+      blockedPath: context.blockedPath ?? canvasReadTarget(toolName, input, session.sdkSessionId),
       decisionReason: context.decisionReason,
       hasSuggestions: (context.suggestions?.length ?? 0) > 0,
       ...(alwaysAllowScope !== undefined ? { alwaysAllowScope } : {}),

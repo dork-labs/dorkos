@@ -47,7 +47,7 @@ import type { CanvasChannelDeclaration } from '@dorkos/shared/canvas-channel-sch
  *
  * @module server/services/rooms/canvas/room-canvas-service
  */
-import { realpathSync } from 'node:fs';
+import { canonicalPath } from './canonical-path.js';
 import path from 'node:path';
 import type { DbTransaction } from '@dorkos/db';
 import type { CanvasDocument, RoomCanvasChange, RoomEvent } from '@dorkos/shared/room-schemas';
@@ -59,6 +59,7 @@ import {
   CANVAS_VERBS,
   OPEN_CANVAS_NEEDS_CONTENT_MESSAGE,
   NO_DEFAULT_DOCUMENT_MESSAGE,
+  canvasContentRefusal,
   canvasSourcePath,
   documentBeingEditedMessage,
   parseScope,
@@ -408,6 +409,9 @@ export class RoomCanvasService {
     // is about to write actually names (a `chart.png` resolves to an `image`,
     // which names no file path at all).
     const content = this.canvas.contentForCommand(command);
+    // A protected file never reaches the table, by any turn's road (DOR-4060).
+    const refused = content === null ? null : canvasContentRefusal(content, input.cwd);
+    if (refused) return { applied: false, code: 'CANVAS_PROTECTED_FILE', reason: refused.message };
     // A room's own question, answered here and handed down: which tree this
     // file came out of, and whose copy it is.
     const tree =
@@ -1383,23 +1387,6 @@ function withTreeRelativeSource(command: UiCommand, tree: CanvasTreePlacement): 
       : ({ ...command, content: { ...command.content, sourcePath: rel } } as UiCommand);
   }
   return command;
-}
-
-/**
- * A path's real spelling: the real path of its deepest existing ancestor with
- * the rest appended, so a file that does not exist yet still compares by the
- * folder it would land in.
- */
-function canonicalPath(p: string): string {
-  const resolved = path.resolve(p);
-  try {
-    return realpathSync.native(resolved);
-  } catch {
-    const parent = path.dirname(resolved);
-    return parent === resolved
-      ? resolved
-      : path.join(canonicalPath(parent), path.basename(resolved));
-  }
 }
 
 function isWithin(child: string, parent: string): boolean {

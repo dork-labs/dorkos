@@ -115,6 +115,7 @@ import {
 } from './handlers.js';
 import { createRecordingHandlers, type RecordingHandlers } from './recording.js';
 import { readSessionCanvasDocument } from './read-canvas-document.js';
+import { registerUiPreGateChecks } from './protected-file-checks.js';
 import { emitToSession } from './session-reach.js';
 import { controlUi, getUiState, type UiCallerContext } from './ui-control.js';
 
@@ -228,6 +229,8 @@ const SESSIONLESS_DRIVING_ANSWER: Record<string, unknown> = {
     'The browser verbs act inside the preview a live session has open in a window. The current ' +
     'surface has no session attached, so there is no preview to reach.',
 };
+
+registerUiPreGateChecks();
 
 /**
  * The `ui` domain: what an agent can see and do in the window it is answering
