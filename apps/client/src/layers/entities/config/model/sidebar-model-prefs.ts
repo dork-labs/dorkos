@@ -45,6 +45,11 @@ export interface SidebarModelPrefs {
   readonly muted: readonly SidebarItemRef[];
   /** Per-section collapse and options. A section with no entry has no state. */
   readonly sections: Readonly<Partial<Record<SidebarSectionId, SidebarSectionPrefs>>>;
+  /**
+   * The apps pinned under the Apps door, by extension id, in pin order, or
+   * `null` when they were never seeded (see `ui.sidebar.pinnedApps`).
+   */
+  readonly pinnedApps: readonly string[] | null;
 }
 
 /**
@@ -66,5 +71,6 @@ export function toSidebarModelPrefs(prefs: SidebarPrefs): SidebarModelPrefs {
     groups: prefs.groups ?? [],
     muted: prefs.muted ?? [],
     sections: prefs.sections ?? {},
+    pinnedApps: prefs.pinnedApps ?? null,
   };
 }

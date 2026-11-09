@@ -20,7 +20,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ListFilter, Plus } from 'lucide-react';
 import type { SidebarGroup, SmartGroupRules } from '@dorkos/shared/config-schema';
-import { cn, requestExtensionRemount } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
 import {
   useInlineEditorSettle,
   useIsMobile,
@@ -65,7 +65,6 @@ import {
 } from './SectionHeaderMenuItems';
 import { SmartGroupRuleDialog } from './SmartGroupRuleDialog';
 import { useSidebarChrome } from './SidebarChrome';
-import { SidebarStatusRow } from './status/SidebarStatusRow';
 
 /** Longest section name the schema accepts (`SidebarGroupSchema.name`). */
 const MAX_GROUP_NAME = 40;
@@ -233,20 +232,6 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     };
   }
 
-  if (section.id === 'addons' && section.loadFailed) {
-    return {
-      ...base,
-      // A failed load must never read as "none installed" (the model keeps the
-      // section for exactly this line). Try again re-runs the full load; if it
-      // fails again, the line simply stays.
-      footer: (
-        <SidebarStatusRow failed onRetry={() => void requestExtensionRemount().catch(() => {})}>
-          Couldn’t load apps.
-        </SidebarStatusRow>
-      ),
-    };
-  }
-
   if (section.id === 'dms') {
     return {
       ...base,
@@ -409,8 +394,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     };
   }
 
-  // The top items and Add-ons. No menu and no `+`: each fills itself, so there
-  // is nothing to sort, filter or create into. Add-ons still folds, through
-  // `toggleCollapsed` on the base.
+  // The top items. No menu and no `+`: they fill themselves, so there is
+  // nothing to sort, filter or create into.
   return base;
 }

@@ -1,15 +1,16 @@
 import {
   Clock,
-  Radio,
-  Globe,
-  Settings,
-  Plus,
-  Search,
   FolderOpen,
-  Moon,
-  Shapes,
-  MessageSquarePlus,
+  Globe,
   Inbox,
+  LayoutGrid,
+  MessageSquarePlus,
+  Moon,
+  Plus,
+  Radio,
+  Search,
+  Settings,
+  Shapes,
 } from 'lucide-react';
 import type { SearchableItem } from '../model/use-palette-search';
 
@@ -33,7 +34,7 @@ export const RESULT_GROUP_LABEL: Record<SearchableItem['type'], string> = {
   command: 'Commands',
   feature: 'Actions',
   'quick-action': 'Actions',
-  page: 'Add-ons',
+  page: 'Apps',
 };
 
 /** The heading over the one row that stands clear of the rest (design-decisions §15). */
@@ -52,6 +53,7 @@ export const ICON_MAP: Record<string, React.ElementType> = {
   Shapes,
   MessageSquarePlus,
   Inbox,
+  LayoutGrid,
 };
 
 /** Ease-out curve for entrances (design system standard). */

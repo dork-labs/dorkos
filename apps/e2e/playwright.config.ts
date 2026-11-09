@@ -1073,7 +1073,7 @@ export default defineConfig({
       // of chat-mock's scenario/reset choreography. What it does share with its
       // neighbours is the server's extension set: it turns `hello-world` on for
       // its own serial tests and off again in `afterAll`, so another test-mode
-      // project can see the extension's page, its Add-ons section, status item
+      // project can see the extension's page, its Apps tile, status item
       // and tab for those few seconds. Nothing any of them asserts depends on
       // the extension set.
       name: 'chromium-extension-seams',

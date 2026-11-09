@@ -46,6 +46,9 @@ interface MockRouterState {
 
 // The web-access indicator rides the beacon but needs the live event feed,
 // which these tests do not provide.
+// The palette's app commands read the extension queries and their live
+// events; the shell's own behaviour here does not depend on them.
+vi.mock('@/layers/widgets/apps-home', () => ({ useAppsPalette: () => {}, AppsPage: () => null }));
 vi.mock('@/layers/features/web-access', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/features/web-access')>()),
   RemoteSessionIndicator: () => null,

@@ -20,10 +20,9 @@ import { appRoutes } from '@/layers/shared/lib';
  * `sidebar-simplification` D4), so it takes its turn against the other cards
  * rather than adding a fourth thing to the bottom of the panel.
  *
- * **A mini app's page is not a fifth destination.** The Add-ons section
- * lists those pages (spec `mini-app-placement` Part 2, superseding
- * `flow-multiproject` N10's "no sidebar entry"), so this strip stays the four
- * places DorkOS itself goes.
+ * **A mini app's page is not a fifth destination.** The Apps door in the top
+ * items reaches every app (DOR-3970), so this strip stays the four places
+ * DorkOS itself goes.
  *
  * @module features/dashboard-sidebar/ui/SidebarFooterStrip
  */

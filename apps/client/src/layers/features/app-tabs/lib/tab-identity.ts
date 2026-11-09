@@ -18,6 +18,7 @@ import {
   Inbox,
   KeyRound,
   LayoutDashboard,
+  LayoutGrid,
   ListTodo,
   MessageCircle,
   MessageSquare,
@@ -268,6 +269,8 @@ export const ROUTE_IDENTITY: Record<string, RouteIdentity> = {
   // The alias, named for where it lands: a tab saved before the rename still
   // restores as `/agents`, and "Agents" on a strip whose page says Team looks stale.
   '/agents': { primary: 'Team', Icon: Users },
+  // Matches the sidebar's Apps door, icon and all (DOR-3970).
+  '/apps': { primary: 'Apps', Icon: LayoutGrid },
   // Plural on purpose: a chat's single bubble is taken, and two tabs that
   // read alike should at least not look alike (DOR-587 review).
   '/channels': { primary: 'Channels', Icon: MessagesSquare },

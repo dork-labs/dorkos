@@ -7,6 +7,10 @@
  * @module shared/config-schema/sidebar
  */
 import { z } from 'zod';
+import { EXTENSION_ID_REGEX } from '../extension-id.js';
+
+/** How many apps the sidebar's Apps door holds pinned under it (DOR-3970). */
+export const MAX_PINNED_APPS = 5;
 
 /**
  * A section's per-agent display filter (agent-list-settings, DOR-339): `all`
@@ -277,6 +281,22 @@ export const SidebarPrefsSchema = z.object({
    * partial mute states.
    */
   muted: z.array(SidebarItemRefSchema).default(() => []),
+  /**
+   * The apps pinned under the sidebar's Apps door, by extension id, in pin
+   * order, at most {@link MAX_PINNED_APPS} (DOR-3970).
+   *
+   * **Absent is a state, not a default.** It means "never seeded": the app
+   * fills it once, from the pages the old Add-ons section listed, so nobody
+   * loses what they had. Only the client knows which extensions add pages, so
+   * no server migration can do that seeding, and a default of `[]` would make
+   * "seeded, then emptied" and "never seeded" the same thing.
+   */
+  // Agents can write this field (it is agent-writable layout), so every id
+  // must be a real extension id shape, never a path or a free string.
+  pinnedApps: z
+    .array(z.string().max(128).regex(EXTENSION_ID_REGEX))
+    .max(MAX_PINNED_APPS)
+    .optional(),
   /**
    * **Retired** (DOR-3092): the Getting started list left the sidebar, and
    * nothing reads or writes this any more. It was the list's memory of which

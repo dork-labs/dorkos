@@ -22,7 +22,7 @@ import { useCallback, useMemo } from 'react';
 import { useRouterState, useSearch } from '@tanstack/react-router';
 import { useShallow } from 'zustand/shallow';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
-import { listedPageAt, useExtensionLoadFailed, useRenderSlot } from '@/layers/shared/lib';
+import { listedPageAt, useRenderSlot } from '@/layers/shared/lib';
 import { useMenuExtensionPages, useNow } from '@/layers/shared/model';
 import {
   disambiguateDisplayNames,
@@ -30,6 +30,7 @@ import {
   useResolvedAgents,
 } from '@/layers/entities/agent';
 import { toSidebarModelPrefs, useSidebarPrefs } from '@/layers/entities/config';
+import { appAccessibleName, useAppCatalog } from '@/layers/entities/extension';
 import { useInteractionTimestamps } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useRooms } from '@/layers/entities/room';
@@ -45,7 +46,7 @@ import type { SidebarTarget } from './build-sidebar-model';
 import { useBootState } from './boot/use-boot-state';
 import type {
   AgentRosterEntry,
-  SidebarAddOnPage,
+  SidebarApps,
   SidebarState,
   SidebarTodosDoor,
 } from './sidebar-state';
@@ -157,17 +158,17 @@ function useStableList(value: string[]): string[] {
  *
  * **A mini app's page is open when you are on it or anywhere under it**, and it
  * names the one listed page that holds the address ({@link listedPageAt}), so
- * the Add-ons section lights one row.
+ * a pinned app's row lights for any of its pages.
+ *
+ * A pinned app's row lights for any of its pages (`isRowActive`), so the
+ * target names the app and whichever listed page holds the address.
  *
  * @param roomKindOf - Resolves a room id to its kind, from the room list.
- * @param addOns - The listed mini-app pages, for which one is open.
  */
-function useActiveTarget(
-  roomKindOf: (roomId: string) => 'channel' | 'dm',
-  addOns: readonly SidebarAddOnPage[]
-): SidebarTarget | null {
+function useActiveTarget(roomKindOf: (roomId: string) => 'channel' | 'dm'): SidebarTarget | null {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const addOn = listedPageAt(addOns, pathname);
+  const menuPages = useMenuExtensionPages();
+  const addOn = listedPageAt(menuPages, pathname);
   const addOnExtensionId = addOn?.extensionId ?? null;
   const addOnPath = addOn?.path ?? null;
   const search = useSearch({ strict: false }) as {
@@ -190,6 +191,7 @@ function useActiveTarget(
     if (pathname === '/threads') return { kind: 'command', commandId: 'open-threads' };
     if (pathname === '/todos') return { kind: 'command', commandId: 'open-todos' };
     if (pathname === '/team') return { kind: 'command', commandId: 'open-directory' };
+    if (pathname === '/apps') return { kind: 'command', commandId: 'open-apps' };
     if (addOnExtensionId !== null && addOnPath !== null) {
       return { kind: 'add-on', extensionId: addOnExtensionId, path: addOnPath };
     }
@@ -346,17 +348,34 @@ export function useSidebarState(): SidebarState {
     () => (roomId: string) => roomKinds.get(roomId) ?? ('channel' as const),
     [roomKinds]
   );
-  // ── The pages mini apps added (spec `mini-app-placement` Part 2) ──
-  // The registry's menu list — listed pages only, by title — narrowed to what
-  // the model may hold. It changes only when an extension registers or drops a
-  // page, so this memo holds across everything else.
-  const menuPages = useMenuExtensionPages();
-  const addOns = useMemo<SidebarAddOnPage[]>(
-    () => menuPages.map(({ id, extensionId, path, title }) => ({ id, extensionId, path, title })),
-    [menuPages]
-  );
-  const activeTarget = useActiveTarget(roomKindOf, addOns);
-  const addOnsLoadFailed = useExtensionLoadFailed();
+  const activeTarget = useActiveTarget(roomKindOf);
+
+  // ── The Apps door and its pins (DOR-3970) ──
+  // Narrowed to what the model may hold: no components, no off apps.
+  const catalog = useAppCatalog();
+  const apps = useMemo<SidebarApps>(() => {
+    const pinnedIds = new Set(catalog.pinned.map((app) => app.id));
+    return {
+      status: catalog.status,
+      pinned: catalog.pinned.flatMap((app) =>
+        app.state === 'off'
+          ? []
+          : [
+              {
+                id: app.id,
+                name: app.name,
+                path: app.path,
+                pageId: app.pageId,
+                state: app.state,
+                count: app.count,
+                accessibleName: appAccessibleName(app),
+              },
+            ]
+      ),
+      heldUnpinned: catalog.apps.some((app) => app.state === 'held' && !pinnedIds.has(app.id)),
+      storedPinCount: catalog.pins.length,
+    };
+  }, [catalog]);
 
   // ── The To-dos door (DOR-3088) ──
   // Absent while to-dos are off. Its count is the list answer's own badge, a number, so the memo
@@ -380,8 +399,7 @@ export function useSidebarState(): SidebarState {
       displayNames,
       prefs,
       mentions,
-      addOns,
-      addOnsLoadFailed,
+      apps,
       todos,
       activeTarget,
     }),
@@ -396,8 +414,7 @@ export function useSidebarState(): SidebarState {
       displayNames,
       prefs,
       mentions,
-      addOns,
-      addOnsLoadFailed,
+      apps,
       todos,
       activeTarget,
     ]

@@ -15,5 +15,6 @@ export const appRoutes = {
   marketplaceSources: () => linkOptions({ to: '/marketplace/sources' }),
   feedbackRequests: () => linkOptions({ to: '/feedback-requests' }),
   threads: () => linkOptions({ to: '/threads' }),
+  apps: () => linkOptions({ to: '/apps' }),
   todos: () => linkOptions({ to: '/todos' }),
 };

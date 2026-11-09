@@ -7,7 +7,7 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarSections
  */
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import { communityRefFromRouteDestination, useCommunityRouteEpoch } from '@/layers/shared/model';
 import { SidebarMenu } from '@/layers/shared/ui';
@@ -54,6 +54,9 @@ export interface SidebarSectionsProps {
   /** The model to draw. */
   model: SidebarModel;
 }
+
+/** The space view's Alt-click: nothing it draws folds. */
+const NO_FOLD = () => {};
 
 /**
  * Every section the model emitted, in its fixed order.
@@ -114,15 +117,19 @@ export function SidebarSections({ model }: SidebarSectionsProps) {
     });
   }, [foldable, update]);
 
-  // Inside a space, Add-ons is the one section of this machine's still drawn,
-  // so it is also the only one Alt-click may fold: folding sections nobody can
-  // see from there would be a write the person never sees the effect of.
-  const spaceAddOns = model.sections.find((section) => section.id === 'addons');
-  const spaceAddOnsCollapsed = spaceAddOns?.collapsed ?? false;
-  const onToggleSpaceAddOns = useCallback(
-    () => update((prev) => setSectionCollapsed(prev, 'addons', !spaceAddOnsCollapsed)),
-    [spaceAddOnsCollapsed, update]
-  );
+  // Inside a space, the Apps door and its pins are the one part of this
+  // machine's panel still drawn: an app's pages are not this machine's
+  // conversations, so they stay one press away inside a space too.
+  const spaceApps = useMemo(() => {
+    const top = model.sections.find((section) => section.id === 'top');
+    if (top === undefined) return undefined;
+    const rows = top.rows.filter(
+      (row) =>
+        row.app !== undefined ||
+        (row.target.kind === 'command' && row.target.commandId === 'open-apps')
+    );
+    return { ...top, rows };
+  }, [model.sections]);
 
   // Every section below arrives inside one of these, so the reveal has
   // something to stagger and a warm boot has an identical DOM to a settled cold
@@ -134,11 +141,10 @@ export function SidebarSections({ model }: SidebarSectionsProps) {
     return (
       <div className="flex min-h-0 flex-col" data-community-context={selectedCommunity}>
         <CommunityChannelGroups />
-        {/* A space's channels replace this machine's conversations, but a mini
-            app's pages are not this machine's conversations: they stay one
-            press away inside a space too. */}
-        {spaceAddOns !== undefined && (
-          <SidebarSection section={spaceAddOns} onToggleAll={onToggleSpaceAddOns} />
+        {spaceApps !== undefined && (
+          // Nothing here folds, so Alt-click has nothing to fold: folding this
+          // machine's sections from inside a space is a write nobody sees.
+          <SidebarSection section={spaceApps} onToggleAll={NO_FOLD} />
         )}
       </div>
     );

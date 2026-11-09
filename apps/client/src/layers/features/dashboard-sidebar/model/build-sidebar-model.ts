@@ -56,13 +56,12 @@ import type { SidebarState } from './sidebar-state';
 export const SIDEBAR_SECTION_IDS = [
   'channels',
   'dms',
-  // Last: the pages mini apps add (spec `mini-app-placement` Part 2). The
-  // operator's own conversations come first, and a section that only exists
-  // once an extension adds a page sits below them.
-  'addons',
+  // No `addons`: the pages mini apps add moved to the Apps door in the top
+  // items (DOR-3970). The id stays in the persisted vocabulary so a stored fold
+  // still parses; nothing reads it.
 ] as const satisfies readonly PersistedSectionId[];
 
-/** One fixed section's id — the three above, and only those. */
+/** One fixed section's id — the two above, and only those. */
 export type FixedSectionId = (typeof SIDEBAR_SECTION_IDS)[number];
 
 /**
@@ -101,9 +100,15 @@ export type SidebarSectionId = 'top' | FixedSectionId | `group:${string}`;
  *   starting a conversation with anyone not on it yet.
  * - `message-agent` — the Directory narrowed to agents, the empty Direct
  *   messages section's one row.
+ * - `open-apps` — the Apps page, every app (DOR-3970).
  */
 export type SidebarCommandId =
-  'open-threads' | 'open-todos' | 'open-directory' | 'message-someone' | 'message-agent';
+  | 'open-threads'
+  | 'open-todos'
+  | 'open-directory'
+  | 'message-someone'
+  | 'message-agent'
+  | 'open-apps';
 
 /**
  * The semantic icons a command row draws.
@@ -112,7 +117,7 @@ export type SidebarCommandId =
  * and a row that said `MessagesSquare` would have decided a rendering rather
  * than a meaning.
  */
-export type SidebarIconId = 'threads' | 'todos' | 'directory' | 'add';
+export type SidebarIconId = 'threads' | 'todos' | 'directory' | 'add' | 'apps';
 
 /** What clicking a row does — and, for `session`, what the router says is open. */
 export type SidebarTarget =
@@ -167,12 +172,6 @@ export interface SidebarRowModel {
     | { kind: 'page-icon'; pageId: string };
   /** The "who": agent name, room name, person name, page title. */
   primary: string;
-  /**
-   * The "what", rendered after `›`. Present only on an Add-ons row whose title
-   * another listed page shares — there `primary` names the extension, so the
-   * two rows can be told apart.
-   */
-  secondary?: string;
   /** True when the row reserves a second line for a live verb. */
   reservesVerbLine: boolean;
   /** The row's unread state. */
@@ -193,9 +192,39 @@ export interface SidebarRowModel {
   muted: boolean;
   /** Whether the row is a drag source. False for every door and every page. */
   draggable: boolean;
+  /**
+   * Set on a pinned app's row under the Apps door (DOR-3970): what the app is
+   * doing, which decides its trailing mark and what pressing it does.
+   */
+  app?: SidebarRowApp;
+  /**
+   * The door's dot: a held app waits somewhere the pinned rows do not show
+   * (spec §2). Only the Apps door carries it.
+   */
+  heldDot?: true;
   /** Provenance. Answers "why is this row here?" in devtools, always. */
   reason: string;
 }
+
+/** A pinned app, as its row reads it. */
+export interface SidebarRowApp {
+  /** The extension id. */
+  id: string;
+  /**
+   * `ok` opens it; `held` opens its approval card (never approves); `error`
+   * retries. An `off` app is never pinned in the panel.
+   */
+  state: 'ok' | 'held' | 'error';
+  /** The name with its state in words, for screen readers. */
+  accessibleName: string;
+}
+
+/**
+ * What stands under the Apps door instead of its pins while they cannot be
+ * shown: the list is still on its first read (skeleton bars, as many as the
+ * stored pins), or it failed (one quiet "Couldn't load apps · Try again" row).
+ */
+export type SidebarAppsNotice = { kind: 'loading'; rows: number } | { kind: 'failed' };
 
 /** What a folded section still shows of what it is hiding. */
 export interface SidebarRollup {
@@ -239,11 +268,10 @@ export interface SidebarSectionModel {
   /** The rows it holds. */
   rows: SidebarRowModel[];
   /**
-   * Set when what fills it could not be read — today only Add-ons, when the mini
-   * apps failed to load. The section stands, empty, and says so with a way to
-   * try again, so a failed load never reads as "none installed".
+   * The top items only: what stands under the Apps door in place of its pins
+   * ({@link SidebarAppsNotice}). A failed load never reads as "no apps".
    */
-  loadFailed?: true;
+  appsNotice?: SidebarAppsNotice;
   /** Provenance. */
   reason: string;
 }
@@ -252,7 +280,7 @@ export interface SidebarSectionModel {
  * The whole panel: one list of sections, top to bottom.
  *
  * The top items first, then the operator's own sections, Channels, Direct
- * messages and Add-ons. A section with nothing in it is absent rather than an
+ * messages. A section with nothing in it is absent rather than an
  * empty box — except Direct messages, which always stands, because its empty
  * state is the way to start one.
  */

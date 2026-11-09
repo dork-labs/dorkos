@@ -107,6 +107,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
           { kind: 'agent', path: '/Users/me/code' },
           { kind: 'room', roomId: '01JPINNEDROOM' },
         ],
+        pinnedApps: ['board', 'timesheet'],
         groups: [
           {
             id: 'group-1',

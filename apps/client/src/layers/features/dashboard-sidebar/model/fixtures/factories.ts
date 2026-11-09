@@ -7,8 +7,9 @@ import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
 import type {
   AgentRosterEntry,
-  SidebarAddOnPage,
+  SidebarApps,
   SidebarModelPrefs,
+  SidebarPinnedApp,
   SidebarState,
 } from '../sidebar-state';
 
@@ -151,14 +152,36 @@ export function agent(
 }
 
 /**
- * A page a mini app added, as the Add-ons section reads it.
+ * One pinned app, running and with nothing waiting unless told otherwise.
  *
- * @param extensionId - The extension that registered it.
- * @param path - The path it registered (`''` for its home).
- * @param title - What the row says.
+ * @param id - The extension id.
+ * @param name - What the row says.
+ * @param overrides - Its state, count or path.
  */
-export function addOn(extensionId: string, path: string, title: string): SidebarAddOnPage {
-  return { id: `${extensionId}:${path}`, extensionId, path, title };
+export function pinnedApp(
+  id: string,
+  name: string,
+  overrides: Partial<SidebarPinnedApp> = {}
+): SidebarPinnedApp {
+  return {
+    id,
+    name,
+    path: '',
+    pageId: `${id}:`,
+    state: 'ok',
+    count: 0,
+    accessibleName: name,
+    ...overrides,
+  };
+}
+
+/**
+ * The Apps door's state: answered, with these pins.
+ *
+ * @param overrides - Its status, pins or held flag.
+ */
+export function appsState(overrides: Partial<SidebarApps> = {}): SidebarApps {
+  return { status: 'ready', pinned: [], heldUnpinned: false, storedPinCount: 0, ...overrides };
 }
 
 /**
@@ -172,6 +195,7 @@ export function prefs(overrides: Partial<SidebarModelPrefs> = {}): SidebarModelP
     groups: [],
     muted: [],
     sections: {},
+    pinnedApps: null,
     ...overrides,
   };
 }
@@ -197,8 +221,7 @@ export function emptyState(overrides: Partial<SidebarState> = {}): SidebarState 
     displayNames: {},
     prefs: prefs(),
     mentions: {},
-    addOns: [],
-    addOnsLoadFailed: false,
+    apps: appsState(),
     todos: null,
     activeTarget: null,
     ...overrides,

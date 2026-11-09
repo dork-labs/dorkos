@@ -93,6 +93,7 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.sidebar.pinned[].kind',
   'ui.sidebar.pinned[].path',
   'ui.sidebar.pinned[].roomId',
+  'ui.sidebar.pinnedApps',
   'ui.sidebar.groups[].id',
   'ui.sidebar.groups[].name',
   'ui.sidebar.groups[].items[].kind',

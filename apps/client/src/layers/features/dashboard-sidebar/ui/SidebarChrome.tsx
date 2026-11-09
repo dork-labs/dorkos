@@ -421,6 +421,9 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
         case 'open-todos':
           void navigate({ ...appRoutes.todos() });
           return;
+        case 'open-apps':
+          void navigate({ ...appRoutes.apps() });
+          return;
         case 'open-directory':
         case 'message-someone':
           void navigate({ ...appRoutes.team() });

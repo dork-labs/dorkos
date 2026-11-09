@@ -90,17 +90,16 @@ describe('isRowActive on an agent row', () => {
   );
 });
 
-describe('isRowActive on a mini app’s page', () => {
+describe('isRowActive on a pinned app (DOR-3970)', () => {
   const home: SidebarTarget = { kind: 'add-on', extensionId: 'flow', path: '' };
   const settings: SidebarTarget = { kind: 'add-on', extensionId: 'flow', path: 'settings' };
+  const other: SidebarTarget = { kind: 'add-on', extensionId: 'crm', path: '' };
 
-  it('lights the page that is open, and no other page of the same extension', () => {
-    // The open target already names the one listed page that holds the address
-    // (`listedPageAt`), so a key comparison is the whole rule — and a home row
-    // that also lit for its subpages would make `aria-current` ambiguous.
-    expect(isRowActive(settings, settings)).toBe(true);
-    expect(isRowActive(home, settings)).toBe(false);
+  it('lights for any page of its app, and for no other app', () => {
+    // One row stands for the whole app, so it is open wherever in the app you are.
+    expect(isRowActive(home, settings)).toBe(true);
     expect(isRowActive(home, home)).toBe(true);
+    expect(isRowActive(other, settings)).toBe(false);
   });
 
   it('stays dark in a conversation, and lights nothing else while open', () => {

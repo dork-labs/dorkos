@@ -38,7 +38,8 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sidebar-state';
 import {
-  addOn,
+  appsState,
+  pinnedApp,
   busyFixture,
   powerFixture,
   quietFixture,
@@ -411,7 +412,7 @@ describe('MobileTabsLayout', () => {
       expect(within(panel('you')).getByTestId('sidebar-footer-strip')).toBeInTheDocument();
     });
 
-    it('lists mini apps’ pages in Home’s list, and only there', () => {
+    it('lists pinned apps under Home’s Apps door, and only there', () => {
       useExtensionRegistry.getState().register('pages', {
         id: 'flow:',
         extensionId: 'flow',
@@ -420,15 +421,12 @@ describe('MobileTabsLayout', () => {
         title: 'Flow',
         menu: true,
       });
-      mockState = { ...busyFixture, addOns: [addOn('flow', '', 'Flow')] };
+      mockState = { ...busyFixture, apps: appsState({ pinned: [pinnedApp('flow', 'Flow')] }) };
       try {
         renderLayout();
 
-        const addOns = panel('home').querySelector('[data-sidebar-section="addons"]');
-        expect(addOns).not.toBeNull();
-        expect(
-          within(addOns as HTMLElement).getByRole('button', { name: 'Flow' })
-        ).toBeInTheDocument();
+        const pins = within(panel('home')).getByRole('group', { name: 'Pinned apps' });
+        expect(within(pins).getByRole('button', { name: 'Flow' })).toBeInTheDocument();
         expect(
           within(panel('you')).queryByRole('button', { name: 'Flow' })
         ).not.toBeInTheDocument();

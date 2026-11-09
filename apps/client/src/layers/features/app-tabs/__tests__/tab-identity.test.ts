@@ -506,6 +506,7 @@ describe('the route map (drift guard)', () => {
       // The alias, named for where it lands: a tab saved before the rename
       // restores as `/agents` and must not read "DorkOS" or "Agents".
       '/agents': 'Team',
+      '/apps': 'Apps',
       '/channels': 'Channels',
       '/connections': 'Connections',
       // What the help menu calls it (DOR-2232).

@@ -5,7 +5,15 @@
  *
  * @module dev/showcases/sidebar-model-row-glyph
  */
-import { Bot, BookUser, Hash, MessageSquareReply, Plus, SquareCheck } from 'lucide-react';
+import {
+  Bot,
+  BookUser,
+  Hash,
+  LayoutGrid,
+  MessageSquareReply,
+  Plus,
+  SquareCheck,
+} from 'lucide-react';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { ContributedIcon, IdentityAvatar } from '@/layers/shared/ui';
 import type {
@@ -20,6 +28,7 @@ const ICON: Record<SidebarIconId, typeof Bot> = {
   todos: SquareCheck,
   directory: BookUser,
   add: Plus,
+  apps: LayoutGrid,
 };
 
 /**

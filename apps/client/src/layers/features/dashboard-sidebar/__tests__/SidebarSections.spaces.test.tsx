@@ -59,23 +59,31 @@ vi.mock('../ui/SidebarSection', () => ({
     section,
     onToggleAll,
   }: {
-    section: { id: string };
+    section: { id: string; rows: { key: string }[] };
     onToggleAll: () => void;
   }) => (
-    <button type="button" data-testid={`section-${section.id}`} onClick={onToggleAll}>
+    <button
+      type="button"
+      data-testid={`section-${section.id}`}
+      data-rows={section.rows.map((row) => row.key).join(',')}
+      onClick={onToggleAll}
+    >
       {section.id}
     </button>
   ),
 }));
 
 import { buildSidebarModel } from '../model/build-sidebar-model';
-import { addOn, busyFixture } from '../model/fixtures';
+import { appsState, busyFixture, pinnedApp } from '../model/fixtures';
 import { SidebarSections } from '../ui/SidebarSections';
 
 const MODEL = buildSidebarModel(busyFixture);
 
-/** A real model holding an Add-ons section, beside Channels and the rest. */
-const WITH_ADD_ONS = buildSidebarModel({ ...busyFixture, addOns: [addOn('flow', '', 'Flow')] });
+/** A real model with one app pinned under the Apps door. */
+const WITH_PINS = buildSidebarModel({
+  ...busyFixture,
+  apps: appsState({ pinned: [pinnedApp('flow', 'Flow')] }),
+});
 
 afterEach(() => {
   cleanup();
@@ -106,46 +114,34 @@ describe('SidebarSections on a space’s address', () => {
   });
 });
 
-describe('Add-ons inside a space', () => {
-  it('stays under the space’s channels, alone of this machine’s sections', () => {
-    // A space's channels replace this machine's conversations, not its mini
-    // apps: before, the pages were one press away in You whatever the panel
-    // showed, so a space hiding them would be a step backwards.
+describe('Apps inside a space', () => {
+  it('keeps the Apps door and its pins under the space’s channels, and nothing else of this machine', () => {
+    // A space's channels replace this machine's conversations, not its apps.
     spaces.on = true;
     commitCommunityRouteEpoch(JSON.stringify(['community', 'acme', null, null]));
-    const { container } = render(<SidebarSections model={WITH_ADD_ONS} />);
+    const { container } = render(<SidebarSections model={WITH_PINS} />);
 
     const space = container.querySelector('[data-community-context="acme"]');
     expect(space).not.toBeNull();
-    const drawn = Array.from(space!.querySelectorAll('[data-testid^="section-"]')).map(
-      (el) => el.textContent
+    const drawn = Array.from(space!.querySelectorAll('[data-testid^="section-"]')).map((el) =>
+      el.getAttribute('data-rows')
     );
-    expect(drawn).toEqual(['addons']);
+    expect(drawn).toEqual(['command:open-apps,add-on:flow:']);
     // Below the channels, not above them.
     expect(
       screen
         .getByTestId('space-channels')
-        .compareDocumentPosition(screen.getByTestId('section-addons')) &
+        .compareDocumentPosition(screen.getByTestId('section-top')) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });
 
-  it('is absent when no mini app added a page', () => {
+  it('folds nothing on Alt-click, since nothing it draws folds', () => {
     spaces.on = true;
     commitCommunityRouteEpoch(JSON.stringify(['community', 'acme', null, null]));
-    render(<SidebarSections model={buildSidebarModel(busyFixture)} />);
+    render(<SidebarSections model={WITH_PINS} />);
 
-    expect(screen.getByTestId('space-channels')).toBeInTheDocument();
-    expect(screen.queryByTestId('section-addons')).not.toBeInTheDocument();
-  });
-
-  it('folds only itself on Alt-click, the one section of this machine a space shows', () => {
-    spaces.on = true;
-    commitCommunityRouteEpoch(JSON.stringify(['community', 'acme', null, null]));
-    render(<SidebarSections model={WITH_ADD_ONS} />);
-
-    fireEvent.click(screen.getByTestId('section-addons'));
-    expect(prefsWrites.setSectionCollapsed).toHaveBeenCalledTimes(1);
-    expect(prefsWrites.setSectionCollapsed).toHaveBeenCalledWith({}, 'addons', true);
+    fireEvent.click(screen.getByTestId('section-top'));
+    expect(prefsWrites.setSectionCollapsed).not.toHaveBeenCalled();
   });
 });

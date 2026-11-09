@@ -61,7 +61,7 @@ export interface ExtensionDecisionListProps {
  * again focuses it again. A row ringed but never focused keeps its ring until
  * the Inbox closes, as the mark of what the link was for.
  */
-function DecisionFrame({
+export function DecisionFrame({
   decisionId,
   focused,
   onFocusSpent,

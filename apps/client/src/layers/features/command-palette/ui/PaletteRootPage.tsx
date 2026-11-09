@@ -1,3 +1,4 @@
+import type { AppTarget } from '@/layers/entities/extension';
 import { motion } from 'motion/react';
 import { CommandGroup, CommandItem, CommandSeparator } from '@/layers/shared/ui';
 import type { RoomSummary } from '@/layers/entities/room';
@@ -65,7 +66,7 @@ interface PaletteRootPageProps {
   /** Put a slash command in the active conversation's composer and go there. */
   onCommandSelect: (command: string) => void;
   /** Open an extension page. */
-  onPageSelect: (href: string) => void;
+  onPageSelect: (href: string, app?: AppTarget) => void;
 }
 
 /**

@@ -545,6 +545,8 @@ export interface SidebarRowProps {
   expansion?: ReactNode;
   /** Stamped on the row button, for tests and page objects. */
   dataSlot?: string;
+  /** Stamped on the row button as `data-testid`, a stable handle for tests and recordings. */
+  testId?: string;
   /** Extra classes on the row button. */
   className?: string;
   /** Ref to the row button, for focus restoration after an inline editor closes. */
@@ -609,6 +611,7 @@ export function SidebarRow({
   editor,
   expansion,
   dataSlot,
+  testId,
   className,
   buttonRef,
   drag,
@@ -678,6 +681,7 @@ export function SidebarRow({
         title={hintLine === null ? rowLabel || undefined : undefined}
         aria-current={isActive ? 'page' : undefined}
         data-slot={dataSlot}
+        data-testid={testId}
         // Which rung the row stands on, readable without parsing its classes —
         // what a browser test asks to tell an unread row from a read one.
         data-row-state={rowState}

@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { getPrefersReducedMotion } from '@/test-setup';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { createInitialSlots, TransportProvider, useExtensionRegistry } from '@/layers/shared/model';
-import { registerExtensionRemount, setExtensionLoadFailed } from '@/layers/shared/lib';
+import { registerExtensionRemount } from '@/layers/shared/lib';
 import { useCreateFlowStore } from '../model/create-flow-store';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
@@ -454,6 +454,20 @@ vi.mock('@/layers/features/feature-promos', () => ({
 }));
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
+// The app catalog has its own tests (`app-catalog.test.ts`); here it is one
+// switchable answer, so these cases are about what the panel draws from it.
+const EMPTY_APP_CATALOG = { status: 'ready', apps: [], pinned: [], pins: [] };
+const appCatalog = vi.hoisted(() => ({ value: undefined as unknown }));
+vi.mock('@/layers/entities/extension', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/extension')>()),
+  useAppCatalog: () => appCatalog.value ?? EMPTY_APP_CATALOG,
+}));
+const mockRequestInbox = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/entities/notifications', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/notifications')>()),
+  requestInbox: mockRequestInbox,
+}));
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -936,122 +950,144 @@ describe('DashboardSidebar', () => {
 
   // ── Add-ons: the pages mini apps add (spec `mini-app-placement` Part 2) ──
 
-  describe('Add-ons — the pages mini apps add', () => {
-    /** Register one page the way `api.registerPage` does. */
-    function registerPage(
-      extensionId: string,
-      path: string,
-      title: string,
-      options: { menu?: boolean; icon?: unknown } = {}
-    ) {
-      useExtensionRegistry.getState().register('pages', {
-        id: `${extensionId}:${path}`,
-        extensionId,
-        path,
-        component: () => null,
-        title,
-        menu: options.menu ?? true,
-        icon: options.icon as never,
-      });
+  describe('the Apps door and its pins (DOR-3970)', () => {
+    /** One app the catalog answers with. */
+    function app(id: string, name: string, overrides: Record<string, unknown> = {}) {
+      return {
+        id,
+        name,
+        summary: '',
+        state: 'ok',
+        path: '',
+        pageId: `${id}:`,
+        count: 0,
+        line: null,
+        ...overrides,
+      };
     }
 
-    /** One Add-ons row's button, by the page's title. */
-    function addOnRow(title: string): HTMLElement {
-      return within(sectionBody('addons')).getByRole('button', { name: title });
+    /** The door's pinned rows, in order, by their visible names. */
+    function pinnedNames(): string[] {
+      return within(screen.getByRole('group', { name: 'Pinned apps' }))
+        .getAllByRole('button')
+        .map((el) => el.querySelector('[data-slot="sidebar-row-title"]')?.textContent ?? '')
+        .filter(Boolean);
     }
 
-    beforeEach(() => useExtensionRegistry.setState({ slots: createInitialSlots() }));
-    afterEach(() => useExtensionRegistry.setState({ slots: createInitialSlots() }));
-
-    it('is absent when no mini app added a page', async () => {
-      mockRooms.mockReturnValue([channel('r1', 'general')]);
-      renderWithProviders(<DashboardSidebar />);
-      await waitFor(() => expect(headings()).toContain('Channels'));
-      expect(headings()).not.toContain('Add-ons');
+    afterEach(() => {
+      appCatalog.value = EMPTY_APP_CATALOG;
+      mockRequestInbox.mockClear();
     });
 
-    it('says the mini apps couldn’t load, and tries again, instead of vanishing', async () => {
-      const remount = vi.fn(() => Promise.resolve());
-      const unregister = registerExtensionRemount(remount);
-      setExtensionLoadFailed(true);
+    it('stands between Threads and Directory, and no Add-ons section is drawn', async () => {
+      renderWithProviders(<DashboardSidebar />);
+      const door = await waitFor(() => screen.getByTestId('apps-door'));
+      expect(door).toHaveTextContent('Apps');
+      expect(headings()).not.toContain('Add-ons');
+      expect(screen.queryByRole('group', { name: 'Pinned apps' })).not.toBeInTheDocument();
+    });
+
+    it('opens the Apps page from its door', async () => {
+      renderWithProviders(<DashboardSidebar />);
+      await userEvent.click(await waitFor(() => screen.getByTestId('apps-door')));
+      expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/apps' }));
+    });
+
+    it('lists the pins under the door, in pin order, not A–Z', async () => {
+      const zeta = app('zeta', 'Zeta Board');
+      const alpha = app('alpha', 'Alpha Notes');
+      appCatalog.value = {
+        status: 'ready',
+        apps: [alpha, zeta],
+        pinned: [zeta, alpha],
+        pins: ['zeta', 'alpha'],
+      };
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(pinnedNames()).toEqual(['Zeta Board', 'Alpha Notes']));
+    });
+
+    // Purpose: a pinned app's count is the neutral pill, capped at 9+ (DOR-3077).
+    it('draws a pinned app’s count as a neutral pill, capped at 9+', async () => {
+      const mail = app('mail', 'Mail', { count: 14 });
+      appCatalog.value = { status: 'ready', apps: [mail], pinned: [mail], pins: ['mail'] };
+      renderWithProviders(<DashboardSidebar />);
+      const row = await waitFor(() => screen.getByTestId('apps-pinned-mail'));
+      const pill = row.querySelector('[data-slot="count-pill"]');
+      expect(pill).toHaveAttribute('data-tone', 'neutral');
+      expect(pill).toHaveTextContent('9+');
+    });
+
+    it('opens a pinned app’s first page when its row is pressed', async () => {
+      const board = app('board', 'Board', { path: 'today' });
+      appCatalog.value = { status: 'ready', apps: [board], pinned: [board], pins: ['board'] };
+      renderWithProviders(<DashboardSidebar />);
+      await userEvent.click(await waitFor(() => screen.getByTestId('apps-pinned-board')));
+      expect(mockRouterNavigate).toHaveBeenCalledWith({ href: '/x/board/today' });
+    });
+
+    it('keeps a held app where it was, says so, and opens its card instead of the app', async () => {
+      const radar = app('radar', 'Release Radar', { state: 'held', pageId: null });
+      appCatalog.value = { status: 'ready', apps: [radar], pinned: [radar], pins: ['radar'] };
+      renderWithProviders(<DashboardSidebar />);
+      const row = await waitFor(() =>
+        screen.getByRole('button', { name: /Release Radar, needs your OK/ })
+      );
+      await userEvent.click(row);
+      expect(mockRequestInbox).toHaveBeenCalledWith(undefined, { focus: 'radar' });
+      expect(mockRouterNavigate).not.toHaveBeenCalled();
+    });
+
+    it('puts a dot on the door only for a held app no pinned row shows', async () => {
+      const radar = app('radar', 'Release Radar', { state: 'held' });
+      appCatalog.value = { status: 'ready', apps: [radar], pinned: [], pins: [] };
+      renderWithProviders(<DashboardSidebar />);
+      const door = await waitFor(() => screen.getByTestId('apps-door'));
+      expect(door).toHaveAccessibleName(/an app needs your OK/);
+    });
+
+    it('marks the app you are on, for any of its pages', async () => {
+      useExtensionRegistry.setState({ slots: createInitialSlots() });
+      useExtensionRegistry.getState().register('pages', {
+        id: 'board:settings',
+        extensionId: 'board',
+        path: 'settings',
+        component: () => null,
+        title: 'Board settings',
+        menu: true,
+      });
+      const board = app('board', 'Board');
+      appCatalog.value = { status: 'ready', apps: [board], pinned: [board], pins: ['board'] };
+      mockPathname = '/x/board/settings';
+      mockLocation = { pathname: mockPathname, search: {} };
       try {
         renderWithProviders(<DashboardSidebar />);
-
-        await waitFor(() => expect(headings()).toContain('Add-ons'));
-        const body = within(sectionBody('addons'));
-        expect(body.getByText('Couldn’t load apps.')).toBeInTheDocument();
-        await userEvent.click(body.getByRole('button', { name: 'Try again' }));
-        expect(remount).toHaveBeenCalledTimes(1);
-
-        // A working load takes the line and the empty section away again.
-        act(() => setExtensionLoadFailed(false));
-        await waitFor(() => expect(headings()).not.toContain('Add-ons'));
+        const row = await waitFor(() => screen.getByTestId('apps-pinned-board'));
+        expect(row).toHaveAttribute('aria-current', 'page');
       } finally {
-        setExtensionLoadFailed(false);
-        unregister();
+        useExtensionRegistry.setState({ slots: createInitialSlots() });
       }
     });
 
-    it('lists every listed page last, by its own title', async () => {
-      registerPage('social-queue', '', 'Social Queue');
-      registerPage('flow', '', 'Flow');
-      // Neither of these can be opened from a list: one asked not to be, the
-      // other needs a value no menu can fill in.
-      registerPage('flow', 'debug', 'Debug', { menu: false });
-      registerPage('flow', 'p/:name', 'Project');
-      renderWithProviders(<DashboardSidebar />);
-
-      await waitFor(() => expect(headings()).toContain('Add-ons'));
-      expect(headings().at(-1)).toBe('Add-ons');
-      // The header's own toggle, then one row per page, sorted by title.
-      expect(
-        within(sectionBody('addons'))
-          .getAllByRole('button')
-          .map((el) => el.textContent?.trim())
-      ).toEqual(['Add-ons', 'Flow', 'Social Queue']);
-    });
-
-    it('opens a page when its row is pressed', async () => {
-      registerPage('flow', 'settings', 'Flow settings');
-      renderWithProviders(<DashboardSidebar />);
-
-      await userEvent.click(await waitFor(() => addOnRow('Flow settings')));
-      expect(mockRouterNavigate).toHaveBeenCalledWith({ href: '/x/flow/settings' });
-    });
-
-    it('marks the page you are on, and only that one', async () => {
-      registerPage('flow', '', 'Flow');
-      registerPage('flow', 'settings', 'Flow settings');
-      mockPathname = '/x/flow/settings/accounts';
-      mockLocation = { pathname: mockPathname, search: {} };
-      renderWithProviders(<DashboardSidebar />);
-
-      const current = await waitFor(() => addOnRow('Flow settings'));
-      expect(current).toHaveAttribute('aria-current', 'page');
-      expect(addOnRow('Flow')).not.toHaveAttribute('aria-current');
-    });
-
-    it('keeps the row when a page’s icon cannot be drawn', async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => {});
-      registerPage('flow', '', 'Flow', { icon: { name: 'flow' } });
-      registerPage('broken', '', 'Broken', {
-        icon: () => {
-          throw new Error('boom');
-        },
-      });
-      renderWithProviders(<DashboardSidebar />);
-
-      expect(await waitFor(() => addOnRow('Flow'))).toBeInTheDocument();
-      expect(addOnRow('Broken')).toBeInTheDocument();
-    });
-
-    it('folds under its own stored id', async () => {
-      registerPage('flow', '', 'Flow');
-      renderWithProviders(<DashboardSidebar />);
-
-      await waitFor(() => expect(headings()).toContain('Add-ons'));
-      fireEvent.click(sectionToggle('Add-ons'));
-      expect(lastPrefsWrite().sections?.addons?.collapsed).toBe(true);
+    it('says the apps couldn’t load under the door, which stays, and tries again', async () => {
+      const remount = vi.fn(() => Promise.resolve());
+      const unregister = registerExtensionRemount(remount);
+      appCatalog.value = { status: 'failed', apps: [], pinned: [], pins: ['board'] };
+      try {
+        renderWithProviders(<DashboardSidebar />);
+        expect(await waitFor(() => screen.getByTestId('apps-door'))).toBeInTheDocument();
+        const status = screen
+          .getAllByRole('status')
+          .find((el) => el.textContent?.includes('Couldn’t load apps'));
+        expect(status).toBeDefined();
+        // Standing where the pins would, right under the door.
+        expect(status?.previousElementSibling?.contains(screen.getByTestId('apps-door'))).toBe(
+          true
+        );
+        await userEvent.click(within(status!).getByRole('button', { name: 'Try again' }));
+        expect(remount).toHaveBeenCalledTimes(1);
+      } finally {
+        unregister();
+      }
     });
   });
 

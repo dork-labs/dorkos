@@ -440,6 +440,8 @@ export function InboxBell() {
                       short row each, answered in place, with no clock. */}
                   <ExtensionApprovalList
                     approvals={extensionApprovals}
+                    focusId={focusId}
+                    onFocusSpent={() => setFocusId(undefined)}
                     onOpenSettings={() => {
                       setOpen(false);
                       void navigate({ ...appRoutes.home(), search: { settings: 'extensions' } });

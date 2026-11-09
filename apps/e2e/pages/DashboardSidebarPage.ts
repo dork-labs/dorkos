@@ -207,7 +207,7 @@ export class DashboardSidebarPage {
   /**
    * One section of the list, by the id the model gave it.
    *
-   * @param id - `top`, `channels`, `dms`, `addons`, or a `group:<id>`.
+   * @param id - `top`, `channels`, `dms`, or a `group:<id>`.
    */
   section(id: string): Locator {
     return this.page.locator(`[data-sidebar-section="${id}"]`);
@@ -225,7 +225,7 @@ export class DashboardSidebarPage {
   /**
    * One section's fold toggle, by the label on its header.
    *
-   * @param label - `Channels`, `Direct messages`, `Add-ons`, or a section you made.
+   * @param label - `Channels`, `Direct messages`, or a section you made.
    */
   sectionToggle(label: string): Locator {
     return this.page
