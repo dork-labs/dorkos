@@ -23,15 +23,22 @@ const managedCredentials = credentials.extend({
     ])
     .optional(),
 });
-/**
- * Composio's managed Slack app also stores Slack's legacy `verification_token`.
- * Like `client_secret` it is the provider app's own material, so it is checked
- * for shape and never retained. Accepted for the `slack` toolkit only: on any
- * other toolkit an unexpected credential key still means the policy is unknown.
- */
-const managedSlackCredentials = managedCredentials.extend({
-  verification_token: z.string().max(16_384).optional(),
-});
+// Value hidden by Composio; this marker does not identify a Microsoft cloud.
+const COMPOSIO_MASKED_VALUE = 'REDACTED';
+/** Toolkit-only managed app metadata, validated here and never retained. */
+const managedCredentialsByToolkit = {
+  // Slack's legacy app token belongs to Composio, like its client_secret.
+  slack: managedCredentials.extend({
+    verification_token: z.string().max(16_384).optional(),
+  }),
+  // Security permits the public cloud and Composio's exact masking marker.
+  outlook: managedCredentials
+    .extend({ microsoft_cloud: z.enum(['global', COMPOSIO_MASKED_VALUE]).optional() })
+    .refine(
+      (value) => !Object.hasOwn(value, 'microsoft_cloud') || value.microsoft_cloud !== undefined,
+      { path: ['microsoft_cloud'] }
+    ),
+};
 const toolAccess = z
   .object({
     tools_available_for_execution: z.array(z.string()).max(0).optional(),
@@ -85,37 +92,62 @@ function scopes(value: string | string[] | undefined): string[] {
   ].sort();
 }
 
+function toolkitSlug(envelope: Record<string, unknown>): string {
+  const toolkit = envelope.toolkit;
+  if (!toolkit || typeof toolkit !== 'object' || Array.isArray(toolkit)) return 'unknown';
+  const slug = (toolkit as Record<string, unknown>).slug;
+  return typeof slug === 'string' && /^[a-z0-9_]{1,200}$/.test(slug) ? slug : 'unknown';
+}
+
+function refusePolicy(
+  toolkit: string,
+  reason: 'unsupported_policy_keys' | 'unsupported_policy_shape',
+  keys: string[]
+): undefined {
+  // Zod messages can contain expected literals. Log only paths and key names.
+  console.warn('[Composio] Authentication configuration policy refused', {
+    toolkit,
+    reason,
+    keys: [...new Set(keys)].sort(),
+  });
+  return undefined;
+}
+
 /** Return only a verified empty/default policy shape; absent means unsuitable for automatic reuse. */
 export function projectComposioAuthenticationConfigPolicy(
   raw: unknown
 ): ComposioAuthenticationConfigPolicy | undefined {
-  if (
-    !raw ||
-    typeof raw !== 'object' ||
-    Array.isArray(raw) ||
-    Object.keys(raw).some((key) => !knownKeys.has(key))
-  )
-    return undefined;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   // Managed OAuth app credentials belong to Composio, not the connected account.
   // Validate only the documented envelope; never retain its client credentials.
   const envelope = raw as Record<string, unknown>;
+  const toolkit = toolkitSlug(envelope);
+  const unknownKeys = Object.keys(raw).filter((key) => !knownKeys.has(key));
+  if (unknownKeys.length > 0) return refusePolicy(toolkit, 'unsupported_policy_keys', unknownKeys);
   const managed =
     envelope.type === 'default' &&
     envelope.is_composio_managed === true &&
     envelope.auth_scheme === 'OAUTH2';
-  const slack =
-    managed &&
-    typeof envelope.toolkit === 'object' &&
-    envelope.toolkit !== null &&
-    (envelope.toolkit as Record<string, unknown>).slug === 'slack';
+  const managedCredentialSchema = Object.hasOwn(managedCredentialsByToolkit, toolkit)
+    ? managedCredentialsByToolkit[toolkit as keyof typeof managedCredentialsByToolkit]
+    : managedCredentials;
   const parsed = (
     managed
       ? policy.extend({
-          credentials: (slack ? managedSlackCredentials : managedCredentials).optional(),
+          credentials: managedCredentialSchema.optional(),
         })
       : policy
   ).safeParse(raw);
-  if (!parsed.success) return undefined;
+  if (!parsed.success)
+    return refusePolicy(
+      toolkit,
+      'unsupported_policy_shape',
+      parsed.error.issues.flatMap((issue) =>
+        issue.code === 'unrecognized_keys'
+          ? issue.keys.map((key) => [...issue.path, key].join('.'))
+          : [issue.path.join('.')]
+      )
+    );
   const scopeList = scopes(parsed.data.credentials?.scopes);
   const userScopeList = scopes(parsed.data.credentials?.user_scopes);
   // Composio stores `scopes: []` on every API-key, bearer, basic and no-auth
