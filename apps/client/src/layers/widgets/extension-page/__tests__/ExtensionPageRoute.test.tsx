@@ -21,8 +21,18 @@ let mockExtensions: { extensions: ExtensionRecordPublic[]; ready: boolean; settl
 vi.mock('@/layers/features/extensions', () => ({
   useExtensions: () => ({ ...mockExtensions, loaded: new Map() }),
 }));
+const tryAgain = vi.fn(async (_id: string) => {});
+vi.mock('@/layers/entities/extension', () => ({
+  useAppActions: () => ({ tryAgain }),
+  useAppTrying: () => false,
+}));
 
+import {
+  getExtensionClientStates,
+  setExtensionClientState,
+} from '@/layers/shared/lib/extension-client-state';
 import { ExtensionPageRoute } from '../ui/ExtensionPageRoute';
+import { STARTING_LINE_DELAY_MS } from '../ui/ExtensionPageStatus';
 
 function record(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecordPublic {
   return {
@@ -79,13 +89,21 @@ function registerPage(path: string, component: (props: ExtensionPageProps) => Re
 beforeEach(() => {
   useExtensionRegistry.setState({ slots: createInitialSlots() });
   mockExtensions = { extensions: [], ready: false };
+  tryAgain.mockClear();
 });
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  for (const id of Object.keys(getExtensionClientStates())) setExtensionClientState(id, undefined);
+});
+
+/** Wait past the delay before "Starting…" may show. */
+const pastStartingDelay = () =>
+  new Promise((resolve) => setTimeout(resolve, STARTING_LINE_DELAY_MS + 50));
 
 describe('ExtensionPageRoute (spec flow-multiproject §6.5)', () => {
-  it('draws a skeleton, never a 404, before extensions have loaded; then the page', async () => {
+  it('waits, never a 404, before extensions have loaded; then the page', async () => {
     await renderAt('/x/hello');
-    expect(await screen.findByTestId('extension-page-skeleton')).toBeInTheDocument();
+    expect(await screen.findByTestId('extension-page-loading')).toBeInTheDocument();
 
     act(() => {
       registerPage('', () => <h1>Hello page</h1>);
@@ -93,7 +111,7 @@ describe('ExtensionPageRoute (spec flow-multiproject §6.5)', () => {
     });
 
     expect(await screen.findByRole('heading', { name: 'Hello page' })).toBeInTheDocument();
-    expect(screen.queryByTestId('extension-page-skeleton')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('extension-page-loading')).not.toBeInTheDocument();
   });
 
   it('hands the page its params and the flat query', async () => {
@@ -133,7 +151,7 @@ describe('ExtensionPageRoute (spec flow-multiproject §6.5)', () => {
     mockExtensions = { extensions, ready: true };
     await renderAt('/x/hello/nowhere');
     expect(await screen.findByText(new RegExp(text.replace(/[.?]/g, '\\$&')))).toBeInTheDocument();
-    expect(screen.queryByTestId('extension-page-skeleton')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('extension-page-loading')).not.toBeInTheDocument();
   });
 
   it('waits, rather than saying the page is missing, while a reload swaps the extensions', async () => {
@@ -141,7 +159,7 @@ describe('ExtensionPageRoute (spec flow-multiproject §6.5)', () => {
     // in between the page is unregistered while the extension still runs.
     mockExtensions = { extensions: [record()], ready: true, settling: true };
     await renderAt('/x/hello');
-    expect(await screen.findByTestId('extension-page-skeleton')).toBeInTheDocument();
+    expect(await screen.findByTestId('extension-page-loading')).toBeInTheDocument();
     expect(screen.queryByText(/doesn’t have this page/)).not.toBeInTheDocument();
   });
 
@@ -156,11 +174,59 @@ describe('ExtensionPageRoute (spec flow-multiproject §6.5)', () => {
     act(() => unregister());
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(screen.queryByText(/doesn’t have this page/)).not.toBeInTheDocument();
-    expect(screen.getByTestId('extension-page-skeleton')).toBeInTheDocument();
+    expect(screen.getByTestId('extension-page-loading')).toBeInTheDocument();
     act(() => void registerPage('', () => <h1>Hello page</h1>));
 
     expect(await screen.findByRole('heading', { name: 'Hello page' })).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(screen.queryByText(/doesn’t have this page/)).not.toBeInTheDocument();
+  });
+
+  it('shows nothing at first, then one quiet “Starting…” line while the app loads (A)', async () => {
+    mockExtensions = { extensions: [record()], ready: true };
+    setExtensionClientState('hello', 'starting');
+    await renderAt('/x/hello');
+    expect(await screen.findByTestId('extension-page-loading')).toBeInTheDocument();
+    // A quick load never flashes it.
+    expect(screen.queryByText('Starting…')).not.toBeInTheDocument();
+
+    await act(pastStartingDelay);
+    expect(screen.getByText('Starting…')).toBeInTheDocument();
+    expect(screen.queryByText(/isn’t available/)).not.toBeInTheDocument();
+
+    act(() => {
+      registerPage('', () => <h1>Hello page</h1>);
+      setExtensionClientState('hello', 'ready');
+    });
+    expect(await screen.findByRole('heading', { name: 'Hello page' })).toBeInTheDocument();
+    expect(screen.queryByText('Starting…')).not.toBeInTheDocument();
+  });
+
+  it('never says “Starting…” while it only holds back a missing page', async () => {
+    mockExtensions = { extensions: [record()], ready: true };
+    setExtensionClientState('hello', 'ready');
+    await renderAt('/x/hello/nowhere');
+    expect(await screen.findByText(/doesn’t have this page/)).toBeInTheDocument();
+    expect(screen.queryByText('Starting…')).not.toBeInTheDocument();
+  });
+
+  it('says the app isn’t working once its bundle never finished, and tries again (B)', async () => {
+    mockExtensions = { extensions: [record()], ready: true };
+    setExtensionClientState('hello', 'error');
+    await renderAt('/x/hello');
+    expect(await screen.findByText('Hello World isn’t working.')).toBeInTheDocument();
+    expect(screen.queryByText(/doesn’t have this page/)).not.toBeInTheDocument();
+
+    act(() => screen.getByRole('button', { name: 'Try again' }).click());
+    expect(tryAgain).toHaveBeenCalledWith('hello');
+  });
+
+  it('keeps “isn’t allowed to run yet” for an app whose files changed mid-load (C2)', async () => {
+    mockExtensions = { extensions: [record({ approvedToRun: false })], ready: true };
+    setExtensionClientState('hello', 'starting');
+    await renderAt('/x/hello');
+    expect(await screen.findByText('Hello World isn’t allowed to run yet.')).toBeInTheDocument();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)));
     expect(screen.queryByText(/doesn’t have this page/)).not.toBeInTheDocument();
   });
 

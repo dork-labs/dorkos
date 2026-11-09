@@ -5,6 +5,7 @@
  * @module widgets/extension-page/model/extension-page-state
  */
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import type { ExtensionClientState } from '@/layers/shared/lib/extension-client-state';
 import type { ExtensionPageAtPath } from '@/layers/shared/model';
 
 /** The one thing an extension page route can be showing. */
@@ -21,6 +22,8 @@ export type ExtensionPageState =
   | { kind: 'turned-off'; name: string }
   /** It could not be built or started. */
   | { kind: 'broken'; name: string }
+  /** Allowed to run, but its bundle failed or never finished loading in this window. */
+  | { kind: 'not-working'; id: string; name: string }
   /** It runs, and has no page at this address. */
   | { kind: 'no-page'; name: string };
 
@@ -45,12 +48,17 @@ const BROKEN_STATUSES: ReadonlySet<ExtensionRecordPublic['status']> = new Set([
  * @param ready - Whether the first extension load has finished.
  * @param settling - Whether a reload is swapping the loaded set right now; the
  *   page may be about to come back, so this also answers `loading`.
+ * @param clientState - This app's own load in this window, the same answer its
+ *   Apps tile reads. "No such page" is only true once it is `ready`: while it is
+ *   `starting` the page may be about to register, and after `error` the app is
+ *   not working, which is a different thing to say.
  */
 export function extensionPageState(
   at: ExtensionPageAtPath,
   extensions: readonly ExtensionRecordPublic[],
   ready: boolean,
-  settling = false
+  settling = false,
+  clientState?: ExtensionClientState
 ): ExtensionPageState {
   if (at.match !== null) return { kind: 'page', at: { ...at, match: at.match } };
   if (!ready || settling) return { kind: 'loading' };
@@ -61,6 +69,10 @@ export function extensionPageState(
   const name = record.manifest.name;
   if (BROKEN_STATUSES.has(record.status)) return { kind: 'broken', name };
   if (record.status === 'disabled') return { kind: 'turned-off', name };
+  // Approval comes before the load: an app whose files changed mid-load keeps
+  // its old attempt's "starting", and still waits on a person.
   if (!record.approvedToRun) return { kind: 'not-allowed', name };
+  if (clientState === 'starting') return { kind: 'loading' };
+  if (clientState === 'error') return { kind: 'not-working', id: record.id, name };
   return { kind: 'no-page', name };
 }

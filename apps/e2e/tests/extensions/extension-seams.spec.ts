@@ -68,15 +68,15 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await expect(page).toHaveURL(/\/x\/hello-world\?name=Kai$/);
 
     // Reload: the address arrives before the extension has loaded, so the
-    // route must draw a skeleton — never "not available" — and then the page.
+    // route must say "Starting…" — never "not available" — and then the page.
     // Both are transient, so a recorder installed before the app boots watches
     // every frame of the load instead of hoping a locator looks at the right
     // moment.
     await page.addInitScript(() => {
-      const seen = { skeleton: false, unavailable: false, said: '' };
+      const seen = { waited: false, unavailable: false, said: '' };
       (window as Window & { __pageLoadSeen?: typeof seen }).__pageLoadSeen = seen;
       new MutationObserver(() => {
-        if (document.querySelector('[data-testid="extension-page-skeleton"]')) seen.skeleton = true;
+        if (document.querySelector('[data-testid="extension-page-loading"]')) seen.waited = true;
         if (document.body?.textContent?.includes('This page isn’t available')) {
           seen.unavailable = true;
           // What it said, so a failure names which empty state flashed.
@@ -99,7 +99,7 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await page.route(bundle, handler);
     try {
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(page.getByTestId('extension-page-skeleton')).toBeVisible();
+      await expect(page.getByTestId('extension-page-loading').getByText('Starting…')).toBeVisible();
     } finally {
       releaseBundle();
       await completed;
@@ -110,14 +110,14 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
       () =>
         (
           window as Window & {
-            __pageLoadSeen?: { skeleton: boolean; unavailable: boolean; said: string };
+            __pageLoadSeen?: { waited: boolean; unavailable: boolean; said: string };
           }
         ).__pageLoadSeen
     ))!;
-    expect(seen.skeleton, 'the reload drew the loading skeleton first').toBe(true);
+    expect(seen.waited, 'the reload waited on the app first').toBe(true);
     expect(seen.said, 'the reload never said the page was unavailable').toBe('');
     expect(seen.unavailable).toBe(false);
-    await expect(page.getByTestId('extension-page-skeleton')).toHaveCount(0);
+    await expect(page.getByTestId('extension-page-loading')).toHaveCount(0);
   });
 
   test('shows its item in a chat’s status bar', async ({ page }) => {
