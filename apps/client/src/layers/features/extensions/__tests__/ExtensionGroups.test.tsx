@@ -277,6 +277,11 @@ describe('the Allow all card', () => {
     const own = screen.getByTestId('approval-set-one-by-one-marketing-suite');
     expect(within(own).getByTestId('extension-card-studio')).toBeInTheDocument();
     expect(within(own).queryByTestId('extension-card-writer')).not.toBeInTheDocument();
+    // Beside the group's neutral count, its chip is neutral too (designer, Nov 8).
+    expect(within(own).getByTestId('extension-health-studio')).toHaveAttribute(
+      'data-tone',
+      'neutral'
+    );
   });
 
   it('echoes the set it showed, and on a partial answer says which were allowed', async () => {

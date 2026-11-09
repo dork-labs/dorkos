@@ -244,8 +244,9 @@ export function ExtensionsSettingsTab() {
   const nothingMatches =
     needsYouCount + otherGroups.length + everythingElse.length + core.length === 0;
 
-  const renderRow = (ext: ExtensionRecordPublic) => (
+  const rowFor = (ext: ExtensionRecordPublic, inGroup: boolean) => (
     <ExtensionRow
+      quietChip={inGroup}
       key={ext.id}
       extension={ext}
       pending={approvals.find((approval) => approval.id === ext.id)}
@@ -262,6 +263,7 @@ export function ExtensionsSettingsTab() {
       isRemoving={removeMutation.isPending && removeMutation.variables === ext.id}
     />
   );
+  const renderRow = (ext: ExtensionRecordPublic) => rowFor(ext, false);
 
   const renderGroup = (group: ExtensionGroup) => (
     <ExtensionGroupRow
@@ -272,7 +274,7 @@ export function ExtensionsSettingsTab() {
       onOpenChange={(open) => setOpen(`group:${group.plugin}`, open)}
       onToggle={handleToggle}
       togglingIds={togglingIds}
-      renderMember={renderRow}
+      renderMember={(ext) => rowFor(ext, true)}
     />
   );
 

@@ -49,6 +49,8 @@ export interface ExtensionRowProps {
   onRemove?: (id: string) => void;
   /** Whether a remove is in flight. */
   isRemoving?: boolean;
+  /** Draw its chip in the neutral tone: a row inside a plugin group, beside the group's count. */
+  quietChip?: boolean;
 }
 
 /** Open: 200ms ease-out. Close: 150ms ease-in. Instant under reduced motion. */
@@ -87,6 +89,7 @@ export function ExtensionRow({
   stepUpRisk,
   onRemove,
   isRemoving,
+  quietChip = false,
 }: ExtensionRowProps) {
   const { manifest } = extension;
   const state = extensionRowState(extension);
@@ -197,7 +200,7 @@ export function ExtensionRow({
           )}
           {state.chip && (
             <Badge
-              tone={state.chip.tone}
+              tone={quietChip ? 'neutral' : state.chip.tone}
               className="shrink-0 max-sm:col-span-2 max-sm:row-start-3 max-sm:justify-self-start"
               data-testid={`extension-health-${extension.id}`}
             >
