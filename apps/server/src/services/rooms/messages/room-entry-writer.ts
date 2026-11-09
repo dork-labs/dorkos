@@ -16,6 +16,7 @@ import {
   noteEntryMarks,
 } from '../../core/turn-power/turn-levels.js';
 import { carryRoomPostWords } from '../../core/turn-power/outside-words.js';
+import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
 import { NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { ulid } from 'ulidx';
 import { roomEntries, type DbTransaction } from '@dorkos/db';
@@ -449,7 +450,10 @@ export class RoomEntryWriter {
     if (held) noteEntryHeldToDefault(entry.id);
     if (keptMarks) noteEntryMarks(entry.id, keptMarks, roomId);
     else if (!held) noteEntryLevel(entry.id, kept as TurnPermissionLevel | undefined, roomId);
-    if (opts?.carryWordsFrom) carryRoomPostWords(entry.id, opts.carryWordsFrom);
+    // A writer's chat a stranger started (a Telegram chat) counts too, not only its room turns (DOR-4029).
+    if (opts?.carryWordsFrom) {
+      carryRoomPostWords(entry.id, opts.carryWordsFrom, (id) => chatReadOutsideWords(id));
+    }
     this.publisher.publishEntry(entry, opts?.attachments ?? []);
     // Never on the transaction, never before the entry is durable: a
     // notification is the least important thing this write does, and it must

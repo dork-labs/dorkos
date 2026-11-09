@@ -131,6 +131,8 @@ export interface RecordedTurn {
   teammate?: true;
   /** Set when the seat turn carries on work whose turn held a Wi-Fi sign-in's mark (DOR-3561). */
   carriedOutsider?: true;
+  /** Set when the turn answers or carries words from outside the team (DOR-4023, DOR-4029). */
+  outsideWords?: true;
   /** A moved seat's launch hint (re-seat), when the turn carried one. */
   accountHint?: string;
   /** A moved seat's summary of the session it replaces, when the turn carried one. */

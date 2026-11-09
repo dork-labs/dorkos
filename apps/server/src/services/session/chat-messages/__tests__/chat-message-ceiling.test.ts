@@ -20,9 +20,12 @@ vi.mock('../../../core/turn-power/turn-levels.js', async (importOriginal) => {
 import {
   CHAT_MESSAGE_ORIGIN,
   parseCarriedHold,
+  parseCarriedWords,
   parseCeiling,
+  rowsCarryWords,
   senderCeilingJson,
 } from '../chat-message-ceiling.js';
+import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
 import { permissionSeedForOrigin } from '../../origin/turn-origin.js';
 import { ceilingOnlyRecords, marksOfCeiling } from '../../../core/turn-power/turn-marks.js';
 
@@ -98,5 +101,44 @@ describe('the Wi-Fi hold a message row carries on (DOR-3561)', () => {
     expect(parseCarriedHold(JSON.stringify('runtime-default'))).toBe(false);
     expect(parseCarriedHold(JSON.stringify(['runtime-default', CHAIN]))).toBe(false);
     expect(parseCarriedHold('not json')).toBe(false);
+  });
+});
+
+describe('the outside words a message row carries on (DOR-4029)', () => {
+  afterEach(() => {
+    heldChats.clear();
+    noteRoomTurnWords(CALLER.sessionId, false);
+  });
+
+  it('stores a sender’s outside words as a record that caps and holds nothing', () => {
+    noteRoomTurnWords(CALLER.sessionId, true);
+    const json = senderCeilingJson({ turnLevelOf: () => LEVEL }, CALLER);
+    expect(parseCarriedWords(json)).toBe(true);
+    expect(parseCarriedHold(json)).toBe(false);
+    expect(parseCeiling(json)).toBeUndefined();
+  });
+
+  it('keeps a teammate’s chain beside them', () => {
+    noteRoomTurnWords(CALLER.sessionId, true);
+    const json = senderCeilingJson({ turnLevelOf: () => CHAIN }, CALLER);
+    expect(parseCarriedWords(json)).toBe(true);
+    expect(marksOfCeiling(parseCeiling(json)!)).toEqual({ teammate: CHAIN.teammate });
+  });
+
+  it('counts a held sender’s row, new or from before words were stored', () => {
+    heldChats.add(CALLER.sessionId);
+    expect(parseCarriedWords(senderCeilingJson({ turnLevelOf: () => LEVEL }, CALLER))).toBe(true);
+    expect(parseCarriedWords(JSON.stringify([{ carriedOutsider: true }]))).toBe(true);
+  });
+
+  it('stores none for a clean sender, and reads none from an older or broken row', () => {
+    const clean = senderCeilingJson({ turnLevelOf: () => LEVEL }, CALLER);
+    expect(parseCarriedWords(clean)).toBe(false);
+    expect(parseCarriedWords(JSON.stringify(['runtime-default', CHAIN]))).toBe(false);
+    expect(parseCarriedWords('not json')).toBe(false);
+    expect(rowsCarryWords([{ ceilingJson: clean }])).toBe(false);
+    noteRoomTurnWords(CALLER.sessionId, true);
+    const marked = senderCeilingJson({ turnLevelOf: () => LEVEL }, CALLER);
+    expect(rowsCarryWords([{ ceilingJson: clean }, { ceilingJson: marked }])).toBe(true);
   });
 });

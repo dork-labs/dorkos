@@ -3,7 +3,7 @@
  * through the REAL room service, store, author registry and trigger dispatcher. Only the turn
  * runner stands in.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -16,6 +16,7 @@ import {
 } from '../limits/turn-ceiling.js';
 import { MINI_APP_REPLY_MARKS } from '../../extensions/rooms/extension-room-threads.js';
 import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
+import { runtimeRegistry } from '../../core/runtime-registry.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
@@ -244,10 +245,16 @@ describe('a turn that answers a mini app’s post', () => {
 // DOR-4023, Security: marks spread through agent hops. An agent whose chat read outside words and
 // then posts carries them to the turn its post wakes.
 describe('an agent post from a chat that read outside words', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  // DOR-4029 (Security S4 on #3576): a chat a stranger started (a Telegram chat) has read their
+  // words without any room turn noting it, and its post carries them on too.
   it.each([
-    ['carries them to the turn it wakes', true],
-    ['carries nothing from a clean chat', false],
-  ])('%s', async (_label, readOutside) => {
+    ['carries them to the turn it wakes', true, null],
+    ['carries them from a Telegram chat (DOR-4029)', false, 'relay-binding'],
+    ['carries nothing from a clean chat', false, null],
+  ])('%s', async (_label, readOutside, origin) => {
+    const expected = readOutside || origin !== null;
     const seen: RoomTurnRequest[] = [];
     const rooms: { service?: RoomService } = {};
     const runner = outcomeRunner((request) => {
@@ -255,6 +262,12 @@ describe('an agent post from a chat that read outside words', () => {
       if (request.agentPath === '/agents/ana') {
         // What the runner notes for Ana's chat as her turn starts.
         noteRoomTurnWords(request.sessionId!, readOutside);
+        if (origin !== null) {
+          const anaChat = request.sessionId!;
+          vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockImplementation((id: string) =>
+            id === anaChat ? origin : null
+          );
+        }
         rooms.service!.postFromTool(request.room.id, {
           authorId: request.authorId,
           text: '@bo take birch off Linear',
@@ -273,6 +286,6 @@ describe('an agent post from a chat that read outside words', () => {
     await settleUntil(() => seen.some((r) => r.agentPath === '/agents/bo'), 'Bo was asked by Ana');
 
     const bo = seen.find((r) => r.agentPath === '/agents/bo')!;
-    expect(bo.outsideWords).toBe(readOutside ? true : undefined);
+    expect(bo.outsideWords).toBe(expected ? true : undefined);
   });
 });

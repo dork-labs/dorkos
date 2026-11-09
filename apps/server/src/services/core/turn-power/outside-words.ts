@@ -56,12 +56,16 @@ const posts = new Set<string>();
  *
  * @param entryId - The post.
  * @param writers - The chats that wrote or vouch for it.
+ * @param readOutside - Whether a writer's chat read outside words; the room-turn note alone by
+ *   default. The rooms layer passes `chatReadOutsideWords`, which also counts a chat a stranger
+ *   started, such as a Telegram chat (DOR-4029).
  */
 export function carryRoomPostWords(
   entryId: string,
-  writers: readonly (string | null | undefined)[]
+  writers: readonly (string | null | undefined)[],
+  readOutside: (sessionId: string) => boolean = roomTurnReadOutsideWords
 ): void {
-  if (!writers.some((sessionId) => typeof sessionId === 'string' && chats.has(sessionId))) return;
+  if (!writers.some((sessionId) => typeof sessionId === 'string' && readOutside(sessionId))) return;
   posts.add(entryId);
   if (posts.size > MEMORY) posts.delete(posts.values().next().value!);
 }

@@ -26,6 +26,7 @@ import {
   deliverSteer,
   setQueuedChatCeilingResolver,
   setQueuedChatHoldResolver,
+  setQueuedChatWordsResolver,
 } from '../message-dispatcher.js';
 import { rememberedChatTitle } from '../origin/started-by-origin-overlay.js';
 import {
@@ -49,7 +50,7 @@ import {
 import { logError, logger } from '../../../lib/logger.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageService } from './chat-message-service.js';
-import { rowsCarryHold } from './chat-message-ceiling.js';
+import { rowsCarryHold, rowsCarryWords } from './chat-message-ceiling.js';
 import { getRoomSeatReports, setChatMessageService } from './chat-message-current.js';
 import { setChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
 import { stampHistory } from './chat-message-stamps.js';
@@ -282,6 +283,9 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
   wireChatReportBack(service, deps.store);
   setQueuedChatCeilingResolver((messageId) => service.ceilingForQueuedMessage(messageId));
   setQueuedChatHoldResolver((messageId) => rowsCarryHold(deps.store.listByQueueMessage(messageId)));
+  setQueuedChatWordsResolver((messageId) =>
+    rowsCarryWords(deps.store.listByQueueMessage(messageId))
+  );
   // A person reads a row another chat sent as its senders and their words,
   // never the fenced envelope it holds for the model (DOR-3060).
   setQueuedChatView((row) => queuedChatViewOf((id) => deps.store.listByQueueMessage(id), row));

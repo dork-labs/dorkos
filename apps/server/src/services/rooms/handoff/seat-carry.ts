@@ -8,6 +8,7 @@
 import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { marksOf } from '../../core/turn-power/turn-levels.js';
+import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
 import {
   ceilingCarrying,
   marksHold,
@@ -57,6 +58,7 @@ export function withRoomMarks(
     ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
     ...(teammate ? { teammate: true } : {}),
     ...(carried.outsider ? { outsider: true } : {}),
+    ...(carried.outsideWords ? { outsideWords: true } : {}),
   };
 }
 
@@ -68,7 +70,9 @@ export function withRoomMarks(
  *
  * A report can run long after the turn it speaks for, and `marksOf` reads the chat's latest turn,
  * so a later unmarked turn would launder the words of a marked one (DOR-3720). `atTurnEnd` is what
- * that turn carried; marks only add up, so it joins whatever the chat carries now.
+ * that turn carried; marks only add up, so it joins whatever the chat carries now. Outside words
+ * the chat read ride on too (DOR-4029): a spin-off a stranger's chat_send reached must not report
+ * them into a seat that then reads as clean.
  *
  * @param sessionId - The chat the turn came from.
  * @param agentPath - Its agent's home.
@@ -83,6 +87,7 @@ export function carryFrom(sessionId: string, agentPath: string, atTurnEnd?: Turn
     ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
     ...(marks.teammate !== undefined && marks.teammate.length > 0 ? { teammate: true } : {}),
     ...(marksHold(marks) ? { outsider: true } : {}),
+    ...(chatReadOutsideWords(sessionId, agentPath) ? { outsideWords: true } : {}),
   };
 }
 

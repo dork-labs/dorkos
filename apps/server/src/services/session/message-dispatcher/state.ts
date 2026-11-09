@@ -106,6 +106,32 @@ export function launchCarriesHold(clientId: string, messageId: string): boolean 
   return isChatClientId(clientId) && queuedChatHold?.(messageId) === true;
 }
 
+/** Whether a chat-sent queue row carries its sender's outside words on (DOR-4029). */
+export type QueuedChatWordsResolver = (messageId: string) => boolean;
+
+let queuedChatWords: QueuedChatWordsResolver | undefined;
+
+/**
+ * Wire (or clear) how a chat-sent queue row's carried outside words are read.
+ *
+ * @param resolver - Reads whether a row carries them; `undefined` clears it.
+ */
+export function setQueuedChatWordsResolver(resolver: QueuedChatWordsResolver | undefined): void {
+  queuedChatWords = resolver;
+}
+
+/**
+ * Whether a launching message carries a sender's outside words on: read like
+ * {@link launchCarriesHold}, from the chat's own record of the send at launch, so a row
+ * adopted after a restart still carries them.
+ *
+ * @param clientId - Who queued the row.
+ * @param messageId - The row's id.
+ */
+export function launchCarriesWords(clientId: string, messageId: string): boolean {
+  return isChatClientId(clientId) && queuedChatWords?.(messageId) === true;
+}
+
 /**
  * The ceiling a launching message runs under: the caller's own, plus a bound
  * read from who queued the row.

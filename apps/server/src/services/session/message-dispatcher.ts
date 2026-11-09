@@ -219,6 +219,7 @@ export {
   onDispatchLifecycle,
   setQueuedChatCeilingResolver,
   setQueuedChatHoldResolver,
+  setQueuedChatWordsResolver,
   withDispatchMutex,
 } from './message-dispatcher/state.js';
 export { isTurnInFlight } from './message-dispatcher/turn-probes.js';
