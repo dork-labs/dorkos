@@ -111,6 +111,11 @@ test('Inbox schedule carries the real server revision at 390 @smoke', async ({
       exact: true,
     });
     await expect(approve).toBeEnabled();
+    // The server is shared with earlier specs, and schedules sit below any
+    // tool approval they left waiting. Scroll the Inbox to the card the way a
+    // person would; the card itself must then fit, answer row included.
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toBeInViewport({ ratio: 1 });
     await expect(approve).toBeInViewport();
     const body = card.locator('[data-slot="schedule-review-body"]');
     await body.evaluate((element) => {
