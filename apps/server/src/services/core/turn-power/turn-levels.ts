@@ -51,6 +51,10 @@ import {
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { noteTurnHold } from './continuation-hold.js';
+import { aliasRoomTurnWords } from './outside-words.js';
+
+/** The room turn's outside-words note travels with its level; a room runner sets both here. */
+export { noteRoomTurnWords } from './outside-words.js';
 import { aliasChosenTurn, noteChosenTurn, ownLevelBounds } from './full-autonomy.js';
 import {
   ceilingHoldsForOutsider,
@@ -403,6 +407,8 @@ export function aliasTurnLevel(from: string, to: string): void {
   const serial = turnSerials.get(from);
   if (serial !== undefined && from !== to) turnSerials.set(to, serial);
   aliasChosenTurn(from, to);
+  // The room turn's outside words go with it, or every check reading the new id sees none (DOR-4023).
+  aliasRoomTurnWords(from, to);
 }
 
 /**
@@ -415,6 +421,8 @@ export function aliasTurnLevel(from: string, to: string): void {
  * @param to - The conversation replacing it.
  */
 export function carryTurnLevel(from: string, to: string): void {
+  // A moved seat keeps outside words its old session's turn read (DOR-4023); they only add.
+  aliasRoomTurnWords(from, to);
   const level = turnLevels.get(from);
   if (level === undefined || from === to) return;
   const existing = turnLevels.get(to);

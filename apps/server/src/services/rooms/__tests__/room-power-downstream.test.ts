@@ -205,6 +205,18 @@ describe('a turn that answers a mini app’s post', () => {
     expect(seen[0]!.untrustedText).toBe(true);
   });
 
+  // Security S2 on #3576: a post held to the default for who was calling (a Wi-Fi sign-in).
+  it('counts a person’s post from Wi-Fi as outside words', async () => {
+    service.post(
+      channel.id,
+      { authorId: human, text: '@ana hi from the café' },
+      false,
+      'runtime-default'
+    );
+    await settleUntil(() => seen.length === 1, 'Ana was woken by the Wi-Fi post');
+    expect(seen[0]!.outsideWords).toBe(true);
+  });
+
   it('counts a comment a mini app forwarded as outside words', async () => {
     service.post(channel.id, {
       authorId: human,

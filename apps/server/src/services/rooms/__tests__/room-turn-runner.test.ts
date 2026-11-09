@@ -16,7 +16,14 @@
  */
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
-import { roomTurnReadOutsideWords } from '../../core/turn-power/outside-words.js';
+import {
+  noteRoomTurnWords,
+  roomTurnReadOutsideWords,
+} from '../../core/turn-power/outside-words.js';
+import {
+  anotherAgentTurnRefusal,
+  LIVE_TURN_GATE_SOURCES,
+} from '../../connectors/access/turn-gate.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { InterruptReceipt } from '@dorkos/shared/types';
@@ -2841,6 +2848,40 @@ describe('what power a room turn runs at (DOR-1917)', () => {
     );
 
     expect(roomTurnReadOutsideWords('room-session-outside-words')).toBe(outside);
+  });
+
+  // Security M1 on #3576: a first turn's session is renamed mid-turn, and every check (the gate,
+  // memory, the browser, a post's carry) reads the new id.
+  it('keeps outside words on the id the runtime renamed a first turn to', async () => {
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'turn_end' });
+      return { accepted: true, canonicalId: `${opts.sessionId}-canonical` };
+    };
+    await createSessionRoomTurnRunner().run(
+      request({ sessionId: 'placeholder-words', outsideWords: true })
+    );
+
+    expect(roomTurnReadOutsideWords('placeholder-words-canonical')).toBe(true);
+    expect(
+      anotherAgentTurnRefusal(
+        { sessionId: 'placeholder-words-canonical' },
+        { ...LIVE_TURN_GATE_SOURCES, hasTurnRecord: () => true }
+      )
+    ).toBe('GRANT_MARKED_TURN');
+  });
+
+  // Security S1 on #3576: a clean trigger refused as busy never wipes the mark of a marked turn
+  // still running on that session; a clean turn that does start clears it.
+  it('clears a chat’s outside words only once a clean turn is accepted', async () => {
+    noteRoomTurnWords('busy-words', true);
+    turnBehaviour = REFUSED;
+    await createSessionRoomTurnRunner().run(request({ sessionId: 'busy-words' }));
+    expect(roomTurnReadOutsideWords('busy-words')).toBe(true);
+
+    turnBehaviour = saysAndCloses('ok');
+    await createSessionRoomTurnRunner().run(request({ sessionId: 'busy-words' }));
+    expect(roomTurnReadOutsideWords('busy-words')).toBe(false);
   });
 
   // A space member who is not the owner (DOR-2955): the turn runs like any other

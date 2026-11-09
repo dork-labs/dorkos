@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(rooms): a mini app's post marks the room turn that reads it"
+  - 'fix(rooms): the mark outlives a renamed first turn and a moved seat, and a busy refusal keeps it'
 ---
 
 ### Fixed

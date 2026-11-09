@@ -24,6 +24,19 @@ export function noteRoomTurnWords(sessionId: string, outside: boolean): void {
 }
 
 /**
+ * Carry a chat's outside words to the id its session goes by next: a runtime renaming a first
+ * turn's session, or a room seat moving to a fresh one (Security M1 on #3576). Only ever adds.
+ *
+ * @param from - The id the turn was noted under.
+ * @param to - The id the session is known by now.
+ */
+export function aliasRoomTurnWords(from: string, to: string): void {
+  if (from === to || !chats.has(from)) return;
+  chats.add(to);
+  if (chats.size > MEMORY) chats.delete(chats.values().next().value!);
+}
+
+/**
  * Whether this chat's latest room turn answered someone from outside this machine.
  *
  * @param sessionId - The chat.
