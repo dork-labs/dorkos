@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -242,9 +242,10 @@ describe('every server runs on a throwaway home', () => {
     // with a 403 about a root nothing changed. Worked out here rather than taken
     // from `throwaway-home.ts`, so a wrong constant there fails too.
     const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
-    // In a linked worktree the boundary must also hold the main checkout, or
-    // every project lookup is refused (`boundary-root.ts`). In a plain checkout,
-    // as in CI, it is exactly the checkout.
+    // In a linked worktree the boundary also holds the main checkout, or every
+    // project lookup is refused (`boundary-root.ts`), unless that would cover
+    // the home folder; then it stays the checkout. In a plain checkout, as in
+    // CI, it is exactly the checkout.
     const mainCheckout = resolve(
       execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
         cwd: repoRoot,
@@ -262,11 +263,13 @@ describe('every server runs on a throwaway home', () => {
       if (mainCheckout === repoRoot) {
         expect({ dorkHome, boundary }).toEqual({ dorkHome, boundary: repoRoot });
       } else {
+        const coversHome = holds(boundary, homedir());
         expect({
           dorkHome,
           holdsCheckout: holds(boundary, repoRoot),
-          holdsMain: holds(boundary, mainCheckout),
-        }).toEqual({ dorkHome, holdsCheckout: true, holdsMain: true });
+          coversHome,
+          holdsMainOrStaysPut: holds(boundary, mainCheckout) || boundary === repoRoot,
+        }).toEqual({ dorkHome, holdsCheckout: true, coversHome: false, holdsMainOrStaysPut: true });
       }
     }
   });
