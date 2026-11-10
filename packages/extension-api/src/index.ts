@@ -177,5 +177,9 @@ export type {
 } from './server-extension-api.js';
 export type { ToolsApi, ExtensionToolHandler, ExtensionToolCall } from './extension-tools.js';
 
-export { EXTENSION_BUNDLE_GLOBAL } from './frame-api.js';
-export type { FrameExtensionAPI } from './frame-api.js';
+export {
+  EXTENSION_BUNDLE_GLOBAL,
+  EXTENSION_CLIENT_API_VERSION,
+  needsClientUpdate,
+} from './frame-api.js';
+export type { FrameCanvasContent, FrameExtensionAPI } from './frame-api.js';

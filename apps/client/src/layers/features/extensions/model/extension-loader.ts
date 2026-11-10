@@ -1,9 +1,10 @@
-import type {
-  ExtensionManifest,
-  ExtensionRecordPublic,
-  ExtensionModule,
-  SecretDeclaration,
-  SettingDeclaration,
+import {
+  needsClientUpdate,
+  type ExtensionManifest,
+  type ExtensionRecordPublic,
+  type ExtensionModule,
+  type SecretDeclaration,
+  type SettingDeclaration,
 } from '@dorkos/extension-api';
 import { createExtensionAPI } from './extension-api-factory';
 import type { ExtensionAPIDeps, LoadedExtension } from './types';
@@ -13,7 +14,7 @@ import { extensionApiUrl } from './extension-api-url';
 import { setExtensionClientState } from '@/layers/shared/lib/extension-client-state';
 import { ExtensionLoadFailure } from '../ui/ExtensionLoadFailure';
 import { importExtensionModule } from './extension-bundle-import';
-import { runningCopiesOnly } from '@/layers/entities/extension';
+import { AppNeedsUpdateNotice, runningCopiesOnly } from '@/layers/entities/extension';
 
 /**
  * Fetch the extension list from the server.
@@ -210,8 +211,10 @@ export class ExtensionLoader {
         const attempt = requestedAttempts?.get(rec.id) ?? ++this.nextAttempt;
         if (requestedAttempts && this.attempts.get(rec.id) !== attempt) return;
         this.attempts.set(rec.id, attempt);
-        if (rec.manifest.clientApiVersion !== 2) {
-          this.markFailed(rec);
+        if (needsClientUpdate(rec.manifest)) {
+          // No code of this app is ever fetched; its tile, page and Settings
+          // row say it needs an update, from the record alone.
+          this.markNeedsUpdate(rec);
           return;
         }
         setExtensionClientState(rec.id, 'starting');
@@ -260,8 +263,29 @@ export class ExtensionLoader {
     return { extensions, loaded: this.loaded };
   }
 
+  /**
+   * An app built for an older extension API keeps the right-panel tab it
+   * declares, saying in the same words as its tile that it needs an update, so
+   * the tab never vanishes or shows an empty frame (DOR-3293).
+   */
+  private markNeedsUpdate(rec: ExtensionRecordPublic): void {
+    this.failedSettings.get(rec.id)?.();
+    this.failedSettings.delete(rec.id);
+    if (rec.manifest.contributions?.['right-panel'] !== true) return;
+    const name = rec.manifest.name;
+    const unsubscribe = this.deps.registry.register('right-panel', {
+      id: `${rec.id}:needs-update`,
+      priority: 100,
+      title: name,
+      component: () => createElement(AppNeedsUpdateNotice, { name, className: 'p-4' }),
+      extensionId: rec.id,
+    });
+    this.failedSettings.set(rec.id, unsubscribe);
+  }
+
   /** Keep a failed app visible in its own Settings section, with a bounded retry. */
   private markFailed(rec: ExtensionRecordPublic): void {
+    this.failedSettings.get(rec.id)?.();
     setExtensionClientState(rec.id, 'error');
     const unsubscribe = this.deps.registry.register('settings.tabs', {
       id: `${rec.id}:load-error`,
@@ -270,7 +294,6 @@ export class ExtensionLoader {
       component: () =>
         createElement(ExtensionLoadFailure, {
           retry: () => this.reloadExtensions([rec.id]),
-          needsUpdate: rec.manifest.clientApiVersion !== 2,
         }),
     });
     this.failedSettings.set(rec.id, unsubscribe);

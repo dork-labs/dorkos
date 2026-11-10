@@ -1,4 +1,4 @@
-import { createElement, useEffect, useRef, type ReactElement } from 'react';
+import { createElement, useEffect, useRef, useState, type ReactElement } from 'react';
 import {
   EXTENSION_EVENT_KINDS as SDK_EVENT_KINDS,
   type ExtensionAPI,
@@ -7,36 +7,27 @@ import {
   type ExtensionPointId,
 } from '@dorkos/extension-api';
 import { z } from 'zod';
-import runtime from 'virtual:dorkos-extension-frame';
 import { extensionApiUrl } from '../model/extension-api-url';
+import { offerAppDownload } from './download';
 import {
-  FrameCallSchema,
+  EXTENSION_FRAME_CSP,
+  EXTENSION_FRAME_SANDBOX,
+  createFrameConnection,
+  frameFit,
+  type FrameConnection,
+  type FrameFit,
+  type FrameSize,
+} from './connection';
+import {
+  args,
+  FrameCanvasContentSchema,
+  FrameDownloadSchema,
   FrameRegistrationSchema,
+  json,
+  text,
   type FrameRegistration,
-  type FrameTheme,
 } from './protocol';
 
-/** The sandbox grants scripts only: no origin, popups, downloads, forms, or parent navigation. */
-export const EXTENSION_FRAME_SANDBOX = 'allow-scripts';
-/** No frame resource can contact DorkOS or an outside account directly. */
-export const EXTENSION_FRAME_CSP =
-  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'";
-const TIMEOUT_MS = 15_000;
-/** Every placement a frame may ask about; the host answers which ones it has. */
-const FRAME_SLOTS: ExtensionPointId[] = [
-  'sidebar.footer',
-  'dashboard.sections',
-  'command-palette.items',
-  'dialog',
-  'settings.tabs',
-  'right-panel',
-  'status-bar',
-];
-// Zod overloads empty and nonempty tuples separately; this preserves the inferred tuple for both.
-const args = <const T extends [] | [z.ZodType, ...z.ZodType[]]>(...schemas: T): z.ZodTuple<T> =>
-  z.tuple(schemas as []) as unknown as z.ZodTuple<T>;
-const text = z.string().max(4000);
-const json = z.json();
 const methodArgs: Record<string, z.ZodType> = {
   loadData: args(),
   saveData: args(json),
@@ -94,22 +85,28 @@ export function isolatedExtensionModule(
         registrations.clear();
         dialogs.clear();
       };
-      function view(key: string): (props: object) => ReactElement {
+      function view(key: string, fit: FrameFit): (props: object) => ReactElement {
         return function IsolatedView(props: object) {
           const container = useRef<HTMLDivElement>(null);
           const connection = useRef<FrameConnection | null>(null);
+          // Hidden until the frame has drawn something: an app with nothing to
+          // show leaves no frame at all, never a small empty one.
+          const [size, setSize] = useState<FrameSize | null>(null);
+          const [failed, setFailed] = useState(false);
           // The frame starts once with the props of its first render; later
           // props travel over the bridge instead of rebuilding the frame.
           const sentProps = useRef<object>(props);
           useEffect(() => {
             if (!container.current || disposed) return;
-            const frame = connect(container.current, key, sentProps.current);
+            const frame = connect(container.current, key, sentProps.current, fit, setSize);
             connection.current = frame;
+            // Our own close also rejects `ready`; only a frame that failed on its own says so.
+            let mounted = true;
             void frame.ready.catch(() => {
-              if (container.current)
-                container.current.textContent = 'This app could not open. Try again in Settings.';
+              if (mounted) setFailed(true);
             });
             return () => {
+              mounted = false;
               frame.close();
               connection.current = null;
             };
@@ -119,16 +116,34 @@ export function isolatedExtensionModule(
             sentProps.current = props;
             connection.current?.setProps(props);
           }, [props]);
+          if (failed) {
+            return createElement(
+              'p',
+              { className: 'text-muted-foreground p-2 text-sm' },
+              'This app could not open. Try again in Settings.'
+            );
+          }
+          const shown = size !== null && size.height > 0;
+          // Zero height, not display:none, so the frame keeps laying out and can
+          // say when it has something to show.
+          const style = !shown
+            ? { height: 0, overflow: 'hidden' }
+            : fit === 'fill'
+              ? undefined
+              : { height: size.height, ...(fit === 'both' ? { width: size.width } : {}) };
           return createElement('div', {
             ref: container,
-            className: 'h-full min-h-8 w-full',
+            'aria-hidden': shown ? undefined : true,
+            className:
+              fit === 'both' ? 'inline-block' : fit === 'fill' ? 'h-full w-full' : 'w-full',
+            style,
             'data-slot': 'extension-frame',
           });
         };
       }
       function register(reg: FrameRegistration): void {
         registrations.get(reg.key)?.();
-        const component = view(reg.key);
+        const component = view(reg.key, frameFit(reg));
         const options = reg.options ?? {};
         switch (reg.kind) {
           case 'component': {
@@ -185,7 +200,9 @@ export function isolatedExtensionModule(
       function connect(
         parent: HTMLElement,
         selectedView: string | null,
-        props: unknown
+        props: unknown,
+        fit: FrameFit = 'fill',
+        onSize?: (size: FrameSize) => void
       ): FrameConnection {
         const frame = createFrameConnection({
           code,
@@ -194,6 +211,8 @@ export function isolatedExtensionModule(
           parent,
           selectedView,
           props,
+          fit,
+          onSize,
           onClose: () => frames.delete(frame),
           async invoke(method, input, emit) {
             if (disposed) throw new Error('This app has stopped.');
@@ -236,6 +255,24 @@ export function isolatedExtensionModule(
               });
               if (!response.ok) throw new Error(`The app request failed (${response.status}).`);
               return response.status === 204 ? null : response.json();
+            }
+            if (method === 'openCanvas') {
+              const [content] = args(FrameCanvasContentSchema).parse(input);
+              // A page an app opens says which app opened it, in the tab's title.
+              api.openCanvas(
+                content.type === 'browser'
+                  ? {
+                      type: 'browser',
+                      url: content.url,
+                      title: `${manifest.name}: ${content.title ?? content.url}`,
+                    }
+                  : content
+              );
+              return null;
+            }
+            if (method === 'download') {
+              const [file] = args(FrameDownloadSchema).parse(input);
+              return offerAppDownload(manifest.name, file);
             }
             if (method === 'settings.get') {
               args().parse(input);
@@ -302,197 +339,4 @@ export function isolatedExtensionModule(
   };
 }
 
-interface FrameConnection {
-  ready: Promise<void>;
-  send(message: unknown): void;
-  setProps(props: unknown): void;
-  close(): void;
-}
-interface FrameOptions {
-  code: string;
-  manifest: ExtensionManifest;
-  api: ExtensionAPI;
-  parent: HTMLElement;
-  selectedView: string | null;
-  props: unknown;
-  onClose(): void;
-  invoke(
-    method: string,
-    args: unknown[],
-    events: {
-      subscribe(key: string, make: () => () => void): null;
-      unsubscribe(key: string): null;
-      send(key: string, data: unknown): void;
-    }
-  ): Promise<unknown>;
-}
-
-/** The host root's classes and inline style, which carry light or dark mode and the font choice. */
-function hostTheme(): FrameTheme {
-  const root = document.documentElement;
-  return { className: root.className, style: root.getAttribute('style') ?? '' };
-}
-
-/** Create an opaque document and give it one private, revocable host connection. */
-function createFrameConnection(options: FrameOptions): FrameConnection {
-  const iframe = document.createElement('iframe');
-  iframe.title = options.manifest.name;
-  iframe.setAttribute('sandbox', EXTENSION_FRAME_SANDBOX);
-  iframe.setAttribute('referrerpolicy', 'no-referrer');
-  iframe.className = 'h-full min-h-8 w-full border-0';
-  iframe.srcdoc = `<!doctype html><meta http-equiv="Content-Security-Policy" content="${EXTENSION_FRAME_CSP}"><div id="root"></div><script>${runtime.replace(/<\/script/gi, '<\\/script')}</script>`;
-  const channel = new MessageChannel();
-  let closed = false;
-  let initialized = false;
-  let callbackSeq = 0;
-  let inflight = 0;
-  let callbacks = new Map<string, (...args: unknown[]) => unknown>();
-  const subscriptions = new Map<string, () => void>();
-  let rejectReady: (error: Error) => void = () => {};
-  let timeout: ReturnType<typeof setTimeout>;
-  const send = (message: unknown) => {
-    if (!closed) channel.port1.postMessage(message);
-  };
-  function encode(value: unknown): unknown {
-    if (typeof value === 'function') {
-      const id = `prop:${++callbackSeq}`;
-      callbacks.set(id, value as (...args: unknown[]) => unknown);
-      return { $callback: id };
-    }
-    if (Array.isArray(value)) return value.map(encode);
-    if (value && typeof value === 'object')
-      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, encode(v)]));
-    return value;
-  }
-  const ready = new Promise<void>((resolve, reject) => {
-    rejectReady = reject;
-    timeout = setTimeout(() => {
-      connection.close();
-      reject(new Error('The app took too long to start.'));
-    }, TIMEOUT_MS);
-    channel.port1.onmessage = async ({ data }) => {
-      if (closed) return;
-      if (data?.type === 'ready') {
-        clearTimeout(timeout);
-        resolve();
-        return;
-      }
-      if (data?.type === 'failed') {
-        connection.close();
-        reject(new Error('The app could not start.'));
-        return;
-      }
-      const parsed = FrameCallSchema.safeParse(data);
-      if (!parsed.success) return;
-      const { extensionId, requestId, method, args: input } = parsed.data;
-      if (extensionId !== options.api.id || inflight >= 32) {
-        send({ type: 'reply', requestId, error: 'This request was refused.' });
-        return;
-      }
-      inflight++;
-      try {
-        let value: unknown;
-        if (method === 'callback') {
-          const [key, values] = args(text, z.array(json).max(8)).parse(input);
-          const callback = callbacks.get(key);
-          if (!callback) throw new Error('That control is no longer available.');
-          value = await callback(...values);
-        } else
-          value = await options.invoke(method, input, {
-            subscribe(key, make) {
-              subscriptions.get(key)?.();
-              subscriptions.set(key, make());
-              return null;
-            },
-            unsubscribe(key) {
-              subscriptions.get(key)?.();
-              subscriptions.delete(key);
-              return null;
-            },
-            send(key, event) {
-              send({ type: 'event', key, args: [event] });
-            },
-          });
-        send({ type: 'reply', requestId, value: value ?? null });
-      } catch {
-        // Errors from the host contain no paths or objects for a bundle to inspect.
-        send({ type: 'reply', requestId, error: 'This app request was refused or failed.' });
-      } finally {
-        inflight--;
-      }
-    };
-    channel.port1.start();
-  });
-  const unsubState = options.api.subscribe(
-    (state) => state,
-    (state) => send({ type: 'state', state })
-  );
-  // A theme or font change on the host reaches every open frame.
-  const themeWatch = new MutationObserver(() => send({ type: 'theme', theme: hostTheme() }));
-  themeWatch.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['class', 'style'],
-  });
-  iframe.onload = () => {
-    if (closed) return;
-    // A navigation loses its port; never give a replacement document another one.
-    if (initialized) {
-      connection.close();
-      return;
-    }
-    initialized = true;
-    const css = Array.from(document.styleSheets)
-      .map((sheet) => {
-        try {
-          return Array.from(sheet.cssRules)
-            .map((rule) => rule.cssText)
-            .join('\n');
-        } catch {
-          return '';
-        }
-      })
-      .join('\n');
-    iframe.contentWindow?.postMessage(
-      {
-        type: 'initialize',
-        init: {
-          extensionId: options.api.id,
-          code: options.code,
-          state: options.api.getState(),
-          slots: FRAME_SLOTS.filter((slot) => options.api.isSlotAvailable(slot)),
-          view: options.selectedView,
-          props: encode(options.props),
-          css,
-          theme: hostTheme(),
-        },
-      },
-      '*',
-      [channel.port2]
-    );
-  };
-  const connection: FrameConnection = {
-    ready,
-    send,
-    setProps(props) {
-      callbacks = new Map();
-      send({ type: 'props', props: encode(props) });
-    },
-    close() {
-      if (closed) return;
-      closed = true;
-      clearTimeout(timeout);
-      unsubState();
-      themeWatch.disconnect();
-      options.onClose();
-      for (const stop of subscriptions.values()) stop();
-      subscriptions.clear();
-      callbacks.clear();
-      channel.port1.close();
-      channel.port2.close();
-      iframe.remove();
-      rejectReady(new Error('This app has stopped.'));
-    },
-  };
-  options.parent.append(iframe);
-  return connection;
-}
+export { EXTENSION_FRAME_CSP, EXTENSION_FRAME_SANDBOX };

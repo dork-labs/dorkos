@@ -8,7 +8,7 @@
  *
  * @module features/command-palette/ui/PaletteResultRow
  */
-import type { AppTarget } from '@/layers/entities/extension';
+import { APP_NEEDS_UPDATE_COPY, type AppTarget } from '@/layers/entities/extension';
 import { motion } from 'motion/react';
 import { CommandItem, ContributedIcon, CountPill } from '@/layers/shared/ui';
 import { getAgentDisplayName } from '@/layers/shared/lib';
@@ -176,6 +176,11 @@ function PaletteAppTrailing({ state, count }: { state: AppTarget['state']; count
   }
   if (state === 'error') {
     return <span className="text-status-error-fg ml-auto text-xs">Not working</span>;
+  }
+  if (state === 'needs-update') {
+    return (
+      <span className="text-muted-foreground ml-auto text-xs">{APP_NEEDS_UPDATE_COPY.chip}</span>
+    );
   }
   if (count > 0) {
     return (

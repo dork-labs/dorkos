@@ -100,7 +100,13 @@ describe('useAppActions', () => {
   });
 
   it('tries a broken app again, and opens Settings only when it still is not working', async () => {
-    const broken = { id: 'w', status: 'activate_error', origin: 'user', approvedToRun: true };
+    const broken = {
+      id: 'w',
+      manifest: { clientApiVersion: 2 },
+      status: 'activate_error',
+      origin: 'user',
+      approvedToRun: true,
+    };
     const { result } = setup([broken]);
     await act(() => result.current.tryAgain('w'));
     expect(remount).toHaveBeenCalledTimes(1);

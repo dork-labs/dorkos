@@ -63,6 +63,7 @@ function makeExtension(overrides: Partial<ExtensionRecordPublic> = {}): Extensio
   return {
     id: 'test-ext',
     manifest: {
+      clientApiVersion: 2,
       id: 'test-ext',
       name: 'Test Extension',
       version: '1.0.0',
@@ -86,7 +87,7 @@ function named(id: string, name: string, overrides: Partial<ExtensionRecordPubli
   return makeExtension({
     id,
     ...overrides,
-    manifest: { id, name, version: '1.0.0', ...overrides.manifest },
+    manifest: { clientApiVersion: 2, id, name, version: '1.0.0', ...overrides.manifest },
   });
 }
 
@@ -244,6 +245,7 @@ describe('ExtensionsSettingsTab', () => {
         '/api/extensions': [
           named('s', 'With summary', {
             manifest: {
+              clientApiVersion: 2,
               id: 's',
               name: 'With summary',
               version: '1.0.0',
@@ -253,6 +255,7 @@ describe('ExtensionsSettingsTab', () => {
           }),
           named('d', 'Description only', {
             manifest: {
+              clientApiVersion: 2,
               id: 'd',
               name: 'Description only',
               version: '1.0.0',
@@ -476,6 +479,7 @@ describe('ExtensionsSettingsTab', () => {
         '/api/extensions': [
           named('ledger', 'Ledger', {
             manifest: {
+              clientApiVersion: 2,
               id: 'ledger',
               name: 'Ledger',
               version: '1.0.0',
@@ -725,6 +729,7 @@ describe('ExtensionsSettingsTab', () => {
       id: 'incompat-ext',
       status: 'incompatible',
       manifest: {
+        clientApiVersion: 2,
         id: 'incompat-ext',
         name: 'Incompat Extension',
         version: '1.0.0',
@@ -828,7 +833,13 @@ describe('ExtensionsSettingsTab — what comes with DorkOS', () => {
           id: 'locked',
           origin: 'core',
           status: 'active',
-          manifest: { id: 'locked', name: 'Locked Core', version: '1.0.0', canDisable: false },
+          manifest: {
+            clientApiVersion: 2,
+            id: 'locked',
+            name: 'Locked Core',
+            version: '1.0.0',
+            canDisable: false,
+          },
         }),
       ],
     });
@@ -848,7 +859,13 @@ describe('ExtensionsSettingsTab — what comes with DorkOS', () => {
           id: 'user-locked',
           origin: 'user',
           status: 'active',
-          manifest: { id: 'user-locked', name: 'User Locked', version: '1.0.0', canDisable: false },
+          manifest: {
+            clientApiVersion: 2,
+            id: 'user-locked',
+            name: 'User Locked',
+            version: '1.0.0',
+            canDisable: false,
+          },
         }),
       ],
     });
@@ -1117,7 +1134,7 @@ describe('screens paused (DOR-3068)', () => {
     const digest = `sha256:${'c'.repeat(64)}`;
     const paused = makeExtension({
       id: 'ledger',
-      manifest: { id: 'ledger', name: 'Ledger', version: '2.3.0' },
+      manifest: { clientApiVersion: 2, id: 'ledger', name: 'Ledger', version: '2.3.0' },
       approvedToRun: true,
       screensPaused: true,
       bundleReady: false,

@@ -4,7 +4,7 @@
  *
  * @module widgets/extension-page/model/extension-page-state
  */
-import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import { needsClientUpdate, type ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { ExtensionClientState } from '@/layers/shared/lib/extension-client-state';
 import type { ExtensionPageAtPath } from '@/layers/shared/model';
 
@@ -22,6 +22,8 @@ export type ExtensionPageState =
   | { kind: 'turned-off'; name: string }
   /** It could not be built or started. */
   | { kind: 'broken'; name: string }
+  /** Built for an older version of DorkOS: none of its screen code runs until it is rebuilt. */
+  | { kind: 'needs-update'; name: string }
   /** Allowed to run, but its bundle failed or never finished loading in this window. */
   | { kind: 'not-working'; id: string; name: string }
   /** It runs, and has no page at this address. */
@@ -69,6 +71,8 @@ export function extensionPageState(
   const name = record.manifest.name;
   if (BROKEN_STATUSES.has(record.status)) return { kind: 'broken', name };
   if (record.status === 'disabled') return { kind: 'turned-off', name };
+  // Before approval: a yes cannot make an out-of-date app run (DOR-3293).
+  if (needsClientUpdate(record.manifest)) return { kind: 'needs-update', name };
   // Approval comes before the load: an app whose files changed mid-load keeps
   // its old attempt's "starting", and still waits on a person.
   if (!record.approvedToRun) return { kind: 'not-allowed', name };

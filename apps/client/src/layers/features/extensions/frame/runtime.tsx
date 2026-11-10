@@ -76,9 +76,15 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
   const views = new Map<string, View>();
   const registrations: Promise<unknown>[] = [];
   const style = document.createElement('style');
-  style.textContent =
-    init.css +
-    '\nhtml,body,#root{margin:0;width:100%;min-height:100%;}body{background:transparent}';
+  // A view that fills its slot stretches to it; one that fits its content is
+  // measured, so the host can size the frame to it (or hide it when empty).
+  const layout =
+    init.fit === 'fill'
+      ? 'html,body,#root{margin:0;width:100%;min-height:100%;}'
+      : init.fit === 'both'
+        ? 'html,body{margin:0;}#root{display:inline-block;}'
+        : 'html,body{margin:0;width:100%;}#root{display:flow-root;}';
+  style.textContent = `${init.css}\n${layout}body{background:transparent}`;
   document.head.append(style);
   applyTheme(init.theme);
 
@@ -120,7 +126,25 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
     }
   };
   port.start();
-  const root = ReactClient.createRoot(document.getElementById('root')!);
+  const rootElement = document.getElementById('root')!;
+  const root = ReactClient.createRoot(rootElement);
+  let lastSize = '';
+  /** Tell the host how big the view's drawing is; an empty view is 0×0. */
+  function reportSize(): void {
+    const empty = rootElement.childNodes.length === 0;
+    const box = rootElement.getBoundingClientRect();
+    const size = empty
+      ? { width: 0, height: 0 }
+      : { width: Math.ceil(box.width), height: Math.max(1, Math.ceil(box.height)) };
+    const key = `${size.width}x${size.height}`;
+    if (key === lastSize) return;
+    lastSize = key;
+    port.postMessage({ type: 'size', ...size });
+  }
+  if (init.view !== null) {
+    new ResizeObserver(reportSize).observe(rootElement);
+    new MutationObserver(reportSize).observe(rootElement, { childList: true, subtree: true });
+  }
   function render(props: unknown): void {
     const view = init.view && views.get(init.view);
     if (!view) return;
@@ -250,6 +274,8 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
     'answerDecision',
     'listDecisions',
     'startWork',
+    'openCanvas',
+    'download',
   ] as const) {
     Object.assign(api, { [method]: (...args: unknown[]) => call(method, ...args) });
   }
@@ -285,6 +311,8 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
     await Promise.all(registrations);
     render(currentProps);
     port.postMessage({ type: 'ready' });
+    // After React's first commit, so a view that draws nothing still says so.
+    if (init.view !== null) requestAnimationFrame(reportSize);
     window.addEventListener('pagehide', () => {
       if (typeof cleanup === 'function') cleanup();
       root.unmount();

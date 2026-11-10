@@ -137,3 +137,5 @@ export {
   type AppActions,
   type AppTarget,
 } from './model/use-app-actions';
+export { APP_NEEDS_UPDATE_COPY } from './lib/needs-update-copy';
+export { AppNeedsUpdateNotice, type AppNeedsUpdateNoticeProps } from './ui/AppNeedsUpdateNotice';

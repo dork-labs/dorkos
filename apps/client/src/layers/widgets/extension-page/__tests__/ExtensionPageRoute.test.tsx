@@ -37,7 +37,7 @@ import { STARTING_LINE_DELAY_MS } from '../ui/ExtensionPageStatus';
 function record(overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecordPublic {
   return {
     id: 'hello',
-    manifest: { id: 'hello', name: 'Hello World', version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id: 'hello', name: 'Hello World', version: '1.0.0' },
     status: 'compiled',
     scope: 'global',
     origin: 'user',

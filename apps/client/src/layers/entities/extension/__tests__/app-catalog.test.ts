@@ -13,7 +13,7 @@ import {
 function ext(id: string, name: string, overrides: Partial<ExtensionRecordPublic> = {}) {
   return {
     id,
-    manifest: { id, name, version: '1.0.0' },
+    manifest: { clientApiVersion: 2, id, name, version: '1.0.0' },
     status: 'active',
     scope: 'global',
     origin: 'user',
@@ -180,7 +180,13 @@ describe('matchesAppSearch and appAccessibleName', () => {
     input({
       extensions: [
         ext('n', 'Meeting Notes', {
-          manifest: { id: 'n', name: 'Meeting Notes', version: '1.0.0', purpose: 'keeps minutes' },
+          manifest: {
+            clientApiVersion: 2,
+            id: 'n',
+            name: 'Meeting Notes',
+            version: '1.0.0',
+            purpose: 'keeps minutes',
+          },
         }),
       ],
       pages: [page('n', '', 'Notes')],

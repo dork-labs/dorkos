@@ -88,9 +88,15 @@ function catalog(records: ExtensionRecordPublic[]) {
 }
 
 describe('apps built for the old extension API', () => {
-  it('never loads their code and says they need an update', async () => {
-    const old = record('meadow');
+  function oldApp(id: string, rightPanel = false): ExtensionRecordPublic {
+    const old = record(id);
     delete (old.manifest as { clientApiVersion?: 2 }).clientApiVersion;
+    if (rightPanel) old.manifest.contributions = { 'right-panel': true };
+    return old;
+  }
+
+  it('never fetches their code, and leaves no error tab or frame behind', async () => {
+    const old = oldApp('meadow');
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({ ok: true, json: async () => [old] }))
@@ -98,18 +104,31 @@ describe('apps built for the old extension API', () => {
     await loader.initialize();
     expect(importExtensionModule).not.toHaveBeenCalled();
     expect(loader.getLoaded().has('meadow')).toBe(false);
+    expect(getExtensionClientStates().meadow).toBeUndefined();
+    const ids = useExtensionRegistry.getState().slots['settings.tabs'].map((tab) => tab.id);
+    expect(ids).not.toContain('meadow:load-error');
+    // The catalog reads the record: its tile says it needs an update.
+    expect(catalog([old]).apps.map((app) => [app.id, app.state])).toEqual([
+      ['meadow', 'needs-update'],
+    ]);
+  });
+
+  it('keeps a declared right-panel tab that says, in the same words, it needs an update', async () => {
+    const old = oldApp('meadow', true);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => [old] }))
+    );
+    await loader.initialize();
     const tab = useExtensionRegistry
       .getState()
-      .slots['settings.tabs'].find((entry) => entry.id === 'meadow:load-error');
+      .slots['right-panel'].find((entry) => entry.id === 'meadow:needs-update');
     expect(tab).toBeDefined();
     render(createElement(tab!.component));
+    expect(screen.getByText('meadow needs an update to run safely.')).toBeInTheDocument();
     expect(
-      screen.getByText('This app needs an update for this version of DorkOS.')
+      screen.getByText('It was built for an older version of DorkOS. Ask its maker for an update.')
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'How to update it' })).toHaveAttribute(
-      'href',
-      'https://dorkos.ai/docs/integrations/extension-frame-migration'
-    );
   });
 });
 

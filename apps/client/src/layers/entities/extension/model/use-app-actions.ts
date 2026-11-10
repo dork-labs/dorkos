@@ -111,7 +111,9 @@ export function useAppActions(): AppActions {
       switch (app.state) {
         case 'starting':
           return;
+        // An out-of-date app's page says it needs an update, in the tile's words.
         case 'ok':
+        case 'needs-update':
           void router.navigate({ href: extensionPageHref(app.id, app.path) });
           return;
         case 'held':

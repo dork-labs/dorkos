@@ -18,6 +18,8 @@ import {
 import { Button } from '@/layers/shared/ui';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import {
+  APP_NEEDS_UPDATE_COPY,
+  AppNeedsUpdateNotice,
   extensionPermissionLines,
   permissionLineText,
   permissionViewFromRecord,
@@ -62,6 +64,7 @@ const NEED_TONE: Record<ExtensionRowNeed, keyof typeof TONE_PANEL> = {
   'needs-ok': 'warning',
   'not-working': 'error',
   'cant-load': 'error',
+  'needs-update': 'neutral',
   'needs-newer': 'neutral',
 };
 
@@ -292,6 +295,19 @@ export function ExtensionNeedPanel({
         )}
       </>,
       'extension-not-working'
+    );
+  }
+
+  if (need === 'needs-update') {
+    return (
+      <div
+        role="group"
+        aria-label={APP_NEEDS_UPDATE_COPY.headline(extension.manifest.name)}
+        className={cn('rounded-lg p-4', TONE_PANEL.neutral)}
+        data-testid={`extension-needs-update-${extension.id}`}
+      >
+        <AppNeedsUpdateNotice name={extension.manifest.name} />
+      </div>
     );
   }
 
