@@ -193,6 +193,9 @@ export const ROOM_RECEIPT_EMOJI = '👀';
  * - `handoff_shared` / `handoff_declined` — an agent's chat here asked its seat in another room
  *   to post something (DOR-3397), and the seat did, or did not and said why. Written in the
  *   room the draft came from, with the agent as subject.
+ * - `schedule_missed` / `schedule_failed` — a schedule's runs were missed while
+ *   this computer slept, or it failed (or was blocked) twice in a row
+ *   (DOR-4078, DOR-4073). Missed is quiet; failed waits on the reader.
  *
  * **This four-code addition is the one non-additive change in the whole
  * chats-as-channels feature (spec §11.2, A11.1).** Widening an enum is not
@@ -232,6 +235,8 @@ export const RoomNoticeCodeSchema = z
     'files_set_up',
     'handoff_shared',
     'handoff_declined',
+    'schedule_missed',
+    'schedule_failed',
   ])
   .openapi('RoomNoticeCode');
 

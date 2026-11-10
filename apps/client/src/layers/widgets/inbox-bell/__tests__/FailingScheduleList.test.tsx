@@ -70,7 +70,7 @@ describe('schedule Needs you card', () => {
   it('uses fixed cause words and opens the actual failed run', () => {
     render(<FailingScheduleList schedules={[task]} />);
     expect(screen.getByText('Grooming failed twice in a row')).toBeTruthy();
-    expect(screen.getByText('an unknown error')).toBeTruthy();
+    expect(screen.getByText('An unknown error.')).toBeTruthy();
     expect(screen.queryByText(/IGNORE|evil/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Open run' }));
     expect(navigate).toHaveBeenCalledWith({ href: '/tasks?schedule=schedule&run=run-two' });
@@ -91,8 +91,32 @@ describe('schedule Needs you card', () => {
     };
     const { rerender } = render(<FailingScheduleList schedules={[blocked]} />);
     expect(screen.getByText('Grooming was blocked twice in a row')).toBeTruthy();
-    expect(screen.getByText('a command was refused')).toBeTruthy();
+    expect(screen.getByText('A command was refused.')).toBeTruthy();
     rerender(<FailingScheduleList schedules={[]} />);
     expect(screen.queryByRole('button', { name: 'Open run' })).toBeNull();
+  });
+
+  it('says the reason as a sentence with when it tries again, kept on one line', () => {
+    const active = {
+      ...task,
+      status: 'active' as const,
+      // Local 10:00, so the card reads the same time in any test timezone.
+      nextRun: new Date(2026, 10, 10, 10, 0).toISOString(),
+    };
+    render(<FailingScheduleList schedules={[active]} />);
+    const reason = screen.getByText(/^An unknown error\. Next/);
+    expect(reason.textContent).toBe('An unknown error. Next try: 10:00.');
+    expect(reason.textContent!.split(/\s+/).length).toBeLessThanOrEqual(15);
+  });
+
+  it('drops the next try for a paused schedule', () => {
+    const paused = {
+      ...task,
+      status: 'active' as const,
+      enabled: false,
+      nextRun: new Date(2026, 10, 10, 10, 0).toISOString(),
+    };
+    render(<FailingScheduleList schedules={[paused]} />);
+    expect(screen.getByText('An unknown error.')).toBeTruthy();
   });
 });

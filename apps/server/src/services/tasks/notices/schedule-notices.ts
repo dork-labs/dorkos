@@ -7,8 +7,10 @@ import { Cron } from 'croner';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
 import {
+  scheduleClockTime,
   scheduleFailureClause,
   scheduleFailureTitle,
+  scheduleNextClause,
   scheduleNoticeName,
 } from '@dorkos/shared/schedule-notice-copy';
 import type { TaskStore } from '../task-store.js';
@@ -33,14 +35,7 @@ export class ScheduleNotices {
   }
 
   private time(instant: Date): string {
-    return instant
-      .toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hourCycle: 'h23',
-        ...(this.deps.timezone() ? { timeZone: this.deps.timezone()! } : {}),
-      })
-      .replace(/^0/, '');
+    return scheduleClockTime(instant, this.deps.timezone());
   }
 
   private next(task: Task, label: 'run' | 'try'): string {
@@ -50,7 +45,7 @@ export class ScheduleNotices {
         paused: true,
         timezone: task.timezone ?? undefined,
       }).nextRun();
-      return next ? ` Next ${label}: ${this.time(next)}.` : '';
+      return next ? ` ${scheduleNextClause(label, this.time(next))}` : '';
     } catch {
       return '';
     }
@@ -74,6 +69,7 @@ export class ScheduleNotices {
         : `${count >= 1000 ? '1000+' : count} runs (${this.time(first)}–${this.time(last)})`;
     this.deps.post(task, {
       text: `${scheduleNoticeName(task)} missed ${when}, likely because this computer was asleep.${this.next(task, 'run')}`,
+      notice: 'schedule_missed',
     });
   }
 
@@ -119,6 +115,7 @@ export class ScheduleNotices {
     });
     this.deps.post(task, {
       text: `${scheduleFailureTitle(task, reason.kind === 'tool_refused' || reason.kind === 'tools_refused')}: ${scheduleFailureClause(reason)}.${this.next(task, 'try')}`,
+      notice: 'schedule_failed',
       scheduleRun: { scheduleId: task.id, runId: run.id },
     });
   }

@@ -29,6 +29,35 @@ export function scheduleFailureClause(reason: TaskFailureReason | null | undefin
   }
 }
 
+/**
+ * The cause as a sentence that stands alone, for the Needs you card: the same
+ * fixed words as {@link scheduleFailureClause}, capitalised and closed.
+ */
+export function scheduleFailureSentence(reason: TaskFailureReason | null | undefined): string {
+  const clause = scheduleFailureClause(reason);
+  return `${clause.charAt(0).toUpperCase()}${clause.slice(1)}.`;
+}
+
+/** A clock time the way every schedule line says it: `9:00`, `14:30`. */
+export function scheduleClockTime(instant: Date, timeZone?: string | null): string {
+  return instant
+    .toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hourCycle: 'h23',
+      ...(timeZone ? { timeZone } : {}),
+    })
+    .replace(/^0/, '');
+}
+
+/**
+ * "Next run: 9:00." held together with no-break spaces, so a narrow line wraps
+ * before the clause and never leaves the time alone on the next line.
+ */
+export function scheduleNextClause(label: 'run' | 'try', time: string): string {
+  return `Next\u00a0${label}:\u00a0${time}.`;
+}
+
 /** A standing schedule problem disappears as soon as run history becomes healthy. */
 export function scheduleNeedsAttention(task: Task): boolean {
   return task.health?.state === 'failing' && task.health.streak >= 2;

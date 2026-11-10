@@ -618,6 +618,46 @@ describe('RoomMessage — telling one notice from another', () => {
     }
   });
 
+  it('draws a failing schedule warm and a slept-through one quiet (DOR-4073, DOR-4078)', () => {
+    renderRow(
+      entry({
+        kind: 'notice',
+        body: {
+          text: 'Weekly report failed twice in a row: an unknown error. Next try: 10:00.',
+          notice: 'schedule_failed',
+          scheduleRun: { scheduleId: 'weekly', runId: 'run-2' },
+        },
+      })
+    );
+    expect(screen.getByTestId('room-notice')).toHaveClass('text-foreground');
+    expect(mark()).toHaveClass('text-status-warning-fg');
+    // Open run is words after the sentence, not a filled button, with its hit
+    // area in padding: 24px with a mouse, 44px on touch.
+    const action = screen.getByRole('button', { name: 'Open run' });
+    expect(action).toHaveClass(
+      'underline',
+      'py-1',
+      '-my-1',
+      'pointer-coarse:py-3.5',
+      'pointer-coarse:-my-3.5'
+    );
+    expect(action.className).not.toMatch(/\bbg-|\bborder\b|\bh-\d/);
+    cleanup();
+
+    renderRow(
+      entry({
+        kind: 'notice',
+        body: {
+          text: 'Weekly report missed 9:00, likely because this computer was asleep.',
+          notice: 'schedule_missed',
+        },
+      })
+    );
+    expect(screen.getByTestId('room-notice')).toHaveClass('text-muted-foreground');
+    expect(mark()).not.toHaveClass('text-status-warning-fg');
+    expect(screen.queryByRole('button', { name: 'Open run' })).toBeNull();
+  });
+
   it('draws the mark as decoration, never as a second sentence', () => {
     // An icon with a name would make a screen reader read "warning" ahead of a
     // sentence that goes on to explain itself in full.
@@ -640,6 +680,8 @@ describe('RoomMessage — telling one notice from another', () => {
     expect(row.className).not.toContain('ring-2');
     const gutter = row.querySelector('[data-slot="notice-mark"]');
     expect(gutter).toHaveClass('w-[var(--msg-gutter-width)]');
+    // One line tall and centred, so the mark sits on the first line of words.
+    expect(gutter).toHaveClass('h-[1lh]', 'items-center');
     expect(mark()).toHaveClass('size-(--size-icon-xs)');
   });
 

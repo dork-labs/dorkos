@@ -218,6 +218,12 @@ const NOTICE_STYLES: Record<RoomNoticeCode, NoticeStyle> = {
   // bridged (chats-as-channels §7.3). Informational, never a fault, so it stays
   // quiet in tone.
   bridge_history_note: { Icon: History },
+  // Runs were missed while this computer slept. Nothing is broken and the
+  // schedule carries on by itself, so it stays quiet.
+  schedule_missed: { Icon: Info },
+  // A schedule failed, or was blocked, twice in a row. Warm like `turn_failed`:
+  // it will keep failing until somebody opens the run and fixes the cause.
+  schedule_failed: { Icon: TriangleAlert, warm: true },
 };
 
 /** The mark on a notice whose code this client does not recognise. */
@@ -393,8 +399,10 @@ export function NoticeRow({
     >
       <span
         data-slot="notice-mark"
-        className="flex w-[var(--msg-gutter-width)] shrink-0 justify-center"
+        className="flex h-[1lh] w-[var(--msg-gutter-width)] shrink-0 items-center justify-center"
       >
+        {/* One line tall, so the mark sits on the centre of the first line of
+            words whatever the text size, and never on the row padding. */}
         {/* Decoration, and it has to stay decoration: the words beside it
             already say everything the mark stands for, and naming the icon
             would make a screen reader read "warning" before a sentence that
@@ -402,7 +410,7 @@ export function NoticeRow({
         <Icon
           aria-hidden
           className={cn(
-            'mt-0.5 size-(--size-icon-xs) shrink-0',
+            'size-(--size-icon-xs) shrink-0',
             warm ? 'text-status-warning-fg' : 'text-muted-foreground'
           )}
         />

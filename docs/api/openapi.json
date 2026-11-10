@@ -16714,7 +16714,9 @@
           "handle_changed",
           "files_set_up",
           "handoff_shared",
-          "handoff_declined"
+          "handoff_declined",
+          "schedule_missed",
+          "schedule_failed"
         ]
       },
       "RoomMoment": {

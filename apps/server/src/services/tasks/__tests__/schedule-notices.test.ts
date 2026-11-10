@@ -53,8 +53,9 @@ describe('schedule notices', () => {
     await vi.runAllTicks();
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0][1].text).toBe(
-      'Grooming missed 8 runs (1:00–8:00), likely because this computer was asleep. Next run: 9:00.'
+      'Grooming missed 8 runs (1:00–8:00), likely because this computer was asleep. Next\u00a0run:\u00a09:00.'
     );
+    expect(post.mock.calls[0][1].notice).toBe('schedule_missed');
     expect(store.runHistory()(task.id).health.streak).toBe(0);
   });
 
@@ -65,6 +66,7 @@ describe('schedule notices', () => {
     await finish('failed');
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0][1].text).toContain('failed twice in a row: an unknown error.');
+    expect(post.mock.calls[0][1].notice).toBe('schedule_failed');
     await finish('failed');
     expect(post).toHaveBeenCalledTimes(1);
     await finish('completed');
@@ -103,6 +105,7 @@ describe('schedule notices', () => {
       'was blocked twice in a row: a command was refused.'
     );
     expect(post.mock.calls[0][1].scheduleRun.runId).toBe(run.id);
+    expect(post.mock.calls[0][1].notice).toBe('schedule_failed');
   });
 
   it('drops next time for paused schedules, reading their current state', async () => {
@@ -134,7 +137,7 @@ describe('schedule notice copy', () => {
     });
     await vi.runAllTicks();
     expect(post.mock.calls[0][1].text).toBe(
-      'Grooming missed 8:00, likely because this computer was asleep. Next run: 9:00.'
+      'Grooming missed 8:00, likely because this computer was asleep. Next\u00a0run:\u00a09:00.'
     );
   });
 
@@ -159,7 +162,7 @@ describe('schedule notice copy', () => {
     await finish('needs_attention');
     const text = post.mock.calls[0][1].text;
     expect(text).toBe(
-      'This schedule… was blocked twice in a row: a command was refused. Next try: 3:00.'
+      'This schedule… was blocked twice in a row: a command was refused. Next\u00a0try:\u00a03:00.'
     );
     expect(text.split(/\s+/)).toHaveLength(15);
   });
