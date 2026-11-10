@@ -16630,6 +16630,21 @@
           "notice": {
             "$ref": "#/components/schemas/RoomNoticeCode"
           },
+          "scheduleRun": {
+            "type": "object",
+            "properties": {
+              "scheduleId": {
+                "type": "string"
+              },
+              "runId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "scheduleId",
+              "runId"
+            ]
+          },
           "subjectAuthorId": {
             "type": "string"
           },
