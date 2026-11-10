@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { docsUrl } from '@dorkos/shared/links';
 import { Button } from '@/layers/shared/ui';
 
 /** What an author changes to move an app to extension API version 2 (DOR-3293). */
-const EXTENSION_UPDATE_GUIDE_URL = 'https://dorkos.ai/docs/integrations/extension-frame-migration';
+const EXTENSION_UPDATE_GUIDE_URL = docsUrl('/integrations/extension-frame-migration');
 
 /** A failed app's Settings section keeps its name and one way to retry. */
 export function ExtensionLoadFailure({
