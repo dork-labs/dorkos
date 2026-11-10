@@ -3,9 +3,12 @@
  * phase 1). Dedupe, retention and deletion are the store's, in
  * `apps/server/src/services/session/turn-context/turn-context-store.ts`.
  */
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createDb, runMigrations, type Db } from '../index.js';
 import {
   turnContextBodies,
@@ -59,15 +62,46 @@ describe('turn_context tables', () => {
 });
 
 describe('turn_context down-migration', () => {
+  const TAG = '20261109151737_turn_context';
+  const MIGRATIONS = fileURLToPath(new URL('../../drizzle/', import.meta.url));
   const DOWN = fileURLToPath(
     new URL('../down/20261109151737_turn_context.down.sql', import.meta.url)
   );
   const TABLES = ['turn_context_bodies', 'turn_context_parts', 'turn_contexts'];
+  let directory: string;
   let db: Db;
 
+  function journal() {
+    return JSON.parse(readFileSync(join(MIGRATIONS, 'meta/_journal.json'), 'utf8')) as {
+      entries: Array<{ idx: number; tag: string; when: number }>;
+    };
+  }
+
+  function entry() {
+    const found = journal().entries.find((e) => e.tag === TAG);
+    expect(found).toBeDefined();
+    return found!;
+  }
+
+  function migrateThrough(lastIdx: number) {
+    const data = journal();
+    const entries = data.entries.filter((e) => e.idx <= lastIdx);
+    for (const e of entries)
+      copyFileSync(join(MIGRATIONS, `${e.tag}.sql`), join(directory, `${e.tag}.sql`));
+    writeFileSync(join(directory, 'meta/_journal.json'), JSON.stringify({ ...data, entries }));
+    migrate(db, { migrationsFolder: directory });
+  }
+
   beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), 'turn-context-down-migration-'));
+    mkdirSync(join(directory, 'meta'));
     db = createDb(':memory:');
-    runMigrations(db);
+    migrateThrough(entry().idx);
+  });
+
+  afterEach(() => {
+    if (db.$client.open) db.$client.close();
+    rmSync(directory, { recursive: true, force: true });
   });
 
   /** Run the down file as the sqlite3 shell would, minus its dot-commands. */
@@ -111,7 +145,7 @@ describe('turn_context down-migration', () => {
 
     expect(tables()).toEqual([]);
     expect(ledger()).toBe(0);
-    runMigrations(db);
+    migrateThrough(entry().idx);
     expect(tables()).toEqual(TABLES);
     expect(db.select().from(turnContextBodies).all()).toEqual([]);
   });
