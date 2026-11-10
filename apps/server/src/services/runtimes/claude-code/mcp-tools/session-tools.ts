@@ -98,12 +98,8 @@ import {
 } from './session-start-permission.js';
 import { outsiderStartCeiling, startCarriesWords, startLevelFacts } from './session-start-facts.js';
 import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
-import {
-  isProtectedLaunchFolder,
-  launchPlaceRefusal,
-  PROTECTED_FOLDER_MESSAGE,
-} from '../../../session/launch/launch-caller.js';
-import { registerPreGateRefusal } from '../../../core/capabilities/pre-gate-refusals.js';
+import { launchPlaceRefusal } from '../../../session/launch/launch-caller.js';
+import { registerSessionStartPreGate } from '../../../session/launch/session-start-pre-gate.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
 import { jsonContent, type McpToolDeps } from './types.js';
 
@@ -317,16 +313,7 @@ function callerOf(
   };
 }
 
-// Before the gate, so no level, card or saved "Always allow" starts a chat in a
-// protected folder (DOR-4060). The handler asks the same rule again.
-registerPreGateRefusal('session_start', (input, caller) => {
-  const cwd = typeof input === 'object' && input !== null ? (input as { cwd?: unknown }).cwd : null;
-  return typeof cwd === 'string' &&
-    path.isAbsolute(cwd) &&
-    isProtectedLaunchFolder(cwd, caller.agentPath)
-    ? PROTECTED_FOLDER_MESSAGE
-    : null;
-});
+registerSessionStartPreGate();
 
 /**
  * Handler factory for `session_start`.
