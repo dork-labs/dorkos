@@ -40,6 +40,7 @@ import {
 } from '@dorkos/shared/schemas';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
+import { protectedPathRefusal } from '../services/runtimes/shared/policy/protected-file-guard.js';
 import { isPersonalComputer } from '../services/core/server-role/role-checks.js';
 import { WORKBENCH } from '../config/constants.js';
 import { injectFrameScripts } from '../services/workbench-serve/frame-inject.js';
@@ -311,6 +312,10 @@ async function handleServe(c: Context<ApiEnv>) {
   try {
     const stat = await fs.stat(resolved);
     if (!stat.isFile()) return c.json({ error: 'Not a file', code: 'NOT_A_FILE' }, 404);
+    // DorkOS's own protected files are never served, whatever page asks (DOR-4060).
+    // No link-count check here: a preview loads hard-linked package files.
+    const refused = protectedPathRefusal(resolved, cwd);
+    if (refused) return c.json({ error: refused.message, code: refused.code }, 403);
     size = stat.size;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;

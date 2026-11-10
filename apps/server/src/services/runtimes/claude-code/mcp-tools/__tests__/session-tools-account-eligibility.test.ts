@@ -34,6 +34,8 @@ vi.mock('../../../../core/runtime-registry.js', () => ({
   },
 }));
 vi.mock('../../../../../lib/boundary.js', () => ({
+  // The protected-folder rule finds the home folder through this (DOR-4060).
+  expandTilde: (p: string) => (p === '~' ? (process.env.HOME ?? '/') : p),
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
 }));
 vi.mock('../../../../core/config-manager.js', () => ({

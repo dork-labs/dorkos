@@ -103,6 +103,7 @@ import type { MessageSenderOpts, ResolvedLaunch } from './message-sender-shared.
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
+import { protectedFileMatcher } from '../tool-gate/protected-file-hook.js';
 import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
 import { shellGuardMatcher } from '../shell-guard/shell-guard-launch.js';
 import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
@@ -838,6 +839,12 @@ export async function resolveLaunch(args: {
   const auditHooks = auditToolHookMatchers(auditTurn);
   sdkOptions.hooks = {
     PreToolUse: [
+      // DorkOS's own tools and protected files (DOR-4060): refused before any card.
+      protectedFileMatcher({
+        sessionId: () => session.sdkSessionId || sessionId,
+        cwd: effectiveCwd,
+        ...(turnAgentPath ? { agentPath: turnAgentPath } : {}),
+      }),
       // The shell's route to protected files (DOR-3300): reads ask below Full,
       // writes to any agent's setup files are refused at every level.
       shellGuardMatcher(session, {

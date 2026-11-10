@@ -40,7 +40,7 @@ import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
-import { forkPlaceRefusal, httpLaunchOf } from './session-launcher.js';
+import { forkPlace, httpLaunchOf } from './session-launcher.js';
 import { httpTurnOrigin } from '../services/session/origin/turn-origin.js';
 import { recordAccepted } from './session-message-accepted.js';
 import { launchRefusalReply, notePersonMode, wifiModeRaiseReply } from './session-route-replies.js';
@@ -738,9 +738,8 @@ export function createSessionRoutes(deps: SessionRouteDeps = {}): Hono<ApiEnv> {
       return c.json(errorBody('Invalid request', 'VALIDATION_ERROR'), 400);
     }
 
-    const cwd = (readQuery(c).cwd as string) || vaultRoot;
     // A fork runs where it is put, so only where its caller may run one (DOR-3644).
-    const refused = await forkPlaceRefusal(honoRequestFacts(c), deps.meshCore, cwd, sessionId);
+    const { cwd, refused } = await forkPlace(c, deps.meshCore, sessionId);
     if (refused) return c.json(refused, 403);
 
     const runtime = await runtimeRegistry.resolveForSession(sessionId);

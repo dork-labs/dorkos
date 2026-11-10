@@ -47,6 +47,7 @@ import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
 import { resolveCallPermission } from './permission-enforcement.js';
 import { principalTurnOf } from './marked-turn-holds.js';
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
+import { preGateRefusal } from './pre-gate-refusals.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
@@ -810,6 +811,16 @@ export function composeRegistry(
       // value, so hashing anything else (the raw body, or a re-parse) would make
       // the binding cover something other than what runs.
       const parsed = capability.input.parse(input);
+      // Before the gate, so no level, card or saved "Always allow" reaches it
+      // (DOR-4060). A trusted caller is the person at the app, never an agent.
+      const early = supplied.trusted
+        ? null
+        : preGateRefusal(capability, parsed, {
+            ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
+            ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
+            ...(supplied.identity ? { agentPath: supplied.identity.agentPath } : {}),
+          });
+      if (early) throw new CapabilityGateRefusal({ outcome: 'denied', payload: early });
 
       // Always a real object, so a handler can read `context.approval` without
       // guarding for an absent context on every call site. The invoking session

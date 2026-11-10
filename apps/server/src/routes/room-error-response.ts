@@ -143,6 +143,7 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // but the table is exhaustive over the code union on purpose, so a code
   // without a status cannot exist.
   ATTACHMENT_PATH_REFUSED: 403,
+  CANVAS_PROTECTED_FILE: 403,
   ATTACHMENT_UNREADABLE: 400,
   ATTACHMENT_TOO_LARGE: 413,
   // A 409 for both room-repo refusals: the request is well formed and the room

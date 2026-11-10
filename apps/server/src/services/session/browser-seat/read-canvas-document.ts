@@ -10,11 +10,12 @@
  *
  * @module services/session/browser-seat/read-canvas-document
  */
-import fs from 'node:fs/promises';
-import { FILE_LIMITS } from '../../../config/constants.js';
-import { canvasSourcePath, peekCanvasService, sessionScope } from '../../canvas/index.js';
-import { resolveWithinCwd } from '../../../lib/file-route-guards.js';
-import { logger } from '../../../lib/logger.js';
+import {
+  canvasSourcePath,
+  peekCanvasService,
+  readCanvasFileText,
+  sessionScope,
+} from '../../canvas/index.js';
 import {
   bridgeKeyFor,
   bridgeTargetForUrl,
@@ -93,7 +94,11 @@ export async function readSessionCanvasDocument(
   const filePath = canvasSourcePath(document.content);
   if (filePath !== null) {
     const cwd = canvas.resolvedTreeOf(scope, document.id);
-    return { note: UNTRUSTED_NOTE, ...metadata, ...(await readFileBacked(cwd, filePath)) };
+    return {
+      note: UNTRUSTED_NOTE,
+      ...metadata,
+      ...(await readCanvasFileText(cwd, filePath, { documentPath: filePath })),
+    };
   }
   // A browser or url document is where it points and nothing else; a widget is
   // its definition; a json document is its data. All of them are already in the
@@ -136,51 +141,4 @@ async function describeFrameBridge(
       'DorkOS served this page without window.dorkos.channel or the DevTools shim. ' +
       FRAME_BRIDGE_AGENT_NOTES[status.reason],
   };
-}
-
-/**
- * Read a file-backed canvas document's CURRENT bytes, through the same guard the
- * file route uses.
- *
- * Four refusals, each handed back as a sentence rather than thrown: the document
- * records no directory, the path escapes it, the file is gone, and the file is
- * too big or is not text. None is a failure of the tool — they are all true
- * things about a file — so each answers with `content: null` and says which.
- *
- * @param cwd - The directory the ROW recorded, or `null`.
- * @param filePath - The path the document names.
- * @returns `content` and, on any refusal, the sentence saying why there is none.
- */
-async function readFileBacked(
-  cwd: string | null,
-  filePath: string
-): Promise<{ content: string | null; reason?: string }> {
-  if (cwd === null) {
-    return {
-      content: null,
-      reason: 'This document does not record which folder its file is in, so it cannot be read.',
-    };
-  }
-  try {
-    const { resolved } = await resolveWithinCwd(cwd, filePath);
-    const stat = await fs.stat(resolved);
-    if (!stat.isFile()) return { content: null, reason: 'That path is not a file.' };
-    if (stat.size > FILE_LIMITS.MAX_TEXT_FILE_BYTES) {
-      return { content: null, reason: 'That file is too large to read as text.' };
-    }
-    const buffer = await fs.readFile(resolved);
-    // The standard binary heuristic, and git's: a NUL byte anywhere.
-    if (buffer.includes(0)) {
-      return { content: null, reason: 'That file is not text, so there is nothing to read out.' };
-    }
-    return { content: buffer.toString('utf8') };
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return { content: null, reason: 'That file is not there any more.' };
-    logger.warn('[ui] could not read a canvas document’s file', {
-      documentPath: filePath,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return { content: null, reason: 'That file could not be read just now.' };
-  }
 }

@@ -16,7 +16,8 @@
  *   its verified identity, never from the path it named.
  *
  * Every check is on real paths, so a symlink cannot carry a name out of the
- * folder it appears in. Nothing inside the rooms directory is attachable except
+ * folder it appears in. A file on the protected-files list, or with more than
+ * one hard link, is refused wherever it sits (DOR-4060). Nothing inside the rooms directory is attachable except
  * through the agent's own copy: never a room's shared `repo/`, never another
  * member's copy, even when the working directory happens to contain the rooms
  * directory (a DorkOS dev checkout keeps its data under the repo).
@@ -38,6 +39,10 @@ import { BoundaryError, validateBoundary } from '../../../lib/boundary.js';
 import { resolveWithinCwd } from '../../../lib/file-route-guards.js';
 import { logger } from '../../../lib/logger.js';
 import { sniffImageContentType } from '../../identity/image-sniff.js';
+import {
+  linkedFileRefusal,
+  protectedPathRefusal,
+} from '../../runtimes/shared/policy/protected-file-guard.js';
 import { RoomError } from '../room-errors.js';
 import { RoomWorktreeManager } from '../repo/room-worktree-manager.js';
 import { SAFE_ROOM_ID } from '../repo/room-repo-store.js';
@@ -198,6 +203,10 @@ export async function readOwnFile(
     }
     throw new RoomError('ATTACHMENT_UNREADABLE', `${label} could not be opened.`);
   }
+  // The same protected-files list the native file tools deny, on the real path:
+  // a folder may hold a file no tool shares, `host.key` in the data folder among them.
+  const refused = protectedPathRefusal(resolved, roots.cwd, roots.ownCopies);
+  if (refused) throw new RoomError('ATTACHMENT_PATH_REFUSED', refused.message);
 
   // One open, never followed through a symlink, and every later question asked
   // of THAT descriptor: the path cannot be swapped between the check and the read.
@@ -218,6 +227,9 @@ export async function readOwnFile(
     if (!stat.isFile()) {
       throw new RoomError('ATTACHMENT_UNREADABLE', `${label} is not a file you can attach.`);
     }
+    // A hard link is a protected file under an innocent name; only its count tells.
+    const linked = linkedFileRefusal(stat, resolved);
+    if (linked) throw new RoomError('ATTACHMENT_PATH_REFUSED', linked.message);
     if (opts.maxBytes !== undefined && stat.size > opts.maxBytes) {
       throw new RoomError(
         'ATTACHMENT_TOO_LARGE',

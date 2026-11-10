@@ -277,6 +277,28 @@ describe('the audit read capabilities', () => {
     ).resolves.toMatchObject({ total: 1 });
   });
 
+  // QA row D (DOR-4060): a session id is a plain name, never a path, for every reader.
+  it.each([
+    '../../../../host.key',
+    '../../host',
+    '..%2F..%2F..%2Fhost.key',
+    '/fixture/home/host.key',
+    '....//....//host.key',
+    '%2e%2e/%2e%2e/host.key',
+    'a\\b',
+    '..',
+    '.',
+  ])('refuse the id %s as not a session id, before any reader looks', async (sessionId) => {
+    const { registry } = setup();
+    for (const caller of [ofAgent, {}]) {
+      await expect(
+        registry.invoke('audit.transcript_read', { sessionId }, caller)
+      ).rejects.toMatchObject({
+        payload: { code: 'NOT_FOUND', error: expect.stringMatching(/not a session id/) },
+      });
+    }
+  });
+
   it('join an account’s ids only through a link the reader may read', async () => {
     const { registry, log } = setup();
     log.record({

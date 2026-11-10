@@ -40,6 +40,7 @@ import type { UiState, UiStateReport, UiCommand } from '@dorkos/shared/types';
 import {
   CANVAS_VERBS,
   SESSION_AGENT_AUTHOR,
+  canvasSourceRefusal,
   frontOfViewIds,
   peekCanvasService,
   sessionScope,
@@ -227,6 +228,19 @@ export async function controlUi(
   }
 
   const roomTurn = uiTurnFacts.read(sessionId).roomTurn;
+
+  // **A protected file never reaches a canvas** (DOR-4060). Asked against the
+  // folder every writer below resolves a relative path in, before any of them
+  // runs, so a refused file gets no document, no event and no room line.
+  const protectedSource = canvasSourceRefusal(command, roomTurn?.cwd ?? caller.cwd);
+  if (protectedSource !== null) {
+    throw new CapabilityToolError({
+      success: false,
+      action: command.action,
+      code: protectedSource.code,
+      error: protectedSource.message,
+    });
+  }
 
   // **A targeted write goes somewhere else entirely, and it is decided first**
   // (spec `canvas-agent-seat` §9). `target` names a room this agent is a member

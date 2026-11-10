@@ -44,6 +44,7 @@ import { resolveRunSession, STICKY_BUSY_SKIP_REASON } from './session/sticky-ses
 import { parkIfAgentApprovalStale } from './agent-mode/agent-mode-record.js';
 import { V1_RELAY_RUNTIME } from './execution/relay-runtime.js';
 import { checkMisplacedMode } from './execution/misplaced-mode.js';
+import { guardRunPlacement, unregisteredAgentError } from './execution/run-place-guard.js';
 import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
 import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
@@ -840,10 +841,7 @@ export class TaskSchedulerService {
     if (task.agentId && this.meshCore) {
       const projectPath = this.meshCore.getProjectPath(task.agentId);
       if (!projectPath) {
-        throw new Error(
-          `Agent ${task.agentId} not found in registry -- task ${task.id} cannot run. ` +
-            'The agent may have been unregistered. Re-link the task to a valid agent or directory.'
-        );
+        throw unregisteredAgentError(task.agentId, task.id);
       }
       const resolved = await resolveSessionCwd({ agentPath: projectPath });
       // **The desk guard** (spec `agent-home-desk` §3.4, DOR-2356): a run for
@@ -851,13 +849,13 @@ export class TaskSchedulerService {
       // room's folder. A refusal throws, and the run is recorded failed with
       // the reason — nothing reaches a runtime.
       assertOwnDesk(projectPath, resolved.cwd, deskBindingFor(resolved));
-      return { cwd: resolved.cwd, agentPath: projectPath };
+      return guardRunPlacement({ cwd: resolved.cwd, agentPath: projectPath });
     }
     // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
     // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an
     // agent-less task through the chain's default rung would quietly move the
     // ones where they differ.
-    return { cwd: process.cwd() };
+    return guardRunPlacement({ cwd: process.cwd() });
   }
 
   /**

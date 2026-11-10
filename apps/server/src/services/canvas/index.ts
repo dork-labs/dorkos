@@ -46,6 +46,12 @@ export {
 } from './scopes.js';
 export { publishSessionCanvas, sessionCanvasViewers } from './session-channel.js';
 export {
+  canvasContentRefusal,
+  canvasSourceRefusal,
+  readCanvasFileText,
+  type CanvasFileText,
+} from './canvas-file-access.js';
+export {
   CANVAS_EDIT_HEARTBEAT_MS,
   CANVAS_EDIT_TTL_MS,
   CANVAS_VERBS,

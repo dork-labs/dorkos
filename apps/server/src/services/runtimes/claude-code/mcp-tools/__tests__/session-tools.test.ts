@@ -80,6 +80,8 @@ vi.mock('../../../../core/runtime-registry.js', () => ({
   },
 }));
 vi.mock('../../../../../lib/boundary.js', () => ({
+  // The protected-folder rule finds the home folder through this (DOR-4060).
+  expandTilde: (p: string) => (p === '~' ? (process.env.HOME ?? '/') : p),
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => {
     if (!boundaryRoots.some((root) => p.startsWith(root))) {
       throw new Error('Access denied: path outside directory boundary');
@@ -157,8 +159,11 @@ import {
 } from '../../../../session/launch/launch-session.js';
 import {
   launchPlaceRefusal,
+  isProtectedLaunchFolder,
   NOT_THE_CALLER_MESSAGE,
   OTHER_AGENTS_HOME_MESSAGE,
+  PROTECTED_DEFAULT_FOLDER_MESSAGE,
+  PROTECTED_FOLDER_MESSAGE,
 } from '../../../../session/launch/launch-caller.js';
 import {
   clearTestHomes,
@@ -171,6 +176,7 @@ import type { ToolRegistrar } from '../../../../core/mcp-tool-gate.js';
 import type { AgentIdentity } from '../../../../core/agent-identity/index.js';
 import { registerSessionTools } from '../../../../core/external-mcp/session-tools.js';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { DEFAULT_CWD } from '../../../../../lib/resolve-root.js';
 import {
   SessionStartedByStore,
   setSessionStartedByStore,
@@ -1998,5 +2004,180 @@ describe('one place rule for session_start and the HTTP launch (DOR-3644)', () =
     const httpCode = isSessionLaunchRefusal(http) ? (http.launcherRefused ?? null) : null;
     expect(httpCode).toBe(expected);
     if (expected !== null) expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * QA row A (DOR-4060): no agent starts a chat in DorkOS's data folder, the home
+ * folder, a folder above either, or a protected folder, unless it is the
+ * agent's own folder (never for a protected one). The rule is asked before the
+ * level, so it holds at every level the calling chat can run at, and on Codex.
+ * The paths are a fixture home with no files in it; nothing real is read.
+ */
+describe('session_start refuses a protected folder (DOR-4060, QA row A)', () => {
+  const HOME = '/work/fixture-home';
+  const DORK = `${HOME}/.dork`;
+  const LEVELS = ['default', 'plan', 'acceptEdits', 'dontAsk', 'bypassPermissions'] as const;
+  const REFUSED = [
+    ['the data folder', DORK],
+    ['the home folder', HOME],
+    ['a folder above the home folder', '/work'],
+    ['a protected folder inside the data folder', `${DORK}/extension-secrets`],
+  ] as const;
+
+  beforeEach(() => {
+    vi.stubEnv('HOME', HOME);
+    vi.stubEnv('DORK_HOME', DORK);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', `${HOME}/.claude-fixture`);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  /** Scout, from a chat at `mode` on `runtime`. */
+  const fromChat = (mode: string, runtime = 'claude-code') =>
+    createSessionStartHandler(makeDeps(), () => ({
+      agentPath: AGENT_HOME,
+      sessionId: 'parent-chat',
+      runtime,
+      permissionMode: mode,
+    }));
+
+  for (const runtime of ['claude-code', 'codex']) {
+    describe(`from a ${runtime} chat`, () => {
+      it.each(LEVELS.flatMap((mode) => REFUSED.map(([name, cwd]) => [mode, name, cwd])))(
+        'at %s: %s',
+        async (mode, _name, cwd) => {
+          const result = await fromChat(mode, runtime)({ ...BASE, cwd, runtime });
+          expect(result.isError).toBe(true);
+          expect(payloadOf(result)).toEqual({
+            error: PROTECTED_FOLDER_MESSAGE,
+            code: 'PROTECTED_FOLDER',
+          });
+          expect(dispatchMessage).not.toHaveBeenCalled();
+          expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
+        }
+      );
+    });
+  }
+
+  it('the HTTP route refuses the same folders for an agent, and never for a person', async () => {
+    for (const [, cwd] of REFUSED) {
+      vi.clearAllMocks();
+      const agent = await dispatchSessionMessage({
+        origin: { kind: 'agent-launch' },
+        launcher: { kind: 'agent', agentPath: AGENT_HOME },
+        sessionId: '00000000-0000-4000-8000-000000004060',
+        request: { content: 'x', cwd },
+        clientId: 'http',
+        meshCore: mesh,
+        roomSessionPlace: undefined,
+      });
+      expect(isSessionLaunchRefusal(agent) ? agent.launcherRefused : null).toBe('PROTECTED_FOLDER');
+      expect(dispatchMessage).not.toHaveBeenCalled();
+      expect(launchPlaceRefusal(mesh, { kind: 'person' }, { cwd })).toBeNull();
+    }
+  });
+
+  it('an unidentified caller is refused too', () => {
+    expect(launchPlaceRefusal(mesh, { kind: 'unidentified' }, { cwd: DORK })?.code).toBe(
+      'PROTECTED_FOLDER'
+    );
+  });
+
+  it('a message into a chat that already stands there still reaches it', () => {
+    const place = { cwd: DORK, chatAgent: null };
+    expect(launchPlaceRefusal(mesh, { kind: 'agent', agentPath: AGENT_HOME }, place)).toBeNull();
+  });
+
+  describe('controls', () => {
+    it.each(LEVELS)('at %s, the agent’s own folder still starts', async (mode) => {
+      const result = await fromChat(mode)({ ...BASE, cwd: AGENT_HOME });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it('an agent whose own folder is the home folder may start there, but not in the data folder', () => {
+      const own = { kind: 'agent', agentPath: HOME } as const;
+      expect(isProtectedLaunchFolder(HOME, HOME)).toBe(false);
+      expect(launchPlaceRefusal(mesh, own, { cwd: DORK })?.code).toBe('PROTECTED_FOLDER');
+    });
+
+    it('an ordinary project folder still starts', async () => {
+      expect((await fromChat('acceptEdits')(BASE)).isError).toBeUndefined();
+    });
+  });
+});
+
+describe('isProtectedLaunchFolder inside and around the data folder (DOR-4060)', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('refuses anything inside the data folder but an agent’s home or a managed workspace', () => {
+    vi.stubEnv('HOME', '/work/fixture-home');
+    vi.stubEnv('DORK_HOME', '/work/fixture-home/.dork');
+    const own = '/work/fixture-home/.dork/agents/scout';
+    for (const cwd of ['relay', 'mcp', 'browser', 'agents', 'workspaces', 'rooms/r1']) {
+      expect(isProtectedLaunchFolder(`/work/fixture-home/.dork/${cwd}`, own)).toBe(true);
+    }
+    expect(isProtectedLaunchFolder(own, own)).toBe(false);
+    expect(isProtectedLaunchFolder('/work/fixture-home/.dork/workspaces/repo/main', own)).toBe(
+      false
+    );
+  });
+
+  it('lets an agent work inside its own folder when the data folder sits in it, as in dev', () => {
+    vi.stubEnv('HOME', '/work/fixture-home');
+    vi.stubEnv('DORK_HOME', '/work/repo/apps/server/.temp/.dork');
+    expect(isProtectedLaunchFolder('/work/repo/apps/server', '/work/repo')).toBe(false);
+    expect(isProtectedLaunchFolder('/work/repo/apps/server', '/work/other')).toBe(true);
+    expect(isProtectedLaunchFolder('/work', '/work/repo')).toBe(true);
+    expect(isProtectedLaunchFolder('/work/repo/apps/server/.temp/.dork', '/work/repo')).toBe(true);
+  });
+});
+
+/**
+ * A launch that names no folder (DOR-4060). The server's default folder is
+ * often the person's home (a CLI started from `~`, the desktop app's default),
+ * so these run with the fixture home AS that default: a launch that resolves to
+ * it is refused with a hint to name a folder, and a person is unchanged.
+ */
+describe('a launch that names no folder, when the default folder is home (DOR-4060)', () => {
+  beforeEach(() => {
+    // The default folder stands in for home; nothing is written there.
+    vi.stubEnv('HOME', DEFAULT_CWD);
+    vi.stubEnv('DORK_HOME', `${DEFAULT_CWD}/.dork-fixture-4060`);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', `${DEFAULT_CWD}/.claude-fixture-4060`);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  const launch = (launcher: Parameters<typeof dispatchSessionMessage>[0]['launcher']) =>
+    dispatchSessionMessage({
+      origin: { kind: 'agent-launch' },
+      ...(launcher ? { launcher } : {}),
+      sessionId: '00000000-0000-4000-8000-000000004061',
+      request: { content: 'x' },
+      clientId: 'http',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+    });
+
+  it('an agent whose own folder DorkOS cannot place is refused, with a hint to name one', async () => {
+    // The folder chain is stubbed to answer nothing, as for a home Mesh does not list.
+    const result = await launch({ kind: 'agent', agentPath: AGENT_HOME });
+    expect(isSessionLaunchRefusal(result) ? result.message : null).toBe(
+      PROTECTED_DEFAULT_FOLDER_MESSAGE
+    );
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('an unidentified caller is refused with the hint, and nothing starts', async () => {
+    const result = await launch({ kind: 'unidentified' });
+    expect(isSessionLaunchRefusal(result) ? result.launcherRefused : null).toBe('PROTECTED_FOLDER');
+    expect(isSessionLaunchRefusal(result) ? result.message : null).toBe(
+      PROTECTED_DEFAULT_FOLDER_MESSAGE
+    );
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('a person is unchanged, at the default folder', async () => {
+    const result = await launch({ kind: 'person' });
+    expect(isSessionLaunchRefusal(result)).toBe(false);
   });
 });

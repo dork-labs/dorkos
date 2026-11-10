@@ -24,7 +24,7 @@
  * @module server/services/rooms/canvas/tests/room-canvas-context
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -32,6 +32,8 @@ import path from 'node:path';
 // stage. What is under test is the CANVAS's rule — which tree a document is read
 // against — not the process-wide boundary, which has its own suite.
 vi.mock('../../../../lib/boundary.js', () => ({
+  // The protected-files check finds the home folder through this (DOR-4060).
+  expandTilde: (p: string) => (p === '~' ? (process.env.HOME ?? '/') : p),
   validateBoundary: vi.fn(async (p: string) => p),
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/'),
@@ -470,5 +472,128 @@ describe('read_canvas', () => {
       { identity: identityFor(ANA, 'Ana') }
     )) as { documents: unknown[] };
     expect(result.documents).toHaveLength(1);
+  });
+});
+
+/**
+ * QA rows B and C on a room's canvas (DOR-4060): a protected file never reaches
+ * the table, by any turn's road, and `read_canvas` never reads one out, whether
+ * the file was swapped for a symlink or a hard link after it was opened. The
+ * boundary is mocked open above, so these prove the protected-files check holds
+ * on its own. A fixture home with a dummy value only.
+ */
+describe('a room canvas and protected files (DOR-4060)', () => {
+  const CANARY = 'TOKEN=dor-4060-dummy-canary';
+  let harness: RoomHarness;
+  let roomId: string;
+  let ana: string;
+  let fixture: string;
+  let dork: string;
+  let tree: string;
+
+  const registryFor = (h: RoomHarness) =>
+    composeRegistry([roomsDomain], {
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      roomDeps: { rooms: h.service },
+    });
+
+  beforeEach(() => {
+    fixture = mkdtempSync(path.join(tmpdir(), 'dor4060-room-'));
+    const home = path.join(fixture, 'home');
+    dork = path.join(home, '.dork');
+    tree = path.join(fixture, 'agents', 'ana');
+    mkdirSync(dork, { recursive: true });
+    mkdirSync(tree, { recursive: true });
+    writeFileSync(path.join(dork, 'host.key'), CANARY);
+    writeFileSync(path.join(tree, 'notes.md'), 'notes ok');
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('DORK_HOME', dork);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(fixture, 'claude-fixture'));
+    harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
+    roomId = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [ANA, BEN] },
+      harness.human
+    ).id;
+    ana = harness.authors.resolveAgent(ANA, 'Ana').id;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(fixture, { recursive: true, force: true });
+  });
+
+  /** Open `sourcePath` with `action` as Ana, standing in `cwd`. */
+  const open = (action: 'open_file' | 'open_diff', sourcePath: string, cwd: string) =>
+    harness.service.canvas.apply({
+      roomId,
+      authorId: ana,
+      turnId: 'turn-4060',
+      command: { action, sourcePath },
+      cwd,
+    });
+
+  /** Ana's `read_canvas` of the one document on the table. */
+  async function readOnly(): Promise<{ content: unknown; reason?: string }> {
+    const [document] = harness.service.canvas.list(roomId);
+    return (await registryFor(harness).invoke(
+      'rooms.read_canvas',
+      { roomId, documentId: document!.id },
+      { identity: identityFor(ANA, 'Ana'), cwd: tree }
+    )) as { content: unknown; reason?: string };
+  }
+
+  it.each(['open_file', 'open_diff'] as const)(
+    'row B: %s of host.key from a chat in the data folder writes nothing',
+    (action) => {
+      expect(open(action, 'host.key', dork)).toMatchObject({
+        applied: false,
+        code: 'CANVAS_PROTECTED_FILE',
+      });
+      expect(harness.service.canvas.list(roomId)).toHaveLength(0);
+    }
+  );
+
+  it('the same refusal for an open_canvas file document, the road a Codex turn takes', () => {
+    const result = harness.service.canvas.apply({
+      roomId,
+      authorId: ana,
+      turnId: 'turn-4060',
+      command: { action: 'open_canvas', content: { type: 'file', sourcePath: 'host.key' } },
+      cwd: dork,
+    });
+    expect(result).toMatchObject({ applied: false, code: 'CANVAS_PROTECTED_FILE' });
+    expect(harness.service.canvas.list(roomId)).toHaveLength(0);
+  });
+
+  it('row C: a hard link to host.key in the agent’s own folder is refused at open', () => {
+    linkSync(path.join(dork, 'host.key'), path.join(tree, 'hk-link.txt'));
+    expect(open('open_file', 'hk-link.txt', tree)).toMatchObject({
+      applied: false,
+      code: 'CANVAS_PROTECTED_FILE',
+    });
+  });
+
+  it('row C: read_canvas refuses a file swapped for a hard link after it was opened', async () => {
+    expect(open('open_file', 'notes.md', tree)).toMatchObject({ applied: true });
+    rmSync(path.join(tree, 'notes.md'));
+    linkSync(path.join(dork, 'host.key'), path.join(tree, 'notes.md'));
+    const result = await readOnly();
+    expect(result.content).toBeNull();
+    expect(result.reason).toMatch(/more than one hard link/);
+    expect(JSON.stringify(result)).not.toContain(CANARY);
+  });
+
+  it('read_canvas refuses a file swapped for a symlink to host.key after it was opened', async () => {
+    expect(open('open_file', 'notes.md', tree)).toMatchObject({ applied: true });
+    rmSync(path.join(tree, 'notes.md'));
+    symlinkSync(path.join(dork, 'host.key'), path.join(tree, 'notes.md'));
+    const result = await readOnly();
+    expect(result.content).toBeNull();
+    expect(JSON.stringify(result)).not.toContain(CANARY);
+  });
+
+  it('control: a plain file in the agent’s own folder opens and reads', async () => {
+    expect(open('open_file', 'notes.md', tree)).toMatchObject({ applied: true });
+    expect((await readOnly()).content).toBe('notes ok');
   });
 });

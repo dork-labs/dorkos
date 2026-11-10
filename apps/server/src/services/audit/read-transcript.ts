@@ -14,6 +14,7 @@ import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { RuntimeRegistry } from '../core/runtime-registry.js';
 import { resolveSessionCwdOrNull } from '../session/resolution/resolve-read-cwd.js';
 import type { TranscriptPage } from '@dorkos/shared/audit-schemas';
+import { isPlainSessionId } from './plain-session-id.js';
 
 /** The longest message text, tool input or tool result a page carries. */
 const MAX_FIELD = 8_000;
@@ -28,7 +29,8 @@ function clip(value: string | undefined): string | undefined {
  * Build the transcript reader the audit capabilities use.
  *
  * @param registry - The runtime registry, to find the session's runtime.
- * @returns A reader that answers `undefined` for a session it cannot read.
+ * @returns A reader that answers `undefined` for a session it cannot read,
+ *   an id that is not a plain name among them.
  */
 export function createTranscriptReader(
   registry: Pick<RuntimeRegistry, 'resolveForSession'>
@@ -37,6 +39,7 @@ export function createTranscriptReader(
   page: { offset: number; limit: number }
 ) => Promise<TranscriptPage | undefined> {
   return async (sessionId, page) => {
+    if (!isPlainSessionId(sessionId)) return undefined;
     try {
       const runtime = await registry.resolveForSession(sessionId);
       const cwd = await resolveSessionCwdOrNull(runtime, sessionId, undefined);

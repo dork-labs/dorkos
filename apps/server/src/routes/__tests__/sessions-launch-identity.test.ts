@@ -14,6 +14,11 @@
  * dispatched.
  */
 import { execFileSync } from 'node:child_process';
+import { DEFAULT_CWD } from '../../lib/resolve-root.js';
+import {
+  PROTECTED_DEFAULT_FOLDER_MESSAGE,
+  PROTECTED_FOLDER_MESSAGE,
+} from '../../services/session/launch/launch-caller.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,6 +29,8 @@ import type { MeshCore } from '@dorkos/mesh';
 const owner = vi.hoisted(() => ({ current: { id: 'user_owner' } as { id: string } | null }));
 
 vi.mock('../../lib/boundary.js', () => ({
+  // The protected-folder rule finds the home folder through this (DOR-4060).
+  expandTilde: (p: string) => (p === '~' ? (process.env.HOME ?? '/') : p),
   validateBoundary: vi.fn(async (p: string) => p),
   validateBoundaryOrDorkHome: vi.fn(async (p: string) => p),
   getBoundary: vi.fn(() => '/'),
@@ -386,6 +393,16 @@ describe('POST /:id/fork', () => {
     expect(res.status).toBe(201);
   });
 
+  it("a fork from A that names no folder runs in A's own home, never the default (DOR-4060)", async () => {
+    const res = await post('/fork', {}, AS_A);
+    expect(res.status).toBe(201);
+    expect(fakeRuntime.forkSession).toHaveBeenCalledWith(
+      homeA,
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
   it("lets a person fork into any agent's home", async () => {
     const res = await post(`/fork?cwd=${encodeURIComponent(homeB)}`, {}, PERSON);
     expect(res.status).toBe(201);
@@ -424,5 +441,54 @@ describe('UI-action person stamp', () => {
     const res = await post('/ui-action', { actionId: 'sample-action' }, caller);
     expect(res.status).toBe(202);
     expect(dispatchMessage).toHaveBeenCalledWith(expect.objectContaining({ turnStarter }));
+  });
+});
+
+/**
+ * No folder named, and the server's default is the home folder (DOR-4060): the
+ * default folder stands in for home here, and nothing is written to it.
+ */
+describe('a launch or fork that names no folder, when the default is home (DOR-4060)', () => {
+  beforeEach(() => {
+    vi.stubEnv('HOME', DEFAULT_CWD);
+    vi.stubEnv('DORK_HOME', `${DEFAULT_CWD}/.dork-fixture-4060`);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', `${DEFAULT_CWD}/.claude-fixture-4060`);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('refuses a token-less new chat with PROTECTED_FOLDER and says to name a folder', async () => {
+    const res = await post('/messages', { content: 'x', create: true });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code?: string; error?: string };
+    expect(body.code).toBe('PROTECTED_FOLDER');
+    expect(body.error).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('refuses a token-less fork the same way', async () => {
+    const res = await post('/fork', {});
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { code?: string; error?: string };
+    expect(body.code).toBe('PROTECTED_FOLDER');
+    expect(body.error).toBe(PROTECTED_DEFAULT_FOLDER_MESSAGE);
+    expect(fakeRuntime.forkSession).not.toHaveBeenCalled();
+  });
+
+  it("lets A's fork land in A's own home", async () => {
+    fakeRuntime.forkSession.mockResolvedValue({ id: 'forked' } as never);
+    const res = await post('/fork', {}, AS_A);
+    expect(res.status).toBe(201);
+    expect(fakeRuntime.forkSession).toHaveBeenCalledWith(
+      homeA,
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it('names the plain refusal, not the hint, when a folder was named', async () => {
+    const res = await post('/messages', { content: 'x', create: true, cwd: DEFAULT_CWD });
+    const body = (await res.json()) as { code?: string; error?: string };
+    expect(body.code).toBe('PROTECTED_FOLDER');
+    expect(body.error).toBe(PROTECTED_FOLDER_MESSAGE);
   });
 });

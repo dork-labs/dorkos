@@ -99,6 +99,7 @@ import {
 import { outsiderStartCeiling, startCarriesWords, startLevelFacts } from './session-start-facts.js';
 import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
 import { launchPlaceRefusal } from '../../../session/launch/launch-caller.js';
+import { registerSessionStartPreGate } from '../../../session/launch/session-start-pre-gate.js';
 import { ceilingHoldsForOutsider } from '@dorkos/shared/permission-semantics';
 import { jsonContent, type McpToolDeps } from './types.js';
 
@@ -311,6 +312,8 @@ function callerOf(
       : null,
   };
 }
+
+registerSessionStartPreGate();
 
 /**
  * Handler factory for `session_start`.
