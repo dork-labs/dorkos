@@ -56,9 +56,9 @@ describe('schedule report destination', () => {
     const { h, room, post, task, chats } = setup();
     const get = h.store.getRoom.bind(h.store);
     vi.spyOn(h.store, 'getRoom').mockImplementation((id) => (id === room.id ? null : get(id)));
-    post(task, { text: 'Grooming skipped 9:00 because this computer was asleep.' });
+    post(task, { text: 'Grooming missed 9:00, likely because this computer was asleep.' });
     const dm = chats.ensureForAgent(ANA, 'Ana');
-    expect(h.store.listEntries(dm.roomId, { limit: 1 })[0].body.text).toContain('skipped');
+    expect(h.store.listEntries(dm.roomId, { limit: 1 })[0].body.text).toContain('missed');
     expect(h.store.listEntries(room.id, { limit: 10 })).toHaveLength(0);
   });
 

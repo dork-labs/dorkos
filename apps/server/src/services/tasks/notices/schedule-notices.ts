@@ -73,7 +73,7 @@ export class ScheduleNotices {
         ? this.time(last)
         : `${count >= 1000 ? '1000+' : count} runs (${this.time(first)}–${this.time(last)})`;
     this.deps.post(task, {
-      text: `${scheduleNoticeName(task)} skipped ${when} because this computer was asleep.${this.next(task, 'run')}`,
+      text: `${scheduleNoticeName(task)} missed ${when}, likely because this computer was asleep.${this.next(task, 'run')}`,
     });
   }
 

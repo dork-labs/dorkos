@@ -53,7 +53,7 @@ describe('schedule notices', () => {
     await vi.runAllTicks();
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0][1].text).toBe(
-      'Grooming skipped 8 runs (1:00–8:00) because this computer was asleep. Next run: 9:00.'
+      'Grooming missed 8 runs (1:00–8:00), likely because this computer was asleep. Next run: 9:00.'
     );
     expect(store.runHistory()(task.id).health.streak).toBe(0);
   });
@@ -76,6 +76,14 @@ describe('schedule notices', () => {
     await finish('failed');
     await finish('failed');
     expect(post).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not post recovery after a single failure', async () => {
+    const { finish, post, store, task } = setup();
+    await finish('failed');
+    await finish('completed');
+    expect(store.runHistory()(task.id).health.streak).toBe(0);
+    expect(post).not.toHaveBeenCalled();
   });
 
   it('uses only fixed cause text, never errors, output or tool text', async () => {
@@ -118,6 +126,18 @@ describe('schedule notices', () => {
 });
 
 describe('schedule notice copy', () => {
+  it('reports one missed occurrence with the qualified cause and next time', async () => {
+    const { store, task, post } = setup();
+    store.claimScheduledRun(task.id, Date.parse('2026-11-10T08:00:00Z'), {
+      status: 'skipped',
+      reason: STALE_SKIP_REASON,
+    });
+    await vi.runAllTicks();
+    expect(post.mock.calls[0][1].text).toBe(
+      'Grooming missed 8:00, likely because this computer was asleep. Next run: 9:00.'
+    );
+  });
+
   it('reports one stale occurrence and omits next time when off', async () => {
     const { store, task, post } = setup();
     store.updateTask(task.id, { enabled: false });
@@ -127,7 +147,7 @@ describe('schedule notice copy', () => {
     });
     await vi.runAllTicks();
     expect(post.mock.calls[0][1].text).toBe(
-      'Grooming skipped 8:00 because this computer was asleep.'
+      'Grooming missed 8:00, likely because this computer was asleep.'
     );
   });
 
