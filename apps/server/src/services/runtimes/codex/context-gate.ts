@@ -66,6 +66,8 @@ import type { AgentContextAppend } from '../shared/agent-context.js';
 export interface CodexContextSelection {
   /** The neutral context this turn sends — the whole append, or memory alone. */
   readonly text: string;
+  /** True when {@link text} is the whole append, stable half included; false when it is memory alone. */
+  readonly carriesStable: boolean;
   /**
    * Record that this turn's prompt reached Codex. Call it AFTER successful event consumption, never at the lazy
    * runStreamed return; a turn that fails on the way out must leave the
@@ -102,10 +104,11 @@ export class CodexContextGate {
     const digest = createHash('sha256').update(append.stable).digest('hex');
     // The stable half is already in the thread — send only what changes.
     if (this.sent.get(sessionId) === digest) {
-      return { text: append.memory, commit: () => {} };
+      return { text: append.memory, carriesStable: false, commit: () => {} };
     }
     return {
       text: append.text,
+      carriesStable: true,
       commit: () => {
         this.sent.set(sessionId, digest);
       },

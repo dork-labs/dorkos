@@ -34,6 +34,12 @@ import { formatApprovalVerdict } from '../../shared/approval-verdict-block.js';
 import { formatDirectNotes } from '../../shared/prose/direct-notes-block.js';
 import { formatSeedContext } from '../../shared/seed-context-block.js';
 import { formatStagedContext } from '../../shared/staged-context-block.js';
+import type { SessionSettings } from '@dorkos/shared/types';
+import {
+  recordTurnContext,
+  turnPlaceOf,
+} from '../../../session/turn-context/record-turn-context.js';
+import { effectiveApprovalMode } from './approvals.js';
 import {
   chooseTrims,
   dorkosContextBudget,
@@ -222,4 +228,73 @@ export function buildOpenCodeParts(content: string, opts?: MessageOpts): OpenCod
   if (blocks.length > 0) parts.push({ type: 'text', text: blocks.join('\n\n'), synthetic: true });
   parts.push({ type: 'text', text: content });
   return parts;
+}
+
+/** The body of one `session.promptAsync` call. */
+export interface OpenCodeTurnBody {
+  /** The synthetic context part, when there is one, then the person's words. */
+  parts: OpenCodeTextPartInput[];
+  /** DorkOS's system text for this request, when there is any. */
+  system?: string;
+  /** The model this request names, when one is chosen. */
+  model?: { providerID: string; modelID: string };
+}
+
+/**
+ * The whole body one turn hands the sidecar: {@link buildOpenCodeSystem} and
+ * {@link buildOpenCodeParts}, put together.
+ *
+ * @param content - The user's message, passed through pristine
+ * @param opts - Per-turn options carrying the context bag and `systemPromptAppend`
+ * @param agentContext - The runtime-neutral DorkOS context blocks
+ * @param contextWindow - The model's context window in tokens, when known
+ * @param model - The model to name, when one is chosen
+ */
+export function openCodeTurnBody(
+  content: string,
+  opts: MessageOpts | undefined,
+  agentContext: string | readonly ContextPart[] | undefined,
+  contextWindow: number | undefined,
+  model: { providerID: string; modelID: string } | undefined
+): OpenCodeTurnBody {
+  const system = buildOpenCodeSystem(opts, agentContext, contextWindow);
+  return {
+    parts: buildOpenCodeParts(content, opts),
+    ...(system !== undefined ? { system } : {}),
+    ...(model !== undefined ? { model } : {}),
+  };
+}
+
+/**
+ * Record what one OpenCode request hands the sidecar, byte for byte: the
+ * system body (sent on every request, never kept by the sidecar), then each
+ * part in order, the synthetic context part named as such.
+ *
+ * @param sessionId - The session taking the turn
+ * @param body - The body about to be sent
+ * @param opts - The turn's options, for where it happened and its ceiling
+ * @param settings - The session's settings, for its permission mode
+ */
+export function recordOpenCodeTurn(
+  sessionId: string,
+  body: OpenCodeTurnBody,
+  opts: MessageOpts | undefined,
+  settings: Pick<SessionSettings, 'permissionMode'>
+): void {
+  const permissionMode = effectiveApprovalMode(settings.permissionMode, opts?.permissionCeiling);
+  recordTurnContext({
+    sessionId,
+    ...(opts?.messageId !== undefined ? { messageId: opts.messageId } : {}),
+    runtime: 'opencode',
+    place: turnPlaceOf(opts),
+    ...(permissionMode !== undefined ? { permissionMode } : {}),
+    systemSentThisTurn: body.system !== undefined,
+    parts: [
+      ...(body.system !== undefined ? [{ slot: 'system', text: body.system }] : []),
+      ...body.parts.map((part) => ({
+        slot: part.synthetic === true ? 'synthetic' : 'message',
+        text: part.text,
+      })),
+    ],
+  });
 }

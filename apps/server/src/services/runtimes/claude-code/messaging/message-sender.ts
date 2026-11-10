@@ -20,6 +20,7 @@ import {
   isReportedFailure,
 } from './empty-stream-guard.js';
 import { fireLaunchProbes } from './launch-probes.js';
+import { recordClaudeTurnContext, systemAppendOf } from './turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
 import type { AgentSession } from '../agent-types.js';
 import { createToolState, stopWasAimedAt } from '../agent-types.js';
@@ -194,6 +195,17 @@ export async function* executeSdkQuery(
     options: sdkOptions,
     session,
     afterServers: (live) => fireLaunchProbes(live, opts),
+  });
+  // Handed over: this path launches a process per turn, so the append rides every one.
+  recordClaudeTurnContext({
+    sessionId,
+    ...(messageOpts?.messageId !== undefined ? { messageId: messageOpts.messageId } : {}),
+    systemAppend: systemAppendOf(sdkOptions),
+    systemSentThisTurn: true,
+    prompt: enrichedContent,
+    sdkOptions,
+    messageOpts,
+    query: agentQuery,
   });
   const initGuard = credentialInitDeadline(
     agentQuery,

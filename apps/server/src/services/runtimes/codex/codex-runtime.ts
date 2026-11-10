@@ -141,7 +141,7 @@ import {
   resolveToolVisibilityFor,
 } from '../shared/permission-tool-filter.js';
 import { resolveCodexLaunchTools } from './mcp-server-config.js';
-import { buildCodexPrompt, grantedWritableDirectories } from './turn-input.js';
+import { codexTurnPrompt, grantedWritableDirectories } from './turn-input.js';
 import { CodexContextGate } from './context-gate.js';
 import { enumerateCodexMcpServers } from './enumerate-mcp-servers.js';
 import { scanSkillCommands } from './scan-skill-commands.js';
@@ -966,7 +966,7 @@ export class CodexRuntime implements AgentRuntime {
       // this turn owes: the whole append when the thread has not been told (or the
       // agent was edited since), the memory block alone otherwise — memory is
       // outside the gate because it changes while the thread runs.
-      const neutralContextSelection = this.contextGate.select(
+      const selection = this.contextGate.select(
         sessionId,
         await buildAgentContextAppend(agentPath, cwd)
       );
@@ -986,7 +986,7 @@ export class CodexRuntime implements AgentRuntime {
       // same area's tools from this turn's list.
       const agentContext = dorkosTools
         ? [
-            neutralContextSelection.text,
+            selection.text,
             buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
             // The agent's own Blocked areas, read where its manifest lives —
             // the listener hides the same areas keyed on the same anchor.
@@ -994,7 +994,7 @@ export class CodexRuntime implements AgentRuntime {
           ]
             .filter(Boolean)
             .join('\n\n')
-        : neutralContextSelection.text;
+        : selection.text;
 
       const accessContext =
         connectorTools && this.connectorRuntimeTools && meshAgent
@@ -1037,7 +1037,7 @@ export class CodexRuntime implements AgentRuntime {
         cwd,
         settings,
         writableDirectories,
-        prompt: buildCodexPrompt(content, turnOpts, agentContext),
+        prompt: codexTurnPrompt(content, turnOpts, agentContext, sessionId, settings, selection),
         // What a wake from this turn's leftover work runs with: the same
         // agent, folder, grants and settings. A wake's own turn passes its
         // context on, so a chain of wakes stays the same agent.
@@ -1111,7 +1111,7 @@ export class CodexRuntime implements AgentRuntime {
       // The SDK iterator is lazy: returning runStreamed is not delivery.
       // Only acknowledge after successful consumption; failures keep the notice owed.
       if (completedTurn && !connectorRuntimeFailed && !controller.signal.aborted) {
-        neutralContextSelection.commit();
+        selection.commit();
         accessContext?.commit();
       }
       // Codex summarized the thread on its own mid-turn: the summary may have

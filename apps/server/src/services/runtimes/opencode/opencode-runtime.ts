@@ -106,9 +106,9 @@ import {
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
 import { awaitAbortAck, delay } from './messaging/bounded-abort.js';
 import {
-  buildOpenCodeParts,
-  buildOpenCodeSystem,
+  openCodeTurnBody,
   parseModelSelection,
+  recordOpenCodeTurn,
 } from './messaging/turn-input.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
 import type { OpenCodeTurnOptions } from './messaging/turn-options.js';
@@ -450,15 +450,10 @@ export class OpenCodeRuntime implements AgentRuntime {
           model?.providerID,
           model?.modelID
         );
-        const system = buildOpenCodeSystem(turnOpts, agentContext, window);
-        const prompted = await client.session.promptAsync({
-          path: { id: ocSessionId },
-          body: {
-            parts: buildOpenCodeParts(content, turnOpts),
-            ...(system !== undefined ? { system } : {}),
-            ...(model !== undefined ? { model } : {}),
-          },
-        });
+        const body = openCodeTurnBody(content, turnOpts, agentContext, window, model);
+        // The exact body the sidecar is handed, for the turn's context record.
+        recordOpenCodeTurn(sessionId, body, turnOpts, settings);
+        const prompted = await client.session.promptAsync({ path: { id: ocSessionId }, body });
         if (prompted.error === undefined) accessContext?.commit();
         if (prompted.error !== undefined) {
           throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);

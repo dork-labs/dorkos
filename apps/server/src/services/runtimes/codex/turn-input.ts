@@ -26,6 +26,8 @@ import { formatDirectNotes } from '../shared/prose/direct-notes-block.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { formatSeedContext } from '../shared/seed-context-block.js';
 import { formatStagedContext } from '../shared/staged-context-block.js';
+import { recordTurnContext, turnPlaceOf } from '../../session/turn-context/record-turn-context.js';
+import type { CodexContextSelection } from './context-gate.js';
 
 /**
  * DorkOS permission mode → Codex sandbox level (NOTES.md Verdict 2).
@@ -199,6 +201,42 @@ export function buildCodexPrompt(
   for (const entry of opts?.additionalContext ?? []) blocks.push(renderContextEntry(entry));
   blocks.push(content);
   return blocks.join('\n\n');
+}
+
+/**
+ * Build a turn's prompt with {@link buildCodexPrompt} and record it, byte for
+ * byte, as what the thread is being handed (the turn-context record). The
+ * prompt is Codex's only input channel, so it is the whole record: one part,
+ * and a flag saying whether it carried the stable half the gate sends once per
+ * thread.
+ *
+ * @param content - The user's message, passed through pristine
+ * @param opts - Per-turn options carrying systemPromptAppend/additionalContext
+ * @param agentContext - The neutral DorkOS context the gate selected
+ * @param sessionId - The session taking the turn
+ * @param settings - The turn's resolved settings, for its permission mode
+ * @param selection - The gate's selection, for whether the stable half rode along
+ * @returns The prompt to hand the thread
+ */
+export function codexTurnPrompt(
+  content: string,
+  opts: MessageOpts | undefined,
+  agentContext: string,
+  sessionId: string,
+  settings: Pick<SessionSettings, 'permissionMode'>,
+  selection: Pick<CodexContextSelection, 'carriesStable'>
+): string {
+  const prompt = buildCodexPrompt(content, opts, agentContext);
+  recordTurnContext({
+    sessionId,
+    ...(opts?.messageId !== undefined ? { messageId: opts.messageId } : {}),
+    runtime: 'codex',
+    place: turnPlaceOf(opts),
+    ...(settings.permissionMode !== undefined ? { permissionMode: settings.permissionMode } : {}),
+    systemSentThisTurn: selection.carriesStable,
+    parts: [{ slot: 'prompt', text: prompt }],
+  });
+  return prompt;
 }
 
 /**

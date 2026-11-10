@@ -1196,6 +1196,13 @@ export interface MessageOpts extends SessionSettings {
    */
   unattended?: boolean;
   /**
+   * Where this turn happens when no room set it: a scheduled task's run or an
+   * agent's heartbeat. Routing metadata for the turn-context record only, never
+   * prompt context, and server-derived. Absent means a room (from
+   * {@link roomTurn}) or a chat. Runtimes pass it through to the record.
+   */
+  contextPlace?: 'task' | 'heartbeat';
+  /**
    * The loosest level THIS turn may run at, whatever the session is set to
    * (spec `trusted-by-default-flip` §4, "power flows downstream, never up").
    *

@@ -37,8 +37,10 @@ import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import type { AgentSession } from '../agent-types.js';
 import { fireLaunchProbes } from '../messaging/launch-probes.js';
+import { noteLaunchedAppend } from '../messaging/turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
-import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
+import type { MessageSenderOpts, ResolvedLaunch } from '../messaging/message-sender-shared.js';
+import { captureLaunchFingerprint } from './launch-fingerprint.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
 import {
   applyLiveChanges,
@@ -72,6 +74,25 @@ export interface PumpLaunchPlan {
   sdkOptions: Options;
   /** What such a launch would be pinned to. */
   fingerprint: LaunchFingerprint;
+}
+
+/**
+ * The plan a turn's dispatch hands the pump, from what the shared resolver
+ * worked out for it.
+ *
+ * @param resolved - The resolver's answer for this turn.
+ * @param effectiveCwd - The working directory the turn runs in.
+ */
+export function pumpLaunchPlanOf(resolved: ResolvedLaunch, effectiveCwd: string): PumpLaunchPlan {
+  return {
+    effectiveCwd,
+    enrichedContent: resolved.enrichedContent,
+    meshAgentId: resolved.meshAgentId,
+    statusEvents: resolved.statusEvents,
+    ...(resolved.substitution ? { substitution: resolved.substitution } : {}),
+    sdkOptions: resolved.sdkOptions,
+    fingerprint: captureLaunchFingerprint(resolved.launch),
+  };
 }
 
 /** What a launcher tells its pump's owner. */
@@ -162,6 +183,8 @@ export function createPumpLauncher(
     // process is not a turn, so the field is armed and disarmed by the pump's
     // own `running` edge instead (`persistent-dispatch.ts`).
     callbacks.onLaunched(live, plan.fingerprint);
+    // The append this process now holds, for every turn's context record.
+    noteLaunchedAppend(session, plan.sdkOptions);
     logger.debug('[pump-launch] booted a persistent process', {
       sessionId,
       cwd: plan.effectiveCwd,

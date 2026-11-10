@@ -28,6 +28,7 @@ import {
   SessionLimitStore,
   setSessionLimitStore,
 } from '../../services/session/index.js';
+import { installTurnContextStore } from '../../services/session/turn-context/index.js';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { KnownProjectsStore } from '../../services/projects/known-projects-store.js';
 import { accountRuleRoots } from '../../services/core/usage/account-eligibility.js';
@@ -145,6 +146,12 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
   // the person "Added context for the next reply" on a stream that survives a
   // restart, so what that receipt points at has to survive one too (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
+
+  // What each turn actually handed its runtime, recorded per turn and private
+  // to the person (spec "Agent context viewer", phase 1). Before any runtime
+  // registers, so the first turn is recorded; text past 30 days is swept here
+  // and on the hourly tick.
+  installTurnContextStore(db);
 
   // The project registry's saved names (spec `flow-multiproject` §6.1). Loaded
   // here, before extensions start, because a name handed out earlier could

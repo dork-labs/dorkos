@@ -178,7 +178,9 @@ import {
 } from './launch-fingerprint.js';
 import { extensionSkillPluginsDir } from '@dorkos/harness';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
-import { createPumpLaunchOptions, waitingOnFor, type PumpLaunchPlan } from './pump-launch.js';
+import { createPumpLaunchOptions, pumpLaunchPlanOf, waitingOnFor } from './pump-launch.js';
+import type { PumpLaunchPlan } from './pump-launch.js';
+import { recordPumpTurnContext } from '../messaging/turn-context/turn-context-record.js';
 import { noteServersStarting } from '../sdk/launch-query.js';
 import { carryCeiling, ceilingMissed, decideCeilingedReuse } from '../warm-ceiling.js';
 import {
@@ -716,15 +718,7 @@ export class PersistentDispatch {
       yield refusal;
       return;
     }
-    const plan: PumpLaunchPlan = {
-      effectiveCwd,
-      enrichedContent: resolved.enrichedContent,
-      meshAgentId: resolved.meshAgentId,
-      statusEvents: resolved.statusEvents,
-      ...(resolved.substitution ? { substitution: resolved.substitution } : {}),
-      sdkOptions: resolved.sdkOptions,
-      fingerprint: captureLaunchFingerprint(resolved.launch),
-    };
+    const plan = pumpLaunchPlanOf(resolved, effectiveCwd);
 
     let bundle = this.acquire(key, session, opts);
     // Nothing pinned to the live process may be stale by the time the turn
@@ -948,6 +942,8 @@ export class PersistentDispatch {
       bundle.booting = false;
       bundle.onSlotWait = undefined;
     }
+    // The prompt is in the process now: record what this turn was handed.
+    recordPumpTurnContext(session, sessionId, messageId, plan, messageOpts);
     // Told once the window is open, so a turn the process refused never ends
     // anybody's follow of the session's later turns. A throw stays out here, and
     // never keeps the next listener from hearing.
