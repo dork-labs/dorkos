@@ -8,7 +8,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -228,5 +228,65 @@ describe('findRoomCanvasMedia', () => {
     expect(await findRoomCanvasMedia(roomsDir, ROOM, `${PNG_HASH}.png`)).toBeNull();
     expect(await findRoomCanvasMedia(roomsDir, '..', name)).toBeNull();
     expect(await findRoomCanvasMedia(roomsDir, 'OTHERROOM', name)).toBeNull();
+  });
+});
+
+/**
+ * A protected file renamed into a picture (DOR-4060): a `.png` hard link to the
+ * data folder's `host.key` passes the picture check by its name, and is
+ * refused by its link count, with nothing copied into the room. A fixture home
+ * with a dummy value only.
+ */
+describe('shareCanvasMedia and a hard-linked protected file (DOR-4060)', () => {
+  const CANARY = 'TOKEN=dor-4060-dummy-canary';
+  let dork: string;
+
+  beforeEach(async () => {
+    const home = path.join(root, 'home');
+    dork = path.join(home, '.dork');
+    await fs.mkdir(dork, { recursive: true });
+    await fs.writeFile(path.join(dork, 'host.key'), CANARY);
+    vi.stubEnv('HOME', home);
+    vi.stubEnv('DORK_HOME', dork);
+    vi.stubEnv('CLAUDE_CONFIG_DIR', path.join(root, 'claude-fixture'));
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('refuses a .png hard link to host.key and copies nothing', async () => {
+    const link = path.join(anaCwd, 'out', 'chart-link.png');
+    await fs.link(path.join(dork, 'host.key'), link);
+    await expect(
+      share({
+        action: 'open_canvas',
+        content: { type: 'image', src: link, alt: 'Chart' },
+        target: { roomId: ROOM },
+      })
+    ).rejects.toMatchObject({
+      code: 'ATTACHMENT_PATH_REFUSED',
+      message: expect.stringMatching(/more than one hard link/),
+    });
+    await expect(fs.stat(path.join(roomsDir, ROOM, 'canvas-media'))).rejects.toThrow();
+  });
+
+  it('refuses a .png symlink to host.key and copies nothing', async () => {
+    const link = path.join(anaCwd, 'out', 'chart-sym.png');
+    await fs.symlink(path.join(dork, 'host.key'), link);
+    await expect(
+      share({
+        action: 'open_canvas',
+        content: { type: 'image', src: link, alt: 'Chart' },
+        target: { roomId: ROOM },
+      })
+    ).rejects.toMatchObject({ code: 'ATTACHMENT_PATH_REFUSED' });
+    await expect(fs.stat(path.join(roomsDir, ROOM, 'canvas-media'))).rejects.toThrow();
+  });
+
+  it('control: a plain picture in the same folder is still shared', async () => {
+    const shared = await share({
+      action: 'open_canvas',
+      content: { type: 'image', src: path.join(anaCwd, 'out', 'chart.png'), alt: 'Chart' },
+      target: { roomId: ROOM },
+    });
+    expect(srcOf(shared)).toMatch(COPY);
   });
 });
