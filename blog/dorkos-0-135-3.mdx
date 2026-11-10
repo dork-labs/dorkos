@@ -1,0 +1,60 @@
+---
+title: DorkOS 0.135.3
+description: See what every agent is told, scheduled tasks use connected apps, and schedules tell you when they miss runs.
+date: 2026-11-10
+author: DorkOS Team
+category: release
+tags: [release, agents, tasks, connections]
+---
+
+DorkOS 0.135.3 lets you see what every agent is told, lets scheduled tasks use their agent's connected apps, and tells you when a schedule misses runs or keeps failing.
+
+## Highlights
+
+- **See what every agent is told.** Settings › Agent instructions shows each part of the instructions, in order, for each runtime and place. The profile of each agent you manage shows its own.
+- **Scheduled tasks use connected apps.** A scheduled task can use the apps its agent has access to.
+- **Schedules speak up.** Runs missed while the computer slept get a line in the schedule's room, and two failures in a row show in Needs you.
+
+## All Changes
+
+### Note for people upgrading
+
+- This release changes the database. Read Going back below before downgrading.
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+
+### Security
+
+- DorkOS's own database backups never keep the text of what your agents were told. A backup keeps each record's details and a fingerprint of each text, never the words. And when a Claude Code chat was deleted while DorkOS was closed, its record is now removed the next time DorkOS starts. (DOR-4001, DOR-4002)
+- The Permissions, Securing your instance and Threat model guides now explain where DorkOS keeps the key that protects your saved secrets, and which programs on your computer can read it. (DOR-3053)
+
+DorkOS now counts a mini app's post in a room as words it can't vouch for. It doesn't yet count an email or web page read through a connected app, so these limits don't cover those cases.
+
+### Added
+
+- **See what every agent is told.** Settings › Agent instructions lists each part of the instructions DorkOS gives agents, in the order the model reads it. Each part says where it comes from, when it is included, roughly how long it is, and whether it is locked. Spots that differ per agent, like its name, show as small chips.
+- **Switch runtime, place and level.** Pick Claude Code, Codex, OpenCode or Doe, and a direct chat, a room or a scheduled task. Notes say what each runtime adds that DorkOS can't show, like Claude Code's own built-in instructions.
+- **Preview as an agent.** "Preview as…" fills the chips in for one agent.
+- **The profile of each agent you manage has What this agent is told.** It shows that agent's own result, for its own runtime and level. The Instructions, Boundaries and Memory pages link to it.
+- **Agents can read the template too.** A new tool shows an agent the same list, with chips and no one's details, or only the parts its own next turn gets.
+- DorkOS now keeps a private record of exactly what each agent was told on every turn: the instructions it started with and the notes added to that turn. The saved copy stays in your local database, and DorkOS never sends it anywhere. For Claude Code chats the text is deleted with the chat (at the latest the next time DorkOS starts) or after 30 days, whichever comes first. For Codex, OpenCode and Doe chats it is deleted after 30 days. The details around it, like when and which runtime, are kept. Common password and key formats, and your DorkOS secrets, are replaced before saving. This is best effort.
+- Live chat updates now include when models reply on every runtime, and when tools start where the runtime reports it.
+
+### Changed
+
+- **The small preview under the Instructions and Boundaries editors is gone.** It rebuilt part of the instructions in the app and could fall out of step. The new page is written by the same code a real chat uses.
+- **A long agent name no longer runs into the close button on a phone.** The name shortens with "…", and its status gets its own line.
+
+### Fixed
+
+- **Scheduled tasks can use the connected apps their agent has access to.** (DOR-4027)
+- **A schedule that misses runs or keeps failing tells you.** When runs were missed because this computer was likely asleep, a line says so in the room the schedule came from, or in its agent's direct chat. When it fails twice in a row, a line says so there too, and the schedule shows in Needs you until a run succeeds. (DOR-4078, DOR-4073)
+- Settings now says plainly that scheduled tasks can't run while the computer sleeps, even with keep-awake on. Agents say the same if they're asked to wake it. (DOR-4064)
+- When a spin-off chat hasn't started within five minutes, the chat that started it is told why, and its status reads "never-started". (DOR-3351)
+
+### Going back
+
+0.135.3 adds three tables to the database, and 0.135.2 starts on it as it is. To go back, install 0.135.2.
+
+On 0.135.2, the saved record of what agents were told is no longer deleted after 30 days or when a chat is deleted, and backups made on 0.135.2 include its text. To remove it, restore the backup below. Lines about missed or failed scheduled runs show there as a plain notice, with no link to the run.
+
+DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.135.2, it's named `dork-<date>-<time>-pre-20261109151737_turn_context.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.135.2. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
