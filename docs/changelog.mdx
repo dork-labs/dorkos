@@ -5,6 +5,29 @@ description: All notable changes to DorkOS, following Keep a Changelog format an
 
 All notable changes to DorkOS are documented here. This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.135.4] - 2026-11-10
+
+> DorkOS 0.135.4 keeps DorkOS's own private files out of the canvas, room attachments and new chats an agent starts, and keeps scheduled runs out of your home folder.
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- A schedule with no agent that would have run in your home folder now runs in a new, private folder of its own each time. Give a schedule an agent if it needs a project's files. (DOR-4060)
+
+### Security
+
+- **The canvas, room attachments and new chats can't reach DorkOS's own private files.** These include its sign-in key, its settings and its saved secrets. The canvas, room attachments and new chats an agent starts now refuse them at every level, with nothing to approve. (DOR-4060)
+- **A scheduled run never runs in your home folder or DorkOS's data folder.** An agent's run that would have landed there runs in that agent's own folder instead. A run with no agent gets a new, private folder of its own. (DOR-4060)
+
+### Fixed
+
+- **An agent that forks a chat without naming a folder now works in its own folder.** A launch refused for its folder says to name one. (DOR-4060)
+- **An approval card for reading a canvas document names the file it reads.** (DOR-4060)
+
+### Going back
+
+0.135.4 doesn't change the database. To go back, install 0.135.3.
+
 ## [0.135.3] - 2026-11-10
 
 > DorkOS 0.135.3 lets you see what every agent is told, lets scheduled tasks use their agent's connected apps, and tells you when a schedule misses runs or keeps failing. This release changes the database, so read Going back before downgrading.
@@ -431,97 +454,4 @@ Also added:
 - New schedules start at Full autonomy unless you've changed your default. The mode is under Advanced, so check it before you save.
 - The notice can say you started a change that someone else's Telegram or Slack message led to. If you don't recognise it, check the chat.
 
-## [0.130.0] - 2026-11-02
-
-> DorkOS 0.130.0 lets you choose a scheduled task's permissions when you approve it, gives agents a work queue, lets an agent hand the Agent browser to you when a page needs you, and keeps each agent to its own chats and schedules.
-
-### Added
-
-- Agents can now have a work queue: an ordered list of work and a number of chats to run at once. It is off until you turn it on for an agent. Once on, when one of its queued chats ends, the next item starts on its own, on the account with the most room. It waits while the disk is low, the computer is busy or the accounts are near their limits, and picks up again when that clears. You can see the list, reorder it, set a daily limit, and stop every queue at once from the agent's profile. (DOR-3462)
-- When a page needs something only you can do, like a password, your agent can now pause and hand the Agent browser to you. That chat can't see or use the browser until you give it back. Press **Resume agent** in the browser panel to give it back; more controls come in a later update. (DOR-3218)
-- An agent's heartbeat now notices work that went quiet. If a chat the agent started in the last 3 days has done nothing for 2 hours, or the agent has an open promise and none of its chats has run for 30 minutes, the next heartbeat wakes the agent and names each item and when it went quiet. The same stall wakes it at most twice. A paused agent, or one whose heartbeat is off, is never woken. (DOR-3674)
-- While heartbeats are on, if no agent chat has run on your computer for 30 minutes and work is still open, DorkOS posts one line in your team room. It says how long nothing has run, how many chats your agents started in the last 3 days, and how many promises are open. It posts once, and again only after a chat has run in between. It wakes no agent. To use another room, set `heartbeats.idleAlertRoomId`. Only you can change it. (DOR-3675)
-- Control Center has a new Team view. It shows which agents are running, which are waiting on you, and how much room this computer has left. (DOR-3461)
-- Owners and admins of a space now see how many messages are flagged, on the Manage button and the Members tab, without opening the queue first. (DOR-3625)
-- A space's server can now take a report of a person, for when there's no single message to report. Owners and admins can mute or ban that person, or dismiss the report. The buttons come in a later release. (DOR-3624)
-
-### Changed
-
-- When you approve a scheduled task, you now choose its permissions on the approval itself, including Never ask on Claude Code. A schedule an agent proposes runs once you approve it, and one you switched off stays off. For Claude Code tasks, the approval also shows the folder rules you approved. If an agent changes a task's instructions or runtime, the task waits for your approval again, even on Trusted. (DOR-3651)
-- An agent now runs at the level you set, wherever a message came from: an extension, the web, a connected chat, a stranger, a room, another agent or another person in a shared space. At Full autonomy, none of these raises a card or lowers what the agent can do. The one exception is a message sent over Wi-Fi by anyone but you, which stays limited. Anyone who can message an agent gets that agent's level, including its files, notes and your profile, so check your DM policy, and set an agent below Full if outsiders can reach it. This is a preview; separate protections come later. (DOR-3440)
-- Schedules that were waiting for your OK because of who wrote them are now switched off. They show as normal schedules you can turn on, and none starts by itself. Switching one off rewrites its file once, which can drop comments from the top of that file. (DOR-3440)
-- At Full, an agent that tries to loosen a permission, change its off-limits list or change a setting only you can change is refused, and nobody is asked. (DOR-3440)
-- An agent in a room can now set up that room's shared files itself, as its Rooms permission allows. The room and Activity show which agent did it. To stop it for one agent, set its Rooms permission to Ask or Blocked. To stop it everywhere, set `rooms.repo.enabled` to false. (DOR-3468)
-- An agent can now ask to install or update a large Marketplace package, such as Flow. Before, DorkOS refused because the full list didn't fit on one approval card. Now the card lists everything that gives the package more power, shows commands in full, and opens the whole list from "See everything it runs". (DOR-3070, DOR-3356)
-- An update's card shows only what changed: each item is marked New, Broader (with what it was) or Removed, and things that stay the same are counted. If the installed copy's files no longer match what was installed, every item shows as New. (DOR-3070)
-- A package with more than 40 things that run code or reach the internet still isn't asked about in chat. The message now says to review it in Marketplace, instead of telling you to update fewer packages at a time when there is only one. (DOR-3356)
-- A new channel now opens on its empty conversation, even if you last left the side panel on Canvas. Its `ROOM.md` is still pinned there, and the empty conversation says so, with **Open** to show it. (DOR-3477)
-- Saved Agent browser sign-ins move to a new private folder the first time you open the Agent browser. There is nothing to do on your side. (DOR-3218)
-- The /flow plugin can now tell when a Claude Code, Codex or OpenCode chat runs in DorkOS. Its journal records which runtime ran the work, and DorkOS as what hosted it. (DOR-2405)
-- Links and code in messages are no longer orange; orange now only means something is for you. A link is the same colour as the words around it, with a quiet underline that darkens when you point at it or tab to it. Inline code sits on a faint grey tint.
-- "Needs you" shows in the sidebar as a small orange diamond, not an amber dot. The dot was hard to see on the light theme and looked like the green and grey dots beside it. An agent with live chats keeps the diamond next to its "live" chip.
-- The sidebar is easier to read: the faded line under a row's name, the Find label, an empty section's hint, and the mute and pause icons are darker, and the "you can drop here" ring is easier to see.
-- Sidebar icons and agent faces are bigger on a phone, so they fit their row. The "⋮" on a row is a little bigger with a mouse too.
-- A space's channels and direct messages show as normal sidebar rows, with the agent's face on each direct message. A busy channel is bold instead of showing a number, a direct message keeps its count, and the arrow keys move through them like any other section.
-- The sidebar promo's × is easier to see and to hit: it's a full-size button in the same ink as the text, and the card's arrow is darker too. The remote-access card now reads "Your agents, from anywhere" so the line fits.
-- "Ask DorkBot" in the sidebar footer is a little larger, and New, the footer icons and "More" are real buttons with the app's standard focus ring.
-- The sidebar's header, section labels, promo and footer line up on one left edge, and the list sits 12px closer to Find.
-- On a phone, Find and New share one row at the top of Home, everything lines up on one 16px edge, and sections have a little more room. New and the You tab's theme menu open as bottom sheets, and the theme menu offers Light, Dark and System as three choices with a sun-and-moon icon instead of a person.
-- The line above the phone's tab bar is gone.
-- A space's loading, offline and error messages show as rows in the sidebar list, with "Try again" on errors.
-- A group conversation's two faces stay inside their space in the sidebar, so the name has room after them.
-- Warning lines in a room are easy to read: the words are full strength and only the mark is amber.
-- An agent's mention shows in readable text whatever its colour; the colour stays in the background.
-- On a phone, reactions and the thread reply line have real 40px and 44px targets, so a tap never opens the wrong thing.
-- Reactions are soft tints with no border, with yours in orange and bold, and a new one no longer bursts a ring.
-- A message's thread line stays right under it, and notices line up with the message text.
-- Three or more notices in a row fold behind "2 earlier", keeping any warning visible.
-- A room's hover, focus outline and message toolbar are quieter.
-
-### Fixed
-
-- An agent can no longer make or change a scheduled task for another agent, though it can still pause one. It can schedule work for itself, or work that belongs to no agent. Only its own schedules start without asking you, even when your agents are trusted. (DOR-3640)
-- Schedule approvals and their notifications now say which agent the task runs as. (DOR-3640)
-- An agent whose access you've switched off can no longer make a scheduled task that starts without asking you. A task it asks for waits for your approval, and DorkOS doesn't credit it to that agent. (DOR-3666)
-- An agent can no longer start a chat in another agent's folder, or post into another agent's chat, through DorkOS's API. It already couldn't from inside a chat. To reach another agent, it sends that agent a message. Once DorkOS has an owner, a program DorkOS can't name can't start work in any agent's folder or chat. That includes scripts and other devices using an API key: they now get an error there, and should use the app or an agent's own token. You can still start a chat anywhere in the app, as before. (DOR-3644)
-- DorkOS's own git work in a room's shared folder now runs only git settings it knows are safe. A room whose git settings hold anything unusual stops until you remove it, and DorkOS names exactly what to remove. (DOR-3667)
-- A workspace copied from a folder on your computer has its git settings checked first, however the folder's address is written. (DOR-3667)
-- When a Claude Code agent took a little longer than usual to start again, DorkOS stopped it after 15 seconds and said "Agents can't read their sign-in. Check this Mac for a password prompt." Agents now get the normal minute to start, and a slow start says "The agent took too long to start. It will try again." The sign-in message now appears only when reading your sign-in really is stuck. (DOR-3670)
-- A Claude Code chat starts when old chats are idle, even after a busy hour. If all 50 chats are busy, DorkOS says to wait for one to finish. (DOR-3682)
-- When an agent can't use its browser, it's now told to say so plainly and ask you to share a browser page in the app, not to send you to Terminal. (DOR-3157)
-- When an agent lists extensions or their errors, it's now told that each extension's name, description, errors and reasons were written by the extension's author, not by DorkOS. Text in those fields that's shaped like a DorkOS message boundary or system tag now reads as plain text. (DOR-3514)
-- An agent on Claude Code can open files in a folder named `credentials/` again, such as `docs/credentials/`. Of files named credentials, only the real AWS one stays blocked. (DOR-3510)
-- On a phone, a chat's header shows the agent's name over the conversation's title, each on its own line, so the title is readable instead of cut to one letter. The face beside them is larger, and the arrow between name and title appears only on wider screens.
-- On a narrow phone (375 pixels wide), a chat's header stays on one row instead of pushing Search, the Inbox and the panel button onto a second one.
-- On a phone, the number on the Inbox bell is no longer cut off at the top of the screen.
-- A channel's tab follows the sidebar's rule. New messages make its name bold, and the number counts only your mentions. A direct message's tab counts every new message, and a muted room's tab stays quiet unless someone mentions you. Before, a busy channel's tab showed every unread message as a number. (DOR-3593)
-- A channel's tab, its hover card, the History menu and a channel link no longer read "# #general". The `#` icon is the mark, and the name beside it is just "general". (DOR-3593)
-- On a space's own page, a channel with new messages now has a bold name instead of a badge counting everyone's messages. (DOR-3593)
-- A space's owner and admins no longer see or resolve a report about their own message or their agent's. The owner or another admin handles it, and a report about the owner goes to an admin. An owner with no admin sees only how many are waiting. (DOR-3621)
-- The owner's export no longer says who filed a report about them, so a space moved with that export doesn't have the reporter on those reports. (DOR-3621)
-- A DorkOS app linked to a space can now remove only its own person's messages and files. Removing someone else's takes the owner or an admin themselves, in their browser. (DOR-3622)
-
-### Security
-
-- In a chat set to **Full**, if someone other than you messages the agent over Wi-Fi, the agent now asks you before it does anything in a connected app beyond drafts, labels, trash and your own calendars. That includes sending, replying to or forwarding an email, inviting guests to an event, changing any event, and anything that can't be undone. Chats only you have used run as before. (DOR-3683)
-- Once DorkOS has an owner, confirming a paused connection's setting asks for your DorkOS password first. So does adding, saving or testing a connection that uses one of your own `env:` or `keychain:` settings. On the Mac app you type it in a small window of its own. Undo still needs nothing. (DOR-3467)
-- While a loaded mini app sits in an agent's folder, or has changed since you approved it, you can't confirm anything this way. Settings → Extensions names it, with buttons to move it out or turn it off. Once it's fixed, press **Sign in again** before you confirm. (DOR-3234)
-- Agents can no longer send a feedback report through DorkOS. You send it; an agent can still hand you a report link. (DOR-3506)
-- In a filed report, the attached conversation is now labelled as untrusted words, not instructions, for whoever triages it. (DOR-3506)
-- Agents can no longer open, read or act on DorkOS's own pages in the Agent browser. (DOR-3218)
-- On a space that sends email, joining through an invitation now asks for your name and email only, then shows "Check your email" whatever address you typed. A new address gets a link to set your password and finish joining. An address that already has an account gets a note to sign in instead. On a space that doesn't send email, and when someone claims a new space as its owner, sign-up still says when an email already has an account. (DOR-2730)
-- A space's sign-in limits, and the address each sign-in records, now come from the real connection. If the host names a trusted proxy header, they come from that header instead. (DOR-2846)
-- DorkOS stays quick when it reads a doc's title, a note or a site's address, however that text is written. Before, some odd text could hold it up for many seconds. (DOR-3661, DOR-3662, DOR-3663)
-- The library that cleans unsafe code out of documents and diagrams before the app shows them is updated to a version that closes three known holes, one of them rated critical.
-- The web server library the app runs on is updated to a version with a file-access fix. (DOR-3573)
-
-### Going back to 0.129.0
-
-This release adds five tables and three columns to DorkOS's own database, and a table and a column to a space's database. 0.129.0 starts normally and ignores them, so going back is safe. A few things don't come back:
-
-- Turns and queued messages the old rules held stay released, and schedules that were switched off stay off. (DOR-3440)
-- Your agents' work queues stop. Queued work starts again when you update. (DOR-3462)
-- Saved Agent browser sign-ins moved to a new folder the first time you opened the Agent browser, so 0.129.0's Agent browser starts signed out. To keep them, move `~/.dork/browser-profiles/default` back to `~/.dork/local-browser/saved-logins` before you start 0.129.0. (DOR-3218)
-- If you host a space and take its server back to 0.129.0, run this once on its database: `DELETE FROM email_link_requests WHERE kind='existing_account' AND state='pending';`. Otherwise sign-in and reset emails can wait up to an hour. On 0.129.0, a space that has a report about a person can't be deleted until that report is removed. (DOR-2730, DOR-3624)
-
-Older releases (v0.1.0 – v0.129.0) live in the [Changelog archive](/changelog-archive).
+Older releases (v0.1.0 – v0.130.0) live in the [Changelog archive](/changelog-archive).
