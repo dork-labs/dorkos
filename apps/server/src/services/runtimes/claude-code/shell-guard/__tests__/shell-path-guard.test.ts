@@ -5,7 +5,15 @@
  * @vitest-environment node
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -201,14 +209,35 @@ describe('commandReachesProtectedRead', () => {
     ['a named profile’s cookies', 'cp $DORK_HOME/browser-profiles/p1/Default/Cookies /tmp/c'],
     ['cat on the cookie store', 'cat ~/"Library/Application Support/DorkOS/Network/Cookies"'],
     ['cp of the cookie store', 'cp ~/"Library/Application Support/DorkOS/Network/Cookies" jar'],
-    [
-      'the cookie store in other case',
-      'cat ~/"library/application support/dorkos/Network/Cookies"',
-    ],
     ['the cookie store through a link', 'sqlite3 app-data/Network/Cookies .dump'],
     ['the app folder by a glob', 'cat ~/Library/Application*/Dork*/Network/Cookies'],
   ])('sees %s', async (_label, command) => {
     expect(await commandReachesProtectedRead(command, roots)).toBe(true);
+  });
+
+  // DOR-3613. On a disk that ignores case (macOS by default) another spelling
+  // opens the same cookie store, so the guard sees it. On a case-sensitive
+  // disk (Linux CI) that spelling is a different, absent file.
+  // The macOS answer on every disk: once the other spelling exists (as it does
+  // where case is ignored), the matcher itself must refuse it, whatever its case.
+  it('refuses the cookie store in other case once that spelling exists, on any disk', async () => {
+    const spelt = 'library/application support/dorkos/cookies';
+    touch(path.join(roots.home, spelt));
+    expect(await commandReachesProtectedRead(`cat ~/"${spelt}"`, roots)).toBe(true);
+    expect(
+      await commandReachesProtectedRead(`sqlite3 ~/"${spelt.toUpperCase()}" .dump`, roots)
+    ).toBe(existsSync(path.join(roots.home, spelt.toUpperCase())));
+  });
+
+  it('sees the cookie store in other case wherever the disk ignores case', async () => {
+    const lower = path.join(roots.home, 'library/application support/dorkos/Network/Cookies');
+    const sameFile = existsSync(lower);
+    expect(
+      await commandReachesProtectedRead(
+        'cat ~/"library/application support/dorkos/Network/Cookies"',
+        roots
+      )
+    ).toBe(sameFile);
   });
 
   it.each([
