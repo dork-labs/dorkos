@@ -81,14 +81,14 @@
     "apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts": 728,
     "apps/server/src/services/runtimes/claude-code/sessions/session-turn-windows.ts": 729,
     "apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts": 551,
-    "apps/server/src/services/runtimes/codex/app-server/notification-mapper.ts": 546,
+    "apps/server/src/services/runtimes/codex/app-server/notification-mapper.ts": 533,
     "apps/server/src/services/runtimes/codex/codex-runtime.ts": 1073,
     "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts": 1150,
     "apps/server/src/services/runtimes/opencode/opencode-runtime.ts": 845,
     "apps/server/src/services/session/chat-messages/chat-message-service.ts": 613,
     "apps/server/src/services/session/devtools-capture-store.ts": 666,
     "apps/server/src/services/session/private-messages/acceptance.ts": 567,
-    "apps/server/src/services/session/session-event-normalizer.ts": 536,
+    "apps/server/src/services/session/session-event-normalizer.ts": 531,
     "apps/server/src/services/session/session-state-projector.ts": 1010,
     "apps/server/src/services/spaces/app.ts": 513,
     "apps/server/src/services/spaces/config.ts": 541,
@@ -136,6 +136,6 @@
     "packages/test-utils/src/fake-community-adapter.ts": 789,
     "packages/test-utils/src/mock-factories.ts": 1225,
     "packages/test-utils/src/runtime-capability-matrix.ts": 776,
-    "packages/test-utils/src/runtime-conformance.ts": 2432
+    "packages/test-utils/src/runtime-conformance.ts": 2426
   }
 }

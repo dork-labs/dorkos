@@ -44,8 +44,8 @@ export type ProjectorPersistenceMode = 'history' | 'record';
 /**
  * Event types `'record'` mode keeps. The turn's two boundaries carry what
  * triggered it (`turn_start.userMessage`) and how it ended
- * (`turn_end.terminalReason`); `error` carries the fault itself. Everything
- * between them is in the JSONL transcript already.
+ * (`turn_end.terminalReason`); `error` carries the fault itself. Model request timing is kept too: JSONL does not retain first-token observations.
+ * The remaining content between them is in the JSONL transcript already.
  *
  * `interaction_resolved` is the one exception to "it is in the transcript
  * already", and it is why an ordinary cockpit session records too. A permission
@@ -85,6 +85,7 @@ export type ProjectorPersistenceMode = 'history' | 'record';
 export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn_start',
   'turn_end',
+  'model_request',
   'error',
   'approval_required',
   'question_prompt',

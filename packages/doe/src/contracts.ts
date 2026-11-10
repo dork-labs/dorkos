@@ -25,6 +25,10 @@ export interface ModelDescriptor {
 }
 /** Provider counts and costs are optional: absence never means zero. */
 export interface ModelUsage {
+  /** Local epoch-ms observations at provider dispatch, first token, and stream completion. */
+  startedAt?: number;
+  firstTokenAt?: number;
+  endedAt?: number;
   requestId: string;
   inputTokens?: number;
   outputTokens?: number;

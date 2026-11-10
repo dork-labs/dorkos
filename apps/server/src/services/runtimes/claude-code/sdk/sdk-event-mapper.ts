@@ -1,3 +1,5 @@
+import { timeRuntimeEvents } from '../../shared/timing/runtime-timing.js';
+import { claudeRequestEvents } from './request-timing.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from '../agent-types.js';
@@ -26,6 +28,19 @@ import { logger } from '../../../../lib/logger.js';
  *   it. Omitted means "nobody stopped anything".
  */
 export async function* mapSdkMessage(
+  message: SDKMessage,
+  session: AgentSession,
+  sessionId: string,
+  toolState: ToolState,
+  wasStopped?: () => boolean
+): AsyncGenerator<StreamEvent> {
+  yield* claudeRequestEvents(message, toolState);
+  for await (const event of mapMessage(message, session, sessionId, toolState, wasStopped)) {
+    yield* timeRuntimeEvents(toolState, [event], { observeStart: message.type === 'stream_event' });
+  }
+}
+
+async function* mapMessage(
   message: SDKMessage,
   session: AgentSession,
   sessionId: string,

@@ -205,7 +205,8 @@ describe('mapOpenCodeEvent', () => {
     it('emits text_delta for each message.part.delta increment', () => {
       const ctx = makeContext();
       expect(mapOpenCodeEvent(partUpdated(textPart(OC, 'p1', '')), ctx)).toEqual([]);
-      expect(mapOpenCodeEvent(partDelta(OC, 'p1', 'Hel'), ctx)).toEqual([
+      expect(mapOpenCodeEvent(partDelta(OC, 'p1', 'Hel'), ctx)).toMatchObject([
+        { type: 'model_request', data: { phase: 'first_token', firstTokenAt: expect.any(Number) } },
         { type: 'text_delta', data: { text: 'Hel' } },
       ]);
       expect(mapOpenCodeEvent(partDelta(OC, 'p1', 'lo'), ctx)).toEqual([
@@ -241,7 +242,8 @@ describe('mapOpenCodeEvent', () => {
     it('maps reasoning parts and their deltas to thinking_delta', () => {
       const ctx = makeContext();
       expect(mapOpenCodeEvent(partUpdated(reasoningPart(OC, 'r1', '')), ctx)).toEqual([]);
-      expect(mapOpenCodeEvent(partDelta(OC, 'r1', 'Think'), ctx)).toEqual([
+      expect(mapOpenCodeEvent(partDelta(OC, 'r1', 'Think'), ctx)).toMatchObject([
+        { type: 'model_request', data: { phase: 'first_token', firstTokenAt: expect.any(Number) } },
         { type: 'thinking_delta', data: { text: 'Think' } },
       ]);
       expect(
@@ -357,8 +359,10 @@ describe('mapOpenCodeEvent', () => {
 
     it('learns the role from message.updated regardless of whether the message completed', () => {
       const ctx = createOpenCodeEventContext(SESSION_ID);
-      // An in-flight assistant message maps to no StreamEvent of its own...
-      expect(mapOpenCodeEvent(messageUpdated(assistantMessage(OC)), ctx)).toEqual([]);
+      // An in-flight assistant message announces its request and records its role.
+      expect(mapOpenCodeEvent(messageUpdated(assistantMessage(OC)), ctx)).toMatchObject([
+        { type: 'model_request', data: { phase: 'start' } },
+      ]);
       // ...but its role is recorded, so its parts stream from the first one.
       expect(mapOpenCodeEvent(partUpdated(textPart(OC, 'p1', 'Hi')), ctx)).toEqual([
         { type: 'text_delta', data: { text: 'Hi' } },
@@ -383,7 +387,7 @@ describe('mapOpenCodeEvent', () => {
         partUpdated(toolPart(OC, 'call_1', 'bash', toolStateRunning(input))),
         makeContext()
       );
-      expect(events).toEqual([
+      expect(events).toMatchObject([
         {
           type: 'tool_call_start',
           data: {
@@ -403,7 +407,7 @@ describe('mapOpenCodeEvent', () => {
         partUpdated(toolPart(OC, 'call_1', 'bash', toolStateCompleted(input, 'file1\n'))),
         ctx
       );
-      expect(events).toEqual([
+      expect(events).toMatchObject([
         {
           type: 'tool_call_end',
           data: { toolCallId: 'call_1', toolName: 'bash', status: 'complete' },
@@ -1165,7 +1169,11 @@ describe('mapOpenCodeEvent', () => {
         messageUpdated(assistantMessage(OC, { completed: true })),
         makeContext()
       );
-      expect(events).toEqual([
+      expect(events).toMatchObject([
+        {
+          type: 'model_request',
+          data: { phase: 'end', startedAt: CREATED_AT, endedAt: COMPLETED_AT },
+        },
         {
           type: 'session_status',
           data: {
@@ -1196,7 +1204,7 @@ describe('mapOpenCodeEvent', () => {
       // OpenCode reports compaction as a single post-hoc completion — honest
       // degradation is a lone operation_progress `done` (no start/percent) plus
       // the durable boundary row.
-      expect(mapOpenCodeEvent(sessionCompacted(OC), makeContext())).toEqual([
+      expect(mapOpenCodeEvent(sessionCompacted(OC), makeContext())).toMatchObject([
         {
           type: 'operation_progress',
           data: { operation: 'compaction', state: 'done', determinate: false },
@@ -1290,8 +1298,10 @@ describe('mapOpenCodeTurn', () => {
   it('maps a simple turn to text deltas, usage, and done', async () => {
     const events = await drain(opencodeSimpleTurn(OC, 'Hello world'));
     expect(events.map((e) => e.type)).toEqual([
+      'model_request',
       'text_delta',
       'text_delta',
+      'model_request',
       'session_status',
       'done',
     ]);
@@ -1313,6 +1323,7 @@ describe('mapOpenCodeTurn', () => {
       'tool_result',
       'background_task_done',
       'text_delta',
+      'model_request',
       'session_status',
       'done',
     ]);
@@ -1337,6 +1348,7 @@ describe('mapOpenCodeTurn', () => {
       'tool_call_start',
       'tool_call_end',
       'text_delta',
+      'model_request',
       'session_status',
       'done',
     ]);
@@ -1350,7 +1362,7 @@ describe('mapOpenCodeTurn', () => {
 
   it('ends an aborted turn with done and NO error event', async () => {
     const events = await drain(opencodeAbortedTurn(OC, 'partial answer'));
-    expect(events.map((e) => e.type)).toEqual(['text_delta', 'done']);
+    expect(events.map((e) => e.type)).toEqual(['model_request', 'text_delta', 'done']);
     expect(events[events.length - 1]!.data).toEqual({ sessionId: SESSION_ID });
   });
 

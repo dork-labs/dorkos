@@ -2262,6 +2262,7 @@ describe('a compaction is not a silent turn (DOR-1235)', () => {
       preTokens: 38234,
       postTokens: 3035,
       durationMs: 19707,
+      endedAt: expect.any(Number),
     });
     expect(events.find((e) => e.type === 'done')).toBeDefined();
   });

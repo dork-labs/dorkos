@@ -41,6 +41,7 @@ import {
   questionOutcomeOf,
   type SessionEvent,
 } from '@dorkos/shared/session-stream';
+import { timingPayload } from './turn-stream/timing-events.js';
 import type {
   ErrorPart,
   HistoryMessage,
@@ -266,6 +267,7 @@ function buildTurnParts(turn: TurnAccumulator): MessagePart[] {
   for (const tool of turn.tools.values()) {
     parts.push({
       type: 'tool_call',
+      ...timingPayload(tool),
       toolCallId: tool.toolCallId,
       toolName: tool.toolName,
       status: tool.status,
@@ -372,13 +374,19 @@ export function reconstructHistoryFromEvents(
         break;
       case 'tool_call': {
         if (!turn) break;
-        const entry = toolEntry(turn, event.toolCallId, event.toolName);
+        const entry = Object.assign(
+          toolEntry(turn, event.toolCallId, event.toolName),
+          timingPayload(event)
+        );
         if (event.input !== undefined) entry.input = event.input;
         break;
       }
       case 'tool_result': {
         if (!turn) break;
-        const entry = toolEntry(turn, event.toolCallId, event.toolName);
+        const entry = Object.assign(
+          toolEntry(turn, event.toolCallId, event.toolName),
+          timingPayload(event)
+        );
         if (event.input !== undefined) entry.input = event.input;
         if (event.result !== undefined) entry.result = event.result;
         // The terminal status the runtime reported, rather than the optimistic
@@ -463,6 +471,7 @@ export function reconstructHistoryFromEvents(
         // turn` pins today's shape so that change is a decision and not a
         // surprise.
         const meta = {
+          ...timingPayload(event),
           ...(event.trigger !== undefined ? { trigger: event.trigger } : {}),
           ...(event.preTokens !== undefined ? { preTokens: event.preTokens } : {}),
           ...(event.postTokens !== undefined ? { postTokens: event.postTokens } : {}),

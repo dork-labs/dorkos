@@ -133,7 +133,7 @@ describe('mapCodexEvent', () => {
         codexItemStarted(commandExecutionItem('c1', { command: 'ls -la' })),
         ctx
       );
-      expect(events).toEqual([
+      expect(events).toMatchObject([
         {
           type: 'tool_call_start',
           data: {
@@ -177,7 +177,7 @@ describe('mapCodexEvent', () => {
         ),
         ctx
       );
-      expect(events).toEqual([
+      expect(events).toMatchObject([
         {
           type: 'tool_call_end',
           data: { toolCallId: 'c1', toolName: 'Shell', status: 'complete' },
@@ -251,7 +251,7 @@ describe('mapCodexEvent', () => {
         ),
         ctx
       );
-      expect(events).toEqual([
+      expect(events).toMatchObject([
         {
           type: 'tool_call_start',
           data: {
@@ -277,7 +277,7 @@ describe('mapCodexEvent', () => {
         codexItemCompleted(mcpToolCallItem('m1', { status: 'completed', resultText: 'created' })),
         ctx
       );
-      expect(events).toEqual([
+      expect(events).toMatchObject([
         {
           type: 'tool_call_end',
           data: { toolCallId: 'm1', toolName: 'mcp__linear__create_issue', status: 'complete' },
@@ -405,7 +405,7 @@ describe('mapCodexEvent', () => {
   describe('web_search → tool events', () => {
     it('maps started/completed to tool_call_start/tool_call_end without a result', () => {
       const ctx = makeContext();
-      expect(mapCodexEvent(codexItemStarted(webSearchItem('w1', 'dorkos')), ctx)).toEqual([
+      expect(mapCodexEvent(codexItemStarted(webSearchItem('w1', 'dorkos')), ctx)).toMatchObject([
         {
           type: 'tool_call_start',
           data: {
@@ -416,7 +416,7 @@ describe('mapCodexEvent', () => {
           },
         },
       ]);
-      expect(mapCodexEvent(codexItemCompleted(webSearchItem('w1', 'dorkos')), ctx)).toEqual([
+      expect(mapCodexEvent(codexItemCompleted(webSearchItem('w1', 'dorkos')), ctx)).toMatchObject([
         {
           type: 'tool_call_end',
           data: { toolCallId: 'w1', toolName: 'WebSearch', status: 'complete' },

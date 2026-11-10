@@ -42,6 +42,7 @@ export type {
   CapabilityApprovalPart,
   TextDelta,
   ToolCallEvent,
+  ModelRequestEvent,
   ToolProgressEvent,
   ApprovalEvent,
   AlwaysAllowScope,

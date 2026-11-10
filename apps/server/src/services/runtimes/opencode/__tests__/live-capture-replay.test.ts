@@ -330,6 +330,7 @@ describe('live capture: a subagent asks, the operator approves, the run finishes
       .filter((event) => event.type !== 'text_delta' && event.type !== 'thinking_delta')
       .map((event) => event.type);
     expect(relevant).toEqual([
+      'model_request',
       'tool_call_start',
       'background_task_started',
       'background_task_progress',
@@ -338,8 +339,11 @@ describe('live capture: a subagent asks, the operator approves, the run finishes
       'tool_call_end',
       'tool_result',
       'background_task_done',
+      'model_request',
       'session_status',
       'session_status',
+      'model_request',
+      'model_request',
       'session_status',
       'session_status',
       'done',

@@ -1,4 +1,21 @@
 import {
+  TimingFields,
+  ModelRequestEventSchema,
+  TextDeltaSchema,
+  ThinkingDeltaSchema,
+  ToolProgressEventSchema,
+} from './timing-events.js';
+export {
+  ModelRequestEventSchema,
+  TextDeltaSchema,
+  ThinkingDeltaSchema,
+  ToolProgressEventSchema,
+  type ModelRequestEvent,
+  type TextDelta,
+  type ThinkingDelta,
+  type ToolProgressEvent,
+} from './timing-events.js';
+import {
   ScheduleOriginMarksSchema,
   TaskReviewPresentationSchema,
 } from './task-approval-schemas.js';
@@ -190,6 +207,7 @@ export const StreamEventTypeSchema = z
   .enum([
     'text_delta',
     'tool_call_start',
+    'model_request',
     'tool_call_delta',
     'tool_call_end',
     'tool_result',
@@ -1811,22 +1829,6 @@ export type CommandsQuery = z.infer<typeof CommandsQuerySchema>;
 
 // === SSE Event Types ===
 
-export const TextDeltaSchema = z
-  .object({
-    text: z.string(),
-  })
-  .openapi('TextDelta');
-
-export type TextDelta = z.infer<typeof TextDeltaSchema>;
-
-export const ThinkingDeltaSchema = z
-  .object({
-    text: z.string(),
-  })
-  .openapi('ThinkingDelta');
-
-export type ThinkingDelta = z.infer<typeof ThinkingDeltaSchema>;
-
 const ToolCallStatusSchema = z.enum(['pending', 'running', 'complete', 'error']);
 
 /**
@@ -1857,6 +1859,7 @@ export const ToolCallEventSchema = z
     toolName: z.string(),
     input: z.string().optional(),
     result: z.string().optional(),
+    ...TimingFields,
     status: ToolCallStatusSchema,
     /** MCP App reference when this tool result carries a `ui://` app (claude-code only). */
     ui: McpAppRefSchema.optional(),
@@ -1864,15 +1867,6 @@ export const ToolCallEventSchema = z
   .openapi('ToolCallEvent');
 
 export type ToolCallEvent = z.infer<typeof ToolCallEventSchema>;
-
-export const ToolProgressEventSchema = z
-  .object({
-    toolCallId: z.string(),
-    content: z.string(),
-  })
-  .openapi('ToolProgressEvent');
-
-export type ToolProgressEvent = z.infer<typeof ToolProgressEventSchema>;
 
 /**
  * How far an accepted "Always Allow" actually reaches.
@@ -2678,6 +2672,7 @@ const agentCompactionShape = {
  */
 export const CompactBoundaryEventSchema = z
   .object({
+    ...TimingFields,
     /** What triggered compaction: `'manual'` (user ran /compact) or `'auto'` (context-pressure threshold). */
     trigger: z.enum(['manual', 'auto']).optional(),
     /** Context tokens occupying the window immediately before compaction. */
@@ -3127,6 +3122,7 @@ export const StreamEventSchema = z
   .object({
     type: StreamEventTypeSchema,
     data: z.union([
+      ModelRequestEventSchema,
       TextDeltaSchema,
       ThinkingDeltaSchema,
       ToolCallEventSchema,
@@ -3251,6 +3247,7 @@ export const ToolCallPartSchema = z
     input: z.string().optional(),
     result: z.string().optional(),
     progressOutput: z.string().optional(),
+    ...TimingFields,
     status: ToolCallStatusSchema,
     interactiveType: z.enum(['approval', 'question']).optional(),
     questions: z.array(QuestionItemSchema).optional(),
@@ -3336,8 +3333,6 @@ export const ToolCallPartSchema = z
      */
     approvalResolvedAt: z.number().optional(),
     hooks: z.array(HookPartSchema).optional(),
-    /** Client-only: timestamp (ms since epoch) when tool_call_start was received. Never serialized. */
-    startedAt: z.number().optional(),
     /** Client-only: timestamp (ms since epoch) when tool_result was received. Never serialized. */
     completedAt: z.number().optional(),
     /**
@@ -3698,6 +3693,7 @@ export const HistoryToolCallSchema = z
      * out, or failed. Runtimes that already knew better had to launder the
      * truth through `result` alone (see OpenCode's `session-mapper`).
      */
+    ...TimingFields,
     status: ToolCallStatusSchema,
     questions: z.array(QuestionItemSchema).optional(),
     answers: z.record(z.string(), z.string()).optional(),
@@ -3746,6 +3742,7 @@ export type HistoryToolCall = z.infer<typeof HistoryToolCallSchema>;
  */
 export const CompactMetadataSchema = z
   .object({
+    ...TimingFields,
     /** What triggered compaction: `'manual'` (user ran /compact) or `'auto'` (context pressure). */
     trigger: z.enum(['manual', 'auto']).optional(),
     /** Context tokens occupying the window immediately before compaction. */

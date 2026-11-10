@@ -127,7 +127,11 @@ export class PiEngine implements Engine {
             const current = modelOf(activeDescriptor);
             let emitted = false;
             let responseStatus: number | undefined;
-            const usage: ModelUsage = { requestId: randomUUID(), modelId: activeDescriptor.id };
+            const usage: ModelUsage = {
+              requestId: randomUUID(),
+              modelId: activeDescriptor.id,
+              startedAt: Date.now(),
+            };
             const source = implementation.streamSimple(current, context, {
               ...options,
               apiKey: explicitKey,
@@ -146,6 +150,13 @@ export class PiEngine implements Engine {
               },
             });
             for await (const event of source) {
+              if (
+                'delta' in event &&
+                event.delta &&
+                ['text_delta', 'thinking_delta', 'toolcall_delta'].includes(event.type) &&
+                usage.firstTokenAt === undefined
+              )
+                usage.firstTokenAt = Date.now();
               if (event.type === 'text_delta' || event.type === 'thinking_delta') emitted = true;
               if (event.type === 'text_delta' || event.type === 'thinking_delta') {
                 const delta = redactor.delta(`${event.type}:${event.contentIndex}`, event.delta);
@@ -158,6 +169,7 @@ export class PiEngine implements Engine {
               } else if (event.type !== 'done' && event.type !== 'error')
                 outer.push(redactor.json(event));
             }
+            usage.endedAt = Date.now();
             let result = await source.result();
             result = redactor.json(result);
             if (

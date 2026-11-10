@@ -1001,6 +1001,7 @@ describe('ClaudeCodeRuntime', () => {
         preTokens: 38234,
         postTokens: 3035,
         durationMs: 19707,
+        endedAt: expect.any(Number),
       });
       expect(events.find((e) => e.type === 'done')).toBeDefined();
     });

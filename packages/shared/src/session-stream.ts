@@ -31,6 +31,7 @@ import {
   TextDeltaSchema,
   ThinkingDeltaSchema,
   ToolCallEventSchema,
+  ModelRequestEventSchema,
   ToolProgressEventSchema,
   QuestionItemSchema,
   ElicitationModeSchema,
@@ -442,6 +443,7 @@ export const SessionEventSchema = z
     z.object({ ...seqShape, type: z.literal('thinking_delta'), ...ThinkingDeltaSchema.shape }),
     // A tool invocation (reuses the StreamEvent tool-call payload).
     z.object({ ...seqShape, type: z.literal('tool_call'), ...ToolCallEventSchema.shape }),
+    z.object({ ...seqShape, type: z.literal('model_request'), ...ModelRequestEventSchema.shape }),
     // The last word available about a tool call so far (reuses the StreamEvent
     // tool-call payload, which carries `result`). NOT necessarily terminal:
     // `status` is what says so — `complete`/`error` are, `running`/`pending`

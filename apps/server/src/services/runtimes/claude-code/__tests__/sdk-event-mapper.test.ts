@@ -290,7 +290,7 @@ describe('sdk-event-mapper background task lifecycle', () => {
 
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('compact_boundary');
-    expect(events[0].data).toEqual({});
+    expect(events[0].data).toEqual({ endedAt: expect.any(Number) });
   });
 
   it('yields elicitation_complete event', async () => {

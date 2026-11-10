@@ -1,3 +1,4 @@
+import { assertRuntimeTimingEvents } from './runtime-timing-conformance.js';
 /**
  * Shared AgentRuntime conformance suite — the behavioral gate every runtime
  * adapter clears before its UI activates.
@@ -1982,15 +1983,8 @@ export function runtimeConformance(
         const events = await drainTurn(runtime, sessionId);
 
         expect(events.length).toBeGreaterThan(0);
-        for (const event of events) {
-          const parsed = StreamEventSchema.safeParse(event);
-          expect(
-            parsed.success,
-            `malformed StreamEvent (type '${event.type}'): ${
-              parsed.success ? '' : parsed.error.message
-            }`
-          ).toBe(true);
-        }
+        for (const event of events) StreamEventSchema.parse(event);
+        assertRuntimeTimingEvents(events);
 
         // The generator completed (the for-await above returned) AND the final
         // event is the turn-ending type — consumers key turn teardown on it.

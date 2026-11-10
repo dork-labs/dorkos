@@ -428,7 +428,7 @@ describe('StreamManager', () => {
     // Real failure mode, and the exact one the sibling pin above exists for, on
     // `SESSION_LIST_EVENT_TYPES` (declared once in `session-stream-methods.ts` and
     // imported here, DOR-576): it is the gate every session-list event the shipped
-    // web/Electron/CLI cockpit receives over HTTP passes through. A discriminant
+    // web/Electron/CLI client receives over HTTP passes through. A discriminant
     // the server broadcasts but this set does not name gets no listener, and
     // `EventSource` drops the frame in silence — no warning, no failed request,
     // just a sidebar that stops updating. Nothing guarded it: the server-side
@@ -516,6 +516,21 @@ describe('StreamManager', () => {
         state: 'started',
         determinate: false,
         message: 'Compacting context…',
+      } as SessionEvent,
+    ],
+    [
+      'model_request',
+      {
+        type: 'model_request',
+        seq: 7,
+        requestId: 'request-a',
+        phase: 'end',
+        model: 'sample-model',
+        startedAt: 1000,
+        firstTokenAt: 1200,
+        endedAt: 1800,
+        inputTokens: 12000,
+        outputTokens: 50,
       } as SessionEvent,
     ],
     [

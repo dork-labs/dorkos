@@ -2,7 +2,18 @@ import { expect, it } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { StreamEventSchema } from '@dorkos/shared/schemas';
 import { DoeTurnEvents } from '../turn.js';
-import { model } from './runtime-fixture.js';
+import type { ModelDescriptor } from '@dorkos/doe';
+const model: ModelDescriptor = {
+  protocol: 'openai-completions',
+  endpoint: 'http://localhost:1/v1',
+  id: 'local',
+  contextWindow: 200000,
+  maxOutputTokens: 1000,
+  payer: 'local',
+  historyFamily: 'chat',
+  requiresCredentials: false,
+  credentials: async () => undefined,
+};
 it('correlates child output to its actual builder and keeps child tools outside parent calls', () => {
   const events: StreamEvent[] = [];
   const mapper = new DoeTurnEvents('s', model, (event) => events.push(event));
@@ -65,4 +76,33 @@ it('RT-COST-01: separates turn cost from cumulative cost and retains unknown tot
   unknown.finish('completed', false);
   expect(events.at(-1)?.data).toMatchObject({ turnCostUsd: 0.1 });
   expect(events.at(-1)?.data).not.toHaveProperty('costUsd');
+});
+
+it('forwards the actual request readings instead of turn totals and clocks parent tools', () => {
+  const events: StreamEvent[] = [];
+  const mapper = new DoeTurnEvents('s', model, (e) => events.push(e));
+  mapper.receive({
+    type: 'usage',
+    scope: 'main',
+    usage: {
+      requestId: 'request',
+      startedAt: 10,
+      firstTokenAt: 20,
+      endedAt: 30,
+      inputTokens: 4,
+      outputTokens: 5,
+    },
+  });
+  expect(events.find((e) => e.type === 'model_request')?.data).toMatchObject({
+    requestId: 'request',
+    startedAt: 10,
+    firstTokenAt: 20,
+    endedAt: 30,
+    inputTokens: 4,
+    outputTokens: 5,
+  });
+  mapper.receive({ type: 'tool-start', callId: 'read', name: 'read', scope: 'main' });
+  mapper.receive({ type: 'tool-end', callId: 'read', name: 'read', scope: 'main' });
+  expect(events.find((e) => e.type === 'tool_call_start')?.data).toHaveProperty('startedAt');
+  expect(events.find((e) => e.type === 'tool_result')?.data).toHaveProperty('endedAt');
 });

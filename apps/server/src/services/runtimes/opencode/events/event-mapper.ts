@@ -56,6 +56,7 @@
  *
  * @module services/runtimes/opencode/event-mapper
  */
+import { openCodeTimingEvents } from './request-timing.js';
 import type { Event, GlobalEvent } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RuntimeErrorCopy } from '@dorkos/shared/runtime-error-classification';
@@ -266,6 +267,11 @@ export function mapOpenCodeEvent(
   event: OpenCodeWireEvent,
   ctx: OpenCodeEventContext
 ): StreamEvent[] {
+  const mapped = mapEvent(event, ctx);
+  return openCodeTimingEvents(event, ctx, mapped);
+}
+
+function mapEvent(event: OpenCodeWireEvent, ctx: OpenCodeEventContext): StreamEvent[] {
   // Learn who wrote each message BEFORE anything is routed or mapped. Every
   // admitted message announces itself this way — the parent's and the child's
   // alike — and message ids are unique across sessions, so one map serves both.

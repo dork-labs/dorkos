@@ -70,6 +70,8 @@ describe('compacting a Codex thread', () => {
           preTokens: 1200,
           postTokens: COMPACTED_TOKENS,
           durationMs: 7277,
+          startedAt: 1000,
+          endedAt: 8277,
         },
       },
     ]);
