@@ -450,6 +450,7 @@ describe('the rows', () => {
       'instructions',
       'boundaries',
       'memory',
+      'told',
     ]);
   });
 
@@ -629,6 +630,11 @@ describe('pushing a page', () => {
     expect(document.querySelector('[data-slot="profile-header"]')).toBeNull();
     const strip = document.querySelector('[data-slot="profile-strip"]')!;
     expect(within(strip as HTMLElement).getByText('Dorian')).toBeInTheDocument();
+    // A long name truncates with its full text on hover, rather than pushing
+    // the status under the sheet's close button on a phone.
+    const name = strip.querySelector('[data-slot="profile-strip-name"]')!;
+    expect(name).toHaveClass('truncate');
+    expect(name).toHaveAttribute('title', 'Dorian');
   });
 
   it('puts focus on the page’s title, not on its back link', async () => {

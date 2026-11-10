@@ -164,6 +164,8 @@ describe('an agent you manage', () => {
       // told, what it must not do, and what it has learned are the same kind
       // of thing to a person looking for them.
       'Memory nav',
+      // Where the three end up: everything the agent is told (spec `context-viewer`).
+      'What this agent is told nav',
     ]);
   });
 

@@ -16,6 +16,7 @@
  */
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import type { AgentHome } from '../../../core/agent-identity/index.js';
+import type { AgentContextSource } from '../../shared/source/agent-context-source.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
 import {
   renderBlockedAreaLines,
@@ -72,14 +73,17 @@ export async function buildOpenCodeTurnContext(
  * way to answer is the posting tool it describes.
  *
  * @param roomTurn - Whether this turn answers a room.
+ * @param source - Where the facts are read from; only the context viewer
+ *   passes one (`shared/source/agent-context-source.ts`).
  */
 export async function buildOpenCodeTurnParts(
   cwd: string,
   dorkosApplied: boolean,
   agentPath: AgentHome | undefined,
-  roomTurn = false
+  roomTurn = false,
+  source?: AgentContextSource
 ): Promise<ContextPart[]> {
-  const append = await buildAgentContextAppend(agentPath, cwd);
+  const append = await buildAgentContextAppend(agentPath, cwd, source);
   const neutral = append.parts ?? [{ block: null, text: append.text }];
   if (!dorkosApplied) return [...neutral];
   // One line per Blocked permission area (spec `agent-permissions` D15); the

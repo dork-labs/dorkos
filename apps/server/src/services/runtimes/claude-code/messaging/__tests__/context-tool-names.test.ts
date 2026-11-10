@@ -521,7 +521,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // seat; no prompt block names it, so it stays deferred. Its options list stays external.
     // 143 -> 144 for `room_handoff_status` (DOR-3778): deferred, and a post's answer names it by
     // its searchable ending.
-    expect(advertised.size).toBe(144);
+    // 144 -> 145 for `agent_instructions` (spec `context-viewer` phase 3): no prompt block names
+    // it, so it stays deferred.
+    expect(advertised.size).toBe(145);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

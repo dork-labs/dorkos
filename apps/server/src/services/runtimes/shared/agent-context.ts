@@ -25,8 +25,7 @@
  *
  * @module services/runtimes/shared/agent-context
  */
-import os from 'node:os';
-import { readHomeManifest, type AgentHome } from '../../core/agent-identity/index.js';
+import type { AgentHome } from '../../core/agent-identity/index.js';
 import { agentBrowserStateFileOf } from '@dorkos/shared/agent-browser';
 import type { ManagedMcpServer } from '@dorkos/shared/mesh-schemas';
 import {
@@ -34,7 +33,6 @@ import {
   buildSoulContent,
   TRAIT_SECTION_START,
 } from '@dorkos/shared/convention-files';
-import { readConventionFile } from '@dorkos/shared/convention-files-io';
 import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { UserProfile } from '@dorkos/shared/config-schema';
 import type { MemorySnapshot } from '@dorkos/shared/memory-provider';
@@ -45,19 +43,15 @@ import {
   MEMORY_STALENESS_LINE,
   MEMORY_TRUST_FRAMING,
 } from '@dorkos/shared/convention-files';
-import { configManager } from '../../core/config-manager.js';
-import { getMemoryProvider } from '../../memory/index.js';
 import { memoryProviderStatus } from '../../memory/registry.js';
 import { logger } from '../../../lib/logger.js';
 import { fenceUntrustedBlock } from './untrusted-fence.js';
-import { renderMemoryNotesLine } from '../../memory/notes-line.js';
 import { env } from '../../../env.js';
-import { SERVER_VERSION } from '../../../lib/version.js';
-import { currentDistribution } from '../../../lib/distribution/index.js';
 import { currentCliInvocation } from './cli-invocation.js';
 import { agentBrowserGap, agentBrowserNotice } from '../../mesh/agent-browser-preset.js';
 import { buildDorkosAreasBlock } from './awareness/dorkos-areas.js';
 import type { ContextPart } from './window/context-fit.js';
+import { diskContextSource, type AgentContextSource } from './source/agent-context-source.js';
 
 /**
  * Build the `<dorkos_context>` block: what DorkOS is, how an agent works in it,
@@ -325,11 +319,15 @@ You are one session of this agent. Other sessions of you exist in other rooms, D
  * @param agentPath - The agent's registered home. The provider resolves
  *   `<agentPath>/.dork/MEMORY.md` itself; nothing here builds a path.
  */
-async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<string> {
-  const notesLine = await buildNotesLine(agentId, agentPath);
+async function buildMemoryBlock(
+  agentId: string,
+  agentPath: AgentHome,
+  source: AgentContextSource = diskContextSource
+): Promise<string> {
+  const notesLine = await buildNotesLine(agentId, agentPath, source);
   let snapshot: MemorySnapshot;
   try {
-    snapshot = await getMemoryProvider().getSnapshot({ agentId, agentPath });
+    snapshot = await source.memorySnapshot(agentId, agentPath);
   } catch (err) {
     // The port promises `getSnapshot` never throws for an absent or unreadable
     // memory, and the builtin provider keeps that promise. This catch is for the
@@ -372,6 +370,7 @@ async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<
     label: MEMORY_FENCE_LABEL,
     preamble: MEMORY_FENCE_PREAMBLE,
     ...(notes.length > 0 ? { notes } : {}),
+    ...(source.fenceNonce ? { nonce: source.fenceNonce } : {}),
   });
 
   return [
@@ -393,14 +392,15 @@ async function buildMemoryBlock(agentId: string, agentPath: AgentHome): Promise<
  *
  * @param agentId - The agent, for the log line.
  * @param agentPath - The agent's registered home.
+ * @param source - Where the list is read from.
  */
-async function buildNotesLine(agentId: string, agentPath: AgentHome): Promise<string> {
+async function buildNotesLine(
+  agentId: string,
+  agentPath: AgentHome,
+  source: AgentContextSource
+): Promise<string> {
   try {
-    const list = await getMemoryProvider().listNotes({ agentId, agentPath }, { limit: 3 });
-    if (list.status === 'error') {
-      logger.warn('[Memory] Could not list notes for agent %s: %s', agentId, list.error);
-    }
-    return renderMemoryNotesLine(list);
+    return await source.notesLine(agentId, agentPath);
   } catch {
     // A backend without `notes` refuses; that is not a fault, and not worth a line.
     return '';
@@ -467,9 +467,9 @@ function buildUserProfileBlock(profile: Partial<UserProfile> | null | undefined)
  * by design: an uninitialized or unreadable config drops the block and never
  * fails the turn — the same posture as every other block here.
  */
-function buildUserProfileBlockFromConfig(): string {
+function buildUserProfileBlockFromConfig(source: AgentContextSource): string {
   try {
-    return buildUserProfileBlock(configManager.getAll().profile);
+    return buildUserProfileBlock(source.profile());
   } catch {
     return '';
   }
@@ -489,18 +489,23 @@ function buildUserProfileBlockFromConfig(): string {
  * pinned) and re-anchors a Codex thread (its gate digests this half).
  *
  * @param cwd - Working directory for the session.
+ * @param source - Where the host facts are read from.
  */
-async function buildEnvBlock(cwd: string): Promise<string> {
+async function buildEnvBlock(
+  cwd: string,
+  source: AgentContextSource = diskContextSource
+): Promise<string> {
+  const facts = source.envFacts(cwd);
   const lines = [
-    `Working directory: ${cwd}`,
+    `Working directory: ${facts.cwd}`,
     `Product: DorkOS`,
-    `App: ${currentDistribution().label}`,
-    `Version: ${SERVER_VERSION}`,
-    `Port: ${env.DORKOS_PORT}`,
-    `Platform: ${os.platform()}`,
-    `OS Version: ${os.release()}`,
-    `Node.js: ${process.version}`,
-    `Hostname: ${os.hostname()}`,
+    `App: ${facts.app}`,
+    `Version: ${facts.version}`,
+    `Port: ${facts.port}`,
+    `Platform: ${facts.platform}`,
+    `OS Version: ${facts.osVersion}`,
+    `Node.js: ${facts.node}`,
+    `Hostname: ${facts.hostname}`,
   ];
 
   return `<env>\n${lines.join('\n')}\n</env>`;
@@ -531,6 +536,21 @@ function buildAgentBrowserBlock(servers: readonly ManagedMcpServer[]): string {
 }
 
 /**
+ * The persona text a turn carries for one `SOUL.md`: the file as written, or,
+ * when it has a trait section, that section regenerated from the current trait
+ * values. One function, because the context viewer fills `{{agent.persona}}`
+ * with exactly this and must never compute it a second way.
+ *
+ * @param soulContent - `SOUL.md` as it stands on disk.
+ * @param traits - The manifest's trait values.
+ */
+export function personaText(soulContent: string, traits?: Record<string, number>): string {
+  if (!soulContent.includes(TRAIT_SECTION_START)) return soulContent;
+  const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...traits });
+  return buildSoulContent(traitBlock, extractCustomProse(soulContent));
+}
+
+/**
  * Build agent identity, persona, and safety boundary blocks from `.dork/`
  * convention files.
  *
@@ -543,19 +563,18 @@ function buildAgentBrowserBlock(servers: readonly ManagedMcpServer[]): string {
  *
  * @param home - The agent's registered home — the only folder its manifest and
  *   convention files are read from (spec `agent-home-desk` I1).
+ * @param source - Where the facts are read from; disk unless the context viewer
+ *   is asking for the template (`agent-context-source.ts`).
  * @returns XML block string, or empty string if no manifest.
  */
-async function buildAgentBlock(home: AgentHome): Promise<AgentContextAppend> {
-  const manifest = await readHomeManifest(home);
+async function buildAgentBlock(
+  home: AgentHome,
+  source: AgentContextSource = diskContextSource
+): Promise<AgentContextAppend> {
+  const manifest = await source.manifest(home);
   if (!manifest) return EMPTY_APPEND;
 
-  // Zod v4 + openapi extension drops persona fields from inferred type
-  const { persona, personaEnabled, traits, conventions } = manifest as {
-    persona?: string;
-    personaEnabled?: boolean;
-    traits?: Record<string, number>;
-    conventions?: { soul?: boolean; nope?: boolean; memory?: boolean; dorkosKnowledge?: boolean };
-  };
+  const { persona, personaEnabled, traits, conventions } = manifest;
 
   // --- Identity block ---
   const identityLines = [
@@ -579,16 +598,13 @@ async function buildAgentBlock(home: AgentHome): Promise<AgentContextAppend> {
   const soulEnabled = conventions?.soul !== false;
 
   if (soulEnabled) {
-    let soulContent = await readConventionFile(home, 'SOUL.md');
+    const soulContent = await source.conventionFile(home, 'SOUL.md');
 
     if (soulContent) {
-      // If SOUL.md has a trait section, regenerate it with current trait values
-      if (soulContent.includes(TRAIT_SECTION_START)) {
-        const customProse = extractCustomProse(soulContent);
-        const traitBlock = renderTraits({ ...DEFAULT_TRAITS, ...traits });
-        soulContent = buildSoulContent(traitBlock, customProse);
-      }
-      push('agent_persona', `<agent_persona>\n${soulContent}\n</agent_persona>`);
+      push(
+        'agent_persona',
+        `<agent_persona>\n${personaText(soulContent, traits)}\n</agent_persona>`
+      );
     } else if (personaEnabled !== false && persona) {
       // Legacy fallback: use persona field
       push('agent_persona', `<agent_persona>\n${persona}\n</agent_persona>`);
@@ -599,7 +615,7 @@ async function buildAgentBlock(home: AgentHome): Promise<AgentContextAppend> {
   const nopeEnabled = conventions?.nope !== false;
 
   if (nopeEnabled) {
-    const nopeContent = await readConventionFile(home, 'NOPE.md');
+    const nopeContent = await source.conventionFile(home, 'NOPE.md');
     if (nopeContent) {
       push(null, `<agent_safety_boundaries>\n${nopeContent}\n</agent_safety_boundaries>`);
     }
@@ -617,7 +633,8 @@ async function buildAgentBlock(home: AgentHome): Promise<AgentContextAppend> {
   push(null, buildWorkingRulesBlock());
 
   // --- Agent memory block (default ON) ---
-  const memory = conventions?.memory !== false ? await buildMemoryBlock(manifest.id, home) : '';
+  const memory =
+    conventions?.memory !== false ? await buildMemoryBlock(manifest.id, home, source) : '';
 
   // --- Everything after the memory block ---
   const tail: ContextPart[] = [];
@@ -718,16 +735,20 @@ const EMPTY_APPEND: AgentContextAppend = { text: '', stable: '', memory: '', par
  *   convention files — never from `cwd`, whose committed `.dork/` may be a
  *   stale branch's or another agent's (spec `agent-home-desk` I1, I2).
  * @param cwd - The session's working directory, for the `<env>` block.
+ * @param source - Where the facts are read from. A turn never passes one; the
+ *   context viewer passes the template source so the same builders write the
+ *   template (`agent-context-source.ts`).
  * @returns The joined blocks, or `''` when nothing could be built.
  */
 export async function buildAgentContextAppend(
   home: AgentHome | undefined,
-  cwd: string
+  cwd: string,
+  source: AgentContextSource = diskContextSource
 ): Promise<AgentContextAppend> {
   const [agent, profile, envBlock] = await Promise.all([
-    home ? settle(buildAgentBlock(home), EMPTY_APPEND) : EMPTY_APPEND,
-    settle(Promise.resolve(buildUserProfileBlockFromConfig()), ''),
-    settle(buildEnvBlock(cwd), ''),
+    home ? settle(buildAgentBlock(home, source), EMPTY_APPEND) : EMPTY_APPEND,
+    settle(Promise.resolve(buildUserProfileBlockFromConfig(source)), ''),
+    settle(buildEnvBlock(cwd, source), ''),
   ]);
 
   // A session with no agent (no home, no manifest, or a failed read) still gets
@@ -816,4 +837,5 @@ export {
   buildSessionModelBlock as _buildSessionModelBlock,
   buildDorkosContextBlock as _buildDorkosContextBlock,
   buildUserProfileBlock as _buildUserProfileBlock,
+  sanitizeProfileValue as _sanitizeProfileValue,
 };

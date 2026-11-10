@@ -36,6 +36,7 @@ import { createTerminalMethods } from './terminal-methods';
 import { createFeedbackMethods } from './feedback-methods';
 import { createApprovalMethods } from './approval-methods';
 import { createPermissionMethods } from './permission-methods';
+import { createInstructionsMethods } from './instructions-methods';
 import { createTodoPromiseMethods } from './todo-promise-methods';
 import { createTodoMethods } from './todo-methods';
 import { createGlobalMcpMethods } from './global-mcp-methods';
@@ -95,6 +96,7 @@ export interface HttpTransport
     ReturnType<typeof createFeedbackMethods>,
     ReturnType<typeof createApprovalMethods>,
     ReturnType<typeof createPermissionMethods>,
+    ReturnType<typeof createInstructionsMethods>,
     ReturnType<typeof createTodoPromiseMethods>,
     ReturnType<typeof createTodoMethods>,
     ReturnType<typeof createGlobalMcpMethods>,
@@ -157,6 +159,7 @@ export class HttpTransport implements Transport {
       createFeedbackMethods(baseUrl),
       createApprovalMethods(baseUrl),
       createPermissionMethods(baseUrl),
+      createInstructionsMethods(baseUrl),
       createTodoPromiseMethods(baseUrl),
       createTodoMethods(baseUrl),
       createGlobalMcpMethods(baseUrl),

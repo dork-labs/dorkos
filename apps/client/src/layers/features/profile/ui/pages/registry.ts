@@ -115,6 +115,10 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
     title: 'Boundaries',
     component: lazy(() => import('./ConventionPage').then((m) => ({ default: m.BoundariesPage }))),
   },
+  told: {
+    title: 'What this agent is told',
+    component: lazy(() => import('./ToldPage').then((m) => ({ default: m.ToldPage }))),
+  },
   memory: {
     title: 'Memory',
     component: lazy(() => import('./ConventionPage').then((m) => ({ default: m.MemoryPage }))),

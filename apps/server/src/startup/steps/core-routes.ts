@@ -7,6 +7,7 @@
  *
  * @module startup/steps/core-routes
  */
+import { setInstructionsReader } from '../../services/runtimes/context-preview/instructions-capability.js';
 import { env } from '../../env.js';
 import { configManager } from '../../services/core/config-manager.js';
 import { approvedByField } from '../../services/connectors/access/access-change-ledger.js';
@@ -684,6 +685,19 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   // read lazily because it is composed after the routes are handed over.
   deps.agentPause = { registry: () => refs.capabilityRegistry };
   mountedRouters.push('agent-pause');
+  // What every agent is told, and what one agent will be told, for a person
+  // (spec `context-viewer` phase 3). Read only.
+  deps.agentInstructions = {
+    agentPath: (agentId) =>
+      refs.meshCore?.listWithPaths().find((agent) => agent.id === agentId)?.projectPath,
+    runtimeType: resolveAgentRuntimeType,
+    meshCore: () => refs.meshCore ?? undefined,
+  };
+  mountedRouters.push('agent-instructions');
+  setInstructionsReader({
+    meshCore: () => refs.meshCore ?? undefined,
+    runtimeType: resolveAgentRuntimeType,
+  });
   // "Confirm it's you" stays off while a loaded mini app is in an agent's
   // folder or changed since it was approved (DOR-3234). Read per request.
   // The ledger remembers a risk that cleared while a tab stayed open, across restarts.

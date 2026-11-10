@@ -37,6 +37,10 @@ import { createA2aRoutes, type A2aRouteDeps } from '../routes/a2a.js';
 import { createActivityRoutes } from '../routes/activity.js';
 import { createAdminRoutes, type AdminDeps } from '../routes/admin.js';
 import { createAgentPauseRoutes, type AgentPauseRouterDeps } from '../routes/agent-pause.js';
+import {
+  createAgentInstructionsRoutes,
+  type AgentInstructionsRouterDeps,
+} from '../routes/agent-instructions.js';
 import { createAgentsRoutes, type AgentsRouterDeps } from '../routes/agents.js';
 import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../routes/approvals.js';
 import { createApiDocsRoutes } from '../routes/api-docs.js';
@@ -207,6 +211,8 @@ export interface ComposedGroupDeps {
   permissions?: PermissionsRouterDeps;
   /** Pausing an agent everywhere (`/api/agents/pauses`, `/api/agents/:id/{pause,resume}`). */
   agentPause?: AgentPauseRouterDeps;
+  /** What every agent is told, and what one agent will be told (spec `context-viewer`). */
+  agentInstructions?: AgentInstructionsRouterDeps;
   /** The operator's photo and name (`/api/profile`). */
   profile?: ProfileRouterDeps;
   /** The agent registry's routes (`/api/mesh`). Only handed over when the mesh started. */
@@ -494,6 +500,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   // nothing else: every other path still reaches its group or the `/api` 404.
   if (deps.permissions) app.route('/api', createPermissionsRoutes(deps.permissions));
   if (deps.agentPause) app.route('/api', createAgentPauseRoutes(deps.agentPause));
+  if (deps.agentInstructions) {
+    app.route('/api', createAgentInstructionsRoutes(deps.agentInstructions));
+  }
   if (deps.mesh) app.route('/api/mesh', createMeshRoutes(deps.mesh));
   if (deps.discovery) app.route('/api/discovery', createDiscoveryRoutes(deps.discovery));
   // Six groups answer under `/api/agents`: the two above, and these four.

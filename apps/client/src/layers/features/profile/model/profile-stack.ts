@@ -35,6 +35,7 @@ export type ProfilePageId =
   | 'instructions'
   | 'boundaries'
   | 'memory'
+  | 'told'
   | 'manages'
   | 'appearance'
   | 'name'
@@ -59,6 +60,7 @@ const PROFILE_PAGE_IDS: readonly ProfilePageId[] = [
   'instructions',
   'boundaries',
   'memory',
+  'told',
   'manages',
   'appearance',
   'name',

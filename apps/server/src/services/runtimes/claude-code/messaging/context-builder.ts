@@ -10,7 +10,7 @@ import type {
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
-import type { ToolDocGates } from './tool-doc-gates.js';
+import type { SystemPromptAppendOptions, ToolDocGates } from './tool-doc-gates.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import type { AgentHome } from '../../../core/agent-identity/index.js';
@@ -646,13 +646,15 @@ export interface SystemPromptAppend {
  *   is `loadsAgentToAgentTools`'s answer for THIS session — the same function
  *   and the same input `mcp-tools/index.ts` decides exposure with — so the
  *   prompt's "already in your tool list" is true whenever it says so
- *   (DOR-1337 / F8). Callers must not compute it themselves.
+ *   (DOR-1337 / F8). Callers must not compute it themselves. `source` is for
+ *   the context viewer alone, which writes the template through these same
+ *   builders (`shared/source/agent-context-source.ts`); a turn never passes one.
  */
 export async function buildSystemPromptAppend(
   home: AgentHome | undefined,
   cwd: string,
   toolConfig?: ToolDocGates,
-  options: { agentSession?: boolean; blockedAreaLines?: string } = {}
+  options: SystemPromptAppendOptions = {}
 ): Promise<SystemPromptAppend> {
   const agentSession = options.agentSession ?? false;
 
@@ -681,11 +683,10 @@ export async function buildSystemPromptAppend(
   // that closes it was three lines below.)
   const roomBlock = buildRoomToolsBlock(IN_SESSION_TOOL_PREFIX);
   const uiBlock = buildUiToolsBlock();
-  const genUiBlock = GEN_UI_CONTEXT;
 
   // Runtime-neutral identity + env (async: reads files, but content is stable
   // between agent config changes)
-  const agentContext = await buildAgentContextAppend(home, cwd);
+  const agentContext = await buildAgentContextAppend(home, cwd, options.source);
 
   // 1. Static tool documentation — fully cacheable, never changes.
   //    The naming rule comes first, because every block after it is written in
@@ -703,7 +704,7 @@ export async function buildSystemPromptAppend(
     // Part of the digested tool docs, so a change relaunches a warm session.
     options.blockedAreaLines ?? '',
     uiBlock,
-    genUiBlock,
+    GEN_UI_CONTEXT,
   ];
 
   // 2. Semi-static identity + env — changes only on agent config or server

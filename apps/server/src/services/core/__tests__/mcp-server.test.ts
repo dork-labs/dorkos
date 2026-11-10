@@ -179,9 +179,10 @@ describe('createExternalMcpServer', () => {
     // `docs/integrations/mcp-server.mdx` states the total for a fully
     // wired server (these 57 + 10 marketplace), and that number is pinned by no
     // test, so update both together when this one moves. 56 -> 57 for
-    // `memory_read` (ADR 261017-153539).
+    // `memory_read` (ADR 261017-153539). 57 -> 58 for `agent_instructions`, the
+    // template every agent is told (spec `context-viewer` phase 3).
     createExternalMcpServer(createMinimalDeps());
-    expect(registeredTools).toHaveLength(57);
+    expect(registeredTools).toHaveLength(58);
   });
 
   it('registers all expected tool names', () => {
@@ -317,7 +318,7 @@ describe('createExternalMcpServer', () => {
     const bindingTools = toolNames.filter((n) => n.startsWith('binding_'));
     const meshTools = toolNames.filter((n) => n.startsWith('mesh_'));
 
-    expect(coreTools).toHaveLength(34); // memory_read + heartbeat_status + 2 document + 4 core + 2 account (accounts_usage, accounts_probe) + 1 session (session_start) + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
+    expect(coreTools).toHaveLength(35); // agent_instructions + memory_read + heartbeat_status + 2 document + 4 core + 2 account (accounts_usage, accounts_probe) + 1 session (session_start) + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
     expect(taskTools).toHaveLength(5);
     expect(relayTools).toHaveLength(7); // 1 relay + 4 adapter + 2 trace
     expect(bindingTools).toHaveLength(3);

@@ -8,6 +8,7 @@
  *
  * @module services/runtimes/claude-code/messaging/tool-doc-gates
  */
+import type { AgentContextSource } from '../../shared/source/agent-context-source.js';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 
 import { isRelayEnabled } from '../../../relay/relay-state.js';
@@ -54,4 +55,17 @@ export function toolDocGates(blockedAreas: readonly PermissionAreaId[]): ToolDoc
     adapter: isRelayEnabled() && !blocked.has('connections'),
     packages: !blocked.has('packages'),
   };
+}
+
+/** What `buildSystemPromptAppend` is told about this session. */
+export interface SystemPromptAppendOptions {
+  /** `loadsAgentToAgentTools`'s answer for this session. */
+  agentSession?: boolean;
+  /** One line per Blocked permission area. */
+  blockedAreaLines?: string;
+  /**
+   * Where the shared append reads its facts. Only the context viewer passes
+   * one (`shared/source/agent-context-source.ts`); a turn never does.
+   */
+  source?: AgentContextSource;
 }

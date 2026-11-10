@@ -60,11 +60,11 @@ export function ProfilePage({ member, title, meta, onBack, children }: ProfilePa
   return (
     <div data-slot="profile-page" className="flex min-h-0 flex-1 flex-col">
       {/* The sheet home pins its own close X in this corner (`SheetContent`, at
-          top-4 right-4), so the strip steps aside for it there — the same
-          allowance the portrait's kebab makes. Without it the status sentence
-          runs underneath the X on a phone, where the strip is widest relative
-          to the panel. */}
-      <div className="flex items-center gap-2 px-2 pt-2 pb-1 group-data-[home=sheet]/profile:pr-9">
+          top-4 right-4), so the strip steps aside for it there. On a phone the
+          X is a 44px tap target 16px from the edge, so it reaches 60px in, and
+          the strip keeps exactly that clear (measured at 390px). Less than that
+          and the status sentence ran under the X and ate part of its tap zone. */}
+      <div className="flex items-center gap-2 px-2 pt-2 pb-1 group-data-[home=sheet]/profile:pr-15">
         <button
           type="button"
           onClick={back}
@@ -78,10 +78,23 @@ export function ProfilePage({ member, title, meta, onBack, children }: ProfilePa
             It is decoration for a screen reader — the heading below names the
             page and the back button names the way out — but it is the whole
             reason a full-height page does not feel like a different panel. */}
-        <div className="flex min-w-0 items-center gap-1.5" data-slot="profile-strip">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5" data-slot="profile-strip">
           <ProfileFace member={member} size="sm" />
-          <span className="min-w-0 truncate text-sm font-medium">{member.displayName}</span>
-          <span className="text-muted-foreground min-w-0 truncate text-xs">· {status.text}</span>
+          {/* One line on a desktop; on a phone the status gets its own line, so
+              a long name truncates instead of pushing the status under the X. */}
+          <div className="flex min-w-0 flex-col md:flex-row md:items-center md:gap-1.5">
+            <span
+              className="min-w-0 truncate text-sm leading-5 font-medium"
+              title={member.displayName}
+              data-slot="profile-strip-name"
+            >
+              {member.displayName}
+            </span>
+            <span className="text-muted-foreground min-w-0 truncate text-xs leading-4 md:shrink-0">
+              <span className="max-md:hidden">· </span>
+              {status.text}
+            </span>
+          </div>
         </div>
       </div>
 

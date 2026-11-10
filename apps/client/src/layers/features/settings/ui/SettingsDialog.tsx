@@ -16,6 +16,7 @@ import {
   MessagesSquare,
   KeyRound,
   Cable,
+  ScrollText,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
@@ -34,6 +35,7 @@ import { NotificationsTab } from './tabs/NotificationsTab';
 import { RoomsTab } from './tabs/RoomsTab';
 import { ConnectionsTab } from './tabs/ConnectionsTab';
 import { PermissionsTab } from './tabs/PermissionsTab';
+import { AgentInstructionsTab } from './tabs/AgentInstructionsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
 import { ToolsTab } from './ToolsTab';
@@ -68,6 +70,8 @@ const SETTINGS_TAB_PARTS: Record<BuiltInSettingsTab, SettingsTabParts> = {
   notifications: { icon: Bell, component: NotificationsTab },
   runtimes: { icon: Cpu, component: RuntimesTab },
   permissions: { icon: KeyRound, component: PermissionsTab },
+  // What every agent is told, as a template. Read only until phase 5.
+  instructions: { icon: ScrollText, component: AgentInstructionsTab },
   // The plumbing behind the Connections page: how DorkOS reaches your apps
   // (the DorkOS account, your own Composio or Nango key) and how chat apps
   // behave when a message arrives.

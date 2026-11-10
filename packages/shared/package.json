@@ -629,6 +629,10 @@
       "types": "./src/work-queue-schemas.ts",
       "default": "./dist/work-queue-schemas.js"
     },
+    "./agent-instructions-schemas": {
+      "types": "./src/agent-instructions-schemas.ts",
+      "default": "./dist/agent-instructions-schemas.js"
+    },
     "./heartbeat-schemas": {
       "types": "./src/heartbeat-schemas.ts",
       "default": "./dist/heartbeat-schemas.js"

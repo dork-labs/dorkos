@@ -5,6 +5,7 @@ import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AgentHome } from '../../core/agent-identity/index.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
+import type { AgentContextSource } from '../shared/source/agent-context-source.js';
 import { buildRoomToolsBlock } from '../shared/room-tools-context.js';
 import { formatAccountsAccess } from '../shared/accounts-access-context.js';
 import { formatContextWarning } from '../../session/agent-compaction/context-warning-block.js';
@@ -99,6 +100,8 @@ export interface DoeContextOptions {
   opts?: MessageOpts;
   hostConnected: boolean;
   agentToAgent?: boolean;
+  /** Where the facts are read from; only the context viewer passes one. */
+  source?: AgentContextSource;
 }
 
 /**
@@ -111,7 +114,7 @@ export interface DoeContextOptions {
  * loaded and is false once they are not.
  */
 export async function buildDoeContextParts(options: DoeContextOptions): Promise<ContextPart[]> {
-  const append = await buildAgentContextAppend(options.agentPath, options.cwd);
+  const append = await buildAgentContextAppend(options.agentPath, options.cwd, options.source);
   const visibility = options.hostConnected
     ? await resolveToolVisibilityFor(options.agentPath)
     : undefined;

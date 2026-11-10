@@ -20,6 +20,7 @@
  */
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { ChevronRight } from 'lucide-react';
 import type { Conventions } from '@dorkos/shared/mesh-schemas';
 import {
   HEARTBEAT_MAX_CHARS,
@@ -30,7 +31,6 @@ import {
 } from '@dorkos/shared/convention-files';
 import { Button, MoreDetails, Skeleton } from '@/layers/shared/ui';
 import { ConventionFileEditor } from '@/layers/features/agent-settings';
-import { InjectionPreview } from '../InjectionPreview';
 import { soulFile } from '../../lib/soul-file';
 import { useProfileLeaveGuard } from '../../model/profile-leave-guard';
 import { useProfileAgent, type ProfileAgentManifest } from '../../model/use-profile-agent';
@@ -192,7 +192,14 @@ interface ConventionPageProps extends ProfilePageContentProps {
 }
 
 /** One convention file, full height, with a Save you have to mean. */
-function ConventionPage({ member, file, fill = true, onSaved, onCancel }: ConventionPageProps) {
+function ConventionPage({
+  member,
+  file,
+  fill = true,
+  onSaved,
+  onCancel,
+  onPush,
+}: ConventionPageProps) {
   const { agent, isPending, isSaving, update } = useProfileAgent(member, {
     errorLabel: file.errorLabel,
   });
@@ -318,26 +325,19 @@ function ConventionPage({ member, file, fill = true, onSaved, onCancel }: Conven
           Save
         </Button>
       </div>
-      {/* Every file, assembled — on EVERY one of these pages, because the agent
-          reads them together and no one editor can show you the rest. Fed the
-          draft rather than what is on disk: `file.write` is the same function
-          Save sends, so the preview is what saving right now would produce. */}
+      {/* Every file, assembled, lives on its own page now: the server writes it
+          with the same builders a turn uses, so it cannot drift (spec
+          `context-viewer` phase 3). It shows what is saved, not the draft. */}
       {key && (
-        <div className="shrink-0">
-          <InjectionPreview
-            name={agent.name}
-            displayName={agent.displayName || agent.name}
-            id={agent.id}
-            description={agent.description}
-            capabilities={agent.capabilities}
-            traits={agent.traits}
-            conventions={conventions}
-            soulContent={agent.soulContent ?? ''}
-            nopeContent={agent.nopeContent ?? ''}
-            memoryContent={agent.memoryContent ?? ''}
-            {...file.write(agent, draft)}
-          />
-        </div>
+        <button
+          type="button"
+          data-slot="profile-convention-told-link"
+          onClick={() => onPush({ kind: 'page', page: 'told' })}
+          className="focus-ring text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1 self-start rounded-md py-1 text-xs transition-colors"
+        >
+          <ChevronRight aria-hidden className="size-3.5" />
+          See everything this agent is told
+        </button>
       )}
     </div>
   );
