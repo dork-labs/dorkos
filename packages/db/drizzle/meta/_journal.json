@@ -1359,6 +1359,13 @@
       "when": 1794285908967,
       "tag": "20261110044508_work_queue_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "6",
+      "when": 1794324045717,
+      "tag": "20261110152045_dor3547_extension_grant_guards",
+      "breakpoints": true
     }
   ]
 }

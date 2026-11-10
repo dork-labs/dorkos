@@ -21,6 +21,9 @@ export const EXTENSION_APPROVAL_ORIGINS = ['core', 'trusted_source', 'digest_pin
 /** Why DorkOS may trust the approved copy's code. See {@link EXTENSION_APPROVAL_ORIGINS}. */
 export type ExtensionApprovalOrigin = (typeof EXTENSION_APPROVAL_ORIGINS)[number];
 
+/** The characters SQLite's `trim` strips here: space, tab, newline and carriage return. */
+const BLANKS = sql.raw(`' ' || char(9) || char(10) || char(13)`);
+
 /** A SQL `IN (...)` list of string literals, raw so drizzle-kit writes no bind markers. */
 function inList(values: readonly string[]) {
   return sql.raw(values.map((v) => `'${v}'`).join(', '));
@@ -91,13 +94,25 @@ export const extensionConnectionApprovals = sqliteTable(
       'extension_connection_approvals_origin_source',
       sql`(${table.installOrigin} = 'trusted_source') = (${table.originSource} IS NOT NULL)`
     ),
+    // A source, when there is one, says something (Security S-3).
+    check(
+      'extension_connection_approvals_origin_source_text',
+      sql`${table.originSource} IS NULL OR trim(${table.originSource}, ${BLANKS}) <> ''`
+    ),
+    // GLOB and substr stop at an embedded NUL, so the byte length must equal
+    // the character length too, or `flow\0:agent-1` would pass (Security S-1).
     check(
       'extension_connection_approvals_extension_id',
-      sql`${table.extensionId} <> '' AND substr(${table.extensionId}, 1, 1) <> '-' AND ${table.extensionId} NOT GLOB '*[^a-z0-9-]*'`
+      sql`${table.extensionId} <> '' AND substr(${table.extensionId}, 1, 1) <> '-' AND ${table.extensionId} NOT GLOB '*[^a-z0-9-]*' AND length(CAST(${table.extensionId} AS BLOB)) = length(${table.extensionId})`
     ),
     check(
       'extension_connection_approvals_digests',
-      sql`${table.approvedFilesDigest} <> '' AND ${table.approvedOperationsDigest} <> ''`
+      sql`trim(${table.approvedFilesDigest}, ${BLANKS}) <> '' AND trim(${table.approvedOperationsDigest}, ${BLANKS}) <> ''`
+    ),
+    // The real path is absolute (Security S-3).
+    check(
+      'extension_connection_approvals_real_path',
+      sql`substr(${table.installRealPath}, 1, 1) = '/' AND length(CAST(${table.installRealPath} AS BLOB)) = length(${table.installRealPath})`
     ),
   ]
 );
